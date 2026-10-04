@@ -42,7 +42,8 @@ def test_with_no_board_table_the_view_draws_the_backlog_md_project_beside_its_co
 
     assert [s["id"] for s in feed.snapshot()["flows"][0]["machine"]["states"]] == ["to_do", "doing", "done"]
     _wait_until(lambda: feed.task("task-1") is not None)
-    assert feed.task("task-1")["state"] == "doing"
+    task = feed.task("task-1")
+    assert task is not None and task["state"] == "doing"
 
 
 def test_a_board_type_names_the_module_whose_board_the_view_draws(tmp_path: Path) -> None:
@@ -54,7 +55,8 @@ def test_a_board_type_names_the_module_whose_board_the_view_draws(tmp_path: Path
     snapshot = feed.snapshot()
     assert [s["id"] for s in snapshot["flows"][0]["machine"]["states"]] == ["open", "shut"]
     assert snapshot["cues"] == [{"dag": "q/nightly"}]
-    assert feed.task("FAKE-1")["state"] == "open"
+    task = feed.task("FAKE-1")
+    assert task is not None and task["state"] == "open"
     assert feed.task("other-1") is None, "a task outside the adapter's keys is not placed"
     assert fake_board.BUILT == [({"type": "starpulse.tests.fake_board", "lanes": ["open", "shut"]}, tmp_path)]
 
@@ -80,12 +82,13 @@ def test_database_url_names_the_database_history_is_kept_in(tmp_path: Path) -> N
 
     store = history_store(config, tmp_path, board, feed.machines)
 
+    assert isinstance(store, HistoryStore)
     assert str(store.engine.url) == url
     assert (tmp_path / "elsewhere.db").is_file()
 
 
 def test_a_board_that_keeps_its_own_history_is_read_instead(tmp_path: Path) -> None:
-    kept = object()
+    kept = HistoryStore(f"sqlite:///{tmp_path / 'kept.db'}", {})
     board = Board(machines=lambda q, w: {}, start=lambda feed, group: None, history=lambda machines: kept)
 
     assert history_store(load(None), tmp_path, board, {}) is kept
