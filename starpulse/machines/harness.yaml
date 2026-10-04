@@ -1,0 +1,23 @@
+name: harness
+states:
+  idle: {initial: true}
+  active: {}
+  stopped: {}
+events:
+  SESSION_STARTED:
+    - {from: [idle, active, stopped], to: active}
+  SKILL_USED:
+    - {from: [active, stopped], to: active}
+  TOOL_USED:
+    - {from: [active, stopped], to: active}
+  SESSION_STOPPED:
+    - {from: active, to: stopped}
+bindings:
+  SessionStart: SESSION_STARTED
+  UserPromptSubmit: SESSION_STARTED
+  PostToolUse: TOOL_USED
+  Stop: SESSION_STOPPED
+  user_prompt: SESSION_STARTED
+  skill_activated: SKILL_USED
+  tool_result: TOOL_USED
+  assistant_response: SESSION_STOPPED

@@ -1,0 +1,10 @@
+name: deploy
+states:
+  planned: {initial: true}
+  rollout: {flow: rollout.yaml}
+  live: {final: true}
+events:
+  STARTED:
+    - {from: planned, to: rollout}
+  FINISHED:
+    - {from: rollout, to: live}

@@ -1,0 +1,135 @@
+{
+ "dag": {
+  "name": "alert-investigation",
+  "steps": [
+   {
+    "id": "ack",
+    "name": "ack",
+    "description": "kind: code"
+   },
+   {
+    "id": "triage",
+    "name": "triage",
+    "depends": [
+     "ack"
+    ],
+    "description": "kind: code"
+   },
+   {
+    "id": "investigate",
+    "name": "investigate",
+    "depends": [
+     "triage"
+    ],
+    "description": "kind: agent"
+   },
+   {
+    "id": "reason",
+    "name": "reason",
+    "depends": [
+     "investigate"
+    ],
+    "description": "kind: code"
+   },
+   {
+    "id": "remediate",
+    "name": "remediate",
+    "depends": [
+     "reason"
+    ],
+    "description": "kind: code"
+   },
+   {
+    "id": "fix",
+    "name": "fix",
+    "depends": [
+     "remediate"
+    ],
+    "description": "kind: agent"
+   },
+   {
+    "id": "finalize",
+    "name": "finalize",
+    "depends": [
+     "fix"
+    ],
+    "description": "kind: code"
+   }
+  ]
+ },
+ "latestDAGRun": {
+  "dagRunId": "alert-investigation-723f5ff34916d9bb",
+  "statusLabel": "running",
+  "startedAt": "",
+  "finishedAt": "",
+  "nodes": [
+   {
+    "step": {
+     "id": "ack",
+     "name": "ack"
+    },
+    "statusLabel": "succeeded"
+   },
+   {
+    "step": {
+     "id": "triage",
+     "name": "triage",
+     "depends": [
+      "ack"
+     ]
+    },
+    "statusLabel": "succeeded"
+   },
+   {
+    "step": {
+     "id": "investigate",
+     "name": "investigate",
+     "depends": [
+      "triage"
+     ]
+    },
+    "statusLabel": "running"
+   },
+   {
+    "step": {
+     "id": "reason",
+     "name": "reason",
+     "depends": [
+      "investigate"
+     ]
+    },
+    "statusLabel": "not_started"
+   },
+   {
+    "step": {
+     "id": "remediate",
+     "name": "remediate",
+     "depends": [
+      "reason"
+     ]
+    },
+    "statusLabel": "not_started"
+   },
+   {
+    "step": {
+     "id": "fix",
+     "name": "fix",
+     "depends": [
+      "remediate"
+     ]
+    },
+    "statusLabel": "not_started"
+   },
+   {
+    "step": {
+     "id": "finalize",
+     "name": "finalize",
+     "depends": [
+      "fix"
+     ]
+    },
+    "statusLabel": "not_started"
+   }
+  ]
+ }
+}

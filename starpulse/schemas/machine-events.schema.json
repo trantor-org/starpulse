@@ -1,0 +1,66 @@
+{
+  "additionalProperties": false,
+  "description": "One event a lifecycle machine saw, keyed by the task or run it moved; the `machine:events` entry's fields.",
+  "properties": {
+    "event_id": {
+      "default": "",
+      "description": "The stream's unique id for the entry; absent from a record not read off a stream.",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "machine": {
+      "description": "The machine's registry name (`in-progress`).",
+      "title": "Machine",
+      "type": "string"
+    },
+    "event": {
+      "description": "The machine's own name for the event (`WORKTREE_READY`).",
+      "title": "Event",
+      "type": "string"
+    },
+    "task": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The task key it moved; exactly one of `task` and `run` is set.",
+      "title": "Task"
+    },
+    "run": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The run id it moved; exactly one of `task` and `run` is set.",
+      "title": "Run"
+    },
+    "actor": {
+      "default": "",
+      "description": "Who or what fired the event: an agent, a hook, a DAG.",
+      "title": "Actor",
+      "type": "string"
+    },
+    "time": {
+      "description": "When it happened, in epoch seconds; a stream carries it as text and it is read as a number.",
+      "title": "Time",
+      "type": "number"
+    }
+  },
+  "required": [
+    "machine",
+    "event",
+    "time"
+  ],
+  "title": "MachineEvent",
+  "type": "object"
+}

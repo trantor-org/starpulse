@@ -1,0 +1,7 @@
+name: nested
+states:
+  planned: {initial: true}
+  rollout: {flow: deploy.yaml}
+events:
+  STARTED:
+    - {from: planned, to: rollout}

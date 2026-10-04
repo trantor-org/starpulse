@@ -1,0 +1,128 @@
+{
+  "$defs": {
+    "Move": {
+      "additionalProperties": false,
+      "description": "The verdict on moving a task to one column: allowed, or guarded by a declared rule.",
+      "properties": {
+        "allowed": {
+          "description": "False when a guard the board writer enforces would refuse the move.",
+          "title": "Allowed",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "description": "What the refusing guard needs; empty when the move is allowed.",
+          "title": "Reason",
+          "type": "string"
+        },
+        "skill": {
+          "default": "",
+          "description": "The skill that produces what the guard needs; empty when allowed.",
+          "title": "Skill",
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed"
+      ],
+      "title": "Move",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One task on the board, as the latest observation of it.",
+  "properties": {
+    "id": {
+      "description": "The task key, matching the adapter's declared `TaskKeys.key` (`PROJ-45`, `ENG-123`).",
+      "title": "Id",
+      "type": "string"
+    },
+    "title": {
+      "description": "The task's one-line title.",
+      "title": "Title",
+      "type": "string"
+    },
+    "lane": {
+      "description": "The id of the Board machine state the task is in (`in_progress`): its status, lower-cased, spaces as `_`.",
+      "title": "Lane",
+      "type": "string"
+    },
+    "dependencies": {
+      "default": [],
+      "description": "Keys of the tasks this one waits on.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Dependencies",
+      "type": "array"
+    },
+    "references": {
+      "default": [],
+      "description": "Links and paths the task cites; the pull request URLs among them are drawn as its PRs.",
+      "items": {
+        "type": "string"
+      },
+      "title": "References",
+      "type": "array"
+    },
+    "settled": {
+      "anyOf": [
+        {
+          "enum": [
+            "completed",
+            "archived"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Set when the task has left the lanes for good, `completed` or `archived`; `lane` is then ignored.",
+      "title": "Settled"
+    },
+    "assignee": {
+      "default": "",
+      "description": "Who or which agent model holds the task; empty when unassigned.",
+      "title": "Assignee",
+      "type": "string"
+    },
+    "labels": {
+      "default": [],
+      "description": "The task's labels.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Labels",
+      "type": "array"
+    },
+    "milestone": {
+      "default": "",
+      "description": "The milestone the task belongs to; empty when it has none.",
+      "title": "Milestone",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "description": "The task's description text, shown when the task is opened.",
+      "title": "Description",
+      "type": "string"
+    },
+    "moves": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Move"
+      },
+      "description": "The verdict on each Board column the task may move to, by state id; empty for a settled task.",
+      "title": "Moves",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "lane"
+  ],
+  "title": "BoardTask",
+  "type": "object"
+}

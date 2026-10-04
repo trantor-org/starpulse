@@ -1,0 +1,139 @@
+{
+  "$defs": {
+    "Step": {
+      "additionalProperties": false,
+      "description": "One step of a DAG in its latest run.",
+      "properties": {
+        "name": {
+          "description": "The step's name, unique within its DAG.",
+          "title": "Name",
+          "type": "string"
+        },
+        "depends": {
+          "description": "Names of the steps that must finish before this one starts.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends",
+          "type": "array"
+        },
+        "status": {
+          "description": "The step's status in the latest run.",
+          "enum": [
+            "not_started",
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "aborted",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The engine's own status for the step when it differs from `status`, shown as is.",
+          "title": "Raw"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The phase kind the step declares (`agent`), or None when it declares none.",
+          "title": "Kind"
+        }
+      },
+      "required": [
+        "name",
+        "depends",
+        "status",
+        "kind"
+      ],
+      "title": "Step",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One DAG with its step graph and its latest run.",
+  "properties": {
+    "name": {
+      "description": "The DAG's name, unique on its scheduler.",
+      "title": "Name",
+      "type": "string"
+    },
+    "status": {
+      "description": "The latest run's status (`not_started` before any run).",
+      "enum": [
+        "not_started",
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "aborted",
+        "skipped"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "raw": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The engine's own status for the run when it differs from `status`, shown as is.",
+      "title": "Raw"
+    },
+    "runId": {
+      "description": "The latest run's id; empty before any run.",
+      "title": "Runid",
+      "type": "string"
+    },
+    "startedAt": {
+      "description": "When the latest run started, ISO 8601 UTC (`2026-10-02T17:00:00Z`); empty before any run.",
+      "title": "Startedat",
+      "type": "string"
+    },
+    "finishedAt": {
+      "description": "When the latest run ended, ISO 8601 UTC; empty while it runs or before any run.",
+      "title": "Finishedat",
+      "type": "string"
+    },
+    "steps": {
+      "description": "The DAG's steps; empty when the scheduler cannot describe them.",
+      "items": {
+        "$ref": "#/$defs/Step"
+      },
+      "title": "Steps",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name",
+    "status",
+    "runId",
+    "startedAt",
+    "finishedAt",
+    "steps"
+  ],
+  "title": "Dag",
+  "type": "object"
+}

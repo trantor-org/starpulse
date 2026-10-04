@@ -1,0 +1,252 @@
+"""What the running server hands a browser."""
+
+import http.client
+import json
+import time
+import urllib.error
+import urllib.request
+from collections.abc import Iterator
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+import pytest
+
+from starpulse.board import Written
+from starpulse.board_feed import BoardFeed
+from starpulse.contracts import Move
+from starpulse.machine_tasks import MachineTasks
+from starpulse.tests.machines import MACHINES
+from starpulse.tests.serving import next_event as _next_event
+from starpulse.tests.serving import serve as _serve
+from starpulse.tests.serving import url as _url
+from starpulse.tests.tasks import task
+
+
+@pytest.fixture
+def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
+    with _serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+        yield server
+
+
+def _status(server: ThreadingHTTPServer, path: str) -> tuple[int, str]:
+    try:
+        with urllib.request.urlopen(_url(server, path), timeout=5) as resp:
+            return resp.status, resp.headers.get_content_type()
+    except urllib.error.HTTPError as exc:
+        return exc.code, ""
+
+
+def test_the_build_is_served_and_nothing_outside_it(server: ThreadingHTTPServer) -> None:
+    paths = (
+        "/",
+        "/?demo",
+        "/board",
+        "/runs",
+        "/flow/authoring-skills",
+        "/flow/nope",
+        "/assets/index-abc123.js",
+        "/assets/",
+        "/../secret.txt",
+        "/missing.js",
+    )
+
+    served = {path: _status(server, path) for path in paths}
+
+    assert served == {
+        "/": (200, "text/html"),
+        "/?demo": (200, "text/html"),
+        "/board": (200, "text/html"),
+        "/runs": (200, "text/html"),
+        "/flow/authoring-skills": (200, "text/html"),
+        "/flow/nope": (404, ""),
+        "/assets/index-abc123.js": (200, "text/javascript"),
+        "/assets/": (404, ""),
+        "/../secret.txt": (404, ""),
+        "/missing.js": (404, ""),
+    }
+
+
+def test_the_page_has_no_snapshot_endpoint_to_poll(server: ThreadingHTTPServer) -> None:
+    assert _status(server, "/api/snapshot?flow=board") == (404, "")
+
+
+def test_the_first_event_carries_each_open_tasks_milestone(tmp_path: Path) -> None:
+    feed = BoardFeed()
+    feed.put(task("PROJ-1", milestone="m-76"))
+    feed.put(task("PROJ-2"))
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            first = _next_event(resp)
+
+    name, snapshot = first
+    assert name == "snapshot"
+    assert {a["id"]: a["milestone"] for a in snapshot["flows"][0]["agents"]} == {"PROJ-1": "m-76", "PROJ-2": ""}
+
+
+def _machine_fields(task: str) -> dict:
+    return {"machine": "in-progress", "event": "WORKTREE_READY", "task": task, "time": str(time.time())}
+
+
+def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Path) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-1", "To Do"))
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            head = (resp.status, resp.headers["Content-Type"], resp.headers["Cache-Control"])
+            first = _next_event(resp)
+            feed.put(task("PROJ-1", "In Progress"))
+            second = _next_event(resp)
+            feed.set_dags("ci", [{"name": "d"}], None)
+            third = _next_event(resp)
+            MachineTasks(feed).handle_entry("1-0", _machine_fields("PROJ-1"))
+            fourth = _next_event(resp)
+
+    assert head == (200, "text/event-stream", "no-store")
+    assert first[0] == "snapshot"
+    assert [(a["id"], a["state"]) for a in first[1]["flows"][0]["agents"]] == [("PROJ-1", "to_do")]
+    assert second[0] == "task"
+    assert (second[1]["id"], second[1]["agent"]["state"], second[1]["settled"]) == ("PROJ-1", "in_progress", None)
+    assert (third[0], third[1]["dags"]) == ("dags", [{"name": "ci/d"}])
+    assert (fourth[0], fourth[1]["flow"], fourth[1]["id"], fourth[1]["agent"]["state"]) == (
+        "move",
+        "in-progress",
+        "PROJ-1",
+        "worktree_ready",
+    )
+
+
+def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("starpulse.server._PING_S", 0.05)
+    with _serve(tmp_path) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            lines = [resp.readline() for _ in range(5)]
+
+    assert b": ping\n" in lines
+
+
+def test_a_page_that_goes_away_is_unsubscribed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("starpulse.server._PING_S", 0.05)
+    feed = BoardFeed()
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            _next_event(resp)
+            assert len(feed._subscribers) == 1
+        deadline = time.monotonic() + 5
+        while feed._subscribers and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+    assert feed._subscribers == []
+
+
+def test_a_run_is_started_by_post_and_never_by_get(tmp_path: Path) -> None:
+    sent: list[str] = []
+
+    def start(workflow: str) -> str:
+        sent.append(workflow)
+        return "run-7"
+
+    with _serve(tmp_path, starts={"dagu": start}) as server:
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/run/dagu/whole-repo-gate"), timeout=5)
+        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", method="POST")
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            posted = (resp.status, resp.headers.get_content_type(), json.load(resp))
+
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+    assert posted == (200, "application/json", {"runId": "run-7"})
+    assert sent == ["whole-repo-gate"]
+
+
+def test_a_refused_run_answers_json_with_its_status(tmp_path: Path) -> None:
+    with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}) as server:
+        request = urllib.request.Request(_url(server, "/api/run/dagu/board-autopilot"), data=b"", method="POST")
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(request, timeout=5)
+
+    assert refused.value.code == 404
+    assert json.load(refused.value) == {"error": "dagu/board-autopilot is not declared run-safe"}
+
+
+def test_post_run_answers_404_for_an_adapter_without_start_and_a_run_id_for_a_run_safe_workflow_on_one_with_it(
+    tmp_path: Path,
+) -> None:
+    def post(server: ThreadingHTTPServer) -> tuple[int, dict]:
+        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=5) as resp:
+                return resp.status, json.load(resp)
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.load(exc)
+
+    with _serve(tmp_path) as without, _serve(tmp_path, starts={"dagu": lambda workflow: f"{workflow}-1"}) as with_start:
+        answers = post(without), post(with_start)
+
+    assert answers == (
+        (404, {"error": "no adapter can start dagu/whole-repo-gate"}),
+        (200, {"runId": "whole-repo-gate-1"}),
+    )
+
+
+def test_a_dag_absent_from_the_configs_run_safe_list_answers_404_on_post(tmp_path: Path) -> None:
+    """`whole-repo-gate` is a DAG trantor runs, so only the config can be what refuses it here."""
+    with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}, run_safe=frozenset({"dagu/nightly"})) as server:
+        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", method="POST")
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(request, timeout=5)
+
+    assert refused.value.code == 404
+    assert json.load(refused.value) == {"error": "dagu/whole-repo-gate is not declared run-safe"}
+
+
+def test_a_post_anywhere_but_the_run_endpoint_is_not_found(server: ThreadingHTTPServer) -> None:
+    request = urllib.request.Request(_url(server, "/api/snapshot"), data=b"", method="POST")
+
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        urllib.request.urlopen(request, timeout=5)
+
+    assert refused.value.code == 404
+
+
+def _post_move(server: ThreadingHTTPServer, body: dict) -> tuple[int, dict]:
+    request = urllib.request.Request(_url(server, "/api/move"), data=json.dumps(body).encode(), method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            return resp.status, json.load(resp)
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.load(exc)
+
+
+def test_a_move_posted_with_no_content_length_is_an_empty_body_not_a_wait_for_bytes(tmp_path: Path) -> None:
+    with _serve(tmp_path) as server:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        connection.putrequest("POST", "/api/move")
+        connection.endheaders()
+        response = connection.getresponse()
+        body = json.load(response)
+        connection.close()
+
+    assert response.status == 400
+    assert "a move needs" in body["error"]
+
+
+def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_path: Path) -> None:
+    sent: list[tuple[str, str]] = []
+
+    def writer(task: str, status: str) -> Written:
+        sent.append((task, status))
+        return Written(True, "ok") if status == "In Progress" else Written(False, "refused: Run the `x` skill", "x")
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True), "waiting": Move(allowed=True)}))
+    with _serve(tmp_path, feed, writer=writer) as server:
+        allowed = _post_move(server, {"task": "PROJ-3", "to": "in_progress"})
+        refused = _post_move(server, {"task": "PROJ-3", "to": "waiting"})
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/move"), timeout=5)
+
+    assert allowed == (200, {"task": "PROJ-3", "to": "in_progress"})
+    assert refused == (409, {"error": "refused: Run the `x` skill", "skill": "x"})
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+    assert sent == [("PROJ-3", "In Progress"), ("PROJ-3", "Waiting")]

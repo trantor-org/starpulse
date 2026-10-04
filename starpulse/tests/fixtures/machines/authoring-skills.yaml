@@ -1,0 +1,21 @@
+# A second procedure the package tests draw, beside in-progress.
+name: AuthoringSkills
+states:
+  guidance_pending: {initial: true}
+  guidance_read: {}
+  skill_drafted: {}
+  skill_tested: {}
+  lint_passed: {final: true}
+events:
+  GUIDANCE_READ:
+    - {from: guidance_pending, to: guidance_read}
+  SKILL_DRAFTED:
+    - {from: guidance_read, to: skill_drafted}
+  SKILL_TESTED:
+    - {from: skill_drafted, to: skill_tested}
+  SKILL_TRIMMED:
+    - {from: skill_tested, to: skill_drafted}
+  LINT_FAILED:
+    - {from: skill_tested, to: skill_tested}
+  LINT_PASSED:
+    - {from: skill_tested, to: lint_passed}

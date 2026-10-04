@@ -1,0 +1,106 @@
+"""The task key an adapter declares: its pattern, its branch mapping, and the flow view placing by it."""
+
+import json
+import re
+
+import jsonschema
+import pytest
+from pydantic import BaseModel, ValidationError
+
+from starpulse import contracts
+from starpulse.board_feed import BoardFeed
+from starpulse.contracts import CONTRACTS, SCHEMAS, BoardTask, Dag, MachineEvent, Step, TaskKeys
+from starpulse.machine_tasks import MachineTasks
+from starpulse.tests.machines import MACHINES
+from starpulse.tests.unit.test_machine_tasks import _agents, _entry
+
+PROJ = TaskKeys(key=re.compile(r"PROJ-\d+"), branch=re.compile(r"(?:refs/heads/)?feature/(PROJ-\d+)(?:-|$)"))
+NUMBERED = TaskKeys(key=re.compile(r"OPS-\d+"), branch=re.compile(r"agent/task-(\d+)(?:-|$)"), key_format="OPS-{}")
+
+
+def test_a_key_scheme_matches_only_whole_keys_of_its_pattern() -> None:
+    assert [PROJ.matches(k) for k in ("PROJ-123", "PROJ-", "xPROJ-123", "PROJ-123x", "OPS-1")] == [
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
+
+
+def test_a_branch_maps_to_its_task_key_through_the_scheme_format() -> None:
+    assert PROJ.for_branch("feature/PROJ-123-add-thing") == "PROJ-123"
+    assert PROJ.for_branch("refs/heads/feature/PROJ-9") == "PROJ-9"
+    assert NUMBERED.for_branch("agent/task-45-x") == "OPS-45"
+    assert [PROJ.for_branch(ref) for ref in ("main", "feature/other", "", None)] == [None] * 4
+
+
+def test_the_flow_view_places_a_task_whose_key_the_adapter_declared() -> None:
+    feed = BoardFeed(machines=MACHINES)
+    tasks = MachineTasks(feed, keys=PROJ)
+
+    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-123", at=100.0))
+
+    assert [(a["id"], a["state"]) for a in _agents(feed, "in-progress")] == [("PROJ-123", "worktree_ready")]
+
+
+def test_a_task_outside_the_declared_scheme_is_not_placed() -> None:
+    feed = BoardFeed(machines=MACHINES)
+    tasks = MachineTasks(feed, keys=NUMBERED)
+
+    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-123", at=100.0))
+
+    assert _agents(feed, "in-progress") == []
+
+
+@pytest.mark.parametrize("model", [BoardTask, MachineEvent, Dag, Step])
+def test_every_field_of_a_contract_says_what_it_holds(model: type[BaseModel]) -> None:
+    assert model.model_fields
+    assert [name for name, field in model.model_fields.items() if not field.description] == []
+
+
+@pytest.mark.parametrize("name", CONTRACTS)
+def test_each_contract_has_a_json_schema_and_the_checked_in_copy_is_current(name: str) -> None:
+    checked_in = json.loads((contracts.SCHEMA_DIR / f"{name}.schema.json").read_text())
+
+    assert SCHEMAS[name] == CONTRACTS[name].model_json_schema()
+    assert checked_in == SCHEMAS[name], "regenerate with `.venv/bin/python -m starpulse.contracts`"
+
+
+def test_a_machine_event_is_keyed_by_exactly_one_of_task_or_run() -> None:
+    fields = {"machine": "in-progress", "event": "WORKTREE_READY", "actor": "agent", "time": "100.5"}
+
+    assert MachineEvent.model_validate({**fields, "task": "PROJ-7"}).time == 100.5
+    assert MachineEvent.model_validate({**fields, "run": "r1"}).task is None
+    for keyed in ({}, {"task": "PROJ-7", "run": "r1"}):
+        with pytest.raises(ValidationError):
+            MachineEvent.model_validate({**fields, **keyed})
+
+
+def test_a_dag_is_read_under_the_names_the_page_draws() -> None:
+    dag = Dag.model_validate(
+        {
+            "name": "d1",
+            "status": "running",
+            "runId": "r1",
+            "startedAt": "2026-10-02T10:00:00Z",
+            "finishedAt": "",
+            "steps": [{"name": "a", "depends": [], "status": "not_started", "kind": None}],
+        }
+    )
+
+    assert dag.model_dump(by_alias=True)["runId"] == "r1"
+    assert jsonschema.Draft202012Validator(SCHEMAS["runs"]).is_valid(dag.model_dump(by_alias=True, mode="json"))
+
+
+def test_a_machine_event_an_adapter_wrote_places_its_task_without_a_stream_entry() -> None:
+    feed = BoardFeed(machines=MACHINES)
+    tasks = MachineTasks(feed, keys=PROJ)
+
+    tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-5", actor="hook", time=100.0))
+    tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", run="r1", time=101.0))
+    tasks.put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="OPS-5", time=102.0))
+
+    assert [(a["id"], a["state"], a["active"]) for a in _agents(feed, "in-progress")] == [
+        ("PROJ-5", "worktree_ready", 100.0)
+    ]

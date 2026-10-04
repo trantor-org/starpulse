@@ -1,0 +1,75 @@
+"""The static shape the page draws: a machine's states and transitions, and the declared workflow relationships."""
+
+from statemachine import State, StateChart
+
+from starpulse import snapshot
+from starpulse.snapshot import describe
+
+
+class _Tiny(StateChart):
+    a = State("A", initial=True)
+    b = State("B", final=True)
+
+    GO = a.to(b)
+    STAY = a.to.itself()
+
+
+class TestDescribe:
+    def test_a_machine_is_its_states_and_every_transition_including_self_loops(self) -> None:
+        assert describe(_Tiny) == {
+            "states": [
+                {"id": "a", "name": "A", "initial": True, "final": False},
+                {"id": "b", "name": "B", "initial": False, "final": True},
+            ],
+            "transitions": [
+                {"source": "a", "target": "b", "event": "GO"},
+                {"source": "a", "target": "a", "event": "STAY"},
+            ],
+        }
+
+
+class TestDeclared:
+    def test_the_board_adapters_cues_are_served_as_it_gives_them(self) -> None:
+        cues = [{"dag": "q/nightly", "event": "MERGED", "state": "done", "on": "each merge"}]
+
+        assert snapshot.declared(cues=cues)["cues"] == cues
+
+    def test_each_domain_lists_the_workflows_the_config_gives_it_with_the_run_safe_flag(self) -> None:
+        domains = snapshot.declared(
+            {"Ops": ("prod/nightly", "prod/backup"), "Data": ("staging/nightly",)}, {"prod/nightly", "staging/nightly"}
+        )["domains"]
+
+        assert domains == [
+            {
+                "name": "Ops",
+                "dags": [{"name": "prod/nightly", "runSafe": True}, {"name": "prod/backup", "runSafe": False}],
+            },
+            {"name": "Data", "dags": [{"name": "staging/nightly", "runSafe": True}]},
+        ]
+
+    def test_without_config_domains_none_is_drawn_and_none_is_run_safe(self) -> None:
+        assert snapshot.declared()["domains"] == []
+
+    def test_only_cues_and_domains_are_served(self) -> None:
+        assert set(snapshot.declared()) == {"cues", "domains"}
+
+
+class TestQualifier:
+    def test_a_workflow_one_instance_lists_is_named_by_that_instance(self) -> None:
+        qualify = snapshot.qualifier({"Ops": ("prod/nightly",), "Data": ("staging/etl",)})
+
+        assert (qualify("nightly"), qualify("etl")) == ("prod/nightly", "staging/etl")
+
+    def test_a_workflow_two_instances_list_stays_bare_because_it_names_neither(self) -> None:
+        assert snapshot.qualifier({"Ops": ("prod/nightly", "staging/nightly")})("nightly") == "nightly"
+
+    def test_a_name_no_instance_lists_stays_as_it_is(self) -> None:
+        qualify = snapshot.qualifier({"Ops": ("prod/nightly",)})
+
+        assert (qualify("operator"), qualify("agent")) == ("operator", "agent")
+
+    def test_a_workflow_name_with_a_slash_is_qualified_whole(self) -> None:
+        assert snapshot.qualifier({"Ops": ("prod/nested/wf",)})("nested/wf") == "prod/nested/wf"
+
+    def test_an_already_qualified_name_stays_as_it_is(self) -> None:
+        assert snapshot.qualifier({"Ops": ("prod/nightly",)})("prod/nightly") == "prod/nightly"

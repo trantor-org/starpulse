@@ -1,0 +1,81 @@
+# A task procedure an executor follows, as observable in its tool trajectory: the fixture the package tests
+# draw a lifecycle machine with.
+name: InProgress
+states:
+  start: {initial: true}
+  worktree_ready: {}
+  red_proven: {}
+  green: {}
+  checkpointed: {}
+  docs_reconciled: {}
+  lint_green: {}
+  committed: {}
+  pushed: {}
+  pr_opened: {}
+  ci_green: {}
+  pr_ready: {}
+  review_recorded: {final: true}
+  # CI_BLOCKED's exit; the board machine's own Needs attention state is out of scope here (D2).
+  needs_attention: {final: true}
+events:
+  WORKTREE_READY:
+    - {from: start, to: worktree_ready}
+  RED_PROVEN:
+    - {from: [worktree_ready, green, checkpointed], to: red_proven}
+    - {from: pr_opened, to: pr_opened}
+  RED_WRONG:
+    - {from: worktree_ready, to: worktree_ready}
+    - {from: lint_green, to: lint_green}
+    - {from: pr_opened, to: pr_opened}
+  GREEN:
+    - {from: start, to: start}
+    - {from: worktree_ready, to: green}
+    - {from: red_proven, to: green}
+    - {from: green, to: green}
+    - {from: lint_green, to: lint_green}
+    - {from: pr_opened, to: pr_opened}
+    - {from: pr_ready, to: pr_ready}
+  AC_CHECKPOINTED:
+    - {from: [worktree_ready, green], to: checkpointed}
+    - {from: checkpointed, to: checkpointed}
+    - {from: lint_green, to: lint_green}
+    - {from: pr_opened, to: pr_opened}
+    - {from: pr_ready, to: pr_ready}
+  DOCS_RECONCILED:
+    - {from: worktree_ready, to: docs_reconciled}
+    - {from: checkpointed, to: docs_reconciled}
+    - {from: pr_opened, to: pr_opened}
+  LINT_GREEN:
+    - {from: docs_reconciled, to: lint_green}
+    - {from: lint_green, to: lint_green}
+    - {from: committed, to: committed}
+    - {from: pushed, to: pushed}
+    - {from: pr_opened, to: pr_opened}
+  LINT_RED:
+    - {from: docs_reconciled, to: docs_reconciled}
+    - {from: lint_green, to: lint_green}
+    - {from: committed, to: committed}
+    - {from: pushed, to: pushed}
+    - {from: pr_opened, to: pr_opened}
+  COMMITTED:
+    - {from: lint_green, to: committed}
+    - {from: committed, to: committed}
+    - {from: pushed, to: committed}
+    - {from: pr_opened, to: pr_opened}
+  PUSHED:
+    - {from: committed, to: pushed}
+    - {from: pr_opened, to: pr_opened}
+    - {from: ci_green, to: ci_green}
+  PR_OPENED:
+    - {from: pushed, to: pr_opened}
+    - {from: pr_opened, to: pr_opened}
+  CI_GREEN:
+    - {from: pr_opened, to: ci_green}
+  CI_RED:
+    - {from: pr_opened, to: pr_opened}
+  CI_BLOCKED:
+    - {from: [pr_opened, ci_green], to: needs_attention}
+  PR_READY:
+    - {from: ci_green, to: pr_ready}
+  REVIEW_RECORDED:
+    - {from: pr_ready, to: review_recorded}

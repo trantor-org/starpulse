@@ -1,0 +1,7 @@
+name: rollout
+states:
+  canary: {initial: true}
+  fleet: {}
+events:
+  PROMOTED:
+    - {from: canary, to: fleet}

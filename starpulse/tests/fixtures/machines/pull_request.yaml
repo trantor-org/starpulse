@@ -1,0 +1,37 @@
+# The YAML twin of backlog_lifecycle.pull_request.PullRequest.
+name: pull_request
+states:
+  start: {initial: true}
+  ci_running: {}
+  ci_red: {}
+  ci_green: {}
+  in_review: {}
+  merged: {final: true}
+  closed: {final: true}
+events:
+  PR_OPENED:
+    - {from: start, to: ci_running}
+  CI_GREEN:
+    - {from: ci_running, to: ci_green}
+  CI_RED:
+    - {from: ci_running, to: ci_red}
+  RERUN:
+    - {from: ci_red, to: ci_running}
+  PUSHED:
+    - {from: [ci_running, ci_red, ci_green, in_review], to: ci_running}
+  REBASED:
+    - {from: [ci_running, ci_red, ci_green, in_review], to: ci_running, unless: draft}
+  THREADS_OPENED:
+    - {from: ci_green, to: in_review}
+    - {from: in_review, to: in_review}
+  THREADS_RESOLVED:
+    - {from: in_review, to: ci_green}
+  READIED:
+    - {from: ci_green, to: ci_green, if: draft, action: mark_ready}
+  MERGED:
+    - {from: ci_green, to: merged, unless: draft}
+  CLOSED:
+    - {from: [ci_running, ci_red, ci_green, in_review], to: closed}
+bindings:
+  github.pull_request.created: PR_OPENED
+  github.pull_request.merged: MERGED

@@ -1,0 +1,236 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RETRY_MS, applyDelta, openStream } from "./stream";
+import type { Dag, RawAgent, Snapshot } from "./types";
+
+const agent = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "" });
+const board = (agents: RawAgent[], extra: Partial<Snapshot> = {}): Snapshot => ({
+  graphs: ["board", "runs"],
+  dags: [],
+  flows: [{ name: "board", machine: { states: [], transitions: [] } as never, agents }],
+  settled: {},
+  error: null,
+  now: 1,
+  ...extra,
+});
+const ids = (s: Snapshot) => s.flows[0].agents.map((a) => `${a.id}:${a.state}`);
+
+describe("applyDelta", () => {
+  it("replaces a task already on the Board and adds one that is not", () => {
+    const s = board([agent("PROJ-1", "to_do")]);
+
+    const moved = applyDelta(s, { kind: "task", id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
+    const added = applyDelta(moved, { kind: "task", id: "PROJ-2", agent: agent("PROJ-2", "ready"), settled: null });
+
+    expect(ids(moved)).toEqual(["PROJ-1:in_progress"]);
+    expect(ids(added)).toEqual(["PROJ-1:in_progress", "PROJ-2:ready"]);
+  });
+
+  it("takes a task off the lanes and records where it went", () => {
+    const s = board([agent("PROJ-1", "done"), agent("PROJ-2", "done")]);
+
+    const swept = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: "completed" });
+
+    expect(ids(swept)).toEqual(["PROJ-2:done"]);
+    expect(swept.settled).toEqual({ "PROJ-1": "completed" });
+  });
+
+  it("forgets a task's settled state once it is back in a lane", () => {
+    const s = board([], { settled: { "PROJ-1": "completed", "PROJ-2": "archived" } });
+
+    const back = applyDelta(s, { kind: "task", id: "PROJ-1", agent: agent("PROJ-1", "to_do"), settled: null });
+
+    expect(back.settled).toEqual({ "PROJ-2": "archived" });
+  });
+
+  it("takes Dagu's runs and error without touching the tasks", () => {
+    const s = board([agent("PROJ-1", "to_do")]);
+    const dags = [{ name: "d" } as Dag];
+
+    const next = applyDelta(s, { kind: "dags", dags, error: "ci: down" });
+
+    expect([next.dags, next.error, ids(next)]).toEqual([dags, "ci: down", ["PROJ-1:to_do"]]);
+  });
+
+  it("replaces the pull requests wholesale with the server's latest read", () => {
+    const pull = { number: 7, url: "https://github.com/o/r/pull/7", checks: "pass" as const, merged: false, threads: 2, stale: false };
+    const s = board([], { pulls: { "PROJ-1": [{ ...pull, number: 6 }], "PROJ-2": [pull] } });
+
+    const next = applyDelta(s, { kind: "pulls", pulls: { "PROJ-1": [pull] } });
+
+    expect(next.pulls).toEqual({ "PROJ-1": [pull] });
+  });
+
+  it("places a task on the machine a move names, replacing the place it held there, and leaves the Board and the other machines alone", () => {
+    const s = board([agent("PROJ-1", "in_progress")]);
+    s.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [agent("PROJ-1", "worktree_ready")] });
+    s.flows.push({ name: "auditing-docs", machine: { states: [], transitions: [] } as never, agents: [] });
+
+    const moved = applyDelta(s, { kind: "move", flow: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "pushed") });
+    const added = applyDelta(moved, { kind: "move", flow: "in-progress", id: "PROJ-2", agent: agent("PROJ-2", "worktree_ready") });
+
+    expect(moved.flows.map((f) => f.agents.map((a) => `${a.id}:${a.state}`))).toEqual([["PROJ-1:in_progress"], ["PROJ-1:pushed"], []]);
+    expect(added.flows[1].agents.map((a) => `${a.id}:${a.state}`)).toEqual(["PROJ-1:pushed", "PROJ-2:worktree_ready"]);
+    expect(s.flows[1].agents.map((a) => a.state)).toEqual(["worktree_ready"]);
+  });
+
+  it("leaves the snapshot it was given as it was", () => {
+    const s = board([agent("PROJ-1", "to_do")]);
+
+    applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: "archived" });
+
+    expect([ids(s), s.settled]).toEqual([["PROJ-1:to_do"], {}]);
+  });
+});
+
+class FakeSource {
+  static made: FakeSource[] = [];
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  private listeners = new Map<string, ((e: { data: string }) => void)[]>();
+  constructor(readonly url: string) {
+    FakeSource.made.push(this);
+  }
+  addEventListener(type: string, fn: (e: { data: string }) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+  }
+  send(type: string, data: unknown) {
+    for (const fn of this.listeners.get(type) ?? []) fn({ data: JSON.stringify(data) });
+  }
+  close() {
+    this.readyState = 2;
+  }
+}
+const open = (url: string) => new FakeSource(url) as unknown as EventSource;
+const last = () => FakeSource.made[FakeSource.made.length - 1];
+
+describe("openStream", () => {
+  const seen: Snapshot[] = [];
+  const lives: boolean[] = [];
+  const handlers = { snapshot: (s: Snapshot) => void seen.push(s), live: (on: boolean) => void lives.push(on) };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSource.made = [];
+    seen.length = 0;
+    lives.length = 0;
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("opens one connection to /api/events and hands over its snapshot", () => {
+    openStream(handlers, open);
+
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+    expect(FakeSource.made.map((f) => f.url)).toEqual(["/api/events"]);
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do"]]);
+  });
+
+  it("hands over an embedded fixture as a live Board without opening a connection", () => {
+    const fixture = board([agent("TASK-D1", "to_do")]);
+
+    openStream(handlers, open, fixture);
+
+    expect(FakeSource.made).toEqual([]);
+    expect([seen.map(ids), lives]).toEqual([[["TASK-D1:to_do"]], [true]]);
+  });
+
+  it("hands over the Board folded with each delta that follows", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+    last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
+    last().send("dags", { dags: [], error: "ci: down" });
+
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"], ["PROJ-1:in_progress"]]);
+    expect(seen[2].error).toBe("ci: down");
+  });
+
+  it("folds a move on a machine into the snapshot without any request but the one stream", () => {
+    const fetched = vi.fn();
+    vi.stubGlobal("fetch", fetched);
+    openStream(handlers, open);
+    const snap = board([agent("PROJ-1", "in_progress")]);
+    snap.flows.push({ name: "in-progress", machine: { states: [], transitions: [] } as never, agents: [] });
+    last().send("snapshot", snap);
+
+    last().send("move", { flow: "in-progress", id: "PROJ-1", agent: agent("PROJ-1", "worktree_ready") });
+    vi.advanceTimersByTime(60_000);
+
+    expect(seen.at(-1)!.flows[1].agents.map((a) => `${a.id}:${a.state}`)).toEqual(["PROJ-1:worktree_ready"]);
+    expect([fetched.mock.calls.length, FakeSource.made.map((f) => f.url)]).toEqual([0, ["/api/events"]]);
+    vi.unstubAllGlobals();
+  });
+
+  it("ignores a delta that arrives before any snapshot", () => {
+    openStream(handlers, open);
+
+    last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "to_do"), settled: null });
+
+    expect(seen).toEqual([]);
+  });
+
+  it("reports whether the connection is up", () => {
+    openStream(handlers, open);
+
+    last().onopen?.();
+    last().onerror?.();
+
+    expect(lives).toEqual([true, false]);
+  });
+
+  it("lets the browser retry a dropped connection and resyncs from the snapshot the server sends on it", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+    last().onerror?.(); // readyState stays CONNECTING: the browser reconnects the same source
+    vi.advanceTimersByTime(RETRY_MS * 2);
+    last().send("snapshot", board([agent("PROJ-1", "done")]));
+
+    expect(FakeSource.made).toHaveLength(1);
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:done"]]);
+  });
+
+  it("opens a new connection when the browser gives the old one up", () => {
+    openStream(handlers, open);
+    last().readyState = 2;
+
+    last().onerror?.();
+    expect(FakeSource.made).toHaveLength(1);
+    vi.advanceTimersByTime(RETRY_MS);
+
+    expect(FakeSource.made).toHaveLength(2);
+  });
+
+  it("closes the connection and cancels a pending reopen", () => {
+    const stream = openStream(handlers, open);
+    const first = last();
+    first.readyState = 2;
+    first.onerror?.();
+
+    stream.close();
+    vi.advanceTimersByTime(RETRY_MS * 2);
+
+    expect(FakeSource.made).toHaveLength(1);
+    expect(first.readyState).toBe(2);
+  });
+
+  it("closes a live connection", () => {
+    const stream = openStream(handlers, open);
+
+    stream.close();
+
+    expect(last().readyState).toBe(2);
+  });
+});
+
+describe("the page's sources", () => {
+  const sources = import.meta.glob<string>(["./*.ts", "./*.tsx", "!./*.test.ts"], { query: "?raw", import: "default", eager: true });
+
+  it("name no snapshot endpoint and keep no timed poll of one: every flow arrives over the stream", () => {
+    const polling = Object.entries(sources).filter(([, text]) => /api\/snapshot|fetchSnapshot|\bpoll/i.test(text));
+
+    expect(Object.keys(sources).length).toBeGreaterThan(5);
+    expect(polling.map(([file]) => file)).toEqual([]);
+  });
+});
