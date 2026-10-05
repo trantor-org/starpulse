@@ -55,8 +55,11 @@ def endpoint_from_url(url: str, password: str | None = None, username: str | Non
     """The same keywords from a `redis://` or `rediss://` (TLS) URL; the URL's own percent-decoded user and password win
     over `username` and `password`.
 
-    A port that is not a number raises `ValueError`."""
+    Any other scheme, which would send the password unencrypted to a non-Redis address, or a port that is not a number
+    raises `ValueError`."""
     parts = urlsplit(url)
+    if parts.scheme not in {"redis", "rediss"}:
+        raise ValueError(f"{parts.scheme!r} is not a redis:// or rediss:// URL")
     return {
         "redis_host": parts.hostname or "127.0.0.1",
         "redis_port": parts.port or 6379,

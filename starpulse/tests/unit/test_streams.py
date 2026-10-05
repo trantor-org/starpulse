@@ -328,6 +328,11 @@ def test_a_url_with_a_port_that_is_no_number_is_refused() -> None:
         endpoint_from_url("redis://cache:abc")
 
 
+def test_a_url_that_is_not_redis_is_refused_before_its_password_is_sent() -> None:
+    with pytest.raises(ValueError, match="'http'"):
+        endpoint_from_url("http://worker:secret@cache")
+
+
 def test_an_endpoint_password_is_read_stripped_from_the_named_file(
     bare_env: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

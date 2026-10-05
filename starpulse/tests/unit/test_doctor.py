@@ -51,6 +51,7 @@ FAULTS: list[tuple[str, str, Callable[[], tuple[Any, ...]], str]] = [
     ("redis", "refused", lambda: (snapshot(), CONFIG, HOME, FakeHost(fake_redis=FakeRedis(up=False))), "6380"),
     ("redis", "no runtime", lambda: (snapshot(), CONFIG, {}, FakeHost(installed=("gh",))), "REDIS_URL"),
     ("redis", "bad port", lambda: (snapshot(), CONFIG, {"REDIS_URL": "redis://h:abc"}, FakeHost()), "malformed"),
+    ("redis", "not redis", lambda: (snapshot(), CONFIG, {"REDIS_URL": "http://h"}, FakeHost()), "malformed"),
     ("redis", "runtime down", lambda: (snapshot(), CONFIG, {}, FakeHost(runtime_up=False)), "Cannot connect"),
     (
         "server",
