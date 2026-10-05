@@ -1,0 +1,14 @@
+# The demo config the UI preview renders the flow view against (ci/ui_preview.py). It names no real board or
+# runs adapter: the board is the default adapter with no backlog, the one runs instance points at a closed port, and
+# the domains only give the DAG layer something to lay out. `starpulse.demo` then replaces every task with a
+# synthetic one.
+mode = "ic"
+
+[[runs]]
+name = "dagu"
+type = "dagu"
+url = "http://127.0.0.1:9"
+
+[runs.domains]
+"Delivery & CI" = ["deliver", "apply-on-merge", "whole-repo-gate"]
+"Board" = ["backlog-sweep", "board-autopilot"]
