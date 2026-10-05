@@ -298,3 +298,48 @@ def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_
     }
     assert (assigned, started) == ([("PROJ-3", "@agent-deep-high")], ["PROJ-3"])
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def _post(server: ThreadingHTTPServer, path: str, body: dict) -> tuple[int, dict]:
+    request = urllib.request.Request(_url(server, path), data=json.dumps(body).encode(), method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            return resp.status, json.load(resp)
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.load(exc)
+
+
+def test_a_task_is_read_edited_and_archived_through_the_server(tmp_path: Path) -> None:
+    record = {"title": "t", "plan": "1. do it"}
+    sent: list[tuple[str, dict, str]] = []
+    archived: list[tuple[str, str]] = []
+
+    def edit(task: str, changes: dict, comment: str) -> Written:
+        sent.append((task, changes, comment))
+        record.update(changes)
+        return Written(True, "ok")
+
+    def archive(task: str, reason: str) -> Written:
+        archived.append((task, reason))
+        return Written(True, "ok")
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Ready"))
+    with _serve(tmp_path, feed, read=lambda _: dict(record), edit=edit, archive=archive) as server:
+        with urllib.request.urlopen(_url(server, "/api/task/PROJ-3"), timeout=5) as resp:
+            opened = json.load(resp)
+        record["plan"] = "another writer's plan"
+        stale = _post(server, "/api/edit", {"task": "PROJ-3", "base": opened["record"], "changes": {"plan": "mine"}})
+        saved = _post(server, "/api/edit", {"task": "PROJ-3", "base": dict(record), "changes": {"title": "u"}})
+        gone = _post(server, "/api/archive", {"task": "PROJ-3", "reason": "obsolete"})
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/edit"), timeout=5)
+
+    assert opened == {"task": "PROJ-3", "record": {"title": "t", "plan": "1. do it"}}
+    assert stale[0] == 409
+    assert stale[1]["stale"] == ["plan"]
+    assert saved == (200, {"task": "PROJ-3", "changed": ["title"]})
+    assert sent == [("PROJ-3", {"title": "u"}, "")]
+    assert gone == (200, {"task": "PROJ-3"})
+    assert archived == [("PROJ-3", "obsolete")]
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")

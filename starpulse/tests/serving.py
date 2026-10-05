@@ -8,7 +8,7 @@ from http.client import HTTPResponse
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse.board import AssigneeWriter, MoveWriter, Written
+from starpulse.board import AssigneeWriter, MoveWriter, TaskArchiver, TaskEditor, TaskReader, Written
 from starpulse.board_feed import BoardFeed
 from starpulse.harnesses import Harnesses
 from starpulse.history import History, HistoryStore
@@ -32,6 +32,9 @@ def serve(
     assign: AssigneeWriter | None = None,
     start_session: Callable[[str], str] | None = None,
     window: HistoryWindow | None = None,
+    read: TaskReader | None = None,
+    edit: TaskEditor | None = None,
+    archive: TaskArchiver | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -51,6 +54,9 @@ def serve(
         harnesses,
         assign or _no_writer,
         start_session,
+        read,
+        edit,
+        archive,
     )
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

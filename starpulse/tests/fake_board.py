@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse.board import Board
+from starpulse.board import Board, Written
 from starpulse.contracts import BoardTask, TaskKeys
 
 #: Each `(settings, base)` the view built this board from.
@@ -32,9 +32,17 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         feed.put(BoardTask(id="FAKE-1", title="t", lane=lanes[0]))
         feed.put(BoardTask(id="other-1", title="t", lane=lanes[0]))
 
+    writers: dict[str, Any] = {}
+    if settings.get("writes"):
+        writers = {
+            "read": lambda task: {"title": "t"},
+            "edit": lambda task, changes, comment: Written(True, ""),
+            "archive": lambda task, reason: Written(True, ""),
+        }
     return Board(
         machines=machines,
         start=start,
         keys=TaskKeys(key=re.compile(r"FAKE-\d+"), branch=re.compile(r"(FAKE-\d+)")),
         cues=lambda qualify: [{"dag": "q/nightly"}],
+        **writers,
     )

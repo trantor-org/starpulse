@@ -39,6 +39,12 @@ POST /api/run/<instance>/<workflow>
 POST /api/move     {task, to[, actor]}: set a Board task's status through the board adapter's writer, as `actor`
                    (`operator`, the page's identity, when absent). An actor outside the event's declared writers
                    is refused 409 before the writer is asked; a board with no writer answers 501
+GET /api/task/<id> {task, record}: every editable field of a task from the board's `read`, which the snapshot's
+                   entry does not carry; 404 when the board cannot read or the task is not on it
+POST /api/edit     {task, base, changes, comment}: one write of every change through the board's `edit`. 409 with the
+                   stale fields and their current values when any changed field no longer equals its `base`, or with
+                   the writer's refusal and its skill; 403 outside loopback and RFC 1918. A GET answers 405
+POST /api/archive  {task, reason}: archive a task from any lane through the board's `archive`; refusals as for an edit
 POST /api/start    {task, assignee}: start a task's session at `session_start_url` (see Start in the README)
 """
 
@@ -59,7 +65,7 @@ from types import ModuleType
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from starpulse.board import AssigneeWriter, Board, MoveWriter, Written
+from starpulse.board import AssigneeWriter, Board, MoveWriter, TaskArchiver, TaskEditor, TaskReader, Written
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.config import Config, ConfigError, RunsInstance, load, runs_adapter
@@ -103,6 +109,11 @@ _MOVE = "/api/move"
 OPERATOR = "operator"
 _START = "/api/start"
 _WINDOW = "/api/history-window"
+_TASK = "/api/task/"
+_EDIT = "/api/edit"
+_ARCHIVE = "/api/archive"
+#: Saves hold this from reading a task's current record to writing, so two browsers saving one task cannot both pass the stale check.
+_EDIT_LOCK = threading.Lock()
 #: The lanes Start session moves a task out of: the spec's start question, never Review's send-back.
 _STARTABLE = frozenset({"ready", "waiting", "needs_attention"})
 
@@ -156,6 +167,97 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task, "to": column}
+
+
+def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[int, dict[str, Any]]:
+    """The full record of `task` from the board's reader: the HTTP status and JSON body.
+
+    The record is keyed by the task's editable fields, which the snapshot's small entry does not carry; the page
+    opens it with this and sends it back as the `base` of an edit. Reading is not LAN-limited, like the snapshot.
+    """
+    if read is None:
+        return 404, {"error": "this board cannot read a task's full record"}
+    if feed.task(task) is None:
+        return 404, {"error": f"{task} is not on the board"}
+    if (record := read(task)) is None:
+        return 404, {"error": f"{task} has no record to read"}
+    return 200, {"task": task, "record": record}
+
+
+def edit_task(
+    source: str, raw: bytes, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+) -> tuple[int, dict[str, Any]]:
+    """Apply the edit `raw` names to a task through `edit` in one write, for a browser at `source`: the HTTP status and
+    JSON body.
+
+    `base` holds the value each changed field had when the page read the task. The edit is refused 409 when any
+    changed field's current value differs, naming those fields with their current values, so another writer's
+    change is never overwritten; fields the edit does not touch may differ. The writer refuses a whole edit or
+    writes all of it, and its refusal carries the skill that satisfies it.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Editing a task answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        request = json.loads(raw)
+        task, base, changes, comment = request["task"], request["base"], request["changes"], request.get("comment", "")
+    except ValueError, TypeError, KeyError:
+        task = base = changes = comment = None
+    if not (isinstance(task, str) and isinstance(base, dict) and isinstance(changes, dict) and changes) or not isinstance(
+        comment, str
+    ):
+        return 400, {"error": 'an edit needs {"task": "TASK-N", "base": {...}, "changes": {...}, "comment": "<optional>"}'}
+    if read is None or edit is None:
+        return 404, {"error": "this board does not edit tasks"}
+    if feed.task(task) is None:
+        return 404, {"error": f"{task} is not on the board"}
+    with _EDIT_LOCK:
+        if (current := read(task)) is None:
+            return 404, {"error": f"{task} has no record to read"}
+        for field in changes:
+            if field not in current:
+                return 400, {"error": f"{field} is not an editable field of {task}"}
+            if field not in base:
+                return 400, {"error": f"the edit has no base for {field}"}
+        if stale := [field for field in changes if current[field] != base[field]]:
+            return 409, {
+                "error": f"{task} changed since it was opened: {', '.join(stale)}",
+                "stale": stale,
+                "current": {field: current[field] for field in stale},
+            }
+        if not (todo := {field: value for field, value in changes.items() if value != current[field]}):
+            return 200, {"task": task, "changed": []}
+        written = edit(task, todo, comment)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task, "changed": list(todo)}
+
+
+def archive_task(
+    source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver | None
+) -> tuple[int, dict[str, Any]]:
+    """Archive the task `raw` names, from whichever column it is in, through `archive`, for a browser at `source`: the
+    HTTP status and JSON body.
+
+    A non-empty `reason` is the writer's to record on the task. The card leaves its column when the board adapter
+    next reports the task archived, not on this answer.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Archiving a task answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        request = json.loads(raw)
+        task, reason = request["task"], request.get("reason", "")
+    except ValueError, TypeError, KeyError:
+        task = reason = None
+    if not isinstance(task, str) or not isinstance(reason, str):
+        return 400, {"error": 'an archive needs {"task": "TASK-N", "reason": "<optional text>"}'}
+    if archive is None:
+        return 404, {"error": "this board does not archive tasks"}
+    if feed.task(task) is None:
+        return 404, {"error": f"{task} is not on the board"}
+    written = archive(task, reason)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task}
 
 
 def start_task(
@@ -249,10 +351,13 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     writer: MoveWriter
     assign: AssigneeWriter
     start_session: Callable[[str], str] | None
+    read: TaskReader | None
+    edit: TaskEditor | None
+    archive: TaskArchiver | None
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
-        if path.startswith(_RUN) or path in {_MOVE, _START}:
+        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE}:
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
             self.end_headers()
@@ -261,11 +366,15 @@ class _ApiHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        if path in {_MOVE, _START}:
+        if path in {_MOVE, _START, _EDIT, _ARCHIVE}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
             if path == _MOVE:
                 status, body = move_task(self.client_address[0], raw, self.feed, self.writer)
+            elif path == _EDIT:
+                status, body = edit_task(self.client_address[0], raw, self.feed, self.read, self.edit)
+            elif path == _ARCHIVE:
+                status, body = archive_task(self.client_address[0], raw, self.feed, self.archive)
             else:
                 status, body = start_task(self.client_address[0], raw, self.feed, self.assign, self.start_session)
         elif path.startswith(_RUN):
@@ -313,6 +422,9 @@ def _handler(
     harnesses: Harnesses | None = None,
     assign: AssigneeWriter = _no_writer,
     start_session: Callable[[str], str] | None = None,
+    read: TaskReader | None = None,
+    edit: TaskEditor | None = None,
+    archive: TaskArchiver | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -326,6 +438,9 @@ def _handler(
             self.writer = writer
             self.assign = assign
             self.start_session = start_session
+            self.read = read
+            self.edit = edit
+            self.archive = archive
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
         def do_GET(self) -> None:
@@ -336,6 +451,9 @@ def _handler(
                 self._send(json.dumps(feed.snapshot()).encode())
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows))
+            elif url.path.startswith(_TASK):
+                status, body = task_record(feed, read, unquote(url.path.removeprefix(_TASK)))
+                self._send(json.dumps(body).encode(), status)
             elif url.path == "/api/harnesses":
                 self._send(harnesses_body)
             elif url.path == _WINDOW:
@@ -415,6 +533,7 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
         run_safe=run_safe,
         cues=board.cues(qualify),
         source=board.source,
+        capabilities={"edit": board.edit is not None, "archive": board.archive is not None},
     )
     return board, feed
 
@@ -481,6 +600,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         config.harnesses,
         board.assign or _no_writer,
         starter(config.session_start_url),
+        board.read,
+        board.edit,
+        board.archive,
     )
     ThreadingHTTPServer(("0.0.0.0", args.port), handler).serve_forever()
 

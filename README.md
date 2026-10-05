@@ -151,7 +151,8 @@ directory. The `Board` says:
 - how the tracker's tasks reach the page (`start`, which feeds each task as it changes, and `keys`, the task
   keys it recognizes),
 - and optionally a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may
-  list the `writers` the machine declares per event), an `assign` for assignee changes, and its own `history`.
+  list the `writers` the machine declares per event), an `assign` for assignee changes, a `read`, `edit` and `archive` for the full task record and guarded edits and
+  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), and its own `history`.
 
 `starpulse.upstream_backlog` is the reference adapter: it polls a Backlog.md project's Markdown files, takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
@@ -171,7 +172,7 @@ internal and can change in any release.
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
 
-- `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer protocols).
+- `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer and task protocols).
 - `starpulse.contracts`: the board, machine-event and runs records, their JSON Schemas, and `RunsSink`.
 - `starpulse.adapter_kit`: the test kit an adapter author runs against their adapter.
 - `starpulse.machine_definition`: loading and validating a machine, and the `Registry` of guards and actions.
