@@ -9,7 +9,18 @@ import pytest
 #: Every module and name an adapter may import. Adding or removing one is a reviewed, public change.
 PUBLIC: dict[str, set[str]] = {
     "starpulse.adapter_kit": {"BoardAdapterKit", "MachineEventsAdapterKit", "RunsAdapterKit"},
-    "starpulse.board": {"DEFAULT_TYPE", "AssigneeWriter", "Board", "MoveWriter", "Written", "load", "module_name"},
+    "starpulse.board": {
+        "DEFAULT_TYPE",
+        "AssigneeWriter",
+        "Board",
+        "MoveWriter",
+        "TaskArchiver",
+        "TaskEditor",
+        "TaskReader",
+        "Written",
+        "load",
+        "module_name",
+    },
     "starpulse.config": {"Config", "ConfigError", "RunsInstance", "load", "runs_adapter"},
     "starpulse.contracts": {
         "CONTRACTS",

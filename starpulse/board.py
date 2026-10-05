@@ -21,7 +21,18 @@ if TYPE_CHECKING:
     from starpulse.board_feed import BoardFeed
     from starpulse.history import History
 
-__all__ = ["DEFAULT_TYPE", "AssigneeWriter", "Board", "MoveWriter", "Written", "load", "module_name"]
+__all__ = [
+    "DEFAULT_TYPE",
+    "AssigneeWriter",
+    "Board",
+    "MoveWriter",
+    "TaskArchiver",
+    "TaskEditor",
+    "TaskReader",
+    "Written",
+    "load",
+    "module_name",
+]
 
 DEFAULT_TYPE = "upstream_backlog"
 
@@ -47,6 +58,24 @@ class AssigneeWriter(Protocol):
     """A board writer: set a task's assignee, and say what it did."""
 
     def __call__(self, task: str, assignee: str, /) -> Written: ...
+
+
+class TaskReader(Protocol):
+    """A board reader: one task's full record, keyed by its editable fields, or None when the board has no such task."""
+
+    def __call__(self, task: str, /) -> Mapping[str, Any] | None: ...
+
+
+class TaskEditor(Protocol):
+    """A board writer: apply every change to a task in one write, with the comment the write records, and say what it did."""
+
+    def __call__(self, task: str, changes: Mapping[str, Any], comment: str, /) -> Written: ...
+
+
+class TaskArchiver(Protocol):
+    """A board writer: archive a task, recording the reason when there is one, and say what it did."""
+
+    def __call__(self, task: str, reason: str, /) -> Written: ...
 
 
 def _no_cues(qualify: Qualify) -> list[dict]:
@@ -77,6 +106,16 @@ class Board:
     """The `<PREFIX>_REDIS_*` names of the streams the adapter reads, pointed at the view's Redis."""
     source: str = "the board"
     """What the page says the Board is read from until the adapter is ready."""
+    read: TaskReader | None = None
+    """Reads a task's full record when the page opens it; None leaves the page with the snapshot's fields."""
+    edit: TaskEditor | None = None
+    """Saves the page's edits to a task in one write; None refuses every edit. Needs `read`, which it is checked against."""
+    archive: TaskArchiver | None = None
+    """Archives a task from any column; None refuses every archive."""
+
+    def __post_init__(self) -> None:
+        if self.edit is not None and self.read is None:
+            raise ValueError("a board that edits tasks must also read them: an edit is checked against the current record")
 
 
 def module_name(kind: str) -> str:

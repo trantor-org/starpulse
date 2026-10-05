@@ -74,7 +74,9 @@ class BoardFeed:
         run_safe: Collection[str] = (),
         cues: Sequence[dict] = (),
         source: str = "the board",
+        capabilities: Mapping[str, bool] | None = None,
     ) -> None:
+        self._capabilities = {"edit": False, "archive": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
         self._run_safe = run_safe
@@ -266,6 +268,7 @@ class BoardFeed:
                 "dags": self._workflows(),
                 "pulls": self._pulls,
                 "claims": dict(self._claims),
+                "capabilities": dict(self._capabilities),
                 "settled": dict(self._settled),
                 "error": self._error(),
                 **declared(self._domains, self._run_safe, self._cues),

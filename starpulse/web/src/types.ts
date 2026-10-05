@@ -163,6 +163,8 @@ export interface Snapshot {
   pulls?: Record<string, Pull[]>;
   /** Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds). */
   claims?: Record<string, { reason: string; at: number }>;
+  /** What the board writes: the task modal draws Edit and Archive only when its board does. */
+  capabilities?: { edit: boolean; archive: boolean };
   settled: Record<string, string>;
   error: string | null;
   now: number;

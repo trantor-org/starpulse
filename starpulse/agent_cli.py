@@ -53,6 +53,7 @@ _SNAPSHOT_KEYS = (
     "cues",
     "domains",
     "boardUrl",
+    "capabilities",
     "now",
 )
 _TASK_KEYS = (
