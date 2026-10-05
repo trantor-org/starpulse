@@ -69,6 +69,9 @@ starpulse board --milestone launch --label api   # tasks per column, with depend
 starpulse task show PROJ-45                      # one task: lane, what it waits on, pull requests, moves
 starpulse task moves PROJ-45                     # every column it may move to, allowed or refused to the agent
 starpulse task move PROJ-45 review               # move it as the agent; a refusal is the verdict, exit 1
+starpulse task trace PROJ-45 --flow in-progress  # where the task has been: Board lanes, or one machine's events
+starpulse machine show in-progress               # a machine's states, transitions and the tasks now in each
+starpulse runs list                              # each workflow as <instance>/<workflow> with its latest status
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
@@ -89,6 +92,10 @@ lists exactly the verbs there are.
 | `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
 | `task move` | `TASK`, `TO`, `--session` | `ok`, `task`, `to`, `reason`, `skill` and `advice`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer |
+| `task trace` | `TASK`, `--flow` | `task`, `flow` (null without `--flow`), `path` and `steps`; the Board's `{at, from, to}` lane changes, or with `--flow` that machine's `{at, event, state}`, oldest first; an unknown flow exits 4, a task never seen has an empty `path` |
+| `machine list` | | `machines`: each `{name, states, tasks}` with its state ids and its live task count |
+| `machine show` | `NAME` | `name`, `states` (each `{id, name, initial, final, count, tasks}`) and `transitions`; an unknown machine exits 4 and names those drawn |
+| `runs list` | | `runs`: each workflow as `{workflow, status, raw, run_id, started_at, finished_at}` with `workflow` `<instance>/<workflow>`, and `error`, the runs adapters' error or null |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
 | `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |
 | `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |

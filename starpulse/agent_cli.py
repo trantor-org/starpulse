@@ -1,9 +1,12 @@
-"""`starpulse snapshot|board|task|doctor|skills|help --agent`: the verbs an agent drives a running server with.
+"""`starpulse snapshot|board|task|machine|runs|doctor|skills|help --agent`: the verbs an agent drives a running server with.
 
     starpulse board --milestone launch --label api
     starpulse task show PROJ-45
     starpulse task moves PROJ-45
     starpulse task move PROJ-45 review
+    starpulse task trace PROJ-45 --flow in-progress
+    starpulse machine show in-progress
+    starpulse runs list
     starpulse doctor
     starpulse skills install --claude --codex
     starpulse help --agent
@@ -27,6 +30,7 @@ import functools
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
@@ -97,19 +101,29 @@ def server_url(flag: str | None, environ: Mapping[str, str]) -> str:
     return (flag or environ.get("STARPULSE_URL") or DEFAULT_SERVER).rstrip("/")
 
 
-def _get_snapshot(base: str) -> dict[str, Any]:
-    """The snapshot the server at `base` answers; JSON without every snapshot key is no StarPulse server."""
-    path = "/api/snapshot"
+def _get(base: str, path: str) -> tuple[int, Any]:
+    """The status and JSON body the server at `base` answers `path` with; None for a body that is no JSON."""
     try:
         with urllib.request.urlopen(
             f"{base}{path}",
             timeout=10.0,  # seconds the server may take to answer one read
         ) as resp:
-            document = json.load(resp)
+            return resp.status, json.load(resp)
     except urllib.error.HTTPError as exc:
-        raise CliError("unavailable", f"{base} answered {exc.code} for {path}: is it a StarPulse server?") from exc
+        try:
+            return exc.code, json.load(exc)
+        except ValueError:
+            return exc.code, None
     except (OSError, ValueError) as exc:
         raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
+
+
+def _get_snapshot(base: str) -> dict[str, Any]:
+    """The snapshot the server at `base` answers; JSON without every snapshot key is no StarPulse server."""
+    path = "/api/snapshot"
+    status, document = _get(base, path)
+    if status != 200:
+        raise CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
     if not isinstance(document, dict) or not document.keys() >= set(_SNAPSHOT_KEYS):
         raise CliError("unavailable", f"{base} answered {path} with no StarPulse snapshot: is it a StarPulse server?")
     return document
@@ -254,6 +268,70 @@ def _json_or_empty(resp: Any) -> dict[str, Any]:
     except ValueError:
         return {}
     return document if isinstance(document, dict) else {}
+
+
+def _trace(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The task's Board lane changes, or with `--flow` its events on that machine, both as the server's history has them."""
+    base = server_url(args.server, environ)
+    query = urllib.parse.urlencode({"task": args.task, **({"flow": args.flow} if args.flow else {})})
+    path = f"/api/history?{query}"
+    status, document = _get(base, path)
+    if args.flow and status == 404 and isinstance(document, dict) and "error" in document:
+        raise CliError("not_found", document["error"])
+    if status != 200 or not isinstance(document, dict) or "path" not in document:
+        raise CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
+    return {
+        "task": document["task"],
+        "flow": document.get("flow"),
+        "path": document["path"],
+        "steps": document.get("steps", len(document["path"])),
+    }
+
+
+def _machines(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    flows = _snapshot(args, environ)["flows"]
+    return {
+        "machines": [
+            {"name": f["name"], "states": [s["id"] for s in f["machine"]["states"]], "tasks": len(f["agents"])}
+            for f in flows
+        ]
+    }
+
+
+def _machine(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """One machine's states with the live count and the tasks in each, and its transitions."""
+    flows = {f["name"]: f for f in _snapshot(args, environ)["flows"]}
+    if (flow := flows.get(args.name)) is None:
+        raise CliError("not_found", f"{args.name} is not a machine; the server draws {', '.join(flows)}")
+    machine = flow["machine"]
+    tasks: dict[str, list[str]] = {state["id"]: [] for state in machine["states"]}
+    for agent in flow["agents"]:
+        tasks.setdefault(agent["state"], []).append(agent["id"])
+    return {
+        "name": flow["name"],
+        "states": [
+            {**state, "count": len(tasks[state["id"]]), "tasks": tasks[state["id"]]} for state in machine["states"]
+        ],
+        "transitions": machine["transitions"],
+    }
+
+
+def _runs(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    snapshot = _snapshot(args, environ)
+    return {
+        "runs": [
+            {
+                "workflow": dag["name"],
+                "status": dag["status"],
+                "raw": dag.get("raw"),
+                "run_id": dag["runId"],
+                "started_at": dag["startedAt"],
+                "finished_at": dag["finishedAt"],
+            }
+            for dag in snapshot["dags"]
+        ],
+        "error": snapshot["error"],
+    }
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -418,6 +496,45 @@ def _parser() -> argparse.ArgumentParser:
         "--session",
         default="",
         help="the session making the move, recorded as the holder of a claimed task (else `STARPULSE_SESSION`)",
+    )
+    trace = leaf(
+        task_verbs,
+        "trace",
+        "a task's path: its Board lane changes, or with --flow its events on that machine, oldest first",
+        _trace,
+        ("task", "flow", "path", "steps"),
+        (0, 2, 3, 4),
+    )
+    trace.add_argument("task", help="the task's key (`PROJ-45`)")
+    trace.add_argument("--flow", help="the machine to trace the task on (`in-progress`), else the Board's lanes")
+    machine = verbs.add_parser("machine", description="the machines the server draws", help="the machines it draws")
+    machine_verbs = machine.add_subparsers(dest="verb", required=True, metavar="verb")
+    leaf(
+        machine_verbs,
+        "list",
+        "every machine the server draws, with its state ids and how many tasks are on it",
+        _machines,
+        ("machines",),
+        (0, 2, 3),
+    )
+    show_machine = leaf(
+        machine_verbs,
+        "show",
+        "one machine: its states with the live task count and tasks in each, and its transitions",
+        _machine,
+        ("name", "states", "transitions"),
+        (0, 2, 3, 4),
+    )
+    show_machine.add_argument("name", help="the machine's name (`board`, `in-progress`)")
+    runs = verbs.add_parser("runs", description="the workflows of the runs adapters", help="its workflows")
+    runs_verbs = runs.add_subparsers(dest="verb", required=True, metavar="verb")
+    leaf(
+        runs_verbs,
+        "list",
+        "every workflow as <instance>/<workflow> with its latest run's status, id and times",
+        _runs,
+        ("runs", "error"),
+        (0, 2, 3),
     )
     check = leaf(
         verbs,
