@@ -8,7 +8,8 @@
     starpulse help --agent
 
 Every verb writes one JSON document to stdout, an error as `{"error": "...", "code": "..."}`, and nothing to stderr.
-`task move` always moves as the actor `agent`: a move the board machine declares for the operator alone, or that the
+`task move` always moves as the actor `agent`, naming its session when `--session` or `STARPULSE_SESSION` gives one: a claim
+(a move to `in_progress`) records that session as the task's holder, and the board writer may answer with `advice`. A move the board machine declares for the operator alone, or that the
 board's guard refuses, is `{"ok": false, "reason": "...", "skill": "..."}`, the verdict, and exit 1.
 The exit code is 0 for success (for `doctor`, every check passing), 1 for a refused or invalid request, a refused
 move or a failed `doctor` check, 2 for a usage error, 3 when the server (or what the
@@ -69,7 +70,7 @@ _TASK_KEYS = (
     "moves",
     "description",
 )
-_MOVE_KEYS = ("ok", "task", "to", "reason", "skill")
+_MOVE_KEYS = ("ok", "task", "to", "reason", "skill", "advice")
 
 Verb = Callable[[argparse.Namespace, Mapping[str, str]], dict[str, Any]]
 
@@ -202,7 +203,10 @@ def _moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
 def _move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Move the task as the agent: the server's verdict, or an error when no board writer can answer."""
     base = server_url(args.server, environ)
-    body = json.dumps({"task": args.task, "to": args.to, "actor": AGENT}).encode()
+    session = args.session or environ.get("STARPULSE_SESSION", "")
+    body = json.dumps(
+        {"task": args.task, "to": args.to, "actor": AGENT, **({"session": session} if session else {})}
+    ).encode()
     request = urllib.request.Request(
         f"{base}/api/move", data=body, headers={"Content-Type": "application/json"}, method="POST"
     )
@@ -218,9 +222,23 @@ def _move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
         raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
     message = reply.get("error") or f"{base} answered {status} for /api/move"
     if status == 200:
-        return {"ok": True, "task": args.task, "to": args.to, "reason": "", "skill": ""}
+        return {
+            "ok": True,
+            "task": args.task,
+            "to": args.to,
+            "reason": "",
+            "skill": "",
+            "advice": reply.get("advice", ""),
+        }
     if status == 409:
-        return {"ok": False, "task": args.task, "to": args.to, "reason": message, "skill": reply.get("skill", "")}
+        return {
+            "ok": False,
+            "task": args.task,
+            "to": args.to,
+            "reason": message,
+            "skill": reply.get("skill", ""),
+            "advice": "",
+        }
     if status == 404:
         raise CliError("not_found", message)
     if status in (400, 403):
@@ -363,6 +381,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     move.add_argument("task", help="the task's key (`PROJ-45`)")
     move.add_argument("to", help="the column's state id (`review`), as `task moves` lists")
+    move.add_argument(
+        "--session",
+        default="",
+        help="the session making the move, recorded as the holder of a claimed task (else `STARPULSE_SESSION`)",
+    )
     check = leaf(
         verbs,
         "doctor",

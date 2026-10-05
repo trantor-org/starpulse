@@ -150,23 +150,27 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
         return 403, {"error": "Moving a task answers only loopback and private network (RFC 1918) browsers"}
     try:
         request = json.loads(raw)
-        task, column, actor = request["task"], request["to"], request.get("actor", OPERATOR)
+        task, column = request["task"], request["to"]
+        actor, session = request.get("actor", OPERATOR), request.get("session", "")
     except ValueError, TypeError, KeyError, AttributeError:
-        task = column = actor = None
-    if not isinstance(task, str) or not isinstance(column, str) or not isinstance(actor, str):
-        return 400, {"error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor" (a string)'}
+        task = column = actor = session = None
+    if not all(isinstance(value, str) for value in (task, column, actor, session)):
+        return 400, {
+            "error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor" and a "session" (strings)'
+        }
     if (agent := feed.task(task)) is None:
         return 404, {"error": f"{task} is not on the board"}
     if column not in agent["moves"]:
         return 409, {"error": f"{task} cannot move from {agent['state']} to {column}"}
     if not (move := Move.model_validate(agent["moves"][column])).permits(actor):
         return 409, {"error": move.for_actor(actor).reason, "skill": move.skill}
-    written = writer(task, column.replace("_", " ").title(), actor)
+    status = column.replace("_", " ").title()
+    written = writer(task, status, actor, session) if session else writer(task, status, actor)
     if written.unavailable:
         return 501, {"error": written.output}
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"task": task, "to": column}
+    return 200, {"task": task, "to": column, **({"advice": written.advice} if written.advice else {})}
 
 
 def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[int, dict[str, Any]]:

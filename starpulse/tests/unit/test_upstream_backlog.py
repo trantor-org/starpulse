@@ -154,6 +154,37 @@ def test_a_task_file_becomes_a_board_task(tmp_path: Path) -> None:
     ]
 
 
+def _notes(*lines: str) -> str:
+    return "<!-- SECTION:NOTES:BEGIN -->\n" + "\n".join(lines) + "\n<!-- SECTION:NOTES:END -->"
+
+
+@pytest.mark.parametrize(
+    ("notes", "holder"),
+    [
+        (
+            _notes("**Holder:** 0d617371-1999-5360-a76f-a26c28d4878d", "Wired the writer."),
+            "0d617371-1999-5360-a76f-a26c28d4878d",
+        ),
+        (_notes("**Holder:** first", "text", "**Holder:** second"), "second"),  # a later claim by another session wins
+        (_notes("Wired the writer."), ""),
+        (_notes("see **Holder:** quoted mid-line"), ""),
+    ],
+)
+def test_the_holder_is_the_last_marker_line_in_the_notes(tmp_path: Path, notes: str, holder: str) -> None:
+    write_config(tmp_path)
+    task = write_task(tmp_path, "tasks", "task-1", "To Do")
+    task.write_text(task.read_text() + f"\n## Implementation Notes\n\n{notes}\n")
+
+    assert [t.holder for t in scanned(tmp_path)] == [holder]
+
+
+def test_a_marker_outside_the_notes_section_is_not_a_holder(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    write_task(tmp_path, "tasks", "task-1", "To Do", body="**Holder:** in-the-description")
+
+    assert [t.holder for t in scanned(tmp_path)] == [""]
+
+
 def test_a_task_with_no_assignee_labels_or_description_has_the_contract_defaults(tmp_path: Path) -> None:
     write_config(tmp_path)
     write_task(tmp_path, "tasks", "task-1", "To Do", body="")
@@ -413,7 +444,10 @@ assert args[:2] == ["task", "edit"] and args[3] == "-s", args
 for path in (Path.cwd() / "backlog" / "tasks").glob("*.md"):
     text = path.read_text()
     if f"id: {{args[2]}}\\n" in text:
-        path.write_text(re.sub(r"^status: .*$", f"status: {{args[4]}}", text, count=1, flags=re.M))
+        text = re.sub(r"^status: .*$", f"status: {{args[4]}}", text, count=1, flags=re.M)
+        if args[5:6] == ["--append-notes"]:
+            text += f"\\n## Implementation Notes\\n\\n<!-- SECTION:NOTES:BEGIN -->\\n{{args[6]}}\\n<!-- SECTION:NOTES:END -->\\n"
+        path.write_text(text)
         print(f"Updated task {{args[2]}}")
         sys.exit(0)
 sys.exit("no such task")
@@ -454,6 +488,38 @@ def test_the_board_writer_sets_the_status_in_the_task_file_through_the_backlog_c
 
     assert written.ok, written.output
     assert "status: Review\n" in task.read_text()
+
+
+def claiming_project(tmp_path: Path):
+    """A fixture project whose lanes include `In Progress`, the lane a claim moves a task to."""
+    root = tmp_path / "backlog"
+    write_config(root, ("To Do", "In Progress", "Review", "Done"))
+    write_task(root, "tasks", "task-1", "To Do")
+    command = fake_cli(tmp_path / "fake-backlog", _FAKE_BACKLOG.format(python=sys.executable))
+    return root, board({"command": command}, tmp_path)
+
+
+def test_an_agent_claim_with_a_session_records_it_as_the_holder_in_the_same_edit(tmp_path: Path) -> None:
+    root, built = claiming_project(tmp_path)
+
+    written = built.writer("task-1", "In Progress", "agent", "0d617371-1999-5360-a76f-a26c28d4878d")
+
+    assert written.ok, written.output
+    assert "status: In Progress\n" in next((root / "tasks").glob("*.md")).read_text()
+    assert [t.holder for t in scanned(root)] == ["0d617371-1999-5360-a76f-a26c28d4878d"]
+
+
+@pytest.mark.parametrize(
+    ("status", "actor", "session"),
+    [("Review", "agent", "s1"), ("In Progress", "agent", ""), ("In Progress", "operator", "s1")],
+)
+def test_only_an_agent_claim_that_names_a_session_records_a_holder(
+    tmp_path: Path, status: str, actor: str, session: str
+) -> None:
+    root, built = claiming_project(tmp_path)
+
+    assert built.writer("task-1", status, actor, session).ok
+    assert [t.holder for t in scanned(root)] == [""]
 
 
 def test_the_board_writer_names_the_configured_status_a_lane_stands_for(tmp_path: Path) -> None:

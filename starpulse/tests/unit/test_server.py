@@ -215,10 +215,12 @@ class _Writer:
         self.reply = reply
         self.sent: list[tuple[str, str]] = []
         self.actors: list[str | None] = []
+        self.sessions: list[str] = []
 
-    def __call__(self, task: str, status: str, actor: str | None = None) -> Written:
+    def __call__(self, task: str, status: str, actor: str | None = None, session: str = "") -> Written:
         self.sent.append((task, status))
         self.actors.append(actor)  # None for a caller that names none, as an assignee write does
+        self.sessions.append(session)
         return self.reply
 
 
@@ -254,7 +256,9 @@ def test_a_body_that_does_not_name_a_task_and_a_column_is_a_bad_request(raw: byt
     status, body = _move(raw, writer)
 
     assert (status, writer.sent) == (400, [])
-    assert body == {"error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor" (a string)'}
+    assert body == {
+        "error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor" and a "session" (strings)'
+    }
 
 
 def test_a_task_the_board_does_not_hold_is_not_found() -> None:
@@ -319,6 +323,45 @@ def test_the_operator_a_writer_names_moves_the_task_with_or_without_naming_itsel
     status, _ = _move({"task": "PROJ-6", "to": "ready", **request_actor}, writer, feed=_operator_only_feed())
 
     assert (status, writer.sent, writer.actors) == (200, [("PROJ-6", "Ready")], ["operator"])
+
+
+def test_a_move_naming_a_session_hands_it_to_the_writer_beside_the_actor() -> None:
+    writer = _Writer()
+
+    status, _ = _move({"task": "PROJ-3", "to": "in_progress", "actor": "agent", "session": "0d617371-1999"}, writer)
+
+    assert (status, writer.actors, writer.sessions) == (200, ["agent"], ["0d617371-1999"])
+
+
+def test_a_move_naming_no_session_calls_a_writer_that_takes_three_arguments() -> None:
+    sent: list[tuple[str, str, str]] = []
+
+    def three_argument_writer(task: str, status: str, actor: str) -> Written:
+        sent.append((task, status, actor))
+        return Written(True, "Updated")
+
+    assert _move({"task": "PROJ-3", "to": "in_progress"}, three_argument_writer)[0] == 200
+    assert sent == [("PROJ-3", "In Progress", "operator")]
+
+
+def test_a_move_naming_a_non_text_session_is_a_bad_request() -> None:
+    writer = _Writer()
+
+    status, body = _move({"task": "PROJ-3", "to": "in_progress", "session": 7}, writer)
+
+    assert (status, writer.sent) == (400, [])
+    assert "session" in body["error"]
+
+
+def test_the_advice_a_writer_returns_is_in_the_answer_only_when_it_has_some() -> None:
+    advised = _Writer(Written(True, "Updated", advice="PROJ-3 is size-8: advised profile @agent-deep-high"))
+
+    assert _move({"task": "PROJ-3", "to": "in_progress"}, advised)[1] == {
+        "task": "PROJ-3",
+        "to": "in_progress",
+        "advice": "PROJ-3 is size-8: advised profile @agent-deep-high",
+    }
+    assert _move({"task": "PROJ-3", "to": "in_progress"}, _Writer())[1] == {"task": "PROJ-3", "to": "in_progress"}
 
 
 def test_a_move_naming_a_non_text_actor_is_a_bad_request() -> None:

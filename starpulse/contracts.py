@@ -103,6 +103,10 @@ class BoardTask(_Contract):
         description="Set when the task has left the lanes for good, `completed` or `archived`; `lane` is then ignored.",
     )
     assignee: str = Field(default="", description="Who or which agent model holds the task; empty when unassigned.")
+    holder: str = Field(
+        default="",
+        description="The session that last claimed the task, as its harness names it; empty when none has. `assignee` stays who or which agent model the task is for.",
+    )
     labels: tuple[str, ...] = Field(default=(), description="The task's labels.")
     milestone: str = Field(default="", description="The milestone the task belongs to; empty when it has none.")
     description: str = Field(default="", description="The task's description text, shown when the task is opened.")

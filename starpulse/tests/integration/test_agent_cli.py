@@ -75,9 +75,11 @@ class _Writer:
     def __init__(self) -> None:
         self.reply = Written(True, "Updated")
         self.sent: list[tuple[str, str, str]] = []
+        self.sessions: list[str] = []
 
-    def __call__(self, task: str, status: str, actor: str) -> Written:
+    def __call__(self, task: str, status: str, actor: str, session: str = "") -> Written:
         self.sent.append((task, status, actor))
+        self.sessions.append(session)
         return self.reply
 
 
@@ -385,6 +387,7 @@ def test_task_move_of_an_in_progress_task_to_ready_is_refused_to_the_agent_but_t
         "to": "ready",
         "reason": "only the operator sends a task back",
         "skill": "operating-the-board",
+        "advice": "",
     }
     assert writer.sent == []  # refused before the board was asked
     post = urllib.request.Request(
@@ -401,8 +404,32 @@ def test_task_move_writes_as_the_agent_and_reports_the_move(
     code, doc = _run(capsys, ["task", "move", "PROJ-6", "review", "--server", movable])
 
     assert code == 0
-    assert doc == {"ok": True, "task": "PROJ-6", "to": "review", "reason": "", "skill": ""}
+    assert doc == {"ok": True, "task": "PROJ-6", "to": "review", "reason": "", "skill": "", "advice": ""}
     assert writer.sent == [("PROJ-6", "Review", "agent")]
+
+
+def test_task_move_names_the_session_from_its_flag_or_the_environment_and_reports_the_advice(
+    movable: str, writer: _Writer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    writer.reply = Written(True, "Updated", advice="PROJ-6 is size-8: advised profile @agent-deep-high")
+
+    code, doc = _run(capsys, ["task", "move", "PROJ-6", "review", "--server", movable, "--session", "from-flag"])
+
+    assert code == 0
+    assert doc["advice"] == "PROJ-6 is size-8: advised profile @agent-deep-high"
+    environ = {"STARPULSE_SESSION": "from-env"}
+    _run(capsys, ["task", "move", "PROJ-6", "review", "--server", movable], environ)
+    _run(capsys, ["task", "move", "PROJ-6", "review", "--server", movable, "--session", "from-flag"], environ)
+    assert writer.sessions == ["from-flag", "from-env", "from-flag"]
+
+
+def test_task_move_with_no_session_and_no_advice_sends_no_session_and_reports_empty_advice(
+    movable: str, writer: _Writer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, doc = _run(capsys, ["task", "move", "PROJ-6", "review", "--server", movable])
+
+    assert doc["advice"] == ""
+    assert writer.sessions == [""]
 
 
 def test_a_move_the_board_writer_refuses_exits_1_with_its_reason_and_skill(

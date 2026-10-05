@@ -46,12 +46,18 @@ class Written(NamedTuple):
     output: str
     skill: str = ""
     unavailable: bool = False
+    advice: str = ""
+    """What the writer tells the mover about the task now it is moved (a routing profile); empty when it has nothing to say."""
 
 
 class MoveWriter(Protocol):
-    """A board writer: set a task's status on behalf of `actor` (`operator` or `agent`), and say what it did."""
+    """A board writer: set a task's status on behalf of `actor` (`operator` or `agent`), and say what it did.
 
-    def __call__(self, task: str, status: str, actor: str) -> Written: ...
+    A move that names the mover's `session` calls the writer with it as a fourth argument; a move that names none calls it
+    with three, so a writer that predates sessions keeps working. A writer records the session as the task's holder when
+    the move is a claim."""
+
+    def __call__(self, task: str, status: str, actor: str, session: str = "") -> Written: ...
 
 
 class AssigneeWriter(Protocol):

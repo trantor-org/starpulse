@@ -43,6 +43,8 @@ _FOLDERS: tuple[tuple[str, Literal["completed", "archived"] | None], ...] = (
 )
 _DESCRIPTION = re.compile(r"<!-- SECTION:DESCRIPTION:BEGIN -->(.*?)<!-- SECTION:DESCRIPTION:END -->", re.S)
 _HEADED_DESCRIPTION = re.compile(r"^## Description\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
+_NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END -->", re.S)
+_HOLDER = re.compile(r"^\*\*Holder:\*\* (\S+)[ \t]*$", re.M)
 
 
 @dataclass(frozen=True)
@@ -130,6 +132,17 @@ def _description(body: str) -> str:
     return described.group(1).strip() if described else ""
 
 
+def _holder(body: str) -> str:
+    """The session a claim recorded in the task's notes: the last `**Holder:** <id>` line there, else empty.
+
+    The marker lives in the notes because the Backlog CLI rewrites a task file's frontmatter and drops a key it
+    does not know, while the notes section survives every edit.
+    """
+    notes = _NOTES.search(body)
+    held = _HOLDER.findall(notes.group(1)) if notes else []
+    return held[-1] if held else ""
+
+
 def _split(text: str) -> tuple[Any, str]:
     """A task file's YAML frontmatter and the Markdown after it; `(None, "")` for a file with neither."""
     text = text.replace("\r\n", "\n")
@@ -202,6 +215,7 @@ class UpstreamBacklog:
             references=_strings(frontmatter.get("references")),
             settled=settled,
             assignee=assignees[0] if assignees else "",
+            holder=_holder(body),
             labels=_strings(frontmatter.get("labels")),
             description=_description(body),
             moves={} if settled else dict(self._moves.get(lane, {})),
@@ -228,12 +242,16 @@ _SETTINGS = {"type", "path", "interval", "machine", "command"}
 def cli_writer(root: Path, statuses: tuple[str, ...], command: list[str]) -> MoveWriter:
     """A board writer that sets a status with the `backlog` CLI run in the project and answers with its output.
 
-    A lane's status is the project's own spelling of it (`QA` for a move to `Qa`).
+    A lane's status is the project's own spelling of it (`QA` for a move to `Qa`). An agent's claim (a move to
+    `In Progress` that names its session) also appends the `**Holder:** <session>` marker to the task's notes, in
+    the same edit as the status, so the board can say which session holds the task.
     """
     spelled = {lane_id(status): status for status in statuses}
 
-    def write(task: str, status: str, actor: str) -> Written:
+    def write(task: str, status: str, actor: str, session: str = "") -> Written:
         argv = [*command, "task", "edit", task, "-s", spelled.get(lane_id(status), status)]
+        if actor != "operator" and session and lane_id(status) == "in_progress":
+            argv += ["--append-notes", f"**Holder:** {session}"]
         try:
             done = subprocess.run(argv, cwd=root.parent, capture_output=True, text=True, timeout=30.0, check=False)
         except (OSError, subprocess.TimeoutExpired) as error:
