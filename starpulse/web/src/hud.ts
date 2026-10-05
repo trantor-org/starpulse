@@ -42,6 +42,8 @@ export interface HudState {
   claims: Record<string, { reason: string; at: number }>;
   /** The Backlog board a task links into. */
   boardUrl: string | null;
+  /** What the board writes beyond moves: the task view draws Edit and Archive… only for what it can. */
+  capabilities?: { edit: boolean; archive: boolean };
 }
 
 export class HudStore {

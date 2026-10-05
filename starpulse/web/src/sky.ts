@@ -37,6 +37,8 @@ export interface Sky {
   dagGroup: Record<string, string>;
   runnable: Set<string>;
   boardUrl: string | null;
+  /** What the board writes beyond moves; absent for a board that only reads. */
+  capabilities?: { edit: boolean; archive: boolean };
   tree: Tree;
   /** The lifecycle machines each Board state opens into; the first is the state's own. */
   subs: Record<string, string[]>;
@@ -83,6 +85,7 @@ export function merge(snap: Snapshot): Sky {
     dagGroup: Object.fromEntries(groups.flatMap((g) => g.dags.map((d) => [d, g.name]))),
     runnable: new Set((snap.domains ?? []).flatMap((d) => d.dags.filter((x) => x.runSafe).map((x) => x.name))),
     boardUrl: snap.boardUrl ?? null,
+    capabilities: snap.capabilities,
     tree: t,
     subs: t.subs,
     child,

@@ -86,6 +86,8 @@ export const ROUTES: Record<string, string | null> = {
   "/api/start": "This demo has no session-start service to start a session with.",
   // unanswered, the start question offers only Work it manually
   "/api/harnesses": "This demo has no harnesses configured.",
+  // unanswered, the task view keeps the snapshot's fields and draws no plan, notes or checks
+  "/api/task": "This demo has no task files to read a full record from.",
   "/api/history-window": "This demo has no server to keep a shared history window.",
 };
 
