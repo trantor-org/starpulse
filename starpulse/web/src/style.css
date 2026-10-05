@@ -175,7 +175,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .mach { display: flex; align-items: center; gap: 6px; font-size: calc(10.5px * var(--fs)); color: #8b95a8; margin-bottom: 6px; white-space: nowrap; }
 #kb .mach b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; color: #c4b5fd; }
 #kb .mach .s { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-#kb .mach .p { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 6px #a78bfa; }
+#kb .mach .p { flex: none; position: relative; top: -1px; width: 6px; height: 6px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 6px #a78bfa; }
 #kb .mach.hot .p { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251,191,36,.25), 0 0 10px #fbbf24; animation: kb-pulse 1.4s ease-in-out infinite; }
 #kb .mach .ago { flex: none; margin-left: auto; color: #475569; }
 @keyframes kb-pulse { 0%, 100% { box-shadow: 0 0 0 2px rgba(251,191,36,.25), 0 0 8px #fbbf24; } 50% { box-shadow: 0 0 0 6px rgba(251,191,36,0), 0 0 16px #fbbf24; } }
@@ -255,6 +255,8 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 #kb .card.claiming::after { content: ""; position: absolute; right: 8px; bottom: 8px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #fbbf24; border-top-color: transparent; animation: kb-spin .8s linear infinite; }
 #kb .mach.sess b, #kb .mach.sess .s { color: #fbbf24; }
 #kb .mach.sess .p { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+#kb .mach.released b { color: #5eead4; }
+#kb .mach.released .p { background: #5eead4; box-shadow: 0 0 6px #5eead4; }
 #kb .mach.sess a { color: #fbbf24; text-decoration: none; }
 #kb .refusal a { color: #c4b5fd; }
 #kbm .moves button.start { border-color: rgba(52,211,153,.55); background: rgba(52,211,153,.12); }

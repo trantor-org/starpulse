@@ -130,7 +130,13 @@ class BoardFeed:
         with self._lock:
             self._assignees[task.id] = task.assignee
             agent = None if task.settled else task_agent(task)
-            if self._open.get(task.id) == agent and self._settled.get(task.id) == task.settled:
+            before = self._open.get(task.id)
+            if agent and before:
+                # the lane the task left on its last move, kept while the hourly reconcile republishes it in place
+                previous = before["state"] if before["state"] != agent["state"] else before.get("previous")
+                if previous:
+                    agent["previous"] = previous
+            if before == agent and self._settled.get(task.id) == task.settled:
                 return  # an hourly reconcile republishes every task; only a change reaches the page
             if agent is None:
                 self._open.pop(task.id, None)

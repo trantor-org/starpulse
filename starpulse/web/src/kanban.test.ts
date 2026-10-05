@@ -5,7 +5,7 @@ import type { Pull, RawAgent, Snapshot } from "./types";
 
 const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
 const task = (id: string, lane: string, milestone = "", at = 0): KanbanTask => ({
-  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, moves: {},
+  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {},
 });
 const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, prefs);
 const column = (v: ReturnType<typeof view>, id: string) => v.columns.find((c) => c.id === id)!;
@@ -144,6 +144,19 @@ describe("the cards drawn from a snapshot", () => {
 
     expect(tasks.find((t) => t.id === "PROJ-1")!.openDeps).toBe(1);
     expect(tasks.find((t) => t.id === "PROJ-2")!.openDeps).toBe(0);
+  });
+
+  it("mark a Ready task whose last Board move was out of Waiting as released, whatever machine last placed it", () => {
+    const snap = snapshot();
+    snap.flows[0].agents.push(
+      agent("PROJ-5", "ready", { previous: "waiting" }), agent("PROJ-6", "ready", { previous: "review" }),
+      agent("PROJ-7", "ready"), agent("PROJ-8", "in_progress", { previous: "waiting" }),
+    );
+    snap.flows[1].agents.push(agent("PROJ-5", "pr_opened", { task: "PROJ-5", active: 400 }));
+    const released = Object.fromEntries(kanbanTasks(merge(snap)).map((t) => [t.id, t.released]));
+
+    expect(released).toMatchObject({ "PROJ-5": true, "PROJ-6": false, "PROJ-7": false, "PROJ-8": false });
+    expect(kanbanTasks(merge(snap)).find((t) => t.id === "PROJ-5")!.live).toMatchObject({ machine: "in-progress", state: "pr_opened" });
   });
 
   it("have no milestone, pull requests or machine when the snapshot names none", () => {
