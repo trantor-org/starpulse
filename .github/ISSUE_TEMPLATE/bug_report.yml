@@ -1,0 +1,31 @@
+name: Bug report
+description: StarPulse did something wrong or failed to start.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The StarPulse release you installed, or the commit you ran from.
+    validations:
+      required: true
+  - type: textarea
+    id: run
+    attributes:
+      label: How you ran it
+      description: The command, your config file with credentials removed, and the board and scheduler it reads.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: What the page showed, and any error the server printed.
+    validations:
+      required: true
