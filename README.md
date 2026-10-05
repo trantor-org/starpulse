@@ -220,6 +220,15 @@ uv run starpulse serve
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 [`bench/`](bench/README.md) holds the hub-ingest and instance event-log benchmarks.
 
+[`design/`](design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`); view it with
+`uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse.demo --mockup design --out
+mockup.html` writes it as one scrubbed file. A pull request that changes the page (`starpulse/web/**`), the mockup or
+the preview itself gets one UI-preview comment from
+[`.github/workflows/ui-preview.yml`](.github/workflows/ui-preview.yml): screenshots of each changed surface's
+scrubbed demo, built by [`ci/ui_preview.py`](ci/ui_preview.py) against the demo config
+[`ci/preview.toml`](ci/preview.toml), with the demos published to `trantor-org/flow-demos` under
+`starpulse-pr-<N>/` while the pull request is open. The preview is review context and never gates the pull request.
+
 ## Contributing
 
 Open an [issue](https://github.com/trantor-org/starpulse/issues/new/choose) for a bug, a feature or a question.

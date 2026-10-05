@@ -53,4 +53,6 @@ starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
-testpaths = ["starpulse/tests"]
+testpaths = ["starpulse/tests", "ci"]
+# The UI preview script under `ci/` is imported by its module name.
+pythonpath = ["ci"]
