@@ -12,6 +12,7 @@ for a design mockup's saved `data.js`, keeping each session's link to its task.
 """
 
 import argparse
+import collections
 import itertools
 import json
 import re
@@ -118,6 +119,7 @@ def scrub(live: dict) -> dict:
         }
         for f in live["flows"]
     ]
+    _seed_delivery(flows, live["now"])
     return {
         **live,
         "boardUrl": None,
@@ -133,7 +135,110 @@ def scrub(live: dict) -> dict:
         },
         "settled": {},
         "error": None,
+        "history": _history(flows, live["now"]),
     }
+
+
+#: The seconds between two synthetic steps of a task's path, before each task's own spread.
+STEP_S = 3 * 3600
+
+
+def _route(machine: dict, state: str, start: str | None = None) -> list[tuple[str, str, str]]:
+    """The shortest (source, event, target) path from the machine's initial state, or `start`, to `state`; [] when
+    `state` is out of reach."""
+    start = start or next((s["id"] for s in machine["states"] if s.get("initial")), state)
+    back: dict[str, tuple[str, str, str] | None] = {start: None}
+    queue = collections.deque([start])
+    while queue and state not in back:
+        here = queue.popleft()
+        for t in machine["transitions"]:
+            if t["source"] == here and t["target"] not in back:
+                back[t["target"]] = (here, t["event"], t["target"])
+                queue.append(t["target"])
+    path, at = [], state
+    while step := back.get(at):
+        path.append(step)
+        at = step[0]
+    return path[::-1]
+
+
+def _times(n: int, i: int, now: float) -> list[float]:
+    """`n` step times ending before `now`, oldest first, spread per task `i` so no two paths line up."""
+    gap = STEP_S + 1800 * i
+    return [now - gap * (n - k) - 600 * i for k in range(n)]
+
+
+def _send_back(machine: dict, steps: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """`steps` with one move back: at the last state that has a transition to a state the route already passed, that
+    move and the shortest route on to where it was. `steps` unchanged when no state has one."""
+    for k, (_, _, here) in reversed(list(enumerate(steps))):
+        passed = {s for s, _, _ in steps[: k + 1]} - {here}  # pragma: no mutate: the next source is `here`
+        for t in machine["transitions"]:
+            if t["source"] == here and t["target"] in passed:
+                again = _route(machine, here, start=t["target"])
+                return [*steps[: k + 1], (here, t["event"], t["target"]), *again, *steps[k + 1 :]]
+    return steps
+
+
+def _walk(machine: dict, state: str, i: int, now: float, via: str | None = None, back: bool = False) -> list[dict]:
+    """Task `i`'s synthetic trail to `state`, on `_times`: the machine's shortest route, through `via` when `via` is
+    on the way, sent back once on the way when `back` is set."""
+    steps = _route(machine, state)
+    if via:
+        head, tail = _route(machine, via), _route(machine, state, start=via)
+        if head and tail:
+            steps = head + tail
+    if back:
+        steps = _send_back(machine, steps)
+    return [{"state": t, "event": e, "at": at} for (_, e, t), at in zip(steps, _times(len(steps), i, now))]
+
+
+def _seed_delivery(flows: list[dict], now: float) -> None:
+    """Place each In Progress Board task on the Board's delivery machine when the capture placed none there, at a varied
+    state along that machine, so its level and its back-trace have a task to show."""
+    board = next(f for f in flows if f["name"] == "board")
+    sub = next(iter(board["machine"].get("subflows", [])), None)
+    if sub is None:
+        return
+    flow = next((f for f in flows if f["name"] == sub["flow"]), None)
+    if not flow or flow["agents"]:
+        return
+    m = flow["machine"]
+    # the states a task can be in mid-flow: reachable from the start (the start itself has an empty route), not final
+    inner = [s["id"] for s in m["states"] if not s.get("final") and _route(m, s["id"])]
+    if not inner:
+        return
+    for i, a in enumerate(x for x in board["agents"] if x["state"] == sub["state"]):
+        state = inner[i % len(inner)]
+        trail = _walk(m, state, i, now)
+        flow["agents"].append(
+            {
+                "id": a["id"],
+                "title": a["title"],
+                "task": a["id"],
+                "state": state,
+                "model": a["model"],
+                "steps": len(trail),
+                "trail": trail,
+                "active": trail[-1]["at"],
+            }
+        )
+
+
+def _history(flows: list[dict], now: float) -> dict[str, list[dict]]:
+    """Each Board task's lane changes as `/api/history?task=` answers them: the Board machine's shortest route to its
+    lane, on synthetic times, with every second task sent back a lane once so the demo's traces draw backtracks. A machine task's path is its own trail, which the page reads from the snapshot."""
+    board = next(f for f in flows if f["name"] == "board")
+    line = board["machine"].get("mainLine", [])
+    # through the Board's first working lane rather than a creation shortcut, so a path has the hops a real task's has
+    via = line[1] if line[1:] else None
+    history = {}
+    for i, a in enumerate(board["agents"]):
+        trail = _walk(board["machine"], a["state"], i, now, via=via, back=i % 2 == 1)
+        history[a["id"]] = [
+            {"at": s["at"], "from": trail[k - 1]["state"] if k else None, "to": s["state"]} for k, s in enumerate(trail)
+        ]
+    return history
 
 
 def _task(i: int, a: dict) -> dict:

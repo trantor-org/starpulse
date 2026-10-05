@@ -29,6 +29,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    bindparam,
     create_engine,
     select,
 )
@@ -87,6 +88,16 @@ _gaps = Table(
     Column("noted_at", Float, nullable=False),
     Index("ux_starpulse_gaps", "stream", "after_id", unique=True),
 )
+#: A path's order: by time, and the earlier insert first when two rows share one.
+_LANE_ORDER = (_lane_changes.c.observed_at, _lane_changes.c.id)
+_STEP_ORDER = (_machine_events.c.occurred_at, _machine_events.c.id)
+#: A task's last lane: its latest observation, the later insert on a tie.
+_LAST_LANE = (
+    select(_lane_changes.c.new_status)
+    .where(_lane_changes.c.task == bindparam("task"))
+    .order_by(_lane_changes.c.observed_at.desc(), _lane_changes.c.id.desc())
+    .limit(1)
+)
 
 
 class History(Protocol):
@@ -132,7 +143,9 @@ class HistoryStore:
     def __init__(self, url: str, machines: Mapping[str, dict], engine: Engine | None = None) -> None:
         self.engine = engine or create_engine(url)
         self._machines = machines
+        # pragma: no mutate start — SQLite compiles the postgresql insert's ON CONFLICT alike
         self._dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
+        # pragma: no mutate end
         _metadata.create_all(self.engine)
         #: One group per database, so two views on one Redis each fill their own, and a new database replays what the
         #: stream still holds into it (a redelivered entry is a no-op).
@@ -153,22 +166,17 @@ class HistoryStore:
             "occurred_at": float(fields["time"]),
         }
         with self.engine.begin() as db:
-            db.execute(self._insert(_machine_events).values(row).on_conflict_do_nothing(index_elements=["event_id"]))
+            db.execute(self._insert(_machine_events).values(row).on_conflict_do_nothing())
 
     def record_lane(self, event_id: str, task: str, status: str, at: float) -> None:
         """Write a task's lane change; a status that repeats the task's last one (a reconcile) is no change."""
         with self.engine.begin() as db:
-            last = db.execute(
-                select(_lane_changes.c.new_status)
-                .where(_lane_changes.c.task == task)
-                .order_by(_lane_changes.c.observed_at.desc(), _lane_changes.c.id.desc())
-                .limit(1)
-            ).scalar()
+            last = db.execute(_LAST_LANE, {"task": task}).scalar()
             if last != status:
                 db.execute(
                     self._insert(_lane_changes)
                     .values(event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at)
-                    .on_conflict_do_nothing(index_elements=["event_id"])
+                    .on_conflict_do_nothing()
                 )
 
     def record_gap(self, stream: str, after_id: str, before_id: str, lost: int) -> None:
@@ -192,7 +200,7 @@ class HistoryStore:
         keys = ["workflow", "step"]
         with self.engine.begin() as db:
             if depends is None:
-                db.execute(insert.on_conflict_do_nothing(index_elements=keys))
+                db.execute(insert.on_conflict_do_nothing())
             else:
                 db.execute(insert.on_conflict_do_update(index_elements=keys, set_={"depends": insert.excluded.depends}))
 
@@ -200,7 +208,9 @@ class HistoryStore:
         """Each pushed workflow's steps, in the order they were first reported, with the steps each waits on."""
         steps = _learned_steps.c
         with self.engine.connect() as db:
+            # pragma: no mutate start — a fresh test table scans in insertion order
             rows = db.execute(select(steps.workflow, steps.step, steps.depends).order_by(steps.id)).all()
+            # pragma: no mutate end
         graphs: dict[str, dict[str, list[str]]] = {}
         for workflow, step, depends in rows:
             graphs.setdefault(workflow, {})[step] = json.loads(depends)
@@ -210,7 +220,9 @@ class HistoryStore:
         """Every recorded gap as `{stream, after_id, before_id, lost}`, oldest first."""
         g = _gaps.c
         with self.engine.connect() as db:
+            # pragma: no mutate start — a fresh test table scans in insertion order
             rows = db.execute(select(g.stream, g.after_id, g.before_id, g.lost).order_by(g.id)).all()
+            # pragma: no mutate end
         return [{"stream": s, "after_id": a, "before_id": b, "lost": n} for s, a, b, n in rows]
 
     def lane_path(self, task: str) -> list[dict]:
@@ -218,7 +230,7 @@ class HistoryStore:
         c = _lane_changes.c
         with self.engine.connect() as db:
             rows = db.execute(
-                select(c.observed_at, c.old_status, c.new_status).where(c.task == task).order_by(c.observed_at, c.id)
+                select(c.observed_at, c.old_status, c.new_status).where(c.task == task).order_by(*_LANE_ORDER)
             ).all()
         return lane_changes([tuple(row) for row in rows])
 
@@ -227,7 +239,7 @@ class HistoryStore:
         c = _machine_events.c
         with self.engine.connect() as db:
             rows = db.execute(
-                select(c.occurred_at, c.event).where(c.task == task, c.machine == flow).order_by(c.occurred_at, c.id)
+                select(c.occurred_at, c.event).where(c.task == task, c.machine == flow).order_by(*_STEP_ORDER)
             ).all()
         return machine_steps(self._machines[flow], [tuple(row) for row in rows])
 

@@ -6,7 +6,7 @@ from collections.abc import Collection
 import pytest
 
 from starpulse.board_feed import BoardFeed
-from starpulse.pull_requests import GhUnavailableError, PullRequests, fetch, read_repository
+from starpulse.pull_requests import GhUnavailableError, PullRequests, Pulls, fetch, read_repository
 from starpulse.tests.tasks import task
 
 REPO = "https://github.com/acme/widgets/pull"
@@ -30,12 +30,15 @@ class _Github:
         self.records = {f"{REPO}/{number.removeprefix('pr')}": record for number, record in records.items()}
         self.requests: list[Collection[str]] = []
         self.down = False
+        self.unread: set[str] = set()
 
-    def __call__(self, urls: Collection[str]) -> dict[str, dict]:
+    def __call__(self, urls: Collection[str]) -> Pulls:
         self.requests.append(urls)
         if self.down:
             raise GhUnavailableError("gh: network unreachable")
-        return {url: self.records[url] for url in urls if url in self.records}
+        answer = Pulls({url: self.records[url] for url in urls if url in self.records and url not in self.unread})
+        answer.unread = frozenset(self.unread)
+        return answer
 
 
 def _record(number: int, checks: str, *, merged: bool = False, threads: int = 0, stale: bool = False) -> dict:
@@ -272,6 +275,27 @@ def test_a_repository_that_cannot_be_read_does_not_hide_the_others_pull_requests
 
 def test_every_readable_repository_contributes_its_pull_requests() -> None:
     assert set(fetch([FIRST, OTHER], _read_except(set()))) == {FIRST, OTHER}
+
+
+def test_the_urls_of_a_repository_that_cannot_be_read_are_named_unread() -> None:
+    assert fetch([FIRST, OTHER], _read_except({"other-org/tools"})).unread == {OTHER}
+
+
+def test_a_partial_outage_keeps_the_unreadable_repositorys_last_value_stale_beside_the_fresh_ones() -> None:
+    feed = _feed(proj_7=[FIRST], proj_9=[OTHER])
+    github = _Github(pr1750=_record(1750, "pass"), pr9=_record(9, "pass"))
+    github.records[OTHER] = {**_record(9, "pass"), "url": OTHER}
+    source = PullRequests(feed, github)
+    source.refresh()
+
+    github.unread = {OTHER}
+    github.records[FIRST] = _record(1750, "failing")
+    source.refresh()
+
+    assert _pulls(feed) == {
+        "PROJ-7": [_record(1750, "failing")],
+        "PROJ-9": [{**_record(9, "pass"), "url": OTHER, "stale": True}],
+    }
 
 
 def test_every_repository_failing_is_a_failed_read() -> None:

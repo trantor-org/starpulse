@@ -115,8 +115,8 @@ uv run starpulse serve
 
 ## Contributing
 
-Issues and pull requests are welcome. Keep a pull request to one change, with tests for what it changes, and
-make sure `uv run pytest` and the page's `check` pass.
+Open an [issue](https://github.com/trantor-org/starpulse/issues/new/choose) for a bug, a feature or a question.
+Pull requests come from collaborators; [CONTRIBUTING.md](CONTRIBUTING.md) has how both work.
 
 ## Releases
 

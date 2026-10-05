@@ -5,7 +5,6 @@ each reads the rest of the line with its own flags, so `starpulse serve --help` 
 """
 
 import argparse
-import sys
 from collections.abc import Callable
 
 from starpulse import emit, server
@@ -17,7 +16,7 @@ def main(argv: list[str] | None = None) -> int | None:
     parser = argparse.ArgumentParser(prog="starpulse", description="StarPulse: the flow view of workflows and tasks")
     parser.add_argument("command", choices=COMMANDS, help="serve: run the view; emit: push a workflow run event")
     parser.add_argument("args", nargs=argparse.REMAINDER, help="the subcommand's own flags")
-    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(argv)  # None reads sys.argv[1:]
     return COMMANDS[args.command](args.args)
 
 

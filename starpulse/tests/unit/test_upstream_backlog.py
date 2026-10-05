@@ -16,6 +16,7 @@ from starpulse.upstream_backlog import (
     BacklogConfig,
     UpstreamBacklog,
     _split,
+    board,
     board_machine,
     read_config,
     upstream_keys,
@@ -341,3 +342,42 @@ def test_the_adapter_module_pulls_in_neither_redis_nor_the_projection_contract()
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False, timeout=60)
 
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def _started(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Path, float]]:
+    started: list[tuple[Path, float]] = []
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: started.append((self.root, interval)))
+    return started
+
+
+def test_the_board_reads_the_project_its_path_names_and_polls_at_its_interval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = _started(monkeypatch)
+    write_config(tmp_path / "proj", ("Open", "Shut"), prefix="PROJ")
+
+    built = board({"type": "upstream_backlog", "path": "proj", "interval": "0.5"}, tmp_path)
+    built.start(BoardFeed(), "test")
+
+    assert built.source == str(tmp_path / "proj")
+    assert built.machines(lambda name: name, ()) == {"board": board_machine(("Open", "Shut"))}
+    assert built.keys is not None
+    assert built.keys.matches("PROJ-1") and not built.keys.matches("task-1")
+    assert started == [(tmp_path / "proj", 0.5)]
+
+
+def test_without_settings_the_board_reads_backlog_beside_the_config_every_two_seconds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = _started(monkeypatch)
+
+    board({}, tmp_path).start(BoardFeed(), "test")
+
+    assert started == [(tmp_path / "backlog", 2.0)]
+
+
+def test_a_board_setting_the_adapter_does_not_read_is_refused_beside_the_known_ones(tmp_path: Path) -> None:
+    with pytest.raises(ValueError) as refused:
+        board({"path": "proj", "colour": "red", "abc": 1}, tmp_path)
+
+    assert str(refused.value) == "board: unknown key(s) abc, colour; known: interval, path, type"

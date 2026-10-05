@@ -2,9 +2,6 @@
 // One fold setting serves every view, so it lives here rather than in a view.
 export const FOLD_KEY = "fv.nav.folded";
 
-/** How long the panel takes to fold, in ms: the canvas refits every frame for as long as its CSS width transition (.3s in style.css) runs. */
-export const FOLD_MS = 300;
-
 export type FoldStorage = Pick<Storage, "getItem" | "setItem">;
 
 // Browser storage can be absent (a private window); the fold then lasts the session.
@@ -49,19 +46,35 @@ export class FoldStore {
   }
 }
 
-/** The canvas's left edge and width: the page between the panel and the rail. */
-export const canvasSpace = (viewport: number, nav: number, rail: number) => ({ left: nav, width: viewport - nav - rail });
+/**
+ * The canvas and the box its level is fitted in, from the panel's open and folded widths, never its current one:
+ * the canvas spans the page the folded panel leaves, and the level fits between the open panel and the rail,
+ * `inset` from the canvas's left edge. A fold only covers or uncovers sky; no body moves.
+ */
+export const canvasSpace = (viewport: number, nav: { open: number; fold: number }, rail: number) => ({
+  left: nav.fold,
+  width: viewport - nav.fold - rail,
+  inset: nav.open - nav.fold,
+  fitWidth: viewport - nav.open - rail,
+});
 
-export type ViewName = "constellation" | "kanban";
+export type ViewName = "constellation" | "kanban" | "admin";
 
-/** The view an address opens: the Kanban only when it says so. */
-export const viewOf = (search: string): ViewName => (new URLSearchParams(search).get("view") === "kanban" ? "kanban" : "constellation");
+/** Whether the address is a retired per-graph one (`/board`, `/flow/<name>`, `/#sec-<name>`): those open the Star Map whatever "Opens on" says. */
+export const retired = (pathname: string, hash: string) => pathname !== "/" || hash !== "";
 
-/** The query string that opens `view`, keeping every other parameter. */
-export function viewSearch(search: string, view: ViewName): string {
+/** The view an address opens: the one it names, or `fallback` (the Admin's "Opens on") when it names none. */
+export function viewOf(search: string, fallback: ViewName = "constellation"): ViewName {
+  const v = new URLSearchParams(search).get("view");
+  if (v === null) return fallback;
+  return v === "kanban" || v === "admin" ? v : "constellation";
+}
+
+/** The query string that opens `view`, keeping every other parameter; the view a bare address opens (`fallback`) needs no parameter. */
+export function viewSearch(search: string, view: ViewName, fallback: ViewName = "constellation"): string {
   const params = new URLSearchParams(search);
   params.delete("view");
-  if (view === "kanban") params.set("view", "kanban");
+  if (view !== fallback) params.set("view", view);
   return queryString(params);
 }
 

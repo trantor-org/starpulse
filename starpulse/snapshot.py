@@ -17,10 +17,6 @@ from starpulse.machine_definition import writers_of
 Qualify = Callable[[str], str]
 
 
-def _same(name: str) -> str:
-    return name
-
-
 def qualifier(domains: Mapping[str, Sequence[str]]) -> Qualify:
     """A workflow's own name as `<instance>/<workflow>`, when exactly one configured instance lists it.
 
@@ -34,14 +30,21 @@ def qualifier(domains: Mapping[str, Sequence[str]]) -> Qualify:
     return lambda name: unique.get(name, name)
 
 
-def describe(machine: Any, name: str | None = None, qualify: Qualify = _same) -> dict:
+def _titled(name: str) -> str:
+    """A state's name with every word capitalised (`In Progress`); python-statemachine capitalises only the first."""
+    return " ".join(word[:1].upper() + word[1:] for word in name.split(" "))
+
+
+def describe(machine: Any) -> dict:
     """The machine's states and transitions, self-loops included, and the workflows among its YAML-declared writers.
 
     A writer is a workflow when its actor is named `<instance>/<workflow>`; a machine with none carries no
-    `writers`. `name` and `qualify` are a board adapter's to use when it adds what its own machines declare.
+    `writers`.
     """
     body: dict[str, Any] = {
-        "states": [{"id": s.id, "name": s.name, "initial": s.initial, "final": s.final} for s in machine.states],
+        "states": [
+            {"id": s.id, "name": _titled(s.name), "initial": s.initial, "final": s.final} for s in machine.states
+        ],
         "transitions": [
             {"source": t.source.id, "target": t.target.id, "event": str(t.event)}
             for s in machine.states

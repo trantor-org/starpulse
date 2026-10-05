@@ -12,8 +12,9 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, f
                    machine, agents}], pulls, settled, error, now}: every machine with its tasks, the
                    workflow declarations and the workflows, each named `<instance>/<workflow>`), then
                    a `task` delta ({id, agent, settled}) per Board task change, a `move` delta ({flow, id, agent}) per task a machine placed, a
-                   `dags` delta ({dags, error}) per runs change and a `pulls` delta ({pulls}) per
-                   change to a task's pull requests, with a `: ping` comment every 15 s.
+                   `dags` delta ({dags, error}) per runs change, a `pulls` delta ({pulls}) per
+                   change to a task's pull requests and a `claim` delta ({task, reason, at}) per
+                   refused agent claim the board adapter reports, with a `: ping` comment every 15 s.
                    `pulls` maps each open task that cites a pull request to [{number, url, checks
                    (pass, failing, pending, none), merged, threads (unresolved), stale}], read from
                    GitHub through `gh` once a minute and held between reads; a failed read keeps the
@@ -21,10 +22,9 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, f
                    Everything is held in memory: the Board from the configured board adapter, other machines' tasks
                    from machine:events, each instance's workflows from its adapter (`pushed/`: runs:events)
 GET /api/history?task=TASK-N[&flow=NAME]
-                   {task, path}: the task's Board lane changes as [{at, from, to}], oldest first
-                   (`at` epoch seconds). With `flow`, {task, flow,
-                   path, steps}: its events on that lifecycle machine as [{at, event, state}] in
-                   order, `steps` their count. A task never seen has an empty path; no `task` is 400
+                   {task, path}: the task's Board lane changes as [{at, from, to}], oldest first (`at`
+                   epoch seconds). With `flow`, {task, flow, path, steps}: its events on that lifecycle
+                   machine as [{at, event, state}] in order, `steps` their count. A task never seen has an empty path; no `task` is 400
                    and an unknown `flow` 404. The machine events are copied from their stream as they
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
                    the config), so the path outlives the stream's trim, unless the board adapter keeps
@@ -36,6 +36,7 @@ POST /api/run/<instance>/<workflow>
                    that can start a run or the workflow is not in its `run_safe`, 502 when the adapter's start
                    fails. A GET answers 405
 POST /api/move     {task, to}: set a Board task's status through the board adapter's writer
+POST /api/start    {task, assignee}: start a task's session at `session_start_url` (see Start in the README)
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ import os
 import queue
 import shutil
 import threading
+import time
 from collections.abc import Callable, Collection, Mapping
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -55,7 +57,7 @@ from types import ModuleType
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from starpulse.board import Board, MoveWriter, Written
+from starpulse.board import AssigneeWriter, Board, MoveWriter, Written
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.config import Config, RunsInstance, load
@@ -68,6 +70,7 @@ from starpulse.pull_requests import PullRequests
 from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.push_runs import build_consumer as build_push_consumer
 from starpulse.runtime import RedisUnavailableError, ensure_redis
+from starpulse.session_start import starter
 from starpulse.snapshot import qualifier
 
 _HERE = Path(__file__).parent
@@ -93,6 +96,9 @@ _LAN = (
 )
 _RUN = "/api/run/"
 _MOVE = "/api/move"
+_START = "/api/start"
+#: The lanes Start session moves a task out of: the spec's start question, never Review's send-back.
+_STARTABLE = frozenset({"ready", "waiting", "needs_attention"})
 
 
 def _on_lan(source: str) -> bool:
@@ -142,6 +148,46 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
     return 200, {"task": task, "to": column}
 
 
+def start_task(
+    source: str,
+    raw: bytes,
+    feed: BoardFeed,
+    assign: AssigneeWriter,
+    start_session: Callable[[str], str] | None,
+    clock: Callable[[], float] = time.time,
+) -> tuple[int, dict[str, Any]]:
+    """Start a session for the task `raw` names, on the assignee it names, for a browser at `source`: the HTTP status
+    and JSON body.
+
+    A changed assignee is saved through the guarded writer first, since the session-start service reads the
+    profile from the task. `at` is when the start began, so the page applies only a refused claim made after it.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Starting a session answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        request = json.loads(raw)
+        task, assignee = request["task"], request["assignee"]
+    except ValueError, TypeError, KeyError:
+        task = assignee = None
+    if not isinstance(task, str) or not isinstance(assignee, str):
+        return 400, {"error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>"}'}
+    if start_session is None:
+        return 404, {"error": "no session-start service is configured (session_start_url)"}
+    if (agent := feed.task(task)) is None:
+        return 404, {"error": f"{task} is not on the board"}
+    if agent["state"] not in _STARTABLE:
+        return 409, {
+            "error": f"{task} is in {agent['state']}: a session starts only a ready, waiting or needs_attention task"
+        }
+    at = clock()
+    if assignee != agent["model"] and not (written := assign(task, assignee)).ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    try:
+        return 200, {"task": task, "url": start_session(task), "at": at}
+    except StartFailedError as exc:
+        return 502, {"error": str(exc)}
+
+
 def _error(message: str) -> bytes:
     return json.dumps({"error": message}).encode()
 
@@ -171,10 +217,12 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     run_safe: Collection[str]
     feed: BoardFeed
     writer: MoveWriter
+    assign: AssigneeWriter
+    start_session: Callable[[str], str] | None
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
-        if path.startswith(_RUN) or path == _MOVE:
+        if path.startswith(_RUN) or path in {_MOVE, _START}:
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
             self.end_headers()
@@ -183,10 +231,13 @@ class _ApiHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        if path == _MOVE:
+        if path in {_MOVE, _START}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
-            status, body = move_task(self.client_address[0], raw, self.feed, self.writer)
+            if path == _MOVE:
+                status, body = move_task(self.client_address[0], raw, self.feed, self.writer)
+            else:
+                status, body = start_task(self.client_address[0], raw, self.feed, self.assign, self.start_session)
         elif path.startswith(_RUN):
             status, body = run_dag(self.client_address[0], unquote(path.removeprefix(_RUN)), self.starts, self.run_safe)
         else:
@@ -214,6 +265,8 @@ def _handler(
     history: History,
     writer: MoveWriter = _no_writer,
     harnesses: Harnesses | None = None,
+    assign: AssigneeWriter = _no_writer,
+    start_session: Callable[[str], str] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -224,6 +277,8 @@ def _handler(
             self.run_safe = run_safe
             self.feed = feed
             self.writer = writer
+            self.assign = assign
+            self.start_session = start_session
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
         def do_GET(self) -> None:
@@ -359,7 +414,17 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     pushed = PushRuns(feed.runs(PUSHED_INSTANCE), history if isinstance(history, HistoryStore) else None)
     follow(pushed, build_push_consumer(pushed, f"flow-view-pushed-{args.port}"))
     print(f"StarPulse on :{args.port}", flush=True)
-    handler = _handler(feed, _STATIC, starts, run_safe, history, board.writer or _no_writer, config.harnesses)
+    handler = _handler(
+        feed,
+        _STATIC,
+        starts,
+        run_safe,
+        history,
+        board.writer or _no_writer,
+        config.harnesses,
+        board.assign or _no_writer,
+        starter(config.session_start_url),
+    )
     ThreadingHTTPServer(("0.0.0.0", args.port), handler).serve_forever()
 
 

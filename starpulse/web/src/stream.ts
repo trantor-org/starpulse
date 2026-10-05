@@ -1,6 +1,9 @@
 // Every machine's tasks and the runs instances' workflows, pushed by /api/events: a snapshot on every connect, then one delta per change.
 
+import { demoServer, type DemoServer } from "./demo";
 import type { Delta, Snapshot } from "./types";
+
+export { embedded } from "./demo";
 
 /** How long after the browser gives a connection up before the page opens a fresh one. */
 export const RETRY_MS = 3000;
@@ -10,6 +13,7 @@ const CLOSED = 2;
 export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   if (delta.kind === "dags") return { ...snap, dags: delta.dags, error: delta.error };
   if (delta.kind === "pulls") return { ...snap, pulls: delta.pulls };
+  if (delta.kind === "claim") return { ...snap, claims: { ...snap.claims, [delta.task]: { reason: delta.reason, at: delta.at } } };
   if (delta.kind === "move") {
     const flows = snap.flows.map((flow) => {
       if (flow.name !== delta.flow) return flow;
@@ -40,24 +44,27 @@ export interface StreamHandlers {
   live(on: boolean): void;
 }
 
-/** The snapshot a self-contained demo page embeds as `window.__FLOW_FIXTURE__`, null on a served page. */
-export const embedded = (): Snapshot | null =>
-  (globalThis as { __FLOW_FIXTURE__?: Snapshot }).__FLOW_FIXTURE__ ?? null;
-
 /**
- * One EventSource on /api/events, or the embedded fixture with no connection at all. The browser retries a dropped connection on
+ * One EventSource on /api/events, or on a self-contained demo page its DemoServer, followed with no connection at all. The browser retries a dropped connection on
  * its own and the server opens each with a fresh snapshot, so a reconnect
  * resyncs; when the browser gives a connection up the page opens a new one.
  */
 export function openStream(
   handlers: StreamHandlers,
   open: (url: string) => EventSource = (url) => new EventSource(url),
-  fixture: Snapshot | null = embedded(),
+  demo: DemoServer | null = demoServer(),
 ): { close(): void } {
-  if (fixture) {
+  if (demo) {
     handlers.live(true);
-    handlers.snapshot(fixture);
-    return { close() {} };
+    handlers.snapshot(demo.snapshot);
+    const off = demo.subscribe(handlers.snapshot);
+    demo.start();
+    return {
+      close() {
+        off();
+        demo.stop();
+      },
+    };
   }
   let source: EventSource | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -88,6 +95,9 @@ export function openStream(
     );
     src.addEventListener("pulls", (e) =>
       fold({ kind: "pulls", ...JSON.parse((e as MessageEvent<string>).data) }),
+    );
+    src.addEventListener("claim", (e) =>
+      fold({ kind: "claim", ...JSON.parse((e as MessageEvent<string>).data) }),
     );
     src.onopen = () => handlers.live(true);
     src.onerror = () => {

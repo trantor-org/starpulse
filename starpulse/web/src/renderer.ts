@@ -1,5 +1,5 @@
 // The canvas side of the page, ported from the approved round-13 mockup
-// (lib/starpulse/design/index.html): it takes the Board and the runs instances from the
+// (the design mockup): it takes the Board and the runs instances from the
 // server's event stream (every machine's tasks and the runs instances' workflows), merges them into one sky,
 // lays the current level out with scene.ts, plays each move once as the
 // mockup's replay did, and owns the level stack, the view, the tooltip and the
@@ -9,10 +9,11 @@
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
 import { demoStep } from "./demo";
 import type { FeedLine, HudState, HudStore } from "./hud";
-import { animating, frameLoop } from "./idle";
+import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, drill, pathKey, startPath, type Level, type Path } from "./levels";
+import { spotIn, type Target } from "./search";
 import {
-  BOARD_COLOR, OWNED, TAU, bez, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, tethersDrawn, textW, turnPage,
+  BOARD_COLOR, GALAXY_MIN, OWNED, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, tethersDrawn, textW, turnPage,
   type BEdge, type Body, type Curve, type Galaxy, type Hangar, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
   type MachineTask, type Moon, type Pager, type Star, type SubState, type Sun,
 } from "./scene";
@@ -20,10 +21,13 @@ import { FLARE, Moves, PULSE, TRAVEL, merge, type Move, type Sky } from "./sky";
 import { kanbanTasks } from "./kanban";
 import { embedded, openStream } from "./stream";
 import { createHistory } from "./history";
-import { TZ, draws, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
+import { sizes } from "./grow";
+import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
 import type { Dag, Machine, Snapshot, Writer } from "./types";
 import { esc, startRun, taskPanel } from "./panels";
-import { canvasSpace } from "./nav";
+import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "./adminPrefs";
+import { clockHm, clockHms, stamp } from "./clock";
+import { canvasSpace, retired, viewOf, viewSearch } from "./nav";
 import { fitBox, fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
 const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
@@ -38,18 +42,14 @@ const rgba = (h: string, a: number) => {
   const n = parseInt(h.slice(1), 16);
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
 };
-// One formatter each: toLocaleTimeString with a time zone builds a new one per call, and the feed formats every move four times a second.
-const HHMM = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
-const HMS = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-const STAMP = new Intl.DateTimeFormat("en-US", { timeZone: TZ, dateStyle: "medium", timeStyle: "short" });
-const hhmm = (sec: number) => HHMM.format(sec * 1000);
-const hms = (d: Date) => HMS.format(d);
 const ease = (u: number) => (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
 /** The current board's ease-out for a hop. */
 const easeO = (u: number) => 1 - Math.pow(1 - u, 3);
 const finished = (iso: string) => (iso ? Date.parse(iso) / 1000 : NaN);
 
 /** The ring a DAG's run ending at `fin` has on screen at `now`, as its age from 0 to 1: one ring per event, over PULSE, never repeated. */
+/** The ring an arrival shows at `age`, 0 to 1 over PULSE: one ring, never a second a beat behind it. */
+export const arrivalRings = (age: number): number[] => (age > 0 && age < 1 ? [age] : []);
 export const dagRings = (fin: number | undefined, now: number): number[] =>
   fin !== undefined && fin <= now && now - fin < PULSE ? [(now - fin) / PULSE] : [];
 
@@ -118,26 +118,36 @@ export interface Renderer {
   go(path: Path, fx?: number, fy?: number, then?: () => View): void;
   /** Fly back to the level's fit. */
   fitView(): void;
-  /** The navigator folded or opened: size the canvas to the space between it and the rail and refit, keeping a zoomed-in view. */
+  /** The canvas is the page again after another view hid it: resize it and refit, keeping a zoomed-in view. */
   resize(): void;
   /** Open a DAG's panel beside the level that is showing. */
   openDag(name: string): void;
   /** Fly to a domain's DAGs on the Board. */
   flyToGroup(name: string): void;
+  /** Light the body a navigator search result stands for, as a hover over it would; null clears it. */
+  spot(target: Target | null): void;
+  /** Pin a task on the Board and open its panel, as a click on it would. */
+  selectTask(id: string): void;
+  /** The Admin view changed how times are written: write the subtitle, the Recent feed and the header clock again. */
+  refresh(): void;
 }
 
-export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement; clock: HTMLElement }, demo: boolean): Renderer {
+export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement; clock: HTMLElement }, demo: boolean, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS): Renderer {
   const cx = cv.getContext("2d")!, { tip, panel } = els;
+  const hhmm = (sec: number) => clockHm(sec, prefs().clock);
   let S: Sky | null = null, snap: Snapshot | null = null, scene: Scene | null = null;
   const moves = new Moves();
   let path: Path = BOARD, W = 0, H = 0, view: View = { k: 1, x: 0, y: 0 }, fit: View = view;
   // the task whose path a click pinned, kept by id so each frame finds it again in the rebuilt scene
   let pin: Subject | null = null;
   const pages: Record<string, number> = {};
+  // what a navigator search result under the pointer stands for, lit while the pointer is off the canvas
+  let spotted: Target | null = null;
   let hover: Hover | null = null, mouse: { ox: number; oy: number; cx: number; cy: number } | null = null;
   let trans: { snap: HTMLCanvasElement; inward: boolean; f: Pt; t0: number } | null = null, anim: ((now: number) => void) | null = null;
   let drag: { fixed: boolean; x: number; y: number; vx: number; vy: number; moved: boolean } | null = null;
   // ZS: zoom beyond the fit size; K: absolute zoom. Text, pulses and dashes divide by these so they never balloon.
+  const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
   let T = Date.now() / 1000, clock = 0, liveTasks = new Set<string>(), hotEdge = new Set<string>(), ZS = 1, K = 1;
   let timer = 0, clockTimer = 0, stopped = false, saveT = 0, tick = 0, clockText = "", live: "" | "on" | "off" = "";
   // The stream the page reads its snapshot and every change after it from.
@@ -154,18 +164,25 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // ---- view: scroll zooms about the cursor (scale only, never changes level), drag pans; kept per screen size and level ----
   const railW = () => document.getElementById("rail")?.offsetWidth ?? 0;
-  const navW = () => document.getElementById("nav")?.offsetWidth ?? 0;
+  // the panel's open and folded widths, never its current one, so a fold neither resizes the canvas nor moves a body
+  const navWidths = () => {
+    const css = getComputedStyle(document.documentElement), px = (v: string) => parseFloat(css.getPropertyValue(v)) || 0;
+    return { open: px("--nav"), fold: px("--nav-fold") };
+  };
   // the canvas is the page between the navigator and the rail, so its size (not the window's) keys the remembered zoom
   const viewKey = () => `fv.view.${W}x${H}.${pathKey(path)}.${scene?.w}x${scene?.h}`;
-  // the default view fits the level's content box (the whole sky on the Board), centred in the canvas; a panel floats over it
-  const fitScene = (): View => fitLevel(scene!, W, H);
+  // the default view fits the level's content box (the whole sky on the Board), centred between the open navigator and the
+  // rail, `I` from the canvas's left edge; a panel floats over it
+  const inFitBox = (v: View): View => ({ ...v, x: v.x + I });
+  const fitScene = (): View => inFitBox(fitLevel(scene!, FW, H));
   /** Lay the level out for the canvas's shape, so a wider screen spreads it instead of framing it with empty sky. */
   function layout(keepView: boolean) {
     if (!S || !W) return;
-    scene = build({ S, moves, W, H, T, pages }, level());
+    const was = fit;
+    scene = build({ S, moves, W: FW, H, T, pages, ease: sized, routes: bends }, level());
     fit = fitScene();
-    if (scene.hub) edgePaths(scene, fit, W, stateName);
-    if (keepView) view = zoomedIn(view, fit) ? view : fit;
+    if (scene.hub) edgePaths(scene, { k: fit.k, x: fit.x - I }, FW, stateName);
+    if (keepView) view = refitView(view, was, fit); // a view at the old fit follows the new one, so the sky zooms out smoothly as a state grows
     else {
       const kept = recall<View>(viewKey());
       view = kept && kept.k > fit.k * 1.02 ? kept : fit; // a remembered zoom-in survives a reload; anything at or below the fit re-centres
@@ -181,10 +198,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     tip.style.opacity = "0";
     loop.wake();
   }
-  let L = 0; // the canvas's left edge on the page, the navigator's width
+  // the canvas's left edge on the page (the folded navigator's width); the fit box's offset in it and its width
+  let L = 0, I = 0, FW = 0;
   const resize = (keepView = false) => {
-    const dpr = devicePixelRatio || 1, was = { view, fit };
-    ({ left: L, width: W } = canvasSpace(innerWidth, navW(), railW()));
+    const dpr = devicePixelRatio || 1;
+    ({ left: L, width: W, inset: I, fitWidth: FW } = canvasSpace(innerWidth, navWidths(), railW()));
     H = innerHeight;
     cv.width = W * dpr;
     cv.height = H * dpr;
@@ -192,8 +210,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cv.style.width = `${W}px`;
     cv.style.height = `${H}px`;
     layout(keepView);
-    // judged against the fit the view was at, not the new one: a view at the old fit follows it, whichever way the canvas changed
-    if (keepView) view = refitView(was.view, was.fit, fit);
   };
   const onResize = () => resize();
   const save = () => {
@@ -326,7 +342,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (first) {
       // A retired per-graph address opens its level; the page's one address is the root.
       path = startPath(location.pathname, location.hash, recall<Path>("fv.path"), S.tree);
-      if (!fixture && (location.pathname !== "/" || location.hash)) history.replaceState(null, "", "/" + location.search);
+      if (!fixture && retired(location.pathname, location.hash)) history.replaceState(null, "", "/" + viewSearch(location.search, viewOf(location.search), prefs().view));
       keep("fv.path", path);
     }
     layout(!first);
@@ -336,17 +352,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** What the HUD shows, written once per snapshot. */
   function publish() {
     const sky = S!, board = sky.board;
-    const stamp = STAMP.format(sky.now * 1000);
+    const at = stamp(sky.now, prefs().clock);
     const next: Partial<HudState> = {
       path,
       tree: sky.tree,
-      stats: sky.error ? `live · ${stamp} MST · ${sky.error}` : `live · ${stamp} MST`,
+      stats: sky.error ? `live · ${at} MST · ${sky.error}` : `live · ${at} MST`,
       states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: board.agents.filter((a) => a.state === s.id).length })),
       counts: Object.fromEntries(Object.values(sky.flows).map((f) => [f.name, f.agents.length])),
       dags: sky.dags.map((d) => d.name),
       groups: sky.groups.map((g) => ({ name: g.name, n: g.dags.length })),
       cards: kanbanTasks(sky),
       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
+      claims: sky.claims,
       boardUrl: sky.boardUrl,
     };
     // a delta rarely changes what the HUD shows, so only changed fields reach React and an unchanged HUD does not re-render
@@ -365,7 +382,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     ev.sort((a, b) => b.at - a.at);
     const feed: FeedLine[] = ev.slice(0, 40).map((l) => ({ ...l, time: hhmm(l.at) })), mv = [...new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => e.flow))].sort();
     const now = hud.get();
-    if (feed.map((f) => f.key + f.at).join() !== now.feed.map((f) => f.key + f.at).join()) hud.set({ feed });
+    if (feed.map((f) => f.key + f.at + f.time).join() !== now.feed.map((f) => f.key + f.at + f.time).join()) hud.set({ feed });
     if (mv.join() !== now.moving.join()) hud.set({ moving: mv });
   }
 
@@ -375,10 +392,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     for (const l of [...sc.hops, ...sc.entries, ...sc.exits]) l.busy = false; // a path glows while a task travels it
     hotEdge = new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => `${e.flow}:${e.from}>${e.to}`));
     for (const k of sc.tasks) {
-      const a = k.a0 + k.w * t;
+      const a = k.a0 + k.w * t, R = k.R;
       k.ang = a;
-      k.x = k.host.x + Math.cos(a) * k.R;
-      k.y = k.host.y + Math.sin(a) * k.R;
+      k.x = k.host.x + Math.cos(a) * R;
+      k.y = k.host.y + Math.sin(a) * R;
       k.moving = false;
       k.arrive = null;
       k.gone = false;
@@ -397,7 +414,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
           k.y = g.y + Math.sin(va) * g.visR;
         }
         if (!ev || T - ev.at >= TRAVEL + PULSE) continue;
-        const u = (T - ev.at) / TRAVEL, e = sc.bEdges.find((b) => !b.loop && b.source === ev.from && b.target === ev.to);
+        const u = (T - ev.at) / TRAVEL, e = sc.bEdges.find((b) => b.source === ev.from && b.target === ev.to);
         if (!e) continue;
         if (u >= 1) {
           k.arrive = { x: g.x, y: g.y, r: g.r, col: g.color, age: (T - ev.at - TRAVEL) / PULSE };
@@ -431,8 +448,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // where an orbiting task was at page time tt
   const orbitAt = (k: Body, tt: number): Pt => {
-    const a = k.a0 + k.w * tt;
-    return { x: k.host.x + Math.cos(a) * k.R, y: k.host.y + Math.sin(a) * k.R };
+    const a = k.a0 + k.w * tt, R = k.R;
+    return { x: k.host.x + Math.cos(a) * R, y: k.host.y + Math.sin(a) * R };
   };
   function ride(k: Body, p0: Pt, p1: Pt, u: number, via: string) {
     const dx = p1.x - p0.x, dy = p1.y - p0.y, c = { x: (p0.x + p1.x) / 2 - dy * 0.12, y: (p0.y + p1.y) / 2 + dx * 0.12 }, e = easeO(u), q = bez(p0, c, p1, e);
@@ -526,7 +543,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const lines: { h: Hover; d: number }[] = [];
     for (const e of sc.mEdges) if (e.a && e.b && e.a !== e.b) lines.push({ h: { kind: "medge", o: e }, d: curveDist(curveOf(e.a, e.b), x, y) });
     for (const e of [...sc.bEdges, ...sc.entries, ...sc.exits])
-      if (e.loop || e.p0) lines.push({ h: { kind: "bedge", o: e }, d: e.loop ? Math.abs(Math.hypot(e.x! - x, e.y! - y) - 12) : curveDist(e as Curve, x, y) });
+      if (e.p0) lines.push({ h: { kind: "bedge", o: e }, d: curveDist(e as Curve, x, y) });
     for (const e of sc.hops) lines.push({ h: { kind: "link", o: e }, d: curveDist(e, x, y) });
     return nearestWithin(lines, (l) => l.d, px(14))?.h ?? null;
   }
@@ -554,10 +571,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     tip.style.opacity = "1";
   }
   // ---- the back-trace: the path a hovered or pinned task took through this level's machine ----
-  const pinnable = (s: Subject) => (s.kind === "task" ? level().kind === "board" : level().kind === "machine");
+  const pinnable = (s: Subject) => (s.kind === "task" ? level().kind === "board" || level().kind === "state" : level().kind === "machine");
   const goalOf = (m?: Machine) => m?.states.find((x) => x.final)?.name ?? "its end";
   /** A task's run, or why there is none yet. */
   function runFor(s: Subject): Run | "loading" | "unavailable" {
+    if (s.kind === "task" && level().kind === "state") {
+      const flow = scene!.hub?.name, rows = flow ? hist.machine(s.id, flow) : "unavailable";
+      // the lane change that brought it here starts the run, so a task with no moves on this level still holds the body it orbits
+      const lane = hist.lane(s.id), last = typeof lane === "string" ? undefined : lane.at(-1);
+      const host = scene!.tasks.find((t) => t.id === s.id && !t.gone)?.host;
+      const entry = last && host ? { at: last.at, from: last.from ?? "new", to: host.name } : undefined;
+      return typeof rows === "string" ? rows : hostRun(scene!.hostTrail!(s.id), T, { flow: flow!, path: rows.path }, entry);
+    }
     if (s.kind === "task") {
       const rows = hist.lane(s.id);
       return typeof rows === "string" ? rows : laneRun(rows, S!.board.machine, T);
@@ -578,7 +603,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const slot = panel.querySelector<HTMLElement>("#trace-slot");
     if (!slot || !pin || !S) return;
     const run = runFor(pin);
-    slot.innerHTML = typeof run === "string" ? `<div class="k" style="margin-top:12px">${run === "loading" ? "tracing its path…" : "history unavailable"}</div>` : traceTable(run, pin.kind === "task" ? stateName : (id) => id);
+    slot.innerHTML = typeof run === "string" ? `<div class="k" style="margin-top:12px">${run === "loading" ? "tracing its path…" : "history unavailable"}</div>` : traceTable(run, level().kind === "state" ? planetName : pin.kind === "task" ? stateName : (id) => id, prefs().clock);
   }
   const writerLine = (w: Writer & { event?: string }) => `${esc(w.actor)} <span class="k">${w.event ? `writes ${esc(w.event)} ` : ""}via ${esc(w.trigger)}</span>`;
   const pagerTip = (pager: Pager) =>
@@ -588,11 +613,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     switch (h.kind) {
       case "task": {
         const o = h.o, at = subjectOf(h)!, kind = `task · ${stateName(o.state)}${o.host.states ? ` · orbiting ${(o.host as Planet).title || o.host.name}` : ""} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
-        return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at));
+        return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at), prefs().clock);
       }
       case "mtask": {
         const o = h.o, at = subjectOf(h)!, kind = `task · ${o.flow} · ${o._state || o.state} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
-        return traceCard({ kind, id: o.id, title: "", goal: goalOf(sky.flows[o.flow]?.machine) }, runFor(at));
+        return traceCard({ kind, id: o.id, title: "", goal: goalOf(sky.flows[o.flow]?.machine) }, runFor(at), prefs().clock);
       }
       case "dag": {
         const o = h.o, crit = (o.tether?.crit ?? []).map(esc).join("<br>");
@@ -705,12 +730,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.textBaseline = "middle";
     cx.fillText(s, x, y);
   }
+  const labPx = (n: number) => labelPx(n, K, prefs().scale);
   // names sit outside their node in a light, translucent face (the same see-through weight as the flow lines); a hovered node's name firms up
   function label(name: string, x: number, y: number, hot: boolean, sub?: string | null, size = 12.5) {
-    size /= K; // type is a fixed size on screen: readable at fit, never balloons when zoomed in
+    size = labelPx(size, K, prefs().scale); // type is a fixed size on screen: readable at fit, never balloons when zoomed in; the Admin font size scales it
     cx.letterSpacing = `${0.6 / K}px`;
     text(name, x, y, size, rgba("#cfd9ea", hot ? 0.95 : 0.58), "center", 300);
-    if (sub) text(sub, x, y + size + 3 / K, size - 2 / K, rgba("#94a3b8", hot ? 0.8 : 0.42), "center", 300);
+    if (sub) text(sub, x, y + size + 3 / K, size - labelPx(2, K, prefs().scale), rgba("#94a3b8", hot ? 0.8 : 0.42), "center", 300);
     cx.letterSpacing = "0px";
   }
   function circle(x: number, y: number, r: number, stroke: string, w = 1, dash?: number[] | null) {
@@ -734,7 +760,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const d = hotDags();
     return e.writers.some((w) => d.includes(w.actor));
   };
-  function disc(x: number, y: number, r: number, col: string, hot: boolean, final: boolean, alpha = 0.16) {
+  function disc(x: number, y: number, r: number, col: string, hot: boolean, alpha = 0.16) {
     const grd = cx.createRadialGradient(x, y, 0, x, y, r);
     grd.addColorStop(0, rgba(col, alpha));
     grd.addColorStop(1, rgba(col, 0.02));
@@ -742,8 +768,29 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.beginPath();
     cx.arc(x, y, r, 0, TAU);
     cx.fill();
-    circle(x, y, r, rgba(col, hot ? 0.9 : 0.4), hot ? 2 : 1.2, final ? [4, 5] : null);
+    circle(x, y, r, rgba(col, hot ? 0.9 : 0.4), hot ? 2 : 1.2);
   }
+  /** A terminal state as a black hole: a lensing halo in the state's colour, a shadow darker than the sky, one bright photon ring and a faint outer edge. */
+  function hole(x: number, y: number, r: number, col: string, hot: boolean) {
+    const rs = r * 0.6, g = cx.createRadialGradient(x, y, rs, x, y, r);
+    g.addColorStop(0, rgba(col, hot ? 0.42 : 0.28));
+    g.addColorStop(1, rgba(col, 0));
+    cx.fillStyle = g;
+    cx.beginPath();
+    cx.arc(x, y, r, 0, TAU);
+    cx.fill();
+    dot(x, y, rs, "#010205");
+    circle(x, y, rs, rgba(col, hot ? 1 : 0.85), hot ? 2 : 1.4);
+    circle(x, y, r, rgba(col, hot ? 0.5 : 0.14), 1);
+  }
+  /** The value `key` shows on this level, eased from the one it showed when a snapshot changes it: the Board's places, sky and sizes and a
+   *  state's sun take it as the level is laid out (`layout`), so their tasks, paths and neighbours move with them; a machine's states draw at it. */
+  const sized = (key: string, r: number) => grown.of(`${pathKey(path)}|${key}`, r, performance.now());
+  /** A Board state's or a fold end's body: a black hole where a task's lifecycle ends, else its disc. */
+  const body = (o: Pt & { id: string; name: string; r: number; color: string; final: boolean }, hot: boolean) => {
+    if (terminal(o)) hole(o.x, o.y, o.r, o.color, hot);
+    else disc(o.x, o.y, o.r, o.color, hot);
+  };
   // the current board's hop: a tapering tail (alpha and width grow toward the head), then a glowing head, in the mover's model colour
   function comet(p0: Pt, c: Pt, p1: Pt, u: number, r = 3, col = ACT) {
     const n = 14, span = 0.27 * Math.min(1, u + 0.05);
@@ -768,11 +815,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.globalCompositeOperation = "source-over";
     dot(h.x, h.y, r, rgba(col, 0.95));
   }
-  // arrival rings as on the current board: two rings, the second a beat behind (a DAG's event passes one lag: a single ring), radius eased out, fading fast; sized in screen terms so a hard zoom keeps them small
-  function pulse(x: number, y: number, r: number, age: number, col = ACT, grow = 38, lags = [0, 0.18]) {
-    for (const lag of lags) {
-      const q = Math.max(0, Math.min(1, age - lag));
-      if (q <= 0 || q >= 1) continue;
+  // an arrival's ring: one ring, radius eased out, fading fast; sized in screen terms so a hard zoom keeps it small
+  function pulse(x: number, y: number, r: number, age: number, col = ACT, grow = 38) {
+    for (const q of arrivalRings(age)) {
       circle(x, y, r + (easeO(q) * grow) / ZS, rgba(col, Math.pow(1 - q, 2) * 0.85), (2 * (1 - q) + 0.4) / ZS);
     }
   }
@@ -781,14 +826,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   // a lifecycle machine is a flat disc with a thin ring outside it, the one mark that tells it from a state
   function machine(x: number, y: number, r: number, hot: boolean, alpha: number) {
-    disc(x, y, r, "#c084fc", hot, false, alpha);
+    disc(x, y, r, "#c084fc", hot, alpha);
     circle(x, y, r + 3, rgba("#c084fc", hot ? 0.9 : 0.5), 1);
   }
 
   function drawGalaxies() {
     for (const g of Object.values(scene!.galaxies)) {
       const hot = isHot("galaxy", g);
-      disc(g.x, g.y, g.r, g.color, hot, g.final);
+      body(g, hot);
       drawTrackRings(g, g.color);
       label(g.name, g.lab.x, g.lab.y, hot, `${g.n}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 13);
     }
@@ -807,7 +852,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       const left = m.x < m.parent.x - 1;
       cx.letterSpacing = `${0.5 / K}px`;
       const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
-      text(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, 10.5 / K, col, left ? "right" : "left", 300);
+      text(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, labPx(10.5), col, left ? "right" : "left", 300);
       cx.letterSpacing = "0px";
     }
     for (const b of sc.subStates) {
@@ -820,31 +865,38 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       cx.lineTo(b.x - u * (b.r! + 3), b.y);
       cx.stroke();
       cx.setLineDash([]);
-      disc(b.x, b.y, b.r!, col, hot, false, 0.22);
+      disc(b.x, b.y, b.r!, col, hot, 0.22);
       drawTrackRings(b, col);
     }
   }
   function drawSun() {
     const s = scene!.sun;
     if (!s) return;
-    const hot = isHot("sun", s);
-    const glow = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 6);
+    const hot = isHot("sun", s), r = s.r;
+    // a terminal state's level centres on the black hole the Board draws for it, at the same size
+    if (terminal(s)) {
+      hole(s.x, s.y, r, s.color, hot);
+      drawTrackRings(s, s.color);
+      return;
+    }
+    // the glow reaches as far past the sun as it did when every sun was GALAXY_MIN, so a large sun does not wash out its level
+    const glow = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r + 5 * GALAXY_MIN);
     glow.addColorStop(0, rgba(s.color, 0.55));
     glow.addColorStop(0.25, rgba(s.color, 0.2));
     glow.addColorStop(1, rgba(s.color, 0));
     cx.fillStyle = glow;
     cx.beginPath();
-    cx.arc(s.x, s.y, s.r * 6, 0, TAU);
+    cx.arc(s.x, s.y, r + 5 * GALAXY_MIN, 0, TAU);
     cx.fill();
-    const core = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
+    const core = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
     core.addColorStop(0, "#f5f3ff");
     core.addColorStop(0.5, rgba(s.color, 0.95));
     core.addColorStop(1, rgba(s.color, 0.6));
     cx.fillStyle = core;
     cx.beginPath();
-    cx.arc(s.x, s.y, s.r * (1 + 0.04 * Math.sin(clock * 2)), 0, TAU);
+    cx.arc(s.x, s.y, r * (1 + 0.04 * Math.sin(clock * 2)), 0, TAU);
     cx.fill();
-    if (hot) circle(s.x, s.y, s.r + 5, rgba(s.color, 0.9), 1.5);
+    if (hot) circle(s.x, s.y, r + 5, rgba(s.color, 0.9), 1.5);
     drawTrackRings(s, s.color);
   }
   // action lines as on the current board: a dashed stroke that streams toward its target, a gradient from source colour to target colour,
@@ -869,14 +921,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const sc = scene!;
     for (const e of sc.bEdges) {
       const lit = isHot("bedge", e) || edgeLitBy(e), col = sc.galaxies[e.source].color, heat = Math.max(hotEdge.has(`board:${e.source}>${e.target}`) ? 1 : 0, ...e.writers.map((w) => dagHeat(w.actor)));
-      if (e.loop) {
-        cx.strokeStyle = rgba(col, lit ? 0.95 : 0.28 + heat * 0.5);
-        cx.lineWidth = lit ? 2.6 : 1.2;
-        cx.beginPath();
-        cx.arc(e.x!, e.y!, 12, 0, TAU);
-        cx.stroke();
-        continue;
-      }
       flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
       cx.beginPath();
       cx.moveTo(e.p0!.x, e.p0!.y);
@@ -926,7 +970,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   function drawStates(states: Record<string, MState>, labels: boolean) {
     for (const s of Object.values(states)) {
-      const R = stateR(s), hot = isHot("state", s);
+      const R = sized(`state|${s.flow}:${s.id}`, stateR(s)), hot = isHot("state", s);
+      if (terminal(s)) {
+        hole(s.x, s.y, R, s.color, hot);
+        if (labels) label(s.name, s.lab ? s.lab.x : s.x, s.lab ? s.lab.y : s.y + R + 16, hot);
+        continue;
+      }
       dot(s.x, s.y, R, "rgba(6,10,20,0.9)");
       circle(s.x, s.y, R, rgba(s.color, hot ? 1 : s.n ? 0.85 : 0.45), hot ? 2.2 : s.mini ? 1 : 1.6);
       dot(s.x, s.y, s.mini ? 1.5 : s.initial ? 4 : 2.5, rgba(s.color, 0.9));
@@ -952,8 +1001,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       }
       const pa = ev ? (T - ev.at - TRAVEL) / PULSE : 9;
       if (prev && prev !== cur && pa >= 0 && pa < 1) pulse(cur.x, cur.y, stateR(cur), pa, cur.color); // the state it landed on rings once
-      const k = (at[state] = (at[state] || 0) + 1) - 1, R = stateR(cur) + 7, per = Math.max(8, Math.floor((TAU * R) / 8));
-      const ring = Math.floor(k / per), t = ((k % per) / per) * TAU - Math.PI / 2 + ring * 0.2, rr = R + ring * 7;
+      const k = (at[state] = (at[state] || 0) + 1) - 1, { t, rr } = taskSlot(sized(`state|${cur.flow}:${cur.id}`, stateR(cur)) + 7, k);
       s._x = cur.x + Math.cos(t) * rr;
       s._y = cur.y + Math.sin(t) * rr;
       const hot = isHot("mtask", s), r = hot ? 4.5 : 2.8;
@@ -1022,7 +1070,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       // a sub-state: a small fuchsia disc on a dashed stem from the body before it
       if (p.subState) {
         stem(p.prev!, p, "#e879f9", hot);
-        disc(p.x, p.y, p.R, "#e879f9", hot, false, p.n ? 0.32 : 0.22);
+        disc(p.x, p.y, p.R, "#e879f9", hot, p.n ? 0.32 : 0.22);
         continue;
       }
       // a skill moon: a still disc, brighter while it has sessions and ringed in amber while one moves, named beside it away from the primary, past
@@ -1033,7 +1081,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         if (mv.length) circle(p.x, p.y, p.R + 4, rgba(ACT, 0.85), 1.5);
         cx.letterSpacing = `${0.5 / K}px`;
         const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
-        text(p.label || p.name, p.x + sd * (past(p) + (p.owned ?? 0) * OWNED), p.y, 11.5 / K, col, sd < 0 ? "right" : "left", 300);
+        text(p.label || p.name, p.x + sd * (past(p) + (p.owned ?? 0) * OWNED), p.y, labPx(11.5), col, sd < 0 ? "right" : "left", 300);
         cx.letterSpacing = "0px";
         continue;
       }
@@ -1104,7 +1152,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const h = scene!.hangar;
     if (!h) return;
     const hot = isHot("hangar", h), heat = Math.max(0, ...h.names.map(dagHeat)), col = "#5eead4";
-    disc(h.x, h.y, h.r, col, hot || heat > 0.5, false, 0.12 + heat * 0.25);
+    disc(h.x, h.y, h.r, col, hot || heat > 0.5, 0.12 + heat * 0.25);
     h.names.forEach((n, i) => {
       const a = (i / h.names.length) * TAU - Math.PI / 2;
       dot(h.x + Math.cos(a) * (h.r + 9), h.y + Math.sin(a) * (h.r + 9), 1.8, rgba(DAG_COLOR[S?.dagBy[n]?.status ?? ""] || "#94a3b8", 0.35 + 0.6 * dagHeat(n)));
@@ -1128,7 +1176,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
           cx.arc(s.x, s.y, s.br * 1.3, 0, TAU);
           cx.fill();
         }
-        label(s.name, s.x, s.y + g.h / 2 + 16 / K, hot, null, 11);
+        label(s.label, s.x, s.y + g.h / 2 + 16 / K, hot, null, 11);
         // the DAG's own step graph in miniature: rounded links streaming toward the step that waits, ringed steps
         const nr = (g.nodes.length === 1 ? 5.5 : 4) * (hot ? 1.15 : 1);
         for (const [p, q] of g.links) {
@@ -1148,7 +1196,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
           dot(x, y, nr * 0.34, rgba(c, idle ? 0.45 : 0.9));
         }
         if (s.runnable) circle(s.x, s.y, s.br, rgba("#dbe4f3", 0.35), 1, [2, 3]);
-        for (const n of s.fold ?? [s.name]) for (const age of dagRings(moves.flare[n], T)) pulse(s.x, s.y, s.br, age, ACT, 38, [0]); // each run ending rings its DAG
+        for (const n of s.fold ?? [s.name]) for (const age of dagRings(moves.flare[n], T)) pulse(s.x, s.y, s.br, age, ACT, 38); // each run ending rings its DAG
       }
     }
   }
@@ -1187,7 +1235,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.lineTo(f.p1.x - L * Math.cos(0.4), f.p1.y - L * Math.sin(0.4));
     cx.fill();
     for (const e of [f.a, f.b]) {
-      disc(e.x, e.y, e.r, e.color, false, e.final);
+      body(e, false);
       label(e.name, e.x, e.y + e.r + 24 / K, false, null, 13);
     }
     for (const e of f.events) {
@@ -1237,32 +1285,61 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const m = sc.machineTasks.find((t) => t.id === s.id && t.flow === s.flow);
     return m && m._x !== undefined ? { x: m._x, y: m._y!, model: m.model } : null;
   }
-  const placesOf = (board: boolean): Record<string, Place> => {
+  type Mode = "board" | "state" | "machine";
+  /** A state level's body by the name its trail gives it, and the name a trace shows for it. */
+  // a trail host is a body's name, or `primary#state` for a state of the primary
+  const planetOf = (name: string) => scene!.planets.find((p) => p.name === name.split("#")[0]);
+  const planetName = (name: string) => {
+    const p = planetOf(name), st = name.includes("#") ? p?.states[name.split("#")[1]] : undefined;
+    return st ? st.name : p ? p.title || p.label || p.name : name;
+  };
+  const placesOf = (mode: Mode): Record<string, Place> => {
     const sc = scene!;
-    if (board) return Object.fromEntries(Object.values(sc.galaxies).map((g) => [g.id, { id: g.id, name: g.name, x: g.x, y: g.y, r: g.r, R: g.R, color: g.color, lab: g.lab }]));
+    // a state level's bodies: the primary's rim is its dark halo, a moon's or sub-state's its disc
+    if (mode === "state") return Object.fromEntries(sc.planets.flatMap((p) => {
+      const r = p.moon || p.subState ? p.R : p.R + 14, states = p.primary ? Object.values(p.states) : [];
+      return [
+        [p.name, { id: p.name, name: planetName(p.name), x: p.x, y: p.y, r, R: r + 12 / K, color: p.subState ? "#e879f9" : p.moon ? "#c4b5fd" : "#c084fc", lab: { x: p.x, y: p.y + r + 16 / K } }],
+        ...states.map((m) => {
+          const id = `${p.name}#${m.id}`, mr = stateR(m);
+          return [id, { id, name: m.name, x: m.x, y: m.y, r: mr, R: mr + 8 / K, color: m.color, lab: m.lab ?? { x: m.x, y: m.y + mr + 12 } }];
+        }),
+      ];
+    }));
+    if (mode === "board") return Object.fromEntries(Object.values(sc.galaxies).map((g) => [g.id, { id: g.id, name: g.name, x: g.x, y: g.y, r: g.r, R: g.R, color: g.color, lab: g.lab }]));
     return Object.fromEntries(Object.values(sc.mStates).map((m) => {
       const r = stateR(m);
       return [m.id, { id: m.id, name: m.name, x: m.x, y: m.y, r, R: r + 12 / K, color: m.color, lab: m.lab ?? { x: m.x, y: m.y + r + 16 } }];
     }));
   };
-  const edgeOf = (board: boolean) => (from: string, to: string): Curve | null => {
+  const edgeOf = (mode: Mode) => (from: string, to: string): Curve | null => {
     const sc = scene!;
-    if (board) {
-      const e = sc.bEdges.find((q) => !q.loop && q.p0 && q.source === from && q.target === to);
+    if (mode === "state") {
+      // inside the primary, its machine's path; between bodies, the hop the level draws
+      const [fa, fs] = from.split("#"), [ta, ts] = to.split("#");
+      if (fs && ts) {
+        const e = planetOf(from)?.edges.find((q) => q.a && q.b && q.source === fs && q.target === ts);
+        return e ? curveOf(e.a!, e.b!) : null;
+      }
+      const h = sc.hops.find((q) => q.from === fa && q.to === ta);
+      return h ? { p0: h.p0, c: h.c, p1: h.p1 } : null;
+    }
+    if (mode === "board") {
+      const e = sc.bEdges.find((q) => q.p0 && q.source === from && q.target === to);
       return e ? { p0: e.p0!, c: e.c!, p1: e.p1! } : null;
     }
     const e = sc.mEdges.find((q) => q.a && q.b && q.source === from && q.target === to);
     return e ? curveOf(e.a!, e.b!) : null;
   };
   // A hovered task lights the path it took through this level, in order; a pinned one is the focused setting, and everything else steps back
-  // under a dark veil from the click itself. Only the Board and a machine level draw it: a state level shows the card alone.
+  // under a dark veil from the click itself. A state level lights the bodies (primary, moons, sub-states) the task's session moved through.
   function drawTrace() {
     const t = draws(hover, pin).trace, sc = scene!;
     if (!t || !S || !pinnable(t.subject)) return;
-    const body = bodyOf(t.subject), board = t.subject.kind === "task", run = runFor(t.subject);
+    const body = bodyOf(t.subject), mode = level().kind as Mode, board = mode === "board", run = runFor(t.subject);
     if (!body) return;
-    if (typeof run !== "string" && (board ? sc.bEdges.length : sc.mEdges.length)) {
-      const { routes, pills, first } = traceLayout(run, placesOf(board), edgeOf(board), board, K), thick = 2.6 / Math.max(1, ZS);
+    if (typeof run !== "string" && (board ? sc.bEdges.length : mode === "state" ? sc.planets.length : sc.mEdges.length)) {
+      const { routes, pills, first } = traceLayout(run, placesOf(mode), edgeOf(mode), board, K), thick = 2.6 / Math.max(1, ZS);
       if (t.veil) {
         const m = cx.getTransform(), dpr = devicePixelRatio || 1;
         cx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1290,7 +1367,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       // each visited state's rim and name firm up, with the time it held the task beside it
       for (const p of pills) {
         circle(p.place.x, p.place.y, p.place.r, rgba(p.place.color, 1), 2.2 / Math.max(1, ZS));
-        label(p.place.name, p.place.lab.x, p.place.lab.y, true, null, board ? 13 : 12.5);
+        if (mode !== "state") label(p.place.name, p.place.lab.x, p.place.lab.y, true, null, board ? 13 : 12.5); // a state level's bodies keep their own names
         pill(p.text, p.x, p.y, p.place.color);
       }
       for (const r of routes) badge(r.badge, r.nums, r.off ? OFF : TRACE);
@@ -1303,7 +1380,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         const ses = sessionRings(S.flows, t.subject.id, sc.moons, sc.subStates);
         for (const [m, n] of ses.moons) {
           circle(m.x, m.y, (m.r ?? 8) + 6, rgba(TRACE, 0.95), 1.6 / Math.max(1, ZS));
-          text(`${n} session${n === 1 ? "" : "s"}`, m.x, m.y - (m.r ?? 8) - 14 / K, 9.5 / K, TRACE, "center", 600);
+          text(`${n} session${n === 1 ? "" : "s"}`, m.x, m.y - (m.r ?? 8) - 14 / K, labPx(9.5), TRACE, "center", 600);
         }
         for (const m of ses.subs) circle(m.x, m.y, (m.r ?? 6) + 5, rgba(TRACE, 0.95), 1.4 / Math.max(1, ZS));
       }
@@ -1334,7 +1411,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   /** The header clock, ticked by a timer so it keeps time while the canvas is idle. */
   function paintClock() {
-    const txt = live === "off" ? `○ reconnecting · ${hms(new Date())} MST` : `● live · ${hms(new Date())} MST`;
+    const t = clockHms(Date.now(), prefs().clock), txt = live === "off" ? `○ reconnecting · ${t} MST` : `● live · ${t} MST`;
     if (txt !== clockText) els.clock.textContent = clockText = txt;
   }
   let wash: { w: number; h: number; g?: CanvasGradient } = { w: 0, h: 0 };
@@ -1343,9 +1420,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     clock += last ? Math.min(now - last, 100) / 1000 : 0;
     last = now;
     T = Date.now() / 1000;
+    if (scene && grown.growing()) layout(true); // a state easing to a new size moves its neighbours, paths and the fit with it, frame by frame
     if (anim) anim(now);
     if (scene) update(clock);
     if (mouse && scene) setHover(hit((mouse.ox - view.x) / view.k, (mouse.oy - view.y) / view.k), mouse.cx, mouse.cy);
+    else if (spotted && scene && !trans) hover = spotIn(scene, spotted) as Hover | null;
     const dpr = devicePixelRatio || 1;
     cx.globalAlpha = 1;
     cx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1383,20 +1462,25 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       heartbeat();
     }
   };
-  /** Something still needs the next frame: a move or DAG run in flight, a fly-to, or a level transition. */
-  const busy = () => !!S && animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans });
+  /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
+  const busy = () => !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing());
   /** The loop settled: the feed and moving list get their last write, and the next wake starts the ambient clock afresh. */
   const settle = () => {
     last = 0;
     heartbeat();
   };
-  const loop = frameLoop({ draw: frame, animating: busy, idle: settle });
+  // with Motion off the loop idles at one frame a second, except for a moment after any input
+  let lastInput = -Infinity;
+  const loop = frameLoop({ draw: frame, animating: busy, idle: settle, pace: () => framePace(prefs().motion, performance.now() - lastInput) });
   /** Every input that can change what the canvas shows wakes it; the handlers run first, so the frame sees their result. */
   const wakers: [EventTarget, string][] = [
     [window, "resize"], [window, "mousemove"], [window, "mouseup"], [window, "keydown"], [document, "visibilitychange"],
     [cv, "mousedown"], [cv, "mouseleave"], [cv, "contextmenu"], [cv, "wheel"],
   ];
-  const wake = () => loop.wake();
+  const wake = () => {
+    lastInput = performance.now();
+    loop.wake(true);
+  };
 
   const probe = (): Probe => {
     const sc = scene, l = level(), canvas = { w: W, h: H }, open = panel.classList.contains("open");
@@ -1482,10 +1566,30 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         const s = scene!.groups.find((g) => g.name === name)?.stars ?? [];
         if (!s.length) return fit;
         const xs = s.map((q) => q.x), ys = s.map((q) => q.y);
-        return fitBox({ x0: Math.min(...xs) - 60, y0: Math.min(...ys) - 80, x1: Math.max(...xs) + 60, y1: Math.max(...ys) + 80 }, W, H, Infinity, 0.9);
+        return inFitBox(fitBox({ x0: Math.min(...xs) - 60, y0: Math.min(...ys) - 80, x1: Math.max(...xs) + 60, y1: Math.max(...ys) + 80 }, FW, H, Infinity, 0.9));
       };
       if (level().kind !== "dags") go([...BOARD, { kind: "dags" }], W / 2, H / 2, box);
       else flyTo(box());
+    },
+    spot(target) {
+      spotted = target;
+      if (!target) hover = null;
+      loop.wake();
+    },
+    refresh() {
+      if (!S) return;
+      publish();
+      heartbeat();
+      paintClock();
+    },
+    selectTask(id) {
+      if (!S) return;
+      if (level().kind !== "board") go(BOARD);
+      const h = spotIn(scene!, { kind: "task", id, lane: "" }) as Hover | null;
+      if (!h) return;
+      hover = h;
+      click(W / 2, H / 2);
+      loop.wake();
     },
   };
 }

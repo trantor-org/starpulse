@@ -51,6 +51,15 @@ def test_every_machine_level_is_in_the_snapshot_beside_the_board_with_its_tasks(
     assert _agents(feed, "board") == []
 
 
+def test_machines_given_to_the_placer_replace_the_feeds_and_one_it_was_not_given_places_nothing() -> None:
+    feed = BoardFeed(machines=MACHINES)
+    tasks = MachineTasks(feed, machines={name: m for name, m in MACHINES.items() if name != "in-progress"})
+    tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-1", at=100.0))
+    tasks.handle_entry(*_entry("authoring-skills", "GUIDANCE_READ", task="PROJ-2", at=101.0))
+
+    assert (_agents(feed, "in-progress"), [a["id"] for a in _agents(feed, "authoring-skills")]) == ([], ["PROJ-2"])
+
+
 def test_a_task_carries_its_step_count_and_the_trail_of_its_moves() -> None:
     feed, tasks = _feed()
     for at, event in ((100.0, "WORKTREE_READY"), (101.0, "AC_CHECKPOINTED"), (102.0, "DOCS_RECONCILED")):

@@ -12,4 +12,4 @@ from starpulse.snapshot import describe
 
 HARNESS = load_machine(Path(__file__).with_name("machines") / "harness.yaml")
 #: The machine as the page draws it, keyed by name like a board adapter's machines.
-HARNESS_MACHINES = {HARNESS.name: describe(HARNESS.machine, HARNESS.name)}
+HARNESS_MACHINES = {HARNESS.name: describe(HARNESS.machine)}

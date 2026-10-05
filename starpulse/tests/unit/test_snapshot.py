@@ -73,3 +73,17 @@ class TestQualifier:
 
     def test_an_already_qualified_name_stays_as_it_is(self) -> None:
         assert snapshot.qualifier({"Ops": ("prod/nightly",)})("prod/nightly") == "prod/nightly"
+
+
+class TestStateNames:
+    def test_every_word_of_a_state_name_is_capitalised(self) -> None:
+        class Lanes(StateChart):
+            ready = State("ready", initial=True)
+            in_progress = State("in progress", final=True)
+
+            START = ready.to(in_progress)
+
+        assert [s["name"] for s in describe(Lanes)["states"]] == ["Ready", "In Progress"]
+
+    def test_titling_changes_only_first_letters(self) -> None:
+        assert snapshot._titled("PR opened  twice") == "PR Opened  Twice"

@@ -1,9 +1,8 @@
 // The hover back-trace's model: the path a task took through a level's machine, drawn from /api/history.
 import { bez, textW, type Curve, type Pt } from "./scene";
 import { esc } from "./panels";
+import { fmtAt, type ClockMode } from "./clock";
 import type { FlowSnapshot, Machine } from "./types";
-
-export const TZ = "America/Phoenix";
 
 /** One lane change of a task, as `/api/history?task=` answers it: `from` is null for the task's first lane. */
 export interface LaneStep {
@@ -81,15 +80,30 @@ export function machineRun(path: MachineStep[], machine: Machine, total: number,
   return runOf(steps, finalsOf(machine), now, total);
 }
 
+/**
+ * A task's run across a state level's bodies: each entry is a body the events placed it on, the first where it began. No body is final. The
+ * primary's recorded path, when given, adds each of its states as `flow#state`, woven in by time, so the run reaches back past the loaded events.
+ * The Board lane change that brought it into the level, when given, is its first hop, into the body it orbits.
+ */
+export function hostRun(
+  events: { at: number; host: string }[],
+  now: number,
+  primary?: { flow: string; path: MachineStep[] },
+  entry?: { at: number; from: string; to: string },
+): Run {
+  const enter = entry ? [{ at: entry.at, host: entry.from }, { at: entry.at, host: entry.to }] : [];
+  const trail = [...enter, ...(primary?.path.map((r) => ({ at: r.at, host: `${primary.flow}#${r.state}` })) ?? []), ...events]
+    .sort((a, b) => a.at - b.at)
+    .filter((r, i, all) => r.host !== all[i - 1]?.host);
+  const steps = trail.map((r, i): Step => ({ at: r.at, from: (trail[i - 1] ?? r).host, to: r.host }));
+  return runOf(steps, new Set(), now, steps.filter((s) => s.from !== s.to).length);
+}
+
 /** A stay in its two largest units. */
 export function fmtDur(secs: number): string {
   const s = Math.max(0, secs), m = Math.round(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
   return d >= 2 ? `${d}d ${h % 24}h` : h ? `${h}h ${m % 60}m` : s >= 60 ? `${m}m` : `${Math.round(s)}s`;
 }
-
-/** A moment as the operator reads it, in Arizona time. */
-export const fmtAt = (t: number) =>
-  new Date(t * 1000).toLocaleString("en-US", { timeZone: TZ, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 
 /** A state a run visited, as the level draws it: its disc, its name's spot and the room its orbits take. */
 export interface Place {
@@ -230,15 +244,15 @@ export interface CardHead {
 }
 const plural = (n: number, w: string) => `<b>${n}</b> ${w}${n === 1 ? "" : "s"}`;
 
-export function traceCard(head: CardHead, run: Run | "loading" | "unavailable"): string {
+export function traceCard(head: CardHead, run: Run | "loading" | "unavailable", clock: ClockMode = "24"): string {
   const top = `<div class="k">${esc(head.kind)}</div><div class="n">${esc(head.id)}</div>${esc(head.title)}`;
   if (typeof run === "string") return `${top}<div class="k">${run === "loading" ? "tracing its path…" : "history unavailable"}</div>`;
   return `${top}<div class="stats"><span>${plural(run.total, "step")}</span><span>${plural(run.loops, "loop")}</span><span><b>${fmtDur(run.end - run.start)}</b> ${run.live ? "so far" : "start to end"}</span></div>
-    <div class="k">since ${fmtAt(run.start)} MST</div>${run.live ? `<div class="fc">forecast · <i>Proposal D, not built</i> · e.g. 71% reach ${esc(head.goal)}, ~1d 6h left</div>` : ""}`;
+    <div class="k">since ${fmtAt(run.start, clock)} MST</div>${run.live ? `<div class="fc">forecast · <i>Proposal D, not built</i> · e.g. 71% reach ${esc(head.goal)}, ~1d 6h left</div>` : ""}`;
 }
 
 /** The pinned panel's table: every hop with when it happened and how long the run stayed where it landed. */
-export const traceTable = (run: Run, name: (id: string) => string): string =>
+export const traceTable = (run: Run, name: (id: string) => string, clock: ClockMode = "24"): string =>
   `<div class="k" style="margin-top:12px">path · ${run.total} steps · ${run.loops} loops · ${fmtDur(run.end - run.start)}</div><table class="trace">${run.hops
-    .map((h) => `<tr><td>${h.n}</td><td>${fmtAt(h.at)}</td><td>${esc(name(h.from))} → ${esc(name(h.to))}</td><td>${fmtDur(h.stay)}</td></tr>`)
+    .map((h) => `<tr><td>${h.n}</td><td>${fmtAt(h.at, clock)}</td><td>${esc(name(h.from))} → ${esc(name(h.to))}</td><td>${fmtDur(h.stay)}</td></tr>`)
     .join("")}</table>`;

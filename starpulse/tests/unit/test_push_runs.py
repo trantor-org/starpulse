@@ -225,3 +225,17 @@ def test_a_workflow_an_adapter_lists_is_drawn_once_whichever_reads_the_stream_fi
         step()
 
     assert sorted(dag["name"] for dag in feed.snapshot()["dags"]) == ["ci/nightly", f"{PUSHED_INSTANCE}/other"]
+
+
+def test_a_step_reported_again_is_published_to_a_subscriber_that_saw_the_earlier_status() -> None:
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))
+    runs.handle_entry("1-0", fields("start", "running"))
+    runs.handle_entry("2-0", fields("start", "running", step="load"))
+    _, changes = feed.subscribe()
+
+    runs.handle_entry("3-0", fields("end", "failed", step="load"))
+
+    kind, data = changes.get_nowait()
+    assert kind == "dags"
+    assert [(s["name"], s["status"]) for s in data["dags"][0]["steps"]] == [("load", "failed")]

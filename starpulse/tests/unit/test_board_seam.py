@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from starpulse.board import Board
+from starpulse.board import load as load_board
 from starpulse.config import ConfigError, load
 from starpulse.history import DEFAULT_FILE, HistoryStore
 from starpulse.server import assemble, history_store
@@ -46,7 +47,8 @@ def test_with_no_board_table_the_view_draws_the_backlog_md_project_beside_its_co
     assert task is not None and task["state"] == "doing"
 
 
-def test_a_board_type_names_the_module_whose_board_the_view_draws(tmp_path: Path) -> None:
+def test_a_board_type_names_the_module_whose_board_the_view_draws(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(fake_board, "BUILT", [])  # mutmut reruns the suite in one process
     config = load(_config(tmp_path, '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["open", "shut"]\n'))
 
     board, feed = assemble(config, tmp_path, None, ())
@@ -61,6 +63,23 @@ def test_a_board_type_names_the_module_whose_board_the_view_draws(tmp_path: Path
     assert fake_board.BUILT == [({"type": "starpulse.tests.fake_board", "lanes": ["open", "shut"]}, tmp_path)]
 
 
+def test_the_board_draws_its_machines_knowing_every_configured_workflow(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(fake_board, "BUILT", [])
+    monkeypatch.setattr(fake_board, "DRAWN", [])
+    config = load(
+        _config(
+            tmp_path,
+            '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["open", "shut"]\n\n'
+            '[[runs]]\nname = "prod"\ntype = "dagu"\nurl = "http://prod.example.test:8085"\n'
+            '[runs.domains]\nOps = ["nightly", "backup"]\nData = ["etl"]\n',
+        )
+    )
+
+    assemble(config, tmp_path, None, ())
+
+    assert fake_board.DRAWN == [["prod/nightly", "prod/backup", "prod/etl"]]
+
+
 def test_a_board_type_no_module_provides_is_refused_by_name(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="no board adapter of type nowhere.board"):
         load(_config(tmp_path, '[board]\ntype = "nowhere.board"\n'))
@@ -73,6 +92,7 @@ def test_without_database_url_history_is_a_sqlite_file_beside_the_config(tmp_pat
 
     assert isinstance(store, HistoryStore)
     assert store.engine.url.database == str(tmp_path / DEFAULT_FILE)
+    assert store.machine_path("task-1", "board") == ([], 0), "the store places steps on the drawn machines"
 
 
 def test_database_url_names_the_database_history_is_kept_in(tmp_path: Path) -> None:
@@ -88,7 +108,27 @@ def test_database_url_names_the_database_history_is_kept_in(tmp_path: Path) -> N
 
 
 def test_a_board_that_keeps_its_own_history_is_read_instead(tmp_path: Path) -> None:
-    kept = HistoryStore(f"sqlite:///{tmp_path / 'kept.db'}", {})
-    board = Board(machines=lambda q, w: {}, start=lambda feed, group: None, history=lambda machines: kept)
+    drawn = {"board": {}}
+    kept = HistoryStore(f"sqlite:///{tmp_path / 'kept.db'}", drawn)
+    board = Board(
+        machines=lambda q, w: drawn,
+        start=lambda feed, group: None,
+        history=lambda machines: kept if machines is drawn else None,
+    )
 
-    assert history_store(load(None), tmp_path, board, {}) is kept
+    assert history_store(load(None), tmp_path, board, drawn) is kept
+
+
+def test_a_feed_draws_the_tracker_and_the_window_its_config_and_caller_give(tmp_path: Path) -> None:
+    config = load(_config(tmp_path, 'tracker_url = "http://tracker.test"\n'))
+
+    _, feed = assemble(config, tmp_path, 3600.0, ())
+
+    assert (feed.snapshot()["boardUrl"], feed._window_s) == ("http://tracker.test", 3600.0)
+
+
+def test_a_board_type_whose_module_builds_no_board_is_refused_by_name(tmp_path: Path) -> None:
+    with pytest.raises(ValueError) as refused:
+        load_board("starpulse.contracts", {}, tmp_path)
+
+    assert str(refused.value) == "board type starpulse.contracts: starpulse.contracts has no board(settings, base)"

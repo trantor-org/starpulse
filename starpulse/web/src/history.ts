@@ -1,4 +1,5 @@
 // The fetch cache behind the hover back-trace: one /api/history read per task (and flow), shared by the card and the panel.
+import { apiFetch } from "./demo";
 import type { LaneStep, MachineStep } from "./trace";
 
 export type Loaded<T> = T | "loading" | "unavailable";
@@ -31,7 +32,7 @@ interface Body {
   steps?: number;
 }
 
-export function createHistory({ onChange, fetch: get = (u) => fetch(u), now = () => Date.now() / 1000, ttl = 30 }: HistoryOptions): History {
+export function createHistory({ onChange, fetch: get = (u) => apiFetch(u), now = () => Date.now() / 1000, ttl = 30 }: HistoryOptions): History {
   const cache = new Map<string, Entry>();
   /** The cached read, started when absent and again once stale; a stale one keeps answering until the new read lands. */
   function read<T>(url: string, pick: (body: Body) => T): Loaded<T> {

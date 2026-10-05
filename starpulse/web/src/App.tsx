@@ -3,13 +3,16 @@
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Admin } from "./Admin";
+import { AdminStore } from "./adminPrefs";
 import { HudStore, useHud, type HudState } from "./hud";
-import { BOARD, pathKey, pathTo, type Path } from "./levels";
+import { BOARD, pathKey, type Path } from "./levels";
 import { Kanban } from "./Kanban";
 import { MoveStore, postMove } from "./move";
-import { FOLD_MS, FoldStore, viewOf, viewSearch, type ViewName } from "./nav";
+import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./nav";
 import { renderer as makeRenderer, type Renderer } from "./renderer";
-import { embedded } from "./stream";
+import { search, type Target } from "./search";
+import { StartStore, fetchHarnesses, postStart } from "./start";
 
 /** The actors the rail can hide, in the order it lists them. */
 
@@ -20,60 +23,47 @@ export function App() {
   const [store] = useState(() => new HudStore());
   const hud = useHud(store);
   const [fold] = useState(() => new FoldStore());
+  const [admin] = useState(() => new AdminStore());
   // a move outlives the view that made it: the card stays where it landed while the writer answers
   const [moves] = useState(() => new MoveStore(postMove));
+  // so does a started session: the card waits in In progress for its agent's claim whichever view is showing
+  const [starts] = useState(() => new StartStore(postStart, moves));
+  useEffect(() => void fetchHarnesses().then((h) => starts.load(h)), [starts]);
   const folded = useSyncExternalStore(fold.subscribe, fold.get);
-  const [view, setView] = useState<ViewName>(() => viewOf(location.search));
+  const prefs = useSyncExternalStore(admin.subscribe, admin.get);
+  // a bare address opens the view the Admin chose; one that names a view opens that
+  const [view, setView] = useState<ViewName>(() => viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view));
   // the view lives in the address, so a reload or a shared link opens the same one
   const choose = (v: ViewName) => {
-    history.replaceState(null, "", `${location.pathname}${viewSearch(location.search, v)}`);
+    history.replaceState(null, "", `${location.pathname}${viewSearch(location.search, v, admin.get().view)}`);
     setView(v);
   };
   useEffect(() => {
     document.body.classList.toggle("kanban", view === "kanban");
+    document.body.classList.toggle("admin", view === "admin");
     // the canvas was sized while hidden or behind the Kanban; refit it once it is the page again
     if (view === "constellation") renderer.current?.resize();
   }, [view]);
 
   useEffect(() => {
     const els = { tip: tip.current!, panel: panel.current!, clock: clock.current! };
-    const r = makeRenderer(canvas.current!, store, els, new URLSearchParams(location.search).has("demo") || embedded() !== null);
+    const r = makeRenderer(canvas.current!, store, els, new URLSearchParams(location.search).has("demo"), admin.get);
     renderer.current = r;
     r.start();
-    return () => r.stop();
-  }, [store]);
+    // times are written at the source, so a new clock is a new subtitle, feed and header clock
+    const unsubscribe = admin.subscribe(() => r.refresh());
+    return () => {
+      unsubscribe();
+      r.stop();
+    };
+  }, [store, admin]);
 
-  // `[` folds the navigator from any view; the canvas takes the width the fold frees
+  // `[` folds the navigator from any view; the canvas already spans the page the fold frees, so nothing refits
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => fold.onKey(e);
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [fold]);
-  // the panel's width animates, so the canvas refits on every frame of it rather than once at the end
-  const settled = useRef(true);
-  useEffect(() => {
-    if (settled.current) {
-      settled.current = false;
-      return;
-    }
-    let raf = 0;
-    const end = performance.now() + FOLD_MS + 40;
-    const tick = () => {
-      renderer.current?.resize();
-      if (performance.now() < end) raf = requestAnimationFrame(tick);
-    };
-    // the transition's clock starts a frame after the click, so the last refit waits for its end rather than for the timer
-    const done = (e: TransitionEvent) => {
-      if (e.target === e.currentTarget && e.propertyName === "width") renderer.current?.resize();
-    };
-    const nav = document.getElementById("nav");
-    nav?.addEventListener("transitionend", done);
-    tick();
-    return () => {
-      cancelAnimationFrame(raf);
-      nav?.removeEventListener("transitionend", done);
-    };
-  }, [folded]);
 
   return (
     <>
@@ -83,10 +73,12 @@ export function App() {
           if (pathKey(p) === pathKey(hud.path)) renderer.current?.fitView();
           else renderer.current?.go(p);
         }}
-        fly={(g) => renderer.current?.flyToGroup(g)} openDag={(d) => renderer.current?.openDag(d)} />
+        fly={(g) => renderer.current?.flyToGroup(g)} openDag={(d) => renderer.current?.openDag(d)}
+        spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
+      {view === "admin" && <Admin store={admin} />}
       {view === "kanban" && (
-        <Kanban hud={hud} moves={moves} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }} />
+        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }} />
       )}
       <Rail hud={hud} view={view} />
       <div ref={tip} id="tip" />
@@ -120,10 +112,20 @@ function Node({ hud, path, label, count, size, flow, chev, open, onChev }: {
   );
 }
 
-function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag }: {
+function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot, selectTask }: {
   hud: HudState; folded: boolean; view: ViewName; choose: (v: ViewName) => void; toggle: () => void; open: (p: Path) => void; fly: (group: string) => void; openDag: (dag: string) => void;
+  spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const statePath = (id: string): Path => [...BOARD, { kind: "state", id }];
+  // a click drills into a sun or a machine, opens a DAG's panel, or pins a task on the Board
+  const pick = (target: Target) => {
+    spot(null);
+    if (target.kind === "state") open(statePath(target.id));
+    else if (target.kind === "machine") open(target.path);
+    else if (target.kind === "dag") openDag(target.name);
+    else selectTask(target.id);
+  };
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const [all, setAll] = useState<Set<string>>(new Set());
   const t = hud.tree, q = query.trim().toLowerCase();
@@ -133,33 +135,26 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag }: {
     else n.add(id);
     return n;
   };
-  const statePath = (id: string): Path => [...BOARD, { kind: "state", id }];
   const props = { hud, open };
+  const hits = t && q ? search(q, { tree: t, states: hud.states, counts: hud.counts, dags: hud.dags, cards: hud.cards }) : [];
   let body = null;
   if (t && q) {
-    // Filtering: a flat list of every level whose name matches, however deep.
-    const hits = [
-      ...hud.states.filter((s) => s.name.toLowerCase().includes(q)).map((s) => (
-        <Node key={s.id} {...props} path={statePath(s.id)} label={s.name} count={s.count} size={10} />
-      )),
-      ...[...new Set([...Object.values(t.subs).flat(), ...Object.values(t.children).flat().map((c) => c.flow)])]
-        .filter((m) => m.includes(q))
-        .flatMap((m) => {
-          const p = pathTo(t, m);
-          return p ? [<Node key={m} {...props} path={p} label={m} count={hud.counts[m]} size={p.length > 3 ? 6 : 8} flow={m} />] : [];
-        }),
-      ...hud.dags.filter((d) => d.toLowerCase().includes(q)).map((d) => (
-        <button key={`dag:${d}`} className="node" onClick={() => openDag(d)}>
-          <i className="g" style={{ width: 7, height: 7 }} />
-          <span className="t">{d}</span>
-          <span className="n" />
-        </button>
-      )),
-    ];
+    // Searching: a flat list of every sun, machine, DAG and task the query names, however deep. Hovering one lights it on the canvas.
     body = (
-      <div className="kids">
+      <div className="kids" onMouseLeave={() => spot(null)}>
         <div className="lvl">Matches</div>
-        {hits.length ? hits : <div className="lvl">no layer matches</div>}
+        {hits.length ? hits.map((h) => {
+          const key = `${h.target.kind}:${h.label}`, flow = h.target.kind === "machine" ? h.target.flow : undefined;
+          const size = h.target.kind === "state" ? 10 : h.target.kind === "machine" ? (h.target.path.length > 3 ? 6 : 8) : h.target.kind === "dag" ? 7 : 5;
+          return (
+            <button key={key} data-kind={h.target.kind} className={`node hit${flow && hud.moving.includes(flow) ? " live" : ""}`} title={h.sub ?? h.label}
+              onMouseEnter={() => spot(h.target)} onClick={() => pick(h.target)}>
+              <i className="g" style={{ width: size, height: size }} />
+              <span className="t">{h.label}{h.sub && <small>{h.sub}</small>}</span>
+              <span className="n">{h.count ?? ""}</span>
+            </button>
+          );
+        }) : <div className="lvl">nothing matches</div>}
       </div>
     );
   } else if (t) {
@@ -212,9 +207,9 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag }: {
       </section>
       <section className="views">
         <h3>Views</h3>
-        <button className={`node${view === "constellation" ? " on here" : ""}`} title="Constellation" onClick={() => (view === "constellation" ? open(BOARD) : choose("constellation"))}>
+        <button className={`node${view === "constellation" ? " on here" : ""}`} title="Star Map" onClick={() => (view === "constellation" ? open(BOARD) : choose("constellation"))}>
           <i className="g" style={{ width: 10, height: 10 }} />
-          <span className="t">Constellation</span>
+          <span className="t">Star Map</span>
           <span className="n" />
         </button>
         <button className={`node${view === "kanban" ? " on here" : ""}`} title="Kanban" onClick={() => choose("kanban")}>
@@ -223,10 +218,15 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag }: {
           <span className="n">{hud.cards.length || ""}</span>
         </button>
       </section>
-      {view === "kanban" && <section className="away note">Layers and Constellations belong to the Constellation view; they return when it is open.</section>}
+      {view === "kanban" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
       {view === "constellation" && <><section className="away">
-        <input id="q" placeholder="filter layers…" autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
+        <input id="q" type="search" placeholder="search tasks, states, DAGs…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
+          onChange={(e) => { setQuery(e.target.value); spot(null); }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { setQuery(""); spot(null); }
+            // Enter takes the first match, as a click on it would
+            if (e.key === "Enter" && hits[0]) pick(hits[0].target);
+          }} />
       </section>
       <section className="away layers">
         <h3>Layers</h3>
@@ -236,13 +236,20 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag }: {
         </div>
       </section>
       <section className="away">
-        <h3>Constellations</h3>
+        <h3>DAGs</h3>
         <div id="cons">
           {hud.groups.map((g) => (
             <button key={g.name} onClick={() => fly(g.name)}><i /><span>{g.name} · {g.n}</span></button>
           ))}
         </div>
       </section></>}
+      <section className="views admin-sec">
+        <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>
+          <svg className="g admin-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>
+          <span className="t">Admin</span>
+          <span className="n" />
+        </button>
+      </section>
     </aside>
   );
 }
@@ -265,9 +272,9 @@ function Rail({ hud, view }: { hud: HudState; view: ViewName }) {
         {view === "kanban" ? (
           <>
             <span><i style={{ background: "#34d399" }} />checks pass</span><span><i style={{ background: "#fb7185" }} />failing</span><span><i style={{ background: "#fbbf24" }} />pending</span><br />
-            <span><i style={{ background: "#a78bfa" }} />merged</span><span style={{ color: "#fbbf24" }}>⌁ n</span> review threads<br />
+            <span><i style={{ background: "#a78bfa" }} />merged</span><span><span style={{ color: "#fbbf24" }}>⌁ n</span> review threads</span><br />
             <span><i style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }} />on a machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />moved now</span><br />
-            <span style={{ color: "#fbbf24" }}>⧗ n</span> open dependencies
+            <span><span style={{ color: "#fbbf24" }}>⧗ n</span> open dependencies</span>
           </>
         ) : (
           <>

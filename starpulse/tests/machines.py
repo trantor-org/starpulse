@@ -13,7 +13,7 @@ STATUSES = ("To Do", "Ready", "In Progress", "Review", "Done")
 
 def flow(name: str) -> dict:
     """The fixture machine `<name>.yaml` as the page draws it."""
-    return describe(load_machine(FIXTURES / f"{name}.yaml").machine, name)
+    return describe(load_machine(FIXTURES / f"{name}.yaml").machine)
 
 
 MACHINES = {

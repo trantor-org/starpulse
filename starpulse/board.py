@@ -38,6 +38,12 @@ class MoveWriter(Protocol):
     def __call__(self, task: str, status: str) -> Written: ...
 
 
+class AssigneeWriter(Protocol):
+    """A board writer: set a task's assignee, and say what it did."""
+
+    def __call__(self, task: str, assignee: str, /) -> Written: ...
+
+
 def _no_cues(qualify: Qualify) -> list[dict]:
     return []
 
@@ -58,6 +64,8 @@ class Board:
     """The workflow cues the page draws, each `{dag, ...}` with its workflow named as `qualify` does."""
     writer: MoveWriter | None = None
     """Sets a task's status when the page moves it; None refuses every move."""
+    assign: AssigneeWriter | None = None
+    """Sets the assignee the page picked when starting a task's session; None refuses a changed assignee."""
     history: Callable[[Mapping[str, dict]], History | None] = lambda machines: None
     """A history the adapter keeps itself, given the drawn machines; None uses StarPulse's own store."""
     redis_prefixes: tuple[str, ...] = ()

@@ -1,5 +1,7 @@
-// `?demo`: walk random legal transitions in random flows so every section moves.
-import type { Snapshot } from "./types";
+// The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
+// demo page (`starpulse.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
+import type { LaneStep } from "./trace";
+import type { Machine, RawAgent, Snapshot } from "./types";
 
 let demoN = 0;
 
@@ -49,3 +51,152 @@ function stepDags(snap: Snapshot, random: () => number): Snapshot {
   }
   return snap;
 }
+
+/** The snapshot `starpulse.demo` embeds, with each Board task's lane changes as `/api/history?task=` answers them. */
+export type DemoFixture = Snapshot & { history?: Record<string, LaneStep[]> };
+
+type Handler = (server: DemoServer, query: URLSearchParams, init?: RequestInit) => Response | Promise<Response>;
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+const HANDLERS: Record<string, Handler> = {
+  "/api/history": (server, query) => {
+    const task = query.get("task") ?? "", flow = query.get("flow");
+    if (!flow) return json({ task, path: server.lanes[task] ?? [] });
+    const f = server.snapshot.flows.find((x) => x.name === flow);
+    if (!f) return json({ error: `no machine ${flow}` }, 404);
+    const a = f.agents.find((x) => (x.task ?? x.id) === task);
+    const path = (a?.trail ?? []).map(({ at, event, state }) => ({ at, event, state }));
+    return json({ task, flow, path, steps: a ? (a.steps ?? path.length) : 0 });
+  },
+  "/api/move": async (server, _url, init) => {
+    const { task, to } = JSON.parse(String(init?.body ?? "{}")) as { task?: string; to?: string };
+    return server.move(String(task), String(to));
+  },
+};
+
+/**
+ * Every /api route the page requests, and how a demo page answers it: `null` for one the demo serves (`/api/events` by
+ * `openStream` following the server, the rest by `DemoServer.fetch`), else why a page with no server cannot.
+ * The demo test fails when the page's source requests a route missing here.
+ */
+export const ROUTES: Record<string, string | null> = {
+  "/api/events": null,
+  ...Object.fromEntries(Object.keys(HANDLERS).map((r) => [r, null])),
+  "/api/run": "This demo has no runs instance to start a run on.",
+  "/api/start": "This demo has no session-start service to start a session with.",
+  // unanswered, the start question offers only Work it manually
+  "/api/harnesses": "This demo has no harnesses configured.",
+};
+
+/** The Board columns a card in `state` may be moved to: the machine's exits that are neither its creation nor a settled state. */
+function columns(m: Machine, state: string): string[] {
+  const rest = new Set(m.states.filter((s) => !s.initial && !s.final).map((s) => s.id));
+  return [...new Set(m.transitions.filter((t) => t.source === state && t.target !== state && rest.has(t.target)).map((t) => t.target))];
+}
+const ALLOWED = { allowed: true, reason: "", skill: "" };
+
+/**
+ * The server a demo page has instead of starpulse.server: it holds the snapshot, plays the `?demo` walk on it, keeps
+ * each Board card's lane history and move verdicts current, and answers /api requests from that, so every view and
+ * every hover of a page with no server behaves as it does on a served one.
+ */
+export class DemoServer {
+  snapshot: Snapshot;
+  lanes: Record<string, LaneStep[]>;
+  private listeners = new Set<(s: Snapshot) => void>();
+  private timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000) {
+    const { history, ...snap } = structuredClone(fixture);
+    this.lanes = history ?? {};
+    this.snapshot = this.verdicts(snap);
+  }
+
+  subscribe(fn: (s: Snapshot) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** Play the walk until `stop`, one step every 0.6 to 1.8 seconds. */
+  start() {
+    const tick = () => {
+      this.step();
+      this.timer = setTimeout(tick, 600 + Math.random() * 1200);
+    };
+    this.timer ??= setTimeout(tick, 1200);
+  }
+  stop() {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+  }
+
+  /** One step of the walk, its Board lane changes recorded; a card it settles comes back as new work so the Board never drains. */
+  step(random = Math.random) {
+    const next = demoStep(this.snapshot, random);
+    const board = next.flows.find((f) => f.name === "board");
+    const prev = this.snapshot.flows.find((f) => f.name === "board")?.agents ?? [];
+    const fresh = new Set<string>();
+    if (board) {
+      const lane = board.machine.mainLine?.[1] ?? board.machine.states.find((s) => s.initial)?.id ?? board.machine.states[0].id;
+      for (const card of prev.filter((a) => a.id in next.settled)) {
+        delete next.settled[card.id];
+        delete this.lanes[card.id];
+        fresh.add(card.id);
+        board.agents.push({ ...card, state: lane, moves: undefined });
+      }
+    }
+    this.publish(next, fresh);
+  }
+
+  /** Move `task` to column `to` as the board writer would: refused unless its lane exits there. */
+  move(task: string, to: string): Response {
+    const board = this.snapshot.flows.find((f) => f.name === "board");
+    const card = board?.agents.find((a) => a.id === task);
+    if (!board || !card) return json({ error: `${task} is not on the board` }, 404);
+    if (!columns(board.machine, card.state).includes(to)) return json({ error: `${task} cannot move from ${card.state} to ${to}` }, 409);
+    const next = structuredClone(this.snapshot);
+    next.flows.find((f) => f.name === "board")!.agents.find((a) => a.id === task)!.state = to;
+    this.publish(next);
+    return json({ task, to });
+  }
+
+  fetch(input: string, init?: RequestInit): Promise<Response> {
+    const [path, search = ""] = input.split("?", 2); // no URL(): a base address would be a host in the public file
+    const route = Object.keys(ROUTES).find((r) => path === r || path.startsWith(`${r}/`));
+    const handler = route ? HANDLERS[route] : undefined;
+    if (handler) return Promise.resolve(handler(this, new URLSearchParams(search), init));
+    return Promise.resolve(json({ error: (route && ROUTES[route]) || `This demo does not serve ${path}.` }, 404));
+  }
+
+  /** Push `next`, recording each Board lane change; a `fresh` card's path starts again from nothing. */
+  private publish(next: Snapshot, fresh = new Set<string>()) {
+    const was = new Map(this.snapshot.flows.find((f) => f.name === "board")?.agents.map((a) => [a.id, a.state]));
+    const at = this.clock();
+    for (const a of next.flows.find((f) => f.name === "board")?.agents ?? []) {
+      const from = fresh.has(a.id) ? null : was.get(a.id) ?? null;
+      if (from !== a.state) (this.lanes[a.id] ??= []).push({ at, from, to: a.state });
+    }
+    this.snapshot = this.verdicts(next);
+    for (const fn of this.listeners) fn(this.snapshot);
+  }
+
+  private verdicts(snap: Snapshot): Snapshot {
+    const flows = snap.flows.map((f) =>
+      f.name !== "board" ? f : { ...f, agents: f.agents.map((a): RawAgent => ({ ...a, moves: Object.fromEntries(columns(f.machine, a.state).map((c) => [c, ALLOWED])) })) },
+    );
+    return { ...snap, flows };
+  }
+}
+
+/** The snapshot a self-contained demo page embeds as `window.__FLOW_FIXTURE__`, null on a served page. */
+export const embedded = (): DemoFixture | null => (globalThis as { __FLOW_FIXTURE__?: DemoFixture }).__FLOW_FIXTURE__ ?? null;
+
+let server: DemoServer | null = null;
+/** The page's one DemoServer when it embeds a fixture, else null: a served page asks starpulse.server. */
+export const demoServer = (): DemoServer | null => {
+  const fixture = embedded();
+  return fixture ? (server ??= new DemoServer(fixture)) : null;
+};
+
+/** `fetch` for the page's /api requests: answered by the demo server on a demo page, by starpulse.server otherwise. */
+export const apiFetch = (url: string, init?: RequestInit): Promise<Response> => demoServer()?.fetch(url, init) ?? fetch(url, init);

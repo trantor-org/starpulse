@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DemoServer } from "./demo";
 import { RETRY_MS, applyDelta, openStream } from "./stream";
 import type { Dag, RawAgent, Snapshot } from "./types";
 
@@ -58,6 +59,15 @@ describe("applyDelta", () => {
     const next = applyDelta(s, { kind: "pulls", pulls: { "PROJ-1": [pull] } });
 
     expect(next.pulls).toEqual({ "PROJ-1": [pull] });
+  });
+
+  it("keeps each task's latest refused claim beside the ones the snapshot carried", () => {
+    const s = board([], { claims: { "TASK-D1": { reason: "old", at: 5 } } });
+
+    const next = applyDelta(applyDelta(s, { kind: "claim", task: "TASK-D2", reason: "TASK-D3 is not Done", at: 9 }), { kind: "claim", task: "TASK-D1", reason: "new", at: 10 });
+
+    expect(next.claims).toEqual({ "TASK-D1": { reason: "new", at: 10 }, "TASK-D2": { reason: "TASK-D3 is not Done", at: 9 } });
+    expect(s.claims).toEqual({ "TASK-D1": { reason: "old", at: 5 } });
   });
 
   it("places a task on the machine a move names, replacing the place it held there, and leaves the Board and the other machines alone", () => {
@@ -126,13 +136,24 @@ describe("openStream", () => {
     expect(seen.map(ids)).toEqual([["PROJ-1:to_do"]]);
   });
 
-  it("hands over an embedded fixture as a live Board without opening a connection", () => {
-    const fixture = board([agent("TASK-D1", "to_do")]);
+  it("follows an embedded page's demo server without opening a connection: its moves and its walk reach the page until closed", () => {
+    const machine = {
+      states: ["new", "to_do", "done"].map((id) => ({ id, name: id, initial: id === "new", final: false })),
+      transitions: [{ source: "to_do", target: "done", event: "FINISH" }],
+    };
+    const server = new DemoServer(board([agent("TASK-D1", "to_do")], { flows: [{ name: "board", machine, agents: [agent("TASK-D1", "to_do")] }] }));
 
-    openStream(handlers, open, fixture);
+    const stream = openStream(handlers, open, server);
+    server.move("TASK-D1", "done");
+    vi.advanceTimersByTime(1200);
+    const walked = seen.length;
+    stream.close();
+    vi.advanceTimersByTime(60_000);
 
     expect(FakeSource.made).toEqual([]);
-    expect([seen.map(ids), lives]).toEqual([[["TASK-D1:to_do"]], [true]]);
+    expect(lives).toEqual([true]);
+    expect(seen.slice(0, 2).map(ids)).toEqual([["TASK-D1:to_do"], ["TASK-D1:done"]]);
+    expect([walked, seen.length]).toEqual([3, 3]); // the snapshot, the move, one walk step; nothing once closed
   });
 
   it("hands over the Board folded with each delta that follows", () => {
@@ -144,6 +165,15 @@ describe("openStream", () => {
 
     expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"], ["PROJ-1:in_progress"]]);
     expect(seen[2].error).toBe("ci: down");
+  });
+
+  it("folds a refused claim the writer published into the snapshot", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("TASK-D1", "waiting")]));
+
+    last().send("claim", { task: "TASK-D1", reason: "TASK-D3 is not Done", at: 1001 });
+
+    expect(seen.at(-1)!.claims).toEqual({ "TASK-D1": { reason: "TASK-D3 is not Done", at: 1001 } });
   });
 
   it("folds a move on a machine into the snapshot without any request but the one stream", () => {
