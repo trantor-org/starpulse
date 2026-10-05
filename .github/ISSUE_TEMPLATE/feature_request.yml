@@ -1,0 +1,21 @@
+name: Feature request
+description: Something StarPulse should draw, read or do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you are trying to do
+      description: The work you want to see or the question you want the page to answer, not the feature itself.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: How you answer it now, and what that costs you.
+  - type: textarea
+    id: idea
+    attributes:
+      label: An idea for how
+      description: Optional. A tracker, scheduler or harness it should read, or how the page could show it.
