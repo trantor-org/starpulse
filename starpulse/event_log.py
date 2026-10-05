@@ -1,0 +1,232 @@
+"""StarPulse's event log: an append-only table in the history store that producers write and readers poll.
+
+Every producer on the host appends one row (`EventLog.append`), which never raises, so reporting an event never
+fails the work that caused it. Every reader keeps its own cursor, the `id` of the last row it passed, and
+polls `id > cursor` (`Tail`); there are no consumer groups. A tail without a cursor replays the retained log, one
+given a cursor resumes after it, and `EventLog.prune` drops rows older than a retention. A cursor below the oldest
+retained row means rows were pruned unread, which is recorded in `starpulse_gaps`.
+
+The database is the history store's: SQLite by default (in WAL mode, so processes on the host append while the
+server reads) or the Postgres a `database_url` names. Delivery is at-least-once within retention, so a handler
+treats `event_id` as its idempotency key. Latency is the poll interval, so a reader polls often (one indexed
+`id > ?` query) and holds no connection, hence no read transaction, between polls: a held SQLite read transaction
+would stop WAL checkpoints and grow the `-wal` file without bound.
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+import time
+import uuid
+from collections.abc import Callable, Mapping
+from typing import Any, NamedTuple
+
+from sqlalchemy import Engine, create_engine, delete, event, func, select
+from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import SQLAlchemyError
+
+from starpulse.tables import events, gaps, metadata
+
+logger = logging.getLogger(__name__)
+
+#: How often a running tail polls, in seconds. It is the delivery latency a producer's event adds.
+DEFAULT_POLL_INTERVAL = 0.25
+
+#: How long SQLite waits on another process's write lock before an append gives up and fails open, in seconds.
+_SQLITE_BUSY_TIMEOUT = 5.0
+
+#: How many times a producer looks for the tables, creating those missing, before the failure counts.
+_CREATE_ATTEMPTS = 5
+
+
+class Entry(NamedTuple):
+    """One row of the log: `id` is the cursor to resume after."""
+
+    id: int
+    stream: str
+    event_id: str
+    fields: dict[str, Any]
+    at: float
+
+
+def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
+
+
+class EventLog:
+    """The log in one database. Opening it is lazy and retried, so a producer that starts before its database is
+    reachable appends once it is."""
+
+    def __init__(self, url: str, *, engine: Engine | None = None) -> None:
+        self.url = url
+        self._engine = engine
+        self._ready = False
+        self._lock = threading.Lock()
+
+    @property
+    def engine(self) -> Engine:
+        """The engine with the log's tables created; raises while the database cannot be opened."""
+        with self._lock:
+            if not self._ready:
+                if self._engine is None:
+                    self._engine = _create_engine(self.url)
+                if self._engine.dialect.name == "sqlite":
+                    event.listen(self._engine, "connect", _sqlite_pragmas)
+                _create_tables(self._engine)
+                self._ready = True
+            assert self._engine is not None
+            return self._engine
+
+    def append(self, stream: str, fields: Mapping[str, Any], *, event_id: str | None = None) -> int | None:
+        """Append one event and return its cursor, or None when it was not appended; never raises.
+
+        `event_id` is the caller's, else the fields', else minted; a row with that `event_id` already in the log
+        is not appended again and its cursor is returned. Encoding sits inside the `try`: fields JSON refuses must
+        fail open like an outage.
+        """
+        try:
+            engine = self.engine
+            key = event_id or str(fields.get("event_id") or "") or uuid.uuid4().hex
+            known = select(events.c.id).where(events.c.event_id == key)
+            statement = (
+                _dialect(engine)
+                .insert(events)
+                .values(stream=stream, event_id=key, fields=dict(fields), at=time.time())
+                .on_conflict_do_nothing(index_elements=["event_id"])
+                .returning(events.c.id)
+            )
+            with engine.begin() as db:
+                # Look first: an ignored insert still spends an id, and a hole in the ids would read as a pruned span.
+                cursor = db.execute(known).scalar()
+                if cursor is None:
+                    cursor = db.execute(statement).scalar()
+                if cursor is None:  # another process appended this event_id between the look and the insert
+                    cursor = db.execute(known).scalar()
+            return cursor
+        except Exception as exc:  # fail open, see module docstring
+            logger.warning("EventLog: append to %s failed (event dropped): %s", stream, exc)
+            return None
+
+    def prune(self, retention: float, now: float | None = None) -> int:
+        """Delete the rows older than `retention` seconds and return how many; raises when the database does."""
+        cutoff = (time.time() if now is None else now) - retention
+        with self.engine.begin() as db:
+            return db.execute(delete(events).where(events.c.at < cutoff)).rowcount
+
+    def record_gap(self, stream: str, after_id: int, before_id: int, lost: int) -> None:
+        """Note that up to `lost` rows between `after_id` and `before_id` were pruned before `stream`'s reader read
+        them; the same `after_id` again updates that gap."""
+        engine = self.engine
+        insert = (
+            _dialect(engine)
+            .insert(gaps)
+            .values(stream=stream, after_id=str(after_id), before_id=str(before_id), lost=lost, noted_at=time.time())
+        )
+        with engine.begin() as db:
+            db.execute(
+                insert.on_conflict_do_update(
+                    index_elements=["stream", "after_id"],
+                    set_={"before_id": insert.excluded.before_id, "lost": insert.excluded.lost},
+                )
+            )
+
+
+class Tail:
+    """One reader's cursor over one stream of the log.
+
+    `after` is the `id` of the last row the reader already handled (the history recorder's persisted cursor); None
+    replays everything the log still retains, which is not a gap however much was pruned before. Rows of other
+    streams share the ids, so the cursor advances past them and a gap's `lost` counts every pruned id in its span,
+    an upper bound for this stream.
+    """
+
+    def __init__(
+        self,
+        log: EventLog,
+        stream: str,
+        *,
+        after: int | None = None,
+        interval: float = DEFAULT_POLL_INTERVAL,
+        batch: int = 500,
+    ) -> None:
+        self.log = log
+        self.stream = stream
+        self.cursor = after
+        self.interval = interval
+        self.batch = batch
+
+    def poll(self) -> list[Entry]:
+        """Read the next batch of this stream's rows past the cursor, move the cursor, and return them.
+
+        The read runs on a connection that is returned before this call does, so no transaction outlasts a poll.
+        Raises when the database is unreachable; `run` retries.
+        """
+        engine = self.log.engine
+        with engine.connect() as db:
+            oldest = db.execute(select(func.min(events.c.id))).scalar()
+            head = db.execute(select(func.max(events.c.id))).scalar()
+            if head is None:
+                return []
+            cursor = self.cursor
+            gap = cursor is not None and oldest > cursor + 1
+            start = oldest - 1 if gap else cursor or 0
+            rows = db.execute(
+                select(events)
+                .where(events.c.stream == self.stream, events.c.id > start, events.c.id <= head)
+                .order_by(events.c.id)
+                .limit(self.batch)
+            ).all()
+        if gap:
+            self.log.record_gap(self.stream, cursor, oldest, oldest - cursor - 1)
+        self.cursor = rows[-1].id if len(rows) == self.batch else head
+        return [Entry(r.id, r.stream, r.event_id, r.fields, r.at) for r in rows]
+
+    def run(self, handle: Callable[[Entry], None], stop: threading.Event) -> None:
+        """Poll until `stop` is set, passing each entry to `handle`.
+
+        A poll that fails (the database went away) is retried after the interval. A handler that raises is logged
+        and the loop goes on with the next entry, so one bad event never stops a reader.
+        """
+        while not stop.is_set():
+            try:
+                entries = self.poll()
+            except Exception as exc:  # the database is unreachable or locked; the next poll retries
+                logger.warning("Tail %s: poll failed, retrying in %ss: %s", self.stream, self.interval, exc)
+                stop.wait(self.interval)
+                continue
+            for entry in entries:
+                try:
+                    handle(entry)
+                except Exception:  # a reader's bug must not stop the reader
+                    logger.exception("Tail %s: handler failed on entry %s", self.stream, entry.id)
+            if len(entries) < self.batch:
+                stop.wait(self.interval)
+
+
+def _create_engine(url: str) -> Engine:
+    if make_url(url).get_backend_name() == "sqlite":
+        return create_engine(url, connect_args={"timeout": _SQLITE_BUSY_TIMEOUT})
+    return create_engine(url)
+
+
+def _create_tables(engine: Engine) -> None:
+    """Create the log's tables; a producer that lost a race to create them looks again and finds them.
+
+    Each lost race means another process created a table meanwhile, and the tables are created once, so a few looks
+    suffice; the last failure is a real one and raises.
+    """
+    for _ in range(_CREATE_ATTEMPTS - 1):
+        try:
+            return metadata.create_all(engine, tables=[events, gaps])
+        except SQLAlchemyError:
+            continue
+    return metadata.create_all(engine, tables=[events, gaps])
+
+
+def _dialect(engine: Engine):
+    return postgresql if engine.dialect.name == "postgresql" else sqlite

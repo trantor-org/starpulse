@@ -25,7 +25,6 @@ from sqlalchemy import (
     Float,
     Index,
     Integer,
-    MetaData,
     String,
     Table,
     Text,
@@ -39,14 +38,15 @@ from sqlalchemy.exc import OperationalError
 from starpulse import events as machine_events
 from starpulse.gap_consumer import GapWatchingConsumer
 from starpulse.machine_tasks import Table as Transitions
+from starpulse.tables import gaps as _gaps
+from starpulse.tables import metadata
 
 #: The file a config without `database_url` keeps its history in, beside the config.
 DEFAULT_FILE = "starpulse-history.sqlite"
 
-_metadata = MetaData()
 _machine_events = Table(
     "starpulse_machine_events",
-    _metadata,
+    metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("event_id", String, nullable=False, unique=True),
     Column("task", String),
@@ -59,7 +59,7 @@ _machine_events = Table(
 )
 _lane_changes = Table(
     "starpulse_lane_changes",
-    _metadata,
+    metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("event_id", String, nullable=False, unique=True),
     Column("task", String, nullable=False),
@@ -70,23 +70,12 @@ _lane_changes = Table(
 )
 _learned_steps = Table(
     "starpulse_learned_steps",
-    _metadata,
+    metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("workflow", String, nullable=False),
     Column("step", String, nullable=False),
     Column("depends", Text, nullable=False),
     Index("ux_starpulse_learned_steps", "workflow", "step", unique=True),
-)
-_gaps = Table(
-    "starpulse_gaps",
-    _metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("stream", String, nullable=False),
-    Column("after_id", String, nullable=False),
-    Column("before_id", String, nullable=False),
-    Column("lost", Integer, nullable=False),
-    Column("noted_at", Float, nullable=False),
-    Index("ux_starpulse_gaps", "stream", "after_id", unique=True),
 )
 #: A path's order: by time, and the earlier insert first when two rows share one.
 _LANE_ORDER = (_lane_changes.c.observed_at, _lane_changes.c.id)
@@ -146,7 +135,7 @@ class HistoryStore:
         # pragma: no mutate start — SQLite compiles the postgresql insert's ON CONFLICT alike
         self._dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
         # pragma: no mutate end
-        _metadata.create_all(self.engine)
+        metadata.create_all(self.engine)
         #: One group per database, so two views on one Redis each fill their own, and a new database replays what the
         #: stream still holds into it (a redelivered entry is a no-op).
         self.group = f"starpulse-history-{hashlib.sha1(url.encode()).hexdigest()[:8]}"
