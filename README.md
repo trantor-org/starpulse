@@ -1,61 +1,128 @@
 # StarPulse
 
-StarPulse draws the flow of work: the workflows your scheduler runs, the lifecycle machines your tasks move
-through, and the agents and people moving them, live in one page.
+See the flow of work: your scheduler's workflows, the lifecycle your tasks move through, and the agents and
+people moving them, live on one page.
 
-## Run it
+**[Live demo](https://trantor-org.github.io/flow-demos/main/flow-view.html)**: a real board's structure with
+every task replaced by a synthetic one, running in your browser with no server.
+
+## What it draws
+
+- **Tasks on their lifecycle.** Each board status is a state on a machine, and a task travels the transitions
+  as it moves. The default board is a [Backlog.md](https://github.com/MrLesk/Backlog.md) project; a Kanban view
+  shows the same tasks as columns, and moves made there are written back to the board when its adapter has a
+  writer.
+- **Workflow runs.** Each workflow is drawn as its step graph with its latest run. [Dagu](https://github.com/dagu-org/dagu) is
+  read directly; any other scheduler reports its runs with `starpulse emit`.
+- **Agents at work.** A Claude Code session's OpenTelemetry log export moves the session through its own
+  machine, so you see which agent is prompting, running a tool or waiting.
+- **History.** Every move is kept, so hovering a task traces the path it took.
+
+## Quickstart
+
+You need [uv](https://docs.astral.sh/uv/), and Docker or Podman.
 
 ```sh
-uvx --from git+https://github.com/trantor-org/starpulse starpulse serve
+cd your-project          # a Backlog.md project: the one with a backlog/ directory
+uvx starpulse serve
 ```
 
-StarPulse reads its streams from Redis: set `REDIS_URL` (or `<PREFIX>_REDIS_HOST`, `_PORT` and
-`REDIS_PASSWORD`). With no config file it draws the [Backlog.md](https://github.com/MrLesk/Backlog.md) project in
-`./backlog` and keeps its history in `starpulse-history.sqlite` beside it.
+Open <http://localhost:8766>. StarPulse starts a Valkey container for its event streams unless `REDIS_URL`
+names a Redis it should use instead, and keeps its history in `starpulse-history.sqlite` beside its config file, or in
+the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
+trust.
 
-## Configure it
+`starpulse serve --port 8800 --hours 24` changes the port and how far back a task's latest move counts toward
+where it is drawn (6 hours by default).
 
-`starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read
-when it exists. Credentials never go in it.
+### Show your Claude Code sessions
 
-```toml
-tracker_url = "https://tracker.example.com"
-# History in Postgres instead of SQLite (install the `postgres` extra: `starpulse[postgres]`).
-database_url = "postgresql+psycopg://db.example.com/starpulse"
+Run the receiver beside the server, then start Claude Code with its log export pointed at it:
 
-# The board adapter: a module under `starpulse`, or a dotted path to one an installed package provides.
-# The rest of the table is that adapter's settings.
-[board]
-type = "upstream_backlog"
+```sh
+uvx --from starpulse python -m starpulse.claude_code
 
-# A runs adapter instance; its workflows are drawn as `<name>/<workflow>`.
-[[runs]]
-name = "dagu"
-type = "dagu"
-url = "http://dagu.example.com:8080"
-run_safe = ["nightly"]
-domains = { Data = ["nightly", "etl"] }
+CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_LOGS_EXPORTER=otlp OTEL_EXPORTER_OTLP_PROTOCOL=http/json \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_LOG_TOOL_DETAILS=1 \
+OTEL_RESOURCE_ATTRIBUTES="vcs.ref.head.name=$(git branch --show-current)" claude
 ```
 
-A board adapter is a module whose `board(settings, base)` returns a `starpulse.board.Board`: the machines the page
-draws, how the Board's tasks are placed, and optionally a writer for moves made on the page.
+The receiver keeps only the event types a session moves on and never reads prompt or reply text.
 
-## Report runs from any scheduler
+### Report runs from any scheduler
 
 ```sh
 starpulse emit start --workflow nightly --run 2026-10-03 --status running
 starpulse emit end   --workflow nightly --run 2026-10-03 --status succeeded --step load --depends fetch
 ```
 
-A workflow no adapter lists is drawn from the step graph its `emit` calls add up to.
+A workflow no adapter lists is drawn from the step graph its `emit` calls add up to, and that graph is kept in
+the history store across restarts.
+
+## Configure
+
+`starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read
+when it exists. Credentials never go in it: they come from the environment (`REDIS_PASSWORD`, and a database
+driver's own, such as `PGPASSWORD`).
+
+```toml
+# The tracker's web address: a task links to `<tracker_url>/tasks/<id>`.
+tracker_url = "https://tracker.example.com"
+
+# History in Postgres instead of SQLite; install the extra with `uvx --from 'starpulse[postgres]' starpulse serve`.
+database_url = "postgresql+psycopg://db.example.com/starpulse"
+
+# The board adapter: a module under `starpulse`, or the dotted path of one an installed package provides.
+# The rest of the table is that adapter's settings.
+[board]
+type = "upstream_backlog"
+
+# One instance of a runs adapter; its workflows are drawn as `<name>/<workflow>`.
+[[runs]]
+name = "dagu"
+type = "dagu"
+url = "http://dagu.example.com:8080"
+run_safe = ["nightly"]                   # the workflows the page's Run now may start
+domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
+```
+
+## Write a board adapter
+
+A board adapter connects StarPulse to a tracker. It is a module with a `board(settings, base)` function that
+returns a `starpulse.board.Board`: `settings` is the rest of the `[board]` table and `base` is the config file's
+directory. The `Board` says:
+
+- which lifecycle machines the page draws (`machines`),
+- how the tracker's tasks reach the page (`start`, which feeds each task as it changes, and `keys`, the task
+  keys it recognizes),
+- and optionally a `writer` for moves made on the page, an `assign` for assignee changes, and its own `history`.
+
+`starpulse.upstream_backlog` is the reference adapter: it polls a Backlog.md project's Markdown files and takes
+the machine from the project's own statuses. Name your module in `[board] type` and StarPulse imports it.
 
 ## Develop
 
 ```sh
+git clone https://github.com/trantor-org/starpulse && cd starpulse
 uv sync
-uv run pytest            # integration tests start Redis and Postgres containers, so Docker must run
-pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # builds the page into starpulse/static
+pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page, built into starpulse/static
+uv run starpulse serve
 ```
+
+`uv run pytest` runs the suite; its integration tests start Redis and Postgres containers, so Docker must run.
+`pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
+
+## Contributing
+
+Issues and pull requests are welcome. Keep a pull request to one change, with tests for what it changes, and
+make sure `uv run pytest` and the page's `check` pass.
+
+## Releases
+
+StarPulse is versioned `0.y.z` until its interfaces settle: a minor version can break the config file, the
+adapter contract or the command line, and a patch release never does. Each release is a
+[GitHub Release](https://github.com/trantor-org/starpulse/releases) whose notes list the pull requests it
+contains, published to PyPI as `starpulse`.
 
 ## License
 
