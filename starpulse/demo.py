@@ -335,14 +335,19 @@ def page(static: Path, fixture: dict) -> str:
     return re.sub(r'<link rel="stylesheet" crossorigin href="/([^"]+)">', style, html)
 
 
+def build(out: Path, server: str, design: Path | None = None) -> Path:
+    """Write the demo page to `out`: from the design mockup in `design` when given, else from `server`'s snapshot."""
+    out.write_text(mockup(design) if design else page(STATIC, scrub(capture(server))))
+    return out
+
+
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — CLI process boundary
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     ap.add_argument("--server", default="http://127.0.0.1:8766")
     ap.add_argument("--mockup", type=Path, help="a design mockup directory to build instead of StarPulse")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
-    args.out.write_text(mockup(args.mockup) if args.mockup else page(STATIC, scrub(capture(args.server))))
-    print(args.out)
+    print(build(args.out, args.server, args.mockup))
 
 
 if __name__ == "__main__":
