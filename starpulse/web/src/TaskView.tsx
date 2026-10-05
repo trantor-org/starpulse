@@ -41,7 +41,7 @@ function Txt({ value, label, className = "", long }: { value: string; label: str
     t.style.height = "auto";
     t.style.height = `${t.scrollHeight + 2}px`;
   }, [value, long]);
-  return <textarea ref={el} className={`fv${long ? " long" : ""}${className && ` ${className}`}`} rows={long ? 7 : 1} value={value} placeholder="—" aria-label={label} readOnly tabIndex={-1} />;
+  return <textarea ref={el} className={`fv${long ? " long" : ""}${className && ` ${className}`}`} rows={long ? 7 : 1} value={value} placeholder="—" aria-label={label} readOnly tabIndex={long ? 0 : -1} />;
 }
 
 /** A select showing `value` among `options`; read mode locks it. */
@@ -117,6 +117,8 @@ export function TaskView(p: TaskViewProps) {
   const milestone = own(r?.milestone, task.milestone);
   const labels = r?.labels ?? task.labels;
   const deps = r?.dependencies ?? task.dependencies;
+  // the board stores a priority in lower case; the select's options are capitalised
+  const priority = PRIORITIES.find((v) => v.toLowerCase() === r?.priority.toLowerCase()) ?? r?.priority ?? "";
   const offered = COLUMNS.filter((c) => c in task.moves).map((c) => ({ to: c, text: names[c] ?? c, allowed: task.moves[c].allowed, reason: task.moves[c].reason }));
   const startVisible = startLane(task) && !p.claiming;
   return (
@@ -136,7 +138,7 @@ export function TaskView(p: TaskViewProps) {
       <div className="tvbody">
         <table><tbody>
           <tr><td>profile</td><td><Select label="Profile" value={profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} /></td></tr>
-          <tr><td>priority</td><td><Select label="Priority" value={r?.priority ?? ""} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} /></td></tr>
+          <tr><td>priority</td><td><Select label="Priority" value={priority} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} /></td></tr>
           <tr><td>labels</td><td><Chips values={labels} flag="needs-human" /></td></tr>
           <tr><td>milestone</td><td><Select label="Milestone" value={milestone} options={[["", "—"], ...p.milestones.map((v): [string, string] => [v, v])]} /></td></tr>
           <tr><td>depends on</td><td><Chips values={deps} /></td></tr>

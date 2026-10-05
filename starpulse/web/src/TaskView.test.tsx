@@ -43,6 +43,13 @@ describe("the task view in read mode", () => {
     expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*disabled=""/);
   });
 
+  it("keeps the scrolling plan and notes boxes reachable by keyboard so they can be scrolled", () => {
+    const boxes = draw().match(/<textarea[^>]*class="fv long"[^>]*>/g) ?? [];
+
+    expect(boxes).toHaveLength(2);
+    for (const box of boxes) expect(box).not.toContain('tabindex="-1"');
+  });
+
   it("draws Edit and Archive only when the board can", () => {
     expect(draw()).toContain("Archive…");
     expect(draw()).toContain("Edit");
@@ -59,6 +66,13 @@ describe("the task view in read mode", () => {
     expect(foot).toContain("Move to");
     expect(foot).toContain("▶ Start session");
     expect(foot.indexOf("Move to")).toBeLessThan(foot.indexOf("▶ Start session"));
+  });
+
+  it("selects the priority's own option when the board stores it in lower case", () => {
+    const html = draw({ record: { ...record, priority: "high" } });
+
+    expect(html).toContain('<option value="High" selected="">High</option>');
+    expect(html).not.toContain('<option value="high"');
   });
 
   it("falls back to the snapshot's fields until the record arrives", () => {
