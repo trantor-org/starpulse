@@ -1,11 +1,13 @@
-"""`starpulse snapshot|board|task show|help --agent`: the verbs an agent reads a running StarPulse server with.
+"""`starpulse snapshot|board|task show|doctor|help --agent`: the verbs an agent reads a running StarPulse server with.
 
     starpulse board --milestone launch --label api
     starpulse task show PROJ-45
+    starpulse doctor
     starpulse help --agent
 
 Every verb writes one JSON document to stdout, an error as `{"error": "...", "code": "..."}`, and nothing to stderr.
-The exit code is 0 for success, 1 for a refused or invalid request, 2 for a usage error, 3 when the server (or what the
+The exit code is 0 for success (for `doctor`, every check passing), 1 for a refused or invalid request or a failed
+`doctor` check, 2 for a usage error, 3 when the server (or what the
 verb needs of it) is unavailable and 4 for something not found. The server is `--server`, else `STARPULSE_URL`, else
 `http://localhost:8766`; a verb reads it per call and keeps nothing. `starpulse help --agent` prints the manifest of
 verbs, generated from the parser below, so a verb added here is listed with its arguments, output keys and exit codes.
@@ -20,7 +22,11 @@ import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from pathlib import Path
 from typing import Any, NoReturn
+
+from starpulse import doctor
+from starpulse.config import load
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
@@ -167,6 +173,21 @@ def _show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     return {**_task(agent, snapshot), "description": agent["description"]}
 
 
+def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Every install check of `starpulse.doctor`; `ok` is false, and the exit code 1, when any fails."""
+    base = server_url(args.server, environ)
+    path = args.config or (Path("starpulse.toml") if Path("starpulse.toml").is_file() else None)
+    try:
+        config = load(path)
+    except (OSError, ValueError) as exc:
+        config = f"{path}: {exc}"
+    try:
+        snapshot: dict[str, Any] | str = _get(base, "/api/snapshot")
+    except CliError as exc:
+        snapshot = str(exc)
+    return doctor.run_checks(snapshot, config, dict(environ), doctor.LIVE, base)
+
+
 def _help(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     return _manifest(_parser())
 
@@ -260,6 +281,15 @@ def _parser() -> argparse.ArgumentParser:
         (0, 2, 3, 4),
     )
     show.add_argument("task", help="the task's key (`PROJ-45`)")
+    check = leaf(
+        verbs,
+        "doctor",
+        "check the install: config, Redis, the server, each adapter producing, gh and stream lag, each pass or fail",
+        _doctor,
+        ("ok", "checks"),
+        (0, 1, 2),
+    )
+    check.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     manifest = leaf(
         verbs,
         "help",
@@ -277,7 +307,8 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] = os.envi
     """Run one verb and print its JSON document; the exit code is the document's, as `EXIT_CODES` lists."""
     try:
         args = _parser().parse_args(argv)
-        document, status = args.run(args, environ), 0
+        document = args.run(args, environ)
+        status = 0 if document.get("ok", True) else 1  # only `doctor` reports `ok`
     except CliError as exc:
         document, status = {"error": str(exc), "code": exc.code}, _ERROR_EXIT[exc.code]
     print(json.dumps(document))
