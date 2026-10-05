@@ -1,10 +1,11 @@
-"""`starpulse snapshot|board|task show|moves|move|doctor|help --agent`: the verbs an agent drives a running StarPulse server with.
+"""`starpulse snapshot|board|task|doctor|skills|help --agent`: the verbs an agent drives a running server with.
 
     starpulse board --milestone launch --label api
     starpulse task show PROJ-45
     starpulse task moves PROJ-45
     starpulse task move PROJ-45 review
     starpulse doctor
+    starpulse skills install --claude --codex
     starpulse help --agent
 
 Every verb writes one JSON document to stdout, an error as `{"error": "...", "code": "..."}`, and nothing to stderr.
@@ -15,6 +16,7 @@ move or a failed `doctor` check, 2 for a usage error, 3 when the server (or what
 verb needs of it) is unavailable and 4 for something not found. The server is `--server`, else `STARPULSE_URL`, else
 `http://localhost:8766`; a verb reads it per call and keeps nothing. `starpulse help --agent` prints the manifest of
 verbs, generated from the parser below, so a verb added here is listed with its arguments, output keys and exit codes.
+`skills` reads no server: it copies the bundled skills into the project or, with `--user`, the home directory.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
-from starpulse import doctor
+from starpulse import doctor, skill_install
 from starpulse.config import load
 from starpulse.contracts import Move
 
@@ -250,6 +252,37 @@ def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     return doctor.run_checks(snapshot, config, dict(environ), doctor.LIVE, base)
 
 
+def _skills_root(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[str, Path]:
+    """Where a `skills` verb works: the project in the working directory, or with `--user` the home directory."""
+    return ("user", Path(environ.get("HOME") or Path.home())) if args.user else ("project", Path.cwd())
+
+
+def _skills_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    scope, root = _skills_root(args, environ)
+    return {
+        "scope": scope,
+        "skills": [
+            {
+                "name": name,
+                "description": skill_install.description(name),
+                **{harness: skill_install.status(root, harness, name) for harness in skill_install.HARNESS_DIRS},
+            }
+            for name in skill_install.names()
+        ],
+    }
+
+
+def _skills_install(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    harnesses = [harness for harness in skill_install.HARNESS_DIRS if getattr(args, harness)]
+    if not harnesses:
+        raise CliError("usage", "choose the harness to install for: --claude, --codex or both")
+    scope, root = _skills_root(args, environ)
+    try:
+        return {"scope": scope, "installed": skill_install.install(root, harnesses, args.force)}
+    except ValueError as exc:
+        raise CliError("refused", str(exc)) from exc
+
+
 def _help(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     return _manifest(_parser())
 
@@ -371,6 +404,31 @@ def _parser() -> argparse.ArgumentParser:
         (0, 1, 2),
     )
     check.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    skills = verbs.add_parser("skills", description="the skills StarPulse bundles", help="the skills StarPulse bundles")
+    skill_verbs = skills.add_subparsers(dest="verb", required=True, metavar="verb")
+    listing = leaf(
+        skill_verbs,
+        "list",
+        "each bundled skill with whether each harness has it installed, outdated or modified, or not at all",
+        _skills_list,
+        ("scope", "skills"),
+        (0, 2),
+        reads_server=False,
+    )
+    install = leaf(
+        skill_verbs,
+        "install",
+        "copy the bundled skills to each chosen harness's skills directory; refuses a copy modified since install",
+        _skills_install,
+        ("scope", "installed"),
+        (0, 1, 2),
+        reads_server=False,
+    )
+    for sub in (listing, install):
+        sub.add_argument("--user", action="store_true", help="the home directory's skills, not this project's")
+    install.add_argument("--claude", action="store_true", help="install for Claude Code, into .claude/skills")
+    install.add_argument("--codex", action="store_true", help="install for Codex, into .agents/skills")
+    install.add_argument("--force", action="store_true", help="replace a copy modified since install")
     manifest = leaf(
         verbs,
         "help",
