@@ -1,0 +1,11 @@
+# CodeRabbit review tuning for the StarPulse package repository.
+#
+# The App reads the configuration of the repository a PR targets. Keep its
+# automatic PR review and its status check disabled here for now, as the
+# workspace's other repositories do.
+language: en-US
+
+reviews:
+  review_status: false
+  auto_review:
+    enabled: false
