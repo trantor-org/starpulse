@@ -86,6 +86,7 @@ export const ROUTES: Record<string, string | null> = {
   "/api/start": "This demo has no session-start service to start a session with.",
   // unanswered, the start question offers only Work it manually
   "/api/harnesses": "This demo has no harnesses configured.",
+  "/api/history-window": "This demo has no server to keep a shared history window.",
 };
 
 /** The Board columns a card in `state` may be moved to: the machine's exits that are neither its creation nor a settled state. */

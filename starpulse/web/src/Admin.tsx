@@ -3,6 +3,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { SCALE, labelPx, type AdminStore } from "./adminPrefs";
 import { clockHm } from "./clock";
+import { CHIPS, type HistoryWindowStore } from "./historyWindow";
 
 /** The Preview's Star Map label: a ring with a state's name and count beneath, sized as the renderer sizes them. */
 function drawPreview(c: HTMLCanvasElement, scale: number) {
@@ -70,11 +71,46 @@ function Seg<T extends string>({ label, value, options, onPick }: { label: strin
 /** The time of the example beside the Clock choice, written as the choice writes every time on the page. */
 const sample = (clock: "24" | "12") => clockHm(Date.now() / 1000, clock);
 
-export function Admin({ store }: { store: AdminStore }) {
+/** The Server card: the history window every viewer shares, which the server keeps and validates. */
+function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" | "12" }) {
+  const { current, draft, phase, unavailable } = useSyncExternalStore(store.subscribe, store.get);
+  useEffect(() => void store.load(), [store]);
+  const dirty = store.dirty(), saving = phase.kind === "saving";
+  return (
+    <section className="card">
+      <h2>Server <span className="c">shared by every viewer</span></h2>
+      <div className="row">
+        <div><div className="lb">History window</div><div className="hint">How far back a task's latest move on a machine counts</div></div>
+        <div>
+          {!current ? (
+            unavailable && <div className="refusal"><div className="k">the history window cannot be read</div>{unavailable}</div>
+          ) : (
+            <>
+              <div className="hours">
+                <input inputMode="decimal" value={draft} aria-label="History window in hours" onChange={(e) => store.edit(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && dirty) void store.save();
+                    if (e.key === "Escape") store.edit(String(current.hours));
+                  }} /> hours
+                <div className="chips">{CHIPS.map((h) => <button key={h} type="button" onClick={() => store.edit(String(h))}>{h}h</button>)}</div>
+                <button type="button" className="btn go" disabled={!dirty || saving} onClick={() => void store.save()}>{saving ? "Saving…" : "Save"}</button>
+              </div>
+              <div className="hint">Default {current.default} h, declared by --hours. <button type="button" className="link" onClick={() => void store.reset()}>Reset to default</button></div>
+              {phase.kind === "saved" && <div className="ok">Saved: every viewer counts the last {current.hours} h from the next snapshot · <span className="when">{clockHm(phase.at, clock)}</span></div>}
+              {phase.kind === "refused" && <div className="refusal"><div className="k">the server refused the change</div>{phase.reason}</div>}
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function Admin({ store, window: historyWindow }: { store: AdminStore; window: HistoryWindowStore }) {
   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
   return (
     <div id="admin">
-      <header><span className="title">Admin</span><span className="count">settings for this browser</span></header>
+      <header><span className="title">Admin</span><span className="count">settings for this browser and for the StarPulse server</span></header>
       <div className="grid">
         <div>
           <section className="card">
@@ -110,6 +146,7 @@ export function Admin({ store }: { store: AdminStore }) {
             </div>
             <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>
           </section>
+          <ServerCard store={historyWindow} clock={clock} />
         </div>
         <Preview scale={scale} compact={density === "compact"} />
       </div>

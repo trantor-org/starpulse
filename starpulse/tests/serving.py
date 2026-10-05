@@ -13,6 +13,7 @@ from starpulse.board_feed import BoardFeed
 from starpulse.harnesses import Harnesses
 from starpulse.history import History, HistoryStore
 from starpulse.server import _handler
+from starpulse.settings import HistoryWindow
 
 
 def _no_writer(task: str, status: str) -> Written:
@@ -30,6 +31,7 @@ def serve(
     harnesses: Harnesses | None = None,
     assign: AssigneeWriter | None = None,
     start_session: Callable[[str], str] | None = None,
+    window: HistoryWindow | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -37,12 +39,14 @@ def serve(
     (static / "index.html").write_text("<!doctype html>")
     (static / "assets" / "index-abc123.js").write_text("")
     (tmp_path / "secret.txt").write_text("")
+    served = feed or BoardFeed()
     handler = _handler(
-        feed or BoardFeed(),
+        served,
         static,
         starts or {},
         run_safe,
         history or HistoryStore("sqlite://", feed.machines if feed else {}),
+        window or HistoryWindow(served, 6, tmp_path / "starpulse-settings.json"),
         writer or _no_writer,
         harnesses,
         assign or _no_writer,
