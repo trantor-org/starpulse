@@ -538,8 +538,29 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
         cues=board.cues(qualify),
         source=board.source,
         capabilities={"edit": board.edit is not None, "archive": board.archive is not None},
+        hint=found_backlog(config, base),
     )
     return board, feed
+
+
+def found_backlog(config: Config, base: Path) -> str | None:
+    """The line that names a Backlog.md project beside `base` and how to switch to it, when the config names no board.
+
+    The default board is StarPulse's own; a project that already has a `backlog/` is told, not adopted.
+    """
+    if "type" in config.board or not (project := base / "backlog" / "config.yml").is_file():
+        return None
+    return (
+        f"Found a Backlog.md project at {project}; StarPulse is showing its own board. "
+        'To show that project instead, add [board] type = "upstream_backlog" to your starpulse.toml.'
+    )
+
+
+def announce(port: int, hint: str | None) -> None:
+    """Say on the terminal where the view is, and the Backlog.md project it found when it did."""
+    print(f"StarPulse on :{port}", flush=True)
+    if hint:
+        print(hint, flush=True)
 
 
 def history_store(config: Config, base: Path, board: Board, machines: Mapping[str, dict]) -> History:
@@ -590,7 +611,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     # The learned step graphs persist only in StarPulse's own store.
     pushed = PushRuns(feed.runs(PUSHED_INSTANCE), history if isinstance(history, HistoryStore) else None)
     follow(pushed, build_push_consumer(pushed, f"flow-view-pushed-{args.port}"))
-    print(f"StarPulse on :{args.port}", flush=True)
+    announce(args.port, feed.snapshot()["hint"])
     handler = _handler(
         feed,
         _STATIC,

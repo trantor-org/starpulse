@@ -33,12 +33,13 @@ def _wait_until(condition, timeout: float = 5.0) -> None:
         time.sleep(0.01)
 
 
-def test_with_no_board_table_the_view_draws_the_backlog_md_project_beside_its_config(tmp_path: Path) -> None:
+def test_a_board_type_upstream_backlog_draws_the_backlog_md_project_beside_its_config(tmp_path: Path) -> None:
     (tmp_path / "backlog" / "tasks").mkdir(parents=True)
     (tmp_path / "backlog" / "config.yml").write_text("statuses: [To Do, Doing, Done]\n")
     (tmp_path / "backlog" / "tasks" / "task-1 - Draw-the-board.md").write_text(TASK)
 
-    board, feed = assemble(load(_config(tmp_path)), tmp_path, None, ())
+    config = load(_config(tmp_path, '[board]\ntype = "upstream_backlog"\n'))
+    board, feed = assemble(config, tmp_path, None, ())
     board.start(feed, "test")
 
     assert [s["id"] for s in feed.snapshot()["flows"][0]["machine"]["states"]] == ["to_do", "doing", "done"]

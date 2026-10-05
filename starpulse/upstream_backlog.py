@@ -4,7 +4,7 @@ Upstream Backlog.md (MrLesk/Backlog.md) has no projection stream and no server t
 the Markdown files under the project's `backlog/` directory. `UpstreamBacklog` polls them, hands each
 changed file to a feed as a `BoardTask`, and the Board machine comes from the project's own statuses
 (`backlog/config.yml`), so a lane is a status the project configured. It imports neither Redis nor the
-projection contract, so it runs on a machine that has neither. It is the default `[board]` adapter.
+projection contract, so it runs on a machine that has neither. It is the `[board] type = "upstream_backlog"` adapter.
 """
 
 from __future__ import annotations
@@ -271,22 +271,21 @@ def _machine(path: Path, config: BacklogConfig) -> tuple[dict, dict[str, tuple[W
     return {**drawn, "mainLine": ids}, dict(compiled.writers)
 
 
-def board(settings: Mapping[str, Any], base: Path) -> Board:
-    """The Board of the Backlog.md project at `settings["path"]` (default `backlog`), polled every `interval` seconds.
+def project_board(
+    root: Path, settings: Mapping[str, Any], base: Path, writers: Callable[[BacklogConfig], Mapping[str, Any]]
+) -> Board:
+    """The Board of the Markdown project in `root`, polled every `settings["interval"]` seconds, with the writers `writers` builds.
 
-    Moves are written with the `backlog` CLI (`command`). Any lane reaches any other unless `machine` names a machine
-    file, whose transitions and `writers` then decide which moves are offered and to whom.
+    Any lane reaches any other unless `settings["machine"]` names a machine file (relative to `base`), whose transitions
+    and `writers` then decide which moves are offered and to whom.
     """
-    if unknown := sorted(settings.keys() - _SETTINGS):
-        raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
-    root = base / str(settings.get("path", "backlog"))
     interval = float(settings.get("interval", 2.0))
     config = read_config(root)
     if "machine" in settings:
-        drawn, writers = _machine(base / str(settings["machine"]), config)
+        drawn, declared = _machine(base / str(settings["machine"]), config)
     else:
-        drawn, writers = board_machine(config.statuses), {}
-    moves = board_moves(drawn, writers)
+        drawn, declared = board_machine(config.statuses), {}
+    moves = board_moves(drawn, declared)
 
     def machines(qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
         return {"board": drawn}
@@ -294,10 +293,16 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     def start(feed: BoardFeed, group: str) -> None:
         UpstreamBacklog(root, feed.put, moves).start(interval)
 
-    return Board(
-        machines=machines,
-        start=start,
-        keys=upstream_keys(config.prefix),
-        writer=cli_writer(root, config.statuses, shlex.split(str(settings.get("command", "backlog")))),
-        source=str(root),
-    )
+    return Board(machines=machines, start=start, keys=upstream_keys(config.prefix), source=str(root), **writers(config))
+
+
+def board(settings: Mapping[str, Any], base: Path) -> Board:
+    """The Board of the Backlog.md project at `settings["path"]` (default `backlog`), polled every `interval` seconds.
+
+    Moves are written with the `backlog` CLI (`command`).
+    """
+    if unknown := sorted(settings.keys() - _SETTINGS):
+        raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
+    command = shlex.split(str(settings.get("command", "backlog")))
+    root = base / str(settings.get("path", "backlog"))
+    return project_board(root, settings, base, lambda config: {"writer": cli_writer(root, config.statuses, command)})

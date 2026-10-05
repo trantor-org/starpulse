@@ -157,6 +157,8 @@ export interface Snapshot {
   cues?: Cue[];
   /** The Backlog board a task links into. */
   boardUrl?: string | null;
+  /** A Backlog.md project found beside the config while the default board is shown, and how to switch to it. */
+  hint?: string | null;
   dags: Dag[];
   flows: FlowSnapshot[];
   /** Each open task's pull requests, by task id. */

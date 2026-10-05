@@ -213,6 +213,7 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "error",
         "flows",
         "graphs",
+        "hint",
         "now",
         "pulls",
         "settled",

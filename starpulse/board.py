@@ -1,7 +1,8 @@
 """The board adapter seam: where the Board's tasks and the machines the page draws come from.
 
 The config's `[board]` table names the adapter by `type`: a module under `starpulse` (the default is
-`upstream_backlog`, a Backlog.md project's task files) or a dotted module path an installed package provides.
+`native`, StarPulse's own Markdown board; `upstream_backlog` reads a Backlog.md project's task files) or a dotted
+module path an installed package provides.
 The module's `board(settings, base)` returns a `Board`; `settings` is the rest of the `[board]` table and
 `base` the directory relative paths in it are read from.
 """
@@ -34,7 +35,7 @@ __all__ = [
     "module_name",
 ]
 
-DEFAULT_TYPE = "upstream_backlog"
+DEFAULT_TYPE = "native"
 
 
 class Written(NamedTuple):

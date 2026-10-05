@@ -1,8 +1,8 @@
 """StarPulse's one config file: its board adapter, its history database, and which runs adapters run.
 
 Credentials never live here; they come from environment variables (`REDIS_PASSWORD`, and a database
-driver's own, such as `PGPASSWORD`). With no file the view runs as an individual-contributor view of the
-Backlog.md project in `./backlog`, keeping its history in a SQLite file, with no runs adapter.
+driver's own, such as `PGPASSWORD`). With no file the view runs as an individual-contributor view of its own
+Markdown board in `./.starpulse/board`, keeping its history in a SQLite file, with no runs adapter.
 
 The `[board]` table names the board adapter by `type` (`starpulse.board`); the rest of the table is that
 adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.history`).

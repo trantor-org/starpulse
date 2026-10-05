@@ -123,6 +123,7 @@ def scrub(live: dict) -> dict:
     return {
         **live,
         "boardUrl": None,
+        "hint": None,
         "domains": [{**d, "dags": [{"name": x["name"], "runSafe": False} for x in d["dags"]]} for d in live["domains"]],
         "dags": [{**d, "runId": f"demo-{i}"} for i, d in enumerate(live["dags"])],
         "flows": flows,
