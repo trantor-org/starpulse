@@ -4,6 +4,7 @@ import json
 import re
 import socket
 import threading
+import time
 import urllib.request
 from collections.abc import Iterator, Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +18,7 @@ from starpulse import doctor, skill_install
 from starpulse.board import Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import Move
+from starpulse.history import HistoryStore
 from starpulse.server import _no_writer
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
@@ -26,6 +28,19 @@ from starpulse.tests.tasks import task
 
 PULL = "https://github.com/acme/app/pull/5"
 UNREAD_PULL = "https://github.com/acme/app/pull/9"  # linked from a task, but the server has not read it
+
+
+def _dag(name: str, status: str, raw: str | None = None) -> dict[str, Any]:
+    """A workflow as a runs adapter lists it."""
+    return {
+        "name": name,
+        "status": status,
+        "raw": raw,
+        "runId": f"{name}-1",
+        "startedAt": "2026-10-05T17:00:00Z",
+        "finishedAt": "",
+        "steps": [],
+    }
 
 
 def _run(
@@ -66,7 +81,31 @@ def base(tmp_path: Path) -> Iterator[str]:
     feed.put(task("PROJ-5", "Ready"))
     pull = {"number": 5, "url": PULL, "checks": "pass", "merged": False, "threads": 2, "stale": False}
     feed.set_pulls({"PROJ-1": [pull]})
-    with _serve(tmp_path, feed) as server:
+    for task_id, state in (("PROJ-1", "worktree_ready"), ("PROJ-2", "worktree_ready"), ("PROJ-4", "green")):
+        feed.move(
+            "in-progress",
+            {
+                "id": task_id,
+                "title": task_id,
+                "model": "",
+                "task": task_id,
+                "state": state,
+                "steps": 1,
+                "trail": [],
+                "active": time.time(),
+            },
+        )
+    feed.runs("prod").set_dags([_dag("nightly", "succeeded", "Success"), _dag("backup", "running")], None)
+    feed.runs("staging").set_dags([_dag("nightly", "failed")], "listing was refused")
+    store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    for i, event in enumerate(["WORKTREE_READY", "RED_PROVEN"]):
+        store.record_machine(
+            f"m{i}-0",
+            {"event_id": f"m{i}", "machine": "in-progress", "event": event, "task": "PROJ-1", "time": 100.0 + i},
+        )
+    for i, lane in enumerate(("to_do", "ready")):
+        store.record_lane(f"l{i}", "PROJ-1", lane, 200.0 + i)
+    with _serve(tmp_path, feed, history=store) as server:
         yield _url(server, "")
 
 
@@ -499,6 +538,10 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task show",
         "task moves",
         "task move",
+        "task trace",
+        "machine list",
+        "machine show",
+        "runs list",
         "doctor",
         "skills list",
         "skills install",
@@ -514,6 +557,123 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
     assert (state["flags"], state["required"]) == (["--state"], False)
     manifest = next(v for v in doc["verbs"] if v["verb"] == "help")
     assert [(a["name"], a["flags"], a["required"]) for a in manifest["arguments"]] == [("agent", ["--agent"], True)]
+
+
+def test_machine_list_names_each_machine_with_its_states_and_live_task_count(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["machine", "list", "--server", base])
+
+    assert code == 0
+    assert [(m["name"], m["tasks"]) for m in doc["machines"]] == [
+        ("board", 4),
+        ("in-progress", 3),
+        ("authoring-skills", 0),
+    ]
+    assert doc["machines"][0]["states"] == ["to_do", "ready", "in_progress", "review", "done"]
+
+
+def test_machine_show_gives_states_transitions_and_the_live_tasks_per_state(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["machine", "show", "in-progress", "--server", base])
+    with urllib.request.urlopen(f"{base}/api/snapshot", timeout=5) as resp:
+        drawn = next(f["machine"] for f in json.load(resp)["flows"] if f["name"] == "in-progress")
+
+    assert code == 0
+    assert doc["name"] == "in-progress"
+    assert doc["transitions"] == drawn["transitions"]
+    assert [(s["id"], s["name"], s["initial"], s["final"]) for s in doc["states"]] == [
+        (s["id"], s["name"], s["initial"], s["final"]) for s in drawn["states"]
+    ]
+    live = {s["id"]: (s["count"], s["tasks"]) for s in doc["states"]}
+    assert live["worktree_ready"] == (2, ["PROJ-1", "PROJ-2"])
+    assert live["green"] == (1, ["PROJ-4"])
+    assert live["start"] == (0, [])
+
+
+def test_machine_show_counts_the_boards_open_tasks_per_column(base: str, capsys: pytest.CaptureFixture[str]) -> None:
+    _, doc = _run(capsys, ["machine", "show", "board", "--server", base])
+
+    assert {s["id"]: (s["count"], s["tasks"]) for s in doc["states"]} == {
+        "to_do": (1, ["PROJ-1"]),
+        "ready": (2, ["PROJ-2", "PROJ-5"]),
+        "in_progress": (1, ["PROJ-4"]),
+        "review": (0, []),
+        "done": (0, []),  # PROJ-3 settled: it left the lanes
+    }
+
+
+def test_a_machine_the_server_does_not_draw_is_not_found_naming_the_machines(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["machine", "show", "nowhere", "--server", base])
+
+    assert (code, doc["code"]) == (4, "not_found")
+    assert doc["error"] == "nowhere is not a machine; the server draws board, in-progress, authoring-skills"
+
+
+def test_task_trace_without_a_flow_is_the_boards_lane_path(base: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "trace", "PROJ-1", "--server", base])
+
+    assert code == 0
+    assert doc == {
+        "task": "PROJ-1",
+        "flow": None,
+        "path": [{"at": 200.0, "from": None, "to": "to_do"}, {"at": 201.0, "from": "to_do", "to": "ready"}],
+        "steps": 2,
+    }
+
+
+def test_task_trace_with_a_flow_is_the_machine_path(base: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "trace", "PROJ-1", "--flow", "in-progress", "--server", base])
+
+    assert code == 0
+    assert doc == {
+        "task": "PROJ-1",
+        "flow": "in-progress",
+        "path": [
+            {"at": 100.0, "event": "WORKTREE_READY", "state": "worktree_ready"},
+            {"at": 101.0, "event": "RED_PROVEN", "state": "red_proven"},
+        ],
+        "steps": 2,
+    }
+
+
+def test_task_trace_of_a_task_never_seen_is_an_empty_path(base: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "trace", "PROJ-99", "--server", base])
+
+    assert (code, doc["path"], doc["steps"]) == (0, [], 0)
+
+
+def test_task_trace_of_an_unknown_flow_is_not_found(base: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "trace", "PROJ-1", "--flow", "nowhere", "--server", base])
+
+    assert (code, doc) == (4, {"error": "unknown flow nowhere", "code": "not_found"})
+
+
+def test_runs_list_names_each_workflow_by_instance_with_its_status_and_the_runs_error(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["runs", "list", "--server", base])
+
+    assert code == 0
+    assert doc["error"] == "staging: listing was refused"
+    assert doc["runs"] == [
+        {
+            "workflow": workflow,
+            "status": status,
+            "raw": raw,
+            "run_id": run_id,
+            "started_at": "2026-10-05T17:00:00Z",
+            "finished_at": "",
+        }
+        for workflow, status, raw, run_id in (
+            ("prod/nightly", "succeeded", "Success", "nightly-1"),
+            ("prod/backup", "running", None, "backup-1"),
+            ("staging/nightly", "failed", None, "nightly-1"),
+        )
+    ]
 
 
 # Every verb the manifest lists, and each exit code it declares, with an argument line that produces it. `{server}`
@@ -538,6 +698,20 @@ CASES = {
     ("task move", 2): ["task", "move", "PROJ-6"],
     ("task move", 3): ["task", "move", "PROJ-6", "review", "--server", "{bare}"],
     ("task move", 4): ["task", "move", "PROJ-99", "review", "--server", "{movable}"],
+    ("task trace", 0): ["task", "trace", "PROJ-1", "--flow", "in-progress", "--server", "{server}"],
+    ("task trace", 2): ["task", "trace"],
+    ("task trace", 3): ["task", "trace", "PROJ-1", "--server", "{down}"],
+    ("task trace", 4): ["task", "trace", "PROJ-1", "--flow", "nowhere", "--server", "{server}"],
+    ("machine list", 0): ["machine", "list", "--server", "{server}"],
+    ("machine list", 2): ["machine", "list", "--nope"],
+    ("machine list", 3): ["machine", "list", "--server", "{down}"],
+    ("machine show", 0): ["machine", "show", "board", "--server", "{server}"],
+    ("machine show", 2): ["machine", "show"],
+    ("machine show", 3): ["machine", "show", "board", "--server", "{down}"],
+    ("machine show", 4): ["machine", "show", "nowhere", "--server", "{server}"],
+    ("runs list", 0): ["runs", "list", "--server", "{server}"],
+    ("runs list", 2): ["runs", "list", "--nope"],
+    ("runs list", 3): ["runs", "list", "--server", "{down}"],
     ("doctor", 0): ["doctor", "--server", "{server}"],
     ("doctor", 1): ["doctor", "--server", "{down}"],
     ("doctor", 2): ["doctor", "--nope"],
