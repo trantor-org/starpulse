@@ -90,8 +90,8 @@ loads), `redis` (`REDIS_URL` answers, or docker or podman can start the Valkey c
 `server` (it answers `/api/snapshot`), `adapter:board` and one `adapter:<name>` per `[[runs]]` instance (it is
 producing: the Board is read, the instance lists workflows and reports no error), `gh` (installed and logged in, which
 the pull request reader needs) and `stream-lag` (no consumer group of `machine:events` or `runs:events` is more than
-100 entries behind, entries delivered but not yet acknowledged included). A check that needs a server or Redis that is
-down fails too, saying so.
+100 entries behind, entries delivered but not yet acknowledged included, and none whose lag Redis cannot measure). A
+check that needs a server or Redis that is down fails too, saying so.
 
 `waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
 merged state and open review threads the server last read when it has them.
