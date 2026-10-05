@@ -71,6 +71,7 @@ starpulse task moves PROJ-45                     # every column it may move to, 
 starpulse task move PROJ-45 review               # move it as the agent; a refusal is the verdict, exit 1
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
+starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
 starpulse help --agent                           # every verb with its arguments, output keys and exit codes
 ```
 
@@ -89,6 +90,8 @@ lists exactly the verbs there are.
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
 | `task move` | `TASK`, `TO`, `--session` | `ok`, `task`, `to`, `reason`, `skill` and `advice`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
+| `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |
+| `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |
 | `help --agent` | | `exit_codes` and `verbs` |
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
@@ -115,6 +118,13 @@ producing: the Board is read, the instance lists workflows and reports no error)
 the pull request reader needs) and `stream-lag` (no consumer group of `machine:events` or `runs:events` is more than
 100 entries behind, entries delivered but not yet acknowledged included, and none whose lag Redis cannot measure). A
 check that needs a server or Redis that is down fails too, saying so.
+
+`skills` reads no server. The package bundles two skills, `operating-starpulse-board` (what to work next, why a task
+cannot move, moving it) and `setting-up-starpulse` (starting the server, Redis, config, `doctor`), and `skills install`
+copies them to `.claude/skills` (`--claude`) or `.agents/skills` (`--codex`) in the working directory, or with `--user`
+to `~/.claude/skills` or `~/.agents/skills`. An install records what it wrote, so a copy you edited afterwards is
+refused (exit 1) until you pass `--force`, while one the package has since updated is replaced; `skills list` reports
+which of the two each copy is.
 
 `waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
 merged state and open review threads the server last read when it has them.

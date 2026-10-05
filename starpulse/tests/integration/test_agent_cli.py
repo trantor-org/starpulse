@@ -1,6 +1,7 @@
 """`starpulse snapshot|board|task show|help --agent`: an agent reads the running server and gets one JSON document."""
 
 import json
+import re
 import socket
 import threading
 import urllib.request
@@ -12,7 +13,7 @@ from typing import Any
 import pytest
 
 from starpulse import agent_cli as cli
-from starpulse import doctor
+from starpulse import doctor, skill_install
 from starpulse.board import Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import Move
@@ -499,6 +500,8 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task moves",
         "task move",
         "doctor",
+        "skills list",
+        "skills install",
         "help",
     ]
     for verb in doc["verbs"]:
@@ -538,9 +541,23 @@ CASES = {
     ("doctor", 0): ["doctor", "--server", "{server}"],
     ("doctor", 1): ["doctor", "--server", "{down}"],
     ("doctor", 2): ["doctor", "--nope"],
+    ("skills list", 0): ["skills", "list"],
+    ("skills list", 2): ["skills", "list", "--nope"],
+    ("skills install", 0): ["skills", "install", "--claude", "--codex"],
+    ("skills install", 1): ["skills", "install", "--claude"],
+    ("skills install", 2): ["skills", "install"],
     ("help", 0): ["help", "--agent"],
     ("help", 2): ["help"],
 }
+
+
+def _edit_an_installed_copy() -> None:
+    """The state `skills install` meets for exit 1: a bundled skill installed here, then edited."""
+    skill_install.install(Path.cwd(), ["claude"], force=False)
+    (Path.cwd() / ".claude/skills/operating-starpulse-board/SKILL.md").write_text("mine\n")
+
+
+PREPARE = {("skills install", 1): _edit_an_installed_copy}
 
 
 def _manifest(capsys: pytest.CaptureFixture[str]) -> list[dict]:
@@ -555,15 +572,145 @@ def test_every_manifest_verb_and_exit_code_has_a_case(capsys: pytest.CaptureFixt
 
 @pytest.mark.parametrize(("verb", "exit_code"), list(CASES))
 def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
-    base: str, movable: str, bare: str, capsys: pytest.CaptureFixture[str], verb: str, exit_code: int
+    base: str,
+    movable: str,
+    bare: str,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    verb: str,
+    exit_code: int,
 ) -> None:
+    monkeypatch.chdir(tmp_path)  # `skills` writes into the project, and under HOME with --user
+    PREPARE.get((verb, exit_code), lambda: None)()
     manifest = next(v for v in _manifest(capsys) if v["verb"] == verb)
     argv = [a.format(server=base, movable=movable, bare=bare, down=_closed_port_url()) for a in CASES[verb, exit_code]]
 
-    code, doc = _run(capsys, argv)
+    code, doc = _run(capsys, argv, {"HOME": str(tmp_path / "home")})
 
     assert code == exit_code
     assert exit_code in manifest["exit_codes"]
     # A failed doctor check and a refused move still report their keys; any other refusal is an error document.
     reports = exit_code == 0 or (verb, exit_code) in {("doctor", 1), ("task move", 1)}
     assert set(doc) == (set(manifest["outputs"]) if reports else {"error", "code"})
+
+
+SKILLS = ["operating-starpulse-board", "setting-up-starpulse"]
+
+
+def test_skills_install_copies_the_bundled_skills_for_each_harness_chosen_into_the_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    code, doc = _run(capsys, ["skills", "install", "--claude", "--codex"], {"HOME": str(tmp_path / "home")})
+
+    assert code == 0
+    assert doc["scope"] == "project"
+    assert {(i["harness"], i["skill"]) for i in doc["installed"]} == {
+        (h, s) for h in ("claude", "codex") for s in SKILLS
+    }
+    for skill in SKILLS:
+        assert (tmp_path / ".claude/skills" / skill / "SKILL.md").is_file()
+        assert (tmp_path / ".agents/skills" / skill / "SKILL.md").is_file()
+    assert not (tmp_path / "home").exists()
+
+
+def test_skills_install_with_user_writes_under_the_home_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project, home = tmp_path / "project", tmp_path / "home"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    code, doc = _run(capsys, ["skills", "install", "--codex", "--user"], {"HOME": str(home)})
+
+    assert (code, doc["scope"]) == (0, "user")
+    assert (home / ".agents/skills/setting-up-starpulse/SKILL.md").is_file()
+    assert not (home / ".claude").exists()
+    assert list(project.iterdir()) == []
+
+
+def test_skills_install_without_a_harness_is_a_usage_error_naming_the_flags(capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["skills", "install"])
+
+    assert (code, doc["code"]) == (2, "usage")
+    assert "--claude" in doc["error"] and "--codex" in doc["error"]
+
+
+def test_skills_install_refuses_a_modified_copy_until_forced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _run(capsys, ["skills", "install", "--claude"])
+    edited = tmp_path / ".claude/skills/operating-starpulse-board/SKILL.md"
+    edited.write_text("mine\n")
+
+    code, doc = _run(capsys, ["skills", "install", "--claude"])
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "operating-starpulse-board" in doc["error"] and "--force" in doc["error"]
+    assert edited.read_text() == "mine\n"
+
+    code, doc = _run(capsys, ["skills", "install", "--claude", "--force"])
+
+    assert code == 0
+    assert edited.read_text().startswith("---\nname: operating-starpulse-board")
+
+
+def test_skills_list_reports_each_skills_status_per_harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _run(capsys, ["skills", "install", "--claude"])
+    (tmp_path / ".claude/skills/setting-up-starpulse/SKILL.md").write_text("mine\n")
+
+    code, doc = _run(capsys, ["skills", "list"])
+
+    assert code == 0
+    assert doc["scope"] == "project"
+    assert [(s["name"], s["claude"], s["codex"]) for s in doc["skills"]] == [
+        ("operating-starpulse-board", "installed", "absent"),
+        ("setting-up-starpulse", "modified", "absent"),
+    ]
+    assert all(s["description"] for s in doc["skills"])
+
+
+def test_skills_list_with_user_reads_the_home_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    environ = {"HOME": str(tmp_path / "home")}
+    _run(capsys, ["skills", "install", "--codex", "--user"], environ)
+
+    _, doc = _run(capsys, ["skills", "list", "--user"], environ)
+
+    assert (doc["scope"], {s["codex"] for s in doc["skills"]}, {s["claude"] for s in doc["skills"]}) == (
+        "user",
+        {"installed"},
+        {"absent"},
+    )
+
+
+def test_every_skill_is_a_directory_named_in_its_front_matter_with_a_description() -> None:
+    assert skill_install.names() == SKILLS
+    for name in SKILLS:
+        text = (skill_install.SOURCE / name / "SKILL.md").read_text()
+        assert f"\nname: {name}\n" in text.split("---")[1]
+        assert skill_install.description(name)
+
+
+def test_every_verb_and_flag_a_bundled_skill_names_is_in_the_manifest(capsys: pytest.CaptureFixture[str]) -> None:
+    verbs = {v["verb"]: {f for a in v["arguments"] for f in a["flags"]} for v in _manifest(capsys)}
+    named = 0
+    for name in skill_install.names():
+        for span in re.findall(r"`starpulse ([^`]+)`", (skill_install.SOURCE / name / "SKILL.md").read_text()):
+            words = span.split()
+            if words[0] in ("serve", "emit"):  # run through their own parsers, not the verb manifest
+                continue
+            leaf = next((" ".join(words[:n]) for n in (2, 1) if " ".join(words[:n]) in verbs), None)
+            assert leaf, f"{name} names `starpulse {span}`, which is no manifest verb"
+            flags = {w.split("=")[0] for w in words if w.startswith("--")}
+            assert flags <= verbs[leaf], f"{name} gives `starpulse {leaf}` {flags - verbs[leaf]}"
+            named += 1
+    assert named >= 8  # the skills do name verbs; a regex that matched nothing would pass vacuously
