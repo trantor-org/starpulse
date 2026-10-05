@@ -67,8 +67,9 @@ jobs:
       - name: Render and post the screenshots
         env:
           # `gh pr comment --attach` is the only way to upload a screenshot into a comment, and it refuses an App or
-          # Actions token ("unsupported authentication type"), so the comment is posted as a user token's user.
-          GH_TOKEN: ${{ secrets.UI_PREVIEW_TOKEN }}
+          # Actions token ("unsupported authentication type"), so the comment is posted as RENOVATE_TOKEN's user, the
+          # PAT the trantor workspace's own UI preview posts with.
+          GH_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
           DEMO_TOKEN: ${{ steps.demo-token.outputs.token }}
           ACTION: ${{ github.event.action }}
         run: >-
