@@ -97,6 +97,12 @@
       "title": "Assignee",
       "type": "string"
     },
+    "holder": {
+      "default": "",
+      "description": "The session that last claimed the task, as its harness names it; empty when none has. `assignee` stays who or which agent model the task is for.",
+      "title": "Holder",
+      "type": "string"
+    },
     "labels": {
       "default": [],
       "description": "The task's labels.",

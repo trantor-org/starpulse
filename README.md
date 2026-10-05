@@ -87,7 +87,7 @@ lists exactly the verbs there are.
 | `board` | `--state`, `--milestone`, `--label`, `--assignee` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, milestone, labels, dependencies, waiting_on, prs, moves}` |
 | `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
-| `task move` | `TASK`, `TO` | `ok`, `task`, `to`, `reason` and `skill`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer |
+| `task move` | `TASK`, `TO`, `--session` | `ok`, `task`, `to`, `reason`, `skill` and `advice`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
 | `help --agent` | | `exit_codes` and `verbs` |
 
@@ -98,6 +98,15 @@ writer is asked, so a move declared for `operator` alone (sending an In Progress
 `starpulse task move`, which always moves as `agent`. A board adapter's `writer` receives that actor as its third
 argument: `writer(task, status, actor)`. `/api/move` is unauthenticated on the LAN, so this stops an agent's
 accident, not an adversary.
+
+A move may also name the mover's session: `POST /api/move` takes `{task, to, actor, session}`, and `starpulse task move`
+sends `--session`, else `STARPULSE_SESSION`. A move that names one calls the writer with it as a fourth argument,
+`writer(task, status, actor, session)`; one that names none calls it with three, so a writer written before sessions
+keeps working. The writer records the session as the task's holder when the move is a claim, `BoardTask.holder`
+carries it back, and a `Written.advice` string rides in the move's answer (`advice` in the CLI document, empty when
+the writer has none). The Backlog.md adapter's writer records the holder as a `**Holder:** <session>` line in the
+task's notes, in the same edit as the `In Progress` status, because the Backlog CLI drops a frontmatter key it
+does not know.
 
 `doctor` runs every check even when one fails, so one call names every fault. The checks: `config` (the config file
 loads), `redis` (`REDIS_URL` answers, or docker or podman can start the Valkey container the server would use),
