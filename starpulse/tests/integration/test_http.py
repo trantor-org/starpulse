@@ -68,8 +68,20 @@ def test_the_build_is_served_and_nothing_outside_it(server: ThreadingHTTPServer)
     }
 
 
-def test_the_page_has_no_snapshot_endpoint_to_poll(server: ThreadingHTTPServer) -> None:
-    assert _status(server, "/api/snapshot?flow=board") == (404, "")
+def test_the_snapshot_endpoint_is_the_document_the_event_stream_connects_with(tmp_path: Path) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-1", "To Do", milestone="m-76"))
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/snapshot"), timeout=5) as resp:
+            polled = (resp.status, resp.headers["Content-Type"], resp.headers["Cache-Control"], json.load(resp))
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            _, streamed = _next_event(resp)
+
+    status, content_type, cache, document = polled
+    assert (status, content_type, cache) == (200, "application/json", "no-store")
+    assert document.pop("now") <= streamed.pop("now")  # read a moment apart, so only the clock differs
+    assert document == streamed
+    assert [a["id"] for a in document["flows"][0]["agents"]] == ["PROJ-1"]
 
 
 def test_the_first_event_carries_each_open_tasks_milestone(tmp_path: Path) -> None:

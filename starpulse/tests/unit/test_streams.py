@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from starpulse.streams import StreamConsumer, StreamProducer, redis_endpoint_from_env
+from starpulse.streams import StreamConsumer, StreamProducer, endpoint_from_url, redis_endpoint_from_env
 
 
 def _consumer(handler: Callable[[str, dict], None] = lambda entry_id, fields: None, **over: Any) -> StreamConsumer:
@@ -33,7 +33,9 @@ def test_a_consumers_socket_deadline_outlasts_its_blocking_read(built: dict[str,
     assert built == {
         "host": "redis",
         "port": 6380,
+        "username": None,
         "password": "secret",
+        "ssl": False,
         "socket_connect_timeout": 5,
         "socket_timeout": 2 + StreamConsumer.SOCKET_TIMEOUT_MARGIN_S,
         "decode_responses": True,
@@ -47,7 +49,9 @@ def test_a_producer_builds_one_decoded_client_on_its_endpoint(built: dict[str, A
     assert built == {
         "host": "redis",
         "port": 6380,
+        "username": None,
         "password": "secret",
+        "ssl": False,
         "socket_connect_timeout": 5,
         "socket_timeout": 5,
         "decode_responses": True,
@@ -127,7 +131,9 @@ def test_a_consumer_defaults_to_a_local_redis_and_its_own_attempt_count() -> Non
     } == {
         "redis_host": "127.0.0.1",
         "redis_port": 6379,
+        "redis_username": None,
         "redis_password": None,
+        "redis_ssl": False,
         "read_batch": 50,
         "read_block_ms": 5000,
         "claim_idle_ms": 60000,
@@ -256,13 +262,75 @@ def test_a_producer_defaults_to_a_local_redis_and_a_ten_thousand_entry_stream() 
 
 @pytest.fixture
 def bare_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    for name in ("X_REDIS_HOST", "X_REDIS_PORT", "REDIS_PASSWORD", "REDIS_PASSWORD_FILE"):
+    for name in (
+        "X_REDIS_HOST",
+        "X_REDIS_PORT",
+        "REDIS_PASSWORD",
+        "REDIS_PASSWORD_FILE",
+        "REDIS_SSL",
+        "REDIS_USERNAME",
+    ):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
 
 def test_an_endpoint_with_nothing_set_is_a_local_redis_without_a_password(bare_env: pytest.MonkeyPatch) -> None:
-    assert redis_endpoint_from_env("X") == {"redis_host": "127.0.0.1", "redis_port": 6379, "redis_password": None}
+    assert redis_endpoint_from_env("X") == {
+        "redis_host": "127.0.0.1",
+        "redis_port": 6379,
+        "redis_username": None,
+        "redis_password": None,
+        "redis_ssl": False,
+    }
+
+
+def test_an_endpoint_reaches_redis_over_tls_when_redis_ssl_is_set(bare_env: pytest.MonkeyPatch) -> None:
+    bare_env.setenv("REDIS_SSL", "1")
+
+    assert redis_endpoint_from_env("X")["redis_ssl"] is True
+
+
+def test_an_endpoint_names_its_acl_user_from_redis_username(bare_env: pytest.MonkeyPatch) -> None:
+    bare_env.setenv("REDIS_USERNAME", "worker")
+
+    assert redis_endpoint_from_env("X")["redis_username"] == "worker"
+
+
+@pytest.mark.parametrize("build", [lambda **kw: StreamProducer(stream="s", **kw), _consumer])
+def test_a_tls_endpoint_with_a_user_builds_a_tls_client_for_that_user(
+    built: dict[str, Any], build: Callable[..., Any]
+) -> None:
+    build(redis_ssl=True, redis_username="worker").connect()
+
+    assert (built["ssl"], built["username"]) == (True, "worker")
+
+
+@pytest.mark.parametrize(
+    ("url", "endpoint"),
+    [
+        ("rediss://:s3cret@cache:6390/0", ("cache", 6390, "default-user", "s3cret", True)),
+        ("redis://cache", ("cache", 6379, "default-user", "shared", False)),
+        ("redis://:s3cret@:6400", ("127.0.0.1", 6400, "default-user", "s3cret", False)),
+        ("rediss://worker:s3cret@cache", ("cache", 6379, "worker", "s3cret", True)),
+        ("redis://w%40rk:p%40ss%3A1@cache", ("cache", 6379, "w@rk", "p@ss:1", False)),
+    ],
+)
+def test_a_url_endpoint_takes_tls_from_the_scheme_and_its_own_decoded_credentials_first(
+    url: str, endpoint: tuple[Any, ...]
+) -> None:
+    assert endpoint_from_url(url, password="shared", username="default-user") == dict(
+        zip(("redis_host", "redis_port", "redis_username", "redis_password", "redis_ssl"), endpoint, strict=True)
+    )
+
+
+def test_a_url_with_a_port_that_is_no_number_is_refused() -> None:
+    with pytest.raises(ValueError, match="abc"):
+        endpoint_from_url("redis://cache:abc")
+
+
+def test_a_url_that_is_not_redis_is_refused_before_its_password_is_sent() -> None:
+    with pytest.raises(ValueError, match="'http'"):
+        endpoint_from_url("http://worker:secret@cache")
 
 
 def test_an_endpoint_password_is_read_stripped_from_the_named_file(

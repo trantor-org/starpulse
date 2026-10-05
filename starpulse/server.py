@@ -21,6 +21,7 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, f
                    last value with `stale` true.
                    Everything is held in memory: the Board from the configured board adapter, other machines' tasks
                    from machine:events, each instance's workflows from its adapter (`pushed/`: runs:events)
+GET /api/snapshot  the document /api/events sends on connect, as one response, for `starpulse snapshot|board|task`
 GET /api/history?task=TASK-N[&flow=NAME]
                    {task, path}: the task's Board lane changes as [{at, from, to}], oldest first (`at`
                    epoch seconds). With `flow`, {task, flow, path, steps}: its events on that lifecycle
@@ -323,6 +324,8 @@ def _handler(
             url = urlsplit(self.path)
             if url.path == "/api/events":
                 self._stream_events()
+            elif url.path == "/api/snapshot":
+                self._send(json.dumps(feed.snapshot()).encode())
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows))
             elif url.path == "/api/harnesses":

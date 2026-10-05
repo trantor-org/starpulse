@@ -28,8 +28,9 @@ uvx starpulse serve
 ```
 
 Open <http://localhost:8766>. StarPulse starts a Valkey container for its event streams unless `REDIS_URL`
-names a Redis it should use instead, and keeps its history in `starpulse-history.sqlite` beside its config file, or in
-the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
+names a Redis it should use instead (`rediss://` reaches it over TLS, and the URL's user and percent-encoded
+password sign in to it), and keeps its history in
+`starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
 trust.
 
 `starpulse serve --port 8800 --hours 24` changes the port and how far back a task's latest move counts toward
@@ -61,10 +62,46 @@ starpulse emit end   --workflow nightly --run 2026-10-03 --status succeeded --st
 A workflow no adapter lists is drawn from the step graph its `emit` calls add up to, and that graph is kept in
 the history store across restarts.
 
+### Read the board from an agent
+
+```sh
+starpulse board --milestone launch --label api   # tasks per column, with dependencies, pull requests and moves
+starpulse task show PROJ-45                      # one task: lane, what it waits on, pull requests, moves
+starpulse snapshot                               # everything the page draws, as one document
+starpulse doctor                                 # does this install work: each check passes or fails, with why
+starpulse help --agent                           # every verb with its arguments, output keys and exit codes
+```
+
+These verbs read the running server (`starpulse serve`) over HTTP: `--server URL`, else `STARPULSE_URL`, else
+`http://localhost:8766`. Each writes one JSON document to stdout and nothing to stderr; an error is
+`{"error": "...", "code": "..."}`. The exit code is 0 for success, 1 for a refused or invalid request or a failed `doctor` check, 2 for a usage
+error, 3 when the server is unreachable (the error names the address tried) and 4 for something not found. A verb
+reads the server on every call and keeps nothing, and `help --agent` is generated from the command parser, so it
+lists exactly the verbs there are.
+
+| Verb | Arguments | Document |
+|---|---|---|
+| `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pulls`, `claims`, `settled`, ... |
+| `board` | `--state`, `--milestone`, `--label`, `--assignee` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, milestone, labels, dependencies, waiting_on, prs, moves}` |
+| `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
+| `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
+| `help --agent` | | `exit_codes` and `verbs` |
+
+`doctor` runs every check even when one fails, so one call names every fault. The checks: `config` (the config file
+loads), `redis` (`REDIS_URL` answers, or docker or podman can start the Valkey container the server would use),
+`server` (it answers `/api/snapshot`), `adapter:board` and one `adapter:<name>` per `[[runs]]` instance (it is
+producing: the Board is read, the instance lists workflows and reports no error), `gh` (installed and logged in, which
+the pull request reader needs) and `stream-lag` (no consumer group of `machine:events` or `runs:events` is more than
+100 entries behind, entries delivered but not yet acknowledged included, and none whose lag Redis cannot measure). A
+check that needs a server or Redis that is down fails too, saying so.
+
+`waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
+merged state and open review threads the server last read when it has them.
+
 ## Configure
 
 `starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read
-when it exists. Credentials never go in it: they come from the environment (`REDIS_PASSWORD`, and a database
+when it exists. Credentials never go in it: they come from the environment (`REDIS_PASSWORD` and the ACL user `REDIS_USERNAME`, and a database
 driver's own, such as `PGPASSWORD`).
 
 ```toml

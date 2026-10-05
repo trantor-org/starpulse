@@ -13,9 +13,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urlsplit
 
-from starpulse.streams import StreamProducer
+from starpulse.streams import StreamProducer, endpoint_from_url
 
 # Redis is reached at RUNS_REDIS_HOST/_PORT plus the shared REDIS_PASSWORD, or at REDIS_URL.
 STREAM = "runs:events"
@@ -48,11 +47,7 @@ def entry(
 def producer(environ: Mapping[str, str]) -> StreamProducer:
     """The producer for the Redis `environ` names: `REDIS_URL` when set, else the `RUNS_REDIS_*` variables."""
     if url := environ.get("REDIS_URL"):
-        parts = urlsplit(url)
         return StreamProducer(
-            stream=STREAM,
-            redis_host=parts.hostname or "127.0.0.1",
-            redis_port=parts.port or 6379,
-            redis_password=parts.password or environ.get("REDIS_PASSWORD"),
+            stream=STREAM, **endpoint_from_url(url, environ.get("REDIS_PASSWORD"), environ.get("REDIS_USERNAME"))
         )
     return StreamProducer.from_env(REDIS_ENV_PREFIX, stream=STREAM)
