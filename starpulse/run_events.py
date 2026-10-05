@@ -47,5 +47,7 @@ def entry(
 def producer(environ: Mapping[str, str]) -> StreamProducer:
     """The producer for the Redis `environ` names: `REDIS_URL` when set, else the `RUNS_REDIS_*` variables."""
     if url := environ.get("REDIS_URL"):
-        return StreamProducer(stream=STREAM, **endpoint_from_url(url, environ.get("REDIS_PASSWORD")))
+        return StreamProducer(
+            stream=STREAM, **endpoint_from_url(url, environ.get("REDIS_PASSWORD"), environ.get("REDIS_USERNAME"))
+        )
     return StreamProducer.from_env(REDIS_ENV_PREFIX, stream=STREAM)

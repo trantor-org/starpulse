@@ -126,12 +126,20 @@ def test_a_stopped_valkey_container_is_found_when_redis_url_is_unset() -> None:
     assert check(report, "redis")["status"] == "pass"
 
 
-def test_a_rediss_url_is_dialed_over_tls_with_its_password() -> None:
+def test_a_rediss_url_is_dialed_over_tls_as_its_user() -> None:
     host = FakeHost()
 
-    doctor.run_checks(snapshot(), CONFIG, {"REDIS_URL": "rediss://:s3cret@cache:6390"}, host.probes(), "")
+    doctor.run_checks(snapshot(), CONFIG, {"REDIS_URL": "rediss://worker:s3cret@cache:6390"}, host.probes(), "")
 
-    assert host.dialed == [{"redis_host": "cache", "redis_port": 6390, "redis_password": "s3cret", "redis_ssl": True}]
+    assert host.dialed == [
+        {
+            "redis_host": "cache",
+            "redis_port": 6390,
+            "redis_username": "worker",
+            "redis_password": "s3cret",
+            "redis_ssl": True,
+        }
+    ]
 
 
 def test_a_redis_older_than_7_reports_no_lag_and_is_judged_by_its_pending_entries() -> None:

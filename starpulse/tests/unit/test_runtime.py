@@ -57,6 +57,14 @@ def test_redis_url_points_every_stream_and_the_board_adapters_at_it_and_starts_n
     assert environ["REDIS_PASSWORD"] == "s3cret"
 
 
+def test_a_url_user_and_encoded_password_are_exported_decoded() -> None:
+    environ = {"REDIS_URL": "redis://worker:p%40ss@redis-host"}
+
+    _ensure(environ, Runtime())
+
+    assert (environ["REDIS_USERNAME"], environ["REDIS_PASSWORD"]) == ("worker", "p@ss")
+
+
 def test_a_rediss_url_turns_tls_on_for_every_stream() -> None:
     environ = {"REDIS_URL": "rediss://redis-host:6390"}
 

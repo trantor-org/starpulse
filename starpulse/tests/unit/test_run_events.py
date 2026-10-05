@@ -28,6 +28,12 @@ def test_the_producer_reaches_the_redis_url_names() -> None:
     )
 
 
+def test_the_producer_signs_in_as_the_url_user_with_its_decoded_password() -> None:
+    producer = run_events.producer({"REDIS_URL": "rediss://worker:p%40ss@cache"})
+
+    assert (producer.redis_username, producer.redis_password) == ("worker", "p@ss")
+
+
 def test_the_producer_reaches_a_rediss_url_over_tls() -> None:
     assert run_events.producer({"REDIS_URL": "rediss://cache:6400"}).redis_ssl is True
 

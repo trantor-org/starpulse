@@ -28,7 +28,8 @@ uvx starpulse serve
 ```
 
 Open <http://localhost:8766>. StarPulse starts a Valkey container for its event streams unless `REDIS_URL`
-names a Redis it should use instead (`rediss://` reaches it over TLS), and keeps its history in
+names a Redis it should use instead (`rediss://` reaches it over TLS, and the URL's user and percent-encoded
+password sign in to it), and keeps its history in
 `starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
 trust.
 
@@ -99,7 +100,7 @@ merged state and open review threads the server last read when it has them.
 ## Configure
 
 `starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read
-when it exists. Credentials never go in it: they come from the environment (`REDIS_PASSWORD`, and a database
+when it exists. Credentials never go in it: they come from the environment (`REDIS_PASSWORD` and the ACL user `REDIS_USERNAME`, and a database
 driver's own, such as `PGPASSWORD`).
 
 ```toml

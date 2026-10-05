@@ -42,7 +42,8 @@ class Probes:
     which: Callable[[str], str | None]
     run: Callable[..., subprocess.CompletedProcess[str]]
     redis: Callable[[dict[str, Any]], Any]
-    """A client for an endpoint: the `redis_host`/`redis_port`/`redis_password`/`redis_ssl` of `endpoint_from_url`."""
+    """A client for an endpoint: the `redis_host`/`redis_port`/`redis_username`/`redis_password`/`redis_ssl` of
+    `endpoint_from_url`."""
 
 
 LIVE = Probes(
@@ -51,6 +52,7 @@ LIVE = Probes(
     redis=lambda endpoint: redis.Redis(
         host=endpoint["redis_host"],
         port=endpoint["redis_port"],
+        username=endpoint["redis_username"],
         password=endpoint["redis_password"],
         ssl=endpoint["redis_ssl"],
         socket_connect_timeout=1,  # seconds a down host may keep the check waiting
@@ -75,7 +77,7 @@ def _redis(environ: dict[str, str], probes: Probes) -> tuple[dict[str, str], Any
     """The `redis` result and a client when there is a Redis to ask; none when a runtime would start one."""
     if url := environ.get("REDIS_URL"):
         try:
-            endpoint = endpoint_from_url(url, environ.get("REDIS_PASSWORD"))
+            endpoint = endpoint_from_url(url, environ.get("REDIS_PASSWORD"), environ.get("REDIS_USERNAME"))
         except ValueError as exc:
             return _result("redis", False, f"REDIS_URL is malformed: {exc}"), None
         where = f"REDIS_URL {endpoint['redis_host']}:{endpoint['redis_port']}"
@@ -96,7 +98,9 @@ def _redis(environ: dict[str, str], probes: Probes) -> tuple[dict[str, str], Any
                 "redis", True, f"REDIS_URL is unset; {runtime} starts {CONTAINER} when the server runs"
             ), None
         host, _, text = published.split()[0].replace("0.0.0.0", "127.0.0.1").rpartition(":")
-        endpoint = endpoint_from_url(f"redis://{host}:{text}", environ.get("REDIS_PASSWORD"))
+        endpoint = endpoint_from_url(
+            f"redis://{host}:{text}", environ.get("REDIS_PASSWORD"), environ.get("REDIS_USERNAME")
+        )
         where = f"{CONTAINER} {host}:{text}"
     client = probes.redis(endpoint)
     try:

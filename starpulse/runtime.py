@@ -45,11 +45,13 @@ def _ping(host: str, port: int) -> bool:  # pragma: no mutate block — a live s
 
 def apply_url(url: str, environ: MutableMapping[str, str], prefixes: Sequence[str] = ()) -> None:
     """Point every stream the view reads, and each of `prefixes`, at `url`; its password, when it has one, becomes
-    `REDIS_PASSWORD`, and a `rediss://` URL sets `REDIS_SSL`."""
+    `REDIS_PASSWORD` and its user `REDIS_USERNAME`, both decoded, and a `rediss://` URL sets `REDIS_SSL`."""
     endpoint = endpoint_from_url(url)
     for prefix in (*_PREFIXES, *prefixes):
         environ[f"{prefix}_REDIS_HOST"] = endpoint["redis_host"]
         environ[f"{prefix}_REDIS_PORT"] = str(endpoint["redis_port"])
+    if endpoint["redis_username"]:
+        environ["REDIS_USERNAME"] = endpoint["redis_username"]
     if endpoint["redis_password"]:
         environ["REDIS_PASSWORD"] = endpoint["redis_password"]
     if endpoint["redis_ssl"]:
