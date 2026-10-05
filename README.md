@@ -113,6 +113,7 @@ uv run starpulse serve
 
 `uv run pytest` runs the suite; its integration tests start Redis and Postgres containers, so Docker must run.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
+[`bench/`](bench/README.md) holds the hub-ingest and instance event-log benchmarks.
 
 ## Contributing
 
