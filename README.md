@@ -235,3 +235,5 @@ contains, published to PyPI as `starpulse`.
 ## License
 
 MIT; see [LICENSE](LICENSE).
+
+<!-- delivery check for TASK-2765; close without merging -->
