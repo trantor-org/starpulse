@@ -10,8 +10,10 @@ from typing import Any
 import pytest
 
 from starpulse import agent_cli as cli
+from starpulse import doctor
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import Move
+from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.serving import serve as _serve
 from starpulse.tests.serving import url as _url
@@ -61,6 +63,12 @@ def base(tmp_path: Path) -> Iterator[str]:
     feed.set_pulls({"PROJ-1": [pull]})
     with _serve(tmp_path, feed) as server:
         yield _url(server, "")
+
+
+@pytest.fixture(autouse=True)
+def healthy_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`doctor` probes this fake host, not the machine the suite runs on."""
+    monkeypatch.setattr(doctor, "LIVE", FakeHost().probes())
 
 
 def _closed_port_url() -> str:
@@ -275,7 +283,7 @@ def test_the_manifest_lists_each_verbs_arguments_outputs_and_exit_codes(capsys: 
 def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pytest.CaptureFixture[str]) -> None:
     _, doc = _run(capsys, ["help", "--agent"])
 
-    assert [v["verb"] for v in doc["verbs"]] == ["snapshot", "board", "task show", "help"]
+    assert [v["verb"] for v in doc["verbs"]] == ["snapshot", "board", "task show", "doctor", "help"]
     for verb in doc["verbs"]:
         assert verb["summary"]
         assert all(set(a) == {"name", "flags", "required", "help"} for a in verb["arguments"])
@@ -301,6 +309,9 @@ CASES = {
     ("task show", 2): ["task", "show"],
     ("task show", 3): ["task", "show", "PROJ-1", "--server", "{down}"],
     ("task show", 4): ["task", "show", "PROJ-99", "--server", "{server}"],
+    ("doctor", 0): ["doctor", "--server", "{server}"],
+    ("doctor", 1): ["doctor", "--server", "{down}"],
+    ("doctor", 2): ["doctor", "--nope"],
     ("help", 0): ["help", "--agent"],
     ("help", 2): ["help"],
 }
@@ -327,4 +338,6 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
 
     assert code == exit_code
     assert exit_code in manifest["exit_codes"]
-    assert set(doc) == (set(manifest["outputs"]) if exit_code == 0 else {"error", "code"})
+    # A failed doctor check still reports every check; any other refusal is an error document.
+    reports = exit_code == 0 or (verb, exit_code) == ("doctor", 1)
+    assert set(doc) == (set(manifest["outputs"]) if reports else {"error", "code"})

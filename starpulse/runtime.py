@@ -27,7 +27,7 @@ _PREFIXES = (
     machine_events.REDIS_ENV_PREFIX,
     run_events.REDIS_ENV_PREFIX,
 )
-_RUNTIMES = ("docker", "podman")
+RUNTIMES = ("docker", "podman")
 #: Seconds a runtime command may take; `run` may pull the image, so the bound is generous.
 _COMMAND_TIMEOUT = 120
 
@@ -101,7 +101,7 @@ def ensure_redis(
     if url := environ.get("REDIS_URL"):
         apply_url(url, environ, prefixes)
         return
-    if not (runtime := next((r for r in _RUNTIMES if which(r)), None)):
+    if not (runtime := next((r for r in RUNTIMES if which(r)), None)):
         raise _refuse("REDIS_URL is unset and neither docker nor podman is installed")
     host, _, port = _start_container(runtime, run).rpartition(":")
     deadline = time.monotonic() + ready_timeout
