@@ -60,6 +60,32 @@ starpulse emit end   --workflow nightly --run 2026-10-03 --status succeeded --st
 A workflow no adapter lists is drawn from the step graph its `emit` calls add up to, and that graph is kept in
 the history store across restarts.
 
+### Read the board from an agent
+
+```sh
+starpulse board --milestone launch --label api   # tasks per column, with dependencies, pull requests and moves
+starpulse task show PROJ-45                      # one task: lane, what it waits on, pull requests, moves
+starpulse snapshot                               # everything the page draws, as one document
+starpulse help --agent                           # every verb with its arguments, output keys and exit codes
+```
+
+These verbs read the running server (`starpulse serve`) over HTTP: `--server URL`, else `STARPULSE_URL`, else
+`http://localhost:8766`. Each writes one JSON document to stdout and nothing to stderr; an error is
+`{"error": "...", "code": "..."}`. The exit code is 0 for success, 1 for a refused or invalid request, 2 for a usage
+error, 3 when the server is unreachable (the error names the address tried) and 4 for something not found. A verb
+reads the server on every call and keeps nothing, and `help --agent` is generated from the command parser, so it
+lists exactly the verbs there are.
+
+| Verb | Arguments | Document |
+|---|---|---|
+| `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pulls`, `claims`, `settled`, ... |
+| `board` | `--state`, `--milestone`, `--label`, `--assignee` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, milestone, labels, dependencies, waiting_on, prs, moves}` |
+| `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
+| `help --agent` | | `exit_codes` and `verbs` |
+
+`waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
+merged state and open review threads the server last read when it has them.
+
 ## Configure
 
 `starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read
