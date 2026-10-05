@@ -68,6 +68,22 @@ class Move(_Contract):
     allowed: bool = Field(description="False when a guard the board writer enforces would refuse the move.")
     reason: str = Field(default="", description="What the refusing guard needs; empty when the move is allowed.")
     skill: str = Field(default="", description="The skill that produces what the guard needs; empty when allowed.")
+    writers: tuple[str, ...] = Field(
+        default=(),
+        description="The actors the machine YAML declares for the event behind the move; empty when it declares none, "
+        "and then any actor may make it.",
+    )
+
+    def permits(self, actor: str) -> bool:
+        """False when the machine declares writers for the event and `actor` is none of them."""
+        return not self.writers or actor in self.writers
+
+    def for_actor(self, actor: str) -> Move:
+        """The verdict as `actor` meets it: this move, or a refusal when `actor` is not among its writers."""
+        if self.permits(actor):
+            return self
+        reason = self.reason or f"made by {', '.join(self.writers)}, not {actor}"
+        return self.model_copy(update={"allowed": False, "reason": reason})
 
 
 class BoardTask(_Contract):

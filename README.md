@@ -62,11 +62,13 @@ starpulse emit end   --workflow nightly --run 2026-10-03 --status succeeded --st
 A workflow no adapter lists is drawn from the step graph its `emit` calls add up to, and that graph is kept in
 the history store across restarts.
 
-### Read the board from an agent
+### Work the board from an agent
 
 ```sh
 starpulse board --milestone launch --label api   # tasks per column, with dependencies, pull requests and moves
 starpulse task show PROJ-45                      # one task: lane, what it waits on, pull requests, moves
+starpulse task moves PROJ-45                     # every column it may move to, allowed or refused to the agent
+starpulse task move PROJ-45 review               # move it as the agent; a refusal is the verdict, exit 1
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse help --agent                           # every verb with its arguments, output keys and exit codes
@@ -74,8 +76,8 @@ starpulse help --agent                           # every verb with its arguments
 
 These verbs read the running server (`starpulse serve`) over HTTP: `--server URL`, else `STARPULSE_URL`, else
 `http://localhost:8766`. Each writes one JSON document to stdout and nothing to stderr; an error is
-`{"error": "...", "code": "..."}`. The exit code is 0 for success, 1 for a refused or invalid request or a failed `doctor` check, 2 for a usage
-error, 3 when the server is unreachable (the error names the address tried) and 4 for something not found. A verb
+`{"error": "...", "code": "..."}`. The exit code is 0 for success, 1 for a refused or invalid request, a refused move or a failed `doctor` check, 2 for a usage
+error, 3 when the server is unreachable (the error names the address tried) or has no board writer and 4 for something not found. A verb
 reads the server on every call and keeps nothing, and `help --agent` is generated from the command parser, so it
 lists exactly the verbs there are.
 
@@ -84,8 +86,18 @@ lists exactly the verbs there are.
 | `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pulls`, `claims`, `settled`, ... |
 | `board` | `--state`, `--milestone`, `--label`, `--assignee` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, milestone, labels, dependencies, waiting_on, prs, moves}` |
 | `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
+| `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
+| `task move` | `TASK`, `TO` | `ok`, `task`, `to`, `reason` and `skill`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
 | `help --agent` | | `exit_codes` and `verbs` |
+
+A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
+the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}` with `actor` `operator` when
+absent, which is what the page sends. The server refuses an actor outside the event's writers before the board
+writer is asked, so a move declared for `operator` alone (sending an In Progress task back to Ready) is refused to
+`starpulse task move`, which always moves as `agent`. A board adapter's `writer` receives that actor as its third
+argument: `writer(task, status, actor)`. `/api/move` is unauthenticated on the LAN, so this stops an agent's
+accident, not an adversary.
 
 `doctor` runs every check even when one fails, so one call names every fault. The checks: `config` (the config file
 loads), `redis` (`REDIS_URL` answers, or docker or podman can start the Valkey container the server would use),
@@ -115,6 +127,9 @@ database_url = "postgresql+psycopg://db.example.com/starpulse"
 # The rest of the table is that adapter's settings.
 [board]
 type = "upstream_backlog"
+# path = "backlog"       # the project's backlog/ directory, relative to this file
+# command = "backlog"    # the Backlog.md CLI that writes a move (`backlog task edit <id> -s <status>`)
+# machine = "board.yaml" # a machine file for the Board: its transitions and `writers` decide which moves are offered, and to whom
 
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
 # (it offers `start(url)` and `follow(url, runs, group)`); its workflows are drawn as `<name>/<workflow>`.
@@ -135,10 +150,15 @@ directory. The `Board` says:
 - which lifecycle machines the page draws (`machines`),
 - how the tracker's tasks reach the page (`start`, which feeds each task as it changes, and `keys`, the task
   keys it recognizes),
-- and optionally a `writer` for moves made on the page, an `assign` for assignee changes, and its own `history`.
+- and optionally a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may
+  list the `writers` the machine declares per event), an `assign` for assignee changes, and its own `history`.
 
-`starpulse.upstream_backlog` is the reference adapter: it polls a Backlog.md project's Markdown files and takes
-the machine from the project's own statuses. Name your module in `[board] type` and StarPulse imports it.
+`starpulse.upstream_backlog` is the reference adapter: it polls a Backlog.md project's Markdown files, takes
+the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
+whose states are those lanes and whose `writers` reserve a move to an actor, such as `operator`), and writes moves
+with the `backlog` CLI, answering a failed write with the CLI's output. An adapter with a writer subclasses
+`BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
+the machine leaves to the operator is refused to the agent. Name your module in `[board] type` and StarPulse imports it.
 
 ## Public surface
 

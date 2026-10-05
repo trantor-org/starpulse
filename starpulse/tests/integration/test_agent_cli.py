@@ -13,8 +13,10 @@ import pytest
 
 from starpulse import agent_cli as cli
 from starpulse import doctor
+from starpulse.board import Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import Move
+from starpulse.server import _no_writer
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.serving import serve as _serve
@@ -64,6 +66,59 @@ def base(tmp_path: Path) -> Iterator[str]:
     pull = {"number": 5, "url": PULL, "checks": "pass", "merged": False, "threads": 2, "stale": False}
     feed.set_pulls({"PROJ-1": [pull]})
     with _serve(tmp_path, feed) as server:
+        yield _url(server, "")
+
+
+class _Writer:
+    """A board writer that records each status change with its actor and answers with one canned reply."""
+
+    def __init__(self) -> None:
+        self.reply = Written(True, "Updated")
+        self.sent: list[tuple[str, str, str]] = []
+
+    def __call__(self, task: str, status: str, actor: str) -> Written:
+        self.sent.append((task, status, actor))
+        return self.reply
+
+
+@pytest.fixture
+def writer() -> _Writer:
+    return _Writer()
+
+
+def _moving_board() -> BoardFeed:
+    """One In Progress task: Ready is the operator's alone, Review anyone's, Waiting a guarded column."""
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(
+        task(
+            "PROJ-6",
+            "In Progress",
+            moves={
+                "ready": Move(
+                    allowed=True,
+                    writers=("operator",),
+                    reason="only the operator sends a task back",
+                    skill="operating-the-board",
+                ),
+                "review": Move(allowed=True, writers=("agent", "operator")),
+                "waiting": Move(allowed=False, reason="name what it waits on", skill="parking-tasks"),
+            },
+        )
+    )
+    return feed
+
+
+@pytest.fixture
+def movable(tmp_path: Path, writer: _Writer) -> Iterator[str]:
+    """A server whose board writer answers, holding `_moving_board`."""
+    with _serve(tmp_path, _moving_board(), writer=writer) as server:
+        yield _url(server, "")
+
+
+@pytest.fixture
+def bare(tmp_path: Path) -> Iterator[str]:
+    """A server with `_moving_board` and no board writer, as one with no `[board]` adapter that writes."""
+    with _serve(tmp_path, _moving_board(), writer=_no_writer) as server:
         yield _url(server, "")
 
 
@@ -286,6 +341,101 @@ def test_a_task_the_board_does_not_hold_is_not_found(base: str, capsys: pytest.C
     assert "PROJ-99" in doc["error"]
 
 
+def test_task_moves_lists_every_target_with_the_verdict_the_agent_meets(
+    movable: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "moves", "PROJ-6", "--server", movable])
+
+    assert code == 0
+    assert doc == {
+        "task": "PROJ-6",
+        "lane": "in_progress",
+        "moves": {
+            "ready": {
+                "allowed": False,
+                "reason": "only the operator sends a task back",
+                "skill": "operating-the-board",
+            },
+            "review": {"allowed": True, "reason": "", "skill": ""},
+            "waiting": {"allowed": False, "reason": "name what it waits on", "skill": "parking-tasks"},
+        },
+    }
+
+
+def test_a_move_whose_writers_leave_out_the_agent_is_refused_to_it_with_a_reason_even_when_unguarded(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-7", "In Progress", moves={"ready": Move(allowed=True, writers=("operator",))}))
+    with _serve(tmp_path, feed) as server:
+        _, doc = _run(capsys, ["task", "moves", "PROJ-7", "--server", _url(server, "")])
+
+    assert doc["moves"] == {"ready": {"allowed": False, "reason": "made by operator, not agent", "skill": ""}}
+
+
+def test_task_move_of_an_in_progress_task_to_ready_is_refused_to_the_agent_but_the_operator_may(
+    movable: str, writer: _Writer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "move", "PROJ-6", "ready", "--server", movable])
+
+    assert code == 1
+    assert doc == {
+        "ok": False,
+        "task": "PROJ-6",
+        "to": "ready",
+        "reason": "only the operator sends a task back",
+        "skill": "operating-the-board",
+    }
+    assert writer.sent == []  # refused before the board was asked
+    post = urllib.request.Request(
+        f"{movable}/api/move", data=json.dumps({"task": "PROJ-6", "to": "ready"}).encode(), method="POST"
+    )
+    with urllib.request.urlopen(post, timeout=5) as response:
+        assert response.status == 200
+    assert writer.sent == [("PROJ-6", "Ready", "operator")]
+
+
+def test_task_move_writes_as_the_agent_and_reports_the_move(
+    movable: str, writer: _Writer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "move", "PROJ-6", "review", "--server", movable])
+
+    assert code == 0
+    assert doc == {"ok": True, "task": "PROJ-6", "to": "review", "reason": "", "skill": ""}
+    assert writer.sent == [("PROJ-6", "Review", "agent")]
+
+
+def test_a_move_the_board_writer_refuses_exits_1_with_its_reason_and_skill(
+    movable: str, writer: _Writer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    writer.reply = Written(False, "refusing to set PROJ-6 Waiting: name what it waits on", "parking-tasks")
+
+    code, doc = _run(capsys, ["task", "move", "PROJ-6", "waiting", "--server", movable])
+
+    assert code == 1
+    assert (doc["ok"], doc["reason"], doc["skill"]) == (
+        False,
+        "refusing to set PROJ-6 Waiting: name what it waits on",
+        "parking-tasks",
+    )
+
+
+def test_a_column_the_task_cannot_move_to_is_a_refusal_naming_it(
+    movable: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "move", "PROJ-6", "done", "--server", movable])
+
+    assert (code, doc["ok"], doc["reason"]) == (1, False, "PROJ-6 cannot move from in_progress to done")
+
+
+def test_task_move_on_a_board_with_no_writer_exits_3_and_says_so(bare: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "move", "PROJ-6", "review", "--server", bare])
+
+    assert code == 3
+    assert doc["code"] == "unavailable"
+    assert "no board writer is configured" in doc["error"]
+
+
 def test_no_verb_is_a_usage_error_as_json(capsys: pytest.CaptureFixture[str]) -> None:
     code, doc = _run(capsys, [])
 
@@ -315,7 +465,15 @@ def test_the_manifest_lists_each_verbs_arguments_outputs_and_exit_codes(capsys: 
 def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pytest.CaptureFixture[str]) -> None:
     _, doc = _run(capsys, ["help", "--agent"])
 
-    assert [v["verb"] for v in doc["verbs"]] == ["snapshot", "board", "task show", "doctor", "help"]
+    assert [v["verb"] for v in doc["verbs"]] == [
+        "snapshot",
+        "board",
+        "task show",
+        "task moves",
+        "task move",
+        "doctor",
+        "help",
+    ]
     for verb in doc["verbs"]:
         assert verb["summary"]
         assert all(set(a) == {"name", "flags", "required", "help"} for a in verb["arguments"])
@@ -341,6 +499,15 @@ CASES = {
     ("task show", 2): ["task", "show"],
     ("task show", 3): ["task", "show", "PROJ-1", "--server", "{down}"],
     ("task show", 4): ["task", "show", "PROJ-99", "--server", "{server}"],
+    ("task moves", 0): ["task", "moves", "PROJ-6", "--server", "{movable}"],
+    ("task moves", 2): ["task", "moves"],
+    ("task moves", 3): ["task", "moves", "PROJ-6", "--server", "{down}"],
+    ("task moves", 4): ["task", "moves", "PROJ-99", "--server", "{movable}"],
+    ("task move", 0): ["task", "move", "PROJ-6", "review", "--server", "{movable}"],
+    ("task move", 1): ["task", "move", "PROJ-6", "ready", "--server", "{movable}"],
+    ("task move", 2): ["task", "move", "PROJ-6"],
+    ("task move", 3): ["task", "move", "PROJ-6", "review", "--server", "{bare}"],
+    ("task move", 4): ["task", "move", "PROJ-99", "review", "--server", "{movable}"],
     ("doctor", 0): ["doctor", "--server", "{server}"],
     ("doctor", 1): ["doctor", "--server", "{down}"],
     ("doctor", 2): ["doctor", "--nope"],
@@ -361,15 +528,15 @@ def test_every_manifest_verb_and_exit_code_has_a_case(capsys: pytest.CaptureFixt
 
 @pytest.mark.parametrize(("verb", "exit_code"), list(CASES))
 def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
-    base: str, capsys: pytest.CaptureFixture[str], verb: str, exit_code: int
+    base: str, movable: str, bare: str, capsys: pytest.CaptureFixture[str], verb: str, exit_code: int
 ) -> None:
     manifest = next(v for v in _manifest(capsys) if v["verb"] == verb)
-    argv = [a.format(server=base, down=_closed_port_url()) for a in CASES[verb, exit_code]]
+    argv = [a.format(server=base, movable=movable, bare=bare, down=_closed_port_url()) for a in CASES[verb, exit_code]]
 
     code, doc = _run(capsys, argv)
 
     assert code == exit_code
     assert exit_code in manifest["exit_codes"]
-    # A failed doctor check still reports every check; any other refusal is an error document.
-    reports = exit_code == 0 or (verb, exit_code) == ("doctor", 1)
+    # A failed doctor check and a refused move still report their keys; any other refusal is an error document.
+    reports = exit_code == 0 or (verb, exit_code) in {("doctor", 1), ("task move", 1)}
     assert set(doc) == (set(manifest["outputs"]) if reports else {"error", "code"})

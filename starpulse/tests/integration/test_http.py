@@ -247,9 +247,11 @@ def test_a_move_posted_with_no_content_length_is_an_empty_body_not_a_wait_for_by
 
 def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_path: Path) -> None:
     sent: list[tuple[str, str]] = []
+    actors: list[str] = []
 
-    def writer(task: str, status: str) -> Written:
+    def writer(task: str, status: str, actor: str) -> Written:
         sent.append((task, status))
+        actors.append(actor)
         return Written(True, "ok") if status == "In Progress" else Written(False, "refused: Run the `x` skill", "x")
 
     feed = BoardFeed()
@@ -264,6 +266,7 @@ def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_pat
     assert refused == (409, {"error": "refused: Run the `x` skill", "skill": "x"})
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
     assert sent == [("PROJ-3", "In Progress"), ("PROJ-3", "Waiting")]
+    assert actors == ["operator", "operator"]  # the page names no actor, so it writes as the operator
 
 
 def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_answers_json(tmp_path: Path) -> None:

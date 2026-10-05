@@ -36,7 +36,9 @@ POST /api/run/<instance>/<workflow>
                    with 403 for a source outside loopback and RFC 1918, 404 when the instance has no adapter
                    that can start a run or the workflow is not in its `run_safe`, 502 when the adapter's start
                    fails. A GET answers 405
-POST /api/move     {task, to}: set a Board task's status through the board adapter's writer
+POST /api/move     {task, to[, actor]}: set a Board task's status through the board adapter's writer, as `actor`
+                   (`operator`, the page's identity, when absent). An actor outside the event's declared writers
+                   is refused 409 before the writer is asked; a board with no writer answers 501
 POST /api/start    {task, assignee}: start a task's session at `session_start_url` (see Start in the README)
 """
 
@@ -61,7 +63,7 @@ from starpulse.board import AssigneeWriter, Board, MoveWriter, Written
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.config import Config, ConfigError, RunsInstance, load, runs_adapter
-from starpulse.contracts import StartFailedError
+from starpulse.contracts import Move, StartFailedError
 from starpulse.harnesses import Harnesses
 from starpulse.history import History, HistoryStore, build_machine_recorder, database_url
 from starpulse.machine_tasks import MachineTasks
@@ -97,6 +99,8 @@ _LAN = (
 )
 _RUN = "/api/run/"
 _MOVE = "/api/move"
+#: Who a move is made by when the request names no actor: the page, which acts for the operator.
+OPERATOR = "operator"
 _START = "/api/start"
 _WINDOW = "/api/history-window"
 #: The lanes Start session moves a task out of: the spec's start question, never Review's send-back.
@@ -135,16 +139,20 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
         return 403, {"error": "Moving a task answers only loopback and private network (RFC 1918) browsers"}
     try:
         request = json.loads(raw)
-        task, column = request["task"], request["to"]
-    except ValueError, TypeError, KeyError:
-        task = column = None
-    if not isinstance(task, str) or not isinstance(column, str):
-        return 400, {"error": 'a move needs {"task": "TASK-N", "to": "<column>"}'}
+        task, column, actor = request["task"], request["to"], request.get("actor", OPERATOR)
+    except ValueError, TypeError, KeyError, AttributeError:
+        task = column = actor = None
+    if not isinstance(task, str) or not isinstance(column, str) or not isinstance(actor, str):
+        return 400, {"error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor" (a string)'}
     if (agent := feed.task(task)) is None:
         return 404, {"error": f"{task} is not on the board"}
     if column not in agent["moves"]:
         return 409, {"error": f"{task} cannot move from {agent['state']} to {column}"}
-    written = writer(task, column.replace("_", " ").title())
+    if not (move := Move.model_validate(agent["moves"][column])).permits(actor):
+        return 409, {"error": move.for_actor(actor).reason, "skill": move.skill}
+    written = writer(task, column.replace("_", " ").title(), actor)
+    if written.unavailable:
+        return 501, {"error": written.output}
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task, "to": column}
@@ -290,8 +298,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def _no_writer(task: str, status: str) -> Written:
-    return Written(False, "no board writer is configured")
+def _no_writer(task: str, status: str, actor: str = OPERATOR) -> Written:
+    return Written(False, "no board writer is configured", unavailable=True)
 
 
 def _handler(

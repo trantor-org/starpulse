@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
+import subprocess
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
@@ -20,9 +22,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
-from starpulse.board import Board
-from starpulse.contracts import BoardTask, TaskKeys
-from starpulse.snapshot import Qualify
+from starpulse.board import Board, MoveWriter, Written
+from starpulse.contracts import BoardTask, Move, TaskKeys
+from starpulse.machine_definition import Writer, load_machine
+from starpulse.snapshot import Qualify, describe
 
 if TYPE_CHECKING:
     from starpulse.board_feed import BoardFeed
@@ -98,6 +101,24 @@ def board_machine(statuses: tuple[str, ...]) -> dict:
     }
 
 
+def board_moves(machine: dict, writers: Mapping[str, tuple[Writer, ...]] = {}) -> dict[str, dict[str, Move]]:
+    """The move verdicts out of each lane of a Board machine, by lane and then by the lane reached.
+
+    A move's writers are the actors the YAML declares for the events that make it; when any of those events
+    declares none, anyone may make the move.
+    """
+    events: dict[tuple[str, str], list[str]] = {}
+    for t in machine["transitions"]:
+        if t["source"] != t["target"]:
+            events.setdefault((t["source"], t["target"]), []).append(t["event"])
+    moves: dict[str, dict[str, Move]] = {}
+    for (source, target), names in events.items():
+        declared = [writers.get(name, ()) for name in names]
+        actors = () if not all(declared) else tuple(dict.fromkeys(w.actor for ws in declared for w in ws))
+        moves.setdefault(source, {})[target] = Move(allowed=True, writers=actors)
+    return moves
+
+
 def _strings(value: object) -> tuple[str, ...]:
     """Backlog's scalar-or-list metadata as the nonempty text values it holds."""
     values = value if isinstance(value, list) else [value]
@@ -129,10 +150,13 @@ class UpstreamBacklog:
     status the config does not list (it is logged once per change of the file).
     """
 
-    def __init__(self, root: Path, put: Callable[[BoardTask], None]) -> None:
+    def __init__(
+        self, root: Path, put: Callable[[BoardTask], None], moves: Mapping[str, Mapping[str, Move]] | None = None
+    ) -> None:
         self.root = root
         self.config = read_config(root)
         self._put = put
+        self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
         self._lanes = {lane_id(status) for status in self.config.statuses}
         self._seen: dict[Path, tuple[int, int]] = {}
 
@@ -180,6 +204,7 @@ class UpstreamBacklog:
             assignee=assignees[0] if assignees else "",
             labels=_strings(frontmatter.get("labels")),
             description=_description(body),
+            moves={} if settled else dict(self._moves.get(lane, {})),
         )
 
     def start(self, interval: float = 2.0) -> threading.Thread:  # pragma: no mutate block — polling thread plumbing
@@ -195,22 +220,66 @@ class UpstreamBacklog:
         return thread
 
 
-#: The `[board]` settings this adapter reads: `path` is the project's `backlog/` directory, relative to the config.
-_SETTINGS = {"type", "path", "interval"}
+#: The `[board]` settings this adapter reads: `path` is the project's `backlog/` directory, relative to the config;
+#: `machine` a machine file for the Board, relative to the config; `command` the `backlog` CLI that writes moves.
+_SETTINGS = {"type", "path", "interval", "machine", "command"}
+
+
+def cli_writer(root: Path, statuses: tuple[str, ...], command: list[str]) -> MoveWriter:
+    """A board writer that sets a status with the `backlog` CLI run in the project and answers with its output.
+
+    A lane's status is the project's own spelling of it (`QA` for a move to `Qa`).
+    """
+    spelled = {lane_id(status): status for status in statuses}
+
+    def write(task: str, status: str, actor: str) -> Written:
+        argv = [*command, "task", "edit", task, "-s", spelled.get(lane_id(status), status)]
+        try:
+            done = subprocess.run(argv, cwd=root.parent, capture_output=True, text=True, timeout=30.0, check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return Written(False, f"{shlex.join(command)}: {error}")
+        return Written(done.returncode == 0, "\n".join(filter(None, (done.stdout.strip(), done.stderr.strip()))))
+
+    return write
+
+
+def _machine(path: Path, config: BacklogConfig) -> tuple[dict, dict[str, tuple[Writer, ...]]]:
+    """The Board machine a file declares, drawn, with its writers; refused unless its states are the project's lanes."""
+    compiled = load_machine(path)
+    drawn = describe(compiled.machine)
+    ids = [lane_id(status) for status in config.statuses]
+    if mismatch := sorted(set(ids) ^ {state["id"] for state in drawn["states"]}):
+        raise ValueError(f"board: machine {path} and the project's statuses disagree on lanes {mismatch}")
+    return {**drawn, "mainLine": ids}, dict(compiled.writers)
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:
-    """The Board of the Backlog.md project at `settings["path"]` (default `backlog`), polled every `interval` seconds."""
+    """The Board of the Backlog.md project at `settings["path"]` (default `backlog`), polled every `interval` seconds.
+
+    Moves are written with the `backlog` CLI (`command`). Any lane reaches any other unless `machine` names a machine
+    file, whose transitions and `writers` then decide which moves are offered and to whom.
+    """
     if unknown := sorted(settings.keys() - _SETTINGS):
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
     root = base / str(settings.get("path", "backlog"))
     interval = float(settings.get("interval", 2.0))
     config = read_config(root)
+    if "machine" in settings:
+        drawn, writers = _machine(base / str(settings["machine"]), config)
+    else:
+        drawn, writers = board_machine(config.statuses), {}
+    moves = board_moves(drawn, writers)
 
     def machines(qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
-        return {"board": board_machine(config.statuses)}
+        return {"board": drawn}
 
     def start(feed: BoardFeed, group: str) -> None:
-        UpstreamBacklog(root, feed.put).start(interval)
+        UpstreamBacklog(root, feed.put, moves).start(interval)
 
-    return Board(machines=machines, start=start, keys=upstream_keys(config.prefix), source=str(root))
+    return Board(
+        machines=machines,
+        start=start,
+        keys=upstream_keys(config.prefix),
+        writer=cli_writer(root, config.statuses, shlex.split(str(settings.get("command", "backlog")))),
+        source=str(root),
+    )
