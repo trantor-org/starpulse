@@ -2,7 +2,7 @@
 
 The board adapter (`starpulse.board`) places each Board task here, the server keeps each task's latest state,
 and every connected page gets one snapshot and then a delta per change. Each other machine's tasks arrive from
-`machine:events` (`machine_tasks`), and each runs adapter instance's workflows from its adapter module.
+the event log (`machine_tasks`), and each runs adapter instance's workflows from its adapter module.
 """
 
 from __future__ import annotations
@@ -12,14 +12,12 @@ import queue
 import re
 import threading
 import time
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import Any, Protocol
 
-import redis.exceptions
-
 from starpulse.contracts import BoardTask, TaskKeys
+from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 from starpulse.snapshot import declared
-from starpulse.streams import StreamConsumer
 from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine
 
 __all__ = ["BoardFeed", "Followed"]
@@ -301,31 +299,38 @@ class Followed(Protocol):
     def expect(self, last_id: str) -> None: ...
 
 
-def follow(feed: Followed, consumer: StreamConsumer) -> threading.Thread:  # pragma: no mutate block — Redis retry loop
-    """Read the whole retained stream into `feed` on a daemon thread and return it.
+def follow(
+    feed: Followed,
+    log: EventLog,
+    stream: str,
+    handle: Callable[[str, dict], None],
+    *,
+    stop: threading.Event | None = None,
+    interval: float = DEFAULT_POLL_INTERVAL,
+) -> threading.Thread:
+    """Read `stream` of the event log into `feed` through `handle(entry_id, fields)` on a daemon thread and return it.
 
-    The feed lives in memory, so every start replays the stream from its first entry: the group is
-    dropped, then recreated at `0` by the consumer. Hourly reconciles keep the latest state of
-    every task inside the stream's retention. The feed turns ready once the entry that was last
-    when it started has been read.
+    The feed lives in memory, so every start replays the log from the oldest entry it retains. Hourly reconciles
+    keep the latest state of every task inside the retention. The feed turns ready once the newest entry `stream`
+    held when it started has been read. While the database cannot be reached the feed is not ready and the start
+    retries every `interval`; a later outage is `Tail.run`'s to retry. `stop` ends the reader.
     """
     feed.await_stream()
+    stop = stop or threading.Event()
 
     def run() -> None:
-        while True:
+        while not stop.is_set():
             try:
-                client = consumer.connect()
-                try:
-                    client.xgroup_destroy(consumer.stream, consumer.group)
-                except redis.exceptions.ResponseError:
-                    pass  # no stream yet, so no group to drop
-                last = client.xrevrange(consumer.stream, count=1)
-                feed.expect(str(last[0][0]) if last else "0-0")
+                last = log.last(stream)
                 break
-            except redis.exceptions.RedisError as exc:
-                logger.warning("StarPulse: cannot reach %s, retrying: %s", consumer.stream, exc)
-                time.sleep(consumer.reconnect_delay)
-        consumer.run_forever()
+            except Exception as exc:  # the database is unreachable; the next attempt retries
+                logger.warning("StarPulse: cannot reach the event log for %s, retrying: %s", stream, exc)
+                stop.wait(interval)
+        else:
+            return
+        feed.expect(str(last) if last else "0-0")
+        tail = Tail(log, stream, interval=interval)  # no cursor: the whole retention is replayed
+        tail.run(lambda entry: handle(str(entry.id), entry.fields), stop)
 
     thread = threading.Thread(target=run, name="board-feed", daemon=True)
     thread.start()

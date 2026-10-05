@@ -12,6 +12,7 @@ from starpulse.board import Board
 from starpulse.board_feed import BoardFeed
 from starpulse.config import load
 from starpulse.contracts import BoardTask
+from starpulse.event_log import EventLog
 from starpulse.machine_definition import Writer
 from starpulse.native import board
 from starpulse.server import announce, assemble, move_task
@@ -70,9 +71,11 @@ def _no_backlog_cli(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytes
     assert shutil.which("backlog") is None
 
 
-def test_serving_in_an_empty_directory_creates_the_default_lanes_and_an_empty_tasks_directory(tmp_path: Path) -> None:
+def test_serving_in_an_empty_directory_creates_the_default_lanes_and_an_empty_tasks_directory(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
     built, feed = assemble(load(None), tmp_path, None, ())
-    built.start(feed, "test")
+    built.start(feed, "test", EventLog(f"sqlite:///{tmp_path_factory.mktemp('log') / 'events.sqlite'}"))
 
     created = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
     assert created == [
@@ -129,7 +132,7 @@ def test_a_move_the_machine_leaves_to_the_operator_is_refused_to_an_agent_with_i
     path, built = project(tmp_path)
     monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: self.scan())
     feed = BoardFeed(machines=built.machines(lambda name: name, ()), keys=built.keys)
-    built.start(feed, "test")
+    built.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
 
     def move(actor: str) -> tuple[int, dict]:
         raw = json.dumps({"task": "task-1", "to": "to_do", "actor": actor}).encode()

@@ -151,7 +151,7 @@ def test_an_instance_type_may_be_the_dotted_path_of_a_module_outside_starpulse(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _adapter_module(
-        tmp_path, monkeypatch, "acme", "runs", "def start(url): return None\ndef follow(url, runs, group): ...\n"
+        tmp_path, monkeypatch, "acme", "runs", "def start(url): return None\ndef follow(url, runs, log): ...\n"
     )
     text = '[[runs]]\nname = "ci"\ntype = "acme.runs"\nurl = "http://ci.test"\n'
 
@@ -167,7 +167,7 @@ def test_a_dotted_type_that_resolves_but_is_no_runs_adapter_is_refused_naming_it
     text = '[[runs]]\nname = "ci"\ntype = "acme.notruns"\nurl = "http://ci.test"\n'
 
     assert _refusal(tmp_path, text) == (
-        "runs instance ci: acme.notruns is not a runs adapter: it needs start(url) and follow(url, runs, group)"
+        "runs instance ci: acme.notruns is not a runs adapter: it needs start(url) and follow(url, runs, log)"
     )
 
 

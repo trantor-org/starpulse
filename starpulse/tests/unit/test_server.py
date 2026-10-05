@@ -530,7 +530,7 @@ def test_an_instance_type_that_is_not_a_runs_adapter_exits_naming_the_instance(
 
     assert exited.value.code == 1
     assert capsys.readouterr().err == (
-        "runs instance ci: config is not a runs adapter: it needs start(url) and follow(url, runs, group)\n"
+        "runs instance ci: config is not a runs adapter: it needs start(url) and follow(url, runs, log)\n"
     )
 
 

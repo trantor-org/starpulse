@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-import json
+import threading
+import time
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from starpulse import run_events
-from starpulse.board_feed import BoardFeed
+from starpulse.board_feed import BoardFeed, follow
 from starpulse.contracts import Dag
+from starpulse.event_log import EventLog
 from starpulse.history import HistoryStore
-from starpulse.push_runs import PUSHED_INSTANCE, PushRuns, build_consumer
+from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
 
 START = 1_700_000_000.0
 
@@ -19,9 +22,8 @@ START = 1_700_000_000.0
 def fields(
     phase: str, status: str, *, run: str = "r1", at: float = START, workflow: str = "nightly", **step: Any
 ) -> dict:
-    """An entry as a consumer reads it off Redis: every value text, a list JSON."""
-    entry = run_events.entry(phase, workflow, run, status, now=at, **step)
-    return {key: value if isinstance(value, str) else json.dumps(value) for key, value in entry.items()}
+    """An entry as the event log holds it: the JSON `starpulse emit` appended, a list still a list."""
+    return run_events.entry(phase, workflow, run, status, now=at, **step)
 
 
 def drawn(feed: BoardFeed, name: str = "nightly") -> dict:
@@ -137,14 +139,14 @@ def test_an_entry_the_contract_does_not_allow_is_dropped() -> None:
     runs.handle_entry("2-0", fields("end", "waiting"))
     runs.handle_entry("3-0", fields("end", "failed") | {"phase": "pause"})
     runs.handle_entry("4-0", {"phase": "end"})
-    runs.handle_entry("5-0", fields("end", "failed", step="s") | {"depends": "not json"})
-    runs.handle_entry("6-0", fields("end", "failed", step="s") | {"depends": '{"a": 1}'})
+    runs.handle_entry("5-0", fields("end", "failed", step="s") | {"depends": "fetch"})
+    runs.handle_entry("6-0", fields("end", "failed", step="s") | {"depends": {"a": 1}})
 
     assert drawn(feed) == before
 
 
-@pytest.mark.parametrize("depends", ["[1, 2]", '"fetch"', '{"fetch": 1}', "7"])
-def test_depends_that_is_not_a_list_of_step_names_drops_the_entry(depends: str) -> None:
+@pytest.mark.parametrize("depends", [[1, 2], "fetch", {"fetch": 1}, 7, '["fetch"]'])
+def test_depends_that_is_not_a_list_of_step_names_drops_the_entry(depends: object) -> None:
     feed = BoardFeed()
     runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))
     runs.handle_entry("1-0", fields("start", "running"))
@@ -187,24 +189,6 @@ def test_without_a_store_a_run_is_drawn_and_its_steps_are_not_kept() -> None:
     assert edges(drawn(feed)) == {"fetch": []}
 
 
-def test_the_consumer_reads_the_runs_stream_on_the_runs_redis_through_its_own_group(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("RUNS_REDIS_HOST", "runs.lan")
-    monkeypatch.setenv("RUNS_REDIS_PORT", "6401")
-    runs = PushRuns(BoardFeed().runs(PUSHED_INSTANCE), None)
-
-    consumer = build_consumer(runs, "flow-view-pushed-8766")
-
-    assert (consumer.stream, consumer.group, consumer.consumer) == (
-        "runs:events",
-        "flow-view-pushed-8766",
-        "flow-view-pushed-8766",
-    )
-    assert (consumer.redis_host, consumer.redis_port) == ("runs.lan", 6401)
-    assert consumer.handler == runs.handle_entry
-
-
 def _listed(name: str) -> dict:
     return {"name": name, "status": "succeeded", "runId": "", "startedAt": "", "finishedAt": "", "steps": []}
 
@@ -239,3 +223,22 @@ def test_a_step_reported_again_is_published_to_a_subscriber_that_saw_the_earlier
     kind, data = changes.get_nowait()
     assert kind == "dags"
     assert [(s["name"], s["status"]) for s in data["dags"][0]["steps"]] == [("load", "failed")]
+
+
+def test_pushed_runs_fed_from_the_event_log_draw_the_workflow_with_its_learned_steps(tmp_path: Path) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    log.append(run_events.STREAM, fields("start", "running"))
+    log.append(run_events.STREAM, fields("end", "succeeded", step="fetch"))
+    log.append(run_events.STREAM, fields("start", "running", step="load", depends=["fetch"]))
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", {}))
+    stop = threading.Event()
+
+    follow(runs, log, run_events.STREAM, runs.handle_entry, stop=stop, interval=0.01)
+    deadline = time.monotonic() + 5
+    while not feed.snapshot()["dags"] or edges(drawn(feed)) != {"fetch": [], "load": ["fetch"]}:
+        assert time.monotonic() < deadline, "the replayed entries never drew the workflow"
+        time.sleep(0.01)
+    stop.set()
+
+    assert drawn(feed)["status"] == "running"

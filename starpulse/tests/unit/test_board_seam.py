@@ -8,6 +8,7 @@ import pytest
 from starpulse.board import Board
 from starpulse.board import load as load_board
 from starpulse.config import ConfigError, load
+from starpulse.event_log import EventLog
 from starpulse.history import DEFAULT_FILE, HistoryStore
 from starpulse.server import assemble, history_store
 from starpulse.tests import fake_board
@@ -40,7 +41,7 @@ def test_a_board_type_upstream_backlog_draws_the_backlog_md_project_beside_its_c
 
     config = load(_config(tmp_path, '[board]\ntype = "upstream_backlog"\n'))
     board, feed = assemble(config, tmp_path, None, ())
-    board.start(feed, "test")
+    board.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
 
     assert [s["id"] for s in feed.snapshot()["flows"][0]["machine"]["states"]] == ["to_do", "doing", "done"]
     _wait_until(lambda: feed.task("task-1") is not None)
@@ -53,7 +54,7 @@ def test_a_board_type_names_the_module_whose_board_the_view_draws(tmp_path: Path
     config = load(_config(tmp_path, '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["open", "shut"]\n'))
 
     board, feed = assemble(config, tmp_path, None, ())
-    board.start(feed, "test")
+    board.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
 
     snapshot = feed.snapshot()
     assert [s["id"] for s in snapshot["flows"][0]["machine"]["states"]] == ["open", "shut"]
@@ -113,7 +114,7 @@ def test_a_board_that_keeps_its_own_history_is_read_instead(tmp_path: Path) -> N
     kept = HistoryStore(f"sqlite:///{tmp_path / 'kept.db'}", drawn)
     board = Board(
         machines=lambda q, w: drawn,
-        start=lambda feed, group: None,
+        start=lambda feed, group, log: None,
         history=lambda machines: kept if machines is drawn else None,
     )
 

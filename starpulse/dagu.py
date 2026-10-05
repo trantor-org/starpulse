@@ -21,11 +21,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, get_args
 
-import redis.exceptions
-
 from starpulse import run_events
 from starpulse.contracts import RunsSink, RunStatus, StartFailedError
-from starpulse.streams import StreamConsumer
+from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 
 #: Seconds between two listings of a followed Dagu instance.
 RECONCILE_INTERVAL = 30.0
@@ -280,41 +278,6 @@ class DaguRuns:
         self._sink.set_dags(list(self._dags.values()), None)
 
 
-class RunsConsumer(StreamConsumer):
-    """A consumer that runs `on_connect` after each connection, once its group exists.
-
-    The group is made before the callback so a run that starts while the callback reads Dagu is
-    delivered rather than skipped, and the callback runs at every reconnect, which is when the
-    stream may have missed runs.
-    """
-
-    def __init__(self, *args: Any, on_connect: Callable[[], None], **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)  # pragma: no mutate: StreamConsumer takes keywords only, so args is empty
-        self._on_connect = on_connect
-
-    def connect(self):
-        client = super().connect()
-        try:
-            client.xgroup_create(self.stream, self.group, id=self.group_start_id, mkstream=True)
-        except redis.exceptions.ResponseError:
-            pass  # the group exists from an earlier connection
-        self._on_connect()
-        return client
-
-
-def build_runs_consumer(runs: DaguRuns, group: str, on_connect: Callable[[], None] | None = None) -> RunsConsumer:
-    """The runs stream reader for `runs`, in its own group at the stream's end: history is in the listing."""
-    return RunsConsumer.from_env(
-        run_events.REDIS_ENV_PREFIX,
-        stream=run_events.STREAM,
-        group=group,
-        consumer=group,
-        handler=runs.handle_entry,
-        group_start_id="$",
-        on_connect=on_connect or runs.reconcile,
-    )
-
-
 def start(url: str) -> Callable[[str], str]:
     """The start capability of the Dagu instance at `url`."""
     return starter(connect(url))
@@ -327,9 +290,19 @@ def _reconcile_forever(runs: DaguRuns) -> None:
         time.sleep(RECONCILE_INTERVAL)
 
 
-def follow(url: str, runs: RunsSink, group: str) -> None:
-    """Read the Dagu instance at `url` into `runs`: its listing at every connect and every `RECONCILE_INTERVAL` seconds, and its run entries."""
+def follow(url: str, runs: RunsSink, log: EventLog, *, interval: float = DEFAULT_POLL_INTERVAL) -> None:
+    """Read the Dagu instance at `url` into `runs`: its listing, then the run entries the log retains and each new one.
+
+    The listing comes first so an entry stamped before it, already in it, is dropped (`DaguRuns`); it repeats every
+    `RECONCILE_INTERVAL` seconds, so runs show with no `handler_on` hooks publishing them.
+    """
     reader = DaguRuns(runs, lambda only=None: dags(url, only))
-    consumer = build_runs_consumer(reader, group)
-    threading.Thread(target=consumer.run_forever, name=group, daemon=True).start()
-    threading.Thread(target=_reconcile_forever, args=(reader,), name=f"{group}-reconcile", daemon=True).start()
+
+    def read() -> None:
+        reader.reconcile()
+        Tail(log, run_events.STREAM, interval=interval).run(
+            lambda entry: reader.handle_entry(str(entry.id), entry.fields), threading.Event()
+        )
+
+    threading.Thread(target=read, name="dagu-runs", daemon=True).start()
+    threading.Thread(target=_reconcile_forever, args=(reader,), name="dagu-runs-reconcile", daemon=True).start()

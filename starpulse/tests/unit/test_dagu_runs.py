@@ -11,14 +11,14 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-import redis.exceptions
 
+from starpulse import run_events
 from starpulse.adapter_kit import RunsAdapterKit
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import StartFailedError, TaskKeys
-from starpulse.dagu import _STATUS, DaguRuns, Transport, build_runs_consumer, connect, dags, start, starter, status_of
+from starpulse.dagu import _STATUS, DaguRuns, Transport, connect, dags, start, starter, status_of
 from starpulse.dagu import follow as follow_instance
-from starpulse.streams import StreamConsumer
+from starpulse.event_log import EventLog
 from starpulse.tests.dagu_stub import dagu, run_entry
 
 LISTING = "/api/v1/dags?perPage=200"
@@ -266,33 +266,6 @@ def test_an_entry_is_applied_before_any_listing_has_been_taken() -> None:
     assert dag(feed, "d1")["status"] == "running"
 
 
-class RecordingClient:
-    def __init__(self, error: Exception | None = None) -> None:
-        self.error = error
-        self.groups: list[tuple[tuple, dict]] = []
-
-    def xgroup_create(self, *args: object, **kwargs: object) -> None:
-        self.groups.append((args, kwargs))
-        if self.error:
-            raise self.error
-
-
-@pytest.mark.parametrize("error", [None, redis.exceptions.ResponseError("BUSYGROUP")])
-def test_a_connection_makes_its_group_at_the_streams_end_then_reads_dagu(
-    error: Exception | None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    client = RecordingClient(error)
-    monkeypatch.setattr(StreamConsumer, "connect", lambda self: client)
-    reads: list[str] = []
-    consumer = build_runs_consumer(
-        DaguRuns(BoardFeed().runs("ci"), lambda only=None: []), "g", lambda: reads.append("listed")
-    )
-
-    assert consumer.connect() is client
-    assert client.groups == [(("runs:events", "g"), {"id": "$", "mkstream": True})]
-    assert reads == ["listed"]
-
-
 def test_an_entry_stamped_at_the_moment_of_the_listing_is_applied() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, _ = follow(base_url)
@@ -359,34 +332,6 @@ def test_an_entry_missing_a_field_is_dropped() -> None:
 
     assert dag(feed, "d1")["status"] == "succeeded"
     assert changes.empty()
-
-
-def test_the_runs_consumer_reads_the_neutral_stream_from_the_end_in_its_own_group_and_relists_on_connect(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("RUNS_REDIS_HOST", "redis.test")
-    monkeypatch.setenv("RUNS_REDIS_PORT", "6400")
-    monkeypatch.setenv("REDIS_PASSWORD", "hunter2")
-    runs = DaguRuns(BoardFeed().runs("ci"), lambda only=None: [])
-
-    consumer = build_runs_consumer(runs, "flow-view-runs-8766")
-
-    assert (consumer.stream, consumer.group, consumer.consumer) == (
-        "runs:events",
-        "flow-view-runs-8766",
-        "flow-view-runs-8766",
-    )
-    assert consumer.handler == runs.handle_entry
-    assert consumer.group_start_id == "$"
-    assert consumer._on_connect == runs.reconcile
-    assert (consumer.redis_host, consumer.redis_port, consumer.redis_password) == ("redis.test", 6400, "hunter2")
-
-
-def test_the_runs_consumer_runs_the_callback_it_is_given() -> None:
-    def hook() -> None:
-        pass
-
-    assert build_runs_consumer(DaguRuns(BoardFeed().runs("ci"), lambda only=None: []), "g", hook)._on_connect is hook
 
 
 class _Reply:
@@ -633,60 +578,86 @@ def test_the_adapters_start_capability_is_the_starter_over_the_instances_url(mon
     assert sent == [("http://dagu.test:8085", "/dags/healthcheck/start")]
 
 
-def test_following_an_instance_reads_its_listing_into_the_sink_on_a_daemon_thread(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.fixture
+def log(tmp_path: Path) -> EventLog:
+    return EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+
+
+def _run_event(log: EventLog, phase: str, status: str, workflow: str = "d1", at: float | None = None) -> None:
+    now = time.time() + 60 if at is None else at  # after any listing the test's follow takes
+    log.append(run_events.STREAM, run_events.entry(phase, workflow, "r1", status, now=now))
+
+
+def _wait_until(condition, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "condition not met within the timeout"
+        time.sleep(0.01)
+
+
+def test_following_an_instance_reads_its_listing_into_the_sink_on_daemon_threads(
+    log: EventLog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     feed = BoardFeed()
-    consumers: list[tuple[DaguRuns, str]] = []
-    ran = threading.Event()
     started: list[threading.Thread] = []
-
-    class _Consumer:
-        def run_forever(self) -> None:
-            reader, _ = consumers[0]
-            reader.reconcile()
-            ran.set()
-
-    def build(runs: DaguRuns, group: str) -> _Consumer:
-        consumers.append((runs, group))
-        return _Consumer()
-
     real_start = threading.Thread.start
+    monkeypatch.setattr(threading.Thread, "start", lambda self: (started.append(self), real_start(self))[1])
     with dagu({"d1": ["a"]}) as (base_url, _):
-        monkeypatch.setattr("starpulse.dagu.build_runs_consumer", build)
+        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
+        _wait_until(lambda: feed.snapshot()["dags"])
 
-        monkeypatch.setattr(threading.Thread, "start", lambda self: (started.append(self), real_start(self))[1])
-        follow_instance(base_url, feed.runs("ci"), "flow-view-runs-ci-8766")
-        assert ran.wait(5)
-
-    assert [(t.name, t.daemon) for t in started if t.name.startswith("flow-view")] == [
-        ("flow-view-runs-ci-8766", True),
-        ("flow-view-runs-ci-8766-reconcile", True),
+    assert [(t.name, t.daemon) for t in started if t.name.startswith("dagu-")] == [
+        ("dagu-runs", True),
+        ("dagu-runs-reconcile", True),
     ]
-    assert consumers[0][1] == "flow-view-runs-ci-8766"
     assert [d["name"] for d in feed.snapshot()["dags"]] == ["ci/d1"]
 
 
-def test_a_followed_instance_reads_only_the_named_dag_when_an_entry_names_a_new_one(
-    monkeypatch: pytest.MonkeyPatch,
+def test_a_run_appended_to_the_log_moves_its_dag_and_the_end_reads_the_steps_again(
+    log: EventLog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    readers: list[DaguRuns] = []
+    monkeypatch.setattr("starpulse.dagu._reconcile_forever", lambda runs: None)  # only the entries move the DAG
+    feed = BoardFeed()
+    with dagu({"d1": ["a"]}) as (base_url, calls):
+        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
+        _wait_until(lambda: feed.snapshot()["dags"])
 
-    class _Consumer:
-        def run_forever(self) -> None:
-            pass
+        _run_event(log, "start", "running")
+        _wait_until(lambda: dag(feed, "d1")["status"] == "running")
+        _run_event(log, "end", "failed")
+        _wait_until(lambda: dag(feed, "d1")["status"] == "failed")
 
-    monkeypatch.setattr("starpulse.dagu.build_runs_consumer", lambda runs, group: readers.append(runs) or _Consumer())
+    assert calls.count(LISTING) == 2  # the first listing, then the ended run's step read
+
+
+def test_the_runs_the_log_retains_are_replayed_after_the_first_listing_and_older_ones_are_in_that_listing(
+    log: EventLog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("starpulse.dagu._reconcile_forever", lambda runs: None)
+    _run_event(log, "start", "running", workflow="d1", at=1.0)  # long before the listing: Dagu's listing holds it
+    _run_event(log, "start", "running", workflow="d2")  # after it
+    feed = BoardFeed()
+    with dagu({"d1": ["a"], "d2": ["b"]}) as (base_url, _):
+        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
+        _wait_until(lambda: feed.snapshot()["dags"] and dag(feed, "d2")["status"] == "running")
+
+    assert dag(feed, "d1")["status"] != "running"
+
+
+def test_a_followed_instance_reads_only_the_named_dag_when_an_entry_names_a_new_one(
+    log: EventLog, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("starpulse.dagu._reconcile_forever", lambda runs: None)  # its listings would skew the count
     steps = {"d1": ["a"], "d2": ["b"]}
     feed = BoardFeed()
     with dagu(steps) as (base_url, calls):
-        follow_instance(base_url, feed.runs("ci"), "flow-view-runs-ci-8766")
-        readers[0].reconcile()
+        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
+        _wait_until(lambda: feed.snapshot()["dags"])
         calls.clear()
         steps["d3"] = ["c"]
 
-        readers[0].handle_entry(*run_entry("start", "d3", "r1", "running", at=time.time() + 60))
+        _run_event(log, "start", "running", workflow="d3")
+        _wait_until(lambda: any(d["name"] == "ci/d3" for d in feed.snapshot()["dags"]))
 
     assert calls == [LISTING, "/api/v1/dags/d3"]
     assert dag(feed, "d3")["status"] == "running"
@@ -748,21 +719,9 @@ def test_a_start_that_cannot_reach_dagu_raises_with_the_transports_reason() -> N
     assert str(failed.value) == "Dagu unreachable: refused"
 
 
-def _wait_until(condition, timeout: float = 5.0) -> None:
-    deadline = time.monotonic() + timeout
-    while not condition():
-        assert time.monotonic() < deadline, "condition not met within the timeout"
-        time.sleep(0.01)
-
-
-def test_a_run_that_finishes_on_dagu_shows_within_one_reconcile_interval_with_no_stream_entries(
-    monkeypatch: pytest.MonkeyPatch,
+def test_a_run_that_finishes_on_dagu_shows_within_one_reconcile_interval_with_no_log_entries(
+    log: EventLog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    class _Idle:
-        def run_forever(self) -> None:
-            """A stream that never delivers an entry."""
-
-    monkeypatch.setattr("starpulse.dagu.build_runs_consumer", lambda runs, group: _Idle())
     monkeypatch.setattr("starpulse.dagu.RECONCILE_INTERVAL", 0.05)
     feed = BoardFeed()
     latest = {"statusLabel": "running", "dagRunId": "r1"}
@@ -771,7 +730,7 @@ def test_a_run_that_finishes_on_dagu_shows_within_one_reconcile_interval_with_no
         return dag(feed, "d1")["status"]
 
     with dagu({"d1": ["a"]}, latest=latest) as (base_url, _):
-        follow_instance(base_url, feed.runs("ci"), "flow-view-runs-ci-8766")
+        follow_instance(base_url, feed.runs("ci"), log, interval=0.01)
         _wait_until(lambda: feed.snapshot()["dags"] and status() == "running")
         latest["statusLabel"] = "succeeded"
         _wait_until(lambda: status() == "succeeded")

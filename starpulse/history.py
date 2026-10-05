@@ -12,8 +12,9 @@ gap. It also keeps the step graphs `push_runs` learns from `starpulse emit`, so 
 
 from __future__ import annotations
 
-import hashlib
 import json
+import logging
+import threading
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -37,13 +38,14 @@ from sqlalchemy.exc import OperationalError
 
 from starpulse import events as machine_events
 from starpulse.config import discover, load
-from starpulse.event_log import EventLog
-from starpulse.gap_consumer import GapWatchingConsumer
+from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables
 from starpulse.machine_tasks import Table as Transitions
 from starpulse.tables import gaps as _gaps
 from starpulse.tables import metadata
 
 __all__ = ["History", "machine_steps"]
+
+logger = logging.getLogger(__name__)
 
 #: The file a config without `database_url` keeps its history in, beside the config.
 DEFAULT_FILE = "starpulse-history.sqlite"
@@ -80,6 +82,13 @@ _learned_steps = Table(
     Column("step", String, nullable=False),
     Column("depends", Text, nullable=False),
     Index("ux_starpulse_learned_steps", "workflow", "step", unique=True),
+)
+#: How far each reader of the log got, so a restart resumes after the last entry it recorded.
+_cursors = Table(
+    "starpulse_cursors",
+    metadata,
+    Column("stream", String, primary_key=True),
+    Column("after_id", Integer, nullable=False),
 )
 #: A path's order: by time, and the earlier insert first when two rows share one.
 _LANE_ORDER = (_lane_changes.c.observed_at, _lane_changes.c.id)
@@ -158,16 +167,22 @@ class HistoryStore:
         # pragma: no mutate start — SQLite compiles the postgresql insert's ON CONFLICT alike
         self._dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
         # pragma: no mutate end
-        metadata.create_all(self.engine)
-        #: One group per database, so two views on one Redis each fill their own, and a new database replays what the
-        #: stream still holds into it (a redelivered entry is a no-op).
-        self.group = f"starpulse-history-{hashlib.sha1(url.encode()).hexdigest()[:8]}"
+        create_tables(self.engine)  # a reader thread of the log may be creating its own at the same time
 
     def _insert(self, table: Table):
         return self._dialect.insert(table)
 
-    def record_machine(self, entry_id: str, fields: dict) -> None:
-        """Write one `machine:events` entry; one the store already holds is a no-op."""
+    def cursor(self, stream: str) -> int | None:
+        """The log id of the last `stream` entry recorded, or None for a store that has recorded none."""
+        with self.engine.connect() as db:
+            return db.execute(select(_cursors.c.after_id).where(_cursors.c.stream == stream)).scalar()
+
+    def record_machine(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
+        """Write one machine event; one the store already holds is a no-op.
+
+        `cursor`, the event's id in the log, is saved in the same transaction, so the store never holds an event
+        its cursor has not passed or a cursor past an event it lacks.
+        """
         row = {
             "event_id": fields.get("event_id") or entry_id,
             "task": fields.get("task"),
@@ -179,6 +194,11 @@ class HistoryStore:
         }
         with self.engine.begin() as db:
             db.execute(self._insert(_machine_events).values(row).on_conflict_do_nothing())
+            if cursor is not None:
+                save = self._insert(_cursors).values(stream=machine_events.STREAM, after_id=cursor)
+                db.execute(
+                    save.on_conflict_do_update(index_elements=["stream"], set_={"after_id": save.excluded.after_id})
+                )
 
     def record_lane(self, event_id: str, task: str, status: str, at: float) -> None:
         """Write a task's lane change; a status that repeats the task's last one (a reconcile) is no change."""
@@ -263,18 +283,27 @@ class HistoryStore:
         return machine_steps(self._machines[flow], [tuple(row) for row in rows])
 
 
-def build_machine_recorder(store: HistoryStore) -> GapWatchingConsumer:
-    """The consumer that copies `machine:events` into `store`, from the oldest entry the stream still holds.
+def record_machine_events(
+    store: HistoryStore, log: EventLog, stop: threading.Event, *, interval: float = DEFAULT_POLL_INTERVAL
+) -> None:
+    """Copy the log's machine events into `store` until `stop`, resuming after the cursor the store holds.
 
-    A database that cannot be reached is the sink down, not the entry bad, so the entry stays pending.
+    A store with no cursor replays what the log retains. Each entry is written with its cursor in one transaction,
+    so a restart neither skips nor repeats one, and rows pruned unread are a gap (`Tail`). A database that cannot be
+    reached is the sink down, not the entry bad, so the entry is read again on the next poll.
     """
     stream = machine_events.STREAM
-    return GapWatchingConsumer.from_env(
-        machine_events.REDIS_ENV_PREFIX,
-        stream=stream,
-        group=store.group,
-        consumer=store.group,
-        handler=store.record_machine,
+    while not stop.is_set():
+        try:
+            after = store.cursor(stream)
+            break
+        except OperationalError as exc:
+            logger.warning("history: cannot read the %s cursor, retrying in %ss: %s", stream, interval, exc)
+            stop.wait(interval)
+    else:
+        return
+    Tail(log, stream, after=after, interval=interval).run(
+        lambda entry: store.record_machine(entry.event_id, entry.fields, cursor=entry.id),
+        stop,
         transient=(OperationalError,),
-        on_gap=lambda after, before, lost: store.record_gap(stream, after, before, lost),
     )

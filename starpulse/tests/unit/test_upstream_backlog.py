@@ -12,6 +12,7 @@ import pytest
 from starpulse.adapter_kit import BoardAdapterKit
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import BoardTask, Move
+from starpulse.event_log import EventLog
 from starpulse.machine_definition import Writer
 from starpulse.server import move_task
 from starpulse.upstream_backlog import (
@@ -408,7 +409,7 @@ def test_the_board_reads_the_project_its_path_names_and_polls_at_its_interval(
     write_config(tmp_path / "proj", ("Open", "Shut"), prefix="PROJ")
 
     built = board({"type": "upstream_backlog", "path": "proj", "interval": "0.5"}, tmp_path)
-    built.start(BoardFeed(), "test")
+    built.start(BoardFeed(), "test", EventLog("sqlite://"))
 
     assert built.source == str(tmp_path / "proj")
     assert built.machines(lambda name: name, ()) == {"board": board_machine(("Open", "Shut"))}
@@ -422,7 +423,7 @@ def test_without_settings_the_board_reads_backlog_beside_the_config_every_two_se
 ) -> None:
     started = _started(monkeypatch)
 
-    board({}, tmp_path).start(BoardFeed(), "test")
+    board({}, tmp_path).start(BoardFeed(), "test", EventLog("sqlite://"))
 
     assert started == [(tmp_path / "backlog", 2.0)]
 
@@ -578,7 +579,7 @@ def served(built, monkeypatch: pytest.MonkeyPatch) -> BoardFeed:
     """A feed the board's tasks are on after one scan."""
     monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: self.scan())
     feed = BoardFeed(machines=built.machines(lambda name: name, ()), keys=built.keys)
-    built.start(feed, "test")
+    built.start(feed, "test", EventLog("sqlite://"))
     return feed
 
 

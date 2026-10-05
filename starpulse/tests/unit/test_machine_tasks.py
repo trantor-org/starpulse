@@ -2,14 +2,18 @@
 
 import itertools
 import json
+import threading
 import time
+from pathlib import Path
 from typing import Literal
 
 import pytest
 
-from starpulse.board_feed import BoardFeed
+from starpulse import events as machine_events
+from starpulse.board_feed import BoardFeed, follow
 from starpulse.contracts import BoardTask
-from starpulse.machine_tasks import MachineTasks, Table, build_consumer
+from starpulse.event_log import EventLog
+from starpulse.machine_tasks import MachineTasks, Table
 from starpulse.tests.machines import FLOWS, MACHINES
 
 _ids = itertools.count(1)
@@ -168,23 +172,26 @@ def test_a_task_whose_latest_move_is_older_than_the_window_is_left_out_of_a_snap
     assert [a["id"] for a in _agents(feed, "in-progress")] == ["PROJ-2"]
 
 
-def test_the_consumer_reads_machine_events_in_a_group_of_its_own_on_the_machine_events_redis(
-    monkeypatch: pytest.MonkeyPatch,
+def test_tasks_fed_from_the_event_log_replay_its_retained_machine_events_then_follow_new_ones_and_turn_ready(
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("MACHINE_EVENTS_REDIS_HOST", "redis.test")
-    monkeypatch.setenv("MACHINE_EVENTS_REDIS_PORT", "6400")
-    monkeypatch.setenv("REDIS_PASSWORD", "hunter2")
-    _, tasks = _feed()
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    _, fields = _entry("in-progress", "WORKTREE_READY", task="PROJ-1")
+    log.append(machine_events.STREAM, fields)
+    log.append("runs:events", {"phase": "start"})  # another stream's row
+    feed, tasks = _feed()
+    stop = threading.Event()
 
-    consumer = build_consumer(tasks, "flow-view-8766")
+    follow(tasks, log, machine_events.STREAM, tasks.handle_entry, stop=stop, interval=0.01)
+    assert tasks.ready.wait(5)
+    log.append(machine_events.STREAM, _entry("in-progress", "RED_PROVEN", task="PROJ-1")[1])
+    deadline = time.monotonic() + 5
+    while [a["state"] for a in _agents(feed, "in-progress")] != ["red_proven"]:
+        assert time.monotonic() < deadline, "the new event never reached the tasks"
+        time.sleep(0.01)
+    stop.set()
 
-    assert (consumer.stream, consumer.group, consumer.consumer) == (
-        "machine:events",
-        "flow-view-8766",
-        "flow-view-8766",
-    )
-    assert consumer.handler == tasks.handle_entry
-    assert (consumer.redis_host, consumer.redis_port, consumer.redis_password) == ("redis.test", 6400, "hunter2")
+    assert [a["id"] for a in _agents(feed, "in-progress")] == ["PROJ-1"]
 
 
 def test_the_tasks_become_ready_once_the_last_entry_held_at_start_has_been_read() -> None:
