@@ -120,6 +120,8 @@ export interface Renderer {
   fitView(): void;
   /** The canvas is the page again after another view hid it: resize it and refit, keeping a zoomed-in view. */
   resize(): void;
+  /** Whether the Star Map is the view showing; while another view hides it, the canvas draws no frame. */
+  show(on: boolean): void;
   /** Open a DAG's panel beside the level that is showing. */
   openDag(name: string): void;
   /** Fly to a domain's DAGs on the Board. */
@@ -149,7 +151,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // ZS: zoom beyond the fit size; K: absolute zoom. Text, pulses and dashes divide by these so they never balloon.
   const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
   let T = Date.now() / 1000, clock = 0, liveTasks = new Set<string>(), hotEdge = new Set<string>(), ZS = 1, K = 1;
-  let timer = 0, clockTimer = 0, stopped = false, saveT = 0, tick = 0, clockText = "", live: "" | "on" | "off" = "";
+  let away = false, timer = 0, clockTimer = 0, stopped = false, saveT = 0, tick = 0, clockText = "", live: "" | "on" | "off" = "";
   // The stream the page reads its snapshot and every change after it from.
   let stream: { close(): void } | null = null, last = 0;
 
@@ -307,7 +309,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (document.hidden) {
       stream?.close();
       stream = null;
-      moves.resync();
+      moves.resync(Date.now() / 1000);
     } else stream ??= openStream({ snapshot: onSnapshot, live: onLive });
   };
 
@@ -323,7 +325,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (first && demo && !stopped) timer = window.setTimeout(demoTick, 1200);
   }
   function onLive(on: boolean) {
-    if (!on) moves.resync(); // the reconnect's snapshot places what the drop missed, as a returning tab's does
+    if (!on) moves.resync(Date.now() / 1000); // the reconnect's snapshot places what the drop missed, as a returning tab's does
     live = on ? "on" : "off";
     hud.set({ live });
     paintClock();
@@ -347,7 +349,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     layout(!first);
     publish();
-    loop.wake();
+    if (away) heartbeat(); // the canvas draws no frame behind another view, but the Recent feed beside it stays current
+    else loop.wake();
   }
   /** What the HUD shows, written once per snapshot. */
   function publish() {
@@ -1416,6 +1419,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   let wash: { w: number; h: number; g?: CanvasGradient } = { w: 0, h: 0 };
   const frame = (now: number) => {
+    if (away) return; // the canvas is hidden behind another view
     // The ambient clock (orbits, twinkle, dash drift) advances only across frames drawn back to back, so it freezes at rest and resumes where it stopped.
     clock += last ? Math.min(now - last, 100) / 1000 : 0;
     last = now;
@@ -1463,7 +1467,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
   };
   /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
-  const busy = () => !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing());
+  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing());
   /** The loop settled: the feed and moving list get their last write, and the next wake starts the ambient clock afresh. */
   const settle = () => {
     last = 0;
@@ -1550,6 +1554,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     },
     fitView: () => {
       if (scene) flyTo(fit);
+    },
+    show(on) {
+      away = !on;
     },
     resize: () => {
       resize(true);

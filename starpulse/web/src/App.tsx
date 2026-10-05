@@ -40,12 +40,6 @@ export function App() {
     history.replaceState(null, "", `${location.pathname}${viewSearch(location.search, v, admin.get().view)}`);
     setView(v);
   };
-  useEffect(() => {
-    document.body.classList.toggle("kanban", view === "kanban");
-    document.body.classList.toggle("admin", view === "admin");
-    // the canvas was sized while hidden or behind the Kanban; refit it once it is the page again
-    if (view === "constellation") renderer.current?.resize();
-  }, [view]);
 
   useEffect(() => {
     const els = { tip: tip.current!, panel: panel.current!, clock: clock.current! };
@@ -59,6 +53,14 @@ export function App() {
       r.stop();
     };
   }, [store, admin]);
+  // declared after the renderer's effect, so the first run already reaches it
+  useEffect(() => {
+    document.body.classList.toggle("kanban", view === "kanban");
+    document.body.classList.toggle("admin", view === "admin");
+    renderer.current?.show(view === "constellation");
+    // the canvas was sized while hidden or behind the Kanban; refit it once it is the page again
+    if (view === "constellation") renderer.current?.resize();
+  }, [view]);
 
   // `[` folds the navigator from any view; the canvas already spans the page the fold frees, so nothing refits
   useEffect(() => {
