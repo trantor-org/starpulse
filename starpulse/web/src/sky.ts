@@ -118,22 +118,28 @@ export class Moves {
   private seen = new Set<string>();
   private last: Record<string, number> = {};
   private prev: Sky | null = null;
+  /** The snapshot clock last read and the page's clock less it; a delta keeps its snapshot's clock, so it keeps the offset taken then. */
+  private clock = { now: NaN, off: 0 };
 
   /**
    * Read the next sky as a page load: what changed since the last one is placed at the time it happened, not queued to play. Board moves
-   * carry no time of their own, so the ones from before are dropped and each task stands where the next sky puts it.
+   * carry no time of their own, so the ones from before are dropped and each task stands where the next sky puts it; a move still queued
+   * to play after `now` is dropped too, and every task's queue starts afresh.
    */
-  resync() {
+  resync(now: number) {
     this.prev = null;
-    this.events = this.events.filter((e) => e.flow !== "board");
+    this.last = {};
+    this.events = this.events.filter((e) => e.flow !== "board" && e.at <= now);
   }
 
   observe(S: Sky, t: number) {
-    const off = t - S.now, prev = this.prev, add = (m: Move, key: string) => {
+    if (S.now !== this.clock.now) this.clock = { now: S.now, off: t - S.now };
+    const off = this.clock.off, prev = this.prev, add = (m: Move, key: string) => {
       if (m.at >= t - HOUR) this.events.push(m);
       this.last[key] = Math.max(this.last[key] ?? -Infinity, m.at);
     };
-    const queue = (key: string) => Math.max(t, (this.last[key] ?? -Infinity) + TRAVEL);
+    // a move waits for the task's last one to land, but never more than one travel: a burst shows its latest state, not a replay
+    const queue = (key: string) => Math.min(Math.max(t, (this.last[key] ?? -Infinity) + TRAVEL), t + TRAVEL);
     for (const f of Object.values(S.flows)) {
       if (f.name === "board") continue;
       for (const s of f.agents)

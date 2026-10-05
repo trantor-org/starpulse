@@ -124,7 +124,7 @@ describe("the moves", () => {
     const m = new Moves();
     m.observe(merge(snap(1000, [task("PROJ-1", "ready")], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900]])])), 1000);
 
-    m.resync();
+    m.resync(1000);
     m.observe(merge(snap(3000, [task("PROJ-1", "in_progress")], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900], ["pr_opened", "PR_OPENED", 2000], ["worktree_ready", "FIX", 2100]])], "2026-09-30T21:00:00Z")), 3000);
 
     expect(m.events.map((e) => [e.flow, e.at, e.to])).toEqual([
@@ -140,10 +140,41 @@ describe("the moves", () => {
     m.observe(merge(snap(1000, [task("PROJ-1", "ready")], [])), 1000);
     m.observe(merge(snap(1004, [task("PROJ-1", "in_progress")], [])), 1004);
 
-    m.resync();
+    m.resync(1004);
     m.observe(merge(snap(3000, [task("PROJ-1", "review")], [])), 3000);
 
     expect(m.events.filter((e) => e.flow === "board")).toEqual([]);
+  });
+
+  it("queues a task's moves at most one travel ahead, so a burst nobody watched cannot bank a replay", () => {
+    const m = new Moves();
+    m.observe(merge(snap(1000, [], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900]])])), 1000);
+
+    for (let i = 1; i <= 20; i++) m.observe(merge(snap(1000, [], [placed("PROJ-1", Array.from({ length: i + 1 }, (_, k) => ["worktree_ready", `STEP${k}`, 900 + k * 101] as [string, string, number]))])), 1000 + i);
+
+    expect(Math.max(...m.events.map((e) => e.at))).toBeLessThanOrEqual(1020 + TRAVEL);
+  });
+
+  it("after a resync, plays nothing it had queued ahead and starts each task's queue afresh", () => {
+    const m = new Moves();
+    m.observe(merge(snap(1000, [task("PROJ-1", "ready")], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900]])])), 1000);
+    m.observe(merge(snap(1000, [task("PROJ-1", "ready")], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900], ["pr_opened", "PR_OPENED", 1001], ["worktree_ready", "FIX", 1002]])])), 1002);
+
+    m.resync(1002);
+    m.observe(merge(snap(1003, [task("PROJ-1", "ready")], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900], ["pr_opened", "PR_OPENED", 1001], ["worktree_ready", "FIX", 1002], ["pr_opened", "PR_OPENED", 1003]])])), 1003);
+
+    expect(m.events.filter((e) => e.at > 1003)).toEqual([]);
+    expect(m.events.at(-1)).toMatchObject({ event: "PR_OPENED", to: "pr_opened" });
+  });
+
+  it("after a resync, places a delta's steps at the time they happened, though a delta leaves the snapshot's clock behind", () => {
+    const m = new Moves();
+    m.observe(merge(snap(1000, [], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900]])])), 1000);
+
+    m.resync(1060);
+    m.observe(merge(snap(1000, [], [placed("PROJ-1", [["worktree_ready", "WORKTREE_READY", 900], ["pr_opened", "PR_OPENED", 1050]])])), 1060);
+
+    expect(m.events.at(-1)).toMatchObject({ event: "PR_OPENED", at: 1050 });
   });
 
   it("forgets moves older than an hour", () => {
