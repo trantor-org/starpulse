@@ -321,6 +321,19 @@ body.admin #c, body.admin #tip, body.admin #panel, body.admin .hud { visibility:
 #admin .btn:hover { color: var(--ink); border-color: rgba(148,163,184,.5); }
 #admin .foot { padding: 10px 16px 12px; font-size: calc(10.5px * var(--fs)); color: #475569; border-top: 1px solid rgba(148,163,184,.06); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 #admin .foot .btn { margin-left: auto; }
+#admin .btn.go { border-color: rgba(52,211,153,.45); color: #34d399; background: rgba(52,211,153,.08); }
+#admin .btn[disabled] { opacity: .45; cursor: default; }
+#admin .link { all: unset; cursor: pointer; color: #c4b5fd; } #admin .link:hover { text-decoration: underline; } #admin .link:focus-visible { outline: 1px solid #a78bfa; outline-offset: 1px; }
+#admin .hours { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#admin .hours input { box-sizing: border-box; width: 70px; height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid rgba(148,163,184,.2); background: rgba(8,13,26,.7);
+  color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); outline: none; font-variant-numeric: tabular-nums; }
+#admin .hours input:focus { border-color: #a78bfa; }
+#admin .chips { display: flex; gap: 4px; } #admin .chips button { all: unset; cursor: pointer; padding: 1px 7px; border-radius: 4px; background: rgba(148,163,184,.1); font-size: calc(10.5px * var(--fs)); color: #94a3b8; }
+#admin .chips button:hover { color: var(--ink); } #admin .chips button:focus-visible { outline: 1px solid #a78bfa; outline-offset: 1px; }
+#admin .refusal { margin-top: 8px; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(251,113,133,.35); background: rgba(60,14,28,.6); color: #fecdd3; font-size: calc(11px * var(--fs)); line-height: 1.5; }
+#admin .refusal .k { color: #fda4af; font-size: calc(10.5px * var(--fs)); margin-bottom: 2px; }
+#admin .ok { margin-top: 8px; font-size: calc(11px * var(--fs)); color: #34d399; }
+#admin .when { font-variant-numeric: tabular-nums; }
 #admin .pv { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
 #admin .pv canvas { position: static; display: block; width: 100%; height: 120px; cursor: default; border-radius: 8px; background: radial-gradient(circle at 50% 40%, #0d1528, #05070d 70%); }
 #admin .pvcard { box-sizing: border-box; padding: 8px 9px 8px 10px; border-radius: 7px; background: rgba(12,19,34,.92); border: 1px solid rgba(148,163,184,.13); line-height: 1.4; }

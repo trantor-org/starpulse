@@ -33,7 +33,8 @@ the working directory without one. The page has no sign-in and listens on every 
 trust.
 
 `starpulse serve --port 8800 --hours 24` changes the port and how far back a task's latest move counts toward
-where it is drawn (6 hours by default).
+where it is drawn (6 hours by default). The Admin page's Server card overrides that window for everyone
+viewing, and `starpulse-settings.json` beside the config keeps the override across restarts.
 
 ### Show your Claude Code sessions
 

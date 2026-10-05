@@ -71,6 +71,7 @@ from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.push_runs import build_consumer as build_push_consumer
 from starpulse.runtime import RedisUnavailableError, ensure_redis
 from starpulse.session_start import starter
+from starpulse.settings import SETTINGS_FILE, HistoryWindow
 from starpulse.snapshot import qualifier
 
 _HERE = Path(__file__).parent
@@ -97,6 +98,7 @@ _LAN = (
 _RUN = "/api/run/"
 _MOVE = "/api/move"
 _START = "/api/start"
+_WINDOW = "/api/history-window"
 #: The lanes Start session moves a task out of: the spec's start question, never Review's send-back.
 _STARTABLE = frozenset({"ready", "waiting", "needs_attention"})
 
@@ -188,6 +190,25 @@ def start_task(
         return 502, {"error": str(exc)}
 
 
+def history_window(source: str, method: str, raw: bytes, window: HistoryWindow) -> tuple[int, dict[str, Any]]:
+    """Read (`GET`), set (`PUT {"hours": N}`) or reset (`DELETE`) the shared history window for a browser at `source`:
+    the HTTP status and JSON body, which is the window's state, or the refusal."""
+    if not _on_lan(source):
+        return 403, {"error": "The history window answers only loopback and private network (RFC 1918) browsers"}
+    if method == "PUT":
+        try:
+            hours = json.loads(raw)["hours"]
+        except ValueError, TypeError, KeyError:
+            return 400, {"error": 'a history window needs {"hours": N}'}
+        try:
+            window.set(hours)
+        except ValueError as exc:
+            return 400, {"error": str(exc)}
+    elif method == "DELETE":
+        window.reset()
+    return 200, window.state()
+
+
 def _error(message: str) -> bytes:
     return json.dumps({"error": message}).encode()
 
@@ -216,6 +237,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     starts: Mapping[str, Callable[[str], str]]
     run_safe: Collection[str]
     feed: BoardFeed
+    window: HistoryWindow
     writer: MoveWriter
     assign: AssigneeWriter
     start_session: Callable[[str], str] | None
@@ -245,6 +267,21 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             return
         self._send(json.dumps(body).encode(), status)
 
+    def do_PUT(self) -> None:
+        self._window("PUT")
+
+    def do_DELETE(self) -> None:
+        self._window("DELETE")
+
+    def _window(self, method: str) -> None:
+        """Answer the history window's route for `method`; no other path takes a PUT or DELETE."""
+        if urlsplit(self.path).path != _WINDOW:
+            self.send_error(404)
+            return
+        declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
+        status, body = history_window(self.client_address[0], method, self.rfile.read(int(declared or 0)), self.window)
+        self._send(json.dumps(body).encode(), status)
+
     def _send(self, body: bytes, status: int = 200) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -263,6 +300,7 @@ def _handler(
     starts: Mapping[str, Callable[[str], str]],
     run_safe: Collection[str],
     history: History,
+    window: HistoryWindow,
     writer: MoveWriter = _no_writer,
     harnesses: Harnesses | None = None,
     assign: AssigneeWriter = _no_writer,
@@ -276,6 +314,7 @@ def _handler(
             self.starts = starts  # set first: the base __init__ handles the request
             self.run_safe = run_safe
             self.feed = feed
+            self.window = window
             self.writer = writer
             self.assign = assign
             self.start_session = start_session
@@ -289,6 +328,8 @@ def _handler(
                 self._send(*history_response(history, parse_qs(url.query), flows))
             elif url.path == "/api/harnesses":
                 self._send(harnesses_body)
+            elif url.path == _WINDOW:
+                self._window("GET")  # pragma: no mutate: any method but PUT and DELETE reads the window
             elif url.path in _PAGES or url.path.startswith("/flow/") and url.path[6:] in flows - {"board"}:
                 self.path = "/index.html"
                 super().do_GET()
@@ -379,7 +420,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     parser = argparse.ArgumentParser(prog="starpulse serve", description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument(
-        "--hours", type=float, default=6.0, help="how far back a task's latest move on a machine counts"
+        "--hours",
+        type=float,
+        default=6.0,
+        help="how far back a task's latest move on a machine counts; Admin's override replaces it",
     )
     parser.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
     args = parser.parse_args(argv)
@@ -399,6 +443,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     # One group per running view: a second copy on another port must see every entry too.
+    # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
+    window = HistoryWindow(feed, args.hours, base / SETTINGS_FILE)
     board.start(feed, f"flow-view-{args.port}")
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, build_machine_consumer(tasks, f"flow-view-machines-{args.port}"))
@@ -420,6 +466,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         starts,
         run_safe,
         history,
+        window,
         board.writer or _no_writer,
         config.harnesses,
         board.assign or _no_writer,
