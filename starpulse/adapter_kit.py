@@ -29,6 +29,8 @@ from starpulse.board_feed import BoardFeed
 from starpulse.contracts import SCHEMAS, BoardTask, Dag, MachineEvent, TaskKeys
 from starpulse.machine_tasks import MachineTasks
 
+__all__ = ["BoardAdapterKit", "MachineEventsAdapterKit", "RunsAdapterKit"]
+
 
 class _AdapterKit:
     """The checks every contract shares; a subclass names the contract and what a record's task key is."""

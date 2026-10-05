@@ -12,9 +12,23 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+__all__ = [
+    "CONTRACTS",
+    "SCHEMAS",
+    "BoardTask",
+    "Dag",
+    "MachineEvent",
+    "Move",
+    "RunStatus",
+    "RunsSink",
+    "StartFailedError",
+    "Step",
+    "TaskKeys",
+]
 
 
 class StartFailedError(Exception):
@@ -138,6 +152,12 @@ class Dag(_Contract):
         description="When the latest run ended, ISO 8601 UTC; empty while it runs or before any run.",
     )
     steps: tuple[Step, ...] = Field(description="The DAG's steps; empty when the scheduler cannot describe them.")
+
+
+class RunsSink(Protocol):
+    """Where a runs adapter's `follow(url, runs, group)` publishes the workflows of its one instance, and says when it cannot read them."""
+
+    def set_dags(self, dags: list | None, error: str | None) -> None: ...
 
 
 #: Each contract's model, by the name its checked-in schema file carries.

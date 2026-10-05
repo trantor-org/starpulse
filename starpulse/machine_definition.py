@@ -35,6 +35,17 @@ from statemachine import StateChart
 from statemachine.exceptions import InvalidDefinition
 from statemachine.io import create_machine_class_from_definition
 
+__all__ = [
+    "Compiled",
+    "MachineDefinitionError",
+    "Registry",
+    "Writer",
+    "load_machine",
+    "refuse_unlisted",
+    "validate",
+    "writers_of",
+]
+
 SCHEMA = json.loads(Path(__file__).with_name("machine.schema.json").read_text())
 _VALIDATOR = Draft202012Validator(SCHEMA)
 
