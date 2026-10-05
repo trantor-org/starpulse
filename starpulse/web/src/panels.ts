@@ -1,5 +1,6 @@
 // The click panel's content. The renderer owns when it opens; it floats over the level and never refits it.
 import { apiFetch } from "./demo";
+import { queryString } from "./nav";
 import type { Sky } from "./sky";
 import type { RawAgent } from "./types";
 
@@ -18,16 +19,24 @@ export async function startRun(dag: string, post: (url: string, init?: RequestIn
 
 const link = (href: string, text: string) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(text)}</a>`;
 
-/** The panel of one Board task: where it stands, what it waits on, its pull requests and the machines it sits on; its description is the Kanban's. */
-export function taskPanel(o: RawAgent, sky: Sky, stateName: (id: string) => string): string {
+/** The panel of one Board task: where it stands, what it waits on, its pull requests and the machines it sits on; its description is the Kanban's.
+ * A task links to the configured tracker, or with none to this page's own Kanban, which opens on it. */
+export function taskPanel(o: RawAgent, sky: Sky, stateName: (id: string) => string, search = globalThis.location?.search ?? ""): string {
   const board = sky.boardUrl?.replace(/\/$/, "");
+  const kanban = (id: string) => {
+    const params = new URLSearchParams(search);
+    params.set("view", "kanban");
+    params.set("task", id);
+    return queryString(params);
+  };
+  const onBoard = (id: string, text: string) => (board ? link(`${board}/tasks/${id}`, text) : `<a href="${esc(kanban(id))}">${esc(text)}</a>`);
   const machines = Object.values(sky.flows).filter((f) => f.name !== "board").flatMap((f) => f.agents.filter((s) => s.task === o.id).map((s) => `${esc(f.name)} · ${esc(s.state)}`));
-  const deps = (o.dependencies ?? []).map((id) => (board ? link(`${board}/tasks/${id}`, id) : esc(id)));
+  const deps = (o.dependencies ?? []).map((id) => onBoard(id, id));
   const prs = (o.prs ?? []).map((url) => link(url, `#${/(\d+)\/?$/.exec(url)?.[1] ?? url}`));
   return `<span class="x">✕</span><div class="k">task · click another dot or empty space to close</div><h2>${esc(o.id)} — ${esc(o.title)}</h2>
     <table><tr><td>Status</td><td>${esc(stateName(o.state))}</td></tr><tr><td>Profile</td><td>${esc(o.model)}</td></tr>
     <tr><td>Labels</td><td>${(o.labels ?? []).map((l) => `<span class="chip">${esc(l)}</span>`).join("")}</td></tr>
     <tr><td>Depends on</td><td>${deps.join(", ") || "none"}</td></tr><tr><td>Pull request</td><td>${prs.join(", ") || "none"}</td></tr>
     <tr><td>Machines</td><td>${machines.join("<br>") || "none"}</td></tr></table>
-    <div class="note">${board ? link(`${board}/tasks/${o.id}`, "Open on board ↗") : ""}</div>`;
+    <div class="note">${onBoard(o.id, "Open on board ↗")}</div>`;
 }
