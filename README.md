@@ -28,8 +28,8 @@ uvx starpulse serve
 ```
 
 Open <http://localhost:8766>. StarPulse starts a Valkey container for its event streams unless `REDIS_URL`
-names a Redis it should use instead, and keeps its history in `starpulse-history.sqlite` beside its config file, or in
-the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
+names a Redis it should use instead (`rediss://` reaches it over TLS), and keeps its history in
+`starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
 trust.
 
 `starpulse serve --port 8800 --hours 24` changes the port and how far back a task's latest move counts toward

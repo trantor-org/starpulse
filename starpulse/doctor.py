@@ -18,7 +18,6 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
 
 import redis
 import redis.exceptions
@@ -27,6 +26,7 @@ from starpulse import events as machine_events
 from starpulse import run_events
 from starpulse.config import Config
 from starpulse.runtime import CONTAINER, RUNTIMES
+from starpulse.streams import endpoint_from_url
 
 #: Entries a consumer group may be behind, delivered but unacknowledged included, before its stream counts as stuck.
 MAX_LAG = 100
@@ -41,17 +41,18 @@ class Probes:
 
     which: Callable[[str], str | None]
     run: Callable[..., subprocess.CompletedProcess[str]]
-    redis: Callable[[str, int, str | None], Any]
-    """A client for `host`, `port` and the password (or none)."""
+    redis: Callable[[dict[str, Any]], Any]
+    """A client for an endpoint: the `redis_host`/`redis_port`/`redis_password`/`redis_ssl` of `endpoint_from_url`."""
 
 
 LIVE = Probes(
     which=shutil.which,
     run=subprocess.run,
-    redis=lambda host, port, password: redis.Redis(
-        host=host,
-        port=port,
-        password=password,
+    redis=lambda endpoint: redis.Redis(
+        host=endpoint["redis_host"],
+        port=endpoint["redis_port"],
+        password=endpoint["redis_password"],
+        ssl=endpoint["redis_ssl"],
         socket_connect_timeout=1,  # seconds a down host may keep the check waiting
     ),
 )
@@ -73,9 +74,11 @@ def _command(probes: Probes, *argv: str) -> tuple[int, str]:
 def _redis(environ: dict[str, str], probes: Probes) -> tuple[dict[str, str], Any]:
     """The `redis` result and a client when there is a Redis to ask; none when a runtime would start one."""
     if url := environ.get("REDIS_URL"):
-        parts = urlsplit(url)
-        host, port, password = parts.hostname or "127.0.0.1", parts.port or 6379, parts.password
-        where = f"REDIS_URL {host}:{port}"
+        try:
+            endpoint = endpoint_from_url(url, environ.get("REDIS_PASSWORD"))
+        except ValueError as exc:
+            return _result("redis", False, f"REDIS_URL is malformed: {exc}"), None
+        where = f"REDIS_URL {endpoint['redis_host']}:{endpoint['redis_port']}"
     elif not (runtime := next((r for r in RUNTIMES if probes.which(r)), None)):
         return _result(
             "redis", False, "REDIS_URL is unset and neither docker nor podman is installed; set REDIS_URL to a Redis"
@@ -84,13 +87,18 @@ def _redis(environ: dict[str, str], probes: Probes) -> tuple[dict[str, str], Any
     else:
         code, published = _command(probes, runtime, "port", CONTAINER, "6379/tcp")
         if code != 0 or not published:
+            code, why = _command(probes, runtime, "info")  # no container is fine; a runtime that cannot answer is not
+            if code != 0:
+                return _result(
+                    "redis", False, f"REDIS_URL is unset and {runtime} cannot start {CONTAINER}: {why}"
+                ), None
             return _result(
                 "redis", True, f"REDIS_URL is unset; {runtime} starts {CONTAINER} when the server runs"
             ), None
         host, _, text = published.split()[0].replace("0.0.0.0", "127.0.0.1").rpartition(":")
-        port, password = int(text), None
-        where = f"{CONTAINER} {host}:{port}"
-    client = probes.redis(host, port, password or environ.get("REDIS_PASSWORD"))
+        endpoint = endpoint_from_url(f"redis://{host}:{text}", environ.get("REDIS_PASSWORD"))
+        where = f"{CONTAINER} {host}:{text}"
+    client = probes.redis(endpoint)
     try:
         client.ping()
     except redis.exceptions.RedisError as exc:
@@ -142,10 +150,18 @@ def _lag(redis_ok: bool, client: Any) -> dict[str, str]:
         for stream in _STREAMS:
             try:
                 found = client.xinfo_groups(stream)
-            except redis.exceptions.ResponseError:  # the stream does not exist yet
-                continue
+            except redis.exceptions.ResponseError as exc:
+                if "no such key" not in str(exc):
+                    raise
+                continue  # the stream does not exist yet
             for group in found:
-                behind = (group.get("lag") or 0) + group.get("pending", 0)
+                if (lag := group.get("lag", 0)) is None:  # Redis before 7 reports no lag at all, so count it as 0
+                    return _result(
+                        "stream-lag",
+                        False,
+                        f"{stream} group {group['name']}: lag cannot be measured, so it may be stuck",
+                    )
+                behind = lag + group.get("pending", 0)
                 if behind > MAX_LAG:
                     return _result(
                         "stream-lag",

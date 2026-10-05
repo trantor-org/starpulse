@@ -57,6 +57,14 @@ def test_redis_url_points_every_stream_and_the_board_adapters_at_it_and_starts_n
     assert environ["REDIS_PASSWORD"] == "s3cret"
 
 
+def test_a_rediss_url_turns_tls_on_for_every_stream() -> None:
+    environ = {"REDIS_URL": "rediss://redis-host:6390"}
+
+    _ensure(environ, Runtime())
+
+    assert environ["REDIS_SSL"] == "1"
+
+
 def test_a_url_without_a_port_or_password_leaves_the_password_alone() -> None:
     environ = {"REDIS_URL": "redis://redis.example.test", "REDIS_PASSWORD": "from-env"}
 

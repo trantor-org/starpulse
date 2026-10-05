@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from redis.exceptions import ResponseError
 
 from starpulse import agent_cli as cli
 from starpulse import doctor
@@ -49,6 +50,8 @@ FAULTS: list[tuple[str, str, Callable[[], tuple[Any, ...]], str]] = [
     ("config", "starpulse.toml: bad key", lambda: (snapshot(), "starpulse.toml: bad key", HOME, FakeHost()), "bad key"),
     ("redis", "refused", lambda: (snapshot(), CONFIG, HOME, FakeHost(fake_redis=FakeRedis(up=False))), "6380"),
     ("redis", "no runtime", lambda: (snapshot(), CONFIG, {}, FakeHost(installed=("gh",))), "REDIS_URL"),
+    ("redis", "bad port", lambda: (snapshot(), CONFIG, {"REDIS_URL": "redis://h:abc"}, FakeHost()), "malformed"),
+    ("redis", "runtime down", lambda: (snapshot(), CONFIG, {}, FakeHost(runtime_up=False)), "Cannot connect"),
     (
         "server",
         "down",
@@ -76,6 +79,28 @@ FAULTS: list[tuple[str, str, Callable[[], tuple[Any, ...]], str]] = [
         ),
         "machine:events",
     ),
+    (
+        "stream-lag",
+        "unreadable",
+        lambda: (
+            snapshot(),
+            CONFIG,
+            HOME,
+            FakeHost(fake_redis=FakeRedis(groups={"machine:events": ResponseError("WRONGTYPE not a stream")})),
+        ),
+        "WRONGTYPE",
+    ),
+    (
+        "stream-lag",
+        "unmeasurable",
+        lambda: (
+            snapshot(),
+            CONFIG,
+            HOME,
+            FakeHost(fake_redis=FakeRedis(groups={"runs:events": [{"name": "g", "lag": None, "pending": 0}]})),
+        ),
+        "lag cannot be measured",
+    ),
 ]
 
 
@@ -97,8 +122,28 @@ def test_a_stopped_valkey_container_is_found_when_redis_url_is_unset() -> None:
 
     report = doctor.run_checks(snapshot(), CONFIG, {}, host.probes(), "http://localhost:8766")
 
-    assert host.dialed == [("127.0.0.1", 49153)]
+    assert [(e["redis_host"], e["redis_port"], e["redis_ssl"]) for e in host.dialed] == [("127.0.0.1", 49153, False)]
     assert check(report, "redis")["status"] == "pass"
+
+
+def test_a_rediss_url_is_dialed_over_tls_with_its_password() -> None:
+    host = FakeHost()
+
+    doctor.run_checks(snapshot(), CONFIG, {"REDIS_URL": "rediss://:s3cret@cache:6390"}, host.probes(), "")
+
+    assert host.dialed == [{"redis_host": "cache", "redis_port": 6390, "redis_password": "s3cret", "redis_ssl": True}]
+
+
+def test_a_redis_older_than_7_reports_no_lag_and_is_judged_by_its_pending_entries() -> None:
+    old = FakeRedis(groups={"machine:events": [{"name": "g", "pending": 3}]})
+
+    report = doctor.run_checks(snapshot(), CONFIG, HOME, FakeHost(fake_redis=old).probes(), "")
+
+    assert check(report, "stream-lag") == {
+        "check": "stream-lag",
+        "status": "pass",
+        "reason": "1 consumer groups, the furthest 3 entries behind",
+    }
 
 
 def test_redis_unset_with_a_runtime_but_no_container_is_auto_startable() -> None:

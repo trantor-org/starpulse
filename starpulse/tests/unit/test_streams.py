@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from starpulse.streams import StreamConsumer, StreamProducer, redis_endpoint_from_env
+from starpulse.streams import StreamConsumer, StreamProducer, endpoint_from_url, redis_endpoint_from_env
 
 
 def _consumer(handler: Callable[[str, dict], None] = lambda entry_id, fields: None, **over: Any) -> StreamConsumer:
@@ -34,6 +34,7 @@ def test_a_consumers_socket_deadline_outlasts_its_blocking_read(built: dict[str,
         "host": "redis",
         "port": 6380,
         "password": "secret",
+        "ssl": False,
         "socket_connect_timeout": 5,
         "socket_timeout": 2 + StreamConsumer.SOCKET_TIMEOUT_MARGIN_S,
         "decode_responses": True,
@@ -48,6 +49,7 @@ def test_a_producer_builds_one_decoded_client_on_its_endpoint(built: dict[str, A
         "host": "redis",
         "port": 6380,
         "password": "secret",
+        "ssl": False,
         "socket_connect_timeout": 5,
         "socket_timeout": 5,
         "decode_responses": True,
@@ -128,6 +130,7 @@ def test_a_consumer_defaults_to_a_local_redis_and_its_own_attempt_count() -> Non
         "redis_host": "127.0.0.1",
         "redis_port": 6379,
         "redis_password": None,
+        "redis_ssl": False,
         "read_batch": 50,
         "read_block_ms": 5000,
         "claim_idle_ms": 60000,
@@ -256,13 +259,52 @@ def test_a_producer_defaults_to_a_local_redis_and_a_ten_thousand_entry_stream() 
 
 @pytest.fixture
 def bare_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    for name in ("X_REDIS_HOST", "X_REDIS_PORT", "REDIS_PASSWORD", "REDIS_PASSWORD_FILE"):
+    for name in ("X_REDIS_HOST", "X_REDIS_PORT", "REDIS_PASSWORD", "REDIS_PASSWORD_FILE", "REDIS_SSL"):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
 
 def test_an_endpoint_with_nothing_set_is_a_local_redis_without_a_password(bare_env: pytest.MonkeyPatch) -> None:
-    assert redis_endpoint_from_env("X") == {"redis_host": "127.0.0.1", "redis_port": 6379, "redis_password": None}
+    assert redis_endpoint_from_env("X") == {
+        "redis_host": "127.0.0.1",
+        "redis_port": 6379,
+        "redis_password": None,
+        "redis_ssl": False,
+    }
+
+
+def test_an_endpoint_reaches_redis_over_tls_when_redis_ssl_is_set(bare_env: pytest.MonkeyPatch) -> None:
+    bare_env.setenv("REDIS_SSL", "1")
+
+    assert redis_endpoint_from_env("X")["redis_ssl"] is True
+
+
+def test_a_tls_endpoint_builds_a_tls_client(built: dict[str, Any]) -> None:
+    StreamProducer(stream="s", redis_ssl=True).connect()
+    _consumer(redis_ssl=True).connect()
+
+    assert built["ssl"] is True
+
+
+@pytest.mark.parametrize(
+    ("url", "endpoint"),
+    [
+        ("rediss://:s3cret@cache:6390/0", ("cache", 6390, "s3cret", True)),
+        ("redis://cache", ("cache", 6379, "shared", False)),
+        ("redis://:s3cret@:6400", ("127.0.0.1", 6400, "s3cret", False)),
+    ],
+)
+def test_a_url_endpoint_takes_tls_from_the_scheme_and_its_own_password_first(
+    url: str, endpoint: tuple[Any, ...]
+) -> None:
+    assert endpoint_from_url(url, "shared") == dict(
+        zip(("redis_host", "redis_port", "redis_password", "redis_ssl"), endpoint, strict=True)
+    )
+
+
+def test_a_url_with_a_port_that_is_no_number_is_refused() -> None:
+    with pytest.raises(ValueError, match="abc"):
+        endpoint_from_url("redis://cache:abc")
 
 
 def test_an_endpoint_password_is_read_stripped_from_the_named_file(

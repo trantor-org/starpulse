@@ -28,6 +28,10 @@ def test_the_producer_reaches_the_redis_url_names() -> None:
     )
 
 
+def test_the_producer_reaches_a_rediss_url_over_tls() -> None:
+    assert run_events.producer({"REDIS_URL": "rediss://cache:6400"}).redis_ssl is True
+
+
 def test_a_redis_url_without_a_port_or_password_uses_redis_defaults_and_the_shared_password() -> None:
     producer = run_events.producer({"REDIS_URL": "redis://cache.lan", "REDIS_PASSWORD": "shared"})
 

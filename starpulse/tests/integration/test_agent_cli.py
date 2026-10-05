@@ -2,8 +2,10 @@
 
 import json
 import socket
+import threading
 import urllib.request
 from collections.abc import Iterator, Sequence
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +97,36 @@ def test_a_server_that_answers_an_error_status_is_unavailable_and_named(
     assert code == 3
     assert doc == {
         "error": f"{base}/elsewhere answered 404 for /api/snapshot: is it a StarPulse server?",
+        "code": "unavailable",
+    }
+
+
+@pytest.mark.parametrize("body", [b"[]", b'{"ok": true}'])
+@pytest.mark.parametrize("verb", [["snapshot"], ["board"], ["task", "show", "PROJ-1"]])
+def test_a_server_that_answers_json_that_is_no_snapshot_is_unavailable(
+    body: bytes, verb: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Other(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Other) as other:
+        threading.Thread(target=other.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{other.server_address[1]}"
+        try:
+            code, doc = _run(capsys, [*verb, "--server", base])
+        finally:
+            other.shutdown()
+
+    assert code == 3
+    assert doc == {
+        "error": f"{base} answered /api/snapshot with no StarPulse snapshot: is it a StarPulse server?",
         "code": "unavailable",
     }
 

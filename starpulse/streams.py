@@ -8,7 +8,8 @@
   so it cannot wedge the group. An entry is acked only after its handler returns, so handlers must be idempotent.
 
 A client reaches Redis at `<prefix>_REDIS_HOST` and `<prefix>_REDIS_PORT` with the shared `REDIS_PASSWORD` (or the
-file `REDIS_PASSWORD_FILE` names); `starpulse.runtime` sets those from `REDIS_URL`.
+file `REDIS_PASSWORD_FILE` names), over TLS when the shared `REDIS_SSL` is `1`; `starpulse.runtime` sets those from
+`REDIS_URL`, whose `rediss://` scheme turns TLS on.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Self, cast
+from urllib.parse import urlsplit
 
 import redis
 import redis.exceptions
@@ -38,11 +40,26 @@ def _password() -> str | None:
 
 
 def redis_endpoint_from_env(prefix: str) -> dict[str, Any]:
-    """The `redis_host`/`redis_port`/`redis_password` keywords both stream classes take, from `<prefix>_REDIS_*`."""
+    """The `redis_host`/`redis_port`/`redis_password`/`redis_ssl` keywords both stream classes take, from
+    `<prefix>_REDIS_*`."""
     return {
         "redis_host": os.environ.get(f"{prefix}_REDIS_HOST", "127.0.0.1"),  # noqa: AGT101
         "redis_port": int(os.environ.get(f"{prefix}_REDIS_PORT", "6379")),  # noqa: AGT101
         "redis_password": _password(),
+        "redis_ssl": os.environ.get("REDIS_SSL") == "1",  # noqa: AGT101
+    }
+
+
+def endpoint_from_url(url: str, password: str | None = None) -> dict[str, Any]:
+    """The same keywords from a `redis://` or `rediss://` (TLS) URL; the URL's own password wins over `password`.
+
+    A port that is not a number raises `ValueError`."""
+    parts = urlsplit(url)
+    return {
+        "redis_host": parts.hostname or "127.0.0.1",
+        "redis_port": parts.port or 6379,
+        "redis_password": parts.password or password,
+        "redis_ssl": parts.scheme == "rediss",
     }
 
 
@@ -66,6 +83,7 @@ class StreamConsumer:
         redis_host: str = "127.0.0.1",
         redis_port: int = 6379,
         redis_password: str | None = None,
+        redis_ssl: bool = False,
         read_batch: int = 50,
         read_block_ms: int = 5000,
         claim_idle_ms: int = 60000,
@@ -82,6 +100,7 @@ class StreamConsumer:
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.redis_password = redis_password
+        self.redis_ssl = redis_ssl
         self.read_batch = read_batch
         self.read_block_ms = read_block_ms
         self.claim_idle_ms = claim_idle_ms
@@ -185,6 +204,7 @@ class StreamConsumer:
             host=self.redis_host,
             port=self.redis_port,
             password=self.redis_password,
+            ssl=self.redis_ssl,
             socket_connect_timeout=5,
             socket_timeout=self.read_block_ms / 1000 + self.SOCKET_TIMEOUT_MARGIN_S,
             decode_responses=True,
@@ -219,6 +239,7 @@ class StreamProducer:
         redis_host: str = "127.0.0.1",
         redis_port: int = 6379,
         redis_password: str | None = None,
+        redis_ssl: bool = False,
         client_factory: Any = None,
     ) -> None:
         self.stream = stream
@@ -226,6 +247,7 @@ class StreamProducer:
         self.redis_host = redis_host
         self.redis_port = redis_port
         self.redis_password = redis_password
+        self.redis_ssl = redis_ssl
         self._client_factory = client_factory
         self._client = None
 
@@ -245,6 +267,7 @@ class StreamProducer:
                 host=self.redis_host,
                 port=self.redis_port,
                 password=self.redis_password,
+                ssl=self.redis_ssl,
                 socket_connect_timeout=5,
                 socket_timeout=5,
                 decode_responses=True,

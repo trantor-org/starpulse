@@ -12,12 +12,12 @@ import shutil
 import subprocess
 import time
 from collections.abc import Callable, MutableMapping, Sequence
-from urllib.parse import urlsplit
 
 import redis.exceptions
 
 from starpulse import events as machine_events
 from starpulse import run_events
+from starpulse.streams import endpoint_from_url
 
 #: The container and its volume; a named volume keeps the stream across restarts.
 CONTAINER = "flow-view-valkey"
@@ -45,13 +45,15 @@ def _ping(host: str, port: int) -> bool:  # pragma: no mutate block — a live s
 
 def apply_url(url: str, environ: MutableMapping[str, str], prefixes: Sequence[str] = ()) -> None:
     """Point every stream the view reads, and each of `prefixes`, at `url`; its password, when it has one, becomes
-    `REDIS_PASSWORD`."""
-    parts = urlsplit(url)
+    `REDIS_PASSWORD`, and a `rediss://` URL sets `REDIS_SSL`."""
+    endpoint = endpoint_from_url(url)
     for prefix in (*_PREFIXES, *prefixes):
-        environ[f"{prefix}_REDIS_HOST"] = parts.hostname or "127.0.0.1"
-        environ[f"{prefix}_REDIS_PORT"] = str(parts.port or 6379)
-    if parts.password:
-        environ["REDIS_PASSWORD"] = parts.password
+        environ[f"{prefix}_REDIS_HOST"] = endpoint["redis_host"]
+        environ[f"{prefix}_REDIS_PORT"] = str(endpoint["redis_port"])
+    if endpoint["redis_password"]:
+        environ["REDIS_PASSWORD"] = endpoint["redis_password"]
+    if endpoint["redis_ssl"]:
+        environ["REDIS_SSL"] = "1"
 
 
 def _refuse(why: str) -> RedisUnavailableError:

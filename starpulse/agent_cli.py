@@ -85,22 +85,26 @@ def server_url(flag: str | None, environ: Mapping[str, str]) -> str:
     return (flag or environ.get("STARPULSE_URL") or DEFAULT_SERVER).rstrip("/")
 
 
-def _get(base: str, path: str) -> dict[str, Any]:
-    """The JSON document the server at `base` answers `path` with."""
+def _get_snapshot(base: str) -> dict[str, Any]:
+    """The snapshot the server at `base` answers; JSON without every snapshot key is no StarPulse server."""
+    path = "/api/snapshot"
     try:
         with urllib.request.urlopen(
             f"{base}{path}",
             timeout=10.0,  # seconds the server may take to answer one read
         ) as resp:
-            return json.load(resp)
+            document = json.load(resp)
     except urllib.error.HTTPError as exc:
         raise CliError("unavailable", f"{base} answered {exc.code} for {path}: is it a StarPulse server?") from exc
     except (OSError, ValueError) as exc:
         raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
+    if not isinstance(document, dict) or not document.keys() >= set(_SNAPSHOT_KEYS):
+        raise CliError("unavailable", f"{base} answered {path} with no StarPulse snapshot: is it a StarPulse server?")
+    return document
 
 
 def _snapshot(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    return _get(server_url(args.server, environ), "/api/snapshot")
+    return _get_snapshot(server_url(args.server, environ))
 
 
 def _board_flow(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -182,7 +186,7 @@ def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     except (OSError, ValueError) as exc:
         config = f"{path}: {exc}"
     try:
-        snapshot: dict[str, Any] | str = _get(base, "/api/snapshot")
+        snapshot: dict[str, Any] | str = _get_snapshot(base)
     except CliError as exc:
         snapshot = str(exc)
     return doctor.run_checks(snapshot, config, dict(environ), doctor.LIVE, base)
