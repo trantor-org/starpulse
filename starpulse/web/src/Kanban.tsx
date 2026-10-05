@@ -13,6 +13,8 @@ import {
   canDrag, dropAsks, placeClaims, profileOf, runsOn, startLane, startable,
   type Asking, type Claiming, type Failed, type Harnesses, type Pick, type StartStore,
 } from "./start";
+import { TaskView } from "./TaskView";
+import { fetchRecord, type TaskRecord } from "./taskView";
 import type { Pull } from "./types";
 
 /** A milestone's header: the key the snapshot carries, or the bucket for tasks with none. */
@@ -134,48 +136,26 @@ export function Card({ task, now, marks, names, compact = false, onOpen, onPress
   );
 }
 
-function Modal({ task, names, marks, now, close, hide, constellation, move, start, dismiss, dismissStart }: {
-  task: KanbanTask; names: Record<string, string>; marks: Marks; now: number; close: () => void; hide: () => void; constellation: () => void;
+function Modal({ task, names, marks, now, profiles, milestones, capabilities, close, hide, constellation, move, start, dismiss, dismissStart }: {
+  task: KanbanTask; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
+  capabilities?: { edit: boolean; archive: boolean }; close: () => void; hide: () => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void;
 }) {
-  const lane = names[task.lane] ?? task.lane;
-  // the columns the Board machine offers, each as the drag would: an allowed move goes at once, a guarded one is refused on the card with the guard's reason
-  const offered = COLUMNS.filter((c) => c in task.moves);
-  const deps = task.dependencies.map((d) => <span key={d}>{d}</span>);
+  // the snapshot's entry lacks the plan, notes and checks: the full record is read when the task opens, and the entry draws meanwhile
+  const [record, setRecord] = useState<TaskRecord | null>(null);
+  useEffect(() => {
+    let current = true;
+    void fetchRecord(task.id).then((r) => current && setRecord(r));
+    return () => { current = false; };
+  }, [task.id]);
   return (
     <div id="kbm" onClick={(e) => e.target === e.currentTarget && close()}>
-      <div className="modal" role="dialog" aria-label={task.id}>
-        <button className="x" onClick={close} aria-label="Close">✕</button>
-        <h2>{task.title}</h2>
-        <div className="k">{task.id} · {lane}{marks.saving ? " · saving" : ""}</div>
-        <table><tbody>
-          <tr><td>profile</td><td>{task.assignee || "unassigned"}</td></tr>
-          <tr><td>labels</td><td>{task.labels.join(", ") || "—"}</td></tr>
-          <tr><td>milestone</td><td>{task.milestone || "—"}</td></tr>
-          <tr><td>depends on</td><td>{deps.length ? deps.flatMap((d, i) => (i ? [", ", d] : [d])) : "—"}</td></tr>
-          <tr><td>pull requests</td><td>{task.prs.length ? task.prs.map((p) => (
-            <div key={p.number}><a href={p.url} target="_blank" rel="noopener">#{p.number}</a> <span className="k">{p.merged ? "merged" : p.checks}{p.threads ? `, ${p.threads} open threads` : ""}</span></div>
-          )) : "—"}</td></tr>
-          <tr><td>machine</td><td>{task.live ? `${task.live.machine} · ${task.live.state} · ${ago(now - task.live.at)} ago` : "—"}</td></tr>
-        </tbody></table>
-        <div className="k moveto">Move to</div>
-        <div className="moves">
-          {startLane(task) && !marks.claim && (
-            <button className="start" disabled={!startable(task) || marks.saving} title={startable(task) ? undefined : task.moves.in_progress?.reason} onClick={start}>▶ Start session</button>
-          )}
-          {offered.length ? offered.map((c) => {
-            const v = task.moves[c];
-            return <button key={c} className={v.allowed ? "ok" : "guard"} title={v.allowed ? undefined : v.reason} disabled={marks.saving} onClick={() => move(c)}>→ {names[c] ?? c}</button>;
-          }) : <span className="k">no moves from here</span>}
-        </div>
-        {marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
-        {marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
-        <div className="desc">{task.description.split("\n## ")[0] || "(no description)"}</div>
-        <div className="mfoot">
-          <a onClick={(e) => { e.preventDefault(); constellation(); }} href="/">Open in Star Map ↗</a>
-          <span className="mright"><button className="hidebtn" onClick={hide}>Hide task</button></span>
-        </div>
-      </div>
+      <TaskView task={task} record={record} lane={names[task.lane] ?? task.lane} names={names}
+        machine={task.live ? `${task.live.machine} · ${task.live.state} · ${ago(now - task.live.at)} ago` : "—"}
+        profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
+        refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
+        startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
+        close={close} hide={hide} constellation={constellation} move={move} start={start} />
     </div>
   );
 }
@@ -587,7 +567,8 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
           start={() => answer("1")} manual={() => answer("2")} cancel={() => answer("Escape")} />
       )}
       {task && (
-        <Modal task={task} names={hud.names} marks={marksOf(task.id)} now={now} close={() => setOpen(null)}
+        <Modal key={task.id} task={task} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
+          profiles={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to)) return void moves.drop(task, to); starts.ask(task, "modal"); setOpen(null); }}
           start={() => { starts.ask(task, "modal"); setOpen(null); }}
