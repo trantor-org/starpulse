@@ -84,15 +84,22 @@ def _read_pulls(
     return out
 
 
-def fetch(urls: Collection[str], read: Callable[[str, list[int]], dict] = read_repository) -> dict[str, dict]:
+class Pulls(dict[str, dict]):
+    """A `fetch` answer: the records read, and `unread`, the URLs of repositories GitHub could not be asked about."""
+
+    unread: frozenset[str] = frozenset()
+
+
+def fetch(urls: Collection[str], read: Callable[[str, list[int]], dict] = read_repository) -> Pulls:
     """Each URL's `{number, url, checks, merged, threads, stale}`; a URL GitHub does not return is left out.
 
     `checks` is `pass`, `failing`, `pending` or `none`; `threads` counts the unresolved review threads. A
-    repository GitHub cannot read is logged and left out so the others still answer; only when every repository
+    repository GitHub cannot read is logged, left out and named in `unread` so the others still answer; only when every repository
     fails does the read raise `GhUnavailableError`, for `PullRequests.refresh` to keep its last answer.
     """
     pulls = sorted((m[1], int(m[2]), url) for url in urls if (m := _PULL.fullmatch(url)))
-    out: dict[str, dict] = {}
+    out = Pulls()
+    unread: set[str] = set()
     failures: list[GhUnavailableError] = []
     groups = [(repo, list(group)) for repo, group in groupby(pulls, key=lambda pull: pull[0])]
     for repo, wanted in groups:
@@ -101,25 +108,29 @@ def fetch(urls: Collection[str], read: Callable[[str, list[int]], dict] = read_r
         except GhUnavailableError as exc:
             logger.warning("pull requests: %s", exc)
             failures.append(exc)
+            unread.update(url for _, _, url in wanted)
     if groups and len(failures) == len(groups):
         raise failures[0]
+    out.unread = frozenset(unread)
     return out
 
 
 class PullRequests:
     """Keeps `feed`'s per-task pull request state current from `fetch`, the last good answer held between reads."""
 
-    def __init__(self, feed: BoardFeed, fetch: Callable[[Collection[str]], dict[str, dict]] = fetch) -> None:
+    def __init__(self, feed: BoardFeed, fetch: Callable[[Collection[str]], Pulls] = fetch) -> None:
         self._feed = feed
         self._fetch = fetch
         self._last: dict[str, dict] = {}
 
     def refresh(self) -> None:
-        """Read every open task's PRs once; on failure the last answer stays, every PR marked `stale`."""
+        """Read every open task's PRs once; a PR GitHub could not be asked about keeps its last record, marked `stale`."""
         wanted = self._feed.pull_requests()
         urls = list(dict.fromkeys(url for prs in wanted.values() for url in prs))
         try:
-            self._last = self._fetch(urls) if urls else {}
+            fresh = self._fetch(urls) if urls else Pulls()
+            kept = {url: {**self._last[url], "stale": True} for url in fresh.unread if url in self._last}
+            self._last = {**fresh, **kept}
         except GhUnavailableError as exc:
             logger.warning("pull requests: %s", exc)
             self._last = {url: {**pull, "stale": True} for url, pull in self._last.items()}

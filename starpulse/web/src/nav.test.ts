@@ -72,14 +72,22 @@ describe("the canvas beside the panel", () => {
 });
 
 describe("the view in the address", () => {
-  it("is the Constellation unless the address asks for the Kanban", () => {
+  it("is the Star Map unless the address asks for the Kanban", () => {
     expect(viewOf("")).toBe("constellation");
     expect(viewOf("?demo")).toBe("constellation");
     expect(viewOf("?view=kanban")).toBe("kanban");
     expect(viewOf("?view=nonsense")).toBe("constellation");
   });
 
-  it("is written beside the other parameters, and the Constellation leaves the address bare", () => {
+  it("opens the Admin view for ?view=admin, beside the other parameters", () => {
+    expect(viewOf("?view=admin")).toBe("admin");
+    expect(viewOf("?demo&view=admin")).toBe("admin");
+    expect(viewSearch("?demo", "admin")).toBe("?demo&view=admin");
+    expect(viewSearch("?view=admin&demo", "kanban")).toBe("?demo&view=kanban");
+    expect(viewSearch("?view=admin", "constellation")).toBe("");
+  });
+
+  it("is written beside the other parameters, and the Star Map leaves the address bare", () => {
     expect(viewSearch("?demo", "kanban")).toBe("?demo&view=kanban");
     expect(viewSearch("?view=kanban&demo", "constellation")).toBe("?demo");
     expect(viewSearch("?view=kanban", "constellation")).toBe("");

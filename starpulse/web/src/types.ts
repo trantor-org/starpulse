@@ -143,7 +143,8 @@ export type Delta =
   | { kind: "task"; id: string; agent: RawAgent | null; settled: string | null }
   | { kind: "move"; flow: string; id: string; agent: RawAgent }
   | { kind: "dags"; dags: Dag[]; error: string | null }
-  | { kind: "pulls"; pulls: Record<string, Pull[]> };
+  | { kind: "pulls"; pulls: Record<string, Pull[]> }
+  | { kind: "claim"; task: string; reason: string; at: number };
 
 export interface Snapshot {
   /** Every lifecycle machine the server draws, and `runs`. */
@@ -158,6 +159,8 @@ export interface Snapshot {
   flows: FlowSnapshot[];
   /** Each open task's pull requests, by task id. */
   pulls?: Record<string, Pull[]>;
+  /** Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds). */
+  claims?: Record<string, { reason: string; at: number }>;
   settled: Record<string, string>;
   error: string | null;
   now: number;

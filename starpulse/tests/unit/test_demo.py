@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.demo import TITLES, capture, mockup, page, scrub, scrub_mockup
+from starpulse.demo import TITLES, _send_back, capture, mockup, page, scrub, scrub_mockup
 
 SECRET = "Rotate the router admin password"
 
@@ -409,3 +409,170 @@ def test_mockup_escapes_a_closing_tag_in_the_data(tmp_path: Path) -> None:
 
     assert '"trigger": "<\\/script>"' in html
     assert html.count("</script>") == 1
+
+
+def _machine(initial: str, edges: list[tuple[str, str, str]], final: str = "") -> dict:
+    states = dict.fromkeys(x for s, t, _ in edges for x in (s, t))
+    return {
+        "states": [{"id": s, "name": s, "initial": s == initial, "final": s == final} for s in states],
+        "transitions": [{"source": s, "target": t, "event": e} for s, t, e in edges],
+    }
+
+
+BOARD = _machine(
+    "new",
+    [
+        ("new", "ready", "CREATE_READY"),
+        ("new", "in_progress", "CREATE_IN_PROGRESS"),
+        ("ready", "in_progress", "CLAIM"),
+        ("in_progress", "in_progress", "PR_OPENED"),
+        ("in_progress", "review", "REVIEW"),
+        ("review", "in_progress", "SEND_BACK"),
+    ],
+)
+DELIVERY = _machine(
+    "start",
+    # green -> red is a move back, so a delivery trail sent back would show it
+    [("start", "red", "RED"), ("red", "green", "GREEN"), ("green", "red", "FAIL"), ("green", "done", "DONE")],
+    final="done",
+)
+
+
+def _structured(board: list[dict], placed: list[dict]) -> dict:
+    live = _live()
+    live["flows"] = [
+        {
+            "name": "board",
+            "machine": BOARD
+            | {"subflows": [{"state": "in_progress", "flow": "in-progress"}], "mainLine": ["new", "ready"]},
+            "agents": board,
+        },
+        {"name": "in-progress", "machine": DELIVERY, "agents": placed},
+    ]
+    live["now"] = 100_000.0
+    return live
+
+
+def test_scrub_embeds_each_board_tasks_lane_path_ending_in_its_lane() -> None:
+    live = _structured(
+        [{"id": "TASK-D1", "state": "review"}, {"id": "TASK-D2", "state": "ready"}, {"id": "TASK-D3", "state": "new"}], []
+    )
+
+    history = scrub(live)["history"]
+
+    assert history == {
+        # through Ready, not the CREATE_IN_PROGRESS shortcut, three hours apart and ending before `now`
+        "DEMO-1": [
+            {"at": 67_600.0, "from": None, "to": "ready"},
+            {"at": 78_400.0, "from": "ready", "to": "in_progress"},
+            {"at": 89_200.0, "from": "in_progress", "to": "review"},
+        ],
+        # the next task's steps spread half an hour wider and ten minutes earlier
+        "DEMO-2": [{"at": 86_800.0, "from": None, "to": "ready"}],
+        "DEMO-3": [],
+    }
+
+
+def test_scrub_sends_every_second_board_task_back_a_lane_once_so_the_demo_draws_backtracks() -> None:
+    live = _structured([{"id": f"TASK-{n}", "state": "review"} for n in (1, 2, 3, 4)], [])
+
+    history = scrub(live)["history"]
+
+    assert [h["to"] for h in history["DEMO-1"]] == ["ready", "in_progress", "review"]
+    # sent back from Review on the machine's own SEND_BACK, then reviewed again, still ending in its lane
+    assert [(h["from"], h["to"]) for h in history["DEMO-2"]] == [
+        (None, "ready"),
+        ("ready", "in_progress"),
+        ("in_progress", "review"),
+        ("review", "in_progress"),
+        ("in_progress", "review"),
+    ]
+    assert [h["at"] for h in history["DEMO-2"]] == sorted(h["at"] for h in history["DEMO-2"])
+    assert [h["to"] for h in history["DEMO-3"]] == ["ready", "in_progress", "review"]
+    assert [h["to"] for h in history["DEMO-4"]] == ["ready", "in_progress", "review", "in_progress", "review"]
+
+
+def test_send_back_splices_the_move_back_mid_route_and_keeps_the_rest_of_the_route() -> None:
+    machine = {
+        "states": [{"id": "a", "initial": True}, {"id": "b"}, {"id": "c"}, {"id": "d"}],
+        "transitions": [
+            {"source": "a", "event": "X", "target": "b"},
+            {"source": "b", "event": "Y", "target": "c"},
+            {"source": "c", "event": "Z", "target": "d"},
+            {"source": "c", "event": "BACK", "target": "b"},
+        ],
+    }
+    steps = [("a", "X", "b"), ("b", "Y", "c"), ("c", "Z", "d")]
+
+    assert _send_back(machine, steps) == [
+        ("a", "X", "b"),
+        ("b", "Y", "c"),
+        ("c", "BACK", "b"),
+        ("b", "Y", "c"),
+        ("c", "Z", "d"),
+    ]
+
+
+def test_scrub_seeds_the_delivery_machine_with_the_in_progress_board_tasks_when_it_has_none() -> None:
+    board = [
+        {"id": "TASK-D1", "state": "in_progress", "model": "@agent-deep-high"},
+        {"id": "TASK-D2", "state": "ready"},
+        {"id": "TASK-D3", "state": "in_progress", "model": ""},
+        {"id": "TASK-D4", "state": "in_progress", "model": ""},
+    ]
+
+    demo = scrub(_structured(board, []))
+
+    assert demo["flows"][1]["agents"] == [
+        {
+            "id": "DEMO-1",
+            "title": TITLES[0],
+            "task": "DEMO-1",
+            "state": "red",
+            "model": "@agent-deep-high",
+            "steps": 1,
+            "trail": [{"state": "red", "event": "RED", "at": 89_200.0}],
+            "active": 89_200.0,
+        },
+        {
+            "id": "DEMO-3",
+            "title": TITLES[2],
+            "task": "DEMO-3",
+            "state": "green",
+            "model": "",
+            "steps": 2,
+            "trail": [
+                {"state": "red", "event": "RED", "at": 74_200.0},
+                {"state": "green", "event": "GREEN", "at": 86_800.0},
+            ],
+            "active": 86_800.0,
+        },
+        # the third wraps round to the first inner state, never the final one
+        {
+            "id": "DEMO-4",
+            "title": TITLES[3],
+            "task": "DEMO-4",
+            "state": "red",
+            "model": "",
+            "steps": 1,
+            "trail": [{"state": "red", "event": "RED", "at": 84_400.0}],
+            "active": 84_400.0,
+        },
+    ]
+
+
+def test_scrub_leaves_a_delivery_machine_the_capture_placed_tasks_on() -> None:
+    placed = [{"id": "TASK-D1", "task": "TASK-D1", "title": "t", "state": "green", "model": "", "steps": 0, "trail": []}]
+
+    demo = scrub(_structured([{"id": "TASK-D1", "state": "in_progress"}], placed))
+
+    assert [a["state"] for a in demo["flows"][1]["agents"]] == ["green"]
+
+
+def test_scrub_seeds_nothing_when_the_capture_lacks_the_boards_delivery_flow() -> None:
+    live = _structured([{"id": "TASK-D1", "state": "in_progress"}], [])
+    live["flows"] = live["flows"][:1]
+
+    demo = scrub(live)
+
+    assert [f["name"] for f in demo["flows"]] == ["board"]

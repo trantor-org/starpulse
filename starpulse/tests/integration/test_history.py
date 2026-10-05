@@ -6,6 +6,7 @@ import threading
 import pytest
 import redis as redis_lib
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from starpulse import events
 from starpulse.history import HistoryStore, build_machine_recorder
@@ -75,6 +76,34 @@ def test_a_status_that_repeats_the_tasks_last_adds_no_lane_change(store: History
         {"at": 3.0, "from": "Doing", "to": "Ready"},
     ]
     assert store.lane_path("PROJ-404") == []
+
+
+def test_a_late_arriving_lane_change_is_placed_by_its_time_and_the_next_compares_with_the_newest(
+    store: HistoryStore,
+) -> None:
+    store.record_lane("a", "PROJ-7", "Ready", 5.0)
+    store.record_lane("b", "PROJ-7", "Doing", 3.0)  # observed after "a" but older
+    store.record_lane("c", "PROJ-7", "Doing", 9.0)  # the newest lane is "a"'s Ready, so this is a change
+
+    assert store.lane_path("PROJ-7") == [
+        {"at": 3.0, "from": "Ready", "to": "Doing"},
+        {"at": 5.0, "from": None, "to": "Ready"},
+        {"at": 9.0, "from": "Ready", "to": "Doing"},
+    ]
+
+
+def test_a_machine_path_is_ordered_by_time_and_holds_only_that_machines_events(store: HistoryStore) -> None:
+    store.record_machine("1-0", _CLAIM | {"event_id": "e1", "event": "RED_PROVEN", "time": "102"})
+    store.record_machine("2-0", _CLAIM | {"event_id": "e2", "event": "WORKTREE_READY", "time": "100"})
+    store.record_machine("3-0", _CLAIM | {"event_id": "e3", "machine": "pull-request", "event": "PUSHED"})
+
+    assert store.machine_path("PROJ-7", "in-progress") == (
+        [
+            {"at": 100.0, "event": "WORKTREE_READY", "state": "worktree_ready"},
+            {"at": 102.0, "event": "RED_PROVEN", "state": "red_proven"},
+        ],
+        2,
+    )
 
 
 def test_the_same_gap_reported_again_is_one_gap_with_its_latest_bounds(store: HistoryStore) -> None:
@@ -149,6 +178,7 @@ def test_the_recorder_reads_machine_events_on_its_own_redis_through_the_stores_g
 
     assert (recorder.redis_host, recorder.redis_port) == ("redis.example", 6400)
     assert (recorder.stream, recorder.group, recorder.consumer) == (events.STREAM, store.group, store.group)
+    assert recorder.transient == (OperationalError,)  # an unreachable database leaves the entry pending
     assert store.gaps() == [{"stream": events.STREAM, "after_id": "5-0", "before_id": "9-0", "lost": 3}]
     assert _event_ids(store) == ["7-0"]
 

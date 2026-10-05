@@ -28,16 +28,18 @@ export interface HudState {
   states: BoardState[];
   /** Tasks per machine; the Board's are its open tasks. */
   counts: Record<string, number>;
-  /** Every DAG, which the navigator's filter opens in its panel. */
+  /** Every DAG, which the navigator's search finds and opens in its panel. */
   dags: string[];
   /** The machines with a move in flight, so their navigator node glows. */
   moving: string[];
-  /** The DAG domains the navigator's Constellations section flies to. */
+  /** The DAG domains the navigator's DAGs section flies to. */
   groups: { name: string; n: number }[];
   feed: FeedLine[];
   /** The Board's tasks as the Kanban view draws them, and the Board states' names. */
   cards: KanbanTask[];
   names: Record<string, string>;
+  /** Each task's latest refused claim, which returns a card the view started a session for. */
+  claims: Record<string, { reason: string; at: number }>;
   /** The Backlog board a task links into. */
   boardUrl: string | null;
 }
@@ -45,7 +47,7 @@ export interface HudState {
 export class HudStore {
   private state: HudState = {
     stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, dags: [],
-    moving: [], groups: [], feed: [], cards: [], names: {}, boardUrl: null,
+    moving: [], groups: [], feed: [], cards: [], names: {}, claims: {}, boardUrl: null,
   };
   private listeners = new Set<() => void>();
 

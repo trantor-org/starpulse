@@ -1,5 +1,6 @@
 // The Kanban view's moves: what a drag offers, the card that lands at once while the board writer is asked, and the refusal that
 // returns it. The writer decides; the snapshot's verdicts only forecast it, so a late refusal still has to put the card back.
+import { apiFetch } from "./demo";
 import type { KanbanTask } from "./kanban";
 
 /** The writer's answer to a move: done, or refused with its reason and the skill that satisfies it (empty when none). */
@@ -96,7 +97,7 @@ export const place = (tasks: KanbanTask[], state: MoveState): KanbanTask[] =>
   });
 
 /** POST the move to the server, which runs the guarded board writer. */
-export async function postMove(task: string, to: string, fetcher: typeof fetch = fetch): Promise<Reply> {
+export async function postMove(task: string, to: string, fetcher: typeof apiFetch = apiFetch): Promise<Reply> {
   let response: Response;
   try {
     response = await fetcher("/api/move", { method: "POST", body: JSON.stringify({ task, to }) });

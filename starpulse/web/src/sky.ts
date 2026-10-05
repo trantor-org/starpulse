@@ -46,6 +46,8 @@ export interface Sky {
   latest: Record<string, { flow: string; state: string; at: number }>;
   /** Each open task's pull requests, by task id. */
   pulls: Record<string, Pull[]>;
+  /** Each task's latest In Progress claim the board writer refused an agent, and when. */
+  claims: Record<string, { reason: string; at: number }>;
   settled: Record<string, string>;
   error: string | null;
 }
@@ -86,6 +88,7 @@ export function merge(snap: Snapshot): Sky {
     child,
     latest,
     pulls: snap.pulls ?? {},
+    claims: snap.claims ?? {},
     settled: snap.settled,
     error: snap.error,
   };

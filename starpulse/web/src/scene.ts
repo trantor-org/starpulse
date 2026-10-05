@@ -1,5 +1,5 @@
 // Where everything on a level sits, ported from the approved round-13 mockup
-// (lib/starpulse/design/index.html): the Board's states as galaxies with the
+// (the design mockup): the Board's states as galaxies with the
 // DAGs as step-graph glyphs beside them, a state's lifecycle system as planets
 // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
 import type { Fold, Level } from "./levels";
@@ -9,6 +9,9 @@ import type { Dag, DagStep, RawAgent, Transition, Writer } from "./types";
 export const TAU = Math.PI * 2;
 export const BOARD_COLOR: Record<string, string> = { new: "#94a3b8", ready: "#60a5fa", waiting: "#fbbf24", blocked: "#fb7185", in_progress: "#a78bfa",
   review: "#e879f9", needs_attention: "#64748b", done: "#34d399", completed: "#2dd4bf", archived: "#475569" };
+/** Where a task's lifecycle ends, drawn as a black hole: a final Board state. Done is not one (the sweep moves it on to Completed), nor is a
+ *  nested machine's final state, which hands its task back to the state that runs the machine. */
+export const terminal = (s: { final: boolean; flow?: string }) => s.final && !s.flow;
 export const RAMP = ["#94a3b8", "#60a5fa", "#818cf8", "#a78bfa", "#c084fc", "#e879f9", "#f472b6", "#fbbf24", "#34d399"];
 
 export interface Pt {
@@ -43,6 +46,8 @@ export interface Tether extends Pt {
   crit: string[];
 }
 export interface Star extends Dag, Pt {
+  /** The name drawn under it: a DAG's bare name when no other instance runs one by that name, else `<instance>/<name>`. */
+  label: string;
   glyph: Glyph;
   br: number;
   group: string;
@@ -81,6 +86,8 @@ export interface Galaxy extends Host {
   moonR: number;
   visR: number;
   lab: Pt;
+  /** The events that take the state back to itself: drawn nowhere, listed in the state's tooltip, as a machine level lists them. */
+  loops: string[];
   /** How far the state's moon names reach right and left of its centre. */
   reach: [number, number];
 }
@@ -112,6 +119,7 @@ export interface SubState extends Host {
 }
 export interface Sun extends Host {
   id: string;
+  final: boolean;
   r: number;
   n: number;
   color: string;
@@ -185,15 +193,14 @@ export const merged = (trs: Transition[], writers: Record<string, Writer[]>): BE
   }
   return [...by.values()].map((m) => ({ ...m, event: m.events.join(" · ") }));
 };
-/** A Board transition: a curve between two galaxies, a loop over one, or a path off a state level's screen edge. */
+/** A Board transition: a curve between two galaxies, a self-transition (never drawn), or a path off a state level's screen edge. */
 export interface BEdge extends Transition, Partial<Curve> {
   /** Every event between its two states, in that direction; `event` joins them for the hover. */
   events: string[];
   /** Every writer of those events, with the event it writes. */
   writers: (Writer & { event: string })[];
+  /** A stay in one state: never drawn, only kept to name its writers' criteria. */
   loop?: boolean;
-  x?: number;
-  y?: number;
   busy?: boolean;
   lab?: { name: string; x: number; y: number };
 }
@@ -284,6 +291,8 @@ export interface Scene {
   box?: [number, number, number, number];
   sid?: string;
   hostAt?: (id: string, t: number) => string;
+  /** The bodies a state level's task moved through, each with the time it got there: its back trace. */
+  hostTrail?: (id: string) => { at: number; host: string }[];
   /** A line of type's height in world units at the state level's fit zoom. */
   moonLH?: number;
   hangar?: Hangar;
@@ -299,6 +308,12 @@ export interface Ctx {
   T: number;
   /** The selected zero-based machine page for each Board state. */
   pages?: Record<string, number>;
+  /** The value a layout value `v` named `key` shows: the renderer eases it from the value it showed when a snapshot changes it. The layout
+   *  computes its targets from the true sizes, so an eased value never moves another's target. */
+  ease?: (key: string, v: number) => number;
+  /** Each bent Board path's last bend (`x` along source → target, `y` across it, as fractions of its length), kept by the renderer from one
+   *  Board to the next so a path keeps its route while that still clears (routed). */
+  routes?: Map<string, Pt>;
 }
 
 export const bez = (p0: Pt, c: Pt, p1: Pt, t: number): Pt => {
@@ -341,7 +356,19 @@ export const tethersDrawn = (scene: Scene, hovered: Star | null): [Star, Tether]
   Object.values(scene.stars).filter((s) => s === hovered && s.tether).map((s): [Star, Tether] => [s, s.tether!]);
 /** The events a machine takes from one of its states back to the same state. */
 const loopsOf = (flow: { machine: { transitions: Transition[] } }, id: string) => flow.machine.transitions.filter((t) => t.source === id && t.target === id).map((t) => t.event);
-export const stateR = (s: MState) => (s.mini ? 3 + 1.2 * Math.sqrt(s.n) : 10 + 2.4 * Math.sqrt(s.n));
+/** A Board state's radius: GALAXY_MIN with no tasks, growing with the square root of its count to GALAXY_MAX, which it reaches near 450 tasks. */
+export const GALAXY_MIN = 34, GALAXY_MAX = 140;
+const galaxyR = (n: number) => Math.min(GALAXY_MAX, GALAXY_MIN + 5 * Math.sqrt(n));
+/**
+ * A machine state's radius from its task count, growing with its square root to a fixed maximum (near 150 tasks on a machine level, 55 inside
+ * a planet).
+ */
+export const stateR = (s: MState) => (s.mini ? Math.min(12, 3 + 1.2 * Math.sqrt(s.n)) : Math.min(40, 10 + 2.4 * Math.sqrt(s.n)));
+/** The `k`th task on a machine state's orbit of radius `R`: rings of tasks 8 apart, each ring 7 further out and turned a little. */
+export const taskSlot = (R: number, k: number) => {
+  const per = Math.max(8, Math.floor((TAU * R) / 8)), ring = Math.floor(k / per);
+  return { t: ((k % per) / per) * TAU - Math.PI / 2 + ring * 0.2, rr: R + ring * 7 };
+};
 const boxOf = (pts: number[][]): [number, number, number, number] => [
   Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1])),
 ];
@@ -400,32 +427,37 @@ export function separate<T extends Pt & { R: number }>(states: T[], gap: (a: T, 
   return dx;
 }
 
+/** A sun's radius: `min` until its `n` tasks, `gap` apart on the ring `pad` outside it, would need a second ring; past that, the radius that holds them in one. */
+export const oneRing = (n: number, gap: number, pad: number, min: number) => Math.max(min, Math.ceil((n * gap) / TAU) - pad);
+
 /** The orbit a body of radius `r` takes on once `n` tasks circle it, one more ring out each time the last fills. */
 const orbit = (n: number, r: number, r0: number) => (n ? rings(n, r0, 9, 8).outer : r);
 
-const CLEAR = 20;
+const CLEAR = 20, HOLD = 16;
 /**
  * The last Board's routed paths and settled DAG bodies, each keyed on everything that places it. A stream delta rarely moves a state, so the
  * next Board reuses both searches instead of running them again on every task move.
  */
 const last = { routes: { key: "", curves: [] as (Curve | null)[] }, bodies: { key: "", at: [] as Pt[] } };
+/** The point on `g`'s rim facing `c`, where a path bending through `c` meets it. */
+const rim = (g: Galaxy, c: Pt) => {
+  const ex = c.x - g.x, ey = c.y - g.y, l = Math.hypot(ex, ey) || 1;
+  return { x: g.x + (ex / l) * g.R, y: g.y + (ey / l) * g.R };
+};
 /**
  * A Board path between two states that passes no other state within CLEAR px. Where the path from `c0` would, its control point moves to a
  * spot on the sky where the path clears every other state; of those the one crossing the fewest paths already drawn and bending least wins,
- * so a path running straight through a state bends to the side that crosses fewer. `sky` bounds the control point.
+ * so a path running straight through a state bends to the side that crosses fewer. `sky` bounds the control point. `held` is the bend the
+ * path took last, which it keeps while that still clears.
  */
-function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: Pt): Curve {
+export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: Pt, held?: Pt): Curve {
   const others = all.filter((g) => g !== a && g !== b);
-  const rim = (g: Galaxy, c: Pt) => {
-    const ex = c.x - g.x, ey = c.y - g.y, l = Math.hypot(ex, ey) || 1;
-    return { x: g.x + (ex / l) * g.R, y: g.y + (ey / l) * g.R };
-  };
   const shape = (c: Pt): Curve => ({ p0: rim(a, c), c, p1: rim(b, c) });
   // both tests walk the same points sample() would give, without allocating them: every spot on the sky runs them
-  const clear = ({ p0, c, p1 }: Curve) => {
+  const clear = ({ p0, c, p1 }: Curve, by = CLEAR) => {
     for (let i = 0; i <= 48; i++) {
       const t = i / 48, u = 1 - t, x = u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, y = u * u * p0.y + 2 * u * t * c.y + t * t * p1.y;
-      for (const g of others) if ((x - g.x) ** 2 + (y - g.y) ** 2 < (g.R + CLEAR) ** 2) return false;
+      for (const g of others) if ((x - g.x) ** 2 + (y - g.y) ** 2 < (g.R + by) ** 2) return false;
     }
     return true;
   };
@@ -438,7 +470,10 @@ function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: 
     return n;
   };
   const straight = shape(c0);
-  if (clear(straight)) return straight;
+  // a bent path keeps its bend while it clears, and straightens only once the straight path clears by HOLD more, so a state growing and
+  // shrinking across the line never flips it back and forth
+  if (clear(straight, held ? CLEAR + HOLD : CLEAR)) return straight;
+  if (held && clear(shape(held))) return shape(held);
   const spots: { c: Pt; bend: number }[] = [];
   for (let x = 10; x <= sky.x - 10; x += 40) for (let y = 10; y <= sky.y - 10; y += 40) spots.push({ c: { x, y }, bend: Math.hypot(x - c0.x, y - c0.y) / 200 });
   let best = straight, cost = Infinity;
@@ -452,7 +487,7 @@ function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: 
   return best;
 }
 /** The points of the paths drawn so far, bucketed in 10 px cells so a point checks only the nine cells round it for one within 10 px. */
-class Drawn {
+export class Drawn {
   private cells = new Map<number, Pt[]>();
   private key = (x: number, y: number) => Math.floor(x / 10) * 65536 + Math.floor(y / 10);
   add(pts: Pt[]) {
@@ -524,11 +559,11 @@ export const MIN_PAGE = 4;
 
 /** The lifecycle machines visible on one page of `size`; the primary machine is supplied separately and is never paged. */
 export function paged(sid: string, list: string[], at = 0, size = PAGE_SIZE) {
-  const PAGE_SIZE = size, pages = Math.ceil(list.length / PAGE_SIZE);
+  const pages = Math.ceil(list.length / size);
   if (pages <= 1) return { shown: list, hidden: [] as string[], pagers: [] as Pager[] };
-  const page = ((at % pages) + pages) % pages, shown = list.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE), hidden = list.filter((n) => !shown.includes(n));
+  const page = ((at % pages) + pages) % pages, shown = list.slice(page * size, page * size + size), hidden = list.filter((n) => !shown.includes(n));
   // a hidden machine goes to the node whose turns reach its page sooner, forward on a tie
-  const back = (i: number) => (page - Math.floor(i / PAGE_SIZE) + pages) % pages < (Math.floor(i / PAGE_SIZE) - page + pages) % pages;
+  const back = (i: number) => (page - Math.floor(i / size) + pages) % pages < (Math.floor(i / size) - page + pages) % pages;
   const pagers = ([-1, 1] as const).map((d): Pager => {
     const to = (page + d + pages) % pages + 1;
     return { sid, page, pages, d, hidden: list.filter((n, i) => hidden.includes(n) && back(i) === (d < 0)), title: d < 0 ? `‹ ${to}/${pages}` : `${to}/${pages} ›` };
@@ -556,7 +591,7 @@ export function build(ctx: Ctx, l: Level): Scene {
 }
 
 function layoutLevel(ctx: Ctx, l: Level): Scene {
-  const { S, moves, W, H, T } = ctx, EVENTS = moves.events, board = S.board, SUBS = S.subs, dagBy = S.dagBy;
+  const { S, moves, W, H, T } = ctx, ease = ctx.ease ?? ((_key: string, v: number) => v), routes = ctx.routes ?? new Map<string, Pt>(), EVENTS = moves.events, board = S.board, SUBS = S.subs, dagBy = S.dagBy;
   const stateName = (id: string) => board.machine.states.find((s) => s.id === id)?.name || id;
   const scene: Scene = { w: 2460, h: 1340, galaxies: {}, bEdges: [], tasks: [], machineTasks: [], mStates: {}, mEdges: [], planets: [], moons: [], subStates: [], stars: {}, groups: [], sun: null, flow: null, hub: null, hops: [], entries: [], exits: [] };
   // Several DAGs on one path fold into one body. It runs while any of them runs, else shows the status of the one that finished last.
@@ -570,10 +605,14 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const top = ns.slice(0, 3);
     return { nodes: top.map((n, i) => ({ name: n, status: dagBy[n]?.status || "not_started", x: (i - (top.length - 1) / 2) * 9, y: -(i - (top.length - 1) / 2) * 5 })), links: [], w: 18, h: 10, br: 18 };
   };
+  // a DAG's instance prefix is drawn only where another instance runs a DAG by the same bare name
+  const bare = (name: string) => name.slice(name.indexOf("/") + 1), bareCount = new Map<string, number>();
+  for (const n of Object.keys(dagBy)) bareCount.set(bare(n), (bareCount.get(bare(n)) ?? 0) + 1);
+  const labelOf = (name: string) => folds[name]?.name ?? (bareCount.get(bare(name)) === 1 ? bare(name) : name);
   const glyphOf = (name: string) => (folds[name] ? fan(folds[name].fold) : glyph(dagBy[name] || stub(name)));
   const star = (name: string, x: number, y: number): Star => {
     const d = folds[name] || dagBy[name] || stub(name), g = glyphOf(name);
-    return { ...d, x, y, glyph: g, br: g.br, group: S.dagGroup[name] || "", runnable: S.runnable.has(name) };
+    return { ...d, label: labelOf(name), x, y, glyph: g, br: g.br, group: S.dagGroup[name] || "", runnable: S.runnable.has(name) };
   };
   // lay DAG glyphs side by side, centred on cx, so wide step graphs never overlap their neighbours
   const row = (names: string[], cx: number, y: number, gap = 26) => {
@@ -601,7 +640,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   function dock(w: number, F: number) {
     const size = (n: string) => {
       const g = glyph(dagBy[n] || stub(n));
-      return { n, hw: Math.max(g.w / 2 + 12, (textW(n, 11) * F) / 2 + 6), up: g.h / 2 + 10, dn: g.h / 2 + 16 * F + 12 };
+      return { n, hw: Math.max(g.w / 2 + 12, (textW(labelOf(n), 11) * F) / 2 + 6), up: g.h / 2 + 10, dn: g.h / 2 + 16 * F + 12 };
     };
     type Item = ReturnType<typeof size>;
     const doms = S.groups.map((g) => ({ name: g.name, items: g.dags.filter((n) => !boardTied(n)).map(size) })).filter((d) => d.items.length);
@@ -667,7 +706,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const radius = (st: (typeof states)[number]) => {
       const all = byState[st.id] || [], at = new Map(all.map((a) => [a, deepest(a)])), fs = flowsOf(st.id);
       const on = (f: string, state?: string) => all.filter((a) => at.get(a)?.flow === f && at.get(a)?.state === state);
-      const here = all.filter((a) => !at.get(a)), r = Math.min(70, 34 + 5 * Math.sqrt(all.length)) * (st.id === "in_progress" ? 1.25 : 1), outer = here.length ? rings(here.length, r + 14, 11, 12).outer : r;
+      const k = st.id === "in_progress" ? 1.25 : 1, here = all.filter((a) => !at.get(a)), r = Math.min(GALAXY_MAX * k, oneRing(here.length, 11, 14, galaxyR(all.length) * k)), outer = here.length ? rings(here.length, r + 14, 11, 12).outer : r;
       const machine = (f: string) => {
         const ss = subStatesOf(f).map((q) => ({ ...q, name: q.name.replace(/^Pr /, "PR ") })), label = `${f}${ss.length ? ` › ${ss.map((q) => q.name).join(" · ")}` : ""}`;
         return { f, ss, label, slot: { moon: orbit(on(f).length, 9, 17), subs: ss.map((q) => orbit(on(f, q.id).length, 6, 14)), name: textW(clipped ? clip(label) : label, 10.5) * F } };
@@ -793,28 +832,30 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const fitted = solve(8 * w0);
     const { sized, ps, shift, grow, left } = fitted;
     w = Math.max(w, fitted.need);
+    // each state's place and the sky's width ease toward the layout's targets, so a state changing size moves its neighbours and the fit smoothly
+    for (const p of ps) {
+      p.x = ease(`${p.id || "hangar"}.x`, p.x + shift.get(p)! + (fitted.base - w0 - grow) / 2 + left + (w - fitted.need) / 2);
+      p.y = ease(`${p.id || "hangar"}.y`, p.y + (Math.round(w / A) - 40 - hb0) / 2);
+    }
+    w = ease("sky.w", w);
     F = Math.min(w / (0.94 * W), Fcap);
     scene.w = w;
     scene.h = Math.round(w / A);
     scene.clipped = clipped;
     if (F < w / (0.94 * W)) scene.unit = F;
     hb = scene.h - 40;
-    for (const p of ps) {
-      p.x += shift.get(p)! + (fitted.base - w0 - grow) / 2 + left + (w - fitted.need) / 2;
-      p.y += (hb - hb0) / 2;
-    }
     for (const st of states) {
-      const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { r, R, rows, ms, pg, here, on, at } = sized[st.id];
-      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: (byState[st.id] || []).length, color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, lab: { x, y }, reach: [R, R] };
+      const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { rows, ms, pg, here, on, at } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
+      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: (byState[st.id] || []).length, color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, lab: { x, y }, reach: [R, R], loops: [] };
       const outer = here.length ? attach(here, g, r + 14, 11, 12, false) : r;
-      g.moonR = rows ? rows.moonR : outer + 16;
+      g.moonR = ease(`${st.id}.moonR`, rows ? rows.moonR : outer + 16);
       if (rows) g.reach = rows.reach;
       g.visR = outer + 7; // a task hopping in orbits on the outer edge
       scene.galaxies[st.id] = g;
       // the machines are moons on the dashed ring, each with the tasks working it outside its sub-states; its sub-states run outward in its
       // row as a chain of small bodies, each with the tasks whose session holds it
       ms.forEach((m, i) => {
-        const { dx, dy } = rows!.at[i], mx = x + dx, my = y + dy, sg = dx < 0 ? -1 : 1, tasks = on(m.f);
+        const dx = ease(`${st.id}/${m.f}.dx`, rows!.at[i].dx), dy = ease(`${st.id}/${m.f}.dy`, rows!.at[i].dy), mx = x + dx, my = y + dy, sg = dx < 0 ? -1 : 1, tasks = on(m.f);
         const moon: Moon = { name: m.f, label: m.label, parent: g, x: mx, y: my, r: 9, R: 9, n: tasks.length, nStates: S.flows[m.f].machine.states.length, ext: 0, chain: [] };
         if (tasks.length) moon.R = attach(tasks, moon, 17, 9, 8, false);
         let c = moon.R, prev: Host = moon;
@@ -842,33 +883,43 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // path runs straight. A final state reached from several states (Archived) gathers its paths into one stream along its side of the Board. Then
     // any path that would pass another state bends away from it until it clears (routed).
     const gs = Object.values(scene.galaxies), pairs = merged(transitions, S.writers);
-    const routeKey = JSON.stringify([w, hb, gs.map((g) => [g.id, g.x, g.y, g.R, g.final]), pairs.map((t) => [t.source, t.target])]);
+    const routeKey = JSON.stringify([w, hb, gs.map((g) => [g.id, g.x, g.y, g.R, g.final]), pairs.map((t) => [t.source, t.target]), [...routes]]);
     const reuse = last.routes.key === routeKey, curves: (Curve | null)[] = [];
-    const drawn = new Drawn();
+    const drawn = new Drawn(), stays: BEdge[] = [];
     for (const tr of pairs) {
       const a = scene.galaxies[tr.source], b = scene.galaxies[tr.target];
       if (!a || !b || a === b) curves.push(null);
       if (!a || !b) continue;
       if (a === b) {
-        scene.bEdges.push({ ...tr, loop: true, x: a.x, y: a.y - a.R - 12 });
+        a.loops.push(...tr.events);
+        stays.push({ ...tr, loop: true });
         continue;
       }
       const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy), both = transitions.some((t) => t.source === tr.target && t.target === tr.source);
       const side = both ? (tr.source < tr.target ? 1 : -1) * 0.11 : 0;
       const gathers = b.final && new Set(transitions.filter((t) => t.target === b.id && t.source !== b.id).map((t) => t.source)).size > 1;
       const c0 = gathers ? { x: a.x + dx * 0.15, y: b.y } : { x: (a.x + b.x) / 2 - (dy / L) * L * side, y: (a.y + b.y) / 2 + (dx / L) * L * side };
-      const r = reuse ? last.routes.curves[curves.length] : routed(a, b, c0, gs, drawn, { x: w, y: hb });
+      // a bend is kept in the frame of its two states (u along a→b, v across it), so a held route moves with them
+      const k = `${tr.source}>${tr.target}`, h = routes.get(k), held = h && { x: a.x + h.x * dx - h.y * dy, y: a.y + h.x * dy + h.y * dx };
+      const r = reuse ? last.routes.curves[curves.length] : routed(a, b, c0, gs, drawn, { x: w, y: hb }, held);
       curves.push(r);
       if (!reuse) drawn.add(sample(r!, 30));
-      scene.bEdges.push({ ...tr, p0: { ...r!.p0 }, c: { ...r!.c }, p1: { ...r!.p1 } });
+      const ox = r!.c.x - a.x, oy = r!.c.y - a.y, u0 = (ox * dx + oy * dy) / L ** 2, v0 = (oy * dx - ox * dy) / L ** 2;
+      if (Math.hypot(r!.c.x - c0.x, r!.c.y - c0.y) < 0.5) routes.delete(k);
+      else routes.set(k, { x: u0, y: v0 });
+      // the bend eases in that frame, so the path rides its states as they move, a re-route bends it over to its new shape instead of
+      // snapping, and its ends stay on the rims facing the bend
+      const u = ease(`${k}.u`, u0), v = ease(`${k}.v`, v0);
+      const c = { x: a.x + u * dx - v * dy, y: a.y + u * dy + v * dx };
+      scene.bEdges.push({ ...tr, p0: rim(a, c), c, p1: rim(b, c) });
     }
     last.routes = { key: routeKey, curves };
     const curve = (e: BEdge) => e as BEdge & Curve;
     // state names go above the state by default and drop below only where a path would run through the text
-    const pts = scene.bEdges.flatMap((e) => (e.loop ? Array.from({ length: 12 }, (_, i) => ({ x: e.x! + 12 * Math.cos((i / 12) * TAU), y: e.y! + 12 * Math.sin((i / 12) * TAU) })) : sample(curve(e))));
+    const pts = scene.bEdges.flatMap((e) => sample(curve(e)));
     for (const g of Object.values(scene.galaxies)) {
       const f = F, hw = (Math.max(textW(g.name, 13), textW(`${g.n}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 11)) / 2) * f;
-      const off = (scene.bEdges.some((e) => e.loop && e.source === g.id) ? 32 : 10) + 4, top = g.y - g.R - off, bot = g.y + g.R + 6;
+      const off = 14, top = g.y - g.R - off, bot = g.y + g.R + 6;
       const cands = [{ x0: g.x - hw, x1: g.x + hw, y0: top - 38 * f, y1: top, ly: top - 38 * f + 12 }, { x0: g.x - hw, x1: g.x + hw, y0: bot, y1: bot + 40 * f, ly: bot + 16 }];
       // the side that prints the name least over another state (one stacked in the same slot) or its moon rows, then the one fewer paths cross
       const on = (c: (typeof cands)[number]) => gs.reduce((a, o) => a + (o === g ? 0 : Math.max(0, Math.min(c.x1, o.x + o.reach[0]) - Math.max(c.x0, o.x - o.reach[1])) * Math.max(0, Math.min(c.y1, o.y + o.R) - Math.max(c.y0, o.y - o.R))), 0);
@@ -881,14 +932,14 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // one body. A body settles beside its path so no glyph or name overlaps another, a state or a path. Every free DAG is on the DAGs level.
     interface Crit { edge?: BEdge; states: string[]; cue: boolean; text: string }
     const crit: Record<string, Crit[]> = {}, via = (e: BEdge) => `${stateName(e.source)} → ${stateName(e.target)}`;
-    for (const e of scene.bEdges)
+    for (const e of [...scene.bEdges, ...stays])
       for (const wr of e.writers)
         if (dagBy[wr.actor]) (crit[wr.actor] ||= []).push(e.loop
           ? { states: [e.source], cue: false, text: `writes ${wr.event} (${stateName(e.source)})` }
           : { edge: e, states: [e.source, e.target], cue: false, text: `writes ${wr.event} (${via(e)})` });
     for (const c of S.cues) {
       if (!scene.galaxies[c.state] || !dagBy[c.dag]) continue;
-      const e = scene.bEdges.find((x) => !x.loop && x.events.includes(c.event));
+      const e = scene.bEdges.find((x) => x.events.includes(c.event));
       (crit[c.dag] ||= []).push({ edge: e, states: e ? [e.source, e.target] : [c.state], cue: true, text: `runs on ${c.on}, beside ${c.event} (${e ? via(e) : stateName(c.state)})` });
     }
     const tethers: Record<string, Tether> = {};
@@ -940,8 +991,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         homes[n] = { x: g.x + Math.cos(a) * r, y: g.y + Math.sin(a) * r };
       });
     }
-    const path = scene.bEdges.flatMap((e) => (e.loop ? [] : sample(curve(e), 40))), gal = Object.values(scene.galaxies);
-    const hwOf = (n: string) => Math.max(glyphOf(n).w / 2 + 12, (textW(folds[n]?.name || n, 11) * F) / 2 + 6);
+    const path = scene.bEdges.flatMap((e) => sample(curve(e), 40)), gal = Object.values(scene.galaxies);
+    const hwOf = (n: string) => Math.max(glyphOf(n).w / 2 + 12, (textW(labelOf(n), 11) * F) / 2 + 6);
     const bodies = Object.keys(tethers).map((n) => {
       const g = glyphOf(n), home = homes[n];
       return { n, x: home.x, y: home.y, home, hw: hwOf(n), up: Math.max(g.h / 2 + 10, g.br + 6), dn: Math.max(g.h / 2, g.br) + 16 * F + 12, k: 0.03 };
@@ -1053,7 +1104,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // the blocks can lay out wider than the scene (the row count caps), so the fit frames what is drawn
     scene.box = boxOf([
       ...Object.values(scene.stars).flatMap((s) => {
-        const hw = Math.max(s.glyph.w / 2, textW(s.name, 11) / 2) + 30;
+        const hw = Math.max(s.glyph.w / 2, textW(s.label, 11) / 2) + 30;
         return [[s.x - hw, s.y - s.glyph.h / 2 - 30], [s.x + hw, s.y + s.glyph.h / 2 + 40]];
       }),
       ...scene.groups.map((g) => [g.lx, g.ly - 20]),
@@ -1090,7 +1141,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     scene.sid = sid;
     const cx0 = scene.w / 2, cy0 = scene.h / 2;
     if (!subs.length) {
-      const sun: Sun = { id: sid, name: stateName(sid), x: cx0, y: cy0, r: 34, R: 0, n: board.agents.filter((a) => a.state === sid).length, color: BOARD_COLOR[sid] ?? "#94a3b8" };
+      const n = board.agents.filter((a) => a.state === sid).length;
+      const sun: Sun = { id: sid, name: stateName(sid), final: !!board.machine.states.find((s) => s.id === sid)?.final, x: cx0, y: cy0, r: ease(`${sid}.r`, Math.min(GALAXY_MAX, oneRing(list.length, 16, 30, galaxyR(n)))), R: 0, n, color: BOARD_COLOR[sid] ?? "#94a3b8" };
       scene.sun = sun;
       scene.hub = sun;
       sun.R = attach(list, sun, sun.r + 30, 16, 16, true);
@@ -1120,6 +1172,11 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       // a task in a hidden machine orbits the pager node standing in for it
       const shown = (name: string) => pg.pagers.find((pager) => pager.hidden.includes(name.split(">")[0]))?.title ?? name;
       scene.hostAt = (id: string, t: number) => shown(rawHostAt(id, t));
+      // on the primary, the trail names the primary's state (`in-progress#pr_opened`), so its moves inside the primary are hops too
+      scene.hostTrail = (id: string) =>
+        EVENTS.filter((e) => e.task === id && subs.includes(e.flow))
+          .map((e) => ({ at: e.at, host: e.flow === subs[0] && hub.states[e.to] ? `${subs[0]}#${e.to}` : scene.hostAt!(id, e.at) }))
+          .filter((r, i, all) => r.host !== all[i - 1]?.host);
       const rawVisits = list.map((a) => {
         const seen = new Set([rawHostAt(a.id, T - HOUR), rawHostAt(a.id, T)]);
         for (const e of EVENTS) if (e.task === a.id && e.at >= T - HOUR && subs.includes(e.flow)) seen.add(rawHostAt(a.id, e.at));
@@ -1130,6 +1187,11 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         const seen = new Set([...rawVisits[i]].map(shown));
         for (const name of seen) byPlanet.get(scene.planets.find((p) => p.name === name)!)!.push(a);
       });
+      // the primary grows, its states with it, until its tasks circle it in one ring
+      const grown = oneRing(byPlanet.get(hub)!.length, 17, 36, hub.R);
+      for (const q of Object.values(hub.states)) [q.dx, q.dy] = [(q.dx! * grown) / hub.R, (q.dy! * grown) / hub.R];
+      hub.R = grown;
+      place(hub, cx0, cy0);
       for (const [p, ts] of byPlanet) {
         const small = p.moon || p.subState, [r0, gap, ringGap, pad] = small ? [p.R + 10, 9, 8, 4] : [p.R + 36, 17, 15, 14];
         p.outer = ts.length ? attach(ts, p, r0, gap, ringGap, true, 4) : p.R + pad;
@@ -1241,7 +1303,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const ring = Object.keys(crit).sort().map((n) => {
         let a: number | null = null, rD = radii[0];
         for (const r of radii) {
-          const w = (Math.max(glyphOf(n).w / 2, (textW(folds[n]?.name || n, 11) * F) / 2) + 18) / r;
+          const w = (Math.max(glyphOf(n).w / 2, (textW(labelOf(n), 11) * F) / 2) + 18) / r;
           a = nearestFree(want[n] ?? -Math.PI / 2, w, r);
           if (a !== null) {
             rD = r;
@@ -1299,10 +1361,10 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     if (!flow) return;
     scene.mStates = layered(name, 180, 260, 1440, flow.machine.states.length > 8 ? 380 : 300);
     scene.mEdges = flow.machine.transitions.map((t) => ({ ...t, flow: name, a: scene.mStates[t.source], b: scene.mStates[t.target] }));
-    // each state name takes the side (below, above, right, left) that crosses the fewest drawn paths
+    // each state name takes the side (below, above, right, left) that crosses the fewest drawn paths, clear of its outermost ring of tasks
     const pts = scene.mEdges.flatMap((e) => (!e.a || !e.b || e.a === e.b ? [] : sample(curveOf(e.a, e.b), 34)));
     for (const s of Object.values(scene.mStates)) {
-      const R = stateR(s), w = textW(s.name, 12.5) / 2, up = R + 12;
+      const R = s.n ? taskSlot(stateR(s) + 7, s.n - 1).rr + 3 : stateR(s), w = textW(s.name, 12.5) / 2, up = R + 12;
       const c = bestSide([
         { x0: s.x - w, x1: s.x + w, y0: s.y + R + 4, y1: s.y + R + 26, lx: s.x, ly: s.y + R + 16 },
         { x0: s.x - w, x1: s.x + w, y0: s.y - up - 22, y1: s.y - up, lx: s.x, ly: s.y - up - 10 },

@@ -75,14 +75,14 @@ def test_the_first_run_creates_a_named_container_with_a_volume_and_points_the_st
     environ: dict[str, str] = {}
     runtime = Runtime(exists=False)
 
-    _ensure(environ, runtime)
+    _ensure(environ, runtime, prefixes=("BOARD",))
 
     created = next(c for c in runtime.calls if c[1] == "run")
     assert created[:5] == ("docker", "run", "-d", "--name", CONTAINER)
     assert f"{CONTAINER}:/data" in created
     assert "127.0.0.1::6379" in created
     assert environ["REDIS_URL"] == "redis://127.0.0.1:49153"
-    assert environ["MACHINE_EVENTS_REDIS_PORT"] == "49153"
+    assert environ["MACHINE_EVENTS_REDIS_PORT"] == environ["BOARD_REDIS_PORT"] == "49153"
 
 
 def test_a_stopped_container_is_started_not_recreated() -> None:

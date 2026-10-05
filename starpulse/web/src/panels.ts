@@ -1,11 +1,12 @@
 // The click panel's content. The renderer owns when it opens; it floats over the level and never refits it.
+import { apiFetch } from "./demo";
 import type { Sky } from "./sky";
 import type { RawAgent } from "./types";
 
 export const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 /** Start a run-safe DAG through the server's run endpoint: the line the panel shows once it answers. */
-export async function startRun(dag: string, post: (url: string, init?: RequestInit) => Promise<Response> = fetch): Promise<string> {
+export async function startRun(dag: string, post: (url: string, init?: RequestInit) => Promise<Response> = apiFetch): Promise<string> {
   try {
     const resp = await post(`/api/run/${dag.split("/").map(encodeURIComponent).join("/")}`, { method: "POST" });
     const body = await resp.json();

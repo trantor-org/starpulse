@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bez, BOARD_GROW, build, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, tethersDrawn, textW, turnPage, type BEdge, type Curve, type Pt, type Scene } from "./scene";
+import { bez, BOARD_GROW, build, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, taskSlot, tethersDrawn, terminal, textW, turnPage, type BEdge, type Curve, type MState, type Pt, type Scene } from "./scene";
 import type { Level } from "./levels";
 import { merge, Moves } from "./sky";
 import type { Cue, Dag, Machine, Snapshot } from "./types";
@@ -36,6 +36,36 @@ const sky = () => {
   moves.observe(S, 1000);
   return { S, moves, W: 1670, H: 1080, T: 1000 };
 };
+
+describe("a terminal state", () => {
+  const state = (id: string, final: boolean, flow?: string) => ({ id, final, flow });
+  it("is a final state of the Board, where a task's lifecycle ends, and nothing else", () => {
+    expect(terminal(state("completed", true))).toBe(true);
+    expect(terminal(state("archived", true))).toBe(true);
+    // Done is not final: the sweep moves its tasks on to Completed
+    expect(terminal(state("done", false))).toBe(false);
+    expect(terminal(state("review", false))).toBe(false);
+  });
+  it("is never a nested machine's final state, which hands its task back to the lifecycle", () => {
+    expect(terminal(state("review_recorded", true, "in-progress"))).toBe(false);
+    expect(terminal(state("needs_attention", true, "in-progress"))).toBe(false);
+  });
+});
+
+describe("a machine's final state", () => {
+  const st = (final: boolean, mini?: boolean): MState => ({ id: "s", name: "S", final, initial: false, flow: "f", n: 4, color: "#fff", mini, loops: [], x: 0, y: 0 });
+  it("is the size of any other state with as many tasks, at the machine level and inside a machine planet", () => {
+    expect(stateR(st(true))).toBe(stateR(st(false)));
+    expect(stateR(st(true, true))).toBe(stateR(st(false, true)));
+  });
+  it("grows with its tasks up to a fixed maximum, so a state with thousands of tasks still fits its level", () => {
+    const at = (n: number, final: boolean, mini?: boolean) => stateR({ ...st(final, mini), n });
+    for (const [final, mini] of [[false, false], [true, false], [false, true], [true, true]] as const) {
+      expect(at(0, final, mini)).toBeLessThan(at(25, final, mini));
+      expect(at(10_000, final, mini)).toBe(at(1_000_000, final, mini));
+    }
+  });
+});
 
 describe("a DAG's glyph", () => {
   it("lays its steps out by dependency depth", () => {
@@ -104,9 +134,121 @@ const boardSky = ({ writes = {}, cues = [], launches = [], free = {} }: { writes
   moves.observe(S, 1000);
   return { S, moves, W: 1920, H: 1080, T: 1000 };
 };
+/** `sky` with `counts[state]` more Board tasks in each named state. */
+const withTasks = (sky: ReturnType<typeof boardSky>, counts: Record<string, number>) => {
+  for (const [state, n] of Object.entries(counts))
+    for (let i = 0; i < n; i++) sky.S.flows.board.agents.push({ id: `${state}-${i}`, title: "t", state, model: "", labels: [] });
+  return sky;
+};
 const cue = (dagName: string, event: string, state: string): Cue => ({ dag: dagName, event, state, on: "each merge" });
 const edgeOf = (scene: Scene, event: string) => scene.bEdges.find((e) => e.event === event)!;
 const middle = (e: BEdge) => bez(e.p0!, e.c!, e.p1!, 0.5);
+
+describe("a Board state's sun", () => {
+  it("carries the state's final flag, so a terminal state's level draws a black hole rather than a sun", () => {
+    const sky = boardSky();
+    sky.S.flows.board.machine.states.find((s) => s.id === "done")!.final = true;
+    expect(build(sky, { kind: "state", id: "done" }).sun!.final).toBe(true);
+    expect(build(sky, { kind: "state", id: "review" }).sun!.final).toBe(false);
+  });
+  it("grows with the state's tasks, as the state does on the Board", () => {
+    const sky = withTasks(boardSky(), { done: 400, review: 10 }), board = build(sky, { kind: "board" });
+    const done = build(sky, { kind: "state", id: "done" }).sun!, review = build(sky, { kind: "state", id: "review" }).sun!;
+
+    expect(done.r).toBeGreaterThan(review.r);
+    expect([done.r, review.r]).toEqual([board.galaxies.done.r, board.galaxies.review.r]);
+  });
+});
+
+describe("a Board state's size", () => {
+  it("grows with its tasks from a fixed minimum, and to hold them in one ring, up to a fixed maximum", () => {
+    const sizes = (counts: Record<string, number>) => build(withTasks(boardSky(), counts), { kind: "board" }).galaxies;
+    const g = sizes({ new: 20, ready: 60, review: 80, done: 3000 });
+
+    expect(g.in_progress.r / 1.25).toBe(sizes({}).new.r);
+    expect(g.new.r).toBeLessThan(g.ready.r);
+    expect(g.ready.r).toBeLessThan(g.review.r);
+    expect(g.review.r).toBeLessThan(g.done.r);
+    expect([g.done.r, sizes({ done: 6000 }).done.r, sizes({ in_progress: 3000 }).in_progress.r]).toEqual([140, 140, 175]);
+  });
+});
+
+describe("a Board laid out at the values it shows", () => {
+  it("carries each state's radius and place, and the sky's width, as the renderer eases them", () => {
+    const sky = withTasks(boardSky(), { ready: 150, done: 400 }), full = build(sky, { kind: "board" });
+    const shown = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".r") ? v / 2 : key === "done.x" ? v + 100 : key === "sky.w" ? v + 50 : v) }, { kind: "board" });
+
+    for (const id of Object.keys(full.galaxies)) expect(shown.galaxies[id].r).toBeCloseTo(full.galaxies[id].r / 2);
+    expect(shown.galaxies.done.x).toBeCloseTo(full.galaxies.done.x + 100);
+    expect(shown.w).toBeCloseTo(full.w + 50);
+    expect(build({ ...sky, ease: (_key: string, v: number) => v / 2 }, { kind: "state", id: "done" }).sun!.r).toBeCloseTo(full.galaxies.done.r / 2);
+  });
+  it("eases a state's ring of machines and each machine's place on it, so a machine row growing moves them instead of snapping", () => {
+    const sky = withTasks(boardSky(), { in_progress: 40 }), full = build(sky, { kind: "board" });
+    const shown = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".moonR") ? v + 30 : key.endsWith(".dx") ? v + 10 : v) }, { kind: "board" });
+
+    expect(full.moons.length).toBeGreaterThan(0);
+    expect(shown.galaxies.in_progress.moonR).toBeCloseTo(full.galaxies.in_progress.moonR + 30);
+    for (const [i, m] of shown.moons.entries()) if (!m.pager) expect(m.x).toBeCloseTo(full.moons[i].x + 10);
+  });
+  it("eases each state's reach, where its paths end, so a new ring of tasks moves the ends instead of snapping them", () => {
+    const sky = withTasks(boardSky(), { ready: 150, done: 400 }), full = build(sky, { kind: "board" });
+    const shown = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".R") ? v + 30 : v) }, { kind: "board" });
+
+    for (const id of Object.keys(full.galaxies)) expect(shown.galaxies[id].R).toBeCloseTo(full.galaxies[id].R + 30);
+  });
+  it("places its states from their true sizes, so an eased radius never moves another state's target", () => {
+    const sky = withTasks(boardSky(), { ready: 150, done: 400 }), full = build(sky, { kind: "board" });
+    const shrunk = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".r") ? v / 2 : v) }, { kind: "board" });
+
+    for (const id of Object.keys(full.galaxies)) expect([shrunk.galaxies[id].x, shrunk.galaxies[id].y]).toEqual([full.galaxies[id].x, full.galaxies[id].y]);
+    expect(shrunk.w).toBe(full.w);
+  });
+  it("eases each path's bend in its two states' own frame, so the path rides its states and its ends stay on their rims", () => {
+    const sky = withTasks(boardSky(), { ready: 150, done: 400 }), full = build(sky, { kind: "board" });
+    const bent = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".v") ? v + 0.2 : v) }, { kind: "board" });
+    const paths = (s: typeof full) => s.bEdges.filter((e) => !e.loop) as unknown as (Curve & { source: string; target: string })[];
+
+    for (const [e, f] of paths(bent).map((e, i) => [e, paths(full)[i]] as const)) {
+      const a = bent.galaxies[e.source], b = bent.galaxies[e.target], dx = b.x - a.x, dy = b.y - a.y;
+      expect([e.c.x, e.c.y]).toEqual([expect.closeTo(f.c.x - 0.2 * dy, 6), expect.closeTo(f.c.y + 0.2 * dx, 6)]);
+      expect(Math.hypot(e.p0.x - a.x, e.p0.y - a.y)).toBeCloseTo(a.R, 6);
+      expect(Math.hypot(e.p1.x - b.x, e.p1.y - b.y)).toBeCloseTo(b.R, 6);
+    }
+  });
+});
+
+describe("a Board path's route", () => {
+  // New and Done on one row with Ready between them, so the straight path from New to Done runs through Ready
+  const at = (id: string, x: number, y: number, R: number) => ({ id, x, y, R }) as unknown as Parameters<typeof routed>[0];
+  const sky = { x: 800, y: 600 }, a = at("new", 100, 300, 30), b = at("done", 700, 300, 30), c0 = { x: 400, y: 300 };
+
+  it("keeps the bend it held while that bend still clears, rather than hopping to another spot the search would pick", () => {
+    const o = at("ready", 400, 300, 40), first = routed(a, b, c0, [a, b, o], new Drawn(), sky);
+    const held = { x: first.c.x, y: 600 - first.c.y }; // the same bend on the other side clears as well
+
+    expect(routed(a, b, c0, [a, b, o], new Drawn(), sky, held).c).toEqual(held);
+  });
+  it("is held from one Board to the next through the bends the renderer keeps, each in the frame of its two states", () => {
+    // Ready → Done runs along the main line through In progress and Review, so it bends round them
+    const sky = withTasks(boardSky(), { ready: 150, done: 400 }), routes = new Map<string, Pt>();
+    sky.S.flows.board.machine.transitions.push({ source: "ready", target: "done", event: "SKIP" });
+    build({ ...sky, routes }, { kind: "board" });
+    expect(routes.size).toBeGreaterThan(0);
+
+    const [k, h] = [...routes][0], nudged = new Map([[k, { x: h.x + 0.01, y: h.y }]]), [source, target] = k.split(">");
+    const scene = build({ ...sky, routes: nudged }, { kind: "board" }), e = scene.bEdges.find((x) => x.source === source && x.target === target)!;
+    const A = scene.galaxies[source], B = scene.galaxies[target], dx = B.x - A.x, dy = B.y - A.y;
+    expect([e.c!.x, e.c!.y]).toEqual([expect.closeTo(A.x + (h.x + 0.01) * dx - h.y * dy, 6), expect.closeTo(A.y + (h.x + 0.01) * dy + h.y * dx, 6)]);
+  });
+  it("straightens a bent path only once the straight path clears by a margin, so a state's size crossing the line never flips it back and forth", () => {
+    const held = { x: 400, y: 120 }, by = (gap: number) => at("ready", 400, 300 + 40 + 20 + gap, 40);
+
+    expect(routed(a, b, c0, [a, b, by(4)], new Drawn(), sky).c).toEqual(c0);
+    expect(routed(a, b, c0, [a, b, by(4)], new Drawn(), sky, held).c).toEqual(held);
+    expect(routed(a, b, c0, [a, b, by(30)], new Drawn(), sky, held).c).toEqual(c0);
+  });
+});
 
 describe("a Board DAG's tether", () => {
   it("runs to the middle of the path carrying most of its criteria, and its hover lists every criterion", () => {
@@ -248,7 +390,7 @@ describe("the DAGs level", () => {
   });
 });
 
-// The saved design snapshot's Board (lib/starpulse/design/data.js): ten states and their transitions, in declaration order.
+// The saved design snapshot's Board (the design mockup): ten states and their transitions, in declaration order.
 const SAVED_STATES = ["new", "ready", "blocked", "waiting", "in_progress", "review", "needs_attention", "done", "completed", "archived"];
 const SAVED_TRANSITIONS = `new>ready new>blocked new>waiting new>in_progress ready>in_progress ready>blocked ready>waiting ready>archived
   blocked>blocked blocked>ready blocked>in_progress blocked>archived waiting>ready waiting>in_progress waiting>archived in_progress>blocked
@@ -333,9 +475,8 @@ describe("Board paths", () => {
     const scene = build(crowd(W, H, counts), { kind: "board" }), close: string[] = [];
 
     for (const e of scene.bEdges)
-      if (!e.loop)
-        for (const g of Object.values(scene.galaxies))
-          if (g.id !== e.source && g.id !== e.target && clearance(e as Curve, g) < 17) close.push(`${e.source}>${e.target} by ${g.id}`);
+      for (const g of Object.values(scene.galaxies))
+        if (g.id !== e.source && g.id !== e.target && clearance(e as Curve, g) < 17) close.push(`${e.source}>${e.target} by ${g.id}`);
     expect(close).toEqual([]);
   });
 
@@ -381,7 +522,7 @@ describe("Board paths", () => {
 describe("the room between Board states", () => {
   const apart = (scene: ReturnType<typeof build>) => {
     const gs = Object.values(scene.galaxies), short: string[] = [];
-    for (const a of gs) for (const b of gs) if (a.x < b.x && Math.abs(a.y - b.y) < a.R + b.R + 40 && b.x - b.R - (a.x + a.R) < 40) short.push(`${a.id}/${b.id}`);
+    for (const a of gs) for (const b of gs) if (a.x < b.x && Math.abs(a.y - b.y) < a.R + b.R + 40 && b.x - b.R - (a.x + a.R) < 40 - 1e-6) short.push(`${a.id}/${b.id}`);
     return short;
   };
   const busy = (patch: (snap: Snapshot) => void = () => {}) => savedBoardSky(1920, 1080, (snap) => {
@@ -538,6 +679,16 @@ describe("a machine", () => {
 
     expect([p.name, p.anchor, p.when]).toEqual(["triaging-cr-reviews", scene.mStates.pr_opened, "while a PR is open"]);
     expect(p.y).toBeGreaterThan(scene.mStates.pr_opened.y);
+  });
+
+  it("sets a crowded state's name outside its outermost ring of tasks", () => {
+    const S = sky(), agents = S.S.flows["in-progress"].agents;
+    for (let i = 0; i < 160; i++) agents.push({ id: `T-${i}`, title: "t", state: "pr_opened", model: "", task: `T-${i}` });
+    const s = build(S, { kind: "machine", flow: "in-progress" }).mStates.pr_opened, w = textW(s.name, 12.5) / 2;
+    const gap = Math.hypot(Math.max(0, Math.abs(s.lab!.x - s.x) - w), Math.max(0, Math.abs(s.lab!.y - s.y) - 9));
+
+    expect(s.n).toBe(160);
+    expect(gap).toBeGreaterThan(taskSlot(stateR(s) + 7, s.n - 1).rr + 2.8);
   });
 });
 
@@ -943,7 +1094,7 @@ describe("a fold's level", () => {
 
 describe("a Board drawn again", () => {
   const geom = (s: Scene) => ({
-    edges: s.bEdges.map((e) => [e.event, e.p0, e.c, e.p1, e.x, e.y]),
+    edges: s.bEdges.map((e) => [e.event, e.p0, e.c, e.p1]),
     stars: Object.values(s.stars).map((q) => [q.name, q.x, q.y, q.tether?.x, q.tether?.y]),
   });
   const routedSky = () => savedBoardSky(1920, 1080), dagSky = () => boardSky({ writes: { alpha: ["CLAIM"], beta: ["CLAIM"], solo: ["MERGED"], chain: ["REVIEW"] } });
@@ -1033,7 +1184,7 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
       const sg = m.x < m.parent.x ? -1 : 1, end = m.x + sg * (m.R + m.ext + 10 + textW(scene.clipped ? clip(m.label) : m.label, 10.5) * F);
       out.push({ o: m.parent.id, x0: Math.min(m.x - m.R, end), x1: Math.max(m.x + m.R, end), y0: m.y - Math.max(m.R, 5.25 * F), y1: m.y + Math.max(m.R, 5.25 * F) });
     }
-    for (const s of Object.values(scene.stars)) add(s.name, s.x, Math.max(s.glyph.w / 2, (textW(s.name, 11) * F) / 2), s.y - s.glyph.h / 2, s.y + s.glyph.h / 2 + 21.5 * F);
+    for (const s of Object.values(scene.stars)) add(s.name, s.x, Math.max(s.glyph.w / 2, (textW(s.label, 11) * F) / 2), s.y - s.glyph.h / 2, s.y + s.glyph.h / 2 + 21.5 * F);
     const h = scene.hangar!;
     add("hangar", h.x, Math.max(h.r, (textW("DAGs", 12.5) * F) / 2, (textW(`${h.names.length} · ${h.doms} domains`, 10.5) * F) / 2), h.y - h.r, h.y + h.r + 30 + 27 * F);
     return out;
@@ -1077,5 +1228,68 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
     const scene = build(everyState(12, 4, 1420, 1080, ALL, true), { kind: "board" }), shown = shownOf(scene);
 
     expect([scene.clipped, scene.w <= BOARD_GROW * 1860, Math.min(...shown) >= MIN_PAGE, Math.max(...shown) > Math.min(...shown)]).toEqual([false, true, true, true]);
+  });
+});
+
+describe("a Board state's self-transitions", () => {
+  it("lists each on the state instead of drawing a loop over it, as a machine level does", () => {
+    const scene = build(boardSky(), { kind: "board" });
+
+    expect(scene.bEdges.filter((e) => e.source === e.target)).toEqual([]);
+    expect(scene.galaxies.in_progress.loops).toEqual(["STAY"]);
+    expect(scene.galaxies.ready.loops).toEqual([]);
+  });
+});
+
+describe("a sun's size", () => {
+  const withTasks = (counts: Record<string, number>) => {
+    const s = boardSky();
+    s.S.board.agents = Object.entries(counts).flatMap(([state, n]) => Array.from({ length: n }, (_, i) => ({ id: `${state}-${i}`, title: "t", state, model: "", labels: [] })));
+    return s;
+  };
+
+  it("keeps the fixed minimum while its tasks fit one ring", () => {
+    expect(build(withTasks({ ready: 1 }), { kind: "board" }).galaxies.ready.r).toBe(39);
+  });
+
+  it.each([60, 80])("grows on the Board so %i tasks circle it in one ring", (n) => {
+    const g = build(withTasks({ ready: n }), { kind: "board" }).galaxies.ready;
+
+    expect(g.rings).toHaveLength(1);
+  });
+
+  it.each([140, 300])("stops at the fixed maximum on the Board and circles %i tasks in more rings", (n) => {
+    const g = build(withTasks({ ready: n }), { kind: "board" }).galaxies.ready;
+
+    expect([g.r, g.rings!.length > 1]).toEqual([140, true]);
+  });
+
+  it("grows on a state level with no machines so every task circles it in one ring, up to the fixed maximum", () => {
+    const sun = build(withTasks({ ready: 40 }), { kind: "state", id: "ready" }).sun!, full = build(withTasks({ ready: 200 }), { kind: "state", id: "ready" }).sun!;
+
+    expect([sun.r > 34, sun.rings?.length, full.r]).toEqual([true, 1, 140]);
+  });
+
+  it("grows the primary on a state level with machines so every task circles it in one ring", () => {
+    const hub = build(withTasks({ in_progress: 200 }), { kind: "state", id: "in_progress" }).hub!;
+
+    expect([hub.R > 104, hub.rings?.length]).toEqual([true, 1]);
+  });
+});
+
+describe("a task's trail on a state level", () => {
+  it("lists each body the task moved to in the events, in order, naming the primary's state while it is on the primary", () => {
+    const scene = build(inProgressSky(), { kind: "state", id: "in_progress" });
+
+    expect(scene.hostTrail!("PROJ-1")).toEqual([{ at: 800, host: "in-progress#worktree_ready" }, { at: 900, host: "triaging-cr-reviews" }, { at: 980, host: "in-progress#worktree_ready" }]);
+  });
+});
+
+describe("a DAG's label", () => {
+  it("drops the namespace when no other DAG shares the bare name", () => {
+    const scene = build(boardSky({ writes: { "dagu/board-autopilot": ["CLAIM"], "dagu/nightly": ["MERGED"], "kit/nightly": ["REVIEW"] } }), { kind: "board" });
+
+    expect(scene.stars["dagu/board-autopilot"].label).toBe("board-autopilot");
+    expect([scene.stars["dagu/nightly"].label, scene.stars["kit/nightly"].label]).toEqual(["dagu/nightly", "kit/nightly"]);
   });
 });

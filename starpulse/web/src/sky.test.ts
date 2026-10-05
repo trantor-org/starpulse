@@ -49,6 +49,13 @@ describe("the sky", () => {
     expect(S.child).toEqual({ "in-progress": { pr_opened: { flow: "triaging-cr-reviews", when: "while a PR is open" } } });
     expect(S.boardUrl).toBe("http://board");
   });
+
+  it("carries each task's latest refused claim, and none when the snapshot names none", () => {
+    const claims = { "TASK-D1": { reason: "TASK-D3 is not Done", at: 900 } };
+
+    expect(merge({ ...snap(1000, [task("TASK-D1", "ready")], []), claims }).claims).toEqual(claims);
+    expect(merge(snap(1000, [task("TASK-D1", "ready")], [])).claims).toEqual({});
+  });
 });
 
 describe("a machine's tasks", () => {

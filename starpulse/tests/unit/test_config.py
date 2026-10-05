@@ -139,7 +139,8 @@ def test_hub_mode_is_reserved_and_refused(tmp_path: Path) -> None:
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: board, database_url, harnesses_file, mode, runs, tracker_url"
+        "unknown config key(s) trakcer_url, zeta; known: board, database_url, harnesses_file, mode, runs, "
+        "session_start_url, tracker_url"
     )
 
 
@@ -196,3 +197,31 @@ def test_an_instance_url_that_is_not_text_is_refused(tmp_path: Path) -> None:
     text = '[[runs]]\nname = "ci"\ntype = "dagu"\nurl = 3\n'
 
     assert _refusal(tmp_path, text) == "runs instance ci: url must be text"
+
+
+def test_the_session_start_service_is_reached_at_the_address_the_config_names(tmp_path: Path) -> None:
+    config = load(_write(tmp_path, 'session_start_url = "http://sessions.example.test:6422"\n'))
+
+    assert config.session_start_url == "http://sessions.example.test:6422"
+
+
+def test_without_a_session_start_address_no_session_can_be_started() -> None:
+    assert load(None).session_start_url is None
+
+
+def test_a_session_start_address_that_is_not_text_is_refused(tmp_path: Path) -> None:
+    assert _refusal(tmp_path, "session_start_url = 6422\n") == "session_start_url must be text"
+
+
+@pytest.mark.parametrize(
+    ("text", "refusal"),
+    [
+        ('board = "backlog"\n', "board must be a [board] table"),
+        ("[board]\ntype = 3\n", "board type 3 is not a module name"),
+        ('[board]\ntype = "a b"\n', "board type 'a b' is not a module name"),
+        ('[board]\ntype = "starpulse.no-such"\n', "board type 'starpulse.no-such' is not a module name"),
+        ("database_url = 5\n", "database_url must be text"),
+    ],
+)
+def test_a_board_or_database_setting_of_the_wrong_shape_is_refused(tmp_path: Path, text: str, refusal: str) -> None:
+    assert _refusal(tmp_path, text) == refusal

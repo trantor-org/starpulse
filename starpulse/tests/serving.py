@@ -8,7 +8,7 @@ from http.client import HTTPResponse
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse.board import MoveWriter, Written
+from starpulse.board import AssigneeWriter, MoveWriter, Written
 from starpulse.board_feed import BoardFeed
 from starpulse.harnesses import Harnesses
 from starpulse.history import History, HistoryStore
@@ -28,6 +28,8 @@ def serve(
     run_safe: frozenset[str] = frozenset({"dagu/whole-repo-gate"}),
     writer: MoveWriter | None = None,
     harnesses: Harnesses | None = None,
+    assign: AssigneeWriter | None = None,
+    start_session: Callable[[str], str] | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -43,6 +45,8 @@ def serve(
         history or HistoryStore("sqlite://", feed.machines if feed else {}),
         writer or _no_writer,
         harnesses,
+        assign or _no_writer,
+        start_session,
     )
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

@@ -44,6 +44,7 @@ def test_the_build_is_served_and_nothing_outside_it(server: ThreadingHTTPServer)
         "/runs",
         "/flow/authoring-skills",
         "/flow/nope",
+        "/flow/board",
         "/assets/index-abc123.js",
         "/assets/",
         "/../secret.txt",
@@ -59,6 +60,7 @@ def test_the_build_is_served_and_nothing_outside_it(server: ThreadingHTTPServer)
         "/runs": (200, "text/html"),
         "/flow/authoring-skills": (200, "text/html"),
         "/flow/nope": (404, ""),
+        "/flow/board": (404, ""),  # the Board is drawn at /board
         "/assets/index-abc123.js": (200, "text/javascript"),
         "/assets/": (404, ""),
         "/../secret.txt": (404, ""),
@@ -250,3 +252,34 @@ def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_pat
     assert refused == (409, {"error": "refused: Run the `x` skill", "skill": "x"})
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
     assert sent == [("PROJ-3", "In Progress"), ("PROJ-3", "Waiting")]
+
+
+def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_answers_json(tmp_path: Path) -> None:
+    assigned: list[tuple[str, str]] = []
+    started: list[str] = []
+
+    def assign(task: str, assignee: str) -> Written:
+        assigned.append((task, assignee))
+        return Written(True, "ok")
+
+    def start_session(task: str) -> str:
+        started.append(task)
+        return "https://claude.ai/code/session_01"
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Ready"))
+    body = json.dumps({"task": "PROJ-3", "assignee": "@agent-deep-high"}).encode()
+    with _serve(tmp_path, feed, assign=assign, start_session=start_session) as server:
+        request = urllib.request.Request(_url(server, "/api/start"), data=body, method="POST")
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            answered = resp.status, json.load(resp)
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/start"), timeout=5)
+
+    assert answered[0] == 200
+    assert {k: answered[1][k] for k in ("task", "url")} == {
+        "task": "PROJ-3",
+        "url": "https://claude.ai/code/session_01",
+    }
+    assert (assigned, started) == ([("PROJ-3", "@agent-deep-high")], ["PROJ-3"])
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")

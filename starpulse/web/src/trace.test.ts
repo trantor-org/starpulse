@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtAt, fmtDur, laneRun, draws, layout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type LaneStep, type MachineStep, type Place, type Subject } from "./trace";
+import { fmtAt, fmtDur, hostRun, laneRun, draws, layout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type LaneStep, type MachineStep, type Place, type Subject } from "./trace";
 import type { Curve } from "./scene";
 import type { FlowSnapshot, Machine } from "./types";
 
@@ -210,5 +210,26 @@ describe("what a hover draws", () => {
   it("draws nothing for any other hover", () => {
     expect(draws({ kind: "state", o: {} }, null)).toEqual({ trace: null, dag: null });
     expect(draws(null, null)).toEqual({ trace: null, dag: null });
+  });
+});
+
+describe("a task's run across a state level's bodies", () => {
+  it("starts from the Board lane the task entered from, so a task with no moves here still holds the body it orbits", () => {
+    const run = hostRun([], 1000, undefined, { at: 400, from: "Ready", to: "in-progress" });
+    expect(run.hops).toEqual([{ n: 1, at: 400, from: "Ready", to: "in-progress", stay: 600 }]);
+    expect(run.stay).toEqual({ "in-progress": 600 });
+  });
+
+  it("numbers each move between bodies and counts a return to one as a loop, still live at its end", () => {
+    const run = hostRun([{ at: T0, host: "in-progress" }, { at: T0 + 100, host: "triaging" }, { at: T0 + 100, host: "triaging" }, { at: T0 + 300, host: "in-progress" }], T0 + 500);
+
+    expect(run.hops.map((h) => [h.n, h.from, h.to])).toEqual([[1, "in-progress", "triaging"], [2, "triaging", "in-progress"]]);
+    expect([run.stay, run.loops, run.live, run.total]).toEqual([{ triaging: 200, "in-progress": 200 }, 1, true, 2]);
+  });
+  it("weaves the primary's recorded path in with the event trail, in time order", () => {
+    const path = [{ at: T0, event: "WORKTREE", state: "worktree_ready" }, { at: T0 + 200, event: "OPEN_PR", state: "pr_opened" }];
+    const run = hostRun([{ at: T0 + 100, host: "triaging" }, { at: T0 + 150, host: "in-progress#worktree_ready" }], T0 + 500, { flow: "in-progress", path });
+
+    expect(run.hops.map((h) => [h.from, h.to])).toEqual([["in-progress#worktree_ready", "triaging"], ["triaging", "in-progress#worktree_ready"], ["in-progress#worktree_ready", "in-progress#pr_opened"]]);
   });
 });

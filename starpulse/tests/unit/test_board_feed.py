@@ -151,6 +151,14 @@ def test_a_feed_still_connecting_to_the_stream_says_so() -> None:
     assert feed.snapshot()["error"] == "board: reading q:tasks"
 
 
+def test_a_feed_given_no_source_says_it_is_reading_the_board() -> None:
+    feed = BoardFeed()
+
+    feed.await_stream()
+
+    assert feed.snapshot()["error"] == "board: reading the board"
+
+
 def test_a_snapshot_before_the_stream_is_read_says_so() -> None:
     feed = BoardFeed(source="q:tasks")
     feed.expect("5-0")
@@ -197,6 +205,7 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
 
     assert sorted(body) == [
         "boardUrl",
+        "claims",
         "cues",
         "dags",
         "domains",
@@ -209,7 +218,13 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
     ]
     assert body["graphs"] == [*FLOWS, "runs"]
     assert (body["flows"][0]["name"], body["flows"][0]["machine"]) == ("board", MACHINES["board"])
-    assert (body["dags"], body["pulls"], body["settled"], body["error"]) == ([], {}, {"PROJ-1": "completed"}, None)
+    assert (body["dags"], body["pulls"], body["claims"], body["settled"], body["error"]) == (
+        [],
+        {},
+        {},
+        {"PROJ-1": "completed"},
+        None,
+    )
     assert body["boardUrl"] == "http://tracker.example.test:6421"
     assert abs(body["now"] - time.time()) < 60
 

@@ -10,6 +10,8 @@ from starpulse.contracts import BoardTask, TaskKeys
 
 #: Each `(settings, base)` the view built this board from.
 BUILT: list[tuple[dict, Path]] = []
+#: The workflows each draw of its machines was given.
+DRAWN: list[list[str]] = []
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:
@@ -22,12 +24,16 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "transitions": [{"source": lanes[0], "target": lanes[-1], "event": "SHUT"}],
     }
 
+    def machines(qualify, workflows) -> dict:
+        DRAWN.append(list(workflows))
+        return {"board": machine}
+
     def start(feed, group: str) -> None:
         feed.put(BoardTask(id="FAKE-1", title="t", lane=lanes[0]))
         feed.put(BoardTask(id="other-1", title="t", lane=lanes[0]))
 
     return Board(
-        machines=lambda qualify, workflows: {"board": machine},
+        machines=machines,
         start=start,
         keys=TaskKeys(key=re.compile(r"FAKE-\d+"), branch=re.compile(r"(FAKE-\d+)")),
         cues=lambda qualify: [{"dag": "q/nightly"}],

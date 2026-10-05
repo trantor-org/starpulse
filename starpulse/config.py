@@ -24,7 +24,7 @@ from pathlib import Path
 from starpulse.board import DEFAULT_TYPE, module_name
 from starpulse.harnesses import Harnesses, load_harnesses
 
-_KEYS = {"tracker_url", "mode", "runs", "harnesses_file", "board", "database_url"}
+_KEYS = {"tracker_url", "mode", "runs", "harnesses_file", "board", "database_url", "session_start_url"}
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains"}
 
 
@@ -91,6 +91,8 @@ class Config:
     """The `[board]` table, the adapter's settings."""
     database_url: str | None = None
     """The history store's SQLAlchemy URL; None keeps it in a SQLite file beside the config."""
+    session_start_url: str | None = None
+    """The session-start service a started task is sent to (`POST <url>/start/TASK-N`); none: nothing can be started."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -119,6 +121,8 @@ def load(path: Path | None) -> Config:
     for at, instance in enumerate(runs):
         if any(instance.name == earlier.name for earlier in runs[:at]):
             raise ConfigError(f"runs instance {instance.name} is configured twice")
+    if not isinstance(session_start_url := raw.get("session_start_url"), str | None):
+        raise ConfigError("session_start_url must be text")
     harnesses = None
     if path and (name := raw.get("harnesses_file")):
         if not (file := path.parent / name).is_file():
@@ -139,4 +143,4 @@ def load(path: Path | None) -> Config:
     url = raw.get("database_url")
     if url is not None and not isinstance(url, str):
         raise ConfigError("database_url must be text")
-    return Config(raw.get("tracker_url"), mode, runs, harnesses, kind, board, url)
+    return Config(raw.get("tracker_url"), mode, runs, harnesses, kind, board, url, session_start_url)

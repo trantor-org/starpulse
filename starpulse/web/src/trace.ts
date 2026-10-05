@@ -81,6 +81,25 @@ export function machineRun(path: MachineStep[], machine: Machine, total: number,
   return runOf(steps, finalsOf(machine), now, total);
 }
 
+/**
+ * A task's run across a state level's bodies: each entry is a body the events placed it on, the first where it began. No body is final. The
+ * primary's recorded path, when given, adds each of its states as `flow#state`, woven in by time, so the run reaches back past the loaded events.
+ * The Board lane change that brought it into the level, when given, is its first hop, into the body it orbits.
+ */
+export function hostRun(
+  events: { at: number; host: string }[],
+  now: number,
+  primary?: { flow: string; path: MachineStep[] },
+  entry?: { at: number; from: string; to: string },
+): Run {
+  const enter = entry ? [{ at: entry.at, host: entry.from }, { at: entry.at, host: entry.to }] : [];
+  const trail = [...enter, ...(primary?.path.map((r) => ({ at: r.at, host: `${primary.flow}#${r.state}` })) ?? []), ...events]
+    .sort((a, b) => a.at - b.at)
+    .filter((r, i, all) => r.host !== all[i - 1]?.host);
+  const steps = trail.map((r, i): Step => ({ at: r.at, from: (trail[i - 1] ?? r).host, to: r.host }));
+  return runOf(steps, new Set(), now, steps.filter((s) => s.from !== s.to).length);
+}
+
 /** A stay in its two largest units. */
 export function fmtDur(secs: number): string {
   const s = Math.max(0, secs), m = Math.round(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);

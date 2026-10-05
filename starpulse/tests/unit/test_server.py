@@ -14,7 +14,7 @@ from starpulse.board_feed import BoardFeed
 from starpulse.config import Config, RunsInstance, load
 from starpulse.contracts import Move, StartFailedError
 from starpulse.harnesses import load_harnesses
-from starpulse.server import _adapter, _config, _no_writer, move_task, run_dag
+from starpulse.server import _adapter, _config, _no_writer, move_task, run_dag, start_task
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.serving import serve, url
 from starpulse.tests.tasks import task
@@ -285,6 +285,116 @@ def test_a_move_the_writer_refuses_answers_409_with_its_reason_and_the_skill_tha
     assert status == 409
     assert body == {"error": "refusing to set PROJ-5 Review: ... Run the `designing-ui` skill", "skill": "designing-ui"}
     assert writer.sent == [("PROJ-5", "Review")]  # the writer decides; the snapshot's verdict only forecasts it
+
+
+STARTED_AT = 1_790_000_000.0
+SESSION = "https://claude.ai/code/session_01"
+
+
+class _Sessions:
+    """A stubbed session-start service: records each task it is asked to start, answers a URL or fails."""
+
+    def __init__(self, failure: str | None = None) -> None:
+        self.failure = failure
+        self.started: list[str] = []
+
+    def __call__(self, task: str) -> str:
+        self.started.append(task)
+        if self.failure:
+            raise StartFailedError(self.failure)
+        return SESSION
+
+
+def _start(
+    body: bytes | dict,
+    assign: _Writer | None = None,
+    sessions: _Sessions | None = None,
+    source: str = LAN,
+    feed: BoardFeed | None = None,
+):
+    raw = body if isinstance(body, bytes) else json.dumps(body).encode()
+    if feed is None:
+        feed = BoardFeed()
+        feed.put(task("PROJ-3", "Ready", assignee="@agent-standard-high"))
+    return start_task(source, raw, feed, assign or _Writer(), sessions, clock=lambda: STARTED_AT)
+
+
+def test_a_start_with_a_changed_assignee_saves_it_then_starts_the_session() -> None:
+    assign, sessions = _Writer(), _Sessions()
+
+    status, body = _start({"task": "PROJ-3", "assignee": "@agent-deep-high"}, assign, sessions)
+
+    assert (status, body) == (200, {"task": "PROJ-3", "url": SESSION, "at": STARTED_AT})
+    assert assign.sent == [("PROJ-3", "@agent-deep-high")]
+    assert sessions.started == ["PROJ-3"]
+
+
+def test_a_start_with_the_assignee_the_task_already_has_writes_nothing() -> None:
+    assign, sessions = _Writer(), _Sessions()
+
+    assert _start({"task": "PROJ-3", "assignee": "@agent-standard-high"}, assign, sessions)[0] == 200
+    assert (assign.sent, sessions.started) == ([], ["PROJ-3"])
+
+
+def test_a_session_that_fails_to_start_answers_502_with_the_services_reason() -> None:
+    status, body = _start({"task": "PROJ-3", "assignee": "@agent-standard-high"}, sessions=_Sessions("tmux failed"))
+
+    assert (status, body) == (502, {"error": "tmux failed"})
+
+
+def test_an_assignee_the_writer_refuses_starts_no_session() -> None:
+    assign, sessions = _Writer(Written(False, "refusing to assign PROJ-3")), _Sessions()
+
+    status, body = _start({"task": "PROJ-3", "assignee": "@agent-nope"}, assign, sessions)
+
+    assert (status, body) == (409, {"error": "refusing to assign PROJ-3", "skill": ""})
+    assert sessions.started == []
+
+
+def test_without_a_session_start_service_nothing_is_started() -> None:
+    assign = _Writer()
+
+    status, body = _start({"task": "PROJ-3", "assignee": "@agent-deep-high"}, assign, None)
+
+    assert (status, body) == (404, {"error": "no session-start service is configured (session_start_url)"})
+    assert assign.sent == []
+
+
+@pytest.mark.parametrize(
+    "raw", [b"", b"not json", b"[]", b'{"task": "PROJ-3"}', b'{"assignee": "@a"}', b'{"task": 3, "assignee": "@a"}']
+)
+def test_a_body_that_does_not_name_a_task_and_an_assignee_is_a_bad_request(raw: bytes) -> None:
+    sessions = _Sessions()
+
+    status, body = _start(raw, sessions=sessions)
+
+    assert (status, sessions.started) == (400, [])
+    assert body == {"error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>"}'}
+
+
+def test_a_start_from_outside_the_lan_is_refused() -> None:
+    sessions = _Sessions()
+
+    status, body = _start({"task": "PROJ-3", "assignee": "@a"}, sessions=sessions, source="203.0.113.5")
+
+    assert (status, sessions.started) == (403, [])
+    assert body == {"error": "Starting a session answers only loopback and private network (RFC 1918) browsers"}
+
+
+def test_a_task_off_the_board_or_outside_ready_waiting_and_needs_attention_starts_nothing() -> None:
+    feed = BoardFeed()
+    feed.put(task("PROJ-5", "Review"))
+    sessions = _Sessions()
+
+    assert _start({"task": "PROJ-99", "assignee": "@a"}, sessions=sessions, feed=feed) == (
+        404,
+        {"error": "PROJ-99 is not on the board"},
+    )
+    assert _start({"task": "PROJ-5", "assignee": "@a"}, sessions=sessions, feed=feed) == (
+        409,
+        {"error": "PROJ-5 is in review: a session starts only a ready, waiting or needs_attention task"},
+    )
+    assert sessions.started == []
 
 
 def test_a_server_built_without_a_board_writer_refuses_every_move() -> None:

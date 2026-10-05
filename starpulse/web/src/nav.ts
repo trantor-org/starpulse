@@ -52,16 +52,19 @@ export class FoldStore {
 /** The canvas's left edge and width: the page between the panel and the rail. */
 export const canvasSpace = (viewport: number, nav: number, rail: number) => ({ left: nav, width: viewport - nav - rail });
 
-export type ViewName = "constellation" | "kanban";
+export type ViewName = "constellation" | "kanban" | "admin";
 
-/** The view an address opens: the Kanban only when it says so. */
-export const viewOf = (search: string): ViewName => (new URLSearchParams(search).get("view") === "kanban" ? "kanban" : "constellation");
+/** The view an address opens: the Kanban or Admin only when it says so. */
+export function viewOf(search: string): ViewName {
+  const v = new URLSearchParams(search).get("view");
+  return v === "kanban" || v === "admin" ? v : "constellation";
+}
 
 /** The query string that opens `view`, keeping every other parameter. */
 export function viewSearch(search: string, view: ViewName): string {
   const params = new URLSearchParams(search);
   params.delete("view");
-  if (view === "kanban") params.set("view", "kanban");
+  if (view !== "constellation") params.set("view", view);
   return queryString(params);
 }
 

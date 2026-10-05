@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dagRings, tierColor } from "./renderer";
+import { arrivalRings, dagRings, tierColor } from "./renderer";
 import { PULSE } from "./sky";
 
 const FIN = 100;
@@ -31,6 +31,15 @@ describe("a DAG event's pulse", () => {
 
   it("draws nothing for a DAG that has not run", () => {
     expect(dagRings(undefined, FIN)).toEqual([]);
+  });
+});
+
+describe("a task's arrival pulse", () => {
+  it("is one ring at any age, never a second one a beat behind", () => {
+    const ages = Array.from({ length: 101 }, (_, i) => i / 100), rings = ages.map(arrivalRings);
+    expect(rings.every((r) => r.length <= 1)).toBe(true);
+    expect(rings[50]).toEqual([0.5]);
+    expect([rings[0], rings[100]]).toEqual([[], []]);
   });
 });
 

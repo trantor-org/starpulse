@@ -92,6 +92,8 @@ class BoardFeed:
         self._dags: dict[str, list] = {}
         self._runs_errors: dict[str, str] = {}
         self._pulls: dict[str, list[dict]] = {}
+        #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
+        self._claims: dict[str, dict] = {}
         self._subscribers: list[queue.Queue] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too
         self._expected: tuple[int, int] | None = None
@@ -151,6 +153,12 @@ class BoardFeed:
                 return
             self._pulls = pulls
             self._publish("pulls", {"pulls": pulls})
+
+    def refuse_claim(self, task: str, reason: str, at: float) -> None:
+        """Keep the board writer's latest refusal of an agent's claim on `task` and publish it."""
+        with self._lock:
+            self._claims[task] = {"reason": reason, "at": at}
+            self._publish("claim", {"task": task, "reason": reason, "at": at})
 
     def task(self, task_id: str) -> dict | None:
         """The open Board task as the page draws it, or None when the Board holds no open task by that id."""
@@ -245,6 +253,7 @@ class BoardFeed:
                 ],
                 "dags": self._workflows(),
                 "pulls": self._pulls,
+                "claims": dict(self._claims),
                 "settled": dict(self._settled),
                 "error": self._error(),
                 **declared(self._domains, self._run_safe, self._cues),

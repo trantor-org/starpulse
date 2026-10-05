@@ -124,13 +124,16 @@ class PushRuns:
         """Set a step's status and, when the entry names them, its dependencies; a step not yet known joins the graph."""
         if self._store:
             self._store.record_step(dag["name"], name, depends)
-        known = next((step for step in dag["steps"] if step["name"] == name), None)
-        if known is None:
-            dag["steps"].append(_step(name, depends or [], status))
-        else:
-            known["status"] = status
-            if depends is not None:
-                known["depends"] = depends
+        steps = [
+            {**step, "status": status, **({} if depends is None else {"depends": depends})}
+            if step["name"] == name
+            else step
+            for step in dag["steps"]
+        ]
+        if all(step["name"] != name for step in steps):
+            steps.append(_step(name, depends or [], status))
+        # a new dict: the feed compares what it was given before with what it is given now
+        self._dags[dag["name"]] = {**dag, "steps": steps}
 
     def await_stream(self) -> None:
         """Nothing to say: pushed workflows are not part of the page's ready state (`follow` calls this)."""
