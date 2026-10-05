@@ -9,7 +9,7 @@ import { HudStore, useHud, type HudState } from "./hud";
 import { BOARD, pathKey, type Path } from "./levels";
 import { Kanban } from "./Kanban";
 import { MoveStore, postMove } from "./move";
-import { FOLD_MS, FoldStore, viewOf, viewSearch, type ViewName } from "./nav";
+import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./nav";
 import { renderer as makeRenderer, type Renderer } from "./renderer";
 import { search, type Target } from "./search";
 import { StartStore, fetchHarnesses, postStart } from "./start";
@@ -30,10 +30,12 @@ export function App() {
   const [starts] = useState(() => new StartStore(postStart, moves));
   useEffect(() => void fetchHarnesses().then((h) => starts.load(h)), [starts]);
   const folded = useSyncExternalStore(fold.subscribe, fold.get);
-  const [view, setView] = useState<ViewName>(() => viewOf(location.search));
+  const prefs = useSyncExternalStore(admin.subscribe, admin.get);
+  // a bare address opens the view the Admin chose; one that names a view opens that
+  const [view, setView] = useState<ViewName>(() => viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view));
   // the view lives in the address, so a reload or a shared link opens the same one
   const choose = (v: ViewName) => {
-    history.replaceState(null, "", `${location.pathname}${viewSearch(location.search, v)}`);
+    history.replaceState(null, "", `${location.pathname}${viewSearch(location.search, v, admin.get().view)}`);
     setView(v);
   };
   useEffect(() => {
@@ -45,43 +47,23 @@ export function App() {
 
   useEffect(() => {
     const els = { tip: tip.current!, panel: panel.current!, clock: clock.current! };
-    const r = makeRenderer(canvas.current!, store, els, new URLSearchParams(location.search).has("demo"), () => admin.get().scale);
+    const r = makeRenderer(canvas.current!, store, els, new URLSearchParams(location.search).has("demo"), admin.get);
     renderer.current = r;
     r.start();
-    return () => r.stop();
+    // times are written at the source, so a new clock is a new subtitle, feed and header clock
+    const unsubscribe = admin.subscribe(() => r.refresh());
+    return () => {
+      unsubscribe();
+      r.stop();
+    };
   }, [store, admin]);
 
-  // `[` folds the navigator from any view; the canvas takes the width the fold frees
+  // `[` folds the navigator from any view; the canvas already spans the page the fold frees, so nothing refits
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => fold.onKey(e);
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [fold]);
-  // the panel's width animates, so the canvas refits on every frame of it rather than once at the end
-  const settled = useRef(true);
-  useEffect(() => {
-    if (settled.current) {
-      settled.current = false;
-      return;
-    }
-    let raf = 0;
-    const end = performance.now() + FOLD_MS + 40;
-    const tick = () => {
-      renderer.current?.resize();
-      if (performance.now() < end) raf = requestAnimationFrame(tick);
-    };
-    // the transition's clock starts a frame after the click, so the last refit waits for its end rather than for the timer
-    const done = (e: TransitionEvent) => {
-      if (e.target === e.currentTarget && e.propertyName === "width") renderer.current?.resize();
-    };
-    const nav = document.getElementById("nav");
-    nav?.addEventListener("transitionend", done);
-    tick();
-    return () => {
-      cancelAnimationFrame(raf);
-      nav?.removeEventListener("transitionend", done);
-    };
-  }, [folded]);
 
   return (
     <>
@@ -96,7 +78,7 @@ export function App() {
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
       {view === "admin" && <Admin store={admin} />}
       {view === "kanban" && (
-        <Kanban hud={hud} moves={moves} starts={starts} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }} />
+        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }} />
       )}
       <Rail hud={hud} view={view} />
       <div ref={tip} id="tip" />

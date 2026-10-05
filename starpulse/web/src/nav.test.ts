@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { canvasSpace, FoldStore, viewOf, viewSearch, type FoldStorage } from "./nav";
+import { canvasSpace, FoldStore, retired, viewOf, viewSearch, type FoldStorage } from "./nav";
 import { fitLevel, toScreen } from "./zoom";
 
 const memory = (): FoldStorage & { data: Map<string, string> } => {
@@ -54,20 +54,17 @@ describe("the navigator's fold", () => {
 
 describe("the canvas beside the panel", () => {
   const level = { w: 2400, h: 400, box: [0, 0, 2400, 400] as [number, number, number, number] };
-  const space = (folded: boolean) => canvasSpace(1920, folded ? 52 : 250, 250);
+  const space = canvasSpace(1920, { open: 250, fold: 52 }, 250);
 
-  it("starts at the panel's edge and ends at the rail's", () => {
-    expect(space(false)).toEqual({ left: 250, width: 1420 });
-    expect(space(true)).toEqual({ left: 52, width: 1618 });
+  it("spans the page the folded panel leaves, so a fold only uncovers or covers sky", () => {
+    expect(space).toEqual({ left: 52, width: 1618, inset: 198, fitWidth: 1420 });
   });
 
-  it("refits to the width the fold frees, still centred between panel and rail", () => {
-    const fit = (folded: boolean) => fitLevel(level, space(folded).width, 1000);
-    const middle = (folded: boolean) => toScreen(fit(folded), { x: 1200, y: 200 }).x;
+  it("fits the level between the open panel and the rail, wherever the panel is", () => {
+    const fit = fitLevel(level, space.fitWidth, 1000);
+    const middle = space.left + space.inset + toScreen(fit, { x: 1200, y: 200 }).x;
 
-    expect(fit(true).k).toBeGreaterThan(fit(false).k);
-    expect(middle(false)).toBe(space(false).width / 2);
-    expect(middle(true)).toBe(space(true).width / 2);
+    expect(middle).toBe(250 + 1420 / 2);
   });
 });
 
@@ -92,5 +89,34 @@ describe("the view in the address", () => {
     expect(viewSearch("?view=kanban&demo", "constellation")).toBe("?demo");
     expect(viewSearch("?view=kanban", "constellation")).toBe("");
     expect(viewSearch("", "kanban")).toBe("?view=kanban");
+  });
+});
+
+describe("the view a bare address opens", () => {
+  it("opens the chosen view only when the address names none", () => {
+    expect(viewOf("", "kanban")).toBe("kanban");
+    expect(viewOf("?demo", "kanban")).toBe("kanban");
+    expect(viewOf("?view=constellation", "kanban")).toBe("constellation");
+    expect(viewOf("?view=admin", "kanban")).toBe("admin");
+    expect(viewOf("?view=nonsense", "kanban")).toBe("constellation");
+    expect(viewOf("")).toBe("constellation");
+  });
+
+  it("writes the view into the address unless it is the one a bare address opens", () => {
+    expect(viewSearch("", "kanban", "kanban")).toBe("");
+    expect(viewSearch("?demo", "kanban", "kanban")).toBe("?demo");
+    expect(viewSearch("", "constellation", "kanban")).toBe("?view=constellation");
+    expect(viewSearch("?view=kanban&demo", "constellation", "kanban")).toBe("?demo&view=constellation");
+    expect(viewSearch("", "admin", "kanban")).toBe("?view=admin");
+    expect(viewSearch("", "kanban")).toBe("?view=kanban");
+  });
+});
+
+describe("a retired per-graph address", () => {
+  it("is any path but the root, or any hash", () => {
+    expect(retired("/", "")).toBe(false);
+    expect(retired("/board", "")).toBe(true);
+    expect(retired("/flow/backlog", "")).toBe(true);
+    expect(retired("/", "#sec-board")).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fmtAt, fmtDur, hostRun, laneRun, draws, layout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type LaneStep, type MachineStep, type Place, type Subject } from "./trace";
+import { fmtAt } from "./clock";
+import { fmtDur, hostRun, laneRun, draws, layout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type LaneStep, type MachineStep, type Place, type Subject } from "./trace";
 import type { Curve } from "./scene";
 import type { FlowSnapshot, Machine } from "./types";
 
@@ -157,6 +158,11 @@ describe("the hover card and the pinned panel's hop table", () => {
     expect(card).toContain("<b>3h 0m</b> so far");
     expect(card).toContain("since Jan 12, 06:46 MST");
     expect(card).toContain("Proposal D, not built");
+  });
+
+  it("writes those moments in the 12-hour clock when the operator chose it", () => {
+    expect(traceCard(head, live, "12")).toContain("since Jan 12, 6:46 am MST");
+    expect(traceTable(live, (id) => id, "12")).toMatch(/<td>Jan 12, \d:\d\d [ap]m<\/td>/);
   });
 
   it("shows a finished run from start to end with no forecast", () => {

@@ -332,3 +332,23 @@ body.admin #c, body.admin #tip, body.admin #panel, body.admin .hud { visibility:
 #admin .pvcard .foot2 { display: flex; flex-wrap: wrap; gap: 4px; font-size: calc(10px * var(--fs)); color: var(--muted); }
 #admin .pvcard .lab { padding: 0 5px; border-radius: 3px; background: rgba(148,163,184,.10); color: #94a3b8; line-height: 15px; }
 #admin .pvk { font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+#admin .seg { display: inline-flex; border: 1px solid rgba(148,163,184,.2); border-radius: 6px; overflow: hidden; justify-self: start; }
+#admin .seg button { all: unset; cursor: pointer; padding: 4px 12px; font-size: calc(11.5px * var(--fs)); color: #b8c4d8; }
+#admin .seg button + button { border-left: 1px solid rgba(148,163,184,.2); }
+#admin .seg button[aria-pressed=true] { background: rgba(167,139,250,.18); color: #ede9fe; }
+#admin .seg button:focus-visible, #admin .sw:focus-visible { outline: 1px solid #a78bfa; outline-offset: 1px; }
+#admin .sw { all: unset; cursor: pointer; position: relative; display: block; width: 30px; height: 16px; border-radius: 8px; background: rgba(148,163,184,.25); transition: background .15s; }
+#admin .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #dbe4f3; transition: left .15s; }
+#admin .sw[aria-checked=true] { background: #7c3aed; } #admin .sw[aria-checked=true]::after { left: 16px; }
+#admin .pvcard.compact { padding: 4px 8px; }
+#admin .pvcard.compact .t { margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Kanban cards, Compact (TASK-2643): tighter padding and gap and a one-line title; the card markup drops the footer. */
+#kb.compact .col .body { gap: 4px; padding: 6px; }
+#kb.compact .bucket { gap: 4px; }
+#kb.compact .card { padding: 4px 8px 4px 9px; }
+#kb.compact .card .t { margin: 2px 0; -webkit-line-clamp: 1; }
+#kb.compact .mach { margin-bottom: 2px; }
+
+/* Motion off (TASK-2643): the Admin sets `still` on the page and nothing animates or eases, including the Admin switch itself. */
+html.still *, html.still *::before, html.still *::after { animation: none !important; transition: none !important; }

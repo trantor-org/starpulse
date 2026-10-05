@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { animating, frameLoop, type Motion } from "./idle";
+import { afterEach, vi } from "vitest";
+import { INPUT_MS, STILL_MS, animating, frameLoop, framePace, type Motion } from "./idle";
 import { FLARE, PULSE, TRAVEL } from "./sky";
 
 /** A frame scheduler the test steps by hand, counting every request. */
@@ -152,5 +153,66 @@ describe("animating", () => {
   it("is true during a fly-to and a level transition", () => {
     expect(animating({ ...rest, flying: true })).toBe(true);
     expect(animating({ ...rest, transitioning: true })).toBe(true);
+  });
+});
+
+describe("framePace", () => {
+  it("draws at the display's pace while motion is on, whatever the last input", () => {
+    expect(framePace(true, 0)).toBe(0);
+    expect(framePace(true, 60_000)).toBe(0);
+  });
+
+  it("slows to one idle redraw a while after the last input when motion is off", () => {
+    expect(framePace(false, 0)).toBe(0);
+    expect(framePace(false, INPUT_MS - 1)).toBe(0);
+    expect(framePace(false, INPUT_MS)).toBe(STILL_MS);
+  });
+});
+
+describe("frameLoop with motion off", () => {
+  afterEach(() => vi.useRealTimers());
+
+  function paced(pace: { ms: number }) {
+    vi.useFakeTimers();
+    const s = scheduler(), drawn: number[] = [];
+    const l = frameLoop({ draw: (now) => void drawn.push(now), animating: () => true, request: s.request, cancel: s.cancel, pace: () => pace.ms });
+    return { s, l, drawn };
+  }
+
+  it("waits out the pace before requesting each next frame", () => {
+    const { s, l, drawn } = paced({ ms: 1000 });
+
+    l.wake();
+    expect(s.requests).toBe(0);
+    vi.advanceTimersByTime(999);
+    expect(s.requests).toBe(0);
+    vi.advanceTimersByTime(1);
+    expect(s.requests).toBe(1);
+    s.frame(5);
+    expect(drawn).toEqual([5]);
+    expect(s.requests).toBe(1);
+    vi.advanceTimersByTime(1000);
+    expect(s.requests).toBe(2);
+    l.stop();
+  });
+
+  it("draws at once on an urgent wake, cutting a wait short", () => {
+    const { s, l, drawn } = paced({ ms: 1000 });
+
+    l.wake();
+    l.wake(true);
+    expect(s.requests).toBe(1);
+    s.frame(7);
+    expect(drawn).toEqual([7]);
+    l.stop();
+  });
+
+  it("requests nothing after stop, even from a wait still running", () => {
+    const { s, l } = paced({ ms: 1000 });
+
+    l.wake();
+    l.stop();
+    vi.advanceTimersByTime(5000);
+    expect(s.requests).toBe(0);
   });
 });

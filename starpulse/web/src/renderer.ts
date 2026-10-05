@@ -9,7 +9,7 @@
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
 import { demoStep } from "./demo";
 import type { FeedLine, HudState, HudStore } from "./hud";
-import { animating, frameLoop } from "./idle";
+import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, drill, pathKey, startPath, type Level, type Path } from "./levels";
 import { spotIn, type Target } from "./search";
 import {
@@ -22,11 +22,12 @@ import { kanbanTasks } from "./kanban";
 import { embedded, openStream } from "./stream";
 import { createHistory } from "./history";
 import { sizes } from "./grow";
-import { TZ, draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
+import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
 import type { Dag, Machine, Snapshot, Writer } from "./types";
 import { esc, startRun, taskPanel } from "./panels";
-import { labelPx } from "./adminPrefs";
-import { canvasSpace } from "./nav";
+import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "./adminPrefs";
+import { clockHm, clockHms, stamp } from "./clock";
+import { canvasSpace, retired, viewOf, viewSearch } from "./nav";
 import { fitBox, fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
 const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
@@ -41,12 +42,6 @@ const rgba = (h: string, a: number) => {
   const n = parseInt(h.slice(1), 16);
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
 };
-// One formatter each: toLocaleTimeString with a time zone builds a new one per call, and the feed formats every move four times a second.
-const HHMM = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
-const HMS = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-const STAMP = new Intl.DateTimeFormat("en-US", { timeZone: TZ, dateStyle: "medium", timeStyle: "short" });
-const hhmm = (sec: number) => HHMM.format(sec * 1000);
-const hms = (d: Date) => HMS.format(d);
 const ease = (u: number) => (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
 /** The current board's ease-out for a hop. */
 const easeO = (u: number) => 1 - Math.pow(1 - u, 3);
@@ -123,7 +118,7 @@ export interface Renderer {
   go(path: Path, fx?: number, fy?: number, then?: () => View): void;
   /** Fly back to the level's fit. */
   fitView(): void;
-  /** The navigator folded or opened: size the canvas to the space between it and the rail and refit, keeping a zoomed-in view. */
+  /** The canvas is the page again after another view hid it: resize it and refit, keeping a zoomed-in view. */
   resize(): void;
   /** Open a DAG's panel beside the level that is showing. */
   openDag(name: string): void;
@@ -133,10 +128,13 @@ export interface Renderer {
   spot(target: Target | null): void;
   /** Pin a task on the Board and open its panel, as a click on it would. */
   selectTask(id: string): void;
+  /** The Admin view changed how times are written: write the subtitle, the Recent feed and the header clock again. */
+  refresh(): void;
 }
 
-export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement; clock: HTMLElement }, demo: boolean, scale: () => number = () => 100): Renderer {
+export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement; clock: HTMLElement }, demo: boolean, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS): Renderer {
   const cx = cv.getContext("2d")!, { tip, panel } = els;
+  const hhmm = (sec: number) => clockHm(sec, prefs().clock);
   let S: Sky | null = null, snap: Snapshot | null = null, scene: Scene | null = null;
   const moves = new Moves();
   let path: Path = BOARD, W = 0, H = 0, view: View = { k: 1, x: 0, y: 0 }, fit: View = view;
@@ -166,18 +164,24 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // ---- view: scroll zooms about the cursor (scale only, never changes level), drag pans; kept per screen size and level ----
   const railW = () => document.getElementById("rail")?.offsetWidth ?? 0;
-  const navW = () => document.getElementById("nav")?.offsetWidth ?? 0;
+  // the panel's open and folded widths, never its current one, so a fold neither resizes the canvas nor moves a body
+  const navWidths = () => {
+    const css = getComputedStyle(document.documentElement), px = (v: string) => parseFloat(css.getPropertyValue(v)) || 0;
+    return { open: px("--nav"), fold: px("--nav-fold") };
+  };
   // the canvas is the page between the navigator and the rail, so its size (not the window's) keys the remembered zoom
   const viewKey = () => `fv.view.${W}x${H}.${pathKey(path)}.${scene?.w}x${scene?.h}`;
-  // the default view fits the level's content box (the whole sky on the Board), centred in the canvas; a panel floats over it
-  const fitScene = (): View => fitLevel(scene!, W, H);
+  // the default view fits the level's content box (the whole sky on the Board), centred between the open navigator and the
+  // rail, `I` from the canvas's left edge; a panel floats over it
+  const inFitBox = (v: View): View => ({ ...v, x: v.x + I });
+  const fitScene = (): View => inFitBox(fitLevel(scene!, FW, H));
   /** Lay the level out for the canvas's shape, so a wider screen spreads it instead of framing it with empty sky. */
   function layout(keepView: boolean) {
     if (!S || !W) return;
     const was = fit;
-    scene = build({ S, moves, W, H, T, pages, ease: sized, routes: bends }, level());
+    scene = build({ S, moves, W: FW, H, T, pages, ease: sized, routes: bends }, level());
     fit = fitScene();
-    if (scene.hub) edgePaths(scene, fit, W, stateName);
+    if (scene.hub) edgePaths(scene, { k: fit.k, x: fit.x - I }, FW, stateName);
     if (keepView) view = refitView(view, was, fit); // a view at the old fit follows the new one, so the sky zooms out smoothly as a state grows
     else {
       const kept = recall<View>(viewKey());
@@ -194,10 +198,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     tip.style.opacity = "0";
     loop.wake();
   }
-  let L = 0; // the canvas's left edge on the page, the navigator's width
+  // the canvas's left edge on the page (the folded navigator's width); the fit box's offset in it and its width
+  let L = 0, I = 0, FW = 0;
   const resize = (keepView = false) => {
     const dpr = devicePixelRatio || 1;
-    ({ left: L, width: W } = canvasSpace(innerWidth, navW(), railW()));
+    ({ left: L, width: W, inset: I, fitWidth: FW } = canvasSpace(innerWidth, navWidths(), railW()));
     H = innerHeight;
     cv.width = W * dpr;
     cv.height = H * dpr;
@@ -337,7 +342,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (first) {
       // A retired per-graph address opens its level; the page's one address is the root.
       path = startPath(location.pathname, location.hash, recall<Path>("fv.path"), S.tree);
-      if (!fixture && (location.pathname !== "/" || location.hash)) history.replaceState(null, "", "/" + location.search);
+      if (!fixture && retired(location.pathname, location.hash)) history.replaceState(null, "", "/" + viewSearch(location.search, viewOf(location.search), prefs().view));
       keep("fv.path", path);
     }
     layout(!first);
@@ -347,11 +352,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** What the HUD shows, written once per snapshot. */
   function publish() {
     const sky = S!, board = sky.board;
-    const stamp = STAMP.format(sky.now * 1000);
+    const at = stamp(sky.now, prefs().clock);
     const next: Partial<HudState> = {
       path,
       tree: sky.tree,
-      stats: sky.error ? `live · ${stamp} MST · ${sky.error}` : `live · ${stamp} MST`,
+      stats: sky.error ? `live · ${at} MST · ${sky.error}` : `live · ${at} MST`,
       states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: board.agents.filter((a) => a.state === s.id).length })),
       counts: Object.fromEntries(Object.values(sky.flows).map((f) => [f.name, f.agents.length])),
       dags: sky.dags.map((d) => d.name),
@@ -377,7 +382,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     ev.sort((a, b) => b.at - a.at);
     const feed: FeedLine[] = ev.slice(0, 40).map((l) => ({ ...l, time: hhmm(l.at) })), mv = [...new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => e.flow))].sort();
     const now = hud.get();
-    if (feed.map((f) => f.key + f.at).join() !== now.feed.map((f) => f.key + f.at).join()) hud.set({ feed });
+    if (feed.map((f) => f.key + f.at + f.time).join() !== now.feed.map((f) => f.key + f.at + f.time).join()) hud.set({ feed });
     if (mv.join() !== now.moving.join()) hud.set({ moving: mv });
   }
 
@@ -598,7 +603,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const slot = panel.querySelector<HTMLElement>("#trace-slot");
     if (!slot || !pin || !S) return;
     const run = runFor(pin);
-    slot.innerHTML = typeof run === "string" ? `<div class="k" style="margin-top:12px">${run === "loading" ? "tracing its path…" : "history unavailable"}</div>` : traceTable(run, level().kind === "state" ? planetName : pin.kind === "task" ? stateName : (id) => id);
+    slot.innerHTML = typeof run === "string" ? `<div class="k" style="margin-top:12px">${run === "loading" ? "tracing its path…" : "history unavailable"}</div>` : traceTable(run, level().kind === "state" ? planetName : pin.kind === "task" ? stateName : (id) => id, prefs().clock);
   }
   const writerLine = (w: Writer & { event?: string }) => `${esc(w.actor)} <span class="k">${w.event ? `writes ${esc(w.event)} ` : ""}via ${esc(w.trigger)}</span>`;
   const pagerTip = (pager: Pager) =>
@@ -608,11 +613,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     switch (h.kind) {
       case "task": {
         const o = h.o, at = subjectOf(h)!, kind = `task · ${stateName(o.state)}${o.host.states ? ` · orbiting ${(o.host as Planet).title || o.host.name}` : ""} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
-        return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at));
+        return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at), prefs().clock);
       }
       case "mtask": {
         const o = h.o, at = subjectOf(h)!, kind = `task · ${o.flow} · ${o._state || o.state} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
-        return traceCard({ kind, id: o.id, title: "", goal: goalOf(sky.flows[o.flow]?.machine) }, runFor(at));
+        return traceCard({ kind, id: o.id, title: "", goal: goalOf(sky.flows[o.flow]?.machine) }, runFor(at), prefs().clock);
       }
       case "dag": {
         const o = h.o, crit = (o.tether?.crit ?? []).map(esc).join("<br>");
@@ -725,13 +730,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.textBaseline = "middle";
     cx.fillText(s, x, y);
   }
-  const labPx = (n: number) => labelPx(n, K, scale());
+  const labPx = (n: number) => labelPx(n, K, prefs().scale);
   // names sit outside their node in a light, translucent face (the same see-through weight as the flow lines); a hovered node's name firms up
   function label(name: string, x: number, y: number, hot: boolean, sub?: string | null, size = 12.5) {
-    size = labelPx(size, K, scale()); // type is a fixed size on screen: readable at fit, never balloons when zoomed in; the Admin font size scales it
+    size = labelPx(size, K, prefs().scale); // type is a fixed size on screen: readable at fit, never balloons when zoomed in; the Admin font size scales it
     cx.letterSpacing = `${0.6 / K}px`;
     text(name, x, y, size, rgba("#cfd9ea", hot ? 0.95 : 0.58), "center", 300);
-    if (sub) text(sub, x, y + size + 3 / K, size - labelPx(2, K, scale()), rgba("#94a3b8", hot ? 0.8 : 0.42), "center", 300);
+    if (sub) text(sub, x, y + size + 3 / K, size - labelPx(2, K, prefs().scale), rgba("#94a3b8", hot ? 0.8 : 0.42), "center", 300);
     cx.letterSpacing = "0px";
   }
   function circle(x: number, y: number, r: number, stroke: string, w = 1, dash?: number[] | null) {
@@ -1406,7 +1411,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   /** The header clock, ticked by a timer so it keeps time while the canvas is idle. */
   function paintClock() {
-    const txt = live === "off" ? `○ reconnecting · ${hms(new Date())} MST` : `● live · ${hms(new Date())} MST`;
+    const t = clockHms(Date.now(), prefs().clock), txt = live === "off" ? `○ reconnecting · ${t} MST` : `● live · ${t} MST`;
     if (txt !== clockText) els.clock.textContent = clockText = txt;
   }
   let wash: { w: number; h: number; g?: CanvasGradient } = { w: 0, h: 0 };
@@ -1464,13 +1469,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     last = 0;
     heartbeat();
   };
-  const loop = frameLoop({ draw: frame, animating: busy, idle: settle });
+  // with Motion off the loop idles at one frame a second, except for a moment after any input
+  let lastInput = -Infinity;
+  const loop = frameLoop({ draw: frame, animating: busy, idle: settle, pace: () => framePace(prefs().motion, performance.now() - lastInput) });
   /** Every input that can change what the canvas shows wakes it; the handlers run first, so the frame sees their result. */
   const wakers: [EventTarget, string][] = [
     [window, "resize"], [window, "mousemove"], [window, "mouseup"], [window, "keydown"], [document, "visibilitychange"],
     [cv, "mousedown"], [cv, "mouseleave"], [cv, "contextmenu"], [cv, "wheel"],
   ];
-  const wake = () => loop.wake();
+  const wake = () => {
+    lastInput = performance.now();
+    loop.wake(true);
+  };
 
   const probe = (): Probe => {
     const sc = scene, l = level(), canvas = { w: W, h: H }, open = panel.classList.contains("open");
@@ -1556,7 +1566,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         const s = scene!.groups.find((g) => g.name === name)?.stars ?? [];
         if (!s.length) return fit;
         const xs = s.map((q) => q.x), ys = s.map((q) => q.y);
-        return fitBox({ x0: Math.min(...xs) - 60, y0: Math.min(...ys) - 80, x1: Math.max(...xs) + 60, y1: Math.max(...ys) + 80 }, W, H, Infinity, 0.9);
+        return inFitBox(fitBox({ x0: Math.min(...xs) - 60, y0: Math.min(...ys) - 80, x1: Math.max(...xs) + 60, y1: Math.max(...ys) + 80 }, FW, H, Infinity, 0.9));
       };
       if (level().kind !== "dags") go([...BOARD, { kind: "dags" }], W / 2, H / 2, box);
       else flyTo(box());
@@ -1565,6 +1575,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       spotted = target;
       if (!target) hover = null;
       loop.wake();
+    },
+    refresh() {
+      if (!S) return;
+      publish();
+      heartbeat();
+      paintClock();
     },
     selectTask(id) {
       if (!S) return;

@@ -4,10 +4,18 @@
 import { FLARE, PULSE, TRAVEL } from "./sky";
 
 export interface FrameLoop {
-  /** Draw a frame now-ish, and keep drawing while `animating()` holds. A no-op when a frame is already pending. */
-  wake(): void;
+  /** Draw a frame now-ish, and keep drawing while `animating()` holds. A no-op when a frame is already pending; `urgent` cuts a wait for the pace short. */
+  wake(urgent?: boolean): void;
   stop(): void;
 }
+
+/** How long after the last pointer or key input the canvas still draws at the display's pace with motion off, in ms. */
+export const INPUT_MS = 600;
+/** With motion off and no recent input, the wait between frames, in ms. */
+export const STILL_MS = 1000;
+
+/** The wait before the next frame: none with motion on or while input is recent, else one idle redraw per `STILL_MS`. */
+export const framePace = (motion: boolean, sinceInput: number): number => (motion || sinceInput < INPUT_MS ? 0 : STILL_MS);
 
 export function frameLoop(opts: {
   draw(now: number): void;
@@ -17,21 +25,38 @@ export function frameLoop(opts: {
   idle?(): void;
   request?(cb: (now: number) => void): number;
   cancel?(id: number): void;
+  /** The wait in ms before each frame is requested; none by default. */
+  pace?(): number;
 }): FrameLoop {
-  const { draw, animating, idle, request = (cb) => requestAnimationFrame(cb), cancel = (id) => cancelAnimationFrame(id) } = opts;
-  let id = 0, stopped = false;
+  const { draw, animating, idle, request = (cb) => requestAnimationFrame(cb), cancel = (id) => cancelAnimationFrame(id), pace = () => 0 } = opts;
+  let id = 0, wait: ReturnType<typeof setTimeout> | undefined, stopped = false;
+  const schedule = (ms: number) => {
+    if (ms <= 0) id = request(step);
+    else
+      wait = setTimeout(() => {
+        wait = undefined;
+        id = request(step);
+      }, ms);
+  };
   const step = (now: number) => {
     id = 0;
     draw(now);
-    if (animating()) id = request(step);
+    if (animating()) schedule(pace());
     else idle?.();
   };
   return {
-    wake() {
-      if (!stopped && !id) id = request(step);
+    wake(urgent = false) {
+      if (stopped) return;
+      if (urgent && wait !== undefined) {
+        clearTimeout(wait);
+        wait = undefined;
+      }
+      if (!id && wait === undefined) schedule(urgent ? 0 : pace());
     },
     stop() {
       stopped = true;
+      clearTimeout(wait);
+      wait = undefined;
       if (id) cancel(id);
       id = 0;
     },

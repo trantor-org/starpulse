@@ -83,13 +83,14 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
   );
 }
 
-function Card({ task, now, marks, names, onOpen, onPress, onPlay, dismiss, dismissStart, style }: {
-  task: KanbanTask; now: number; marks: Marks; names: Record<string, string>; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
+/** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
+export function Card({ task, now, marks, names, compact = false, onOpen, onPress, onPlay, dismiss, dismissStart, style }: {
+  task: KanbanTask; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
   const labels = task.labels.filter((l) => !/^kind-|^agent-resolvable$/.test(l)).slice(0, 3);
   const live = task.live, claim = marks.claim;
-  const cls = ["card", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
+  const cls = ["card", compact && "compact", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
   const guard = task.moves.in_progress?.allowed === false ? task.moves.in_progress.reason : "";
   return (
     <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={onPress}
@@ -114,13 +115,15 @@ function Card({ task, now, marks, names, onOpen, onPress, onPlay, dismiss, dismi
           <span className="p" /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
         </div>
       )}
-      <div className="foot">
-        {labels.map((l) => (
-          <span key={l} title={l} className={`lab${l === "needs-human" ? " nh" : /^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
-        ))}
-        {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
-        {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
-      </div>
+      {!compact && (
+        <div className="foot">
+          {labels.map((l) => (
+            <span key={l} title={l} className={`lab${l === "needs-human" ? " nh" : /^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
+          ))}
+          {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
+          {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
+        </div>
+      )}
       {marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
       {marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart ?? dismiss} />}
     </div>
@@ -303,7 +306,7 @@ interface Press {
 /** Pixels a press travels before it lifts the card instead of opening it. */
 const LIFT_PX = 5;
 
-export function Kanban({ hud, moves, starts, constellation }: { hud: HudState; moves: MoveStore; starts: StartStore; constellation: (lane: string) => void }) {
+export function Kanban({ hud, moves, starts, compact, constellation }: { hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void }) {
   const [storage] = useState(browserStorage);
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(storage, location.search));
   const [open, setOpen] = useState<string | null>(null);
@@ -488,7 +491,7 @@ export function Kanban({ hud, moves, starts, constellation }: { hud: HudState; m
   const heldTask = held ? cards.find((t) => t.id === held.id) : undefined;
   const openCard = (id: string) => () => !clickEnds.current && setOpen(id);
   return (
-    <main id="kb">
+    <main id="kb" className={compact ? "compact" : undefined}>
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
       <div className="filters">
         <div className="fw">
@@ -553,7 +556,7 @@ export function Kanban({ hud, moves, starts, constellation }: { hud: HudState; m
                       <button className="hide" title="Hide this milestone" onClick={(e) => { e.stopPropagation(); setPrefs((p) => hideMilestone(p, b.milestone)); }}>hide</button>
                     </div>
                     {!b.folded && b.tasks.map((t) => (
-                      <Card key={t.id} task={t} now={now} names={hud.names} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
+                      <Card key={t.id} task={t} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
                         style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
                         onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
                         dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
@@ -567,12 +570,12 @@ export function Kanban({ hud, moves, starts, constellation }: { hud: HudState; m
       </div>
       {lifted && (
         <div ref={ghost} className="lift">
-          <Card task={lifted} now={now} names={hud.names} marks={{}} onOpen={() => {}} dismiss={() => {}} style={{ width: lift?.w }} />
+          <Card task={lifted} now={now} names={hud.names} compact={compact} marks={{}} onOpen={() => {}} dismiss={() => {}} style={{ width: lift?.w }} />
         </div>
       )}
       {held && heldTask && (
         <div className="lift" style={{ left: held.rect.left, top: held.rect.top }}>
-          <Card task={heldTask} now={now} names={hud.names} marks={{}} onOpen={() => {}} dismiss={() => {}} style={{ width: held.w }} />
+          <Card task={heldTask} now={now} names={hud.names} compact={compact} marks={{}} onOpen={() => {}} dismiss={() => {}} style={{ width: held.w }} />
         </div>
       )}
       {started.asking && (
