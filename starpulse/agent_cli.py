@@ -26,6 +26,7 @@ verbs, generated from the parser below, so a verb added here is listed with its 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import functools
 import json
 import os
@@ -36,9 +37,10 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
-from starpulse import doctor, skill_install
-from starpulse.config import load
+from starpulse import demo, doctor, mermaid_import, skill_install
+from starpulse.config import ConfigError, load
 from starpulse.contracts import Move
+from starpulse.machine_definition import MachineDefinitionError, Registry, load_machine
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
@@ -77,6 +79,25 @@ _TASK_KEYS = (
     "description",
 )
 _MOVE_KEYS = ("ok", "task", "to", "reason", "skill", "advice")
+
+
+class _AnyName(Mapping[str, Callable[..., Any]]):
+    """Every guard or action name an adapter might register: a file alone cannot say which names it will."""
+
+    def __getitem__(self, name: str) -> Callable[..., Any]:
+        return lambda *args, **kwargs: True
+
+    def __contains__(self, name: object) -> bool:
+        return True
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(())
+
+    def __len__(self) -> int:
+        return 0
+
+
+_ADAPTER_NAMES = Registry(guards=_AnyName(), actions=_AnyName())
 
 Verb = Callable[[argparse.Namespace, Mapping[str, str]], dict[str, Any]]
 
@@ -380,6 +401,55 @@ def _skills_install(args: argparse.Namespace, environ: Mapping[str, str]) -> dic
         raise CliError("refused", str(exc)) from exc
 
 
+def _checked(path: Path) -> dict[str, Any]:
+    """One machine file's verdict: compiling it is what refuses a schema or a compile error."""
+    try:
+        load_machine(path, _ADAPTER_NAMES)
+    except MachineDefinitionError as error:
+        errors = [{"file": str(error.file or path), "line": error.line, "message": str(error)}]
+    else:
+        errors = []
+    return {"path": str(path), "ok": not errors, "errors": errors}
+
+
+def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Every machine file checked; `ok` is false, and the exit code 1, when any is refused."""
+    machines = [_checked(path) for path in args.paths]
+    return {"ok": all(machine["ok"] for machine in machines), "machines": machines}
+
+
+def _import_mermaid(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    if not args.source.is_file():
+        raise CliError("not_found", f"{args.source} is not a file")
+    try:
+        return {"written": str(mermaid_import.import_file(args.source, args.out))}
+    except (MachineDefinitionError, OSError) as exc:
+        raise CliError("refused", f"{args.source}: {exc}") from exc
+
+
+def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The config as it would run, every default filled in; `ok` is false, and the exit code 1, when it would not."""
+    path = args.config or (Path("starpulse.toml") if Path("starpulse.toml").is_file() else None)
+    checked: dict[str, Any] = {"file": str(path) if path else None, "unknown_keys": [], "errors": [], "config": None}
+    try:
+        config = load(path)
+    except ConfigError as exc:
+        return {**checked, "ok": False, "unknown_keys": list(exc.unknown_keys), "errors": [str(exc)]}
+    except (OSError, ValueError) as exc:  # a file that is missing or not TOML
+        return {**checked, "ok": False, "errors": [f"{path}: {exc}"]}
+    effective = json.loads(json.dumps(dataclasses.asdict(config), default=str))
+    return {**checked, "ok": True, "config": effective}
+
+
+def _demo(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    try:
+        return {"written": str(demo.build(args.out, server_url(args.server, environ), args.mockup))}
+    except urllib.error.URLError as exc:
+        raise CliError("unavailable", f"cannot reach StarPulse at {server_url(args.server, environ)}: {exc}") from exc
+    except (OSError, ValueError) as exc:
+        raise CliError("refused", str(exc)) from exc
+
+
 def _help(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     return _manifest(_parser())
 
@@ -507,7 +577,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     trace.add_argument("task", help="the task's key (`PROJ-45`)")
     trace.add_argument("--flow", help="the machine to trace the task on (`in-progress`), else the Board's lanes")
-    machine = verbs.add_parser("machine", description="the machines the server draws", help="the machines it draws")
+    machine = verbs.add_parser(
+        "machine",
+        description="the machines the server draws and the machine files",
+        help="the machines and their files",
+    )
     machine_verbs = machine.add_subparsers(dest="verb", required=True, metavar="verb")
     leaf(
         machine_verbs,
@@ -526,6 +600,29 @@ def _parser() -> argparse.ArgumentParser:
         (0, 2, 3, 4),
     )
     show_machine.add_argument("name", help="the machine's name (`board`, `in-progress`)")
+    validate = leaf(
+        machine_verbs,
+        "validate",
+        "check machine files against the schema and compile them, each error with its file and line",
+        _validate,
+        ("ok", "machines"),
+        (0, 1, 2),
+        reads_server=False,
+    )
+    validate.add_argument("paths", nargs="+", type=Path, help="the machine YAML files")
+    importer = machine_verbs.add_parser("import", description="draft a machine file", help="draft a machine file")
+    import_verbs = importer.add_subparsers(dest="source_kind", required=True, metavar="format")
+    mermaid = leaf(
+        import_verbs,
+        "mermaid",
+        "draft a machine file from a Mermaid stateDiagram-v2 file; guards and actions are left to write, and an existing file is never overwritten",
+        _import_mermaid,
+        ("written",),
+        (0, 1, 2, 4),
+        reads_server=False,
+    )
+    mermaid.add_argument("source", type=Path, help="the stateDiagram-v2 .mmd file")
+    mermaid.add_argument("--out", type=Path, help="default: .starpulse/machines/<source name>.yaml")
     runs = verbs.add_parser("runs", description="the workflows of the runs adapters", help="its workflows")
     runs_verbs = runs.add_subparsers(dest="verb", required=True, metavar="verb")
     leaf(
@@ -536,6 +633,28 @@ def _parser() -> argparse.ArgumentParser:
         ("runs", "error"),
         (0, 2, 3),
     )
+    config = verbs.add_parser("config", description="the config file", help="the config file")
+    config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
+    config_check = leaf(
+        config_verbs,
+        "check",
+        "load the config: unknown keys by name and the effective config with its defaults",
+        _config_check,
+        ("ok", "file", "unknown_keys", "errors", "config"),
+        (0, 1, 2),
+        reads_server=False,
+    )
+    config_check.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    page = leaf(
+        verbs,
+        "demo",
+        "build the self-contained demo page: the server's structure with every task replaced by a synthetic one",
+        _demo,
+        ("written",),
+        (0, 1, 2, 3),
+    )
+    page.add_argument("--out", type=Path, required=True, help="the HTML file to write")
+    page.add_argument("--mockup", type=Path, help="a design mockup directory to build instead of the server's page")
     check = leaf(
         verbs,
         "doctor",

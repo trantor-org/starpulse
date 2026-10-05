@@ -26,6 +26,7 @@ from starpulse.tests.serving import serve as _serve
 from starpulse.tests.serving import url as _url
 from starpulse.tests.tasks import task
 
+VALID_MACHINE = Path(__file__).parent.parent.parent / "machines" / "harness.yaml"
 PULL = "https://github.com/acme/app/pull/5"
 UNREAD_PULL = "https://github.com/acme/app/pull/9"  # linked from a task, but the server has not read it
 
@@ -541,7 +542,11 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task trace",
         "machine list",
         "machine show",
+        "machine validate",
+        "machine import mermaid",
         "runs list",
+        "config check",
+        "demo",
         "doctor",
         "skills list",
         "skills install",
@@ -677,7 +682,8 @@ def test_runs_list_names_each_workflow_by_instance_with_its_status_and_the_runs_
 
 
 # Every verb the manifest lists, and each exit code it declares, with an argument line that produces it. `{server}`
-# is a running server, `{down}` an address nothing listens on.
+# is a running server, `{down}` an address nothing listens on, `{valid}` a machine that compiles and `{dir}` a directory
+# of `bad.yaml` (a schema error), `ok.toml`, `bad.toml` (an unknown key), `flow.mmd` and `design/` (a demo mockup).
 CASES = {
     ("snapshot", 0): ["snapshot", "--server", "{server}"],
     ("snapshot", 2): ["snapshot", "--nope"],
@@ -712,6 +718,20 @@ CASES = {
     ("runs list", 0): ["runs", "list", "--server", "{server}"],
     ("runs list", 2): ["runs", "list", "--nope"],
     ("runs list", 3): ["runs", "list", "--server", "{down}"],
+    ("machine validate", 0): ["machine", "validate", "{valid}"],
+    ("machine validate", 1): ["machine", "validate", "{dir}/bad.yaml"],
+    ("machine validate", 2): ["machine", "validate"],
+    ("machine import mermaid", 0): ["machine", "import", "mermaid", "{dir}/flow.mmd", "--out", "{dir}/flow.yaml"],
+    ("machine import mermaid", 1): ["machine", "import", "mermaid", "{dir}/flow.mmd", "--out", "{dir}/bad.yaml"],
+    ("machine import mermaid", 2): ["machine", "import", "mermaid"],
+    ("machine import mermaid", 4): ["machine", "import", "mermaid", "{dir}/nope.mmd"],
+    ("config check", 0): ["config", "check", "--config", "{dir}/ok.toml"],
+    ("config check", 1): ["config", "check", "--config", "{dir}/bad.toml"],
+    ("config check", 2): ["config", "check", "--nope"],
+    ("demo", 0): ["demo", "--mockup", "{dir}/design", "--out", "{dir}/demo.html"],
+    ("demo", 1): ["demo", "--mockup", "{dir}/nope", "--out", "{dir}/demo.html"],
+    ("demo", 2): ["demo"],
+    ("demo", 3): ["demo", "--server", "{down}", "--out", "{dir}/demo.html"],
     ("doctor", 0): ["doctor", "--server", "{server}"],
     ("doctor", 1): ["doctor", "--server", "{down}"],
     ("doctor", 2): ["doctor", "--nope"],
@@ -744,6 +764,20 @@ def test_every_manifest_verb_and_exit_code_has_a_case(capsys: pytest.CaptureFixt
     assert declared == set(CASES)
 
 
+def _case_files(root: Path) -> Path:
+    """The files the offline verbs' cases name, in a fresh directory."""
+    (root / "design").mkdir(parents=True)
+    (root / "bad.yaml").write_text("name: flow\nstates:\n  idle: {initial: true}\n  done: {final: maybe}\nevents: {}\n")
+    (root / "ok.toml").write_text('tracker_url = "http://tracker.example"\n')
+    (root / "bad.toml").write_text('colour = "red"\n')
+    (root / "flow.mmd").write_text("stateDiagram-v2\n    [*] --> open\n    open --> closed : Close it\n")
+    board = {"agents": [{"id": "PROJ-1", "title": "Rotate the secret", "state": "ready"}]}
+    snap = {"now": 1.0, "dags": [], "flows": {"board": board, "in-progress": {"agents": []}}}
+    (root / "design" / "data.js").write_text(f"window.SNAP = {json.dumps(snap)};\n")
+    (root / "design" / "index.html").write_text('<script src="data.js"></script>')
+    return root
+
+
 @pytest.mark.parametrize(("verb", "exit_code"), list(CASES))
 def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
     base: str,
@@ -758,14 +792,18 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
     monkeypatch.chdir(tmp_path)  # `skills` writes into the project, and under HOME with --user
     PREPARE.get((verb, exit_code), lambda: None)()
     manifest = next(v for v in _manifest(capsys) if v["verb"] == verb)
-    argv = [a.format(server=base, movable=movable, bare=bare, down=_closed_port_url()) for a in CASES[verb, exit_code]]
+    files = _case_files(tmp_path / "cases")
+    argv = [
+        a.format(server=base, movable=movable, bare=bare, down=_closed_port_url(), valid=VALID_MACHINE, dir=files)
+        for a in CASES[verb, exit_code]
+    ]
 
     code, doc = _run(capsys, argv, {"HOME": str(tmp_path / "home")})
 
     assert code == exit_code
     assert exit_code in manifest["exit_codes"]
-    # A failed doctor check and a refused move still report their keys; any other refusal is an error document.
-    reports = exit_code == 0 or (verb, exit_code) in {("doctor", 1), ("task move", 1)}
+    # A verb that reports `ok` still reports every check it made when it fails; any other refusal is an error document.
+    reports = exit_code == 0 or (exit_code == 1 and "ok" in manifest["outputs"])
     assert set(doc) == (set(manifest["outputs"]) if reports else {"error", "code"})
 
 

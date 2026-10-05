@@ -2,6 +2,7 @@
 
 import json
 from importlib.metadata import entry_points
+from pathlib import Path
 
 import pytest
 
@@ -51,3 +52,36 @@ def test_no_subcommand_is_a_usage_error_as_json(capsys: pytest.CaptureFixture[st
     assert cli.main([]) == 2
 
     assert json.loads(capsys.readouterr().out)["code"] == "usage"
+
+
+def test_the_offline_verbs_are_in_the_manifest(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["help", "--agent"]) == 0
+
+    verbs = {v["verb"] for v in json.loads(capsys.readouterr().out)["verbs"]}
+    assert {"machine validate", "machine import mermaid", "config check", "demo"} <= verbs
+
+
+def test_machine_import_mermaid_runs_through_the_installed_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source, out = tmp_path / "flow.mmd", tmp_path / "flow.yaml"
+    source.write_text("stateDiagram-v2\n    [*] --> open\n    open --> closed : Close it\n")
+
+    assert cli.main(["machine", "import", "mermaid", str(source), "--out", str(out)]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {"written": str(out)}
+    assert "CLOSE_IT" in out.read_text()
+
+
+def test_demo_runs_through_the_installed_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    design, out = tmp_path / "design", tmp_path / "demo.html"
+    design.mkdir()
+    board = {"agents": [{"id": "PROJ-1", "title": "Rotate the secret", "state": "ready"}]}
+    snap = {"now": 1.0, "dags": [], "flows": {"board": board, "in-progress": {"agents": []}}}
+    (design / "data.js").write_text(f"window.SNAP = {json.dumps(snap)};\n")
+    (design / "index.html").write_text('<script src="data.js"></script>')
+
+    assert cli.main(["demo", "--mockup", str(design), "--out", str(out)]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {"written": str(out)}
+    assert "DEMO-1" in out.read_text()
