@@ -807,7 +807,12 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
     assert set(doc) == (set(manifest["outputs"]) if reports else {"error", "code"})
 
 
-SKILLS = ["operating-starpulse-board", "setting-up-starpulse"]
+SKILLS = [
+    "authoring-starpulse-machines",
+    "operating-starpulse-board",
+    "setting-up-starpulse",
+    "writing-starpulse-adapters",
+]
 
 
 def test_skills_install_copies_the_bundled_skills_for_each_harness_chosen_into_the_project(
@@ -882,8 +887,10 @@ def test_skills_list_reports_each_skills_status_per_harness(
     assert code == 0
     assert doc["scope"] == "project"
     assert [(s["name"], s["claude"], s["codex"]) for s in doc["skills"]] == [
+        ("authoring-starpulse-machines", "installed", "absent"),
         ("operating-starpulse-board", "installed", "absent"),
         ("setting-up-starpulse", "modified", "absent"),
+        ("writing-starpulse-adapters", "installed", "absent"),
     ]
     assert all(s["description"] for s in doc["skills"])
 
@@ -912,17 +919,24 @@ def test_every_skill_is_a_directory_named_in_its_front_matter_with_a_description
         assert skill_install.description(name)
 
 
+def _named_verbs(skill: str, verbs: dict[str, set[str]]) -> list[str]:
+    """The manifest verb behind each `starpulse ...` command the skill names, each with its flags checked."""
+    named = []
+    for span in re.findall(r"`starpulse ([^`]+)`", (skill_install.SOURCE / skill / "SKILL.md").read_text()):
+        words = span.split()
+        if words[0] in ("serve", "emit"):  # run through their own parsers, not the verb manifest
+            continue
+        leaf = next((" ".join(words[:n]) for n in (3, 2, 1) if " ".join(words[:n]) in verbs), None)
+        assert leaf, f"{skill} names `starpulse {span}`, which is no manifest verb"
+        flags = {w.split("=")[0] for w in words if w.startswith("--")}
+        assert flags <= verbs[leaf], f"{skill} gives `starpulse {leaf}` {flags - verbs[leaf]}"
+        named.append(leaf)
+    return named
+
+
 def test_every_verb_and_flag_a_bundled_skill_names_is_in_the_manifest(capsys: pytest.CaptureFixture[str]) -> None:
     verbs = {v["verb"]: {f for a in v["arguments"] for f in a["flags"]} for v in _manifest(capsys)}
-    named = 0
-    for name in skill_install.names():
-        for span in re.findall(r"`starpulse ([^`]+)`", (skill_install.SOURCE / name / "SKILL.md").read_text()):
-            words = span.split()
-            if words[0] in ("serve", "emit"):  # run through their own parsers, not the verb manifest
-                continue
-            leaf = next((" ".join(words[:n]) for n in (2, 1) if " ".join(words[:n]) in verbs), None)
-            assert leaf, f"{name} names `starpulse {span}`, which is no manifest verb"
-            flags = {w.split("=")[0] for w in words if w.startswith("--")}
-            assert flags <= verbs[leaf], f"{name} gives `starpulse {leaf}` {flags - verbs[leaf]}"
-            named += 1
-    assert named >= 8  # the skills do name verbs; a regex that matched nothing would pass vacuously
+    named = {skill: _named_verbs(skill, verbs) for skill in skill_install.names()}
+    assert sum(map(len, named.values())) >= 8  # the skills do name verbs; a regex that matched nothing would pass vacuously
+    assert {"machine validate", "machine import mermaid"} <= set(named["authoring-starpulse-machines"])
+    assert {"doctor", "config check"} <= set(named["writing-starpulse-adapters"])
