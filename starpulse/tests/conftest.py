@@ -16,7 +16,13 @@ from starpulse.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 
 #: StarPulse's own tables, dropped before each Postgres test so it starts empty.
-_TABLES = ("starpulse_machine_events", "starpulse_lane_changes", "starpulse_learned_steps", "starpulse_gaps")
+_TABLES = (
+    "starpulse_machine_events",
+    "starpulse_lane_changes",
+    "starpulse_learned_steps",
+    "starpulse_gaps",
+    "starpulse_events",
+)
 
 if "db.testing" not in sys.modules:
 
@@ -58,3 +64,14 @@ def store(request: pytest.FixtureRequest, tmp_path: Path) -> HistoryStore:
     with engine.begin() as db:
         db.execute(text(f"DROP TABLE IF EXISTS {', '.join(_TABLES)}"))
     return HistoryStore(engine.url.render_as_string(hide_password=False), MACHINES, engine=engine)
+
+
+@pytest.fixture(params=["sqlite", "postgres"])
+def database_url(request: pytest.FixtureRequest, tmp_path: Path) -> str:
+    """The URL of an empty database for the event log: a SQLite file, or a Postgres server with StarPulse's tables dropped."""
+    if request.param == "sqlite":
+        return f"sqlite:///{tmp_path / 'events.sqlite'}"
+    engine: Engine = request.getfixturevalue("pg_engine")
+    with engine.begin() as db:
+        db.execute(text(f"DROP TABLE IF EXISTS {', '.join(_TABLES)}"))
+    return engine.url.render_as_string(hide_password=False)
