@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Admin } from "./Admin";
 import { AdminStore } from "./adminPrefs";
+import { HistoryWindowStore } from "./historyWindow";
 import { HudStore, useHud, type HudState } from "./hud";
 import { BOARD, pathKey, type Path } from "./levels";
 import { Kanban } from "./Kanban";
@@ -24,6 +25,7 @@ export function App() {
   const hud = useHud(store);
   const [fold] = useState(() => new FoldStore());
   const [admin] = useState(() => new AdminStore());
+  const [historyWindow] = useState(() => new HistoryWindowStore());
   // a move outlives the view that made it: the card stays where it landed while the writer answers
   const [moves] = useState(() => new MoveStore(postMove));
   // so does a started session: the card waits in In progress for its agent's claim whichever view is showing
@@ -76,7 +78,7 @@ export function App() {
         fly={(g) => renderer.current?.flyToGroup(g)} openDag={(d) => renderer.current?.openDag(d)}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
-      {view === "admin" && <Admin store={admin} />}
+      {view === "admin" && <Admin store={admin} window={historyWindow} />}
       {view === "kanban" && (
         <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }} />
       )}

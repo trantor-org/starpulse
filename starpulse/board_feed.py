@@ -106,6 +106,12 @@ class BoardFeed:
         """The machines the page draws, the Board's as `board`."""
         return self._drawn
 
+    def set_window(self, window_s: float | None) -> None:
+        """Draw with a new window from now on, and hand every connected page a snapshot that applies it."""
+        with self._lock:
+            self._window_s = window_s
+            self._publish("snapshot", self.snapshot())
+
     def expect(self, last_id: str) -> None:
         """Mark the feed ready once the entry `last_id` has been read; `0-0` is an empty stream."""
         with self._lock:
