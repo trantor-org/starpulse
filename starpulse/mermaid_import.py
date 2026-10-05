@@ -24,6 +24,8 @@ import yaml
 
 from starpulse.machine_definition import MachineDefinitionError, validate
 
+__all__ = ["Diagram", "Edge", "draft_machine", "dump", "parse"]
+
 _ID = r"[A-Za-z][A-Za-z0-9_]*"
 _DECLARATION = re.compile(rf'state\s+"[^"]*"\s+as\s+(?P<id>{_ID})$')
 _INITIAL = re.compile(rf"\[\*\]\s*-->\s*(?P<id>{_ID})$")

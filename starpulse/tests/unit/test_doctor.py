@@ -10,12 +10,11 @@ from redis.exceptions import ResponseError
 
 from starpulse import agent_cli as cli
 from starpulse import doctor
+from starpulse.adapter_kit import serve, task, url
 from starpulse.board_feed import BoardFeed
 from starpulse.config import Config, RunsInstance
 from starpulse.tests.hosts import FakeHost, FakeRedis
 from starpulse.tests.machines import MACHINES
-from starpulse.tests.serving import serve, url
-from starpulse.tests.tasks import task
 
 HOME = {"REDIS_URL": "redis://127.0.0.1:6380"}
 CHECKS = ["config", "redis", "server", "adapter:board", "adapter:nightly", "gh", "stream-lag"]

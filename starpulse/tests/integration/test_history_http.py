@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
+from starpulse.adapter_kit import serve, url
 from starpulse.board_feed import BoardFeed
 from starpulse.history import HistoryStore
 from starpulse.tests.machines import MACHINES
-from starpulse.tests.serving import serve, url
 
 
 def _get(server: ThreadingHTTPServer, query: str) -> tuple[int, dict]:

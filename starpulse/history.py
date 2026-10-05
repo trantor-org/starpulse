@@ -41,6 +41,8 @@ from starpulse.machine_tasks import Table as Transitions
 from starpulse.tables import gaps as _gaps
 from starpulse.tables import metadata
 
+__all__ = ["History", "machine_steps"]
+
 #: The file a config without `database_url` keeps its history in, beside the config.
 DEFAULT_FILE = "starpulse-history.sqlite"
 

@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from starpulse.adapter_kit import task
 from starpulse.board import Board, Written
 from starpulse.board_feed import BoardFeed
 from starpulse.config import load
@@ -13,7 +14,6 @@ from starpulse.contracts import Move
 from starpulse.server import archive_task, assemble, edit_task, task_record
 from starpulse.tests import fake_board
 from starpulse.tests.machines import MACHINES
-from starpulse.tests.tasks import task
 
 LAN = "192.168.0.42"
 RECORD = {

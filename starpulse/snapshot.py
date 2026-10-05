@@ -12,6 +12,8 @@ from typing import Any
 
 from starpulse.machine_definition import writers_of
 
+__all__ = ["Qualify", "describe", "is_workflow", "qualifier", "writers"]
+
 #: Names a workflow as the page draws it. A machine or cue names its workflows by their own name; the page draws
 #: them as `<instance>/<workflow>`, so what a machine says is read through one of these.
 Qualify = Callable[[str], str]

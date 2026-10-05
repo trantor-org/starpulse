@@ -192,10 +192,16 @@ internal and can change in any release.
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
 
 - `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer and task protocols).
+- `starpulse.board_feed`: the feed a board adapter places tasks on (`BoardFeed`) and what following a stream needs of it.
 - `starpulse.contracts`: the board, machine-event and runs records, their JSON Schemas, and `RunsSink`.
-- `starpulse.adapter_kit`: the test kit an adapter author runs against their adapter.
+- `starpulse.adapter_kit`: the test kit an adapter author runs against their adapter, and the helpers that serve it.
 - `starpulse.machine_definition`: loading and validating a machine, and the `Registry` of guards and actions.
+- `starpulse.snapshot`: how a machine is described to the page, and how its workflows are named.
+- `starpulse.history`: the history a board adapter may keep itself, and placing a task's events on a machine.
+- `starpulse.event_log`: the database event log producers append to and readers tail.
 - `starpulse.config`: loading the config file, and the runs adapter a `type` names.
+- `starpulse.harnesses`: loading the harness file, the tiers and efforts an agent profile names.
+- `starpulse.mermaid_import`: drafting a machine definition from a Mermaid state diagram.
 - `starpulse.otlp`: decoding Claude Code's OpenTelemetry log export.
 
 A package test pins this list and each module's names, so adding or removing one is a reviewed change.
