@@ -120,7 +120,7 @@ export interface Renderer {
   fitView(): void;
   /** The canvas is the page again after another view hid it: resize it and refit, keeping a zoomed-in view. */
   resize(): void;
-  /** Whether the Star Map is the view showing; while another view hides it, nothing queues to play on its return. */
+  /** Whether the Star Map is the view showing; while another view hides it, the canvas draws no frame. */
   show(on: boolean): void;
   /** Open a DAG's panel beside the level that is showing. */
   openDag(name: string): void;
@@ -340,7 +340,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     snap = next;
     T = Date.now() / 1000;
     S = merge(next);
-    if (away) moves.resync(T); // behind another view each snapshot reads as a page load, so the Star Map returns to where things stand
     moves.observe(S, T);
     if (first) {
       // A retired per-graph address opens its level; the page's one address is the root.
@@ -350,7 +349,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     layout(!first);
     publish();
-    if (!away) loop.wake();
+    if (away) heartbeat(); // the canvas draws no frame behind another view, but the Recent feed beside it stays current
+    else loop.wake();
   }
   /** What the HUD shows, written once per snapshot. */
   function publish() {
@@ -1557,7 +1557,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     },
     show(on) {
       away = !on;
-      if (away) moves.resync(Date.now() / 1000);
     },
     resize: () => {
       resize(true);
