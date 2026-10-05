@@ -19,15 +19,18 @@ feeds to see that each is placed.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import ClassVar
 
 import jsonschema
 from pydantic import BaseModel
 
+from starpulse.board import MoveWriter, Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import SCHEMAS, BoardTask, Dag, MachineEvent, TaskKeys
 from starpulse.machine_tasks import MachineTasks
+from starpulse.server import move_task
 
 __all__ = ["BoardAdapterKit", "MachineEventsAdapterKit", "RunsAdapterKit"]
 
@@ -73,9 +76,49 @@ class BoardAdapterKit(_AdapterKit):
     _model = BoardTask
     #: The machines the page draws, the Board's as `board`, as the adapter's `starpulse.board.Board` draws them.
     machines: ClassVar[Mapping[str, dict]]
+    #: The adapter's board writer over the project `produce` reads, when it has one; with a writer, `produce` offers
+    #: a move any actor may make and one the machine leaves to the operator.
+    writer: MoveWriter | None = None
 
     def test_every_task_key_is_in_the_declared_scheme(self) -> None:
         assert [t.id for t in self.records() if not self.keys.matches(t.id)] == []
+
+    def _move(self, actor: str, permitted: bool) -> tuple[tuple[int, dict], list[str]]:
+        """Ask the server to make the first offered move `actor` is (`permitted`) or is not allowed; the writer's calls."""
+        assert self.writer is not None
+        calls: list[str] = []
+
+        def write(task: str, status: str, by: str) -> Written:
+            calls.append(task)
+            assert self.writer is not None
+            return self.writer(task, status, by)
+
+        feed = BoardFeed(keys=self.keys, machines=self.machines)
+        records = self.records()
+        for task in records:
+            feed.put(task)
+        offered = [
+            (task.id, column)
+            for task in records
+            for column, move in task.moves.items()
+            if move.allowed and move.permits(actor) == permitted
+        ]
+        assert offered, f"produce() offers no move that {actor} {'may' if permitted else 'may not'} make"
+        task, column = offered[0]
+        raw = json.dumps({"task": task, "to": column, "actor": actor}).encode()
+        return move_task("127.0.0.1", raw, feed, write), calls
+
+    def test_a_move_the_actor_may_make_is_written_by_the_board_writer(self) -> None:
+        if self.writer is None:
+            return
+        (status, reply), calls = self._move("operator", permitted=True)
+        assert (status, calls != []) == (200, True), reply
+
+    def test_a_move_the_machine_leaves_to_others_is_refused_to_an_agent_before_the_writer(self) -> None:
+        if self.writer is None:
+            return
+        (status, reply), calls = self._move("agent", permitted=False)
+        assert (status, calls) == (409, []), reply
 
     def test_the_flow_view_places_every_task_in_its_lane_or_as_settled(self) -> None:
         feed = BoardFeed(keys=self.keys, machines=self.machines)
