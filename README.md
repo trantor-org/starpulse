@@ -127,6 +127,9 @@ database_url = "postgresql+psycopg://db.example.com/starpulse"
 # The rest of the table is that adapter's settings.
 [board]
 type = "upstream_backlog"
+# path = "backlog"       # the project's backlog/ directory, relative to this file
+# command = "backlog"    # the Backlog.md CLI that writes a move (`backlog task edit <id> -s <status>`)
+# machine = "board.yaml" # a machine file for the Board: its transitions and `writers` decide which moves are offered, and to whom
 
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
 # (it offers `start(url)` and `follow(url, runs, group)`); its workflows are drawn as `<name>/<workflow>`.
@@ -150,8 +153,12 @@ directory. The `Board` says:
 - and optionally a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may
   list the `writers` the machine declares per event), an `assign` for assignee changes, and its own `history`.
 
-`starpulse.upstream_backlog` is the reference adapter: it polls a Backlog.md project's Markdown files and takes
-the machine from the project's own statuses. Name your module in `[board] type` and StarPulse imports it.
+`starpulse.upstream_backlog` is the reference adapter: it polls a Backlog.md project's Markdown files, takes
+the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
+whose states are those lanes and whose `writers` reserve a move to an actor, such as `operator`), and writes moves
+with the `backlog` CLI, answering a failed write with the CLI's output. An adapter with a writer subclasses
+`BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
+the machine leaves to the operator is refused to the agent. Name your module in `[board] type` and StarPulse imports it.
 
 ## Public surface
 

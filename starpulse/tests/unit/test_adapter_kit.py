@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from starpulse.adapter_kit import BoardAdapterKit, MachineEventsAdapterKit, RunsAdapterKit, _AdapterKit
+from starpulse.board import Written
 from starpulse.contracts import TaskKeys
 from starpulse.tests.machines import MACHINES
 
@@ -109,6 +110,49 @@ def test_an_adapter_that_does_not_override_produce_is_told_to() -> None:
         _AdapterKit().produce()
 
     assert str(raised.value) == "override produce() to return the adapter's records"
+
+
+OPEN = {"allowed": True}
+OPERATOR_ONLY = {"allowed": True, "writers": ["operator"]}
+WRITING_TASK = {**TASK, "moves": {"review": OPEN, "to_do": OPERATOR_ONLY}}
+
+
+def written(task: str, status: str, actor: str) -> Written:
+    return Written(True, "")
+
+
+def refused(task: str, status: str, actor: str) -> Written:
+    return Written(False, "no")
+
+
+def move_checks(adapter: _AdapterKit) -> list[Callable[[], None]]:
+    return [getattr(adapter, name) for name in dir(adapter) if name.startswith("test_") and "move" in name]
+
+
+def test_a_board_with_a_writer_and_an_operator_only_move_passes_the_move_checks() -> None:
+    writing = adapter(BoardAdapterKit, [WRITING_TASK], writer=staticmethod(written))
+
+    assert len(move_checks(writing)) == 2
+    assert [failing(check) for check in move_checks(writing)] == [False, False]
+
+
+@pytest.mark.parametrize(
+    ("task", "writer", "what"),
+    [
+        ({**TASK, "moves": {"review": OPEN}}, written, "no move reserved to the operator"),
+        (WRITING_TASK, refused, "a writer that refuses the move it offers"),
+    ],
+)
+def test_a_board_writer_that_breaks_the_move_contract_fails_a_move_check(
+    task: dict, writer: Callable, what: str
+) -> None:
+    checks = move_checks(adapter(BoardAdapterKit, [task], writer=staticmethod(writer)))
+
+    assert any(failing(check) for check in checks), what
+
+
+def test_a_board_without_a_writer_skips_the_move_checks() -> None:
+    assert [failing(check) for check in move_checks(adapter(BoardAdapterKit, [TASK]))] == [False, False]
 
 
 def test_the_placement_check_alone_fails_a_record_the_view_drops_for_its_key() -> None:
