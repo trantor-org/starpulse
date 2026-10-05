@@ -30,6 +30,14 @@ GET /api/history?task=TASK-N[&flow=NAME]
                    arrive into the history database (`database_url`, else starpulse-history.sqlite beside
                    the config), so the path outlives the stream's trim, unless the board adapter keeps
                    its own history. A trim past entries the copy never read is recorded as a gap
+GET /api/analytics/health[?hours=N][&stuck_hours=N]
+                   the Board's flow health from the history's lane changes (`analytics.board_health`): `states`
+                   (each with `wip` now and, for a state that is not final, the `visits`, `mean_s` and `max_s` of
+                   its stays over the last `hours`, default 168, `open` of them still going and counted to now),
+                   `throughput` {count, per_day} into a final state, `stuck` (tasks in a middle state for
+                   `stuck_hours` or longer, default 24, each `counted_to_now`) and `warnings` (the history's
+                   recorded gaps). A `hours` or `stuck_hours` that is no positive number is 400; a history that
+                   does not keep lane changes for every task is 501
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
 POST /api/run/<instance>/<workflow>
                    start a run-safe workflow through its instance's optional `start`: {runId}, or {error}
@@ -65,13 +73,14 @@ from types import ModuleType
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from starpulse import analytics
 from starpulse.board import AssigneeWriter, Board, MoveWriter, TaskArchiver, TaskEditor, TaskReader, Written
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.config import Config, ConfigError, RunsInstance, load, runs_adapter
 from starpulse.contracts import Move, StartFailedError
 from starpulse.harnesses import Harnesses
-from starpulse.history import History, HistoryStore, build_machine_recorder, database_url
+from starpulse.history import HealthHistory, History, HistoryStore, build_machine_recorder, database_url
 from starpulse.machine_tasks import MachineTasks
 from starpulse.machine_tasks import build_consumer as build_machine_consumer
 from starpulse.pull_requests import PullRequests
@@ -345,6 +354,36 @@ def history_response(history: History, query: dict[str, list[str]], flows: Colle
     return json.dumps(body).encode(), 200
 
 
+#: `/api/analytics/health`'s defaults: the window it counts over, and how long a stay in one state makes a task stuck.
+_HEALTH_HOURS = 168.0
+_STUCK_HOURS = 24.0
+
+
+def _hours(query: dict[str, list[str]], key: str, default: float) -> float | None:
+    """The positive, finite number of hours `key` gives, `default` when absent; None for anything else."""
+    try:
+        hours = float(query[key][0]) if key in query else default
+    except ValueError:
+        return None
+    return hours if 0 < hours < float("inf") else None
+
+
+def health_response(
+    history: History, query: dict[str, list[str]], machines: Mapping[str, dict], now: float
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/health`: the Board's flow health over the last `hours` as of `now`."""
+    window = _hours(query, "hours", _HEALTH_HOURS)
+    stuck = _hours(query, "stuck_hours", _STUCK_HOURS)
+    if window is None or stuck is None:
+        return _error("hours and stuck_hours must each be a positive number"), 400
+    if not isinstance(history, HealthHistory):
+        return _error("this history does not keep every task's lane changes, so it cannot report flow health"), 501
+    health = analytics.board_health(
+        machines["board"], history.lane_rows(), history.gaps(), now=now, window_s=window * 3600, stuck_s=stuck * 3600
+    )
+    return json.dumps(health).encode(), 200
+
+
 class _ApiHandler(SimpleHTTPRequestHandler):
     """The run endpoint and the JSON answer every API route sends; the page's routes subclass it."""
 
@@ -429,6 +468,7 @@ def _handler(
     read: TaskReader | None = None,
     edit: TaskEditor | None = None,
     archive: TaskArchiver | None = None,
+    clock: Callable[[], float] = time.time,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -455,6 +495,8 @@ def _handler(
                 self._send(json.dumps(feed.snapshot()).encode())
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows))
+            elif url.path == "/api/analytics/health":
+                self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
             elif url.path.startswith(_TASK):
                 status, body = task_record(feed, read, unquote(url.path.removeprefix(_TASK)))
                 self._send(json.dumps(body).encode(), status)

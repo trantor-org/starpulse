@@ -1,4 +1,4 @@
-"""`starpulse snapshot|board|task|machine|runs|watch|doctor|skills|help --agent`: the verbs an agent drives a running server with.
+"""`starpulse snapshot|board|task|machine|runs|watch|analytics|doctor|skills|help --agent`: the verbs an agent drives a running server with.
 
     starpulse board --milestone launch --label api
     starpulse task show PROJ-45
@@ -9,6 +9,7 @@
     starpulse runs list
     starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
+    starpulse analytics health --hours 72
     starpulse doctor
     starpulse skills install --claude --codex
     starpulse help --agent
@@ -70,6 +71,7 @@ _SNAPSHOT_KEYS = (
     "capabilities",
     "now",
 )
+_HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
 _TASK_KEYS = (
     "id",
     "title",
@@ -420,6 +422,20 @@ def _watch(args: argparse.Namespace, environ: Mapping[str, str]) -> Iterator[dic
             yield {"event": name, "data": delta}
 
 
+def _health(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The Board's flow health as `/api/analytics/health` answers it; a window the server refuses is `refused`."""
+    base = server_url(args.server, environ)
+    asked = {"hours": args.hours, "stuck_hours": args.stuck_hours}
+    query = urllib.parse.urlencode({key: value for key, value in asked.items() if value is not None})
+    path = f"/api/analytics/health?{query}"
+    status, document = _get(base, path)
+    if status in {400, 501} and isinstance(document, dict) and "error" in document:
+        raise CliError("refused" if status == 400 else "unavailable", document["error"])
+    if status != 200 or not isinstance(document, dict) or not document.keys() >= set(_HEALTH_KEYS):
+        raise CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
+    return {key: document[key] for key in _HEALTH_KEYS}
+
+
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Every install check of `starpulse.doctor`; `ok` is false, and the exit code 1, when any fails."""
     base = server_url(args.server, environ)
@@ -641,6 +657,18 @@ def _parser() -> argparse.ArgumentParser:
     )
     watch.add_argument("--machine", help="only changes on this machine (`board`, `in-progress`)")
     watch.add_argument("--task", help="only changes to this task (`PROJ-45`)")
+    analytics = verbs.add_parser("analytics", description="flow health", help="flow health")
+    analytics_verbs = analytics.add_subparsers(dest="verb", required=True, metavar="verb")
+    health = leaf(
+        analytics_verbs,
+        "health",
+        "the Board's dwell and WIP per state, throughput and stuck tasks over a window, with history gap warnings",
+        _health,
+        _HEALTH_KEYS,
+        (0, 1, 2, 3),
+    )
+    health.add_argument("--hours", type=float, help="the window to count over, in hours (default: the server's, 168)")
+    health.add_argument("--stuck-hours", type=float, help="how long in one state makes a task stuck (default 24)")
     check = leaf(
         verbs,
         "doctor",

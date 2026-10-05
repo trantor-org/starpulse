@@ -80,6 +80,7 @@ starpulse machine show in-progress               # a machine's states, transitio
 starpulse runs list                              # each workflow as <instance>/<workflow> with its latest status
 starpulse runs start prod/nightly                # start a run-safe workflow through Run now; its run id
 starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
+starpulse analytics health --hours 72            # dwell and WIP per state, throughput and stuck tasks, with gap warnings
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
@@ -106,10 +107,23 @@ lists exactly the verbs there are.
 | `runs list` | | `runs`: each workflow as `{workflow, status, raw, run_id, started_at, finished_at}` with `workflow` `<instance>/<workflow>`, and `error`, the runs adapters' error or null |
 | `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
+| `analytics health` | `--hours`, `--stuck-hours` | `now`, `window_s`, `stuck_after_s`, `states`, `throughput`, `stuck` and `warnings`, below |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
 | `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |
 | `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |
 | `help --agent` | | `exit_codes` and `verbs` |
+
+`analytics health` reads `GET /api/analytics/health[?hours=N][&stuck_hours=N]` (a window of 168 hours and a stuck
+threshold of 24 by default), the Board's flow health from the history's lane changes. `states` lists each Board state
+with `wip`, the tasks in it now, and for a state that is not final the `visits`, `mean_s` and `max_s` of the stays that
+ended inside the window or are still going, `open` of them: a task still in its state counts to now, so its stay is
+flagged rather than left out. `throughput` is `{count, per_day}`, the entries into a final state in the window.
+`stuck` lists each task whose current stay in a state that is neither the first nor a final one has lasted
+`stuck_hours` or longer, longest first, each `{task, state, since, dwell_s, counted_to_now}`. `warnings` carry each
+gap the history recorded (`kind` `gap`: entries trimmed before it read them, so counts may miss them) and each lane
+the Board machine has no state for. History starts at a task's first recorded lane change, so a stay before it is not
+counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive number, and 501 when the history
+(a board adapter's own) does not list every task's lane changes through `lane_rows()` and `gaps()`.
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}` with `actor` `operator` when

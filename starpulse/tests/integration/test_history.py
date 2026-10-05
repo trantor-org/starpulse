@@ -106,6 +106,19 @@ def test_a_machine_path_is_ordered_by_time_and_holds_only_that_machines_events(s
     )
 
 
+def test_lane_rows_are_every_tasks_lane_changes_in_time_order(store: HistoryStore) -> None:
+    store.record_lane("a", "PROJ-7", "Ready", 5.0)
+    store.record_lane("b", "PROJ-8", "To Do", 1.0)
+    store.record_lane("c", "PROJ-7", "Ready", 6.0)  # repeats the last lane: no change
+    store.record_lane("d", "PROJ-7", "Done", 9.0)
+
+    assert store.lane_rows() == [
+        ("PROJ-8", 1.0, None, "To Do"),
+        ("PROJ-7", 5.0, None, "Ready"),
+        ("PROJ-7", 9.0, "Ready", "Done"),
+    ]
+
+
 def test_the_same_gap_reported_again_is_one_gap_with_its_latest_bounds(store: HistoryStore) -> None:
     store.record_gap("machine:events", "5-0", "9-0", 3)
     store.record_gap("machine:events", "5-0", "12-0", 6)

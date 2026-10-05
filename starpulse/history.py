@@ -17,7 +17,7 @@ import json
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from sqlalchemy import (
     Column,
@@ -97,6 +97,15 @@ class History(Protocol):
     def lane_path(self, task: str) -> list[dict]: ...
 
     def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]: ...
+
+
+@runtime_checkable
+class HealthHistory(History, Protocol):
+    """A history that can also answer `/api/analytics/health`: every task's lane changes and the gaps it recorded."""
+
+    def lane_rows(self) -> list[tuple[str, float, str | None, str]]: ...
+
+    def gaps(self) -> list[dict]: ...
 
 
 def database_url(configured: str | None, directory: Path) -> str:
@@ -215,6 +224,13 @@ class HistoryStore:
             rows = db.execute(select(g.stream, g.after_id, g.before_id, g.lost).order_by(g.id)).all()
             # pragma: no mutate end
         return [{"stream": s, "after_id": a, "before_id": b, "lost": n} for s, a, b, n in rows]
+
+    def lane_rows(self) -> list[tuple[str, float, str | None, str]]:
+        """`(task, at, from, to)` for every lane change of every task, oldest first."""
+        c = _lane_changes.c
+        with self.engine.connect() as db:
+            rows = db.execute(select(c.task, c.observed_at, c.old_status, c.new_status).order_by(*_LANE_ORDER)).all()
+        return [tuple(row) for row in rows]
 
     def lane_path(self, task: str) -> list[dict]:
         """`{at, from, to}` for each time the task changed lane, oldest first; a task never seen has none."""
