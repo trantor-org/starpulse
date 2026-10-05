@@ -1,6 +1,6 @@
 ---
 name: operating-starpulse-board
-description: Reads and moves a project's task board through the starpulse CLI instead of editing task files. Use when asked what to work on next, why a task (PROJ-45, TASK-12) cannot move to a column or is blocked, to move a task to review, done or another column, or to check what a task is waiting on.
+description: Operates a task board that runs on StarPulse through the starpulse CLI, never by editing task files or calling its HTTP API. Use when a project's board runs on StarPulse and the work is picking what to work on next, finding why a task (PROJ-45, TASK-12) cannot move to a column, moving a task to review, done or another column, or checking what a task waits on.
 ---
 
 # Operating the StarPulse Board
