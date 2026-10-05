@@ -16,7 +16,7 @@ import redis.exceptions
 from starpulse.adapter_kit import RunsAdapterKit
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import StartFailedError, TaskKeys
-from starpulse.dagu import _STATUS, DaguRuns, Transport, build_runs_consumer, dags, start, starter, status_of
+from starpulse.dagu import _STATUS, DaguRuns, Transport, build_runs_consumer, connect, dags, start, starter, status_of
 from starpulse.dagu import follow as follow_instance
 from starpulse.streams import StreamConsumer
 from starpulse.tests.dagu_stub import dagu, run_entry
@@ -852,3 +852,34 @@ def test_a_listing_that_began_at_the_same_moment_as_the_last_is_still_merged() -
         runs.reconcile()
 
     assert dag(feed, "d1")["status"] == "succeeded"
+
+
+class _Raw:
+    def __init__(self, raw: bytes) -> None:
+        self._raw = raw
+        self.status = 200
+
+    def __enter__(self) -> _Raw:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._raw
+
+
+def test_a_dagu_answer_that_is_not_json_raises_start_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: _Raw(b"<html>bad gateway</html>"))
+
+    with pytest.raises(StartFailedError, match="Dagu returned malformed JSON"):
+        connect("http://ci.test")("POST", "/dags/healthcheck/start", {})
+
+
+@pytest.mark.parametrize("raw", [b"[1, 2]", b'"ok"', b"null", b"3"])
+def test_a_dagu_answer_that_is_not_an_object_reads_as_an_empty_body(
+    raw: bytes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: _Raw(raw))
+
+    assert connect("http://ci.test")("POST", "/dags/healthcheck/start", {}) == (200, {})

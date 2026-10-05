@@ -85,9 +85,12 @@ def connect(base_url: str, timeout: float = 30.0) -> Transport:  # pragma: no mu
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 raw = response.read()
-                return response.status, json.loads(raw) if raw else {}
+                body = json.loads(raw) if raw else {}
+                return response.status, body if isinstance(body, dict) else {}
         except urllib.error.HTTPError as exc:
             return exc.code, {}
+        except json.JSONDecodeError as exc:
+            raise StartFailedError(f"Dagu returned malformed JSON: {exc}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise StartFailedError(f"Dagu unreachable: {exc}") from exc
 

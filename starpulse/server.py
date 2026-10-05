@@ -571,9 +571,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     try:
         board, feed = assemble(config, base, args.hours * 3600, run_safe)
         ensure_redis(prefixes=board.redis_prefixes)
-    except RedisUnavailableError as exc:
-        parser.exit(1, f"{exc}\n")
-    except ValueError as exc:
+    except (RedisUnavailableError, ValueError) as exc:
         parser.exit(1, f"{exc}\n")
     # One group per running view: a second copy on another port must see every entry too.
     # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
