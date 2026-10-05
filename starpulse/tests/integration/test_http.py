@@ -11,15 +11,17 @@ from pathlib import Path
 
 import pytest
 
+from starpulse.adapter_kit import next_event as _next_event
+from starpulse.adapter_kit import serve as _serve
+from starpulse.adapter_kit import task
+from starpulse.adapter_kit import url as _url
 from starpulse.board import Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import Move
 from starpulse.machine_tasks import MachineTasks
 from starpulse.tests.machines import MACHINES
-from starpulse.tests.serving import next_event as _next_event
-from starpulse.tests.serving import serve as _serve
-from starpulse.tests.serving import url as _url
-from starpulse.tests.tasks import task
+
+RUN_SAFE = frozenset({"dagu/whole-repo-gate"})
 
 
 @pytest.fixture
@@ -161,7 +163,7 @@ def test_a_run_is_started_by_post_and_never_by_get(tmp_path: Path) -> None:
         sent.append(workflow)
         return "run-7"
 
-    with _serve(tmp_path, starts={"dagu": start}) as server:
+    with _serve(tmp_path, starts={"dagu": start}, run_safe=RUN_SAFE) as server:
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(_url(server, "/api/run/dagu/whole-repo-gate"), timeout=5)
         request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", method="POST")
@@ -194,7 +196,11 @@ def test_post_run_answers_404_for_an_adapter_without_start_and_a_run_id_for_a_ru
         except urllib.error.HTTPError as exc:
             return exc.code, json.load(exc)
 
-    with _serve(tmp_path) as without, _serve(tmp_path, starts={"dagu": lambda workflow: f"{workflow}-1"}) as with_start:
+    starts = {"dagu": lambda workflow: f"{workflow}-1"}
+    with (
+        _serve(tmp_path, run_safe=RUN_SAFE) as without,
+        _serve(tmp_path, starts=starts, run_safe=RUN_SAFE) as with_start,
+    ):
         answers = post(without), post(with_start)
 
     assert answers == (

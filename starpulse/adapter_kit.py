@@ -20,19 +20,38 @@ feeds to see that each is placed.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+import threading
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from http.client import HTTPResponse
+from http.server import ThreadingHTTPServer
+from pathlib import Path
 from typing import ClassVar
 
 import jsonschema
 from pydantic import BaseModel
 
-from starpulse.board import MoveWriter, Written
+from starpulse.board import AssigneeWriter, Board, MoveWriter, TaskArchiver, TaskEditor, TaskReader, Written
 from starpulse.board_feed import BoardFeed
+from starpulse.config import Config
 from starpulse.contracts import SCHEMAS, BoardTask, Dag, MachineEvent, TaskKeys
+from starpulse.harnesses import Harnesses
+from starpulse.history import History, HistoryStore
 from starpulse.machine_tasks import MachineTasks
-from starpulse.server import move_task
+from starpulse.server import _handler, move_task
+from starpulse.server import assemble as _assemble
+from starpulse.settings import HistoryWindow
 
-__all__ = ["BoardAdapterKit", "MachineEventsAdapterKit", "RunsAdapterKit"]
+__all__ = [
+    "BoardAdapterKit",
+    "MachineEventsAdapterKit",
+    "RunsAdapterKit",
+    "assembled",
+    "next_event",
+    "serve",
+    "task",
+    "url",
+]
 
 
 class _AdapterKit:
@@ -176,3 +195,89 @@ class RunsAdapterKit(_AdapterKit):
         dags = self.produce()
         feed.runs("kit").set_dags(dags, None)
         assert feed.snapshot()["dags"] == [{**dag, "name": f"kit/{dag['name']}"} for dag in dags]
+
+
+# The helpers below drive an adapter through the flow view's own server and feed.
+
+
+def _no_writer(task: str, status: str, actor: str = "") -> Written:
+    raise AssertionError(f"the test reached the board writer: {task} {status}")
+
+
+@contextmanager
+def serve(
+    tmp_path: Path,
+    feed: BoardFeed | None = None,
+    starts: Mapping[str, Callable[[str], str]] | None = None,
+    history: History | None = None,
+    run_safe: frozenset[str] = frozenset(),
+    writer: MoveWriter | None = None,
+    harnesses: Harnesses | None = None,
+    assign: AssigneeWriter | None = None,
+    start_session: Callable[[str], str] | None = None,
+    window: HistoryWindow | None = None,
+    read: TaskReader | None = None,
+    edit: TaskEditor | None = None,
+    archive: TaskArchiver | None = None,
+) -> Iterator[ThreadingHTTPServer]:
+    """Serve a stub build in `tmp_path` until the `with` block ends."""
+    static = tmp_path / "static"
+    (static / "assets").mkdir(parents=True, exist_ok=True)
+    (static / "index.html").write_text("<!doctype html>")
+    (static / "assets" / "index-abc123.js").write_text("")
+    (tmp_path / "secret.txt").write_text("")
+    served = feed or BoardFeed()
+    handler = _handler(
+        served,
+        static,
+        starts or {},
+        run_safe,
+        history or HistoryStore("sqlite://", feed.machines if feed else {}),
+        window or HistoryWindow(served, 6, tmp_path / "starpulse-settings.json"),
+        writer or _no_writer,
+        harnesses,
+        assign or _no_writer,
+        start_session,
+        read,
+        edit,
+        archive,
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+
+
+def url(server: ThreadingHTTPServer, path: str) -> str:
+    return f"http://127.0.0.1:{server.server_port}{path}"
+
+
+def next_event(resp: HTTPResponse) -> tuple[str, dict]:
+    """The next named event on the stream, skipping its keep-alive comments."""
+    name = ""
+    while line := resp.readline().decode():
+        if line.startswith("event: "):
+            name = line.removeprefix("event: ").strip()
+        elif line.startswith("data: "):
+            return name, json.loads(line.removeprefix("data: "))
+    raise AssertionError("the stream ended")
+
+
+def task(task_id: str, status: str = "To Do", **fields) -> BoardTask:
+    """A task in the lane `status` names, its title derived from its key unless given."""
+    return BoardTask(
+        id=task_id,
+        title=fields.pop("title", f"Title of {task_id}"),
+        lane=status.lower().replace(" ", "_"),
+        **fields,
+    )
+
+
+def assembled(config: Config, base: Path) -> tuple[Board, BoardFeed]:
+    """The board the config's `[board]` adapter builds and the feed that draws it, as `starpulse serve` assembles them.
+
+    `base` is the directory the config's relative paths are read from.
+    """
+    return _assemble(config, base, None, config.qualified_run_safe())

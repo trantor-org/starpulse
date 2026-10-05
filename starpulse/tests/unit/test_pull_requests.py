@@ -5,9 +5,9 @@ from collections.abc import Collection
 
 import pytest
 
+from starpulse.adapter_kit import task
 from starpulse.board_feed import BoardFeed
 from starpulse.pull_requests import GhUnavailableError, PullRequests, Pulls, fetch, read_repository
-from starpulse.tests.tasks import task
 
 REPO = "https://github.com/acme/widgets/pull"
 FIRST, SECOND = f"{REPO}/1750", f"{REPO}/1751"

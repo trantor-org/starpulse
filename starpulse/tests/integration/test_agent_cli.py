@@ -15,6 +15,9 @@ import pytest
 
 from starpulse import agent_cli as cli
 from starpulse import doctor, skill_install
+from starpulse.adapter_kit import serve as _serve
+from starpulse.adapter_kit import task
+from starpulse.adapter_kit import url as _url
 from starpulse.board import Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import Move
@@ -22,9 +25,6 @@ from starpulse.history import HistoryStore
 from starpulse.server import _no_writer
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
-from starpulse.tests.serving import serve as _serve
-from starpulse.tests.serving import url as _url
-from starpulse.tests.tasks import task
 
 PULL = "https://github.com/acme/app/pull/5"
 UNREAD_PULL = "https://github.com/acme/app/pull/9"  # linked from a task, but the server has not read it

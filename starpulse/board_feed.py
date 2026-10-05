@@ -22,6 +22,8 @@ from starpulse.snapshot import declared
 from starpulse.streams import StreamConsumer
 from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine
 
+__all__ = ["BoardFeed", "Followed"]
+
 logger = logging.getLogger(__name__)
 
 _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")

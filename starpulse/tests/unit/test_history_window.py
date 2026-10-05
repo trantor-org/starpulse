@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from starpulse.adapter_kit import serve, url
 from starpulse.board_feed import BoardFeed
 from starpulse.machine_tasks import MachineTasks
 from starpulse.server import history_window
 from starpulse.settings import HistoryWindow
 from starpulse.tests.machines import MACHINES
-from starpulse.tests.serving import serve, url
 from starpulse.tests.unit.test_machine_tasks import _entry
 from starpulse.tests.unit.test_server import _ip
 

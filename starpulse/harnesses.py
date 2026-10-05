@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+__all__ = ["Harness", "HarnessError", "Harnesses", "Tier", "load_harnesses"]
+
 
 class HarnessError(ValueError):
     """The harness file is not one the view or a session start can run from."""

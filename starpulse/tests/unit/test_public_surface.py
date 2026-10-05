@@ -8,7 +8,16 @@ import pytest
 
 #: Every module and name an adapter may import. Adding or removing one is a reviewed, public change.
 PUBLIC: dict[str, set[str]] = {
-    "starpulse.adapter_kit": {"BoardAdapterKit", "MachineEventsAdapterKit", "RunsAdapterKit"},
+    "starpulse.adapter_kit": {
+        "BoardAdapterKit",
+        "MachineEventsAdapterKit",
+        "RunsAdapterKit",
+        "assembled",
+        "next_event",
+        "serve",
+        "task",
+        "url",
+    },
     "starpulse.board": {
         "DEFAULT_TYPE",
         "AssigneeWriter",
@@ -21,6 +30,7 @@ PUBLIC: dict[str, set[str]] = {
         "load",
         "module_name",
     },
+    "starpulse.board_feed": {"BoardFeed", "Followed"},
     "starpulse.config": {"Config", "ConfigError", "RunsInstance", "load", "runs_adapter"},
     "starpulse.contracts": {
         "CONTRACTS",
@@ -35,6 +45,9 @@ PUBLIC: dict[str, set[str]] = {
         "Step",
         "TaskKeys",
     },
+    "starpulse.event_log": {"Entry", "EventLog", "Tail"},
+    "starpulse.harnesses": {"Harness", "HarnessError", "Harnesses", "Tier", "load_harnesses"},
+    "starpulse.history": {"History", "machine_steps"},
     "starpulse.machine_definition": {
         "Compiled",
         "MachineDefinitionError",
@@ -45,6 +58,7 @@ PUBLIC: dict[str, set[str]] = {
         "validate",
         "writers_of",
     },
+    "starpulse.mermaid_import": {"Diagram", "Edge", "draft_machine", "dump", "parse"},
     "starpulse.otlp": {
         "ASSISTANT_RESPONSE",
         "BRANCH",
@@ -55,6 +69,7 @@ PUBLIC: dict[str, set[str]] = {
         "parse",
         "receiver",
     },
+    "starpulse.snapshot": {"Qualify", "describe", "is_workflow", "qualifier", "writers"},
 }
 
 README = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "README.md"

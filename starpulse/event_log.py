@@ -29,6 +29,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse.tables import events, gaps, metadata
 
+__all__ = ["Entry", "EventLog", "Tail"]
+
 logger = logging.getLogger(__name__)
 
 #: How often a running tail polls, in seconds. It is the delivery latency a producer's event adds.

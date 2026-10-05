@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from starpulse.adapter_kit import serve, task, url
 from starpulse.board import MoveWriter, Written
 from starpulse.board_feed import BoardFeed
 from starpulse.config import Config, RunsInstance, load
@@ -16,8 +17,6 @@ from starpulse.contracts import Move, StartFailedError
 from starpulse.harnesses import load_harnesses
 from starpulse.server import _adapter, _config, _no_writer, move_task, run_dag, start_task
 from starpulse.tests.machines import MACHINES
-from starpulse.tests.serving import serve, url
-from starpulse.tests.tasks import task
 
 #: The workflows the config declares run-safe in these tests, and the domains it groups them in.
 RUN_SAFE = frozenset({"dagu/whole-repo-gate", "dagu/healthcheck"})
