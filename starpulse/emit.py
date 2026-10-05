@@ -1,34 +1,33 @@
-"""`starpulse emit start|end`: push a workflow run, or one of its steps, onto the runs stream.
+"""`starpulse emit start|end`: append a workflow run, or one of its steps, to the event log.
 
     python -m starpulse emit start --workflow nightly --run 2026-10-03 --status running
     python -m starpulse emit end   --workflow nightly --run 2026-10-03 --status succeeded --step load --depends fetch,clean
 
 A scheduler hook (cron, systemd, Cronicle, Rundeck, an Airflow callback) calls it at each start and end. A step's
 entries name the step and, optionally, the steps it waits on; a workflow no adapter lists draws the step graph those
-entries add up to. Redis is `REDIS_URL`, else `RUNS_REDIS_HOST`/`_PORT` with `REDIS_PASSWORD`. The exit code is 1
-when the stream refused the entry and 2 for a flag the contract does not allow.
+entries add up to. The log is in the database `--config` names (default `starpulse.toml` in the working directory,
+as `serve` finds it), so a hook that runs from no fixed directory passes `--config`. The exit code is 1 when the log
+refused the entry and 2 for a flag the contract does not allow or a config that cannot be read.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Protocol, get_args
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import get_args
 
 from starpulse import run_events
 from starpulse.contracts import RunStatus
-
-
-class Producer(Protocol):
-    def emit(self, fields: dict[str, Any]) -> str | None: ...
+from starpulse.event_log import EventLog
+from starpulse.history import open_event_log
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="starpulse emit", description="push a workflow run, or one of its steps, onto the runs stream"
+        prog="starpulse emit", description="push a workflow run, or one of its steps, onto the event log"
     )
     parser.add_argument("phase", choices=run_events.PHASES)
     parser.add_argument("--workflow", required=True)
@@ -36,17 +35,21 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--status", required=True, choices=get_args(RunStatus))
     parser.add_argument("--step", help="report this step of the run instead of the run itself")
     parser.add_argument("--depends", help="with --step: comma-separated names of the steps it waits on")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="the TOML config whose database holds the event log; default starpulse.toml when it exists",
+    )
     return parser
 
 
 def main(
     argv: Sequence[str] | None = None,
-    environ: Mapping[str, str] = os.environ,
     *,
     now: Callable[[], float] = time.time,
-    producer: Producer | None = None,
+    log: EventLog | None = None,
 ) -> int:
-    """Publish one entry; 0 when the stream took it, 1 when it refused."""
+    """Append one entry; 0 when the log took it, 1 when it refused."""
     parser = _parser()
     args = parser.parse_args(argv)
     if args.depends and not args.step:
@@ -55,7 +58,12 @@ def main(
     event = run_events.entry(
         args.phase, args.workflow, args.run, args.status, now=now(), step=args.step, depends=depends
     )
-    if (producer or run_events.producer(environ)).emit(event) is None:
-        print(f"starpulse emit: {run_events.STREAM} refused the entry (is Redis reachable?)", file=sys.stderr)
+    if log is None:
+        try:
+            log = open_event_log(args.config)
+        except (OSError, ValueError) as exc:
+            parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
+    if log.append(run_events.STREAM, event) is None:
+        print(f"starpulse emit: {run_events.STREAM} refused the entry (is the database reachable?)", file=sys.stderr)
         return 1
     return 0

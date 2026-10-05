@@ -131,6 +131,13 @@ class Config:
         return tuple(f"{instance.name}/{w}" for instance in self.runs for w in instance.run_safe)
 
 
+def discover(path: Path | None) -> Path | None:
+    """`path`, else `starpulse.toml` in the working directory when it exists, else None (the defaults)."""
+    if path is None and Path("starpulse.toml").is_file():
+        return Path("starpulse.toml")
+    return path
+
+
 def load(path: Path | None) -> Config:
     """The config in `path`, or the defaults when there is none."""
     raw = tomllib.loads(path.read_text()) if path else {}

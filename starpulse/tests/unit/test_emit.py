@@ -1,97 +1,157 @@
-"""`starpulse emit`: the push path onto the runs stream."""
+"""`starpulse emit`: the push path onto the event log."""
 
 from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, get_args
 
 import pytest
 
 from starpulse import emit
 from starpulse.contracts import RunStatus
+from starpulse.event_log import EventLog, Tail
+from starpulse.history import DEFAULT_FILE
 
 NOW = 1_700_000_000.0
 
 
-class Producer:
-    """Stands in for `StreamProducer`: keeps what was emitted, or refuses like a Redis that is down."""
-
-    def __init__(self, entry_id: str | None = "1-0") -> None:
-        self.entry_id = entry_id
-        self.entries: list[dict[str, Any]] = []
-
-    def emit(self, fields: dict[str, Any]) -> str | None:
-        self.entries.append(fields)
-        return self.entry_id
+@pytest.fixture
+def log(tmp_path: Path) -> EventLog:
+    return EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
 
 
-def run(*argv: str, producer: Producer | None = None, environ: dict[str, str] | None = None) -> int:
-    return emit.main(list(argv), environ or {}, now=lambda: NOW, producer=producer or Producer())
+def run(*argv: str, log: EventLog) -> int:
+    return emit.main(list(argv), now=lambda: NOW, log=log)
 
 
-def test_a_run_start_becomes_one_entry_with_the_flags_it_was_given() -> None:
-    producer = Producer()
+def appended(log: EventLog) -> list[dict[str, Any]]:
+    return [entry.fields for entry in Tail(log, "runs:events").poll()]
 
-    code = run("start", "--workflow", "nightly", "--run", "r1", "--status", "running", producer=producer)
+
+def test_a_run_start_becomes_one_entry_with_the_flags_it_was_given(log: EventLog) -> None:
+    code = run("start", "--workflow", "nightly", "--run", "r1", "--status", "running", log=log)
 
     assert code == 0
-    assert producer.entries == [
+    assert appended(log) == [
         {"time": NOW, "phase": "start", "workflow": "nightly", "run_id": "r1", "status": "running"}
     ]
 
 
-def test_a_step_entry_carries_its_name_and_the_steps_it_depends_on() -> None:
-    producer = Producer()
-
+def test_a_step_entry_carries_its_name_and_the_steps_it_depends_on(log: EventLog) -> None:
     run(
         "end", "--workflow", "nightly", "--run", "r1", "--status", "succeeded",
         "--step", "load", "--depends", "fetch,clean",
-        producer=producer,
+        log=log,
     )  # fmt: skip
 
-    assert producer.entries[0] | {"time": 0} == {
-        "time": 0,
-        "phase": "end",
-        "workflow": "nightly",
-        "run_id": "r1",
-        "status": "succeeded",
-        "step": "load",
-        "depends": ["fetch", "clean"],
-    }
+    assert appended(log) == [
+        {
+            "time": NOW,
+            "phase": "end",
+            "workflow": "nightly",
+            "run_id": "r1",
+            "status": "succeeded",
+            "step": "load",
+            "depends": ["fetch", "clean"],
+        }
+    ]
 
 
 @pytest.mark.parametrize("status", ["done", "SUCCESS", "waiting", ""])
 def test_a_status_outside_the_contract_is_refused_naming_the_allowed_values(
-    status: str, capsys: pytest.CaptureFixture[str]
+    status: str, log: EventLog, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    producer = Producer()
-
     with pytest.raises(SystemExit) as refused:
-        run("end", "--workflow", "w", "--run", "r", "--status", status, producer=producer)
+        run("end", "--workflow", "w", "--run", "r", "--status", status, log=log)
 
     assert refused.value.code != 0
     error = capsys.readouterr().err
     for allowed in get_args(RunStatus):
         assert allowed in error
-    assert producer.entries == []
+    assert appended(log) == []
 
 
-def test_depends_without_a_step_is_refused(capsys: pytest.CaptureFixture[str]) -> None:
+def test_depends_without_a_step_is_refused(log: EventLog, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as refused:
-        run("start", "--workflow", "w", "--run", "r", "--status", "running", "--depends", "a")
+        run("start", "--workflow", "w", "--run", "r", "--status", "running", "--depends", "a", log=log)
 
     assert refused.value.code != 0
     assert "error: --depends needs --step" in capsys.readouterr().err
 
 
-def test_a_stream_that_refuses_the_entry_exits_non_zero_so_the_caller_can_tell(
-    capsys: pytest.CaptureFixture[str],
+def test_a_store_that_refuses_the_entry_exits_one_so_the_caller_can_tell(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code = run("start", "--workflow", "w", "--run", "r", "--status", "running", producer=Producer(entry_id=None))
+    unreachable = EventLog(f"sqlite:///{tmp_path / 'missing-directory' / 'events.sqlite'}")
+
+    code = run("start", "--workflow", "w", "--run", "r", "--status", "running", log=unreachable)
 
     assert code == 1
     assert "runs:events" in capsys.readouterr().err
+
+
+def test_config_names_the_database_the_entry_is_appended_to(tmp_path: Path) -> None:
+    config = tmp_path / "view.toml"
+    config.write_text(f'database_url = "sqlite:///{tmp_path / "chosen.sqlite"}"\n')
+
+    code = emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running", "--config", str(config)])
+
+    assert code == 0
+    assert [
+        e.fields["workflow"] for e in Tail(EventLog(f"sqlite:///{tmp_path / 'chosen.sqlite'}"), "runs:events").poll()
+    ] == ["w"]
+
+
+def test_a_config_without_a_database_url_appends_to_the_history_file_beside_it(tmp_path: Path) -> None:
+    config = tmp_path / "view.toml"
+    config.write_text('tracker_url = "http://tracker"\n')
+
+    emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running", "--config", str(config)])
+
+    assert [
+        e.fields["run_id"] for e in Tail(EventLog(f"sqlite:///{tmp_path / DEFAULT_FILE}"), "runs:events").poll()
+    ] == ["r"]
+
+
+def test_without_a_config_flag_the_starpulse_toml_in_the_working_directory_is_used(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "starpulse.toml").write_text(f'database_url = "sqlite:///{tmp_path / "found.sqlite"}"\n')
+    monkeypatch.chdir(tmp_path)
+
+    emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running"])
+
+    assert [
+        e.fields["workflow"] for e in Tail(EventLog(f"sqlite:///{tmp_path / 'found.sqlite'}"), "runs:events").poll()
+    ] == ["w"]
+
+
+def test_without_any_config_the_entry_goes_to_the_history_file_in_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running"])
+
+    assert [
+        e.fields["workflow"] for e in Tail(EventLog(f"sqlite:///{tmp_path / DEFAULT_FILE}"), "runs:events").poll()
+    ] == ["w"]
+
+
+def test_a_config_that_cannot_be_read_is_a_usage_error_and_appends_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "view.toml"
+    config.write_text("mode = [\n")
+
+    with pytest.raises(SystemExit) as refused:
+        emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running", "--config", str(config)])
+
+    assert refused.value.code == 2
+    assert str(config) in capsys.readouterr().err
+    assert not (tmp_path / DEFAULT_FILE).exists()
 
 
 def test_the_command_line_refuses_a_bad_status_with_a_usage_error_naming_the_allowed_values() -> None:
@@ -109,14 +169,15 @@ def test_the_command_line_refuses_a_bad_status_with_a_usage_error_naming_the_all
 
 def test_the_help_names_the_command_and_each_flag(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as helped:
-        run("--help")
+        emit.main(["--help"])
 
     assert helped.value.code == 0
     text = " ".join(capsys.readouterr().out.split())
     for expected in (
         "usage: starpulse emit",
         "{start,end}",
-        "push a workflow run, or one of its steps, onto the runs stream",
+        "push a workflow run, or one of its steps, onto the event log",
+        "the TOML config whose database holds the event log",
         "the run's id",
         "report this step of the run instead of the run itself",
         "comma-separated names of the steps it waits on",
@@ -125,35 +186,22 @@ def test_the_help_names_the_command_and_each_flag(capsys: pytest.CaptureFixture[
 
 
 @pytest.mark.parametrize("missing", ["--workflow", "--run", "--status"])
-def test_a_missing_required_flag_is_a_usage_error(missing: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_missing_required_flag_is_a_usage_error(
+    missing: str, log: EventLog, capsys: pytest.CaptureFixture[str]
+) -> None:
     flags = {"--workflow": "w", "--run": "r", "--status": "running"}
     argv = [part for flag, value in flags.items() if flag != missing for part in (flag, value)]
 
     with pytest.raises(SystemExit) as refused:
-        run("start", *argv)
+        run("start", *argv, log=log)
 
     assert refused.value.code == 2
     assert f"required: {missing}" in capsys.readouterr().err
 
 
-def test_a_phase_other_than_start_or_end_is_refused(capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_phase_other_than_start_or_end_is_refused(log: EventLog, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as refused:
-        run("pause", "--workflow", "w", "--run", "r", "--status", "running")
+        run("pause", "--workflow", "w", "--run", "r", "--status", "running", log=log)
 
     assert refused.value.code == 2
     assert "invalid choice: 'pause'" in capsys.readouterr().err
-
-
-def test_without_an_injected_producer_the_redis_the_environment_names_is_reached(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    reached: list[Any] = []
-    producer = Producer()
-    monkeypatch.setattr(emit.run_events, "producer", lambda environ: reached.append(environ) or producer)
-    environ = {"REDIS_URL": "redis://cache.lan"}
-
-    code = emit.main(["start", "--workflow", "w", "--run", "r", "--status", "running"], environ, now=lambda: NOW)
-
-    assert code == 0
-    assert reached == [environ]
-    assert len(producer.entries) == 1

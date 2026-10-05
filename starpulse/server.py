@@ -77,7 +77,7 @@ from starpulse import analytics
 from starpulse.board import AssigneeWriter, Board, MoveWriter, TaskArchiver, TaskEditor, TaskReader, Written
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
-from starpulse.config import Config, ConfigError, RunsInstance, load, runs_adapter
+from starpulse.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse.contracts import Move, StartFailedError
 from starpulse.harnesses import Harnesses
 from starpulse.history import HealthHistory, History, HistoryStore, build_machine_recorder, database_url
@@ -545,8 +545,7 @@ def _handler(
 
 def _config(parser: argparse.ArgumentParser, path: Path | None) -> Config:
     """The config in `path`, else `starpulse.toml` beside where the view runs, else the defaults."""
-    if path is None and Path("starpulse.toml").is_file():
-        path = Path("starpulse.toml")
+    path = discover(path)
     try:
         return load(path)
     except (OSError, ValueError) as exc:

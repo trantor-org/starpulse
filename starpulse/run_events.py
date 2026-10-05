@@ -1,7 +1,7 @@
 """The runs stream contract: one entry when a workflow run or one of its steps starts or ends.
 
 `starpulse emit` writes it from any scheduler hook or script, so a workflow needs no adapter to be seen.
-Emission is fail-open (`starpulse.streams.StreamProducer`): a missing entry means the emit failed, never that the
+Emission is fail-open (`EventLog.append` never raises): a missing entry means the emit failed, never that the
 run did not happen.
 
 Each entry carries `event_id` plus these fields (absent when empty): `time` (epoch seconds), `phase`
@@ -11,14 +11,10 @@ Each entry carries `event_id` plus these fields (absent when empty): `time` (epo
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
-from starpulse.streams import StreamProducer, endpoint_from_url
-
-# Redis is reached at RUNS_REDIS_HOST/_PORT plus the shared REDIS_PASSWORD, or at REDIS_URL.
 STREAM = "runs:events"
-REDIS_ENV_PREFIX = "RUNS"
+REDIS_ENV_PREFIX = "RUNS"  # the Redis consumers' endpoint until they read the log
 PHASES = ("start", "end")
 
 
@@ -42,12 +38,3 @@ def entry(
         **({"step": step} if step else {}),
         **({"depends": depends} if depends else {}),
     }
-
-
-def producer(environ: Mapping[str, str]) -> StreamProducer:
-    """The producer for the Redis `environ` names: `REDIS_URL` when set, else the `RUNS_REDIS_*` variables."""
-    if url := environ.get("REDIS_URL"):
-        return StreamProducer(
-            stream=STREAM, **endpoint_from_url(url, environ.get("REDIS_PASSWORD"), environ.get("REDIS_USERNAME"))
-        )
-    return StreamProducer.from_env(REDIS_ENV_PREFIX, stream=STREAM)

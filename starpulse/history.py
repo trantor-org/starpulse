@@ -36,6 +36,8 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import OperationalError
 
 from starpulse import events as machine_events
+from starpulse.config import discover, load
+from starpulse.event_log import EventLog
 from starpulse.gap_consumer import GapWatchingConsumer
 from starpulse.machine_tasks import Table as Transitions
 from starpulse.tables import gaps as _gaps
@@ -111,6 +113,16 @@ class HealthHistory(History, Protocol):
 def database_url(configured: str | None, directory: Path) -> str:
     """The configured URL, else a SQLite file `DEFAULT_FILE` in `directory`."""
     return configured or f"sqlite:///{(directory / DEFAULT_FILE).resolve()}"
+
+
+def open_event_log(path: Path | None = None) -> EventLog:
+    """The event log in the store `serve --config path` keeps its history in, so a producer and the view share it.
+
+    A producer runs from no fixed directory, so it names the config as `serve` does: `path`, else `starpulse.toml`
+    in the working directory, else the defaults. Raises `OSError` or `ValueError` for a config that cannot be read.
+    """
+    path = discover(path)
+    return EventLog(database_url(load(path).database_url, path.parent if path else Path.cwd()))
 
 
 def lane_changes(rows: list[tuple[float, str | None, str]]) -> list[dict]:

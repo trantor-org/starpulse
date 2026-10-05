@@ -1,8 +1,6 @@
-"""The runs stream contract: its entry shape and the Redis its producer reaches."""
+"""The runs stream contract: its entry shape."""
 
 from __future__ import annotations
-
-import pytest
 
 from starpulse import run_events
 
@@ -17,43 +15,13 @@ def test_an_entry_omits_the_step_and_depends_of_a_run_level_event() -> None:
     }
 
 
-def test_the_producer_reaches_the_redis_url_names() -> None:
-    producer = run_events.producer({"REDIS_URL": "redis://:s3cret@cache:6400"})
-
-    assert (producer.stream, producer.redis_host, producer.redis_port, producer.redis_password) == (
-        "runs:events",
-        "cache",
-        6400,
-        "s3cret",
-    )
-
-
-def test_the_producer_signs_in_as_the_url_user_with_its_decoded_password() -> None:
-    producer = run_events.producer({"REDIS_URL": "rediss://worker:p%40ss@cache"})
-
-    assert (producer.redis_username, producer.redis_password) == ("worker", "p@ss")
-
-
-def test_the_producer_reaches_a_rediss_url_over_tls() -> None:
-    assert run_events.producer({"REDIS_URL": "rediss://cache:6400"}).redis_ssl is True
-
-
-def test_a_redis_url_without_a_port_or_password_uses_redis_defaults_and_the_shared_password() -> None:
-    producer = run_events.producer({"REDIS_URL": "redis://cache.lan", "REDIS_PASSWORD": "shared"})
-
-    assert (producer.redis_host, producer.redis_port, producer.redis_password) == ("cache.lan", 6379, "shared")
-
-
-def test_without_a_redis_url_the_producer_reads_the_runs_endpoint_variables(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RUNS_REDIS_HOST", "runs.lan")
-    monkeypatch.setenv("RUNS_REDIS_PORT", "6401")
-
-    producer = run_events.producer({})
-
-    assert (producer.stream, producer.redis_host, producer.redis_port) == ("runs:events", "runs.lan", 6401)
-
-
-def test_a_redis_url_without_a_host_reaches_the_local_redis() -> None:
-    producer = run_events.producer({"REDIS_URL": "redis://:s3cret@:6400"})
-
-    assert (producer.redis_host, producer.redis_port, producer.redis_password) == ("127.0.0.1", 6400, "s3cret")
+def test_a_step_entry_names_the_step_and_the_steps_it_waits_on() -> None:
+    assert run_events.entry("start", "w", "r", "running", now=5.0, step="load", depends=["fetch"]) == {
+        "time": 5.0,
+        "phase": "start",
+        "workflow": "w",
+        "run_id": "r",
+        "status": "running",
+        "step": "load",
+        "depends": ["fetch"],
+    }

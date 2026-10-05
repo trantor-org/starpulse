@@ -3,6 +3,7 @@
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 from starpulse.event_log import Entry, EventLog, Tail
 
@@ -62,3 +63,21 @@ def test_appends_from_several_processes_are_all_read_once_in_cursor_order(databa
 
     assert sorted(e.fields["event"] for e in entries) == [f"E{i}" for i in range(6)]
     assert [e.id for e in entries] == sorted(e.id for e in entries)
+
+
+def test_starpulse_emit_in_another_process_reaches_the_tail_of_the_database_the_config_names(tmp_path: Path) -> None:
+    database = f"sqlite:///{tmp_path / 'store.sqlite'}"
+    config = tmp_path / "view.toml"
+    config.write_text(f'database_url = "{database}"\n')
+    tail = Tail(EventLog(database), "runs:events")
+    assert tail.poll() == []
+
+    subprocess.run(
+        [sys.executable, "-m", "starpulse", "emit", "start", "--workflow", "nightly", "--run", "r1",
+         "--status", "running", "--config", str(config)],
+        cwd=tmp_path, capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+
+    assert [(e.fields["workflow"], e.fields["run_id"], e.fields["status"]) for e in tail.poll()] == [
+        ("nightly", "r1", "running")
+    ]

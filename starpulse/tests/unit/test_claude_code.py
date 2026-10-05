@@ -5,8 +5,9 @@ import re
 from pathlib import Path
 
 from starpulse.adapter_kit import MachineEventsAdapterKit
-from starpulse.claude_code import ClaudeCodeAdapter
+from starpulse.claude_code import ClaudeCodeAdapter, publisher
 from starpulse.contracts import TaskKeys
+from starpulse.event_log import EventLog, Tail
 from starpulse.harness import HARNESS_MACHINES
 from starpulse.machine_tasks import Table
 from starpulse.otlp import BRANCH, LogEvent, parse
@@ -90,3 +91,16 @@ class TestClaudeCodeAdapter(MachineEventsAdapterKit):
 
     def produce(self) -> list[dict]:
         return [*replay("feature/PROJ-1-add-x"), *replay()]
+
+
+def test_the_publisher_appends_each_mapped_event_to_the_log_under_the_machine_events_stream(tmp_path: Path) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    publish = publisher(log)
+
+    for event in replay("feature/PROJ-7-x")[:2]:
+        assert publish(event) is not None
+
+    assert [(e.fields["event"], e.fields["task"], e.fields["actor"]) for e in Tail(log, "machine:events").poll()] == [
+        ("SESSION_STARTED", "PROJ-7", "claude-code"),
+        ("SKILL_USED", "PROJ-7", "claude-code"),
+    ]
