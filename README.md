@@ -47,7 +47,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_LOG_TOOL_DETAILS=1 \
 OTEL_RESOURCE_ATTRIBUTES="vcs.ref.head.name=$(git branch --show-current)" claude
 ```
 
-The receiver keeps only the event types a session moves on and never reads prompt or reply text.
+The receiver decodes each export but publishes only which session moved, on which event and when; prompt,
+reply and tool text is neither stored nor forwarded.
 
 ### Report runs from any scheduler
 
