@@ -437,7 +437,9 @@ def test_an_instance_type_that_is_not_a_runs_adapter_exits_naming_the_instance(
         _adapter(parser, RunsInstance("ci", "config", "http://ci.test"))
 
     assert exited.value.code == 1
-    assert capsys.readouterr().err == "runs instance ci: starpulse.config is not a runs adapter\n"
+    assert capsys.readouterr().err == (
+        "runs instance ci: config is not a runs adapter: it needs start(url) and follow(url, runs, group)\n"
+    )
 
 
 @pytest.mark.parametrize("present", ["start", "follow"])

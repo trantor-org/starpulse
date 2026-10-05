@@ -7,25 +7,29 @@ Backlog.md project in `./backlog`, keeping its history in a SQLite file, with no
 The `[board]` table names the board adapter by `type` (`starpulse.board`); the rest of the table is that
 adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.history`).
 
-Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` under
-`starpulse`, the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
+Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a name under
+`starpulse`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
 group its workflows on the page. A workflow is shown as `<instance>/<workflow>`, so two instances can
 carry the same workflow name.
 """
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 
 from starpulse.board import DEFAULT_TYPE, module_name
 from starpulse.harnesses import Harnesses, load_harnesses
 
 _KEYS = {"tracker_url", "mode", "runs", "harnesses_file", "board", "database_url", "session_start_url"}
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains"}
+
+__all__ = ["Config", "ConfigError", "RunsInstance", "load", "runs_adapter"]
 
 
 class ConfigError(ValueError):
@@ -42,12 +46,30 @@ class RunsInstance:
 
     name: str
     type: str
-    """The adapter module under `starpulse` that reads the instance."""
+    """The adapter module that reads the instance: a name under `starpulse`, or a dotted module path."""
     url: str
     run_safe: tuple[str, ...] = ()
     """The workflows Run now may start; any other answers 404, so none is startable by default."""
     domains: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     """The page's groups of this instance's workflows, in the order it lays them out."""
+
+
+def runs_adapter(kind: str) -> ModuleType:
+    """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, group)`."""
+    if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
+        raise ConfigError(f"no runs adapter of type {kind}")
+    target = module_name(kind)
+    try:
+        module = importlib.import_module(target)
+    except ModuleNotFoundError as exc:
+        if exc.name and (target == exc.name or target.startswith(f"{exc.name}.")):
+            raise ConfigError(f"no runs adapter of type {kind}") from exc
+        raise ConfigError(f"runs adapter {kind} failed to import: {exc}") from exc
+    except ImportError as exc:
+        raise ConfigError(f"runs adapter {kind} failed to import: {exc}") from exc
+    if not (callable(getattr(module, "start", None)) and callable(getattr(module, "follow", None))):
+        raise ConfigError(f"{kind} is not a runs adapter: it needs start(url) and follow(url, runs, group)")
+    return module
 
 
 def _instance(raw: object) -> RunsInstance:
@@ -64,8 +86,10 @@ def _instance(raw: object) -> RunsInstance:
             f"runs instance {name}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_INSTANCE_KEYS))}"
         )
     kind, url = raw["type"], raw["url"]
-    if not isinstance(kind, str) or not kind.isidentifier() or importlib.util.find_spec(f"starpulse.{kind}") is None:
-        raise ConfigError(f"runs instance {name}: no runs adapter of type {kind}")
+    try:
+        runs_adapter(kind)
+    except ConfigError as exc:
+        raise ConfigError(f"runs instance {name}: {exc}") from exc
     if not isinstance(url, str):
         raise ConfigError(f"runs instance {name}: url must be text")
     run_safe, domains = raw.get("run_safe", []), raw.get("domains", {})

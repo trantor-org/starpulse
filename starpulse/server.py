@@ -42,7 +42,6 @@ POST /api/start    {task, assignee}: start a task's session at `session_start_ur
 from __future__ import annotations
 
 import argparse
-import importlib
 import ipaddress
 import json
 import os
@@ -60,7 +59,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from starpulse.board import AssigneeWriter, Board, MoveWriter, Written
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
-from starpulse.config import Config, RunsInstance, load
+from starpulse.config import Config, ConfigError, RunsInstance, load, runs_adapter
 from starpulse.contracts import StartFailedError
 from starpulse.harnesses import Harnesses
 from starpulse.history import History, HistoryStore, build_machine_recorder, database_url
@@ -381,10 +380,10 @@ def _config(parser: argparse.ArgumentParser, path: Path | None) -> Config:
 
 def _adapter(parser: argparse.ArgumentParser, instance: RunsInstance) -> ModuleType:
     """The runs adapter module of `instance`: `start(url)` gives its start capability or None, `follow(url, sink, group)` reads its workflows."""
-    module = importlib.import_module(f"starpulse.{instance.type}")
-    if not (callable(getattr(module, "start", None)) and callable(getattr(module, "follow", None))):
-        parser.exit(1, f"runs instance {instance.name}: starpulse.{instance.type} is not a runs adapter\n")
-    return module
+    try:
+        return runs_adapter(instance.type)
+    except ConfigError as exc:
+        parser.exit(1, f"runs instance {instance.name}: {exc}\n")
 
 
 def assemble(config: Config, base: Path, window_s: float | None, run_safe: Collection[str]) -> tuple[Board, BoardFeed]:

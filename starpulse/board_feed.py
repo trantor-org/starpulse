@@ -268,12 +268,6 @@ class BoardFeed:
             }
 
 
-class RunsSink(Protocol):
-    """Where a runs adapter publishes the workflows of its one instance, and says when it cannot read them."""
-
-    def set_dags(self, dags: list | None, error: str | None) -> None: ...
-
-
 class InstanceRuns:
     """The feed as one runs adapter instance sees it: it publishes its workflows and errors under its own name."""
 

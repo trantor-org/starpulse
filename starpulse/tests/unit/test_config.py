@@ -1,10 +1,11 @@
 """StarPulse's one config file: where its tracker and orchestrator are and which adapters run."""
 
+import sys
 from pathlib import Path
 
 import pytest
 
-from starpulse.config import Config, ConfigError, load
+from starpulse.config import Config, ConfigError, load, runs_adapter
 from starpulse.harnesses import HarnessError
 
 
@@ -129,6 +130,55 @@ def test_an_instance_type_that_names_no_adapter_is_refused(tmp_path: Path) -> No
     text = '[[runs]]\nname = "ci"\ntype = "airflowz"\nurl = "http://ci.test"\n'
 
     assert _refusal(tmp_path, text) == "runs instance ci: no runs adapter of type airflowz"
+
+
+def _adapter_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, package: str, module: str, source: str) -> None:
+    """An installed-package stand-in: `<package>.<module>` importable from `tmp_path`."""
+    (tmp_path / package).mkdir()
+    (tmp_path / package / "__init__.py").touch()
+    (tmp_path / package / f"{module}.py").write_text(source)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    for name in (package, f"{package}.{module}"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+
+def test_an_instance_type_may_be_the_dotted_path_of_a_module_outside_starpulse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _adapter_module(
+        tmp_path, monkeypatch, "acme", "runs", "def start(url): return None\ndef follow(url, runs, group): ...\n"
+    )
+    text = '[[runs]]\nname = "ci"\ntype = "acme.runs"\nurl = "http://ci.test"\n'
+
+    (only,) = load(_write(tmp_path, text)).runs
+
+    assert (only.type, runs_adapter(only.type).__name__) == ("acme.runs", "acme.runs")
+
+
+def test_a_dotted_type_that_resolves_but_is_no_runs_adapter_is_refused_naming_its_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _adapter_module(tmp_path, monkeypatch, "acme", "notruns", "def start(url): return None\n")
+    text = '[[runs]]\nname = "ci"\ntype = "acme.notruns"\nurl = "http://ci.test"\n'
+
+    assert _refusal(tmp_path, text) == (
+        "runs instance ci: acme.notruns is not a runs adapter: it needs start(url) and follow(url, runs, group)"
+    )
+
+
+def test_a_dotted_type_whose_module_is_missing_is_refused(tmp_path: Path) -> None:
+    text = '[[runs]]\nname = "ci"\ntype = "acme_absent.runs"\nurl = "http://ci.test"\n'
+
+    assert _refusal(tmp_path, text) == "runs instance ci: no runs adapter of type acme_absent.runs"
+
+
+def test_a_dotted_type_that_fails_to_import_is_refused_with_the_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _adapter_module(tmp_path, monkeypatch, "acme", "broken", "import acme_missing_dependency\n")
+    text = '[[runs]]\nname = "ci"\ntype = "acme.broken"\nurl = "http://ci.test"\n'
+
+    assert "acme_missing_dependency" in _refusal(tmp_path, text)
 
 
 def test_hub_mode_is_reserved_and_refused(tmp_path: Path) -> None:

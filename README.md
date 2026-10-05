@@ -79,7 +79,8 @@ database_url = "postgresql+psycopg://db.example.com/starpulse"
 [board]
 type = "upstream_backlog"
 
-# One instance of a runs adapter; its workflows are drawn as `<name>/<workflow>`.
+# One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
+# (it offers `start(url)` and `follow(url, runs, group)`); its workflows are drawn as `<name>/<workflow>`.
 [[runs]]
 name = "dagu"
 type = "dagu"
@@ -101,6 +102,26 @@ directory. The `Board` says:
 
 `starpulse.upstream_backlog` is the reference adapter: it polls a Backlog.md project's Markdown files and takes
 the machine from the project's own statuses. Name your module in `[board] type` and StarPulse imports it.
+
+## Public surface
+
+What a release keeps compatible; a minor `0.y` release may break it, and its notes say so. Everything else in the package is
+internal and can change in any release.
+
+- The `starpulse` command line: its verbs, their JSON output and their exit codes.
+- The documented entry point `python -m starpulse.claude_code`.
+- The config file's keys and the machine YAML with its JSON Schema (`machine.schema.json`).
+
+The modules an adapter may import, each exporting exactly the names in its `__all__`:
+
+- `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer protocols).
+- `starpulse.contracts`: the board, machine-event and runs records, their JSON Schemas, and `RunsSink`.
+- `starpulse.adapter_kit`: the test kit an adapter author runs against their adapter.
+- `starpulse.machine_definition`: loading and validating a machine, and the `Registry` of guards and actions.
+- `starpulse.config`: loading the config file, and the runs adapter a `type` names.
+- `starpulse.otlp`: decoding Claude Code's OpenTelemetry log export.
+
+A package test pins this list and each module's names, so adding or removing one is a reviewed change.
 
 ## Develop
 

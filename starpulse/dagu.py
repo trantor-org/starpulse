@@ -24,8 +24,7 @@ from typing import Any, get_args
 import redis.exceptions
 
 from starpulse import run_events
-from starpulse.board_feed import RunsSink
-from starpulse.contracts import RunStatus, StartFailedError
+from starpulse.contracts import RunsSink, RunStatus, StartFailedError
 from starpulse.streams import StreamConsumer
 
 #: Seconds between two listings of a followed Dagu instance.
