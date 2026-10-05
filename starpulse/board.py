@@ -27,17 +27,20 @@ DEFAULT_TYPE = "upstream_backlog"
 
 
 class Written(NamedTuple):
-    """What a board writer did with a status change: `output` is its response, or its refusal and the `skill` that satisfies it."""
+    """What a board writer did with a status change: `output` is its response, or its refusal and the `skill` that satisfies it.
+
+    `unavailable` marks a board with no writer at all, which is no refusal of this change but of every one."""
 
     ok: bool
     output: str
     skill: str = ""
+    unavailable: bool = False
 
 
 class MoveWriter(Protocol):
-    """A board writer: set a task's status, and say what it did."""
+    """A board writer: set a task's status on behalf of `actor` (`operator` or `agent`), and say what it did."""
 
-    def __call__(self, task: str, status: str) -> Written: ...
+    def __call__(self, task: str, status: str, actor: str) -> Written: ...
 
 
 class AssigneeWriter(Protocol):

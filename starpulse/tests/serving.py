@@ -16,7 +16,7 @@ from starpulse.server import _handler
 from starpulse.settings import HistoryWindow
 
 
-def _no_writer(task: str, status: str) -> Written:
+def _no_writer(task: str, status: str, actor: str = "") -> Written:
     raise AssertionError(f"the test reached the board writer: {task} {status}")
 
 

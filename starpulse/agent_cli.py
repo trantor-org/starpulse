@@ -1,13 +1,17 @@
-"""`starpulse snapshot|board|task show|doctor|help --agent`: the verbs an agent reads a running StarPulse server with.
+"""`starpulse snapshot|board|task show|moves|move|doctor|help --agent`: the verbs an agent drives a running StarPulse server with.
 
     starpulse board --milestone launch --label api
     starpulse task show PROJ-45
+    starpulse task moves PROJ-45
+    starpulse task move PROJ-45 review
     starpulse doctor
     starpulse help --agent
 
 Every verb writes one JSON document to stdout, an error as `{"error": "...", "code": "..."}`, and nothing to stderr.
-The exit code is 0 for success (for `doctor`, every check passing), 1 for a refused or invalid request or a failed
-`doctor` check, 2 for a usage error, 3 when the server (or what the
+`task move` always moves as the actor `agent`: a move the board machine declares for the operator alone, or that the
+board's guard refuses, is `{"ok": false, "reason": "...", "skill": "..."}`, the verdict, and exit 1.
+The exit code is 0 for success (for `doctor`, every check passing), 1 for a refused or invalid request, a refused
+move or a failed `doctor` check, 2 for a usage error, 3 when the server (or what the
 verb needs of it) is unavailable and 4 for something not found. The server is `--server`, else `STARPULSE_URL`, else
 `http://localhost:8766`; a verb reads it per call and keeps nothing. `starpulse help --agent` prints the manifest of
 verbs, generated from the parser below, so a verb added here is listed with its arguments, output keys and exit codes.
@@ -27,9 +31,12 @@ from typing import Any, NoReturn
 
 from starpulse import doctor
 from starpulse.config import load
+from starpulse.contracts import Move
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
+#: Who `task move` moves as: the machine YAML's writers say which moves an agent may make.
+AGENT = "agent"
 #: What each exit code means, as the manifest says it.
 EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}
 #: The exit code of each error `code`.
@@ -61,6 +68,7 @@ _TASK_KEYS = (
     "moves",
     "description",
 )
+_MOVE_KEYS = ("ok", "task", "to", "reason", "skill")
 
 Verb = Callable[[argparse.Namespace, Mapping[str, str]], dict[str, Any]]
 
@@ -111,6 +119,14 @@ def _board_flow(snapshot: dict[str, Any]) -> dict[str, Any]:
     return next(flow for flow in snapshot["flows"] if flow["name"] == "board")
 
 
+def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The verdict on each column as the agent meets it: a move the board machine leaves to others is refused."""
+    return {
+        column: Move.model_validate(raw).for_actor(AGENT).model_dump(include={"allowed", "reason", "skill"})
+        for column, raw in agent["moves"].items()
+    }
+
+
 def _task(agent: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
     """A Board task as a verb reports it. It waits on each dependency that has not completed."""
     pulls = {pull["url"]: pull for pull in snapshot["pulls"].get(agent["id"], [])}
@@ -124,7 +140,7 @@ def _task(agent: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
         "dependencies": agent["dependencies"],
         "waiting_on": [d for d in agent["dependencies"] if snapshot["settled"].get(d) != "completed"],
         "prs": [pulls.get(url, {"url": url}) for url in agent["prs"]],
-        "moves": agent["moves"],
+        "moves": _agent_moves(agent),
     }
 
 
@@ -175,6 +191,48 @@ def _show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
             "description": "",
         }
     return {**_task(agent, snapshot), "description": agent["description"]}
+
+
+def _moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    shown = _show(args, environ)
+    return {"task": shown["id"], "lane": shown["lane"], "moves": shown["moves"]}
+
+
+def _move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Move the task as the agent: the server's verdict, or an error when no board writer can answer."""
+    base = server_url(args.server, environ)
+    body = json.dumps({"task": args.task, "to": args.to, "actor": AGENT}).encode()
+    request = urllib.request.Request(
+        f"{base}/api/move", data=body, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=10.0,  # seconds the board writer may take to answer one move
+        ) as resp:
+            status, reply = resp.status, json.load(resp)
+    except urllib.error.HTTPError as exc:  # before OSError, which it subclasses
+        status, reply = exc.code, _json_or_empty(exc)
+    except (OSError, ValueError) as exc:
+        raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
+    message = reply.get("error") or f"{base} answered {status} for /api/move"
+    if status == 200:
+        return {"ok": True, "task": args.task, "to": args.to, "reason": "", "skill": ""}
+    if status == 409:
+        return {"ok": False, "task": args.task, "to": args.to, "reason": message, "skill": reply.get("skill", "")}
+    if status == 404:
+        raise CliError("not_found", message)
+    if status in (400, 403):
+        raise CliError("refused", message)
+    raise CliError("unavailable", f"{base}: {message}")
+
+
+def _json_or_empty(resp: Any) -> dict[str, Any]:
+    try:
+        document = json.load(resp)
+    except ValueError:
+        return {}
+    return document if isinstance(document, dict) else {}
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -285,6 +343,25 @@ def _parser() -> argparse.ArgumentParser:
         (0, 2, 3, 4),
     )
     show.add_argument("task", help="the task's key (`PROJ-45`)")
+    moves = leaf(
+        task_verbs,
+        "moves",
+        "every column a task may move to, each allowed or refused to the agent with its reason and skill",
+        _moves,
+        ("task", "lane", "moves"),
+        (0, 2, 3, 4),
+    )
+    moves.add_argument("task", help="the task's key (`PROJ-45`)")
+    move = leaf(
+        task_verbs,
+        "move",
+        "move a task to a column as the agent; a refusal is the guard's verdict with its reason and skill",
+        _move,
+        _MOVE_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    move.add_argument("task", help="the task's key (`PROJ-45`)")
+    move.add_argument("to", help="the column's state id (`review`), as `task moves` lists")
     check = leaf(
         verbs,
         "doctor",

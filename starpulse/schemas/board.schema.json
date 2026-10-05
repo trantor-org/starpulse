@@ -20,6 +20,15 @@
           "description": "The skill that produces what the guard needs; empty when allowed.",
           "title": "Skill",
           "type": "string"
+        },
+        "writers": {
+          "default": [],
+          "description": "The actors the machine YAML declares for the event behind the move; empty when it declares none, and then any actor may make it.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Writers",
+          "type": "array"
         }
       },
       "required": [

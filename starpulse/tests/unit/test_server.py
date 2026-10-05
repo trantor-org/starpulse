@@ -214,9 +214,11 @@ class _Writer:
     def __init__(self, reply: Written = Written(True, "Updated task PROJ-3")) -> None:
         self.reply = reply
         self.sent: list[tuple[str, str]] = []
+        self.actors: list[str | None] = []
 
-    def __call__(self, task: str, status: str) -> Written:
+    def __call__(self, task: str, status: str, actor: str | None = None) -> Written:
         self.sent.append((task, status))
+        self.actors.append(actor)  # None for a caller that names none, as an assignee write does
         return self.reply
 
 
@@ -252,7 +254,7 @@ def test_a_body_that_does_not_name_a_task_and_a_column_is_a_bad_request(raw: byt
     status, body = _move(raw, writer)
 
     assert (status, writer.sent) == (400, [])
-    assert body == {"error": 'a move needs {"task": "TASK-N", "to": "<column>"}'}
+    assert body == {"error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor" (a string)'}
 
 
 def test_a_task_the_board_does_not_hold_is_not_found() -> None:
@@ -285,6 +287,47 @@ def test_a_move_the_writer_refuses_answers_409_with_its_reason_and_the_skill_tha
     assert status == 409
     assert body == {"error": "refusing to set PROJ-5 Review: ... Run the `designing-ui` skill", "skill": "designing-ui"}
     assert writer.sent == [("PROJ-5", "Review")]  # the writer decides; the snapshot's verdict only forecasts it
+
+
+def test_a_move_with_no_actor_reaches_the_writer_as_the_operator() -> None:
+    writer = _Writer()
+
+    assert _move({"task": "PROJ-3", "to": "in_progress"}, writer)[0] == 200
+    assert writer.actors == ["operator"]
+
+
+def _operator_only_feed() -> BoardFeed:
+    feed = _feed()
+    only = Move(allowed=True, writers=("operator",), reason="only the operator sends a task back", skill="operating")
+    feed.put(task("PROJ-6", "In Progress", moves={"ready": only}))
+    return feed
+
+
+def test_an_actor_outside_the_events_writers_is_refused_before_the_writer_is_asked() -> None:
+    writer = _Writer()
+
+    status, body = _move({"task": "PROJ-6", "to": "ready", "actor": "agent"}, writer, feed=_operator_only_feed())
+
+    assert (status, writer.sent) == (409, [])
+    assert body == {"error": "only the operator sends a task back", "skill": "operating"}
+
+
+@pytest.mark.parametrize("request_actor", [{"actor": "operator"}, {}])
+def test_the_operator_a_writer_names_moves_the_task_with_or_without_naming_itself(request_actor: dict) -> None:
+    writer = _Writer()
+
+    status, _ = _move({"task": "PROJ-6", "to": "ready", **request_actor}, writer, feed=_operator_only_feed())
+
+    assert (status, writer.sent, writer.actors) == (200, [("PROJ-6", "Ready")], ["operator"])
+
+
+def test_a_move_naming_a_non_text_actor_is_a_bad_request() -> None:
+    writer = _Writer()
+
+    status, body = _move({"task": "PROJ-3", "to": "in_progress", "actor": 7}, writer)
+
+    assert (status, writer.sent) == (400, [])
+    assert "actor" in body["error"]
 
 
 STARTED_AT = 1_790_000_000.0
@@ -398,7 +441,14 @@ def test_a_task_off_the_board_or_outside_ready_waiting_and_needs_attention_start
 
 
 def test_a_server_built_without_a_board_writer_refuses_every_move() -> None:
-    assert _no_writer("PROJ-3", "Review") == Written(False, "no board writer is configured")
+    assert _no_writer("PROJ-3", "Review") == Written(False, "no board writer is configured", unavailable=True)
+
+
+def test_a_move_on_a_board_with_no_writer_answers_501_not_a_refusal() -> None:
+    assert _move({"task": "PROJ-3", "to": "in_progress"}, _no_writer) == (
+        501,
+        {"error": "no board writer is configured"},
+    )
 
 
 def test_the_harness_configuration_is_served_to_the_page(tmp_path: Path) -> None:
