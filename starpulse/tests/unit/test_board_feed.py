@@ -267,6 +267,38 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
     assert changes.get_nowait()[0] == "task"
 
 
+def test_a_task_that_changed_lane_carries_the_lane_it_left_until_it_changes_again() -> None:
+    feed = BoardFeed()
+    waiting = BoardTask(id="PROJ-1", title="t", lane="waiting")
+    ready = BoardTask(id="PROJ-1", title="t", lane="ready")
+
+    feed.put(waiting)
+    assert "previous" not in _agents(feed)[0]  # first seen: it left no lane
+
+    feed.put(ready)
+    _, changes = feed.subscribe()
+    feed.put(ready)  # the hourly reconcile republishes it unchanged
+
+    assert _agents(feed)[0]["previous"] == "waiting"
+    assert changes.empty()
+
+    feed.put(BoardTask(id="PROJ-1", title="t", lane="in_progress"))
+    assert _agents(feed)[0]["previous"] == "ready"
+
+
+def test_a_settled_task_republished_unchanged_is_no_delta_and_a_reopened_one_is_no_longer_settled() -> None:
+    feed = BoardFeed()
+    done = BoardTask(id="PROJ-1", title="t", lane="done", settled="completed")
+    feed.put(done)
+    _, changes = feed.subscribe()
+
+    feed.put(done)  # the hourly reconcile republishes it unchanged
+
+    assert changes.empty()
+    feed.put(BoardTask(id="PROJ-1", title="t", lane="ready"))
+    assert feed.snapshot()["settled"] == {}
+
+
 def test_a_settled_board_task_leaves_its_lane_and_a_task_outside_the_scheme_is_not_placed() -> None:
     feed = BoardFeed(keys=PROJ)
     feed.put(BoardTask(id="PROJ-1", title="t", lane="done"))

@@ -110,6 +110,10 @@ export function Card({ task, now, marks, names, compact = false, onOpen, onPress
           <span className="p" /><b>session</b><span className="s">· {claim.phase === "starting" ? "starting" : "waiting for claim"}</span>
           {claim.url && <a className="ago" href={claim.url} target="_blank" rel="noopener" title="Open session" onClick={stop} onPointerDown={stop}>↗</a>}
         </div>
+      ) : task.released ? (
+        <div className="mach released" title="Left Waiting when its dependencies finished">
+          <span className="p" /><b>released</b>
+        </div>
       ) : live && (
         <div className={`mach${now - live.at < HOT_S ? " hot" : ""}`}>
           <span className="p" /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>

@@ -77,6 +77,8 @@ export interface RawAgent {
   description?: string;
   /** A Board task's milestone; empty or absent when it has none. */
   milestone?: string;
+  /** The Board lane the task left on its last move; absent before it has moved. */
+  previous?: string;
   /** The verdict on each Board column the task may move to, by state id. */
   moves?: Record<string, { allowed: boolean; reason: string; skill: string }>;
 }

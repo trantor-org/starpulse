@@ -21,6 +21,8 @@ export interface KanbanTask {
   description: string;
   /** The lifecycle machine that last placed the task, the state it left it in and when (epoch seconds). */
   live: { machine: string; state: string; at: number } | null;
+  /** Ready again after waiting: its last Board move was out of Waiting, so a machine state from before it no longer describes the card. */
+  released: boolean;
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
   moves: Record<string, { allowed: boolean; reason: string; skill: string }>;
 }
@@ -155,7 +157,8 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
     return {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: sky.pulls[a.id] ?? [], description: a.description ?? "",
-      live: latest ? { machine: latest.flow, state: latest.state, at: latest.at } : null, moves: a.moves ?? {},
+      live: latest ? { machine: latest.flow, state: latest.state, at: latest.at } : null,
+      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {},
     };
   });
 }
