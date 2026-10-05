@@ -39,9 +39,12 @@ export function savePrefs(storage: FoldStorage | null, p: Prefs): void {
   }
 }
 
-/** The address once the view has taken a deep link's filters, so a reload keeps what the operator changed since. */
+/** The task a `task` link opens the view on, its modal shown over the board. */
+export const linkedTask = (search: string): string | null => new URLSearchParams(search).get("task");
+
+/** The address once the view has taken a deep link's filters and task, so a reload keeps what the operator changed since. */
 export function withoutFilters(search: string): string {
   const params = new URLSearchParams(search);
-  for (const k of LINK) params.delete(k);
+  for (const k of [...LINK, "task"]) params.delete(k);
   return queryString(params);
 }

@@ -103,7 +103,7 @@ def _instance(raw: object) -> RunsInstance:
 @dataclass(frozen=True)
 class Config:
     tracker_url: str | None
-    """The tracker's web address; a task links to `<tracker_url>/tasks/<id>`."""
+    """The tracker's web address; a task links to `<tracker_url>/tasks/<id>`, or with none to the page's own Kanban."""
     mode: str
     """`ic` for one person on one machine; `hub` is reserved for the organization release."""
     runs: tuple[RunsInstance, ...] = ()

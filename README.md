@@ -136,7 +136,7 @@ when it exists. Credentials never go in it: they come from the environment (`RED
 driver's own, such as `PGPASSWORD`).
 
 ```toml
-# The tracker's web address: a task links to `<tracker_url>/tasks/<id>`.
+# The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's own Kanban.
 tracker_url = "https://tracker.example.com"
 
 # History in Postgres instead of SQLite; install the extra with `uvx --from 'starpulse[postgres]' starpulse serve`.

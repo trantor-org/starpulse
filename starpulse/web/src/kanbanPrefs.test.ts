@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NO_PREFS, hideMilestone, hideTask, toggleFold, type Prefs } from "./kanban";
-import { PREFS_KEY, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
+import { PREFS_KEY, linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
 import type { FoldStorage } from "./nav";
 
 const memory = (): FoldStorage & { data: Map<string, string> } => {
@@ -79,5 +79,16 @@ describe("a deep link", () => {
     expect(withoutFilters("?view=kanban&q=x&demo&assignee=a&milestone=m-1")).toBe("?view=kanban&demo");
     expect(withoutFilters("?q=x")).toBe("");
     expect(withoutFilters("?view=kanban&demo")).toBe("?view=kanban&demo");
+  });
+});
+
+describe("a link to one task", () => {
+  it("names the task whose modal the view opens with", () => {
+    expect(linkedTask("?view=kanban&task=PROJ-7")).toBe("PROJ-7");
+    expect(linkedTask("?view=kanban")).toBeNull();
+  });
+
+  it("leaves the address once taken, so a reload does not reopen it", () => {
+    expect(withoutFilters("?view=kanban&task=PROJ-7&demo")).toBe("?view=kanban&demo");
   });
 });

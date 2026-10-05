@@ -16,7 +16,7 @@ const sky = (tasks: RawAgent[], boardUrl: string | null = "http://board/") =>
     error: null,
     now: 0,
   } as Snapshot);
-const panel = (o: RawAgent, boardUrl?: string | null) => taskPanel(o, sky([o], boardUrl), (id) => (id === "in_progress" ? "In Progress" : id));
+const panel = (o: RawAgent, boardUrl?: string | null, search = "") => taskPanel(o, sky([o], boardUrl), (id) => (id === "in_progress" ? "In Progress" : id), search);
 
 describe("the task panel", () => {
   it("shows the task's state, profile and labels, and leaves its description to the Kanban", () => {
@@ -37,10 +37,19 @@ describe("the task panel", () => {
     expect(html).toContain('<a href="http://board/tasks/PROJ-2157" target="_blank" rel="noopener">PROJ-2157</a>');
   });
 
-  it("names a dependency without a link when the page has no board address", () => {
+  it("opens the task and its dependencies in the page's own Kanban when there is no tracker", () => {
     const html = panel(task({ dependencies: ["PROJ-2156"] }), null);
 
-    expect(html).toContain("<td>Depends on</td><td>PROJ-2156</td>");
+    expect(html).toContain('<a href="?view=kanban&amp;task=PROJ-2156">PROJ-2156</a>');
+    expect(html).toContain('<a href="?view=kanban&amp;task=PROJ-7">Open on board ↗</a>');
+  });
+
+  it("keeps the page's other parameters on its Kanban link", () => {
+    expect(panel(task(), null, "?demo&view=constellation")).toContain('<a href="?demo&amp;view=kanban&amp;task=PROJ-7">Open on board ↗</a>');
+  });
+
+  it("opens the task on the tracker when one is configured", () => {
+    expect(panel(task())).toContain('<a href="http://board/tasks/PROJ-7" target="_blank" rel="noopener">Open on board ↗</a>');
   });
 
   it("links each pull request by its number", () => {

@@ -6,7 +6,7 @@ import {
   COLUMNS, applySuggestion, assigneeOptions, clearFilters, filtersActive, hideMilestone, hideTask, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
   type KanbanTask, type Option, type Prefs,
 } from "./kanban";
-import { loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
+import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
 import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
 import { browserStorage } from "./nav";
 import {
@@ -313,7 +313,7 @@ const LIFT_PX = 5;
 export function Kanban({ hud, moves, starts, compact, constellation }: { hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void }) {
   const [storage] = useState(browserStorage);
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(storage, location.search));
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(() => linkedTask(location.search));
   const [menu, setMenu] = useState<MenuName | null>(null);
   const [typing, setTyping] = useState(false);
   const [pick, setPick] = useState(0);
