@@ -2,6 +2,7 @@
 
 import http.client
 import json
+import mimetypes
 import time
 import mimetypes
 import urllib.error
@@ -74,6 +75,21 @@ def test_the_build_is_served_and_nothing_outside_it(server: ThreadingHTTPServer)
         "/../secret.txt": (404, ""),
         "/missing.js": (404, ""),
     }
+
+
+def test_a_script_is_text_javascript_on_a_host_whose_mime_table_says_otherwise(
+    server: ThreadingHTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host = mimetypes.guess_file_type
+    monkeypatch.setattr(
+        mimetypes,
+        "guess_file_type",
+        lambda path, *, strict=True: ("application/javascript", None)
+        if str(path).endswith(".js")
+        else host(path, strict=strict),
+    )
+
+    assert _status(server, "/assets/index-abc123.js") == (200, "text/javascript")
 
 
 def test_the_snapshot_endpoint_is_the_document_the_event_stream_connects_with(tmp_path: Path) -> None:

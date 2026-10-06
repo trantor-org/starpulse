@@ -17,13 +17,16 @@ from typing import Any
 
 import yaml
 
-from starpulse.board import Board, MoveWriter, TaskCreator, Written
+from starpulse.board import Board, MoveWriter, TaskCreator, TaskReader, Written
 from starpulse.upstream_backlog import (
     _FOLDERS,
+    _NOTES,
     DEFAULT_PREFIX,
     DEFAULT_STATUSES,
     BacklogConfig,
+    _description,
     _split,
+    _strings,
     lane_id,
     project_board,
 )
@@ -34,6 +37,10 @@ DEFAULT_PATH = ".starpulse/board"
 #: relative to the config.
 _SETTINGS = {"type", "path", "interval", "machine"}
 _NOTES_END = re.compile(r"\s*<!-- SECTION:NOTES:END -->")
+_PLAN = re.compile(r"<!-- SECTION:PLAN:BEGIN -->(.*?)<!-- SECTION:PLAN:END -->", re.S)
+_CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
+_DONE = re.compile(r"<!-- DOD:BEGIN -->(.*?)<!-- DOD:END -->", re.S)
+_ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
 _NOTES_SECTION = "\n## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{}\n<!-- SECTION:NOTES:END -->\n"
 
 
@@ -71,6 +78,48 @@ def _update(root: Path, task: str, edit: Callable[[dict, str], str]) -> Written:
     except OSError as error:
         return Written(False, f"{path}: {error}")
     return Written(True, f"Updated task {task}")
+
+
+def _section(pattern: re.Pattern[str], body: str) -> str:
+    """The text between a section's markers, trimmed; empty when the section is absent."""
+    found = pattern.search(body)
+    return found.group(1).strip() if found else ""
+
+
+def _items(pattern: re.Pattern[str], body: str) -> list[dict[str, Any]]:
+    """The checklist between a section's markers as `{n, text, checked}`, in file order."""
+    found = pattern.search(body)
+    return [
+        {"n": int(number), "text": text, "checked": mark != " "}
+        for mark, number, text in _ITEM.findall(found.group(1) if found else "")
+    ]
+
+
+def _reader(root: Path) -> TaskReader:
+    """A board reader: the record of the task's file, keyed by the fields the task view draws and edits."""
+
+    def read(task: str, /) -> dict[str, Any] | None:
+        if (path := _find(root, task)) is None:
+            return None
+        try:
+            frontmatter, body = _split(path.read_text())
+        except OSError:
+            return None  # moved or removed while reading
+        return {
+            "title": str(frontmatter.get("title") or ""),
+            "profile": next(iter(_strings(frontmatter.get("assignee"))), ""),
+            "priority": str(frontmatter.get("priority") or ""),
+            "labels": list(_strings(frontmatter.get("labels"))),
+            "milestone": str(frontmatter.get("milestone") or ""),
+            "dependencies": list(_strings(frontmatter.get("dependencies"))),
+            "description": _description(body),
+            "plan": _section(_PLAN, body),
+            "notes": _section(_NOTES, body),
+            "acceptanceCriteria": _items(_CRITERIA, body),
+            "definitionOfDone": _items(_DONE, body),
+        }
+
+    return read
 
 
 def _holder(body: str, session: str) -> str:
@@ -155,7 +204,7 @@ def _creator(root: Path, config: BacklogConfig) -> TaskCreator:
 def board(settings: Mapping[str, Any], base: Path) -> Board:
     """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, polled every `interval` seconds.
 
-    Moves, assignee changes and creates write the task files directly. Any lane reaches any other unless `machine` names a
+    Moves, assignee changes and creates write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
     machine file, whose transitions and `writers` then decide which moves are offered, and to whom.
     """
     if unknown := sorted(settings.keys() - _SETTINGS):
@@ -174,5 +223,10 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         root,
         settings,
         base,
-        lambda config: {"writer": _writer(root, config.statuses), "assign": assign, "create": _creator(root, config)},
+        lambda config: {
+            "writer": _writer(root, config.statuses),
+            "assign": assign,
+            "create": _creator(root, config),
+            "read": _reader(root),
+        },
     )
