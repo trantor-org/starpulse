@@ -43,7 +43,7 @@ __all__ = ["ENGINE", "INSTANCE", "PUBLIC", "ROUTES", "SESSION_S", "VIEWER", "Gat
 
 PUBLIC, VIEWER, INSTANCE, ENGINE = "public", "viewer", "instance", "engine"
 #: The routes that are not viewer routes. The insights routes join it as `ENGINE` routes in their own slice.
-ROUTES: Mapping[str, str] = {"/auth/login": PUBLIC, "/auth/callback": PUBLIC, "/api/runs/events": INSTANCE}
+ROUTES: Mapping[str, str] = {"/auth/login": PUBLIC, "/auth/callback": PUBLIC, "/api/runs/events": INSTANCE, "/api/forward": INSTANCE}
 #: How long a session lasts: a working day, after which the viewer signs in again.
 SESSION_S = 8 * 3600
 #: How long a started sign-in may take before its state is forgotten.

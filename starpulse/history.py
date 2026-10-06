@@ -22,6 +22,7 @@ from typing import Protocol, runtime_checkable
 
 from sqlalchemy import (
     Column,
+    Connection,
     Engine,
     Float,
     Index,
@@ -195,10 +196,16 @@ class HistoryStore:
         with self.engine.begin() as db:
             db.execute(self._insert(_machine_events).values(row).on_conflict_do_nothing())
             if cursor is not None:
-                save = self._insert(_cursors).values(stream=machine_events.STREAM, after_id=cursor)
-                db.execute(
-                    save.on_conflict_do_update(index_elements=["stream"], set_={"after_id": save.excluded.after_id})
-                )
+                self._save_cursor(db, machine_events.STREAM, cursor)
+
+    def save_cursor(self, stream: str, after_id: int) -> None:
+        """Keep `after_id` as the log id `stream`'s reader has passed, in place of the last one."""
+        with self.engine.begin() as db:
+            self._save_cursor(db, stream, after_id)
+
+    def _save_cursor(self, db: Connection, stream: str, after_id: int) -> None:
+        save = self._insert(_cursors).values(stream=stream, after_id=after_id)
+        db.execute(save.on_conflict_do_update(index_elements=["stream"], set_={"after_id": save.excluded.after_id}))
 
     def record_lane(self, event_id: str, task: str, status: str, at: float) -> None:
         """Write a task's lane change; a status that repeats the task's last one (a reconcile) is no change."""

@@ -1,16 +1,21 @@
-"""`starpulse serve|emit|<verb> ...` (or `python -m starpulse`): the package's command line.
+"""`starpulse serve|emit|forward|<verb> ...` (or `python -m starpulse`): the package's command line.
 
-`serve` runs the view (`starpulse.server`) and `emit` pushes a workflow run onto the runs stream (`starpulse.emit`);
-each reads the rest of the line with its own flags, so `starpulse serve --help` lists the server's. Any other word is
-a verb that reads the running server as JSON (`starpulse.agent_cli`), and `starpulse help --agent` lists them.
+`serve` runs the view (`starpulse.server`), `emit` pushes a workflow run onto the runs stream (`starpulse.emit`) and
+`forward` sets the opt-in that lets a person's name leave for a hub (`starpulse.forward`); each reads the rest of the
+line with its own flags, so `starpulse serve --help` lists the server's. Any other word is a verb that reads the
+running server as JSON (`starpulse.agent_cli`), and `starpulse help --agent` lists them.
 """
 
 import sys
 from collections.abc import Callable
 
-from starpulse import agent_cli, emit, server
+from starpulse import agent_cli, emit, forward, server
 
-COMMANDS: dict[str, Callable[[list[str]], int | None]] = {"serve": server.main, "emit": emit.main}
+COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
+    "serve": server.main,
+    "emit": emit.main,
+    "forward": forward.main,
+}
 
 
 def main(argv: list[str] | None = None) -> int | None:

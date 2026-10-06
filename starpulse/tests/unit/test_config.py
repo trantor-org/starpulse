@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.config import Config, ConfigError, OidcSettings, load, runs_adapter
+from starpulse.config import Config, ConfigError, Forward, OidcSettings, Source, load, runs_adapter
 from starpulse.harnesses import HarnessError
 
 
@@ -194,8 +194,8 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: board, database_url, harnesses_file, hub_retention_days, "
-        "level, mode, oidc, runs, session_start_url, tracker_url"
+        "unknown config key(s) trakcer_url, zeta; known: aggregates_only, board, database_url, forward, "
+        "harnesses_file, hub_retention_days, level, mode, oidc, runs, session_start_url, sources, tracker_url"
     )
 
 
@@ -410,3 +410,71 @@ def test_an_oidc_table_with_an_unknown_key_is_refused(tmp_path: Path) -> None:
 
 def test_oidc_is_a_table(tmp_path: Path) -> None:
     assert _refusal(tmp_path, "oidc = 3\n") == "oidc must be an [oidc] table"
+
+
+def test_a_forward_table_names_the_hub_its_token_variable_and_a_default_batch(tmp_path: Path) -> None:
+    text = '[forward]\nurl = "https://hub.example.test"\ntoken_env = "HUB_TOKEN"\n'
+
+    forward = load(_write(tmp_path, text)).forward
+
+    assert forward == Forward(url="https://hub.example.test", token_env="HUB_TOKEN", batch=50)
+
+
+def test_no_forward_table_means_nothing_is_forwarded(tmp_path: Path) -> None:
+    assert load(None).forward is None
+    assert load(_write(tmp_path, 'tracker_url = "http://t.test"\n')).forward is None
+
+
+@pytest.mark.parametrize(
+    ("table", "reason"),
+    [
+        ('token_env = "T"', "forward needs url"),
+        ('url = "https://hub.test"', "forward needs token_env"),
+        ('url = "hub.test"\ntoken_env = "T"', "forward url must be an http:// or https:// address"),
+        ('url = "https://hub.test"\ntoken_env = "not a name"', "forward token_env must be the name of an environment variable"),
+        ('url = "https://hub.test"\ntoken_env = "T"\nbatch = 0', "forward batch must be a whole number from 1 to 200"),
+        ('url = "https://hub.test"\ntoken_env = "T"\nbatch = 201', "forward batch must be a whole number from 1 to 200"),
+        ('url = "https://hub.test"\ntoken_env = "T"\nbatch = true', "forward batch must be a whole number from 1 to 200"),
+        ('url = "https://hub.test"\ntoken_env = "T"\nopt_in = true', "forward: unknown key(s) opt_in; known: batch, token_env, url"),
+    ],
+)
+def test_a_forward_table_that_cannot_run_is_refused_with_its_reason(tmp_path: Path, table: str, reason: str) -> None:
+    assert _refusal(tmp_path, f"[forward]\n{table}\n") == reason
+
+
+def test_sources_are_the_instances_a_hub_accepts_events_from_each_with_its_own_token_variable(tmp_path: Path) -> None:
+    text = (
+        '[[sources]]\nname = "ana"\ntoken_env = "ANA_TOKEN"\n\n[[sources]]\nname = "bo"\ntoken_env = "BO_TOKEN"\n'
+    )
+
+    config = load(_write(tmp_path, text))
+
+    assert config.sources == (Source("ana", "ANA_TOKEN"), Source("bo", "BO_TOKEN"))
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        ('[[sources]]\ntoken_env = "T"\n', "a source needs name"),
+        ('[[sources]]\nname = "ana"\n', "a source needs token_env"),
+        ('[[sources]]\nname = "a/b"\ntoken_env = "T"\n', "source names must be non-empty text without a /"),
+        ('[[sources]]\nname = "ana"\ntoken_env = "T 1"\n', "source ana: token_env must be the name of an environment variable"),
+        ('[[sources]]\nname = "ana"\ntoken_env = "T"\nurl = "x"\n', "source ana: unknown key(s) url; known: name, token_env"),
+        (
+            '[[sources]]\nname = "ana"\ntoken_env = "A"\n[[sources]]\nname = "ana"\ntoken_env = "B"\n',
+            "source ana is configured twice",
+        ),
+        (
+            '[[sources]]\nname = "ana"\ntoken_env = "A"\n[[sources]]\nname = "bo"\ntoken_env = "A"\n',
+            "sources ana and bo share token_env A; each needs its own token",
+        ),
+    ],
+)
+def test_a_sources_table_that_cannot_run_is_refused_with_its_reason(tmp_path: Path, text: str, reason: str) -> None:
+    assert _refusal(tmp_path, text) == reason
+
+
+def test_a_hub_takes_names_unless_it_is_configured_for_aggregates_only(tmp_path: Path) -> None:
+    assert load(None).aggregates_only is False
+    assert load(_write(tmp_path, "aggregates_only = true\n")).aggregates_only is True
+    assert _refusal(tmp_path, 'aggregates_only = "yes"\n') == "aggregates_only must be true or false"

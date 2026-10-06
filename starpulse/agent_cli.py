@@ -587,7 +587,7 @@ def _manifest(parser: argparse.ArgumentParser) -> dict[str, Any]:
                 "exit_codes": leaf.get_default("exit_codes"),
             }
             for verb, leaf in _leaves(parser)
-            if leaf.get_default("run")  # `serve` and `emit` are listed for `--help` but read no running server
+            if leaf.get_default("run")  # `serve`, `emit` and `forward` are listed for `--help` but read no running server
         ],
     }
 
@@ -597,12 +597,13 @@ def _parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="starpulse",
         description="StarPulse: the flow view of workflows and tasks. These verbs read a running server as JSON.",
-        epilog="`starpulse serve` runs the server and `starpulse emit` pushes a workflow run; each has its own --help.",
+        epilog="`starpulse serve` runs the server, `starpulse emit` pushes a workflow run and `starpulse forward` sets the hub opt-in; each has its own --help.",
     )
     verbs = parser.add_subparsers(dest="command", required=True, metavar="command")
     # Listed so `--help` shows how to start the server; `__main__` hands these words to their own parsers before this one.
     verbs.add_parser("serve", help="run the flow view's server", add_help=False)
     verbs.add_parser("emit", help="push a workflow run onto the runs stream", add_help=False)
+    verbs.add_parser("forward", help="let a person's name leave this instance for the hub, or stop it", add_help=False)
 
     def leaf(
         group: argparse._SubParsersAction,

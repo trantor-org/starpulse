@@ -101,7 +101,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse import analytics, run_events
+from starpulse import analytics, forward, run_events
 from starpulse import events as machine_events
 from starpulse.board import (
     AssigneeWriter,
@@ -120,7 +120,7 @@ from starpulse.contracts import Move, StartFailedError
 from starpulse.event_log import EventLog
 from starpulse.harnesses import Harnesses
 from starpulse.history import HealthHistory, History, HistoryStore, database_url, record_machine_events
-from starpulse.ingest import MAX_BODY, Ingest
+from starpulse.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse.ingest import tokens as ingest_tokens
 from starpulse.machine_tasks import MachineTasks
 from starpulse.machine_tasks import tables as machine_tables
@@ -162,6 +162,7 @@ _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
 _TASKS = "/api/tasks"
 _INGEST = "/api/runs/events"
+_FORWARD = "/api/forward"
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
 #: The details a create takes besides its title, as one text value or a list of them.
@@ -524,6 +525,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     create: TaskCreator | None
     ingest: Ingest | None
     gate: Callable[[BaseHTTPRequestHandler], bool] | None
+    forward: ForwardIngest | None
 
     def parse_request(self) -> bool:
         """Parse the request, then let the gate (a hub's sign-in) answer or admit it before any route sees it."""
@@ -531,7 +533,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
-        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST}:
+        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD}:
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
             self.end_headers()
@@ -564,7 +566,9 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             else:
                 status, body = start_task(self.client_address[0], raw, self.feed, self.assign, self.start_session)
         elif path == _INGEST and self.ingest is not None:
-            status, body = self._ingest(self.ingest)
+            status, body = self._pushed(self.ingest, MAX_BODY)
+        elif path == _FORWARD and self.forward is not None:
+            status, body = self._pushed(self.forward, MAX_FORWARD_BODY)
         elif path.startswith(_RUN):
             status, body = run_dag(self.client_address[0], unquote(path.removeprefix(_RUN)), self.starts, self.run_safe)
         else:
@@ -572,15 +576,15 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             return
         self._send(json.dumps(body).encode(), status)
 
-    def _ingest(self, ingest: Ingest) -> tuple[int, dict]:
-        """Answer one pushed run event; a body over `MAX_BODY` is refused unread and the connection closed."""
+    def _pushed(self, ingest: Callable[[str | None, bytes], tuple[int, dict]], limit: int) -> tuple[int, dict]:
+        """Answer one token-guarded push; a body over `limit` is refused unread and the connection closed."""
         try:
             declared = int(self.headers.get("Content-Length") or 0)  # pragma: no mutate: case-insensitive
         except ValueError:
             declared = 0
-        if declared > MAX_BODY:
+        if declared > limit:
             self.close_connection = True  # the body was not read, so the connection cannot carry another request
-            return 413, {"error": f"a run event is at most {MAX_BODY} bytes"}
+            return 413, {"error": f"a body is at most {limit} bytes"}
         return ingest(self.headers.get("Authorization"), self.rfile.read(max(declared, 0)))
 
     def do_PUT(self) -> None:
@@ -630,6 +634,7 @@ def _handler(
     clock: Callable[[], float] = time.time,
     ingest: Ingest | None = None,
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
+    forward: ForwardIngest | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -649,6 +654,7 @@ def _handler(
             self.create = create
             self.ingest = ingest
             self.gate = gate
+            self.forward = forward
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
         def do_GET(self) -> None:
@@ -824,6 +830,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     config = _config(parser, args.config)
     try:
         instance_tokens = ingest_tokens(config.runs, os.environ)
+        source_tokens = ingest_tokens(config.sources, os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     gate = None
@@ -887,6 +894,19 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     # The learned step graphs persist only in StarPulse's own store.
     pushed = PushRuns(feed.runs(PUSHED_INSTANCE), history if isinstance(history, HistoryStore) else None)
     follow(pushed, log, run_events.STREAM, pushed.handle_entry)
+    forwarding = threading.Event()  # never set: the forwarder lives as long as the process
+    try:
+        forward.start(
+            config,
+            base,
+            log,
+            history if isinstance(history, HistoryStore) else HistoryStore(url, feed.machines),
+            os.environ,
+            forwarding,
+            hub=args.hub,
+        )
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
     announce(args.port, feed.snapshot()["hint"])
     handler = _handler(
         feed,
@@ -905,6 +925,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         board.create,
         ingest=Ingest(instance_tokens, log) if instance_tokens else None,
         gate=gate,
+        forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,
     )
     serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 

@@ -142,6 +142,14 @@ def test_a_store_holds_a_cursor_per_stream_which_a_store_opened_again_reads(stor
     assert store.cursor("board:events") is None
 
 
+def test_a_reader_saves_its_own_cursor_and_a_later_save_replaces_it(store: HistoryStore) -> None:
+    store.save_cursor("forward:https://hub.test", 12)
+    store.save_cursor("forward:https://hub.test", 40)
+
+    assert store.cursor("forward:https://hub.test") == 40
+    assert store.cursor(events.STREAM) is None
+
+
 def test_an_entry_that_cannot_be_written_moves_no_cursor(store: HistoryStore) -> None:
     store.record_machine("1-0", _CLAIM, cursor=3)
 

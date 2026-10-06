@@ -319,7 +319,7 @@ engine_token_env = "STARPULSE_ENGINE_TOKEN"            # optional: the token of 
 
 Before sign-in every path but `/auth/login` and `/auth/callback` answers 401, including the page, `/api/events` and every
 write. Sign-in sets an `HttpOnly` session cookie that lasts eight hours; sessions live in the hub's memory, so a restart
-signs everyone out. The credentials are separate: a per-instance ingest token passes only on `POST /api/runs/events`, the
+signs everyone out. The credentials are separate: a per-instance token passes only on `POST /api/runs/events` and `POST /api/forward`, the
 engine token only on the engine's routes, and neither signs a viewer in. A new route of the server is a viewer route
 until the gate says otherwise. The test suite signs in against a
 [mock OIDC server](https://github.com/navikt/mock-oauth2-server) container, so it needs Docker or Podman for those cases.
@@ -402,6 +402,51 @@ its machine lacks, or a machine the board does not draw, is refused, naming it, 
 A viewer's facet filter keeps a run only when the run has a value for each selected facet and that value is selected.
 A run without a value for a selected facet is excluded, never counted as zero or as an empty value; selecting nothing
 keeps every run.
+
+### Forward an instance's events to a hub
+
+An instance sends its machine and runs events to a hub over HTTPS, a batch at a time, in log order. Each side is
+config; neither needs the hub extras on the instance.
+
+On the hub, one `[[sources]]` table per instance names the variable that holds that instance's token. Setting the
+variable is the grant and removing the table (then restarting `serve`) is the revocation:
+
+```toml
+[[sources]]
+name = "ana"                 # the instance; the hub stores its events as `<name>/<event_id>`
+token_env = "ANA_FORWARD_TOKEN"
+
+aggregates_only = false      # true: refuse any batch that opts in to names
+```
+
+On the instance, `[forward]` names the hub and the variable holding the token the hub issued:
+
+```toml
+[forward]
+url = "https://hub.example.com:8766"
+token_env = "HUB_FORWARD_TOKEN"
+batch = 50                   # events per request, 1 to 200
+```
+
+- **What leaves.** Only the machine and runs streams, cut to the fields their contracts name (`machine`, `event`,
+  `task` or `run`, `time`, and a run's `workflow`, `run_id`, `status`, `step`, `depends`). A field a producer added
+  stays home.
+- **Names stay home by default.** `actor` and `assignee` leave only while the instance is opted in. Run
+  `starpulse forward opt-in`, `opt-out` or `status` (`--config` as for `serve`); the flag is
+  `starpulse-forward.json` beside the config. The forwarder reads it before every batch, so an opt-out applies at the
+  next send with no restart and no call to the hub, even while the hub is unreachable. A batch that failed while
+  opted in is rebuilt from the log, so it goes out without names after an opt-out. A hub with `aggregates_only`
+  answers an opt-in 403, and the forwarder sends that batch, and the ones after it, without names until the instance
+  opts out and in again.
+- **Exactly once.** The forwarder reads the instance's event log from a cursor stored in the instance's own database
+  (`forward:<url>`), not from a Redis consumer group. The cursor moves only after the hub answers 200, so a batch
+  that fails, or a process killed between the send and the answer, is sent again whole; the hub stores each
+  `event_id` once and drops the repeat. A new `url` replays the retained log to the new hub.
+- **`POST /api/forward`** takes `{"opt_in": bool, "events": [{"event_id", "stream", "fields"}]}` (at most 200 events
+  and 1 MiB) as a bearer. A missing or wrong token answers 401, an opt-in to an `aggregates_only` hub 403, a body
+  that is no batch 400, and none of them writes anything. An invalid event is counted `rejected` in the 200 so it
+  cannot hold the cursor; a 503 means the hub's log refused an event and the batch repeats.
+- `[forward]` is for an instance; `serve --hub` refuses it.
 
 ## Write a board adapter
 
