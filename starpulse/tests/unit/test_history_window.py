@@ -170,7 +170,7 @@ def test_the_server_answers_get_put_and_delete_on_the_history_window_route(tmp_p
     feed, window = _window(tmp_path, 6)
 
     def call(method: str, body: bytes | None = None) -> tuple[int, dict]:
-        request = urllib.request.Request(url(server, "/api/history-window"), data=body, method=method)
+        request = urllib.request.Request(url(server, "/api/history-window"), data=body, headers={"Content-Type": "application/json"}, method=method)
         try:
             with urllib.request.urlopen(request) as resp:
                 return resp.status, json.load(resp)

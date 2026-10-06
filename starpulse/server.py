@@ -1,6 +1,10 @@
 """Serve StarPulse: every lifecycle machine, the tasks in each, and the workflows of each runs adapter instance.
 
-    .venv/bin/python -m starpulse.server [--port 8766] [--hours 6] [--config starpulse.toml]
+    .venv/bin/python -m starpulse.server [--host 127.0.0.1] [--port 8766] [--hours 6] [--config starpulse.toml]
+
+Every write (POST /api/..., PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
+no `Origin` or this server's own (else 403), so a web page on another site cannot write through the operator's browser.
+It listens on --host, 127.0.0.1 by default.
 
 GET /              the page, built by `pnpm --filter flow-view build` into static/: one view
                    that drills Board → Board state → machine, or Board → workflow. It holds one
@@ -158,6 +162,21 @@ _STARTABLE = frozenset({"ready", "waiting", "needs_attention"})
 
 def _on_lan(source: str) -> bool:
     return any(ipaddress.ip_address(source) in net for net in _LAN)
+
+
+def write_refusal(origin: str | None, host: str | None, content_type: str | None) -> tuple[int, dict[str, str]] | None:
+    """The refusal of a write that may have been sent by another web page, or None when it may go on.
+
+    A page the operator opens reaches this server from the operator's own address, so the source check alone lets it
+    write. A browser names the page's origin on a cross-site write, so an `origin` that is not this server's own (`host`
+    is the `Host` header it was sent to) is 403, and `null` with it. A write must also say it is JSON: a form or a
+    `text/plain` post, the cross-site requests a browser sends without asking first, is 415. The CLI sends no origin.
+    """
+    if origin is not None and urlsplit(origin).netloc != host:
+        return 403, {"error": "A write answers only a page this server served: its origin is not this server's"}
+    if (content_type or "").partition(";")[0].strip().lower() != "application/json":
+        return 415, {"error": "A write must be sent as Content-Type: application/json"}
+    return None
 
 
 def run_dag(
@@ -490,8 +509,18 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
+    def _refused_write(self) -> bool:
+        """Answer a write another web page may have sent with its refusal; whether it did."""
+        headers = self.headers
+        if (refusal := write_refusal(headers.get("Origin"), headers.get("Host"), headers.get("Content-Type"))) is None:
+            return False
+        self._send(json.dumps(refusal[1]).encode(), refusal[0])
+        return True
+
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
+        if (path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS} or path.startswith(_RUN)) and self._refused_write():
+            return
         if path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
@@ -522,6 +551,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         """Answer the history window's route for `method`; no other path takes a PUT or DELETE."""
         if urlsplit(self.path).path != _WINDOW:
             self.send_error(404)
+            return
+        if method != "GET" and self._refused_write():
             return
         declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
         status, body = history_window(self.client_address[0], method, self.rfile.read(int(declared or 0)), self.window)
@@ -714,8 +745,14 @@ def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
         feed.save()
 
 
-def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
+def serve_parser() -> argparse.ArgumentParser:
+    """The `starpulse serve` command line."""
     parser = argparse.ArgumentParser(prog="starpulse serve", description=__doc__.splitlines()[0] if __doc__ else None)
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="the address to listen on; the default answers this machine only, and 0.0.0.0 answers the network",
+    )
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument(
         "--hours",
@@ -724,6 +761,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         help="how far back a task's latest move on a machine counts; Admin's override replaces it",
     )
     parser.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
+    parser = serve_parser()
     args = parser.parse_args(argv)
     config = _config(parser, args.config)
     base = args.config.parent if args.config else Path.cwd()
@@ -776,7 +818,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         board.archive,
         board.create,
     )
-    serve_until_stopped(ThreadingHTTPServer(("0.0.0.0", args.port), handler), feed)
+    serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 
 
 if __name__ == "__main__":

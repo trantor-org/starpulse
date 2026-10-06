@@ -1,6 +1,6 @@
 [project]
 name = "starpulse"
-version = "0.1.0"
+version = "0.1.1"
 description = "StarPulse visualizes the workflows runs adapters read, lifecycle machines and the agents moving through them"
 readme = "README.md"
 license = "MIT"
