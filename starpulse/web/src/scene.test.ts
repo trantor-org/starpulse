@@ -152,24 +152,32 @@ describe("a starting or terminal Board state", () => {
     sky.S.today = { new: [dot("PROJ-1", "new"), dot("PROJ-2", "new")], done: [dot("PROJ-3", "done"), dot("PROJ-4", "done"), dot("PROJ-5", "done")] };
     return sky;
   };
-  it("counts and orbits the day's arrivals on the Board, and says so", () => {
+  it("counts the day's arrivals on the Board and says so, orbiting those that settled on a terminal state", () => {
     const scene = build(today(), { kind: "board" }), on = (id: string) => scene.tasks.filter((k) => k.today && k.host === scene.galaxies[id]).map((k) => k.id);
 
     expect([scene.galaxies.new.n, scene.galaxies.done.n, scene.galaxies.review.n]).toEqual([2, 3, 0]);
     expect([scene.galaxies.new.today, scene.galaxies.done.today, scene.galaxies.review.today]).toEqual([2, 3, undefined]);
-    expect([on("new"), on("done")]).toEqual([["PROJ-1", "PROJ-2"], ["PROJ-3", "PROJ-4", "PROJ-5"]]);
+    expect(on("done")).toEqual(["PROJ-3", "PROJ-4", "PROJ-5"]);
   });
-  it("keeps drawing the tasks in such a state and adds each of the day's arrivals not already among them", () => {
+  it("orbits no arrival on a starting state, since each is drawn where it is now, yet sizes the state by them", () => {
+    const sky = today(), scene = build(sky, { kind: "board" }), sun = build(sky, { kind: "state", id: "new" });
+    const none = boardSky(), empty = build(none, { kind: "board" });
+
+    expect([scene.tasks.filter((k) => k.host === scene.galaxies.new).length, sun.tasks.length]).toEqual([0, 0]);
+    expect([sun.sun!.n, sun.sun!.today]).toEqual([2, 2]);
+    expect(scene.galaxies.new.r).toBeGreaterThan(empty.galaxies.new.r);
+  });
+  it("keeps drawing the tasks in such a state, and on a terminal one adds each of the day's arrivals not already among them", () => {
     const sky = today();
     sky.S.flows.board.agents.push({ id: "PROJ-1", title: "PROJ-1", state: "new", model: "" }, { id: "PROJ-6", title: "PROJ-6", state: "done", model: "" });
     const board = build(sky, { kind: "board" }), sun = build(sky, { kind: "state", id: "new" });
     const on = (id: string) => board.tasks.filter((k) => k.host === board.galaxies[id]).map((k) => k.id).sort();
 
-    expect([on("new"), on("done")]).toEqual([["PROJ-1", "PROJ-2"], ["PROJ-3", "PROJ-4", "PROJ-5", "PROJ-6"]]);
+    expect([on("new"), on("done")]).toEqual([["PROJ-1"], ["PROJ-3", "PROJ-4", "PROJ-5", "PROJ-6"]]);
     expect([board.galaxies.new.n, board.galaxies.new.today, board.galaxies.done.n, board.galaxies.done.today]).toEqual([2, 2, 4, 3]);
-    expect([sun.sun!.n, sun.sun!.today, sun.tasks.map((k) => k.id).sort()]).toEqual([2, 2, ["PROJ-1", "PROJ-2"]]);
+    expect([sun.sun!.n, sun.sun!.today, sun.tasks.map((k) => k.id)]).toEqual([2, 2, ["PROJ-1"]]);
   });
-  it("counts and orbits them on its own level too", () => {
+  it("counts and orbits them on a terminal state's own level too", () => {
     const sun = build(today(), { kind: "state", id: "done" });
 
     expect([sun.sun!.n, sun.sun!.today, sun.tasks.map((k) => k.id)]).toEqual([3, 3, ["PROJ-3", "PROJ-4", "PROJ-5"]]);

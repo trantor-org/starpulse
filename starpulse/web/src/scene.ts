@@ -3,7 +3,7 @@
 // DAGs as step-graph glyphs beside them, a state's lifecycle system as planets
 // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
 import type { Fold, Level } from "./levels";
-import { countText, daily, HOUR, type Move, type Moves, type Sky } from "./sky";
+import { countText, daily, HOUR, stateCount, type Move, type Moves, type Sky } from "./sky";
 import type { Dag, DagStep, RawAgent, Transition, Writer } from "./types";
 
 export const TAU = Math.PI * 2;
@@ -79,7 +79,7 @@ export interface Host extends Pt {
 export interface Galaxy extends Host {
   id: string;
   r: number;
-  /** Every task drawn on it: its own, and on a starting or terminal state the day's arrivals not already in it. */
+  /** Its count: its own tasks, and on a starting or terminal state the day's arrivals not already in it, which only a terminal state also orbits. */
   n: number;
   /** On a starting or terminal state, the day's arrivals there; absent on any other. */
   today?: number;
@@ -124,7 +124,7 @@ export interface Sun extends Host {
   id: string;
   final: boolean;
   r: number;
-  /** Every task drawn on it: its own, and on a starting or terminal state the day's arrivals not already in it. */
+  /** Its count: its own tasks, and on a starting or terminal state the day's arrivals not already in it, which only a terminal state also orbits. */
   n: number;
   /** On a starting or terminal state, the day's arrivals there; absent on any other. */
   today?: number;
@@ -697,8 +697,9 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const spanX = Math.max(...bx) - Math.min(...bx) || 1, spanY = Math.max(...by) - Math.min(...by) || 1;
     const byState: Record<string, RawAgent[]> = {};
     board.agents.forEach((a) => (byState[a.state] ||= []).push(a));
-    // a starting or terminal state also orbits the day's arrivals there that are not already in it
-    for (const [sid, list] of Object.entries(S.today)) (byState[sid] ||= []).push(...list.filter((t) => !byState[sid]?.some((a) => a.id === t.id)));
+    // a terminal state also orbits the day's arrivals there not already in it; a starting state only counts them, as each is drawn where it is now
+    const final = new Set(states.filter((s) => s.final).map((s) => s.id));
+    for (const [sid, list] of Object.entries(S.today)) if (final.has(sid)) (byState[sid] ||= []).push(...list.filter((t) => !byState[sid]?.some((a) => a.id === t.id)));
     // A task orbits the deepest body this level draws that it is in: the sub-state its latest session holds (a CHILD entry, pr_opened while a PR
     // is open), else the moon of the machine it works when that is not its state's primary, else its state.
     const flowsOf = (sid: string) => (SUBS[sid] || []).filter((f) => S.flows[f]);
@@ -714,7 +715,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const radius = (st: (typeof states)[number]) => {
       const all = byState[st.id] || [], at = new Map(all.map((a) => [a, deepest(a)])), fs = flowsOf(st.id);
       const on = (f: string, state?: string) => all.filter((a) => at.get(a)?.flow === f && at.get(a)?.state === state);
-      const k = st.id === "in_progress" ? 1.25 : 1, here = all.filter((a) => !at.get(a)), r = Math.min(GALAXY_MAX * k, oneRing(here.length, 11, 14, galaxyR(all.length) * k)), outer = here.length ? rings(here.length, r + 14, 11, 12).outer : r;
+      const k = st.id === "in_progress" ? 1.25 : 1, here = all.filter((a) => !at.get(a)), r = Math.min(GALAXY_MAX * k, oneRing(here.length, 11, 14, galaxyR(stateCount(S, st.id)) * k)), outer = here.length ? rings(here.length, r + 14, 11, 12).outer : r;
       const machine = (f: string) => {
         const ss = subStatesOf(f).map((q) => ({ ...q, name: q.name.replace(/^Pr /, "PR ") })), label = `${f}${ss.length ? ` › ${ss.map((q) => q.name).join(" · ")}` : ""}`;
         return { f, ss, label, slot: { moon: orbit(on(f).length, 9, 17), subs: ss.map((q) => orbit(on(f, q.id).length, 6, 14)), name: textW(clipped ? clip(label) : label, 10.5) * F } };
@@ -854,7 +855,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     hb = scene.h - 40;
     for (const st of states) {
       const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { rows, ms, pg, here, on, at } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
-      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: (byState[st.id] || []).length, color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, lab: { x, y }, reach: [R, R], loops: [] };
+      const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, lab: { x, y }, reach: [R, R], loops: [] };
       const outer = here.length ? attach(here, g, r + 14, 11, 12, false) : r;
       g.moonR = ease(`${st.id}.moonR`, rows ? rows.moonR : outer + 16);
       if (rows) g.reach = rows.reach;
@@ -1143,16 +1144,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   // primary. The Board transitions into and out of the state run as paths off the left and right edges.
   function buildState(sid: string) {
     const subs = (SUBS[sid] || []).filter((f) => S.flows[f]), bevOf = (id: string) => EVENTS.filter((e) => e.flow === "board" && e.task === id);
-    // a starting or terminal state holds only the day's arrivals, so a task in it or passing through is drawn once, as one of them
-    // a task in the state or passing through it is drawn once, and a day's arrival there only when it is neither
+    // a task in the state or passing through it is drawn once, and on a terminal state a day's arrival there only when it is neither
     const st = board.machine.states.find((s) => s.id === sid), here = board.agents.filter((a) => a.state === sid || bevOf(a.id).some((e) => e.from === sid || e.to === sid));
-    const today = S.today[sid] ?? [], extra = today.filter((t) => !here.some((a) => a.id === t.id)), list = [...here, ...extra];
+    const today = S.today[sid] ?? [], list = [...here, ...(st?.final ? today.filter((t) => !here.some((a) => a.id === t.id)) : [])];
     scene.h = subs.length ? 1300 : 820;
     scene.w = Math.max(subs.length ? 1800 : 1000, Math.round((scene.h * W) / H));
     scene.sid = sid;
     const cx0 = scene.w / 2, cy0 = scene.h / 2;
     if (!subs.length) {
-      const n = board.agents.filter((a) => a.state === sid).length + today.filter((t) => !board.agents.some((a) => a.id === t.id && a.state === sid)).length;
+      const n = stateCount(S, sid);
       const sun: Sun = { id: sid, name: stateName(sid), final: !!st?.final, today: st && daily(st) ? today.length : undefined, x: cx0, y: cy0, r: ease(`${sid}.r`, Math.min(GALAXY_MAX, oneRing(list.length, 16, 30, galaxyR(n)))), R: 0, n, color: BOARD_COLOR[sid] ?? "#94a3b8" };
       scene.sun = sun;
       scene.hub = sun;
