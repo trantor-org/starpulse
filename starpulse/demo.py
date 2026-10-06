@@ -17,6 +17,7 @@ import itertools
 import json
 import re
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
 
 STATIC = Path(__file__).parent / "static"
@@ -42,6 +43,67 @@ def _demo_dag(index: int, dag: dict) -> dict:
     if "active" in dag:
         demo["active"] = [{**run, "runId": f"demo-{index}-{n}"} for n, run in enumerate(dag["active"])]
     return demo
+
+
+#: The steps of the seeded `deliver` DAG, and the runs seeded in flight on it: the step each is in and the seconds since it entered it.
+DELIVER_STEPS = ("refuse", "lint", "commit", "push", "open_pr", "wait_ci", "ready")
+SEEDED_RUNS = (("wait_ci", 300), ("lint", 60), ("wait_ci", 450))
+#: The seeded concurrency pools and their caps; `deliver` is the one the seeded runs hold.
+SEEDED_POOLS = {"deliver": 32, "default": 2}
+
+
+def _iso(at: float) -> str:
+    return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _seed_fanout(domains: list[dict], dags: list[dict], now: float) -> tuple[list[dict], list[dict]]:
+    """A `deliver` DAG with runs in flight and the pools it runs on, for a capture whose runs adapter reports none.
+
+    CI's server has no runs adapter to read, so the page's Queues section and each DAG's fan-out would draw nothing.
+    The DAG takes the instance prefix of the `deliver` workflow the domains declare; none declared, or one the capture
+    already reads, nothing is seeded.
+    """
+    name = next((d["name"] for g in domains for d in g["dags"] if d["name"].rpartition("/")[2] == "deliver"), None)
+    if name is None or any(d["name"] == name for d in dags):
+        return [], []
+    prefix = f"{name.rpartition('/')[0]}/" if "/" in name else ""
+
+    def statuses(step: str) -> dict[str, str]:
+        at = DELIVER_STEPS.index(step)
+        return {
+            s: "succeeded" if i < at else "running" if i == at else "not_started" for i, s in enumerate(DELIVER_STEPS)
+        }
+
+    runs = [
+        {
+            "runId": f"deliver-agent-demo-{n}",
+            "status": "running",
+            "startedAt": _iso(now - seconds - 150),
+            "step": step,
+            "stepStartedAt": _iso(now - seconds),
+            "steps": statuses(step),
+        }
+        for n, (step, seconds) in enumerate(SEEDED_RUNS, 1)
+    ]
+    steps = [
+        {"name": s, "depends": [DELIVER_STEPS[i - 1]] if i else [], "status": runs[0]["steps"][s], "kind": None}
+        for i, s in enumerate(DELIVER_STEPS)
+    ]
+    dag = {
+        "name": name,
+        "status": "running",
+        "runId": runs[0]["runId"],
+        "startedAt": runs[0]["startedAt"],
+        "finishedAt": "",
+        "steps": steps,
+        "active": runs,
+        "pool": f"{prefix}deliver",
+    }
+    pools = [
+        {"name": f"{prefix}{p}", "cap": cap, "running": len(runs) if p == "deliver" else 0, "queued": 0}
+        for p, cap in SEEDED_POOLS.items()
+    ]
+    return [dag], pools
 
 
 def capture(server: str) -> dict:
@@ -128,13 +190,17 @@ def scrub(live: dict) -> dict:
         name = names.setdefault(a["id"], f"DEMO-{len(names) + 1}")
         demo = _task(int(name.removeprefix("DEMO-")) - 1, a)
         if is_board:
-            return demo | {
-                "milestone": milestones.get(a.get("milestone"), ""),
-                "labels": [x for x in a.get("labels", []) if LABELS.match(x)],
-                "dependencies": [names[d] for d in a.get("dependencies", []) if d in names],
-                "description": f"Synthetic demo task: {demo['title'].lower()}.",
-                **({"entered": a["entered"]} if "entered" in a else {}),
-            } | ({"created": a["created"]} if a.get("created") is not None else {})
+            return (
+                demo
+                | {
+                    "milestone": milestones.get(a.get("milestone"), ""),
+                    "labels": [x for x in a.get("labels", []) if LABELS.match(x)],
+                    "dependencies": [names[d] for d in a.get("dependencies", []) if d in names],
+                    "description": f"Synthetic demo task: {demo['title'].lower()}.",
+                    **({"entered": a["entered"]} if "entered" in a else {}),
+                }
+                | ({"created": a["created"]} if a.get("created") is not None else {})
+            )
         keep = {k: a[k] for k in ("state", "model", "steps", "trail", "active") if k in a}
         return {**keep, "id": demo["id"], "title": demo["title"], "task": demo["id"]}
 
@@ -152,17 +218,24 @@ def scrub(live: dict) -> dict:
     def settled_task(id_: str, entry: dict) -> tuple[str, dict]:
         name = names.setdefault(id_, f"DEMO-{len(names) + 1}")
         demo = _task(int(name.removeprefix("DEMO-")) - 1, entry)
-        return name, {k: entry.get(k) for k in ("state", "at", "created")} | {"title": demo["title"], "model": demo["model"]}
+        return name, {k: entry.get(k) for k in ("state", "at", "created")} | {
+            "title": demo["title"],
+            "model": demo["model"],
+        }
 
     day = dict(
         settled_task(id_, e) for id_, e in settled.items() if e.get("at") is not None and e["at"] > live["now"] - DAY_S
+    )
+    seeded_dags, seeded_pools = (
+        ([], []) if live.get("pools") else _seed_fanout(live["domains"], live["dags"], live["now"])
     )
     return {
         **live,
         "boardUrl": None,
         "hint": None,
         "domains": [{**d, "dags": [{"name": x["name"], "runSafe": False} for x in d["dags"]]} for d in live["domains"]],
-        "dags": [_demo_dag(i, d) for i, d in enumerate(live["dags"])],
+        "dags": [_demo_dag(i, d) for i, d in enumerate(live["dags"])] + seeded_dags,
+        **({"pools": seeded_pools} if seeded_pools else {}),
         "flows": flows,
         "pulls": {
             names[t]: [

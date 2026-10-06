@@ -45,10 +45,42 @@ export function demoStep(prev: Snapshot, random = Math.random): Snapshot {
 }
 
 function stepDags(snap: Snapshot, random: () => number): Snapshot {
-  if (snap.dags.length && random() < 0.3) {
-    const d = snap.dags[Math.floor(random() * snap.dags.length)];
+  const idle = snap.dags.filter((d) => !d.active?.length); // a DAG with runs in flight moves by `stepRuns`
+  if (idle.length && random() < 0.3) {
+    const d = idle[Math.floor(random() * idle.length)];
     d.status = d.status === "running" ? (random() < 0.85 ? "succeeded" : "failed") : d.status === "queued" ? "running" : "queued";
     if (d.status === "queued") d.runId += "+";
+  }
+  return snap;
+}
+
+const iso = (at: number) => new Date(at * 1000).toISOString().replace(/\.\d+Z$/, "Z");
+
+/**
+ * One step of the fan-out the embedded demo plays: a run in flight enters its next step or ends, or a new run starts while
+ * its pool has room, the pool's count following. A DAG with no pool or steps does not move.
+ */
+export function stepRuns(prev: Snapshot, random = Math.random): Snapshot {
+  const fans = prev.dags.filter((d) => d.pool && d.steps.length && prev.pools?.some((p) => p.name === d.pool));
+  if (!fans.length) return prev;
+  const snap = structuredClone(prev), now = Date.now() / 1000;
+  const action = random(), d = snap.dags.filter((x) => fans.some((f) => f.name === x.name))[Math.floor(random() * fans.length)];
+  const pool = snap.pools!.find((p) => p.name === d.pool)!, active = (d.active ??= []), names = d.steps.map((s) => s.name);
+  if (action < 0.5 && active.length) {
+    const run = active[Math.floor(random() * active.length)], at = names.indexOf(run.step);
+    if (at + 1 < names.length) {
+      const step = names[at + 1];
+      Object.assign(run, { step, stepStartedAt: iso(now), steps: { ...run.steps, [run.step]: "succeeded", [step]: "running" } });
+    } else {
+      active.splice(active.indexOf(run), 1);
+      pool.running = Math.max(0, pool.running - 1);
+      if (!active.length) Object.assign(d, { status: "succeeded", finishedAt: iso(now) });
+    }
+  } else if (action >= 0.5 && action < 0.75 && pool.running < pool.cap) {
+    const runId = `${d.name.slice(d.name.indexOf("/") + 1)}-agent-demo-${100 + ++demoN}`;
+    active.push({ runId, status: "running", startedAt: iso(now), step: names[0], stepStartedAt: iso(now), steps: Object.fromEntries(names.map((n, i) => [n, i ? "not_started" : "running"])) });
+    pool.running++;
+    Object.assign(d, { status: "running", runId, startedAt: iso(now), finishedAt: "" });
   }
   return snap;
 }
@@ -143,7 +175,7 @@ export class DemoServer {
 
   /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains. */
   step(random = Math.random) {
-    const next = demoStep(this.snapshot, random);
+    const next = stepRuns(demoStep(this.snapshot, random), random);
     const board = next.flows.find((f) => f.name === "board");
     const prev = this.snapshot.flows.find((f) => f.name === "board")?.agents ?? [];
     const fresh = new Set<string>();

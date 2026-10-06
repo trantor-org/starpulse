@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { DemoServer, ROUTES, type DemoFixture } from "./demo";
+import { DemoServer, ROUTES, stepRuns, type DemoFixture } from "./demo";
 import { NO_HARNESSES, fetchHarnesses, postStart } from "./start";
-import type { Machine, RawAgent } from "./types";
+import type { Machine, RawAgent, RunStatus, Snapshot } from "./types";
 import type { TaskRecord } from "./taskView";
 
 const machine = (initial: string, edges: [string, string, string][], final = ""): Machine => {
@@ -225,5 +225,79 @@ describe("the demo's route table", () => {
 
     expect(routes.size).toBeGreaterThan(3);
     expect([...routes].filter((r) => !(r in ROUTES))).toEqual([]);
+  });
+});
+
+const STEPS = ["refuse", "lint", "wait_ci", "ready"];
+const run = (runId: string, step: string) => ({
+  runId, status: "running" as const, startedAt: "2026-10-05T16:00:00Z", step, stepStartedAt: "2026-10-05T16:00:05Z",
+  steps: Object.fromEntries(STEPS.map((n, i) => [n, i < STEPS.indexOf(step) ? "succeeded" : i === STEPS.indexOf(step) ? "running" : "not_started"])) as Record<string, RunStatus>,
+});
+const fan = (...at: string[]): Snapshot => ({
+  ...fixture(),
+  dags: [{
+    name: "dagu/deliver", status: "running", runId: "deliver-agent-demo-1", startedAt: "", finishedAt: "", pool: "dagu/deliver",
+    steps: STEPS.map((name, i) => ({ name, depends: i ? [STEPS[i - 1]] : [], status: "not_started" as const })),
+    active: at.map((step, i) => run(`deliver-agent-demo-${i + 1}`, step)),
+  }],
+  pools: [{ name: "dagu/deliver", cap: 2, running: at.length, queued: 0 }],
+});
+const script = (...v: number[]) => () => v.shift() ?? 0;
+
+describe("the demo's fan-out", () => {
+  it("moves a run in flight to its next step, marking the one it left done", () => {
+    const next = stepRuns(fan("lint", "wait_ci"), script(0.1, 0, 0));
+
+    const [moved, other] = next.dags[0].active!;
+    expect(moved).toMatchObject({ step: "wait_ci", steps: { refuse: "succeeded", lint: "succeeded", wait_ci: "running", ready: "not_started" } });
+    expect(moved.stepStartedAt).not.toBe("2026-10-05T16:00:05Z");
+    expect(other.step).toBe("wait_ci");
+    expect(next.pools).toEqual([{ name: "dagu/deliver", cap: 2, running: 2, queued: 0 }]);
+  });
+
+  it("ends a run in its last step, freeing its slot in the pool", () => {
+    const next = stepRuns(fan("ready", "lint"), script(0.1, 0, 0));
+
+    expect(next.dags[0].active!.map((r) => r.step)).toEqual(["lint"]);
+    expect(next.dags[0].status).toBe("running");
+    expect(next.pools).toEqual([{ name: "dagu/deliver", cap: 2, running: 1, queued: 0 }]);
+  });
+
+  it("settles the DAG once its last run ends", () => {
+    const next = stepRuns(fan("ready"), script(0.1, 0, 0));
+
+    expect(next.dags[0]).toMatchObject({ status: "succeeded", active: [] });
+    expect(next.dags[0].finishedAt).not.toBe("");
+    expect(next.pools![0].running).toBe(0);
+  });
+
+  it("starts a new run in the first step while the pool has room", () => {
+    const next = stepRuns(fan("lint"), script(0.6, 0));
+
+    const [, started] = next.dags[0].active!;
+    expect(started).toMatchObject({ status: "running", step: "refuse", steps: { refuse: "running", lint: "not_started" } });
+    expect(started.runId).toMatch(/^deliver-agent-demo-\d+$/);
+    expect(next.pools![0].running).toBe(2);
+  });
+
+  it("starts nothing once the pool is full", () => {
+    const next = stepRuns(fan("lint", "wait_ci"), script(0.6, 0));
+
+    expect(next.dags[0].active).toHaveLength(2);
+    expect(next.pools![0]).toMatchObject({ running: 2, queued: 0 });
+  });
+
+  it("leaves a snapshot with no pools or runs as it was", () => {
+    const snap = { ...fixture(), dags: [{ name: "x", status: "succeeded" as const, runId: "", startedAt: "", finishedAt: "", steps: [] }] };
+
+    expect(stepRuns(snap, script(0.1, 0, 0))).toEqual(snap);
+  });
+
+  it("is what the embedded server plays on each step", () => {
+    const s = new DemoServer({ ...fan("lint", "wait_ci"), history: {} });
+
+    s.step(script(0.1, 0, 0, 0, 0, 0, 0, 0, 0));
+
+    expect(s.snapshot.dags[0].active!.map((r) => r.step)).toEqual(["wait_ci", "wait_ci"]);
   });
 });

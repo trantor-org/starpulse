@@ -2,7 +2,7 @@
 // moves the page plays. The approved mockup replayed a saved hour; the page
 // plays each move once, when the stream first delivers it.
 import { tree, type Tree } from "./levels";
-import type { Cue, Dag, FlowSnapshot, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
+import type { Cue, Dag, FlowSnapshot, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -29,6 +29,8 @@ export interface Sky {
   flows: Record<string, FlowSnapshot>;
   board: FlowSnapshot;
   dags: Dag[];
+  /** The concurrency pools the DAGs run on; empty when the adapter reports none. */
+  pools: Pool[];
   dagBy: Record<string, Dag>;
   writers: Record<string, Writer[]>;
   launches: Launch[];
@@ -102,6 +104,7 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     flows,
     board,
     dags: snap.dags,
+    pools: snap.pools ?? [],
     dagBy: Object.fromEntries(snap.dags.map((d) => [d.name, d])),
     writers: board.machine.writers ?? {},
     launches: Object.entries(board.machine.launches ?? {}).map(([dag, l]) => ({ dag, skill: l.skill, flow: l.flow })),

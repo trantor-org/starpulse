@@ -8,6 +8,7 @@
 // zooms about the cursor between the level's fit and eight times it, and a drag
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
 import { demoStep } from "./demo";
+import { RunEvents } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, drill, pathKey, startPath, type Level, type Path } from "./levels";
@@ -139,6 +140,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const hhmm = (sec: number) => clockHm(sec, prefs().clock);
   let S: Sky | null = null, snap: Snapshot | null = null, scene: Scene | null = null;
   const moves = new Moves();
+  /** The feed's lines for the runs of every DAG that start, queue, change step or end. */
+  const runEvents = new RunEvents();
   let path: Path = BOARD, W = 0, H = 0, view: View = { k: 1, x: 0, y: 0 }, fit: View = view;
   // the task whose path a click pinned, kept by id so each frame finds it again in the rebuilt scene
   let pin: Subject | null = null;
@@ -339,6 +342,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     T = Date.now() / 1000;
     S = merge(next);
     moves.observe(S, T);
+    if (first) runEvents.resync(); // the runs already in flight when the page opens are not announced as new
+    runEvents.observe(S.dags, T);
     if (first) {
       // A retired per-graph address opens its level; the page's one address is the root.
       path = startPath(location.pathname, location.hash, recall<Path>("fv.path"), S.tree);
@@ -361,6 +366,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: stateCount(sky, s.id) })),
       counts: Object.fromEntries(Object.values(sky.flows).map((f) => [f.name, f.agents.length])),
       dags: sky.dags.map((d) => d.name),
+      pools: sky.pools,
       groups: sky.groups.map((g) => ({ name: g.name, n: g.dags.length })),
       cards: kanbanTasks(sky),
       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
@@ -377,10 +383,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function heartbeat() {
     if (!S) return;
     const ev: Omit<FeedLine, "time">[] = EVENTS().filter((e) => e.at <= T).map((e, i) => ({ key: `m${i}`, at: e.at, who: e.task ?? "", what: e.event.toLowerCase(), where: e.flow }));
+    // a run line already says how its run ended, so the DAG's own line for that run is left out
+    const told = new Set(runEvents.lines.filter((l) => l.tone).map((l) => l.runId));
     for (const d of S.dags) {
       const f = finished(d.finishedAt);
-      if (f <= T) ev.push({ key: `d${d.name}`, at: f, who: d.name, what: "", where: d.status });
+      if (f <= T && !told.has(d.runId)) ev.push({ key: `d${d.name}`, at: f, who: d.name, what: "", where: d.status });
     }
+    ev.push(...runEvents.lines);
     ev.sort((a, b) => b.at - a.at);
     const feed: FeedLine[] = ev.slice(0, 40).map((l) => ({ ...l, time: hhmm(l.at) })), mv = [...new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => e.flow))].sort();
     const now = hud.get();

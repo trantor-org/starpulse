@@ -3,8 +3,9 @@
 import { useSyncExternalStore } from "react";
 import type { KanbanTask } from "./kanban";
 import { BOARD, type Path, type Tree } from "./levels";
+import type { Pool } from "./types";
 
-/** One line of the activity feed: a move, or a DAG run ending. */
+/** One line of the activity feed: a move, a DAG run ending, or a run starting, queueing, changing step or ending. */
 export interface FeedLine {
   key: string;
   /** When it happened, in seconds; the feed runs newest first. */
@@ -13,6 +14,10 @@ export interface FeedLine {
   who: string;
   what: string;
   where: string;
+  /** A run's outcome: green when it succeeded, red when it failed. */
+  tone?: "ok" | "failed";
+  /** Born after the page's first read: the feed flashes it once. */
+  fresh?: boolean;
 }
 export interface BoardState {
   id: string;
@@ -34,6 +39,8 @@ export interface HudState {
   moving: string[];
   /** The DAG domains the navigator's DAGs section flies to. */
   groups: { name: string; n: number }[];
+  /** The concurrency pools the navigator's Queues section lists; empty when the adapter reports none. */
+  pools: Pool[];
   feed: FeedLine[];
   /** The Board's tasks as the Kanban view draws them, and the Board states' names. */
   cards: KanbanTask[];
@@ -49,7 +56,7 @@ export interface HudState {
 export class HudStore {
   private state: HudState = {
     stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, dags: [],
-    moving: [], groups: [], feed: [], cards: [], names: {}, claims: {}, boardUrl: null,
+    moving: [], groups: [], pools: [], feed: [], cards: [], names: {}, claims: {}, boardUrl: null,
   };
   private listeners = new Set<() => void>();
 

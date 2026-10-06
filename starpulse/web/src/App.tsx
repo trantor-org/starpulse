@@ -8,6 +8,7 @@ import { AdminStore } from "./adminPrefs";
 import { HistoryWindowStore } from "./historyWindow";
 import { HudStore, useHud, type HudState } from "./hud";
 import { BOARD, pathKey, type Path } from "./levels";
+import { FeedLines, Queues } from "./Fanout";
 import { Kanban } from "./Kanban";
 import { MoveStore, postMove } from "./move";
 import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./nav";
@@ -246,7 +247,8 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
             <button key={g.name} onClick={() => fly(g.name)}><i /><span>{g.name} · {g.n}</span></button>
           ))}
         </div>
-      </section></>}
+      </section>
+      <Queues pools={hud.pools} /></>}
       <section className="views admin-sec">
         <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>
           <svg className="g admin-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>
@@ -264,11 +266,7 @@ function Rail({ hud, view }: { hud: HudState; view: ViewName }) {
       <section className="recent">
         <h3>Recent</h3>
         <div id="feed">
-          {hud.feed.map((f) => (
-            <div key={f.key + f.at}>
-              <em>{f.time}</em> <b>{f.who}</b>{f.what && ` ${f.what}`} <em>{f.where}</em>
-            </div>
-          ))}
+          <FeedLines lines={hud.feed} />
         </div>
       </section>
       <section id="legend">
