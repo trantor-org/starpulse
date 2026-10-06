@@ -1,0 +1,39 @@
+{
+  "isLast": false,
+  "nextPageToken": "EgQIlMIC",
+  "issues": [
+    {
+      "id": "20001", "key": "PAY-1", "self": "https://example.atlassian.net/rest/api/2/issue/20001",
+      "fields": {
+        "summary": "Capture card payments",
+        "description": "Accept a card payment end to end.",
+        "status": {"id": "10000", "name": "To Do", "statusCategory": {"key": "new"}},
+        "project": {"id": "10100", "key": "PAY", "name": "Payments"},
+        "assignee": {"accountId": "5b10ac8d82e05b22cc7d4ef5", "displayName": "Ada Lovelace"},
+        "labels": ["spike", "cards"],
+        "created": "2026-09-28T09:15:00.000-0700",
+        "resolutiondate": null,
+        "issuelinks": [
+          {"id": "30001", "type": {"name": "Blocks", "inward": "is blocked by", "outward": "blocks"}, "inwardIssue": {"id": "20002", "key": "PAY-2"}},
+          {"id": "30002", "type": {"name": "Relates", "inward": "relates to", "outward": "relates to"}, "outwardIssue": {"id": "20004", "key": "PAY-4"}}
+        ]
+      }
+    },
+    {
+      "id": "20002", "key": "PAY-2", "self": "https://example.atlassian.net/rest/api/2/issue/20002",
+      "fields": {
+        "summary": "Tokenise stored cards",
+        "description": null,
+        "status": {"id": "10001", "name": "In Progress", "statusCategory": {"key": "indeterminate"}},
+        "project": {"id": "10100", "key": "PAY", "name": "Payments"},
+        "assignee": null,
+        "labels": [],
+        "created": "2026-09-29T14:00:00.000-0700",
+        "resolutiondate": null,
+        "issuelinks": [
+          {"id": "30001", "type": {"name": "Blocks", "inward": "is blocked by", "outward": "blocks"}, "outwardIssue": {"id": "20001", "key": "PAY-1"}}
+        ]
+      }
+    }
+  ]
+}

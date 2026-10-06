@@ -27,7 +27,8 @@ Pick the contract first: a tracker is a board, a hook that says a task moved is 
    refusal's `output` and `skill` are what `starpulse task move` reports. An actor outside a move's `writers` is refused
    before the writer is called. `assign`, `read`, `edit`, `archive` and `history` are optional.
 5. Name the module in `[board] type`, a module under `starpulse` or a dotted path an installed package provides.
-   `starpulse.upstream_backlog` is the reference adapter. The machine's states and writers are authored with the
+   `starpulse.upstream_backlog` is the reference adapter, and `starpulse.jira` one that imports its machine from the
+   tracker's own workflow. The machine's states and writers are authored with the
    `authoring-starpulse-machines` skill.
 
 Done when `starpulse doctor` reports `adapter:board` as ok.

@@ -221,6 +221,16 @@ type = "native"
 # command = "backlog"    # the Backlog.md CLI that writes a move (`backlog task edit <id> -s <status>`)
 # machine = "board.yaml" # as above
 
+# To draw a Jira project instead (read-only; building the board reads the site once, to import the workflow):
+# [board]
+# type = "jira"
+# url = "https://example.atlassian.net"  # the site, http or https
+# project = "PAY"                        # the Jira project key, which is each task's team
+# workflow = "Payments Software Workflow" # the Jira workflow imported as the Board machine
+# token_env = "JIRA_TOKEN"               # the environment variable holding the token: Bearer, or with `user` the Basic password
+# user = "ada@example.com"               # Jira Cloud: the account the API token belongs to
+# interval = 30                          # seconds between polls
+
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
 # (it offers `start(url)` and `follow(url, runs, log)`); its workflows are drawn as `<name>/<workflow>`.
 [[runs]]
@@ -419,7 +429,11 @@ whose states are those lanes and whose `writers` reserve a move to an actor, suc
 with the `backlog` CLI, answering a failed write with the CLI's output. An adapter with a writer subclasses
 `BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
 the machine leaves to the operator is refused to the agent. A board kit also declares `teams`, the team key the
-adapter derives for each task it produces, and asserts each record carries it. Name your module in `[board] type` and StarPulse imports it.
+adapter derives for each task it produces, and asserts each record carries it. `starpulse.jira` reads a Jira project and has no writer. It imports the named workflow from the site's
+`workflows/search` as the Board machine (a state per status, an event per transition, a global transition leaving every
+other status), refusing a workflow with a status in no transition, two statuses that make one lane, or no single initial
+transition. Each issue is a task in the lane of its status and the team of its Jira project; an issue it `Blocks` waits on
+the blocker, and a status in Jira's done category settles it as `completed`. Name your module in `[board] type` and StarPulse imports it.
 
 ## Public surface
 

@@ -129,7 +129,11 @@ def _line_of(text: str, parts: Iterable[str | int]) -> int:
 
 def load_machine(path: Path, registry: Registry = Registry()) -> Compiled:
     """Compile the machine file at `path`, opening each state's `flow:` child file."""
-    document = _read(path)
+    return compile_document(_read(path), path, registry)
+
+
+def compile_document(document: dict[str, Any], path: Path, registry: Registry = Registry()) -> Compiled:
+    """Compile a machine `document` the schema has accepted; `path` names it in errors and resolves its `flow:` files."""
     states, bindings = _compile(document, path, registry, prefix="")
     writers = {
         event: tuple(Writer(**writer) for writer in declared) for event, declared in document.get("writers", {}).items()
