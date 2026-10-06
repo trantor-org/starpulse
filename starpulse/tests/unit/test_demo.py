@@ -45,7 +45,7 @@ def _live() -> dict:
             {"name": "board", "machine": {"states": []}, "agents": [task]},
             {"name": "in-progress", "machine": {"states": []}, "agents": [placed]},
         ],
-        "settled": {"PROJ-2100": "completed"},
+        "settled": {"PROJ-2100": {"state": "completed", "at": None, "created": None, "title": SECRET, "model": ""}},
         "error": "ci: down",
         "now": 1.0,
     }
@@ -211,6 +211,36 @@ def test_scrub_replaces_each_pull_request_with_a_synthetic_one_on_the_task_demo_
     assert "github.com" not in json.dumps(demo)
 
 
+def test_scrub_keeps_each_task_settled_in_the_last_day_under_a_demo_name_and_a_board_tasks_created_time() -> None:
+    live = _live()
+    now = live["now"] = 100_000.0
+    live["flows"][0]["agents"][0]["created"] = now - 600
+    live["settled"] = {
+        "PROJ-2100": {"state": "archived", "at": now - 3600, "created": now - 7200, "title": SECRET, "model": "opus"},
+        "PROJ-2000": {"state": "completed", "at": now - 2 * 86400, "created": None, "title": SECRET, "model": ""},
+    }
+
+    demo = scrub(live)
+
+    assert demo["flows"][0]["agents"][0]["created"] == now - 600
+    assert demo["settled"] == {
+        "DEMO-2": {"state": "archived", "at": now - 3600, "created": now - 7200, "title": TITLES[1], "model": "opus"}
+    }
+
+
+def test_scrub_seeds_the_days_arrivals_with_the_board_it_seeds() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+    now = live["now"] = 100_000.0
+
+    demo = scrub(live)
+
+    settled, created = demo["settled"].values(), [a["created"] for a in demo["flows"][0]["agents"] if "created" in a]
+    assert {e["state"] for e in settled} == {"completed", "archived"}
+    assert all(now - 7200 < e["at"] <= now and e["title"] in TITLES for e in settled)
+    assert created and all(now - 7200 < at <= now for at in created)
+
+
 def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
     live = _live()
     live["flows"][0]["agents"] = []
@@ -229,6 +259,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
         "labels": ["size-2", "kind-feature"],
         "dependencies": [],
         "description": f"Synthetic demo task: {TITLES[0].lower()}.",
+        "created": live["now"] - 900,
     }
     assert board[3]["dependencies"] == ["DEMO-1"] and board[3]["labels"] == ["size-5", "needs-human"]
     assert demo["pulls"]["DEMO-9"] == [

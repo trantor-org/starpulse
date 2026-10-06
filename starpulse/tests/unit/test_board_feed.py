@@ -286,7 +286,7 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         [],
         {},
         {},
-        {"PROJ-1": "completed"},
+        {"PROJ-1": {"state": "completed", "at": None, "created": None, "title": "t", "model": ""}},
         None,
     )
     assert body["boardUrl"] == "http://tracker.example.test:6421"
@@ -327,6 +327,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "description": "Draw it.",
             "moves": {},  # an adapter that writes no verdicts offers no guarded column
             "entered": 7.0,
+            "created": None,  # an adapter that does not say when a task was created
         }
     ]
     assert changes.get_nowait()[0] == "task"
@@ -372,7 +373,7 @@ def test_a_settled_board_task_leaves_its_lane_and_a_task_outside_the_scheme_is_n
     feed.put(BoardTask(id="OPS-9", title="t", lane="to_do"))
 
     body = feed.snapshot()
-    assert (_agents(feed), body["settled"]) == ([], {"PROJ-1": "completed"})
+    assert (_agents(feed), body["settled"]["PROJ-1"]["state"]) == ([], "completed")
 
 
 def test_a_task_read_live_is_stamped_when_it_entered_its_lane_and_keeps_that_time_until_it_changes_lane() -> None:
@@ -418,3 +419,20 @@ def test_a_history_that_cannot_be_read_dates_a_replayed_lane_by_the_clock_and_st
     feed.put(BoardTask(id="PROJ-1", title="t", lane="ready"))
 
     assert [(a["id"], a["entered"]) for a in _agents(feed)] == [("PROJ-1", 500.0)]
+
+
+def test_a_task_carries_when_it_was_created_and_a_settled_one_when_and_as_whom_it_settled() -> None:
+    feed = BoardFeed()
+    feed.put(BoardTask(id="PROJ-1", title="open one", lane="ready", created_at=100.0))
+    _, changes = feed.subscribe()
+
+    feed.put(
+        BoardTask(
+            id="PROJ-2", title="done one", lane="done", assignee="opus", settled="archived", created_at=50.0, settled_at=200.0
+        )
+    )
+
+    entry = {"state": "archived", "at": 200.0, "created": 50.0, "title": "done one", "model": "opus"}
+    assert _agents(feed)[0]["created"] == 100.0
+    assert feed.snapshot()["settled"] == {"PROJ-2": entry}
+    assert changes.get_nowait() == ("task", {"id": "PROJ-2", "agent": None, "settled": entry})

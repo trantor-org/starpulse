@@ -17,7 +17,7 @@ import {
   type BEdge, type Body, type Curve, type Galaxy, type Hangar, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
   type MachineTask, type Moon, type Pager, type Star, type SubState, type Sun,
 } from "./scene";
-import { FLARE, Moves, PULSE, TRAVEL, merge, type Move, type Sky } from "./sky";
+import { FLARE, Moves, PULSE, TRAVEL, merge, stateCount, type Move, type Sky } from "./sky";
 import { kanbanTasks } from "./kanban";
 import { embedded, openStream } from "./stream";
 import { createHistory } from "./history";
@@ -358,7 +358,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       path,
       tree: sky.tree,
       stats: sky.error ? `live · ${at} MST · ${sky.error}` : `live · ${at} MST`,
-      states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: board.agents.filter((a) => a.state === s.id).length })),
+      states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: stateCount(sky, s.id) })),
       counts: Object.fromEntries(Object.values(sky.flows).map((f) => [f.name, f.agents.length])),
       dags: sky.dags.map((d) => d.name),
       groups: sky.groups.map((g) => ({ name: g.name, n: g.dags.length })),
@@ -402,7 +402,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       k.arrive = null;
       k.gone = false;
       k.via = null;
-      if (!k.host.states && board) {
+      if (!k.host.states && board && !k.today) {
         // Board: a task sits on the state it held at this moment and hops along the transition's curve
         const bev = EVENTS().filter((e) => e.flow === "board" && e.task === k.id);
         if (!bev.length) continue;
@@ -429,7 +429,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         k.hop = { c: { p0: e.p0!, c: e.c!, p1: e.p1! }, u: easeO(u) };
         continue;
       }
-      if (level().kind === "state" && stateHop(k, t)) continue;
+      if (level().kind === "state" && !k.today && stateHop(k, t)) continue;
       // a task whose machine is changing its state leaves its orbit, rides the machine's chord like the current board's hop (ease-out, comet tail),
       // rings the state it lands on, then drops back into orbit
       const st = k.host.states, ev = st && EVENTS().findLast((e) => e.task === k.id && e.flow === k.host.name && e.from && st[e.from] && st[e.to] && e.from !== e.to && e.at <= T && T - e.at < TRAVEL + PULSE);
@@ -614,7 +614,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const sky = S!;
     switch (h.kind) {
       case "task": {
-        const o = h.o, at = subjectOf(h)!, kind = `task · ${stateName(o.state)}${o.host.states ? ` · orbiting ${(o.host as Planet).title || o.host.name}` : ""} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
+        const o = h.o, at = subjectOf(h)!, kind = `task · ${stateName(o.state)}${o.today ? " today" : ""}${o.host.states ? ` · orbiting ${(o.host as Planet).title || o.host.name}` : ""} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
         return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at), prefs().clock);
       }
       case "mtask": {
@@ -632,7 +632,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         return `<div class="k">DAGs that write no Board lane · click to open</div><div class="n">DAGs</div>${h.o.names.length} DAGs in ${h.o.doms} domain${h.o.doms === 1 ? "" : "s"}${run.length ? `<div class="k">running: ${run.map(esc).join(", ")}</div>` : ""}`;
       }
       case "galaxy":
-        return `<div class="k">Board state · click to open</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.subs.length ? ` · ${h.o.subs.length} lifecycle machines inside` : ""}`;
+        return `<div class="k">Board state · click to open</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.daily ? " today" : ""}${h.o.subs.length ? ` · ${h.o.subs.length} lifecycle machines inside` : ""}`;
       case "moon": {
         const o = h.o, mv = moving(o.name).length, f = sky.flows[o.name];
         if (o.pager) return pagerTip(o.pager);
@@ -641,7 +641,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       case "sat":
         return `<div class="k">state of the ${esc(h.o.machine)} machine · opens ${esc(h.o.flow)} ${esc(h.o.when)} · click to open ${esc(h.o.machine)}</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} orbiting`;
       case "sun":
-        return `<div class="k">Board state</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${scene!.planets.length ? ` · ${scene!.planets.length} lifecycle machines orbiting it` : ""}`;
+        return `<div class="k">Board state</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.daily ? " today" : ""}${scene!.planets.length ? ` · ${scene!.planets.length} lifecycle machines orbiting it` : ""}`;
       case "state":
         return `<div class="k">${esc(h.o.flow)} state</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} here now${h.o.loops.length ? `<div class="k">stays here on ${h.o.loops.map(esc).join(", ")}</div>` : ""}`;
       case "planet": {
@@ -837,7 +837,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       const hot = isHot("galaxy", g);
       body(g, hot);
       drawTrackRings(g, g.color);
-      label(g.name, g.lab.x, g.lab.y, hot, `${g.n}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 13);
+      label(g.name, g.lab.x, g.lab.y, hot, `${g.n}${g.daily ? " today" : ""}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 13);
     }
   }
   // lifecycle moons: still, named bodies on their state's dashed outer ring, brighter while they have sessions, ringed in amber while one moves.

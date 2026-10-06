@@ -73,19 +73,37 @@ SEED = [
 ]
 
 
-def _seed() -> tuple[list[dict], dict]:
-    """`SEED` as a live Board's tasks and the pull requests the server would have read for them."""
+#: How long before the capture each seeded task created that day was created, by its index in `SEED`.
+SEED_CREATED = {0: 900, 1: 2400}
+#: The seeded tasks settled that day: where each settled, how long before the capture, and its assignee.
+SEED_SETTLED = [
+    ("completed", 1200, "@agent-standard-high"),
+    ("completed", 3000, "@agent-deep-high"),
+    ("completed", 5400, "@agent-fast-low"),
+    ("archived", 4200, ""),
+]
+#: How far back a settled task is still the day's; a capture keeps no older one.
+DAY_S = 86400
+
+
+def _seed(now: float) -> tuple[list[dict], dict, dict]:
+    """`SEED` as a live Board's tasks, the pull requests the server would have read for them, and the day's settled tasks."""
     ids = [f"seed-{i}" for i in range(len(SEED))]
     agents, pulls = [], {}
     for i, (state, milestone, labels, after, model, pull) in enumerate(SEED):
         agents.append(
             {"id": ids[i], "state": state, "model": model, "milestone": milestone, "labels": labels}
             | ({"dependencies": [ids[after]]} if after is not None else {})
+            | ({"created": now - SEED_CREATED[i]} if i in SEED_CREATED else {})
         )
         if pull:
             checks, merged, threads = pull
             pulls[ids[i]] = [{"checks": checks, "merged": merged, "threads": threads}]
-    return agents, pulls
+    settled = {
+        f"seed-settled-{i}": {"state": state, "at": now - age, "created": None, "title": "", "model": model}
+        for i, (state, age, model) in enumerate(SEED_SETTLED)
+    }
+    return agents, pulls, settled
 
 
 def scrub(live: dict) -> dict:
@@ -98,9 +116,9 @@ def scrub(live: dict) -> dict:
     """
     names: dict[str, str] = {}
     board = [a for f in live["flows"] if f["name"] == "board" for a in f["agents"]]
-    pulls = live.get("pulls", {})
+    pulls, settled = live.get("pulls", {}), live.get("settled", {})
     if not board:
-        board, pulls = _seed()
+        board, pulls, settled = _seed(live["now"])
     for a in board:  # the Board's tasks are DEMO-1.. in Board order, whichever flow comes first
         names.setdefault(a["id"], f"DEMO-{len(names) + 1}")
     keys = sorted({a["milestone"] for a in board if a.get("milestone")}, key=lambda k: (len(k), k))
@@ -116,7 +134,7 @@ def scrub(live: dict) -> dict:
                 "dependencies": [names[d] for d in a.get("dependencies", []) if d in names],
                 "description": f"Synthetic demo task: {demo['title'].lower()}.",
                 **({"entered": a["entered"]} if "entered" in a else {}),
-            }
+            } | ({"created": a["created"]} if a.get("created") is not None else {})
         keep = {k: a[k] for k in ("state", "model", "steps", "trail", "active") if k in a}
         return {**keep, "id": demo["id"], "title": demo["title"], "task": demo["id"]}
 
@@ -130,6 +148,15 @@ def scrub(live: dict) -> dict:
         for f in live["flows"]
     ]
     _seed_delivery(flows, live["now"])
+
+    def settled_task(id_: str, entry: dict) -> tuple[str, dict]:
+        name = names.setdefault(id_, f"DEMO-{len(names) + 1}")
+        demo = _task(int(name.removeprefix("DEMO-")) - 1, entry)
+        return name, {k: entry.get(k) for k in ("state", "at", "created")} | {"title": demo["title"], "model": demo["model"]}
+
+    day = dict(
+        settled_task(id_, e) for id_, e in settled.items() if e.get("at") is not None and e["at"] > live["now"] - DAY_S
+    )
     return {
         **live,
         "boardUrl": None,
@@ -144,7 +171,7 @@ def scrub(live: dict) -> dict:
             for t, ps in pulls.items()
             if t in names and ps
         },
-        "settled": {},
+        "settled": day,
         "error": None,
         "history": _history(flows, live["now"]),
     }

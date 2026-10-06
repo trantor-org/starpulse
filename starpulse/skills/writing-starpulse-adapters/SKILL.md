@@ -10,7 +10,7 @@ Schema under `starpulse/schemas/`. Unknown fields are an error, so a misspelt on
 
 | Contract | Record | Written to |
 |---|---|---|
-| `board` | `BoardTask`: `id`, `title`, `lane`, `dependencies`, `references`, `settled`, `assignee`, `holder`, `labels`, `milestone`, `description`, `moves` | a board adapter's `Board` |
+| `board` | `BoardTask`: `id`, `title`, `lane`, `dependencies`, `references`, `settled`, `created_at`, `settled_at`, `assignee`, `holder`, `labels`, `milestone`, `description`, `moves` | a board adapter's `Board` |
 | `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds) | the database event log under `machine:events` |
 | `runs` | `Dag`: `name`, `status`, `runId`, `startedAt`, `finishedAt`, `steps` | a runs adapter's `RunsSink`, or `starpulse emit` |
 

@@ -60,7 +60,7 @@ def test_a_saved_board_restores_its_tasks_assignees_and_cursor_and_is_ready_at_t
 
     assert cursor == "7-0"
     assert feed.snapshot()["flows"][0]["agents"] == first.snapshot()["flows"][0]["agents"]
-    assert feed.snapshot()["settled"] == {"TASK-2": "completed"}
+    assert feed.snapshot()["settled"] == first.snapshot()["settled"]
     assert feed.ready.is_set()
 
 
@@ -98,8 +98,15 @@ def test_a_restored_task_read_again_is_no_delta() -> None:
         ("7-0", {"open": {}}),
         ("7-0", {"open": 5, "settled": {}, "assignees": {}}),
         ("not-a-cursor", {"open": {}, "settled": {}, "assignees": {}}),
+        ("7-0", {"open": {}, "settled": {"TASK-2": "completed"}, "assignees": {}}),
     ],
-    ids=["nothing saved", "a missing part", "a part of the wrong type", "a cursor that is no entry id"],
+    ids=[
+        "nothing saved",
+        "a missing part",
+        "a part of the wrong type",
+        "a cursor that is no entry id",
+        "a settled task saved as its state alone",
+    ],
 )
 def test_a_board_that_cannot_be_restored_replays_and_keeps_the_feed_empty(saved: tuple[str, dict] | None) -> None:
     feed, cursor = _resumed(_Store({STREAM: saved} if saved else {}))
