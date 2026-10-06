@@ -241,6 +241,18 @@ describe("the demo server", () => {
     expect(s.snapshot.flows[0].agents.find((a) => a.id === "DEMO-2")?.state).toBe("to_do");
   });
 
+  it("leaves a task the viewer created in its starting lane while the demo walks, until the viewer moves it", async () => {
+    const f = fixture();
+    f.flows = [{ name: "board", machine: { ...machine("to_do", [["to_do", "in_progress", "START"], ["in_progress", "done", "FINISH"]], "done"), mainLine: ["to_do", "in_progress", "done"] }, agents: [] }];
+    const s = new DemoServer(f);
+    const { task } = await (await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) })).json();
+    for (let i = 0; i < 5; i++) s.step(() => 0);
+
+    expect(s.snapshot.flows[0].agents.find((a) => a.id === task)?.state).toBe("to_do");
+    expect((await s.fetch("/api/move", { method: "POST", body: JSON.stringify({ task, to: "in_progress" }) })).status).toBe(200);
+    expect(s.snapshot.flows[0].agents.find((a) => a.id === task)?.state).toBe("in_progress");
+  });
+
   it("refuses a create with no title, and a create the review fixture makes the writer refuse", async () => {
     const s = new DemoServer(fixture(), undefined, true);
 

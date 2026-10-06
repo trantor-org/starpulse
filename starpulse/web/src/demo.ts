@@ -143,6 +143,7 @@ export class DemoServer {
   snapshot: Snapshot;
   lanes: Record<string, LaneStep[]>;
   records: Record<string, TaskRecord>;
+  private created = new Set<string>();
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -175,13 +176,19 @@ export class DemoServer {
     this.timer = undefined;
   }
 
-  /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains. */
+  /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains.
+   * A card the viewer created stays out of the walk, so it stays where it landed until the viewer moves it. */
   step(random = Math.random) {
-    const next = stepRuns(demoStep(this.snapshot, random), random);
+    const walked = structuredClone(this.snapshot);
+    const held = walked.flows.find((f) => f.name === "board");
+    const created = held?.agents.filter((a) => this.created.has(a.id)) ?? [];
+    if (held) held.agents = held.agents.filter((a) => !this.created.has(a.id));
+    const next = stepRuns(demoStep(walked, random), random);
     const board = next.flows.find((f) => f.name === "board");
-    const prev = this.snapshot.flows.find((f) => f.name === "board")?.agents ?? [];
+    const prev = held?.agents ?? [];
     const fresh = new Set<string>();
     if (board) {
+      board.agents.push(...created);
       const lane = board.machine.mainLine?.[1] ?? board.machine.states.find((s) => s.initial)?.id ?? board.machine.states[0].id;
       const ids = [...board.agents, ...prev].map((a) => a.id).concat(Object.keys(next.settled));
       let n = Math.max(0, ...ids.map((id) => Number(id.match(/\d+$/)?.[0] ?? 0)));
@@ -250,7 +257,7 @@ export class DemoServer {
     return json({ task });
   }
 
-  /** Create a task in the Board's first lane as the served writer would, unless a review fixture makes the writer refuse. */
+  /** Create a task in the Board's starting lane as the served writer would, unless a review fixture makes the writer refuse. */
   create(raw: string): Response {
     let sent: Record<string, unknown>;
     try { sent = JSON.parse(raw) as Record<string, unknown>; } catch { sent = {}; }
@@ -270,6 +277,7 @@ export class DemoServer {
       dependencies: list("dependencies"), description: text("description"),
     };
     board.agents.push(card);
+    this.created.add(id);
     this.records[id] = {
       ...demoRecord(card), priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
       acceptanceCriteria: list("acceptanceCriteria").map((item, i) => ({ n: i + 1, text: item, checked: false })),
