@@ -1,7 +1,8 @@
-"""The three contracts an adapter writes (board, machine events, runs) and the task key it declares.
+"""The contracts an adapter writes (board, machine events, runs and their pools) and the task key it declares.
 
 An adapter is a producer of these records for StarPulse: a Backlog.md or Jira reader writes
-`BoardTask`s, a harness or git hook writes `MachineEvent`s, and a scheduler reader writes `Dag`s.
+`BoardTask`s, a harness or git hook writes `MachineEvent`s, and a scheduler reader writes `Dag`s, each with its
+`ActiveRun`s, and the `Pool`s they run on.
 Each model is also published as a JSON Schema under `schemas/`, regenerated with
 `python -m starpulse.contracts`; `starpulse.adapter_kit` runs an adapter's output against them.
 """
@@ -19,10 +20,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 __all__ = [
     "CONTRACTS",
     "SCHEMAS",
+    "ActiveRun",
     "BoardTask",
     "Dag",
     "MachineEvent",
     "Move",
+    "Pool",
     "RunStatus",
     "RunsSink",
     "StartFailedError",
@@ -172,16 +175,62 @@ class Dag(_Contract):
         description="When the latest run ended, ISO 8601 UTC; empty while it runs or before any run.",
     )
     steps: tuple[Step, ...] = Field(description="The DAG's steps; empty when the scheduler cannot describe them.")
+    active: tuple[ActiveRun, ...] = Field(
+        default=(),
+        description="Every run of the DAG that is running or queued now, longest-running first; empty when none "
+        "is or the scheduler cannot list them.",
+    )
+    pool: str = Field(
+        default="", description="The name of the concurrency `Pool` the DAG runs on; empty when it names none."
+    )
+
+
+class ActiveRun(_Contract):
+    """One run of a DAG that is running or queued now."""
+
+    run_id: str = Field(alias="runId", description="The run's id.")
+    status: RunStatus = Field(description="The run's status: `running` or `queued`.")
+    raw: str | None = Field(
+        default=None, description="The engine's own status for the run when it differs from `status`, shown as is."
+    )
+    started_at: str = Field(
+        alias="startedAt",
+        description="When the run started, or was queued while it waits, ISO 8601 UTC (`2026-10-02T17:00:00Z`).",
+    )
+    step: str = Field(
+        description="The step the run entered last among those running; empty while it is queued or between steps."
+    )
+    step_started_at: str = Field(
+        alias="stepStartedAt", description="When the run entered `step`, ISO 8601 UTC; empty when `step` is."
+    )
+    steps: dict[str, RunStatus] = Field(description="Each of the DAG's steps by name with its status in this run.")
+
+
+class Pool(_Contract):
+    """One concurrency pool: the cap on the runs that may execute at once, and the runs holding or awaiting it."""
+
+    name: str = Field(description="The pool's name, unique on its scheduler; a DAG's `pool` names it.")
+    cap: int = Field(ge=0, description="The most runs the pool lets execute at once.")
+    running: int = Field(ge=0, description="The runs executing on the pool now.")
+    queued: int = Field(ge=0, description="The runs waiting for the pool to have room.")
 
 
 class RunsSink(Protocol):
-    """Where a runs adapter's `follow(url, runs, log)` publishes the workflows of its one instance, and says when it cannot read them."""
+    """Where a runs adapter's `follow(url, runs, log)` publishes the workflows and `Pool`s of its one instance, and says when it cannot read them.
 
-    def set_dags(self, dags: list | None, error: str | None) -> None: ...
+    `pools` None keeps the last reported and a list replaces them, so an adapter that reports none passes `[]`.
+    """
+
+    def set_dags(self, dags: list | None, error: str | None, pools: list | None = None) -> None: ...
 
 
 #: Each contract's model, by the name its checked-in schema file carries.
-CONTRACTS: dict[str, type[BaseModel]] = {"board": BoardTask, "machine-events": MachineEvent, "runs": Dag}
+CONTRACTS: dict[str, type[BaseModel]] = {
+    "board": BoardTask,
+    "machine-events": MachineEvent,
+    "runs": Dag,
+    "pools": Pool,
+}
 #: Each contract's JSON Schema, by the same names.
 SCHEMAS: dict[str, dict] = {name: model.model_json_schema() for name, model in CONTRACTS.items()}
 SCHEMA_DIR = Path(__file__).parent / "schemas"

@@ -17,6 +17,9 @@ TASK = {"id": "PROJ-1", "title": "t", "lane": "in_progress"}
 EVENT = {"machine": "in-progress", "event": "WORKTREE_READY", "task": "PROJ-1", "time": "100.0"}
 STEP = {"name": "a", "depends": [], "status": "succeeded", "kind": None}
 DAG = {"name": "d", "status": "succeeded", "runId": "r", "startedAt": "", "finishedAt": "", "steps": [STEP]}
+RUN = {"runId": "r2", "status": "running", "startedAt": "", "step": "a", "stepStartedAt": "", "steps": {"a": "running"}}
+POOL = {"name": "lane", "cap": 1, "running": 1, "queued": 0}
+BUSY = {**DAG, "active": [RUN], "pool": "lane"}
 
 
 def adapter(kit: type[_AdapterKit], records: list[dict], **overrides: object) -> _AdapterKit:
@@ -45,6 +48,36 @@ def test_an_adapter_that_keeps_its_contract_passes_every_check(kit: type[_Adapte
     assert [failing(check) for check in every_check(adapter(kit, records))] == [False] * len(
         every_check(adapter(kit, records))
     )
+
+
+def test_an_adapter_reporting_active_runs_and_pools_passes_every_check() -> None:
+    busy = adapter(RunsAdapterKit, [BUSY], produce_pools=lambda self: [POOL])
+
+    assert [failing(check) for check in every_check(busy)] == [False] * len(every_check(busy))
+
+
+@pytest.mark.parametrize(
+    ("records", "pools", "what"),
+    [
+        (
+            [{**BUSY, "active": [{**RUN, "steps": {"ghost": "running"}}]}],
+            [POOL],
+            "an active run reporting a ghost step",
+        ),
+        ([{**BUSY, "active": [{**RUN, "step": "ghost"}]}], [POOL], "an active run currently in a ghost step"),
+        ([{**BUSY, "active": [RUN, RUN]}], [POOL], "two active runs of one id"),
+        ([{**BUSY, "active": [{**RUN, "status": "succeeded"}]}], [POOL], "an active run that is not in flight"),
+        ([BUSY], [], "a DAG naming a pool the adapter does not report"),
+        ([BUSY], [POOL, POOL], "a pool reported twice"),
+        ([BUSY], [{**POOL, "cap": -1}], "a pool the contract rejects"),
+    ],
+)
+def test_an_adapter_whose_active_runs_or_pools_break_the_contract_fails_a_check(
+    records: list[dict], pools: list[dict], what: str
+) -> None:
+    checks = every_check(adapter(RunsAdapterKit, records, produce_pools=lambda self: pools))
+
+    assert any(failing(check) for check in checks), what
 
 
 @pytest.mark.parametrize(

@@ -44,7 +44,7 @@ from starpulse.board import (
 )
 from starpulse.board_feed import BoardFeed
 from starpulse.config import Config
-from starpulse.contracts import SCHEMAS, BoardTask, Dag, MachineEvent, TaskKeys
+from starpulse.contracts import SCHEMAS, BoardTask, Dag, MachineEvent, Pool, TaskKeys
 from starpulse.harnesses import Harnesses
 from starpulse.history import History, HistoryStore
 from starpulse.machine_tasks import MachineTasks
@@ -194,17 +194,45 @@ class RunsAdapterKit(_AdapterKit):
     _name = "runs"
     _model = Dag
 
+    def produce_pools(self) -> list[dict]:
+        """The concurrency pools the adapter reports, as plain dicts shaped as the `pools` schema; an adapter with none leaves this empty."""
+        return []
+
     def test_every_step_waits_only_on_steps_of_its_own_dag(self) -> None:
         for dag in self.records():
             names = [step.name for step in dag.steps]
             assert len(names) == len(set(names)), f"{dag.name} repeats a step name"
             assert [d for step in dag.steps for d in step.depends if d not in names] == []
 
-    def test_the_flow_view_draws_every_dag(self) -> None:
+    def test_every_active_run_is_in_flight_and_stays_within_its_own_dag(self) -> None:
+        for dag in self.records():
+            names = {step.name for step in dag.steps}
+            ids = [run.run_id for run in dag.active]
+            assert len(ids) == len(set(ids)), f"{dag.name} repeats an active run id"
+            for run in dag.active:
+                assert run.status in ("queued", "running"), f"{dag.name} run {run.run_id} is not queued or running"
+                if names:
+                    assert set(run.steps) <= names, f"{dag.name} run {run.run_id} reports a step the DAG lacks"
+                    assert run.step in names | {""}, f"{dag.name} run {run.run_id} is in a step the DAG lacks"
+
+    def test_every_pool_follows_its_contract_and_every_pool_a_dag_names_is_reported(self) -> None:
+        pools = [Pool.model_validate(pool) for pool in self.produce_pools()]
+        for pool in pools:
+            jsonschema.validate(pool.model_dump(mode="json", by_alias=True), SCHEMAS["pools"])
+        names = [pool.name for pool in pools]
+        assert len(names) == len(set(names)), "a pool is reported twice"
+        assert [dag.name for dag in self.records() if dag.pool and dag.pool not in names] == []
+
+    def test_the_flow_view_draws_every_dag_and_pool(self) -> None:
         feed = BoardFeed()
-        dags = self.produce()
-        feed.runs("kit").set_dags(dags, None)
-        assert feed.snapshot()["dags"] == [{**dag, "name": f"kit/{dag['name']}"} for dag in dags]
+        dags, pools = self.produce(), self.produce_pools()
+        feed.runs("kit").set_dags(dags, None, pools)
+        snapshot = feed.snapshot()
+        assert snapshot["dags"] == [
+            {**dag, "name": f"kit/{dag['name']}"} | ({"pool": f"kit/{dag['pool']}"} if dag.get("pool") else {})
+            for dag in dags
+        ]
+        assert snapshot["pools"] == [{**pool, "name": f"kit/{pool['name']}"} for pool in pools]
 
 
 # The helpers below drive an adapter through the flow view's own server and feed.

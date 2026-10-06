@@ -16,10 +16,10 @@ from starpulse import run_events
 from starpulse.adapter_kit import RunsAdapterKit
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import StartFailedError, TaskKeys
-from starpulse.dagu import _STATUS, DaguRuns, Transport, connect, dags, start, starter, status_of
+from starpulse.dagu import _STATUS, DaguRuns, Transport, connect, dags, pools, start, starter, status_of
 from starpulse.dagu import follow as follow_instance
 from starpulse.event_log import EventLog
-from starpulse.tests.dagu_stub import dagu, run_entry
+from starpulse.tests.dagu_stub import InFlight, Queue, dagu, run_entry
 
 LISTING = "/api/v1/dags?perPage=200"
 #: The listing is read at this time; an entry stamped before it is already in the listing.
@@ -33,14 +33,64 @@ class TestDaguAdapter(RunsAdapterKit):
     branches = {"feature/PROJ-1": "PROJ-1", "main": None}
 
     def produce(self) -> list[dict]:
-        with dagu({"d1": ["a", "b"], "d2": ["c"]}) as (base_url, _):
+        with self._serving() as (base_url, _):
             return dags(base_url)
+
+    def produce_pools(self) -> list[dict]:
+        with self._serving() as (base_url, _):
+            return pools(base_url)
+
+    @staticmethod
+    def _serving():
+        """A Dagu with `deliver` running twice and queued once on a two-run queue, and an idle DAG on no queue."""
+        queues = {"deliver": Queue(2, 2, 1)}
+        return dagu({**DELIVER, "d2": ["c"]}, **LANE, queues=queues, in_flight=(LINTING, WAITING, QUEUED))
+
+
+DELIVER = {"deliver": ["refuse", "lint", "wait_ci"]}
+LANE = {"queue_of": {"deliver": "deliver"}}
+#: One run in `lint`, one further on in `wait_ci`, and one waiting for a slot on the `deliver` queue.
+LINTING = InFlight(
+    "deliver",
+    "r1",
+    started_at="2026-10-05T23:00:00Z",
+    nodes=(
+        ("refuse", "succeeded", "2026-10-05T23:00:01Z"),
+        ("lint", "running", "2026-10-05T23:00:02Z"),
+        ("wait_ci", "not_started", ""),
+    ),
+)
+WAITING = InFlight(
+    "deliver",
+    "r2",
+    started_at="2026-10-05T23:04:00Z",
+    nodes=(
+        ("refuse", "succeeded", "2026-10-05T23:04:01Z"),
+        ("lint", "succeeded", "2026-10-05T23:04:02Z"),
+        ("wait_ci", "running", "2026-10-05T23:04:30Z"),
+    ),
+)
+QUEUED = InFlight(
+    "deliver",
+    "r3",
+    label="queued",
+    queued_at="2026-10-05T23:05:00Z",
+    nodes=(("refuse", "not_started", ""), ("lint", "not_started", ""), ("wait_ci", "not_started", "")),
+)
+
+
+def deliver(*, in_flight: tuple[InFlight, ...], **stub) -> dict:
+    """The `deliver` DAG as the adapter lists it while Dagu runs `in_flight`."""
+    with dagu(DELIVER, **LANE, in_flight=in_flight, **stub) as (base_url, _):
+        return next(d for d in dags(base_url) if d["name"] == "deliver")
 
 
 def follow(base_url: str) -> tuple[BoardFeed, DaguRuns, queue.Queue]:
     """A runs reader that has taken its one listing, and the queue of changes a page would get."""
     feed = BoardFeed()
-    runs = DaguRuns(feed.runs("ci"), lambda only=None: dags(base_url, only), clock=lambda: LISTED_AT)
+    runs = DaguRuns(
+        feed.runs("ci"), lambda only=None: dags(base_url, only), lambda: pools(base_url), clock=lambda: LISTED_AT
+    )
     runs.reconcile()
     _, changes = feed.subscribe()
     return feed, runs, changes
@@ -116,7 +166,7 @@ def test_an_end_entry_keeps_the_step_statuses_the_dag_had_when_dagu_cannot_be_re
     assert (dag(feed, "d1")["status"], statuses(feed, "d1")) == ("failed", {"a": "succeeded"})
 
 
-def test_the_end_of_a_run_that_is_not_the_one_drawn_changes_nothing() -> None:
+def test_the_end_of_a_run_that_is_neither_the_one_drawn_nor_an_active_one_changes_nothing() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
         runs.handle_entry(*run_entry("start", "d1", "r1", "running", at=101.0))
@@ -124,7 +174,7 @@ def test_the_end_of_a_run_that_is_not_the_one_drawn_changes_nothing() -> None:
         while not changes.empty():
             changes.get_nowait()
 
-        runs.handle_entry(*run_entry("end", "d1", "r1", "failed", at=103.0))
+        runs.handle_entry(*run_entry("end", "d1", "r0", "failed", at=103.0))
 
     assert (dag(feed, "d1")["status"], dag(feed, "d1")["runId"]) == ("running", "r2")
     assert changes.empty()
@@ -421,6 +471,8 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             "startedAt": "s",
             "finishedAt": "f",
             "steps": [{"name": "only", "depends": [], "status": "not_started", "kind": None}],
+            "active": [],
+            "pool": "",
         },
         {
             "name": "queued",
@@ -432,8 +484,19 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
                 {"name": "a", "depends": [], "status": "not_started", "kind": None},
                 {"name": "b", "depends": ["a"], "status": "not_started", "kind": None},
             ],
+            "active": [],
+            "pool": "",
         },
-        {"name": "never", "status": "not_started", "runId": "", "startedAt": "", "finishedAt": "", "steps": []},
+        {
+            "name": "never",
+            "status": "not_started",
+            "runId": "",
+            "startedAt": "",
+            "finishedAt": "",
+            "steps": [],
+            "active": [],
+            "pool": "",
+        },
         {
             "name": "unlabelled",
             "status": "not_started",
@@ -441,6 +504,8 @@ def test_dags_reads_each_dags_latest_run_with_defaults_for_what_dagu_omits(monke
             "startedAt": "",
             "finishedAt": "",
             "steps": [{"name": "a", "depends": [], "status": "running", "kind": None}],
+            "active": [],
+            "pool": "",
         },
     ]
     assert set(timeouts) == {5}
@@ -842,3 +907,184 @@ def test_a_dagu_answer_that_is_not_an_object_reads_as_an_empty_body(
     monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: _Raw(raw))
 
     assert connect("http://ci.test")("POST", "/dags/healthcheck/start", {}) == (200, {})
+
+
+def test_two_concurrent_runs_of_one_dag_are_two_active_records_with_their_own_steps() -> None:
+    listed = deliver(in_flight=(WAITING, LINTING))
+
+    assert listed.get("active") == [
+        {
+            "runId": "r1",
+            "status": "running",
+            "startedAt": "2026-10-05T23:00:00Z",
+            "step": "lint",
+            "stepStartedAt": "2026-10-05T23:00:02Z",
+            "steps": {"refuse": "succeeded", "lint": "running", "wait_ci": "not_started"},
+        },
+        {
+            "runId": "r2",
+            "status": "running",
+            "startedAt": "2026-10-05T23:04:00Z",
+            "step": "wait_ci",
+            "stepStartedAt": "2026-10-05T23:04:30Z",
+            "steps": {"refuse": "succeeded", "lint": "succeeded", "wait_ci": "running"},
+        },
+    ]
+
+
+def test_a_queued_run_follows_the_running_ones_and_starts_when_it_was_queued() -> None:
+    listed = deliver(in_flight=(QUEUED, LINTING))
+
+    assert [
+        (a["runId"], a["status"], a["startedAt"], a["step"], a["stepStartedAt"]) for a in listed.get("active", [])
+    ] == [
+        ("r1", "running", "2026-10-05T23:00:00Z", "lint", "2026-10-05T23:00:02Z"),
+        ("r3", "queued", "2026-10-05T23:05:00Z", "", ""),
+    ]
+
+
+def test_a_run_between_steps_has_no_current_step() -> None:
+    between = InFlight(
+        "deliver",
+        "r4",
+        started_at="2026-10-05T23:06:00Z",
+        nodes=(
+            ("refuse", "succeeded", "2026-10-05T23:06:01Z"),
+            ("lint", "not_started", ""),
+            ("wait_ci", "not_started", ""),
+        ),
+    )
+
+    assert [(a["step"], a["stepStartedAt"]) for a in deliver(in_flight=(between,)).get("active", [])] == [("", "")]
+
+
+def test_a_run_of_another_dag_is_not_active_on_this_one() -> None:
+    other = InFlight(
+        "other", "r9", started_at="2026-10-05T23:00:00Z", nodes=(("a", "running", "2026-10-05T23:00:01Z"),)
+    )
+    with dagu({**DELIVER, "other": ["a"]}, **LANE, in_flight=(LINTING, other)) as (base_url, _):
+        listed = {d["name"]: d for d in dags(base_url)}
+
+    assert [a["runId"] for a in listed["deliver"].get("active", [])] == ["r1"]
+    assert [a["runId"] for a in listed["other"].get("active", [])] == ["r9"]
+
+
+def test_a_dag_names_the_queue_it_declares_as_its_pool() -> None:
+    with dagu({**DELIVER, "d2": ["a"]}, queue_of={"deliver": "deliver"}) as (base_url, _):
+        listed = {d["name"]: d for d in dags(base_url)}
+
+    assert (listed["deliver"].get("pool"), listed["d2"].get("pool")) == ("deliver", "")
+
+
+def test_the_pools_are_the_queues_dagu_reports() -> None:
+    queues = {"deliver": Queue(cap=32, running=2, queued=1), "default": Queue(cap=2)}
+    with dagu(DELIVER, queues=queues) as (base_url, _):
+        assert pools(base_url) == [
+            {"name": "deliver", "cap": 32, "running": 2, "queued": 1},
+            {"name": "default", "cap": 2, "running": 0, "queued": 0},
+        ]
+
+
+def test_a_dagu_that_reports_no_queues_has_no_pools() -> None:
+    with dagu(DELIVER) as (base_url, _):
+        assert pools(base_url) == []
+
+
+def test_two_concurrent_runs_and_the_pool_they_share_reach_the_page_under_the_instance() -> None:
+    queues = {"deliver": Queue(cap=32, running=2, queued=1)}
+    with dagu(DELIVER, **LANE, queues=queues, in_flight=(LINTING, WAITING, QUEUED)) as (base_url, _):
+        feed, _, _ = follow(base_url)
+
+    listed = dag(feed, "deliver")
+    assert [(a["runId"], a["step"]) for a in listed["active"]] == [("r1", "lint"), ("r2", "wait_ci"), ("r3", "")]
+    assert listed["pool"] == "ci/deliver"
+    assert feed.snapshot()["pools"] == [{"name": "ci/deliver", "cap": 32, "running": 2, "queued": 1}]
+
+
+def test_the_pools_travel_with_the_dags_delta_and_a_run_entry_keeps_them() -> None:
+    queues = {"deliver": Queue(cap=32, running=2)}
+    with dagu(DELIVER, **LANE, queues=queues) as (base_url, _):
+        feed, runs, changes = follow(base_url)
+
+        runs.handle_entry(*run_entry("start", "deliver", "r9", "running", at=101.0))
+
+    kind, delta = changes.get_nowait()
+    assert (kind, delta["pools"]) == ("dags", [{"name": "ci/deliver", "cap": 32, "running": 2, "queued": 0}])
+    assert feed.snapshot()["pools"] == [{"name": "ci/deliver", "cap": 32, "running": 2, "queued": 0}]
+
+
+def test_a_dagu_that_goes_unreachable_keeps_the_pools_it_last_reported() -> None:
+    with dagu(DELIVER, **LANE, queues={"deliver": Queue(cap=32)}) as (base_url, _):
+        feed, runs, _ = follow(base_url)
+
+    runs.reconcile()
+
+    assert feed.snapshot()["error"] is not None
+    assert [p["name"] for p in feed.snapshot()["pools"]] == ["ci/deliver"]
+
+
+def test_a_listing_that_reports_no_pools_clears_those_the_last_one_reported() -> None:
+    feed = BoardFeed()
+    reported = [{"name": "deliver", "cap": 32, "running": 1, "queued": 0}]
+    runs = DaguRuns(feed.runs("ci"), lambda only=None: [], lambda: reported, clock=lambda: LISTED_AT)
+
+    runs.reconcile()
+    assert [p["name"] for p in feed.snapshot()["pools"]] == ["ci/deliver"]
+    reported.clear()
+    runs.reconcile()
+
+    assert feed.snapshot()["pools"] == []
+
+
+def active_ids(feed: BoardFeed) -> list[str]:
+    return [a["runId"] for a in dag(feed, "deliver")["active"]]
+
+
+def test_a_start_entry_adds_its_run_to_the_active_ones_with_every_step_not_started() -> None:
+    with dagu(DELIVER, **LANE, in_flight=(LINTING,)) as (base_url, _):
+        feed, runs, _ = follow(base_url)
+
+        runs.handle_entry(*run_entry("start", "deliver", "r9", "running", at=101.0))
+
+    started = dag(feed, "deliver")["active"][-1]
+    assert active_ids(feed) == ["r1", "r9"]
+    assert started == {
+        "runId": "r9",
+        "status": "running",
+        "startedAt": "1970-01-01T00:01:41Z",
+        "step": "",
+        "stepStartedAt": "",
+        "steps": {"refuse": "not_started", "lint": "not_started", "wait_ci": "not_started"},
+    }
+
+
+def test_an_end_entry_drops_its_run_from_the_active_ones_and_keeps_the_others() -> None:
+    latest = {"statusLabel": "running", "dagRunId": "r2"}
+    with dagu(DELIVER, **LANE, latest=latest, in_flight=(LINTING, WAITING)) as (base_url, _):
+        feed, runs, _ = follow(base_url)
+
+        runs.handle_entry(*run_entry("end", "deliver", "r2", "succeeded", at=105.0))
+
+    assert (dag(feed, "deliver")["status"], active_ids(feed)) == ("succeeded", ["r1"])
+
+
+def test_the_end_of_a_run_that_is_no_longer_the_one_drawn_still_leaves_the_active_ones() -> None:
+    latest = {"statusLabel": "running", "dagRunId": "r2"}
+    with dagu(DELIVER, **LANE, latest=latest, in_flight=(LINTING, WAITING)) as (base_url, _):
+        feed, runs, changes = follow(base_url)
+
+        runs.handle_entry(*run_entry("end", "deliver", "r1", "succeeded", at=105.0))
+
+    assert (dag(feed, "deliver")["runId"], dag(feed, "deliver")["status"], active_ids(feed)) == (
+        "r2",
+        "running",
+        ["r2"],
+    )
+    assert changes.get_nowait()[0] == "dags"
+
+
+def test_a_dagu_that_reports_no_pools_and_runs_nothing_yields_empty_pools_and_active() -> None:
+    with dagu(DELIVER) as (base_url, _):
+        feed, _, _ = follow(base_url)
+
+    assert (dag(feed, "deliver")["active"], dag(feed, "deliver")["pool"], feed.snapshot()["pools"]) == ([], "", [])

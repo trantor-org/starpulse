@@ -62,6 +62,7 @@ _SNAPSHOT_KEYS = (
     "graphs",
     "flows",
     "dags",
+    "pools",
     "pulls",
     "claims",
     "settled",

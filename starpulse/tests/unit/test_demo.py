@@ -115,6 +115,17 @@ def test_scrub_keeps_the_structure_and_replaces_every_task() -> None:
     assert [f["machine"] for f in demo["flows"]] == [{"states": []}, {"states": []}]
 
 
+def test_scrub_renames_each_active_run_of_a_dag_as_it_does_the_latest_run() -> None:
+    live = _live()
+    active = {"status": "running", "startedAt": "", "step": "", "stepStartedAt": "", "steps": {}}
+    live["dags"][0]["active"] = [{**active, "runId": "deliver-agent-task-2836-secret"}, {**active, "runId": "r-2"}]
+
+    demo = scrub(live)
+
+    assert [a["runId"] for a in demo["dags"][0]["active"]] == ["demo-0-0", "demo-0-1"]
+    assert "secret" not in json.dumps(demo)
+
+
 def test_scrub_keeps_a_board_tasks_bucket_labels_and_dependencies_under_demo_names() -> None:
     live = _live()
     live["flows"][0]["agents"] = [
@@ -455,7 +466,8 @@ def _structured(board: list[dict], placed: list[dict]) -> dict:
 
 def test_scrub_embeds_each_board_tasks_lane_path_ending_in_its_lane() -> None:
     live = _structured(
-        [{"id": "TASK-D1", "state": "review"}, {"id": "TASK-D2", "state": "ready"}, {"id": "TASK-D3", "state": "new"}], []
+        [{"id": "TASK-D1", "state": "review"}, {"id": "TASK-D2", "state": "ready"}, {"id": "TASK-D3", "state": "new"}],
+        [],
     )
 
     history = scrub(live)["history"]
@@ -562,7 +574,9 @@ def test_scrub_seeds_the_delivery_machine_with_the_in_progress_board_tasks_when_
 
 
 def test_scrub_leaves_a_delivery_machine_the_capture_placed_tasks_on() -> None:
-    placed = [{"id": "TASK-D1", "task": "TASK-D1", "title": "t", "state": "green", "model": "", "steps": 0, "trail": []}]
+    placed = [
+        {"id": "TASK-D1", "task": "TASK-D1", "title": "t", "state": "green", "model": "", "steps": 0, "trail": []}
+    ]
 
     demo = scrub(_structured([{"id": "TASK-D1", "state": "in_progress"}], placed))
 

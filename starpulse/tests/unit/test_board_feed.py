@@ -42,6 +42,47 @@ def test_an_instances_runs_arrive_as_a_delta_only_when_they_change() -> None:
     assert second[1]["error"] == "ci: down"
 
 
+POOL = {"name": "deliver", "cap": 32, "running": 2, "queued": 1}
+
+
+def test_pools_are_drawn_under_the_instance_that_reported_them_and_so_is_the_pool_a_dag_names() -> None:
+    feed = BoardFeed()
+    _, deltas = feed.subscribe()
+
+    feed.set_dags("prod", [{"name": "a", "pool": "deliver"}, {"name": "b", "pool": ""}, {"name": "c"}], None, [POOL])
+    feed.set_dags("staging", [{"name": "d", "pool": "deliver"}], None, [{**POOL, "cap": 4}])
+
+    snapshot = feed.snapshot()
+    assert snapshot["pools"] == [
+        {**POOL, "name": "prod/deliver"},
+        {**POOL, "name": "staging/deliver", "cap": 4},
+    ]
+    assert [d.get("pool") for d in snapshot["dags"]] == ["prod/deliver", "", None, "staging/deliver"]
+    kind, delta = deltas.get_nowait()
+    assert (kind, delta["pools"]) == ("dags", [{**POOL, "name": "prod/deliver"}])
+
+
+def test_an_instance_that_reports_no_pools_has_none_drawn() -> None:
+    feed = BoardFeed()
+
+    feed.set_dags("ci", [{"name": "d"}], None)
+
+    assert feed.snapshot()["pools"] == []
+    assert feed.snapshot()["dags"] == [{"name": "ci/d"}]
+
+
+def test_pools_stay_until_an_instance_reports_others_and_a_read_error_keeps_them() -> None:
+    feed = BoardFeed()
+    feed.set_dags("ci", [{"name": "d"}], None, [POOL])
+
+    feed.set_dags("ci", [{"name": "d"}], None)  # nothing said about pools: they stay
+    feed.set_dags("ci", None, "refused")
+    assert feed.snapshot()["pools"] == [{**POOL, "name": "ci/deliver"}]
+
+    feed.set_dags("ci", [{"name": "d"}], None, [])  # the adapter now reports none
+    assert feed.snapshot()["pools"] == []
+
+
 def test_two_instances_draw_both_sets_each_workflow_prefixed_with_its_instance() -> None:
     feed = BoardFeed()
     feed.set_dags("prod", [{"name": "nightly"}, {"name": "backup"}], None)
@@ -234,6 +275,7 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "graphs",
         "hint",
         "now",
+        "pools",
         "pulls",
         "reading",
         "settled",

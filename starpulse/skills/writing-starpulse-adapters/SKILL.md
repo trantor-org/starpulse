@@ -39,7 +39,8 @@ Done when `starpulse doctor` reports `adapter:board` as ok.
 2. Declare `keys = TaskKeys(...)` and `branches = {"feature/PROJ-1-add-x": "PROJ-1", "main": None}`, with a branch that
    names a task and one that names none. A board or machine-events kit also declares `machines`, and a board kit with a
    writer sets `writer`.
-3. Override `produce()` to return the records your adapter writes, as plain dicts shaped as the schema.
+3. Override `produce()` to return the records your adapter writes, as plain dicts shaped as the schema. A runs adapter
+   that reports concurrency pools also overrides `produce_pools()`; each `Dag.pool` must name one of them.
 4. Run `pytest`. The kit checks each record against the contract, its keys and branches, and that StarPulse places it.
 
 Done when every kit check passes against records your adapter actually produced.
@@ -54,7 +55,8 @@ usually because its database is unreachable; exit 2 means a flag or configuratio
 never means the run failed.
 
 A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`) whose module offers `start(url)` and
-`follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error)`; its workflows are drawn as
+`follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools)` (a `Dag` lists its running and queued runs in `active`,
+and `pools` is the list of concurrency pools, empty when the scheduler has none); its workflows are drawn as
 `<name>/<workflow>`.
 
 ## Check it
