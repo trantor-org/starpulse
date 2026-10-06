@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Card } from "./Kanban";
+import { Card, HeldBy } from "./Kanban";
 import type { KanbanTask } from "./kanban";
 
 const task: KanbanTask = {
@@ -29,5 +29,35 @@ describe("a Kanban card's density", () => {
     expect(html).toContain("A title long enough");
     expect(html).toContain("red proven");
     expect(html).toContain("1m");
+  });
+});
+
+describe("what holds the Waiting lane", () => {
+  const holder = (id: string, holds: number, labels: string[] = []) => ({ task: { ...task, id, labels }, holds });
+
+  it("marks a card with the Waiting tasks it holds, and draws no mark on a card that holds none", () => {
+    const held = renderToStaticMarkup(<Card task={task} holds={23} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
+    const free = renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(held).toContain('title="holds 23 Waiting tasks"');
+    expect(held).toContain("⛓23");
+    expect(free).not.toContain("⛓");
+  });
+
+  it("lists the top three holders with their counts, flags a needs-human one and counts the rest", () => {
+    const html = renderToStaticMarkup(
+      <HeldBy holders={[holder("TASK-2706", 23, ["needs-human"]), holder("TASK-2875", 3), holder("TASK-2873", 3), holder("TASK-1878", 2)]} open={() => {}} />,
+    );
+
+    expect(html).toContain("Held by");
+    expect(html).toMatch(/TASK-2706.*23/);
+    expect(html).toContain('class="hb nh"');
+    expect(html).toContain("TASK-2873");
+    expect(html).not.toContain("TASK-1878");
+    expect(html).toContain("+1 more");
+  });
+
+  it("draws nothing when no task holds Waiting work", () => {
+    expect(renderToStaticMarkup(<HeldBy holders={[]} open={() => {}} />)).toBe("");
   });
 });

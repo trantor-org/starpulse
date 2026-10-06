@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, filtersActive, hideMilestone, hideTask, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, type KanbanTask } from "./kanban";
+import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, type KanbanTask } from "./kanban";
 import { merge } from "./sky";
 import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "./types";
@@ -277,5 +277,50 @@ describe("label suggestions", () => {
   it("write label:<name> in place of the word being typed, ready for the next word", () => {
     expect(applySuggestion("need", "needs-human")).toBe("label:needs-human ");
     expect(applySuggestion("kanban label:si", "size-3")).toBe("kanban label:size-3 ");
+  });
+});
+
+describe("what holds the Waiting lane", () => {
+  const dep = (id: string, lane: string, ...dependencies: string[]): KanbanTask => {
+    const open = dependencies.filter((d) => !d.startsWith("DONE")).length;
+    return { ...task(id, lane), dependencies, openDeps: open };
+  };
+  // A gate in Review holds a Waiting hub, which holds two Waiting slices; one slice also waits on a Ready task
+  const board = [
+    dep("GATE", "review"), dep("HUB", "waiting", "GATE"), dep("S1", "waiting", "HUB"), dep("S2", "waiting", "HUB", "SIDE"),
+    dep("SIDE", "ready"), dep("TIMED", "waiting"), dep("FREE", "waiting", "DONE-1"), dep("LATE", "in_progress", "GATE"), task("DONE-1", "done"),
+  ];
+
+  it("count every Waiting task behind a task, through other Waiting tasks, once each", () => {
+    const counts = holdCounts(board);
+
+    expect(counts.get("GATE")).toBe(3);
+    expect(counts.get("HUB")).toBe(2);
+    expect(counts.get("SIDE")).toBe(1);
+    expect(counts.get("S1") ?? 0).toBe(0);
+  });
+
+  it("leave out a dependent that is not Waiting and a dependency that is Done", () => {
+    const counts = holdCounts(board);
+
+    expect(counts.get("DONE-1") ?? 0).toBe(0);
+    expect(counts.get("TIMED") ?? 0).toBe(0);
+  });
+
+  it("rank the tasks at the bottom of the chains, most held first, leaving out a Waiting task that waits on open work", () => {
+    expect(holders(board).map((h) => [h.task.id, h.holds])).toEqual([["GATE", 3], ["SIDE", 1]]);
+  });
+
+  it("count a Waiting task held only by its own Start Criteria as a holder of the tasks behind it", () => {
+    const timed = [dep("TIMED", "waiting"), dep("AFTER", "waiting", "TIMED")];
+
+    expect(holders(timed).map((h) => [h.task.id, h.holds])).toEqual([["TIMED", 1]]);
+  });
+
+  it("stop at a dependency cycle instead of counting forever", () => {
+    const cycle = [dep("A", "waiting", "B"), dep("B", "waiting", "A")];
+
+    expect(holdCounts(cycle).get("A")).toBe(1);
+    expect(holders(cycle)).toEqual([]);
   });
 });

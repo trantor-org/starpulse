@@ -5,7 +5,7 @@ import { archiveDialogKey, withoutArchived } from "./archive";
 import { ArchiveDialog } from "./ArchiveConfirm";
 import type { HudState } from "./hud";
 import {
-  COLUMNS, applySuggestion, applyTaskRecord, assigneeOptions, clearFilters, filtersActive, hideMilestone, hideTask, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
+  COLUMNS, applySuggestion, applyTaskRecord, assigneeOptions, clearFilters, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
   type KanbanTask, type Option, type Prefs,
 } from "./kanban";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
@@ -88,8 +88,8 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
 }
 
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
-export function Card({ task, now, marks, names, compact = false, onOpen, onPress, onPlay, dismiss, dismissStart, style }: {
-  task: KanbanTask; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
+export function Card({ task, holds = 0, now, marks, names, compact = false, onOpen, onPress, onPlay, dismiss, dismissStart, style }: {
+  task: KanbanTask; holds?: number; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
   const labels = task.labels.filter((l) => !/^kind-|^agent-resolvable$/.test(l)).slice(0, 3);
@@ -128,12 +128,30 @@ export function Card({ task, now, marks, names, compact = false, onOpen, onPress
           {labels.map((l) => (
             <span key={l} title={l} className={`lab${l === "needs-human" ? " nh" : /^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
           ))}
+          {holds > 0 && <span className="holds" title={`holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>⛓{holds}</span>}
           {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
           {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
         </div>
       )}
       {marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
       {marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart ?? dismiss} />}
+    </div>
+  );
+}
+
+/** The Waiting column's strip: the tasks at the bottom of its chains, most held first, each opening its card. */
+export function HeldBy({ holders: held, open }: { holders: { task: KanbanTask; holds: number }[]; open: (id: string) => void }) {
+  if (!held.length) return null;
+  return (
+    <div className="heldby">
+      <span className="k" title="The tasks every Waiting chain ends at; finishing one releases the Waiting tasks it holds">Held by</span>
+      {held.slice(0, 3).map(({ task, holds }) => (
+        <button key={task.id} className={`hb${task.labels.includes("needs-human") ? " nh" : ""}`} onClick={() => open(task.id)}
+          title={`${task.title} · ${task.lane.replace(/_/g, " ")} · holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>
+          {task.id}<b>⛓{holds}</b>
+        </button>
+      ))}
+      {held.length > 3 && <span className="more">+{held.length - 3} more</span>}
     </div>
   );
 }
@@ -364,6 +382,8 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
     return saved?.source === hud.cards ? applyTaskRecord(card, saved.record) : card;
   }), gone), [edited, gone, hud.cards, moved, started]);
   const view = useMemo(() => layout(cards, hud.names, prefs), [cards, hud.names, prefs]);
+  const holds = useMemo(() => holdCounts(cards), [cards]);
+  const blockers = useMemo(() => holders(cards, holds), [cards, holds]);
   const task = open ? cards.find((t) => t.id === open) : undefined;
   const archiveTask = archiving ? cards.find((t) => t.id === archiving) : undefined;
   useEffect(() => {
@@ -545,6 +565,7 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
                 )}
               </h2>
               {target?.kind === "guard" && <div className="why"><Reason text={target.reason} /></div>}
+              {col.id === "waiting" && !lift && <HeldBy holders={blockers} open={(id) => setOpen(id)} />}
               <div className="body">
                 {col.buckets.length === 0 && <div className="empty">no tasks</div>}
                 {col.buckets.map((b) => (
@@ -555,7 +576,7 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
                       <button className="hide" title="Hide this milestone" onClick={(e) => { e.stopPropagation(); setPrefs((p) => hideMilestone(p, b.milestone)); }}>hide</button>
                     </div>
                     {!b.folded && b.tasks.map((t) => (
-                      <Card key={t.id} task={t} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
+                      <Card key={t.id} task={t} holds={holds.get(t.id)} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
                         style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
                         onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
                         dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />

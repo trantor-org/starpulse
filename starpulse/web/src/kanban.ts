@@ -176,3 +176,34 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
     };
   });
 }
+
+/** How many Waiting tasks each task holds: those that depend on it while it is not Done, directly or through other Waiting tasks, each counted once. */
+export function holdCounts(tasks: KanbanTask[]): Map<string, number> {
+  const open = new Set(tasks.filter((t) => t.lane !== "done").map((t) => t.id));
+  const waitingOn = new Map<string, string[]>();
+  for (const t of tasks) {
+    if (t.lane !== "waiting") continue;
+    for (const d of t.dependencies) if (open.has(d)) waitingOn.set(d, [...(waitingOn.get(d) ?? []), t.id]);
+  }
+  const counts = new Map<string, number>();
+  for (const id of waitingOn.keys()) {
+    const seen = new Set<string>(), next = [id];
+    for (let at = next.pop(); at !== undefined; at = next.pop()) {
+      for (const w of waitingOn.get(at) ?? []) {
+        if (w === id || seen.has(w)) continue;
+        seen.add(w);
+        next.push(w);
+      }
+    }
+    counts.set(id, seen.size);
+  }
+  return counts;
+}
+
+/** The tasks at the bottom of the Waiting chains, most held first: each holds Waiting work and is not itself waiting on open work. */
+export function holders(tasks: KanbanTask[], counts = holdCounts(tasks)): { task: KanbanTask; holds: number }[] {
+  return tasks
+    .filter((t) => (counts.get(t.id) ?? 0) > 0 && !(t.lane === "waiting" && t.openDeps > 0))
+    .map((task) => ({ task, holds: counts.get(task.id)! }))
+    .sort((a, b) => b.holds - a.holds || a.task.id.localeCompare(b.task.id, undefined, { numeric: true }));
+}
