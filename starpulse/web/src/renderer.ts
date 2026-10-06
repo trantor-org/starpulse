@@ -273,10 +273,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onDown = (e: MouseEvent) => {
     if (e.button !== 0) return;
     drag = { fixed: zoomedOut(), x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
-    cv.classList.add("drag");
   };
   const onUp = (e: MouseEvent) => {
-    cv.classList.remove("drag");
     if (drag && !drag.moved && e.target === cv) click(e.offsetX, e.offsetY);
     drag = null;
   };
