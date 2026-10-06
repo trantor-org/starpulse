@@ -26,7 +26,8 @@ import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
 import type { Dag, Machine, Snapshot, Writer } from "./types";
 import { fanBadge, fanTip, stepStatus } from "./fanout";
-import { esc, startRun, taskPanel } from "./panels";
+import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
+import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "./fan";
 import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "./adminPrefs";
 import { clockHm, clockHms, stamp } from "./clock";
 import { canvasSpace, retired, viewOf, viewSearch } from "./nav";
@@ -140,6 +141,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const cx = cv.getContext("2d")!, { tip, panel } = els;
   const hhmm = (sec: number) => clockHm(sec, prefs().clock);
   let S: Sky | null = null, snap: Snapshot | null = null, scene: Scene | null = null;
+  /** Each DAG's runs as the panel last saw them, so a run that ends keeps its row for a moment. */
+  const fans: Record<string, Fan> = {};
   const moves = new Moves();
   /** The feed's lines for the runs of every DAG that start, queue, change step or end. */
   const runEvents = new RunEvents();
@@ -155,7 +158,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // ZS: zoom beyond the fit size; K: absolute zoom. Text, pulses and dashes divide by these so they never balloon.
   const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
   let T = Date.now() / 1000, clock = 0, liveTasks = new Set<string>(), hotEdge = new Set<string>(), ZS = 1, K = 1;
-  let away = false, timer = 0, clockTimer = 0, stopped = false, saveT = 0, tick = 0, clockText = "", live: "" | "on" | "off" = "";
+  let away = false, timer = 0, clockTimer = 0, fanTimer = 0, stopped = false, saveT = 0, tick = 0, clockText = "", live: "" | "on" | "off" = "";
   // The stream the page reads its snapshot and every change after it from.
   let stream: { close(): void } | null = null, last = 0;
 
@@ -342,6 +345,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     snap = next;
     T = Date.now() / 1000;
     S = merge(next);
+    for (const d of S.dags) fans[d.name] = track(fans[d.name] ?? emptyFan(), d, T);
     moves.observe(S, T);
     if (first) runEvents.resync(); // the runs already in flight when the page opens are not announced as new
     runEvents.observe(S.dags, T);
@@ -353,6 +357,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     layout(!first);
     publish();
+    paintFan();
     if (away) heartbeat(); // the canvas draws no frame behind another view, but the Recent feed beside it stays current
     else loop.wake();
   }
@@ -682,15 +687,37 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     panel.classList.remove("open");
     return true;
   }
+  /** The three parts of a DAG panel that follow its runs: the Queue row, the Steps chips and the In-flight list. */
+  function fanParts(o: Dag, now: number) {
+    const sky = S!, q = queueRow(o, snap?.pools), rows = fanRows(fans[o.name] ?? emptyFan(), o, now, sky.board.agents.map((a) => a.id));
+    const last = `${esc(o.status)}${o.finishedAt ? ` ${hhmm(finished(o.finishedAt))} MST` : ""}`;
+    return {
+      queue: q ? queueCell(q) : "",
+      steps: o.steps.map((s) => { const n = stepRuns(o, s.name); return `<span class="chip" style="color:${DAG_COLOR[stepStatus(o, s.name, s.status)] || "#94a3b8"}">${esc(s.name)}${n ? ` ×${n}` : ""}</span>${s.depends.length ? `<span class="k"> after ${s.depends.map(esc).join(", ")}</span>` : ""}`; }).join("<br>"),
+      list: fanList(rows, last, (id) => taskLink(id, id, sky)),
+    };
+  }
+  /** Repaint the open DAG panel's runs; its Run button and note stay as they are. */
+  function paintFan() {
+    const box = panel.classList.contains("open") ? panel.querySelector<HTMLElement>(".fan") : null, o = box && S?.dagBy[box.dataset.dag ?? ""];
+    if (!box || !o) return;
+    const parts = fanParts(o, Date.now() / 1000), row = panel.querySelector<HTMLElement>(".fan-q")!, top = panel.scrollTop;
+    row.hidden = !parts.queue;
+    row.querySelector("td:last-child")!.innerHTML = parts.queue;
+    panel.querySelector(".fan-steps")!.innerHTML = parts.steps;
+    box.innerHTML = parts.list;
+    panel.scrollTop = top;
+  }
   function openDagPanel(o: Dag & { group: string; runnable: boolean }) {
-    const sky = S!, span = o.startedAt ? ` · ${hhmm(finished(o.startedAt))}–${o.finishedAt ? hhmm(finished(o.finishedAt)) : "…"} MST` : "";
+    const sky = S!, span = o.startedAt ? ` · ${hhmm(finished(o.startedAt))}–${o.finishedAt ? hhmm(finished(o.finishedAt)) : "…"} MST` : "", f = fanParts(o, Date.now() / 1000);
     panel.innerHTML = `<span class="x">✕</span><div class="k">DAG · ${esc(o.group)}</div><h2>${esc(o.name)}</h2>
-      <table><tr><td>Last run</td><td>${esc(o.status)}${o.raw ? ` (${esc(o.raw)})` : ""}${span}</td></tr>
-      <tr><td>Steps</td><td>${o.steps.map((s) => `<span class="chip" style="color:${DAG_COLOR[s.status] || "#94a3b8"}">${esc(s.name)}</span>${s.depends.length ? `<span class="k"> after ${s.depends.map(esc).join(", ")}</span>` : ""}`).join("<br>")}</td></tr>
+      <table><tr class="fan-q"${f.queue ? "" : " hidden"}><td>Queue</td><td>${f.queue}</td></tr>
+      <tr><td>Last run</td><td>${esc(o.status)}${o.raw ? ` (${esc(o.raw)})` : ""}${span}</td></tr>
+      <tr><td>Steps</td><td class="fan-steps">${f.steps}</td></tr>
       <tr><td>Writes</td><td>${writes(o.name).map(esc).join(", ") || "no Board lane"}</td></tr>
       <tr><td>Launches</td><td>${sky.launches.filter((l) => l.dag === o.name).map((l) => esc(l.skill)).join(", ") || "no agent"}</td></tr>${cueLine(o.name) ? `
       <tr><td>Runs with</td><td>${cueLine(o.name)}</td></tr>` : ""}</table>
-      <button class="run" ${o.runnable ? "" : "disabled"}>▶ Run now</button>
+      ${o.active ? `<div class="fan" data-dag="${esc(o.name)}">${f.list}</div>` : ""}<button class="run" ${o.runnable ? "" : "disabled"}>▶ Run now</button>
       <div class="note">${o.runnable ? "Declared safe to re-run (idempotent)." : "Not declared idempotent, so the page offers no run control."}</div>`;
     const run = panel.querySelector<HTMLButtonElement>(".run")!, note = panel.querySelector<HTMLElement>(".note")!;
     // the run then appears through the event stream, like any other
@@ -1554,6 +1581,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       loop.wake();
       stream = openStream({ snapshot: onSnapshot, live: onLive });
       clockTimer = window.setInterval(paintClock, 1000);
+      fanTimer = window.setInterval(paintFan, 1000);
       paintClock();
     },
     stop() {
@@ -1563,6 +1591,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       clearTimeout(timer);
       clearInterval(timer);
       clearInterval(clockTimer);
+      clearInterval(fanTimer);
       clearTimeout(saveT);
       for (const [target, type] of wakers) target.removeEventListener(type, wake);
       removeEventListener("resize", onResize);
