@@ -317,7 +317,8 @@ def _serve(directory: Path) -> Iterator[int]:  # pragma: no cover — process bo
 
 def _shoot(url: str, out: Path) -> Path:  # pragma: no cover — process boundary
     """Open `url` in headless Chromium, give it `_SETTLE_MS` to draw, and save the viewport to `out`."""
-    pw = [*_PLAYWRIGHT_CLI, "-s=starpulse-ui-preview"]
+    # every runner on the host shares one playwright-cli daemon, so a session named per process keeps a concurrent job's `close` off this browser
+    pw = [*_PLAYWRIGHT_CLI, f"-s=starpulse-ui-preview-{os.getpid()}"]
     try:
         _run(*pw, "open", url)
         _run(*pw, "resize", *map(str, _VIEWPORT))

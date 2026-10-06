@@ -341,7 +341,25 @@ describe("the DAGs free of the Board", () => {
     const scene = build(fixture(), { kind: "board" }), h = scene.hangar!, xs = Object.values(scene.galaxies).map((g) => g.x);
 
     expect([h.names, h.doms]).toEqual([["pr-launcher", "free-a", "free-b", "free-c"], 3]);
-    expect([h.x, h.y]).toEqual([Math.max(...xs), scene.galaxies.new.y]);
+    expect([h.x > Math.max(...xs), h.y]).toEqual([true, scene.galaxies.new.y]);
+  });
+
+  it("keeps the hangar clear of a final state that ends the axis", () => {
+    const snap: Snapshot = {
+      graphs: ["board", "runs"],
+      flows: [{ name: "board", agents: [], machine: {
+        ...machine(["to_do", "in_progress", "done"], { transitions: [{ source: "to_do", target: "in_progress", event: "START" }, { source: "in_progress", target: "done", event: "FINISH" }], mainLine: ["to_do", "in_progress", "done"] }),
+        states: [{ id: "to_do", name: "To Do", initial: true, final: false }, { id: "in_progress", name: "In Progress", initial: false, final: false }, { id: "done", name: "Done", initial: false, final: true }],
+      } }],
+      dags: ["free-a", "free-b"].map((n) => dag(n, [["run", []]])),
+      domains: [{ name: "Ops", dags: [{ name: "free-a", runSafe: false }, { name: "free-b", runSafe: false }] }],
+      cues: [], settled: {}, error: null, now: 1000,
+    };
+    const S = merge(snap), moves = new Moves();
+    moves.observe(S, 1000);
+    const scene = build({ S, moves, W: 1920, H: 1080, T: 1000 }, { kind: "board" }), h = scene.hangar!, done = scene.galaxies.done;
+
+    expect(h.x - h.r).toBeGreaterThanOrEqual(done.x + done.reach[0]);
   });
 
   it("draws no hangar when every DAG is tied to the Board", () => {
