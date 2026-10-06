@@ -124,8 +124,10 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
   };
 }
 
-/** A Board state's count: the tasks in it, and on a starting or terminal state the day's arrivals there not already in it. */
+/** A Board state's count: a starting state's is the day's arrivals alone, as it is a concept no task stays in; any other's is the tasks in it,
+ * and on a terminal state the day's arrivals there not already in it. */
 export function stateCount(sky: Sky, sid: string): number {
+  if (sky.board.machine.states.find((s) => s.id === sid)?.initial) return sky.today[sid]?.length ?? 0;
   const here = sky.board.agents.filter((a) => a.state === sid);
   return here.length + (sky.today[sid] ?? []).filter((t) => !here.some((a) => a.id === t.id)).length;
 }

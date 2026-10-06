@@ -167,15 +167,19 @@ describe("a starting or terminal Board state", () => {
     expect([sun.sun!.n, sun.sun!.today]).toEqual([2, 2]);
     expect(scene.galaxies.new.r).toBeGreaterThan(empty.galaxies.new.r);
   });
-  it("keeps drawing the tasks in such a state, and on a terminal one adds each of the day's arrivals not already among them", () => {
+  it("draws no task on a starting state, not even one in its lane, and counts only the day's arrivals; a terminal state keeps its tasks and adds the day's", () => {
     const sky = today();
-    sky.S.flows.board.agents.push({ id: "PROJ-1", title: "PROJ-1", state: "new", model: "" }, { id: "PROJ-6", title: "PROJ-6", state: "done", model: "" });
+    sky.S.flows.board.agents.push(
+      { id: "PROJ-1", title: "PROJ-1", state: "new", model: "" },
+      { id: "PROJ-7", title: "PROJ-7", state: "new", model: "" }, // in the lane, not created today
+      { id: "PROJ-6", title: "PROJ-6", state: "done", model: "" },
+    );
     const board = build(sky, { kind: "board" }), sun = build(sky, { kind: "state", id: "new" });
     const on = (id: string) => board.tasks.filter((k) => k.host === board.galaxies[id]).map((k) => k.id).sort();
 
-    expect([on("new"), on("done")]).toEqual([["PROJ-1"], ["PROJ-3", "PROJ-4", "PROJ-5", "PROJ-6"]]);
+    expect([on("new"), on("done")]).toEqual([[], ["PROJ-3", "PROJ-4", "PROJ-5", "PROJ-6"]]);
     expect([board.galaxies.new.n, board.galaxies.new.today, board.galaxies.done.n, board.galaxies.done.today]).toEqual([2, 2, 4, 3]);
-    expect([sun.sun!.n, sun.sun!.today, sun.tasks.map((k) => k.id)]).toEqual([2, 2, ["PROJ-1"]]);
+    expect([sun.sun!.n, sun.sun!.today, sun.tasks.map((k) => k.id)]).toEqual([2, 2, []]);
   });
   it("counts and orbits them on a terminal state's own level too", () => {
     const sun = build(today(), { kind: "state", id: "done" });
@@ -763,7 +767,7 @@ const moonSky = (skills = 2, W = 1920, H = 1080, ties: { writes?: Record<string,
   const snap: Snapshot = {
     graphs: ["board", "in-progress", "triaging-cr-reviews", "running-skill-evals", ...names, "runs"],
     flows: [
-      { name: "board", agents: ["PROJ-1", "PROJ-2", "PROJ-3", ...extra].map((id) => ({ id, title: "t", state: "in_progress", model: "", labels: [] })).concat([{ id: "PROJ-4", title: "t", state: "ready", model: "", labels: [] }]),
+      { name: "board", agents: ["PROJ-1", "PROJ-2", "PROJ-3", ...extra].map((id) => ({ id, title: "t", state: "in_progress", model: "", labels: [] })).concat([{ id: "PROJ-4", title: "t", state: "review", model: "", labels: [] }]),
         machine: machine(["ready", "in_progress", "review"], {
           transitions: [{ source: "ready", target: "in_progress", event: "CLAIM" }, { source: "in_progress", target: "review", event: "REVIEW" }],
           subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }],
@@ -836,7 +840,7 @@ describe("the Board's lifecycle moons", () => {
     expect(host("PROJ-1")).toBe(scene.subStates.find((b) => b.machine === "in-progress" && b.state === "pr_opened"));
     expect(host("PROJ-2")).toBe(skill);
     expect(host("PROJ-3")).toBe(scene.galaxies.in_progress);
-    expect(host("PROJ-4")).toBe(scene.galaxies.ready);
+    expect(host("PROJ-4")).toBe(scene.galaxies.review);
   });
 
   it("counts every task of a state on the state, wherever it orbits", () => {

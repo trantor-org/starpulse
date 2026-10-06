@@ -68,10 +68,10 @@ describe("the sky", () => {
 
     expect(["ready", "review", "completed"].map((sid) => stateCount(S, sid))).toEqual([1, 2, 1]);
   });
-  it("counts a task in a starting state that arrived today once, beside the tasks in it that did not", () => {
+  it("counts a starting state by the day's arrivals alone, leaving out a task in its lane that did not arrive today", () => {
     const base = snap(5000, [{ ...task("PROJ-1", "ready"), created: 1500 }, { ...task("PROJ-2", "ready"), created: 10 }], []);
 
-    expect(stateCount(merge(base, 1000), "ready")).toBe(2);
+    expect(stateCount(merge(base, 1000), "ready")).toBe(1);
   });
   it("reads a starting or terminal state's count as the day's, saying how many it holds when some did not arrive today", () => {
     expect([countText(5), countText(4, 4), countText(6, 4), countText(0, 0)]).toEqual(["5", "4 today", "6 · 4 today", "0 today"]);

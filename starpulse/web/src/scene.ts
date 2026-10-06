@@ -79,7 +79,7 @@ export interface Host extends Pt {
 export interface Galaxy extends Host {
   id: string;
   r: number;
-  /** Its count: its own tasks, and on a starting or terminal state the day's arrivals not already in it, which only a terminal state also orbits. */
+  /** Its count (`stateCount`): on a starting state the day's arrivals, drawn where they went; on any other its tasks, and on a terminal state the day's arrivals there too. */
   n: number;
   /** On a starting or terminal state, the day's arrivals there; absent on any other. */
   today?: number;
@@ -124,7 +124,7 @@ export interface Sun extends Host {
   id: string;
   final: boolean;
   r: number;
-  /** Its count: its own tasks, and on a starting or terminal state the day's arrivals not already in it, which only a terminal state also orbits. */
+  /** Its count (`stateCount`): on a starting state the day's arrivals, drawn where they went; on any other its tasks, and on a terminal state the day's arrivals there too. */
   n: number;
   /** On a starting or terminal state, the day's arrivals there; absent on any other. */
   today?: number;
@@ -696,9 +696,9 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const mx = (Math.min(...bx) + Math.max(...bx)) / 2, my = (Math.min(...by) + Math.max(...by)) / 2;
     const spanX = Math.max(...bx) - Math.min(...bx) || 1, spanY = Math.max(...by) - Math.min(...by) || 1;
     const byState: Record<string, RawAgent[]> = {};
-    board.agents.forEach((a) => (byState[a.state] ||= []).push(a));
-    // a terminal state also orbits the day's arrivals there not already in it; a starting state only counts them, as each is drawn where it is now
-    const final = new Set(states.filter((s) => s.final).map((s) => s.id));
+    // a starting state orbits no task, as each is drawn where it went; a terminal state also orbits the day's arrivals there not already in it
+    const initial = new Set(states.filter((s) => s.initial).map((s) => s.id)), final = new Set(states.filter((s) => s.final).map((s) => s.id));
+    board.agents.forEach((a) => initial.has(a.state) || (byState[a.state] ||= []).push(a));
     for (const [sid, list] of Object.entries(S.today)) if (final.has(sid)) (byState[sid] ||= []).push(...list.filter((t) => !byState[sid]?.some((a) => a.id === t.id)));
     // A task orbits the deepest body this level draws that it is in: the sub-state its latest session holds (a CHILD entry, pr_opened while a PR
     // is open), else the moon of the machine it works when that is not its state's primary, else its state.
@@ -1144,8 +1144,9 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   // primary. The Board transitions into and out of the state run as paths off the left and right edges.
   function buildState(sid: string) {
     const subs = (SUBS[sid] || []).filter((f) => S.flows[f]), bevOf = (id: string) => EVENTS.filter((e) => e.flow === "board" && e.task === id);
-    // a task in the state or passing through it is drawn once, and on a terminal state a day's arrival there only when it is neither
-    const st = board.machine.states.find((s) => s.id === sid), here = board.agents.filter((a) => a.state === sid || bevOf(a.id).some((e) => e.from === sid || e.to === sid));
+    // a task in the state or passing through it is drawn once, and on a terminal state a day's arrival there only when it is neither; a starting
+    // state draws none
+    const st = board.machine.states.find((s) => s.id === sid), here = st?.initial ? [] : board.agents.filter((a) => a.state === sid || bevOf(a.id).some((e) => e.from === sid || e.to === sid));
     const today = S.today[sid] ?? [], list = [...here, ...(st?.final ? today.filter((t) => !here.some((a) => a.id === t.id)) : [])];
     scene.h = subs.length ? 1300 : 820;
     scene.w = Math.max(subs.length ? 1800 : 1000, Math.round((scene.h * W) / H));
