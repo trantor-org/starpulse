@@ -17,7 +17,7 @@ import {
   type BEdge, type Body, type Curve, type Galaxy, type Hangar, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
   type MachineTask, type Moon, type Pager, type Star, type SubState, type Sun,
 } from "./scene";
-import { FLARE, Moves, PULSE, TRAVEL, merge, stateCount, type Move, type Sky } from "./sky";
+import { FLARE, Moves, PULSE, TRAVEL, countText, merge, stateCount, type Move, type Sky } from "./sky";
 import { kanbanTasks } from "./kanban";
 import { embedded, openStream } from "./stream";
 import { createHistory } from "./history";
@@ -632,7 +632,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         return `<div class="k">DAGs that write no Board lane · click to open</div><div class="n">DAGs</div>${h.o.names.length} DAGs in ${h.o.doms} domain${h.o.doms === 1 ? "" : "s"}${run.length ? `<div class="k">running: ${run.map(esc).join(", ")}</div>` : ""}`;
       }
       case "galaxy":
-        return `<div class="k">Board state · click to open</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.daily ? " today" : ""}${h.o.subs.length ? ` · ${h.o.subs.length} lifecycle machines inside` : ""}`;
+        return `<div class="k">Board state · click to open</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.today === undefined ? "" : ` · ${h.o.today} today`}${h.o.subs.length ? ` · ${h.o.subs.length} lifecycle machines inside` : ""}`;
       case "moon": {
         const o = h.o, mv = moving(o.name).length, f = sky.flows[o.name];
         if (o.pager) return pagerTip(o.pager);
@@ -641,7 +641,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       case "sat":
         return `<div class="k">state of the ${esc(h.o.machine)} machine · opens ${esc(h.o.flow)} ${esc(h.o.when)} · click to open ${esc(h.o.machine)}</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} orbiting`;
       case "sun":
-        return `<div class="k">Board state</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.daily ? " today" : ""}${scene!.planets.length ? ` · ${scene!.planets.length} lifecycle machines orbiting it` : ""}`;
+        return `<div class="k">Board state</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.today === undefined ? "" : ` · ${h.o.today} today`}${scene!.planets.length ? ` · ${scene!.planets.length} lifecycle machines orbiting it` : ""}`;
       case "state":
         return `<div class="k">${esc(h.o.flow)} state</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} here now${h.o.loops.length ? `<div class="k">stays here on ${h.o.loops.map(esc).join(", ")}</div>` : ""}`;
       case "planet": {
@@ -837,7 +837,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       const hot = isHot("galaxy", g);
       body(g, hot);
       drawTrackRings(g, g.color);
-      label(g.name, g.lab.x, g.lab.y, hot, `${g.n}${g.daily ? " today" : ""}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 13);
+      label(g.name, g.lab.x, g.lab.y, hot, `${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 13);
     }
   }
   // lifecycle moons: still, named bodies on their state's dashed outer ring, brighter while they have sessions, ringed in amber while one moves.

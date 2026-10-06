@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { merge, Moves, stateCount, TRAVEL } from "./sky";
+import { countText, merge, Moves, stateCount, TRAVEL } from "./sky";
 import type { Machine, RawAgent, Snapshot } from "./types";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
@@ -54,6 +54,12 @@ describe("the sky", () => {
     expect(ids("archived")).toEqual([["PROJ-4", "dropped", "archived", true]]);
     expect(Object.keys(today).sort()).toEqual(["archived", "completed", "ready"]);
   });
+  it("counts a task still in a final lane by when it entered it, as a board whose final state keeps its tasks does", () => {
+    const base = snap(5000, [{ ...task("PROJ-1", "completed"), entered: 1500 }, { ...task("PROJ-2", "completed"), entered: 900 }], []);
+    base.flows[0].machine.states.push({ id: "completed", name: "completed", initial: false, final: true });
+
+    expect((merge(base, 1000).today.completed ?? []).map((a) => a.id)).toEqual(["PROJ-1"]);
+  });
   it("counts a starting or terminal state by the day's arrivals and any other by the tasks in it", () => {
     const base = snap(5000, [{ ...task("PROJ-1", "review"), created: 1500 }, task("PROJ-2", "review")], []);
     base.flows[0].machine.states.push({ id: "completed", name: "completed", initial: false, final: true });
@@ -61,6 +67,14 @@ describe("the sky", () => {
     const S = merge(base, 1000);
 
     expect(["ready", "review", "completed"].map((sid) => stateCount(S, sid))).toEqual([1, 2, 1]);
+  });
+  it("counts a task in a starting state that arrived today once, beside the tasks in it that did not", () => {
+    const base = snap(5000, [{ ...task("PROJ-1", "ready"), created: 1500 }, { ...task("PROJ-2", "ready"), created: 10 }], []);
+
+    expect(stateCount(merge(base, 1000), "ready")).toBe(2);
+  });
+  it("reads a starting or terminal state's count as the day's, saying how many it holds when some did not arrive today", () => {
+    expect([countText(5), countText(4, 4), countText(6, 4), countText(0, 0)]).toEqual(["5", "4 today", "6 · 4 today", "0 today"]);
   });
 
 
