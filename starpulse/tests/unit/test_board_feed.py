@@ -436,3 +436,15 @@ def test_a_task_carries_when_it_was_created_and_a_settled_one_when_and_as_whom_i
     assert _agents(feed)[0]["created"] == 100.0
     assert feed.snapshot()["settled"] == {"PROJ-2": entry}
     assert changes.get_nowait() == ("task", {"id": "PROJ-2", "agent": None, "settled": entry})
+
+
+def test_a_retracted_task_leaves_the_board_and_publishes_once() -> None:
+    feed = BoardFeed()
+    feed.put(BoardTask(id="task-1", title="T", lane="to_do"))
+    _, events = feed.subscribe()
+
+    feed.retract("task-1")
+    feed.retract("task-1")
+
+    assert feed.task("task-1") is None
+    assert events.qsize() == 1

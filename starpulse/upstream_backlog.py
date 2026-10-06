@@ -180,17 +180,23 @@ class UpstreamBacklog:
     """
 
     def __init__(
-        self, root: Path, put: Callable[[BoardTask], None], moves: Mapping[str, Mapping[str, Move]] | None = None
+        self,
+        root: Path,
+        put: Callable[[BoardTask], None],
+        moves: Mapping[str, Mapping[str, Move]] | None = None,
+        retract: Callable[[str], None] = lambda _task: None,
     ) -> None:
         self.root = root
         self.config = read_config(root)
         self._put = put
+        self._retract = retract
         self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
         self._lanes = {lane_id(status) for status in self.config.statuses}
         self._seen: dict[Path, tuple[int, int]] = {}
+        self._ids: dict[Path, str] = {}
 
     def scan(self) -> None:
-        """Publish every task file that is new or changed since the last scan."""
+        """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone."""
         present: set[Path] = set()
         for folder, settled in _FOLDERS:
             for path in sorted((self.root / folder).glob("*.md")):
@@ -204,10 +210,17 @@ class UpstreamBacklog:
                 except OSError:
                     continue  # moved or removed while scanning; the next scan sees where it went
                 self._seen[path] = fingerprint
-                if (task := self._task(path, text, settled)) is not None:
+                task = self._task(path, text, settled)
+                if task is None:
+                    self._ids.pop(path, None)
+                else:
+                    self._ids[path] = task.id
                     self._put(task)
         for gone in self._seen.keys() - present:
             del self._seen[gone]
+            # a file moved between folders is back under its id; only an id no file holds is retracted
+            if (task_id := self._ids.pop(gone, None)) and task_id not in self._ids.values():
+                self._retract(task_id)
 
     def _task(self, path: Path, text: str, settled: Literal["completed", "archived"] | None) -> BoardTask | None:
         frontmatter, body = _split(text)
@@ -309,7 +322,7 @@ def project_board(
         return {"board": drawn}
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
-        UpstreamBacklog(root, feed.put, moves).start(interval)
+        UpstreamBacklog(root, feed.put, moves, feed.retract).start(interval)
 
     return Board(machines=machines, start=start, keys=upstream_keys(config.prefix), source=str(root), **writers(config))
 
