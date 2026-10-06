@@ -264,6 +264,60 @@ the database's schema to the latest revision on every start: the history tables 
 Alembic (`starpulse/migrations`, revisions recorded in `starpulse_alembic_version`), so upgrading the package and
 restarting upgrades the schema. An instance without `--hub` keeps its SQLite file and never imports the hub extras.
 
+### Configure a level
+
+A hub draws one level above the Board: a flow graph over the trajectories of one Board machine, merged across
+sources. It is configuration, not an org chart; the package has no pod, department or org. A `[level]` table names
+what the level reads and how it is judged. An IC instance parses and checks the table but draws no level.
+
+```toml
+[level]
+machine = "board"        # the Board machine whose trajectories the level reads
+goal = "done"            # the terminal state the level is judged by
+gates = ["review"]       # policy states every run should cross
+terminals = [            # every way a run ends
+  { id = "done", role = "goal" },
+  { id = "archived", role = "abandoned" },
+]
+facets = [{ id = "source" }, { id = "type", label = "work type" }, { id = "repo" }]
+title = "Flow graph"     # what the page calls the level
+subject = "task"         # what one trajectory is
+runs = "agent sessions"  # what is attached to a trajectory
+series = "delivery"      # the card series the level opens
+
+[level.orbit]
+suns = "working"                                   # "terminal" (default) or "working"
+working = ["ready", "in_progress", "review"]       # the working states drawn as suns when suns = "working"
+
+[level.activity]
+measure = "share"   # "share" (default), "count" or "flux"
+pace = "min"        # "live", "min" (default, one day per minute) or "fast" (one day per ten seconds)
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `machine` | yes | The Board machine the level reads. |
+| `goal` | yes | The state the level is judged by; one of `terminals`. |
+| `terminals` | yes | Every way a run ends, each `{ id, role }`. The role is `goal`, `abandoned` or another outcome to watch; each id is listed once. |
+| `gates` | no | Policy states every run should cross. Default: none. |
+| `orbit.suns` | no | What the orbit view circles: `terminal` states, or the `working` states of `orbit.working`. Default `terminal`. |
+| `orbit.working` | with `suns = "working"` | The working states drawn as suns. None may be a terminal. |
+| `facets` | no | The fields a viewer groups and filters by, each `{ id, label }`; the label defaults to the id. |
+| `activity.measure` | no | How activity becomes dots: `share`, `count` or `flux`. Default `share`. |
+| `activity.pace` | no | How fast the page replays it: `live`, `min` or `fast`. Default `min`. |
+| `title` | no | The level's name on the page. Default `Flow graph`. |
+| `subject` | no | What one trajectory is called. Default `task`. |
+| `runs` | no | What is attached to a trajectory. Default `runs`. |
+| `series` | no | The card series the level opens. Default none. |
+
+A level that cannot be read is refused when the config loads, naming the key. Every state it names (`goal`, `gates`,
+`terminals`, `orbit.working`) must be a state of `machine`: when the board is assembled, a level that names a state
+its machine lacks, or a machine the board does not draw, is refused, naming it, before anything is served.
+
+A viewer's facet filter keeps a run only when the run has a value for each selected facet and that value is selected.
+A run without a value for a selected facet is excluded, never counted as zero or as an empty value; selecting nothing
+keeps every run.
+
 ## Write a board adapter
 
 A board adapter connects StarPulse to a tracker. It is a module with a `board(settings, base)` function that

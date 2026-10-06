@@ -718,11 +718,14 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
     board = load_board(config.board_type, config.board, base)
     domains = config.qualified_domains()
     qualify = qualifier(domains)
+    machines = board.machines(qualify, [name for names in domains.values() for name in names])
+    if config.level:
+        config.level.check(machines)
     feed = BoardFeed(
         window_s,
         board.keys,
         config.tracker_url,
-        machines=board.machines(qualify, [name for names in domains.values() for name in names]),
+        machines=machines,
         domains=domains,
         run_safe=run_safe,
         cues=board.cues(qualify),
