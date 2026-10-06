@@ -18,6 +18,8 @@ tasks, running in your browser with no server.
   `starpulse emit`.
 - **Agents at work.** A Claude Code session's OpenTelemetry log export moves the session through its own
   machine, so you see which agent is prompting, running a tool or waiting.
+- **Pull requests and Copilot.** A repository's pull requests move through opened, checks passing or failing, and
+  merged or closed, and GitHub Copilot's coding agent and code reviews move a pull request through their own machine.
 - **History.** Every move is kept, so hovering a task traces the path it took.
 
 ## Quickstart
@@ -254,6 +256,30 @@ run_safe = ["ui-preview.yml"]
 - **Events.** The repository is listed every 60 s. A `workflow_run` webhook, mapped with
   `starpulse.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
   at once.
+
+### Show pull requests and Copilot work
+
+`python -m starpulse.github` reads a repository's 30 most recently updated pull requests every `--interval` seconds
+(300 by default) and appends their events to the event log, beside the server:
+
+```sh
+uvx --from starpulse python -m starpulse.github --repo trantor-org/starpulse
+```
+
+- **`github-pull-request` machine.** `PR_OPENED`, then `CHECKS_PASSED` or `CHECKS_FAILED` once every check run on the
+  head commit has completed, then `PR_MERGED` or `PR_CLOSED`.
+- **`copilot` machine.** `WORK_STARTED` and `WORK_FINISHED` from the `copilot_work_started` and `copilot_work_finished`
+  timeline events (the actor is the person who asked), `RUN_STARTED` and `RUN_FINISHED` from the `dynamic` workflow run
+  "Running Copilot cloud agent", `REVIEW_RUN_STARTED` and `REVIEW_RUN_FINISHED` from "Running Copilot Code Review", and
+  `REVIEW_SUBMITTED` from a review by `copilot-pull-request-reviewer[bot]`. GitHub exposes no per-tool trajectory for
+  these sessions, so Copilot gives spans and outcomes, not trajectories. GitHub documents neither timeline event name;
+  the adapter's tests pin them on recorded responses.
+- **Keys.** An event is keyed by the task the pull request's branch names (`--key`, `--branch` and `--key-format`, as
+  for the Claude Code receiver), else by the pull request as a run (`owner/name#7`).
+- **Credentials** are `GITHUB_TOKEN` or `GH_TOKEN` (read access to pull requests, checks and Actions), and
+  `GITHUB_API_URL` for GitHub Enterprise Server. A re-read appends nothing already in the log.
+
+The two machine definitions ship in the package under `starpulse/machines/`.
 
 ### Run a hub
 
