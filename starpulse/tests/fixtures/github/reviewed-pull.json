@@ -1,0 +1,131 @@
+{
+  "pull": {
+    "closed_at": "2026-05-17T13:02:44Z",
+    "created_at": "2026-05-16T16:04:48Z",
+    "draft": false,
+    "head": {
+      "ref": "stft-refactor",
+      "sha": "4bd4021e7e7e5188536a74e1c54f30b0c38fa00a"
+    },
+    "merged_at": "2026-05-17T13:02:44Z",
+    "number": 38,
+    "state": "closed",
+    "user": {
+      "login": "operator"
+    },
+    "updated_at": "2026-05-30T12:23:54Z"
+  },
+  "timeline": [
+    {
+      "actor": {
+        "login": "operator"
+      },
+      "created_at": "2026-05-16T16:17:37Z",
+      "event": "copilot_work_started",
+      "id": 25611109351
+    }
+  ],
+  "reviews": [
+    {
+      "id": 4303912526,
+      "state": "COMMENTED",
+      "submitted_at": "2026-05-16T16:20:23Z",
+      "user": {
+        "login": "copilot-pull-request-reviewer[bot]",
+        "type": "Bot"
+      }
+    }
+  ],
+  "check_runs": {
+    "check_runs": [
+      {
+        "completed_at": "2026-05-17T13:04:16Z",
+        "conclusion": "success",
+        "id": 76398506914,
+        "name": "test (macos-latest)",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-05-17T13:01:16Z",
+        "conclusion": "success",
+        "id": 76398506911,
+        "name": "test (windows-latest)",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-05-17T13:00:46Z",
+        "conclusion": "success",
+        "id": 76398506908,
+        "name": "test (ubuntu-latest)",
+        "status": "completed"
+      }
+    ]
+  },
+  "runs": {
+    "workflow_runs": [
+      {
+        "conclusion": "success",
+        "created_at": "2026-05-17T12:59:44Z",
+        "event": "pull_request",
+        "id": 25991552334,
+        "name": "Tests",
+        "status": "completed",
+        "updated_at": "2026-05-17T13:04:17Z"
+      },
+      {
+        "conclusion": "success",
+        "created_at": "2026-05-17T12:44:14Z",
+        "event": "pull_request",
+        "id": 25991206066,
+        "name": "Tests",
+        "status": "completed",
+        "updated_at": "2026-05-17T12:47:14Z"
+      },
+      {
+        "conclusion": "success",
+        "created_at": "2026-05-17T12:41:30Z",
+        "event": "pull_request",
+        "id": 25991145706,
+        "name": "Tests",
+        "status": "completed",
+        "updated_at": "2026-05-17T12:45:58Z"
+      },
+      {
+        "conclusion": "success",
+        "created_at": "2026-05-17T12:37:45Z",
+        "event": "pull_request",
+        "id": 25991063194,
+        "name": "Tests",
+        "status": "completed",
+        "updated_at": "2026-05-17T12:42:58Z"
+      },
+      {
+        "conclusion": "success",
+        "created_at": "2026-05-17T12:23:23Z",
+        "event": "pull_request",
+        "id": 25990742586,
+        "name": "Tests",
+        "status": "completed",
+        "updated_at": "2026-05-17T12:27:40Z"
+      },
+      {
+        "conclusion": "success",
+        "created_at": "2026-05-17T12:10:43Z",
+        "event": "pull_request",
+        "id": 25990469819,
+        "name": "Tests",
+        "status": "completed",
+        "updated_at": "2026-05-17T12:15:04Z"
+      },
+      {
+        "conclusion": "failure",
+        "created_at": "2026-05-16T16:04:53Z",
+        "event": "pull_request",
+        "id": 25966522959,
+        "name": "Tests",
+        "status": "completed",
+        "updated_at": "2026-05-16T16:09:05Z"
+      }
+    ]
+  }
+}

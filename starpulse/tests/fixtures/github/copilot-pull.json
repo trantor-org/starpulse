@@ -1,0 +1,88 @@
+{
+  "pull": {
+    "closed_at": null,
+    "created_at": "2026-10-06T22:54:55Z",
+    "draft": true,
+    "head": {
+      "ref": "copilot/add-testing-against-python-3-15",
+      "sha": "44b829fefc28f9788ac53286088a7deb5f6f5c38"
+    },
+    "merged_at": null,
+    "number": 46,
+    "state": "open",
+    "user": {
+      "login": "Copilot"
+    },
+    "updated_at": "2026-10-06T22:57:10Z"
+  },
+  "timeline": [
+    {
+      "actor": {
+        "login": "operator"
+      },
+      "created_at": "2026-10-06T22:55:40Z",
+      "event": "copilot_work_finished",
+      "id": 32643556093
+    },
+    {
+      "actor": {
+        "login": "operator"
+      },
+      "created_at": "2026-10-06T22:55:40Z",
+      "event": "copilot_work_started",
+      "id": 32643556115
+    },
+    {
+      "actor": {
+        "login": "operator"
+      },
+      "created_at": "2026-10-06T22:56:44Z",
+      "event": "copilot_work_started",
+      "id": 32643605062
+    }
+  ],
+  "reviews": [],
+  "check_runs": {
+    "check_runs": []
+  },
+  "runs": {
+    "workflow_runs": [
+      {
+        "conclusion": "action_required",
+        "created_at": "2026-10-06T22:57:13Z",
+        "event": "pull_request",
+        "id": 37543759930,
+        "name": "Tests",
+        "status": "completed",
+        "updated_at": "2026-10-06T22:57:13Z"
+      },
+      {
+        "conclusion": null,
+        "created_at": "2026-10-06T22:56:35Z",
+        "event": "dynamic",
+        "id": 37543701011,
+        "name": "Running Copilot cloud agent",
+        "status": "in_progress",
+        "updated_at": "2026-10-06T22:56:41Z"
+      },
+      {
+        "conclusion": "action_required",
+        "created_at": "2026-10-06T22:55:00Z",
+        "event": "pull_request",
+        "id": 37543545073,
+        "name": "Tests",
+        "status": "completed",
+        "updated_at": "2026-10-06T22:55:00Z"
+      },
+      {
+        "conclusion": "success",
+        "created_at": "2026-10-06T22:53:35Z",
+        "event": "dynamic",
+        "id": 37543405640,
+        "name": "Running Copilot cloud agent",
+        "status": "completed",
+        "updated_at": "2026-10-06T22:55:38Z"
+      }
+    ]
+  }
+}

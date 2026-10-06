@@ -1,0 +1,19 @@
+name: github-pull-request
+states:
+  start: {initial: true}
+  open: {}
+  checks_failed: {}
+  checks_passed: {}
+  merged: {final: true}
+  closed: {final: true}
+events:
+  PR_OPENED:
+    - {from: start, to: open}
+  CHECKS_PASSED:
+    - {from: [open, checks_failed, checks_passed], to: checks_passed}
+  CHECKS_FAILED:
+    - {from: [open, checks_failed, checks_passed], to: checks_failed}
+  PR_MERGED:
+    - {from: [open, checks_failed, checks_passed], to: merged}
+  PR_CLOSED:
+    - {from: [open, checks_failed, checks_passed], to: closed}

@@ -213,6 +213,8 @@ def connect(token: str | None, timeout: float = 30.0) -> Transport:  # pragma: n
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 raw = response.read()
                 decoded = json.loads(raw) if raw else {}
+                if isinstance(decoded, list):  # a list endpoint's array comes back as `{"items": [...]}`
+                    decoded = {"items": decoded}
                 return response.status, decoded if isinstance(decoded, dict) else {}
         except urllib.error.HTTPError as exc:
             return exc.code, {}
