@@ -27,7 +27,7 @@ jobs:
     # Review context, never a gate: a failed render must not impede the pull request it describes.
     continue-on-error: true
     # The server uses an isolated SQLite database for the preview.
-    runs-on: [self-hosted, ai-vm-1]
+    runs-on: [self-hosted, validate]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -96,7 +96,7 @@ jobs:
     name: Scan the demos for leaks
     needs: render
     if: ${{ !cancelled() && needs.render.result == 'success' && github.event.action != 'closed' }}
-    runs-on: [self-hosted, ai-vm-1]
+    runs-on: [self-hosted, validate]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
