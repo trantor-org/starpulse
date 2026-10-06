@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DemoServer, ROUTES, type DemoFixture } from "./demo";
 import { NO_HARNESSES, fetchHarnesses, postStart } from "./start";
 import type { Machine, RawAgent } from "./types";
+import type { TaskRecord } from "./taskView";
 
 const machine = (initial: string, edges: [string, string, string][], final = ""): Machine => {
   const ids = [...new Set(edges.flatMap(([s, t]) => [s, t]))];
@@ -43,6 +44,32 @@ const body = async (r: Promise<Response>) => (await r).json();
 const lane = (s: DemoServer, id: string) => s.snapshot.flows[0].agents.find((a) => a.id === id)?.state;
 
 describe("the demo server", () => {
+  it("serves and edits a synthetic full task record so the public preview exercises edit mode", async () => {
+    const s = new DemoServer(fixture());
+    const opened = await body(s.fetch("/api/task/DEMO-1")) as { record: TaskRecord };
+    const reply = await s.fetch("/api/edit", { method: "POST", body: JSON.stringify({
+      task: "DEMO-1", base: { title: opened.record.title }, changes: { title: "Edited in the demo" }, comment: "proof",
+    }) });
+
+    expect(reply.status).toBe(200);
+    expect(await reply.json()).toEqual({ task: "DEMO-1", changed: ["title"] });
+    expect((await body(s.fetch("/api/task/DEMO-1"))).record.title).toBe("Edited in the demo");
+    expect(s.snapshot.capabilities?.edit).toBe(true);
+    expect(s.snapshot.flows[0].agents[0].title).toBe("Edited in the demo");
+  });
+
+  it("can render the writer-refusal state in a public review fixture", async () => {
+    const s = new DemoServer(fixture(), undefined, true);
+    const opened = await body(s.fetch("/api/task/DEMO-1")) as { record: TaskRecord };
+    const reply = await s.fetch("/api/edit", { method: "POST", body: JSON.stringify({
+      task: "DEMO-1", base: { title: opened.record.title }, changes: { title: "Refused edit" },
+    }) });
+
+    expect(reply.status).toBe(409);
+    expect(await reply.json()).toEqual({ error: "The demo writer refused this edit.", skill: "completing-tasks" });
+    expect((await body(s.fetch("/api/task/DEMO-1"))).record.title).toBe(opened.record.title);
+  });
+
   it("answers a task's lane path from the embedded history", async () => {
     const s = new DemoServer(fixture());
 

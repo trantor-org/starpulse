@@ -2,6 +2,7 @@
 // demo page (`starpulse.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
 import type { LaneStep } from "./trace";
 import type { Machine, RawAgent, Snapshot } from "./types";
+import type { TaskRecord } from "./taskView";
 
 let demoN = 0;
 
@@ -55,11 +56,11 @@ function stepDags(snap: Snapshot, random: () => number): Snapshot {
 /** The snapshot `starpulse.demo` embeds, with each Board task's lane changes as `/api/history?task=` answers them. */
 export type DemoFixture = Snapshot & { history?: Record<string, LaneStep[]> };
 
-type Handler = (server: DemoServer, query: URLSearchParams, init?: RequestInit) => Response | Promise<Response>;
+type Handler = (server: DemoServer, path: string, query: URLSearchParams, init?: RequestInit) => Response | Promise<Response>;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const HANDLERS: Record<string, Handler> = {
-  "/api/history": (server, query) => {
+  "/api/history": (server, _path, query) => {
     const task = query.get("task") ?? "", flow = query.get("flow");
     if (!flow) return json({ task, path: server.lanes[task] ?? [] });
     const f = server.snapshot.flows.find((x) => x.name === flow);
@@ -68,10 +69,12 @@ const HANDLERS: Record<string, Handler> = {
     const path = (a?.trail ?? []).map(({ at, event, state }) => ({ at, event, state }));
     return json({ task, flow, path, steps: a ? (a.steps ?? path.length) : 0 });
   },
-  "/api/move": async (server, _url, init) => {
+  "/api/move": async (server, _path, _query, init) => {
     const { task, to } = JSON.parse(String(init?.body ?? "{}")) as { task?: string; to?: string };
     return server.move(String(task), String(to));
   },
+  "/api/task": (server, path) => server.task(decodeURIComponent(path.slice("/api/task/".length))),
+  "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
 };
 
 /**
@@ -86,8 +89,6 @@ export const ROUTES: Record<string, string | null> = {
   "/api/start": "This demo has no session-start service to start a session with.",
   // unanswered, the start question offers only Work it manually
   "/api/harnesses": "This demo has no harnesses configured.",
-  // unanswered, the task view keeps the snapshot's fields and draws no plan, notes or checks
-  "/api/task": "This demo has no task files to read a full record from.",
   "/api/history-window": "This demo has no server to keep a shared history window.",
 };
 
@@ -106,13 +107,15 @@ const ALLOWED = { allowed: true, reason: "", skill: "" };
 export class DemoServer {
   snapshot: Snapshot;
   lanes: Record<string, LaneStep[]>;
+  records: Record<string, TaskRecord>;
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000) {
+  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false) {
     const { history, ...snap } = structuredClone(fixture);
     this.lanes = history ?? {};
-    this.snapshot = this.verdicts(snap);
+    this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
+    this.snapshot = this.verdicts({ ...snap, capabilities: { edit: true, archive: false } });
   }
 
   subscribe(fn: (s: Snapshot) => void): () => void {
@@ -163,11 +166,38 @@ export class DemoServer {
     return json({ task, to });
   }
 
+  /** The synthetic full record behind a public demo card. */
+  task(id: string): Response {
+    const record = this.records[id];
+    return record ? json({ task: id, record }) : json({ error: `${id} has no record to read` }, 404);
+  }
+
+  /** Apply the same optimistic-lock payload as the served writer, then publish card-sized fields. */
+  edit(raw: string): Response {
+    let request: { task?: string; base?: Partial<TaskRecord>; changes?: Partial<TaskRecord> };
+    try { request = JSON.parse(raw) as typeof request; } catch { return json({ error: "invalid edit" }, 400); }
+    const task = request.task ?? "", current = this.records[task];
+    if (!current || !request.base || !request.changes || !Object.keys(request.changes).length) return json({ error: "invalid edit" }, 400);
+    if (this.refuseEdits) return json({ error: "The demo writer refused this edit.", skill: "completing-tasks" }, 409);
+    const fields = Object.keys(request.changes) as (keyof TaskRecord)[];
+    const stale = fields.filter((field) => JSON.stringify(current[field]) !== JSON.stringify(request.base?.[field]));
+    if (stale.length) return json({ error: `${task} changed since it was opened: ${stale.join(", ")}`, stale, current: Object.fromEntries(stale.map((field) => [field, current[field]])) }, 409);
+    this.records[task] = { ...current, ...request.changes } as TaskRecord;
+    const next = structuredClone(this.snapshot);
+    const card = next.flows.find((f) => f.name === "board")?.agents.find((agent) => agent.id === task);
+    if (card) {
+      const record = this.records[task];
+      Object.assign(card, { title: record.title, model: record.profile, labels: record.labels, milestone: record.milestone, dependencies: record.dependencies, description: record.description });
+      this.publish(next);
+    }
+    return json({ task, changed: fields });
+  }
+
   fetch(input: string, init?: RequestInit): Promise<Response> {
     const [path, search = ""] = input.split("?", 2); // no URL(): a base address would be a host in the public file
     const route = Object.keys(ROUTES).find((r) => path === r || path.startsWith(`${r}/`));
     const handler = route ? HANDLERS[route] : undefined;
-    if (handler) return Promise.resolve(handler(this, new URLSearchParams(search), init));
+    if (handler) return Promise.resolve(handler(this, path, new URLSearchParams(search), init));
     return Promise.resolve(json({ error: (route && ROUTES[route]) || `This demo does not serve ${path}.` }, 404));
   }
 
@@ -191,6 +221,23 @@ export class DemoServer {
   }
 }
 
+const demoRecord = (card: RawAgent): TaskRecord => ({
+  title: card.title,
+  profile: card.model,
+  priority: "Medium",
+  labels: card.labels ?? ["demo"],
+  milestone: card.milestone ?? "",
+  dependencies: card.dependencies ?? [],
+  description: card.description ?? "A synthetic task used by the public StarPulse preview.",
+  plan: "1. Inspect the task\n2. Make the smallest safe change\n3. Verify the result",
+  notes: "This record contains no real board data.",
+  acceptanceCriteria: [
+    { n: 1, text: "The public preview can edit every field", checked: false },
+    { n: 2, text: "The saved card refreshes immediately", checked: false },
+  ],
+  definitionOfDone: [{ n: 1, text: "The change is verified", checked: false }],
+});
+
 /** The snapshot a self-contained demo page embeds as `window.__FLOW_FIXTURE__`, null on a served page. */
 export const embedded = (): DemoFixture | null => (globalThis as { __FLOW_FIXTURE__?: DemoFixture }).__FLOW_FIXTURE__ ?? null;
 
@@ -198,7 +245,8 @@ let server: DemoServer | null = null;
 /** The page's one DemoServer when it embeds a fixture, else null: a served page asks starpulse.server. */
 export const demoServer = (): DemoServer | null => {
   const fixture = embedded();
-  return fixture ? (server ??= new DemoServer(fixture)) : null;
+  const refuseEdits = new URLSearchParams(globalThis.location?.search ?? "").get("edit") === "refuse";
+  return fixture ? (server ??= new DemoServer(fixture, undefined, refuseEdits)) : null;
 };
 
 /** `fetch` for the page's /api requests: answered by the demo server on a demo page, by starpulse.server otherwise. */

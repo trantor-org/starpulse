@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { HudState } from "./hud";
 import {
-  COLUMNS, applySuggestion, assigneeOptions, clearFilters, filtersActive, hideMilestone, hideTask, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
+  COLUMNS, applySuggestion, applyTaskRecord, assigneeOptions, clearFilters, filtersActive, hideMilestone, hideTask, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
   type KanbanTask, type Option, type Prefs,
 } from "./kanban";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
@@ -136,10 +136,10 @@ export function Card({ task, now, marks, names, compact = false, onOpen, onPress
   );
 }
 
-function Modal({ task, names, marks, now, profiles, milestones, capabilities, close, hide, constellation, move, start, dismiss, dismissStart }: {
+function Modal({ task, names, marks, now, profiles, milestones, capabilities, close, hide, constellation, move, start, dismiss, dismissStart, saved }: {
   task: KanbanTask; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
   capabilities?: { edit: boolean; archive: boolean }; close: () => void; hide: () => void; constellation: () => void;
-  move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void;
+  move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
   // the snapshot's entry lacks the plan, notes and checks: the full record is read when the task opens, and the entry draws meanwhile
   const [record, setRecord] = useState<TaskRecord | null>(null);
@@ -149,14 +149,13 @@ function Modal({ task, names, marks, now, profiles, milestones, capabilities, cl
     return () => { current = false; };
   }, [task.id]);
   return (
-    <div id="kbm" onClick={(e) => e.target === e.currentTarget && close()}>
       <TaskView task={task} record={record} lane={names[task.lane] ?? task.lane} names={names}
         machine={task.live ? `${task.live.machine} · ${task.live.state} · ${ago(now - task.live.at)} ago` : "—"}
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
         startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
-        close={close} hide={hide} constellation={constellation} move={move} start={start} />
-    </div>
+        close={close} hide={hide} constellation={constellation} move={move} start={start}
+        onSaved={(next) => { setRecord(next); saved(next); }} />
   );
 }
 
@@ -300,6 +299,7 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
   const [now, setNow] = useState(() => Date.now() / 1000);
   const [lift, setLift] = useState<{ id: string; kinds: Record<string, Target>; over: string | null; w: number } | null>(null);
   const [bounced, setBounced] = useState<string | null>(null);
+  const [edited, setEdited] = useState<Record<string, { record: TaskRecord; source: KanbanTask[] }>>({});
   const moved = useSyncExternalStore(moves.subscribe, moves.get);
   const started = useSyncExternalStore(starts.subscribe, starts.get);
   // a card dropped on In progress waits where it was dropped until the start question is answered
@@ -353,7 +353,10 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
     document.body.classList.toggle("dragging", lift !== null);
     return () => document.body.classList.remove("dragging");
   }, [lift]);
-  const cards = useMemo(() => placeClaims(place(hud.cards, moved), started), [hud.cards, moved, started]);
+  const cards = useMemo(() => placeClaims(place(hud.cards, moved), started).map((card) => {
+    const saved = edited[card.id];
+    return saved?.source === hud.cards ? applyTaskRecord(card, saved.record) : card;
+  }), [edited, hud.cards, moved, started]);
   const view = useMemo(() => layout(cards, hud.names, prefs), [cards, hud.names, prefs]);
   const task = open ? cards.find((t) => t.id === open) : undefined;
   const marksOf = (id: string): Marks => ({ saving: moved.pending[id]?.saving, refusal: moved.refused[id], claim: started.claiming[id], failed: started.failed[id] });
@@ -572,7 +575,8 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to)) return void moves.drop(task, to); starts.ask(task, "modal"); setOpen(null); }}
           start={() => { starts.ask(task, "modal"); setOpen(null); }}
-          dismiss={() => moves.dismiss(task.id)} dismissStart={() => starts.dismiss(task.id)} />
+          dismiss={() => moves.dismiss(task.id)} dismissStart={() => starts.dismiss(task.id)}
+          saved={(record) => setEdited((all) => ({ ...all, [task.id]: { record, source: hud.cards } }))} />
       )}
     </main>
   );
