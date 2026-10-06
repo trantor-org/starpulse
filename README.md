@@ -264,6 +264,31 @@ the database's schema to the latest revision on every start: the history tables 
 Alembic (`starpulse/migrations`, revisions recorded in `starpulse_alembic_version`), so upgrading the package and
 restarting upgrades the schema. An instance without `--hub` keeps its SQLite file and never imports the hub extras.
 
+#### Retention and rollups
+
+A hub keeps its raw events (`starpulse_events`) in one partition per UTC day, keyed on the event's `at` time, and
+drops whole days instead of deleting rows. An instance on SQLite is unchanged: it keeps one table and prunes by
+deleting rows.
+
+```toml
+hub_retention_days = 14   # the default; a whole number of days, 1 or more
+```
+
+- **Partitions.** The hub creates today's and tomorrow's partition before it serves and again every hour, so an
+  insert at midnight finds its partition already there. An event whose `at` falls on a day with no partition is refused
+  by the database, so a forwarder must create that day's partition (`starpulse.hub.ensure_partitions`) or refuse
+  events older than the retention bound.
+- **Retention.** A day more than `hub_retention_days` before today is rolled up and then dropped (`DROP TABLE`,
+  never `DELETE`), in one transaction, so a partition is never dropped without its rollup. A reader whose cursor sat
+  in a dropped day finds the oldest retained event past its cursor on its next poll and records the span in
+  `starpulse_gaps`.
+- **Rollups.** `starpulse_day_rollups` holds one row per UTC day, team, machine and state: `entries`, how many tasks
+  or runs entered the state that day; `open_entries`, how many of those had not left it when the day was rolled up;
+  and `seconds`, how long the others stayed, from entering the state to the next event that moved the task or run out
+  of it (which may be on a later day). The team is the entering event's `team` field, and `""` when the event names
+  none. Trends older than retention read this table; anything that needs individual events is limited to the
+  retained days.
+
 ### Configure a level
 
 A hub draws one level above the Board: a flow graph over the trajectories of one Board machine, merged across

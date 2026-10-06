@@ -124,6 +124,7 @@ class TestConfigCheck:
             "database_url": None,
             "session_start_url": None,
             "level": None,
+            "hub_retention_days": 14,
         }
 
     def test_with_no_file_it_reports_the_defaults(

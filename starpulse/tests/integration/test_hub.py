@@ -6,6 +6,7 @@ import sys
 import time
 import urllib.error
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,9 @@ def test_a_hub_writes_a_machine_event_to_postgres_and_reads_it_back(pg_engine: E
         with create_engine(url).connect() as db:
             row = db.execute(text("SELECT task, machine, event, actor FROM starpulse_machine_events")).one()
         assert tuple(row) == ("HUB-1", "board", "MOVED", "tester")
+        tomorrow = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y%m%d")
+        with create_engine(url).connect() as db:  # the hub made it before the clock reached it
+            assert db.execute(text("SELECT to_regclass(:name)"), {"name": f"starpulse_events_{tomorrow}"}).scalar()
     finally:
         proc.terminate()
         proc.wait(timeout=10)

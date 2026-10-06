@@ -194,8 +194,8 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: board, database_url, harnesses_file, level, mode, "
-        "runs, session_start_url, tracker_url"
+        "unknown config key(s) trakcer_url, zeta; known: board, database_url, harnesses_file, hub_retention_days, "
+        "level, mode, runs, session_start_url, tracker_url"
     )
 
 
@@ -308,3 +308,16 @@ def test_two_instances_cannot_share_a_token_env(tmp_path: Path) -> None:
     text = one.format("a") + one.format("b")
 
     assert _refusal(tmp_path, text) == "runs instances a and b share token_env SHARED; each needs its own token"
+
+
+def test_a_hub_keeps_two_weeks_of_raw_events_unless_the_config_says_otherwise(tmp_path: Path) -> None:
+    assert load(None).hub_retention_days == 14
+    assert load(_write(tmp_path, "hub_retention_days = 30\n")).hub_retention_days == 30
+
+
+@pytest.mark.parametrize("value", ["0", "-3", "1.5", '"14"', "true"])
+def test_a_hub_retention_that_is_not_a_positive_whole_number_of_days_is_refused(tmp_path: Path, value: str) -> None:
+    assert (
+        _refusal(tmp_path, f"hub_retention_days = {value}\n")
+        == "hub_retention_days must be a whole number of days, 1 or more"
+    )

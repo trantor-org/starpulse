@@ -31,7 +31,17 @@ from starpulse.board import DEFAULT_TYPE, module_name
 from starpulse.harnesses import Harnesses, load_harnesses
 from starpulse.level import Level, LevelError, parse_level
 
-_KEYS = {"tracker_url", "mode", "runs", "harnesses_file", "board", "database_url", "session_start_url", "level"}
+_KEYS = {
+    "tracker_url",
+    "mode",
+    "runs",
+    "harnesses_file",
+    "board",
+    "database_url",
+    "session_start_url",
+    "level",
+    "hub_retention_days",
+}
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env"}
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -138,6 +148,8 @@ class Config:
     """The session-start service a started task is sent to (`POST <url>/start/TASK-N`); none: nothing can be started."""
     level: Level | None = None
     """The `[level]` flow graph above the Board; none when the config has no such table."""
+    hub_retention_days: int = 14
+    """A hub keeps raw events for this many days before today, then drops each older day's partition after rolling it up."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -188,6 +200,9 @@ def load(path: Path | None) -> Config:
             )
     if not isinstance(session_start_url := raw.get("session_start_url"), str | None):
         raise ConfigError("session_start_url must be text")
+    retention = raw.get("hub_retention_days", 14)
+    if not isinstance(retention, int) or isinstance(retention, bool) or retention < 1:
+        raise ConfigError("hub_retention_days must be a whole number of days, 1 or more")
     harnesses = None
     if path and (name := raw.get("harnesses_file")):
         if not (file := path.parent / name).is_file():
@@ -208,4 +223,6 @@ def load(path: Path | None) -> Config:
     url = raw.get("database_url")
     if url is not None and not isinstance(url, str):
         raise ConfigError("database_url must be text")
-    return Config(raw.get("tracker_url"), mode, runs, harnesses, kind, board, url, session_start_url, _level(raw))
+    return Config(
+        raw.get("tracker_url"), mode, runs, harnesses, kind, board, url, session_start_url, _level(raw), retention
+    )

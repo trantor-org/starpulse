@@ -28,7 +28,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse.tables import board_state, events, gaps, metadata
+from starpulse.tables import board_state, day_rollups, events, gaps, metadata
 
 __all__ = ["Entry", "EventLog", "Tail"]
 
@@ -111,7 +111,7 @@ class EventLog:
                 _dialect(engine)
                 .insert(events)
                 .values(stream=stream, event_id=key, fields=dict(fields), at=time.time())
-                .on_conflict_do_nothing(index_elements=["event_id"])
+                .on_conflict_do_nothing()  # any unique key: the hub keys a row on (event_id, at), the IC log on event_id
                 .returning(events.c.id)
             )
             with engine.begin() as db:
@@ -280,12 +280,16 @@ def _create_engine(url: str) -> Engine:
 
 
 def create_tables(engine: Engine, tables: Sequence[Table] | None = None) -> None:
-    """Create `tables`, or every StarPulse table for None, in `engine`'s database.
+    """Create `tables`, or every StarPulse table but the hub's rollups for None, in `engine`'s database.
+
+    The rollups belong to a hub and arrive with its migrations, so an instance's own database never gains them here.
 
     A caller that lost a race to create them looks again and finds them: each lost race means another process or
     thread created a table meanwhile, and the tables are created once, so a few looks suffice; the last failure is a
     real one and raises.
     """
+    if tables is None:
+        tables = [table for table in metadata.sorted_tables if table is not day_rollups]
     for _ in range(_CREATE_ATTEMPTS - 1):
         try:
             return metadata.create_all(engine, tables=tables)

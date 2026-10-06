@@ -94,6 +94,8 @@ from types import ModuleType
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from starpulse import analytics, run_events
 from starpulse import events as machine_events
 from starpulse.board import (
@@ -116,6 +118,7 @@ from starpulse.history import HealthHistory, History, HistoryStore, database_url
 from starpulse.ingest import MAX_BODY, Ingest
 from starpulse.ingest import tokens as ingest_tokens
 from starpulse.machine_tasks import MachineTasks
+from starpulse.machine_tasks import tables as machine_tables
 from starpulse.pull_requests import PullRequests
 from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.session_start import starter
@@ -839,6 +842,19 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     history = history_store(config, base, board, feed.machines)
     feed.date_lanes(history.lane_path)
+    if args.hub:
+        # The first pass runs before serving, so the hub never takes an event without today's partition.
+        keeping = {"retention_days": config.hub_retention_days, "machines": machine_tables(feed.machines)}
+        try:
+            hub.maintain(log.engine, **keeping)
+        except SQLAlchemyError as exc:
+            parser.exit(1, f"hub maintenance failed at start: {exc}\n")
+        threading.Thread(
+            target=hub.keep,
+            kwargs={"engine": log.engine, "stop": threading.Event(), **keeping},
+            name="hub-maintenance",
+            daemon=True,
+        ).start()
     board.start(feed, f"flow-view-{args.port}", log)
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
