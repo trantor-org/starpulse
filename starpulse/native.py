@@ -10,14 +10,23 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from starpulse.board import Board, MoveWriter, Written
-from starpulse.upstream_backlog import DEFAULT_PREFIX, DEFAULT_STATUSES, _split, lane_id, project_board
+from starpulse.board import Board, MoveWriter, TaskCreator, Written
+from starpulse.upstream_backlog import (
+    _FOLDERS,
+    DEFAULT_PREFIX,
+    DEFAULT_STATUSES,
+    BacklogConfig,
+    _split,
+    lane_id,
+    project_board,
+)
 
 #: Where the board lives, relative to the config's directory (or the working directory without a config).
 DEFAULT_PATH = ".starpulse/board"
@@ -91,10 +100,46 @@ def _writer(root: Path, statuses: tuple[str, ...]) -> MoveWriter:
     return write
 
 
+def _next_id(root: Path, prefix: str) -> str:
+    """`<prefix>-N` with N one past the highest on the board, its completed and archived tasks included."""
+    number = re.compile(rf"{re.escape(prefix)}-(\d+)", re.I)
+    highest = 0
+    for folder, _ in _FOLDERS:
+        for path in (root / folder).glob("*.md"):
+            try:
+                frontmatter, _ = _split(path.read_text())
+            except OSError:
+                continue  # moved or removed while looking
+            if isinstance(frontmatter, dict) and (found := number.fullmatch(str(frontmatter.get("id") or "").strip())):
+                highest = max(highest, int(found[1]))
+    return f"{prefix}-{highest + 1}"
+
+
+def _creator(root: Path, config: BacklogConfig) -> TaskCreator:
+    """A board writer that makes a task file in the first lane with the next id, `<id> - <title as a slug>.md`."""
+    lock = threading.Lock()  # two creates must not both read the same highest id
+
+    def create(title: str, /) -> Written:
+        with lock:
+            task = _next_id(root, config.prefix)
+            slug = re.sub(r"[^\w-]+", "-", title).strip("-")[:60].strip("-") or "Task"
+            path = root / "tasks" / f"{task} - {slug}.md"
+            scratch = path.with_name(f"{path.name}.tmp")  # not a `.md` file, so a scan never reads it half written
+            frontmatter = {"id": task, "title": title, "status": config.statuses[0]}
+            try:
+                scratch.write_text(f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---\n")
+                os.replace(scratch, path)
+            except OSError as error:
+                return Written(False, f"{path}: {error}")
+        return Written(True, task)
+
+    return create
+
+
 def board(settings: Mapping[str, Any], base: Path) -> Board:
     """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, polled every `interval` seconds.
 
-    Moves and assignee changes edit the task files directly. Any lane reaches any other unless `machine` names a
+    Moves, assignee changes and creates write the task files directly. Any lane reaches any other unless `machine` names a
     machine file, whose transitions and `writers` then decide which moves are offered, and to whom.
     """
     if unknown := sorted(settings.keys() - _SETTINGS):
@@ -110,5 +155,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         return _update(root, task, edit)
 
     return project_board(
-        root, settings, base, lambda config: {"writer": _writer(root, config.statuses), "assign": assign}
+        root,
+        settings,
+        base,
+        lambda config: {"writer": _writer(root, config.statuses), "assign": assign, "create": _creator(root, config)},
     )

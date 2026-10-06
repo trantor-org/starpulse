@@ -32,7 +32,16 @@ from typing import ClassVar
 import jsonschema
 from pydantic import BaseModel
 
-from starpulse.board import AssigneeWriter, Board, MoveWriter, TaskArchiver, TaskEditor, TaskReader, Written
+from starpulse.board import (
+    AssigneeWriter,
+    Board,
+    MoveWriter,
+    TaskArchiver,
+    TaskCreator,
+    TaskEditor,
+    TaskReader,
+    Written,
+)
 from starpulse.board_feed import BoardFeed
 from starpulse.config import Config
 from starpulse.contracts import SCHEMAS, BoardTask, Dag, MachineEvent, TaskKeys
@@ -220,6 +229,7 @@ def serve(
     read: TaskReader | None = None,
     edit: TaskEditor | None = None,
     archive: TaskArchiver | None = None,
+    create: TaskCreator | None = None,
     clock: Callable[[], float] = time.time,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
@@ -243,6 +253,7 @@ def serve(
         read,
         edit,
         archive,
+        create,
         clock,
     )
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)

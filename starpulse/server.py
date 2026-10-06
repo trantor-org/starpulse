@@ -53,6 +53,9 @@ POST /api/edit     {task, base, changes, comment}: one write of every change thr
                    stale fields and their current values when any changed field no longer equals its `base`, or with
                    the writer's refusal and its skill; 403 outside loopback and RFC 1918. A GET answers 405
 POST /api/archive  {task, reason}: archive a task from any lane through the board's `archive`; refusals as for an edit
+POST /api/tasks    {title}: create a task in the board's first lane through the board's `create`, and answer 201 {task}
+                   with its id; 400 for a missing, blank or over-long title, 403 outside loopback and RFC 1918, 404 when the board
+                   does not create (the snapshot's `capabilities.create` says which). A GET answers 405
 POST /api/start    {task, assignee}: start a task's session at `session_start_url` (see Start in the README)
 """
 
@@ -77,7 +80,16 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from starpulse import analytics, run_events
 from starpulse import events as machine_events
-from starpulse.board import AssigneeWriter, Board, MoveWriter, TaskArchiver, TaskEditor, TaskReader, Written
+from starpulse.board import (
+    AssigneeWriter,
+    Board,
+    MoveWriter,
+    TaskArchiver,
+    TaskCreator,
+    TaskEditor,
+    TaskReader,
+    Written,
+)
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
@@ -122,6 +134,9 @@ _WINDOW = "/api/history-window"
 _TASK = "/api/task/"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
+_TASKS = "/api/tasks"
+#: The longest title a create accepts; a title is one line on a card, not a description.
+_TITLE_MAX = 300
 #: Saves hold this from reading a task's current record to writing, so two browsers saving one task cannot both pass the stale check.
 _EDIT_LOCK = threading.Lock()
 #: The lanes Start session moves a task out of: the spec's start question, never Review's send-back.
@@ -274,6 +289,28 @@ def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver
     return 200, {"task": task}
 
 
+def create_task(source: str, raw: bytes, create: TaskCreator | None) -> tuple[int, dict[str, Any]]:
+    """Create the task `raw` names in the board's first lane through `create`, for a browser at `source`: the HTTP
+    status and JSON body, which holds the new task's id.
+
+    The card appears in its column when the board adapter next reports the task, not on this answer.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Creating a task answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        title = json.loads(raw)["title"]
+    except ValueError, TypeError, KeyError:
+        title = None
+    if not isinstance(title, str) or not title.strip() or len(title.strip()) > _TITLE_MAX:
+        return 400, {"error": f'a create needs {{"title": "<1 to {_TITLE_MAX} characters>"}}'}
+    if create is None:
+        return 404, {"error": "this board does not create tasks"}
+    written = create(title.strip())
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 201, {"task": written.output}
+
+
 def start_task(
     source: str,
     raw: bytes,
@@ -398,10 +435,11 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     read: TaskReader | None
     edit: TaskEditor | None
     archive: TaskArchiver | None
+    create: TaskCreator | None
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
-        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE}:
+        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS}:
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
             self.end_headers()
@@ -410,7 +448,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        if path in {_MOVE, _START, _EDIT, _ARCHIVE}:
+        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
             if path == _MOVE:
@@ -419,6 +457,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = edit_task(self.client_address[0], raw, self.feed, self.read, self.edit)
             elif path == _ARCHIVE:
                 status, body = archive_task(self.client_address[0], raw, self.feed, self.archive)
+            elif path == _TASKS:
+                status, body = create_task(self.client_address[0], raw, self.create)
             else:
                 status, body = start_task(self.client_address[0], raw, self.feed, self.assign, self.start_session)
         elif path.startswith(_RUN):
@@ -469,6 +509,7 @@ def _handler(
     read: TaskReader | None = None,
     edit: TaskEditor | None = None,
     archive: TaskArchiver | None = None,
+    create: TaskCreator | None = None,
     clock: Callable[[], float] = time.time,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
@@ -486,6 +527,7 @@ def _handler(
             self.read = read
             self.edit = edit
             self.archive = archive
+            self.create = create
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
         def do_GET(self) -> None:
@@ -579,7 +621,11 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
         run_safe=run_safe,
         cues=board.cues(qualify),
         source=board.source,
-        capabilities={"edit": board.edit is not None, "archive": board.archive is not None},
+        capabilities={
+            "edit": board.edit is not None,
+            "archive": board.archive is not None,
+            "create": board.create is not None,
+        },
         hint=found_backlog(config, base),
     )
     return board, feed
@@ -682,6 +728,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         board.read,
         board.edit,
         board.archive,
+        board.create,
     )
     serve_until_stopped(ThreadingHTTPServer(("0.0.0.0", args.port), handler), feed)
 

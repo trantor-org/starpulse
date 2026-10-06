@@ -221,10 +221,11 @@ directory. The `Board` says:
   keys it recognizes),
 - and optionally a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may
   list the `writers` the machine declares per event), an `assign` for assignee changes, a `read`, `edit` and `archive` for the full task record and guarded edits and
-  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), and its own `history`.
+  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `create(title)` that makes a
+  task in the first lane and answers with its id (`POST /api/tasks {title}`; `capabilities.create`), and its own `history`.
 
-`starpulse.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves and
-assignee changes to them in Python. `starpulse.upstream_backlog` is the reference adapter for a tracker with its own
+`starpulse.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
+assignee changes and new tasks to them in Python. `starpulse.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
 whose states are those lanes and whose `writers` reserve a move to an actor, such as `operator`), and writes moves

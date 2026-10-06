@@ -29,6 +29,7 @@ __all__ = [
     "Board",
     "MoveWriter",
     "TaskArchiver",
+    "TaskCreator",
     "TaskEditor",
     "TaskReader",
     "Written",
@@ -86,6 +87,14 @@ class TaskArchiver(Protocol):
     def __call__(self, task: str, reason: str, /) -> Written: ...
 
 
+class TaskCreator(Protocol):
+    """A board writer: create a task with this title in the board's first lane, and say what it did.
+
+    A successful `Written.output` is the new task's id."""
+
+    def __call__(self, title: str, /) -> Written: ...
+
+
 def _no_cues(qualify: Qualify) -> list[dict]:
     return []
 
@@ -119,6 +128,8 @@ class Board:
     """Saves the page's edits to a task in one write; None refuses every edit. Needs `read`, which it is checked against."""
     archive: TaskArchiver | None = None
     """Archives a task from any column; None refuses every archive."""
+    create: TaskCreator | None = None
+    """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
 
     def __post_init__(self) -> None:
         if self.edit is not None and self.read is None:

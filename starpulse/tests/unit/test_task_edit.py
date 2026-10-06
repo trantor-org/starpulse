@@ -285,7 +285,7 @@ def test_a_board_with_the_writers_reports_the_capabilities_in_its_snapshot(
 
     _, feed = assemble(_config(tmp_path, writes=True), tmp_path, None, ())
 
-    assert feed.snapshot().get("capabilities") == {"edit": True, "archive": True}
+    assert feed.snapshot().get("capabilities") == {"edit": True, "archive": True, "create": False}
 
 
 def test_a_board_without_the_writers_reports_no_edit_or_archive_capability(
@@ -295,7 +295,7 @@ def test_a_board_without_the_writers_reports_no_edit_or_archive_capability(
 
     _, feed = assemble(_config(tmp_path, writes=False), tmp_path, None, ())
 
-    assert feed.snapshot().get("capabilities") == {"edit": False, "archive": False}
+    assert feed.snapshot().get("capabilities") == {"edit": False, "archive": False, "create": False}
 
 
 def test_a_board_that_edits_without_reading_is_refused() -> None:
