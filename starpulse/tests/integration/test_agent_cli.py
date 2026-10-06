@@ -3,6 +3,7 @@
 import json
 import re
 import socket
+import string
 import threading
 import time
 import urllib.request
@@ -16,7 +17,7 @@ import pytest
 
 from starpulse import agent_cli as cli
 from starpulse import doctor, skill_install
-from starpulse.adapter_kit import serve as _serve
+from starpulse.adapter_kit import serve as _real_serve
 from starpulse.adapter_kit import task
 from starpulse.adapter_kit import url as _url
 from starpulse.board import Written
@@ -28,6 +29,16 @@ from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
 
 VALID_MACHINE = Path(__file__).parent.parent.parent / "machines" / "harness.yaml"
+STARTED = [0]  # server lifecycles begun in this process, so a test can prove which fixtures a case builds
+
+
+@contextmanager
+def _serve(*args: Any, **kwargs: Any) -> Iterator[Any]:
+    STARTED[0] += 1
+    with _real_serve(*args, **kwargs) as server:
+        yield server
+
+
 PULL = "https://github.com/acme/app/pull/5"
 UNREAD_PULL = "https://github.com/acme/app/pull/9"  # linked from a task, but the server has not read it
 
@@ -1036,13 +1047,27 @@ def _case_files(root: Path) -> Path:
     return root
 
 
+SERVERS = {"server": "base", "movable": "movable", "bare": "bare", "runnable": "runnable", "forbidden": "forbidden"}
+
+
+def _servers(request: pytest.FixtureRequest, template: Sequence[str]) -> dict[str, str]:
+    """The servers a template names, each built only if named: a case never pays for a server it does not use."""
+    named = {name for arg in template for _, name, _, _ in string.Formatter().parse(arg)}
+    return {name: request.getfixturevalue(fixture) for name, fixture in SERVERS.items() if name in named}
+
+
+def test_a_manifest_case_builds_only_the_servers_its_template_names(request: pytest.FixtureRequest) -> None:
+    for template, built in ((["task", "move", "PROJ-6", "review", "--server", "{bare}"], 1), (["skills", "list"], 0)):
+        before = STARTED[0]
+
+        _servers(request, template)
+
+        assert STARTED[0] - before == built
+
+
 @pytest.mark.parametrize(("verb", "exit_code"), list(CASES))
 def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
-    base: str,
-    movable: str,
-    bare: str,
-    runnable: str,
-    forbidden: str,
+    request: pytest.FixtureRequest,
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1053,19 +1078,9 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
     PREPARE.get((verb, exit_code), lambda: None)()
     manifest = next(v for v in _manifest(capsys) if v["verb"] == verb)
     files = _case_files(tmp_path / "cases")
-    argv = [
-        a.format(
-            server=base,
-            movable=movable,
-            bare=bare,
-            runnable=runnable,
-            forbidden=forbidden,
-            down=_closed_port_url(),
-            valid=VALID_MACHINE,
-            dir=files,
-        )
-        for a in CASES[verb, exit_code]
-    ]
+    template = CASES[verb, exit_code]
+    servers = _servers(request, template)
+    argv = [a.format(**servers, down=_closed_port_url(), valid=VALID_MACHINE, dir=files) for a in template]
 
     code, doc = _run(capsys, argv, {"HOME": str(tmp_path / "home")})
 
@@ -1206,6 +1221,8 @@ def _named_verbs(skill: str, verbs: dict[str, set[str]]) -> list[str]:
 def test_every_verb_and_flag_a_bundled_skill_names_is_in_the_manifest(capsys: pytest.CaptureFixture[str]) -> None:
     verbs = {v["verb"]: {f for a in v["arguments"] for f in a["flags"]} for v in _manifest(capsys)}
     named = {skill: _named_verbs(skill, verbs) for skill in skill_install.names()}
-    assert sum(map(len, named.values())) >= 8  # the skills do name verbs; a regex that matched nothing would pass vacuously
+    assert (
+        sum(map(len, named.values())) >= 8
+    )  # the skills do name verbs; a regex that matched nothing would pass vacuously
     assert {"machine validate", "machine import mermaid"} <= set(named["authoring-starpulse-machines"])
     assert {"doctor", "config check"} <= set(named["writing-starpulse-adapters"])
