@@ -28,7 +28,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse.tables import events, gaps, metadata
+from starpulse.tables import board_state, events, gaps, metadata
 
 __all__ = ["Entry", "EventLog", "Tail"]
 
@@ -91,7 +91,7 @@ class EventLog:
                     self._engine = _create_engine(self.url)
                 if self._engine.dialect.name == "sqlite":
                     event.listen(self._engine, "connect", _sqlite_pragmas)
-                create_tables(self._engine, [events, gaps])
+                create_tables(self._engine, [events, gaps, board_state])
                 self._ready = True
             assert self._engine is not None
             return self._engine
@@ -136,6 +136,39 @@ class EventLog:
         """The cursor of `stream`'s newest row, or None when it has none; raises when the database does."""
         with self.engine.connect() as db:
             return db.execute(select(func.max(events.c.id)).where(events.c.stream == stream)).scalar()
+
+    def oldest(self) -> int | None:
+        """The cursor of the oldest row the log retains, or None when it holds none; raises when the database does."""
+        with self.engine.connect() as db:
+            return db.execute(select(func.min(events.c.id))).scalar()
+
+    def save_board_state(self, stream: str, cursor: str, state: dict) -> None:
+        """Keep `state`, the Board a reader built from `stream` up to the entry `cursor`, in place of the last one."""
+        engine = self.engine
+        insert = (
+            _dialect(engine)
+            .insert(board_state)
+            .values(stream=stream, after_id=cursor, state=state, saved_at=time.time())
+        )
+        with engine.begin() as db:
+            db.execute(
+                insert.on_conflict_do_update(
+                    index_elements=["stream"],
+                    set_={
+                        "after_id": insert.excluded.after_id,
+                        "state": insert.excluded.state,
+                        "saved_at": insert.excluded.saved_at,
+                    },
+                )
+            )
+
+    def load_board_state(self, stream: str) -> tuple[str, dict] | None:
+        """The cursor and state last saved for `stream`, or None when none was; raises when the database does."""
+        with self.engine.connect() as db:
+            row = db.execute(
+                select(board_state.c.after_id, board_state.c.state).where(board_state.c.stream == stream)
+            ).first()
+        return None if row is None else (row.after_id, row.state)
 
     def record_gap(self, stream: str, after_id: int, before_id: int, lost: int) -> None:
         """Note that up to `lost` rows between `after_id` and `before_id` were pruned before `stream`'s reader read

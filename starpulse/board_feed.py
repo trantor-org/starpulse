@@ -13,20 +13,22 @@ import re
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from starpulse.contracts import BoardTask, TaskKeys
 from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 from starpulse.snapshot import declared
 from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine
 
-__all__ = ["BoardFeed", "Followed"]
+__all__ = ["BoardFeed", "BoardStore", "Followed", "Resumable"]
 
 logger = logging.getLogger(__name__)
 
 _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 # The runs instance pushed workflows belong to, so the page names them `pushed/<workflow>`.
 PUSHED_INSTANCE = "pushed"
+#: How often a running reader saves the Board, in seconds; a restart reads again what arrived since.
+SAVE_INTERVAL = 60.0
 
 
 def task_agent(task: BoardTask) -> dict:
@@ -49,6 +51,14 @@ def stream_id(entry_id: str) -> tuple[int, int]:
     """A stream id as numbers: `10-0` follows `9-0`, which text order gets backwards."""
     millis, _, sequence = entry_id.partition("-")
     return int(millis), int(sequence or 0)
+
+
+class BoardStore(Protocol):
+    """Where a feed keeps the Board it saved: the event log, or any store that holds one state per stream."""
+
+    def load_board_state(self, stream: str) -> tuple[str, dict] | None: ...
+
+    def save_board_state(self, stream: str, cursor: str, state: dict) -> None: ...
 
 
 class BoardFeed:
@@ -102,6 +112,8 @@ class BoardFeed:
         self._awaiting = False  # pragma: no mutate — None is falsy too
         self._expected: tuple[int, int] | None = None
         self._seen = (0, 0)
+        self._saved = (0, 0)
+        self._store: tuple[BoardStore, str] | None = None
         #: Set once the stream has been read up to the last entry it held when the feed started.
         self.ready = threading.Event()
 
@@ -132,6 +144,56 @@ class BoardFeed:
         with self._lock:
             self._seen = max(self._seen, stream_id(entry_id))
             self._check_ready()
+
+    def resume(self, store: BoardStore, stream: str, retained: Callable[[str], bool]) -> str | None:
+        """Restore the Board `store` saved for `stream` and return the cursor to read the stream after, else None.
+
+        None means the reader replays what the stream retains: nothing was saved, `retained(cursor)` says the stream
+        no longer holds every entry after the saved cursor, or the saved state is not one this feed can read. The
+        feed saves to `store` under `stream` from now on (`save`, `keep_saved`).
+        """
+        self._store = (store, stream)
+        saved = store.load_board_state(stream)
+        if saved is None or not retained(saved[0]):
+            return None
+        cursor, state = saved
+        try:
+            seen, open_, settled, assignees = (
+                stream_id(cursor),
+                dict(state["open"]),
+                dict(state["settled"]),
+                dict(state["assignees"]),
+            )
+        except KeyError, TypeError, ValueError:
+            logger.warning("StarPulse: the Board saved for %s cannot be read, replaying instead", stream)
+            return None
+        with self._lock:
+            self._open, self._settled, self._assignees, self._seen, self._saved = open_, settled, assignees, seen, seen
+        return cursor
+
+    def save(self) -> None:
+        """Write the Board and the cursor it reflects to the store `resume` was given, unless the feed has read
+        nothing since the last save. A store that cannot be written is logged; the next save tries again."""
+        if self._store is None:
+            return
+        store, stream = self._store
+        with self._lock:
+            if self._seen == self._saved:
+                return
+            seen = self._seen
+            state = {"open": dict(self._open), "settled": dict(self._settled), "assignees": dict(self._assignees)}
+        try:
+            store.save_board_state(stream, "-".join(map(str, seen)), state)
+        except Exception as exc:  # the store is down; the Board still draws and the next save retries
+            logger.warning("StarPulse: cannot save the Board of %s: %s", stream, exc)
+            return
+        self._saved = seen
+
+    def keep_saved(self, stop: threading.Event, interval: float = SAVE_INTERVAL) -> None:
+        """Save every `interval` seconds, and once more when `stop` is set."""
+        while not stop.wait(interval):
+            self.save()
+        self.save()
 
     def put(self, task: BoardTask) -> None:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
@@ -299,6 +361,27 @@ class Followed(Protocol):
     def expect(self, last_id: str) -> None: ...
 
 
+@runtime_checkable
+class Resumable(Protocol):
+    """A feed that keeps its state across restarts (`BoardFeed`), so a reader of its stream resumes after a cursor."""
+
+    def resume(self, store: BoardStore, stream: str, retained: Callable[[str], bool]) -> str | None: ...
+
+    def keep_saved(self, stop: threading.Event, interval: float = ...) -> None: ...
+
+
+def _retained(log: EventLog, stream: str) -> Callable[[str], bool]:
+    """Whether the log still holds every `stream` row after a saved cursor: `Tail`'s gap rule, and a cursor the log
+    has not reached yet (the database was replaced) is no cursor of this log."""
+
+    def retained(cursor: str) -> bool:
+        after = stream_id(cursor)[0]
+        oldest = log.oldest()
+        return oldest is not None and oldest - 1 <= after <= (log.last(stream) or 0)
+
+    return retained
+
+
 def follow(
     feed: Followed,
     log: EventLog,
@@ -310,18 +393,23 @@ def follow(
 ) -> threading.Thread:
     """Read `stream` of the event log into `feed` through `handle(entry_id, fields)` on a daemon thread and return it.
 
-    The feed lives in memory, so every start replays the log from the oldest entry it retains. Hourly reconciles
-    keep the latest state of every task inside the retention. The feed turns ready once the newest entry `stream`
-    held when it started has been read. While the database cannot be reached the feed is not ready and the start
-    retries every `interval`; a later outage is `Tail.run`'s to retry. `stop` ends the reader.
+    A feed that keeps its state (`Resumable`) restores the Board the last run saved in the log and reads only the
+    entries after the cursor it reflects, then keeps saving it until `stop`. With no saved Board, or one the log no
+    longer covers, the feed replays from the oldest entry the log retains: hourly reconciles keep the latest state
+    of every task inside the retention. The feed turns ready once the newest entry `stream` held when it started
+    has been read. While the database cannot be reached the feed is not ready and the start retries every
+    `interval`; a later outage is `Tail.run`'s to retry. `stop` ends the reader.
     """
     feed.await_stream()
     stop = stop or threading.Event()
 
     def run() -> None:
+        after = None
         while not stop.is_set():
             try:
                 last = log.last(stream)
+                if isinstance(feed, Resumable):
+                    after = feed.resume(log, stream, _retained(log, stream))
                 break
             except Exception as exc:  # the database is unreachable; the next attempt retries
                 logger.warning("StarPulse: cannot reach the event log for %s, retrying: %s", stream, exc)
@@ -329,7 +417,10 @@ def follow(
         else:
             return
         feed.expect(str(last) if last else "0-0")
-        tail = Tail(log, stream, interval=interval)  # no cursor: the whole retention is replayed
+        if isinstance(feed, Resumable):
+            threading.Thread(target=feed.keep_saved, args=(stop,), name="board-state", daemon=True).start()
+        # no cursor replays the whole retention
+        tail = Tail(log, stream, after=None if after is None else stream_id(after)[0], interval=interval)
         tail.run(lambda entry: handle(str(entry.id), entry.fields), stop)
 
     thread = threading.Thread(target=run, name="board-feed", daemon=True)
