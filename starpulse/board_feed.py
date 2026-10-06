@@ -18,7 +18,7 @@ from typing import Any, Protocol, runtime_checkable
 from starpulse.contracts import BoardTask, TaskKeys
 from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 from starpulse.snapshot import declared
-from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine
+from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 
 __all__ = ["BoardFeed", "BoardStore", "Followed", "Resumable"]
 
@@ -86,8 +86,12 @@ class BoardFeed:
         source: str = "the board",
         capabilities: Mapping[str, bool] | None = None,
         hint: str | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._hint = hint
+        self._clock = clock
+        #: A task's lane changes as the history keeps them (`History.lane_path`), read while the feed replays.
+        self._lane_path: Callable[[str], list[dict]] = lambda _task: []
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
@@ -201,6 +205,10 @@ class BoardFeed:
             self.save()
         self.save()
 
+    def date_lanes(self, lane_path: Callable[[str], list[dict]]) -> None:
+        """Date a lane the feed replays by the history's last change into it (`History.lane_path`), not by the replay."""
+        self._lane_path = lane_path
+
     def put(self, task: BoardTask) -> None:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
         if self._keys is not None and not self._keys.matches(task.id):
@@ -214,6 +222,8 @@ class BoardFeed:
                 previous = before["state"] if before["state"] != agent["state"] else before.get("previous")
                 if previous:
                     agent["previous"] = previous
+            if agent:
+                agent["entered"] = self._entered(task, before)
             if before == agent and self._settled.get(task.id) == task.settled:
                 return  # an hourly reconcile republishes every task; only a change reaches the page
             if agent is None:
@@ -224,6 +234,21 @@ class BoardFeed:
                 self._open[task.id] = agent
                 self._settled.pop(task.id, None)
             self._publish("task", {"id": task.id, "agent": agent, "settled": task.settled})
+
+    def _entered(self, task: BoardTask, before: dict | None) -> float:
+        """When `task` entered its lane: kept while it stays there, now for a move read live, else the history's date."""
+        if before and before["state"] == task.lane and "entered" in before:
+            return before["entered"]
+        if not self.ready.is_set():
+            try:
+                path = self._lane_path(task.id)
+            except Exception as exc:  # the history is down; the task is still placed, dated now
+                logger.warning("StarPulse: cannot read the lane history of %s: %s", task.id, exc)
+                path = []
+            dated = [c["at"] for c in path if lane_id(c["to"]) == task.lane]
+            if dated:
+                return dated[-1]
+        return self._clock()
 
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""

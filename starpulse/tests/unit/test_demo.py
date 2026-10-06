@@ -157,6 +157,18 @@ def test_scrub_keeps_a_board_tasks_bucket_labels_and_dependencies_under_demo_nam
     assert not {"m-76", "m-100", "payroll-audit", SECRET} & set(json.dumps(board).split('"'))
 
 
+def test_scrub_keeps_when_each_board_task_entered_its_lane_so_the_demo_orders_its_columns_as_the_live_board() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = [
+        {"id": "PROJ-1", "title": SECRET, "state": "ready", "entered": 30.0},
+        {"id": "PROJ-2", "title": SECRET, "state": "ready"},
+    ]
+
+    board = scrub(live)["flows"][0]["agents"]
+
+    assert [a.get("entered") for a in board] == [30.0, None]
+
+
 def test_scrub_names_a_session_of_a_task_off_the_board_after_the_board_tasks() -> None:
     live = _live()
     live["flows"][1]["agents"].append({"id": "PROJ-9999", "state": "committed", "model": ""})

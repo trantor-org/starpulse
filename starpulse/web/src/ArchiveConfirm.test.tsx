@@ -5,7 +5,7 @@ import { COLUMNS, type KanbanTask } from "./kanban";
 
 const task = (lane: string, over: Partial<KanbanTask> = {}): KanbanTask => ({
   id: "TASK-9", title: "Redraw the view", lane, milestone: "m-89", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [],
-  description: "", live: null, released: false, moves: {}, ...over,
+  description: "", live: null, released: false, moves: {}, entered: 0, ...over,
 });
 const pull = { number: 12, url: "http://pr/12", checks: "pending" as const, merged: false, threads: 0, stale: false };
 const draw = (t: KanbanTask, over: Partial<ArchiveConfirmProps> = {}) => renderToStaticMarkup(

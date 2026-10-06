@@ -297,7 +297,7 @@ PROJ = TaskKeys(key=re.compile(r"PROJ-\d+"), branch=re.compile(r"feature/(PROJ-\
 
 
 def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
-    feed = BoardFeed(keys=PROJ)
+    feed = BoardFeed(keys=PROJ, clock=lambda: 7.0)
     _, changes = feed.subscribe()
 
     feed.put(
@@ -326,6 +326,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "prs": [PR],
             "description": "Draw it.",
             "moves": {},  # an adapter that writes no verdicts offers no guarded column
+            "entered": 7.0,
         }
     ]
     assert changes.get_nowait()[0] == "task"
@@ -372,3 +373,48 @@ def test_a_settled_board_task_leaves_its_lane_and_a_task_outside_the_scheme_is_n
 
     body = feed.snapshot()
     assert (_agents(feed), body["settled"]) == ([], {"PROJ-1": "completed"})
+
+
+def test_a_task_read_live_is_stamped_when_it_entered_its_lane_and_keeps_that_time_until_it_changes_lane() -> None:
+    now = [100.0]
+    feed = BoardFeed(clock=lambda: now[0])
+    feed.expect("0-0")  # read up to the stream's end: every put from here is live
+    feed.put(BoardTask(id="PROJ-1", title="t", lane="ready"))
+
+    now[0] = 200.0
+    feed.put(BoardTask(id="PROJ-1", title="edited", lane="ready"))  # an edit in place, or the hourly reconcile
+    assert _agents(feed)[0]["entered"] == 100.0
+
+    feed.put(BoardTask(id="PROJ-1", title="edited", lane="in_progress"))
+    assert _agents(feed)[0]["entered"] == 200.0
+
+
+def test_a_task_replayed_before_the_feed_is_ready_takes_its_lane_entry_from_the_history() -> None:
+    path = {
+        "PROJ-1": [
+            {"at": 10.0, "from": None, "to": "In Progress"},
+            {"at": 20.0, "from": "In Progress", "to": "Review"},
+            {"at": 30.0, "from": "Review", "to": "In Progress"},
+        ]
+    }
+    feed = BoardFeed(clock=lambda: 500.0)
+    feed.date_lanes(lambda task: path.get(task, []))
+    feed.expect("5-0")
+
+    feed.put(BoardTask(id="PROJ-1", title="t", lane="in_progress"))
+    feed.put(BoardTask(id="PROJ-2", title="t", lane="ready"))  # the history never saw it
+
+    assert [a["entered"] for a in _agents(feed)] == [30.0, 500.0]
+
+
+def test_a_history_that_cannot_be_read_dates_a_replayed_lane_by_the_clock_and_still_places_the_task() -> None:
+    def down(_task: str) -> list[dict]:
+        raise OSError("history down")
+
+    feed = BoardFeed(clock=lambda: 500.0)
+    feed.date_lanes(down)
+    feed.expect("5-0")
+
+    feed.put(BoardTask(id="PROJ-1", title="t", lane="ready"))
+
+    assert [(a["id"], a["entered"]) for a in _agents(feed)] == [("PROJ-1", 500.0)]

@@ -699,6 +699,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     url = database_url(config.database_url, base)
     log = EventLog(url)
     window = HistoryWindow(feed, args.hours, base / SETTINGS_FILE)
+    # the history dates the lanes the board adapter replays, so it is open before the adapter starts
+    history = history_store(config, base, board, feed.machines)
+    feed.date_lanes(history.lane_path)
     board.start(feed, f"flow-view-{args.port}", log)
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
@@ -706,7 +709,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         threading.Thread(target=PullRequests(feed).run_forever, name="pull-requests", daemon=True).start()
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)
-    history = history_store(config, base, board, feed.machines)
     if isinstance(history, HistoryStore):
         threading.Thread(
             target=record_machine_events, args=(history, log, threading.Event()), name="machine-history", daemon=True
