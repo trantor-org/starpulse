@@ -238,6 +238,40 @@ def test_completed_and_archived_files_are_settled(tmp_path: Path) -> None:
     assert {t.id: t.settled for t in scanned(tmp_path)} == {"task-1": "completed", "task-2": "archived"}
 
 
+def _scan_with_retractions(root: Path) -> tuple[UpstreamBacklog, list[BoardTask], list[str]]:
+    tasks: list[BoardTask] = []
+    gone: list[str] = []
+    return UpstreamBacklog(root, tasks.append, retract=gone.append), tasks, gone
+
+
+def test_a_task_whose_file_is_deleted_between_scans_is_retracted(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    path = write_task(tmp_path, "tasks", "task-1", "To Do")
+    write_task(tmp_path, "tasks", "task-2", "To Do")
+    backlog, _, gone = _scan_with_retractions(tmp_path)
+    backlog.scan()
+
+    path.unlink()
+    backlog.scan()
+    backlog.scan()
+
+    assert gone == ["task-1"]
+
+
+def test_a_task_file_moved_to_the_archive_is_settled_not_retracted(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    path = write_task(tmp_path, "tasks", "task-1", "To Do")
+    backlog, tasks, gone = _scan_with_retractions(tmp_path)
+    backlog.scan()
+
+    path.unlink()
+    write_task(tmp_path, "archive/tasks", "task-1", "To Do")
+    backlog.scan()
+
+    assert gone == []
+    assert [(t.id, t.settled) for t in tasks] == [("task-1", None), ("task-1", "archived")]
+
+
 def test_a_status_the_config_does_not_list_is_skipped_and_one_in_other_case_is_matched(tmp_path: Path) -> None:
     write_config(tmp_path)
     write_task(tmp_path, "tasks", "task-1", "Mystery")

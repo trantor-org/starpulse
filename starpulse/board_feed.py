@@ -251,6 +251,14 @@ class BoardFeed:
                 self._settled.pop(task.id, None)
             self._publish("task", {"id": task.id, "agent": agent, "settled": settled})
 
+    def retract(self, task_id: str) -> None:
+        """Remove a task the adapter's source no longer holds, open or settled; a task not placed is a no-op."""
+        with self._lock:
+            self._assignees.pop(task_id, None)
+            if self._open.pop(task_id, None) is None and self._settled.pop(task_id, None) is None:
+                return
+            self._publish("task", {"id": task_id, "agent": None, "settled": None})
+
     def _entered(self, task: BoardTask, before: dict | None) -> float:
         """When `task` entered its lane: kept while it stays there, now for a move read live, else the history's date."""
         if before and before["state"] == task.lane and "entered" in before:
