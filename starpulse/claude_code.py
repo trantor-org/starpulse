@@ -7,7 +7,10 @@ moves the session through the machine's `bindings`:
     OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_LOG_TOOL_DETAILS=1 \\
     OTEL_RESOURCE_ATTRIBUTES="vcs.ref.head.name=$(git branch --show-current)" claude
 
-    python -m starpulse.claude_code [--host ADDR] [--port 4318] [--key RE --branch RE --key-format FMT]
+    python -m starpulse.claude_code [--host ADDR] [--port 4318] [--config FILE] [--key RE --branch RE --key-format FMT]
+
+Events are appended to the event log in the database `--config` names (default `starpulse.toml` in the working
+directory), the store `starpulse serve` reads.
 
 The export marks no turn end, and a reply is exported as each text answer lands, mid-turn included,
 so every reply stops the session and its next tool call starts it again. A `Skill` tool result moves
@@ -26,10 +29,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from starpulse import events as machine_events
 from starpulse.contracts import TaskKeys
+from starpulse.event_log import EventLog
 from starpulse.harness import HARNESS
+from starpulse.history import open_event_log
 from starpulse.otlp import TOOL_RESULT, LogEvent, receiver
 
 ACTOR = "claude-code"
@@ -73,10 +79,28 @@ def handler(adapter: ClaudeCodeAdapter, publish: Callable[[dict], object]) -> ty
     return receiver(ingest)
 
 
+def publisher(log: EventLog) -> Callable[[dict], int | None]:
+    """Appends each event the adapter maps to `log`, fail-open."""
+
+    def publish(event: dict) -> int | None:
+        return machine_events.publish(
+            event["machine"],
+            event["event"],
+            actor=event["actor"],
+            task=event["task"],
+            run=event["run"],
+            now=event["time"],
+            log=log,
+        )
+
+    return publish
+
+
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--config", type=Path, help="the TOML config whose database holds the event log")
     parser.add_argument("--key", default=r"TASK-\d+", help="a whole task key")
     parser.add_argument(
         "--branch", default=r"(?i)(?:refs/heads/)?(?:[\w.-]+/)*task-(\d+)", help="group 1 names the key"
@@ -85,18 +109,13 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     args = parser.parse_args(argv)
     keys = TaskKeys(key=re.compile(args.key), branch=re.compile(args.branch), key_format=args.key_format)
 
-    def publish(event: dict) -> None:
-        machine_events.publish(
-            event["machine"],
-            event["event"],
-            actor=event["actor"],
-            task=event["task"],
-            run=event["run"],
-            now=event["time"],
-        )
+    try:
+        log = open_event_log(args.config)
+    except (OSError, ValueError) as exc:
+        parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
 
     print(f"claude code adapter on {args.host}:{args.port}", flush=True)
-    ThreadingHTTPServer((args.host, args.port), handler(ClaudeCodeAdapter(keys), publish)).serve_forever()
+    ThreadingHTTPServer((args.host, args.port), handler(ClaudeCodeAdapter(keys), publisher(log))).serve_forever()
 
 
 if __name__ == "__main__":

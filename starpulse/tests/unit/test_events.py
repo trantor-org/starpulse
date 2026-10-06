@@ -2,74 +2,62 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from pathlib import Path
+from typing import Any
 
 import pytest
 
 from starpulse import events
-from starpulse.streams import StreamProducer
+from starpulse.event_log import EventLog, Tail
 
 
-class FakeProducer:
-    def __init__(self) -> None:
-        self.emitted: list[dict[str, Any]] = []
-
-    def emit(self, fields: dict[str, Any]) -> str:
-        self.emitted.append(fields)
-        return "1-0"
+@pytest.fixture
+def log(tmp_path: Path) -> EventLog:
+    return EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
 
 
-def _publish(producer: FakeProducer, **keys: Any) -> str | None:
-    return events.publish(
-        "in-progress", "RED_PROVEN", actor="agent", now=5.5, producer=cast("StreamProducer", producer), **keys
-    )
+def _publish(log: EventLog, **keys: Any) -> int | None:
+    return events.publish("in-progress", "RED_PROVEN", actor="agent", now=5.5, log=log, **keys)
 
 
-def test_a_task_event_carries_its_machine_event_task_actor_and_time() -> None:
-    producer = FakeProducer()
+def _appended(log: EventLog) -> list[dict[str, Any]]:
+    return [entry.fields for entry in Tail(log, events.STREAM).poll()]
 
-    assert _publish(producer, task="PROJ-7") == "1-0"
-    assert producer.emitted == [
+
+def test_a_task_event_is_appended_with_its_machine_event_task_actor_and_time(log: EventLog) -> None:
+    cursor = _publish(log, task="PROJ-7")
+
+    assert cursor == 1
+    assert _appended(log) == [
         {"machine": "in-progress", "event": "RED_PROVEN", "task": "PROJ-7", "actor": "agent", "time": 5.5}
     ]
 
 
-def test_a_run_event_carries_its_run_and_no_task() -> None:
-    producer = FakeProducer()
+def test_a_run_event_carries_its_run_and_no_task(log: EventLog) -> None:
+    _publish(log, run="run-1")
 
-    _publish(producer, run="run-1")
-
-    assert producer.emitted == [
+    assert _appended(log) == [
         {"machine": "in-progress", "event": "RED_PROVEN", "run": "run-1", "actor": "agent", "time": 5.5}
     ]
 
 
 @pytest.mark.parametrize("keys", [{}, {"task": "PROJ-7", "run": "run-1"}])
-def test_an_event_keyed_by_neither_or_both_is_refused(keys: dict[str, str]) -> None:
+def test_an_event_keyed_by_neither_or_both_is_refused(log: EventLog, keys: dict[str, str]) -> None:
     with pytest.raises(ValueError, match="in-progress RED_PROVEN: key an event by exactly one of task or run"):
-        _publish(FakeProducer(), **keys)
+        _publish(log, **keys)
+
+    assert _appended(log) == []
 
 
-def test_the_time_defaults_to_now(monkeypatch: pytest.MonkeyPatch) -> None:
-    producer = FakeProducer()
+def test_the_time_defaults_to_now(log: EventLog, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(events.time, "time", lambda: 42.0)
 
-    events.publish("in-progress", "RED_PROVEN", actor="agent", task="PROJ-7", producer=cast("StreamProducer", producer))
+    events.publish("in-progress", "RED_PROVEN", actor="agent", task="PROJ-7", log=log)
 
-    assert producer.emitted[0]["time"] == 42.0
+    assert _appended(log)[0]["time"] == 42.0
 
 
-def test_a_publish_defaults_to_the_machine_events_stream_on_its_own_redis(monkeypatch: pytest.MonkeyPatch) -> None:
-    built: list[tuple[str, dict[str, Any]]] = []
-    producer = FakeProducer()
+def test_a_publish_to_a_database_that_cannot_be_opened_returns_none_instead_of_raising(tmp_path: Path) -> None:
+    unreachable = EventLog(f"sqlite:///{tmp_path / 'missing-directory' / 'events.sqlite'}")
 
-    def from_env(prefix: str, **kwargs: Any) -> FakeProducer:
-        built.append((prefix, kwargs))
-        return producer
-
-    monkeypatch.setattr(StreamProducer, "from_env", from_env)
-
-    events.publish("in-progress", "RED_PROVEN", actor="agent", task="PROJ-7")
-
-    assert built == [("MACHINE_EVENTS", {"stream": "machine:events"})]
-    assert len(producer.emitted) == 1
+    assert _publish(unreachable, task="PROJ-7") is None

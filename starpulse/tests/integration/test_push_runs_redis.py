@@ -1,13 +1,14 @@
-"""`starpulse emit` against a real Redis: pushed runs reach the page snapshot, and their learned graph outlives a restart."""
+"""The runs stream against a real Redis: pushed runs reach the page snapshot, and their learned graph outlives a restart."""
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
 import redis as redis_lib
 
-from starpulse import emit, run_events
+from starpulse import run_events
 from starpulse.board_feed import BoardFeed
 from starpulse.history import HistoryStore
 from starpulse.push_runs import PUSHED_INSTANCE, PushRuns, build_consumer
@@ -28,8 +29,19 @@ class Pushed:
         self.producer = StreamProducer(stream=run_events.STREAM, client_factory=lambda: redis_client)
         self.client = redis_client
 
-    def emit(self, *argv: str) -> None:
-        assert emit.main(list(argv), {}, producer=self.producer) == 0
+    def emit(self, phase: str, *flags: str) -> None:
+        """Write what `starpulse emit <phase> <flags>` builds onto the Redis stream this reader still consumes."""
+        given = dict(zip(flags[::2], flags[1::2], strict=True))
+        entry = run_events.entry(
+            phase,
+            given["--workflow"],
+            given["--run"],
+            given["--status"],
+            now=time.time(),
+            step=given.get("--step"),
+            depends=given["--depends"].split(",") if "--depends" in given else None,
+        )
+        assert self.producer.emit(entry) is not None
 
     def read(self) -> dict:
         self.consumer.consume_once(self.client)

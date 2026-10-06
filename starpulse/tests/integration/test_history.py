@@ -198,7 +198,7 @@ def test_the_recorder_reads_machine_events_on_its_own_redis_through_the_stores_g
 
 def _send(client: redis_lib.Redis, event: str, at: float, task: str = "PROJ-7") -> str:
     producer = StreamProducer(stream=events.STREAM, client_factory=lambda: client)
-    entry_id = events.publish("in-progress", event, actor="agent", task=task, now=at, producer=producer)
+    entry_id = producer.emit({"machine": "in-progress", "event": event, "task": task, "actor": "agent", "time": at})
     assert entry_id is not None
     return entry_id
 
