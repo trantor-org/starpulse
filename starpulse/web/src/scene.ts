@@ -776,9 +776,10 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         }
       }
       // the DAGs hangar holds the right end of the axis, opposite New, and keeps clear of the states beside it as a state does: its disc, its
-      // ring of dots and the name and count below it
+      // ring of dots and the name and count below it. It starts 2 px right of the last column, past the 1 px separate() reads as one column,
+      // so a state ending the axis there pushes it clear instead of sharing its place.
       const hangHW = Math.max(31, (Math.max(textW("DAGs", 12.5), textW(`${free.length} · ${doms} domains`, 10.5)) * F) / 2);
-      const all = free.length ? [...ps, { id: "", R: 52 + 27 * F, x: Math.max(...ps.map((p) => p.x)), y: ps.find((p) => p.id === (board.machine.mainLine?.[0] ?? states[0].id))!.y }] : ps;
+      const all = free.length ? [...ps, { id: "", R: 52 + 27 * F, x: Math.max(...ps.map((p) => p.x)) + 2, y: ps.find((p) => p.id === (board.machine.mainLine?.[0] ?? states[0].id))!.y }] : ps;
       const reach = (p: { id: string; R: number }, sd: 1 | -1) => (p.id ? (sized[p.id].rows?.reach[sd > 0 ? 0 : 1] ?? p.R) : hangHW);
       const shift = separate(all, gapOf, reach), grow = Math.max(0, ...shift.values());
       const over = Math.max(0, 56 * F - Math.min(...ps.map((p) => p.y - p.R)), Math.max(...ps.map((p) => p.y + p.R)) - (hb0 - 20));
