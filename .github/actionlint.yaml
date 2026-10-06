@@ -1,0 +1,5 @@
+# The self-hosted runner lanes ci.yml targets; actionlint reads this file from here.
+self-hosted-runner:
+  labels:
+    - ai-vm-1
+    - validate
