@@ -27,7 +27,7 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from http.client import HTTPResponse
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
 
@@ -271,6 +271,8 @@ def serve(
     create: TaskCreator | None = None,
     clock: Callable[[], float] = time.time,
     ingest: Ingest | None = None,
+    gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
+    port: int = 0,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -296,8 +298,9 @@ def serve(
         create,
         clock,
         ingest,
+        gate,
     )
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         yield server

@@ -26,6 +26,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import urlsplit
 
 from starpulse.board import DEFAULT_TYPE, module_name
 from starpulse.harnesses import Harnesses, load_harnesses
@@ -41,6 +42,17 @@ _KEYS = {
     "session_start_url",
     "level",
     "hub_retention_days",
+    "oidc",
+}
+_OIDC_KEYS = {
+    "issuer",
+    "client_id",
+    "client_secret_env",
+    "redirect_uri",
+    "allowed_groups",
+    "groups_claim",
+    "scopes",
+    "engine_token_env",
 }
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env"}
 
@@ -75,6 +87,61 @@ class RunsInstance:
     """The page's groups of this instance's workflows, in the order it lays them out."""
     token_env: str | None = None
     """The environment variable holding this instance's ingest token; none: the instance takes no pushed events."""
+
+
+@dataclass(frozen=True)
+class OidcSettings:
+    """The hub's sign-in: its OpenID Connect issuer, this hub's client at it, and who may sign in."""
+
+    issuer: str
+    client_id: str
+    client_secret_env: str
+    redirect_uri: str
+    allowed_groups: tuple[str, ...]
+    groups_claim: str = "groups"
+    scopes: tuple[str, ...] = ("openid", "profile", "email")
+    engine_token_env: str | None = None
+
+
+def _oidc(raw: object) -> OidcSettings:
+    """The `[oidc]` table as settings; each refusal names the key to fix."""
+    if not isinstance(raw, dict):
+        raise ConfigError("oidc must be an [oidc] table")
+    if unknown := sorted(raw.keys() - _OIDC_KEYS):
+        raise ConfigError(f"oidc: unknown key(s) {', '.join(unknown)}")
+    text: dict[str, str] = {}
+    for key in ("issuer", "client_id", "client_secret_env", "redirect_uri"):
+        if key not in raw:
+            raise ConfigError(f"oidc: {key} is required")
+        if not isinstance(raw[key], str) or not raw[key]:
+            raise ConfigError(f"oidc: {key} must be text")
+        text[key] = raw[key]
+    for key in ("issuer", "redirect_uri"):
+        if urlsplit(text[key]).scheme not in {"http", "https"} or not urlsplit(text[key]).netloc:
+            raise ConfigError(f"oidc: {key} must be an http(s) URL")
+    groups = raw.get("allowed_groups")
+    if not (_names(groups) and groups and all(groups)):
+        raise ConfigError("oidc: allowed_groups must name at least one group")
+    claim = raw.get("groups_claim", "groups")
+    scopes = raw.get("scopes", ["openid", "profile", "email"])
+    if not isinstance(claim, str) or not claim:
+        raise ConfigError("oidc: groups_claim must be text")
+    if not (_names(scopes) and scopes and "openid" in scopes):
+        raise ConfigError("oidc: scopes must be a list of text that includes openid")
+    engine = raw.get("engine_token_env")
+    for key, name in (("client_secret_env", text["client_secret_env"]), ("engine_token_env", engine)):
+        if name is not None and not (isinstance(name, str) and _ENV_NAME.fullmatch(name)):
+            raise ConfigError(f"oidc: {key} must be the name of an environment variable")
+    return OidcSettings(
+        text["issuer"],
+        text["client_id"],
+        text["client_secret_env"],
+        text["redirect_uri"],
+        tuple(groups),
+        claim,
+        tuple(scopes),
+        engine,
+    )
 
 
 def runs_adapter(kind: str) -> ModuleType:
@@ -150,6 +217,8 @@ class Config:
     """The `[level]` flow graph above the Board; none when the config has no such table."""
     hub_retention_days: int = 14
     """A hub keeps raw events for this many days before today, then drops each older day's partition after rolling it up."""
+    oidc: OidcSettings | None = None
+    """The hub's sign-in (`[oidc]`); a hub refuses to start without it, and an IC instance without `--hub` refuses it."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -223,6 +292,17 @@ def load(path: Path | None) -> Config:
     url = raw.get("database_url")
     if url is not None and not isinstance(url, str):
         raise ConfigError("database_url must be text")
+    oidc = _oidc(raw["oidc"]) if "oidc" in raw else None
     return Config(
-        raw.get("tracker_url"), mode, runs, harnesses, kind, board, url, session_start_url, _level(raw), retention
+        raw.get("tracker_url"),
+        mode,
+        runs,
+        harnesses,
+        kind,
+        board,
+        url,
+        session_start_url,
+        _level(raw),
+        retention,
+        oidc,
     )
