@@ -16,6 +16,7 @@ would stop WAL checkpoints and grow the `-wal` file without bound.
 from __future__ import annotations
 
 import logging
+import sqlite3
 import threading
 import time
 import uuid
@@ -39,6 +40,10 @@ DEFAULT_POLL_INTERVAL = 0.25
 #: How long SQLite waits on another process's write lock before an append gives up and fails open, in seconds.
 _SQLITE_BUSY_TIMEOUT = 5.0
 
+#: How many times a new SQLite connection tries to switch to WAL, which fails at once, without waiting on the busy
+#: timeout, while another connection opens or closes the database.
+_PRAGMA_ATTEMPTS = 20
+
 #: How many times a producer looks for the tables, creating those missing, before the failure counts.
 _CREATE_ATTEMPTS = 5
 
@@ -55,7 +60,14 @@ class Entry(NamedTuple):
 
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
     cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
+    for attempt in range(_PRAGMA_ATTEMPTS):
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            break
+        except sqlite3.OperationalError:
+            if attempt == _PRAGMA_ATTEMPTS - 1:
+                raise
+            time.sleep(0.05)
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
 
