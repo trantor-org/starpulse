@@ -92,6 +92,27 @@ body:has(#nav:hover) #crumbs, body:has(#nav:focus-within) #crumbs { opacity: 0; 
 #panel .run[disabled] { border-color: #475569; color: #64748b; background: none; cursor: not-allowed; }
 #panel .note { margin-top: 6px; color: var(--muted); font-size: 11px; }
 .chip { display: inline-block; padding: 0 6px; margin: 2px 4px 0 0; border-radius: 4px; background: rgba(148,163,184,.12); font-size: 11px; }
+/* fan-out: a DAG's queue bar and one row per run in flight */
+#panel .qbar { position: relative; height: 6px; border-radius: 3px; background: rgba(148,163,184,.14); margin: 6px 0 2px; overflow: hidden; }
+#panel .qbar i { position: absolute; left: 0; top: 0; bottom: 0; background: #fbbf24; transition: width .5s; } #panel .qbar i.full { background: #fb7185; }
+#panel .fan { margin-top: 12px; border-top: 1px solid rgba(148,163,184,.12); padding-top: 10px; }
+#panel .fan .hd { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+#panel .fr { display: grid; grid-template-columns: 78px 1fr 46px; gap: 2px 8px; align-items: center; padding: 5px 6px; border-radius: 6px; }
+#panel .fr:hover { background: rgba(148,163,184,.07); } #panel .fr.adv { animation: flash 1.2s; } #panel .fr.queued { opacity: .55; }
+#panel .fr a { color: #a78bfa; text-decoration: none; font: 11.5px ui-monospace, monospace; } #panel .fr a:hover { text-decoration: underline; }
+#panel .fr .el { text-align: right; color: var(--muted); font: 11px ui-monospace, monospace; }
+#panel .fr .st { grid-column: 2 / 3; color: var(--muted); font-size: 10.5px; } #panel .fr .st b { color: #fbbf24; font-weight: 500; }
+#panel .fan .empty { color: var(--muted); font-size: 11px; }
+.strip { display: flex; gap: 2px; align-items: center; } .strip i { flex: 1; height: 6px; border-radius: 2px; background: #334155; transition: background .4s; }
+.strip i.succeeded { background: #34d399; } .strip i.running { background: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,.6); } .strip i.failed { background: #fb7185; }
+#queues .q { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
+#queues .q span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#queues .m { height: 3px; border-radius: 2px; background: rgba(148,163,184,.15); margin: 2px 0 6px; overflow: hidden; } #queues .m i { display: block; height: 100%; transition: width .5s; }
+#feed div.new { animation: flash 1.2s; } @keyframes flash { from { background: rgba(251,191,36,.18); } to { background: none; } }
+/* design review only: the fan-out scenario switcher, shown when the address names one with ?s= */
+#fanctl { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); bottom: 14px; display: flex; gap: 6px; align-items: center; font-size: 11px; }
+#fanctl button { all: unset; white-space: nowrap; cursor: pointer; padding: 3px 9px; border-radius: 5px; border: 1px solid rgba(148,163,184,.25); color: var(--muted); background: rgba(6,10,20,.8); }
+#fanctl button.on { color: #fbbf24; border-color: #fbbf24; } #fanctl .note { color: var(--muted); max-width: 420px; }
 </style>
 </head>
 <body>
@@ -102,6 +123,7 @@ body:has(#nav:hover) #crumbs, body:has(#nav:focus-within) #crumbs { opacity: 0; 
     <section><input id="q" placeholder="filter layers…" autocomplete="off"></section>
     <section style="flex:1;min-height:0;overflow:auto"><h3>Layers</h3><div id="layers"></div></section>
     <section><h3>Constellations</h3><div id="cons"></div></section>
+    <section><h3>Queues</h3><div id="queues"></div></section>
   </div>
 </aside>
 <div id="clock" class="hud" style="top:18px;left:auto;right:calc(var(--rail) + 24px)"></div>
@@ -113,6 +135,7 @@ body:has(#nav:hover) #crumbs, body:has(#nav:focus-within) #crumbs { opacity: 0; 
 </aside>
 <div id="tip"></div>
 <div id="panel"></div>
+<div id="fanctl" hidden></div>
 <script src="data.js"></script>
 <script src="history.js"></script>
 <script src="trace.js"></script>
@@ -249,6 +272,81 @@ const moving = (flow) => EVENTS.filter((e) => e.flow === flow && e.from && e.at 
 // the seeded night sky and its twinkle, the same as the current board's backdrop
 let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const STARS = Array.from({ length: 160 }, () => ({ x: rnd(), y: rnd(), r: rnd() * 1.1 + 0.2, p: rnd() * TAU }));
+
+// ---- fan-out: every run of a DAG in flight at once, against its Dagu queue's cap. Mockup: simulated at 10x from the scenario ?s= names,
+// on its own clock beside the replay; the build reads Dagu's /queues and each run's step from /dag-runs ----
+const FAN_SPEED = 10, STEP_SECS = { refuse: 2, lint: 140, commit: 2, push: 2, open_pr: 3, wait_ci: 620, ready: 2 }; // deliver's typical seconds per step
+const QUEUES = { deliver: 32, default: 2, models: 1, "alert-investigation": 3, "dependency-update-investigation": 2, "gpu-1": 1, healthcheck: 1, "renovate-ci-fix": 1 };
+const QUEUE_OF = { deliver: "deliver", "alert-investigation": "alert-investigation", healthcheck: "healthcheck" }, queueOf = (n) => QUEUE_OF[n] || "default";
+const FAN_STATES = { // each seed is [step index, seconds in that step]
+  live: { note: "5 of 32: the deliver runs in flight at 16:00 MST on Oct 5; a new one arrives every ~15 s on screen, which holds about five in flight", deliver: [[5, 40], [5, 300], [5, 520], [1, 60], [5, 450]], other: { "alert-investigation": [[1, 30]] }, arrive: 15 },
+  idle: { note: "nothing in flight: no badge, and the panel says when the last run ended", deliver: [], other: {} },
+  burst: { note: "saturated: 32 of 32 running and 6 queued; a freed slot starts the next queued run", deliver: Array.from({ length: 32 }, (_, i) => [i % 3 ? 5 : 1, i % 3 ? (i * 37) % 600 : (i * 13) % 130]), queued: 6, other: { "board-autopilot": [[0, 20]], "alert-investigation": [[1, 10], [2, 30]] }, arrive: 2.5 },
+  panel: { note: "deliver's panel open at 5 of 32; a new run arrives every ~15 s on screen", deliver: [[5, 40], [5, 300], [5, 520], [1, 60], [5, 450]], other: {}, open: "deliver", arrive: 15 },
+  failed: { note: "a run fails at lint after ~1 s: its row, strip, step and feed line turn red and the row leaves 12 s later", deliver: [[1, 130], [5, 200], [5, 400]], other: {}, open: "deliver" },
+};
+const fanParam = new URLSearchParams(location.search).get("s"), FANS = FAN_STATES[fanParam] ? fanParam : "live";
+if (FAN_STATES[fanParam]) stack = [{ kind: "board" }, { kind: "dags" }]; // a scenario address opens on the DAGs level
+const FAN_TASKS = (board.agents.some((a) => a.state === "in_progress" || a.state === "review") ? board.agents.filter((a) => a.state === "in_progress" || a.state === "review") : board.agents).map((a) => a.id);
+let runs = [], runSeq = 0, fanClock = S.now, fanLast = 0, nextArrive = null, fanPanelAt = 0;
+const fanEvents = [], stepPulses = [];
+const runsOf = (n) => runs.filter((r) => r.dag === n), liveOf = (n) => runs.filter((r) => r.dag === n && r.status === "running");
+const queuedOf = (n) => runs.filter((r) => r.dag === n && r.status === "queued");
+const liveIn = (q) => runs.filter((r) => queueOf(r.dag) === q && r.status === "running").length;
+const stepSecs = (dag, step) => (dag === "deliver" ? STEP_SECS[step] : 40);
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+function newRun(dag, at, inStep, queued) {
+  const task = FAN_TASKS[runSeq++ % FAN_TASKS.length], steps = dagBy[dag].steps.map((s) => s.name);
+  const elapsed = steps.slice(0, Math.max(0, at)).reduce((t, s) => t + stepSecs(dag, s), 0) + inStep;
+  return { id: `${dag}-agent-${task.toLowerCase()}-${runSeq}`, dag, task, steps, at: Math.max(0, at), inStep, elapsed, status: queued ? "queued" : "running", failAt: null, endedAt: null, adv: -9 };
+}
+// a step's run status on the glyph: running while any run is in it, done once a run is past it
+function stepStatus(name, step, fallback) {
+  const rs = runsOf(name).filter((r) => r.status !== "queued"); if (!rs.length) return fallback;
+  const i = rs[0].steps.indexOf(step);
+  if (rs.some((r) => r.status === "failed" && r.at === i)) return "failed";
+  if (rs.some((r) => r.status === "running" && r.at === i)) return "running";
+  return rs.some((r) => r.at > i || (r.status === "succeeded" && r.at === i)) ? "succeeded" : "not_started";
+}
+function fanEvent(dag, what, col) { fanEvents.unshift({ at: T, html: `<b>${esc(dag)}</b> <em${col ? ` style="color:${col};opacity:1"` : ""}>${esc(what)}</em>`, fresh: true }); fanEvents.length = Math.min(fanEvents.length, 12); }
+function startQueued() {
+  for (const q of Object.keys(QUEUES)) { let live = liveIn(q);
+    for (const r of runs.filter((x) => queueOf(x.dag) === q && x.status === "queued")) if (live < QUEUES[q]) { r.status = "running"; r.at = 0; r.inStep = 0; r.adv = clock; live++; fanEvent(r.dag, `started · ${r.task}`); stepPulses.push({ dag: r.dag, step: r.steps[0], t0: clock, col: ACT }); } }
+}
+function enqueue(dag = "deliver") {
+  const r = newRun(dag, 0, 0, liveIn(queueOf(dag)) >= QUEUES[queueOf(dag)]); r.adv = clock; runs.push(r);
+  fanEvent(dag, `${r.status === "queued" ? "queued" : "started"} · ${r.task}`); if (r.status === "running") stepPulses.push({ dag, step: r.steps[0], t0: clock, col: ACT });
+  renderQueues(); refreshFanPanel(true);
+}
+function fanReset() {
+  const st = FAN_STATES[FANS]; runs = []; runSeq = 0; nextArrive = null;
+  for (const [at, s] of st.deliver) runs.push(newRun("deliver", at, s));
+  for (let i = 0; i < (st.queued || 0); i++) runs.push(newRun("deliver", -1, 0, true));
+  if (FANS === "failed") runs[0].failAt = "lint";
+  for (const [dag, list] of Object.entries(st.other)) if (dagBy[dag]) for (const [at, s] of list) runs.push(newRun(dag, at, s));
+}
+// each run walks its steps; every step a run enters rings that step on the glyph and flashes the run's row
+function fanTick(now) {
+  const dt = fanLast ? Math.min(1, (now - fanLast) / 1000) * FAN_SPEED : 0; fanLast = now; fanClock += dt; let changed = false;
+  for (const r of runs) {
+    if (r.endedAt != null) { if (fanClock - r.endedAt > (r.status === "failed" ? 12 : 6) * FAN_SPEED) { r.gone = true; changed = true; } continue; }
+    if (r.status === "queued") continue;
+    r.elapsed += dt; r.inStep += dt; const step = r.steps[r.at], need = stepSecs(r.dag, step);
+    if (r.failAt === step && r.inStep > need * 0.97) { r.status = "failed"; r.endedAt = fanClock; r.adv = clock; changed = true;
+      stepPulses.push({ dag: r.dag, step, t0: clock, col: DAG_COLOR.failed }); fanEvent(r.dag, `failed at ${step} · ${r.task}`, DAG_COLOR.failed); continue; }
+    if (r.inStep < need) continue;
+    r.inStep = 0; r.adv = clock; changed = true;
+    if (r.at + 1 >= r.steps.length) { r.status = "succeeded"; r.endedAt = fanClock; stepPulses.push({ dag: r.dag, step, t0: clock, col: DAG_COLOR.succeeded }); fanEvent(r.dag, `succeeded · ${r.task}`, DAG_COLOR.succeeded); }
+    else { r.at++; stepPulses.push({ dag: r.dag, step: r.steps[r.at], t0: clock, col: ACT }); fanEvent(r.dag, `${r.steps[r.at]} · ${r.task}`); }
+  }
+  if (changed) { runs = runs.filter((r) => !r.gone); startQueued(); } // an ended run frees its slot at once; its row lingers
+  const arrive = FAN_STATES[FANS].arrive;
+  if (arrive && (nextArrive ??= now + arrive * 1000) <= now) { nextArrive = now + arrive * 1000 * (0.6 + Math.random() * 0.8); enqueue(); }
+  while (stepPulses.length && clock - stepPulses[0].t0 > 1.1) stepPulses.shift();
+  if (changed) renderQueues();
+  refreshFanPanel(changed);
+}
+fanReset();
 
 let scene;
 function build() {
@@ -859,12 +957,18 @@ const tip = document.getElementById("tip");
 function setHover(h, mx, my) {
   const same = h && hover && h.kind === hover.kind && h.o === hover.o; hover = h;
   if (!h) { tip.style.opacity = 0; return; }
-  if (!same) tip.innerHTML = tipHtml(h);
+  if (!same || h.kind === "dag") tip.innerHTML = tipHtml(h); // a DAG's tooltip carries its live run counts
   const r = tip.getBoundingClientRect(); let tx = mx + 16, ty = my + 14;
   if (tx + r.width > innerWidth - railW() - 8) tx = mx - r.width - 16; if (ty + r.height > innerHeight - 8) ty = my - r.height - 14;
   tip.style.left = tx + "px"; tip.style.top = ty + "px"; tip.style.opacity = 1;
 }
 const writerLine = (w) => `${esc(w.actor)} <span class="k">${w.event ? `writes ${esc(w.event)} ` : ""}via ${esc(w.trigger)}</span>`;
+// the fan-out line: how many of the queue's slots this DAG holds, and how its runs spread over its steps
+function fanTip(name) {
+  const live = liveOf(name), wait = queuedOf(name).length, q = queueOf(name); if (!live.length && !wait) return "";
+  const at = {}; live.forEach((r) => (at[r.steps[r.at]] = (at[r.steps[r.at]] || 0) + 1));
+  return `<div class="k" style="color:${ACT}">${live.length} of ${QUEUES[q]} running on queue ${esc(q)}${wait ? ` · ${wait} queued` : ""}</div>${live.length ? `<div class="k">${Object.entries(at).map(([s, n]) => `${n} at ${esc(s)}`).join(" · ")}</div>` : ""}`;
+}
 function tipHtml({ kind, o }) {
   if (kind === "task" || kind === "session") return traceCard({ kind, o });
   if (kind === "turn") return `<div class="k">page ${o.pager.page + 1} of ${o.pager.pages}</div><div class="n">${o.d < 0 ? "‹ previous page" : "next page ›"}</div>`;
@@ -872,7 +976,7 @@ function tipHtml({ kind, o }) {
   if (kind === "task") return `<div class="k">task · ${esc(stateName(o.state))}${o.host.states || o.host.depends ? ` · orbiting ${esc(o.host.title || o.host.name)}` : ""} · click for details</div><div class="n">${esc(o.id)}</div>${esc(o.title)}<div class="k">${esc(o.model)} · ${o.labels.map(esc).join(", ")}</div>`;
   if (kind === "session") return `<div class="k">${esc(o.kind)} session · ${esc(o.flow)}</div><div class="n">${esc(o.task || o.title)}</div><div class="k">${esc(o._state || o.state)} · ${o.steps} steps · ${esc(o.model)} · last active ${hhmm(o.active)} MST</div>`;
   if (kind === "dag" && o.fold) return `<div class="k">${o.fold.length} DAGs on one path · click to open them</div><div class="n">${o.fold.map(esc).join("<br>")}</div><div class="k">${o.tethers[0].crit.map(esc).join("<br>")}</div>`;
-  if (kind === "dag") return `<div class="k">DAG · ${esc(o.group)} · ${esc(o.status)}${o.runnable ? " · runnable" : ""}</div><div class="n">${esc(o.name)}</div>${o.tethers?.[0]?.crit ? `<div class="k">${o.tethers[0].crit.map(esc).join("<br>")}</div>` : ""}${o.steps.length} step${o.steps.length === 1 ? "" : "s"}: ${o.steps.map((s) => esc(s.name)).join(" → ")}${o.finishedAt ? `<div class="k">last run ${hhmm(Date.parse(o.finishedAt) / 1000)} MST</div>` : ""}`;
+  if (kind === "dag") return `<div class="k">DAG · ${esc(o.group)} · ${esc(liveOf(o.name).length ? "running" : o.status)}${o.runnable ? " · runnable" : ""}</div><div class="n">${esc(o.name)}</div>${fanTip(o.name)}${o.tethers?.[0]?.crit ? `<div class="k">${o.tethers[0].crit.map(esc).join("<br>")}</div>` : ""}${o.steps.length} step${o.steps.length === 1 ? "" : "s"}: ${o.steps.map((s) => esc(s.name)).join(" → ")}${o.finishedAt ? `<div class="k">last run ${hhmm(Date.parse(o.finishedAt) / 1000)} MST</div>` : ""}`;
   if (kind === "galaxy") return `<div class="k">Board state · click to open</div><div class="n">${esc(o.name)}</div>${o.n} tasks${o.subs.length ? ` · ${o.subs.length} lifecycle machines inside` : ""}`;
   if (kind === "sun") return `<div class="k">Board state</div><div class="n">${esc(o.name)}</div>${o.n} tasks${scene.planets.length ? ` · ${scene.planets.length} lifecycle machines orbiting it` : ""}`;
   if (kind === "state") return `<div class="k">${esc(o.flow)} state</div><div class="n">${esc(o.name)}</div>${o.n} session${o.n === 1 ? "" : "s"} here at snapshot${o.loops?.length ? `<div class="k">stays here on ${o.loops.map(esc).join(", ")}</div>` : ""}`;
@@ -890,14 +994,37 @@ function tipHtml({ kind, o }) {
 
 // ---- click: drill into states, machines and DAG folds, open panels for tasks and sessions ----
 const panel = document.getElementById("panel");
+// one row per run in flight: its task, a strip of its steps, the step it is in and for how long, and its elapsed time; queued runs follow
+function fanRow(r) {
+  const strip = r.steps.map((s, i) => `<i class="${r.status === "queued" ? "" : i < r.at || (r.status === "succeeded" && i === r.at) ? "succeeded" : i === r.at ? (r.status === "failed" ? "failed" : "running") : ""}" title="${esc(s)}"></i>`).join("");
+  const st = r.status === "queued" ? "queued for a slot" : r.status === "failed" ? `<b style="color:${DAG_COLOR.failed}">failed at ${esc(r.steps[r.at])}</b>` : r.status === "succeeded" ? `<b style="color:${DAG_COLOR.succeeded}">succeeded</b>` : `<b>${esc(r.steps[r.at])}</b> · ${mmss(r.inStep)} in step`;
+  return `<div class="fr${clock - r.adv < 1.2 ? " adv" : ""}${r.status === "queued" ? " queued" : ""}" title="${esc(r.id)}"><a href="#" onclick="return false">${esc(r.task)}</a><div class="strip">${strip}</div><div class="el">${r.status === "queued" ? "—" : mmss(r.elapsed)}</div><div class="st">${st}</div></div>`;
+}
+function fanHtml(o) {
+  const q = queueOf(o.name), cap = QUEUES[q], live = liveIn(q), mine = liveOf(o.name).length, wait = queuedOf(o.name), shown = runsOf(o.name).filter((r) => r.status !== "queued");
+  const lastRun = `${esc(o.status)}${o.finishedAt ? ` ${hhmm(Date.parse(o.finishedAt) / 1000)} MST` : ""}`;
+  return { queue: `<tr><td>Queue</td><td>${esc(q)} · <b style="color:${live >= cap ? DAG_COLOR.failed : ACT}">${live}</b> of ${cap} running${mine !== live ? ` (${mine} of them this DAG)` : ""}${wait.length ? ` · ${wait.length} queued` : ""}
+      <div class="qbar"><i class="${live >= cap ? "full" : ""}" style="width:${Math.min(100, (live / cap) * 100)}%"></i></div></td></tr>`,
+    runs: `<div class="fan"><div class="hd"><span>In flight · ${mine}${wait.length ? ` + ${wait.length} queued` : ""}</span><span>elapsed</span></div>
+      ${shown.length || wait.length ? shown.sort((a, b) => b.elapsed - a.elapsed).map(fanRow).join("") + wait.map(fanRow).join("") : `<div class="empty">No run in flight. Last run ${lastRun}.</div>`}</div>`,
+    step: (s) => { const n = runsOf(o.name).filter((r) => r.status === "running" && r.steps[r.at] === s.name).length; return n ? ` ×${n}` : ""; },
+    stepColor: (s) => DAG_COLOR[stepStatus(o.name, s.name, s.status)] || "#94a3b8" };
+}
+function refreshFanPanel(force) {
+  const o = panel.classList.contains("open") && panel.querySelector(".fan") && dagPanelOf; if (!o || (!force && clock - fanPanelAt < 1)) return;
+  fanPanelAt = clock; const top = panel.scrollTop; openDagPanel(o); panel.scrollTop = top;
+}
+let dagPanelOf = null;
 function openDagPanel(o) {
+  const f = fanHtml(o); dagPanelOf = o;
   panel.innerHTML = `<span class="x">✕</span><div class="k">DAG · ${esc(o.group)}</div><h2>${esc(o.name)}</h2>
-    <table><tr><td>Last run</td><td>${esc(o.status)}${o.startedAt ? ` · ${hhmm(Date.parse(o.startedAt) / 1000)}–${o.finishedAt ? hhmm(Date.parse(o.finishedAt) / 1000) : "…"} MST` : ""}</td></tr>
-    <tr><td>Steps</td><td>${o.steps.map((s) => `<span class="chip" style="color:${DAG_COLOR[s.status] || "#94a3b8"}">${esc(s.name)}</span>${s.depends.length ? `<span class="k"> after ${s.depends.map(esc).join(", ")}</span>` : ""}`).join("<br>")}</td></tr>
+    <table>${f.queue}
+    <tr><td>Last run</td><td>${esc(o.status)}${o.startedAt ? ` · ${hhmm(Date.parse(o.startedAt) / 1000)}–${o.finishedAt ? hhmm(Date.parse(o.finishedAt) / 1000) : "…"} MST` : ""}</td></tr>
+    <tr><td>Steps</td><td>${o.steps.map((s) => `<span class="chip" style="color:${f.stepColor(s)}">${esc(s.name)}${f.step(s)}</span>${s.depends.length ? `<span class="k"> after ${s.depends.map(esc).join(", ")}</span>` : ""}`).join("<br>")}</td></tr>
     <tr><td>Writes</td><td>${Object.entries(S.writers).filter(([, ws]) => ws.some((w) => w.actor === o.name)).map(([ev]) => esc(ev)).join(", ") || "no Board lane"}</td></tr>
     <tr><td>Launches</td><td>${S.launches.filter((l) => l.dag === o.name).map((l) => esc(l.skill)).join(", ") || "no agent"}</td></tr>${cueLine(o.name) ? `
     <tr><td>Runs with</td><td>${cueLine(o.name)}</td></tr>` : ""}</table>
-    <button class="run" ${o.runnable ? "" : "disabled"}>▶ Run now</button>
+    ${f.runs}<button class="run" ${o.runnable ? "" : "disabled"}>▶ Run now</button>
     <div class="note">${o.runnable ? "Declared safe to re-run (idempotent). Mockup: the button does nothing." : "Not declared idempotent, so the page offers no run control."}</div>`;
   panel.classList.add("open"); panel.querySelector(".x").onclick = () => panel.classList.remove("open");
 }
@@ -911,7 +1038,7 @@ function click(fx, fy) {
   if (h.kind === "sat") return go([...stack, { kind: "state", id: h.o.board }, { kind: "machine", flow: h.o.machine }], fx, fy); // the machine the sub-state belongs to; its own state opens the child machine from there
   if (h.kind === "hangar") return push({ kind: "dags" }, fx, fy);
   if (h.kind === "planet") return push({ kind: "machine", flow: h.o.subState ? h.o.flow : h.o.name }, fx, fy);
-  if (h.kind === "dag") { const o = h.o, crit = o.tethers[0].crit; // a fold opens the level of its DAGs over the path they write; one DAG opens its panel
+  if (h.kind === "dag") { const o = h.o, crit = o.tethers?.[0]?.crit; // a fold opens the level of its DAGs over the path they write; one DAG opens its panel
     return o.fold ? push({ kind: "fold", id: o.fold.join("+"), dags: o.fold, crit, path: foldPath(crit) }, fx, fy) : openDagPanel(o); }
   if (h.kind === "task") {
     const d = S.descriptions[h.o.id] || "(no description)";
@@ -1027,7 +1154,7 @@ function drawSun() {
 }
 // action lines as on the current board: a dashed stroke that streams toward its target, a gradient from source colour to target colour,
 // brighter and thicker while a writer DAG has just run (or is running)
-const dagHeat = (n) => { const d = dagBy[n]; if (!d) return 0; if (d.status === "running") return 1; const f = d.finishedAt && Date.parse(d.finishedAt) / 1000; return f && f <= T ? Math.max(0, 1 - (T - f) / 240) : 0; };
+const dagHeat = (n) => { const d = dagBy[n]; if (!d) return 0; if (d.status === "running" || liveOf(n).length) return 1; const f = d.finishedAt && Date.parse(d.finishedAt) / 1000; return f && f <= T ? Math.max(0, 1 - (T - f) / 240) : 0; };
 function flow(a, b, alpha, heat, dash = [2, 5]) {
   const g = cx.createLinearGradient(a.x, a.y, b.x, b.y); g.addColorStop(0, rgba(a.color, alpha)); g.addColorStop(1, rgba(b.color, alpha));
   cx.strokeStyle = g; cx.lineWidth = (1 + heat * 1.5) / Math.min(1, K) ** 0.5 / Math.max(1, ZS); cx.setLineDash(dash.map((d) => d / K * 1.2)); cx.lineDashOffset = -clock * 12 / K * 1.2;
@@ -1135,24 +1262,32 @@ function drawStars() {
   for (const grp of scene.groups) {
     if (grp.head !== false) label(grp.name.toUpperCase(), grp.lx, grp.ly, false, null, 10.5);
     for (const s of grp.stars) {
-      const col = DAG_COLOR[s.status] || "#94a3b8", hot = isHot("dag", s), g = s.glyph, r = hot ? 4.4 : 3.4;
+      const live = s.fold ? 0 : liveOf(s.name).length, wait = s.fold ? 0 : queuedOf(s.name).length, status = live ? "running" : s.status;
+      const col = DAG_COLOR[status] || "#94a3b8", hot = isHot("dag", s), g = s.glyph, r = hot ? 4.4 : 3.4;
       if (hot || scene.fold) for (const a of s.tethers || []) { if (a.none) continue; // one tether to the middle of the path most of its criteria are on, drawn only while the DAG is hovered (always on a fold's level)
         const heat = 0, tx = a.g ? a.g.x + ((s.x - a.g.x) / Math.hypot(s.x - a.g.x, s.y - a.g.y)) * a.g.R : a.x, ty = a.g ? a.g.y + ((s.y - a.g.y) / Math.hypot(s.x - a.g.x, s.y - a.g.y)) * a.g.R : a.y;
         const lo = a.cue ? 0.5 : 1; // a cue is a looser tie than a write or a launch: half as bright, sparser dots
         cx.strokeStyle = rgba("#fbbf24", (hot ? 0.85 : 0.45 + heat * 0.45) * lo); cx.lineWidth = (hot ? 1.3 : 1) / K ** 0.5; cx.setLineDash(a.cue ? [1.5 / K, 8 / K] : [2 / K, 5 / K]); cx.lineDashOffset = -clock * 8 / K;
         cx.beginPath(); cx.moveTo(s.x, s.y); cx.lineTo(tx, ty); cx.stroke(); cx.setLineDash([]); if (!a.g) dot(tx, ty, 2.2 / K ** 0.5, rgba("#fbbf24", hot ? 0.8 : 0.3 + heat * 0.5)); }
-      if (hot || s.status === "running") { // no resting glow: only a hovered or currently running DAG gets a faint halo
+      if (hot || status === "running") { // no resting glow: only a hovered or currently running DAG gets a faint halo
         const glow = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.br * 1.3); glow.addColorStop(0, rgba(col, 0.09)); glow.addColorStop(1, rgba(col, 0));
         cx.fillStyle = glow; cx.beginPath(); cx.arc(s.x, s.y, s.br * 1.3, 0, TAU); cx.fill(); }
       label(s.name, s.x, s.y + g.h / 2 + 16 / K, hot, null, 11);
       // the DAG's own step graph in miniature, drawn the way its drilled-in level is: rounded links streaming toward the step that waits, ringed steps
       const nr = (g.nodes.length === 1 ? 5.5 : 4) * (hot ? 1.15 : 1);
-      for (const [p, q] of g.links) { const a = { x: s.x + p.x, y: s.y + p.y, color: DAG_COLOR[p.status] || "#94a3b8" }, b = { x: s.x + q.x, y: s.y + q.y, color: DAG_COLOR[q.status] || "#94a3b8" };
-        const live = p.status === "running" || q.status === "running", dx = (b.x - a.x) / 2;
-        flow(a, b, hot || live ? 0.8 : 0.42, live ? 0.6 : 0, [1.5, 3.5]);
+      const ss = (n) => (s.fold ? n.status : stepStatus(s.name, n.name, n.status)); // a step's status: from the runs in flight when there are any
+      for (const [p, q] of g.links) { const a = { x: s.x + p.x, y: s.y + p.y, color: DAG_COLOR[ss(p)] || "#94a3b8" }, b = { x: s.x + q.x, y: s.y + q.y, color: DAG_COLOR[ss(q)] || "#94a3b8" };
+        const on = ss(p) === "running" || ss(q) === "running", dx = (b.x - a.x) / 2;
+        flow(a, b, hot || on ? 0.8 : 0.42, on ? 0.6 : 0, [1.5, 3.5]);
         cx.beginPath(); cx.moveTo(a.x + nr, a.y); cx.bezierCurveTo(a.x + dx, a.y, b.x - dx, b.y, b.x - nr, b.y); cx.stroke(); cx.setLineDash([]); }
-      for (const n of g.nodes) { const c = DAG_COLOR[n.status] || col, idle = n.status === "not_started", x = s.x + n.x, y = s.y + n.y;
-        dot(x, y, nr, "rgba(6,10,20,0.9)"); circle(x, y, nr, rgba(c, hot ? 1 : idle ? 0.45 : 0.85), hot ? 1.4 : 1); dot(x, y, nr * 0.34, rgba(c, idle ? 0.45 : 0.9)); }
+      for (const n of g.nodes) { const st = ss(n), c = DAG_COLOR[st] || col, idle = st === "not_started", x = s.x + n.x, y = s.y + n.y;
+        dot(x, y, nr, "rgba(6,10,20,0.9)"); circle(x, y, nr, rgba(c, hot ? 1 : idle ? 0.45 : 0.85), hot ? 1.4 : 1); dot(x, y, nr * 0.34, rgba(c, idle ? 0.45 : 0.9));
+        for (const p of stepPulses) if (p.dag === s.name && p.step === n.name) pulse(x, y, nr, (clock - p.t0) / 1.1, p.col, 16, [0]); } // a run entering this step rings it once
+      // the fan-out badge: the runs this DAG has in flight over its queue's cap, plus any waiting; red once the queue is full
+      if (live || wait) { const q = queueOf(s.name), cap = QUEUES[q], full = liveIn(q) >= cap, txt = `${live}/${cap}${wait ? ` +${wait}` : ""}`, fs = 10.5 / K;
+        const bw = textW(txt, 10.5) / K + 6 / K, bh = 15 / K, bx = s.x + g.w / 2 + nr + 8 / K, by = s.y - g.h / 2 - nr - 10 / K, bc = full ? DAG_COLOR.failed : ACT;
+        cx.fillStyle = "rgba(6,10,20,0.85)"; cx.strokeStyle = rgba(bc, 0.8); cx.lineWidth = 1 / K; cx.beginPath(); cx.roundRect(bx, by - bh / 2, bw, bh, bh / 2); cx.fill(); cx.stroke();
+        text(txt, bx + bw / 2, by + 0.5 / K, fs, bc, "center", 500); }
       if (s.runnable) circle(s.x, s.y, s.br, rgba("#dbe4f3", 0.35), 1, [2, 3]);
       const fin = s.finishedAt ? Date.parse(s.finishedAt) / 1000 : 0;
       if (fin && fin <= T && T - fin < PULSE) pulse(s.x, s.y, s.br, (T - fin) / PULSE, ACT, 38, [0]); // a run ending rings once
@@ -1176,7 +1311,7 @@ function drawScene(k, x, y) {
   drawMachineEdges(scene.mEdges); drawStates(scene.mStates, true); drawOccupants(); drawStars(); drawTrace(k, x, y);
 }
 function frame(now) {
-  clock = now / 1000; T = replayT(now); if (anim) anim(now); update(now);
+  clock = now / 1000; T = replayT(now); fanTick(now); if (anim) anim(now); update(now);
   if (mouse) setHover(hit((mouse.ox - view.x) / view.k, (mouse.oy - view.y) / view.k), mouse.cx, mouse.cy);
   const dpr = devicePixelRatio || 1; cx.globalAlpha = 1; cx.setTransform(dpr, 0, 0, dpr, 0, 0);
   // the current board's night sky: a radial wash and 160 slow-twinkling stars with a slight parallax against the view
@@ -1262,13 +1397,27 @@ function renderRail() {
 // the feed shows what the replay has reached, newest first
 let fedTo = -2;
 setInterval(() => { const i = EVENTS.findLastIndex((e) => e.at <= T), dn = S.dags.filter((d) => d.finishedAt && Date.parse(d.finishedAt) / 1000 <= T).length;
-  if (i * 100 + dn === fedTo) return; fedTo = i * 100 + dn;
+  const key = `${i}:${dn}:${fanEvents.length && fanEvents[0].at}`; if (key === fedTo) return; fedTo = key;
   const ev = EVENTS.slice(0, i + 1).map((e) => ({ at: e.at, html: `<b>${esc(e.task || e.sid.slice(0, 8))}</b> ${esc(e.event.toLowerCase())} <em>${esc(e.flow)}</em>` }));
   S.dags.forEach((d) => { const f = d.finishedAt && Date.parse(d.finishedAt) / 1000; if (f && f <= T) ev.push({ at: f, html: `<b>${esc(d.name)}</b> <em>${esc(d.status)}</em>` }); });
-  ev.sort((a, b) => b.at - a.at); document.getElementById("feed").innerHTML = ev.slice(0, 40).map((e) => `<div><em>${hhmm(e.at)}</em> ${e.html}</div>`).join(""); }, 250);
+  ev.sort((a, b) => b.at - a.at);
+  // the fan-out's run events lead the feed on their own clock, the newest flashing once
+  const fan = fanEvents.map((e) => `<div${e.fresh ? ' class="new"' : ""}><em>${hhmm(e.at)}</em> ${e.html}</div>`); fanEvents.forEach((e) => (e.fresh = false));
+  document.getElementById("feed").innerHTML = fan.join("") + ev.slice(0, 40 - fan.length).map((e) => `<div><em>${hhmm(e.at)}</em> ${e.html}</div>`).join(""); }, 250);
 
+// the navigator's queues: each Dagu queue's running runs against its cap, with any waiting
+function renderQueues() {
+  document.getElementById("queues").innerHTML = Object.entries(QUEUES).map(([q, cap]) => { const live = liveIn(q), wait = runs.filter((r) => queueOf(r.dag) === q && r.status === "queued").length, c = live >= cap ? DAG_COLOR.failed : ACT;
+    return `<div class="q"><span>${esc(q)}</span><b style="color:${live ? c : "inherit"};font-weight:500">${live}/${cap}${wait ? ` +${wait}` : ""}</b></div><div class="m"><i style="width:${(live / cap) * 100}%;background:${c}"></i></div>`; }).join("");
+}
+// design review only: switch scenario or add a deliver run by hand
+if (FAN_STATES[fanParam]) { const c = document.getElementById("fanctl"); c.hidden = false;
+  c.innerHTML = Object.keys(FAN_STATES).map((k) => `<button class="${k === FANS ? "on" : ""}" data-s="${k}">${k}</button>`).join("") + `<button id="enq">+ enqueue deliver</button><span class="note">${esc(FAN_STATES[FANS].note)}</span>`;
+  c.querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => (location.search = `?s=${b.dataset.s}`)));
+  c.querySelector("#enq").onclick = () => enqueue(); }
 document.getElementById("stamp").textContent = `snapshot ${new Date(S.now * 1000).toLocaleString("en-US", { timeZone: TZ, dateStyle: "medium", timeStyle: "short" })} MST`;
-renderRail(); resize(); renderNav();
+renderRail(); resize(); renderNav(); renderQueues();
+if (FAN_STATES[FANS].open && fanParam && scene.stars[FAN_STATES[FANS].open]) openDagPanel(scene.stars[FAN_STATES[FANS].open]);
 addEventListener("resize", resize);
 addEventListener("keydown", (e) => { if (e.key === "Escape") { panel.classList.remove("open"); pinned = null; } if (e.target.id === "q") return; if (e.key === "Backspace") pop(); if (e.key === "0") flyTo(fitScene()); });
 requestAnimationFrame(frame);

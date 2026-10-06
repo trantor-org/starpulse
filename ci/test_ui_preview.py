@@ -163,7 +163,7 @@ def test_rerender_never_touches_a_comment_that_is_not_its_own() -> None:
 
 def test_note_links_each_demo_in_the_prs_own_folder() -> None:
     note = demo_note(7, ["flow-view.html"])
-    assert "(https://trantor-org.github.io/flow-demos/starpulse-pr-7/flow-view.html)" in note
+    assert "(https://trantor-org.github.io/starpulse-demo/starpulse-pr-7/flow-view.html)" in note
     assert demo_note(7, []) == ""
 
 
@@ -201,7 +201,7 @@ def test_publish_writes_each_demo_and_drops_one_the_pr_no_longer_builds(tmp_path
 
     urls = publish_demos(gh, folder, [built], tmp_path / "scratch")
 
-    assert urls == [f"https://trantor-org.github.io/flow-demos/{folder}/flow-view.html"]
+    assert urls == [f"https://trantor-org.github.io/starpulse-demo/{folder}/flow-view.html"]
     assert gh.writes == [
         (
             "PUT",
