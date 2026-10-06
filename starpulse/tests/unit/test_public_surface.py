@@ -24,6 +24,7 @@ PUBLIC: dict[str, set[str]] = {
         "Board",
         "MoveWriter",
         "TaskArchiver",
+        "TaskCreator",
         "TaskEditor",
         "TaskReader",
         "Written",

@@ -78,7 +78,7 @@ class BoardFeed:
         hint: str | None = None,
     ) -> None:
         self._hint = hint
-        self._capabilities = {"edit": False, "archive": False} | dict(capabilities or {})
+        self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
         self._run_safe = run_safe
