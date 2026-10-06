@@ -3,7 +3,7 @@
 See the flow of work: your scheduler's workflows, the lifecycle your tasks move through, and the agents and
 people moving them, live on one page.
 
-**[Live demo](https://trantor-org.github.io/flow-demos/main/flow-view.html)**: a real board's structure with
+**[Live demo](https://trantor-org.github.io/starpulse-demo/main/flow-view.html)**: a real board's structure with
 every task replaced by a synthetic one, running in your browser with no server.
 
 ## What it draws
@@ -251,7 +251,7 @@ mockup.html` writes it as one scrubbed file. A pull request that changes the pag
 the preview itself gets one UI-preview comment from
 [`.github/workflows/ui-preview.yml`](.github/workflows/ui-preview.yml): screenshots of each changed surface's
 scrubbed demo, built by [`ci/ui_preview.py`](ci/ui_preview.py) against the demo config
-[`ci/preview.toml`](ci/preview.toml), with the demos published to `trantor-org/flow-demos` under
+[`ci/preview.toml`](ci/preview.toml), with the demos published to `trantor-org/starpulse-demo` under
 `starpulse-pr-<N>/` while the pull request is open. The preview is review context and never gates the pull request.
 
 ## Contributing

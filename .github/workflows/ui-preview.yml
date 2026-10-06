@@ -2,7 +2,7 @@ name: UI preview
 
 # The paths filter is `UI_GLOBS` in ci/ui_preview.py; its test holds the two equal.
 #
-# Every open UI pull request publishes its scrubbed demos to the public trantor-org/flow-demos Pages repository,
+# Every open UI pull request publishes its scrubbed demos to the public trantor-org/starpulse-demo Pages repository,
 # under starpulse-pr-<N>/, and links them in its description; closing the pull request unpublishes them, which is
 # why that event starts a run too.
 on:
@@ -61,7 +61,7 @@ jobs:
           client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
           private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: flow-demos
+          repositories: starpulse-demo
           permission-contents: write
 
       - name: Render and post the screenshots

@@ -2,7 +2,7 @@
 
 `.github/workflows/ui-preview.yml` runs this on every pull request that touches the page (`starpulse/web/**`), the
 design mockup (`design/**`) or this preview. It builds each changed surface's scrubbed one-file demo with
-`starpulse.demo`, screenshots the demos, publishes them to the public `flow-demos` Pages repository while the pull
+`starpulse.demo`, screenshots the demos, publishes them to the public `starpulse-demo` Pages repository while the pull
 request is open, and leaves one comment holding the screenshots and the demo links. The flow view is rendered
 against `ci/preview.toml`, a demo config naming no real board or runs adapter.
 """
@@ -117,7 +117,7 @@ def publish(gh: Callable[..., str], repo: str, pr: int, body: Path, images: Sequ
 
 
 #: The public GitHub Pages repository the demos are published to while the pull request is open.
-DEMO_REPO = "trantor-org/flow-demos"
+DEMO_REPO = "trantor-org/starpulse-demo"
 #: The hosts a public demo may link to: XML namespaces, the mockup's web font and React's error decoder.
 DEMO_URL_HOSTS = frozenset({"www.w3.org", "fonts.googleapis.com", "fonts.gstatic.com", "react.dev"})
 #: Identifiers the scrub must have removed, by the name a refusal gives them. The scrub's own synthetic UUIDs
