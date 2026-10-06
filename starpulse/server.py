@@ -64,6 +64,8 @@ import json
 import os
 import queue
 import shutil
+import signal
+import sys
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
@@ -612,6 +614,16 @@ def history_store(config: Config, base: Path, board: Board, machines: Mapping[st
     return kept if (kept := board.history(machines)) is not None else store
 
 
+def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
+    """Serve until Ctrl-C or `SIGTERM`, then save the Board the feed keeps, so the next start resumes from it."""
+    # a stopped unit leaves through the save below, as Ctrl-C does
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        server.serve_forever()
+    finally:
+        feed.save()
+
+
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
     parser = argparse.ArgumentParser(prog="starpulse serve", description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--port", type=int, default=8766)
@@ -671,7 +683,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         board.edit,
         board.archive,
     )
-    ThreadingHTTPServer(("0.0.0.0", args.port), handler).serve_forever()
+    serve_until_stopped(ThreadingHTTPServer(("0.0.0.0", args.port), handler), feed)
 
 
 if __name__ == "__main__":

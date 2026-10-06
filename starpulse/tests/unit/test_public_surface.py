@@ -30,7 +30,7 @@ PUBLIC: dict[str, set[str]] = {
         "load",
         "module_name",
     },
-    "starpulse.board_feed": {"BoardFeed", "Followed"},
+    "starpulse.board_feed": {"BoardFeed", "BoardStore", "Followed", "Resumable"},
     "starpulse.config": {"Config", "ConfigError", "RunsInstance", "load", "runs_adapter"},
     "starpulse.contracts": {
         "CONTRACTS",

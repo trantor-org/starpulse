@@ -24,9 +24,11 @@ _TABLES = (
     "starpulse_gaps",
     "starpulse_events",
     "starpulse_cursors",
+    "starpulse_board_state",
 )
 
 if "db.testing" not in sys.modules:
+
     @pytest.fixture(scope="session")
     def pg_engine() -> Iterator[Engine]:  # pragma: no mutate block — container lifecycle
         if not any(shutil.which(runtime) for runtime in ("docker", "podman")):

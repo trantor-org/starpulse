@@ -37,3 +37,13 @@ gaps = Table(
     Column("noted_at", Float, nullable=False),
     Index("ux_starpulse_gaps", "stream", "after_id", unique=True),
 )
+
+#: The Board a reader saved, with the cursor of the last entry it reflects, so a restart resumes after it.
+board_state = Table(
+    "starpulse_board_state",
+    metadata,
+    Column("stream", String, primary_key=True),
+    Column("after_id", String, nullable=False),
+    Column("state", JSON, nullable=False),
+    Column("saved_at", Float, nullable=False),
+)
