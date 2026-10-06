@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoServer } from "./demo";
 import { RETRY_MS, applyDelta, openStream } from "./stream";
-import type { Dag, Pool, RawAgent, Snapshot } from "./types";
+import type { ActiveRun, Dag, Pool, RawAgent, Snapshot } from "./types";
 
 const agent = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "" });
 const board = (agents: RawAgent[], extra: Partial<Snapshot> = {}): Snapshot => ({
@@ -50,6 +50,18 @@ describe("applyDelta", () => {
     const next = applyDelta(s, { kind: "dags", dags, error: "ci: down" });
 
     expect([next.dags, next.error, ids(next)]).toEqual([dags, "ci: down", ["PROJ-1:to_do"]]);
+  });
+
+  it("keeps each concurrent run's own step as the deltas of a DAG move one run at a time", () => {
+    const run = (runId: string, step: string) =>
+      ({ runId, status: "running", startedAt: "", step, stepStartedAt: "", steps: {} }) as ActiveRun;
+    const deliver = (...active: ActiveRun[]) => [{ name: "ci/deliver", active } as Dag];
+    const s = applyDelta(board([]), { kind: "dags", dags: deliver(run("r1", "refuse"), run("r2", "refuse")), error: null });
+
+    const moved = applyDelta(s, { kind: "dags", dags: deliver(run("r1", "refuse"), run("r2", "lint")), error: null });
+
+    expect(moved.dags[0].active?.map((a) => `${a.runId}:${a.step}`)).toEqual(["r1:refuse", "r2:lint"]);
+    expect(s.dags[0].active?.map((a) => `${a.runId}:${a.step}`)).toEqual(["r1:refuse", "r2:refuse"]);
   });
 
   it("takes the pools a runs delta carries, and keeps the last ones from a delta that carries none", () => {
