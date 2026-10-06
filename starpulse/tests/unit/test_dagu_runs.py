@@ -19,7 +19,7 @@ from starpulse.contracts import StartFailedError, TaskKeys
 from starpulse.dagu import _STATUS, DaguRuns, Transport, connect, dags, pools, start, starter, status_of
 from starpulse.dagu import follow as follow_instance
 from starpulse.event_log import EventLog
-from starpulse.tests.dagu_stub import InFlight, Queue, dagu, run_entry
+from starpulse.tests.dagu_stub import InFlight, Queue, dagu, run_entry, step_entry
 
 LISTING = "/api/v1/dags?perPage=200"
 #: The listing is read at this time; an entry stamped before it is already in the listing.
@@ -361,7 +361,7 @@ def test_an_entry_for_a_dag_nobody_lists_changes_nothing() -> None:
     assert changes.empty()
 
 
-def test_an_entry_about_a_step_changes_nothing() -> None:
+def test_a_step_entry_of_a_run_that_is_neither_in_flight_nor_the_one_drawn_changes_nothing() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)
         entry = run_entry("start", "d1", "r1", "running", at=101.0)[1] | {"step": "a"}
@@ -1088,3 +1088,75 @@ def test_a_dagu_that_reports_no_pools_and_runs_nothing_yields_empty_pools_and_ac
         feed, _, _ = follow(base_url)
 
     assert (dag(feed, "deliver")["active"], dag(feed, "deliver")["pool"], feed.snapshot()["pools"]) == ([], "", [])
+
+
+def active(feed: BoardFeed, run_id: str) -> dict:
+    return next(a for a in dag(feed, "deliver")["active"] if a["runId"] == run_id)
+
+
+def test_step_entries_of_two_concurrent_runs_each_move_only_the_run_they_name() -> None:
+    with dagu(DELIVER, **LANE) as (base_url, _):
+        feed, runs, _ = follow(base_url)
+        for entry in (
+            run_entry("start", "deliver", "r1", "running", at=101.0),
+            run_entry("start", "deliver", "r2", "running", at=102.0),
+            step_entry("start", "deliver", "r1", "refuse", "running", at=103.0),
+            step_entry("start", "deliver", "r2", "refuse", "running", at=104.0),
+            step_entry("end", "deliver", "r2", "refuse", "succeeded", at=105.0),
+            step_entry("start", "deliver", "r2", "lint", "running", at=106.0),
+        ):
+            runs.handle_entry(*entry)
+
+    assert [
+        (a["runId"], a["step"], a["stepStartedAt"], a["steps"]) for a in (active(feed, "r1"), active(feed, "r2"))
+    ] == [
+        (
+            "r1",
+            "refuse",
+            "1970-01-01T00:01:43Z",
+            {"refuse": "running", "lint": "not_started", "wait_ci": "not_started"},
+        ),
+        (
+            "r2",
+            "lint",
+            "1970-01-01T00:01:46Z",
+            {"refuse": "succeeded", "lint": "running", "wait_ci": "not_started"},
+        ),
+    ]
+
+
+def test_the_end_of_a_runs_current_step_leaves_it_between_steps_and_the_other_run_where_it_was() -> None:
+    with dagu(DELIVER, **LANE) as (base_url, _):
+        feed, runs, _ = follow(base_url)
+        for entry in (
+            run_entry("start", "deliver", "r1", "running", at=101.0),
+            run_entry("start", "deliver", "r2", "running", at=102.0),
+            step_entry("start", "deliver", "r1", "refuse", "running", at=103.0),
+            step_entry("start", "deliver", "r2", "refuse", "running", at=104.0),
+            step_entry("end", "deliver", "r1", "refuse", "succeeded", at=105.0),
+        ):
+            runs.handle_entry(*entry)
+
+    assert [(a["runId"], a["step"], a["steps"]["refuse"]) for a in dag(feed, "deliver")["active"]] == [
+        ("r1", "", "succeeded"),
+        ("r2", "refuse", "running"),
+    ]
+
+
+def test_only_a_step_entry_of_the_latest_run_moves_the_steps_the_dag_itself_shows() -> None:
+    with dagu(DELIVER, **LANE) as (base_url, _):
+        feed, runs, _ = follow(base_url)
+        for entry in (
+            run_entry("start", "deliver", "r1", "running", at=101.0),
+            run_entry("start", "deliver", "r2", "running", at=102.0),
+            step_entry("start", "deliver", "r1", "refuse", "running", at=103.0),
+        ):
+            runs.handle_entry(*entry)
+        before = statuses(feed, "deliver")
+        runs.handle_entry(*step_entry("start", "deliver", "r2", "refuse", "running", at=104.0))
+
+    assert (before["refuse"], statuses(feed, "deliver")["refuse"], dag(feed, "deliver")["runId"]) == (
+        "not_started",
+        "running",
+        "r2",
+    )

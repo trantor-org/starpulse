@@ -224,20 +224,52 @@ class _Run:
     run_id: str
     status: str
     at: float
+    step: str
 
 
 def _decode(fields: dict) -> _Run | None:
-    """The run an entry reports, or None for one the contract does not allow or one that reports a step."""
+    """The run (or, with `step`, the step of a run) an entry reports, or None for one the contract does not allow."""
     try:
-        run = _Run(fields["phase"], fields["workflow"], fields["run_id"], fields["status"], float(fields["time"]))
+        run = _Run(
+            fields["phase"],
+            fields["workflow"],
+            fields["run_id"],
+            fields["status"],
+            float(fields["time"]),
+            fields.get("step") or "",
+        )
     except KeyError, ValueError:
         return None
-    well_formed = run.phase in run_events.PHASES and run.status in get_args(RunStatus) and not fields.get("step")
+    well_formed = run.phase in run_events.PHASES and run.status in get_args(RunStatus)
     return run if well_formed else None
 
 
 def _iso(at: float) -> str:
     return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _stepped(dag: dict, run: _Run) -> dict | None:
+    """`dag` with the step `run` reports moved in the run it names, or None when that run is neither active nor the latest.
+
+    A run in flight keeps its own step and step statuses; the steps the DAG itself shows are the latest run's.
+    """
+    mine = next((a for a in dag.get("active", []) if a["runId"] == run.run_id), None)
+    latest = run.run_id == dag["runId"]
+    if mine is None and not latest:
+        return None
+    moved = dag
+    if mine is not None:
+        if run.status == "running":
+            step, since = run.step, _iso(run.at)
+        elif mine["step"] == run.step:
+            step, since = "", ""
+        else:
+            step, since = mine["step"], mine["stepStartedAt"]
+        entry = {**mine, "step": step, "stepStartedAt": since, "steps": mine["steps"] | {run.step: run.status}}
+        moved = {**moved, "active": [entry if a["runId"] == run.run_id else a for a in dag["active"]]}
+    if latest:
+        moved = {**moved, "steps": [_restated(s, run.status) if s["name"] == run.step else s for s in dag["steps"]]}
+    return moved
 
 
 class DaguRuns:
@@ -320,7 +352,11 @@ class DaguRuns:
                 self._sink.set_dags(list(self._dags.values()), None)
                 return
         others = [a for a in dag.get("active", []) if a["runId"] != run.run_id]
-        if run.phase == "start":
+        if run.step:
+            moved = _stepped(dag, run)
+            if moved is None:
+                return  # a step of a run that is neither in flight nor the one drawn
+        elif run.phase == "start":
             begun = {
                 "runId": run.run_id,
                 "status": "running",
