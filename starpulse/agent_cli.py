@@ -587,6 +587,7 @@ def _manifest(parser: argparse.ArgumentParser) -> dict[str, Any]:
                 "exit_codes": leaf.get_default("exit_codes"),
             }
             for verb, leaf in _leaves(parser)
+            if leaf.get_default("run")  # `serve` and `emit` are listed for `--help` but read no running server
         ],
     }
 
@@ -599,6 +600,9 @@ def _parser() -> argparse.ArgumentParser:
         epilog="`starpulse serve` runs the server and `starpulse emit` pushes a workflow run; each has its own --help.",
     )
     verbs = parser.add_subparsers(dest="command", required=True, metavar="command")
+    # Listed so `--help` shows how to start the server; `__main__` hands these words to their own parsers before this one.
+    verbs.add_parser("serve", help="run the flow view's server", add_help=False)
+    verbs.add_parser("emit", help="push a workflow run onto the runs stream", add_help=False)
 
     def leaf(
         group: argparse._SubParsersAction,

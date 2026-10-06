@@ -25,6 +25,24 @@ def test_help_names_both_subcommands(capsys: pytest.CaptureFixture[str]) -> None
 
 
 @pytest.mark.parametrize("command", ["serve", "emit"])
+def test_help_lists_the_subcommand_with_a_description(capsys: pytest.CaptureFixture[str], command: str) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+
+    listed = capsys.readouterr().out.split("\n\n`starpulse serve`")[0]
+    assert any(line.split()[:1] == [command] and len(line.split()) > 1 for line in listed.splitlines())
+
+
+def test_the_manifest_leaves_out_serve_and_emit_because_they_do_not_read_a_running_server(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["help", "--agent"]) == 0
+
+    verbs = {v["verb"] for v in json.loads(capsys.readouterr().out)["verbs"]}
+    assert not {"serve", "emit"} & verbs
+
+
+@pytest.mark.parametrize("command", ["serve", "emit"])
 def test_a_subcommand_gets_the_rest_of_the_line(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
     seen: list[list[str]] = []
     monkeypatch.setitem(cli.COMMANDS, command, lambda argv: seen.append(argv) or 3)
