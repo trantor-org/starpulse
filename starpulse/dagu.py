@@ -112,11 +112,11 @@ def _get(url: str) -> dict:
         return json.load(resp)
 
 
-def _steps(base_url: str, name: str) -> list[dict]:
-    """A DAG's steps, each with the steps it waits on, its status in the latest run and its declared kind."""
+def _steps(base_url: str, name: str) -> tuple[str, list[dict]]:
+    """The queue a DAG declares, and its steps: each with the steps it waits on, its status in the latest run and its declared kind."""
     detail = _get(f"{base_url}/api/v1/dags/{name}")
     ran = {n["step"]["name"]: n["statusLabel"] for n in (detail.get("latestDAGRun") or {}).get("nodes", [])}
-    return [
+    return detail["dag"].get("queue", ""), [
         {
             "name": s["name"],
             "depends": s.get("depends", []),
@@ -135,19 +135,70 @@ def _kind(step: dict) -> str | None:
     return description.removeprefix("kind: ").strip() or None
 
 
-def dags(base_url: str, only: Collection[str] | None = None) -> list[dict]:
-    """Every DAG on a Dagu instance, or just those in `only`, with its latest run and its step graph.
+#: Dagu's numeric run statuses, as `/dag-runs?status=` filters by them.
+_RUNNING, _QUEUED = 1, 5
 
-    A DAG whose detail cannot be read is listed without steps rather than failing the listing.
+
+def pools(base_url: str) -> list[dict]:
+    """Every Dagu queue as a pool: its cap, and the runs it holds and has waiting; none when Dagu reports no queues."""
+    try:
+        queues = _get(f"{base_url}/api/v1/queues").get("queues", [])
+    except OSError:
+        return []
+    return [
+        {"name": q["name"], "cap": q["maxConcurrency"], "running": q["runningCount"], "queued": q["queuedCount"]}
+        for q in queues
+    ]
+
+
+def _in_flight(base_url: str) -> dict[str, list[dict]]:
+    """Each DAG's running runs, longest-running first, then its queued ones, oldest first; none when Dagu cannot list them."""
+    out: dict[str, list[dict]] = {}
+    try:
+        for status, begun in ((_RUNNING, "startedAt"), (_QUEUED, "queuedAt")):
+            listed = _get(f"{base_url}/api/v1/dag-runs?status={status}&perPage=200").get("dagRuns", [])
+            for run in sorted(listed, key=lambda r: r.get(begun, "")):
+                out.setdefault(run["name"], []).append(run)
+    except OSError:
+        return {}
+    return out
+
+
+def _active(base_url: str, run: dict, steps: list[dict]) -> dict | None:
+    """One running or queued run with its steps and the step it entered last; None once Dagu no longer has it."""
+    try:
+        nodes = _get(f"{base_url}/api/v1/dag-runs/{run['name']}/{run['dagRunId']}")["dagRunDetails"].get("nodes", [])
+    except OSError:  # it finished and was removed between the listing and this read
+        return None
+    entered = max(
+        (n for n in nodes if status_of(n["statusLabel"]) == "running"), key=lambda n: n.get("startedAt", ""), default={}
+    )
+    return {
+        "runId": run["dagRunId"],
+        **_reported(run["statusLabel"]),
+        "startedAt": run.get("startedAt") or run.get("queuedAt") or "",
+        "step": entered.get("step", {}).get("name", ""),
+        "stepStartedAt": entered.get("startedAt", ""),
+        "steps": {s["name"]: "not_started" for s in steps}
+        | {n["step"]["name"]: status_of(n["statusLabel"]) for n in nodes},
+    }
+
+
+def dags(base_url: str, only: Collection[str] | None = None) -> list[dict]:
+    """Every DAG on a Dagu instance, or just those in `only`, with its latest run, its step graph and its pool.
+
+    A full listing also reads each DAG's active runs; the listing of `only` leaves them out, as it serves a step read
+    after one run entry. A DAG whose detail cannot be read is listed without steps or pool rather than failing the listing.
     """
+    in_flight = _in_flight(base_url) if only is None else {}
     out = []
     for d in _get(f"{base_url}/api/v1/dags?perPage=200").get("dags", []):
         if only is not None and d["fileName"] not in only:
             continue
         try:
-            steps = _steps(base_url, d["fileName"])
+            pool, steps = _steps(base_url, d["fileName"])
         except OSError:
-            steps = []
+            pool, steps = "", []
         run = d.get("latestDAGRun") or {}
         out.append(
             {
@@ -157,6 +208,8 @@ def dags(base_url: str, only: Collection[str] | None = None) -> list[dict]:
                 "startedAt": run.get("startedAt") or run.get("queuedAt") or "",
                 "finishedAt": run.get("finishedAt", ""),
                 "steps": steps,
+                "active": [a for r in in_flight.get(d["fileName"], []) if (a := _active(base_url, r, steps))],
+                "pool": pool,
             }
         )
     return out
@@ -190,15 +243,23 @@ def _iso(at: float) -> str:
 class DaguRuns:
     """The DAGs as the page draws them, from `fetch` (one Dagu listing, of the named DAGs or all) and then run entries.
 
+    `pools` reads the instance's concurrency pools alongside each full listing.
+
     Entries and reconnects arrive on the consumer thread and the periodic reconcile runs on its own, so the
     DAGs are held under a lock; the sink holds the page-facing state and its own.
     """
 
     def __init__(
-        self, sink: RunsSink, fetch: Callable[[Collection[str] | None], list], *, clock: Callable[[], float] = time.time
+        self,
+        sink: RunsSink,
+        fetch: Callable[[Collection[str] | None], list],
+        pools: Callable[[], list[dict]] = list,
+        *,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._sink = sink
         self._fetch = fetch
+        self._pools = pools
         self._clock = clock
         self._lock = threading.RLock()
         self._dags: dict[str, dict[str, Any]] = {}
@@ -215,6 +276,7 @@ class DaguRuns:
         listed_at = self._clock()
         try:
             listed = self._fetch(None)
+            pools = self._pools()
         except OSError as exc:
             self._sink.set_dags(None, str(exc))
             return
@@ -229,7 +291,7 @@ class DaguRuns:
                 dag["name"]: dag if self._streamed.get(dag["name"], -math.inf) < listed_at else self._dags[dag["name"]]
                 for dag in listed
             }
-            self._sink.set_dags(list(self._dags.values()), None)
+            self._sink.set_dags(list(self._dags.values()), None, pools)
 
     def _listed(self, name: str) -> dict | None:
         """`name` as Dagu lists it now, or None when Dagu lacks it or cannot be read; the next reconcile corrects either."""
@@ -257,12 +319,22 @@ class DaguRuns:
             if run.at < listed_at:  # the entry is already in what Dagu just listed
                 self._sink.set_dags(list(self._dags.values()), None)
                 return
+        others = [a for a in dag.get("active", []) if a["runId"] != run.run_id]
         if run.phase == "start":
+            begun = {
+                "runId": run.run_id,
+                "status": "running",
+                "startedAt": _iso(run.at),
+                "step": "",
+                "stepStartedAt": "",
+                "steps": {step["name"]: "not_started" for step in dag["steps"]},
+            }
             moved = _restated(dag, "running") | {
                 "runId": run.run_id,
                 "startedAt": _iso(run.at),
                 "finishedAt": "",
                 "steps": [_restated(step, "not_started") for step in dag["steps"]],
+                "active": [*others, begun],
             }
         elif run.run_id == dag["runId"]:
             # Dagu is still inside the run's exit handler, so only its steps are final: read them now.
@@ -270,7 +342,10 @@ class DaguRuns:
             moved = _restated(dag, run.status) | {
                 "finishedAt": _iso(run.at),
                 "steps": listed["steps"] if listed else dag["steps"],
+                "active": others,
             }
+        elif len(others) < len(dag.get("active", [])):
+            moved = {**dag, "active": others}  # the end of a run no longer the one drawn, still listed as active
         else:
             return  # the end of a run that is no longer the one drawn
         self._dags[run.dag] = moved
@@ -296,7 +371,7 @@ def follow(url: str, runs: RunsSink, log: EventLog, *, interval: float = DEFAULT
     The listing comes first so an entry stamped before it, already in it, is dropped (`DaguRuns`); it repeats every
     `RECONCILE_INTERVAL` seconds, so runs show with no `handler_on` hooks publishing them.
     """
-    reader = DaguRuns(runs, lambda only=None: dags(url, only))
+    reader = DaguRuns(runs, lambda only=None: dags(url, only), lambda: pools(url))
 
     def read() -> None:
         reader.reconcile()

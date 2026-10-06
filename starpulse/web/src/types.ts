@@ -102,6 +102,27 @@ export interface DagStep {
   kind?: string | null;
 }
 
+/** One running or queued run of a DAG: the step it is in and when it entered it, and every step's status in this run. */
+export interface ActiveRun {
+  runId: string;
+  status: RunStatus;
+  /** The engine's own status when it differs from `status`. */
+  raw?: string | null;
+  startedAt: string;
+  /** The step the run is in; empty when it is in none. */
+  step: string;
+  stepStartedAt: string;
+  steps: Record<string, RunStatus>;
+}
+
+/** A concurrency pool: how many runs it admits at once, and how many it runs and holds waiting. */
+export interface Pool {
+  name: string;
+  cap: number;
+  running: number;
+  queued: number;
+}
+
 export interface Dag {
   name: string;
   status: RunStatus;
@@ -111,6 +132,10 @@ export interface Dag {
   startedAt: string;
   finishedAt: string;
   steps: DagStep[];
+  /** Every running or queued run of the DAG, including concurrent ones. */
+  active?: ActiveRun[];
+  /** The name of the `Pool` the DAG runs on; empty when its adapter reports none. */
+  pool?: string;
 }
 
 /** A domain's DAGs, and whether each is declared safe to run from the page. */
@@ -144,7 +169,7 @@ export interface Cue {
 export type Delta =
   | { kind: "task"; id: string; agent: RawAgent | null; settled: string | null }
   | { kind: "move"; flow: string; id: string; agent: RawAgent }
-  | { kind: "dags"; dags: Dag[]; error: string | null }
+  | { kind: "dags"; dags: Dag[]; pools?: Pool[]; error: string | null }
   | { kind: "pulls"; pulls: Record<string, Pull[]> }
   | { kind: "claim"; task: string; reason: string; at: number };
 
@@ -160,6 +185,8 @@ export interface Snapshot {
   /** A Backlog.md project found beside the config while the default board is shown, and how to switch to it. */
   hint?: string | null;
   dags: Dag[];
+  /** The concurrency pools the DAGs run on. */
+  pools?: Pool[];
   flows: FlowSnapshot[];
   /** Each open task's pull requests, by task id. */
   pulls?: Record<string, Pull[]>;

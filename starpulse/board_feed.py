@@ -94,6 +94,7 @@ class BoardFeed:
         #: Every placed task's assignee, a settled one's included, so a machine still drawing it keeps its colour.
         self._assignees: dict[str, str] = {}
         self._dags: dict[str, list] = {}
+        self._pools: dict[str, list] = {}
         self._runs_errors: dict[str, str] = {}
         self._pulls: dict[str, list[dict]] = {}
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
@@ -205,27 +206,41 @@ class BoardFeed:
         """Where the runs adapter instance `instance` publishes its workflows."""
         return InstanceRuns(self, instance)
 
-    def set_dags(self, instance: str, dags: list | None, error: str | None) -> None:
-        """Take the latest workflows of `instance` (None keeps its last) and publish them when they differ from before."""
+    def set_dags(self, instance: str, dags: list | None, error: str | None, pools: list | None = None) -> None:
+        """Take the latest workflows and concurrency pools of `instance` (None keeps the last of each) and publish
+        them when they differ from before; an empty `pools` says the instance now reports none."""
         with self._lock:
             dags = self._dags.get(instance, []) if dags is None else dags
-            if (dags, error) == (self._dags.get(instance), self._runs_errors.get(instance)):
+            pools = self._pools.get(instance, []) if pools is None else pools
+            if (dags, error, pools) == (
+                self._dags.get(instance),
+                self._runs_errors.get(instance),
+                self._pools.get(instance, []),
+            ):
                 return
             self._dags[instance] = dags
+            self._pools[instance] = pools
             if error is None:
                 self._runs_errors.pop(instance, None)
             else:
                 self._runs_errors[instance] = error
-            self._publish("dags", {"dags": self._workflows(), "error": self._error()})
+            self._publish("dags", {"dags": self._workflows(), "pools": self._drawn_pools(), "error": self._error()})
 
     def _workflows(self) -> list[dict]:
         """Every instance's workflows, each named `<instance>/<workflow>`; a pushed one an adapter lists is drawn by that adapter."""
         listed = {dag["name"] for instance, dags in self._dags.items() if instance != PUSHED_INSTANCE for dag in dags}
         return [
             {**dag, "name": f"{instance}/{dag['name']}"}
+            | ({"pool": f"{instance}/{dag['pool']}"} if dag.get("pool") else {})
             for instance, dags in self._dags.items()
             for dag in dags
             if instance != PUSHED_INSTANCE or dag["name"] not in listed
+        ]
+
+    def _drawn_pools(self) -> list[dict]:
+        """Every instance's concurrency pools, each named `<instance>/<pool>` like the `pool` a workflow names."""
+        return [
+            {**pool, "name": f"{instance}/{pool['name']}"} for instance, pools in self._pools.items() for pool in pools
         ]
 
     def _error(self) -> str | None:
@@ -249,7 +264,7 @@ class BoardFeed:
             self._subscribers.remove(subscriber)
 
     def snapshot(self) -> dict[str, Any]:
-        """What the page draws: every machine with its tasks, the workflow declarations, and the workflows."""
+        """What the page draws: every machine with its tasks, the workflow declarations, the workflows and their pools."""
         with self._lock:
             since = time.time() - self._window_s if self._window_s is not None else None
             return {
@@ -268,6 +283,7 @@ class BoardFeed:
                     ),
                 ],
                 "dags": self._workflows(),
+                "pools": self._drawn_pools(),
                 "pulls": self._pulls,
                 "claims": dict(self._claims),
                 "capabilities": dict(self._capabilities),
@@ -287,8 +303,8 @@ class InstanceRuns:
         self._feed = feed
         self._instance = instance
 
-    def set_dags(self, dags: list | None, error: str | None) -> None:
-        self._feed.set_dags(self._instance, dags, error)
+    def set_dags(self, dags: list | None, error: str | None, pools: list | None = None) -> None:
+        self._feed.set_dags(self._instance, dags, error, pools)
 
 
 class Followed(Protocol):

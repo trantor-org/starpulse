@@ -36,6 +36,14 @@ TITLES = [
 ]
 
 
+def _demo_dag(index: int, dag: dict) -> dict:
+    """`dag` under run ids that name no real run, its active runs numbered after it."""
+    demo = {**dag, "runId": f"demo-{index}"}
+    if "active" in dag:
+        demo["active"] = [{**run, "runId": f"demo-{index}-{n}"} for n, run in enumerate(dag["active"])]
+    return demo
+
+
 def capture(server: str) -> dict:
     """The snapshot the server's event stream opens with."""
     with urllib.request.urlopen(f"{server}/api/events", timeout=30) as stream:
@@ -125,7 +133,7 @@ def scrub(live: dict) -> dict:
         "boardUrl": None,
         "hint": None,
         "domains": [{**d, "dags": [{"name": x["name"], "runSafe": False} for x in d["dags"]]} for d in live["domains"]],
-        "dags": [{**d, "runId": f"demo-{i}"} for i, d in enumerate(live["dags"])],
+        "dags": [_demo_dag(i, d) for i, d in enumerate(live["dags"])],
         "flows": flows,
         "pulls": {
             names[t]: [

@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "description": "One concurrency pool: the cap on the runs that may execute at once, and the runs holding or awaiting it.",
+  "properties": {
+    "name": {
+      "description": "The pool's name, unique on its scheduler; a DAG's `pool` names it.",
+      "title": "Name",
+      "type": "string"
+    },
+    "cap": {
+      "description": "The most runs the pool lets execute at once.",
+      "minimum": 0,
+      "title": "Cap",
+      "type": "integer"
+    },
+    "running": {
+      "description": "The runs executing on the pool now.",
+      "minimum": 0,
+      "title": "Running",
+      "type": "integer"
+    },
+    "queued": {
+      "description": "The runs waiting for the pool to have room.",
+      "minimum": 0,
+      "title": "Queued",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "name",
+    "cap",
+    "running",
+    "queued"
+  ],
+  "title": "Pool",
+  "type": "object"
+}

@@ -1,5 +1,85 @@
 {
   "$defs": {
+    "ActiveRun": {
+      "additionalProperties": false,
+      "description": "One run of a DAG that is running or queued now.",
+      "properties": {
+        "runId": {
+          "description": "The run's id.",
+          "title": "Runid",
+          "type": "string"
+        },
+        "status": {
+          "description": "The run's status: `running` or `queued`.",
+          "enum": [
+            "not_started",
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "aborted",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The engine's own status for the run when it differs from `status`, shown as is.",
+          "title": "Raw"
+        },
+        "startedAt": {
+          "description": "When the run started, or was queued while it waits, ISO 8601 UTC (`2026-10-02T17:00:00Z`).",
+          "title": "Startedat",
+          "type": "string"
+        },
+        "step": {
+          "description": "The step the run entered last among those running; empty while it is queued or between steps.",
+          "title": "Step",
+          "type": "string"
+        },
+        "stepStartedAt": {
+          "description": "When the run entered `step`, ISO 8601 UTC; empty when `step` is.",
+          "title": "Stepstartedat",
+          "type": "string"
+        },
+        "steps": {
+          "additionalProperties": {
+            "enum": [
+              "not_started",
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "aborted",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "description": "Each of the DAG's steps by name with its status in this run.",
+          "title": "Steps",
+          "type": "object"
+        }
+      },
+      "required": [
+        "runId",
+        "status",
+        "startedAt",
+        "step",
+        "stepStartedAt",
+        "steps"
+      ],
+      "title": "ActiveRun",
+      "type": "object"
+    },
     "Step": {
       "additionalProperties": false,
       "description": "One step of a DAG in its latest run.",
@@ -124,6 +204,21 @@
       },
       "title": "Steps",
       "type": "array"
+    },
+    "active": {
+      "default": [],
+      "description": "Every run of the DAG that is running or queued now, longest-running first; empty when none is or the scheduler cannot list them.",
+      "items": {
+        "$ref": "#/$defs/ActiveRun"
+      },
+      "title": "Active",
+      "type": "array"
+    },
+    "pool": {
+      "default": "",
+      "description": "The name of the concurrency `Pool` the DAG runs on; empty when it names none.",
+      "title": "Pool",
+      "type": "string"
     }
   },
   "required": [

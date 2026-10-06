@@ -35,10 +35,12 @@ PUBLIC: dict[str, set[str]] = {
     "starpulse.contracts": {
         "CONTRACTS",
         "SCHEMAS",
+        "ActiveRun",
         "BoardTask",
         "Dag",
         "MachineEvent",
         "Move",
+        "Pool",
         "RunStatus",
         "RunsSink",
         "StartFailedError",

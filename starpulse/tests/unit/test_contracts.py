@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from starpulse import contracts
 from starpulse.board_feed import BoardFeed
-from starpulse.contracts import CONTRACTS, SCHEMAS, BoardTask, Dag, MachineEvent, Step, TaskKeys
+from starpulse.contracts import CONTRACTS, SCHEMAS, ActiveRun, BoardTask, Dag, MachineEvent, Pool, Step, TaskKeys
 from starpulse.machine_tasks import MachineTasks
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_machine_tasks import _agents, _entry
@@ -53,7 +53,7 @@ def test_a_task_outside_the_declared_scheme_is_not_placed() -> None:
     assert _agents(feed, "in-progress") == []
 
 
-@pytest.mark.parametrize("model", [BoardTask, MachineEvent, Dag, Step])
+@pytest.mark.parametrize("model", [BoardTask, MachineEvent, Dag, Step, ActiveRun, Pool])
 def test_every_field_of_a_contract_says_what_it_holds(model: type[BaseModel]) -> None:
     assert model.model_fields
     assert [name for name, field in model.model_fields.items() if not field.description] == []
@@ -91,6 +91,62 @@ def test_a_dag_is_read_under_the_names_the_page_draws() -> None:
 
     assert dag.model_dump(by_alias=True)["runId"] == "r1"
     assert jsonschema.Draft202012Validator(SCHEMAS["runs"]).is_valid(dag.model_dump(by_alias=True, mode="json"))
+
+
+DAG = {
+    "name": "deliver",
+    "status": "running",
+    "runId": "r2",
+    "startedAt": "2026-10-02T10:05:00Z",
+    "finishedAt": "",
+    "steps": [{"name": "lint", "depends": [], "status": "running", "kind": None}],
+}
+ACTIVE = {
+    "runId": "r2",
+    "status": "running",
+    "startedAt": "2026-10-02T10:05:00Z",
+    "step": "lint",
+    "stepStartedAt": "2026-10-02T10:05:01Z",
+    "steps": {"lint": "running", "push": "not_started"},
+}
+
+
+def test_a_dag_that_reports_no_active_runs_or_pool_has_none() -> None:
+    dag = Dag.model_validate(DAG)
+
+    assert (dag.active, dag.pool) == ((), "")
+
+
+def test_a_dag_carries_one_record_per_active_run_and_the_pool_it_runs_on() -> None:
+    dag = Dag.model_validate(
+        {**DAG, "pool": "deliver", "active": [ACTIVE, {**ACTIVE, "runId": "r3", "status": "queued", "step": ""}]}
+    )
+    dumped = dag.model_dump(by_alias=True, mode="json")
+
+    assert [(a.run_id, a.status, a.step, a.step_started_at) for a in dag.active] == [
+        ("r2", "running", "lint", "2026-10-02T10:05:01Z"),
+        ("r3", "queued", "", "2026-10-02T10:05:01Z"),
+    ]
+    assert dag.active[0].steps == {"lint": "running", "push": "not_started"}
+    assert dumped["pool"] == "deliver"
+    assert jsonschema.Draft202012Validator(SCHEMAS["runs"]).is_valid(dumped)
+
+
+def test_an_active_run_outside_the_status_set_is_refused() -> None:
+    assert ActiveRun.model_validate(ACTIVE).status == "running"
+    with pytest.raises(ValidationError):
+        ActiveRun.model_validate({**ACTIVE, "status": "paused"})
+    with pytest.raises(ValidationError):
+        ActiveRun.model_validate({**ACTIVE, "steps": {"lint": "paused"}})
+
+
+def test_a_pool_is_a_name_with_its_capacity_and_load() -> None:
+    pool = Pool.model_validate({"name": "deliver", "cap": 32, "running": 5, "queued": 1})
+
+    assert (pool.name, pool.cap, pool.running, pool.queued) == ("deliver", 32, 5, 1)
+    assert jsonschema.Draft202012Validator(SCHEMAS["pools"]).is_valid(pool.model_dump(mode="json"))
+    with pytest.raises(ValidationError):
+        Pool.model_validate({"name": "deliver", "cap": 32, "running": -1, "queued": 0})
 
 
 def test_a_machine_event_an_adapter_wrote_places_its_task_without_a_stream_entry() -> None:

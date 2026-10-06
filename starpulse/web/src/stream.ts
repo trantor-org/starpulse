@@ -11,7 +11,7 @@ const CLOSED = 2;
 
 /** `snap` with one delta folded in; `snap` itself is left as it was. */
 export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
-  if (delta.kind === "dags") return { ...snap, dags: delta.dags, error: delta.error };
+  if (delta.kind === "dags") return { ...snap, dags: delta.dags, pools: delta.pools ?? snap.pools, error: delta.error };
   if (delta.kind === "pulls") return { ...snap, pulls: delta.pulls };
   if (delta.kind === "claim") return { ...snap, claims: { ...snap.claims, [delta.task]: { reason: delta.reason, at: delta.at } } };
   if (delta.kind === "move") {

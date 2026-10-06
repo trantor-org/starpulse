@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoServer } from "./demo";
 import { RETRY_MS, applyDelta, openStream } from "./stream";
-import type { Dag, RawAgent, Snapshot } from "./types";
+import type { Dag, Pool, RawAgent, Snapshot } from "./types";
 
 const agent = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "" });
 const board = (agents: RawAgent[], extra: Partial<Snapshot> = {}): Snapshot => ({
@@ -50,6 +50,17 @@ describe("applyDelta", () => {
     const next = applyDelta(s, { kind: "dags", dags, error: "ci: down" });
 
     expect([next.dags, next.error, ids(next)]).toEqual([dags, "ci: down", ["PROJ-1:to_do"]]);
+  });
+
+  it("takes the pools a runs delta carries, and keeps the last ones from a delta that carries none", () => {
+    const lane: Pool = { name: "ci/deliver", cap: 2, running: 1, queued: 1 };
+    const s = board([], { pools: [lane] });
+
+    const emptied = applyDelta(s, { kind: "dags", dags: [], pools: [], error: null });
+    const kept = applyDelta(s, { kind: "dags", dags: [], error: null });
+    const replaced = applyDelta(s, { kind: "dags", dags: [], pools: [{ ...lane, running: 2 }], error: null });
+
+    expect([emptied.pools, kept.pools, replaced.pools]).toEqual([[], [lane], [{ ...lane, running: 2 }]]);
   });
 
   it("replaces the pull requests wholesale with the server's latest read", () => {

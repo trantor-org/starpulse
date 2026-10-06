@@ -8,11 +8,12 @@ GET /              the page, built by `pnpm --filter flow-view build` into stati
 GET /board, /flow/<name>, /runs
                    the same page; it opens the level that draws that graph, then rewrites the address to /
 GET /?demo         the page driven by synthetic agents, for a look without live data
-GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, flows: [{name,
+GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, pools, flows: [{name,
                    machine, agents}], pulls, settled, error, now}: every machine with its tasks, the
-                   workflow declarations and the workflows, each named `<instance>/<workflow>`), then
+                   workflow declarations, the workflows, each named `<instance>/<workflow>`, and the
+                   concurrency pools they run on, each named `<instance>/<pool>`), then
                    a `task` delta ({id, agent, settled}) per Board task change, a `move` delta ({flow, id, agent}) per task a machine placed, a
-                   `dags` delta ({dags, error}) per runs change, a `pulls` delta ({pulls}) per
+                   `dags` delta ({dags, pools, error}) per runs change, a `pulls` delta ({pulls}) per
                    change to a task's pull requests and a `claim` delta ({task, reason, at}) per
                    refused agent claim the board adapter reports, with a `: ping` comment every 15 s.
                    `pulls` maps each open task that cites a pull request to [{number, url, checks
