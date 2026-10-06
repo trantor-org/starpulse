@@ -242,3 +242,15 @@ def test_pushed_runs_fed_from_the_event_log_draw_the_workflow_with_its_learned_s
     stop.set()
 
     assert drawn(feed)["status"] == "running"
+
+
+def test_an_entry_from_an_instance_is_its_own_workflow_beside_a_pushed_one_of_the_same_name() -> None:
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))
+
+    runs.handle_entry("1-0", fields("start", "running"))
+    runs.handle_entry("2-0", fields("start", "failed", run="c1", instance="cron"))
+
+    assert drawn(feed)["runId"] == "r1"
+    assert drawn(feed, "cron/nightly")["runId"] == "c1"
+    assert drawn(feed, "cron/nightly")["status"] == "failed"

@@ -127,7 +127,7 @@ def test_an_unknown_instance_key_is_refused_by_name_beside_the_known_ones(tmp_pa
     text = '[[runs]]\nname = "ci"\ntype = "dagu"\nurl = "http://ci.test"\nrunsafe = []\nzeta = 1\n'
 
     assert _refusal(tmp_path, text) == (
-        "runs instance ci: unknown key(s) runsafe, zeta; known: domains, name, run_safe, type, url"
+        "runs instance ci: unknown key(s) runsafe, zeta; known: domains, name, run_safe, token_env, type, url"
     )
 
 
@@ -280,3 +280,31 @@ def test_a_session_start_address_that_is_not_text_is_refused(tmp_path: Path) -> 
 )
 def test_a_board_or_database_setting_of_the_wrong_shape_is_refused(tmp_path: Path, text: str, refusal: str) -> None:
     assert _refusal(tmp_path, text) == refusal
+
+
+def test_an_instance_names_the_environment_variable_that_holds_its_ingest_token(tmp_path: Path) -> None:
+    text = '[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://cron.test"\ntoken_env = "CRON_INGEST_TOKEN"\n'
+
+    (cron,) = load(_write(tmp_path, text)).runs
+
+    assert cron.token_env == "CRON_INGEST_TOKEN"
+
+
+def test_an_instance_with_no_token_env_takes_no_pushed_events(tmp_path: Path) -> None:
+    (prod, _) = load(_write(tmp_path, _TWO_INSTANCES)).runs
+
+    assert prod.token_env is None
+
+
+@pytest.mark.parametrize("value", ["1", '""', '"has space"', '"9LIVES"', "[]"])
+def test_a_token_env_that_is_not_an_environment_variable_name_is_refused(tmp_path: Path, value: str) -> None:
+    text = f'[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://cron.test"\ntoken_env = {value}\n'
+
+    assert _refusal(tmp_path, text) == f"runs instance cron: token_env must be the name of an environment variable"
+
+
+def test_two_instances_cannot_share_a_token_env(tmp_path: Path) -> None:
+    one = '[[runs]]\nname = "{}"\ntype = "dagu"\nurl = "http://x.test"\ntoken_env = "SHARED"\n'
+    text = one.format("a") + one.format("b")
+
+    assert _refusal(tmp_path, text) == "runs instances a and b share token_env SHARED; each needs its own token"

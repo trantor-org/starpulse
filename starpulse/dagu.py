@@ -339,7 +339,7 @@ class DaguRuns:
 
     def _apply(self, fields: dict) -> None:
         run = _decode(fields)
-        if run is None or run.at < self._listed_at:
+        if run is None or fields.get("instance") or run.at < self._listed_at:  # an ingested entry is another instance's
             return
         dag = self._dags.get(run.dag)
         if dag is None:  # a DAG file added since the listing

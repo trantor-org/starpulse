@@ -6,7 +6,9 @@ run did not happen.
 
 Each entry carries `event_id` plus these fields (absent when empty): `time` (epoch seconds), `phase`
 (`start` or `end`), `workflow`, `run_id`, `status` (one of `contracts.RunStatus`), and, for a step's entry,
-`step` (its name) and `depends` (a JSON list of the step names it waits on).
+`step` (its name) and `depends` (a JSON list of the step names it waits on). An entry the HTTP ingest wrote also
+carries `instance`, the runs adapter instance whose token pushed it: it is that instance's, so another instance's
+reader ignores it.
 """
 
 from __future__ import annotations
@@ -26,8 +28,9 @@ def entry(
     now: float,
     step: str | None = None,
     depends: list[str] | None = None,
+    instance: str | None = None,
 ) -> dict[str, Any]:
-    """One stream entry; `step` and `depends` make it a step's rather than the run's."""
+    """One stream entry; `step` and `depends` make it a step's rather than the run's, `instance` an ingested one's."""
     return {
         "time": now,
         "phase": phase,
@@ -36,4 +39,5 @@ def entry(
         "status": status,
         **({"step": step} if step else {}),
         **({"depends": depends} if depends else {}),
+        **({"instance": instance} if instance else {}),
     }

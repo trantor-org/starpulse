@@ -68,6 +68,20 @@ starpulse emit end   --workflow nightly --run 2026-10-03 --status succeeded --st
 A workflow no adapter lists is drawn from the step graph its `emit` calls add up to, and that graph is kept in
 the history store across restarts.
 
+A producer on another host, or an engine that can only send webhooks (Cronicle, Rundeck, a GitHub `workflow_run`
+relay), posts the same event to the server instead. Name an environment variable for the instance's token in the
+config (`token_env`, below), set it where `serve` runs, and send the token as a bearer:
+
+```sh
+curl -X POST http://localhost:8766/api/runs/events -H "Authorization: Bearer $CRON_INGEST_TOKEN" \
+  -d '{"phase": "start", "workflow": "cron/nightly", "run_id": "2026-10-03", "status": "running"}'
+```
+
+The body takes `emit`'s fields as JSON (`phase`, `workflow`, `run_id`, `status`, and optionally `time`, `step` and
+`depends`) with the workflow named `<instance>/<workflow>`. A token pushes only its own instance's workflows: a
+missing or wrong token answers 401, another instance's workflow 403, an event the contract does not allow 400, and
+none of them writes anything. The page draws an accepted event as `pushed/<instance>/<workflow>`.
+
 ### Work the board from an agent
 
 ```sh
@@ -210,6 +224,8 @@ type = "dagu"
 url = "http://dagu.example.com:8080"
 run_safe = ["nightly"]                   # the workflows the page's Run now may start
 domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
+token_env = "DAGU_INGEST_TOKEN"          # the environment variable holding the token `POST /api/runs/events` accepts for
+                                         # this instance; the token never goes in this file; omit the key and the instance takes no pushed events
 ```
 
 ## Write a board adapter
