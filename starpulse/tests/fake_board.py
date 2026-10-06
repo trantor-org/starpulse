@@ -28,7 +28,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         DRAWN.append(list(workflows))
         return {"board": machine}
 
-    def start(feed, group: str) -> None:
+    def start(feed, group: str, log) -> None:
         feed.put(BoardTask(id="FAKE-1", title="t", lane=lanes[0]))
         feed.put(BoardTask(id="other-1", title="t", lane=lanes[0]))
 

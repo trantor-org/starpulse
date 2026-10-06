@@ -20,6 +20,7 @@ from starpulse.snapshot import Qualify
 
 if TYPE_CHECKING:
     from starpulse.board_feed import BoardFeed
+    from starpulse.event_log import EventLog
     from starpulse.history import History
 
 __all__ = [
@@ -96,9 +97,10 @@ class Board:
     machines: Callable[[Qualify, Collection[str]], dict[str, dict]]
     """Every machine the page draws, the Board's as `board`, naming workflows as `qualify` does; the collection is
     the `<instance>/<workflow>` names the config lists, for an adapter that refuses a writer naming another."""
-    start: Callable[[BoardFeed, str], None]
+    start: Callable[[BoardFeed, str, EventLog], None]
     """Begin placing the Board's tasks on the feed, on threads of the adapter's own; the text is a name unique to this
-    running view, for a stream consumer group."""
+    running view, and the log is the event log of the view's database, which an adapter that reads another system's
+    events appends them to (`board_feed.follow` reads a stream of it into the feed)."""
     keys: TaskKeys | None = None
     """The tracker's task key scheme; None places any key."""
     cues: Callable[[Qualify], Sequence[dict]] = _no_cues
@@ -122,7 +124,9 @@ class Board:
 
     def __post_init__(self) -> None:
         if self.edit is not None and self.read is None:
-            raise ValueError("a board that edits tasks must also read them: an edit is checked against the current record")
+            raise ValueError(
+                "a board that edits tasks must also read them: an edit is checked against the current record"
+            )
 
 
 def module_name(kind: str) -> str:

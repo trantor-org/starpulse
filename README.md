@@ -189,7 +189,7 @@ type = "native"
 # machine = "board.yaml" # as above
 
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
-# (it offers `start(url)` and `follow(url, runs, group)`); its workflows are drawn as `<name>/<workflow>`.
+# (it offers `start(url)` and `follow(url, runs, log)`); its workflows are drawn as `<name>/<workflow>`.
 [[runs]]
 name = "dagu"
 type = "dagu"

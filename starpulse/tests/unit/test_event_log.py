@@ -249,3 +249,29 @@ def test_run_keeps_polling_after_a_failed_poll_and_after_a_failing_handler(
     tail.run(handle, stop)
 
     assert seen == [1, 2]
+
+
+def test_last_is_the_newest_cursor_of_one_stream_and_none_when_it_has_no_rows(log: EventLog) -> None:
+    log.append("a", {"n": "1"})
+    newest = log.append("a", {"n": "2"})
+    log.append("b", {"n": "3"})
+
+    assert (log.last("a"), log.last("c")) == (newest, None)
+
+
+def test_run_reads_an_entry_again_when_its_handler_fails_with_a_transient_error(log: EventLog) -> None:
+    log.append("a", {"n": "1"})
+    log.append("a", {"n": "2"})
+    stop = threading.Event()
+    seen: list[int] = []
+
+    def handle(entry) -> None:
+        seen.append(entry.id)
+        if seen == [1, 2]:
+            raise OperationalError("insert", {}, Exception("database is locked"))
+        if len(seen) == 3:
+            stop.set()
+
+    Tail(log, "a", interval=0.01).run(handle, stop, transient=(OperationalError,))
+
+    assert seen == [1, 2, 2]

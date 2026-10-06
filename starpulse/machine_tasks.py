@@ -15,10 +15,8 @@ from collections.abc import Mapping
 
 from pydantic import ValidationError
 
-from starpulse import events as machine_events
 from starpulse.board_feed import BoardFeed, stream_id
 from starpulse.contracts import MachineEvent, TaskKeys
-from starpulse.streams import StreamConsumer
 
 #: How many of a task's latest steps travel with it, so a page that connected after several steps can still walk each one.
 TRAIL = 12
@@ -127,14 +125,3 @@ class MachineTasks:
         except ValidationError:
             return
         self.put(event)
-
-
-def build_consumer(tasks: MachineTasks, group: str) -> StreamConsumer:
-    """The `machine:events` reader for `tasks`, in its own group so each running view sees every entry."""
-    return StreamConsumer.from_env(
-        machine_events.REDIS_ENV_PREFIX,
-        stream=machine_events.STREAM,
-        group=group,
-        consumer=group,
-        handler=tasks.handle_entry,
-    )

@@ -175,7 +175,7 @@ class Dag(_Contract):
 
 
 class RunsSink(Protocol):
-    """Where a runs adapter's `follow(url, runs, group)` publishes the workflows of its one instance, and says when it cannot read them."""
+    """Where a runs adapter's `follow(url, runs, log)` publishes the workflows of its one instance, and says when it cannot read them."""
 
     def set_dags(self, dags: list | None, error: str | None) -> None: ...
 

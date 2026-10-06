@@ -29,6 +29,7 @@ from starpulse.snapshot import Qualify, describe
 
 if TYPE_CHECKING:
     from starpulse.board_feed import BoardFeed
+    from starpulse.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +291,7 @@ def project_board(
     def machines(qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
         return {"board": drawn}
 
-    def start(feed: BoardFeed, group: str) -> None:
+    def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         UpstreamBacklog(root, feed.put, moves).start(interval)
 
     return Board(machines=machines, start=start, keys=upstream_keys(config.prefix), source=str(root), **writers(config))

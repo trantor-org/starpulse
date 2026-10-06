@@ -19,10 +19,10 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, NamedTuple
 
-from sqlalchemy import Engine, create_engine, delete, event, func, select
+from sqlalchemy import Engine, Table, create_engine, delete, event, func, select
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
@@ -79,7 +79,7 @@ class EventLog:
                     self._engine = _create_engine(self.url)
                 if self._engine.dialect.name == "sqlite":
                     event.listen(self._engine, "connect", _sqlite_pragmas)
-                _create_tables(self._engine)
+                create_tables(self._engine, [events, gaps])
                 self._ready = True
             assert self._engine is not None
             return self._engine
@@ -119,6 +119,11 @@ class EventLog:
         cutoff = (time.time() if now is None else now) - retention
         with self.engine.begin() as db:
             return db.execute(delete(events).where(events.c.at < cutoff)).rowcount
+
+    def last(self, stream: str) -> int | None:
+        """The cursor of `stream`'s newest row, or None when it has none; raises when the database does."""
+        with self.engine.connect() as db:
+            return db.execute(select(func.max(events.c.id)).where(events.c.stream == stream)).scalar()
 
     def record_gap(self, stream: str, after_id: int, before_id: int, lost: int) -> None:
         """Note that up to `lost` rows between `after_id` and `before_id` were pruned before `stream`'s reader read
@@ -188,11 +193,18 @@ class Tail:
         self.cursor = rows[-1].id if len(rows) == self.batch else head
         return [Entry(r.id, r.stream, r.event_id, r.fields, r.at) for r in rows]
 
-    def run(self, handle: Callable[[Entry], None], stop: threading.Event) -> None:
+    def run(
+        self,
+        handle: Callable[[Entry], None],
+        stop: threading.Event,
+        transient: tuple[type[BaseException], ...] = (),
+    ) -> None:
         """Poll until `stop` is set, passing each entry to `handle`.
 
         A poll that fails (the database went away) is retried after the interval. A handler that raises is logged
-        and the loop goes on with the next entry, so one bad event never stops a reader.
+        and the loop goes on with the next entry, so one bad event never stops a reader. A handler that raises one of
+        `transient` (its sink is down, the entry is not bad) is not skipped: the cursor goes back before that entry
+        and the poll after the interval reads it again.
         """
         while not stop.is_set():
             try:
@@ -201,12 +213,18 @@ class Tail:
                 logger.warning("Tail %s: poll failed, retrying in %ss: %s", self.stream, self.interval, exc)
                 stop.wait(self.interval)
                 continue
+            retry = False
             for entry in entries:
                 try:
                     handle(entry)
+                except transient as exc:
+                    logger.warning("Tail %s: sink down at entry %s, retrying: %s", self.stream, entry.id, exc)
+                    self.cursor = entry.id - 1
+                    retry = True
+                    break
                 except Exception:  # a reader's bug must not stop the reader
                     logger.exception("Tail %s: handler failed on entry %s", self.stream, entry.id)
-            if len(entries) < self.batch:
+            if retry or len(entries) < self.batch:
                 stop.wait(self.interval)
 
 
@@ -216,18 +234,19 @@ def _create_engine(url: str) -> Engine:
     return create_engine(url)
 
 
-def _create_tables(engine: Engine) -> None:
-    """Create the log's tables; a producer that lost a race to create them looks again and finds them.
+def create_tables(engine: Engine, tables: Sequence[Table] | None = None) -> None:
+    """Create `tables`, or every StarPulse table for None, in `engine`'s database.
 
-    Each lost race means another process created a table meanwhile, and the tables are created once, so a few looks
-    suffice; the last failure is a real one and raises.
+    A caller that lost a race to create them looks again and finds them: each lost race means another process or
+    thread created a table meanwhile, and the tables are created once, so a few looks suffice; the last failure is a
+    real one and raises.
     """
     for _ in range(_CREATE_ATTEMPTS - 1):
         try:
-            return metadata.create_all(engine, tables=[events, gaps])
+            return metadata.create_all(engine, tables=tables)
         except SQLAlchemyError:
             continue
-    return metadata.create_all(engine, tables=[events, gaps])
+    return metadata.create_all(engine, tables=tables)
 
 
 def _dialect(engine: Engine):

@@ -22,6 +22,7 @@ _TABLES = (
     "starpulse_learned_steps",
     "starpulse_gaps",
     "starpulse_events",
+    "starpulse_cursors",
 )
 
 if "db.testing" not in sys.modules:

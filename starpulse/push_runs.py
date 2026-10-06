@@ -4,12 +4,11 @@ A pushed workflow has no listing to read its steps from, so each step an entry n
 steps it said it waits on. The graph is kept in the history store, so after a restart the workflow is drawn with
 its steps, not started, until the next run reports them again. A step that has never run is not drawn.
 
-Entries arrive on the one consumer thread, so nothing here needs a lock; the feed holds the page-facing state.
+Entries arrive on the one reader thread, so nothing here needs a lock; the feed holds the page-facing state.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, get_args
@@ -17,9 +16,8 @@ from typing import Any, Protocol, get_args
 from starpulse import run_events
 from starpulse.board_feed import PUSHED_INSTANCE, InstanceRuns
 from starpulse.contracts import RunStatus
-from starpulse.streams import StreamConsumer
 
-__all__ = ["PUSHED_INSTANCE", "PushRuns", "build_consumer"]
+__all__ = ["PUSHED_INSTANCE", "PushRuns"]
 
 
 class GraphStore(Protocol):
@@ -47,7 +45,7 @@ def _decode(fields: dict) -> _Entry | None:
     """The entry the contract allows, or None for one it does not."""
     try:
         step = fields.get("step") or None
-        depends = json.loads(fields["depends"]) if step and "depends" in fields else None
+        depends = fields["depends"] if step and "depends" in fields else None
         entry = _Entry(
             fields["phase"],
             fields["workflow"],
@@ -140,10 +138,3 @@ class PushRuns:
 
     def expect(self, last_id: str) -> None:
         """Nothing to wait for: the replay fills the workflows in as it reads (`follow` calls this)."""
-
-
-def build_consumer(pushed: PushRuns, group: str) -> StreamConsumer:
-    """The runs stream's reader for `pushed`, in its own group so each running view sees every entry."""
-    return StreamConsumer.from_env(
-        run_events.REDIS_ENV_PREFIX, stream=run_events.STREAM, group=group, consumer=group, handler=pushed.handle_entry
-    )

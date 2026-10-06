@@ -1,16 +1,17 @@
-"""The history store's rules, on SQLite and on Postgres, and its recorder fed from a real Redis."""
+"""The history store's rules, on SQLite and on Postgres, and its recorder fed from the event log."""
 
-import re
 import threading
+import time
+from collections.abc import Callable, Iterator
 
 import pytest
-import redis as redis_lib
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from starpulse import events
-from starpulse.history import HistoryStore, build_machine_recorder
-from starpulse.streams import StreamConsumer, StreamProducer
+from starpulse.event_log import EventLog
+from starpulse.history import HistoryStore, record_machine_events
+from starpulse.tables import metadata
 from starpulse.tests.machines import MACHINES
 
 _CLAIM = {"event_id": "e-1", "machine": "in-progress", "event": "WORKTREE_READY", "task": "PROJ-7", "time": "100"}
@@ -130,13 +131,42 @@ def test_the_same_gap_reported_again_is_one_gap_with_its_latest_bounds(store: Hi
     ]
 
 
-def test_each_database_has_its_own_consumer_group(store: HistoryStore, tmp_path) -> None:
-    url = store.engine.url.render_as_string(hide_password=False)
-    other = HistoryStore(f"sqlite:///{tmp_path / 'other.sqlite'}", MACHINES)
+def test_a_store_holds_a_cursor_per_stream_which_a_store_opened_again_reads(store: HistoryStore) -> None:
+    assert store.cursor("machine:events") is None
 
-    assert re.fullmatch(r"starpulse-history-[0-9a-f]{8}", store.group)
-    assert other.group != store.group
-    assert HistoryStore(url, MACHINES, engine=store.engine).group == store.group
+    store.record_machine("1-0", _CLAIM, cursor=7)
+    store.record_machine("2-0", _CLAIM | {"event_id": "e-2"}, cursor=9)
+    url = store.engine.url.render_as_string(hide_password=False)
+
+    assert HistoryStore(url, MACHINES, engine=store.engine).cursor(events.STREAM) == 9
+    assert store.cursor("board:events") is None
+
+
+def test_an_entry_that_cannot_be_written_moves_no_cursor(store: HistoryStore) -> None:
+    store.record_machine("1-0", _CLAIM, cursor=3)
+
+    with pytest.raises(KeyError):
+        store.record_machine("2-0", {"event_id": "e-2"}, cursor=4)  # lacks the machine and event
+
+    assert store.cursor(events.STREAM) == 3
+
+
+def test_a_store_that_loses_the_race_to_create_the_tables_to_a_reader_thread_still_opens(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    create_all, attempts = metadata.create_all, []
+
+    def lose_the_race(engine, **kwargs) -> None:
+        attempts.append(1)
+        create_all(engine, **kwargs)  # the log's reader created them meanwhile ...
+        if len(attempts) == 1:
+            raise OperationalError("CREATE TABLE starpulse_events", {}, Exception("table already exists"))
+
+    monkeypatch.setattr(metadata, "create_all", lose_the_race)
+
+    opened = HistoryStore(f"sqlite:///{tmp_path / 'raced.sqlite'}", MACHINES)
+
+    assert (len(attempts), opened.cursor(events.STREAM)) == (2, None)
 
 
 def test_a_thread_other_than_the_one_that_opened_the_store_can_use_it(store: HistoryStore) -> None:
@@ -179,130 +209,144 @@ def test_a_step_reported_without_depends_keeps_its_edges_and_one_with_them_repla
     assert store.learned_graphs() == {"nightly": {"load": ["clean"]}}
 
 
-def test_the_recorder_reads_machine_events_on_its_own_redis_through_the_stores_group(
-    store: HistoryStore, monkeypatch: pytest.MonkeyPatch
+@pytest.fixture
+def log(store: HistoryStore) -> EventLog:
+    return EventLog(store.engine.url.render_as_string(hide_password=False), engine=store.engine)
+
+
+@pytest.fixture
+def stop() -> Iterator[threading.Event]:
+    event = threading.Event()
+    yield event
+    event.set()
+
+
+def _until(done: Callable[[], bool]) -> None:
+    deadline = time.monotonic() + 10
+    while not done():
+        assert time.monotonic() < deadline, "the recorder never got there"
+        time.sleep(0.01)
+
+
+def _record(store: HistoryStore, log: EventLog, stop: threading.Event) -> threading.Thread:
+    thread = threading.Thread(
+        target=record_machine_events, args=(store, log, stop), kwargs={"interval": 0.01}, daemon=True
+    )
+    thread.start()
+    return thread
+
+
+def _emit(log: EventLog, event: str, at: float, task: str = "PROJ-7") -> int:
+    cursor = log.append(
+        events.STREAM, {"machine": "in-progress", "event": event, "task": task, "actor": "agent", "time": at}
+    )
+    assert cursor is not None
+    return cursor
+
+
+def _prune_below(log: EventLog, kept: int) -> None:
+    """What a retention prune does: drop the oldest rows, here everything before `kept`."""
+    with log.engine.begin() as db:
+        db.execute(text("DELETE FROM starpulse_events WHERE id < :kept"), {"kept": kept})
+
+
+def _stop(stop: threading.Event, thread: threading.Thread) -> None:
+    stop.set()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+
+
+def test_the_recorder_copies_the_logs_machine_events_into_the_store_and_keeps_its_cursor(
+    store: HistoryStore, log: EventLog, stop: threading.Event
 ) -> None:
-    monkeypatch.setenv(f"{events.REDIS_ENV_PREFIX}_REDIS_HOST", "redis.example")
-    monkeypatch.setenv(f"{events.REDIS_ENV_PREFIX}_REDIS_PORT", "6400")
+    _emit(log, "WORKTREE_READY", 100.0)
+    log.append("board:events", {"machine": "in-progress", "event": "OTHER", "task": "PROJ-7", "time": 1})
+    thread = _record(store, log, stop)
+    newest = _emit(log, "RED_PROVEN", 101.0)  # appended while it runs
+    _until(lambda: store.cursor(events.STREAM) == newest)
+    _stop(stop, thread)
 
-    recorder = build_machine_recorder(store)
-    recorder.on_gap("5-0", "9-0", 3)
-    recorder.handler("7-0", {k: v for k, v in _CLAIM.items() if k != "event_id"})
-
-    assert (recorder.redis_host, recorder.redis_port) == ("redis.example", 6400)
-    assert (recorder.stream, recorder.group, recorder.consumer) == (events.STREAM, store.group, store.group)
-    assert recorder.transient == (OperationalError,)  # an unreachable database leaves the entry pending
-    assert store.gaps() == [{"stream": events.STREAM, "after_id": "5-0", "before_id": "9-0", "lost": 3}]
-    assert _event_ids(store) == ["7-0"]
-
-
-def _send(client: redis_lib.Redis, event: str, at: float, task: str = "PROJ-7") -> str:
-    producer = StreamProducer(stream=events.STREAM, client_factory=lambda: client)
-    entry_id = producer.emit({"machine": "in-progress", "event": event, "task": task, "actor": "agent", "time": at})
-    assert entry_id is not None
-    return entry_id
-
-
-def _recorder(store: HistoryStore) -> StreamConsumer:
-    recorder = build_machine_recorder(store)
-    recorder.read_block_ms = 100
-    return recorder
-
-
-def test_a_trim_past_an_unconsumed_entry_is_recorded_as_a_gap_with_its_id_range(
-    redis_client: redis_lib.Redis, store: HistoryStore
-) -> None:
-    first = _send(redis_client, "WORKTREE_READY", 100.0)
-    read = _send(redis_client, "RED_PROVEN", 101.0)
-    _recorder(store).consume_once(redis_client)  # the consumer runs, then stops
-
-    lost_a = _send(redis_client, "GREEN", 102.0)
-    lost_b = _send(redis_client, "AC_CHECKPOINTED", 103.0)
-    kept = _send(redis_client, "DOCS_RECONCILED", 104.0)
-    redis_client.xtrim(events.STREAM, maxlen=1, approximate=False)  # while it is down
-    assert [entry_id for entry_id, _ in redis_client.xrange(events.STREAM) or []] == [kept]
-
-    _recorder(store).consume_once(redis_client)  # restarts
-
-    assert store.gaps() == [{"stream": events.STREAM, "after_id": read, "before_id": kept, "lost": 2}]
-    assert first < read < lost_a < lost_b < kept
-    assert len(_event_ids(store)) == 3  # the two it read and the one the stream kept
-
-
-def test_every_event_written_while_the_consumer_runs_has_exactly_one_row_after_the_trim(
-    redis_client: redis_lib.Redis, store: HistoryStore
-) -> None:
-    recorder = _recorder(store)
-    sent = []
-    for i in range(6):
-        sent.append(_send(redis_client, "AC_CHECKPOINTED", 100.0 + i, task=f"PROJ-{i % 2}"))
-        recorder.consume_once(redis_client)
-        redis_client.xtrim(events.STREAM, maxlen=1, approximate=False)
-    _recorder(store).consume_once(redis_client)  # a restart redelivers nothing and adds nothing
-
-    assert redis_client.xlen(events.STREAM) == 1
-    assert sorted(_event_ids(store)) == sorted(set(_event_ids(store))) and len(_event_ids(store)) == len(sent) == 6
+    assert [step["event"] for step in store.machine_path("PROJ-7", "in-progress")[0]] == [
+        "WORKTREE_READY",
+        "RED_PROVEN",
+    ]
+    assert len(_event_ids(store)) == 2  # keyed by the log's event ids, which the events were minted
     assert store.gaps() == []
 
 
-def test_a_trim_that_empties_the_stream_is_a_gap_up_to_the_id_after_the_newest_entry(
-    redis_client: redis_lib.Redis, store: HistoryStore
+def test_a_recorder_started_again_resumes_after_its_cursor_and_adds_nothing_twice(
+    store: HistoryStore, log: EventLog, stop: threading.Event
 ) -> None:
-    _send(redis_client, "WORKTREE_READY", 100.0)
-    read = _send(redis_client, "RED_PROVEN", 101.0)
-    _recorder(store).consume_once(redis_client)
-    _send(redis_client, "GREEN", 102.0)
-    newest = _send(redis_client, "AC_CHECKPOINTED", 103.0)
-    redis_client.xtrim(events.STREAM, maxlen=0, approximate=False)
-    millis, _, sequence = newest.partition("-")
+    _emit(log, "WORKTREE_READY", 100.0)
+    read = _emit(log, "RED_PROVEN", 101.0)
+    first = _record(store, log, stop)
+    _until(lambda: store.cursor(events.STREAM) == read)
+    _stop(stop, first)
 
-    _recorder(store).consume_once(redis_client)
+    again = threading.Event()
+    last = _emit(log, "GREEN", 102.0)
+    second = _record(store, log, again)
+    _until(lambda: store.cursor(events.STREAM) == last)
+    _stop(again, second)
 
-    assert store.gaps() == [
-        {"stream": events.STREAM, "after_id": read, "before_id": f"{millis}-{int(sequence) + 1}", "lost": 2}
-    ]
+    assert len(_event_ids(store)) == 3
+    assert store.gaps() == []
 
 
-def test_a_consumer_over_a_stream_that_does_not_exist_yet_records_no_gap(
-    redis_client: redis_lib.Redis, store: HistoryStore
+def test_a_prune_past_an_unrecorded_entry_is_a_gap_with_its_id_range(
+    store: HistoryStore, log: EventLog, stop: threading.Event
 ) -> None:
-    _recorder(store).consume_once(redis_client)
+    _emit(log, "WORKTREE_READY", 100.0)
+    read = _emit(log, "RED_PROVEN", 101.0)
+    first = _record(store, log, stop)
+    _until(lambda: store.cursor(events.STREAM) == read)
+    _stop(stop, first)
 
-    assert (store.gaps(), _event_ids(store)) == ([], [])
+    _emit(log, "GREEN", 102.0)
+    _emit(log, "AC_CHECKPOINTED", 103.0)
+    kept = _emit(log, "DOCS_RECONCILED", 104.0)
+    _prune_below(log, kept)  # while it is down
+
+    again = threading.Event()
+    second = _record(store, log, again)
+    _until(lambda: store.cursor(events.STREAM) == kept)
+    _stop(again, second)
+
+    assert store.gaps() == [{"stream": events.STREAM, "after_id": str(read), "before_id": str(kept), "lost": 2}]
+    assert len(_event_ids(store)) == 3  # the two it read and the one the log kept
 
 
-def test_a_group_that_never_read_reports_no_gap_for_what_was_trimmed_before_it_started(
-    redis_client: redis_lib.Redis, store: HistoryStore
+def test_a_store_with_no_cursor_replays_the_retained_log_and_reports_no_gap_for_what_was_pruned_before(
+    store: HistoryStore, log: EventLog, stop: threading.Event
 ) -> None:
-    _send(redis_client, "WORKTREE_READY", 100.0)
-    _send(redis_client, "RED_PROVEN", 101.0)
-    redis_client.xtrim(events.STREAM, maxlen=1, approximate=False)
+    _emit(log, "WORKTREE_READY", 100.0)
+    _emit(log, "RED_PROVEN", 101.0)
+    kept = _emit(log, "GREEN", 102.0)
+    _prune_below(log, kept)
 
-    _recorder(store).consume_once(redis_client)
+    thread = _record(store, log, stop)
+    _until(lambda: store.cursor(events.STREAM) == kept)
+    _stop(stop, thread)
 
     assert (store.gaps(), len(_event_ids(store))) == ([], 1)
 
 
-def test_a_single_lost_entry_is_a_gap_of_one(redis_client: redis_lib.Redis, store: HistoryStore) -> None:
-    read = _send(redis_client, "WORKTREE_READY", 100.0)
-    _recorder(store).consume_once(redis_client)
-    _send(redis_client, "RED_PROVEN", 101.0)
-    kept = _send(redis_client, "GREEN", 102.0)
-    redis_client.xtrim(events.STREAM, maxlen=1, approximate=False)
-
-    _recorder(store).consume_once(redis_client)
-
-    assert store.gaps() == [{"stream": events.STREAM, "after_id": read, "before_id": kept, "lost": 1}]
-
-
-def test_a_trim_after_the_consumer_read_everything_is_not_a_gap(
-    redis_client: redis_lib.Redis, store: HistoryStore
+def test_a_database_that_cannot_be_reached_leaves_the_entry_to_be_recorded_on_the_next_poll(
+    store: HistoryStore, log: EventLog, stop: threading.Event, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _send(redis_client, "WORKTREE_READY", 100.0)
-    _send(redis_client, "RED_PROVEN", 101.0)
-    _recorder(store).consume_once(redis_client)
-    redis_client.xtrim(events.STREAM, maxlen=0, approximate=False)  # nothing it had not read was lost
+    write, failures = store.record_machine, []
 
-    _recorder(store).consume_once(redis_client)
+    def flaky(event_id: str, fields: dict, **kwargs) -> None:
+        if not failures:
+            failures.append(event_id)
+            raise OperationalError("insert", {}, Exception("connection refused"))
+        write(event_id, fields, **kwargs)
 
-    assert store.gaps() == []
+    monkeypatch.setattr(store, "record_machine", flaky)
+    only = _emit(log, "WORKTREE_READY", 100.0)
+
+    thread = _record(store, log, stop)
+    _until(lambda: store.cursor(events.STREAM) == only)
+    _stop(stop, thread)
+
+    assert (len(failures), len(_event_ids(store))) == (1, 1)

@@ -73,20 +73,19 @@ from types import ModuleType
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from starpulse import analytics
+from starpulse import analytics, run_events
+from starpulse import events as machine_events
 from starpulse.board import AssigneeWriter, Board, MoveWriter, TaskArchiver, TaskEditor, TaskReader, Written
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse.contracts import Move, StartFailedError
+from starpulse.event_log import EventLog
 from starpulse.harnesses import Harnesses
-from starpulse.history import HealthHistory, History, HistoryStore, build_machine_recorder, database_url
+from starpulse.history import HealthHistory, History, HistoryStore, database_url, record_machine_events
 from starpulse.machine_tasks import MachineTasks
-from starpulse.machine_tasks import build_consumer as build_machine_consumer
 from starpulse.pull_requests import PullRequests
 from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
-from starpulse.push_runs import build_consumer as build_push_consumer
-from starpulse.runtime import RedisUnavailableError, ensure_redis
 from starpulse.session_start import starter
 from starpulse.settings import SETTINGS_FILE, HistoryWindow
 from starpulse.snapshot import qualifier
@@ -215,10 +214,12 @@ def edit_task(
         task, base, changes, comment = request["task"], request["base"], request["changes"], request.get("comment", "")
     except ValueError, TypeError, KeyError:
         task = base = changes = comment = None
-    if not (isinstance(task, str) and isinstance(base, dict) and isinstance(changes, dict) and changes) or not isinstance(
-        comment, str
-    ):
-        return 400, {"error": 'an edit needs {"task": "TASK-N", "base": {...}, "changes": {...}, "comment": "<optional>"}'}
+    if not (
+        isinstance(task, str) and isinstance(base, dict) and isinstance(changes, dict) and changes
+    ) or not isinstance(comment, str):
+        return 400, {
+            "error": 'an edit needs {"task": "TASK-N", "base": {...}, "changes": {...}, "comment": "<optional>"}'
+        }
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
     if feed.task(task) is None:
@@ -245,9 +246,7 @@ def edit_task(
     return 200, {"task": task, "changed": list(todo)}
 
 
-def archive_task(
-    source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver | None
-) -> tuple[int, dict[str, Any]]:
+def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver | None) -> tuple[int, dict[str, Any]]:
     """Archive the task `raw` names, from whichever column it is in, through `archive`, for a browser at `source`: the
     HTTP status and JSON body.
 
@@ -553,7 +552,7 @@ def _config(parser: argparse.ArgumentParser, path: Path | None) -> Config:
 
 
 def _adapter(parser: argparse.ArgumentParser, instance: RunsInstance) -> ModuleType:
-    """The runs adapter module of `instance`: `start(url)` gives its start capability or None, `follow(url, sink, group)` reads its workflows."""
+    """The runs adapter module of `instance`: `start(url)` gives its start capability or None, `follow(url, sink, log)` reads its workflows from the event log and the instance."""
     try:
         return runs_adapter(instance.type)
     except ConfigError as exc:
@@ -605,10 +604,12 @@ def announce(port: int, hint: str | None) -> None:
 
 
 def history_store(config: Config, base: Path, board: Board, machines: Mapping[str, dict]) -> History:
-    """The board's own history when it keeps one, else StarPulse's store at `database_url` or beside the config."""
-    if (kept := board.history(machines)) is not None:
-        return kept
-    return HistoryStore(database_url(config.database_url, base), machines)
+    """The board's own history when it keeps one, else StarPulse's store at `database_url` or beside the config.
+
+    The store is opened either way, so every StarPulse table, the event log's included, is on that database.
+    """
+    store = HistoryStore(database_url(config.database_url, base), machines)
+    return kept if (kept := board.history(machines)) is not None else store
 
 
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
@@ -632,26 +633,28 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
     try:
         board, feed = assemble(config, base, args.hours * 3600, run_safe)
-        ensure_redis(prefixes=board.redis_prefixes)
-    except (RedisUnavailableError, ValueError) as exc:
+    except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    # One group per running view: a second copy on another port must see every entry too.
+    # Every reader keeps its own cursor over the one event log, so a second copy on another port sees every entry too.
     # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
+    url = database_url(config.database_url, base)
+    log = EventLog(url)
     window = HistoryWindow(feed, args.hours, base / SETTINGS_FILE)
-    board.start(feed, f"flow-view-{args.port}")
+    board.start(feed, f"flow-view-{args.port}", log)
     tasks = MachineTasks(feed, board.keys)
-    follow(tasks, build_machine_consumer(tasks, f"flow-view-machines-{args.port}"))
+    follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     if shutil.which("gh"):  # without the GitHub CLI there is no source, and a task simply carries no PR state
         threading.Thread(target=PullRequests(feed).run_forever, name="pull-requests", daemon=True).start()
-    for instance, adapter in adapters:  # one group per instance and per running view, as for the Board
-        adapter.follow(instance.url, feed.runs(instance.name), f"flow-view-runs-{instance.name}-{args.port}")
+    for instance, adapter in adapters:
+        adapter.follow(instance.url, feed.runs(instance.name), log)
     history = history_store(config, base, board, feed.machines)
     if isinstance(history, HistoryStore):
-        recorder = build_machine_recorder(history)
-        threading.Thread(target=recorder.run_forever, name="machine-history", daemon=True).start()
+        threading.Thread(
+            target=record_machine_events, args=(history, log, threading.Event()), name="machine-history", daemon=True
+        ).start()
     # The learned step graphs persist only in StarPulse's own store.
     pushed = PushRuns(feed.runs(PUSHED_INSTANCE), history if isinstance(history, HistoryStore) else None)
-    follow(pushed, build_push_consumer(pushed, f"flow-view-pushed-{args.port}"))
+    follow(pushed, log, run_events.STREAM, pushed.handle_entry)
     announce(args.port, feed.snapshot()["hint"])
     handler = _handler(
         feed,

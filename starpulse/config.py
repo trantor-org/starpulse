@@ -55,7 +55,7 @@ class RunsInstance:
 
 
 def runs_adapter(kind: str) -> ModuleType:
-    """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, group)`."""
+    """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, log)`."""
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
         raise ConfigError(f"no runs adapter of type {kind}")
     target = module_name(kind)
@@ -68,7 +68,7 @@ def runs_adapter(kind: str) -> ModuleType:
     except ImportError as exc:
         raise ConfigError(f"runs adapter {kind} failed to import: {exc}") from exc
     if not (callable(getattr(module, "start", None)) and callable(getattr(module, "follow", None))):
-        raise ConfigError(f"{kind} is not a runs adapter: it needs start(url) and follow(url, runs, group)")
+        raise ConfigError(f"{kind} is not a runs adapter: it needs start(url) and follow(url, runs, log)")
     return module
 
 

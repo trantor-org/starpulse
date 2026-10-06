@@ -1,4 +1,4 @@
-"""The server as a stranger runs it: no `REDIS_URL`, no workspace, one process."""
+"""The server as a stranger runs it: no Redis, no container runtime, no workspace, one process."""
 
 import json
 import os
@@ -16,7 +16,6 @@ import pytest
 
 from starpulse import server
 from starpulse.history import DEFAULT_FILE
-from starpulse.runtime import CONTAINER
 
 _ENV_DROPPED = ("REDIS_URL", "REDIS_PASSWORD", "DATABASE_URI")
 
@@ -47,42 +46,24 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def _container_exists(runtime: str) -> bool:
-    return subprocess.run([runtime, "inspect", CONTAINER], capture_output=True, timeout=30).returncode == 0
+def _get(port: int, path: str) -> tuple[int, dict]:
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as resp:
+        return resp.status, json.loads(resp.read())
 
 
 @pytest.mark.usefixtures("build")
-def test_without_redis_url_or_a_container_runtime_the_server_exits_naming_redis_url(tmp_path: Path) -> None:
-    started = time.monotonic()
-
-    result = subprocess.run(
-        [sys.executable, "-m", "starpulse.server", "--port", str(_free_port())],
-        env=_env(PATH=str(tmp_path)),  # an empty directory: neither docker nor podman resolves
-        cwd=tmp_path,  # the board a first serve creates lands here, not in the checkout
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-
-    assert result.returncode != 0
-    assert "REDIS_URL" in result.stderr
-    assert time.monotonic() - started < 10
-
-
-@pytest.mark.skipif(shutil.which("docker") is None, reason="needs Docker to start the Valkey container")
-@pytest.mark.usefixtures("build")
-def test_without_redis_url_the_server_starts_a_valkey_container_and_serves_the_page_and_its_history(
+def test_without_redis_or_any_tool_on_the_path_the_server_serves_the_page_its_history_and_what_emit_pushed(
     tmp_path: Path,
 ) -> None:
-    preexisting = _container_exists("docker")
     port = _free_port()
     config = tmp_path / "starpulse.toml"  # the defaults; the history file lands beside it
     config.write_text("")
+    env = _env(PATH=str(tmp_path))  # an empty directory: no docker, podman or gh resolves, and no Redis answers
     proc = subprocess.Popen(
-        [sys.executable, "-m", "starpulse.server", "--port", str(port), "--config", str(config)], env=_env()
+        [sys.executable, "-m", "starpulse.server", "--port", str(port), "--config", str(config)], env=env
     )
     try:
-        deadline = time.monotonic() + 180  # the first run pulls the Valkey image
+        deadline = time.monotonic() + 30
         while True:
             assert proc.poll() is None, "the server exited before serving"
             try:
@@ -91,18 +72,38 @@ def test_without_redis_url_the_server_starts_a_valkey_container_and_serves_the_p
                     break
             except OSError:
                 assert time.monotonic() < deadline, "the page never came up"
-                time.sleep(0.5)
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/history?task=PROJ-1", timeout=5) as resp:
-            assert (resp.status, json.loads(resp.read())) == (200, {"task": "PROJ-1", "path": []})
+                time.sleep(0.2)
+        assert _get(port, "/api/history?task=PROJ-1") == (200, {"task": "PROJ-1", "path": []})
         assert (tmp_path / DEFAULT_FILE).is_file()
         assert (tmp_path / ".starpulse" / "board" / "config.yml").is_file()  # the first serve made its own board
-        running = subprocess.run(
-            ["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER], capture_output=True, text=True, timeout=30
+
+        emitted = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "starpulse",
+                "emit",
+                "start",
+                "--workflow",
+                "nightly",
+                "--run",
+                "r1",
+                "--status",
+                "running",
+                "--config",
+                str(config),
+            ],  # fmt: skip
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
-        assert running.stdout.strip() == "true"
+        assert emitted.returncode == 0, emitted.stderr
+        deadline = time.monotonic() + 30
+        while "pushed/nightly" not in [d["name"] for d in _get(port, "/api/snapshot")[1]["dags"]]:
+            assert proc.poll() is None, "the server exited"
+            assert time.monotonic() < deadline, "the emitted run never reached the snapshot"
+            time.sleep(0.2)
     finally:
         proc.terminate()
         proc.wait(timeout=30)
-        if not preexisting:
-            subprocess.run(["docker", "rm", "-f", "-v", CONTAINER], capture_output=True, timeout=60)
-            subprocess.run(["docker", "volume", "rm", CONTAINER], capture_output=True, timeout=60)
