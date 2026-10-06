@@ -3,6 +3,7 @@
 import http.client
 import json
 import time
+import mimetypes
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -349,3 +350,11 @@ def test_a_task_is_read_edited_and_archived_through_the_server(tmp_path: Path) -
     assert gone == (200, {"task": "PROJ-3"})
     assert archived == [("PROJ-3", "obsolete")]
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def test_the_page_script_is_served_as_text_javascript_whatever_the_hosts_mime_table_says(
+    server: ThreadingHTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(mimetypes.types_map, ".js", "application/javascript")  # what a runner's /etc/mime.types gives
+
+    assert _status(server, "/assets/index-abc123.js") == (200, "text/javascript")
