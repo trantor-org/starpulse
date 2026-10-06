@@ -1,5 +1,7 @@
-// What a DAG's fan-out adds beside the glyph: the navigator's rows of concurrency pools, and the Recent feed's lines for the runs that
-// start, queue, change step and end. Both read the runs contract's `pools` and each DAG's `active` runs, never a simulation.
+// What a DAG's fan-out adds: the navigator's rows of concurrency pools, the Recent feed's lines for the runs that start, queue, change step
+// and end, and on each DAG's glyph the badge, step status, tooltip line and rings. All read the runs contract's `pools` and each DAG's
+// `active` runs, never a simulation.
+import { esc } from "./panels";
 import type { ActiveRun, Dag, Pool } from "./types";
 
 /** How many run lines the feed keeps. */
@@ -113,4 +115,70 @@ export class RunEvents {
     }
     this.lines = [...add.reverse(), ...this.lines].slice(0, KEEP);
   }
+}
+
+/** The runs a DAG has running, and how many wait in its pool. */
+const held = (dag: Pick<Dag, "active">) => ({
+  running: (dag.active ?? []).filter((r) => r.status === "running"),
+  queued: (dag.active ?? []).filter((r) => r.status === "queued").length,
+});
+
+/**
+ * The badge a DAG's glyph carries while it has a run in flight or queued: its running runs over its pool's cap, `+q` for those waiting, and
+ * `full` once the pool's running runs (any DAG's) fill its cap. Null while idle, or when the adapter reports no pool for the DAG.
+ */
+export function fanBadge(dag: Pick<Dag, "active" | "pool">, pools: Pool[] | undefined): { text: string; full: boolean } | null {
+  const pool = pools?.find((p) => p.name === dag.pool), { running, queued } = held(dag);
+  if (!pool || (!running.length && !queued)) return null;
+  return { text: `${running.length}/${pool.cap}${queued ? ` +${queued}` : ""}`, full: pool.running >= pool.cap };
+}
+
+/**
+ * A glyph step's status from the runs in flight: failed when a run failed in it, running while a run is in it, succeeded once a run is past it,
+ * else not started. `fallback` (the DAG's latest run) stands while no run is in flight; a queued run has entered no step.
+ */
+export function stepStatus(dag: Pick<Dag, "active">, step: string, fallback: string): string {
+  const runs = (dag.active ?? []).filter((r) => r.status !== "queued");
+  if (!runs.length) return fallback;
+  const of = (status: string) => runs.some((r) => r.steps[step] === status || (status === "running" && r.step === step));
+  return of("failed") ? "failed" : of("running") ? "running" : of("succeeded") ? "succeeded" : "not_started";
+}
+
+/** The tooltip's fan-out lines: the runs this DAG has running against its pool's cap and those queued, then how the running ones spread over the steps. */
+export function fanTip(dag: Pick<Dag, "active" | "pool">, pools: Pool[] | undefined): string {
+  const pool = pools?.find((p) => p.name === dag.pool), { running, queued } = held(dag);
+  if (!pool || (!running.length && !queued)) return "";
+  const at = new Map<string, number>();
+  for (const r of running) if (r.step) at.set(r.step, (at.get(r.step) ?? 0) + 1);
+  const spread = [...at].sort((a, b) => b[1] - a[1]).map(([step, n]) => `${n} at ${esc(step)}`).join(" · ");
+  return `<div class="k">${running.length} of ${pool.cap} running on queue ${esc(pool.name)}${queued ? ` · ${queued} queued` : ""}</div>${spread ? `<div class="k">${spread}</div>` : ""}`;
+}
+
+export interface StepRing {
+  step: string;
+  status: "running" | "succeeded" | "failed";
+}
+
+/**
+ * The rings one listing raises over the last: amber on a step a run entered (a started run's first step included), and, for a run that left
+ * `active` as the DAG's latest, green on the step it ended in or red on each step that failed. An ended run that is no longer the latest
+ * carries no outcome, so it rings nothing. A DAG with no earlier listing was first seen, not moved.
+ */
+export function stepRings(before: Dag | undefined, after: Dag): StepRing[] {
+  if (!before) return [];
+  const rings = new Map<string, StepRing>(), add = (step: string, status: StepRing["status"]) => step && rings.set(`${step}|${status}`, { step, status });
+  const now = new Map((after.active ?? []).map((r) => [r.runId, r]));
+  for (const run of after.active ?? []) {
+    const was = (before.active ?? []).find((r) => r.runId === run.runId);
+    if (run.status === "running" && (was?.status !== "running" || was.step !== run.step)) add(run.step, "running");
+  }
+  for (const run of before.active ?? []) {
+    if (now.has(run.runId) || after.runId !== run.runId) continue;
+    if (after.status === "succeeded") add(run.step, "succeeded");
+    else if (after.status === "failed") {
+      const failed = after.steps.filter((s) => s.status === "failed");
+      for (const s of failed.length ? failed : [{ name: run.step }]) add(s.name, "failed");
+    }
+  }
+  return [...rings.values()];
 }

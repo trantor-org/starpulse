@@ -150,6 +150,13 @@ describe("animating", () => {
     expect(animating({ ...rest, dags: [{ status: "succeeded", finishedAt: ago(FLARE - 0.5) }] })).toBe(true);
   });
 
+  it("is true while any of a DAG's runs is running, whatever its latest run did", () => {
+    const old = { status: "succeeded", finishedAt: ago(FLARE + 60) };
+    expect(animating({ ...rest, dags: [{ ...old, active: [{ status: "running" }] }] })).toBe(true);
+    expect(animating({ ...rest, dags: [{ ...old, active: [{ status: "queued" }] }] })).toBe(false);
+    expect(animating({ ...rest, dags: [{ ...old, active: [] }] })).toBe(false);
+  });
+
   it("is true during a fly-to and a level transition", () => {
     expect(animating({ ...rest, flying: true })).toBe(true);
     expect(animating({ ...rest, transitioning: true })).toBe(true);
