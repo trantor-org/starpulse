@@ -37,8 +37,10 @@ milestone, assignee, dependencies and acceptance criteria and adds it to the fir
 **Connect a tracker** opens the `[board]` setting for each public adapter. If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
 line naming it and the `[board] type = "upstream_backlog"` setting that shows it instead (see Configure); the page's
 snapshot carries the same line as `hint`, and Connect a tracker shows it. StarPulse keeps its event log and history in
-`starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
-trust.
+`starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on this machine only (`127.0.0.1`): `--host 0.0.0.0` widens it to
+every interface so another computer on your network can open it, which you do only on a network you trust. A write (move, edit,
+start, run, history window) is refused unless it is a JSON request (`Content-Type: application/json`) that either names no
+`Origin`, as a script or `curl` does, or names this server's own, so a web page on another site cannot write through your browser.
 
 `starpulse serve --port 8800 --hours 24` changes the port and how far back a task's latest move counts toward
 where it is drawn (6 hours by default). The Admin page's Server card overrides that window for everyone
@@ -131,7 +133,7 @@ lists exactly the verbs there are.
 | `machine validate` | `PATH...` | `ok` and `machines`: each `{path, ok, errors}`, an error `{file, line, message}` (`line` is null when the compiler cannot place it); exit 1 when any file is refused. A guard or action name is taken as the adapter's to register |
 | `machine import mermaid` | `SOURCE`, `--out` | `written`: the new file, by default `.starpulse/machines/<name>.yaml`; an existing file is refused (exit 1), a missing source is exit 4 |
 | `runs list` | | `runs`: each workflow as `{workflow, status, raw, run_id, started_at, finished_at}` with `workflow` `<instance>/<workflow>`, and `error`, the runs adapters' error or null |
-| `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
+| `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network, as JSON with no foreign `Origin` (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
 | `analytics health` | `--hours`, `--stuck-hours` | `now`, `window_s`, `stuck_after_s`, `states`, `throughput`, `stuck` and `warnings`, below |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load |

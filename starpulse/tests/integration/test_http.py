@@ -31,10 +31,15 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
         yield server
 
 
+#: The host's mime table names JavaScript one of two ways (a runner's /etc/mime.types may say application/javascript).
+_JAVASCRIPT = "application/javascript"
+
+
 def _status(server: ThreadingHTTPServer, path: str) -> tuple[int, str]:
     try:
         with urllib.request.urlopen(_url(server, path), timeout=5) as resp:
-            return resp.status, resp.headers.get_content_type()
+            kind = resp.headers.get_content_type()
+            return resp.status, "text/javascript" if kind == _JAVASCRIPT else kind
     except urllib.error.HTTPError as exc:
         return exc.code, ""
 
@@ -167,7 +172,7 @@ def test_a_run_is_started_by_post_and_never_by_get(tmp_path: Path) -> None:
     with _serve(tmp_path, starts={"dagu": start}, run_safe=RUN_SAFE) as server:
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(_url(server, "/api/run/dagu/whole-repo-gate"), timeout=5)
-        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", method="POST")
+        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=5) as resp:
             posted = (resp.status, resp.headers.get_content_type(), json.load(resp))
 
@@ -178,7 +183,7 @@ def test_a_run_is_started_by_post_and_never_by_get(tmp_path: Path) -> None:
 
 def test_a_refused_run_answers_json_with_its_status(tmp_path: Path) -> None:
     with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}) as server:
-        request = urllib.request.Request(_url(server, "/api/run/dagu/board-autopilot"), data=b"", method="POST")
+        request = urllib.request.Request(_url(server, "/api/run/dagu/board-autopilot"), data=b"", headers={"Content-Type": "application/json"}, method="POST")
         with pytest.raises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(request, timeout=5)
 
@@ -190,7 +195,7 @@ def test_post_run_answers_404_for_an_adapter_without_start_and_a_run_id_for_a_ru
     tmp_path: Path,
 ) -> None:
     def post(server: ThreadingHTTPServer) -> tuple[int, dict]:
-        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", method="POST")
+        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", headers={"Content-Type": "application/json"}, method="POST")
         try:
             with urllib.request.urlopen(request, timeout=5) as resp:
                 return resp.status, json.load(resp)
@@ -213,7 +218,7 @@ def test_post_run_answers_404_for_an_adapter_without_start_and_a_run_id_for_a_ru
 def test_a_dag_absent_from_the_configs_run_safe_list_answers_404_on_post(tmp_path: Path) -> None:
     """`whole-repo-gate` is a DAG trantor runs, so only the config can be what refuses it here."""
     with _serve(tmp_path, starts={"dagu": lambda workflow: "run-7"}, run_safe=frozenset({"dagu/nightly"})) as server:
-        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", method="POST")
+        request = urllib.request.Request(_url(server, "/api/run/dagu/whole-repo-gate"), data=b"", headers={"Content-Type": "application/json"}, method="POST")
         with pytest.raises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(request, timeout=5)
 
@@ -231,7 +236,7 @@ def test_a_post_anywhere_but_the_run_endpoint_is_not_found(server: ThreadingHTTP
 
 
 def _post_move(server: ThreadingHTTPServer, body: dict) -> tuple[int, dict]:
-    request = urllib.request.Request(_url(server, "/api/move"), data=json.dumps(body).encode(), method="POST")
+    request = urllib.request.Request(_url(server, "/api/move"), data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=5) as resp:
             return resp.status, json.load(resp)
@@ -243,6 +248,7 @@ def test_a_move_posted_with_no_content_length_is_an_empty_body_not_a_wait_for_by
     with _serve(tmp_path) as server:
         connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
         connection.putrequest("POST", "/api/move")
+        connection.putheader("Content-Type", "application/json")
         connection.endheaders()
         response = connection.getresponse()
         body = json.load(response)
@@ -292,7 +298,7 @@ def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_
     feed.put(task("PROJ-3", "Ready"))
     body = json.dumps({"task": "PROJ-3", "assignee": "@agent-deep-high"}).encode()
     with _serve(tmp_path, feed, assign=assign, start_session=start_session) as server:
-        request = urllib.request.Request(_url(server, "/api/start"), data=body, method="POST")
+        request = urllib.request.Request(_url(server, "/api/start"), data=body, headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=5) as resp:
             answered = resp.status, json.load(resp)
         with pytest.raises(urllib.error.HTTPError) as got:
@@ -308,7 +314,7 @@ def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_
 
 
 def _post(server: ThreadingHTTPServer, path: str, body: dict) -> tuple[int, dict]:
-    request = urllib.request.Request(_url(server, path), data=json.dumps(body).encode(), method="POST")
+    request = urllib.request.Request(_url(server, path), data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=5) as resp:
             return resp.status, json.load(resp)

@@ -194,7 +194,7 @@ def test_post_api_tasks_creates_on_the_native_board_and_answers_405_to_a_get(
 ) -> None:
     built, feed = _serving(tmp_path, monkeypatch)
     with serve(tmp_path, feed, create=built.create) as server:
-        request = urllib.request.Request(url(server, "/api/tasks"), data=_raw(title="Over HTTP"), method="POST")
+        request = urllib.request.Request(url(server, "/api/tasks"), data=_raw(title="Over HTTP"), headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=5) as resp:
             created = (resp.status, json.load(resp))
         with pytest.raises(urllib.error.HTTPError) as got:
@@ -206,7 +206,7 @@ def test_post_api_tasks_creates_on_the_native_board_and_answers_405_to_a_get(
 
 def test_post_api_tasks_on_a_board_without_create_is_404(tmp_path: Path) -> None:
     with serve(tmp_path, BoardFeed()) as server:
-        request = urllib.request.Request(url(server, "/api/tasks"), data=_raw(title="Nope"), method="POST")
+        request = urllib.request.Request(url(server, "/api/tasks"), data=_raw(title="Nope"), headers={"Content-Type": "application/json"}, method="POST")
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(request, timeout=5)
 
