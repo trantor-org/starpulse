@@ -1,5 +1,6 @@
 """The event log's rules on SQLite: fail-open append, replay and resume by cursor, retention and gaps."""
 
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -8,7 +9,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
-from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
+from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, _sqlite_pragmas
 from starpulse.tables import metadata
 
 
@@ -275,3 +276,31 @@ def test_run_reads_an_entry_again_when_its_handler_fails_with_a_transient_error(
     Tail(log, "a", interval=0.01).run(handle, stop, transient=(OperationalError,))
 
     assert seen == [1, 2, 2]
+
+
+class _LockedOnce:
+    """A SQLite connection whose first statement finds the database locked, as one opened beside another does."""
+
+    def __init__(self) -> None:
+        self.locked = True
+        self.executed: list[str] = []
+
+    def cursor(self) -> "_LockedOnce":
+        return self
+
+    def execute(self, statement: str) -> None:
+        if self.locked:
+            self.locked = False
+            raise sqlite3.OperationalError("database is locked")
+        self.executed.append(statement)
+
+    def close(self) -> None:
+        pass
+
+
+def test_a_new_connection_that_finds_the_database_locked_sets_its_pragmas_once_it_is_free() -> None:
+    connection = _LockedOnce()
+
+    _sqlite_pragmas(connection, None)
+
+    assert connection.executed == ["PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL"]

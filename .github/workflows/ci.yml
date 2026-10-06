@@ -8,11 +8,11 @@ on:
 permissions:
   contents: read
 
-# Validation runs on the organization's self-hosted ai-vm-1 lane, free and independent of GitHub's hosted
+# Validation runs on the organization's self-hosted validate lane, free and independent of GitHub's hosted
 # pool. That runner group serves private repositories only: making this repository public strands these jobs.
 jobs:
   python:
-    runs-on: [self-hosted, ai-vm-1]
+    runs-on: [self-hosted, validate]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -21,7 +21,7 @@ jobs:
       - run: uv run pytest
 
   web:
-    runs-on: [self-hosted, ai-vm-1]
+    runs-on: [self-hosted, validate]
     defaults:
       run:
         working-directory: starpulse/web
