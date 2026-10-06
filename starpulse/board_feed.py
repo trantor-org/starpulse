@@ -123,6 +123,8 @@ class BoardFeed:
         self._assignees: dict[str, str] = {}
         self._dags: dict[str, list] = {}
         self._pools: dict[str, list] = {}
+        #: The workflows each instance's adapter reported it can start; an instance not here can start all it has.
+        self._startable: dict[str, frozenset[str]] = {}
         self._runs_errors: dict[str, str] = {}
         self._pulls: dict[str, list[dict]] = {}
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
@@ -322,25 +324,55 @@ class BoardFeed:
         """Where the runs adapter instance `instance` publishes its workflows."""
         return InstanceRuns(self, instance)
 
-    def set_dags(self, instance: str, dags: list | None, error: str | None, pools: list | None = None) -> None:
+    def set_dags(
+        self,
+        instance: str,
+        dags: list | None,
+        error: str | None,
+        pools: list | None = None,
+        startable: list[str] | None = None,
+    ) -> None:
         """Take the latest workflows and concurrency pools of `instance` (None keeps the last of each) and publish
-        them when they differ from before; an empty `pools` says the instance now reports none."""
+        them when they differ from before; an empty `pools` says the instance now reports none.
+
+        `startable` names the workflows of `instance` its adapter can start now (None keeps the last report; an
+        instance that never reports one can start every workflow it has a start for). Run now is declared only on a
+        `run_safe` workflow in it, and a change hands every page a snapshot, which is what carries the declaration.
+        """
         with self._lock:
             dags = self._dags.get(instance, []) if dags is None else dags
             pools = self._pools.get(instance, []) if pools is None else pools
-            if (dags, error, pools) == (
+            reported = self._startable.get(instance) if startable is None else frozenset(startable)
+            moved = (dags, error, pools) != (
                 self._dags.get(instance),
                 self._runs_errors.get(instance),
                 self._pools.get(instance, []),
-            ):
+            )
+            changed = reported != self._startable.get(instance)
+            if not (moved or changed):
                 return
             self._dags[instance] = dags
             self._pools[instance] = pools
+            if reported is not None:
+                self._startable[instance] = reported
             if error is None:
                 self._runs_errors.pop(instance, None)
             else:
                 self._runs_errors[instance] = error
-            self._publish("dags", {"dags": self._workflows(), "pools": self._drawn_pools(), "error": self._error()})
+            if moved:
+                self._publish("dags", {"dags": self._workflows(), "pools": self._drawn_pools(), "error": self._error()})
+            if changed:
+                self._publish("snapshot", self.snapshot())
+
+    def _runnable(self) -> list[str]:
+        """The `run_safe` workflows Run now is declared on: those their instance's adapter can start."""
+        out = []
+        for name in self._run_safe:
+            instance, _, workflow = name.partition("/")
+            startable = self._startable.get(instance)
+            if startable is None or workflow in startable:
+                out.append(name)
+        return out
 
     def _workflows(self) -> list[dict]:
         """Every instance's workflows, each named `<instance>/<workflow>`; a pushed one an adapter lists is drawn by that adapter."""
@@ -408,7 +440,7 @@ class BoardFeed:
                 "settled": dict(self._settled),
                 "error": self._error(),
                 "reading": self._replaying(),
-                **declared(self._domains, self._run_safe, self._cues),
+                **declared(self._domains, self._runnable(), self._cues),
                 "boardUrl": self._board_url,
                 "hint": self._hint,
                 "now": time.time(),
@@ -422,8 +454,10 @@ class InstanceRuns:
         self._feed = feed
         self._instance = instance
 
-    def set_dags(self, dags: list | None, error: str | None, pools: list | None = None) -> None:
-        self._feed.set_dags(self._instance, dags, error, pools)
+    def set_dags(
+        self, dags: list | None, error: str | None, pools: list | None = None, startable: list[str] | None = None
+    ) -> None:
+        self._feed.set_dags(self._instance, dags, error, pools, startable)
 
 
 class Followed(Protocol):

@@ -448,3 +448,39 @@ def test_a_retracted_task_leaves_the_board_and_publishes_once() -> None:
 
     assert feed.task("task-1") is None
     assert events.qsize() == 1
+
+
+def _run_flags(feed: BoardFeed) -> dict[str, bool]:
+    return {d["name"]: d["runSafe"] for d in feed.snapshot()["domains"][0]["dags"]}
+
+
+def _kinds(deltas) -> list[str]:
+    kinds = []
+    while not deltas.empty():
+        kinds.append(deltas.get_nowait()[0])
+    return kinds
+
+
+def test_run_now_is_declared_only_on_the_run_safe_workflows_its_adapter_reports_startable() -> None:
+    names = ("gh/ci.yml", "gh/ui.yml", "dagu/nightly")
+    feed = BoardFeed(domains={"Ops": names}, run_safe=names)
+    _, deltas = feed.subscribe()
+
+    feed.runs("gh").set_dags([], None, startable=["ui.yml"])
+    assert _run_flags(feed) == {"gh/ci.yml": False, "gh/ui.yml": True, "dagu/nightly": True}
+    assert _kinds(deltas) == ["dags", "snapshot"]
+
+    feed.runs("gh").set_dags([], None)  # None keeps the last the adapter reported
+    assert (_run_flags(feed), _kinds(deltas)) == ({"gh/ci.yml": False, "gh/ui.yml": True, "dagu/nightly": True}, [])
+
+    feed.runs("gh").set_dags([], None, startable=["ci.yml", "ui.yml"])
+    assert _run_flags(feed) == {"gh/ci.yml": True, "gh/ui.yml": True, "dagu/nightly": True}
+    assert _kinds(deltas) == ["snapshot"]
+
+
+def test_a_workflow_the_adapter_reports_startable_but_config_does_not_declare_run_safe_stays_off() -> None:
+    feed = BoardFeed(domains={"Ops": ("gh/ci.yml", "gh/ui.yml")}, run_safe=("gh/ui.yml",))
+
+    feed.runs("gh").set_dags([], None, startable=["ci.yml", "ui.yml"])
+
+    assert _run_flags(feed) == {"gh/ci.yml": False, "gh/ui.yml": True}

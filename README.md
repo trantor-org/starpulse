@@ -13,8 +13,9 @@ tasks, running in your browser with no server.
   the first time you serve. A [Backlog.md](https://github.com/MrLesk/Backlog.md) project is one `[board]` setting
   away; a Kanban view shows the same tasks as columns, and moves made there are written back to the board when its
   adapter has a writer.
-- **Workflow runs.** Each workflow is drawn as its step graph with its latest run. [Dagu](https://github.com/dagu-org/dagu) is
-  read directly; any other scheduler reports its runs with `starpulse emit`.
+- **Workflow runs.** Each workflow is drawn as its step graph with its latest run. [Dagu](https://github.com/dagu-org/dagu) and
+  [GitHub Actions](https://docs.github.com/actions) are read directly; any other scheduler reports its runs with
+  `starpulse emit`.
 - **Agents at work.** A Claude Code session's OpenTelemetry log export moves the session through its own
   machine, so you see which agent is prompting, running a tool or waiting.
 - **History.** Every move is kept, so hovering a task traces the path it took.
@@ -211,6 +212,30 @@ url = "http://dagu.example.com:8080"
 run_safe = ["nightly"]                   # the workflows the page's Run now may start
 domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
 ```
+
+### GitHub Actions
+
+`type = "github_actions"` reads one repository's workflows: each active workflow file is a workflow named for the file
+(`ci.yml`), its jobs are the steps (waiting on their `needs`), and a job a run took once also lists its steps. A run's
+`status` and `conclusion` become StarPulse's statuses (`queued`, `running`, `succeeded`, `failed`, `aborted`,
+`skipped`) and GitHub's own label stays in `raw`; a label the mapping lacks is an error, never a failure.
+
+```toml
+[[runs]]
+name = "gh"
+type = "github_actions"
+url = "https://github.com/trantor-org/starpulse"   # or `owner/name`
+run_safe = ["ui-preview.yml"]
+```
+
+- **Credentials** come from the environment: `GITHUB_TOKEN` or `GH_TOKEN` (read and `actions: write` on the repository),
+  and `GITHUB_API_URL` for GitHub Enterprise Server. Without a token the repository is still read, at GitHub's lower
+  unauthenticated rate limit, and nothing starts.
+- **Run now** dispatches the workflow on the default branch (`workflow_dispatch`) and answers its run id. It is drawn
+  only on a `run_safe` workflow whose file declares `workflow_dispatch`; any other workflow is refused.
+- **Events.** The repository is listed every 60 s. A `workflow_run` webhook, mapped with
+  `starpulse.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
+  at once.
 
 ## Write a board adapter
 

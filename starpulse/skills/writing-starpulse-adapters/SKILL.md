@@ -55,9 +55,10 @@ usually because its database is unreachable; exit 2 means a flag or configuratio
 never means the run failed.
 
 A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`) whose module offers `start(url)` and
-`follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools)` (a `Dag` lists its running and queued runs in `active`,
-and `pools` is the list of concurrency pools, empty when the scheduler has none); its workflows are drawn as
-`<name>/<workflow>`.
+`follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error, pools, startable)` (a `Dag` lists its running and queued runs in `active`,
+`pools` is the list of concurrency pools, empty when the scheduler has none, and `startable` names the workflows
+`start` can run when it cannot start all of them, such as those a GitHub workflow file marks `workflow_dispatch`);
+its workflows are drawn as `<name>/<workflow>`.
 
 ## Check it
 
