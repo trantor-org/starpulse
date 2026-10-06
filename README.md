@@ -78,6 +78,8 @@ starpulse task move PROJ-45 review               # move it as the agent; a refus
 starpulse task trace PROJ-45 --flow in-progress  # where the task has been: Board lanes, or one machine's events
 starpulse machine show in-progress               # a machine's states, transitions and the tasks now in each
 starpulse runs list                              # each workflow as <instance>/<workflow> with its latest status
+starpulse runs start prod/nightly                # start a run-safe workflow through Run now; its run id
+starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
@@ -85,8 +87,8 @@ starpulse help --agent                           # every verb with its arguments
 ```
 
 These verbs read the running server (`starpulse serve`) over HTTP: `--server URL`, else `STARPULSE_URL`, else
-`http://localhost:8766`. Each writes one JSON document to stdout and nothing to stderr; an error is
-`{"error": "...", "code": "..."}`. The exit code is 0 for success, 1 for a refused or invalid request, a refused move or a failed `doctor` check, 2 for a usage
+`http://localhost:8766`. Each writes one JSON document to stdout and nothing to stderr, except `watch`, which writes
+one JSON line per change; an error is `{"error": "...", "code": "..."}`. The exit code is 0 for success, 1 for a refused or invalid request, a refused move or a failed `doctor` check, 2 for a usage
 error, 3 when the server is unreachable (the error names the address tried) or has no board writer and 4 for something not found. A verb
 reads the server on every call and keeps nothing, and `help --agent` is generated from the command parser, so it
 lists exactly the verbs there are.
@@ -102,6 +104,8 @@ lists exactly the verbs there are.
 | `machine list` | | `machines`: each `{name, states, tasks}` with its state ids and its live task count |
 | `machine show` | `NAME` | `name`, `states` (each `{id, name, initial, final, count, tasks}`) and `transitions`; an unknown machine exits 4 and names those drawn |
 | `runs list` | | `runs`: each workflow as `{workflow, status, raw, run_id, started_at, finished_at}` with `workflow` `<instance>/<workflow>`, and `error`, the runs adapters' error or null |
+| `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
+| `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
 | `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |
 | `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |

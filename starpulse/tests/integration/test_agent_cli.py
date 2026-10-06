@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.request
 from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -542,6 +543,8 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "machine list",
         "machine show",
         "runs list",
+        "runs start",
+        "watch",
         "doctor",
         "skills list",
         "skills install",
@@ -676,6 +679,223 @@ def test_runs_list_names_each_workflow_by_instance_with_its_status_and_the_runs_
     ]
 
 
+@pytest.fixture
+def runnable(tmp_path: Path) -> Iterator[str]:
+    """A server whose `prod` instance can start runs and holds `prod/nightly` run-safe; `staging` has no start."""
+    feed = BoardFeed(machines=MACHINES)
+    feed.runs("prod").set_dags([_dag("nightly", "succeeded"), _dag("backup", "running")], None)
+    feed.runs("staging").set_dags([_dag("nightly", "failed")], None)
+    with _serve(
+        tmp_path,
+        feed,
+        starts={"prod": lambda workflow: f"{workflow}-7"},
+        run_safe=frozenset({"prod/nightly"}),
+    ) as server:
+        yield _url(server, "")
+
+
+@contextmanager
+def _canned(status: int, body: dict[str, Any]) -> Iterator[str]:
+    """A server that answers every request with `status` and the JSON `body`, as one the run guards refuse."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(body).encode())
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield _url(server, "")
+    finally:
+        server.shutdown()
+
+
+@pytest.fixture
+def forbidden() -> Iterator[str]:
+    """A server that refuses Run now to the caller, as it does one outside loopback and the private network."""
+    with _canned(403, {"error": "Run now answers only loopback and private network (RFC 1918) browsers"}) as base:
+        yield base
+
+
+def test_runs_start_returns_the_run_id_of_a_run_safe_workflow(
+    runnable: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["runs", "start", "prod/nightly", "--server", runnable])
+
+    assert (code, doc) == (0, {"workflow": "prod/nightly", "run_id": "nightly-7"})
+
+
+def test_runs_start_of_an_instance_without_start_exits_3(runnable: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["runs", "start", "staging/nightly", "--server", runnable])
+
+    assert (code, doc["code"]) == (3, "unavailable")
+    assert "no adapter can start staging/nightly" in doc["error"]
+
+
+def test_runs_start_of_a_workflow_outside_run_safe_exits_4(runnable: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["runs", "start", "prod/backup", "--server", runnable])
+
+    assert (code, doc) == (4, {"error": "prod/backup is not declared run-safe", "code": "not_found"})
+
+
+def test_runs_start_the_server_refuses_to_the_caller_exits_1(
+    forbidden: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["runs", "start", "prod/nightly", "--server", forbidden])
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "loopback" in doc["error"]
+
+
+def test_runs_start_the_adapter_fails_to_start_exits_3_with_its_error(capsys: pytest.CaptureFixture[str]) -> None:
+    with _canned(502, {"error": "dagu refused the start"}) as failing:
+        code, doc = _run(capsys, ["runs", "start", "prod/nightly", "--server", failing])
+
+    assert (code, doc) == (3, {"error": f"{failing}: dagu refused the start", "code": "unavailable"})
+
+
+def test_runs_start_without_an_instance_is_a_usage_error(runnable: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["runs", "start", "nightly", "--server", runnable])
+
+    assert (code, doc["code"]) == (2, "usage")
+    assert "<instance>/<workflow>" in doc["error"]
+
+
+# What a watch sees on the stream: the connect snapshot, then one of each delta the server sends.
+FLOWS = ("board", "in-progress", "deploy")
+DELTAS: list[tuple[str, dict[str, Any]]] = [
+    ("task", {"id": "PROJ-1", "agent": {"state": "ready"}, "settled": None}),
+    ("task", {"id": "PROJ-2", "agent": {"state": "review"}, "settled": None}),
+    ("move", {"flow": "in-progress", "id": "PROJ-1", "agent": {"state": "green"}}),
+    ("move", {"flow": "in-progress", "id": "PROJ-2", "agent": {"state": "red"}}),
+    ("move", {"flow": "deploy", "id": "PROJ-1", "agent": {"state": "live"}}),
+    ("pulls", {"pulls": {"PROJ-1": [{"number": 5}], "PROJ-2": [{"number": 6}]}}),
+    ("claim", {"task": "PROJ-2", "reason": "claim it first", "at": 1.0}),
+    ("dags", {"dags": [], "error": None}),
+]
+
+
+@contextmanager
+def _stream(frames: Sequence[tuple[str, dict[str, Any]]]) -> Iterator[str]:
+    """A server whose `/api/events` sends `frames`, with a keep-alive comment between them, then closes the stream."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for name, data in frames:
+                self.wfile.write(f": ping\n\nevent: {name}\ndata: {json.dumps(data)}\n\n".encode())
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield _url(server, "")
+    finally:
+        server.shutdown()
+
+
+def _watch(
+    capsys: pytest.CaptureFixture[str], base: str, *flags: str
+) -> tuple[int, list[dict[str, Any]], dict[str, Any]]:
+    """A watch of `base` that runs until the server closes the stream: the exit code, the delta lines, the last line."""
+    code = cli.main(["watch", "--server", base, *flags], {})
+    out = capsys.readouterr()
+    assert out.err == ""
+    lines = [json.loads(line) for line in out.out.splitlines()]
+    return code, lines[:-1], lines[-1]
+
+
+def _line(index: int) -> dict[str, Any]:
+    event, data = DELTAS[index]
+    return {"event": event, "data": data}
+
+
+@pytest.fixture
+def stream() -> Iterator[str]:
+    with _stream([("snapshot", {"flows": [{"name": flow} for flow in FLOWS]}), *DELTAS]) as base:
+        yield base
+
+
+@pytest.mark.parametrize(
+    ("flags", "wanted"),
+    [
+        ([], [0, 1, 2, 3, 4, 5, 6, 7]),
+        (["--machine", "in-progress"], [2, 3]),
+        (["--machine", "board"], [0, 1, 5, 6]),
+        (["--task", "PROJ-2"], [1, 3, 5, 6]),
+        (["--machine", "in-progress", "--task", "PROJ-2"], [3]),
+        (["--task", "PROJ-9"], []),
+    ],
+)
+def test_watch_writes_one_json_line_per_matching_delta_and_filters_by_machine_and_task(
+    stream: str, capsys: pytest.CaptureFixture[str], flags: list[str], wanted: list[int]
+) -> None:
+    code, deltas, last = _watch(capsys, stream, *flags)
+
+    expected = [_line(i) for i in wanted]
+    for line in expected:  # `--task` keeps only that task's pull requests
+        if line["event"] == "pulls" and "--task" in flags:
+            task = flags[flags.index("--task") + 1]
+            line["data"] = {"pulls": {task: line["data"]["pulls"][task]}}
+    assert deltas == expected
+    assert (code, last["code"]) == (3, "unavailable")  # the server closing the stream is the watch's only end
+    assert "closed the event stream" in last["error"]
+
+
+def test_watch_never_writes_the_connect_snapshot(stream: str, capsys: pytest.CaptureFixture[str]) -> None:
+    _, deltas, _ = _watch(capsys, stream)
+
+    assert "snapshot" not in {line["event"] for line in deltas}
+
+
+def test_watch_of_an_unknown_machine_is_not_found_before_any_delta(
+    stream: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = cli.main(["watch", "--machine", "nowhere", "--server", stream], {})
+    out = capsys.readouterr()
+
+    assert code == 4
+    assert json.loads(out.out) == {
+        "error": "nowhere is not a machine; the server draws board, in-progress, deploy",
+        "code": "not_found",
+    }
+
+
+def test_watch_of_a_server_that_is_no_event_stream_is_unavailable(capsys: pytest.CaptureFixture[str]) -> None:
+    with _stream([("task", DELTAS[0][1])]) as base:  # the first event is no snapshot
+        code = cli.main(["watch", "--server", base], {})
+
+    assert (code, json.loads(capsys.readouterr().out)["code"]) == (3, "unavailable")
+
+
+def test_an_interrupt_ends_a_watch_with_exit_0_after_the_lines_it_wrote(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def frames(base: str) -> Iterator[tuple[str, dict[str, Any]]]:
+        yield "snapshot", {"flows": [{"name": "board"}]}
+        yield DELTAS[0]
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "_frames", frames)
+
+    code = cli.main(["watch"], {})
+    out = capsys.readouterr()
+
+    assert code == 0
+    assert [json.loads(line) for line in out.out.splitlines()] == [_line(0)]
+    assert out.err == ""
+
+
 # Every verb the manifest lists, and each exit code it declares, with an argument line that produces it. `{server}`
 # is a running server, `{down}` an address nothing listens on.
 CASES = {
@@ -712,6 +932,14 @@ CASES = {
     ("runs list", 0): ["runs", "list", "--server", "{server}"],
     ("runs list", 2): ["runs", "list", "--nope"],
     ("runs list", 3): ["runs", "list", "--server", "{down}"],
+    ("runs start", 0): ["runs", "start", "prod/nightly", "--server", "{runnable}"],
+    ("runs start", 1): ["runs", "start", "prod/nightly", "--server", "{forbidden}"],
+    ("runs start", 2): ["runs", "start"],
+    ("runs start", 3): ["runs", "start", "staging/nightly", "--server", "{runnable}"],
+    ("runs start", 4): ["runs", "start", "prod/backup", "--server", "{runnable}"],
+    ("watch", 2): ["watch", "--nope"],
+    ("watch", 3): ["watch", "--server", "{down}"],
+    ("watch", 4): ["watch", "--machine", "nowhere", "--server", "{server}"],
     ("doctor", 0): ["doctor", "--server", "{server}"],
     ("doctor", 1): ["doctor", "--server", "{down}"],
     ("doctor", 2): ["doctor", "--nope"],
@@ -738,10 +966,14 @@ def _manifest(capsys: pytest.CaptureFixture[str]) -> list[dict]:
     return _run(capsys, ["help", "--agent"])[1]["verbs"]
 
 
+# A verb that ends only when interrupted has no case that writes one document; its own test covers that exit.
+INTERRUPTED = {("watch", 0)}
+
+
 def test_every_manifest_verb_and_exit_code_has_a_case(capsys: pytest.CaptureFixture[str]) -> None:
     declared = {(v["verb"], code) for v in _manifest(capsys) for code in v["exit_codes"]}
 
-    assert declared == set(CASES)
+    assert declared - INTERRUPTED == set(CASES)
 
 
 @pytest.mark.parametrize(("verb", "exit_code"), list(CASES))
@@ -749,6 +981,8 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
     base: str,
     movable: str,
     bare: str,
+    runnable: str,
+    forbidden: str,
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -758,7 +992,12 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
     monkeypatch.chdir(tmp_path)  # `skills` writes into the project, and under HOME with --user
     PREPARE.get((verb, exit_code), lambda: None)()
     manifest = next(v for v in _manifest(capsys) if v["verb"] == verb)
-    argv = [a.format(server=base, movable=movable, bare=bare, down=_closed_port_url()) for a in CASES[verb, exit_code]]
+    argv = [
+        a.format(
+            server=base, movable=movable, bare=bare, runnable=runnable, forbidden=forbidden, down=_closed_port_url()
+        )
+        for a in CASES[verb, exit_code]
+    ]
 
     code, doc = _run(capsys, argv, {"HOME": str(tmp_path / "home")})
 

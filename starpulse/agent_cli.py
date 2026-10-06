@@ -1,4 +1,4 @@
-"""`starpulse snapshot|board|task|machine|runs|doctor|skills|help --agent`: the verbs an agent drives a running server with.
+"""`starpulse snapshot|board|task|machine|runs|watch|doctor|skills|help --agent`: the verbs an agent drives a running server with.
 
     starpulse board --milestone launch --label api
     starpulse task show PROJ-45
@@ -7,6 +7,8 @@
     starpulse task trace PROJ-45 --flow in-progress
     starpulse machine show in-progress
     starpulse runs list
+    starpulse runs start prod/nightly
+    starpulse watch --machine in-progress --task PROJ-45
     starpulse doctor
     starpulse skills install --claude --codex
     starpulse help --agent
@@ -20,6 +22,10 @@ move or a failed `doctor` check, 2 for a usage error, 3 when the server (or what
 verb needs of it) is unavailable and 4 for something not found. The server is `--server`, else `STARPULSE_URL`, else
 `http://localhost:8766`; a verb reads it per call and keeps nothing. `starpulse help --agent` prints the manifest of
 verbs, generated from the parser below, so a verb added here is listed with its arguments, output keys and exit codes.
+`watch` is the one verb that writes more than one document: it holds the server's event stream open and writes one JSON
+line, `{"event": "task|move|pulls|claim|dags", "data": {...}}`, per change that `--machine` and `--task` leave in, until
+it is interrupted (exit 0) or the server ends the stream (an error line, exit 3). `runs start` calls the server's Run
+now path, so its LAN and `run_safe` guards apply to the agent as they do to the page.
 `skills` reads no server: it copies the bundled skills into the project or, with `--user`, the home directory.
 """
 
@@ -78,8 +84,11 @@ _TASK_KEYS = (
     "description",
 )
 _MOVE_KEYS = ("ok", "task", "to", "reason", "skill", "advice")
+#: Seconds `watch` waits for the next byte: the server pings every 15, so a longer silence is a server that is gone.
+_STREAM_TIMEOUT_S = 45.0
 
-Verb = Callable[[argparse.Namespace, Mapping[str, str]], dict[str, Any]]
+#: A verb answers with one document, or with the stream of documents `watch` writes as they arrive.
+Verb = Callable[[argparse.Namespace, Mapping[str, str]], dict[str, Any] | Iterator[dict[str, Any]]]
 
 
 class CliError(Exception):
@@ -221,22 +230,8 @@ def _move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     """Move the task as the agent: the server's verdict, or an error when no board writer can answer."""
     base = server_url(args.server, environ)
     session = args.session or environ.get("STARPULSE_SESSION", "")
-    body = json.dumps(
-        {"task": args.task, "to": args.to, "actor": AGENT, **({"session": session} if session else {})}
-    ).encode()
-    request = urllib.request.Request(
-        f"{base}/api/move", data=body, headers={"Content-Type": "application/json"}, method="POST"
-    )
-    try:
-        with urllib.request.urlopen(
-            request,
-            timeout=10.0,  # seconds the board writer may take to answer one move
-        ) as resp:
-            status, reply = resp.status, json.load(resp)
-    except urllib.error.HTTPError as exc:  # before OSError, which it subclasses
-        status, reply = exc.code, _json_or_empty(exc)
-    except (OSError, ValueError) as exc:
-        raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
+    body = {"task": args.task, "to": args.to, "actor": AGENT, **({"session": session} if session else {})}
+    status, reply = _post(base, "/api/move", body)
     message = reply.get("error") or f"{base} answered {status} for /api/move"
     if status == 200:
         return {
@@ -261,6 +256,23 @@ def _move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     if status in (400, 403):
         raise CliError("refused", message)
     raise CliError("unavailable", f"{base}: {message}")
+
+
+def _post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """The status and JSON object the server at `base` answers a POST of `body` to `path` with; {} for any other body."""
+    request = urllib.request.Request(
+        f"{base}{path}", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=10.0,  # seconds the board writer or the runs adapter may take to answer
+        ) as resp:
+            return resp.status, _json_or_empty(resp)
+    except urllib.error.HTTPError as exc:  # before OSError, which it subclasses
+        return exc.code, _json_or_empty(exc)
+    except (OSError, ValueError) as exc:
+        raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
 
 
 def _json_or_empty(resp: Any) -> dict[str, Any]:
@@ -333,6 +345,79 @@ def _runs(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
         ],
         "error": snapshot["error"],
     }
+
+
+def _run_start(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Start a workflow through the server's Run now path: its run id, or why the server's guards refused it."""
+    base = server_url(args.server, environ)
+    if "/" not in args.workflow:
+        raise CliError("usage", f"name the workflow as <instance>/<workflow>, as `runs list` shows it: {args.workflow}")
+    path = f"/api/run/{urllib.parse.quote(args.workflow, safe='/')}"
+    status, reply = _post(base, path, {})
+    message = reply.get("error") or f"{base} answered {status} for {path}: is it a StarPulse server?"
+    if status == 200 and "runId" in reply:
+        return {"workflow": args.workflow, "run_id": reply["runId"]}
+    if status == 403:
+        raise CliError("refused", message)
+    if status == 404 and "error" in reply:
+        # The server gives both 404s as text only: an instance with no start, else a workflow outside its `run_safe`.
+        raise CliError("unavailable" if message.startswith("no adapter can start") else "not_found", message)
+    raise CliError("unavailable", f"{base}: {message}")
+
+
+def _frames(base: str) -> Iterator[tuple[str, Any]]:
+    """Each named event the server's stream sends, keep-alive comments skipped; the stream's end is an error."""
+    try:
+        with urllib.request.urlopen(f"{base}/api/events", timeout=_STREAM_TIMEOUT_S) as resp:
+            name = ""
+            for raw in resp:
+                line = raw.decode().rstrip("\r\n")
+                if line.startswith("event: "):
+                    name = line.removeprefix("event: ")
+                elif line.startswith("data: "):
+                    yield name, json.loads(line.removeprefix("data: "))
+    except urllib.error.HTTPError as exc:  # before OSError, which it subclasses
+        raise CliError("unavailable", f"{base} answered {exc.code} for /api/events: is it a StarPulse server?") from exc
+    except (OSError, ValueError) as exc:
+        raise CliError("unavailable", f"cannot read StarPulse's events at {base}: {exc}") from exc
+    raise CliError("unavailable", f"{base} closed the event stream")
+
+
+def _delta(event: str, data: dict[str, Any], machine: str | None, task: str | None) -> dict[str, Any] | None:
+    """The delta as `--machine` and `--task` leave it, None when they drop it.
+
+    A `task` or `claim` delta is the Board's, a `move` delta its machine's, and `pulls` are the Board's tasks' with
+    `--task` keeping only that task's. Workflow runs (`dags`) belong to neither, so any filter drops them.
+    """
+    if not (machine or task):
+        return data
+    if event == "pulls":
+        pulls = {id_: found for id_, found in data["pulls"].items() if task in (None, id_)}
+        return {"pulls": pulls} if pulls and machine in (None, "board") else None
+    about = {
+        "task": lambda d: ("board", d["id"]),
+        "move": lambda d: (d["flow"], d["id"]),
+        "claim": lambda d: ("board", d["task"]),
+    }.get(event)
+    if about is None:
+        return None
+    flow, id_ = about(data)
+    return data if machine in (None, flow) and task in (None, id_) else None
+
+
+def _watch(args: argparse.Namespace, environ: Mapping[str, str]) -> Iterator[dict[str, Any]]:
+    """One line per change the server announces after the connect snapshot, the snapshot itself never."""
+    base = server_url(args.server, environ)
+    frames = _frames(base)
+    name, snapshot = next(frames)
+    if name != "snapshot" or not isinstance(snapshot, dict) or "flows" not in snapshot:
+        raise CliError("unavailable", f"{base} opened its event stream with no snapshot: is it a StarPulse server?")
+    flows = [flow["name"] for flow in snapshot["flows"]]
+    if args.machine and args.machine not in flows:
+        raise CliError("not_found", f"{args.machine} is not a machine; the server draws {', '.join(flows)}")
+    for name, data in frames:
+        if (delta := _delta(name, data, args.machine, args.task)) is not None:
+            yield {"event": name, "data": delta}
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -537,6 +622,25 @@ def _parser() -> argparse.ArgumentParser:
         ("runs", "error"),
         (0, 2, 3),
     )
+    start = leaf(
+        runs_verbs,
+        "start",
+        "start a run-safe workflow through the server's Run now path and return its run id",
+        _run_start,
+        ("workflow", "run_id"),
+        (0, 1, 2, 3, 4),
+    )
+    start.add_argument("workflow", help="the workflow as `runs list` names it (`prod/nightly`)")
+    watch = leaf(
+        verbs,
+        "watch",
+        "hold the event stream open and write one JSON line per change to a task, machine or workflow run",
+        _watch,
+        ("event", "data"),
+        (0, 2, 3, 4),
+    )
+    watch.add_argument("--machine", help="only changes on this machine (`board`, `in-progress`)")
+    watch.add_argument("--task", help="only changes to this task (`PROJ-45`)")
     check = leaf(
         verbs,
         "doctor",
@@ -588,9 +692,15 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] = os.envi
     """Run one verb and print its JSON document; the exit code is the document's, as `EXIT_CODES` lists."""
     try:
         args = _parser().parse_args(argv)
-        document = args.run(args, environ)
-        status = 0 if document.get("ok", True) else 1  # only `doctor` reports `ok`
+        result = args.run(args, environ)
+        if not isinstance(result, dict):  # a stream: each line is written as it arrives, until an error or an interrupt
+            for line in result:
+                print(json.dumps(line), flush=True)
+            return 0
+        document, status = result, 0 if result.get("ok", True) else 1  # only `doctor` reports `ok`
     except CliError as exc:
         document, status = {"error": str(exc), "code": exc.code}, _ERROR_EXIT[exc.code]
+    except KeyboardInterrupt:  # the one way a `watch` ends well
+        return 0
     print(json.dumps(document))
     return status
