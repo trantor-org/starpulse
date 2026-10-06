@@ -87,8 +87,8 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
   );
 }
 
-/** Where a card sits in the hovered card's chain: the hovered card, a Waiting task it holds, an open task it waits on, or outside it. */
-export type Chain = "self" | "holds" | "waits" | "out";
+/** Where a card sits in the hovered card's chain: the hovered card, a Waiting task it holds or an open task it waits on. */
+export type Chain = "self" | "holds" | "waits";
 
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
 export function Card({ task, holds = 0, chain, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
@@ -395,7 +395,7 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
   const chain = useMemo(() => {
     const c = hovered && !lift ? chainOf(cards, hovered) : null;
     if (!c || (!c.holds.size && !c.waitsOn.size)) return null;
-    return (id: string): Chain => (id === hovered ? "self" : c.holds.has(id) ? "holds" : c.waitsOn.has(id) ? "waits" : "out");
+    return (id: string): Chain | undefined => (id === hovered ? "self" : c.holds.has(id) ? "holds" : c.waitsOn.has(id) ? "waits" : undefined);
   }, [cards, hovered, lift]);
   const task = open ? cards.find((t) => t.id === open) : undefined;
   const archiveTask = archiving ? cards.find((t) => t.id === archiving) : undefined;
@@ -569,10 +569,12 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
       <div id="cols">
         {view.columns.map((col) => {
           const target = lift?.kinds[col.id];
+          const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
           const colCls = ["col", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
           return (
             <section key={col.id} className={colCls} data-lane={col.id}>
               <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
+                {inChain > 0 && <span className="cc" title={`${inChain} of this column's tasks are in the hovered task's chain`}>⛓{inChain}</span>}
                 {target && target.kind !== "here" && (
                   <span className="hint">{target.kind === "ok" ? "drop" : target.kind === "guard" ? `guarded · ${target.skill || "refused"}` : "no transition"}</span>
                 )}
