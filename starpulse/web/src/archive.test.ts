@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { archiveKey, archiveWarnings, postArchive, withoutArchived } from "./archive";
+import { archiveDialogKey, archiveKey, archiveWarnings, postArchive, withoutArchived } from "./archive";
 import { COLUMNS, NO_PREFS, layout, type KanbanTask } from "./kanban";
 
 const task = (id: string, lane: string, over: Partial<KanbanTask> = {}): KanbanTask => ({
@@ -84,5 +84,11 @@ describe("the archive confirm's keys", () => {
     expect(archiveKey("Enter", false, false, false)).toBeNull();
     expect(archiveKey("Escape", false, false, true)).toBeNull();
     expect(archiveKey("Enter", true, false, true)).toBeNull();
+  });
+});
+
+describe("the dialog's key", () => {
+  it("differs from the task Modal's bare-id key, which sits beside it in the same parent", () => {
+    expect(archiveDialogKey("TASK-7")).not.toBe("TASK-7");
   });
 });

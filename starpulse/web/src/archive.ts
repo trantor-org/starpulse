@@ -40,3 +40,6 @@ export function archiveKey(key: string, ctrl: boolean, meta: boolean, busy: bool
 /** The cards without the tasks archived here, so the card and its column's count drop before the next snapshot says so. */
 export const withoutArchived = (tasks: KanbanTask[], gone: ReadonlySet<string>): KanbanTask[] =>
   gone.size ? tasks.filter((t) => !gone.has(t.id)) : tasks;
+
+/** The dialog renders beside the task's Modal, which is keyed by the bare id; React reconciles keyed siblings together, so a shared key duplicates the Modal's node on every render. */
+export const archiveDialogKey = (id: string) => `archive-${id}`;
