@@ -184,6 +184,18 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .lab.nh { background: rgba(251,113,133,.14); color: #fda4af; } #kb .lab.sz { background: rgba(103,232,249,.10); color: #a5f3fc; }
 #kb .who { margin-left: auto; display: flex; align-items: center; gap: 4px; } #kb .who i { width: 6px; height: 6px; border-radius: 50%; }
 #kb .dep { color: #fbbf24; }
+#kb .holds { color: #fb923c; font-weight: 600; }
+#kb .col .heldby { flex: none; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 6px 10px; font-size: calc(10.5px * var(--fs)); border-bottom: 1px solid rgba(251,146,60,.18); background: rgba(251,146,60,.05); }
+#kb .heldby .k { color: var(--muted); margin-right: 2px; }
+#kb .heldby .hb { all: unset; cursor: pointer; display: inline-flex; gap: 4px; padding: 1px 6px; border-radius: 3px; background: rgba(148,163,184,.10); color: #cbd5e1; font-family: "JetBrains Mono", ui-monospace, monospace; }
+#kb .heldby .hb b { font-weight: 600; color: #fb923c; }
+#kb .heldby .hb.nh { background: rgba(251,113,133,.14); color: #fda4af; }
+#kb .heldby .hb:hover, #kb .heldby .hb:focus-visible { outline: 1px solid rgba(251,146,60,.6); }
+#kb .heldby .more { color: var(--muted); }
+#kb .col h2 .cc { margin-left: 6px; color: #fb923c; font-weight: 600; letter-spacing: 0; }
+#kb .card.chain-self { box-shadow: 0 0 0 1px #e2e8f0, 0 0 14px rgba(226,232,240,.18); }
+#kb .card.chain-holds { box-shadow: 0 0 0 1px #fb923c, 0 0 12px rgba(251,146,60,.28); }
+#kb .card.chain-waits { box-shadow: 0 0 0 1px #67e8f9, 0 0 12px rgba(103,232,249,.25); }
 
 /* The task modal: centred over a dimmed board. */
 #kbm { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(2,4,10,.62); backdrop-filter: blur(2px); animation: kb-scrim .15s ease-out; }

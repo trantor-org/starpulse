@@ -5,7 +5,7 @@ import { archiveDialogKey, withoutArchived } from "./archive";
 import { ArchiveDialog } from "./ArchiveConfirm";
 import type { HudState } from "./hud";
 import {
-  COLUMNS, applySuggestion, applyTaskRecord, assigneeOptions, clearFilters, filtersActive, hideMilestone, hideTask, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
+  COLUMNS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
   type KanbanTask, type Option, type Prefs,
 } from "./kanban";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
@@ -87,17 +87,21 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
   );
 }
 
+/** Where a card sits in the hovered card's chain: the hovered card, a Waiting task it holds or an open task it waits on. */
+export type Chain = "self" | "holds" | "waits";
+
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
-export function Card({ task, now, marks, names, compact = false, onOpen, onPress, onPlay, dismiss, dismissStart, style }: {
-  task: KanbanTask; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
-  onPlay?: () => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
+export function Card({ task, holds = 0, chain, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
+  task: KanbanTask; holds?: number; chain?: Chain; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
   const labels = task.labels.filter((l) => !/^kind-|^agent-resolvable$/.test(l)).slice(0, 3);
   const live = task.live, claim = marks.claim;
-  const cls = ["card", compact && "compact", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
+  const cls = ["card", chain && `chain-${chain}`, compact && "compact", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
   const guard = task.moves.in_progress?.allowed === false ? task.moves.in_progress.reason : "";
   return (
     <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={onPress}
+      onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
         <span className="id">{task.id}</span><PullChip pulls={task.prs} />
@@ -128,12 +132,33 @@ export function Card({ task, now, marks, names, compact = false, onOpen, onPress
           {labels.map((l) => (
             <span key={l} title={l} className={`lab${l === "needs-human" ? " nh" : /^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
           ))}
+          {holds > 0 && <span className="holds" title={`holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>⛓{holds}</span>}
           {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
           {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
         </div>
       )}
       {marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
       {marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart ?? dismiss} />}
+    </div>
+  );
+}
+
+/** The Waiting column's strip: the tasks at the bottom of its chains, most held first, each opening its card. */
+export function HeldBy({ holders: held, open, hover }: {
+  holders: { task: KanbanTask; holds: number }[]; open: (id: string) => void; hover?: (id: string | null) => void;
+}) {
+  if (!held.length) return null;
+  return (
+    <div className="heldby">
+      <span className="k" title="The tasks every Waiting chain ends at; finishing one releases the Waiting tasks it holds">Held by</span>
+      {held.slice(0, 3).map(({ task, holds }) => (
+        <button key={task.id} className={`hb${task.labels.includes("needs-human") ? " nh" : ""}`} onClick={() => open(task.id)}
+          onPointerEnter={hover && (() => hover(task.id))} onPointerLeave={hover && (() => hover(null))}
+          title={`${task.title} · ${task.lane.replace(/_/g, " ")} · holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>
+          {task.id}<b>⛓{holds}</b>
+        </button>
+      ))}
+      {held.length > 3 && <span className="more">+{held.length - 3} more</span>}
     </div>
   );
 }
@@ -364,6 +389,14 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
     return saved?.source === hud.cards ? applyTaskRecord(card, saved.record) : card;
   }), gone), [edited, gone, hud.cards, moved, started]);
   const view = useMemo(() => layout(cards, hud.names, prefs), [cards, hud.names, prefs]);
+  const holds = useMemo(() => holdCounts(cards), [cards]);
+  const blockers = useMemo(() => holders(cards, holds), [cards, holds]);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const chain = useMemo(() => {
+    const c = hovered && !lift ? chainOf(cards, hovered) : null;
+    if (!c || (!c.holds.size && !c.waitsOn.size)) return null;
+    return (id: string): Chain | undefined => (id === hovered ? "self" : c.holds.has(id) ? "holds" : c.waitsOn.has(id) ? "waits" : undefined);
+  }, [cards, hovered, lift]);
   const task = open ? cards.find((t) => t.id === open) : undefined;
   const archiveTask = archiving ? cards.find((t) => t.id === archiving) : undefined;
   useEffect(() => {
@@ -536,15 +569,18 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
       <div id="cols">
         {view.columns.map((col) => {
           const target = lift?.kinds[col.id];
+          const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
           const colCls = ["col", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
           return (
             <section key={col.id} className={colCls} data-lane={col.id}>
               <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
+                {inChain > 0 && <span className="cc" title={`${inChain} of this column's tasks are in the hovered task's chain`}>⛓{inChain}</span>}
                 {target && target.kind !== "here" && (
                   <span className="hint">{target.kind === "ok" ? "drop" : target.kind === "guard" ? `guarded · ${target.skill || "refused"}` : "no transition"}</span>
                 )}
               </h2>
               {target?.kind === "guard" && <div className="why"><Reason text={target.reason} /></div>}
+              {col.id === "waiting" && !lift && <HeldBy holders={blockers} open={(id) => setOpen(id)} hover={setHovered} />}
               <div className="body">
                 {col.buckets.length === 0 && <div className="empty">no tasks</div>}
                 {col.buckets.map((b) => (
@@ -555,9 +591,10 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
                       <button className="hide" title="Hide this milestone" onClick={(e) => { e.stopPropagation(); setPrefs((p) => hideMilestone(p, b.milestone)); }}>hide</button>
                     </div>
                     {!b.folded && b.tasks.map((t) => (
-                      <Card key={t.id} task={t} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
+                      <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
                         style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
                         onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
+                        onHover={(on) => setHovered((h) => (on ? t.id : h === t.id ? null : h))}
                         dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
                     ))}
                   </div>

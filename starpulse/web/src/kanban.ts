@@ -176,3 +176,49 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
     };
   });
 }
+
+/** The dependency edges between open tasks: each task's open dependencies, and each task's Waiting dependents. */
+function edges(tasks: KanbanTask[]) {
+  const open = new Set(tasks.filter((t) => t.lane !== "done").map((t) => t.id));
+  const waitsOn = new Map<string, string[]>(), heldBy = new Map<string, string[]>();
+  for (const t of tasks) {
+    const deps = t.dependencies.filter((d) => open.has(d));
+    if (t.lane === "done" || !deps.length) continue;
+    waitsOn.set(t.id, deps);
+    if (t.lane === "waiting") for (const d of deps) heldBy.set(d, [...(heldBy.get(d) ?? []), t.id]);
+  }
+  return { waitsOn, heldBy };
+}
+
+/** Every task reachable from `id` along `next`, `id` itself left out, each once. */
+function reach(id: string, next: Map<string, string[]>): Set<string> {
+  const seen = new Set<string>(), todo = [id];
+  for (let at = todo.pop(); at !== undefined; at = todo.pop()) {
+    for (const n of next.get(at) ?? []) {
+      if (n === id || seen.has(n)) continue;
+      seen.add(n);
+      todo.push(n);
+    }
+  }
+  return seen;
+}
+
+/** A task's chain: the Waiting tasks it holds and the open tasks it waits on, both transitively. */
+export function chainOf(tasks: KanbanTask[], id: string): { holds: Set<string>; waitsOn: Set<string> } {
+  const e = edges(tasks);
+  return { holds: reach(id, e.heldBy), waitsOn: reach(id, e.waitsOn) };
+}
+
+/** How many Waiting tasks each task holds: those that depend on it while it is not Done, directly or through other Waiting tasks, each counted once. */
+export function holdCounts(tasks: KanbanTask[]): Map<string, number> {
+  const { heldBy } = edges(tasks);
+  return new Map([...heldBy.keys()].map((id) => [id, reach(id, heldBy).size]));
+}
+
+/** The tasks at the bottom of the Waiting chains, most held first: each holds Waiting work and is not itself waiting on open work. */
+export function holders(tasks: KanbanTask[], counts = holdCounts(tasks)): { task: KanbanTask; holds: number }[] {
+  return tasks
+    .filter((t) => (counts.get(t.id) ?? 0) > 0 && !(t.lane === "waiting" && t.openDeps > 0))
+    .map((task) => ({ task, holds: counts.get(task.id)! }))
+    .sort((a, b) => b.holds - a.holds || a.task.id.localeCompare(b.task.id, undefined, { numeric: true }));
+}
