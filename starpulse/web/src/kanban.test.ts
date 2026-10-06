@@ -5,8 +5,8 @@ import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "./types";
 
 const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
-const task = (id: string, lane: string, milestone = "", at = 0): KanbanTask => ({
-  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {},
+const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): KanbanTask => ({
+  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered,
 });
 const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, prefs);
 const column = (v: ReturnType<typeof view>, id: string) => v.columns.find((c) => c.id === id)!;
@@ -20,10 +20,17 @@ describe("the columns", () => {
     expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0]);
   });
 
-  it("order a column's cards by their latest machine event, newest first", () => {
-    const v = view([task("PROJ-1", "ready", "", 10), task("PROJ-2", "ready", "", 30), task("PROJ-3", "ready", "", 20)]);
+  it("order a column's cards by when each entered the column, newest first, then by id, newest first", () => {
+    const v = view([task("PROJ-1", "ready", "", 0, 10), task("PROJ-2", "ready", "", 0, 30), task("PROJ-9", "ready", "", 0, 20), task("PROJ-10", "ready", "", 0, 20)]);
 
-    expect(column(v, "ready").buckets[0].tasks.map((t) => t.id)).toEqual(["PROJ-2", "PROJ-3", "PROJ-1"]);
+    expect(column(v, "ready").buckets[0].tasks.map((t) => t.id)).toEqual(["PROJ-2", "PROJ-10", "PROJ-9", "PROJ-1"]);
+  });
+
+  it("hold a card's place when only its session activity advances", () => {
+    const ids = (at: number) => column(view([task("PROJ-1", "in_progress", "", at, 10), task("PROJ-2", "in_progress", "", 5, 20)]), "in_progress").buckets[0].tasks.map((t) => t.id);
+
+    expect(ids(1)).toEqual(["PROJ-2", "PROJ-1"]);
+    expect(ids(99)).toEqual(ids(1));
   });
 });
 
@@ -158,6 +165,14 @@ describe("the cards drawn from a snapshot", () => {
 
     expect(released).toMatchObject({ "PROJ-5": true, "PROJ-6": false, "PROJ-7": false, "PROJ-8": false });
     expect(kanbanTasks(merge(snap)).find((t) => t.id === "PROJ-5")!.live).toMatchObject({ machine: "in-progress", state: "pr_opened" });
+  });
+
+  it("carry when the task entered its column, and 0 when the snapshot gives no time", () => {
+    const snap = snapshot();
+    snap.flows[0].agents[0].entered = 450;
+    const tasks = kanbanTasks(merge(snap));
+
+    expect([tasks.find((t) => t.id === "PROJ-1")!.entered, tasks.find((t) => t.id === "PROJ-2")!.entered]).toEqual([450, 0]);
   });
 
   it("have no milestone, pull requests or machine when the snapshot names none", () => {

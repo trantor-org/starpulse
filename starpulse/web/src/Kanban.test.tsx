@@ -5,7 +5,7 @@ import type { KanbanTask } from "./kanban";
 
 const task: KanbanTask = {
   id: "PROJ-1", title: "A title long enough to need two lines in a comfortable card", lane: "in_progress", milestone: "m-1", labels: ["feature", "needs-human"], assignee: "@agent-standard-high",
-  dependencies: [], openDeps: 2, prs: [], description: "", live: { machine: "in-progress", state: "red_proven", at: 100 }, released: false, moves: {},
+  dependencies: [], openDeps: 2, prs: [], description: "", live: { machine: "in-progress", state: "red_proven", at: 100 }, released: false, moves: {}, entered: 0,
 };
 const draw = (compact: boolean) => renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
 

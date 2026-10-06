@@ -26,6 +26,8 @@ export interface KanbanTask {
   released: boolean;
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
   moves: Record<string, { allowed: boolean; reason: string; skill: string }>;
+  /** When the task entered its column, epoch seconds; 0 when the server gave no time. */
+  entered: number;
 }
 
 /** Refresh the snapshot-sized card with the fields a successful full-record edit can change. */
@@ -149,7 +151,7 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs
       && (prefs.assignee === null || t.assignee === prefs.assignee) && (prefs.milestone === null || t.milestone === prefs.milestone),
   );
   const columns = COLUMNS.map((id): Column => {
-    const here = visible.filter((t) => t.lane === id).sort((a, b) => (b.live?.at ?? 0) - (a.live?.at ?? 0));
+    const here = visible.filter((t) => t.lane === id).sort((a, b) => b.entered - a.entered || b.id.localeCompare(a.id, undefined, { numeric: true }));
     const keys = [...new Set(here.map((t) => t.milestone))].sort((a, b) => milestoneNumber(b) - milestoneNumber(a));
     const buckets = keys.map((milestone) => ({ milestone, tasks: here.filter((t) => t.milestone === milestone), folded: prefs.folded.has(milestone) }));
     return { id, name: names[id] ?? id, count: here.length, buckets };
@@ -170,7 +172,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: sky.pulls[a.id] ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at } : null,
-      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {},
+      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0,
     };
   });
 }

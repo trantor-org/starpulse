@@ -81,6 +81,8 @@ export interface RawAgent {
   previous?: string;
   /** The verdict on each Board column the task may move to, by state id. */
   moves?: Record<string, { allowed: boolean; reason: string; skill: string }>;
+  /** When a Board task entered its lane, epoch seconds; absent when the server holds no time for it. */
+  entered?: number;
 }
 
 export interface FlowSnapshot {

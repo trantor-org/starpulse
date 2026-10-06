@@ -4,7 +4,7 @@ import { COLUMNS, NO_PREFS, layout, type KanbanTask } from "./kanban";
 
 const task = (id: string, lane: string, over: Partial<KanbanTask> = {}): KanbanTask => ({
   id, title: id, lane, milestone: "m-89", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null,
-  released: false, moves: {}, ...over,
+  released: false, moves: {}, entered: 0, ...over,
 });
 const pull = (over = {}) => ({ number: 7, url: "http://pr/7", checks: "pass" as const, merged: false, threads: 0, stale: false, ...over });
 const reply = (status: number, body: object) => async () => new Response(JSON.stringify(body), { status });
