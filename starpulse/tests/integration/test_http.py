@@ -30,10 +30,15 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
         yield server
 
 
+#: The host's mime table names JavaScript one of two ways (a runner's /etc/mime.types may say application/javascript).
+_JAVASCRIPT = "application/javascript"
+
+
 def _status(server: ThreadingHTTPServer, path: str) -> tuple[int, str]:
     try:
         with urllib.request.urlopen(_url(server, path), timeout=5) as resp:
-            return resp.status, resp.headers.get_content_type()
+            kind = resp.headers.get_content_type()
+            return resp.status, "text/javascript" if kind == _JAVASCRIPT else kind
     except urllib.error.HTTPError as exc:
         return exc.code, ""
 
