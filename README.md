@@ -31,9 +31,11 @@ uvx starpulse serve
 Open <http://localhost:8766>. The first serve creates `.starpulse/board/` in the working directory (beside the config file when `--config`
 names one): a `config.yml`
 holding the lanes (To Do, In Progress, Done) and an empty `tasks/` directory, one Markdown file per task. The
-Kanban view starts with no tasks. If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
+Kanban view starts with no tasks: **New task**, at the top right beside the task count, opens a form for its title, description, priority, labels,
+milestone, assignee, dependencies and acceptance criteria and adds it to the first column, and
+**Connect a tracker** opens the `[board]` setting for each public adapter. If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
 line naming it and the `[board] type = "upstream_backlog"` setting that shows it instead (see Configure); the page's
-snapshot carries the same line as `hint`. StarPulse keeps its event log and history in
+snapshot carries the same line as `hint`, and Connect a tracker shows it. StarPulse keeps its event log and history in
 `starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
 trust.
 
@@ -221,8 +223,10 @@ directory. The `Board` says:
   keys it recognizes),
 - and optionally a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may
   list the `writers` the machine declares per event), an `assign` for assignee changes, a `read`, `edit` and `archive` for the full task record and guarded edits and
-  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `create(title)` that makes a
-  task in the first lane and answers with its id (`POST /api/tasks {title}`; `capabilities.create`), and its own `history`.
+  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `create(title, details)` that
+  makes a task in the board's starting lane with the details the page filled (description, priority, labels,
+  milestone, assignee, dependencies, acceptance criteria) and answers with its id (`POST /api/tasks`;
+  `capabilities.create`), and its own `history`.
 
 `starpulse.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python. `starpulse.upstream_backlog` is the reference adapter for a tracker with its own

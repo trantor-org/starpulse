@@ -248,6 +248,7 @@ class UpstreamBacklog:
             assignee=assignees[0] if assignees else "",
             holder=_holder(body),
             labels=_strings(frontmatter.get("labels")),
+            milestone=str(frontmatter.get("milestone") or "").strip(),
             description=_description(body),
             moves={} if settled else dict(self._moves.get(lane, {})),
         )

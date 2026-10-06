@@ -1,5 +1,6 @@
 // The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
 // demo page (`starpulse.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
+import { columnsOf } from "./kanban";
 import type { LaneStep } from "./trace";
 import type { Machine, RawAgent, Snapshot } from "./types";
 import type { TaskRecord } from "./taskView";
@@ -108,6 +109,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/task": (server, path) => server.task(decodeURIComponent(path.slice("/api/task/".length))),
   "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
+  "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
 };
 
 /**
@@ -141,6 +143,7 @@ export class DemoServer {
   snapshot: Snapshot;
   lanes: Record<string, LaneStep[]>;
   records: Record<string, TaskRecord>;
+  private created = new Set<string>();
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -152,7 +155,7 @@ export class DemoServer {
     for (const e of Object.values(snap.settled)) [e.at, e.created] = [e.at == null ? null : e.at + age, e.created == null ? null : e.created + age];
     this.lanes = history ?? {};
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
-    this.snapshot = this.verdicts({ ...snap, capabilities: { edit: true, archive: true } });
+    this.snapshot = this.verdicts({ ...snap, capabilities: { edit: true, archive: true, create: true } });
   }
 
   subscribe(fn: (s: Snapshot) => void): () => void {
@@ -173,13 +176,19 @@ export class DemoServer {
     this.timer = undefined;
   }
 
-  /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains. */
+  /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains.
+   * A card the viewer created stays out of the walk, so it stays where it landed until the viewer moves it. */
   step(random = Math.random) {
-    const next = stepRuns(demoStep(this.snapshot, random), random);
+    const walked = structuredClone(this.snapshot);
+    const held = walked.flows.find((f) => f.name === "board");
+    const created = held?.agents.filter((a) => this.created.has(a.id)) ?? [];
+    if (held) held.agents = held.agents.filter((a) => !this.created.has(a.id));
+    const next = stepRuns(demoStep(walked, random), random);
     const board = next.flows.find((f) => f.name === "board");
-    const prev = this.snapshot.flows.find((f) => f.name === "board")?.agents ?? [];
+    const prev = held?.agents ?? [];
     const fresh = new Set<string>();
     if (board) {
+      board.agents.push(...created);
       const lane = board.machine.mainLine?.[1] ?? board.machine.states.find((s) => s.initial)?.id ?? board.machine.states[0].id;
       const ids = [...board.agents, ...prev].map((a) => a.id).concat(Object.keys(next.settled));
       let n = Math.max(0, ...ids.map((id) => Number(id.match(/\d+$/)?.[0] ?? 0)));
@@ -248,6 +257,36 @@ export class DemoServer {
     return json({ task });
   }
 
+  /** Create a task in the Board's starting lane as the served writer would, unless a review fixture makes the writer refuse. */
+  create(raw: string): Response {
+    let sent: Record<string, unknown>;
+    try { sent = JSON.parse(raw) as Record<string, unknown>; } catch { sent = {}; }
+    const { title } = sent;
+    if (typeof title !== "string" || !title.trim()) return json({ error: 'a create needs {"title": "<1 to 300 characters>"}' }, 400);
+    const text = (field: string) => (typeof sent[field] === "string" ? (sent[field] as string).trim() : "");
+    const list = (field: string) => (Array.isArray(sent[field]) ? (sent[field] as unknown[]).filter((v): v is string => typeof v === "string") : []);
+    if (this.refuseEdits) return json({ error: "The demo writer refused this create; the task was not created.", skill: "completing-tasks" }, 409);
+    const next = structuredClone(this.snapshot);
+    const board = next.flows.find((f) => f.name === "board");
+    if (!board) return json({ error: "this board does not create tasks" }, 404);
+    const prefix = board.agents[0]?.id.match(/^(.*?)\d+$/)?.[1] ?? "TASK-";
+    const ids = board.agents.map((a) => a.id).concat(Object.keys(next.settled));
+    const id = `${prefix}${Math.max(0, ...ids.map((n) => Number(n.match(/\d+$/)?.[0] ?? 0))) + 1}`;
+    const lane = startingLane(board.machine);
+    const card: RawAgent = {
+      id, title: title.trim(), state: lane, model: text("assignee"), labels: list("labels"), milestone: text("milestone"),
+      dependencies: list("dependencies"), description: text("description"),
+    };
+    board.agents.push(card);
+    this.created.add(id);
+    this.records[id] = {
+      ...demoRecord(card), priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
+      acceptanceCriteria: list("acceptanceCriteria").map((item, i) => ({ n: i + 1, text: item, checked: false })),
+    };
+    this.publish(next, new Set([id]));
+    return json({ task: id }, 201);
+  }
+
   fetch(input: string, init?: RequestInit): Promise<Response> {
     const [path, search = ""] = input.split("?", 2); // no URL(): a base address would be a host in the public file
     const route = Object.keys(ROUTES).find((r) => path === r || path.startsWith(`${r}/`));
@@ -275,6 +314,13 @@ export class DemoServer {
     return { ...snap, flows };
   }
 }
+
+/** Where a new task starts: the machine's initial state when the Kanban draws it as a column, else the first column. */
+const startingLane = (machine: Machine): string => {
+  const lanes = columnsOf(Object.fromEntries(machine.states.map((s) => [s.id, s.name])));
+  const initial = machine.states.find((s) => s.initial)?.id ?? "";
+  return lanes.includes(initial) ? initial : lanes[0];
+};
 
 const demoRecord = (card: RawAgent): TaskRecord => ({
   title: card.title,

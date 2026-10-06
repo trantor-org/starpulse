@@ -374,6 +374,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       claims: sky.claims,
       boardUrl: sky.boardUrl,
       capabilities: sky.capabilities,
+      hint: sky.hint,
     };
     // a delta rarely changes what the HUD shows, so only changed fields reach React and an unchanged HUD does not re-render
     const now = hud.get() as unknown as Record<string, unknown>;

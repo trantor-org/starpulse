@@ -6,6 +6,9 @@ import type { Pull } from "./types";
 /** The Board states drawn as columns, in order. New is the creation pseudo-state and Completed and Archived have left the lanes. */
 export const COLUMNS = ["ready", "waiting", "in_progress", "review", "needs_attention", "done"];
 
+/** The lanes drawn as columns: the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses), except those six on a board with the `ready` lane (trantor's lifecycle) and before the board's lanes are known. */
+export const columnsOf = (names: Record<string, string>): string[] => ("ready" in names || !Object.keys(names).length ? COLUMNS : Object.keys(names));
+
 export interface KanbanTask {
   id: string;
   title: string;
@@ -95,23 +98,23 @@ export interface Option {
   value: string;
   count: number;
 }
-const options = (tasks: KanbanTask[], of: (t: KanbanTask) => string, order: (a: Option, b: Option) => number): Option[] => {
+const options = (tasks: KanbanTask[], columns: string[], of: (t: KanbanTask) => string, order: (a: Option, b: Option) => number): Option[] => {
   const counts = new Map<string, number>();
-  for (const t of tasks.filter((x) => COLUMNS.includes(x.lane))) counts.set(of(t), (counts.get(of(t)) ?? 0) + 1);
+  for (const t of tasks.filter((x) => columns.includes(x.lane))) counts.set(of(t), (counts.get(of(t)) ?? 0) + 1);
   return [...counts].map(([value, count]) => ({ value, count })).sort(order);
 };
 /** Busiest first, the unassigned after the named. */
-export const assigneeOptions = (tasks: KanbanTask[]) =>
-  options(tasks, (t) => t.assignee, (a, b) => Number(a.value === "") - Number(b.value === "") || b.count - a.count || a.value.localeCompare(b.value));
+export const assigneeOptions = (tasks: KanbanTask[], columns = COLUMNS) =>
+  options(tasks, columns, (t) => t.assignee, (a, b) => Number(a.value === "") - Number(b.value === "") || b.count - a.count || a.value.localeCompare(b.value));
 /** Newest first, as the buckets run, with No milestone last. */
-export const milestoneOptions = (tasks: KanbanTask[]) => options(tasks, (t) => t.milestone, (a, b) => milestoneNumber(b.value) - milestoneNumber(a.value));
+export const milestoneOptions = (tasks: KanbanTask[], columns = COLUMNS) => options(tasks, columns, (t) => t.milestone, (a, b) => milestoneNumber(b.value) - milestoneNumber(a.value));
 
 /** The labels containing the word being typed (the last word of the bar, after a `label:` prefix), most used first. */
-export function labelSuggestions(tasks: KanbanTask[], query: string): { label: string; count: number }[] {
+export function labelSuggestions(tasks: KanbanTask[], query: string, columns = COLUMNS): { label: string; count: number }[] {
   const word = /\S+$/.exec(query)?.[0].toLowerCase().replace(LABEL, "") ?? "";
   if (!word) return [];
   const counts = new Map<string, number>();
-  for (const t of tasks.filter((x) => COLUMNS.includes(x.lane))) for (const l of t.labels) counts.set(l, (counts.get(l) ?? 0) + 1);
+  for (const t of tasks.filter((x) => columns.includes(x.lane))) for (const l of t.labels) counts.set(l, (counts.get(l) ?? 0) + 1);
   return [...counts].filter(([l]) => l.toLowerCase().includes(word)).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 /** The bar with the word being typed written as `label:<name>`, ready for the next word. */
@@ -145,12 +148,13 @@ export interface Layout {
 const milestoneNumber = (milestone: string) => (milestone ? Number(/^m-(\d+)/.exec(milestone)?.[1] ?? 0) : -1);
 
 export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs): Layout {
-  const drawn = tasks.filter((t) => COLUMNS.includes(t.lane));
+  const lanes = columnsOf(names);
+  const drawn = tasks.filter((t) => lanes.includes(t.lane));
   const visible = drawn.filter(
     (t) => !prefs.hiddenTasks.has(t.id) && !prefs.hiddenMilestones.has(t.milestone) && matches(t, prefs.query)
       && (prefs.assignee === null || t.assignee === prefs.assignee) && (prefs.milestone === null || t.milestone === prefs.milestone),
   );
-  const columns = COLUMNS.map((id): Column => {
+  const columns = lanes.map((id): Column => {
     const here = visible.filter((t) => t.lane === id).sort((a, b) => b.entered - a.entered || b.id.localeCompare(a.id, undefined, { numeric: true }));
     const keys = [...new Set(here.map((t) => t.milestone))].sort((a, b) => milestoneNumber(b) - milestoneNumber(a));
     const buckets = keys.map((milestone) => ({ milestone, tasks: here.filter((t) => t.milestone === milestone), folded: prefs.folded.has(milestone) }));

@@ -88,11 +88,13 @@ class TaskArchiver(Protocol):
 
 
 class TaskCreator(Protocol):
-    """A board writer: create a task with this title in the board's first lane, and say what it did.
+    """A board writer: create a task with this title and details in the board's starting lane, and say what it did.
 
+    `details` holds only the fields the page filled, each checked by the server: `description`, `priority`
+    (`high`, `medium` or `low`), `labels`, `milestone`, `assignee`, `dependencies` and `acceptanceCriteria`.
     A successful `Written.output` is the new task's id."""
 
-    def __call__(self, title: str, /) -> Written: ...
+    def __call__(self, title: str, details: Mapping[str, Any], /) -> Written: ...
 
 
 def _no_cues(qualify: Qualify) -> list[dict]:

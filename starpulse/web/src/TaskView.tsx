@@ -1,7 +1,8 @@
 // The task view: the same framed fields in read and edit mode, with one guarded write for the complete diff.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { COLUMNS, type KanbanTask } from "./kanban";
+import { columnsOf, type KanbanTask } from "./kanban";
 import { startLane, startable } from "./start";
+import type { Capabilities } from "./types";
 import {
   PRIORITIES, changedFields, discardMessage, editKey, menuKey, newlyChecked, saveTask,
   type Item, type MenuState, type TaskField, type TaskRecord,
@@ -16,7 +17,7 @@ export interface TaskViewProps {
   milestones: string[];
   refusal: ReactNode;
   startNote: ReactNode;
-  capabilities?: { edit: boolean; archive: boolean };
+  capabilities?: Capabilities;
   names?: Record<string, string>;
   saving: boolean;
   claiming: boolean;
@@ -243,7 +244,7 @@ export function TaskView(p: TaskViewProps) {
     return () => removeEventListener("keydown", onKey, true);
   }, [cancelEdit, diff.fields.length, editing, save]);
 
-  const offered = COLUMNS.filter((c) => c in p.task.moves).map((c) => ({
+  const offered = columnsOf(names).filter((c) => c in p.task.moves).map((c) => ({
     to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason,
   }));
   const startVisible = startLane(p.task) && !p.claiming;

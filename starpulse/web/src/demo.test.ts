@@ -208,6 +208,71 @@ describe("the demo server", () => {
     expect((await reply.json()).error).toBe(ROUTES["/api/run"]);
   });
 
+  it("creates a task in the first lane, as the served board does, and says so in its snapshot", async () => {
+    const s = new DemoServer(fixture());
+    const reply = await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) });
+
+    expect(s.snapshot.capabilities?.create).toBe(true);
+    expect(reply.status).toBe(201);
+    expect(await reply.json()).toEqual({ task: "DEMO-3" });
+    expect(s.snapshot.flows[0].agents.find((a) => a.id === "DEMO-3")).toMatchObject({ title: "Write the docs", state: "ready" });
+    expect((await body(s.fetch("/api/task/DEMO-3"))).record.title).toBe("Write the docs");
+  });
+
+  it("numbers a created task past the settled ones, so it never reuses a settled task's id", async () => {
+    const f = fixture();
+    f.settled = { "DEMO-9": { state: "completed", at: 40, created: 10, title: "shipped", model: "" } };
+    const s = new DemoServer(f);
+
+    const reply = await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) });
+
+    expect(await reply.json()).toEqual({ task: "DEMO-10" });
+  });
+
+  it("creates a task with every detail the form filled, on its card and in its record", async () => {
+    const s = new DemoServer(fixture());
+    const details = { description: "Every lane", priority: "High", labels: ["docs"], milestone: "m-1", assignee: "@agent-fast-low", dependencies: ["DEMO-1"], acceptanceCriteria: ["Names every lane"] };
+    await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs", ...details }) });
+
+    expect(s.snapshot.flows[0].agents.find((a) => a.id === "DEMO-3")).toMatchObject({ model: "@agent-fast-low", labels: ["docs"], milestone: "m-1", dependencies: ["DEMO-1"], description: "Every lane" });
+    expect((await body(s.fetch("/api/task/DEMO-3"))).record).toMatchObject({
+      profile: "@agent-fast-low", priority: "High", labels: ["docs"], milestone: "m-1", dependencies: ["DEMO-1"], description: "Every lane",
+      acceptanceCriteria: [{ n: 1, text: "Names every lane", checked: false }],
+    });
+  });
+
+  it("creates a task in the board's starting lane, not its first working lane", async () => {
+    const f = fixture();
+    const native = { ...machine("to_do", [["to_do", "in_progress", "START"], ["in_progress", "done", "FINISH"]], "done"), mainLine: ["to_do", "in_progress", "done"] };
+    f.flows = [{ name: "board", machine: native, agents: [card("DEMO-1", "in_progress")] }];
+    const s = new DemoServer(f);
+    await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) });
+
+    expect(s.snapshot.flows[0].agents.find((a) => a.id === "DEMO-2")?.state).toBe("to_do");
+  });
+
+  it("leaves a task the viewer created in its starting lane while the demo walks, until the viewer moves it", async () => {
+    const f = fixture();
+    f.flows = [{ name: "board", machine: { ...machine("to_do", [["to_do", "in_progress", "START"], ["in_progress", "done", "FINISH"]], "done"), mainLine: ["to_do", "in_progress", "done"] }, agents: [] }];
+    const s = new DemoServer(f);
+    const { task } = await (await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) })).json();
+    for (let i = 0; i < 5; i++) s.step(() => 0);
+
+    expect(s.snapshot.flows[0].agents.find((a) => a.id === task)?.state).toBe("to_do");
+    expect((await s.fetch("/api/move", { method: "POST", body: JSON.stringify({ task, to: "in_progress" }) })).status).toBe(200);
+    expect(s.snapshot.flows[0].agents.find((a) => a.id === task)?.state).toBe("in_progress");
+  });
+
+  it("refuses a create with no title, and a create the review fixture makes the writer refuse", async () => {
+    const s = new DemoServer(fixture(), undefined, true);
+
+    expect((await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: " " }) })).status).toBe(400);
+    const refused = await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "x" }) });
+    expect(refused.status).toBe(409);
+    expect((await refused.json()).error).toContain("task was not created");
+    expect(s.snapshot.flows[0].agents.map((a) => a.id)).toEqual(["DEMO-1", "DEMO-2"]);
+  });
+
   it("refuses a session start with why, and names no harness, so the start question offers only Work it manually", async () => {
     const s = new DemoServer(fixture());
     const fetcher = (url: string, init?: RequestInit) => s.fetch(url, init);
