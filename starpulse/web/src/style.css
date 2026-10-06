@@ -192,6 +192,10 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .heldby .hb.nh { background: rgba(251,113,133,.14); color: #fda4af; }
 #kb .heldby .hb:hover, #kb .heldby .hb:focus-visible { outline: 1px solid rgba(251,146,60,.6); }
 #kb .heldby .more { color: var(--muted); }
+#kb .card.chain-out { opacity: .28; transition: opacity .12s; }
+#kb .card.chain-self { box-shadow: 0 0 0 1px #e2e8f0, 0 0 14px rgba(226,232,240,.18); }
+#kb .card.chain-holds { box-shadow: 0 0 0 1px #fb923c, 0 0 12px rgba(251,146,60,.28); }
+#kb .card.chain-waits { box-shadow: 0 0 0 1px #67e8f9, 0 0 12px rgba(103,232,249,.25); }
 
 /* The task modal: centred over a dimmed board. */
 #kbm { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(2,4,10,.62); backdrop-filter: blur(2px); animation: kb-scrim .15s ease-out; }

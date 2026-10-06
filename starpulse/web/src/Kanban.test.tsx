@@ -57,6 +57,16 @@ describe("what holds the Waiting lane", () => {
     expect(html).toContain("+1 more");
   });
 
+  it("marks a card's place in the hovered chain, and dims a card outside it", () => {
+    const as = (chain: "self" | "holds" | "waits" | "out") =>
+      renderToStaticMarkup(<Card task={task} chain={chain} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(as("self")).toContain('class="card chain-self"');
+    expect(as("holds")).toContain('class="card chain-holds"');
+    expect(as("waits")).toContain('class="card chain-waits"');
+    expect(as("out")).toContain('class="card chain-out"');
+  });
+
   it("draws nothing when no task holds Waiting work", () => {
     expect(renderToStaticMarkup(<HeldBy holders={[]} open={() => {}} />)).toBe("");
   });

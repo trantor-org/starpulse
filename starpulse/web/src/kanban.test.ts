@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, type KanbanTask } from "./kanban";
+import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, filtersActive, hideMilestone, chainOf, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, type KanbanTask } from "./kanban";
 import { merge } from "./sky";
 import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "./types";
@@ -315,6 +315,12 @@ describe("what holds the Waiting lane", () => {
     const timed = [dep("TIMED", "waiting"), dep("AFTER", "waiting", "TIMED")];
 
     expect(holders(timed).map((h) => [h.task.id, h.holds])).toEqual([["TIMED", 1]]);
+  });
+
+  it("trace a task's chain: the Waiting tasks it holds and the open tasks it waits on, both transitively", () => {
+    expect(chainOf(board, "HUB")).toEqual({ holds: new Set(["S1", "S2"]), waitsOn: new Set(["GATE"]) });
+    expect(chainOf(board, "S2")).toEqual({ holds: new Set(), waitsOn: new Set(["HUB", "SIDE", "GATE"]) });
+    expect(chainOf(board, "TIMED")).toEqual({ holds: new Set(), waitsOn: new Set() });
   });
 
   it("stop at a dependency cycle instead of counting forever", () => {
