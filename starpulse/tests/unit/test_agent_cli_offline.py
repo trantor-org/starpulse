@@ -123,6 +123,7 @@ class TestConfigCheck:
             "board": {},
             "database_url": None,
             "session_start_url": None,
+            "level": None,
         }
 
     def test_with_no_file_it_reports_the_defaults(

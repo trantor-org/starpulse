@@ -12,6 +12,8 @@ Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter
 group its workflows on the page, and optionally `token_env`, the name of the environment variable that holds the
 token the HTTP ingest accepts for it (the token itself is never in this file). A workflow is shown as `<instance>/<workflow>`, so two instances can
 carry the same workflow name.
+
+The optional `[level]` table configures the flow graph a hub draws above the Board (`starpulse.level`).
 """
 
 from __future__ import annotations
@@ -27,8 +29,9 @@ from types import ModuleType
 
 from starpulse.board import DEFAULT_TYPE, module_name
 from starpulse.harnesses import Harnesses, load_harnesses
+from starpulse.level import Level, LevelError, parse_level
 
-_KEYS = {"tracker_url", "mode", "runs", "harnesses_file", "board", "database_url", "session_start_url"}
+_KEYS = {"tracker_url", "mode", "runs", "harnesses_file", "board", "database_url", "session_start_url", "level"}
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env"}
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -133,6 +136,8 @@ class Config:
     """The history store's SQLAlchemy URL; None keeps it in a SQLite file beside the config."""
     session_start_url: str | None = None
     """The session-start service a started task is sent to (`POST <url>/start/TASK-N`); none: nothing can be started."""
+    level: Level | None = None
+    """The `[level]` flow graph above the Board; none when the config has no such table."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -145,6 +150,14 @@ class Config:
     def qualified_run_safe(self) -> tuple[str, ...]:
         """Every instance's run-safe workflows as `<instance>/<workflow>`."""
         return tuple(f"{instance.name}/{w}" for instance in self.runs for w in instance.run_safe)
+
+
+def _level(raw: Mapping[str, object]) -> Level | None:
+    """The `[level]` table's level, or None when the config has none; a table the schema refuses is a `ConfigError`."""
+    try:
+        return parse_level(raw["level"]) if "level" in raw else None
+    except LevelError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def discover(path: Path | None) -> Path | None:
@@ -195,4 +208,4 @@ def load(path: Path | None) -> Config:
     url = raw.get("database_url")
     if url is not None and not isinstance(url, str):
         raise ConfigError("database_url must be text")
-    return Config(raw.get("tracker_url"), mode, runs, harnesses, kind, board, url, session_start_url)
+    return Config(raw.get("tracker_url"), mode, runs, harnesses, kind, board, url, session_start_url, _level(raw))
