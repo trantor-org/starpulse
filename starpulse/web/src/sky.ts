@@ -1,6 +1,7 @@
 // What the drawing reads: the pushed snapshot merged into one sky, and the
 // moves the page plays. The approved mockup replayed a saved hour; the page
 // plays each move once, when the stream first delivers it.
+import { stepRings, type StepRing } from "./fanout";
 import { tree, type Tree } from "./levels";
 import type { Cue, Dag, FlowSnapshot, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
 
@@ -8,6 +9,8 @@ import type { Cue, Dag, FlowSnapshot, Pool, Pull, RawAgent, Settled, Snapshot, W
 export const TRAVEL = 3;
 export const PULSE = 1.8;
 export const FLARE = 4;
+/** Seconds a step's ring takes to fade. */
+export const RING = 1.1;
 /** Moves older than this are forgotten. */
 export const HOUR = 3600;
 
@@ -150,6 +153,12 @@ export interface Move {
 
 const finished = (d: Dag) => (d.finishedAt ? Date.parse(d.finishedAt) / 1000 : NaN);
 
+/** A run's entry into a step, or its end in one, as the ring it draws. */
+export interface StepMove extends StepRing {
+  dag: string;
+  at: number;
+}
+
 /**
  * The moves the page plays, on the page's clock. A step from before the page
  * loaded keeps the time it happened; a step the stream first delivers plays then, and a
@@ -159,6 +168,8 @@ export class Moves {
   events: Move[] = [];
   /** When each DAG's latest run ended, on the page's clock. */
   flare: Record<string, number> = {};
+  /** The rings the steps of DAG glyphs are showing, on the page's clock: a run entering a step, or ending in it. */
+  rings: StepMove[] = [];
   private seen = new Set<string>();
   private last: Record<string, number> = {};
   private prev: Sky | null = null;
@@ -212,6 +223,8 @@ export class Moves {
       if (!prev) this.flare[d.name] = f + off;
       else if (!before || finished(before) !== f) this.flare[d.name] = t;
     }
+    this.rings = this.rings.filter((r) => t - r.at < RING);
+    if (prev) for (const d of S.dags) for (const r of stepRings(prev.dagBy[d.name], d)) this.rings.push({ dag: d.name, ...r, at: t });
     this.events = this.events.filter((e) => e.at >= t - HOUR).sort((a, b) => a.at - b.at);
     this.prev = S;
   }

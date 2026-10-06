@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { countText, merge, Moves, stateCount, TRAVEL } from "./sky";
-import type { Machine, RawAgent, Snapshot } from "./types";
+import { countText, merge, Moves, RING, stateCount, TRAVEL } from "./sky";
+import type { ActiveRun, Dag, Machine, RawAgent, Snapshot } from "./types";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
   states: ids.map((id, i) => ({ id, name: id.replace(/_/g, " "), initial: i === 0, final: false })),
@@ -237,5 +237,41 @@ describe("a page opened while the server is still reading its board", () => {
 
     expect(m.events.filter((e) => e.flow === "board")).toEqual([]);
     expect(m.events.filter((e) => e.event === "PR_OPENED").map((e) => e.at)).toEqual([1005]);
+  });
+});
+
+describe("the step rings a run raises", () => {
+  const entered = (runId: string, step: string): ActiveRun => ({ runId, status: "running", startedAt: "", step, stepStartedAt: "", steps: { lint: "not_started", push: "not_started" } });
+  const withRuns = (now: number, active: ActiveRun[]): Snapshot => {
+    const s = snap(now, [], []);
+    const dag: Dag = { name: "deliver", status: "running", runId: "a", startedAt: "", finishedAt: "", steps: [{ name: "lint", depends: [], status: "not_started" }, { name: "push", depends: ["lint"], status: "not_started" }], active, pool: "deliver" };
+    return { ...s, dags: [dag], pools: [{ name: "deliver", cap: 32, running: active.length, queued: 0 }] };
+  };
+
+  it("carries the snapshot's pools", () => {
+    expect(merge(withRuns(1000, [entered("a", "lint")])).pools).toEqual([{ name: "deliver", cap: 32, running: 1, queued: 0 }]);
+    expect(merge(snap(1000, [], [])).pools).toEqual([]);
+  });
+
+  it("rings the step a run entered between two snapshots, at the time it is seen", () => {
+    const m = new Moves();
+    m.observe(merge(withRuns(1000, [entered("a", "lint")])), 1000);
+    expect(m.rings).toEqual([]);
+
+    m.observe(merge(withRuns(1004, [entered("a", "push")])), 1004);
+
+    expect(m.rings).toEqual([{ dag: "deliver", step: "push", status: "running", at: 1004 }]);
+  });
+
+  it("drops a ring once it has faded, and rings nothing after a resync", () => {
+    const m = new Moves();
+    m.observe(merge(withRuns(1000, [entered("a", "lint")])), 1000);
+    m.observe(merge(withRuns(1004, [entered("a", "push")])), 1004);
+    m.observe(merge(withRuns(1004 + RING + 1, [entered("a", "push")])), 1004 + RING + 1);
+    expect(m.rings).toEqual([]);
+
+    m.resync(2000);
+    m.observe(merge(withRuns(2001, [entered("a", "lint")])), 2001);
+    expect(m.rings).toEqual([]);
   });
 });

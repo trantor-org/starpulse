@@ -68,7 +68,7 @@ export interface Motion {
   /** Epoch seconds. */
   now: number;
   moves: readonly { at: number }[];
-  dags: readonly { status: string; finishedAt: string }[];
+  dags: readonly { status: string; finishedAt: string; active?: readonly { status: string }[] }[];
   /** A fly-to is easing the view. */
   flying: boolean;
   /** A level transition is running. */
@@ -78,9 +78,9 @@ export interface Motion {
 /** A move travels, then pulses on arrival; one queued for later counts so it plays when due. */
 const MOVE_S = Math.max(TRAVEL + PULSE, FLARE);
 
-/** Whether anything needs the next frame: a task move in flight or queued, a running or just-finished DAG, a fly-to, a transition. */
+/** Whether anything needs the next frame: a task move in flight or queued, a running (in any of its runs) or just-finished DAG, a fly-to, a transition. */
 export function animating(m: Motion): boolean {
   if (m.flying || m.transitioning) return true;
   if (m.moves.some((e) => m.now - e.at < MOVE_S)) return true;
-  return m.dags.some((d) => d.status === "running" || m.now - Date.parse(d.finishedAt) / 1000 < FLARE);
+  return m.dags.some((d) => d.status === "running" || d.active?.some((r) => r.status === "running") || m.now - Date.parse(d.finishedAt) / 1000 < FLARE);
 }

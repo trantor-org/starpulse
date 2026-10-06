@@ -15,16 +15,17 @@ import { BOARD, drill, pathKey, startPath, type Level, type Path } from "./level
 import { spotIn, type Target } from "./search";
 import {
   BOARD_COLOR, GALAXY_MIN, OWNED, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, tethersDrawn, textW, turnPage,
-  type BEdge, type Body, type Curve, type Galaxy, type Hangar, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
+  type BEdge, type Body, type Curve, type Galaxy, type GNode, type Hangar, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
   type MachineTask, type Moon, type Pager, type Star, type SubState, type Sun,
 } from "./scene";
-import { FLARE, Moves, PULSE, TRAVEL, countText, merge, stateCount, type Move, type Sky } from "./sky";
+import { FLARE, Moves, PULSE, RING, TRAVEL, countText, merge, stateCount, type Move, type Sky } from "./sky";
 import { kanbanTasks } from "./kanban";
 import { embedded, openStream } from "./stream";
 import { createHistory } from "./history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
 import type { Dag, Machine, Snapshot, Writer } from "./types";
+import { fanBadge, fanTip, stepStatus } from "./fanout";
 import { esc, startRun, taskPanel } from "./panels";
 import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "./adminPrefs";
 import { clockHm, clockHms, stamp } from "./clock";
@@ -634,7 +635,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         const o = h.o, crit = (o.tether?.crit ?? []).map(esc).join("<br>");
         if (o.fold) return `<div class="k">${o.fold.length} DAGs on one ${o.tether?.edge ? "path" : "state"} · click to open them</div><div class="n">${o.fold.map(esc).join("<br>")}</div>${crit ? `<div class="k">${crit}</div>` : ""}`;
         const l = o.tether?.crit.some((t) => t.startsWith("launches ")) ? [] : sky.launches.filter((x) => x.dag === o.name && x.flow).map((x) => x.flow!);
-        return `<div class="k">DAG · ${esc(o.group)} · ${esc(o.status)}${o.runnable ? " · runnable" : ""}</div><div class="n">${esc(o.name)}</div>${crit ? `<div class="k">${crit}</div>` : ""}${l.length ? `<div class="k">launches ${l.map(esc).join(", ")}</div>` : ""}${o.steps.length} step${o.steps.length === 1 ? "" : "s"}: ${o.steps.map((s) => esc(s.name)).join(" → ")}${o.finishedAt ? `<div class="k">last run ${hhmm(finished(o.finishedAt))} MST</div>` : ""}`;
+        return `<div class="k">DAG · ${esc(o.group)} · ${esc(o.active?.some((r) => r.status === "running") ? "running" : o.status)}${o.runnable ? " · runnable" : ""}</div><div class="n">${esc(o.name)}</div>${fanTip(o, S?.pools)}${crit ? `<div class="k">${crit}</div>` : ""}${l.length ? `<div class="k">launches ${l.map(esc).join(", ")}</div>` : ""}${o.steps.length} step${o.steps.length === 1 ? "" : "s"}: ${o.steps.map((s) => esc(s.name)).join(" → ")}${o.finishedAt ? `<div class="k">last run ${hhmm(finished(o.finishedAt))} MST</div>` : ""}`;
       }
       case "hangar": {
         const run = h.o.names.filter((n) => sky.dagBy[n]?.status === "running");
@@ -1176,8 +1177,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     for (const grp of scene!.groups) {
       if (grp.head !== false) label(grp.name.toUpperCase(), grp.lx, grp.ly, false, null, 10.5);
       for (const s of grp.stars) {
-        const col = DAG_COLOR[s.status] || "#94a3b8", hot = isHot("dag", s), g = s.glyph;
-        if (hot || s.status === "running") {
+        const live = !!s.active?.some((r) => r.status === "running"), status = live ? "running" : s.status;
+        const col = DAG_COLOR[status] || "#94a3b8", hot = isHot("dag", s), g = s.glyph;
+        if (hot || status === "running") {
           // no resting glow: only a hovered or currently running DAG gets a faint halo
           const glow = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.br * 1.3);
           glow.addColorStop(0, rgba(col, 0.09));
@@ -1190,9 +1192,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         label(s.label, s.x, s.y + g.h / 2 + 16 / K, hot, null, 11);
         // the DAG's own step graph in miniature: rounded links streaming toward the step that waits, ringed steps
         const nr = (g.nodes.length === 1 ? 5.5 : 4) * (hot ? 1.15 : 1);
+        const ss = (n: GNode) => stepStatus(s, n.name, n.status); // a step's status: from the runs in flight when there are any
         for (const [p, q] of g.links) {
-          const a = { x: s.x + p.x, y: s.y + p.y, color: DAG_COLOR[p.status] || "#94a3b8" }, b = { x: s.x + q.x, y: s.y + q.y, color: DAG_COLOR[q.status] || "#94a3b8" };
-          const running = p.status === "running" || q.status === "running", dx = (b.x - a.x) / 2;
+          const a = { x: s.x + p.x, y: s.y + p.y, color: DAG_COLOR[ss(p)] || "#94a3b8" }, b = { x: s.x + q.x, y: s.y + q.y, color: DAG_COLOR[ss(q)] || "#94a3b8" };
+          const running = ss(p) === "running" || ss(q) === "running", dx = (b.x - a.x) / 2;
           flowLine(a, b, hot || running ? 0.8 : 0.42, running ? 0.6 : 0, [1.5, 3.5]);
           cx.beginPath();
           cx.moveTo(a.x + nr, a.y);
@@ -1201,10 +1204,25 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
           cx.setLineDash([]);
         }
         for (const n of g.nodes) {
-          const c = DAG_COLOR[n.status] || col, idle = n.status === "not_started", x = s.x + n.x, y = s.y + n.y;
+          const st = ss(n), c = DAG_COLOR[st] || col, idle = st === "not_started", x = s.x + n.x, y = s.y + n.y;
           dot(x, y, nr, "rgba(6,10,20,0.9)");
           circle(x, y, nr, rgba(c, hot ? 1 : idle ? 0.45 : 0.85), hot ? 1.4 : 1);
           dot(x, y, nr * 0.34, rgba(c, idle ? 0.45 : 0.9));
+          for (const r of moves.rings) if (r.dag === s.name && r.step === n.name) pulse(x, y, nr, (T - r.at) / RING, DAG_COLOR[r.status], 16); // a run entering or ending in this step rings it once
+        }
+        // the fan-out badge: the runs this DAG has running over its pool's cap, plus any waiting; red once the pool is full
+        const fan = fanBadge(s, S?.pools);
+        if (fan) {
+          const bc = fan.full ? DAG_COLOR.failed : ACT, bw = textW(fan.text, 10.5) / K + 6 / K, bh = 15 / K;
+          const bx = s.x + g.w / 2 + nr + 8 / K, by = s.y - g.h / 2 - nr - 10 / K;
+          cx.fillStyle = "rgba(6,10,20,0.85)";
+          cx.strokeStyle = rgba(bc, 0.8);
+          cx.lineWidth = 1 / K;
+          cx.beginPath();
+          cx.roundRect(bx, by - bh / 2, bw, bh, bh / 2);
+          cx.fill();
+          cx.stroke();
+          text(fan.text, bx + bw / 2, by + 0.5 / K, 10.5 / K, bc, "center", 500);
         }
         if (s.runnable) circle(s.x, s.y, s.br, rgba("#dbe4f3", 0.35), 1, [2, 3]);
         for (const n of s.fold ?? [s.name]) for (const age of dagRings(moves.flare[n], T)) pulse(s.x, s.y, s.br, age, ACT, 38); // each run ending rings its DAG
