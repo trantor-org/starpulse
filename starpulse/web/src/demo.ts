@@ -270,7 +270,8 @@ export class DemoServer {
     const board = next.flows.find((f) => f.name === "board");
     if (!board) return json({ error: "this board does not create tasks" }, 404);
     const prefix = board.agents[0]?.id.match(/^(.*?)\d+$/)?.[1] ?? "TASK-";
-    const id = `${prefix}${Math.max(0, ...board.agents.map((a) => Number(a.id.match(/\d+$/)?.[0] ?? 0))) + 1}`;
+    const ids = board.agents.map((a) => a.id).concat(Object.keys(next.settled));
+    const id = `${prefix}${Math.max(0, ...ids.map((n) => Number(n.match(/\d+$/)?.[0] ?? 0))) + 1}`;
     const lane = startingLane(board.machine);
     const card: RawAgent = {
       id, title: title.trim(), state: lane, model: text("assignee"), labels: list("labels"), milestone: text("milestone"),

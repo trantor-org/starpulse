@@ -219,6 +219,16 @@ describe("the demo server", () => {
     expect((await body(s.fetch("/api/task/DEMO-3"))).record.title).toBe("Write the docs");
   });
 
+  it("numbers a created task past the settled ones, so it never reuses a settled task's id", async () => {
+    const f = fixture();
+    f.settled = { "DEMO-9": { state: "completed", at: 40, created: 10, title: "shipped", model: "" } };
+    const s = new DemoServer(f);
+
+    const reply = await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) });
+
+    expect(await reply.json()).toEqual({ task: "DEMO-10" });
+  });
+
   it("creates a task with every detail the form filled, on its card and in its record", async () => {
     const s = new DemoServer(fixture());
     const details = { description: "Every lane", priority: "High", labels: ["docs"], milestone: "m-1", assignee: "@agent-fast-low", dependencies: ["DEMO-1"], acceptanceCriteria: ["Names every lane"] };
