@@ -24,9 +24,11 @@ from starpulse.board import Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import Move
 from starpulse.history import HistoryStore
+from starpulse.level import Level, Orbit, Terminal
 from starpulse.server import _no_writer
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.unit.test_analytics import H, NOW, ROWS
 
 VALID_MACHINE = Path(__file__).parent.parent.parent / "machines" / "harness.yaml"
 STARTED = [0]  # server lifecycles begun in this process, so a test can prove which fixtures a case builds
@@ -167,6 +169,17 @@ def _moving_board() -> BoardFeed:
 def movable(tmp_path: Path, writer: _Writer) -> Iterator[str]:
     """A server whose board writer answers, holding `_moving_board`."""
     with _serve(tmp_path, _moving_board(), writer=writer) as server:
+        yield _url(server, "")
+
+
+@pytest.fixture
+def leveled(tmp_path: Path) -> Iterator[str]:
+    """A hub's address: a level on the Board and 90 hours of history from two sources, the clock at `NOW`."""
+    level = Level("board", "done", (Terminal("done", "goal"),), orbit=Orbit("working", ("in_progress", "review")))
+    store = HistoryStore(f"sqlite:///{tmp_path / 'level.sqlite'}", MACHINES)
+    for i, (task_id, at, _old, new) in enumerate(ROWS):
+        store.record_lane(f"{'a' if task_id in 'AB' else 'b'}/{i}", task_id, new, at)
+    with _serve(tmp_path, BoardFeed(machines=MACHINES), history=store, clock=lambda: NOW, level=level) as server:
         yield _url(server, "")
 
 
@@ -563,6 +576,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "runs start",
         "watch",
         "analytics health",
+        "analytics level",
         "config check",
         "demo",
         "doctor",
@@ -694,6 +708,38 @@ def test_analytics_health_refuses_a_window_the_server_refuses(base: str, capsys:
     code, doc = _run(capsys, ["analytics", "health", "--hours", "0", "--server", base])
 
     assert (code, doc["code"], "positive number" in doc["error"]) == (1, "refused", True)
+
+
+def test_analytics_level_serves_the_levels_flow_numbers_and_orbit_shares_as_the_server_computes_them(
+    leveled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["analytics", "level", "--hours", "48", "--server", leveled])
+
+    assert code == 0
+    assert (doc["machine"], doc["goal"], doc["window_s"], doc["history_s"]) == ("board", "done", 48 * H, 90 * H)
+    assert doc["wip"] == {"count": 1, "states": {"in_progress": 1}}
+    assert doc["throughput"] == {"count": 2, "per_day": 1.0}
+    assert doc["aging"]["threshold_s"] == 25 * H
+    assert [source["id"] for source in doc["sources"]] == ["a", "b"]
+    assert doc["orbit"]["terminals"] == {"done": {"ended": 2}}
+    for source in doc["sources"]:
+        assert sum(source["time_share"].values()) == pytest.approx(1.0)
+
+
+def test_analytics_level_refuses_a_window_longer_than_the_history_naming_the_history(
+    leveled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["analytics", "level", "--hours", "91", "--server", leveled])
+
+    assert (code, doc["code"], "90 hours" in doc["error"]) == (1, "refused", True)
+
+
+def test_analytics_level_of_a_server_with_no_level_is_unavailable(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["analytics", "level", "--server", base])
+
+    assert (code, doc["code"], "[level]" in doc["error"]) == (3, "unavailable", True)
 
 
 def test_runs_list_names_each_workflow_by_instance_with_its_status_and_the_runs_error(
@@ -951,6 +997,10 @@ CASES = {
     ("analytics health", 1): ["analytics", "health", "--hours", "0", "--server", "{server}"],
     ("analytics health", 2): ["analytics", "health", "--hours", "soon"],
     ("analytics health", 3): ["analytics", "health", "--server", "{down}"],
+    ("analytics level", 0): ["analytics", "level", "--hours", "48", "--server", "{leveled}"],
+    ("analytics level", 1): ["analytics", "level", "--hours", "91", "--server", "{leveled}"],
+    ("analytics level", 2): ["analytics", "level", "--hours", "soon"],
+    ("analytics level", 3): ["analytics", "level", "--server", "{server}"],
     ("task show", 0): ["task", "show", "PROJ-1", "--server", "{server}"],
     ("task show", 2): ["task", "show"],
     ("task show", 3): ["task", "show", "PROJ-1", "--server", "{down}"],
@@ -1050,7 +1100,14 @@ def _case_files(root: Path) -> Path:
     return root
 
 
-SERVERS = {"server": "base", "movable": "movable", "bare": "bare", "runnable": "runnable", "forbidden": "forbidden"}
+SERVERS = {
+    "server": "base",
+    "leveled": "leveled",
+    "movable": "movable",
+    "bare": "bare",
+    "runnable": "runnable",
+    "forbidden": "forbidden",
+}
 
 
 def _servers(request: pytest.FixtureRequest, template: Sequence[str]) -> dict[str, str]:

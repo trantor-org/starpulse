@@ -48,6 +48,14 @@ GET /api/analytics/health[?hours=N][&stuck_hours=N]
                    `stuck_hours` or longer, default 24, each `counted_to_now`) and `warnings` (the history's
                    recorded gaps). A `hours` or `stuck_hours` that is no positive number is 400; a history that
                    does not keep lane changes for every task is 501
+GET /api/level[?hours=N]
+                   the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
+                   last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
+                   `terminals` and `working` totals, plus per source (the forwarder an event id names) its
+                   `ended` runs with `terminal_share` and its `dwell` with `time_share`, each set summing to 1.
+                   A `hours` that is no positive number is 400, as is one longer than the history, with
+                   `history_s` its length; a server with no `[level]` table or not serving `--hub` is 404, and a
+                   history that does not keep runs is 501
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
 POST /api/run/<instance>/<workflow>
                    start a run-safe workflow through its instance's optional `start`: {runId}, or {error}
@@ -119,9 +127,11 @@ from starpulse.config import Config, ConfigError, RunsInstance, discover, load, 
 from starpulse.contracts import Move, StartFailedError
 from starpulse.event_log import EventLog
 from starpulse.harnesses import Harnesses
-from starpulse.history import HealthHistory, History, HistoryStore, database_url, record_machine_events
+from starpulse.history import HealthHistory, History, HistoryStore, LevelHistory, database_url, record_machine_events
 from starpulse.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse.ingest import tokens as ingest_tokens
+from starpulse.level import Level
+from starpulse.level_metrics import WindowPastHistory, level_metrics
 from starpulse.machine_tasks import MachineTasks
 from starpulse.machine_tasks import tables as machine_tables
 from starpulse.pull_requests import PullRequests
@@ -506,6 +516,29 @@ def health_response(
     return json.dumps(health).encode(), 200
 
 
+def level_response(
+    history: History, query: dict[str, list[str]], level: Level | None, machines: Mapping[str, dict], now: float
+) -> tuple[bytes, int]:
+    """The body and status for `/api/level`: the level's flow numbers over the last `hours` as of `now`.
+
+    A window longer than the history is 400 with the history's length (`history_s`), never answered with its missing
+    days as zero; a server with no level is 404."""
+    if level is None:
+        return _error("this server has no level: add a [level] table and serve with --hub"), 404
+    window = _hours(query, "hours", _HEALTH_HOURS)
+    if window is None:
+        return _error("hours must be a positive number"), 400
+    if not isinstance(history, LevelHistory):
+        return _error("this history does not keep every task's trajectory, so it cannot report the level"), 501
+    try:
+        metrics = level_metrics(
+            level, machines[level.machine], history.level_runs(level.machine), now=now, window_s=window * 3600
+        )
+    except WindowPastHistory as exc:
+        return json.dumps({"error": str(exc), "history_s": exc.history_s}).encode(), 400
+    return json.dumps(metrics).encode(), 200
+
+
 class _ApiHandler(SimpleHTTPRequestHandler):
     """The run endpoint and the JSON answer every API route sends; the page's routes subclass it."""
 
@@ -635,6 +668,7 @@ def _handler(
     ingest: Ingest | None = None,
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
     forward: ForwardIngest | None = None,
+    level: Level | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -667,6 +701,8 @@ def _handler(
                 self._send(*history_response(history, parse_qs(url.query), flows))
             elif url.path == "/api/analytics/health":
                 self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
+            elif url.path == "/api/level":
+                self._send(*level_response(history, parse_qs(url.query), level, feed.machines, clock()))
             elif url.path.startswith(_TASK):
                 status, body = task_record(feed, read, unquote(url.path.removeprefix(_TASK)))
                 self._send(json.dumps(body).encode(), status)
@@ -926,6 +962,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         ingest=Ingest(instance_tokens, log) if instance_tokens else None,
         gate=gate,
         forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,
+        level=config.level if args.hub else None,
     )
     serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 

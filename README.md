@@ -100,6 +100,7 @@ starpulse runs list                              # each workflow as <instance>/<
 starpulse runs start prod/nightly                # start a run-safe workflow through Run now; its run id
 starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
 starpulse analytics health --hours 72            # dwell and WIP per state, throughput and stuck tasks, with gap warnings
+starpulse analytics level --hours 48             # the level's WIP, throughput, aging and per-source orbit shares
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
@@ -138,6 +139,7 @@ lists exactly the verbs there are.
 | `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network, as JSON with no foreign `Origin` (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
 | `analytics health` | `--hours`, `--stuck-hours` | `now`, `window_s`, `stuck_after_s`, `states`, `throughput`, `stuck` and `warnings`, below |
+| `analytics level` | `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `wip`, `throughput`, `time_in_state`, `aging`, `orbit` and `sources`, below; a window longer than the history exits 1 and a server with no level exits 3 |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
@@ -156,6 +158,19 @@ gap the history recorded (`kind` `gap`: entries trimmed before it read them, so 
 the Board machine has no state for. History starts at a task's first recorded lane change, so a stay before it is not
 counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive number, and 501 when the history
 (a board adapter's own) does not list every task's lane changes through `lane_rows()` and `gaps()`.
+
+`analytics level` reads `GET /api/level[?hours=N]` (a window of 168 hours by default), served by a hub (`serve --hub`)
+whose config has a `[level]` table. It counts the level's machine on the Backlog flow metric definitions, merged across
+the sources that forward to the hub, a source being the prefix of an event id (`<source>/<id>`; `unattributed` when
+none). `wip` is the runs now in a working state (`orbit.working`, else every state that is neither initial nor a
+terminal), `throughput` the entries into the goal in the window, `time_in_state` each non-final state's stays clipped
+to the window, and `aging` each working run's age since it first entered a working state against `threshold_s`, the
+85th-percentile cycle time of the trailing 12 weeks (null with no completion to measure). `orbit` totals the ended runs
+per terminal and the working time per working state, and each of `sources` carries its `ended` runs with
+`terminal_share`, its `dwell` per working state with `time_share`; a set of shares sums to 1, and is empty, not zero,
+for a source with nothing ended or worked. History begins at the first event the hub holds: a window longer than it is
+refused (exit 1, the error naming the history's hours, `history_s` in the HTTP body), never padded with zero days. A
+server with no level is 404 (exit 3).
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}` with `actor` `operator` when
