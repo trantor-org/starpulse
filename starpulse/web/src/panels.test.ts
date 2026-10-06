@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { startRun, taskPanel } from "./panels";
+import type { FanRow, QueueRow } from "./fan";
+import { fanList, queueCell, startRun, taskPanel } from "./panels";
 import { merge } from "./sky";
 import type { RawAgent, Snapshot } from "./types";
 
@@ -93,5 +94,29 @@ describe("Run now", () => {
 
   it("reports a server it cannot reach", async () => {
     expect(await startRun("whole-repo-gate", async () => Promise.reject(new TypeError("Failed to fetch")))).toBe("Not started: Failed to fetch");
+  });
+});
+
+describe("the DAG panel's queue and runs", () => {
+  const q = (o: Partial<QueueRow> = {}): QueueRow => ({ pool: "deliver", running: 5, cap: 32, queued: 0, mine: 5, full: false, ...o });
+  const row = (o: Partial<FanRow> = {}): FanRow => ({ id: "deliver-agent-task-2787-x", task: "TASK-2787", state: "running", strip: [{ name: "lint", status: "running" }], step: "lint", inStep: 65, elapsed: 125, flash: false, ...o });
+  const href = (id: string) => `<a>${id}</a>`;
+
+  it("names the pool's running count against its cap, and this DAG's share only when other DAGs hold slots", () => {
+    expect(queueCell(q())).toContain("deliver · <b class=\"qn \">5</b> of 32 running");
+    expect(queueCell(q())).not.toContain("this DAG");
+    expect(queueCell(q({ pool: "default", running: 2, cap: 2, mine: 1, queued: 1, full: true }))).toContain("<b class=\"qn full\">2</b> of 2 running (1 of them this DAG) · 1 queued");
+  });
+
+  it("says when the last run ended when nothing is in flight", () => {
+    expect(fanList([], "succeeded 16:04 MST", href)).toContain("No run in flight. Last run succeeded 16:04 MST.");
+  });
+
+  it("draws a running row with its step and time in it, and a failed row with the step it failed at", () => {
+    const failed = row({ state: "failed", strip: [{ name: "lint", status: "failed" }], step: "" });
+
+    expect(fanList([row()], "", href)).toContain("<b>lint</b> · 1:05 in step");
+    expect(fanList([failed], "", href)).toContain('<b class="bad">failed at lint</b>');
+    expect(fanList([row(), row({ id: "q", task: null, state: "queued" })], "", href)).toContain("In flight · 1 + 1 queued");
   });
 });

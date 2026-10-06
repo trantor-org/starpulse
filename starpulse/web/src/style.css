@@ -93,6 +93,23 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #panel table.trace td:first-child { color: #fbbf24; width: 22px; } #panel table.trace td:last-child { text-align: right; color: var(--muted); }
 #panel .note { margin-top: 6px; color: var(--muted); font-size: calc(11px * var(--fs)); }
 #panel a { color: #a78bfa; text-decoration: none; } #panel a:hover { text-decoration: underline; }
+/* a DAG's fan-out: its pool's bar and one row per run in flight */
+#panel .qn { color: #fbbf24; font-weight: 600; } #panel .qn.full { color: #fb7185; }
+#panel .qbar { position: relative; height: 6px; border-radius: 3px; background: rgba(148,163,184,.14); margin: 6px 0 2px; overflow: hidden; }
+#panel .qbar i { position: absolute; left: 0; top: 0; bottom: 0; background: #fbbf24; transition: width .5s; } #panel .qbar i.full { background: #fb7185; }
+#panel .fan { margin-top: 12px; border-top: 1px solid rgba(148,163,184,.12); padding-top: 10px; }
+#panel .fan .hd { display: flex; justify-content: space-between; color: var(--muted); font-size: calc(11px * var(--fs)); margin-bottom: 6px; }
+#panel .fr { display: grid; grid-template-columns: 78px 1fr 46px; gap: 2px 8px; align-items: center; padding: 5px 6px; border-radius: 6px; }
+#panel .fr:hover { background: rgba(148,163,184,.07); } #panel .fr.adv { animation: fan-flash 1.2s; } #panel .fr.queued { opacity: .55; }
+#panel .fr a, #panel .fr .rid { color: #a78bfa; font: calc(11.5px * var(--fs)) ui-monospace, monospace; }
+#panel .fr .rid { color: var(--muted); }
+#panel .fr .el { text-align: right; color: var(--muted); font: calc(11px * var(--fs)) ui-monospace, monospace; }
+#panel .fr .st { grid-column: 2 / 3; color: var(--muted); font-size: calc(10.5px * var(--fs)); } #panel .fr .st b { color: #fbbf24; font-weight: 500; }
+#panel .fr .st b.ok { color: #34d399; } #panel .fr .st b.bad { color: #fb7185; }
+#panel .fan .empty { color: var(--muted); font-size: calc(11px * var(--fs)); }
+#panel .strip { display: flex; gap: 2px; align-items: center; } #panel .strip i { flex: 1; height: 6px; border-radius: 2px; background: #334155; transition: background .4s; }
+#panel .strip i.succeeded { background: #34d399; } #panel .strip i.running { background: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,.6); } #panel .strip i.failed { background: #fb7185; }
+@keyframes fan-flash { from { background: rgba(251,191,36,.18); } to { background: none; } }
 .chip { display: inline-block; padding: 0 6px; margin: 2px 4px 0 0; border-radius: 4px; background: rgba(148,163,184,.12); font-size: calc(11px * var(--fs)); }
 
 /* The Kanban view: the Board's open tasks in six columns between the navigator and the rail. The page never scrolls; only a column body does.
