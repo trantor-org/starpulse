@@ -255,6 +255,15 @@ run_safe = ["ui-preview.yml"]
   `starpulse.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
   at once.
 
+### Run a hub
+
+`starpulse serve --hub` serves the same package from a Postgres history, for a hub that instances forward to.
+Install the hub extras (`uvx --from 'starpulse[hub]' starpulse serve --hub`) and set `database_url` to a Postgres
+database in the config; a config with none, or with a SQLite URL, is refused before anything starts. The hub brings
+the database's schema to the latest revision on every start: the history tables are versioned with the package by
+Alembic (`starpulse/migrations`, revisions recorded in `starpulse_alembic_version`), so upgrading the package and
+restarting upgrades the schema. An instance without `--hub` keeps its SQLite file and never imports the hub extras.
+
 ## Write a board adapter
 
 A board adapter connects StarPulse to a tracker. It is a module with a `board(settings, base)` function that
@@ -317,7 +326,8 @@ uv run starpulse serve
 ```
 
 `uv run pytest` runs the suite with Python alone. When Docker or Podman is available, it also runs the Postgres-backed
-integration cases; otherwise those cases are skipped.
+integration cases; otherwise those cases are skipped. `uv sync --no-group hub` installs without the hub extras, as an IC
+instance runs, and the suite then skips the Postgres and hub cases.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 [`bench/`](bench/README.md) holds the hub-ingest and instance event-log benchmarks.
 
