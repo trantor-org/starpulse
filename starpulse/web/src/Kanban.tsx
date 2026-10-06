@@ -1,7 +1,7 @@
 // The Kanban view: the Board's open tasks as six columns of milestone buckets, with drag and modal moves and sessions started from a card.
 // The model is kanban.ts, move.ts and start.ts; this draws them.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { withoutArchived } from "./archive";
+import { archiveDialogKey, withoutArchived } from "./archive";
 import { ArchiveDialog } from "./ArchiveConfirm";
 import type { HudState } from "./hud";
 import {
@@ -591,7 +591,7 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
           saved={(record) => setEdited((all) => ({ ...all, [task.id]: { record, source: hud.cards } }))} />
       )}
       {archiveTask && (
-        <ArchiveDialog key={archiveTask.id} task={archiveTask} lane={hud.names[archiveTask.lane] ?? archiveTask.lane} close={() => setArchiving(null)}
+        <ArchiveDialog key={archiveDialogKey(archiveTask.id)} task={archiveTask} lane={hud.names[archiveTask.lane] ?? archiveTask.lane} close={() => setArchiving(null)}
           archived={(reason) => {
             setGone((ids) => new Set(ids).add(archiveTask.id));
             setArchiving(null);
