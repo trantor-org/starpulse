@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { archiveDialogKey, withoutArchived } from "./archive";
 import { ArchiveDialog } from "./ArchiveConfirm";
+import { ConnectTracker } from "./ConnectTracker";
 import type { HudState } from "./hud";
 import {
-  COLUMNS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
+  applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
   type KanbanTask, type Option, type Prefs,
 } from "./kanban";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
@@ -15,9 +16,10 @@ import {
   canDrag, dropAsks, placeClaims, profileOf, runsOn, startLane, startable,
   type Asking, type Claiming, type Failed, type Harnesses, type Pick, type StartStore,
 } from "./start";
+import { NewTaskAction } from "./NewTask";
 import { TaskView } from "./TaskView";
 import { fetchRecord, type TaskRecord } from "./taskView";
-import type { Pull } from "./types";
+import type { Capabilities, Pull } from "./types";
 
 /** A milestone's header: the key the snapshot carries, or the bucket for tasks with none. */
 const milestoneName = (milestone: string) => milestone || "No milestone";
@@ -165,7 +167,7 @@ export function HeldBy({ holders: held, open, hover }: {
 
 function Modal({ task, names, marks, now, profiles, milestones, capabilities, close, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
   task: KanbanTask; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
-  capabilities?: { edit: boolean; archive: boolean }; close: () => void; hide: () => void; archive: () => void; constellation: () => void;
+  capabilities?: Capabilities; close: () => void; hide: () => void; archive: () => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
   // the snapshot's entry lacks the plan, notes and checks: the full record is read when the task opens, and the entry draws meanwhile
@@ -405,10 +407,11 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
     return () => clearTimeout(timer);
   }, [toast]);
   const marksOf = (id: string): Marks => ({ saving: moved.pending[id]?.saving, refusal: moved.refused[id], claim: started.claiming[id], failed: started.failed[id] });
-  const suggestions = useMemo(() => labelSuggestions(cards, prefs.query), [cards, prefs.query]);
+  const lanes = useMemo(() => columnsOf(hud.names), [hud.names]);
+  const suggestions = useMemo(() => labelSuggestions(cards, prefs.query, lanes), [cards, prefs.query, lanes]);
   const at = Math.min(pick, suggestions.length - 1);
-  const assignees = useMemo(() => assigneeOptions(cards), [cards]);
-  const milestones = useMemo(() => milestoneOptions(cards), [cards]);
+  const assignees = useMemo(() => assigneeOptions(cards, lanes), [cards, lanes]);
+  const milestones = useMemo(() => milestoneOptions(cards, lanes), [cards, lanes]);
   const choose = (label: string) => {
     setPrefs((p) => ({ ...p, query: applySuggestion(p.query, label) }));
     setPick(0);
@@ -460,7 +463,7 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
   const begin = (t: KanbanTask) => (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest(".refusal")) return;
     const box = e.currentTarget.getBoundingClientRect();
-    const p: Press = { task: t, kinds: targets(t, COLUMNS), x: e.clientX, y: e.clientY, dx: e.clientX - box.left, dy: e.clientY - box.top, w: box.width, lifted: false };
+    const p: Press = { task: t, kinds: targets(t, lanes), x: e.clientX, y: e.clientY, dx: e.clientX - box.left, dy: e.clientY - box.top, w: box.width, lifted: false };
     press.current = p;
     const overOf = (x: number, y: number) => document.elementFromPoint(x, y)?.closest<HTMLElement>(".col")?.dataset.lane ?? null;
     const end = () => {
@@ -565,8 +568,10 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
           </div>
         )}
         <span className="shown">{view.shown} of {view.total} tasks</span>
+        <NewTaskAction capabilities={hud.capabilities} created={(id) => setToast({ text: `${id} created`, sub: "in the first column" })} />
+        <ConnectTracker hint={hud.hint} />
       </div>
-      <div id="cols">
+      <div id="cols" style={{ "--cols": view.columns.length } as CSSProperties}>
         {view.columns.map((col) => {
           const target = lift?.kinds[col.id];
           const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;

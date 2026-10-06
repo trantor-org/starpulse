@@ -208,6 +208,27 @@ describe("the demo server", () => {
     expect((await reply.json()).error).toBe(ROUTES["/api/run"]);
   });
 
+  it("creates a task in the first lane, as the served board does, and says so in its snapshot", async () => {
+    const s = new DemoServer(fixture());
+    const reply = await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) });
+
+    expect(s.snapshot.capabilities?.create).toBe(true);
+    expect(reply.status).toBe(201);
+    expect(await reply.json()).toEqual({ task: "DEMO-3" });
+    expect(s.snapshot.flows[0].agents.find((a) => a.id === "DEMO-3")).toMatchObject({ title: "Write the docs", state: "ready" });
+    expect((await body(s.fetch("/api/task/DEMO-3"))).record.title).toBe("Write the docs");
+  });
+
+  it("refuses a create with no title, and a create the review fixture makes the writer refuse", async () => {
+    const s = new DemoServer(fixture(), undefined, true);
+
+    expect((await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: " " }) })).status).toBe(400);
+    const refused = await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "x" }) });
+    expect(refused.status).toBe(409);
+    expect((await refused.json()).error).toContain("task was not created");
+    expect(s.snapshot.flows[0].agents.map((a) => a.id)).toEqual(["DEMO-1", "DEMO-2"]);
+  });
+
   it("refuses a session start with why, and names no harness, so the start question offers only Work it manually", async () => {
     const s = new DemoServer(fixture());
     const fetcher = (url: string, init?: RequestInit) => s.fetch(url, init);

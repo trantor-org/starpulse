@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, filtersActive, hideMilestone, chainOf, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, type KanbanTask } from "./kanban";
+import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, type KanbanTask } from "./kanban";
 import { merge } from "./sky";
 import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "./types";
@@ -18,6 +18,16 @@ describe("the columns", () => {
 
     expect(v.columns.map((c) => c.name)).toEqual(["Ready", "Waiting", "In progress", "Review", "Needs attention", "Done"]);
     expect(v.columns.map((c) => c.count)).toEqual([1, 0, 0, 0, 0, 0]);
+  });
+
+  it("are the board's own lanes in order when it has no ready lane, so a native board's first-lane task is drawn", () => {
+    const native = { to_do: "To Do", in_progress: "In Progress", done: "Done" };
+    const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, NO_PREFS);
+
+    expect(columnsOf(native)).toEqual(["to_do", "in_progress", "done"]);
+    expect(v.columns.map((c) => [c.id, c.name, c.count])).toEqual([["to_do", "To Do", 1], ["in_progress", "In Progress", 0], ["done", "Done", 1]]);
+    expect(v.shown).toBe(2);
+    expect(assigneeOptions([task("TASK-1", "to_do")], columnsOf(native))).toEqual([{ value: "", count: 1 }]);
   });
 
   it("order a column's cards by when each entered the column, newest first, then by id, newest first", () => {

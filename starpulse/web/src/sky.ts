@@ -2,7 +2,7 @@
 // moves the page plays. The approved mockup replayed a saved hour; the page
 // plays each move once, when the stream first delivers it.
 import { tree, type Tree } from "./levels";
-import type { Cue, Dag, FlowSnapshot, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
+import type { Capabilities, Cue, Dag, FlowSnapshot, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -40,7 +40,9 @@ export interface Sky {
   runnable: Set<string>;
   boardUrl: string | null;
   /** What the board writes beyond moves; absent for a board that only reads. */
-  capabilities?: { edit: boolean; archive: boolean };
+  capabilities?: Capabilities;
+  /** The Backlog.md project serve found beside the config while it shows its own board, and how to switch to it. */
+  hint: string | null;
   tree: Tree;
   /** The lifecycle machines each Board state opens into; the first is the state's own. */
   subs: Record<string, string[]>;
@@ -114,6 +116,7 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     runnable: new Set((snap.domains ?? []).flatMap((d) => d.dags.filter((x) => x.runSafe).map((x) => x.name))),
     boardUrl: snap.boardUrl ?? null,
     capabilities: snap.capabilities,
+    hint: snap.hint ?? null,
     tree: t,
     subs: t.subs,
     child,

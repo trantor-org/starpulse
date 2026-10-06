@@ -188,6 +188,13 @@ export type Delta =
   | { kind: "pulls"; pulls: Record<string, Pull[]> }
   | { kind: "claim"; task: string; reason: string; at: number };
 
+/** What the board writes beyond moves: the page draws Edit, Archive… and New task only for what its board does. */
+export interface Capabilities {
+  edit: boolean;
+  archive: boolean;
+  create?: boolean;
+}
+
 export interface Snapshot {
   /** Every lifecycle machine the server draws, and `runs`. */
   graphs: string[];
@@ -208,7 +215,7 @@ export interface Snapshot {
   /** Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds). */
   claims?: Record<string, { reason: string; at: number }>;
   /** What the board writes: the task modal draws Edit and Archive only when its board does. */
-  capabilities?: { edit: boolean; archive: boolean };
+  capabilities?: Capabilities;
   settled: Record<string, Settled>;
   error: string | null;
   /** True while a just-started server is still reading its board: its Board is partial until a snapshot without it follows. */

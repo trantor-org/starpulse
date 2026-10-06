@@ -108,6 +108,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/task": (server, path) => server.task(decodeURIComponent(path.slice("/api/task/".length))),
   "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
+  "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
 };
 
 /**
@@ -152,7 +153,7 @@ export class DemoServer {
     for (const e of Object.values(snap.settled)) [e.at, e.created] = [e.at == null ? null : e.at + age, e.created == null ? null : e.created + age];
     this.lanes = history ?? {};
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
-    this.snapshot = this.verdicts({ ...snap, capabilities: { edit: true, archive: true } });
+    this.snapshot = this.verdicts({ ...snap, capabilities: { edit: true, archive: true, create: true } });
   }
 
   subscribe(fn: (s: Snapshot) => void): () => void {
@@ -246,6 +247,25 @@ export class DemoServer {
     delete this.records[task];
     this.publish(next);
     return json({ task });
+  }
+
+  /** Create a task in the Board's first lane as the served writer would, unless a review fixture makes the writer refuse. */
+  create(raw: string): Response {
+    let title: unknown;
+    try { title = (JSON.parse(raw) as { title?: unknown }).title; } catch { title = undefined; }
+    if (typeof title !== "string" || !title.trim()) return json({ error: 'a create needs {"title": "<1 to 200 characters>"}' }, 400);
+    if (this.refuseEdits) return json({ error: "The demo writer refused this create; the task was not created.", skill: "completing-tasks" }, 409);
+    const next = structuredClone(this.snapshot);
+    const board = next.flows.find((f) => f.name === "board");
+    if (!board) return json({ error: "this board does not create tasks" }, 404);
+    const prefix = board.agents[0]?.id.match(/^(.*?)\d+$/)?.[1] ?? "TASK-";
+    const id = `${prefix}${Math.max(0, ...board.agents.map((a) => Number(a.id.match(/\d+$/)?.[0] ?? 0))) + 1}`;
+    const lane = board.machine.mainLine?.[1] ?? board.machine.states.find((s) => !s.initial && !s.final)?.id ?? board.machine.states[0].id;
+    const card: RawAgent = { id, title: title.trim(), state: lane, model: "" };
+    board.agents.push(card);
+    this.records[id] = demoRecord(card);
+    this.publish(next, new Set([id]));
+    return json({ task: id }, 201);
   }
 
   fetch(input: string, init?: RequestInit): Promise<Response> {

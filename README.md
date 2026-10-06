@@ -31,9 +31,10 @@ uvx starpulse serve
 Open <http://localhost:8766>. The first serve creates `.starpulse/board/` in the working directory (beside the config file when `--config`
 names one): a `config.yml`
 holding the lanes (To Do, In Progress, Done) and an empty `tasks/` directory, one Markdown file per task. The
-Kanban view starts with no tasks. If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
+Kanban view starts with no tasks: **New task**, at the top right beside the task count, adds one to the first column, and
+**Connect a tracker** opens the `[board]` setting for each public adapter. If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
 line naming it and the `[board] type = "upstream_backlog"` setting that shows it instead (see Configure); the page's
-snapshot carries the same line as `hint`. StarPulse keeps its event log and history in
+snapshot carries the same line as `hint`, and Connect a tracker shows it. StarPulse keeps its event log and history in
 `starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
 trust.
 
