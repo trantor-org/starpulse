@@ -1,6 +1,8 @@
 // The Kanban view: the Board's open tasks as six columns of milestone buckets, with drag and modal moves and sessions started from a card.
 // The model is kanban.ts, move.ts and start.ts; this draws them.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { withoutArchived } from "./archive";
+import { ArchiveDialog } from "./ArchiveConfirm";
 import type { HudState } from "./hud";
 import {
   COLUMNS, applySuggestion, applyTaskRecord, assigneeOptions, clearFilters, filtersActive, hideMilestone, hideTask, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
@@ -136,9 +138,9 @@ export function Card({ task, now, marks, names, compact = false, onOpen, onPress
   );
 }
 
-function Modal({ task, names, marks, now, profiles, milestones, capabilities, close, hide, constellation, move, start, dismiss, dismissStart, saved }: {
+function Modal({ task, names, marks, now, profiles, milestones, capabilities, close, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
   task: KanbanTask; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
-  capabilities?: { edit: boolean; archive: boolean }; close: () => void; hide: () => void; constellation: () => void;
+  capabilities?: { edit: boolean; archive: boolean }; close: () => void; hide: () => void; archive: () => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
   // the snapshot's entry lacks the plan, notes and checks: the full record is read when the task opens, and the entry draws meanwhile
@@ -154,7 +156,7 @@ function Modal({ task, names, marks, now, profiles, milestones, capabilities, cl
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
         startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
-        close={close} hide={hide} constellation={constellation} move={move} start={start}
+        close={close} hide={hide} archive={archive} constellation={constellation} move={move} start={start}
         onSaved={(next) => { setRecord(next); saved(next); }} />
   );
 }
@@ -300,6 +302,10 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
   const [lift, setLift] = useState<{ id: string; kinds: Record<string, Target>; over: string | null; w: number } | null>(null);
   const [bounced, setBounced] = useState<string | null>(null);
   const [edited, setEdited] = useState<Record<string, { record: TaskRecord; source: KanbanTask[] }>>({});
+  // an archived card leaves its column at once; the next snapshot agrees
+  const [archiving, setArchiving] = useState<string | null>(null);
+  const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+  const [toast, setToast] = useState<{ text: string; sub: string } | null>(null);
   const moved = useSyncExternalStore(moves.subscribe, moves.get);
   const started = useSyncExternalStore(starts.subscribe, starts.get);
   // a card dropped on In progress waits where it was dropped until the start question is answered
@@ -353,12 +359,18 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
     document.body.classList.toggle("dragging", lift !== null);
     return () => document.body.classList.remove("dragging");
   }, [lift]);
-  const cards = useMemo(() => placeClaims(place(hud.cards, moved), started).map((card) => {
+  const cards = useMemo(() => withoutArchived(placeClaims(place(hud.cards, moved), started).map((card) => {
     const saved = edited[card.id];
     return saved?.source === hud.cards ? applyTaskRecord(card, saved.record) : card;
-  }), [edited, hud.cards, moved, started]);
+  }), gone), [edited, gone, hud.cards, moved, started]);
   const view = useMemo(() => layout(cards, hud.names, prefs), [cards, hud.names, prefs]);
   const task = open ? cards.find((t) => t.id === open) : undefined;
+  const archiveTask = archiving ? cards.find((t) => t.id === archiving) : undefined;
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4200);
+    return () => clearTimeout(timer);
+  }, [toast]);
   const marksOf = (id: string): Marks => ({ saving: moved.pending[id]?.saving, refusal: moved.refused[id], claim: started.claiming[id], failed: started.failed[id] });
   const suggestions = useMemo(() => labelSuggestions(cards, prefs.query), [cards, prefs.query]);
   const at = Math.min(pick, suggestions.length - 1);
@@ -572,12 +584,22 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
       {task && (
         <Modal key={task.id} task={task} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
           profiles={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
-          hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} constellation={() => constellation(task.lane)}
+          hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task.id)} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to)) return void moves.drop(task, to); starts.ask(task, "modal"); setOpen(null); }}
           start={() => { starts.ask(task, "modal"); setOpen(null); }}
           dismiss={() => moves.dismiss(task.id)} dismissStart={() => starts.dismiss(task.id)}
           saved={(record) => setEdited((all) => ({ ...all, [task.id]: { record, source: hud.cards } }))} />
       )}
+      {archiveTask && (
+        <ArchiveDialog key={archiveTask.id} task={archiveTask} lane={hud.names[archiveTask.lane] ?? archiveTask.lane} close={() => setArchiving(null)}
+          archived={(reason) => {
+            setGone((ids) => new Set(ids).add(archiveTask.id));
+            setArchiving(null);
+            setOpen(null);
+            setToast({ text: `${archiveTask.id} archived`, sub: reason ? "reason saved as a task comment" : "no reason given" });
+          }} />
+      )}
+      {toast && <div id="ef-toast" role="status">{toast.text}<span>  ·  {toast.sub}</span></div>}
     </main>
   );
 }

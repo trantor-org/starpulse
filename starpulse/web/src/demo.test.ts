@@ -70,6 +70,32 @@ describe("the demo server", () => {
     expect((await body(s.fetch("/api/task/DEMO-1"))).record.title).toBe(opened.record.title);
   });
 
+  it("archives a synthetic task so the public preview exercises the archive confirm", async () => {
+    const s = new DemoServer(fixture());
+    const reply = await s.fetch("/api/archive", { method: "POST", body: JSON.stringify({ task: "DEMO-1", reason: "superseded" }) });
+
+    expect(s.snapshot.capabilities?.archive).toBe(true);
+    expect(reply.status).toBe(200);
+    expect(await reply.json()).toEqual({ task: "DEMO-1" });
+    expect(lane(s, "DEMO-1")).toBeUndefined();
+    expect((await s.fetch("/api/task/DEMO-1")).status).toBe(404);
+  });
+
+  it("can render the archive-refusal state in a public review fixture", async () => {
+    const s = new DemoServer(fixture(), undefined, true);
+    const reply = await s.fetch("/api/archive", { method: "POST", body: JSON.stringify({ task: "DEMO-1", reason: "" }) });
+
+    expect(reply.status).toBe(409);
+    expect(await reply.json()).toEqual({ error: "The demo writer refused this archive; the task was not archived.", skill: "completing-tasks" });
+    expect(lane(s, "DEMO-1")).toBe("in_progress");
+  });
+
+  it("refuses an archive of a task that is not on the board", async () => {
+    const reply = await new DemoServer(fixture()).fetch("/api/archive", { method: "POST", body: JSON.stringify({ task: "DEMO-9", reason: "" }) });
+
+    expect(reply.status).toBe(404);
+  });
+
   it("answers a task's lane path from the embedded history", async () => {
     const s = new DemoServer(fixture());
 
