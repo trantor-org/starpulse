@@ -52,6 +52,8 @@ export interface Sky {
   claims: Record<string, { reason: string; at: number }>;
   settled: Record<string, string>;
   error: string | null;
+  /** The server was still reading its board, so this sky's Board is partial. */
+  reading: boolean;
 }
 
 const EMPTY: FlowSnapshot = { name: "board", machine: { states: [], transitions: [] }, agents: [] };
@@ -94,6 +96,7 @@ export function merge(snap: Snapshot): Sky {
     claims: snap.claims ?? {},
     settled: snap.settled,
     error: snap.error,
+    reading: !!snap.reading,
   };
 }
 
@@ -136,6 +139,7 @@ export class Moves {
   }
 
   observe(S: Sky, t: number) {
+    if (this.prev?.reading) this.resync(t); // the Board the server finished reading is placed as a page load, not moved onto from a partial one
     if (S.now !== this.clock.now) this.clock = { now: S.now, off: t - S.now };
     const off = this.clock.off, prev = this.prev, add = (m: Move, key: string) => {
       if (m.at >= t - HOUR) this.events.push(m);

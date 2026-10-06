@@ -124,8 +124,13 @@ class BoardFeed:
             self._check_ready()
 
     def _check_ready(self) -> None:
-        if self._expected is not None and self._seen >= self._expected:
+        if self._expected is not None and self._seen >= self._expected and not self.ready.is_set():
             self.ready.set()
+            # the replay published no step, so a page connected through it is handed the Board it built in one piece
+            self._publish("snapshot", self.snapshot())
+
+    def _replaying(self) -> bool:
+        return self._awaiting and not self.ready.is_set()
 
     def seen(self, entry_id: str) -> None:
         """Note that a board adapter reading a stream has read up to the entry `entry_id`."""
@@ -234,6 +239,8 @@ class BoardFeed:
         return "; ".join(f"{instance}: {error}" for instance, error in self._runs_errors.items()) or None
 
     def _publish(self, kind: str, data: dict) -> None:
+        if kind in ("task", "move") and self._replaying():
+            return  # a replayed step is history, not a move to draw: the snapshot once the stream is read carries its result
         for subscriber in self._subscribers:
             subscriber.put((kind, data))
 
@@ -273,6 +280,7 @@ class BoardFeed:
                 "capabilities": dict(self._capabilities),
                 "settled": dict(self._settled),
                 "error": self._error(),
+                "reading": self._replaying(),
                 **declared(self._domains, self._run_safe, self._cues),
                 "boardUrl": self._board_url,
                 "hint": self._hint,

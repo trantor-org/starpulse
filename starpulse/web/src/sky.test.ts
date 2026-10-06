@@ -185,3 +185,15 @@ describe("the moves", () => {
     expect(m.events.map((e) => e.at)).toEqual([9000]);
   });
 });
+
+describe("a page opened while the server is still reading its board", () => {
+  it("places the Board the server finished reading at once instead of moving every task onto it", () => {
+    const m = new Moves();
+    m.observe(merge({ ...snap(1000, [], [placed("PROJ-1", [["worktree_ready", "START", 900]])]), reading: true }), 1000);
+
+    m.observe(merge(snap(1010, [task("PROJ-1", "in_progress"), task("PROJ-2", "review")], [placed("PROJ-1", [["worktree_ready", "START", 900], ["pr_opened", "PR_OPENED", 1005]])])), 1010);
+
+    expect(m.events.filter((e) => e.flow === "board")).toEqual([]);
+    expect(m.events.filter((e) => e.event === "PR_OPENED").map((e) => e.at)).toEqual([1005]);
+  });
+});

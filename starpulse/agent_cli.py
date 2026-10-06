@@ -71,6 +71,7 @@ _SNAPSHOT_KEYS = (
     "boardUrl",
     "hint",
     "capabilities",
+    "reading",
     "now",
 )
 _HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")

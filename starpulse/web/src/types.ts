@@ -169,5 +169,7 @@ export interface Snapshot {
   capabilities?: { edit: boolean; archive: boolean };
   settled: Record<string, string>;
   error: string | null;
+  /** True while a just-started server is still reading its board: its Board is partial until a snapshot without it follows. */
+  reading?: boolean;
   now: number;
 }
