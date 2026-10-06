@@ -38,8 +38,8 @@ class _Store:
 
 def _feed_with_tasks() -> BoardFeed:
     feed = BoardFeed()
-    feed.put(BoardTask(id="TASK-1", title="open", lane="to_do", assignee="opus", description="d"))
-    feed.put(BoardTask(id="TASK-2", title="gone", lane="done", settled="completed", assignee="sonnet"))
+    feed.put(BoardTask(id="TASK-1", team="demo", title="open", lane="to_do", assignee="opus", description="d"))
+    feed.put(BoardTask(id="TASK-2", team="demo", title="gone", lane="done", settled="completed", assignee="sonnet"))
     feed.seen("7-0")
     return feed
 
@@ -86,7 +86,7 @@ def test_a_restored_task_read_again_is_no_delta() -> None:
     feed, _ = _resumed(store)
     _, deltas = feed.subscribe()
 
-    feed.put(BoardTask(id="TASK-1", title="open", lane="to_do", assignee="opus", description="d"))
+    feed.put(BoardTask(id="TASK-1", team="demo", title="open", lane="to_do", assignee="opus", description="d"))
 
     assert deltas.empty()
 

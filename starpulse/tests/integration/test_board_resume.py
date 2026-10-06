@@ -32,7 +32,7 @@ def run() -> Iterator[Callable[[BoardFeed, EventLog], list[str]]]:
 
         def handle(entry_id: str, fields: dict) -> None:
             handled.append(entry_id)
-            feed.put(BoardTask(id=fields["id"], title=fields["id"], lane=fields["lane"]))
+            feed.put(BoardTask(id=fields["id"], team="demo", title=fields["id"], lane=fields["lane"]))
             feed.seen(entry_id)
 
         stops.append(threading.Event())

@@ -51,6 +51,12 @@
       "title": "Title",
       "type": "string"
     },
+    "team": {
+      "description": "The team key the adapter derived from the tracker's own structure: a Backlog.md project, a Jira project or board, a GitHub repository. Never blank, so a task that belongs to no project is refused rather than counted under a default team.",
+      "pattern": "\\S",
+      "title": "Team",
+      "type": "string"
+    },
     "lane": {
       "description": "The id of the Board machine state the task is in (`in_progress`): its status, lower-cased, spaces as `_`.",
       "title": "Lane",
@@ -162,6 +168,7 @@
   "required": [
     "id",
     "title",
+    "team",
     "lane"
   ],
   "title": "BoardTask",

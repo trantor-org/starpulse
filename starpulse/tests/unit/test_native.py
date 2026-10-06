@@ -54,7 +54,9 @@ def project(base: Path, status: str = "In Progress") -> tuple[Path, Board]:
     """A native board holding `task-1` in `status`, whose machine leaves the move back to To Do to the operator."""
     (base / "board.yaml").write_text(_OPERATOR_ONLY)
     native_root(base).mkdir(parents=True)
-    (native_root(base) / "config.yml").write_text(yaml.safe_dump({"statuses": LANES, "task_prefix": "task"}))
+    (native_root(base) / "config.yml").write_text(
+        yaml.safe_dump({"project_name": "demo", "statuses": LANES, "task_prefix": "task"})
+    )
     return write_task(base, "task-1", status), board({"machine": "board.yaml"}, base)
 
 
@@ -85,6 +87,7 @@ def test_serving_in_an_empty_directory_creates_the_default_lanes_and_an_empty_ta
         ".starpulse/board/tasks",
     ]
     assert yaml.safe_load((native_root(tmp_path) / "config.yml").read_text()) == {
+        "project_name": tmp_path.name,
         "statuses": LANES,
         "task_prefix": "task",
     }
@@ -95,7 +98,7 @@ def test_serving_in_an_empty_directory_creates_the_default_lanes_and_an_empty_ta
 
 def test_serving_again_leaves_a_board_the_user_edited_as_it_is(tmp_path: Path) -> None:
     native_root(tmp_path).mkdir(parents=True)
-    (native_root(tmp_path) / "config.yml").write_text("statuses: [Open, Shut]\ntask_prefix: bug\n")
+    (native_root(tmp_path) / "config.yml").write_text("project_name: demo\nstatuses: [Open, Shut]\ntask_prefix: bug\n")
 
     built, feed = assemble(load(None), tmp_path, None, ())
 
@@ -173,7 +176,7 @@ def test_with_a_backlog_md_project_beside_the_default_config_the_snapshot_and_ba
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "backlog").mkdir()
-    (tmp_path / "backlog" / "config.yml").write_text("statuses: [To Do, Done]\n")
+    (tmp_path / "backlog" / "config.yml").write_text("project_name: demo\nstatuses: [To Do, Done]\n")
 
     _, feed = assemble(load(None), tmp_path, None, ())
 
@@ -190,7 +193,7 @@ def test_a_config_that_names_a_board_gets_no_backlog_md_hint(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], table: str
 ) -> None:
     (tmp_path / "backlog").mkdir()
-    (tmp_path / "backlog" / "config.yml").write_text("statuses: [To Do, Done]\n")
+    (tmp_path / "backlog" / "config.yml").write_text("project_name: demo\nstatuses: [To Do, Done]\n")
     (tmp_path / "starpulse.toml").write_text(table)
 
     _, feed = assemble(load(tmp_path / "starpulse.toml"), tmp_path, None, ())
@@ -208,6 +211,7 @@ def test_with_no_backlog_md_project_the_default_config_has_no_hint(tmp_path: Pat
 
 class TestNativeBoardAdapter(BoardAdapterKit):
     keys = upstream_keys("task")
+    teams = {"task-1": "demo", "task-2": "demo"}
     branches = {"feature/task-12-add-x": "task-12", "main": None}
 
     @pytest.fixture(autouse=True)

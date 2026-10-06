@@ -36,7 +36,7 @@ def _wait_until(condition, timeout: float = 5.0) -> None:
 
 def test_a_board_type_upstream_backlog_draws_the_backlog_md_project_beside_its_config(tmp_path: Path) -> None:
     (tmp_path / "backlog" / "tasks").mkdir(parents=True)
-    (tmp_path / "backlog" / "config.yml").write_text("statuses: [To Do, Doing, Done]\n")
+    (tmp_path / "backlog" / "config.yml").write_text("project_name: demo\nstatuses: [To Do, Doing, Done]\n")
     (tmp_path / "backlog" / "tasks" / "task-1 - Draw-the-board.md").write_text(TASK)
 
     config = load(_config(tmp_path, '[board]\ntype = "upstream_backlog"\n'))

@@ -13,7 +13,8 @@ from starpulse.tests.machines import MACHINES
 
 PROJ = TaskKeys(key=re.compile(r"PROJ-\d+"), branch=re.compile(r"feature/(PROJ-\d+)"))
 BRANCHES = {"feature/PROJ-1": "PROJ-1", "main": None}
-TASK = {"id": "PROJ-1", "title": "t", "lane": "in_progress"}
+TASK = {"id": "PROJ-1", "title": "t", "team": "PROJ", "lane": "in_progress"}
+TEAMS = {"PROJ-1": "PROJ"}
 EVENT = {"machine": "in-progress", "event": "WORKTREE_READY", "task": "PROJ-1", "time": "100.0"}
 STEP = {"name": "a", "depends": [], "status": "succeeded", "kind": None}
 DAG = {"name": "d", "status": "succeeded", "runId": "r", "startedAt": "", "finishedAt": "", "steps": [STEP]}
@@ -24,7 +25,14 @@ BUSY = {**DAG, "active": [RUN], "pool": "lane"}
 
 def adapter(kit: type[_AdapterKit], records: list[dict], **overrides: object) -> _AdapterKit:
     """An adapter of `kit`'s contract producing `records` on the fixture machines, its keys PROJ and its branch examples valid unless overridden."""
-    attrs = {"keys": PROJ, "branches": BRANCHES, "machines": MACHINES, "produce": lambda self: records, **overrides}
+    attrs = {
+        "keys": PROJ,
+        "branches": BRANCHES,
+        "machines": MACHINES,
+        "teams": TEAMS,
+        "produce": lambda self: records,
+        **overrides,
+    }
     return type("Adapter", (kit,), attrs)()
 
 
@@ -87,6 +95,9 @@ def test_an_adapter_whose_active_runs_or_pools_break_the_contract_fails_a_check(
         (BoardAdapterKit, [{**TASK, "title": None}], "a record the contract rejects"),
         (BoardAdapterKit, [{**TASK, "id": "OPS-1"}], "a key outside the declared scheme"),
         (BoardAdapterKit, [{**TASK, "lane": "no_such_lane"}], "a lane the Board machine lacks"),
+        (BoardAdapterKit, [{**TASK, "team": "OPS"}], "a team other than the one the adapter declares deriving"),
+        (BoardAdapterKit, [{**TASK, "team": ""}], "a task with no team"),
+        (BoardAdapterKit, [TASK, {**TASK, "id": "PROJ-2"}], "a task whose team the adapter never declared"),
         (MachineEventsAdapterKit, [{**EVENT, "task": "OPS-1"}], "a key outside the declared scheme"),
         (MachineEventsAdapterKit, [{**EVENT, "machine": "nope"}], "a machine the view does not draw"),
         (MachineEventsAdapterKit, [{**EVENT, "event": "NOPE"}], "an event the machine lacks"),
