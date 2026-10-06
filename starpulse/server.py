@@ -469,6 +469,9 @@ def health_response(
 class _ApiHandler(SimpleHTTPRequestHandler):
     """The run endpoint and the JSON answer every API route sends; the page's routes subclass it."""
 
+    #: The page's script is `text/javascript` on every host: the host's MIME table may call it `application/javascript`.
+    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".js": "text/javascript"}
+
     starts: Mapping[str, Callable[[str], str]]
     run_safe: Collection[str]
     feed: BoardFeed
