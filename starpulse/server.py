@@ -59,6 +59,15 @@ POST /api/tasks    {title, description, priority, labels, milestone, assignee, d
                    with its id; only the title is required. 400 for a missing, blank or over-long title or a detail of
                    the wrong kind, 403 outside loopback and RFC 1918, 404 when the board
                    does not create (the snapshot's `capabilities.create` says which). A GET answers 405
+POST /api/runs/events
+                   push one run event from a producer that cannot reach the event log, with `Authorization: Bearer
+                   <token>`: {phase, workflow: "<instance>/<workflow>", run_id, status[, time, step, depends]}, the
+                   fields of `starpulse emit`. Each `[[runs]]` instance with a `token_env` has its own token, read from
+                   that environment variable at start, and a token pushes only its own instance's workflows. 201
+                   {accepted} when the log took the event, which the page draws as `pushed/<instance>/<workflow>`;
+                   401 for a missing or wrong token, 403 for another instance's workflow, 400 for an event the contract
+                   does not allow, 413 over 64 KiB, 503 when the log refuses it, 404 when no instance has a token. A
+                   refusal writes nothing. A GET answers 405
 POST /api/start    {task, assignee}: start a task's session at `session_start_url` (see Start in the README)
 """
 
@@ -100,6 +109,8 @@ from starpulse.contracts import Move, StartFailedError
 from starpulse.event_log import EventLog
 from starpulse.harnesses import Harnesses
 from starpulse.history import HealthHistory, History, HistoryStore, database_url, record_machine_events
+from starpulse.ingest import MAX_BODY, Ingest
+from starpulse.ingest import tokens as ingest_tokens
 from starpulse.machine_tasks import MachineTasks
 from starpulse.pull_requests import PullRequests
 from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
@@ -138,6 +149,7 @@ _TASK = "/api/task/"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
 _TASKS = "/api/tasks"
+_INGEST = "/api/runs/events"
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
 #: The details a create takes besides its title, as one text value or a list of them.
@@ -483,10 +495,11 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     edit: TaskEditor | None
     archive: TaskArchiver | None
     create: TaskCreator | None
+    ingest: Ingest | None
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
-        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS}:
+        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST}:
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
             self.end_headers()
@@ -508,12 +521,25 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = create_task(self.client_address[0], raw, self.create)
             else:
                 status, body = start_task(self.client_address[0], raw, self.feed, self.assign, self.start_session)
+        elif path == _INGEST and self.ingest is not None:
+            status, body = self._ingest(self.ingest)
         elif path.startswith(_RUN):
             status, body = run_dag(self.client_address[0], unquote(path.removeprefix(_RUN)), self.starts, self.run_safe)
         else:
             self.send_error(404)
             return
         self._send(json.dumps(body).encode(), status)
+
+    def _ingest(self, ingest: Ingest) -> tuple[int, dict]:
+        """Answer one pushed run event; a body over `MAX_BODY` is refused unread and the connection closed."""
+        try:
+            declared = int(self.headers.get("Content-Length") or 0)  # pragma: no mutate: case-insensitive
+        except ValueError:
+            declared = 0
+        if declared > MAX_BODY:
+            self.close_connection = True  # the body was not read, so the connection cannot carry another request
+            return 413, {"error": f"a run event is at most {MAX_BODY} bytes"}
+        return ingest(self.headers.get("Authorization"), self.rfile.read(max(declared, 0)))
 
     def do_PUT(self) -> None:
         self._window("PUT")
@@ -558,6 +584,7 @@ def _handler(
     archive: TaskArchiver | None = None,
     create: TaskCreator | None = None,
     clock: Callable[[], float] = time.time,
+    ingest: Ingest | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -575,6 +602,7 @@ def _handler(
             self.edit = edit
             self.archive = archive
             self.create = create
+            self.ingest = ingest
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
         def do_GET(self) -> None:
@@ -733,6 +761,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     if not (_STATIC / "index.html").is_file():
         parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter flow-view build` first\n")
     adapters = [(instance, _adapter(parser, instance)) for instance in config.runs]
+    try:
+        instance_tokens = ingest_tokens(config.runs, os.environ)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
     starts = {instance.name: start for instance, adapter in adapters if (start := adapter.start(instance.url))}
     # Run now is drawn only for an instance whose adapter can start a run, and only on its run-safe workflows.
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
@@ -778,6 +810,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         board.edit,
         board.archive,
         board.create,
+        ingest=Ingest(instance_tokens, log) if instance_tokens else None,
     )
     serve_until_stopped(ThreadingHTTPServer(("0.0.0.0", args.port), handler), feed)
 

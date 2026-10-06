@@ -9,7 +9,8 @@ adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a name under
 `starpulse`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
-group its workflows on the page. A workflow is shown as `<instance>/<workflow>`, so two instances can
+group its workflows on the page, and optionally `token_env`, the name of the environment variable that holds the
+token the HTTP ingest accepts for it (the token itself is never in this file). A workflow is shown as `<instance>/<workflow>`, so two instances can
 carry the same workflow name.
 """
 
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import re
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -27,7 +29,9 @@ from starpulse.board import DEFAULT_TYPE, module_name
 from starpulse.harnesses import Harnesses, load_harnesses
 
 _KEYS = {"tracker_url", "mode", "runs", "harnesses_file", "board", "database_url", "session_start_url"}
-_INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains"}
+_INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env"}
+
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 __all__ = ["Config", "ConfigError", "RunsInstance", "load", "runs_adapter"]
 
@@ -56,6 +60,8 @@ class RunsInstance:
     """The workflows Run now may start; any other answers 404, so none is startable by default."""
     domains: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     """The page's groups of this instance's workflows, in the order it lays them out."""
+    token_env: str | None = None
+    """The environment variable holding this instance's ingest token; none: the instance takes no pushed events."""
 
 
 def runs_adapter(kind: str) -> ModuleType:
@@ -102,7 +108,12 @@ def _instance(raw: object) -> RunsInstance:
         raise ConfigError(f"runs instance {name}: run_safe must be a list of workflow names")
     if not isinstance(domains, dict) or not all(_names(workflows) for workflows in domains.values()):
         raise ConfigError(f"runs instance {name}: domains must map each domain name to a list of workflow names")
-    return RunsInstance(name, kind, url, tuple(run_safe), {domain: tuple(ws) for domain, ws in domains.items()})
+    token_env = raw.get("token_env")
+    if token_env is not None and not (isinstance(token_env, str) and _ENV_NAME.fullmatch(token_env)):
+        raise ConfigError(f"runs instance {name}: token_env must be the name of an environment variable")
+    return RunsInstance(
+        name, kind, url, tuple(run_safe), {domain: tuple(ws) for domain, ws in domains.items()}, token_env
+    )
 
 
 @dataclass(frozen=True)
@@ -157,6 +168,11 @@ def load(path: Path | None) -> Config:
     for at, instance in enumerate(runs):
         if any(instance.name == earlier.name for earlier in runs[:at]):
             raise ConfigError(f"runs instance {instance.name} is configured twice")
+        if instance.token_env and (shared := next((e for e in runs[:at] if e.token_env == instance.token_env), None)):
+            raise ConfigError(
+                f"runs instances {shared.name} and {instance.name} share token_env {instance.token_env}; "
+                "each needs its own token"
+            )
     if not isinstance(session_start_url := raw.get("session_start_url"), str | None):
         raise ConfigError("session_start_url must be text")
     harnesses = None

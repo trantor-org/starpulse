@@ -39,6 +39,12 @@ class _Entry:
     at: float
     step: str | None
     depends: list[str] | None
+    instance: str | None = None
+
+    @property
+    def key(self) -> str:
+        """The workflow's name here: an ingested one is `<instance>/<workflow>`, so two instances never share one."""
+        return f"{self.instance}/{self.workflow}" if self.instance else self.workflow
 
 
 def _decode(fields: dict) -> _Entry | None:
@@ -54,6 +60,7 @@ def _decode(fields: dict) -> _Entry | None:
             float(fields["time"]),
             step,
             depends,
+            fields.get("instance") or None,
         )
     except KeyError, ValueError, TypeError:
         return None
@@ -98,14 +105,14 @@ class PushRuns:
         entry = _decode(fields)
         if entry is None:
             return
-        dag = self._dags.get(entry.workflow)
+        dag = self._dags.get(entry.key)
         if entry.step is not None:
             if dag is None or dag["runId"] != entry.run_id:
                 return
             self._report_step(dag, entry.step, entry.depends, entry.status)
         elif entry.phase == "start":
             steps = [{**step, "status": "not_started"} for step in dag["steps"]] if dag else []
-            self._dags[entry.workflow] = (dag or _dag(entry.workflow, {})) | {
+            self._dags[entry.key] = (dag or _dag(entry.key, {})) | {
                 "status": entry.status,
                 "runId": entry.run_id,
                 "startedAt": _iso(entry.at),
@@ -113,7 +120,7 @@ class PushRuns:
                 "steps": steps,
             }
         elif dag is not None and dag["runId"] == entry.run_id:
-            self._dags[entry.workflow] = dag | {"status": entry.status, "finishedAt": _iso(entry.at)}
+            self._dags[entry.key] = dag | {"status": entry.status, "finishedAt": _iso(entry.at)}
         else:
             return  # the end of a run that is no longer the one drawn
         self._publish()

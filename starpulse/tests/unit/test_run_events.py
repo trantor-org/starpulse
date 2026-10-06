@@ -25,3 +25,7 @@ def test_a_step_entry_names_the_step_and_the_steps_it_waits_on() -> None:
         "step": "load",
         "depends": ["fetch"],
     }
+
+
+def test_an_entry_from_an_instance_names_it() -> None:
+    assert run_events.entry("start", "w", "r", "running", now=5.0, instance="cron")["instance"] == "cron"

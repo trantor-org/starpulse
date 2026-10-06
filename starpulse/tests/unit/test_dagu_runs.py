@@ -361,6 +361,17 @@ def test_an_entry_for_a_dag_nobody_lists_changes_nothing() -> None:
     assert changes.empty()
 
 
+def test_an_entry_from_another_instance_never_moves_a_dag_of_the_same_name() -> None:
+    with dagu({"d1": ["a"]}) as (base_url, _):
+        feed, runs, changes = follow(base_url)
+        entry = run_entry("start", "d1", "r1", "running", at=101.0)[1] | {"instance": "cron"}
+
+        runs.handle_entry("9-0", entry)
+
+    assert dag(feed, "d1")["status"] == "succeeded"
+    assert changes.empty()
+
+
 def test_a_step_entry_of_a_run_that_is_neither_in_flight_nor_the_one_drawn_changes_nothing() -> None:
     with dagu({"d1": ["a"]}) as (base_url, _):
         feed, runs, changes = follow(base_url)

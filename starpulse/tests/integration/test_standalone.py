@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from contextlib import closing
@@ -103,3 +104,64 @@ def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_histor
     finally:
         proc.terminate()
         proc.wait(timeout=30)
+
+
+_INGEST_CONFIG = '[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://127.0.0.1:9"\ntoken_env = "CRON_INGEST_TOKEN"\n'
+
+
+@pytest.mark.usefixtures("build")
+def test_an_event_posted_with_the_token_in_the_environment_reaches_the_snapshot_and_a_wrong_token_does_not(
+    tmp_path: Path,
+) -> None:
+    port = _free_port()
+    config = tmp_path / "starpulse.toml"
+    config.write_text(_INGEST_CONFIG)
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "starpulse.server", "--port", str(port), "--config", str(config)],
+        env=_env(CRON_INGEST_TOKEN="s3cret"),
+    )
+    event = json.dumps({"phase": "start", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}).encode()
+
+    def post(token: str) -> int:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/runs/events", data=event, method="POST", headers={"Authorization": token}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as resp:
+                return resp.status
+        except urllib.error.HTTPError as exc:
+            return exc.code
+        except OSError:
+            return 0  # not listening yet
+
+    try:
+        deadline = time.monotonic() + 30
+        while (status := post("Bearer wrong")) != 401:
+            assert proc.poll() is None, "the server exited before serving"
+            assert time.monotonic() < deadline, f"the server never answered the ingest (last {status})"
+            time.sleep(0.2)
+        assert post("Bearer s3cret") == 201
+        while "pushed/cron/nightly" not in [d["name"] for d in _get(port, "/api/snapshot")[1]["dags"]]:
+            assert proc.poll() is None, "the server exited"
+            assert time.monotonic() < deadline, "the ingested run never reached the snapshot"
+            time.sleep(0.2)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=30)
+
+
+@pytest.mark.usefixtures("build")
+def test_an_instance_whose_token_variable_is_unset_stops_the_server_naming_it(tmp_path: Path) -> None:
+    config = tmp_path / "starpulse.toml"
+    config.write_text(_INGEST_CONFIG)
+
+    started = subprocess.run(
+        [sys.executable, "-m", "starpulse.server", "--port", str(_free_port()), "--config", str(config)],
+        env=_env(),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert started.returncode == 1
+    assert "runs instance cron: CRON_INGEST_TOKEN is not set" in started.stderr
