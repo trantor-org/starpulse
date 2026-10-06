@@ -792,6 +792,11 @@ def serve_parser() -> argparse.ArgumentParser:
         help="how far back a task's latest move on a machine counts; Admin's override replaces it",
     )
     parser.add_argument("--config", type=Path, help="the TOML config file; default starpulse.toml when it exists")
+    parser.add_argument(
+        "--hub",
+        action="store_true",
+        help="serve as a hub: history in the Postgres database_url, its schema migrated to head (needs starpulse[hub])",
+    )
     return parser
 
 
@@ -799,6 +804,15 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     parser = serve_parser()
     args = parser.parse_args(argv)
     config = _config(parser, args.config)
+    if args.hub:
+        try:
+            from starpulse import hub  # noqa: PLC0415 - hub-only code; an IC instance never imports it
+        except ImportError as exc:
+            parser.exit(1, f"hub mode needs the hub extras: pip install 'starpulse[hub]' ({exc})\n")
+        try:
+            hub.prepare(config.database_url)
+        except hub.HubError as exc:
+            parser.exit(1, f"{exc}\n")
     base = args.config.parent if args.config else Path.cwd()
     if not (_STATIC / "index.html").is_file():
         parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter flow-view build` first\n")

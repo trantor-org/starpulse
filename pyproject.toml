@@ -17,6 +17,11 @@ dependencies = [
 [project.optional-dependencies]
 # History on a Postgres server (`database_url = "postgresql+psycopg://..."`); SQLite needs nothing extra.
 postgres = ["psycopg[binary]>=3.2"]
+# `starpulse serve --hub`: the Postgres driver and Alembic, which versions the hub's history schema.
+hub = [
+    "alembic>=1.16",
+    "psycopg[binary]>=3.2",
+]
 
 [project.scripts]
 starpulse = "starpulse.__main__:main"
@@ -25,9 +30,16 @@ starpulse = "starpulse.__main__:main"
 [dependency-groups]
 dev = [
     "pytest>=9",
-    "testcontainers[postgres]>=4.15.0",
-    "psycopg[binary]>=3.2",
 ]
+hub = [
+    "alembic>=1.16",
+    "psycopg[binary]>=3.2",
+    "testcontainers[postgres]>=4.15.0",
+]
+
+# A plain `uv sync` installs both groups; CI's IC job passes `--no-group hub` to run without the hub extras.
+[tool.uv]
+default-groups = ["dev", "hub"]
 
 # deptry reads `starpulse` imports as the project's own.
 [tool.deptry]
@@ -48,7 +60,7 @@ exclude = ["starpulse.tests", "starpulse.tests.*"]
 
 # The built page and the machine schema are read from beside the module through `__file__`.
 [tool.setuptools.package-data]
-starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*.yaml", "skills/*/SKILL.md"]
+starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*.yaml", "skills/*/SKILL.md", "migrations/*.py", "migrations/versions/*.py"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

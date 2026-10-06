@@ -186,9 +186,9 @@ def test_a_dotted_type_that_fails_to_import_is_refused_with_the_failure(
     assert "acme_missing_dependency" in _refusal(tmp_path, text)
 
 
-def test_hub_mode_is_reserved_and_refused(tmp_path: Path) -> None:
+def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'mode = "hub"\n') == (
-        "mode 'hub' is not available yet; hub mode is reserved, use mode = \"ic\""
+        "mode 'hub' is not a config setting; use mode = \"ic\", and start a hub with `serve --hub`"
     )
 
 

@@ -33,7 +33,10 @@ if "db.testing" not in sys.modules:
     def pg_engine() -> Iterator[Engine]:  # pragma: no mutate block — container lifecycle
         if not any(shutil.which(runtime) for runtime in ("docker", "podman")):
             pytest.skip("Postgres integration cases need Docker or Podman")
-        from testcontainers.community.postgres import PostgresContainer  # noqa: PLC0415 - a unit run needs no Docker
+        # The hub dependency group; without it (the IC suite) the Postgres cases are skipped.
+        pytest.importorskip("psycopg", reason="Postgres integration cases need the hub extras")
+        postgres = pytest.importorskip("testcontainers.community.postgres", reason="needs the hub dependency group")
+        PostgresContainer = postgres.PostgresContainer  # noqa: N806
 
         with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
             engine = create_engine(container.get_connection_url())

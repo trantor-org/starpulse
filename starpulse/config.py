@@ -121,7 +121,7 @@ class Config:
     tracker_url: str | None
     """The tracker's web address; a task links to `<tracker_url>/tasks/<id>`, or with none to the page's own Kanban."""
     mode: str
-    """`ic` for one person on one machine; `hub` is reserved for the organization release."""
+    """`ic` for one person on one machine. A hub is started with `starpulse serve --hub`, not by this key."""
     runs: tuple[RunsInstance, ...] = ()
     harnesses: Harnesses | None = None
     """The tiers and per-harness models `harnesses_file` declares; none when the config names no file."""
@@ -160,7 +160,7 @@ def load(path: Path | None) -> Config:
     if unknown := sorted(raw.keys() - _KEYS):
         raise ConfigError(f"unknown config key(s) {', '.join(unknown)}; known: {', '.join(sorted(_KEYS))}", unknown)
     if (mode := raw.get("mode", "ic")) != "ic":
-        raise ConfigError(f'mode {mode!r} is not available yet; hub mode is reserved, use mode = "ic"')
+        raise ConfigError(f'mode {mode!r} is not a config setting; use mode = "ic", and start a hub with `serve --hub`')
     runs_raw = raw.get("runs", [])
     if not isinstance(runs_raw, list):
         raise ConfigError("runs must be a list of [[runs]] tables")
