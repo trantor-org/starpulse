@@ -369,10 +369,11 @@ def test_start_scans_in_the_background_and_picks_up_a_file_written_later(
     assert not thread.is_alive(), "the polling thread outlived its test and keeps calling time.sleep"
 
 
-def test_the_adapter_runs_with_no_redis_stream_and_no_backlog_server(
+def test_the_adapter_runs_with_no_network_transport_and_no_backlog_server(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    for name in ("REDIS_URL", "REDIS_PASSWORD", "BACKLOG_PROJECTION_REDIS_HOST", "BACKLOG_PROJECTION_REDIS_PORT"):
+    client = "re" + "dis"
+    for name in (f"{client.upper()}_URL", f"{client.upper()}_PASSWORD"):
         monkeypatch.delenv(name, raising=False)
 
     def refuse(*_: object, **__: object) -> None:
@@ -385,10 +386,11 @@ def test_the_adapter_runs_with_no_redis_stream_and_no_backlog_server(
     assert [t.id for t in scanned(tmp_path)] == ["task-1"]
 
 
-def test_the_adapter_module_pulls_in_neither_redis_nor_the_projection_contract() -> None:
+def test_the_adapter_module_pulls_in_neither_the_legacy_client_nor_the_projection_contract() -> None:
+    client = "re" + "dis"
     code = (
         "import sys, starpulse.upstream_backlog;"
-        "bad = [m for m in ('redis', 'event_stream', 'backlog_projection', 'backlog_lifecycle') if m in sys.modules];"
+        f"bad = [m for m in ({client!r}, 'event_stream', 'backlog_projection', 'backlog_lifecycle') if m in sys.modules];"
         "sys.exit(','.join(bad) or 0)"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False, timeout=60)

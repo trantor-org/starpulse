@@ -17,7 +17,6 @@ from typing import Any
 from starpulse.event_log import EventLog
 
 STREAM = "machine:events"
-REDIS_ENV_PREFIX = "MACHINE_EVENTS"  # the Redis consumers' endpoint until they read the log
 
 
 def publish(

@@ -469,7 +469,7 @@ def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
         snapshot: dict[str, Any] | str = _get_snapshot(base)
     except CliError as exc:
         snapshot = str(exc)
-    return doctor.run_checks(snapshot, config, dict(environ), doctor.LIVE, base)
+    return doctor.run_checks(snapshot, config, doctor.LIVE, base)
 
 
 def _skills_root(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[str, Path]:
@@ -791,7 +791,7 @@ def _parser() -> argparse.ArgumentParser:
     check = leaf(
         verbs,
         "doctor",
-        "check the install: config, Redis, the server, each adapter producing, gh and stream lag, each pass or fail",
+        "check the install: config, the server, each adapter producing and gh, each pass or fail",
         _doctor,
         ("ok", "checks"),
         (0, 1, 2),

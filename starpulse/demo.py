@@ -45,7 +45,7 @@ def capture(server: str) -> dict:
     raise ValueError(f"{server}/api/events sent no snapshot")
 
 
-#: A Board for a capture that has none (CI's server has no Redis), so the Kanban demo is not an empty page. It is
+#: A Board for a capture that has none (CI's server has no tasks), so the Kanban demo is not an empty page. It is
 #: scrubbed like a live Board: (state, milestone, labels, index of the task it depends on, profile, pull request).
 SEED = [
     ("ready", "m-2", ["size-2", "kind-feature"], None, "@agent-fast-low", None),

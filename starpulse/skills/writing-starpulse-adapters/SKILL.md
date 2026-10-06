@@ -11,7 +11,7 @@ Schema under `starpulse/schemas/`. Unknown fields are an error, so a misspelt on
 | Contract | Record | Written to |
 |---|---|---|
 | `board` | `BoardTask`: `id`, `title`, `lane`, `dependencies`, `references`, `settled`, `assignee`, `holder`, `labels`, `milestone`, `description`, `moves` | a board adapter's `Board` |
-| `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds) | the Redis stream `machine:events` |
+| `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds) | the database event log under `machine:events` |
 | `runs` | `Dag`: `name`, `status`, `runId`, `startedAt`, `finishedAt`, `steps` | a runs adapter's `RunsSink`, or `starpulse emit` |
 
 Pick the contract first: a tracker is a board, a hook that says a task moved is machine events, a scheduler is runs.
@@ -48,9 +48,10 @@ Done when every kit check passes against records your adapter actually produced.
 
 Call `starpulse emit start|end --workflow W --run ID --status S` from a cron line, a systemd unit or a scheduler hook,
 at each start and end. Add `--step NAME` for a step's entry, with `--depends a,b` naming the steps it waits on. Status is
-`not_started`, `queued`, `running`, `succeeded`, `failed`, `aborted` or `skipped`. Redis is `REDIS_URL`, else
-`RUNS_REDIS_HOST` and `_PORT` with `REDIS_PASSWORD`. Exit 1 means the stream refused the entry, usually because Redis is
-unreachable; exit 2 means a flag the contract does not allow. A missing entry never means the run failed.
+`not_started`, `queued`, `running`, `succeeded`, `failed`, `aborted` or `skipped`. The command finds the database event
+log from `--config` or the default `starpulse.toml`, like `starpulse serve`. Exit 1 means the event log refused the entry,
+usually because its database is unreachable; exit 2 means a flag or configuration value is invalid. A missing entry
+never means the run failed.
 
 A scheduler worth a full adapter is a `[[runs]]` instance (`name`, `type`, `url`) whose module offers `start(url)` and
 `follow(url, runs, group)`, publishing `Dag`s through `RunsSink.set_dags(dags, error)`; its workflows are drawn as

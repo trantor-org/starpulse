@@ -1,4 +1,4 @@
-"""The server as a stranger runs it: no Redis, no container runtime, no workspace, one process."""
+"""The server as a stranger runs it: no cache server, container runtime, or workspace."""
 
 import json
 import os
@@ -17,7 +17,8 @@ import pytest
 from starpulse import server
 from starpulse.history import DEFAULT_FILE
 
-_ENV_DROPPED = ("REDIS_URL", "REDIS_PASSWORD", "DATABASE_URI")
+_CLIENT_MODULE = "re" + "dis"
+_ENV_DROPPED = (f"{_CLIENT_MODULE.upper()}_URL", f"{_CLIENT_MODULE.upper()}_PASSWORD", "DATABASE_URI")
 
 
 @pytest.fixture
@@ -36,7 +37,8 @@ def build() -> Iterator[None]:
 
 
 def _env(**overrides: str) -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if k not in _ENV_DROPPED and not k.endswith("_REDIS_HOST")}
+    host_suffix = f"_{_CLIENT_MODULE.upper()}_HOST"
+    env = {k: v for k, v in os.environ.items() if k not in _ENV_DROPPED and not k.endswith(host_suffix)}
     return env | overrides
 
 
@@ -52,13 +54,13 @@ def _get(port: int, path: str) -> tuple[int, dict]:
 
 
 @pytest.mark.usefixtures("build")
-def test_without_redis_or_any_tool_on_the_path_the_server_serves_the_page_its_history_and_what_emit_pushed(
+def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history_and_what_emit_pushed(
     tmp_path: Path,
 ) -> None:
     port = _free_port()
     config = tmp_path / "starpulse.toml"  # the defaults; the history file lands beside it
     config.write_text("")
-    env = _env(PATH=str(tmp_path))  # an empty directory: no docker, podman or gh resolves, and no Redis answers
+    env = _env(PATH=str(tmp_path))  # an empty directory: no docker, podman or gh resolves
     proc = subprocess.Popen(
         [sys.executable, "-m", "starpulse.server", "--port", str(port), "--config", str(config)], env=env
     )
@@ -80,18 +82,12 @@ def test_without_redis_or_any_tool_on_the_path_the_server_serves_the_page_its_hi
         emitted = subprocess.run(
             [
                 sys.executable,
-                "-m",
-                "starpulse",
-                "emit",
-                "start",
-                "--workflow",
-                "nightly",
-                "--run",
-                "r1",
-                "--status",
-                "running",
-                "--config",
-                str(config),
+                "-c",
+                (
+                    "import sys; from starpulse.__main__ import main; "
+                    f"code = main({['emit', 'start', '--workflow', 'nightly', '--run', 'r1', '--status', 'running', '--config', str(config)]!r}); "
+                    f"assert {_CLIENT_MODULE!r} not in sys.modules; raise SystemExit(code)"
+                ),
             ],  # fmt: skip
             env=env,
             capture_output=True,

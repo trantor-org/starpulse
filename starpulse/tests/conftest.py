@@ -1,10 +1,11 @@
-"""Redis and Postgres for the integration tests, and the history store on each database.
+"""Postgres for the integration tests, and the history store on each database.
 
-Standalone, each server is a throwaway container (the `testcontainers` dev dependency, so Docker must run). A host
-project that runs these tests inside its own suite may already provide `redis_client` and `pg_engine` from a pytest
-plugin on containers it shares; trantor's workspace plugin `db.testing` does, and then none is started here.
+Standalone, the Postgres server is a throwaway container when Docker or Podman is available. A host project that runs
+these tests inside its own suite may already provide `pg_engine` from a pytest plugin on a container it shares;
+trantor's workspace plugin `db.testing` does, and then none is started here.
 """
 
+import shutil
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -26,26 +27,10 @@ _TABLES = (
 )
 
 if "db.testing" not in sys.modules:
-
-    @pytest.fixture(scope="session")
-    def _redis_container() -> Iterator:  # pragma: no mutate block — container lifecycle
-        from testcontainers.community.redis import RedisContainer  # noqa: PLC0415 - a unit run needs no Docker
-
-        with RedisContainer("redis:8-alpine") as container:
-            yield container
-
-    @pytest.fixture
-    def redis_client(_redis_container) -> Iterator:
-        """A client on the container's Redis, flushed before the test so it starts empty."""
-        client = _redis_container.get_client(decode_responses=True)
-        client.flushdb()
-        try:
-            yield client
-        finally:
-            client.close()
-
     @pytest.fixture(scope="session")
     def pg_engine() -> Iterator[Engine]:  # pragma: no mutate block — container lifecycle
+        if not any(shutil.which(runtime) for runtime in ("docker", "podman")):
+            pytest.skip("Postgres integration cases need Docker or Podman")
         from testcontainers.community.postgres import PostgresContainer  # noqa: PLC0415 - a unit run needs no Docker
 
         with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:

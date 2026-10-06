@@ -14,7 +14,6 @@ from __future__ import annotations
 from typing import Any
 
 STREAM = "runs:events"
-REDIS_ENV_PREFIX = "RUNS"  # the Redis consumers' endpoint until they read the log
 PHASES = ("start", "end")
 
 

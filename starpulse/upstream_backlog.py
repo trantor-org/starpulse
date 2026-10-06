@@ -3,8 +3,8 @@
 Upstream Backlog.md (MrLesk/Backlog.md) has no projection stream and no server to ask; its state is
 the Markdown files under the project's `backlog/` directory. `UpstreamBacklog` polls them, hands each
 changed file to a feed as a `BoardTask`, and the Board machine comes from the project's own statuses
-(`backlog/config.yml`), so a lane is a status the project configured. It imports neither Redis nor the
-projection contract, so it runs on a machine that has neither. It is the `[board] type = "upstream_backlog"` adapter.
+(`backlog/config.yml`), so a lane is a status the project configured. It has no network transport or projection
+dependency, so it runs from the files alone. It is the `[board] type = "upstream_backlog"` adapter.
 """
 
 from __future__ import annotations

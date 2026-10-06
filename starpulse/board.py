@@ -111,8 +111,6 @@ class Board:
     """Sets the assignee the page picked when starting a task's session; None refuses a changed assignee."""
     history: Callable[[Mapping[str, dict]], History | None] = lambda machines: None
     """A history the adapter keeps itself, given the drawn machines; None uses StarPulse's own store."""
-    redis_prefixes: tuple[str, ...] = ()
-    """The `<PREFIX>_REDIS_*` names of the streams the adapter reads, pointed at the view's Redis."""
     source: str = "the board"
     """What the page says the Board is read from until the adapter is ready."""
     read: TaskReader | None = None
