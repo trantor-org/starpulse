@@ -568,7 +568,9 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
           </div>
         )}
         <span className="shown">{view.shown} of {view.total} tasks</span>
-        <NewTaskAction capabilities={hud.capabilities} created={(id) => setToast({ text: `${id} created`, sub: "in the first column" })} />
+        <NewTaskAction capabilities={hud.capabilities} lane={hud.names[lanes[0]] ?? lanes[0]}
+          assignees={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)}
+          created={(id) => setToast({ text: `${id} created`, sub: `in ${hud.names[lanes[0]] ?? lanes[0]}` })} />
         <ConnectTracker hint={hud.hint} />
       </div>
       <div id="cols" style={{ "--cols": view.columns.length } as CSSProperties}>

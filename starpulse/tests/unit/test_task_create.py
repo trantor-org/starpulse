@@ -14,7 +14,7 @@ from starpulse.board_feed import BoardFeed
 from starpulse.config import load
 from starpulse.event_log import EventLog
 from starpulse.server import assemble, create_task
-from starpulse.upstream_backlog import UpstreamBacklog
+from starpulse.upstream_backlog import UpstreamBacklog, _split
 
 LAN = "192.168.0.42"
 
@@ -85,6 +85,78 @@ def test_a_title_with_a_path_separator_still_makes_one_file_inside_tasks(
 
     written = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*.md"))
     assert len(written) == 1 and written[0].startswith(".starpulse/board/tasks/task-1 - ")
+
+
+_DETAILS = {
+    "description": "Explain the three lanes.\nThen the toolbar.",
+    "priority": "High",
+    "labels": ["docs", "ui"],
+    "milestone": "m-1",
+    "assignee": "@agent-fast-low",
+    "dependencies": ["task-1"],
+    "acceptanceCriteria": ["The quickstart names every lane", "A reader can create a task"],
+}
+
+
+def test_a_create_writes_every_detail_as_backlog_markdown_and_the_next_scan_reads_them_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, feed = _serving(tmp_path, monkeypatch)
+    assert built.create is not None
+    create_task("127.0.0.1", _raw(title="First"), built.create)
+
+    created = create_task("127.0.0.1", _raw(title="Write the quickstart", **_DETAILS), built.create)
+
+    assert created == (201, {"task": "task-2"})
+    frontmatter, body = _split((_tasks(tmp_path) / "task-2 - Write-the-quickstart.md").read_text())
+    assert frontmatter == {
+        "id": "task-2",
+        "title": "Write the quickstart",
+        "status": "To Do",
+        "assignee": ["@agent-fast-low"],
+        "labels": ["docs", "ui"],
+        "milestone": "m-1",
+        "dependencies": ["task-1"],
+        "priority": "high",
+    }
+    assert (
+        "## Acceptance Criteria\n<!-- AC:BEGIN -->\n- [ ] #1 The quickstart names every lane\n"
+        "- [ ] #2 A reader can create a task\n<!-- AC:END -->"
+    ) in body
+    UpstreamBacklog(tmp_path / ".starpulse" / "board", feed.put).scan()
+    (flow,) = feed.snapshot()["flows"]
+    agent = next(agent for agent in flow["agents"] if agent["id"] == "task-2")
+    assert {key: agent[key] for key in ("state", "model", "labels", "milestone", "dependencies", "description")} == {
+        "state": "to_do",
+        "model": "@agent-fast-low",
+        "labels": ["docs", "ui"],
+        "milestone": "m-1",
+        "dependencies": ["task-1"],
+        "description": "Explain the three lanes.\nThen the toolbar.",
+    }
+
+
+@pytest.mark.parametrize(
+    ("details", "field"),
+    [
+        ({"colour": "red"}, "colour"),
+        ({"labels": "docs"}, "labels"),
+        ({"labels": [3]}, "labels"),
+        ({"priority": "Urgent"}, "priority"),
+        ({"description": 5}, "description"),
+        ({"acceptanceCriteria": ["Fine", " "]}, "acceptanceCriteria"),
+    ],
+)
+def test_a_create_with_a_wrong_detail_is_a_400_naming_it_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, details: dict, field: str
+) -> None:
+    built, _ = _serving(tmp_path, monkeypatch)
+    assert built.create is not None
+
+    status, body = create_task("127.0.0.1", _raw(title="Fine", **details), built.create)
+
+    assert status == 400 and field in body["error"]
+    assert list(_tasks(tmp_path).iterdir()) == []
 
 
 @pytest.mark.parametrize("raw", [b"not json", _raw(), _raw(title=3), _raw(title="  "), _raw(title="x" * 301)])

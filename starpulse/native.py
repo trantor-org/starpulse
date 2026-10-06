@@ -115,19 +115,35 @@ def _next_id(root: Path, prefix: str) -> str:
     return f"{prefix}-{highest + 1}"
 
 
+def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) -> str:
+    """A new task file as Backlog.md writes one: its front matter, then its Description and Acceptance Criteria."""
+    frontmatter: dict[str, Any] = {"id": task, "title": title, "status": status}
+    if "assignee" in details:
+        frontmatter["assignee"] = [details["assignee"]]
+    frontmatter |= {key: details[key] for key in ("labels", "milestone", "dependencies", "priority") if key in details}
+    text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---\n"
+    if description := details.get("description"):
+        text += (
+            f"\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\n{description}\n<!-- SECTION:DESCRIPTION:END -->\n"
+        )
+    if criteria := details.get("acceptanceCriteria"):
+        items = "".join(f"- [ ] #{n} {item}\n" for n, item in enumerate(criteria, 1))
+        text += f"\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n{items}<!-- AC:END -->\n"
+    return text
+
+
 def _creator(root: Path, config: BacklogConfig) -> TaskCreator:
     """A board writer that makes a task file in the first lane with the next id, `<id> - <title as a slug>.md`."""
     lock = threading.Lock()  # two creates must not both read the same highest id
 
-    def create(title: str, /) -> Written:
+    def create(title: str, details: Mapping[str, Any], /) -> Written:
         with lock:
             task = _next_id(root, config.prefix)
             slug = re.sub(r"[^\w-]+", "-", title).strip("-")[:60].strip("-") or "Task"
             path = root / "tasks" / f"{task} - {slug}.md"
             scratch = path.with_name(f"{path.name}.tmp")  # not a `.md` file, so a scan never reads it half written
-            frontmatter = {"id": task, "title": title, "status": config.statuses[0]}
             try:
-                scratch.write_text(f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---\n")
+                scratch.write_text(_new_task(task, title, config.statuses[0], details))
                 os.replace(scratch, path)
             except OSError as error:
                 return Written(False, f"{path}: {error}")

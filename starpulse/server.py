@@ -54,8 +54,10 @@ POST /api/edit     {task, base, changes, comment}: one write of every change thr
                    stale fields and their current values when any changed field no longer equals its `base`, or with
                    the writer's refusal and its skill; 403 outside loopback and RFC 1918. A GET answers 405
 POST /api/archive  {task, reason}: archive a task from any lane through the board's `archive`; refusals as for an edit
-POST /api/tasks    {title}: create a task in the board's first lane through the board's `create`, and answer 201 {task}
-                   with its id; 400 for a missing, blank or over-long title, 403 outside loopback and RFC 1918, 404 when the board
+POST /api/tasks    {title, description, priority, labels, milestone, assignee, dependencies, acceptanceCriteria}: create
+                   a task in the board's starting lane through the board's `create`, and answer 201 {task}
+                   with its id; only the title is required. 400 for a missing, blank or over-long title or a detail of
+                   the wrong kind, 403 outside loopback and RFC 1918, 404 when the board
                    does not create (the snapshot's `capabilities.create` says which). A GET answers 405
 POST /api/start    {task, assignee}: start a task's session at `session_start_url` (see Start in the README)
 """
@@ -138,6 +140,16 @@ _ARCHIVE = "/api/archive"
 _TASKS = "/api/tasks"
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
+#: The details a create takes besides its title, as one text value or a list of them.
+_CREATE_TEXT = ("description", "priority", "milestone", "assignee")
+_CREATE_LISTS = ("labels", "dependencies", "acceptanceCriteria")
+_PRIORITIES = frozenset({"high", "medium", "low"})
+_CREATE_KINDS = {
+    "priority": "high, medium or low",
+    "labels": "a list of text",
+    "dependencies": "a list of text",
+    "acceptanceCriteria": "a list of nonblank text",
+}
 #: Saves hold this from reading a task's current record to writing, so two browsers saving one task cannot both pass the stale check.
 _EDIT_LOCK = threading.Lock()
 #: The lanes Start session moves a task out of: the spec's start question, never Review's send-back.
@@ -290,8 +302,35 @@ def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver
     return 200, {"task": task}
 
 
+def _create_details(body: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
+    """The filled details of a create body, trimmed, and the first field that is unknown or of the wrong kind, or ""."""
+    details: dict[str, Any] = {}
+    for field, value in body.items():
+        if field == "title":
+            continue
+        if field in _CREATE_TEXT:
+            ok = isinstance(value, str)
+            value = value.strip() if ok else value
+        elif field in _CREATE_LISTS:
+            ok = isinstance(value, list) and all(isinstance(item, str) for item in value)
+            value = [item.strip() for item in value if item.strip()] if ok else value
+            ok = ok and (field != "acceptanceCriteria" or len(value) == len(body[field]))
+        else:
+            return (
+                {},
+                f"{field} is not a task field; a create takes title, {', '.join((*_CREATE_TEXT, *_CREATE_LISTS))}",
+            )
+        if field == "priority" and ok and value:
+            ok, value = value.lower() in _PRIORITIES, value.lower()
+        if not ok:
+            return {}, f"{field} must be {_CREATE_KINDS.get(field, 'text')}"
+        if value:
+            details[field] = value
+    return details, ""
+
+
 def create_task(source: str, raw: bytes, create: TaskCreator | None) -> tuple[int, dict[str, Any]]:
-    """Create the task `raw` names in the board's first lane through `create`, for a browser at `source`: the HTTP
+    """Create the task `raw` names in the board's starting lane through `create`, for a browser at `source`: the HTTP
     status and JSON body, which holds the new task's id.
 
     The card appears in its column when the board adapter next reports the task, not on this answer.
@@ -299,14 +338,18 @@ def create_task(source: str, raw: bytes, create: TaskCreator | None) -> tuple[in
     if not _on_lan(source):
         return 403, {"error": "Creating a task answers only loopback and private network (RFC 1918) browsers"}
     try:
-        title = json.loads(raw)["title"]
+        body = json.loads(raw)
+        title = body["title"]
     except ValueError, TypeError, KeyError:
-        title = None
+        body, title = {}, None
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > _TITLE_MAX:
         return 400, {"error": f'a create needs {{"title": "<1 to {_TITLE_MAX} characters>"}}'}
+    details, wrong = _create_details(body)
+    if wrong:
+        return 400, {"error": wrong}
     if create is None:
         return 404, {"error": "this board does not create tasks"}
-    written = create(title.strip())
+    written = create(title.strip(), details)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 201, {"task": written.output}

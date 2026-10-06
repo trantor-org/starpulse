@@ -237,6 +237,8 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv .fv::placeholder { color: #475569; }
 #kbm .tv textarea.fv { display: block; resize: none; overflow: hidden; white-space: pre-wrap; color: #b8c4d8; }
 #kbm .tv textarea.fv.title { font-size: calc(16px * var(--fs)); font-weight: 500; padding: 1px 8px; margin-bottom: 2px; color: var(--ink); }
+#kbm .newtaskform input.fv.title { font-size: calc(16px * var(--fs)); font-weight: 500; padding: 4px 8px; margin-bottom: 4px; }
+#kbm .newtaskform .item .n { color: #64748b; font-size: calc(11px * var(--fs)); }
 #kbm .tv select.fv { appearance: none; width: auto; min-width: 240px; padding-right: 26px; -webkit-text-fill-color: var(--ink); }
 #kbm .tv select option { background: #0c1322; }
 /* Plan and notes are fixed 150 px boxes that scroll inside rather than growing the view. */
@@ -506,11 +508,7 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #kb .tbtn { cursor: pointer; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(148,163,184,.18); background: none; font: inherit; font-size: calc(11.5px * var(--fs)); color: #94a3b8; white-space: nowrap; }
 #kb .tbtn:hover:not(:disabled) { border-color: rgba(148,163,184,.4); color: var(--ink); }
 #kb .tbtn:disabled { opacity: .5; cursor: default; }
-#kb .tbtn.go { border-color: rgba(167,139,250,.6); background: rgba(167,139,250,.10); color: var(--ink); }
 #kb .shown + * { margin-left: 12px; }
-#kb .newtask { display: flex; gap: 6px; align-items: center; }
-#kb .newtask input { flex: none; min-width: 0; width: 22ch; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(167,139,250,.6); background: rgba(2,6,23,.6); color: var(--ink); font: inherit; font-size: calc(11.5px * var(--fs)); }
-#kb .newtask .refused { color: #fca5a5; font-size: calc(11px * var(--fs)); max-width: 40ch; }
 #kb .trackerw { position: relative; }
 #kb .trackers { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(460px, 90vw); padding: 12px 14px; border-radius: 8px; border: 1px solid rgba(148,163,184,.3); background: #0b1220; box-shadow: 0 10px 30px rgba(0,0,0,.5); font-size: calc(11.5px * var(--fs)); color: var(--ink); }
 #kb .trackers .hd { display: flex; justify-content: space-between; align-items: center; }
