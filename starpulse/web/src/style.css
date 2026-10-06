@@ -3,8 +3,7 @@
   --fs: 1; }
 /* One page, never scrolled: the canvas left of the rail is the whole view. */
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg0); color: var(--ink); font-family: Inter, system-ui, sans-serif; }
-canvas { position: fixed; left: 0; top: 0; display: block; cursor: grab; }
-canvas.drag { cursor: grabbing; }
+canvas { position: fixed; left: 0; top: 0; display: block; }
 aside { position: fixed; z-index: 2; top: 0; bottom: 0; box-sizing: border-box; padding: 20px 18px; overflow: hidden; background: rgba(8,12,22,.78);
   backdrop-filter: blur(6px); display: flex; flex-direction: column; gap: 18px; font-size: calc(11px * var(--fs)); color: var(--muted); }
 aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500; letter-spacing: .28em; text-transform: uppercase; color: var(--muted); }
