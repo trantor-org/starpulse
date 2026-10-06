@@ -6,10 +6,10 @@ import time
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 
-from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, _sqlite_pragmas
+from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, _sqlite_pragmas, create_tables
 from starpulse.tables import metadata
 
 
@@ -304,3 +304,13 @@ def test_a_new_connection_that_finds_the_database_locked_sets_its_pragmas_once_i
     _sqlite_pragmas(connection, None)
 
     assert connection.executed == ["PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL"]
+
+
+def test_an_instances_database_never_gains_the_hubs_rollups(tmp_path: Path) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+
+    create_tables(log.engine)
+
+    names = set(inspect(log.engine).get_table_names())
+    assert "starpulse_events" in names
+    assert "starpulse_day_rollups" not in names

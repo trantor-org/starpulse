@@ -1,36 +1,22 @@
 """The hub's history schema is versioned with the package: an empty Postgres database upgrades to head, and head is
 the schema the code writes."""
 
-import uuid
-from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy import Engine, inspect, text
 
 pytest.importorskip("alembic", reason="the hub extras are not installed")
 
+from alembic import command  # noqa: E402
 from alembic.autogenerate import compare_metadata  # noqa: E402
+from alembic.config import Config  # noqa: E402
 from alembic.runtime.migration import MigrationContext  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
 
 from starpulse import history, hub  # noqa: E402, F401 - history declares its tables on the shared metadata
 from starpulse.tables import metadata  # noqa: E402
-
-
-@pytest.fixture
-def empty_database(pg_engine: Engine) -> Iterator[Engine]:
-    """A newly created Postgres database with no table in it."""
-    name = f"hub_{uuid.uuid4().hex[:12]}"
-    with pg_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as db:
-        db.execute(text(f'CREATE DATABASE "{name}"'))
-    engine = create_engine(pg_engine.url.set(database=name))
-    try:
-        yield engine
-    finally:
-        engine.dispose()
-        with pg_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as db:
-            db.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
 
 
 def _url(engine: Engine) -> str:
@@ -50,15 +36,34 @@ def test_an_empty_database_upgrades_to_head_with_every_table(empty_database: Eng
     assert set(metadata.tables) <= set(inspect(empty_database).get_table_names())
 
 
+def _declared_by_the_hub_alone(obj: object, name: str | None, kind: str, reflected: bool, _: object) -> bool:
+    """False for the one constraint the hub's partitioned `starpulse_events` keys differently from the shared metadata:
+    Postgres needs `at` in it, and SQLite's event log, which shares the metadata, partitions nothing."""
+    return not (
+        kind == "unique_constraint" and getattr(getattr(obj, "table", None), "name", None) == "starpulse_events"
+    )
+
+
 def test_head_is_the_schema_the_code_declares(empty_database: Engine) -> None:
     hub.prepare(_url(empty_database))
 
     with empty_database.connect() as db:
         context = MigrationContext.configure(
             db,
-            opts={"compare_type": True, "include_name": lambda name, kind, _: name != hub.VERSION_TABLE},
+            opts={
+                "compare_type": True,
+                "include_name": lambda name, kind, _: name != hub.VERSION_TABLE,
+                "include_object": _declared_by_the_hub_alone,
+            },
         )
         assert compare_metadata(context, metadata) == []
+        unique = db.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conrelid = 'starpulse_events'::regclass AND contype = 'u'"
+            )
+        ).scalars()
+        assert list(unique) == ["UNIQUE (event_id, at)"]
 
 
 def test_preparing_a_database_already_at_head_changes_nothing(empty_database: Engine) -> None:
@@ -67,3 +72,32 @@ def test_preparing_a_database_already_at_head_changes_nothing(empty_database: En
 
     with empty_database.connect() as db:
         assert db.execute(text("SELECT count(*) FROM starpulse_alembic_version")).scalar() == 1
+
+
+def test_events_a_hub_already_holds_survive_the_move_into_partitions(empty_database: Engine) -> None:
+    config = Config()
+    config.set_main_option("script_location", str(Path(hub.__file__).parent / "migrations"))
+    with empty_database.begin() as db:
+        config.attributes["connection"] = db
+        command.upgrade(config, "0001")
+        for event_id, at in (("early", 1790000000.0), ("late", 1790000000.0 + 2 * 86400)):  # 2026-09-21 and -23 UTC
+            db.execute(
+                text("INSERT INTO starpulse_events (stream, event_id, fields, at) VALUES ('s', :e, '{}', :at)"),
+                {"e": event_id, "at": at},
+            )
+
+    hub.prepare(_url(empty_database))
+
+    hub.ensure_partitions(empty_database, today=date(2026, 9, 24), ahead=0)
+    with empty_database.begin() as db:
+        rows = db.execute(text("SELECT id, event_id, tableoid::regclass::text FROM starpulse_events ORDER BY id")).all()
+        assert [tuple(r) for r in rows] == [
+            (1, "early", "starpulse_events_20260921"),
+            (2, "late", "starpulse_events_20260923"),
+        ]
+        new = db.execute(
+            text(
+                "INSERT INTO starpulse_events (stream, event_id, fields, at) VALUES ('s', 'new', '{}', 1790208000) RETURNING id"
+            )
+        ).scalar_one()
+    assert new == 3

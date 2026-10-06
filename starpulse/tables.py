@@ -6,7 +6,7 @@ the tables they share are declared here, where neither module has to import the 
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Column, Float, Index, Integer, MetaData, String, Table
+from sqlalchemy import JSON, Column, Date, Float, Index, Integer, MetaData, PrimaryKeyConstraint, String, Table
 
 metadata = MetaData()
 
@@ -46,4 +46,20 @@ board_state = Table(
     Column("after_id", String, nullable=False),
     Column("state", JSON, nullable=False),
     Column("saved_at", Float, nullable=False),
+)
+
+#: What a hub keeps of a day after its raw events are dropped (`hub.enforce_retention`): per team, machine and state,
+#: how many tasks or runs entered the state that UTC day (`entries`), how many of those had not left it when the day was
+#: rolled up (`open_entries`), and the seconds the others stayed. A hub writes it; an IC instance never does.
+day_rollups = Table(
+    "starpulse_day_rollups",
+    metadata,
+    Column("day", Date, nullable=False),
+    Column("team", String, nullable=False),
+    Column("machine", String, nullable=False),
+    Column("state", String, nullable=False),
+    Column("entries", Integer, nullable=False),
+    Column("open_entries", Integer, nullable=False),
+    Column("seconds", Float, nullable=False),
+    PrimaryKeyConstraint("day", "team", "machine", "state"),
 )
