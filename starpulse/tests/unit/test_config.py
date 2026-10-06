@@ -31,6 +31,11 @@ def test_no_config_file_means_a_tracker_less_ic_view_without_runs() -> None:
     assert load(None) == Config(tracker_url=None, mode="ic", runs=())
 
 
+def test_with_no_config_or_no_board_table_the_board_is_starpulses_own_native_board(tmp_path: Path) -> None:
+    assert load(None).board_type == "native"
+    assert load(_write(tmp_path, 'tracker_url = "http://tracker.example.test:6421"\n')).board_type == "native"
+
+
 _TWO_INSTANCES = """
 [[runs]]
 name = "prod"

@@ -60,6 +60,7 @@ _SNAPSHOT_KEYS = (
     "cues",
     "domains",
     "boardUrl",
+    "hint",
     "capabilities",
     "now",
 )

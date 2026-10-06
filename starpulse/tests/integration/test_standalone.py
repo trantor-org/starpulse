@@ -58,6 +58,7 @@ def test_without_redis_url_or_a_container_runtime_the_server_exits_naming_redis_
     result = subprocess.run(
         [sys.executable, "-m", "starpulse.server", "--port", str(_free_port())],
         env=_env(PATH=str(tmp_path)),  # an empty directory: neither docker nor podman resolves
+        cwd=tmp_path,  # the board a first serve creates lands here, not in the checkout
         capture_output=True,
         text=True,
         timeout=10,
@@ -94,6 +95,7 @@ def test_without_redis_url_the_server_starts_a_valkey_container_and_serves_the_p
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/history?task=PROJ-1", timeout=5) as resp:
             assert (resp.status, json.loads(resp.read())) == (200, {"task": "PROJ-1", "path": []})
         assert (tmp_path / DEFAULT_FILE).is_file()
+        assert (tmp_path / ".starpulse" / "board" / "config.yml").is_file()  # the first serve made its own board
         running = subprocess.run(
             ["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER], capture_output=True, text=True, timeout=30
         )

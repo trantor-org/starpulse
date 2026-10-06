@@ -77,7 +77,9 @@ class BoardFeed:
         cues: Sequence[dict] = (),
         source: str = "the board",
         capabilities: Mapping[str, bool] | None = None,
+        hint: str | None = None,
     ) -> None:
+        self._hint = hint
         self._capabilities = {"edit": False, "archive": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
@@ -275,6 +277,7 @@ class BoardFeed:
                 "error": self._error(),
                 **declared(self._domains, self._run_safe, self._cues),
                 "boardUrl": self._board_url,
+                "hint": self._hint,
                 "now": time.time(),
             }
 
