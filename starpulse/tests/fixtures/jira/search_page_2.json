@@ -1,0 +1,35 @@
+{
+  "isLast": true,
+  "issues": [
+    {
+      "id": "20003", "key": "PAY-3", "self": "https://example.atlassian.net/rest/api/2/issue/20003",
+      "fields": {
+        "summary": "Refund a captured payment",
+        "description": "Refund in full or in part.",
+        "status": {"id": "10003", "name": "Done", "statusCategory": {"key": "done"}},
+        "project": {"id": "10100", "key": "PAY", "name": "Payments"},
+        "assignee": {"accountId": "5b10ac8d82e05b22cc7d4ef6", "displayName": "Grace Hopper"},
+        "labels": ["refunds"],
+        "created": "2026-09-20T08:00:00.000-0700",
+        "resolutiondate": "2026-10-01T16:30:00.000-0700",
+        "issuelinks": []
+      }
+    },
+    {
+      "id": "20004", "key": "PAY-4", "self": "https://example.atlassian.net/rest/api/2/issue/20004",
+      "fields": {
+        "summary": "Reconcile settlement files",
+        "description": "",
+        "status": {"id": "10002", "name": "In Review", "statusCategory": {"key": "indeterminate"}},
+        "project": {"id": "10100", "key": "PAY", "name": "Payments"},
+        "assignee": null,
+        "labels": [],
+        "created": "2026-09-30T10:00:00.000-0700",
+        "resolutiondate": null,
+        "issuelinks": [
+          {"id": "30002", "type": {"name": "Relates", "inward": "relates to", "outward": "relates to"}, "inwardIssue": {"id": "20001", "key": "PAY-1"}}
+        ]
+      }
+    }
+  ]
+}

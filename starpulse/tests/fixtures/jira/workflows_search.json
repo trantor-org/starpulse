@@ -1,0 +1,39 @@
+{
+  "isLast": true,
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 1,
+  "self": "https://example.atlassian.net/rest/api/2/workflows/search?workflowName=Payments+Software+Workflow",
+  "statuses": [
+    {"description": "", "id": "10000", "name": "To Do", "scope": {"type": "GLOBAL"}, "statusCategory": "TODO", "statusReference": "10000"},
+    {"description": "", "id": "10001", "name": "In Progress", "scope": {"type": "GLOBAL"}, "statusCategory": "IN_PROGRESS", "statusReference": "10001"},
+    {"description": "", "id": "10002", "name": "In Review", "scope": {"type": "GLOBAL"}, "statusCategory": "IN_PROGRESS", "statusReference": "10002"},
+    {"description": "", "id": "10003", "name": "Done", "scope": {"type": "GLOBAL"}, "statusCategory": "DONE", "statusReference": "10003"}
+  ],
+  "values": [
+    {
+      "description": "Software workflow of the Payments project",
+      "id": "5ed312c5-f7a6-4a78-a1f6-8ff7f307d063",
+      "isEditable": true,
+      "name": "Payments Software Workflow",
+      "scope": {"type": "GLOBAL"},
+      "startPointLayout": {"x": 0, "y": 0},
+      "version": {"id": "a2f9c1d4-0b8e-4c63-9a52-7d1e5f3b8c60", "versionNumber": 3},
+      "statuses": [
+        {"deprecated": false, "layout": {"x": 0, "y": 0}, "properties": {}, "statusReference": "10000"},
+        {"deprecated": false, "layout": {"x": 200, "y": 0}, "properties": {}, "statusReference": "10001"},
+        {"deprecated": false, "layout": {"x": 400, "y": 0}, "properties": {}, "statusReference": "10002"},
+        {"deprecated": false, "layout": {"x": 600, "y": 0}, "properties": {}, "statusReference": "10003"}
+      ],
+      "transitions": [
+        {"id": "1", "name": "Create", "description": "", "type": "INITIAL", "toStatusReference": "10000", "links": [], "actions": [], "properties": {}, "triggers": [], "validators": []},
+        {"id": "11", "name": "Start work", "description": "", "type": "DIRECTED", "toStatusReference": "10001", "links": [{"fromPort": 0, "fromStatusReference": "10000", "toPort": 1}], "actions": [], "properties": {}, "triggers": [], "validators": []},
+        {"id": "21", "name": "Request review", "description": "", "type": "DIRECTED", "toStatusReference": "10002", "links": [{"fromPort": 0, "fromStatusReference": "10001", "toPort": 1}], "actions": [], "properties": {}, "triggers": [], "validators": []},
+        {"id": "31", "name": "Approve", "description": "", "type": "DIRECTED", "toStatusReference": "10003", "links": [{"fromPort": 0, "fromStatusReference": "10002", "toPort": 1}], "actions": [], "properties": {}, "triggers": [], "validators": []},
+        {"id": "41", "name": "Request changes", "description": "", "type": "DIRECTED", "toStatusReference": "10001", "links": [{"fromPort": 0, "fromStatusReference": "10002", "toPort": 1}], "actions": [], "properties": {}, "triggers": [], "validators": []},
+        {"id": "51", "name": "Reopen", "description": "", "type": "DIRECTED", "toStatusReference": "10000", "links": [{"fromPort": 0, "fromStatusReference": "10003", "toPort": 1}], "actions": [], "properties": {}, "triggers": [], "validators": []},
+        {"id": "61", "name": "Close", "description": "Close from any status", "type": "GLOBAL", "toStatusReference": "10003", "links": [], "actions": [], "properties": {}, "triggers": [], "validators": []}
+      ]
+    }
+  ]
+}
