@@ -123,7 +123,7 @@ describe("the cards drawn from a snapshot", () => {
       { name: "in-progress", machine, agents: [agent("PROJ-1", "pr_opened", { task: "PROJ-1", active: 500 })] },
     ],
     pulls: { "PROJ-1": [pull(7, "pass", 2)] },
-    settled: { "PROJ-4": "completed" },
+    settled: { "PROJ-4": { state: "completed", at: null, created: null, title: "t", model: "" } },
     error: null,
     now: 600,
   });

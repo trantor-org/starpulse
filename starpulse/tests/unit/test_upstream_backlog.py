@@ -155,6 +155,28 @@ def test_a_task_file_becomes_a_board_task(tmp_path: Path) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("created", "updated", "expected"),
+    [
+        ("'2026-10-06 07:00'", "'2026-10-06 08:30'", (1791270000.0, 1791275400.0)),
+        ("2026-10-06", "2026-10-07", (1791244800.0, 1791331200.0)),
+        ("'not a date'", "''", (None, None)),
+    ],
+    ids=["a UTC minute", "a bare date", "no date it can read"],
+)
+def test_a_task_carries_its_created_date_and_a_settled_one_its_last_update_as_when_it_settled(
+    tmp_path: Path, created: str, updated: str, expected: tuple
+) -> None:
+    write_config(tmp_path)
+    write_task(tmp_path, "tasks", "task-1", "To Do", created_date=created, updated_date=updated)
+    write_task(tmp_path, "completed", "task-2", "Done", created_date=created, updated_date=updated)
+
+    open_, settled = scanned(tmp_path)
+
+    assert (open_.created_at, open_.settled_at) == (expected[0], None)
+    assert (settled.created_at, settled.settled_at) == expected
+
+
 def _notes(*lines: str) -> str:
     return "<!-- SECTION:NOTES:BEGIN -->\n" + "\n".join(lines) + "\n<!-- SECTION:NOTES:END -->"
 
@@ -321,7 +343,7 @@ def test_moving_a_task_file_between_statuses_reaches_the_page_as_a_board_event(t
     done.write_text(done.read_text().replace("status: Review", "status: Done"))
     adapter.scan()
     _, settled = events.get_nowait()
-    assert (settled["id"], settled["agent"], settled["settled"]) == ("task-1", None, "completed")
+    assert (settled["id"], settled["agent"], settled["settled"]["state"]) == ("task-1", None, "completed")
 
     board = feed.snapshot()["flows"][0]
     assert [s["id"] for s in board["machine"]["states"]] == ["to_do", "doing", "review", "done"]

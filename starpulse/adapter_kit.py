@@ -159,7 +159,9 @@ class BoardAdapterKit(_AdapterKit):
         assert snapshot["flows"][0]["machine"] == self.machines["board"]
         placed = {a["id"]: a["state"] for a in snapshot["flows"][0]["agents"]}
         assert {t.id: t.lane for t in latest.values() if not t.settled} == placed
-        assert {t.id: t.settled for t in latest.values() if t.settled} == snapshot["settled"]
+        assert {t.id: t.settled for t in latest.values() if t.settled} == {
+            id: entry["state"] for id, entry in snapshot["settled"].items()
+        }
         assert set(placed.values()) - lanes == set()
 
 

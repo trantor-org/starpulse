@@ -162,26 +162,41 @@ describe("the demo server", () => {
     }
   });
 
-  it("keeps its Board full: a card the walk settles comes back as a new task in the first lane", () => {
+  it("keeps its Board full: a card the walk settles stays settled now, and new work created now takes its place in the first lane", () => {
     const f = fixture();
     f.flows[0].machine = { ...BOARD, mainLine: ["new", "ready", "in_progress", "review", "done"] };
     const s = new DemoServer(f, () => 40);
 
     for (let i = 0; i < 400; i++) s.step();
 
-    expect(s.snapshot.flows[0].agents.map((a) => a.id).sort()).toEqual(["DEMO-1", "DEMO-2"]);
-    expect(s.snapshot.settled).toEqual({});
+    const settled = Object.values(s.snapshot.settled), cards = s.snapshot.flows[0].agents;
+    expect(settled.length).toBeGreaterThan(0);
+    expect(cards).toHaveLength(2);
+    expect(settled.every((e) => e.state === "completed" && e.at === 40)).toBe(true);
+    expect(cards.filter((a) => !["DEMO-1", "DEMO-2"].includes(a.id)).every((a) => a.created === 40 && s.records[a.id])).toBe(true);
   });
 
-  it("starts a returned card's lane path afresh, as a new task", () => {
+  it("starts the new work's lane path afresh, as a new task", () => {
     const f = fixture();
     f.flows = [{ name: "board", machine: { ...machine("new", [["new", "ready", "CREATE"], ["ready", "done", "FINISH"]], "done"), mainLine: ["new", "ready"] }, agents: [card("DEMO-2", "ready")] }];
     const s = new DemoServer(f, () => 40);
 
     s.step(() => 0);
 
-    expect(lane(s, "DEMO-2")).toBe("ready");
-    expect(s.lanes["DEMO-2"]).toEqual([{ at: 40, from: null, to: "ready" }]);
+    expect(s.snapshot.settled["DEMO-2"]).toMatchObject({ state: "done", at: 40, title: "DEMO-2" });
+    expect(s.snapshot.flows[0].agents.map((a) => [a.id, a.state])).toEqual([["DEMO-3", "ready"]]);
+    expect(s.lanes["DEMO-3"]).toEqual([{ at: 40, from: null, to: "ready" }]);
+  });
+
+  it("keeps the fixture's times as ages, so a task settled an hour before the capture settled an hour before the page opened", () => {
+    const f = fixture();
+    f.flows[0].agents[1].created = 50;
+    f.settled = { "DEMO-9": { state: "completed", at: 40, created: 10, title: "shipped", model: "" } };
+
+    const s = new DemoServer(f, () => 1000);
+
+    expect(s.snapshot.flows[0].agents.map((a) => a.created)).toEqual([undefined, 950]);
+    expect(s.snapshot.settled["DEMO-9"]).toMatchObject({ at: 940, created: 910 });
   });
 
   it("answers a route the demo cannot serve with why, not a network error", async () => {

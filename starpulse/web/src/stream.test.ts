@@ -15,6 +15,8 @@ const board = (agents: RawAgent[], extra: Partial<Snapshot> = {}): Snapshot => (
 });
 const ids = (s: Snapshot) => s.flows[0].agents.map((a) => `${a.id}:${a.state}`);
 
+const settled = (state: string) => ({ state, at: null, created: null, title: "t", model: "" });
+
 describe("applyDelta", () => {
   it("replaces a task already on the Board and adds one that is not", () => {
     const s = board([agent("PROJ-1", "to_do")]);
@@ -29,18 +31,18 @@ describe("applyDelta", () => {
   it("takes a task off the lanes and records where it went", () => {
     const s = board([agent("PROJ-1", "done"), agent("PROJ-2", "done")]);
 
-    const swept = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: "completed" });
+    const swept = applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: settled("completed") });
 
     expect(ids(swept)).toEqual(["PROJ-2:done"]);
-    expect(swept.settled).toEqual({ "PROJ-1": "completed" });
+    expect(swept.settled).toEqual({ "PROJ-1": settled("completed") });
   });
 
   it("forgets a task's settled state once it is back in a lane", () => {
-    const s = board([], { settled: { "PROJ-1": "completed", "PROJ-2": "archived" } });
+    const s = board([], { settled: { "PROJ-1": settled("completed"), "PROJ-2": settled("archived") } });
 
     const back = applyDelta(s, { kind: "task", id: "PROJ-1", agent: agent("PROJ-1", "to_do"), settled: null });
 
-    expect(back.settled).toEqual({ "PROJ-2": "archived" });
+    expect(back.settled).toEqual({ "PROJ-2": settled("archived") });
   });
 
   it("takes Dagu's runs and error without touching the tasks", () => {
@@ -109,7 +111,7 @@ describe("applyDelta", () => {
   it("leaves the snapshot it was given as it was", () => {
     const s = board([agent("PROJ-1", "to_do")]);
 
-    applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: "archived" });
+    applyDelta(s, { kind: "task", id: "PROJ-1", agent: null, settled: settled("archived") });
 
     expect([ids(s), s.settled]).toEqual([["PROJ-1:to_do"], {}]);
   });

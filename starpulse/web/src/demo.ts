@@ -22,7 +22,7 @@ export function demoStep(prev: Snapshot, random = Math.random): Snapshot {
       const e = outs[Math.floor(random() * outs.length)];
       if (finals.has(e.target)) {
         f.agents = f.agents.filter((a) => a !== ag);
-        snap.settled[ag.id] = e.target;
+        snap.settled[ag.id] = { state: e.target, at: Date.now() / 1000, created: ag.created ?? null, title: ag.title, model: ag.model };
       } else ag.state = e.target;
     }
   } else {
@@ -114,6 +114,10 @@ export class DemoServer {
 
   constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false) {
     const { history, ...snap } = structuredClone(fixture);
+    // the fixture's times are kept as ages, so what settled an hour before the capture settled an hour before the page opened
+    const age = clock() - snap.now;
+    for (const card of snap.flows.find((f) => f.name === "board")?.agents ?? []) if (card.created != null) card.created += age;
+    for (const e of Object.values(snap.settled)) [e.at, e.created] = [e.at == null ? null : e.at + age, e.created == null ? null : e.created + age];
     this.lanes = history ?? {};
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
     this.snapshot = this.verdicts({ ...snap, capabilities: { edit: true, archive: true } });
@@ -137,7 +141,7 @@ export class DemoServer {
     this.timer = undefined;
   }
 
-  /** One step of the walk, its Board lane changes recorded; a card it settles comes back as new work so the Board never drains. */
+  /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains. */
   step(random = Math.random) {
     const next = demoStep(this.snapshot, random);
     const board = next.flows.find((f) => f.name === "board");
@@ -145,11 +149,14 @@ export class DemoServer {
     const fresh = new Set<string>();
     if (board) {
       const lane = board.machine.mainLine?.[1] ?? board.machine.states.find((s) => s.initial)?.id ?? board.machine.states[0].id;
-      for (const card of prev.filter((a) => a.id in next.settled)) {
-        delete next.settled[card.id];
-        delete this.lanes[card.id];
-        fresh.add(card.id);
-        board.agents.push({ ...card, state: lane, moves: undefined });
+      const ids = [...board.agents, ...prev].map((a) => a.id).concat(Object.keys(next.settled));
+      let n = Math.max(0, ...ids.map((id) => Number(id.match(/\d+$/)?.[0] ?? 0)));
+      for (const card of prev.filter((a) => a.id in next.settled && !(a.id in this.snapshot.settled))) {
+        next.settled[card.id].at = this.clock();
+        const work = { ...card, id: `DEMO-${++n}`, state: lane, moves: undefined, created: this.clock() };
+        this.records[work.id] = demoRecord(work);
+        fresh.add(work.id);
+        board.agents.push(work);
       }
     }
     this.publish(next, fresh);

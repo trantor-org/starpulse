@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { merge, Moves, TRAVEL } from "./sky";
+import { countText, merge, Moves, stateCount, TRAVEL } from "./sky";
 import type { Machine, RawAgent, Snapshot } from "./types";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
@@ -36,6 +36,48 @@ const snap = (now: number, tasks: RawAgent[], machineTasks: RawAgent[], finished
 });
 
 describe("the sky", () => {
+  it("puts each task created since midnight on the starting state and each settled since midnight on where it settled", () => {
+    const midnight = 1000, base = snap(5000, [], []), board = base.flows[0];
+    board.machine.states.push({ id: "completed", name: "completed", initial: false, final: true }, { id: "archived", name: "archived", initial: false, final: true });
+    board.agents = [{ ...task("PROJ-1", "review"), created: 1500 }, { ...task("PROJ-2", "ready"), created: 900 }];
+    base.settled = {
+      "PROJ-3": { state: "completed", at: 1200, created: 1100, title: "shipped", model: "@agent-deep-high" },
+      "PROJ-4": { state: "archived", at: 1300, created: 10, title: "dropped", model: "" },
+      "PROJ-5": { state: "completed", at: 999, created: 10, title: "yesterday", model: "" },
+    };
+
+    const today = merge(base, midnight).today;
+
+    const ids = (sid: string) => (today[sid] ?? []).map((a) => [a.id, a.title, a.state, a.today]);
+    expect(ids("ready")).toEqual([["PROJ-1", "PROJ-1", "ready", true], ["PROJ-3", "shipped", "ready", true]]);
+    expect(ids("completed")).toEqual([["PROJ-3", "shipped", "completed", true]]);
+    expect(ids("archived")).toEqual([["PROJ-4", "dropped", "archived", true]]);
+    expect(Object.keys(today).sort()).toEqual(["archived", "completed", "ready"]);
+  });
+  it("counts a task still in a final lane by when it entered it, as a board whose final state keeps its tasks does", () => {
+    const base = snap(5000, [{ ...task("PROJ-1", "completed"), entered: 1500 }, { ...task("PROJ-2", "completed"), entered: 900 }], []);
+    base.flows[0].machine.states.push({ id: "completed", name: "completed", initial: false, final: true });
+
+    expect((merge(base, 1000).today.completed ?? []).map((a) => a.id)).toEqual(["PROJ-1"]);
+  });
+  it("counts a starting or terminal state by the day's arrivals and any other by the tasks in it", () => {
+    const base = snap(5000, [{ ...task("PROJ-1", "review"), created: 1500 }, task("PROJ-2", "review")], []);
+    base.flows[0].machine.states.push({ id: "completed", name: "completed", initial: false, final: true });
+    base.settled = { "PROJ-3": { state: "completed", at: 1200, created: 10, title: "shipped", model: "" } };
+    const S = merge(base, 1000);
+
+    expect(["ready", "review", "completed"].map((sid) => stateCount(S, sid))).toEqual([1, 2, 1]);
+  });
+  it("counts a starting state by the day's arrivals alone, leaving out a task in its lane that did not arrive today", () => {
+    const base = snap(5000, [{ ...task("PROJ-1", "ready"), created: 1500 }, { ...task("PROJ-2", "ready"), created: 10 }], []);
+
+    expect(stateCount(merge(base, 1000), "ready")).toBe(1);
+  });
+  it("reads a starting or terminal state's count as the day's, saying how many it holds when some did not arrive today", () => {
+    expect([countText(5), countText(4, 4), countText(6, 4), countText(0, 0)]).toEqual(["5", "4 today", "6 · 4 today", "0 today"]);
+  });
+
+
   it("reads the relationships the drawing needs from the Board snapshot", () => {
     const S = merge(snap(1000, [task("PROJ-1", "ready")], []));
 

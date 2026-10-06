@@ -105,6 +105,13 @@ class BoardTask(_Contract):
         default=None,
         description="Set when the task has left the lanes for good, `completed` or `archived`; `lane` is then ignored.",
     )
+    created_at: float | None = Field(
+        default=None, description="When the task was created, in epoch seconds; None when the board does not say."
+    )
+    settled_at: float | None = Field(
+        default=None,
+        description="When a settled task settled, in epoch seconds; None when the board does not say or it is not settled.",
+    )
     assignee: str = Field(default="", description="Who or which agent model holds the task; empty when unassigned.")
     holder: str = Field(
         default="",

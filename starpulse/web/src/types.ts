@@ -83,6 +83,19 @@ export interface RawAgent {
   moves?: Record<string, { allowed: boolean; reason: string; skill: string }>;
   /** When a Board task entered its lane, epoch seconds; absent when the server holds no time for it. */
   entered?: number;
+  /** When a Board task was created, in epoch seconds; null or absent when the board does not say. */
+  created?: number | null;
+  /** Drawn on a starting or terminal Board state as one of the day's arrivals there, not as the task's own place. */
+  today?: boolean;
+}
+
+/** A task that left the Board's lanes for good: where it settled, when, and the title and assignee it settled with. */
+export interface Settled {
+  state: string;
+  at: number | null;
+  created: number | null;
+  title: string;
+  model: string;
 }
 
 export interface FlowSnapshot {
@@ -169,7 +182,7 @@ export interface Cue {
 
 /** One change the server pushes after the snapshot: a Board task that moved (`agent` null once it left the lanes), a task a machine event placed on another machine, or a runs instance's workflows. */
 export type Delta =
-  | { kind: "task"; id: string; agent: RawAgent | null; settled: string | null }
+  | { kind: "task"; id: string; agent: RawAgent | null; settled: Settled | null }
   | { kind: "move"; flow: string; id: string; agent: RawAgent }
   | { kind: "dags"; dags: Dag[]; pools?: Pool[]; error: string | null }
   | { kind: "pulls"; pulls: Record<string, Pull[]> }
@@ -196,7 +209,7 @@ export interface Snapshot {
   claims?: Record<string, { reason: string; at: number }>;
   /** What the board writes: the task modal draws Edit and Archive only when its board does. */
   capabilities?: { edit: boolean; archive: boolean };
-  settled: Record<string, string>;
+  settled: Record<string, Settled>;
   error: string | null;
   /** True while a just-started server is still reading its board: its Board is partial until a snapshot without it follows. */
   reading?: boolean;

@@ -17,6 +17,7 @@ import threading
 import time
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -122,6 +123,20 @@ def board_moves(machine: dict, writers: Mapping[str, tuple[Writer, ...]] = {}) -
     return moves
 
 
+def _when(value: object) -> float | None:
+    """A frontmatter date as epoch seconds: Backlog.md writes `YYYY-MM-DD HH:MM` or `YYYY-MM-DD` in UTC; None for anything else."""
+    if isinstance(value, date) and not isinstance(value, datetime):
+        value = datetime(value.year, value.month, value.day)
+    if isinstance(value, str):
+        for form in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                value = datetime.strptime(value.strip(), form)
+                break
+            except ValueError:
+                continue
+    return value.replace(tzinfo=UTC).timestamp() if isinstance(value, datetime) else None
+
+
 def _strings(value: object) -> tuple[str, ...]:
     """Backlog's scalar-or-list metadata as the nonempty text values it holds."""
     values = value if isinstance(value, list) else [value]
@@ -215,6 +230,8 @@ class UpstreamBacklog:
             dependencies=_strings(frontmatter.get("dependencies")),
             references=_strings(frontmatter.get("references")),
             settled=settled,
+            created_at=_when(frontmatter.get("created_date")),
+            settled_at=_when(frontmatter.get("updated_date")) if settled else None,
             assignee=assignees[0] if assignees else "",
             holder=_holder(body),
             labels=_strings(frontmatter.get("labels")),

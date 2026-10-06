@@ -44,6 +44,20 @@ def task_agent(task: BoardTask) -> dict:
         "prs": [ref for ref in task.references if _PULL_REQUEST.fullmatch(ref)],
         "description": task.description,
         "moves": {column: move.model_dump() for column, move in task.moves.items()},
+        "created": task.created_at,
+    }
+
+
+def settled_entry(task: BoardTask) -> dict | None:
+    """Where a settled task settled, when, and the title and assignee it settled with; None for an open task."""
+    if not task.settled:
+        return None
+    return {
+        "state": task.settled,
+        "at": task.settled_at,
+        "created": task.created_at,
+        "title": task.title,
+        "model": task.assignee,
     }
 
 
@@ -104,7 +118,7 @@ class BoardFeed:
         self._window_s = window_s
         self._open: dict[str, dict] = {}
         self._machines: dict[str, dict[str, dict]] = {name: {} for name in self._drawn if name != "board"}
-        self._settled: dict[str, str] = {}
+        self._settled: dict[str, dict] = {}
         #: Every placed task's assignee, a settled one's included, so a machine still drawing it keeps its colour.
         self._assignees: dict[str, str] = {}
         self._dags: dict[str, list] = {}
@@ -174,6 +188,8 @@ class BoardFeed:
                 dict(state["settled"]),
                 dict(state["assignees"]),
             )
+            if not all(isinstance(entry, dict) for entry in settled.values()):
+                raise TypeError("a settled task saved before settled entries carried their time")
         except KeyError, TypeError, ValueError:
             logger.warning("StarPulse: the Board saved for %s cannot be read, replaying instead", stream)
             return None
@@ -215,7 +231,7 @@ class BoardFeed:
             return
         with self._lock:
             self._assignees[task.id] = task.assignee
-            agent = None if task.settled else task_agent(task)
+            agent, settled = (None, settled_entry(task)) if task.settled else (task_agent(task), None)
             before = self._open.get(task.id)
             if agent and before:
                 # the lane the task left on its last move, kept while the hourly reconcile republishes it in place
@@ -224,16 +240,16 @@ class BoardFeed:
                     agent["previous"] = previous
             if agent:
                 agent["entered"] = self._entered(task, before)
-            if before == agent and self._settled.get(task.id) == task.settled:
+            if before == agent and self._settled.get(task.id) == settled:
                 return  # an hourly reconcile republishes every task; only a change reaches the page
             if agent is None:
                 self._open.pop(task.id, None)
-                if task.settled:
-                    self._settled[task.id] = task.settled
+                if settled:
+                    self._settled[task.id] = settled
             else:
                 self._open[task.id] = agent
                 self._settled.pop(task.id, None)
-            self._publish("task", {"id": task.id, "agent": agent, "settled": task.settled})
+            self._publish("task", {"id": task.id, "agent": agent, "settled": settled})
 
     def _entered(self, task: BoardTask, before: dict | None) -> float:
         """When `task` entered its lane: kept while it stays there, now for a move read live, else the history's date."""

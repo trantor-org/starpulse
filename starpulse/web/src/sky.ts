@@ -2,7 +2,7 @@
 // moves the page plays. The approved mockup replayed a saved hour; the page
 // plays each move once, when the stream first delivers it.
 import { tree, type Tree } from "./levels";
-import type { Cue, Dag, FlowSnapshot, Pull, RawAgent, Snapshot, Writer } from "./types";
+import type { Cue, Dag, FlowSnapshot, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -50,7 +50,9 @@ export interface Sky {
   pulls: Record<string, Pull[]>;
   /** Each task's latest In Progress claim the board writer refused an agent, and when. */
   claims: Record<string, { reason: string; at: number }>;
-  settled: Record<string, string>;
+  settled: Record<string, Settled>;
+  /** The day's arrivals on each starting and terminal Board state: tasks created, or settled there, since local midnight. */
+  today: Record<string, RawAgent[]>;
   error: string | null;
   /** The server was still reading its board, so this sky's Board is partial. */
   reading: boolean;
@@ -64,7 +66,28 @@ const joined = (a: RawAgent, board: Map<string, RawAgent>): RawAgent => {
   return b ? { ...a, title: b.title, model: b.model || a.model, labels: b.labels, dependencies: b.dependencies, prs: b.prs, description: b.description } : a;
 };
 
-export function merge(snap: Snapshot): Sky {
+/** Local midnight today, in epoch seconds. */
+export const midnight = (now = new Date()) => new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+
+/** A Board state that counts the day's arrivals rather than the tasks in it: where tasks start, or a final state where they end. */
+export const daily = (s: { initial: boolean; final: boolean }) => s.initial || s.final;
+
+/** The tasks created since `since` on each starting state, and those settled since then on the terminal state each settled in. */
+function arrivals(board: FlowSnapshot, settled: Record<string, Settled>, since: number): Record<string, RawAgent[]> {
+  const out: Record<string, RawAgent[]> = {}, dot = (id: string, title: string, model: string, state: string): RawAgent => ({ id, title, model, state, today: true });
+  const settledDots = Object.entries(settled);
+  for (const s of board.machine.states.filter(daily)) {
+    const list = s.initial
+      ? [...board.agents.filter((a) => (a.created ?? -Infinity) >= since).map((a) => dot(a.id, a.title, a.model, s.id)),
+          ...settledDots.filter(([, e]) => (e.created ?? -Infinity) >= since).map(([id, e]) => dot(id, e.title, e.model, s.id))]
+      : [...board.agents.filter((a) => a.state === s.id && (a.entered ?? -Infinity) >= since).map((a) => dot(a.id, a.title, a.model, s.id)),
+          ...settledDots.filter(([, e]) => e.state === s.id && (e.at ?? -Infinity) >= since).map(([id, e]) => dot(id, e.title, e.model, s.id))];
+    if (list.length) out[s.id] = list;
+  }
+  return out;
+}
+
+export function merge(snap: Snapshot, since = midnight()): Sky {
   const boardTasks = new Map((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((a) => [a.id, a]));
   const flows = Object.fromEntries(snap.flows.map((f) => [f.name, f.name === "board" ? f : { ...f, agents: f.agents.map((a) => joined(a, boardTasks)) }]));
   const board = flows.board ?? EMPTY, t = tree(snap), groups = (snap.domains ?? []).map((d) => ({ name: d.name, dags: d.dags.map((x) => x.name) }));
@@ -95,10 +118,22 @@ export function merge(snap: Snapshot): Sky {
     pulls: snap.pulls ?? {},
     claims: snap.claims ?? {},
     settled: snap.settled,
+    today: arrivals(board, snap.settled, since),
     error: snap.error,
     reading: !!snap.reading,
   };
 }
+
+/** A Board state's count: a starting state's is the day's arrivals alone, as it is a concept no task stays in; any other's is the tasks in it,
+ * and on a terminal state the day's arrivals there not already in it. */
+export function stateCount(sky: Sky, sid: string): number {
+  if (sky.board.machine.states.find((s) => s.id === sid)?.initial) return sky.today[sid]?.length ?? 0;
+  const here = sky.board.agents.filter((a) => a.state === sid);
+  return here.length + (sky.today[sid] ?? []).filter((t) => !here.some((a) => a.id === t.id)).length;
+}
+
+/** How a Board state's count reads: `n`, or on a starting or terminal state `N today`, with every task drawn first when some did not arrive today. */
+export const countText = (n: number, today?: number) => (today === undefined ? `${n}` : n > today ? `${n} · ${today} today` : `${today} today`);
 
 /** One step a task takes: from null is where it was first seen. */
 export interface Move {

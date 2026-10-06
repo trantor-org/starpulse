@@ -144,6 +144,50 @@ const cue = (dagName: string, event: string, state: string): Cue => ({ dag: dagN
 const edgeOf = (scene: Scene, event: string) => scene.bEdges.find((e) => e.event === event)!;
 const middle = (e: BEdge) => bez(e.p0!, e.c!, e.p1!, 0.5);
 
+describe("a starting or terminal Board state", () => {
+  const today = () => {
+    const sky = boardSky();
+    sky.S.flows.board.machine.states.find((s) => s.id === "done")!.final = true;
+    const dot = (id: string, state: string) => ({ id, title: id, state, model: "", today: true });
+    sky.S.today = { new: [dot("PROJ-1", "new"), dot("PROJ-2", "new")], done: [dot("PROJ-3", "done"), dot("PROJ-4", "done"), dot("PROJ-5", "done")] };
+    return sky;
+  };
+  it("counts the day's arrivals on the Board and says so, orbiting those that settled on a terminal state", () => {
+    const scene = build(today(), { kind: "board" }), on = (id: string) => scene.tasks.filter((k) => k.today && k.host === scene.galaxies[id]).map((k) => k.id);
+
+    expect([scene.galaxies.new.n, scene.galaxies.done.n, scene.galaxies.review.n]).toEqual([2, 3, 0]);
+    expect([scene.galaxies.new.today, scene.galaxies.done.today, scene.galaxies.review.today]).toEqual([2, 3, undefined]);
+    expect(on("done")).toEqual(["PROJ-3", "PROJ-4", "PROJ-5"]);
+  });
+  it("orbits no arrival on a starting state, since each is drawn where it is now, yet sizes the state by them", () => {
+    const sky = today(), scene = build(sky, { kind: "board" }), sun = build(sky, { kind: "state", id: "new" });
+    const none = boardSky(), empty = build(none, { kind: "board" });
+
+    expect([scene.tasks.filter((k) => k.host === scene.galaxies.new).length, sun.tasks.length]).toEqual([0, 0]);
+    expect([sun.sun!.n, sun.sun!.today]).toEqual([2, 2]);
+    expect(scene.galaxies.new.r).toBeGreaterThan(empty.galaxies.new.r);
+  });
+  it("draws no task on a starting state, not even one in its lane, and counts only the day's arrivals; a terminal state keeps its tasks and adds the day's", () => {
+    const sky = today();
+    sky.S.flows.board.agents.push(
+      { id: "PROJ-1", title: "PROJ-1", state: "new", model: "" },
+      { id: "PROJ-7", title: "PROJ-7", state: "new", model: "" }, // in the lane, not created today
+      { id: "PROJ-6", title: "PROJ-6", state: "done", model: "" },
+    );
+    const board = build(sky, { kind: "board" }), sun = build(sky, { kind: "state", id: "new" });
+    const on = (id: string) => board.tasks.filter((k) => k.host === board.galaxies[id]).map((k) => k.id).sort();
+
+    expect([on("new"), on("done")]).toEqual([[], ["PROJ-3", "PROJ-4", "PROJ-5", "PROJ-6"]]);
+    expect([board.galaxies.new.n, board.galaxies.new.today, board.galaxies.done.n, board.galaxies.done.today]).toEqual([2, 2, 4, 3]);
+    expect([sun.sun!.n, sun.sun!.today, sun.tasks.map((k) => k.id)]).toEqual([2, 2, []]);
+  });
+  it("counts and orbits them on a terminal state's own level too", () => {
+    const sun = build(today(), { kind: "state", id: "done" });
+
+    expect([sun.sun!.n, sun.sun!.today, sun.tasks.map((k) => k.id)]).toEqual([3, 3, ["PROJ-3", "PROJ-4", "PROJ-5"]]);
+  });
+});
+
 describe("a Board state's sun", () => {
   it("carries the state's final flag, so a terminal state's level draws a black hole rather than a sun", () => {
     const sky = boardSky();
@@ -741,7 +785,7 @@ const moonSky = (skills = 2, W = 1920, H = 1080, ties: { writes?: Record<string,
   const snap: Snapshot = {
     graphs: ["board", "in-progress", "triaging-cr-reviews", "running-skill-evals", ...names, "runs"],
     flows: [
-      { name: "board", agents: ["PROJ-1", "PROJ-2", "PROJ-3", ...extra].map((id) => ({ id, title: "t", state: "in_progress", model: "", labels: [] })).concat([{ id: "PROJ-4", title: "t", state: "ready", model: "", labels: [] }]),
+      { name: "board", agents: ["PROJ-1", "PROJ-2", "PROJ-3", ...extra].map((id) => ({ id, title: "t", state: "in_progress", model: "", labels: [] })).concat([{ id: "PROJ-4", title: "t", state: "review", model: "", labels: [] }]),
         machine: machine(["ready", "in_progress", "review"], {
           transitions: [{ source: "ready", target: "in_progress", event: "CLAIM" }, { source: "in_progress", target: "review", event: "REVIEW" }],
           subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }],
@@ -814,7 +858,7 @@ describe("the Board's lifecycle moons", () => {
     expect(host("PROJ-1")).toBe(scene.subStates.find((b) => b.machine === "in-progress" && b.state === "pr_opened"));
     expect(host("PROJ-2")).toBe(skill);
     expect(host("PROJ-3")).toBe(scene.galaxies.in_progress);
-    expect(host("PROJ-4")).toBe(scene.galaxies.ready);
+    expect(host("PROJ-4")).toBe(scene.galaxies.review);
   });
 
   it("counts every task of a state on the state, wherever it orbits", () => {
