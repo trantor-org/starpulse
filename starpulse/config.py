@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -33,7 +33,11 @@ __all__ = ["Config", "ConfigError", "RunsInstance", "load", "runs_adapter"]
 
 
 class ConfigError(ValueError):
-    """The config file is not one the view can run from."""
+    """The config file is not one the view can run from; `unknown_keys` names the keys it refused as unknown."""
+
+    def __init__(self, message: str, unknown_keys: Sequence[str] = ()) -> None:
+        super().__init__(message)
+        self.unknown_keys = tuple(unknown_keys)
 
 
 def _names(value: object) -> bool:
@@ -83,7 +87,8 @@ def _instance(raw: object) -> RunsInstance:
         raise ConfigError("runs instance names must be non-empty text without a /")
     if unknown := sorted(raw.keys() - _INSTANCE_KEYS):
         raise ConfigError(
-            f"runs instance {name}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_INSTANCE_KEYS))}"
+            f"runs instance {name}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_INSTANCE_KEYS))}",
+            [f"runs.{name}.{key}" for key in unknown],
         )
     kind, url = raw["type"], raw["url"]
     try:
@@ -142,7 +147,7 @@ def load(path: Path | None) -> Config:
     """The config in `path`, or the defaults when there is none."""
     raw = tomllib.loads(path.read_text()) if path else {}
     if unknown := sorted(raw.keys() - _KEYS):
-        raise ConfigError(f"unknown config key(s) {', '.join(unknown)}; known: {', '.join(sorted(_KEYS))}")
+        raise ConfigError(f"unknown config key(s) {', '.join(unknown)}; known: {', '.join(sorted(_KEYS))}", unknown)
     if (mode := raw.get("mode", "ic")) != "ic":
         raise ConfigError(f'mode {mode!r} is not available yet; hub mode is reserved, use mode = "ic"')
     runs_raw = raw.get("runs", [])

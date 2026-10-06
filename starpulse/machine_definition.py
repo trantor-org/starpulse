@@ -22,7 +22,7 @@ conformance and guard replay run on it unchanged.
 """
 
 import json
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
@@ -30,7 +30,7 @@ from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import best_match
+from jsonschema.exceptions import ValidationError, best_match
 from statemachine import StateChart
 from statemachine.exceptions import InvalidDefinition
 from statemachine.io import create_machine_class_from_definition
@@ -51,7 +51,12 @@ _VALIDATOR = Draft202012Validator(SCHEMA)
 
 
 class MachineDefinitionError(ValueError):
-    """A machine file the schema or the compiler refuses."""
+    """A machine file the schema or the compiler refuses: `file` is the one to blame and `line` where in it, when known."""
+
+    def __init__(self, message: str, file: Path | None = None, line: int | None = None) -> None:
+        super().__init__(message)
+        self.file = file
+        self.line = line
 
 
 @dataclass(frozen=True)
@@ -91,11 +96,35 @@ def writers_of(machine: type[StateChart]) -> Mapping[str, tuple[Writer, ...]]:
     return getattr(machine, "writers", {})
 
 
+def _schema_error(document: Any) -> ValidationError | None:
+    return best_match(_VALIDATOR.iter_errors(document))
+
+
+def _describe(error: ValidationError) -> str:
+    where = "/".join(str(part) for part in error.absolute_path) or "<root>"
+    return f"{where}: {error.message}"
+
+
 def validate(document: Any) -> None:
     """Refuse a document the published schema rejects."""
-    if (error := best_match(_VALIDATOR.iter_errors(document))) is not None:
-        where = "/".join(str(part) for part in error.absolute_path) or "<root>"
-        raise MachineDefinitionError(f"{where}: {error.message}")
+    if (error := _schema_error(document)) is not None:
+        raise MachineDefinitionError(_describe(error))
+
+
+def _line_of(text: str, parts: Iterable[str | int]) -> int:
+    """The 1-based line of the YAML value at `parts`, or of the deepest enclosing node that exists."""
+    node = yaml.compose(text)
+    for part in parts:
+        if isinstance(node, yaml.MappingNode):
+            child = next((value for key, value in node.value if key.value == part), None)
+        elif isinstance(node, yaml.SequenceNode) and isinstance(part, int):
+            child = node.value[part]
+        else:
+            child = None
+        if child is None:
+            break
+        node = child
+    return node.start_mark.line + 1
 
 
 def load_machine(path: Path, registry: Registry = Registry()) -> Compiled:
@@ -106,24 +135,24 @@ def load_machine(path: Path, registry: Registry = Registry()) -> Compiled:
         event: tuple(Writer(**writer) for writer in declared) for event, declared in document.get("writers", {}).items()
     }
     if unknown := sorted(writers.keys() - document["events"].keys()):
-        raise MachineDefinitionError(f"{path}: writers name events the machine lacks: {unknown}")
+        raise MachineDefinitionError(f"{path}: writers name events the machine lacks: {unknown}", path)
     try:
         machine = create_machine_class_from_definition(document["name"], states=states)
     except InvalidDefinition as error:
-        raise MachineDefinitionError(f"{path}: {error}") from error
+        raise MachineDefinitionError(f"{path}: {error}", path) from error
     setattr(machine, "writers", writers)
     return Compiled(document["name"], machine, bindings, writers)
 
 
 def _read(path: Path) -> dict[str, Any]:
     try:
-        document = yaml.safe_load(path.read_text())
+        text = path.read_text()
+        document = yaml.safe_load(text)
     except (OSError, yaml.YAMLError) as error:
-        raise MachineDefinitionError(f"{path}: {error}") from error
-    try:
-        validate(document)
-    except MachineDefinitionError as error:
-        raise MachineDefinitionError(f"{path}: {error}") from error
+        mark = getattr(error, "problem_mark", None)
+        raise MachineDefinitionError(f"{path}: {error}", path, mark.line + 1 if mark else None) from error
+    if (error := _schema_error(document)) is not None:
+        raise MachineDefinitionError(f"{path}: {_describe(error)}", path, _line_of(text, error.absolute_path))
     return document
 
 
@@ -133,9 +162,9 @@ def _compile(
     """The library's state definitions for one machine file, ids prefixed when it is a child."""
     declared = document["states"]
     if sum(bool(state.get("initial")) for state in declared.values()) != 1:
-        raise MachineDefinitionError(f"{path}: a machine needs exactly one initial state")
+        raise MachineDefinitionError(f"{path}: a machine needs exactly one initial state", path)
     if unknown := {event for event in document.get("bindings", {}).values() if event not in document["events"]}:
-        raise MachineDefinitionError(f"{path}: bindings name events the machine lacks: {sorted(unknown)}")
+        raise MachineDefinitionError(f"{path}: bindings name events the machine lacks: {sorted(unknown)}", path)
 
     states: dict[str, Any] = {f"{prefix}{name}": _state(state) for name, state in declared.items()}
     bindings = dict(document.get("bindings", {}))
@@ -144,7 +173,7 @@ def _compile(
             sources = [transition["from"]] if isinstance(transition["from"], str) else transition["from"]
             for name in (*sources, transition["to"]):
                 if name not in declared:
-                    raise MachineDefinitionError(f"{path}: event {event} names undeclared state {name!r}")
+                    raise MachineDefinitionError(f"{path}: event {event} names undeclared state {name!r}", path)
             target = {
                 "target": f"{prefix}{transition['to']}",
                 **{
@@ -161,13 +190,13 @@ def _compile(
         if "flow" not in state:
             continue
         if nested:
-            raise MachineDefinitionError(f"{path}: state {name!r} opens a flow, but subflows go one level only")
+            raise MachineDefinitionError(f"{path}: state {name!r} opens a flow, but subflows go one level only", path)
         child_path = path.parent / state["flow"]
         children, child_bindings = _compile(
             _read(child_path), child_path, registry, prefix=f"{prefix}{name}_", nested=True
         )
         if clash := bindings.keys() & child_bindings.keys():
-            raise MachineDefinitionError(f"{child_path}: bindings already bound by {path}: {sorted(clash)}")
+            raise MachineDefinitionError(f"{child_path}: bindings already bound by {path}: {sorted(clash)}", child_path)
         bindings |= child_bindings
         states[f"{prefix}{name}"]["states"] = children
     return states, bindings
@@ -199,7 +228,7 @@ def _labelled(name: str, guard: Callable[..., bool]) -> Callable[..., bool]:
 
 def _named[F: Callable[..., Any]](name: str, table: Mapping[str, F], path: Path) -> F:
     if name not in table:
-        raise MachineDefinitionError(f"{path}: {name!r} is not registered by the adapter")
+        raise MachineDefinitionError(f"{path}: {name!r} is not registered by the adapter", path)
     return table[name]
 
 

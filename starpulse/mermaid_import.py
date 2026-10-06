@@ -117,17 +117,24 @@ def dump(draft: dict[str, Any], source: str = "") -> str:
     return header + yaml.safe_dump(draft, sort_keys=False)  # pragma: no mutate: `None` and `False` both keep key order
 
 
+def import_file(source: Path, out: Path | None = None) -> Path:
+    """Write the draft machine of the diagram in `source` to `out` (default under `.starpulse/machines`) and return
+    where it went; an existing file is never overwritten."""
+    out = out or Path(".starpulse/machines") / f"{source.stem}.yaml"
+    draft = draft_machine(source.stem, parse(source.read_text()))
+    validate(draft)
+    with out.open("x") as handle:
+        handle.write(dump(draft, source.name))
+    return out
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Draft a StarPulse machine definition from a stateDiagram-v2 file.")
     parser.add_argument("source", type=Path, help="a stateDiagram-v2 .mmd file")
     parser.add_argument("--out", type=Path, help="default: .starpulse/machines/<source name>.yaml")
     args = parser.parse_args(argv)
-    out = args.out or Path(".starpulse/machines") / f"{args.source.stem}.yaml"
     try:
-        draft = draft_machine(args.source.stem, parse(args.source.read_text()))
-        validate(draft)
-        with out.open("x") as handle:
-            handle.write(dump(draft, args.source.name))
+        out = import_file(args.source, args.out)
     except (MachineDefinitionError, OSError) as error:
         parser.error(f"{args.source}: {error}")
     print(f"Wrote {out}")

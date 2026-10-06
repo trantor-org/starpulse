@@ -27,6 +27,7 @@ from starpulse.server import _no_writer
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
 
+VALID_MACHINE = Path(__file__).parent.parent.parent / "machines" / "harness.yaml"
 PULL = "https://github.com/acme/app/pull/5"
 UNREAD_PULL = "https://github.com/acme/app/pull/9"  # linked from a task, but the server has not read it
 
@@ -542,10 +543,14 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task trace",
         "machine list",
         "machine show",
+        "machine validate",
+        "machine import mermaid",
         "runs list",
         "runs start",
         "watch",
         "analytics health",
+        "config check",
+        "demo",
         "doctor",
         "skills list",
         "skills install",
@@ -919,7 +924,8 @@ def test_an_interrupt_ends_a_watch_with_exit_0_after_the_lines_it_wrote(
 
 
 # Every verb the manifest lists, and each exit code it declares, with an argument line that produces it. `{server}`
-# is a running server, `{down}` an address nothing listens on.
+# is a running server, `{down}` an address nothing listens on, `{valid}` a machine that compiles and `{dir}` a directory
+# of `bad.yaml` (a schema error), `ok.toml`, `bad.toml` (an unknown key), `flow.mmd` and `design/` (a demo mockup).
 CASES = {
     ("snapshot", 0): ["snapshot", "--server", "{server}"],
     ("snapshot", 2): ["snapshot", "--nope"],
@@ -966,6 +972,20 @@ CASES = {
     ("watch", 2): ["watch", "--nope"],
     ("watch", 3): ["watch", "--server", "{down}"],
     ("watch", 4): ["watch", "--machine", "nowhere", "--server", "{server}"],
+    ("machine validate", 0): ["machine", "validate", "{valid}"],
+    ("machine validate", 1): ["machine", "validate", "{dir}/bad.yaml"],
+    ("machine validate", 2): ["machine", "validate"],
+    ("machine import mermaid", 0): ["machine", "import", "mermaid", "{dir}/flow.mmd", "--out", "{dir}/flow.yaml"],
+    ("machine import mermaid", 1): ["machine", "import", "mermaid", "{dir}/flow.mmd", "--out", "{dir}/bad.yaml"],
+    ("machine import mermaid", 2): ["machine", "import", "mermaid"],
+    ("machine import mermaid", 4): ["machine", "import", "mermaid", "{dir}/nope.mmd"],
+    ("config check", 0): ["config", "check", "--config", "{dir}/ok.toml"],
+    ("config check", 1): ["config", "check", "--config", "{dir}/bad.toml"],
+    ("config check", 2): ["config", "check", "--nope"],
+    ("demo", 0): ["demo", "--mockup", "{dir}/design", "--out", "{dir}/demo.html"],
+    ("demo", 1): ["demo", "--mockup", "{dir}/nope", "--out", "{dir}/demo.html"],
+    ("demo", 2): ["demo"],
+    ("demo", 3): ["demo", "--server", "{down}", "--out", "{dir}/demo.html"],
     ("doctor", 0): ["doctor", "--server", "{server}"],
     ("doctor", 1): ["doctor", "--server", "{down}"],
     ("doctor", 2): ["doctor", "--nope"],
@@ -1002,6 +1022,20 @@ def test_every_manifest_verb_and_exit_code_has_a_case(capsys: pytest.CaptureFixt
     assert declared - INTERRUPTED == set(CASES)
 
 
+def _case_files(root: Path) -> Path:
+    """The files the offline verbs' cases name, in a fresh directory."""
+    (root / "design").mkdir(parents=True)
+    (root / "bad.yaml").write_text("name: flow\nstates:\n  idle: {initial: true}\n  done: {final: maybe}\nevents: {}\n")
+    (root / "ok.toml").write_text('tracker_url = "http://tracker.example"\n')
+    (root / "bad.toml").write_text('colour = "red"\n')
+    (root / "flow.mmd").write_text("stateDiagram-v2\n    [*] --> open\n    open --> closed : Close it\n")
+    board = {"agents": [{"id": "PROJ-1", "title": "Rotate the secret", "state": "ready"}]}
+    snap = {"now": 1.0, "dags": [], "flows": {"board": board, "in-progress": {"agents": []}}}
+    (root / "design" / "data.js").write_text(f"window.SNAP = {json.dumps(snap)};\n")
+    (root / "design" / "index.html").write_text('<script src="data.js"></script>')
+    return root
+
+
 @pytest.mark.parametrize(("verb", "exit_code"), list(CASES))
 def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
     base: str,
@@ -1018,9 +1052,17 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
     monkeypatch.chdir(tmp_path)  # `skills` writes into the project, and under HOME with --user
     PREPARE.get((verb, exit_code), lambda: None)()
     manifest = next(v for v in _manifest(capsys) if v["verb"] == verb)
+    files = _case_files(tmp_path / "cases")
     argv = [
         a.format(
-            server=base, movable=movable, bare=bare, runnable=runnable, forbidden=forbidden, down=_closed_port_url()
+            server=base,
+            movable=movable,
+            bare=bare,
+            runnable=runnable,
+            forbidden=forbidden,
+            down=_closed_port_url(),
+            valid=VALID_MACHINE,
+            dir=files,
         )
         for a in CASES[verb, exit_code]
     ]
@@ -1029,12 +1071,17 @@ def test_a_manifest_verb_writes_one_json_document_and_exits_as_declared(
 
     assert code == exit_code
     assert exit_code in manifest["exit_codes"]
-    # A failed doctor check and a refused move still report their keys; any other refusal is an error document.
-    reports = exit_code == 0 or (verb, exit_code) in {("doctor", 1), ("task move", 1)}
+    # A verb that reports `ok` still reports every check it made when it fails; any other refusal is an error document.
+    reports = exit_code == 0 or (exit_code == 1 and "ok" in manifest["outputs"])
     assert set(doc) == (set(manifest["outputs"]) if reports else {"error", "code"})
 
 
-SKILLS = ["operating-starpulse-board", "setting-up-starpulse"]
+SKILLS = [
+    "authoring-starpulse-machines",
+    "operating-starpulse-board",
+    "setting-up-starpulse",
+    "writing-starpulse-adapters",
+]
 
 
 def test_skills_install_copies_the_bundled_skills_for_each_harness_chosen_into_the_project(
@@ -1109,8 +1156,10 @@ def test_skills_list_reports_each_skills_status_per_harness(
     assert code == 0
     assert doc["scope"] == "project"
     assert [(s["name"], s["claude"], s["codex"]) for s in doc["skills"]] == [
+        ("authoring-starpulse-machines", "installed", "absent"),
         ("operating-starpulse-board", "installed", "absent"),
         ("setting-up-starpulse", "modified", "absent"),
+        ("writing-starpulse-adapters", "installed", "absent"),
     ]
     assert all(s["description"] for s in doc["skills"])
 
@@ -1139,17 +1188,24 @@ def test_every_skill_is_a_directory_named_in_its_front_matter_with_a_description
         assert skill_install.description(name)
 
 
+def _named_verbs(skill: str, verbs: dict[str, set[str]]) -> list[str]:
+    """The manifest verb behind each `starpulse ...` command the skill names, each with its flags checked."""
+    named = []
+    for span in re.findall(r"`starpulse ([^`]+)`", (skill_install.SOURCE / skill / "SKILL.md").read_text()):
+        words = span.split()
+        if words[0] in ("serve", "emit"):  # run through their own parsers, not the verb manifest
+            continue
+        leaf = next((" ".join(words[:n]) for n in (3, 2, 1) if " ".join(words[:n]) in verbs), None)
+        assert leaf, f"{skill} names `starpulse {span}`, which is no manifest verb"
+        flags = {w.split("=")[0] for w in words if w.startswith("--")}
+        assert flags <= verbs[leaf], f"{skill} gives `starpulse {leaf}` {flags - verbs[leaf]}"
+        named.append(leaf)
+    return named
+
+
 def test_every_verb_and_flag_a_bundled_skill_names_is_in_the_manifest(capsys: pytest.CaptureFixture[str]) -> None:
     verbs = {v["verb"]: {f for a in v["arguments"] for f in a["flags"]} for v in _manifest(capsys)}
-    named = 0
-    for name in skill_install.names():
-        for span in re.findall(r"`starpulse ([^`]+)`", (skill_install.SOURCE / name / "SKILL.md").read_text()):
-            words = span.split()
-            if words[0] in ("serve", "emit"):  # run through their own parsers, not the verb manifest
-                continue
-            leaf = next((" ".join(words[:n]) for n in (2, 1) if " ".join(words[:n]) in verbs), None)
-            assert leaf, f"{name} names `starpulse {span}`, which is no manifest verb"
-            flags = {w.split("=")[0] for w in words if w.startswith("--")}
-            assert flags <= verbs[leaf], f"{name} gives `starpulse {leaf}` {flags - verbs[leaf]}"
-            named += 1
-    assert named >= 8  # the skills do name verbs; a regex that matched nothing would pass vacuously
+    named = {skill: _named_verbs(skill, verbs) for skill in skill_install.names()}
+    assert sum(map(len, named.values())) >= 8  # the skills do name verbs; a regex that matched nothing would pass vacuously
+    assert {"machine validate", "machine import mermaid"} <= set(named["authoring-starpulse-machines"])
+    assert {"doctor", "config check"} <= set(named["writing-starpulse-adapters"])
