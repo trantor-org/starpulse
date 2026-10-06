@@ -20,6 +20,10 @@ collaborator, say so in an issue.
 - The maintainer squash-merges it. Its title becomes the commit on `main` and the line in the next release's
   notes, so write the title for someone who uses StarPulse.
 - Nobody pushes to `main` directly, force-pushes it or deletes it.
+- After a merge, the `dispatch` job in `ci.yml` runs once `python` and `web` pass on `main`. It sends trantor a
+  `starpulse-green` `repository_dispatch` whose `sha` is the tested commit, and trantor's `starpulse-bump` workflow
+  opens one pull request pinned to that commit. Pull requests and red runs send nothing. The job mints the
+  workspace App token from the `WORKSPACE_APP_CLIENT_ID` and `WORKSPACE_APP_PRIVATE_KEY` secrets.
 
 ## License
 

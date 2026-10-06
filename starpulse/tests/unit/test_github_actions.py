@@ -243,7 +243,9 @@ def test_an_instance_can_start_runs_only_with_a_token_in_the_environment(monkeyp
 
 def post_run(server, workflow: str) -> tuple[int, dict]:
     """What the page's Run now button gets: the status and body of `POST /api/run/<workflow>`."""
-    request = urllib.request.Request(url(server, f"/api/run/{workflow}"), data=b"", method="POST")
+    request = urllib.request.Request(
+        url(server, f"/api/run/{workflow}"), data=b"", method="POST", headers={"Content-Type": "application/json"}
+    )
     try:
         with urllib.request.urlopen(request) as resp:
             return resp.status, json.load(resp)
