@@ -11,6 +11,7 @@ import yaml
 from ui_preview import (
     DEMO_REPO,
     FLOW_VIEW,
+    MAIN_FOLDER,
     MARKER,
     MOCKUP,
     UI_GLOBS,
@@ -48,10 +49,13 @@ def test_surfaces_follow_the_changed_paths(changed: list[str], expected: list[st
     assert surfaces(changed) == expected
 
 
-def test_the_workflow_filters_on_the_scripts_globs() -> None:
+def test_the_workflow_filters_pull_requests_and_main_pushes_on_the_scripts_globs() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/ui-preview.yml").read_text())
     # PyYAML reads the `on:` key as True.
-    assert tuple(workflow[True]["pull_request"]["paths"]) == UI_GLOBS
+    on = workflow[True]
+    assert tuple(on["pull_request"]["paths"]) == UI_GLOBS
+    assert on["push"] == {"branches": ["main"], "paths": list(UI_GLOBS)}
+    assert "workflow_dispatch" in on
 
 
 def test_the_shipped_mockup_builds_a_demo_that_leaks_nothing() -> None:
@@ -163,7 +167,7 @@ def test_rerender_never_touches_a_comment_that_is_not_its_own() -> None:
 
 def test_note_links_each_demo_in_the_prs_own_folder() -> None:
     note = demo_note(7, ["flow-view.html"])
-    assert "(https://trantor-org.github.io/starpulse-demo/starpulse-pr-7/flow-view.html)" in note
+    assert "(https://trantor-org.github.io/starpulse-demo/pr-7/flow-view.html)" in note
     assert demo_note(7, []) == ""
 
 
@@ -196,8 +200,8 @@ class DemoGh:
 def test_publish_writes_each_demo_and_drops_one_the_pr_no_longer_builds(tmp_path: Path) -> None:
     built = tmp_path / "flow-view.html"
     built.write_text("<html>")
-    folder = "starpulse-pr-7"
-    gh = DemoGh({f"{folder}/flow-view.html": "old", f"{folder}/design-mockup.html": "gone", "pr-7/flow-view.html": "t"})
+    folder = "pr-7"
+    gh = DemoGh({f"{folder}/flow-view.html": "old", f"{folder}/design-mockup.html": "gone", "main/flow-view.html": "m"})
 
     urls = publish_demos(gh, folder, [built], tmp_path / "scratch")
 
@@ -221,12 +225,24 @@ def test_publish_writes_each_demo_and_drops_one_the_pr_no_longer_builds(tmp_path
 
 
 def test_unpublish_deletes_only_this_prs_folder() -> None:
-    gh = DemoGh({"starpulse-pr-7/a.html": "a", "starpulse-pr-70/a.html": "b", "pr-7/a.html": "t", "main/a.html": "m"})
+    gh = DemoGh({"pr-7/a.html": "a", "pr-70/a.html": "b", "main/a.html": "m"})
 
-    unpublish_demos(gh, "starpulse-pr-7")
+    unpublish_demos(gh, "pr-7")
 
-    assert gh.writes == [
-        ("DELETE", "starpulse-pr-7/a.html", {"message": "Unpublish starpulse-pr-7/a.html", "sha": "a"})
+    assert gh.writes == [("DELETE", "pr-7/a.html", {"message": "Unpublish pr-7/a.html", "sha": "a"})]
+
+
+def test_publishing_main_replaces_mains_demos_and_leaves_every_pr_folder(tmp_path: Path) -> None:
+    built = tmp_path / "flow-view.html"
+    built.write_text("<html>")
+    gh = DemoGh({"main/flow-view.html": "old", "main/gone.html": "g", "pr-7/flow-view.html": "p"})
+
+    urls = publish_demos(gh, MAIN_FOLDER, [built], tmp_path / "scratch")
+
+    assert urls == ["https://trantor-org.github.io/starpulse-demo/main/flow-view.html"]
+    assert [(method, route) for method, route, _ in gh.writes] == [
+        ("PUT", "main/flow-view.html"),
+        ("DELETE", "main/gone.html"),
     ]
 
 
@@ -264,7 +280,7 @@ def test_publish_refuses_every_demo_when_one_leaks(tmp_path: Path) -> None:
     gh = DemoGh({})
 
     with pytest.raises(DemoLeakError, match=r"design-mockup\.html: task id: TASK-9"):
-        publish_demos(gh, "starpulse-pr-7", [clean, leaky], tmp_path / "scratch")
+        publish_demos(gh, "pr-7", [clean, leaky], tmp_path / "scratch")
 
     assert gh.writes == []
 

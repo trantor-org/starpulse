@@ -1,10 +1,11 @@
-"""Render a pull request's StarPulse UI and post the screenshots as one PR comment.
+"""Render a pull request's StarPulse UI and post the screenshots as one PR comment; publish main's live demo.
 
 `.github/workflows/ui-preview.yml` runs this on every pull request that touches the page (`starpulse/web/**`), the
 design mockup (`design/**`) or this preview. It builds each changed surface's scrubbed one-file demo with
-`starpulse.demo`, screenshots the demos, publishes them to the public `starpulse-demo` Pages repository while the pull
-request is open, and leaves one comment holding the screenshots and the demo links. The flow view is rendered
-against `ci/preview.toml`, a demo config naming no real board or runs adapter.
+`starpulse.demo`, screenshots the demos, publishes them to the public `starpulse-demo` Pages repository while the
+pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
+touches the same paths runs it with `--main`, which republishes both demos as `main/`, the live demo the README
+links. The flow view is rendered against `ci/preview.toml`, a demo config naming no real board or runs adapter.
 """
 
 from __future__ import annotations
@@ -116,8 +117,10 @@ def publish(gh: Callable[..., str], repo: str, pr: int, body: Path, images: Sequ
     return next(c["html_url"] for c in earlier if c["id"] == old_id)
 
 
-#: The public GitHub Pages repository the demos are published to while the pull request is open.
+#: The public GitHub Pages repository the demos are published to.
 DEMO_REPO = "trantor-org/starpulse-demo"
+#: The folder in it that always holds main's demos.
+MAIN_FOLDER = "main"
 #: The hosts a public demo may link to: XML namespaces, the mockup's web font and React's error decoder.
 DEMO_URL_HOSTS = frozenset({"www.w3.org", "fonts.googleapis.com", "fonts.gstatic.com", "react.dev"})
 #: Identifiers the scrub must have removed, by the name a refusal gives them. The scrub's own synthetic UUIDs
@@ -138,8 +141,8 @@ _URL_HOST = re.compile(r"https?://([^/\s\"'`<>)\\:?#]+)")
 
 
 def demo_folder(pr: int) -> str:
-    """The Pages folder a pull request's demos live in, apart from trantor's own `pr-<N>` folders."""
-    return f"starpulse-pr-{pr}"
+    """The Pages folder a pull request's demos live in while it is open."""
+    return f"pr-{pr}"
 
 
 def demo_url(folder: str, name: str) -> str:
@@ -286,6 +289,7 @@ def _flow_view() -> Iterator[int]:  # pragma: no cover — process boundary
 
 
 def _build_demos(names: Sequence[str], out: Path) -> list[Path]:  # pragma: no cover — process boundary
+    out.mkdir(parents=True, exist_ok=True)
     built = []
     if demo_name(FLOW_VIEW) in names:
         with _flow_view() as port:
@@ -338,6 +342,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
     parser.add_argument(
         "--scan", type=Path, metavar="DIR", help="leak-scan the demos built into DIR, publishing nothing"
     )
+    parser.add_argument("--main", action="store_true", help="publish this checkout's demos as main's live demo")
     parser.add_argument("--repo", help="owner/name")
     parser.add_argument("--pr", type=int)
     parser.add_argument("--sha")
@@ -351,6 +356,10 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
         except DemoLeakError as error:
             print(error, file=sys.stderr)
             return 1
+        return 0
+    if args.main:
+        built = _build_demos([demo_name(s) for s in SURFACE_GLOBS], args.out / "demo")
+        print(*publish_demos(_demo_gh, MAIN_FOLDER, built, args.out / "requests"), sep="\n")
         return 0
     if None in (args.repo, args.pr, args.sha, args.run_url, args.action):
         parser.error("a pull request preview needs --repo, --pr, --sha, --run-url and --action")
@@ -367,7 +376,6 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
         print("no UI surface to render")
         return 0
     demo_dir = args.out / "demo"  # the workflow uploads this directory as the `ui-demo` artifact
-    demo_dir.mkdir(parents=True, exist_ok=True)
     names = [demo_name(s) for s in todo]
     built = _build_demos(names, demo_dir)
     shots: dict[str, list[Path]] = {}

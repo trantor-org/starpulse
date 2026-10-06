@@ -1,10 +1,10 @@
 name: UI preview
 
-# The paths filter is `UI_GLOBS` in ci/ui_preview.py; its test holds the two equal.
+# Both paths filters are `UI_GLOBS` in ci/ui_preview.py; its test holds them equal.
 #
 # Every open UI pull request publishes its scrubbed demos to the public trantor-org/starpulse-demo Pages repository,
-# under starpulse-pr-<N>/, and links them in its description; closing the pull request unpublishes them, which is
-# why that event starts a run too.
+# under pr-<N>/, and links them in its description; closing the pull request unpublishes them, which is why that
+# event starts a run too. A push to main, or a dispatch, republishes main/, the live demo the README links.
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
@@ -13,6 +13,14 @@ on:
       - ci/**
       - .github/workflows/ui-preview.yml
       - design/**
+  push:
+    branches: [main]
+    paths:
+      - starpulse/web/**
+      - ci/**
+      - .github/workflows/ui-preview.yml
+      - design/**
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,8 +32,9 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
-    # Review context, never a gate: a failed render must not impede the pull request it describes.
-    continue-on-error: true
+    # On a pull request this is review context, never a gate: a failed render must not impede the pull request it
+    # describes. On main a failed build or publish turns the run red; the previous main/ demo keeps serving.
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
     # The server uses an isolated SQLite database for the preview.
     runs-on: [self-hosted, validate]
     timeout-minutes: 20
@@ -64,7 +73,14 @@ jobs:
           repositories: starpulse-demo
           permission-contents: write
 
+      - name: Publish main's live demo
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          DEMO_TOKEN: ${{ steps.demo-token.outputs.token }}
+        run: uv run python ci/ui_preview.py --main
+
       - name: Render and post the screenshots
+        if: github.event_name == 'pull_request'
         env:
           # `gh pr comment --attach` is the only way to upload a screenshot into a comment, and it refuses an App or
           # Actions token ("unsupported authentication type"), so the comment is posted as RENOVATE_TOKEN's user, the
