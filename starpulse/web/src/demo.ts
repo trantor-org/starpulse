@@ -75,6 +75,7 @@ const HANDLERS: Record<string, Handler> = {
   },
   "/api/task": (server, path) => server.task(decodeURIComponent(path.slice("/api/task/".length))),
   "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
+  "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
 };
 
 /**
@@ -115,7 +116,7 @@ export class DemoServer {
     const { history, ...snap } = structuredClone(fixture);
     this.lanes = history ?? {};
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
-    this.snapshot = this.verdicts({ ...snap, capabilities: { edit: true, archive: false } });
+    this.snapshot = this.verdicts({ ...snap, capabilities: { edit: true, archive: true } });
   }
 
   subscribe(fn: (s: Snapshot) => void): () => void {
@@ -191,6 +192,21 @@ export class DemoServer {
       this.publish(next);
     }
     return json({ task, changed: fields });
+  }
+
+  /** Archive `task` as the served writer would: the card and its record leave the board, unless a review fixture makes the writer refuse. */
+  archive(raw: string): Response {
+    let task: unknown;
+    try { task = (JSON.parse(raw) as { task?: unknown }).task; } catch { task = undefined; }
+    if (typeof task !== "string") return json({ error: "invalid archive" }, 400);
+    if (!this.snapshot.flows.find((f) => f.name === "board")?.agents.some((a) => a.id === task)) return json({ error: `${task} is not on the board` }, 404);
+    if (this.refuseEdits) return json({ error: "The demo writer refused this archive; the task was not archived.", skill: "completing-tasks" }, 409);
+    const next = structuredClone(this.snapshot);
+    const board = next.flows.find((f) => f.name === "board")!;
+    board.agents = board.agents.filter((a) => a.id !== task);
+    delete this.records[task];
+    this.publish(next);
+    return json({ task });
   }
 
   fetch(input: string, init?: RequestInit): Promise<Response> {
