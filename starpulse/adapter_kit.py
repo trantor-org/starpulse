@@ -1,14 +1,16 @@
 """The test kit an adapter author runs against their adapter.
 
 Subclass the kit for the contract the adapter writes, declare the adapter's task keys and branch
-examples, and say how to produce its records; pytest collects the checks on the subclass:
+examples (and, for a board, the team it derives for each task), and say how to produce its records;
+pytest collects the checks on the subclass:
 
     class TestMyBoard(BoardAdapterKit):
         keys = TaskKeys(key=re.compile(r"PROJ-\\d+"), branch=re.compile(r"feature/(PROJ-\\d+)"))
         branches = {"feature/PROJ-1-add-x": "PROJ-1", "main": None}
+        teams = {"PROJ-1": "PROJ"}
 
         def produce(self) -> list[dict]:
-            return [{"id": "PROJ-1", "title": "Add x", "lane": "in_progress"}]
+            return [{"id": "PROJ-1", "title": "Add x", "team": "PROJ", "lane": "in_progress"}]
 
 `produce` returns the records the adapter writes for StarPulse, as plain dicts shaped as the
 contract's JSON Schema (`starpulse.contracts.SCHEMAS`). A machine event may carry its `time` as text,
@@ -106,12 +108,18 @@ class BoardAdapterKit(_AdapterKit):
     _model = BoardTask
     #: The machines the page draws, the Board's as `board`, as the adapter's `starpulse.board.Board` draws them.
     machines: ClassVar[Mapping[str, dict]]
+    #: The team key the adapter derives for each task `produce` returns, by task key: the Backlog.md project, Jira
+    #: project or board, or GitHub repository its tracker places the task in. The kit holds each record to it.
+    teams: ClassVar[Mapping[str, str]]
     #: The adapter's board writer over the project `produce` reads, when it has one; with a writer, `produce` offers
     #: a move any actor may make and one the machine leaves to the operator.
     writer: MoveWriter | None = None
 
     def test_every_task_key_is_in_the_declared_scheme(self) -> None:
         assert [t.id for t in self.records() if not self.keys.matches(t.id)] == []
+
+    def test_every_task_is_in_the_team_the_adapter_derives_from_its_tracker(self) -> None:
+        assert {t.id: t.team for t in self.records()} == dict(self.teams)
 
     def _move(self, actor: str, permitted: bool) -> tuple[tuple[int, dict], list[str]]:
         """Ask the server to make the first offered move `actor` is (`permitted`) or is not allowed; the writer's calls."""
@@ -313,10 +321,11 @@ def next_event(resp: HTTPResponse) -> tuple[str, dict]:
 
 
 def task(task_id: str, status: str = "To Do", **fields) -> BoardTask:
-    """A task in the lane `status` names, its title derived from its key unless given."""
+    """A task in the lane `status` names, its title derived from its key and its team `demo` unless given."""
     return BoardTask(
         id=task_id,
         title=fields.pop("title", f"Title of {task_id}"),
+        team=fields.pop("team", "demo"),
         lane=status.lower().replace(" ", "_"),
         **fields,
     )

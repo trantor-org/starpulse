@@ -57,17 +57,33 @@ class BacklogConfig:
     """The configured statuses in board order: the first is where a task starts, the last where it ends."""
     prefix: str
     """The task id prefix (`task` in `task-12`)."""
+    project: str
+    """The config's `project_name`, the team its tasks are in; empty when the config names none."""
 
 
 def read_config(root: Path) -> BacklogConfig:
-    """The config in `root/config.yml`, with upstream's defaults for what it does not say."""
+    """The config in `root/config.yml`, with upstream's defaults for the statuses and prefix it does not say.
+
+    It has no default project: a project the config does not name is refused by `require_project`, never given a team.
+    """
     try:
         raw = yaml.safe_load((root / "config.yml").read_text())
     except OSError, yaml.YAMLError:
-        return BacklogConfig(DEFAULT_STATUSES, DEFAULT_PREFIX)
+        return BacklogConfig(DEFAULT_STATUSES, DEFAULT_PREFIX, "")
     raw = raw if isinstance(raw, dict) else {}
     statuses = tuple(str(s) for s in raw.get("statuses") or ()) or DEFAULT_STATUSES
-    return BacklogConfig(statuses, str(raw.get("task_prefix") or DEFAULT_PREFIX))
+    return BacklogConfig(
+        statuses, str(raw.get("task_prefix") or DEFAULT_PREFIX), str(raw.get("project_name") or "").strip()
+    )
+
+
+def require_project(root: Path, config: BacklogConfig) -> str:
+    """The project `config` names, which is the team of every task under `root`; refused when it names none."""
+    if not config.project:
+        raise ValueError(
+            f"board: {root / 'config.yml'} sets no project_name, so its tasks belong to no team; name the project there"
+        )
+    return config.project
 
 
 def upstream_keys(prefix: str = DEFAULT_PREFIX) -> TaskKeys:
@@ -188,6 +204,7 @@ class UpstreamBacklog:
     ) -> None:
         self.root = root
         self.config = read_config(root)
+        self._team = require_project(root, self.config)
         self._put = put
         self._retract = retract
         self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
@@ -239,6 +256,7 @@ class UpstreamBacklog:
         return BoardTask(
             id=task_id,
             title=title,
+            team=self._team,
             lane=lane,
             dependencies=_strings(frontmatter.get("dependencies")),
             references=_strings(frontmatter.get("references")),
@@ -313,6 +331,7 @@ def project_board(
     """
     interval = float(settings.get("interval", 2.0))
     config = read_config(root)
+    require_project(root, config)
     if "machine" in settings:
         drawn, declared = _machine(base / str(settings["machine"]), config)
     else:

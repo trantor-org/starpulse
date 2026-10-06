@@ -194,7 +194,12 @@ def test_post_api_tasks_creates_on_the_native_board_and_answers_405_to_a_get(
 ) -> None:
     built, feed = _serving(tmp_path, monkeypatch)
     with serve(tmp_path, feed, create=built.create) as server:
-        request = urllib.request.Request(url(server, "/api/tasks"), data=_raw(title="Over HTTP"), headers={"Content-Type": "application/json"}, method="POST")
+        request = urllib.request.Request(
+            url(server, "/api/tasks"),
+            data=_raw(title="Over HTTP"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         with urllib.request.urlopen(request, timeout=5) as resp:
             created = (resp.status, json.load(resp))
         with pytest.raises(urllib.error.HTTPError) as got:
@@ -206,7 +211,12 @@ def test_post_api_tasks_creates_on_the_native_board_and_answers_405_to_a_get(
 
 def test_post_api_tasks_on_a_board_without_create_is_404(tmp_path: Path) -> None:
     with serve(tmp_path, BoardFeed()) as server:
-        request = urllib.request.Request(url(server, "/api/tasks"), data=_raw(title="Nope"), headers={"Content-Type": "application/json"}, method="POST")
+        request = urllib.request.Request(
+            url(server, "/api/tasks"),
+            data=_raw(title="Nope"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(request, timeout=5)
 
@@ -218,6 +228,8 @@ def test_post_api_tasks_on_a_board_without_create_is_404(tmp_path: Path) -> None
     [("", True), ('[board]\ntype = "native"\n', True), ('[board]\ntype = "upstream_backlog"\n', False)],
 )
 def test_the_snapshot_says_whether_the_board_can_create(tmp_path: Path, table: str, can_create: bool) -> None:
+    (tmp_path / "backlog").mkdir()
+    (tmp_path / "backlog" / "config.yml").write_text("project_name: demo\n")
     (tmp_path / "starpulse.toml").write_text(table)
 
     built, feed = assemble(load(tmp_path / "starpulse.toml"), tmp_path, None, ())

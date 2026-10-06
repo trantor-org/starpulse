@@ -21,7 +21,7 @@ def test_an_unsubscribed_page_gets_no_more_deltas() -> None:
     _, deltas = feed.subscribe()
 
     feed.unsubscribe(deltas)
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="to_do"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="to_do"))
 
     assert deltas.empty()
 
@@ -210,14 +210,16 @@ def test_a_snapshot_before_the_stream_is_read_says_so() -> None:
     assert feed.snapshot()["error"] is None
 
 
-def test_a_page_connected_while_the_stream_is_replayed_gets_one_snapshot_once_it_is_read_not_every_replayed_step() -> None:
+def test_a_page_connected_while_the_stream_is_replayed_gets_one_snapshot_once_it_is_read_not_every_replayed_step() -> (
+    None
+):
     feed = BoardFeed(keys=PROJ)
     feed.expect("5-0")
     first, changes = feed.subscribe()
 
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="ready"))
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="in_progress"))
-    feed.put(BoardTask(id="PROJ-2", title="u", lane="review"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="in_progress"))
+    feed.put(BoardTask(id="PROJ-2", team="demo", title="u", lane="review"))
     feed.seen("4-0")
     assert changes.empty()
 
@@ -259,7 +261,7 @@ def test_a_stream_id_with_no_sequence_counts_as_sequence_zero() -> None:
 
 def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
     feed = BoardFeed(board_url="http://tracker.example.test:6421", machines=MACHINES)
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="done", settled="completed"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="done", settled="completed"))
 
     body = feed.snapshot()
 
@@ -303,6 +305,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
     feed.put(
         BoardTask(
             id="PROJ-1",
+            team="demo",
             title="Add thing",
             lane="in_progress",
             dependencies=("PROJ-0",),
@@ -335,8 +338,8 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
 
 def test_a_task_that_changed_lane_carries_the_lane_it_left_until_it_changes_again() -> None:
     feed = BoardFeed()
-    waiting = BoardTask(id="PROJ-1", title="t", lane="waiting")
-    ready = BoardTask(id="PROJ-1", title="t", lane="ready")
+    waiting = BoardTask(id="PROJ-1", team="demo", title="t", lane="waiting")
+    ready = BoardTask(id="PROJ-1", team="demo", title="t", lane="ready")
 
     feed.put(waiting)
     assert "previous" not in _agents(feed)[0]  # first seen: it left no lane
@@ -348,29 +351,29 @@ def test_a_task_that_changed_lane_carries_the_lane_it_left_until_it_changes_agai
     assert _agents(feed)[0]["previous"] == "waiting"
     assert changes.empty()
 
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="in_progress"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="in_progress"))
     assert _agents(feed)[0]["previous"] == "ready"
 
 
 def test_a_settled_task_republished_unchanged_is_no_delta_and_a_reopened_one_is_no_longer_settled() -> None:
     feed = BoardFeed()
-    done = BoardTask(id="PROJ-1", title="t", lane="done", settled="completed")
+    done = BoardTask(id="PROJ-1", team="demo", title="t", lane="done", settled="completed")
     feed.put(done)
     _, changes = feed.subscribe()
 
     feed.put(done)  # the hourly reconcile republishes it unchanged
 
     assert changes.empty()
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="ready"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
     assert feed.snapshot()["settled"] == {}
 
 
 def test_a_settled_board_task_leaves_its_lane_and_a_task_outside_the_scheme_is_not_placed() -> None:
     feed = BoardFeed(keys=PROJ)
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="done"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="done"))
 
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="done", settled="completed"))
-    feed.put(BoardTask(id="OPS-9", title="t", lane="to_do"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="done", settled="completed"))
+    feed.put(BoardTask(id="OPS-9", team="demo", title="t", lane="to_do"))
 
     body = feed.snapshot()
     assert (_agents(feed), body["settled"]["PROJ-1"]["state"]) == ([], "completed")
@@ -380,13 +383,15 @@ def test_a_task_read_live_is_stamped_when_it_entered_its_lane_and_keeps_that_tim
     now = [100.0]
     feed = BoardFeed(clock=lambda: now[0])
     feed.expect("0-0")  # read up to the stream's end: every put from here is live
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="ready"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
 
     now[0] = 200.0
-    feed.put(BoardTask(id="PROJ-1", title="edited", lane="ready"))  # an edit in place, or the hourly reconcile
+    feed.put(
+        BoardTask(id="PROJ-1", team="demo", title="edited", lane="ready")
+    )  # an edit in place, or the hourly reconcile
     assert _agents(feed)[0]["entered"] == 100.0
 
-    feed.put(BoardTask(id="PROJ-1", title="edited", lane="in_progress"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="edited", lane="in_progress"))
     assert _agents(feed)[0]["entered"] == 200.0
 
 
@@ -402,8 +407,8 @@ def test_a_task_replayed_before_the_feed_is_ready_takes_its_lane_entry_from_the_
     feed.date_lanes(lambda task: path.get(task, []))
     feed.expect("5-0")
 
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="in_progress"))
-    feed.put(BoardTask(id="PROJ-2", title="t", lane="ready"))  # the history never saw it
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="in_progress"))
+    feed.put(BoardTask(id="PROJ-2", team="demo", title="t", lane="ready"))  # the history never saw it
 
     assert [a["entered"] for a in _agents(feed)] == [30.0, 500.0]
 
@@ -416,19 +421,26 @@ def test_a_history_that_cannot_be_read_dates_a_replayed_lane_by_the_clock_and_st
     feed.date_lanes(down)
     feed.expect("5-0")
 
-    feed.put(BoardTask(id="PROJ-1", title="t", lane="ready"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
 
     assert [(a["id"], a["entered"]) for a in _agents(feed)] == [("PROJ-1", 500.0)]
 
 
 def test_a_task_carries_when_it_was_created_and_a_settled_one_when_and_as_whom_it_settled() -> None:
     feed = BoardFeed()
-    feed.put(BoardTask(id="PROJ-1", title="open one", lane="ready", created_at=100.0))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="open one", lane="ready", created_at=100.0))
     _, changes = feed.subscribe()
 
     feed.put(
         BoardTask(
-            id="PROJ-2", title="done one", lane="done", assignee="opus", settled="archived", created_at=50.0, settled_at=200.0
+            id="PROJ-2",
+            team="demo",
+            title="done one",
+            lane="done",
+            assignee="opus",
+            settled="archived",
+            created_at=50.0,
+            settled_at=200.0,
         )
     )
 
@@ -440,7 +452,7 @@ def test_a_task_carries_when_it_was_created_and_a_settled_one_when_and_as_whom_i
 
 def test_a_retracted_task_leaves_the_board_and_publishes_once() -> None:
     feed = BoardFeed()
-    feed.put(BoardTask(id="task-1", title="T", lane="to_do"))
+    feed.put(BoardTask(id="task-1", team="demo", title="T", lane="to_do"))
     _, events = feed.subscribe()
 
     feed.retract("task-1")

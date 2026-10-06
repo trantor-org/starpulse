@@ -40,10 +40,13 @@ def write_task(root: Path, folder: str, task_id: str, status: str, **fields: obj
     return path
 
 
-def write_config(root: Path, statuses: tuple[str, ...] = STATUSES, prefix: str = "task") -> None:
+def write_config(
+    root: Path, statuses: tuple[str, ...] = STATUSES, prefix: str = "task", project: str | None = "demo"
+) -> None:
     root.mkdir(parents=True, exist_ok=True)
     listed = ", ".join(f'"{s}"' for s in statuses)
-    (root / "config.yml").write_text(f'project_name: "demo"\nstatuses: [{listed}]\ntask_prefix: "{prefix}"\n')
+    named = "" if project is None else f'project_name: "{project}"\n'
+    (root / "config.yml").write_text(f'{named}statuses: [{listed}]\ntask_prefix: "{prefix}"\n')
 
 
 def scanned(root: Path) -> list[BoardTask]:
@@ -54,6 +57,7 @@ def scanned(root: Path) -> list[BoardTask]:
 
 class TestUpstreamBoardAdapter(BoardAdapterKit):
     keys = upstream_keys("task")
+    teams = {"task-1": "demo", "task-2": "demo", "task-3": "demo", "task-4": "demo"}
     branches = {"feature/task-12-add-x": "task-12", "refs/heads/task-3": "task-3", "main": None, "task-x": None}
 
     @pytest.fixture(autouse=True)
@@ -80,18 +84,40 @@ class TestUpstreamBoardAdapter(BoardAdapterKit):
 def test_the_config_names_the_statuses_and_the_task_prefix(tmp_path: Path) -> None:
     write_config(tmp_path, ("Backlog", "Shipped"), prefix="PROJ")
 
-    assert read_config(tmp_path) == BacklogConfig(("Backlog", "Shipped"), "PROJ")
+    assert read_config(tmp_path) == BacklogConfig(("Backlog", "Shipped"), "PROJ", "demo")
 
 
 def test_a_project_without_a_config_has_upstream_defaults(tmp_path: Path) -> None:
-    assert read_config(tmp_path) == BacklogConfig(("To Do", "In Progress", "Done"), "task")
+    assert read_config(tmp_path) == BacklogConfig(("To Do", "In Progress", "Done"), "task", "")
 
 
 @pytest.mark.parametrize("text", ["statuses: [unclosed", "- just\n- a list\n", ""])
 def test_a_config_that_is_not_a_mapping_has_upstream_defaults(tmp_path: Path, text: str) -> None:
     (tmp_path / "config.yml").write_text(text)
 
-    assert read_config(tmp_path) == BacklogConfig(("To Do", "In Progress", "Done"), "task")
+    assert read_config(tmp_path) == BacklogConfig(("To Do", "In Progress", "Done"), "task", "")
+
+
+def test_every_task_is_in_the_team_the_projects_name_gives(tmp_path: Path) -> None:
+    write_config(tmp_path, project="Payments")
+    write_task(tmp_path, "tasks", "task-1", "To Do")
+    write_task(tmp_path, "completed", "task-2", "Done")
+
+    assert {task.id: task.team for task in scanned(tmp_path)} == {"task-1": "Payments", "task-2": "Payments"}
+
+
+@pytest.mark.parametrize("project", [None, "", "  "], ids=["no project_name", "empty", "blank"])
+def test_a_project_that_names_no_project_is_refused_rather_than_given_a_default_team(
+    tmp_path: Path, project: str | None
+) -> None:
+    root = tmp_path / "backlog"
+    write_config(root, project=project)
+    write_task(root, "tasks", "task-1", "To Do")
+
+    with pytest.raises(ValueError, match=r"config\.yml.*project_name"):
+        UpstreamBacklog(root, lambda task: None)
+    with pytest.raises(ValueError, match=r"config\.yml.*project_name"):
+        board({}, tmp_path)
 
 
 def test_the_prefix_sets_the_task_keys() -> None:
@@ -143,6 +169,7 @@ def test_a_task_file_becomes_a_board_task(tmp_path: Path) -> None:
     assert scanned(tmp_path) == [
         BoardTask(
             id="task-7",
+            team="demo",
             title="Title of task-7",
             lane="doing",
             dependencies=("task-2", "task-3"),
@@ -217,6 +244,7 @@ def test_a_task_with_no_assignee_labels_or_description_has_the_contract_defaults
         BoardTask(
             id="task-1",
             title="T",
+            team="demo",
             lane="to_do",
             moves={lane: Move(allowed=True) for lane in ("doing", "review", "done")},
         )
@@ -480,6 +508,7 @@ def test_without_settings_the_board_reads_backlog_beside_the_config_every_two_se
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     started = _started(monkeypatch)
+    write_config(tmp_path / "backlog")
 
     board({}, tmp_path).start(BoardFeed(), "test", EventLog("sqlite://"))
 

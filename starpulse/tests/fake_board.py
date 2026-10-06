@@ -29,8 +29,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         return {"board": machine}
 
     def start(feed, group: str, log) -> None:
-        feed.put(BoardTask(id="FAKE-1", title="t", lane=lanes[0]))
-        feed.put(BoardTask(id="other-1", title="t", lane=lanes[0]))
+        feed.put(BoardTask(id="FAKE-1", team="demo", title="t", lane=lanes[0]))
+        feed.put(BoardTask(id="other-1", team="demo", title="t", lane=lanes[0]))
 
     writers: dict[str, Any] = {}
     if settings.get("writes"):

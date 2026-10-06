@@ -44,12 +44,15 @@ _ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
 _NOTES_SECTION = "\n## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{}\n<!-- SECTION:NOTES:END -->\n"
 
 
-def _create(root: Path) -> None:
-    """Make an empty board in `root` when it is absent: the default lanes and a `tasks/` directory, nothing else."""
+def _create(root: Path, project: str) -> None:
+    """Make an empty board in `root` when it is absent: the project it belongs to, the default lanes and a `tasks/` directory, nothing else."""
     if not root.exists():
         (root / "tasks").mkdir(parents=True)
         (root / "config.yml").write_text(
-            yaml.safe_dump({"statuses": list(DEFAULT_STATUSES), "task_prefix": DEFAULT_PREFIX}, sort_keys=False)
+            yaml.safe_dump(
+                {"project_name": project, "statuses": list(DEFAULT_STATUSES), "task_prefix": DEFAULT_PREFIX},
+                sort_keys=False,
+            )
         )
 
 
@@ -202,7 +205,7 @@ def _creator(root: Path, config: BacklogConfig) -> TaskCreator:
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:
-    """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, polled every `interval` seconds.
+    """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, as the project named for `base`'s directory, polled every `interval` seconds.
 
     Moves, assignee changes and creates write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
     machine file, whose transitions and `writers` then decide which moves are offered, and to whom.
@@ -210,7 +213,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     if unknown := sorted(settings.keys() - _SETTINGS):
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
     root = base / str(settings.get("path", DEFAULT_PATH))
-    _create(root)
+    _create(root, base.resolve().name)
 
     def assign(task: str, assignee: str, /) -> Written:
         def edit(frontmatter: dict, body: str) -> str:

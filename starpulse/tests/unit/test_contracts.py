@@ -160,3 +160,18 @@ def test_a_machine_event_an_adapter_wrote_places_its_task_without_a_stream_entry
     assert [(a["id"], a["state"], a["active"]) for a in _agents(feed, "in-progress")] == [
         ("PROJ-5", "worktree_ready", 100.0)
     ]
+
+
+@pytest.mark.parametrize("team", [None, "", "   "], ids=["absent", "empty", "blank"])
+def test_a_board_task_with_no_team_is_refused(team: str | None) -> None:
+    fields = {"id": "PROJ-1", "title": "t", "lane": "to_do", **({} if team is None else {"team": team})}
+
+    with pytest.raises(ValidationError):
+        BoardTask.model_validate(fields)
+
+
+def test_a_board_task_carries_the_team_key_its_adapter_derived() -> None:
+    task = BoardTask(id="PROJ-1", title="t", lane="to_do", team="PROJ")
+
+    assert task.model_dump(mode="json")["team"] == "PROJ"
+    assert "team" in SCHEMAS["board"]["required"]

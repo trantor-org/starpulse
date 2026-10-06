@@ -311,12 +311,16 @@ def test_a_machine_task_keeps_the_assignee_of_its_board_task_once_that_task_is_s
     settled: Literal["completed", "archived"],
 ) -> None:
     feed, tasks = _feed()
-    feed.put(BoardTask(id="PROJ-9", title="t", lane="in_progress", assignee="@agent-deep-medium"))
+    feed.put(BoardTask(id="PROJ-9", team="demo", title="t", lane="in_progress", assignee="@agent-deep-medium"))
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-9", at=100.0))
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-8", at=100.0))
 
-    feed.put(BoardTask(id="PROJ-9", title="t", lane="done", assignee="@agent-deep-medium", settled=settled))
-    feed.put(BoardTask(id="PROJ-8", title="t", lane="done", assignee="@agent-standard-high", settled=settled))
+    feed.put(
+        BoardTask(id="PROJ-9", team="demo", title="t", lane="done", assignee="@agent-deep-medium", settled=settled)
+    )
+    feed.put(
+        BoardTask(id="PROJ-8", team="demo", title="t", lane="done", assignee="@agent-standard-high", settled=settled)
+    )
 
     models = {a["id"]: a["model"] for a in _agents(feed, "in-progress")}
     assert models == {"PROJ-9": "@agent-deep-medium", "PROJ-8": "@agent-standard-high"}
@@ -324,7 +328,11 @@ def test_a_machine_task_keeps_the_assignee_of_its_board_task_once_that_task_is_s
 
 def test_a_move_delta_carries_the_assignee_of_a_settled_board_task() -> None:
     feed, tasks = _feed()
-    feed.put(BoardTask(id="PROJ-9", title="t", lane="done", assignee="@agent-standard-high", settled="completed"))
+    feed.put(
+        BoardTask(
+            id="PROJ-9", team="demo", title="t", lane="done", assignee="@agent-standard-high", settled="completed"
+        )
+    )
     _, changes = feed.subscribe()
 
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", task="PROJ-9", at=100.0))

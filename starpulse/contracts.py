@@ -94,6 +94,12 @@ class BoardTask(_Contract):
 
     id: str = Field(description="The task key, matching the adapter's declared `TaskKeys.key` (`PROJ-45`, `ENG-123`).")
     title: str = Field(description="The task's one-line title.")
+    team: str = Field(
+        pattern=r"\S",
+        description="The team key the adapter derived from the tracker's own structure: a Backlog.md project, a Jira "
+        "project or board, a GitHub repository. Never blank, so a task that belongs to no project is refused rather "
+        "than counted under a default team.",
+    )
     lane: str = Field(
         description="The id of the Board machine state the task is in (`in_progress`): its status, lower-cased, spaces as `_`."
     )

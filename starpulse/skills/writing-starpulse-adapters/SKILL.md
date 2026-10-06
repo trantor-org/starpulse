@@ -10,7 +10,7 @@ Schema under `starpulse/schemas/`. Unknown fields are an error, so a misspelt on
 
 | Contract | Record | Written to |
 |---|---|---|
-| `board` | `BoardTask`: `id`, `title`, `lane`, `dependencies`, `references`, `settled`, `created_at`, `settled_at`, `assignee`, `holder`, `labels`, `milestone`, `description`, `moves` | a board adapter's `Board` |
+| `board` | `BoardTask`: `id`, `title`, `team`, `lane`, `dependencies`, `references`, `settled`, `created_at`, `settled_at`, `assignee`, `holder`, `labels`, `milestone`, `description`, `moves` | a board adapter's `Board` |
 | `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds) | the database event log under `machine:events` |
 | `runs` | `Dag`: `name`, `status`, `runId`, `startedAt`, `finishedAt`, `steps` | a runs adapter's `RunsSink`, or `starpulse emit` |
 
@@ -37,11 +37,13 @@ Done when `starpulse doctor` reports `adapter:board` as ok.
 1. Subclass the kit for the contract: `BoardAdapterKit`, `MachineEventsAdapterKit` or `RunsAdapterKit`, from
    `starpulse.adapter_kit`.
 2. Declare `keys = TaskKeys(...)` and `branches = {"feature/PROJ-1-add-x": "PROJ-1", "main": None}`, with a branch that
-   names a task and one that names none. A board or machine-events kit also declares `machines`, and a board kit with a
-   writer sets `writer`.
+   names a task and one that names none. A board or machine-events kit also declares `machines`; a board kit declares
+   `teams = {"PROJ-1": "PROJ"}`, the team key your adapter derives for each task it produces, and one with a writer
+   sets `writer`.
 3. Override `produce()` to return the records your adapter writes, as plain dicts shaped as the schema. A runs adapter
    that reports concurrency pools also overrides `produce_pools()`; each `Dag.pool` must name one of them.
-4. Run `pytest`. The kit checks each record against the contract, its keys and branches, and that StarPulse places it.
+4. Run `pytest`. The kit checks each record against the contract, its keys and branches, that a board task is in the team you declared
+   for it, and that StarPulse places it.
 
 Done when every kit check passes against records your adapter actually produced.
 
