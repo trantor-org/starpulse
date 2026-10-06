@@ -221,6 +221,27 @@ describe("openStream", () => {
     expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:done"]]);
   });
 
+  it("keeps the Board it showed while a restarted server is still reading its board, then hands over the Board it read in one piece", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do"), agent("PROJ-2", "review")]));
+
+    last().onerror?.(); // the server restarted: the browser reconnects the same source
+    last().send("snapshot", board([], { reading: true, error: "board: reading q:tasks" }));
+    last().send("move", { flow: "board", id: "PROJ-9", agent: agent("PROJ-9", "x") });
+    last().send("dags", { dags: [], error: "board: reading q:tasks" });
+    last().send("snapshot", board([agent("PROJ-1", "in_progress"), agent("PROJ-2", "review")], { reading: false }));
+
+    expect(seen.map(ids)).toEqual([["PROJ-1:to_do", "PROJ-2:review"], ["PROJ-1:in_progress", "PROJ-2:review"]]);
+  });
+
+  it("shows a server that is still reading its board when the page has shown nothing yet", () => {
+    openStream(handlers, open);
+
+    last().send("snapshot", board([], { reading: true, error: "board: reading q:tasks" }));
+
+    expect(seen.map((s) => s.error)).toEqual(["board: reading q:tasks"]);
+  });
+
   it("opens a new connection when the browser gives the old one up", () => {
     openStream(handlers, open);
     last().readyState = 2;

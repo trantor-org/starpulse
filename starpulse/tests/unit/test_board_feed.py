@@ -169,6 +169,25 @@ def test_a_snapshot_before_the_stream_is_read_says_so() -> None:
     assert feed.snapshot()["error"] is None
 
 
+def test_a_page_connected_while_the_stream_is_replayed_gets_one_snapshot_once_it_is_read_not_every_replayed_step() -> None:
+    feed = BoardFeed(keys=PROJ)
+    feed.expect("5-0")
+    first, changes = feed.subscribe()
+
+    feed.put(BoardTask(id="PROJ-1", title="t", lane="ready"))
+    feed.put(BoardTask(id="PROJ-1", title="t", lane="in_progress"))
+    feed.put(BoardTask(id="PROJ-2", title="u", lane="review"))
+    feed.seen("4-0")
+    assert changes.empty()
+
+    feed.seen("5-0")
+
+    kind, body = changes.get_nowait()
+    assert changes.empty()
+    assert (first["reading"], kind, body["reading"]) == (True, "snapshot", False)
+    assert {a["id"]: a["state"] for a in body["flows"][0]["agents"]} == {"PROJ-1": "in_progress", "PROJ-2": "review"}
+
+
 def test_the_sequence_half_of_a_stream_id_orders_entries_that_share_a_millisecond() -> None:
     feed = BoardFeed()
     feed.expect("5-1")
@@ -216,6 +235,7 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "hint",
         "now",
         "pulls",
+        "reading",
         "settled",
     ]
     assert body["graphs"] == [*FLOWS, "runs"]

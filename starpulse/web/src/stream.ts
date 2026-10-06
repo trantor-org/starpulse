@@ -70,11 +70,18 @@ export function openStream(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
   let state: Snapshot | null = null;
+  /** A restarted server's partial Board is not handed over once the page has drawn one: the page keeps its own until the server has read its board. */
+  let shown = false;
+  const hand = () => {
+    if (shown && state!.reading) return;
+    shown = true;
+    handlers.snapshot(state!);
+  };
 
   const fold = (delta: Delta) => {
     if (!state) return; // a delta means nothing before the snapshot it extends
     state = applyDelta(state, delta);
-    handlers.snapshot(state);
+    hand();
   };
 
   const connect = () => {
@@ -82,7 +89,7 @@ export function openStream(
     source = src;
     src.addEventListener("snapshot", (e) => {
       state = JSON.parse((e as MessageEvent<string>).data) as Snapshot;
-      handlers.snapshot(state);
+      hand();
     });
     src.addEventListener("task", (e) =>
       fold({ kind: "task", ...JSON.parse((e as MessageEvent<string>).data) }),
