@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { NO_PREFS, applySuggestion, assigneeOptions, filtersActive, hideMilestone, hideTask, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, type KanbanTask } from "./kanban";
+import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, filtersActive, hideMilestone, hideTask, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, type KanbanTask } from "./kanban";
 import { merge } from "./sky";
+import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "./types";
 
 const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
@@ -161,6 +162,18 @@ describe("the cards drawn from a snapshot", () => {
 
   it("have no milestone, pull requests or machine when the snapshot names none", () => {
     expect(kanbanTasks(merge(snapshot())).find((t) => t.id === "PROJ-2")).toMatchObject({ milestone: "", prs: [], live: null });
+  });
+
+  it("refreshes every card field the full record carries immediately after a successful save", () => {
+    const before = kanbanTasks(merge(snapshot())).find((t) => t.id === "PROJ-1")!;
+    const record: TaskRecord = {
+      title: "Saved title", profile: "@bob", priority: "Low", labels: ["saved"], milestone: "m-99", dependencies: ["PROJ-8"],
+      description: "Saved description", plan: "plan", notes: "notes", acceptanceCriteria: [], definitionOfDone: [],
+    };
+
+    expect(applyTaskRecord(before, record)).toMatchObject({
+      title: "Saved title", assignee: "@bob", labels: ["saved"], milestone: "m-99", dependencies: ["PROJ-8"], description: "Saved description",
+    });
   });
 });
 

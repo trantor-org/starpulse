@@ -199,13 +199,13 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .hidebtn { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(148,163,184,.25); color: #94a3b8; font-size: calc(11.5px * var(--fs)); }
 #kbm .hidebtn:hover, #kbm .hidebtn:focus-visible { color: var(--ink); border-color: rgba(148,163,184,.5); }
 
-/* The task view (approved mockup, read mode): a fixed header and footer around a scrolling body. Each editable field is one framed,
-   locked control (3% tint, 10% outline), so the edit slice only unlocks what is already drawn. */
+/* The task view (approved mockup): fixed chrome around one set of field frames. Read is 3% tint/10% outline; edit unlocks
+   those same boxes at 6%/22%, so switching modes never moves a field. */
 #kbm .modal.tv { display: flex; flex-direction: column; padding: 0; overflow: hidden; max-height: min(86vh, 860px); }
-#kbm .tvhead { flex: none; display: flex; align-items: flex-start; gap: 16px; padding: 18px 54px 14px 26px; border-bottom: 1px solid rgba(148,163,184,.12); }
-#kbm .tvhead .ttl { flex: 1; min-width: 0; }
-#kbm .tv .acts { flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 8px; min-height: 30px; }
-#kbm .tv .acts button { white-space: nowrap; }
+#kbm .tvhead { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) 330px; align-items: flex-start; gap: 16px; padding: 18px 54px 14px 26px; border-bottom: 1px solid rgba(148,163,184,.12); }
+#kbm .tvhead .ttl { min-width: 0; }
+#kbm .tv .acts { display: flex; justify-content: flex-end; align-items: center; gap: 8px; min-height: 30px; }
+#kbm .tv .acts button { flex: none; white-space: nowrap; }
 #kbm .tvbody { overflow-y: auto; padding: 18px 26px 26px; display: flex; flex-direction: column; gap: 20px; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.25) transparent; }
 #kbm .tv table { margin-top: 0; }
 #kbm .tv td { vertical-align: middle; padding: 3px 14px 3px 0; }
@@ -216,6 +216,10 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv .sh .n { letter-spacing: 0; }
 #kbm .tv .fv { box-sizing: border-box; width: calc(100% + 9px); margin: 0 0 0 -9px; font: inherit; line-height: 1.5; color: var(--ink); background: rgba(148,163,184,.03);
   border: 1px solid rgba(148,163,184,.10); border-radius: 6px; padding: 3px 8px; outline: none; opacity: 1; }
+#kbm .tv.editing .fv { background: rgba(148,163,184,.06); border-color: rgba(148,163,184,.22); }
+#kbm .tv.editing .fv:focus-within, #kbm .tv.editing .fv:focus { border-color: rgba(167,139,250,.65); box-shadow: 0 0 0 1px rgba(167,139,250,.22); }
+#kbm .tv .fv.dirty { border-left-color: #a78bfa; box-shadow: inset 2px 0 rgba(167,139,250,.55); }
+#kbm .tv .fv.bad { border-color: rgba(251,113,133,.8); box-shadow: 0 0 0 1px rgba(251,113,133,.18); }
 #kbm .tv .fv::placeholder { color: #475569; }
 #kbm .tv textarea.fv { display: block; resize: none; overflow: hidden; white-space: pre-wrap; color: #b8c4d8; }
 #kbm .tv textarea.fv.title { font-size: calc(16px * var(--fs)); font-weight: 500; padding: 1px 8px; margin-bottom: 2px; color: var(--ink); }
@@ -224,22 +228,49 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 /* Plan and notes are fixed 150 px boxes that scroll inside rather than growing the view. */
 #kbm .tv textarea.fv.long { height: 150px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.25) transparent; }
 #kbm .tv .fv.chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 30px; }
+#kbm .tv .chipinput { box-sizing: border-box; width: 100%; border: 0; outline: 0; padding: 0; background: transparent; color: var(--ink); font: inherit; }
 #kbm .tv .chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 10px; background: rgba(148,163,184,.12); color: #cbd5e1; font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .chip.nh { background: rgba(251,191,36,.14); color: #fcd34d; }
 #kbm .tv .chips .none { color: #475569; }
 #kbm .tv .list { display: flex; flex-direction: column; gap: 2px; }
-#kbm .tv .item { display: grid; grid-template-columns: 22px 1fr; align-items: center; gap: 4px; }
+#kbm .tv .item { display: grid; grid-template-columns: 22px 1fr 20px; align-items: center; gap: 4px; }
 #kbm .tv .item .fv { width: 100%; margin: 0; }
 #kbm .tv .item.done .fv { color: #94a3b8; }
 #kbm .tv .item input[type=checkbox] { appearance: none; box-sizing: border-box; width: 16px; height: 16px; margin: 0 4px 0 0; border-radius: 4px; border: 1.5px solid rgba(148,163,184,.45); background: rgba(148,163,184,.04) center / 11px 11px no-repeat; }
 #kbm .tv .item input[type=checkbox]:checked { border-color: #34d399; background-color: rgba(52,211,153,.18);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5' fill='none' stroke='%236ee7b7' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+#kbm .tv .item .remove, #kbm .tv .add { all: unset; cursor: pointer; color: #64748b; font-size: calc(11px * var(--fs)); }
+#kbm .tv .item .remove { width: 20px; text-align: center; }
+#kbm .tv .item .remove:disabled, #kbm .tv .add:disabled { visibility: hidden; }
+#kbm .tv .item .remove:hover, #kbm .tv .add:hover { color: var(--ink); }
+#kbm .tv .add { align-self: flex-start; margin: 5px 0 0 26px; color: #a78bfa; }
+#kbm .tv .evidence { grid-column: 2 / -1; display: grid; grid-template-columns: 112px 1fr; gap: 8px; align-items: center; margin: 4px 0 8px; color: #94a3b8; font-size: calc(10.5px * var(--fs)); }
+#kbm .tv .evidence textarea { box-sizing: border-box; min-height: 42px; resize: vertical; border-radius: 5px; border: 1px solid rgba(148,163,184,.22); background: rgba(148,163,184,.06); color: var(--ink); padding: 5px 7px; font: inherit; }
+#kbm .tv .evidence.missing { color: #fda4af; }
+#kbm .tv .evidence.missing textarea { border-color: rgba(251,113,133,.8); }
+#kbm .tv .evidence-note { color: #fbbf24; font-size: calc(10.5px * var(--fs)); }
 #kbm .tvhead .k a { color: #a78bfa; }
 #kbm .tv .archbtn { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(248,113,113,.4); color: #f87171; font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .archbtn:hover, #kbm .tv .archbtn:focus-visible { background: rgba(248,113,113,.10); }
 #kbm .tv .editbtn { all: unset; cursor: pointer; padding: 4px 14px; border-radius: 6px; border: 1px solid rgba(167,139,250,.6); background: rgba(167,139,250,.16); color: #ede9fe; font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .editbtn:hover, #kbm .tv .editbtn:focus-visible { background: rgba(167,139,250,.28); }
+#kbm .tv .changed { color: #a78bfa; font-size: calc(10.5px * var(--fs)); }
+#kbm .tv .cancelbtn, #kbm .tv .savebtn { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(148,163,184,.28); color: #cbd5e1; font-size: calc(11.5px * var(--fs)); }
+#kbm .tv .savebtn { border-color: rgba(52,211,153,.55); background: rgba(52,211,153,.13); color: #a7f3d0; }
+#kbm .tv .cancelbtn:hover, #kbm .tv .savebtn:hover { background: rgba(148,163,184,.12); }
+#kbm .tv .savebtn:disabled { opacity: .4; cursor: default; }
+#kbm .tv kbd { margin-left: 4px; color: #64748b; font: calc(9px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
+#kbm .tv .saveok, #kbm .tv .editrefusal { padding: 8px 10px; border-radius: 7px; font-size: calc(11px * var(--fs)); }
+#kbm .tv .saveok { border: 1px solid rgba(52,211,153,.35); background: rgba(52,211,153,.08); color: #a7f3d0; }
+#kbm .tv .editrefusal { border: 1px solid rgba(251,113,133,.4); background: rgba(60,14,28,.65); color: #fecdd3; }
+#kbm .tv .editrefusal code { color: #c4b5fd; }
 #kbm .tv .refusal { margin: 0; }
+#kbm .tv .discard { position: absolute; inset: 0; z-index: 8; display: grid; place-content: center; gap: 18px; padding: 30px; background: rgba(5,9,18,.91); text-align: center; }
+#kbm .tv .discard b { font-size: calc(15px * var(--fs)); font-weight: 500; }
+#kbm .tv .discard p { margin: 4px 0 0; color: #94a3b8; }
+#kbm .tv .discardacts { display: flex; justify-content: center; gap: 8px; }
+#kbm .tv .discardacts button { cursor: pointer; padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(148,163,184,.3); background: rgba(148,163,184,.08); color: var(--ink); }
+#kbm .tv .discardacts .danger { border-color: rgba(251,113,133,.5); color: #fda4af; }
 /* Move to opens upward from the fixed footer's right corner; Start session sits to its right. */
 #kbm .tvfoot { flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 26px; border-top: 1px solid rgba(148,163,184,.12); }
 #kbm .tvfoot .mv { position: relative; }

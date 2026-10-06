@@ -1,8 +1,12 @@
+// @ts-expect-error Vitest runs this test in Node; production source stays browser-only.
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { KanbanTask } from "./kanban";
 import { TaskView } from "./TaskView";
 import type { TaskRecord } from "./taskView";
+
+const styles = readFileSync(new URL("./style.css", import.meta.url), "utf8");
 
 const task: KanbanTask = {
   id: "TASK-9", title: "Redraw the view", lane: "ready", milestone: "m-89", labels: ["needs-human"], assignee: "@agent-standard-high",
@@ -80,5 +84,37 @@ describe("the task view in read mode", () => {
 
     expect(html).toContain("from the snapshot");
     expect(html).not.toContain("Implementation plan");
+  });
+});
+
+describe("the task view in edit mode", () => {
+  const frames = (html: string) => [...html.matchAll(/<(textarea|select|div|input)[^>]*data-field="([^"]+)"[^>]*class="([^"]*\bfv\b[^"]*)"[^>]*>/g)]
+    .map((m) => [m[2], m[1], m[3].replace(/\b(dirty|bad)\b/g, "").replace(/\s+/g, " ").trim()]);
+
+  it("keeps every field in the same framed element in read and edit modes", () => {
+    const read = draw();
+    const edit = draw({ initialEditing: true });
+
+    expect(frames(edit)).toEqual(frames(read));
+    expect(frames(edit).map(([field]) => field)).toEqual(expect.arrayContaining([
+      "title", "profile", "priority", "labels", "milestone", "dependencies", "description", "acceptanceCriteria",
+      "definitionOfDone", "plan", "notes",
+    ]));
+    expect(edit).toContain("0 fields changed");
+    expect(edit).toContain("Save");
+    expect(edit).toContain("Cancel");
+    expect(edit).toContain('class="modal tv editing"');
+    expect(read.match(/class="remove"/g)).toHaveLength(edit.match(/class="remove"/g)?.length ?? 0);
+    expect(read.match(/class="add"/g)).toHaveLength(edit.match(/class="add"/g)?.length ?? 0);
+    expect(styles).toMatch(/\.tvhead \{[^}]*grid-template-columns: minmax\(0, 1fr\) 330px/);
+    expect(styles).toMatch(/\.item \{[^}]*grid-template-columns: 22px 1fr 20px/);
+  });
+
+  it("disables Move and Start for the whole edit", () => {
+    const html = draw({ initialEditing: true });
+    const foot = html.slice(html.indexOf('class="tvfoot"'));
+
+    expect(foot).toMatch(/class="mvbtn"[^>]*disabled=""/);
+    expect(foot).toMatch(/class="startbtn"[^>]*disabled=""/);
   });
 });

@@ -1,5 +1,6 @@
 // The Kanban view's model: the Board's open tasks laid out as columns of milestone buckets. Pure, so the view only draws it.
 import type { Sky } from "./sky";
+import type { TaskRecord } from "./taskView";
 import type { Pull } from "./types";
 
 /** The Board states drawn as columns, in order. New is the creation pseudo-state and Completed and Archived have left the lanes. */
@@ -26,6 +27,17 @@ export interface KanbanTask {
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
   moves: Record<string, { allowed: boolean; reason: string; skill: string }>;
 }
+
+/** Refresh the snapshot-sized card with the fields a successful full-record edit can change. */
+export const applyTaskRecord = (task: KanbanTask, record: TaskRecord): KanbanTask => ({
+  ...task,
+  title: record.title,
+  assignee: record.profile,
+  labels: record.labels,
+  milestone: record.milestone,
+  dependencies: record.dependencies,
+  description: record.description,
+});
 
 /** What the operator chose to filter, fold or hide; each change returns a new value. */
 export interface Prefs {
