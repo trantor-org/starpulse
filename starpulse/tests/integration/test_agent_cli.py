@@ -545,6 +545,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "runs list",
         "runs start",
         "watch",
+        "analytics health",
         "doctor",
         "skills list",
         "skills install",
@@ -653,6 +654,27 @@ def test_task_trace_of_an_unknown_flow_is_not_found(base: str, capsys: pytest.Ca
     code, doc = _run(capsys, ["task", "trace", "PROJ-1", "--flow", "nowhere", "--server", base])
 
     assert (code, doc) == (4, {"error": "unknown flow nowhere", "code": "not_found"})
+
+
+def test_analytics_health_reports_the_boards_flow_health_with_a_stay_still_open_counted_to_now(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["analytics", "health", "--hours", "24", "--stuck-hours", "1", "--server", base])
+
+    states = {state["id"]: state for state in doc["states"]}
+    assert code == 0
+    assert (doc["window_s"], doc["stuck_after_s"], doc["warnings"]) == (24 * 3600, 3600, [])
+    assert (states["ready"]["wip"], states["ready"]["open"], states["to_do"]["visits"]) == (1, 1, 0)
+    assert doc["throughput"] == {"count": 0, "per_day": 0.0}
+    (stuck,) = doc["stuck"]  # PROJ-1 entered Ready at second 201 and is still there
+    assert (stuck["task"], stuck["state"], stuck["since"], stuck["counted_to_now"]) == ("PROJ-1", "ready", 201.0, True)
+    assert stuck["dwell_s"] == pytest.approx(doc["now"] - 201.0)
+
+
+def test_analytics_health_refuses_a_window_the_server_refuses(base: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["analytics", "health", "--hours", "0", "--server", base])
+
+    assert (code, doc["code"], "positive number" in doc["error"]) == (1, "refused", True)
 
 
 def test_runs_list_names_each_workflow_by_instance_with_its_status_and_the_runs_error(
@@ -905,6 +927,10 @@ CASES = {
     ("board", 0): ["board", "--server", "{server}"],
     ("board", 2): ["board", "--state", "nowhere", "--server", "{server}"],
     ("board", 3): ["board", "--server", "{down}"],
+    ("analytics health", 0): ["analytics", "health", "--server", "{server}"],
+    ("analytics health", 1): ["analytics", "health", "--hours", "0", "--server", "{server}"],
+    ("analytics health", 2): ["analytics", "health", "--hours", "soon"],
+    ("analytics health", 3): ["analytics", "health", "--server", "{down}"],
     ("task show", 0): ["task", "show", "PROJ-1", "--server", "{server}"],
     ("task show", 2): ["task", "show"],
     ("task show", 3): ["task", "show", "PROJ-1", "--server", "{down}"],

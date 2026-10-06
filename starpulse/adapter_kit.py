@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from http.client import HTTPResponse
@@ -219,6 +220,7 @@ def serve(
     read: TaskReader | None = None,
     edit: TaskEditor | None = None,
     archive: TaskArchiver | None = None,
+    clock: Callable[[], float] = time.time,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -241,6 +243,7 @@ def serve(
         read,
         edit,
         archive,
+        clock,
     )
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
