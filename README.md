@@ -21,7 +21,7 @@ every task replaced by a synthetic one, running in your browser with no server.
 
 ## Quickstart
 
-You need [uv](https://docs.astral.sh/uv/), and Docker or Podman.
+You need [uv](https://docs.astral.sh/uv/).
 
 ```sh
 cd your-project
@@ -33,9 +33,7 @@ names one): a `config.yml`
 holding the lanes (To Do, In Progress, Done) and an empty `tasks/` directory, one Markdown file per task. The
 Kanban view starts with no tasks. If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
 line naming it and the `[board] type = "upstream_backlog"` setting that shows it instead (see Configure); the page's
-snapshot carries the same line as `hint`. StarPulse starts a Valkey container for its event streams unless `REDIS_URL`
-names a Redis it should use instead (`rediss://` reaches it over TLS, and the URL's user and percent-encoded
-password sign in to it), and keeps its history in
+snapshot carries the same line as `hint`. StarPulse keeps its event log and history in
 `starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on every interface, so run it on a machine or network you
 trust.
 
@@ -156,21 +154,18 @@ task's notes, in the same edit as the `In Progress` status, because the Backlog 
 does not know.
 
 `doctor` runs every check even when one fails, so one call names every fault. The checks: `config` (the config file
-loads), `redis` (`REDIS_URL` answers, or docker or podman can start the Valkey container the server would use),
-`server` (it answers `/api/snapshot`), `adapter:board` and one `adapter:<name>` per `[[runs]]` instance (it is
-producing: the Board is read, the instance lists workflows and reports no error), `gh` (installed and logged in, which
-the pull request reader needs) and `stream-lag` (no consumer group of `machine:events` or `runs:events` is more than
-100 entries behind, entries delivered but not yet acknowledged included, and none whose lag Redis cannot measure). A
-check that needs a server or Redis that is down fails too, saying so.
+loads), `server` (it answers `/api/snapshot`), `adapter:board` and one `adapter:<name>` per `[[runs]]` instance (it is
+producing: the Board is read, the instance lists workflows and reports no error), and `gh` (installed and logged in,
+which the pull request reader needs).
 
 `skills` reads no server. The package bundles four skills: `operating-starpulse-board` (what to work next, why a task
 cannot move, moving it), `authoring-starpulse-machines` (machine YAML, writers, guards, subflows, `machine validate`
 and `machine import mermaid`), `writing-starpulse-adapters` (the board, machine-events and runs contracts, the adapter
-kit, `emit`) and `setting-up-starpulse` (starting the server, Redis, config, `doctor`), and `skills install`
+kit, `emit`) and `setting-up-starpulse` (starting the server, config, `doctor`), and `skills install`
 copies them to `.claude/skills` (`--claude`) or `.agents/skills` (`--codex`) in the working directory, or with `--user`
 to `~/.claude/skills` or `~/.agents/skills`. An install records what it wrote, so a copy you edited afterwards is
 refused (exit 1) until you pass `--force`, while one the package has since updated is replaced; `skills list` reports
-which of the two each copy is.
+which of the four each copy is.
 
 `waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
 merged state and open review threads the server last read when it has them.
@@ -178,8 +173,10 @@ merged state and open review threads the server last read when it has them.
 ## Configure
 
 `starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read
-when it exists. Credentials never go in it: they come from the environment (`REDIS_PASSWORD` and the ACL user `REDIS_USERNAME`, and a database
-driver's own, such as `PGPASSWORD`).
+when it exists. Database credentials never go in it: they come from the driver's environment, such as `PGPASSWORD`.
+
+The default SQLite store must be on a local disk because WAL mode does not work on network filesystems such as NFS
+or SMB. When the project or config lives on network storage, set `database_url` to a Postgres database instead.
 
 ```toml
 # The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's own Kanban.
@@ -270,7 +267,8 @@ pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page,
 uv run starpulse serve
 ```
 
-`uv run pytest` runs the suite; its integration tests start Redis and Postgres containers, so Docker must run.
+`uv run pytest` runs the suite with Python alone. When Docker or Podman is available, it also runs the Postgres-backed
+integration cases; otherwise those cases are skipped.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 [`bench/`](bench/README.md) holds the hub-ingest and instance event-log benchmarks.
 

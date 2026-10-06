@@ -26,7 +26,7 @@ jobs:
       cancel-in-progress: true
     # Review context, never a gate: a failed render must not impede the pull request it describes.
     continue-on-error: true
-    # The server starts its own Valkey container, so the job needs the runner's Docker, as the test suite does.
+    # The server uses an isolated SQLite database for the preview.
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 20
     steps:

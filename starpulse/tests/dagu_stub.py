@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_ids = itertools.count(1)  # Redis stream ids rise; each entry built here takes the next
+_ids = itertools.count(1)  # Event ids rise; each entry built here takes the next
 
 
 @contextmanager

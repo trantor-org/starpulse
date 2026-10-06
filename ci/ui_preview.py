@@ -271,9 +271,9 @@ def _wait_ready(url: str, seconds: float) -> None:  # pragma: no cover — proce
 
 @contextmanager
 def _flow_view() -> Iterator[int]:  # pragma: no cover — process boundary
-    """A server on `PREVIEW_CONFIG`, starting its own Valkey container so no host Redis data reaches the render."""
+    """A server on `PREVIEW_CONFIG`, using its isolated preview database."""
     port = _free_port()
-    env = {k: v for k, v in os.environ.items() if k not in ("REDIS_URL", "REDIS_PASSWORD", "DATABASE_URI")}
+    env = {k: v for k, v in os.environ.items() if k != "DATABASE_URI"}
     server = subprocess.Popen(
         [sys.executable, "-m", "starpulse.server", "--port", str(port), "--config", PREVIEW_CONFIG], env=env
     )

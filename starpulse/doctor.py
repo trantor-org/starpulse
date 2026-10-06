@@ -1,14 +1,7 @@
-"""The checks behind `starpulse doctor`: whether a StarPulse install can run, each reported as pass or fail with why.
+"""The checks behind `starpulse doctor`, each reported as pass or fail with why.
 
-    config        the config file loads
-    redis         `REDIS_URL` answers, or a container runtime can start the Valkey the view would use
-    server        the server answers `/api/snapshot`
-    adapter:<n>   the Board, and each configured runs instance, is producing: it lists tasks or workflows, no error
-    gh            the GitHub CLI is installed and logged in, which the pull request reader needs
-    stream-lag    no consumer group trails `machine:events` or `runs:events` by more than `MAX_LAG` entries
-
-One failing check never stops the others, so a report names every fault at once. A check that needs a server or Redis
-that is down fails too, saying so, rather than vanishing from the list.
+The checks cover config loading, the server, each configured adapter, and the GitHub CLI. One failure never stops the
+others, so a report names every fault at once.
 """
 
 from __future__ import annotations
@@ -19,44 +12,23 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import redis
-import redis.exceptions
-
-from starpulse import events as machine_events
-from starpulse import run_events
 from starpulse.config import Config
-from starpulse.runtime import CONTAINER, RUNTIMES
-from starpulse.streams import endpoint_from_url
 
-#: Entries a consumer group may be behind, delivered but unacknowledged included, before its stream counts as stuck.
-MAX_LAG = 100
-#: Seconds a `gh` or runtime command may take.
+#: Seconds a `gh` command may take.
 _COMMAND_TIMEOUT = 10
-_STREAMS = (machine_events.STREAM, run_events.STREAM)
 
 
 @dataclass(frozen=True)
 class Probes:
-    """What the checks touch outside the process: installed tools, commands, and a Redis connection."""
+    """What the checks touch outside the process: installed tools and commands."""
 
     which: Callable[[str], str | None]
     run: Callable[..., subprocess.CompletedProcess[str]]
-    redis: Callable[[dict[str, Any]], Any]
-    """A client for an endpoint: the `redis_host`/`redis_port`/`redis_username`/`redis_password`/`redis_ssl` of
-    `endpoint_from_url`."""
 
 
 LIVE = Probes(
     which=shutil.which,
     run=subprocess.run,
-    redis=lambda endpoint: redis.Redis(
-        host=endpoint["redis_host"],
-        port=endpoint["redis_port"],
-        username=endpoint["redis_username"],
-        password=endpoint["redis_password"],
-        ssl=endpoint["redis_ssl"],
-        socket_connect_timeout=1,  # seconds a down host may keep the check waiting
-    ),
 )
 
 
@@ -71,43 +43,6 @@ def _command(probes: Probes, *argv: str) -> tuple[int, str]:
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 1, str(exc)
     return done.returncode, (done.stdout.strip() if done.returncode == 0 else done.stderr.strip())
-
-
-def _redis(environ: dict[str, str], probes: Probes) -> tuple[dict[str, str], Any]:
-    """The `redis` result and a client when there is a Redis to ask; none when a runtime would start one."""
-    if url := environ.get("REDIS_URL"):
-        try:
-            endpoint = endpoint_from_url(url, environ.get("REDIS_PASSWORD"), environ.get("REDIS_USERNAME"))
-        except ValueError as exc:
-            return _result("redis", False, f"REDIS_URL is malformed: {exc}"), None
-        where = f"REDIS_URL {endpoint['redis_host']}:{endpoint['redis_port']}"
-    elif not (runtime := next((r for r in RUNTIMES if probes.which(r)), None)):
-        return _result(
-            "redis", False, "REDIS_URL is unset and neither docker nor podman is installed; set REDIS_URL to a Redis"
-            " or Valkey server (redis://host:6379)"
-        ), None  # fmt: skip
-    else:
-        code, published = _command(probes, runtime, "port", CONTAINER, "6379/tcp")
-        if code != 0 or not published:
-            code, why = _command(probes, runtime, "info")  # no container is fine; a runtime that cannot answer is not
-            if code != 0:
-                return _result(
-                    "redis", False, f"REDIS_URL is unset and {runtime} cannot start {CONTAINER}: {why}"
-                ), None
-            return _result(
-                "redis", True, f"REDIS_URL is unset; {runtime} starts {CONTAINER} when the server runs"
-            ), None
-        host, _, text = published.split()[0].replace("0.0.0.0", "127.0.0.1").rpartition(":")
-        endpoint = endpoint_from_url(
-            f"redis://{host}:{text}", environ.get("REDIS_PASSWORD"), environ.get("REDIS_USERNAME")
-        )
-        where = f"{CONTAINER} {host}:{text}"
-    client = probes.redis(endpoint)
-    try:
-        client.ping()
-    except redis.exceptions.RedisError as exc:
-        return _result("redis", False, f"{where} does not answer: {exc}"), None
-    return _result("redis", True, f"{where} answers"), client
 
 
 def _adapters(snapshot: dict[str, Any] | str, config: Config | str) -> list[dict[str, str]]:
@@ -145,55 +80,19 @@ def _gh(probes: Probes) -> dict[str, str]:
     return _result("gh", True, "gh is logged in")
 
 
-def _lag(redis_ok: bool, client: Any) -> dict[str, str]:
-    if client is None:
-        reason = "no Redis is running yet, so no stream can lag" if redis_ok else "Redis is unreachable"
-        return _result("stream-lag", redis_ok, reason)
-    worst, groups = 0, 0
-    try:
-        for stream in _STREAMS:
-            try:
-                found = client.xinfo_groups(stream)
-            except redis.exceptions.ResponseError as exc:
-                if "no such key" not in str(exc):
-                    raise
-                continue  # the stream does not exist yet
-            for group in found:
-                if (lag := group.get("lag", 0)) is None:  # Redis before 7 reports no lag at all, so count it as 0
-                    return _result(
-                        "stream-lag",
-                        False,
-                        f"{stream} group {group['name']}: lag cannot be measured, so it may be stuck",
-                    )
-                behind = lag + group.get("pending", 0)
-                if behind > MAX_LAG:
-                    return _result(
-                        "stream-lag",
-                        False,
-                        f"{stream} group {group['name']} is {behind} entries behind (limit {MAX_LAG})",
-                    )
-                worst, groups = max(worst, behind), groups + 1
-    except redis.exceptions.RedisError as exc:
-        return _result("stream-lag", False, f"cannot read the consumer groups: {exc}")
-    return _result("stream-lag", True, f"{groups} consumer groups, the furthest {worst} entries behind")
-
-
 def run_checks(
-    snapshot: dict[str, Any] | str, config: Config | str, environ: dict[str, str], probes: Probes, server: str
+    snapshot: dict[str, Any] | str, config: Config | str, probes: Probes, server: str
 ) -> dict[str, Any]:
     """Every check as `{ok, checks: [{check, status, reason}]}`.
 
     `snapshot` is the server's snapshot, or the reason it could not be read; `config` is the loaded config, or the
     reason it could not be loaded; `server` is the address the snapshot was read from."""
-    redis_result, client = _redis(environ, probes)
     checks = [
         _result(
             "config", *((False, config) if isinstance(config, str) else (True, f"{len(config.runs)} runs instances"))
         ),
-        redis_result,
         _result("server", *((False, snapshot) if isinstance(snapshot, str) else (True, f"{server} answers"))),
         *_adapters(snapshot, config),
         _gh(probes),
-        _lag(redis_result["status"] == "pass", client),
     ]
     return {"ok": all(c["status"] == "pass" for c in checks), "checks": checks}
