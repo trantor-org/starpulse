@@ -7,6 +7,7 @@ trantor's workspace plugin `db.testing` does, and then none is started here.
 
 import shutil
 import sys
+import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -16,6 +17,7 @@ from sqlalchemy import Engine, create_engine, text
 
 from starpulse.history import HistoryStore
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.mock_issuer import IMAGE, answers
 
 #: StarPulse's own tables, dropped before each Postgres test so it starts empty.
 _TABLES = (
@@ -83,3 +85,20 @@ def empty_database(pg_engine: Engine) -> Iterator[Engine]:
         engine.dispose()
         with pg_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as db:
             db.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
+
+
+@pytest.fixture(scope="session")
+def issuer() -> Iterator[str]:  # pragma: no mutate block — container lifecycle
+    """The address of a mock OpenID Connect issuer container, for the hub's sign-in cases."""
+    if not any(shutil.which(runtime) for runtime in ("docker", "podman")):
+        pytest.skip("the sign-in cases need Docker or Podman")
+    pytest.importorskip("testcontainers", reason="needs the hub dependency group")
+    from testcontainers.core.container import DockerContainer  # noqa: PLC0415
+
+    with DockerContainer(IMAGE).with_exposed_ports(8080) as container:
+        address = f"http://127.0.0.1:{container.get_exposed_port(8080)}/default"
+        deadline = time.monotonic() + 60
+        while not answers(f"{address}/.well-known/openid-configuration"):
+            assert time.monotonic() < deadline, "the mock issuer never answered"
+            time.sleep(0.5)
+        yield address

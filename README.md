@@ -290,6 +290,30 @@ the database's schema to the latest revision on every start: the history tables 
 Alembic (`starpulse/migrations`, revisions recorded in `starpulse_alembic_version`), so upgrading the package and
 restarting upgrades the schema. An instance without `--hub` keeps its SQLite file and never imports the hub extras.
 
+A hub also requires an `[oidc]` table, because viewers sign in with the hub's OpenID Connect issuer before anything is
+drawn; a hub without one is refused before it starts, and an instance without `--hub` refuses the table rather than
+serve ungated. The hub is a confidential client of the issuer (authorization-code flow with PKCE, a state and a nonce;
+ID tokens must verify against the issuer's published keys):
+
+```toml
+[oidc]
+issuer = "https://id.example.com/realms/flow"          # its /.well-known/openid-configuration names the endpoints
+client_id = "starpulse-hub"
+client_secret_env = "STARPULSE_OIDC_SECRET"            # the environment variable holding the client secret
+redirect_uri = "https://hub.example.com/auth/callback" # registered at the issuer; its /auth/callback path is fixed
+allowed_groups = ["flow-viewers"]                      # an account holding none of these is refused with the reason
+groups_claim = "groups"                                # optional: the ID token claim that lists an account's groups
+scopes = ["openid", "profile", "email"]                # optional: add the scope your issuer needs for the groups claim
+engine_token_env = "STARPULSE_ENGINE_TOKEN"            # optional: the token of an insights engine, never a viewer's
+```
+
+Before sign-in every path but `/auth/login` and `/auth/callback` answers 401, including the page, `/api/events` and every
+write. Sign-in sets an `HttpOnly` session cookie that lasts eight hours; sessions live in the hub's memory, so a restart
+signs everyone out. The credentials are separate: a per-instance ingest token passes only on `POST /api/runs/events`, the
+engine token only on the engine's routes, and neither signs a viewer in. A new route of the server is a viewer route
+until the gate says otherwise. The test suite signs in against a
+[mock OIDC server](https://github.com/navikt/mock-oauth2-server) container, so it needs Docker or Podman for those cases.
+
 #### Retention and rollups
 
 A hub keeps its raw events (`starpulse_events`) in one partition per UTC day, keyed on the event's `at` time, and

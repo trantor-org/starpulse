@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.config import Config, ConfigError, load, runs_adapter
+from starpulse.config import Config, ConfigError, OidcSettings, load, runs_adapter
 from starpulse.harnesses import HarnessError
 
 
@@ -195,7 +195,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: board, database_url, harnesses_file, hub_retention_days, "
-        "level, mode, runs, session_start_url, tracker_url"
+        "level, mode, oidc, runs, session_start_url, tracker_url"
     )
 
 
@@ -300,7 +300,7 @@ def test_an_instance_with_no_token_env_takes_no_pushed_events(tmp_path: Path) ->
 def test_a_token_env_that_is_not_an_environment_variable_name_is_refused(tmp_path: Path, value: str) -> None:
     text = f'[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://cron.test"\ntoken_env = {value}\n'
 
-    assert _refusal(tmp_path, text) == f"runs instance cron: token_env must be the name of an environment variable"
+    assert _refusal(tmp_path, text) == "runs instance cron: token_env must be the name of an environment variable"
 
 
 def test_two_instances_cannot_share_a_token_env(tmp_path: Path) -> None:
@@ -321,3 +321,92 @@ def test_a_hub_retention_that_is_not_a_positive_whole_number_of_days_is_refused(
         _refusal(tmp_path, f"hub_retention_days = {value}\n")
         == "hub_retention_days must be a whole number of days, 1 or more"
     )
+
+
+_OIDC = """
+[oidc]
+issuer = "https://id.example.test/realm"
+client_id = "starpulse-hub"
+client_secret_env = "HUB_OIDC_SECRET"
+redirect_uri = "https://hub.example.test/auth/callback"
+allowed_groups = ["flow-viewers", "ops"]
+"""
+
+
+def test_an_oidc_table_names_the_issuer_the_client_and_the_allowed_groups(tmp_path: Path) -> None:
+    config = load(_write(tmp_path, _OIDC))
+
+    assert config.oidc == OidcSettings(
+        issuer="https://id.example.test/realm",
+        client_id="starpulse-hub",
+        client_secret_env="HUB_OIDC_SECRET",
+        redirect_uri="https://hub.example.test/auth/callback",
+        allowed_groups=("flow-viewers", "ops"),
+    )
+    assert (config.oidc.groups_claim, config.oidc.scopes, config.oidc.engine_token_env) == (
+        "groups",
+        ("openid", "profile", "email"),
+        None,
+    )
+
+
+def test_an_oidc_table_may_set_the_groups_claim_the_scopes_and_the_engine_token_variable(tmp_path: Path) -> None:
+    extra = 'groups_claim = "roles"\nscopes = ["openid", "roles"]\nengine_token_env = "HUB_ENGINE_TOKEN"\n'
+    oidc = load(_write(tmp_path, _OIDC + extra)).oidc
+
+    assert oidc is not None
+    assert (oidc.groups_claim, oidc.scopes, oidc.engine_token_env) == ("roles", ("openid", "roles"), "HUB_ENGINE_TOKEN")
+
+
+def test_a_config_without_an_oidc_table_has_none() -> None:
+    assert load(None).oidc is None
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        ('issuer = "https://id.example.test/realm"\n', "oidc: issuer is required"),
+        ('client_id = "starpulse-hub"\n', "oidc: client_id is required"),
+        ('client_secret_env = "HUB_OIDC_SECRET"\n', "oidc: client_secret_env is required"),
+        ('redirect_uri = "https://hub.example.test/auth/callback"\n', "oidc: redirect_uri is required"),
+        ('allowed_groups = ["flow-viewers", "ops"]\n', "oidc: allowed_groups must name at least one group"),
+    ],
+)
+def test_an_oidc_table_missing_a_required_key_is_refused(tmp_path: Path, edit: str, message: str) -> None:
+    assert _refusal(tmp_path, _OIDC.replace(edit, "")) == message
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            'allowed_groups = ["flow-viewers", "ops"]',
+            "allowed_groups = []",
+            "oidc: allowed_groups must name at least one group",
+        ),
+        (
+            'allowed_groups = ["flow-viewers", "ops"]',
+            'allowed_groups = "ops"',
+            "oidc: allowed_groups must name at least one group",
+        ),
+        (
+            'allowed_groups = ["flow-viewers", "ops"]',
+            'allowed_groups = [""]',
+            "oidc: allowed_groups must name at least one group",
+        ),
+        ('"HUB_OIDC_SECRET"', '"has space"', "oidc: client_secret_env must be the name of an environment variable"),
+        ('"https://id.example.test/realm"', '"id.example.test"', "oidc: issuer must be an http(s) URL"),
+        ('"https://hub.example.test/auth/callback"', '"/auth/callback"', "oidc: redirect_uri must be an http(s) URL"),
+        ('client_id = "starpulse-hub"', "client_id = 3", "oidc: client_id must be text"),
+    ],
+)
+def test_an_oidc_table_with_a_bad_value_is_refused(tmp_path: Path, old: str, new: str, message: str) -> None:
+    assert _refusal(tmp_path, _OIDC.replace(old, new)) == message
+
+
+def test_an_oidc_table_with_an_unknown_key_is_refused(tmp_path: Path) -> None:
+    assert _refusal(tmp_path, _OIDC + "color = 1\n") == "oidc: unknown key(s) color"
+
+
+def test_oidc_is_a_table(tmp_path: Path) -> None:
+    assert _refusal(tmp_path, "oidc = 3\n") == "oidc must be an [oidc] table"

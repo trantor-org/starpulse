@@ -6,6 +6,11 @@ Every write (POST /api/..., PUT and DELETE /api/history-window) must be `Content
 no `Origin` or this server's own (else 403), so a web page on another site cannot write through the operator's browser.
 It listens on --host, 127.0.0.1 by default.
 
+GET /auth/login, /auth/callback
+                   a hub's sign-in (`serve --hub`; an IC instance has no sign-in): login sends the browser to the OpenID
+                   Connect issuer, the callback finishes the sign-in with a session cookie and sends it to /, or
+                   answers 403 naming why an account outside `allowed_groups` was refused. Every other route of a hub,
+                   this one included, answers 401 until then; a bearer token is no session (see POST /api/runs/events)
 GET /              the page, built by `pnpm --filter flow-view build` into static/: one view
                    that drills Board → Board state → machine, or Board → workflow. It holds one
                    /api/events connection and nothing else
@@ -88,7 +93,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -518,6 +523,11 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     archive: TaskArchiver | None
     create: TaskCreator | None
     ingest: Ingest | None
+    gate: Callable[[BaseHTTPRequestHandler], bool] | None
+
+    def parse_request(self) -> bool:
+        """Parse the request, then let the gate (a hub's sign-in) answer or admit it before any route sees it."""
+        return super().parse_request() and (self.gate is None or self.gate(self))
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
@@ -619,6 +629,7 @@ def _handler(
     create: TaskCreator | None = None,
     clock: Callable[[], float] = time.time,
     ingest: Ingest | None = None,
+    gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -637,6 +648,7 @@ def _handler(
             self.archive = archive
             self.create = create
             self.ingest = ingest
+            self.gate = gate
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
         def do_GET(self) -> None:
@@ -810,23 +822,29 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     parser = serve_parser()
     args = parser.parse_args(argv)
     config = _config(parser, args.config)
-    if args.hub:
-        try:
-            from starpulse import hub  # noqa: PLC0415 - hub-only code; an IC instance never imports it
-        except ImportError as exc:
-            parser.exit(1, f"hub mode needs the hub extras: pip install 'starpulse[hub]' ({exc})\n")
-        try:
-            hub.prepare(config.database_url)
-        except hub.HubError as exc:
-            parser.exit(1, f"{exc}\n")
-    base = args.config.parent if args.config else Path.cwd()
-    if not (_STATIC / "index.html").is_file():
-        parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter flow-view build` first\n")
-    adapters = [(instance, _adapter(parser, instance)) for instance in config.runs]
     try:
         instance_tokens = ingest_tokens(config.runs, os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
+    gate = None
+    if args.hub:
+        try:
+            from starpulse import hub, oidc  # noqa: PLC0415 - hub-only code; an IC instance never imports it
+        except ImportError as exc:
+            parser.exit(1, f"hub mode needs the hub extras: pip install 'starpulse[hub]' ({exc})\n")
+        if config.oidc is None:
+            parser.exit(1, "hub mode needs an [oidc] table: viewers sign in before anything is drawn\n")
+        try:
+            gate = oidc.build(config.oidc, os.environ, instance_tokens)
+            hub.prepare(config.database_url)
+        except (ValueError, hub.HubError) as exc:  # HubError is a ValueError, named for the reader
+            parser.exit(1, f"{exc}\n")
+    elif config.oidc is not None:
+        parser.exit(1, "[oidc] gates a hub: start one with `starpulse serve --hub`, or remove the table\n")
+    base = args.config.parent if args.config else Path.cwd()
+    if not (_STATIC / "index.html").is_file():
+        parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter flow-view build` first\n")
+    adapters = [(instance, _adapter(parser, instance)) for instance in config.runs]
     starts = {instance.name: start for instance, adapter in adapters if (start := adapter.start(instance.url))}
     # Run now is drawn only for an instance whose adapter can start a run, and only on its run-safe workflows.
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
@@ -886,6 +904,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         board.archive,
         board.create,
         ingest=Ingest(instance_tokens, log) if instance_tokens else None,
+        gate=gate,
     )
     serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 

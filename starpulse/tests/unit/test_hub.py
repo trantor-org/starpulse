@@ -15,12 +15,27 @@ needs_extras = pytest.mark.skipif(
 )
 
 
-def _serve_hub(tmp_path: Path, config_text: str) -> int | str | None:
-    """The exit code of `serve --hub` on a config with `config_text`."""
+_OIDC = """
+[oidc]
+issuer = "https://id.example.test/realm"
+client_id = "starpulse-hub"
+client_secret_env = "HUB_OIDC_SECRET"
+redirect_uri = "https://hub.example.test/auth/callback"
+allowed_groups = ["ops"]
+"""
+
+
+@pytest.fixture(autouse=True)
+def _client_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HUB_OIDC_SECRET", "hub-secret")
+
+
+def _serve_hub(tmp_path: Path, config_text: str, oidc: str | None = _OIDC, argv: tuple[str, ...] = ("--hub",)) -> int | str | None:
+    """The exit code of `serve --hub` on a config with `config_text` and the `oidc` table (none: no sign-in)."""
     config = tmp_path / "starpulse.toml"
-    config.write_text(config_text)
+    config.write_text(config_text + (oidc or ""))
     with pytest.raises(SystemExit) as exited:
-        server.main(["--hub", "--config", str(config)])
+        server.main([*argv, "--config", str(config)])
     return exited.value.code
 
 
@@ -60,9 +75,36 @@ def test_a_hub_on_a_sqlite_database_is_refused(tmp_path: Path, capsys: pytest.Ca
     assert not (tmp_path / "h.sqlite").exists()  # refused before anything opened the database
 
 
+@needs_extras
+def test_a_hub_without_an_oidc_table_is_refused_before_the_database_is_touched(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = _serve_hub(tmp_path, 'database_url = "postgresql+psycopg://127.0.0.1:1/hub"\n', oidc=None)
+
+    assert code == 1
+    assert "hub mode needs an [oidc] table" in capsys.readouterr().err
+
+
+@needs_extras
+def test_a_hub_whose_client_secret_variable_is_unset_is_refused_naming_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HUB_OIDC_SECRET")
+
+    assert _serve_hub(tmp_path, 'database_url = "postgresql+psycopg://127.0.0.1:1/hub"\n') == 1
+    assert "HUB_OIDC_SECRET is not set" in capsys.readouterr().err
+
+
+def test_an_instance_that_is_not_a_hub_refuses_an_oidc_table_rather_than_serving_ungated(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _serve_hub(tmp_path, "", argv=()) == 1
+    assert "[oidc] gates a hub" in capsys.readouterr().err
+
+
 _IC_RUN = """
 import sys
-for name in ("alembic", "psycopg"):
+for name in ("alembic", "psycopg", "jwt"):
     sys.modules[name] = None  # an import of either raises ImportError, as on a machine without the hub extras
 
 import tempfile, threading
@@ -82,6 +124,7 @@ threading.Timer(1.0, stop.set).start()
 record_machine_events(store, log, stop, interval=0.05)
 assert store.machine_path("IC-1", "in-progress")[1] == 1
 assert "starpulse.hub" not in sys.modules, "IC mode imported the hub module"
+assert "starpulse.oidc" not in sys.modules, "IC mode imported the sign-in module"
 """
 
 
