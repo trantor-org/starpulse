@@ -59,7 +59,10 @@ def test_the_build_is_served_and_nothing_outside_it(server: ThreadingHTTPServer)
         "/missing.js",
     )
 
-    served = {path: _status(server, path) for path in paths}
+    # The stdlib handler reads the host's mime table: a host that maps .js to the legacy
+    # application/javascript serves the same script, so both spellings are one type here.
+    legacy_js = {"application/javascript": "text/javascript"}
+    served = {path: (code, legacy_js.get(kind, kind)) for path, (code, kind) in ((p, _status(server, p)) for p in paths)}
 
     assert served == {
         "/": (200, "text/html"),
