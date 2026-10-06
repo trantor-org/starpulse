@@ -474,3 +474,17 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
   border: 1px solid rgba(52,211,153,.4); color: #a7f3d0; font: calc(12px * var(--fs)) Inter, system-ui, sans-serif; box-shadow: 0 12px 30px rgba(0,0,0,.5); animation: kb-modal .2s ease-out; }
 #ef-toast span { color: #6b7a93; }
 @media (prefers-reduced-motion: reduce) { #ef-toast, #efa, #efa .box { animation: none; } }
+
+/* the navigator's Queues: each pool's running/cap and a meter, amber while it runs and red once it is full */
+#queues .q { margin-bottom: 6px; }
+#queues .r { display: flex; justify-content: space-between; gap: 8px; font-size: calc(11px * var(--fs)); color: var(--muted); }
+#queues .r span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#queues .r b { font-weight: 500; }
+#queues .busy .r b { color: #fbbf24; } #queues .full .r b { color: #fb7185; }
+#queues .m { height: 3px; border-radius: 2px; background: rgba(148,163,184,.15); margin-top: 2px; overflow: hidden; }
+#queues .m i { display: block; height: 100%; transition: width .5s; background: #fbbf24; } #queues .full .m i { background: #fb7185; }
+@media (prefers-reduced-motion: reduce) { #queues .m i { transition: none; } }
+/* the Recent feed's run lines: an outcome in its colour, the newest line flashing once as it arrives */
+#feed em.ok { color: #34d399; opacity: 1; } #feed em.failed { color: #fb7185; opacity: 1; }
+#feed div.new { animation: flash 1.2s; } @keyframes flash { from { background: rgba(251,191,36,.18); } to { background: none; } }
+@media (prefers-reduced-motion: reduce) { #feed div.new { animation: none; } }

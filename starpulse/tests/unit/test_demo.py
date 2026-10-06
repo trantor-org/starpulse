@@ -6,8 +6,10 @@ import re
 import urllib.request
 from pathlib import Path
 
+import jsonschema
 import pytest
 
+from starpulse.contracts import SCHEMAS, Dag, Pool
 from starpulse.demo import TITLES, _send_back, capture, mockup, page, scrub, scrub_mockup
 
 SECRET = "Rotate the router admin password"
@@ -49,6 +51,66 @@ def _live() -> dict:
         "error": "ci: down",
         "now": 1.0,
     }
+
+
+def _with_deliver(live: dict) -> dict:
+    live["domains"] = [{"name": "Delivery", "dags": [{"name": "dagu/deliver", "runSafe": False}]}]
+    live["dags"] = []
+    return live
+
+
+def test_scrub_seeds_running_deliver_runs_and_their_pool_when_the_capture_has_no_pools() -> None:
+    demo = scrub(_with_deliver(_live()))
+
+    deliver = next(d for d in demo["dags"] if d["name"] == "dagu/deliver")
+    steps = {s["name"] for s in deliver["steps"]}
+    assert len(deliver["active"]) == 3
+    assert {r["status"] for r in deliver["active"]} == {"running"}
+    assert {r["step"] for r in deliver["active"]} <= steps
+    assert all(set(r["steps"]) <= steps for r in deliver["active"])
+    assert len({r["runId"] for r in deliver["active"]}) == 3
+    pools = {p["name"]: p for p in demo["pools"]}
+    assert deliver["pool"] == "dagu/deliver"
+    assert pools["dagu/deliver"] == {"name": "dagu/deliver", "cap": 32, "running": 3, "queued": 0}
+    assert pools["dagu/default"]["running"] == 0
+
+
+def test_scrub_seeds_pools_and_runs_that_follow_the_contract() -> None:
+    demo = scrub(_with_deliver(_live()))
+
+    for dag in demo["dags"]:
+        jsonschema.validate(Dag.model_validate(dag).model_dump(mode="json", by_alias=True), SCHEMAS["runs"])
+    for pool in demo["pools"]:
+        jsonschema.validate(Pool.model_validate(pool).model_dump(mode="json", by_alias=True), SCHEMAS["pools"])
+
+
+def test_scrub_keeps_the_pools_a_capture_reports_and_seeds_nothing() -> None:
+    live = _with_deliver(_live())
+    live["pools"] = [{"name": "dagu/deliver", "cap": 8, "running": 0, "queued": 0}]
+
+    demo = scrub(live)
+
+    assert demo["pools"] == live["pools"]
+    assert demo["dags"] == []
+
+
+def test_scrub_seeds_no_second_deliver_dag_when_the_capture_already_reads_one() -> None:
+    live = _with_deliver(_live())
+    live["dags"] = [
+        {"name": "dagu/deliver", "status": "succeeded", "runId": "r-1", "startedAt": "", "finishedAt": "", "steps": []}
+    ]
+
+    demo = scrub(live)
+
+    assert [d["name"] for d in demo["dags"]] == ["dagu/deliver"]
+    assert "pools" not in demo
+
+
+def test_scrub_seeds_no_pools_when_the_capture_has_no_deliver_workflow() -> None:
+    demo = scrub(_live())
+
+    assert demo.get("pools", []) == []
+    assert [d["name"] for d in demo["dags"]] == ["nightly"]
 
 
 def test_scrub_keeps_the_structure_and_replaces_every_task() -> None:
