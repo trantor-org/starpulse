@@ -4,7 +4,7 @@ Every producer on the host appends one row (`EventLog.append`), which never rais
 fails the work that caused it. Every reader keeps its own cursor, the `id` of the last row it passed, and
 polls `id > cursor` (`Tail`); there are no consumer groups. A tail without a cursor replays the retained log, one
 given a cursor resumes after it, and `EventLog.prune` drops rows older than a retention, which `serve` runs hourly
-(`prune_forever`). A cursor below the oldest retained row means rows were pruned unread, which is recorded in
+(`prune_forever`) after writing each row to its UTC day's gzip JSONL archive file. A cursor below the oldest retained row means rows were pruned unread, which is recorded in
 `starpulse_gaps`.
 
 The database is the history store's: SQLite by default (in WAL mode, so processes on the host append while the
@@ -16,12 +16,17 @@ would stop WAL checkpoints and grow the `-wal` file without bound.
 
 from __future__ import annotations
 
+import gzip
+import json
 import logging
+import os
 import sqlite3
 import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, NamedTuple
 
 from sqlalchemy import Engine, Table, create_engine, delete, event, func, select
@@ -44,6 +49,9 @@ _SQLITE_BUSY_TIMEOUT = 5.0
 #: How many times a new SQLite connection tries to switch to WAL, which fails at once, without waiting on the busy
 #: timeout, while another connection opens or closes the database.
 _PRAGMA_ATTEMPTS = 20
+
+#: How many rows a prune archives and deletes at a time, so a long backlog is never held in memory at once.
+_PRUNE_BATCH = 1000
 
 #: How many times a producer looks for the tables, creating those missing, before the failure counts.
 _CREATE_ATTEMPTS = 5
@@ -127,11 +135,33 @@ class EventLog:
             logger.warning("EventLog: append to %s failed (event dropped): %s", stream, exc)
             return None
 
-    def prune(self, retention: float, now: float | None = None) -> int:
-        """Delete the rows older than `retention` seconds and return how many; raises when the database does."""
+    def prune(self, retention: float, now: float | None = None, *, archive_dir: Path) -> int:
+        """Archive and then delete the rows older than `retention` seconds and return how many; raises when the
+        database or the archive does.
+
+        Rows go to `archive_dir` first, in id order, one gzip JSONL file per UTC day of `at` (`YYYY-MM-DD.jsonl.gz`),
+        appended to when a later pass prunes more of that day. A batch is deleted only after its lines were written
+        and fsynced, so a failed write deletes nothing and a crash between write and delete archives those rows again
+        on the next pass: a reader of the archive treats `id` as its key.
+        """
         cutoff = (time.time() if now is None else now) - retention
-        with self.engine.begin() as db:
-            return db.execute(delete(events).where(events.c.at < cutoff)).rowcount
+        engine = self.engine
+        pruned = last = 0
+        while True:
+            with engine.connect() as db:
+                batch = db.execute(
+                    select(events)
+                    .where(events.c.at < cutoff, events.c.id > last)
+                    .order_by(events.c.id)
+                    .limit(_PRUNE_BATCH)
+                ).all()
+            if not batch:
+                return pruned
+            _archive(archive_dir, batch)
+            with engine.begin() as db:
+                db.execute(delete(events).where(events.c.id > last, events.c.id <= batch[-1].id, events.c.at < cutoff))
+            pruned += len(batch)
+            last = batch[-1].id
 
     def last(self, stream: str) -> int | None:
         """The cursor of `stream`'s newest row, or None when it has none; raises when the database does."""
@@ -277,17 +307,49 @@ class Tail:
                 stop.wait(self.interval)
 
 
-def prune_forever(log: EventLog, *, retention_days: int, stop: threading.Event, interval: float = 3600) -> None:
-    """Prune the rows older than `retention_days` at start and then every `interval` seconds until `stop` is set. A
-    pass that fails is logged and the next one retries, so a database that was briefly away does not end the pruning."""
+def prune_forever(
+    log: EventLog, *, retention_days: int, archive_dir: Path, stop: threading.Event, interval: float = 3600
+) -> None:
+    """Prune the rows older than `retention_days` into `archive_dir` at start and then every `interval` seconds until
+    `stop` is set. A pass that fails is logged and the next one retries, so a database that was briefly away, or an
+    archive that could not be written, does not end the pruning."""
     while True:
         try:
-            if pruned := log.prune(retention_days * 86400):
+            if pruned := log.prune(retention_days * 86400, archive_dir=archive_dir):
                 logger.info("EventLog: pruned %d rows older than %d days", pruned, retention_days)
         except Exception:  # the database is unreachable or locked; the next pass retries
             logger.exception("EventLog: prune failed; retrying in %ss", interval)
         if stop.wait(interval):
             return
+
+
+def _archive(directory: Path, rows: Sequence[Any]) -> None:
+    """Append `rows` to their UTC days' files in `directory` and fsync each file and the directory before returning.
+
+    A write that fails is cut back to the file's earlier size, so no torn gzip member stays in a day's file.
+    """
+    days: dict[str, list[str]] = {}
+    for row in rows:
+        entry = {"id": row.id, "stream": row.stream, "event_id": row.event_id, "fields": row.fields, "at": row.at}
+        day = datetime.fromtimestamp(row.at, UTC).strftime("%Y-%m-%d")
+        days.setdefault(day, []).append(json.dumps(entry, separators=(",", ":")) + "\n")
+    directory.mkdir(parents=True, exist_ok=True)
+    for day, lines in days.items():
+        with (directory / f"{day}.jsonl.gz").open("ab") as raw:
+            size = raw.tell()
+            try:
+                with gzip.GzipFile(fileobj=raw, mode="wb") as member:  # a gzip file may hold several members
+                    member.write("".join(lines).encode())
+                raw.flush()
+                os.fsync(raw.fileno())
+            except BaseException:
+                raw.truncate(size)
+                raise
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)  # a new day's file must survive a crash as an entry of the directory
+    finally:
+        os.close(fd)
 
 
 def _create_engine(url: str) -> Engine:

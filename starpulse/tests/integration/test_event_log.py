@@ -87,7 +87,7 @@ def test_starpulse_emit_in_another_process_reaches_the_tail_of_the_database_the_
     ]
 
 
-def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str) -> None:
+def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str, tmp_path: Path) -> None:
     log = EventLog(database_url)
     for n in range(1, 5):
         log.append("machine:events", {"n": n})
@@ -100,7 +100,11 @@ def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str
     reader.cursor = 1
 
     stop = threading.Event()
-    timer = threading.Thread(target=prune_forever, args=(log,), kwargs={"retention_days": 7, "stop": stop})
+    timer = threading.Thread(
+        target=prune_forever,
+        args=(log,),
+        kwargs={"retention_days": 7, "archive_dir": tmp_path / "archive", "stop": stop},
+    )
     timer.start()
     try:
         deadline = time.monotonic() + 10

@@ -1,21 +1,27 @@
 """The snapshot the page is handed, and the run endpoint."""
 
 import argparse
+import gzip
 import json
 import sys
+import threading
+import time
 import types
 import urllib.request
 from pathlib import Path
 
 import pytest
+from sqlalchemy import update
 
 from starpulse.adapter_kit import serve, task, url
 from starpulse.board import MoveWriter, Written
 from starpulse.board_feed import BoardFeed
 from starpulse.config import CommitKeys, Config, RunsInstance, load
 from starpulse.contracts import Move, StartFailedError
+from starpulse.event_log import EventLog
 from starpulse.harnesses import load_harnesses
-from starpulse.server import _adapter, _config, _no_writer, move_task, rerun_dag, run_dag, start_task
+from starpulse.server import _adapter, _config, _no_writer, keep_event_log, move_task, rerun_dag, run_dag, start_task
+from starpulse.tables import events
 from starpulse.tests.machines import MACHINES
 
 #: The workflows the config declares run-safe in these tests, and the domains it groups them in.
@@ -648,3 +654,39 @@ def test_a_rerun_the_adapter_fails_answers_with_its_reason() -> None:
     failed = _Rerun(StartFailedError("Dagu unreachable: refused"))
 
     assert _rerun(failed) == (502, {"error": "Dagu unreachable: refused"})
+
+
+def _threads() -> set[str]:
+    return {t.name for t in threading.enumerate()}
+
+
+def test_a_hub_starts_no_event_log_row_prune_because_it_drops_day_partitions(tmp_path: Path) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    stop = threading.Event()
+
+    assert keep_event_log(log, load(None), tmp_path, hub=True, stop=stop) is None
+
+    assert "event-log-prune" not in _threads()
+
+
+def test_an_instance_serve_archives_the_rows_it_prunes_beside_the_config(tmp_path: Path) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    log.append("a", {"n": 1}, event_id="old")
+    stale = time.time() - 30 * 86400
+    with log.engine.begin() as db:
+        db.execute(update(events).values(at=stale))
+    stop = threading.Event()
+
+    pruner = keep_event_log(log, load(None), tmp_path, hub=False, stop=stop)
+    try:
+        assert pruner is not None
+        deadline = time.monotonic() + 10
+        while log.oldest() is not None and time.monotonic() < deadline:
+            time.sleep(0.02)
+    finally:
+        stop.set()
+        pruner.join(timeout=5)
+
+    [day] = (tmp_path / "starpulse-archive").iterdir()
+    with gzip.open(day, "rt") as lines:
+        assert [json.loads(line)["event_id"] for line in lines] == ["old"]

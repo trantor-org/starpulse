@@ -1,21 +1,30 @@
 """The event log's rules on SQLite: fail-open append, replay and resume by cursor, retention and gaps."""
 
+import gzip
+import json
+import os
 import sqlite3
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, update
 from sqlalchemy.exc import OperationalError
 
 from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, _sqlite_pragmas, create_tables, prune_forever
-from starpulse.tables import metadata
+from starpulse.tables import events, metadata
 
 
 @pytest.fixture
 def log(tmp_path: Path) -> EventLog:
     return EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+
+
+@pytest.fixture
+def archive(tmp_path: Path) -> Path:
+    return tmp_path / "archive"
 
 
 def _gaps(log: EventLog) -> list[tuple]:
@@ -136,10 +145,10 @@ def test_a_tail_over_several_streams_reads_them_in_log_order_under_one_cursor(lo
     assert tail.poll() == []
 
 
-def test_a_gap_before_a_multi_stream_tail_is_recorded_under_the_readers_name(log: EventLog) -> None:
+def test_a_gap_before_a_multi_stream_tail_is_recorded_under_the_readers_name(log: EventLog, archive: Path) -> None:
     for n in range(4):
         log.append("a", {"n": n})
-    log.prune(0, now=time.time() + 1)
+    log.prune(0, now=time.time() + 1, archive_dir=archive)
     log.append("a", {"n": 9})
 
     Tail(log, "forward", streams=("a", "b"), after=2).poll()
@@ -155,10 +164,10 @@ def test_a_poll_reads_at_most_one_batch(log: EventLog) -> None:
     assert [[e.id for e in tail.poll()] for _ in range(3)] == [[1, 2], [3, 4], [5]]
 
 
-def test_a_cursor_below_the_oldest_retained_row_is_a_gap_and_the_tail_reads_on(log: EventLog) -> None:
+def test_a_cursor_below_the_oldest_retained_row_is_a_gap_and_the_tail_reads_on(log: EventLog, archive: Path) -> None:
     for n in range(3):
         log.append("a", {"n": str(n)})
-    assert log.prune(retention=0, now=time.time() + 10) == 3
+    assert log.prune(retention=0, now=time.time() + 10, archive_dir=archive) == 3
     log.append("a", {"n": "kept-1"})
     log.append("a", {"n": "kept-2"})
     resumed = Tail(log, "a", after=1)  # read row 1 and nothing after it before the prune
@@ -168,9 +177,9 @@ def test_a_cursor_below_the_oldest_retained_row_is_a_gap_and_the_tail_reads_on(l
     assert _gaps(log) == [("a", "1", "4", 2)]  # rows 2 and 3 were pruned unread; ids continue past the prune
 
 
-def test_a_gap_is_recorded_once_for_the_same_cursor(log: EventLog) -> None:
+def test_a_gap_is_recorded_once_for_the_same_cursor(log: EventLog, archive: Path) -> None:
     log.append("a", {"n": "old"})
-    log.prune(retention=0, now=time.time() + 10)
+    log.prune(retention=0, now=time.time() + 10, archive_dir=archive)
     log.append("a", {"n": "new"})
 
     Tail(log, "a", after=0).poll()
@@ -179,33 +188,35 @@ def test_a_gap_is_recorded_once_for_the_same_cursor(log: EventLog) -> None:
     assert _gaps(log) == [("a", "0", "2", 1)]
 
 
-def test_a_replay_from_the_start_of_retention_is_not_a_gap(log: EventLog) -> None:
+def test_a_replay_from_the_start_of_retention_is_not_a_gap(log: EventLog, archive: Path) -> None:
     log.append("a", {"n": "old"})
-    log.prune(retention=0, now=time.time() + 10)
+    log.prune(retention=0, now=time.time() + 10, archive_dir=archive)
     log.append("a", {"n": "new"})
 
     assert [e.fields["n"] for e in Tail(log, "a").poll()] == ["new"]
     assert _gaps(log) == []
 
 
-def test_a_tail_that_kept_up_across_a_prune_of_everything_it_read_is_no_gap(log: EventLog) -> None:
+def test_a_tail_that_kept_up_across_a_prune_of_everything_it_read_is_no_gap(log: EventLog, archive: Path) -> None:
     tail = Tail(log, "a")
     log.append("a", {"n": "1"})
     tail.poll()
-    log.prune(retention=0, now=time.time() + 10)
+    log.prune(retention=0, now=time.time() + 10, archive_dir=archive)
     log.append("a", {"n": "2"})
 
     assert [e.id for e in tail.poll()] == [2]  # the id after the pruned one: SQLite does not reuse it
     assert _gaps(log) == []
 
 
-def test_a_prune_removes_only_rows_older_than_the_retention(log: EventLog) -> None:
+def test_a_prune_removes_only_rows_older_than_the_retention(log: EventLog, archive: Path) -> None:
     log.append("a", {"n": "old"})
     time.sleep(0.05)
     log.append("a", {"n": "new"})
     newest = Tail(log, "a").poll()[-1].at
 
-    assert log.prune(retention=0.02, now=newest + 0.01) == 1  # the cutoff falls between the two rows
+    assert (
+        log.prune(retention=0.02, now=newest + 0.01, archive_dir=archive) == 1
+    )  # the cutoff falls between the two rows
     assert [e.fields["n"] for e in Tail(log, "a").poll()] == ["new"]
 
 
@@ -348,9 +359,11 @@ class _SpyLog:
         self.stop = stop
         self.outcomes = outcomes
         self.retentions: list[float] = []
+        self.archives: list[Path] = []
 
-    def prune(self, retention: float) -> int:
+    def prune(self, retention: float, *, archive_dir: Path) -> int:
         self.retentions.append(retention)
+        self.archives.append(archive_dir)
         outcome = self.outcomes[len(self.retentions) - 1]
         if len(self.retentions) == len(self.outcomes):
             self.stop.set()
@@ -359,19 +372,94 @@ class _SpyLog:
         return 0
 
 
-def test_the_prune_timer_prunes_at_start_and_every_interval_with_the_configured_days_in_seconds() -> None:
+def test_the_prune_timer_prunes_at_start_and_every_interval_with_the_configured_days_in_seconds(archive: Path) -> None:
     stop = threading.Event()
     spy = _SpyLog(stop, [None, None, None])
 
-    prune_forever(spy, retention_days=7, stop=stop, interval=0.001)
+    prune_forever(spy, retention_days=7, archive_dir=archive, stop=stop, interval=0.001)
 
     assert spy.retentions == [7 * 86400] * 3
+    assert spy.archives == [archive] * 3
 
 
-def test_a_prune_pass_that_fails_is_retried_on_the_next_interval() -> None:
+def test_a_prune_pass_that_fails_is_retried_on_the_next_interval(archive: Path) -> None:
     stop = threading.Event()
     spy = _SpyLog(stop, [OperationalError("DELETE", {}, Exception("database is locked")), None])
 
-    prune_forever(spy, retention_days=1, stop=stop, interval=0.001)
+    prune_forever(spy, retention_days=1, archive_dir=archive, stop=stop, interval=0.001)
 
     assert spy.retentions == [86400, 86400]
+
+
+def _day(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0) -> float:
+    return datetime(year, month, day, hour, minute, second, tzinfo=UTC).timestamp()
+
+
+def _age(log: EventLog, ages: dict[int, float]) -> None:
+    with log.engine.begin() as db:
+        for row_id, at in ages.items():
+            db.execute(update(events).where(events.c.id == row_id).values(at=at))
+
+
+def _read(path: Path) -> list[dict]:
+    with gzip.open(path, "rt") as lines:
+        return [json.loads(line) for line in lines]
+
+
+def test_a_prune_writes_every_row_it_deletes_to_its_utc_day_file_and_a_later_prune_appends(
+    log: EventLog, archive: Path
+) -> None:
+    for n in range(4):
+        log.append("a", {"n": n}, event_id=f"e{n}")
+    late_day_one = _day(2026, 9, 1, 23, 59, 59)
+    early_day_two = _day(2026, 9, 2, 0, 0, 1)
+    _age(log, {1: late_day_one, 2: early_day_two, 3: early_day_two + 5})
+
+    assert log.prune(retention=5, now=early_day_two + 10, archive_dir=archive) == 2
+
+    assert sorted(p.name for p in archive.iterdir()) == ["2026-09-01.jsonl.gz", "2026-09-02.jsonl.gz"]
+    assert [r["id"] for r in _read(archive / "2026-09-01.jsonl.gz")] == [1]
+    assert [r["id"] for r in _read(archive / "2026-09-02.jsonl.gz")] == [2]  # row 3 is still inside retention
+
+    assert log.prune(retention=0, now=early_day_two + 10 + 86400 * 2, archive_dir=archive) == 1  # row 4 is current
+
+    assert [r["id"] for r in _read(archive / "2026-09-02.jsonl.gz")] == [2, 3]  # appended, in id order
+    assert [r["id"] for r in _read(archive / "2026-09-01.jsonl.gz")] == [1]
+
+
+def test_an_archived_row_carries_every_column(log: EventLog, archive: Path) -> None:
+    log.append("machine:events", {"machine": "m", "event": "A", "nested": {"k": [1, 2]}}, event_id="evt-1")
+    at = _day(2026, 9, 3, 12, 30)
+    _age(log, {1: at})
+
+    log.prune(retention=0, now=at + 1, archive_dir=archive)
+
+    [row] = _read(archive / "2026-09-03.jsonl.gz")
+    assert row == {
+        "id": 1,
+        "stream": "machine:events",
+        "event_id": "evt-1",
+        "fields": {"machine": "m", "event": "A", "nested": {"k": [1, 2]}},
+        "at": at,
+    }
+
+
+def test_a_failed_archive_write_deletes_no_row(log: EventLog, archive: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for n in range(3):
+        log.append("a", {"n": n})
+    at = _day(2026, 9, 4)
+    _age(log, {1: at, 2: at, 3: at})
+
+    def refuse(_fd: int) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "fsync", refuse)
+    with pytest.raises(OSError, match="disk full"):
+        log.prune(retention=0, now=at + 1, archive_dir=archive)
+    monkeypatch.undo()
+
+    assert [e.id for e in Tail(log, "a").poll()] == [1, 2, 3]
+    day = archive / "2026-09-04.jsonl.gz"
+    assert not day.exists() or day.stat().st_size == 0  # no torn member is left for a reader to trip on
+    assert log.prune(retention=0, now=at + 1, archive_dir=archive) == 3  # the retry archives them once
+    assert [r["id"] for r in _read(day)] == [1, 2, 3]

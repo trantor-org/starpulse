@@ -46,6 +46,7 @@ _KEYS = {
     "ci",
     "hub_retention_days",
     "event_log_retention_days",
+    "event_log_archive_dir",
     "oidc",
     "forward",
     "sources",
@@ -404,6 +405,8 @@ class Config:
     """A hub that takes aggregates only refuses an instance's opt-in to be named."""
     event_log_retention_days: int = 7
     """`serve` prunes the event log's rows older than this many days, hourly, so the table and every reader's boot replay stay bounded; a reader that was behind the oldest retained row records a gap."""
+    event_log_archive_dir: str = "starpulse-archive"
+    """Where `serve` writes the event log rows it prunes, one gzip JSONL file per UTC day, before it deletes them; a relative path is beside the config."""
     repos: tuple[Repo, ...] = ()
     """The repositories whose merges apply through the parent's pin bump (`[[repos]]`)."""
     ci: tuple[str, ...] = ()
@@ -454,6 +457,13 @@ def _retention(value: object, key: str) -> int:
     """The days `key` keeps rows for; a whole number, 1 or more."""
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise ConfigError(f"{key} must be a whole number of days, 1 or more")
+    return value
+
+
+def _archive_dir(value: object) -> str:
+    """The directory `event_log_archive_dir` names; text, not empty."""
+    if not isinstance(value, str) or not value:
+        raise ConfigError("event_log_archive_dir must be a directory path")
     return value
 
 
@@ -517,6 +527,7 @@ def load(path: Path | None) -> Config:
         _sources(raw.get("sources", [])),
         _aggregates_only(raw.get("aggregates_only", False)),
         event_log_retention_days=log_retention,
+        event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", "starpulse-archive")),
         repos=_repos(raw.get("repos", [])),
         ci=_ci(raw),
     )

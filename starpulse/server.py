@@ -1095,6 +1095,31 @@ def serve_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def keep_event_log(
+    log: EventLog, config: Config, base: Path, *, hub: bool, stop: threading.Event
+) -> threading.Thread | None:
+    """Start the hourly prune of the event log, which archives each row it deletes under `event_log_archive_dir`.
+
+    A hub starts none: it drops a whole day's partition once it has rolled the day up, so its rows are never deleted
+    one by one.
+    """
+    if hub:
+        return None
+    thread = threading.Thread(
+        target=prune_forever,
+        args=(log,),
+        kwargs={
+            "retention_days": config.event_log_retention_days,
+            "archive_dir": base / config.event_log_archive_dir,
+            "stop": stop,
+        },
+        name="event-log-prune",
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
     parser = serve_parser()
     args = parser.parse_args(argv)
@@ -1139,13 +1164,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
     url = database_url(config.database_url, base)
     log = EventLog(url)
-    threading.Thread(
-        target=prune_forever,
-        args=(log,),
-        kwargs={"retention_days": config.event_log_retention_days, "stop": threading.Event()},
-        name="event-log-prune",
-        daemon=True,
-    ).start()
+    keep_event_log(log, config, base, hub=args.hub, stop=threading.Event())
     window = HistoryWindow(feed, args.hours, base / SETTINGS_FILE)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store, history = history_store(config, base, board, feed.machines)

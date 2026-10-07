@@ -284,6 +284,10 @@ database_url = "postgresql+psycopg://db.example.com/starpulse"
 # row and records the span it missed in `starpulse_gaps`. A whole number of days, 1 or more.
 event_log_retention_days = 7   # the default
 
+# Where `serve` writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to
+# this file unless absolute. A `serve --hub` prunes no rows and writes no archive.
+event_log_archive_dir = "starpulse-archive"   # the default
+
 # The board adapter: a module under `starpulse`, or the dotted path of one an installed package provides.
 # The rest of the table is that adapter's settings.
 # With no [board] table the view draws its own Markdown board, `type = "native"`:
@@ -340,6 +344,34 @@ task = "TASK"                            # the task a run is for: pairs a run wi
 name = "skills"
 path = "skills"
 applied_by = "pin-bump"
+```
+
+#### Event log archive
+
+Before `serve` deletes an event-log row it appends the row to a gzip JSONL file under `event_log_archive_dir`, one
+file per UTC day of the row's `at`, named `YYYY-MM-DD.jsonl.gz`. A later pass that prunes more of a day appends to that
+day's file, which is then several gzip members in a row; `gzip` and DuckDB read them as one stream. A pass writes and
+fsyncs a batch of rows, 1000 at most, before it deletes that batch, so a write that fails (disk full, directory not
+writable) deletes nothing and logs the failure, and the next hourly pass retries. A crash between the write and the
+delete archives those rows again, so a reader of the archive keys a row on `id`.
+
+Each line is one JSON object with every column of `starpulse_events`:
+
+```json
+{"id":1,"stream":"machine:events","event_id":"evt-1","fields":{"machine":"m","event":"A"},"at":1788307200.5}
+```
+
+`at` is seconds since the epoch. Read a day with DuckDB, or with the standard library:
+
+```sql
+SELECT id, stream, event_id, fields, to_timestamp("at") AS at FROM read_json('starpulse-archive/*.jsonl.gz');
+```
+
+```python
+import gzip, json
+
+with gzip.open("starpulse-archive/2026-09-01.jsonl.gz", "rt") as lines:
+    rows = [json.loads(line) for line in lines]
 ```
 
 #### The Ledger
@@ -506,8 +538,8 @@ until the gate says otherwise. The test suite signs in against a
 #### Retention and rollups
 
 A hub keeps its raw events (`starpulse_events`) in one partition per UTC day, keyed on the event's `at` time, and
-drops whole days instead of deleting rows. An instance on SQLite is unchanged: it keeps one table and prunes by
-deleting rows.
+drops whole days instead of deleting rows, so it starts no row prune and writes no event log archive. An instance on
+SQLite is unchanged: it keeps one table and prunes by deleting rows, archiving each first.
 
 ```toml
 hub_retention_days = 14   # the default; a whole number of days, 1 or more
