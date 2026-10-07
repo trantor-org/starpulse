@@ -5,10 +5,10 @@ import { optionalSteps } from "./ledger";
 import { ledgerLevel } from "./levels";
 import { newScroll, place, take } from "./ledgerScroll";
 import { bannerOf, ledgerHit, mergePanel, type DoctorBox, type PanelCtx } from "./ledgerPanel";
-import type { ContractReport, Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "./types";
+import type { ContractReport, Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "./api";
 
 const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
-const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded" })) });
+const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null })) });
 const machine = (): Machine => ({
   states: ["review", "done"].map((id, i) => ({ id, name: id, initial: !i, final: !!i })),
   transitions: [{ source: "review", target: "done", event: "MERGED" }],

@@ -3,7 +3,7 @@
 // `?ms=` picks what the rows show: `live` (the default) keys every run by commit with the newest still running, `fail` pins two failed applies (one past the head page),
 // `cross` adds another repository's merges and the pin bump that applies one, and `infer` is an install that declares no commit key, so time pairs every run.
 import { MERGE_EVENT, tiesOf, type Tie } from "./ledger";
-import type { ContractCheck, ContractReport, LedgerRow, LedgerRun, MergeStrip, RunStatus, Snapshot } from "./types";
+import type { ContractCheck, ContractReport, LedgerRow, LedgerRun, MergeStrip, RunStatus, Snapshot } from "./api";
 
 export type Scenario = "live" | "fail" | "cross" | "infer";
 const SCENARIOS: Scenario[] = ["live", "fail", "cross", "infer"];

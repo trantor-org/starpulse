@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FeedLines, Queues } from "./Fanout";
 import type { FeedLine } from "./hud";
-import type { Pool } from "./types";
+import type { Pool } from "./api";
 
 const pools: Pool[] = [
   { name: "dagu/deliver", cap: 32, running: 5, queued: 0 },

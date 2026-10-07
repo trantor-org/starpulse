@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nestsOf, type Nest } from "./machineChain";
 import { laneRows, rowLabels, type LaneMachine } from "./machineLanes";
-import type { FlowSnapshot } from "./types";
+import type { FlowSnapshot } from "./api";
 
 const states = (...ids: string[]) => ids.map((id, i) => ({ id, name: id, initial: !i, final: i === ids.length - 1 }));
 const tr = (...ids: string[]) => ids.slice(1).map((t, i) => ({ source: ids[i], target: t, event: t }));

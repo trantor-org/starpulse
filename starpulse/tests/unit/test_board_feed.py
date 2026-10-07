@@ -608,7 +608,7 @@ LEDGER_MACHINE = {
     ],
     "writers": {"STARTED": [{"actor": "ci/start", "trigger": "task started"}]},
 }
-CUE = {"event": "MERGED", "dag": "ci/apply", "on": "merge", "resolves": "retry", "state": "done"}
+CUE = {"event": "MERGED", "dag": "ci/apply", "on": "merge", "resolves": "forced", "state": "done"}
 MERGED_PR = {
     "url": "https://github.com/o/trantor/pull/7",
     "merged": True,
@@ -626,7 +626,15 @@ APPLIED = {
 
 
 def _dag(name: str, *recent: dict) -> dict:
-    return {"name": name, "recent": list(recent)}
+    return {
+        "name": name,
+        "status": "not_started",
+        "runId": "",
+        "startedAt": "",
+        "finishedAt": "",
+        "steps": [],
+        "recent": list(recent),
+    }
 
 
 def ledger_feed() -> BoardFeed:
@@ -665,7 +673,9 @@ def test_the_workflow_listing_the_page_draws_leaves_the_recent_runs_to_the_ledge
     feed = ledger_feed()
     feed.set_dags("ci", [_dag("apply", APPLIED)], None)
 
-    assert feed.snapshot()["dags"] == [{"name": "ci/apply"}]
+    (dag,) = feed.snapshot()["dags"]
+    assert dag["name"] == "ci/apply"
+    assert "recent" not in dag
 
 
 def test_a_feed_that_ties_no_workflow_to_an_event_has_no_ledgers() -> None:
@@ -849,7 +859,16 @@ def _merged(n: int, minute: int, day: int = 7) -> tuple[str, list[dict]]:
     """Task `TASK-<n>`'s pull request, merged at `minute` past midnight UTC on October `day` as commit `<n>` repeated."""
     at = f"2026-10-{day:02d}T{minute // 60:02d}:{minute % 60:02d}:00Z"
     return f"TASK-{n}", [
-        {"url": f"https://github.com/o/trantor/pull/{n}", "merged": True, "merge_sha": f"{n:040x}", "merged_at": at}
+        {
+            "number": n,
+            "url": f"https://github.com/o/trantor/pull/{n}",
+            "checks": "pass",
+            "merged": True,
+            "merge_sha": f"{n:040x}",
+            "merged_at": at,
+            "threads": 0,
+            "stale": False,
+        }
     ]
 
 

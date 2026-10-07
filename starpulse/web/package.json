@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "gen:types": "json2ts -i ../api.schema.json -o src/api/types.gen.ts --bannerComment \"/* Generated from starpulse/api.schema.json by pnpm run gen:types; edit contracts_api.py, not this file. */\"",
     "typecheck": "tsc6 --noEmit -p .",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
@@ -24,6 +25,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.12.0",
     "jsdom": "^30.1.2",
+    "json-schema-to-typescript": "^16.0.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.71.0",
     "vite": "^8.3.1",

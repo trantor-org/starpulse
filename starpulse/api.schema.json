@@ -1,0 +1,4650 @@
+{
+  "$defs": {
+    "Accepted": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accepted"
+      ],
+      "title": "Accepted",
+      "type": "object"
+    },
+    "ActiveRun": {
+      "additionalProperties": false,
+      "description": "One run of a DAG that is running or queued now.",
+      "properties": {
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The engine's own status for the run when it differs from `status`, shown as is."
+        },
+        "runId": {
+          "description": "The run's id.",
+          "type": "string"
+        },
+        "startedAt": {
+          "description": "When the run started, or was queued while it waits, ISO 8601 UTC (`2026-10-02T17:00:00Z`).",
+          "type": "string"
+        },
+        "status": {
+          "description": "The run's status: `running` or `queued`.",
+          "enum": [
+            "not_started",
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "aborted",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "step": {
+          "description": "The step the run entered last among those running; empty while it is queued or between steps.",
+          "type": "string"
+        },
+        "stepStartedAt": {
+          "description": "When the run entered `step`, ISO 8601 UTC; empty when `step` is.",
+          "type": "string"
+        },
+        "steps": {
+          "additionalProperties": {
+            "enum": [
+              "not_started",
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "aborted",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "description": "Each of the DAG's steps by name with its status in this run.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "runId",
+        "status",
+        "startedAt",
+        "step",
+        "stepStartedAt",
+        "steps"
+      ],
+      "title": "ActiveRun",
+      "type": "object"
+    },
+    "AgingRun": {
+      "additionalProperties": false,
+      "properties": {
+        "age_s": {
+          "type": "number"
+        },
+        "over": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "task",
+        "state",
+        "age_s",
+        "over"
+      ],
+      "title": "AgingRun",
+      "type": "object"
+    },
+    "ApiError": {
+      "additionalProperties": false,
+      "description": "Every refusal: what went wrong.",
+      "properties": {
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "title": "ApiError",
+      "type": "object"
+    },
+    "ArchiveRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/archive`: archive `task`, recording `reason` when it is not blank.",
+      "properties": {
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "ArchiveRequest",
+      "type": "object"
+    },
+    "Archived": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "Archived",
+      "type": "object"
+    },
+    "Arrival": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "source": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "state",
+        "at"
+      ],
+      "title": "Arrival",
+      "type": "object"
+    },
+    "Bottleneck": {
+      "additionalProperties": false,
+      "properties": {
+        "path_days": {
+          "type": "number"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "path_days"
+      ],
+      "title": "Bottleneck",
+      "type": "object"
+    },
+    "Capabilities": {
+      "additionalProperties": false,
+      "description": "What the board writes beyond moves: the page draws Edit, Archive\u2026 and New task only for what its board does.",
+      "properties": {
+        "archive": {
+          "type": "boolean"
+        },
+        "create": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "edit": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "edit",
+        "archive"
+      ],
+      "title": "Capabilities",
+      "type": "object"
+    },
+    "ChainState": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_days": {
+          "type": "number"
+        },
+        "p_goal": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "expected_days",
+        "p_goal"
+      ],
+      "title": "ChainState",
+      "type": "object"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "at"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "ClaimDelta": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "reason",
+        "at"
+      ],
+      "title": "ClaimDelta",
+      "type": "object"
+    },
+    "ContractCheck": {
+      "additionalProperties": false,
+      "description": "One check of the contract between the config and the machines' DAG cues.",
+      "properties": {
+        "check": {
+          "description": "`cue:<dag>` or `repo:<name>`.",
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "warn",
+            "fail"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "status",
+        "reason"
+      ],
+      "title": "ContractCheck",
+      "type": "object"
+    },
+    "ContractReport": {
+      "additionalProperties": false,
+      "description": "The contract checks `starpulse doctor` runs; `ok` is false when any fails.",
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/ContractCheck"
+          },
+          "type": "array"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "checks"
+      ],
+      "title": "ContractReport",
+      "type": "object"
+    },
+    "CreateRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/tasks`: create a task in the board's starting lane.",
+      "properties": {
+        "acceptanceCriteria": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "assignee": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dependencies": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "milestone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "title": "CreateRequest",
+      "type": "object"
+    },
+    "Created": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "Created",
+      "type": "object"
+    },
+    "Cue": {
+      "additionalProperties": false,
+      "description": "A DAG that runs on the same trigger as a Board event's writer but writes no lane itself.",
+      "properties": {
+        "dag": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string"
+        },
+        "on": {
+          "type": "string"
+        },
+        "resolves": {
+          "anyOf": [
+            {
+              "enum": [
+                "forced",
+                "next"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How a failed run of the DAG clears: `forced` only on a green forced rerun, `next` on the DAG's next green run."
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "dag",
+        "event",
+        "state",
+        "on"
+      ],
+      "title": "Cue",
+      "type": "object"
+    },
+    "DagBody": {
+      "additionalProperties": false,
+      "description": "A runs workflow as the page draws it: the latest run, the runs in flight and the pool it runs on.",
+      "properties": {
+        "active": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ActiveRun"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Every running or queued run of the workflow, including concurrent ones."
+        },
+        "finishedAt": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "pool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The name of the pool the workflow runs on; empty when none."
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The engine's own status when it differs from `status`."
+        },
+        "runId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "not_started",
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "aborted",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "runId",
+        "startedAt",
+        "finishedAt",
+        "steps"
+      ],
+      "title": "DagBody",
+      "type": "object"
+    },
+    "DagsDelta": {
+      "additionalProperties": false,
+      "description": "A runs instance's workflows.",
+      "properties": {
+        "dags": {
+          "items": {
+            "$ref": "#/$defs/DagBody"
+          },
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pools": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Pool"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "dags",
+        "error"
+      ],
+      "title": "DagsDelta",
+      "type": "object"
+    },
+    "Domain": {
+      "additionalProperties": false,
+      "description": "A domain's DAGs, and whether each is declared safe to run from the page.",
+      "properties": {
+        "dags": {
+          "items": {
+            "$ref": "#/$defs/DomainDag"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "dags"
+      ],
+      "title": "Domain",
+      "type": "object"
+    },
+    "DomainDag": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "runSafe": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "runSafe"
+      ],
+      "title": "DomainDag",
+      "type": "object"
+    },
+    "EditRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/edit`: change fields of `task`; `base` holds the value each changed field had when the page read it.",
+      "properties": {
+        "base": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "changes": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "comment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "base",
+        "changes"
+      ],
+      "title": "EditRequest",
+      "type": "object"
+    },
+    "Edited": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "changed"
+      ],
+      "title": "Edited",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "One thing a reader can open to check a finding: a labelled link, or a labelled query over the history store.",
+      "properties": {
+        "label": {
+          "description": "What the link or query shows, in a few words.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A read-only query over the history store's tables that returns the evidence; exactly one of `url` and `query` is set."
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A link to the evidence; exactly one of `url` and `query` is set."
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "One thing an external engine says about the flow, posted to `POST /api/insights`; a re-post of an `id` replaces it.",
+      "properties": {
+        "created_at": {
+          "description": "When the engine wrote it, in epoch seconds.",
+          "type": "number"
+        },
+        "engine": {
+          "$ref": "#/$defs/FindingEngine",
+          "description": "The engine that wrote it, by name and version."
+        },
+        "evidence": {
+          "default": [],
+          "description": "Where a reader can check it.",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "type": "array"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "When the page should stop showing it, in epoch seconds, after `created_at`; None keeps it until it is retracted."
+        },
+        "id": {
+          "description": "The engine's stable key for the finding; posting it again replaces it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/FindingScope",
+          "description": "What it is about: a team, machine, state or task, each optional."
+        },
+        "severity": {
+          "description": "How much attention it asks for.",
+          "enum": [
+            "info",
+            "warn",
+            "act"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "description": "What the engine found, in plain text of at most 280 characters.",
+          "maxLength": 280,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "engine",
+        "severity",
+        "text",
+        "created_at"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "FindingEngine": {
+      "additionalProperties": false,
+      "description": "The engine that wrote a finding.",
+      "properties": {
+        "name": {
+          "description": "The engine's name, stable across its releases.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "description": "The engine release that wrote the finding.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "FindingEngine",
+      "type": "object"
+    },
+    "FindingScope": {
+      "additionalProperties": false,
+      "description": "What a finding is about. Every field is optional and a finding may name none; there is no field for a person,\nso a finding about one cannot be written, and one that tries is refused as an unknown field.",
+      "properties": {
+        "machine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The machine the finding is about, as `<repo>/<machine>`."
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The state of that machine the finding is about."
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The task key the finding is about."
+        },
+        "team": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The team key the finding is about, as a board task's `team`."
+        }
+      },
+      "title": "FindingScope",
+      "type": "object"
+    },
+    "FlowSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/RawAgent"
+          },
+          "type": "array"
+        },
+        "chain": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "depth": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "last": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "machine": {
+          "$ref": "#/$defs/Machine"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nested": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "stuck": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stuck"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ties": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Tie"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name",
+        "machine",
+        "agents"
+      ],
+      "title": "FlowSnapshot",
+      "type": "object"
+    },
+    "ForwardAccepted": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "type": "integer"
+        },
+        "rejected": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "accepted",
+        "rejected"
+      ],
+      "title": "ForwardAccepted",
+      "type": "object"
+    },
+    "ForwardRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/forward`: a batch of events an instance's forwarder sends a hub.",
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/ForwardedEvent"
+          },
+          "type": "array"
+        },
+        "opt_in": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "opt_in",
+        "events"
+      ],
+      "title": "ForwardRequest",
+      "type": "object"
+    },
+    "ForwardedEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "kept": {
+          "description": "The fields of an entry that stay on the instance.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "stream": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "stream",
+        "fields",
+        "kept"
+      ],
+      "title": "ForwardedEntry",
+      "type": "object"
+    },
+    "ForwardedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "type": "string"
+        },
+        "fields": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "stream": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "stream",
+        "fields"
+      ],
+      "title": "ForwardedEvent",
+      "type": "object"
+    },
+    "ForwardedField": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "person": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "field",
+        "person"
+      ],
+      "title": "ForwardedField",
+      "type": "object"
+    },
+    "ForwardingRequest": {
+      "additionalProperties": false,
+      "description": "`PUT /api/forwarding`: whether a person's name may leave the instance.",
+      "properties": {
+        "opt_in": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "opt_in"
+      ],
+      "title": "ForwardingRequest",
+      "type": "object"
+    },
+    "ForwardingStatus": {
+      "additionalProperties": false,
+      "description": "What the forwarder would send next, and why.",
+      "properties": {
+        "configured": {
+          "const": true,
+          "type": "boolean"
+        },
+        "contract": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/ForwardedField"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "lastSent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "more": {
+          "type": "boolean"
+        },
+        "names": {
+          "type": "boolean"
+        },
+        "next": {
+          "items": {
+            "$ref": "#/$defs/ForwardedEntry"
+          },
+          "type": "array"
+        },
+        "optIn": {
+          "type": "boolean"
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refused": {
+          "type": "boolean"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "configured",
+        "url",
+        "optIn",
+        "names",
+        "refused",
+        "lastSent",
+        "problem",
+        "next",
+        "more",
+        "contract"
+      ],
+      "title": "ForwardingStatus",
+      "type": "object"
+    },
+    "ForwardingUnconfigured": {
+      "additionalProperties": false,
+      "description": "An instance with no `[forward]` block.",
+      "properties": {
+        "configured": {
+          "const": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "configured"
+      ],
+      "title": "ForwardingUnconfigured",
+      "type": "object"
+    },
+    "GapWarning": {
+      "additionalProperties": false,
+      "description": "The history lost entries between two ids, so any number here may miss some.",
+      "properties": {
+        "after_id": {
+          "type": "string"
+        },
+        "before_id": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "gap",
+          "type": "string"
+        },
+        "lost": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "stream": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "stream",
+        "after_id",
+        "before_id",
+        "lost",
+        "message"
+      ],
+      "title": "GapWarning",
+      "type": "object"
+    },
+    "GateSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "bypassable": {
+          "type": "boolean"
+        },
+        "bypassed": {
+          "type": "integer"
+        },
+        "crossed": {
+          "type": "integer"
+        },
+        "gate": {
+          "type": "string"
+        },
+        "mandatory": {
+          "type": "integer"
+        },
+        "runs": {
+          "type": "integer"
+        },
+        "witness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateWitness"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "gate",
+        "runs",
+        "crossed",
+        "mandatory",
+        "bypassed",
+        "bypassable",
+        "witness"
+      ],
+      "title": "GateSummary",
+      "type": "object"
+    },
+    "GateWitness": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "path"
+      ],
+      "title": "GateWitness",
+      "type": "object"
+    },
+    "HarnessBody": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessions": {
+          "type": "boolean"
+        },
+        "tiers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/HarnessTier"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "sessions",
+        "reason",
+        "tiers"
+      ],
+      "title": "HarnessBody",
+      "type": "object"
+    },
+    "HarnessTier": {
+      "additionalProperties": false,
+      "properties": {
+        "efforts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "efforts"
+      ],
+      "title": "HarnessTier",
+      "type": "object"
+    },
+    "Harnesses": {
+      "additionalProperties": false,
+      "description": "`GET /api/harnesses`: the tiers in order and each harness with its models and efforts.",
+      "properties": {
+        "harnesses": {
+          "items": {
+            "$ref": "#/$defs/HarnessBody"
+          },
+          "type": "array"
+        },
+        "tiers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tiers",
+        "harnesses"
+      ],
+      "title": "Harnesses",
+      "type": "object"
+    },
+    "Health": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/health`: the Board's flow health over a window.",
+      "properties": {
+        "now": {
+          "type": "number"
+        },
+        "states": {
+          "items": {
+            "$ref": "#/$defs/HealthState"
+          },
+          "type": "array"
+        },
+        "stuck": {
+          "items": {
+            "$ref": "#/$defs/HealthStuck"
+          },
+          "type": "array"
+        },
+        "stuck_after_s": {
+          "type": "number"
+        },
+        "throughput": {
+          "$ref": "#/$defs/HealthThroughput"
+        },
+        "warnings": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "gap": "#/$defs/GapWarning",
+                "unknown_lane": "#/$defs/UnknownLaneWarning"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/GapWarning"
+              },
+              {
+                "$ref": "#/$defs/UnknownLaneWarning"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "stuck_after_s",
+        "states",
+        "throughput",
+        "stuck",
+        "warnings"
+      ],
+      "title": "Health",
+      "type": "object"
+    },
+    "HealthState": {
+      "additionalProperties": false,
+      "properties": {
+        "final": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "max_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mean_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "type": "string"
+        },
+        "open": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "visits": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "wip": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "final",
+        "wip"
+      ],
+      "title": "HealthState",
+      "type": "object"
+    },
+    "HealthStuck": {
+      "additionalProperties": false,
+      "properties": {
+        "counted_to_now": {
+          "type": "boolean"
+        },
+        "dwell_s": {
+          "type": "number"
+        },
+        "since": {
+          "type": "number"
+        },
+        "state": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "state",
+        "since",
+        "dwell_s",
+        "counted_to_now"
+      ],
+      "title": "HealthStuck",
+      "type": "object"
+    },
+    "HealthThroughput": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "per_day": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "count",
+        "per_day"
+      ],
+      "title": "HealthThroughput",
+      "type": "object"
+    },
+    "InsightDelta": {
+      "additionalProperties": false,
+      "description": "A finding drawn, or retracted when `finding` is null.",
+      "properties": {
+        "finding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Finding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "finding"
+      ],
+      "title": "InsightDelta",
+      "type": "object"
+    },
+    "InsightPosted": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "replaced": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "replaced"
+      ],
+      "title": "InsightPosted",
+      "type": "object"
+    },
+    "InsightRetracted": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "retracted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "retracted"
+      ],
+      "title": "InsightRetracted",
+      "type": "object"
+    },
+    "LaneHistory": {
+      "additionalProperties": false,
+      "description": "`GET /api/history?task=`: a task's lane changes, oldest first.",
+      "properties": {
+        "path": {
+          "items": {
+            "$ref": "#/$defs/LaneStep"
+          },
+          "type": "array"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "path"
+      ],
+      "title": "LaneHistory",
+      "type": "object"
+    },
+    "LaneStep": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "from",
+        "to"
+      ],
+      "title": "LaneStep",
+      "type": "object"
+    },
+    "Launch": {
+      "additionalProperties": false,
+      "description": "A runs workflow's launch: the skill it starts and the flow that skill draws, null when it has none.",
+      "properties": {
+        "flow": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "flow"
+      ],
+      "title": "Launch",
+      "type": "object"
+    },
+    "LedgerFail": {
+      "additionalProperties": false,
+      "description": "A failed run of a cue the merge row holds open: the step it stopped at, and how the failure clears.",
+      "properties": {
+        "finishedAt": {
+          "type": "string"
+        },
+        "resolved": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LedgerResolved"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolves": {
+          "anyOf": [
+            {
+              "enum": [
+                "forced",
+                "next"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runId",
+        "step",
+        "startedAt",
+        "finishedAt",
+        "resolves",
+        "resolved"
+      ],
+      "title": "LedgerFail",
+      "type": "object"
+    },
+    "LedgerPull": {
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "url"
+      ],
+      "title": "LedgerPull",
+      "type": "object"
+    },
+    "LedgerResolved": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runId",
+        "at"
+      ],
+      "title": "LedgerResolved",
+      "type": "object"
+    },
+    "LedgerRow": {
+      "additionalProperties": false,
+      "description": "One merge occurrence: its pull request and commit, the runs paired with it by DAG, and, for another repository's\nmerge, the parent merge that pinned it.",
+      "properties": {
+        "appliedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The parent merge's key whose pin bump applied this one; null until one has; absent on a merge of the main repository."
+        },
+        "applies": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "at": {
+          "description": "Epoch seconds the merge landed.",
+          "type": "number"
+        },
+        "fails": {
+          "additionalProperties": {
+            "$ref": "#/$defs/LedgerFail"
+          },
+          "type": "object"
+        },
+        "key": {
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LedgerPull"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "runs": {
+          "additionalProperties": {
+            "$ref": "#/$defs/LedgerRun"
+          },
+          "type": "object"
+        },
+        "sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tasks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "at",
+        "tasks",
+        "runs",
+        "fails",
+        "pinned"
+      ],
+      "title": "LedgerRow",
+      "type": "object"
+    },
+    "LedgerRun": {
+      "additionalProperties": false,
+      "description": "One DAG run a merge row carries: `inferred` when time, not the commit, paired it, and `ambiguous` how many other merges landed in its window.",
+      "properties": {
+        "ambiguous": {
+          "type": "integer"
+        },
+        "finishedAt": {
+          "type": "string"
+        },
+        "inferred": {
+          "type": "boolean"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "runId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "not_started",
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "aborted",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "step": {
+          "description": "The step running now, or \"\".",
+          "type": "string"
+        },
+        "steps": {
+          "additionalProperties": {
+            "enum": [
+              "not_started",
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "aborted",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "runId",
+        "status",
+        "startedAt",
+        "finishedAt",
+        "steps",
+        "step",
+        "inferred",
+        "ambiguous"
+      ],
+      "title": "LedgerRun",
+      "type": "object"
+    },
+    "LedgersDelta": {
+      "additionalProperties": false,
+      "properties": {
+        "ledgers": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/LedgerRow"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "mergePins": {
+          "items": {
+            "$ref": "#/$defs/LedgerRow"
+          },
+          "type": "array"
+        },
+        "mergeStrip": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeStrip"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ledgers",
+        "mergeStrip",
+        "mergePins"
+      ],
+      "title": "LedgersDelta",
+      "type": "object"
+    },
+    "Level": {
+      "additionalProperties": false,
+      "description": "`GET /api/level`: the level's flow numbers over a window.",
+      "properties": {
+        "aging": {
+          "$ref": "#/$defs/LevelAging"
+        },
+        "arrivals": {
+          "items": {
+            "$ref": "#/$defs/Arrival"
+          },
+          "type": "array"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "history_s": {
+          "type": "number"
+        },
+        "level": {
+          "$ref": "#/$defs/LevelConfig"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "now": {
+          "type": "number"
+        },
+        "orbit": {
+          "$ref": "#/$defs/LevelOrbit"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/LevelSource"
+          },
+          "type": "array"
+        },
+        "throughput": {
+          "$ref": "#/$defs/HealthThroughput"
+        },
+        "time_in_state": {
+          "items": {
+            "$ref": "#/$defs/LevelStay"
+          },
+          "type": "array"
+        },
+        "window_s": {
+          "type": "number"
+        },
+        "wip": {
+          "$ref": "#/$defs/LevelWip"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "history_s",
+        "machine",
+        "goal",
+        "level",
+        "wip",
+        "throughput",
+        "time_in_state",
+        "aging",
+        "orbit",
+        "arrivals",
+        "sources"
+      ],
+      "title": "Level",
+      "type": "object"
+    },
+    "LevelActivity": {
+      "additionalProperties": false,
+      "properties": {
+        "measure": {
+          "type": "string"
+        },
+        "pace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "measure",
+        "pace"
+      ],
+      "title": "LevelActivity",
+      "type": "object"
+    },
+    "LevelAging": {
+      "additionalProperties": false,
+      "properties": {
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/AgingRun"
+          },
+          "type": "array"
+        },
+        "threshold_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "threshold_s",
+        "runs"
+      ],
+      "title": "LevelAging",
+      "type": "object"
+    },
+    "LevelConfig": {
+      "additionalProperties": false,
+      "description": "What the page needs of the level's config to draw it.",
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/LevelActivity"
+        },
+        "facets": {
+          "items": {
+            "$ref": "#/$defs/LevelFacet"
+          },
+          "type": "array"
+        },
+        "gates": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "orbit": {
+          "$ref": "#/$defs/LevelOrbitConfig"
+        },
+        "runs": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "terminals": {
+          "items": {
+            "$ref": "#/$defs/LevelTerminal"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "subject",
+        "runs",
+        "gates",
+        "terminals",
+        "orbit",
+        "facets",
+        "activity"
+      ],
+      "title": "LevelConfig",
+      "type": "object"
+    },
+    "LevelFacet": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "title": "LevelFacet",
+      "type": "object"
+    },
+    "LevelOrbit": {
+      "additionalProperties": false,
+      "properties": {
+        "suns": {
+          "type": "string"
+        },
+        "terminals": {
+          "additionalProperties": {
+            "$ref": "#/$defs/OrbitTerminal"
+          },
+          "type": "object"
+        },
+        "working": {
+          "additionalProperties": {
+            "$ref": "#/$defs/OrbitWorking"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "suns",
+        "terminals",
+        "working"
+      ],
+      "title": "LevelOrbit",
+      "type": "object"
+    },
+    "LevelOrbitConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "suns": {
+          "type": "string"
+        },
+        "working": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "suns",
+        "working"
+      ],
+      "title": "LevelOrbitConfig",
+      "type": "object"
+    },
+    "LevelSource": {
+      "additionalProperties": false,
+      "properties": {
+        "dwell": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SourceDwell"
+          },
+          "type": "object"
+        },
+        "ended": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "shared": {
+          "type": "boolean"
+        },
+        "terminal_share": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "time_share": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "wip": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "shared",
+        "wip",
+        "ended",
+        "terminal_share",
+        "dwell",
+        "time_share"
+      ],
+      "title": "LevelSource",
+      "type": "object"
+    },
+    "LevelStay": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "mean_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task_s": {
+          "type": "number"
+        },
+        "visits": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "visits",
+        "task_s",
+        "mean_s"
+      ],
+      "title": "LevelStay",
+      "type": "object"
+    },
+    "LevelTerminal": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "role"
+      ],
+      "title": "LevelTerminal",
+      "type": "object"
+    },
+    "LevelWip": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "states": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "count",
+        "states"
+      ],
+      "title": "LevelWip",
+      "type": "object"
+    },
+    "Machine": {
+      "additionalProperties": false,
+      "properties": {
+        "dagActors": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only the board machine: the writers that are runs workflows."
+        },
+        "launches": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Launch"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only the board machine: the skill flow each launching DAG starts."
+        },
+        "mainLine": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only the board machine: the state ids along its axis, in order (New to Done)."
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The third party whose events move this machine (\"GitHub\"); absent for a machine StarPulse's own actors move."
+        },
+        "states": {
+          "items": {
+            "$ref": "#/$defs/MachineState"
+          },
+          "type": "array"
+        },
+        "subflows": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/SubFlow"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The flows that open under this machine's states; the board's first is its In Progress delivery machine."
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "type": "array"
+        },
+        "writers": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "$ref": "#/$defs/Writer"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only the board machine: its writers per event."
+        }
+      },
+      "required": [
+        "states",
+        "transitions"
+      ],
+      "title": "Machine",
+      "type": "object"
+    },
+    "MachineEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "dag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineEntryFrom"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "machine": {
+          "type": "string"
+        },
+        "row": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "machine",
+        "row",
+        "from",
+        "dag"
+      ],
+      "title": "MachineEntry",
+      "type": "object"
+    },
+    "MachineEntryFrom": {
+      "additionalProperties": false,
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "state"
+      ],
+      "title": "MachineEntryFrom",
+      "type": "object"
+    },
+    "MachineHistory": {
+      "additionalProperties": false,
+      "description": "`GET /api/history?task=&flow=`: a task's path on one machine, and how many steps it has taken.",
+      "properties": {
+        "flow": {
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/MachineStep"
+          },
+          "type": "array"
+        },
+        "steps": {
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "flow",
+        "path",
+        "steps"
+      ],
+      "title": "MachineHistory",
+      "type": "object"
+    },
+    "MachinePage": {
+      "additionalProperties": false,
+      "description": "The first page of machines entered from `open`, by name; their bodies are in the snapshot's `flows`.",
+      "properties": {
+        "machines": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "more": {
+          "type": "boolean"
+        },
+        "open": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "open",
+        "machines",
+        "more"
+      ],
+      "title": "MachinePage",
+      "type": "object"
+    },
+    "MachineRow": {
+      "additionalProperties": false,
+      "description": "A machine of `GET /api/machines`: whole, with its derivation.",
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/RawAgent"
+          },
+          "type": "array"
+        },
+        "chain": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "depth": {
+          "type": "integer"
+        },
+        "last": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "machine": {
+          "$ref": "#/$defs/Machine"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nested": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stuck": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stuck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ties": {
+          "items": {
+            "$ref": "#/$defs/Tie"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "machine",
+        "agents",
+        "ties",
+        "parent",
+        "depth",
+        "chain",
+        "nested",
+        "last",
+        "stuck"
+      ],
+      "title": "MachineRow",
+      "type": "object"
+    },
+    "MachineState": {
+      "additionalProperties": false,
+      "properties": {
+        "final": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "initial": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "initial",
+        "final"
+      ],
+      "title": "MachineState",
+      "type": "object"
+    },
+    "MachineStep": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "event": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "event",
+        "state"
+      ],
+      "title": "MachineStep",
+      "type": "object"
+    },
+    "MachineStrip": {
+      "additionalProperties": false,
+      "description": "The last 24 hours of machine entries, counted over every machine.",
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/MachineEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "title": "MachineStrip",
+      "type": "object"
+    },
+    "Machines": {
+      "additionalProperties": false,
+      "description": "`GET /api/machines`: the next page of machines entered from `open`.",
+      "properties": {
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/MachineRow"
+          },
+          "type": "array"
+        },
+        "more": {
+          "type": "boolean"
+        },
+        "open": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "open",
+        "machines",
+        "more"
+      ],
+      "title": "Machines",
+      "type": "object"
+    },
+    "MergeStrip": {
+      "additionalProperties": false,
+      "description": "The 24-hour strip of the merge ledger: per bucket, the merges, the failed ones and the forced reruns.",
+      "properties": {
+        "bucket": {
+          "type": "number"
+        },
+        "buckets": {
+          "items": {
+            "$ref": "#/$defs/StripBucket"
+          },
+          "type": "array"
+        },
+        "since": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "since",
+        "bucket",
+        "buckets"
+      ],
+      "title": "MergeStrip",
+      "type": "object"
+    },
+    "Merges": {
+      "additionalProperties": false,
+      "description": "`GET /api/merges`: the next page of merge rows, newest first, and whether older ones remain.",
+      "properties": {
+        "merges": {
+          "items": {
+            "$ref": "#/$defs/LedgerRow"
+          },
+          "type": "array"
+        },
+        "more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "merges",
+        "more"
+      ],
+      "title": "Merges",
+      "type": "object"
+    },
+    "Move": {
+      "additionalProperties": false,
+      "description": "The verdict on moving a task to one column: allowed, or guarded by a declared rule.",
+      "properties": {
+        "allowed": {
+          "description": "False when a guard the board writer enforces would refuse the move.",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "description": "What the refusing guard needs; empty when the move is allowed.",
+          "type": "string"
+        },
+        "skill": {
+          "default": "",
+          "description": "The skill that produces what the guard needs; empty when allowed.",
+          "type": "string"
+        },
+        "writers": {
+          "default": [],
+          "description": "The actors the machine YAML declares for the event behind the move; empty when it declares none, and then any actor may make it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "allowed"
+      ],
+      "title": "Move",
+      "type": "object"
+    },
+    "MoveDelta": {
+      "additionalProperties": false,
+      "description": "A task a machine event placed on another machine.",
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/RawAgent"
+        },
+        "flow": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "flow",
+        "id",
+        "agent"
+      ],
+      "title": "MoveDelta",
+      "type": "object"
+    },
+    "MoveRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/move`: move `task` to the column `to`.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "to"
+      ],
+      "title": "MoveRequest",
+      "type": "object"
+    },
+    "Moved": {
+      "additionalProperties": false,
+      "properties": {
+        "advice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "to"
+      ],
+      "title": "Moved",
+      "type": "object"
+    },
+    "Norm": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "path": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "path",
+        "count"
+      ],
+      "title": "Norm",
+      "type": "object"
+    },
+    "OrbitTerminal": {
+      "additionalProperties": false,
+      "properties": {
+        "ended": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ended"
+      ],
+      "title": "OrbitTerminal",
+      "type": "object"
+    },
+    "OrbitWorking": {
+      "additionalProperties": false,
+      "properties": {
+        "task_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "task_s"
+      ],
+      "title": "OrbitWorking",
+      "type": "object"
+    },
+    "Outlier": {
+      "additionalProperties": false,
+      "properties": {
+        "distance": {
+          "type": "integer"
+        },
+        "path": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "task",
+        "path",
+        "distance"
+      ],
+      "title": "Outlier",
+      "type": "object"
+    },
+    "Pool": {
+      "additionalProperties": false,
+      "description": "One concurrency pool: the cap on the runs that may execute at once, and the runs holding or awaiting it.",
+      "properties": {
+        "cap": {
+          "description": "The most runs the pool lets execute at once.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "The pool's name, unique on its scheduler; a DAG's `pool` names it.",
+          "type": "string"
+        },
+        "queued": {
+          "description": "The runs waiting for the pool to have room.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "description": "The runs executing on the pool now.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "cap",
+        "running",
+        "queued"
+      ],
+      "title": "Pool",
+      "type": "object"
+    },
+    "Pull": {
+      "additionalProperties": false,
+      "description": "One pull request a task cites, as GitHub last answered the server.",
+      "properties": {
+        "checks": {
+          "description": "The head commit's check rollup.",
+          "enum": [
+            "pass",
+            "failing",
+            "pending",
+            "none"
+          ],
+          "type": "string"
+        },
+        "merge_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The merge commit's SHA; null until the PR merges."
+        },
+        "merged": {
+          "type": "boolean"
+        },
+        "merged_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When the PR merged, ISO 8601 UTC; null until it does."
+        },
+        "number": {
+          "type": "integer"
+        },
+        "stale": {
+          "description": "True when the last read failed and this is the read before it.",
+          "type": "boolean"
+        },
+        "threads": {
+          "description": "Unresolved review threads.",
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "number",
+        "url",
+        "checks",
+        "merged",
+        "merge_sha",
+        "merged_at",
+        "threads",
+        "stale"
+      ],
+      "title": "Pull",
+      "type": "object"
+    },
+    "PullsDelta": {
+      "additionalProperties": false,
+      "properties": {
+        "pulls": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Pull"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "pulls"
+      ],
+      "title": "PullsDelta",
+      "type": "object"
+    },
+    "RawAgent": {
+      "additionalProperties": false,
+      "description": "A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in.",
+      "properties": {
+        "active": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "created": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "When a Board task was created, in epoch seconds; null or absent when unknown."
+        },
+        "dependencies": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A task's dependencies, as task ids."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A task's Backlog description."
+        },
+        "entered": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "When a Board task entered its lane, epoch seconds; absent when the server holds no time for it."
+        },
+        "id": {
+          "type": "string"
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "milestone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A Board task's milestone; empty or absent when it has none."
+        },
+        "model": {
+          "type": "string"
+        },
+        "moves": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Move"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The verdict on each Board column the task may move to, by state id."
+        },
+        "previous": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The Board lane the task left on its last move; absent before it has moved."
+        },
+        "prs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A task's pull requests: the PR URLs among its references."
+        },
+        "state": {
+          "type": "string"
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A machine's task: the id of the Backlog task its events name."
+        },
+        "title": {
+          "type": "string"
+        },
+        "trail": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/TrailStep"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether a Board task can be worked now."
+        },
+        "workable_since": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Since when a workable Board task has been, epoch seconds."
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "state",
+        "model"
+      ],
+      "title": "RawAgent",
+      "type": "object"
+    },
+    "RunEventRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/runs/events`: one workflow phase a producer reports.",
+      "properties": {
+        "depends": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "phase": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "time": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workflow": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "workflow",
+        "run_id",
+        "status"
+      ],
+      "title": "RunEventRequest",
+      "type": "object"
+    },
+    "RunGate": {
+      "additionalProperties": false,
+      "properties": {
+        "crossed": {
+          "type": "boolean"
+        },
+        "dominators": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "gate": {
+          "type": "string"
+        },
+        "mandatory": {
+          "type": "boolean"
+        },
+        "post_dominators": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "witness": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "gate",
+        "crossed",
+        "mandatory",
+        "dominators",
+        "post_dominators",
+        "witness"
+      ],
+      "title": "RunGate",
+      "type": "object"
+    },
+    "RunStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "runId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runId"
+      ],
+      "title": "RunStarted",
+      "type": "object"
+    },
+    "Settled": {
+      "additionalProperties": false,
+      "description": "A task that left the Board's lanes for good: where it settled, when, and the title and assignee it settled with.",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "at",
+        "created",
+        "title",
+        "model"
+      ],
+      "title": "Settled",
+      "type": "object"
+    },
+    "SkillRefusal": {
+      "additionalProperties": false,
+      "description": "A refusal a skill satisfies: the skill that produces what the guard needs.",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "skill": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "skill"
+      ],
+      "title": "SkillRefusal",
+      "type": "object"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "boardUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The Backlog board a task links into."
+        },
+        "capabilities": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Capabilities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the board writes: the task modal draws Edit and Archive only when its board does."
+        },
+        "claims": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Claim"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds)."
+        },
+        "cues": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Cue"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The DAGs cued by a Board event."
+        },
+        "dags": {
+          "items": {
+            "$ref": "#/$defs/DagBody"
+          },
+          "type": "array"
+        },
+        "domains": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Domain"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The DAG domains."
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flows": {
+          "items": {
+            "$ref": "#/$defs/FlowSnapshot"
+          },
+          "type": "array"
+        },
+        "graphs": {
+          "description": "Every lifecycle machine the server draws, and `runs`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A Backlog.md project found beside the config while the default board is shown, and how to switch to it."
+        },
+        "insights": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Finding"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The findings an engine posted that are still live."
+        },
+        "ledgers": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "$ref": "#/$defs/LedgerRow"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Each Ledger event's rows, newest first."
+        },
+        "machinePage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachinePage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "machineStrip": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineStrip"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mergePins": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/LedgerRow"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The pinned merge rows of the last day that the newest page leaves out."
+        },
+        "mergeStrip": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeStrip"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "now": {
+          "type": "number"
+        },
+        "pools": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Pool"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The concurrency pools the DAGs run on."
+        },
+        "pulls": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "$ref": "#/$defs/Pull"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Each open task's pull requests, by task id."
+        },
+        "reading": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "True while a just-started server is still reading its board: its Board is partial until a snapshot without it follows."
+        },
+        "settled": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Settled"
+          },
+          "type": "object"
+        },
+        "suns": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Each Board state's share of the lane moves in the week before the last local midnight, which sizes its sun."
+        }
+      },
+      "required": [
+        "graphs",
+        "dags",
+        "flows",
+        "settled",
+        "error",
+        "now"
+      ],
+      "title": "Snapshot",
+      "type": "object"
+    },
+    "SourceDwell": {
+      "additionalProperties": false,
+      "properties": {
+        "mean_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task_s": {
+          "type": "number"
+        },
+        "visits": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "visits",
+        "task_s",
+        "mean_s"
+      ],
+      "title": "SourceDwell",
+      "type": "object"
+    },
+    "StaleEdit": {
+      "additionalProperties": false,
+      "description": "An edit refused because a field changed since the page read it: those fields with their current values.",
+      "properties": {
+        "current": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "error": {
+          "type": "string"
+        },
+        "stale": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "error",
+        "stale",
+        "current"
+      ],
+      "title": "StaleEdit",
+      "type": "object"
+    },
+    "StartRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/start`: start a session for `task` on `assignee`.",
+      "properties": {
+        "assignee": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "assignee"
+      ],
+      "title": "StartRequest",
+      "type": "object"
+    },
+    "Started": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "task": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "url",
+        "at"
+      ],
+      "title": "Started",
+      "type": "object"
+    },
+    "Step": {
+      "additionalProperties": false,
+      "description": "One step of a DAG in its latest run.",
+      "properties": {
+        "depends": {
+          "description": "Names of the steps that must finish before this one starts.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The phase kind the step declares (`agent`), or None when it declares none."
+        },
+        "name": {
+          "description": "The step's name, unique within its DAG.",
+          "type": "string"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The engine's own status for the step when it differs from `status`, shown as is."
+        },
+        "status": {
+          "description": "The step's status in the latest run.",
+          "enum": [
+            "not_started",
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "aborted",
+            "skipped"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "depends",
+        "status",
+        "kind"
+      ],
+      "title": "Step",
+      "type": "object"
+    },
+    "StripBucket": {
+      "additionalProperties": false,
+      "properties": {
+        "failed": {
+          "type": "integer"
+        },
+        "merges": {
+          "type": "integer"
+        },
+        "reruns": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "merges",
+        "failed",
+        "reruns"
+      ],
+      "title": "StripBucket",
+      "type": "object"
+    },
+    "Stuck": {
+      "additionalProperties": false,
+      "description": "The longest-stuck task of a machine and every machine nested below it: idle over two hours outside a final state.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "since": {
+          "description": "When the task last moved, epoch seconds.",
+          "type": "number"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "state",
+        "since"
+      ],
+      "title": "Stuck",
+      "type": "object"
+    },
+    "SubFlow": {
+      "additionalProperties": false,
+      "description": "Where a Board state opens into another machine, and which Board event each inner final state fires.",
+      "properties": {
+        "exits": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "flow": {
+          "type": "string"
+        },
+        "parent": {
+          "description": "The flow the link opens under: `board`, or the flow whose `state` it hangs off.",
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "when": {
+          "description": "What has to hold for the inner flow to run under `state`; empty when always.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "flow",
+        "exits",
+        "parent",
+        "when"
+      ],
+      "title": "SubFlow",
+      "type": "object"
+    },
+    "SunsDelta": {
+      "additionalProperties": false,
+      "properties": {
+        "suns": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "suns"
+      ],
+      "title": "SunsDelta",
+      "type": "object"
+    },
+    "TaskDelta": {
+      "additionalProperties": false,
+      "description": "A Board task that moved (`agent` null once it left the lanes).",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RawAgent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "settled": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Settled"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "agent",
+        "settled"
+      ],
+      "title": "TaskDelta",
+      "type": "object"
+    },
+    "TaskRecord": {
+      "additionalProperties": false,
+      "description": "`GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.",
+      "properties": {
+        "record": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "record"
+      ],
+      "title": "TaskRecord",
+      "type": "object"
+    },
+    "Tie": {
+      "additionalProperties": false,
+      "description": "Where a lifecycle machine is entered from.\n\n`declared` is a SubFlow on `machine`'s `state`; `observed` is the state the task held on `machine` when its session\nentered this one; `dag` is a launch by `dag`, which names no machine or state. `count` is the sessions entered\nthrough it, null for a launch.",
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "declared",
+            "observed",
+            "dag"
+          ],
+          "type": "string"
+        },
+        "machine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "when": {
+          "description": "What has to hold for a declared tie to run; empty otherwise.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "machine",
+        "state",
+        "count",
+        "dag",
+        "when"
+      ],
+      "title": "Tie",
+      "type": "object"
+    },
+    "TrailStep": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "event": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "event",
+        "at"
+      ],
+      "title": "TrailStep",
+      "type": "object"
+    },
+    "Trajectories": {
+      "additionalProperties": false,
+      "description": "`GET /api/level/trajectories`: the paths of the runs that ended in a terminal over a window.",
+      "properties": {
+        "betweenness": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "bottleneck": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bottleneck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chain": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ChainState"
+          },
+          "type": "object"
+        },
+        "ended": {
+          "type": "integer"
+        },
+        "gates": {
+          "items": {
+            "$ref": "#/$defs/GateSummary"
+          },
+          "type": "array"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "history_s": {
+          "type": "number"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "norm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Norm"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "now": {
+          "type": "number"
+        },
+        "outliers": {
+          "items": {
+            "$ref": "#/$defs/Outlier"
+          },
+          "type": "array"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/TrajectoryRun"
+          },
+          "type": "array"
+        },
+        "variants": {
+          "items": {
+            "$ref": "#/$defs/Variant"
+          },
+          "type": "array"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "history_s",
+        "machine",
+        "goal",
+        "ended",
+        "variants",
+        "norm",
+        "outliers",
+        "chain",
+        "betweenness",
+        "bottleneck",
+        "gates",
+        "runs"
+      ],
+      "title": "Trajectories",
+      "type": "object"
+    },
+    "TrajectoryRun": {
+      "additionalProperties": false,
+      "properties": {
+        "gates": {
+          "items": {
+            "$ref": "#/$defs/RunGate"
+          },
+          "type": "array"
+        },
+        "path": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reached_goal": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "task",
+        "path",
+        "reached_goal",
+        "gates"
+      ],
+      "title": "TrajectoryRun",
+      "type": "object"
+    },
+    "Transition": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "event"
+      ],
+      "title": "Transition",
+      "type": "object"
+    },
+    "UnknownLaneWarning": {
+      "additionalProperties": false,
+      "description": "A lane that is no Board state.",
+      "properties": {
+        "kind": {
+          "const": "unknown_lane",
+          "type": "string"
+        },
+        "lane": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "lane",
+        "message"
+      ],
+      "title": "UnknownLaneWarning",
+      "type": "object"
+    },
+    "Variant": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "path": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "share": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "path",
+        "count",
+        "share"
+      ],
+      "title": "Variant",
+      "type": "object"
+    },
+    "WindowRequest": {
+      "additionalProperties": false,
+      "description": "`PUT /api/history-window`: set the shared history window.",
+      "properties": {
+        "hours": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "hours"
+      ],
+      "title": "WindowRequest",
+      "type": "object"
+    },
+    "WindowState": {
+      "additionalProperties": false,
+      "description": "`/api/history-window`: the effective window, the declared default, and whether Admin's override is in effect.",
+      "properties": {
+        "default": {
+          "type": "number"
+        },
+        "hours": {
+          "type": "number"
+        },
+        "overridden": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hours",
+        "default",
+        "overridden"
+      ],
+      "title": "WindowState",
+      "type": "object"
+    },
+    "WindowTooLong": {
+      "additionalProperties": false,
+      "description": "A level window longer than the history, with the history's length.",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "history_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "error",
+        "history_s"
+      ],
+      "title": "WindowTooLong",
+      "type": "object"
+    },
+    "Writer": {
+      "additionalProperties": false,
+      "description": "Who fires a Board event: a runs workflow (by `<instance>/<workflow>` name), `operator` or `agent`.",
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "trigger": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actor",
+        "trigger"
+      ],
+      "title": "Writer",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The root of `api.schema.json`: every body as a property, so the generated types name each one.",
+  "properties": {
+    "answers": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Moved"
+          },
+          {
+            "$ref": "#/$defs/Edited"
+          },
+          {
+            "$ref": "#/$defs/Archived"
+          },
+          {
+            "$ref": "#/$defs/Created"
+          },
+          {
+            "$ref": "#/$defs/Started"
+          },
+          {
+            "$ref": "#/$defs/RunStarted"
+          },
+          {
+            "$ref": "#/$defs/Accepted"
+          },
+          {
+            "$ref": "#/$defs/ForwardAccepted"
+          },
+          {
+            "$ref": "#/$defs/InsightPosted"
+          },
+          {
+            "$ref": "#/$defs/InsightRetracted"
+          },
+          {
+            "$ref": "#/$defs/ApiError"
+          },
+          {
+            "$ref": "#/$defs/SkillRefusal"
+          },
+          {
+            "$ref": "#/$defs/StaleEdit"
+          },
+          {
+            "$ref": "#/$defs/WindowTooLong"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "contractReport": {
+      "$ref": "#/$defs/ContractReport"
+    },
+    "events": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/TaskDelta"
+          },
+          {
+            "$ref": "#/$defs/MoveDelta"
+          },
+          {
+            "$ref": "#/$defs/DagsDelta"
+          },
+          {
+            "$ref": "#/$defs/PullsDelta"
+          },
+          {
+            "$ref": "#/$defs/ClaimDelta"
+          },
+          {
+            "$ref": "#/$defs/SunsDelta"
+          },
+          {
+            "$ref": "#/$defs/LedgersDelta"
+          },
+          {
+            "$ref": "#/$defs/InsightDelta"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "forwardingStatus": {
+      "$ref": "#/$defs/ForwardingStatus"
+    },
+    "forwardingUnconfigured": {
+      "$ref": "#/$defs/ForwardingUnconfigured"
+    },
+    "harnesses": {
+      "$ref": "#/$defs/Harnesses"
+    },
+    "health": {
+      "$ref": "#/$defs/Health"
+    },
+    "laneHistory": {
+      "$ref": "#/$defs/LaneHistory"
+    },
+    "level": {
+      "$ref": "#/$defs/Level"
+    },
+    "machineHistory": {
+      "$ref": "#/$defs/MachineHistory"
+    },
+    "machines": {
+      "$ref": "#/$defs/Machines"
+    },
+    "merges": {
+      "$ref": "#/$defs/Merges"
+    },
+    "requests": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/MoveRequest"
+          },
+          {
+            "$ref": "#/$defs/StartRequest"
+          },
+          {
+            "$ref": "#/$defs/EditRequest"
+          },
+          {
+            "$ref": "#/$defs/ArchiveRequest"
+          },
+          {
+            "$ref": "#/$defs/CreateRequest"
+          },
+          {
+            "$ref": "#/$defs/WindowRequest"
+          },
+          {
+            "$ref": "#/$defs/ForwardingRequest"
+          },
+          {
+            "$ref": "#/$defs/RunEventRequest"
+          },
+          {
+            "$ref": "#/$defs/ForwardRequest"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/Snapshot"
+    },
+    "taskRecord": {
+      "$ref": "#/$defs/TaskRecord"
+    },
+    "trajectories": {
+      "$ref": "#/$defs/Trajectories"
+    },
+    "windowState": {
+      "$ref": "#/$defs/WindowState"
+    }
+  },
+  "required": [
+    "snapshot",
+    "events",
+    "merges",
+    "machines",
+    "laneHistory",
+    "machineHistory",
+    "health",
+    "level",
+    "trajectories",
+    "harnesses",
+    "windowState",
+    "forwardingStatus",
+    "forwardingUnconfigured",
+    "contractReport",
+    "taskRecord",
+    "requests",
+    "answers"
+  ],
+  "title": "ApiContract",
+  "type": "object"
+}

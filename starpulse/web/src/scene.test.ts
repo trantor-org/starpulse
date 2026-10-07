@@ -3,11 +3,11 @@ import { BOARD_GROW, build, GALAXY_MAX, GALAXY_MIN, Drawn, routed, clip, curveDi
 import { ledgerLevel, type Level } from "./levels";
 import { merge, Moves } from "./sky";
 import { emptyNote } from "./machineRows";
-import type { Cue, Dag, LedgerRow, Machine, Snapshot } from "./types";
+import type { Cue, Dag, LedgerRow, Machine, Snapshot } from "./api";
 
 const dag = (name: string, steps: [string, string[]][] = []): Dag => ({
   name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "",
-  steps: steps.map(([n, depends]) => ({ name: n, depends, status: "succeeded" })),
+  steps: steps.map(([n, depends]) => ({ name: n, depends, status: "succeeded", kind: null })),
 });
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
   states: ids.map((id, i) => ({ id, name: id, initial: i === 0, final: false })),

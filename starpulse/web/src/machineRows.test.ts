@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { age, firstOpened, rankRows, rowMeta, stuckCount } from "./machineRows";
-import type { FlowSnapshot, Stuck, Tie } from "./types";
+import type { FlowSnapshot, Stuck, Tie } from "./api";
 
 const NOW = 1_800_000_000;
 const tie = (kind: Tie["kind"], machine: string | null, state: string | null, count: number | null, dag: string | null = null, when = ""): Tie => ({ kind, machine, state, count, dag, when });

@@ -124,6 +124,10 @@ def test_the_first_event_carries_each_open_tasks_milestone(tmp_path: Path) -> No
     assert {a["id"]: a["milestone"] for a in snapshot["flows"][0]["agents"]} == {"PROJ-1": "m-76", "PROJ-2": ""}
 
 
+#: A workflow as the page reads it: the API refuses a body short of a field its model names.
+_DAG = {"name": "d", "status": "succeeded", "runId": "1", "startedAt": "", "finishedAt": "", "steps": []}
+
+
 def _machine_fields(task: str) -> dict:
     return {"machine": "in-progress", "event": "WORKTREE_READY", "task": task, "time": str(time.time())}
 
@@ -137,7 +141,7 @@ def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Pat
             first = _next_event(resp)
             feed.put(task("PROJ-1", "In Progress"))
             second = _next_event(resp)
-            feed.set_dags("ci", [{"name": "d"}], None)
+            feed.set_dags("ci", [_DAG], None)
             third = _next_event(resp)
             MachineTasks(feed).handle_entry("1-0", _machine_fields("PROJ-1"))
             fourth = _next_event(resp)
@@ -147,7 +151,7 @@ def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Pat
     assert [(a["id"], a["state"]) for a in first[1]["flows"][0]["agents"]] == [("PROJ-1", "to_do")]
     assert second[0] == "task"
     assert (second[1]["id"], second[1]["agent"]["state"], second[1]["settled"]) == ("PROJ-1", "in_progress", None)
-    assert (third[0], third[1]["dags"]) == ("dags", [{"name": "ci/d"}])
+    assert (third[0], [d["name"] for d in third[1]["dags"]]) == ("dags", ["ci/d"])
     assert (fourth[0], fourth[1]["flow"], fourth[1]["id"], fourth[1]["agent"]["state"]) == (
         "move",
         "in-progress",

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PAGE, begin, chip, dragMove, dragStart, ease, fail, footer, keyScroll, newScroll, place, receive, scrollToKey, take, thumbOf, wantsPage, wheelScroll, type Scroll, type Viewport,
 } from "./ledgerScroll";
-import type { LedgerRow } from "./types";
+import type { LedgerRow } from "./api";
 
 const row = (n: number, at = 100_000 - n * 60): LedgerRow => ({ key: `m${n}`, at, tasks: [`T-${n}`], runs: {}, fails: {}, pinned: false });
 const rows = (from: number, count: number) => Array.from({ length: count }, (_, i) => row(from + i));

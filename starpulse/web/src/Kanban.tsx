@@ -24,7 +24,7 @@ import { NewTaskAction } from "./NewTask";
 import { SearchClear } from "./SearchClear";
 import { TaskView } from "./TaskView";
 import { fetchRecord, type TaskRecord } from "./taskView";
-import type { Capabilities, Pull } from "./types";
+import type { Capabilities, Pull } from "./api";
 
 /** A milestone's header: the key the snapshot carries, or the bucket for tasks with none. */
 const milestoneName = (milestone: string) => milestone || "No milestone";
@@ -129,7 +129,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
         </div>
       ) : live && (
         <div className={`mach${now - live.at < HOT_S ? " hot" : ""}`}>
-          <span className={live.source ? "p mapped" : "p"} title={live.source && `mapped from ${live.source}`} /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
+          <span className={live.source ? "p mapped" : "p"} title={live.source ? `mapped from ${live.source}` : undefined} /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
         </div>
       )}
       {!compact && (

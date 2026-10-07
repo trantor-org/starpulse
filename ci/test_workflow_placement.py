@@ -20,7 +20,7 @@ def job(workflow: str, name: str) -> dict:
 
 @pytest.mark.parametrize(
     ("workflow", "name"),
-    [("ci.yml", "python"), ("ci.yml", "web"), ("ui-preview.yml", "render"), ("ui-preview.yml", "leak-scan")],
+    [("ci.yml", "python"), ("ci.yml", "web"), ("ci.yml", "api-types"), ("ui-preview.yml", "render"), ("ui-preview.yml", "leak-scan")],
 )
 def test_pull_request_job_runs_on_the_validate_lane(workflow, name):
     assert job(workflow, name)["runs-on"] == VALIDATE_LANE
@@ -43,7 +43,8 @@ def test_publishing_job_runs_on_a_hosted_runner(name):
 
 
 @pytest.mark.parametrize(
-    ("workflow", "name"), [("ci.yml", "web"), ("release.yml", "build"), ("ui-preview.yml", "render")]
+    ("workflow", "name"),
+    [("ci.yml", "web"), ("ci.yml", "api-types"), ("release.yml", "build"), ("ui-preview.yml", "render")],
 )
 def test_node_is_installed_before_pnpm(workflow, name):
     """`pnpm/action-setup` installs pnpm with the runner's `npm`, which fails under the system Node of a validate runner."""

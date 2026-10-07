@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanban";
 import { merge } from "./sky";
 import type { TaskRecord } from "./taskView";
-import type { Pull, RawAgent, Snapshot } from "./types";
+import type { Pull, RawAgent, Snapshot } from "./api";
 
 const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
 const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): KanbanTask => ({

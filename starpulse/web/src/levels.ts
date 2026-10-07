@@ -3,7 +3,7 @@
 // Pure: which machines open where, the path to any of them, and where an old URL
 // lands.
 import { pathOf, tiesOf, type Source } from "./ledger";
-import type { Snapshot } from "./types";
+import type { Snapshot } from "./api";
 
 /** The DAGs a Board fold stands for, the criteria that tie them to the Board and the two Board states of the path they write (null beside one state). */
 export interface Fold {

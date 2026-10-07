@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DemoServer, ROUTES, demoLive, stepRuns, type DemoFixture } from "./demo";
 import { PAGE } from "./ledgerScroll";
 import { NO_HARNESSES, fetchHarnesses, postStart } from "./start";
-import type { FlowSnapshot, LedgerRow, Machine, RawAgent, RunStatus, Snapshot } from "./types";
+import type { FlowSnapshot, LedgerRow, Machine, RawAgent, RunStatus, Snapshot } from "./api";
 import type { TaskRecord } from "./taskView";
 
 const machine = (initial: string, edges: [string, string, string][], final = ""): Machine => {
@@ -46,7 +46,7 @@ const lane = (s: DemoServer, id: string) => s.snapshot.flows[0].agents.find((a) 
 
 /** The fixture with a DAG that writes MERGED and one cued by it, so its Board has a Ledger. */
 function tied(): DemoFixture {
-  const f = fixture(), steps = (names: string[]) => names.map((n, i) => ({ name: n, depends: i ? [names[i - 1]] : [], status: "succeeded" as RunStatus }));
+  const f = fixture(), steps = (names: string[]) => names.map((n, i) => ({ name: n, depends: i ? [names[i - 1]] : [], status: "succeeded" as RunStatus, kind: null }));
   f.flows[0].machine = { ...BOARD, writers: { MERGED: [{ actor: "main-follow", trigger: "push" }] }, dagActors: ["main-follow"] };
   f.cues = [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge", resolves: "forced" }];
   f.dags = ["main-follow", "apply-on-merge"].map((name) => ({ name, status: "succeeded" as RunStatus, runId: "r", startedAt: "", finishedAt: "", steps: steps(["a", "b"]) }));
@@ -501,7 +501,7 @@ const fan = (...at: string[]): Snapshot => ({
   ...fixture(),
   dags: [{
     name: "dagu/deliver", status: "running", runId: "deliver-agent-demo-1", startedAt: "", finishedAt: "", pool: "dagu/deliver",
-    steps: STEPS.map((name, i) => ({ name, depends: i ? [STEPS[i - 1]] : [], status: "not_started" as const })),
+    steps: STEPS.map((name, i) => ({ name, depends: i ? [STEPS[i - 1]] : [], status: "not_started" as const, kind: null })),
     active: at.map((step, i) => run(`deliver-agent-demo-${i + 1}`, step)),
   }],
   pools: [{ name: "dagu/deliver", cap: 2, running: at.length, queued: 0 }],

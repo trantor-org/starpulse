@@ -1,6 +1,6 @@
 // The machine ledger's rows: every machine entered from the machine at the top is one row under it. Pure: which machines are rows, in what
 // order, and what each row's meta column says. The renderer draws them; scene.ts places them under the top (machineLedger.ts).
-import type { FlowSnapshot } from "./types";
+import type { FlowSnapshot } from "./api";
 
 /**
  * The machines entered from `top`, newest activity first. One sequence, nothing pinned: a machine with a task stuck keeps the place its last

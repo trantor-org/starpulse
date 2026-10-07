@@ -1,6 +1,6 @@
 // The machine ledger's top: the In Progress machine fixed across the top of its level, in screen pixels. Pure layout: where each
 // state sits, how tall the top is and where each state's name goes. The renderer draws it; scene.ts places it on the level.
-import type { MachineState, Transition } from "./types";
+import type { MachineState, Transition } from "./api";
 
 export interface LedgerMachine {
   states: MachineState[];

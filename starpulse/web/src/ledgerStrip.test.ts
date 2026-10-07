@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PAGE, newScroll, take, type Viewport } from "./ledgerScroll";
 import { inView, stripLabel, stripMarks } from "./ledgerStrip";
-import type { LedgerRow, MergeStrip } from "./types";
+import type { LedgerRow, MergeStrip } from "./api";
 
 // 15:00 MST on Oct 7 2026; each merge lands five minutes before the one above it.
 const NOW = Date.UTC(2026, 9, 7, 22, 0) / 1000;

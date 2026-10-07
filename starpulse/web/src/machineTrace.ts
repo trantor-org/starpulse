@@ -1,6 +1,6 @@
 // A task's path across the machine ledger: every session it has in the template and in the machines entered from it, in time order. Pure; the
 // renderer draws it over the ledger (drawTop, drawLane).
-import type { FlowSnapshot, RawAgent } from "./types";
+import type { FlowSnapshot, RawAgent } from "./api";
 
 export interface Session {
   machine: string;

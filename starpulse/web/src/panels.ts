@@ -3,7 +3,7 @@ import { apiFetch } from "./demo";
 import { queryString } from "./nav";
 import type { FanRow, QueueRow } from "./fan";
 import type { Sky } from "./sky";
-import type { RawAgent } from "./types";
+import type { RawAgent } from "./api";
 
 export const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 

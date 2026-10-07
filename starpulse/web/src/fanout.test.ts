@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fanBadge, fanTip, poolRows, RunEvents, stepRings, stepStatus } from "./fanout";
-import type { ActiveRun, Dag, DagStep, Pool, RunStatus } from "./types";
+import type { ActiveRun, Dag, DagStep, Pool, RunStatus } from "./api";
 
 const pool = (name: string, cap: number, running: number, queued = 0): Pool => ({ name, cap, running, queued });
 
@@ -285,7 +285,7 @@ describe("the DAG tooltip's fan-out line", () => {
 describe("the rings a DAG's runs raise on its glyph", () => {
   const whole = (active: ActiveRun[], status: RunStatus = "running", runId = "a", steps: Partial<Record<string, RunStatus>> = {}): Dag => ({
     name: "deliver", status, runId, startedAt: "", finishedAt: "", pool: "deliver", active,
-    steps: STEPS.map((name): DagStep => ({ name, depends: [], status: steps[name] ?? "not_started" })),
+    steps: STEPS.map((name): DagStep => ({ name, depends: [], status: steps[name] ?? "not_started", kind: null })),
   });
 
   it("rings, amber, the step a run enters", () => {

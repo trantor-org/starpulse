@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { EMPTY_DRAFT, createOutcome, newTaskKey, postCreate, type NewTaskDraft } from "./newTask";
 import { PRIORITIES } from "./taskView";
-import type { Capabilities } from "./types";
+import type { Capabilities } from "./api";
 
 type Field = Exclude<keyof NewTaskDraft, "acceptanceCriteria">;
 

@@ -35,7 +35,7 @@ import { createHistory } from "./history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
 import { dagData } from "./dags";
-import type { ContractReport, Dag, LedgerRow, Machine, MachineEntry, RawAgent, Snapshot, Writer } from "./types";
+import type { ContractReport, Dag, LedgerRow, Machine, MachineEntry, RawAgent, Snapshot, Writer } from "./api";
 import { fanBadge, fanTip, stepStatus } from "./fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "./fan";
@@ -936,7 +936,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   /** The three parts of a DAG panel that follow its runs: the Queue row, the Steps chips and the In-flight list. */
   function fanParts(o: Dag, now: number) {
-    const sky = S!, q = queueRow(o, snap?.pools), rows = fanRows(fans[o.name] ?? emptyFan(), o, now, sky.board.agents.map((a) => a.id));
+    const sky = S!, q = queueRow(o, snap?.pools ?? undefined), rows = fanRows(fans[o.name] ?? emptyFan(), o, now, sky.board.agents.map((a) => a.id));
     const last = `${esc(o.status)}${o.finishedAt ? ` ${hhmm(finished(o.finishedAt))} MST` : ""}`;
     return {
       queue: q ? queueCell(q) : "",
@@ -1150,7 +1150,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   /** A mapped machine (machine.source: a third party moves it) is drawn like a local one, in a colour of its own: blue, never purple. */
   const EXT = "#60a5fa";
-  const sourceOf = (flow: string | null | undefined) => (flow ? S?.flows[flow]?.machine.source : undefined);
+  const sourceOf = (flow: string | null | undefined) => (flow ? S?.flows[flow]?.machine.source ?? undefined : undefined);
   /** A machine's name; a mapped machine's name and source are in its colour, and the pair keeps the alignment the name had. */
   function machineName(s: string, x: number, y: number, size: number, col: string, align: CanvasTextAlign, src?: string) {
     if (!src) return text(s, x, y, size, col, align, 300);

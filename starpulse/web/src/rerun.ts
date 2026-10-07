@@ -1,6 +1,6 @@
 // The Ledger's forced rerun: the one request, whose refusal comes back as a value for the merge panel to show.
 import { apiFetch } from "./demo";
-import type { Dag } from "./types";
+import type { Dag } from "./api";
 
 export type RerunResult = { ok: true; runId: string } | { ok: false; reason: string };
 

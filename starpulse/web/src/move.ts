@@ -34,7 +34,7 @@ export const targets = (task: KanbanTask, columns: string[]): Record<string, Tar
       const verdict = task.moves[column];
       if (column === task.lane) return [column, { kind: "here" }];
       if (!verdict) return [column, { kind: "no" }];
-      return [column, verdict.allowed ? { kind: "ok" } : { kind: "guard", reason: verdict.reason, skill: verdict.skill }];
+      return [column, verdict.allowed ? { kind: "ok" } : { kind: "guard", reason: verdict.reason ?? "", skill: verdict.skill ?? "" }];
     }),
   );
 

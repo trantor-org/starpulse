@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { heldBy, sessionsOf, traceSteps } from "./machineTrace";
-import type { FlowSnapshot, RawAgent } from "./types";
+import type { FlowSnapshot, RawAgent } from "./api";
 
 /** A machine whose states run in a line, `a → b → c`, with no line back. */
 function flow(name: string, ids: string[], agents: RawAgent[] = []): FlowSnapshot {

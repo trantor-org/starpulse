@@ -1,7 +1,7 @@
 // A merge Ledger's scroll: the rows run under the fixed templates by wheel, key or thumb, older merges load a page at a time when the footer row comes
 // into view, and a merge that lands while the reader is scrolled down counts on a chip instead of moving the rows in view. Pure: every function takes
 // the state and returns the next, in the world units the scene laid the viewport out in, and knows nothing of the canvas, the network or the clock.
-import type { LedgerRow } from "./types";
+import type { LedgerRow } from "./api";
 
 /** Merges the server sends at a time: the snapshot's head, and each page `/api/merges` answers. */
 export const PAGE = 20;

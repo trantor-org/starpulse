@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyFan, fanRows, LINGER_FAILED_S, LINGER_S, queueRow, stepRuns, track } from "./fan";
 import { RunEvents } from "./fanout";
-import type { ActiveRun, Dag, Pool, RunStatus } from "./types";
+import type { ActiveRun, Dag, Pool, RunStatus } from "./api";
 
 const STEPS = ["refuse", "lint", "wait_ci"];
 const at = (s: number) => new Date(s * 1000).toISOString();
@@ -23,7 +23,7 @@ const dag = (active: ActiveRun[], o: Partial<Dag> = {}): Dag => ({
   runId: "",
   startedAt: "",
   finishedAt: "",
-  steps: STEPS.map((name) => ({ name, depends: [], status: "not_started" as const })),
+  steps: STEPS.map((name) => ({ name, depends: [], status: "not_started" as const, kind: null })),
   active,
   pool: "dagu/deliver",
   ...o,

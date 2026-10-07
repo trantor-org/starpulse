@@ -4,9 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DagData } from "./dags";
 import { Dags } from "./Dags";
-import type { Dag, DagStep, Machine, RunStatus } from "./types";
+import type { Dag, DagStep, Machine, RunStatus } from "./api";
 
-const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded", kind?: string): DagStep => ({ name, depends, status, kind });
+const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded", kind?: string): DagStep => ({ name, depends, status, kind: kind ?? null });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
   name, status, runId: "run-abc", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", steps: [step("scan"), step("fix", ["scan"], "succeeded", "agent")], pool: "runs/main", ...over,
 });

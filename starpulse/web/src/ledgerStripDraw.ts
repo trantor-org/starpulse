@@ -4,7 +4,7 @@ import { clockHm, type ClockMode } from "./clock";
 import type { Ink } from "./ledgerRows";
 import { stripLabel, stripMarks } from "./ledgerStrip";
 import type { LedgerView } from "./scene";
-import type { LedgerRow, MergeStrip } from "./types";
+import type { LedgerRow, MergeStrip } from "./api";
 
 const ACT = "#fbbf24", MUTED = "#94a3b8", HOUR = 3600, DAY = 86400;
 

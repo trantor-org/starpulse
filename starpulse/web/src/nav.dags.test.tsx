@@ -19,8 +19,8 @@ vi.mock("./renderer", async (original) => ({
 const dagData: DagData = {
   now: 100,
   dags: [
-    { name: "runs/pr-watch", status: "succeeded", runId: "", startedAt: "", finishedAt: "1970-01-01T00:01:00Z", steps: [{ name: "scan", depends: [], status: "succeeded" }], pool: "runs/main" },
-    { name: "runs/sweep", status: "not_started", runId: "", startedAt: "", finishedAt: "", steps: [{ name: "scan", depends: [], status: "not_started" }] },
+    { name: "runs/pr-watch", status: "succeeded", runId: "", startedAt: "", finishedAt: "1970-01-01T00:01:00Z", steps: [{ name: "scan", depends: [], status: "succeeded", kind: null }], pool: "runs/main" },
+    { name: "runs/sweep", status: "not_started", runId: "", startedAt: "", finishedAt: "", steps: [{ name: "scan", depends: [], status: "not_started", kind: null }] },
   ],
   domains: [{ name: "Board", dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/sweep", runSafe: false }] }],
   pools: [{ name: "runs/main", cap: 2, running: 1, queued: 0 }],

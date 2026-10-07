@@ -2,7 +2,7 @@
 // the catalog, and where a step sits in its constellation. The page's snapshot reaches it as one DagData, read from the Sky.
 import { BOARD_COLOR } from "./scene";
 import type { Sky } from "./sky";
-import type { Cue, Dag, DagStep, Domain, Machine, Pool } from "./types";
+import type { Cue, Dag, DagStep, Domain, Machine, Pool } from "./api";
 
 /** Everything the DAGs view reads from the snapshot: the DAGs, their domains, the pools, the cues, each machine and the server's clock. */
 export interface DagData {

@@ -1,6 +1,6 @@
 // A DAG's runs in flight, as the panel lists them: one row per run, the queue they share and what each step holds.
 import { outcome, taskIn } from "./fanout";
-import type { ActiveRun, Dag, Pool, RunStatus } from "./types";
+import type { ActiveRun, Dag, Pool, RunStatus } from "./api";
 
 /** Seconds a finished run's row stays in its outcome colour; a failed run's stays twice as long. */
 export const LINGER_S = 6;

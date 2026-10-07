@@ -94,7 +94,16 @@ def base(tmp_path: Path) -> Iterator[str]:
     feed.put(task("PROJ-3", "Done", settled="completed"))
     feed.put(task("PROJ-4", "In Progress", milestone="m-2", labels=("api",), assignee="@agent-a"))
     feed.put(task("PROJ-5", "Ready"))
-    pull = {"number": 5, "url": PULL, "checks": "pass", "merged": False, "threads": 2, "stale": False}
+    pull = {
+        "number": 5,
+        "url": PULL,
+        "checks": "pass",
+        "merged": False,
+        "merge_sha": None,
+        "merged_at": None,
+        "threads": 2,
+        "stale": False,
+    }
     feed.set_pulls({"PROJ-1": [pull]})
     for task_id, state in (("PROJ-1", "worktree_ready"), ("PROJ-2", "worktree_ready"), ("PROJ-4", "green")):
         feed.move(
@@ -317,7 +326,18 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         "labels": ["cli"],
         "dependencies": ["PROJ-2", "PROJ-3"],
         "waiting_on": ["PROJ-2"],
-        "prs": [{"number": 5, "url": PULL, "checks": "pass", "merged": False, "threads": 2, "stale": False}],
+        "prs": [
+            {
+                "number": 5,
+                "url": PULL,
+                "checks": "pass",
+                "merged": False,
+                "merge_sha": None,
+                "merged_at": None,
+                "threads": 2,
+                "stale": False,
+            }
+        ],
         "moves": {
             "in_progress": {"allowed": False, "reason": "claim it first", "skill": "starting-tasks"},
             "ready": {"allowed": True, "reason": "", "skill": ""},

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RerunStore, postRerun, rerunLine, type RerunResult } from "./rerun";
-import type { Dag } from "./types";
+import type { Dag } from "./api";
 
 const reply = (status: number, body: string) => async () => new Response(body, { status });
 

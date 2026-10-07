@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import type { KanbanTask } from "./kanban";
 import { BOARD, type Path, type Tree } from "./levels";
 import type { DagData } from "./dags";
-import type { Capabilities, Pool } from "./types";
+import type { Capabilities, Pool } from "./api";
 
 /** One line of the activity feed: a move, a DAG run ending, or a run starting, queueing, changing step or ending. */
 export interface FeedLine {

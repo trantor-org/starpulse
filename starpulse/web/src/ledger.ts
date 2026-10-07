@@ -2,7 +2,7 @@
 // the frame lists the writer and then each cue, left to right, under the path the transition takes. Pure: it reads the snapshot's Board machine
 // and cues, and says what a Ledger holds, never how it is drawn.
 import type { Fold } from "./levels";
-import type { Cue, LedgerRow, LedgerRun, Machine, RunStatus } from "./types";
+import type { Cue, LedgerRow, LedgerRun, Machine, RunStatus } from "./api";
 
 /** The Board event whose occurrences are pull request merges; every other event's are tasks entering a lane. */
 export const MERGE_EVENT = "MERGED";
@@ -10,7 +10,7 @@ export const MERGE_EVENT = "MERGED";
 /** What a Ledger reads: the Board machine and the cues. */
 export interface Source {
   flows: { name: string; machine: Machine }[];
-  cues?: Cue[];
+  cues?: Cue[] | null;
 }
 
 /** A DAG tied to the event: the one that writes it (`on` its trigger) or a cue (`on` the occasion it runs, `resolves` how its failure clears). */

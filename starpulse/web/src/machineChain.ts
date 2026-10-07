@@ -4,7 +4,7 @@
 // line hung from the state it is entered from (four lines at most, then `+N deeper`), then its name; names that would not fit their block
 // alternate between two baselines. Pure layout, down from the row's top; the renderer draws it.
 import { layers, sizes, type Block, type Layers } from "./machineLedger";
-import type { FlowSnapshot } from "./types";
+import type { FlowSnapshot } from "./api";
 
 /** A machine entered from another: its states along its machine, and the machines entered from each. */
 export interface Nest {

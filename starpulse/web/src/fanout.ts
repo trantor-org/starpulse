@@ -2,7 +2,7 @@
 // and end, and on each DAG's glyph the badge, step status, tooltip line and rings. All read the runs contract's `pools` and each DAG's
 // `active` runs, never a simulation.
 import { esc } from "./panels";
-import type { ActiveRun, Dag, Pool } from "./types";
+import type { ActiveRun, Dag, Pool } from "./api";
 
 /** How many run lines the feed keeps. */
 const KEEP = 12;

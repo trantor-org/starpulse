@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Ink } from "./ledgerRows";
 import { drawStrip, type StripFrame } from "./ledgerStripDraw";
 import { stripLabel, stripMarks } from "./ledgerStrip";
-import type { LedgerRow, MergeStrip } from "./types";
+import type { LedgerRow, MergeStrip } from "./api";
 
 const NOW = Date.UTC(2026, 9, 7, 22, 0) / 1000;
 const row = (n: number, over: Partial<LedgerRow> = {}): LedgerRow => ({ key: `m${n}`, at: NOW - n * 300, tasks: [], runs: {}, fails: {}, pinned: false, ...over });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fetchMerges } from "./ledgerPage";
-import type { LedgerRow } from "./types";
+import type { LedgerRow } from "./api";
 
 const row = (n: number): LedgerRow => ({ key: `m${n}`, at: 1000 - n, tasks: [], runs: {}, fails: {}, pinned: false });
 const reply = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));

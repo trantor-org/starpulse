@@ -9,7 +9,7 @@ import { statusLine, type LineCtx } from "./ledger";
 import { portOf, type Pins } from "./ledgerPins";
 import { PAGE, chip, footer, place, thumbOf, type Scroll } from "./ledgerScroll";
 import type { Glyph, LedgerView } from "./scene";
-import type { LedgerRow } from "./types";
+import type { LedgerRow } from "./api";
 
 export const AMBER = "#f59e0b";
 export const CROSS = "#c084fc";

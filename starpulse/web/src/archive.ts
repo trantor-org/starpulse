@@ -1,7 +1,7 @@
 // Archiving a task from the task view: what the confirm warns about, the one request, and the cards an archive removes.
 import { apiFetch } from "./demo";
 import type { KanbanTask } from "./kanban";
-import type { Pull } from "./types";
+import type { Pull } from "./api";
 
 /** Work that outlives the archive: the task's open pull request and the agent session still working it. */
 export interface ArchiveWarnings {

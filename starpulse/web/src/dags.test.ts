@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { bigPlace, chartHeight, dagData, filterRows, order, place, RECENCY, refusal, rows, ties, type DagData } from "./dags";
-import type { Dag, DagStep, Machine, RunStatus } from "./types";
+import type { Dag, DagStep, Machine, RunStatus } from "./api";
 
-const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status });
+const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
   name, status, runId: "", startedAt: "", finishedAt: "", steps: [step("a"), step("b", ["a"])], ...over,
 });

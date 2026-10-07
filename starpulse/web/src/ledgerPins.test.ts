@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PAGE, newScroll, place, take, type Viewport } from "./ledgerScroll";
 import { pinsOf, portOf, withPins } from "./ledgerPins";
-import type { LedgerFail, LedgerRow } from "./types";
+import type { LedgerFail, LedgerRow } from "./api";
 
 const open = (resolved: LedgerFail["resolved"] = null): LedgerFail => ({ runId: "r", step: "apply", startedAt: "", finishedAt: "", resolves: "forced", resolved });
 const row = (n: number, over: Partial<LedgerRow> = {}): LedgerRow => ({ key: `m${n}`, at: 100_000 - n * 60, tasks: [`T-${n}`], runs: {}, fails: {}, pinned: false, ...over });

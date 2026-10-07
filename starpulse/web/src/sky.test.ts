@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { countText, merge, Moves, RING, stateCount, TRAVEL } from "./sky";
-import type { ActiveRun, Dag, Machine, RawAgent, Snapshot } from "./types";
+import type { ActiveRun, Dag, Machine, RawAgent, Snapshot } from "./api";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
   states: ids.map((id, i) => ({ id, name: id.replace(/_/g, " "), initial: i === 0, final: false })),
@@ -244,7 +244,7 @@ describe("the step rings a run raises", () => {
   const entered = (runId: string, step: string): ActiveRun => ({ runId, status: "running", startedAt: "", step, stepStartedAt: "", steps: { lint: "not_started", push: "not_started" } });
   const withRuns = (now: number, active: ActiveRun[]): Snapshot => {
     const s = snap(now, [], []);
-    const dag: Dag = { name: "deliver", status: "running", runId: "a", startedAt: "", finishedAt: "", steps: [{ name: "lint", depends: [], status: "not_started" }, { name: "push", depends: ["lint"], status: "not_started" }], active, pool: "deliver" };
+    const dag: Dag = { name: "deliver", status: "running", runId: "a", startedAt: "", finishedAt: "", steps: [{ name: "lint", depends: [], status: "not_started", kind: null }, { name: "push", depends: ["lint"], status: "not_started", kind: null }], active, pool: "deliver" };
     return { ...s, dags: [dag], pools: [{ name: "deliver", cap: 32, running: active.length, queued: 0 }] };
   };
 
