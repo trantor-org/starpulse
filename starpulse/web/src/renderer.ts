@@ -8,7 +8,7 @@
 // zooms about the cursor between the level's fit and eight times it, and a drag
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
 import { demoStep } from "./demo";
-import { RunEvents } from "./fanout";
+import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, drill, pathKey, startPath, type Level, type Path } from "./levels";
@@ -129,12 +129,27 @@ export interface Renderer {
   openDag(name: string): void;
   /** Fly to a domain's DAGs on the Board. */
   flyToGroup(name: string): void;
-  /** Light the body a navigator search result stands for, as a hover over it would; null clears it. */
-  spot(target: Target | null): void;
+  /** Light the body a navigator search result stands for, as a hover over it would; null clears it. With `near`, a task the level does not draw lights its state instead. */
+  spot(target: Target | null, near?: boolean): void;
+  /** Open a task's panel on the level showing: pinned, as a click on it would, where the level draws it, else its Board panel. */
+  openTask(id: string): void;
   /** Pin a task on the Board and open its panel, as a click on it would. */
   selectTask(id: string): void;
   /** The Admin view changed how times are written: write the subtitle, the Recent feed and the header clock again. */
   refresh(): void;
+}
+
+/** The Recent feed's newest 40 lines at `now`: each move, each DAG run's line, and a DAG's own line for a run no run line ended. */
+export function feedOf(moves: Move[], dags: Dag[], runs: RunLine[], now: number): Omit<FeedLine, "time">[] {
+  const ev: Omit<FeedLine, "time">[] = moves.filter((e) => e.at <= now).map((e, i) => ({ key: `m${i}`, at: e.at, who: e.task ?? "", what: e.event.toLowerCase(), where: e.flow, task: e.task ?? undefined }));
+  // a run line already says how its run ended, so the DAG's own line for that run is left out
+  const told = new Set(runs.filter((l) => l.tone).map((l) => l.runId));
+  for (const d of dags) {
+    const f = finished(d.finishedAt);
+    if (f <= now && !told.has(d.runId)) ev.push({ key: `d${d.name}`, at: f, who: d.name, what: "", where: d.status, dag: d.name });
+  }
+  ev.push(...runs);
+  return ev.sort((a, b) => b.at - a.at).slice(0, 40);
 }
 
 export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement; clock: HTMLElement }, demo: boolean, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS): Renderer {
@@ -151,7 +166,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let pin: Subject | null = null;
   const pages: Record<string, number> = {};
   // what a navigator search result under the pointer stands for, lit while the pointer is off the canvas
-  let spotted: Target | null = null;
+  let spotted: Target | null = null, spotNear = false;
   let hover: Hover | null = null, mouse: { ox: number; oy: number; cx: number; cy: number } | null = null;
   let trans: { snap: HTMLCanvasElement; inward: boolean; f: Pt; t0: number } | null = null, anim: ((now: number) => void) | null = null;
   let drag: { fixed: boolean; x: number; y: number; vx: number; vy: number; moved: boolean } | null = null;
@@ -389,16 +404,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** Every quarter second: the feed and the navigator's moving machines, written only when they change. */
   function heartbeat() {
     if (!S) return;
-    const ev: Omit<FeedLine, "time">[] = EVENTS().filter((e) => e.at <= T).map((e, i) => ({ key: `m${i}`, at: e.at, who: e.task ?? "", what: e.event.toLowerCase(), where: e.flow }));
-    // a run line already says how its run ended, so the DAG's own line for that run is left out
-    const told = new Set(runEvents.lines.filter((l) => l.tone).map((l) => l.runId));
-    for (const d of S.dags) {
-      const f = finished(d.finishedAt);
-      if (f <= T && !told.has(d.runId)) ev.push({ key: `d${d.name}`, at: f, who: d.name, what: "", where: d.status });
-    }
-    ev.push(...runEvents.lines);
-    ev.sort((a, b) => b.at - a.at);
-    const feed: FeedLine[] = ev.slice(0, 40).map((l) => ({ ...l, time: hhmm(l.at) })), mv = [...new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => e.flow))].sort();
+    const feed: FeedLine[] = feedOf(EVENTS(), S.dags, runEvents.lines, T).map((l) => ({ ...l, time: hhmm(l.at) })), mv = [...new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => e.flow))].sort();
     const now = hud.get();
     if (feed.map((f) => f.key + f.at + f.time).join() !== now.feed.map((f) => f.key + f.at + f.time).join()) hud.set({ feed });
     if (mv.join() !== now.moving.join()) hud.set({ moving: mv });
@@ -1482,7 +1488,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (anim) anim(now);
     if (scene) update(clock);
     if (mouse && scene) setHover(hit((mouse.ox - view.x) / view.k, (mouse.oy - view.y) / view.k), mouse.cx, mouse.cy);
-    else if (spotted && scene && !trans) hover = spotIn(scene, spotted) as Hover | null;
+    else if (spotted && scene && !trans) hover = (spotIn(scene, spotted) ?? (spotNear && spotted.kind === "task" ? spotIn(scene, { kind: "state", id: spotted.lane }) : null)) as Hover | null;
     const dpr = devicePixelRatio || 1;
     cx.globalAlpha = 1;
     cx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1634,8 +1640,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       if (level().kind !== "dags") go([...BOARD, { kind: "dags" }], W / 2, H / 2, box);
       else flyTo(box());
     },
-    spot(target) {
+    spot(target, near = false) {
       spotted = target;
+      spotNear = near;
       if (!target) hover = null;
       loop.wake();
     },
@@ -1644,6 +1651,19 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       publish();
       heartbeat();
       paintClock();
+    },
+    openTask(id) {
+      if (!S || !scene) return;
+      const h = spotIn(scene, { kind: "task", id, lane: "" }) as Hover | null, raw = S.board.agents.find((a) => a.id === id);
+      if (h) {
+        hover = h;
+        click(W / 2, H / 2);
+      } else if (raw) {
+        pin = null;
+        panel.innerHTML = taskPanel(raw, S, stateName);
+        openPanel();
+      }
+      loop.wake();
     },
     selectTask(id) {
       if (!S) return;

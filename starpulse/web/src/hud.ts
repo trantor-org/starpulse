@@ -18,6 +18,10 @@ export interface FeedLine {
   tone?: "ok" | "failed";
   /** Born after the page's first read: the feed flashes it once. */
   fresh?: boolean;
+  /** The task the line is about, which hovering it lights and clicking it opens. */
+  task?: string;
+  /** The DAG that wrote it, which the line lights on the Star Map when it names no task. */
+  dag?: string;
 }
 export interface BoardState {
   id: string;

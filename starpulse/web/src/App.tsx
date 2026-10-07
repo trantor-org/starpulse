@@ -34,6 +34,9 @@ export function App() {
   // so does a started session: the card waits in In progress for its agent's claim whichever view is showing
   const [starts] = useState(() => new StartStore(postStart, moves));
   useEffect(() => void fetchHarnesses().then((h) => starts.load(h)), [starts]);
+  // a hovered Recent line lights its task on the view showing: the Kanban hears it as a task to spot and says why it has no card
+  const [line, setLine] = useState<string | null>(null), [spotted, setSpotted] = useState<string | null>(null);
+  const [why, setWhy] = useState<string | null>(null), [opening, setOpening] = useState<{ id: string } | null>(null);
   const folded = useSyncExternalStore(fold.subscribe, fold.get);
   const prefs = useSyncExternalStore(admin.subscribe, admin.get);
   // a bare address opens the view the Admin chose; one that names a view opens that
@@ -85,9 +88,22 @@ export function App() {
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
       {view === "admin" && <Admin store={admin} window={historyWindow} forwarding={forwarding} />}
       {view === "kanban" && (
-        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }} />
+        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
+          spot={spotted} note={setWhy} opening={opening} />
       )}
-      <Rail hud={hud} view={view} />
+      <Rail hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
+        can={(l) => (view === "kanban" ? !!l.task : view === "constellation" && !!(l.task || l.dag))}
+        spot={(l) => {
+          setLine(l?.key ?? null);
+          if (view === "kanban") return setSpotted(l?.task ?? null);
+          const lane = (id: string) => hud.cards.find((c) => c.id === id)?.lane ?? "";
+          renderer.current?.spot(!l ? null : l.task ? { kind: "task", id: l.task, lane: lane(l.task) } : { kind: "dag", name: l.dag! }, true);
+        }}
+        pick={(l) => {
+          if (view === "kanban") setOpening({ id: l.task! });
+          else if (l.task) renderer.current?.openTask(l.task);
+          else renderer.current?.openDag(l.dag!);
+        }} />
       <div ref={tip} id="tip" />
       <div ref={panel} id="panel" />
     </>
@@ -262,13 +278,13 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
   );
 }
 
-function Rail({ hud, view }: { hud: HudState; view: ViewName }) {
+function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
   return (
     <aside id="rail">
       <section className="recent">
         <h3>Recent</h3>
         <div id="feed">
-          <FeedLines lines={hud.feed} />
+          <FeedLines lines={hud.feed} {...feed} />
         </div>
       </section>
       <section id="legend">
