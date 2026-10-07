@@ -176,7 +176,7 @@ export function Dags({ data, post }: { data: DagData | null; post?: Post }) {
       </header>
       <div className="filters">
         <div className="fw">
-          <input type="text" placeholder="filter by name, step or domain…" aria-label="Filter DAGs by name, step or domain" autoComplete="off" spellCheck={false} value={q}
+          <input id="dgq" type="text" placeholder="filter by name, step or domain…" aria-label="Filter DAGs by name, step or domain" autoComplete="off" spellCheck={false} value={q}
             onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQ("")} />
         </div>
         <div className="fw">

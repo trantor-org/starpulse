@@ -65,16 +65,16 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #nav .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--run); margin-right: 7px; vertical-align: 1px; box-shadow: 0 0 8px currentColor; }
 #nav .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); } #nav .dot.off { background: var(--fail); }
 #clock { color: var(--run); font: calc(10.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
-#q, #kbq { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: color-mix(in srgb, var(--slate) 6%, transparent);
+#q, #kbq, #dgq { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: color-mix(in srgb, var(--slate) 6%, transparent);
   font-size: calc(12px * var(--fs)); color: var(--ink); }
-#q:focus, #kbq:focus { border-color: var(--agent); }
+#q:focus, #kbq:focus, #dgq:focus { border-color: var(--agent); }
 /* The Star Map entry's orbit icon draws in place of the ring every other node keeps. */
 .node .g.orbit { border: 0; border-radius: 0; width: 14px; height: 14px; display: grid; place-items: center; }
 .node .g.orbit svg { display: block; }
 /* One ✕ per search at the input's right end, scaled with the text; the browser's own cancel button would draw a second. */
 .has-x { position: relative; }
-#q, #kbq { padding-right: calc(24px * var(--fs)); }
-#q::-webkit-search-cancel-button, #kbq::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+#q, #kbq, #dgq { padding-right: calc(24px * var(--fs)); }
+#q::-webkit-search-cancel-button, #kbq::-webkit-search-cancel-button, #dgq::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
 .sx { all: unset; box-sizing: border-box; position: absolute; z-index: 1; top: 50%; right: 5px; transform: translateY(-50%); cursor: pointer; display: grid; place-items: center;
   width: calc(18px * var(--fs)); height: calc(18px * var(--fs)); border-radius: 4px; color: var(--muted); font-size: calc(11px * var(--fs)); line-height: 1; }
 .sx:hover, .sx:focus-visible { color: var(--ink); background: color-mix(in srgb, var(--slate) 14%, transparent); }
@@ -693,7 +693,7 @@ body.dags canvas, body.dags #tip, body.dags #panel { visibility: hidden; }
 .orb.o-failed { background: var(--bg0); border-color: var(--fail); }
 .orb.o-idle { background: var(--pop); border-color: var(--faint); }
 @media (prefers-reduced-motion: reduce) { .orb.o-running { animation: none; } }
-#dg header .sky { margin-left: auto; }
+#dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
 .census { display: inline-flex; align-items: center; gap: 10px; margin-left: 8px; font-size: calc(11px * var(--fs)); font-weight: 400; letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
 .census > span { display: inline-flex; align-items: center; gap: 5px; }
 #dg #catalog { flex: 1; min-height: 0; padding-bottom: 16px; --grid: 18px minmax(120px, 1fr) minmax(150px, 1.5fr) minmax(130px, 1fr) minmax(70px, .5fr) minmax(100px, .8fr) 0; }
