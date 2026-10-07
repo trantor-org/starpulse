@@ -44,6 +44,8 @@
     const easeO = (u) => 1 - Math.pow(1 - u, 3), ease = (u) => (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, u) => a + (b - a) * u, smooth = (u) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
     let FS = 1;
+    // review option: how a row shows where its nesting is (&nest=stub|mini|ring); badge is the approved text alone
+    let NESTV = ["stub", "mini", "ring"].includes(P.get("nest")) ? P.get("nest") : "badge";
     const readFS = () => (FS = parseFloat(getComputedStyle(document.documentElement).fontSize) / 16 || 1);
     const NAVW = () => parseInt(getComputedStyle(document.documentElement).getPropertyValue("--nav")) || 52, RAILW = () => document.getElementById("rail").offsetWidth;
 
@@ -493,10 +495,41 @@
         : `${ag.length} task${ag.length === 1 ? "" : "s"} · ${idle ? `idle ${age(simT - lastIn(r.m))}` : `last ${hhmm(lastIn(r.m))}`}`;
       text(fit(l3 + (seeded.has(r.m) ? " · seeded" : ""), sp, L.metaW), mx, ty + px * 1.4 + sp * 2.25, sp, st.length || ns.length ? rgba(OFF, 0.9) : rgba(SUB, idle ? 0.5 : 0.7));
       for (const s of L.stars) if (s.row === r) { drawStarLine(s, now); drawStar(s); }
-      cx.globalAlpha = ga * (idle && !hot ? 0.75 : 1); drawEdgesOf(r.m, now); drawNodesOf(r.m); cx.globalAlpha = ga; drawTasksOf(r.m, y0, y1, now); rowLabels(r, hot); cx.globalAlpha = 1;
+      cx.globalAlpha = ga * (idle && !hot ? 0.75 : 1); drawEdgesOf(r.m, now); drawNodesOf(r.m); cx.globalAlpha = ga; drawTasksOf(r.m, y0, y1, now); drawNest(r, hot); rowLabels(r, hot); cx.globalAlpha = 1;
+    }
+    // review option (&nest=): each state of the row a machine is entered from shows it, beside the row's `N nested ›`
+    function drawNest(r, hot) {
+      r.nestBoxes = [];
+      if (NESTV === "badge") return;
+      const sp = PX.sub(), by = new Map();
+      for (const c of KIDS[r.m]) { const s = primary[c]?.ps; if (s) (by.get(s) || by.set(s, []).get(s)).push(c); }
+      for (const [s, ks] of by) { const n = node(r.m, s); if (!n) continue;
+        const deeper = ks.reduce((a, c) => a + desc(c).length, 0), o = orbitOf(n), al = hot ? 0.95 : 0.72, col = n.col;
+        const names = ks.length > 2 ? `${ks.length} machines` : ks.join(", "), more = deeper ? ` +${deeper} deeper` : "", mw = textW(more, sp);
+        if (NESTV === "ring") { // a dashed halo round the state and a chip with how many machines sit under it
+          cx.strokeStyle = rgba(PLANET, al); cx.lineWidth = 1.2; cx.setLineDash([2, 3]); cx.beginPath(); cx.arc(n.x, n.y, o + 4, 0, TAU); cx.stroke(); cx.setLineDash([]);
+          const t = String(ks.length + deeper), w = Math.max(textW(t, sp) + 8, sp * 1.5), qx = n.x + (o + 4) * 0.72, qy = n.y - (o + 4) * 0.72;
+          cx.fillStyle = rgba(PLANET, 0.9); cx.beginPath(); cx.roundRect(qx - w / 2, qy - sp * 0.75, w, sp * 1.5, sp * 0.75); cx.fill();
+          text(t, qx, qy, sp, "rgba(6,10,20,.95)", "center");
+          r.nestBoxes.push({ x: n.x, y: n.y, r: o + 6 }, { x0: qx - w / 2, x1: qx + w / 2, y0: qy - sp, y1: qy + sp }); continue; }
+        const yb = r.cy + r.h - 12 * FS, y0 = n.y + o + 2;
+        if (NESTV === "stub") { // a dashed drop from the state to the template's notch, the machines named beside it
+          cx.strokeStyle = rgba(col, al * 0.8); cx.lineWidth = 1.2; cx.setLineDash([2, 3]); cx.beginPath(); cx.moveTo(n.x, y0); cx.lineTo(n.x, yb - 6); cx.stroke(); cx.setLineDash([]);
+          cx.fillStyle = rgba(col, al); cx.beginPath(); cx.moveTo(n.x - 4.5, yb - 7); cx.lineTo(n.x + 4.5, yb - 7); cx.lineTo(n.x, yb - 1); cx.closePath(); cx.fill();
+          const lab = fit(names, sp, Math.max(30, L.x1 - n.x - 14 - mw)), lw = textW(lab, sp); text(lab, n.x + 9, yb - 4, sp, rgba(PLANET, al)); if (more) text(more, n.x + 9 + lw, yb - 4, sp, rgba(SUB, 0.7));
+          r.nestBoxes.push({ x0: n.x - 6, x1: n.x + 6, y0, y1: yb }, { x0: n.x + 6, x1: n.x + 12 + lw + mw, y0: yb - 4 - sp, y1: yb + 2 }); continue; }
+        // mini: each machine as a small line of its own states, hung from the state it is entered from
+        const dx = 7 * GS(); ks.slice(0, 2).forEach((c, i) => { const yy = yb - 4 - i * sp * 1.7, x0 = n.x + 12, st = G[c].order, d = desc(c).length;
+          cx.strokeStyle = rgba(col, al * 0.7); cx.lineWidth = 1.1; cx.setLineDash([2, 3]); cx.beginPath(); cx.moveTo(n.x, y0); cx.quadraticCurveTo(n.x, yy, x0 - 3, yy); cx.stroke(); cx.setLineDash([]);
+          cx.strokeStyle = rgba(SUB, 0.35); cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x0, yy); cx.lineTo(x0 + (st.length - 1) * dx, yy); cx.stroke();
+          st.forEach((_, j) => { cx.fillStyle = rgba(RAMP[Math.round((j / Math.max(1, st.length - 1)) * (RAMP.length - 1))], al); cx.beginPath(); cx.arc(x0 + j * dx, yy, 1.9 * GS(), 0, TAU); cx.fill(); });
+          const lx = x0 + (st.length - 1) * dx + 7, lab = fit(c, sp, Math.max(30, L.x1 - lx - 40)), lw = textW(lab, sp); text(lab, lx, yy, sp, rgba(PLANET, al));
+          if (d) text(` +${d} deeper`, lx + lw, yy, sp, rgba(SUB, 0.7));
+          r.nestBoxes.push({ x0: n.x - 6, x1: lx + lw + (d ? 60 : 0), y0: Math.min(y0, yy - sp), y1: yy + sp * 0.8 }); });
+        if (ks.length > 2) text(`+${ks.length - 2} more`, n.x + 12, yb - 4 - 2 * sp * 1.7, sp, rgba(SUB, 0.7)); }
     }
     // a row's state names alternate below and above its line; a name that would touch another, or leave the row, waits for the tooltip
-    function rowLabels(r, hot) { const placed = [...r.nodes.map((n) => ({ x: n.x, y: n.y, r: orbitOf(n) + 1 })), ...L.stars.filter((s) => s.row === r).map((s) => ({ x: s.x, y: s.y, r: 11 }))], px = PX.row(), h = px * 1.3, g2 = G[r.m];
+    function rowLabels(r, hot) { const placed = [...(r.nestBoxes || []), ...r.nodes.map((n) => ({ x: n.x, y: n.y, r: orbitOf(n) + 1 })), ...L.stars.filter((s) => s.row === r).map((s) => ({ x: s.x, y: s.y, r: 11 }))], px = PX.row(), h = px * 1.3, g2 = G[r.m];
       for (const n of r.nodes) { n.lab = null; const w = textW(n.label, px), o = orbitOf(n) + 1, up = n.oy < 0 || (n.oy === 0 && g2.depth[n.s] % 2 === 1), xx = clamp(n.x - w / 2, L.x0 - 26 * FS, L.x1 - w);
         // in a fan of three or more, the states above and below hold those places, so the name goes beside the state
         const side = [{ x: n.x + o + 8, y: n.y - h / 2 }, { x: n.x - o - 8 - w, y: n.y - h / 2 }], vert = (up ? [true, false] : [false, true]).map((u) => ({ x: xx, y: u ? n.y - o - 1.5 - h : n.y + o + 1.5 }));
@@ -728,7 +761,9 @@
     // ---- the address that reproduces the view, and the review-only text size switch
     function syncUrl() { const q = new URLSearchParams(location.search); selRow ? q.set("focus", selRow.m) : q.delete("focus"); topM !== IP ? q.set("open", topM) : q.delete("open"); q.delete("pick"); history.replaceState(null, "", `?${q}`); }
     function setFS(p) { document.documentElement.style.fontSize = p === 100 ? "" : `${p}%`; const q = new URLSearchParams(location.search); p === 100 ? q.delete("fs") : q.set("fs", p); history.replaceState(null, "", `?${q}`); dispatchEvent(new Event("resize")); }
-    function renderRev() { const fs = Math.round(FS * 100); revEl.innerHTML = `review · text ` + [100, 125, 150].map((p) => `<button data-fs="${p}" class="${p === fs ? "on" : ""}">${p}%</button>`).join("");
+    function renderRev() { const fs = Math.round(FS * 100); revEl.innerHTML = `review · text ` + [100, 125, 150].map((p) => `<button data-fs="${p}" class="${p === fs ? "on" : ""}">${p}%</button>`).join("") +
+        ` · nesting ` + ["badge", "stub", "mini", "ring"].map((v) => `<button data-nest="${v}" class="${v === NESTV ? "on" : ""}">${v}</button>`).join("");
+      revEl.querySelectorAll("[data-nest]").forEach((b) => (b.onclick = () => { NESTV = b.dataset.nest; const q = new URLSearchParams(location.search); NESTV === "badge" ? q.delete("nest") : q.set("nest", NESTV); history.replaceState(null, "", `?${q}`); renderRev(); }));
       revEl.querySelectorAll("[data-fs]").forEach((b) => (b.onclick = () => setFS(+b.dataset.fs))); }
     function resize() { DPR = devicePixelRatio || 1; NX = NAVW(); W = innerWidth - RAILW(); H = innerHeight; CW = W - NX; CH = H;
       for (const c of [cv, buf]) { c.width = W * DPR; c.height = H * DPR; } cv.style.width = `${W}px`; cv.style.height = `${H}px`;
