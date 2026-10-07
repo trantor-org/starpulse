@@ -339,6 +339,16 @@ def _fill(line: list[str], start: int, now: float) -> list[tuple]:
     return rows
 
 
+def _workable(i: int, state: str, after: int | None, now: float) -> dict:
+    """Since when seeded task `i` has been workable, for the Leaderboard: an open task that waits on no other has been
+    for between a quarter hour and three days, spread by its number; one that waits on another is held (None). A Waiting
+    task is held too unless it is every fifth, which waits on something that is not a task."""
+    if state in ("new", "done"):
+        return {}
+    held = i % 5 != 0 if state == "waiting" else after is not None
+    return {"workable_since": None if held else now - 900 * (1 + i * 7 % 300)}
+
+
 def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
     """`SEED` as a live Board's tasks, the pull requests the server would have read for them, and the day's settled
     tasks; with the Board machine's main `line`, `_fill`'s tasks and `FILL_SETTLED` too."""
@@ -351,6 +361,7 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
             {"id": ids[i], "state": state, "model": model, "milestone": milestone, "labels": labels}
             | ({"dependencies": [ids[after]]} if after is not None else {})
             | ({"created": created} if created is not None else {})
+            | _workable(i, state, after, now)
         )
         if pull:
             pulls[ids[i]] = [
