@@ -47,7 +47,6 @@ export interface HudState {
   /** The snapshot's DAGs with their domains, pools, cues and machines, which the DAGs view draws; null before the first read. */
   dagData: DagData | null;
   /** The DAG domains the navigator's DAGs section flies to. */
-  groups: { name: string; n: number }[];
   /** The concurrency pools the navigator's Queues section lists; empty when the adapter reports none. */
   pools: Pool[];
   feed: FeedLine[];
@@ -67,7 +66,7 @@ export interface HudState {
 export class HudStore {
   private state: HudState = {
     stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, hostCounts: {}, dags: [], dagData: null,
-    moving: [], groups: [], pools: [], feed: [], cards: [], names: {}, claims: {}, boardUrl: null,
+    moving: [], pools: [], feed: [], cards: [], names: {}, claims: {}, boardUrl: null,
   };
   private listeners = new Set<() => void>();
 

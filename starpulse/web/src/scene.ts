@@ -36,14 +36,8 @@ export interface Glyph {
   h: number;
   br: number;
 }
-/**
- * A Board DAG's one tether, drawn only while it is hovered: to the middle of the path carrying most of its criteria, else to the state it sits
- * beside. A cue is a looser tie than a write, so a tether made only of cues is fainter. `crit` is the hover's list of every criterion.
- */
+/** A Ledger template's tie to its event, drawn only while it is hovered. A cue is a looser tie than a write. `crit` is the hover's list of every criterion. */
 export interface Tether extends Pt {
-  edge?: BEdge;
-  /** The body the tether ends on the rim of: a Board state's galaxy, or a state level's primary or moon. */
-  g?: Pt & { R: number; id?: string };
   cue: boolean;
   crit: string[];
 }
@@ -55,16 +49,6 @@ export interface Star extends Dag, Pt {
   group: string;
   runnable: boolean;
   tether?: Tether;
-  /** A body that stands for several DAGs on one path (or beside one state): the DAGs it folds, in name order. */
-  fold?: string[];
-  /** The skill machine a state level's launch-only DAG orbits. */
-  owned?: Planet;
-}
-/** Every DAG that writes no Board lane and is no cue, folded into one body at the right end of the axis. */
-export interface Hangar extends Pt {
-  r: number;
-  names: string[];
-  doms: number;
 }
 /** Anything tasks orbit: a Board state, a state level's sun, or a lifecycle machine. */
 export interface Host extends Pt {
@@ -176,8 +160,6 @@ export interface Planet extends Host {
   label?: string;
   /** How far the chain runs out past the moon's own orbits. */
   ext?: number;
-  /** How many launch-only DAGs orbit the moon. */
-  owned?: number;
   /** The body before this one in its row: the moon, or the sub-state ahead of it. */
   prev?: Planet;
   /** A paging control standing in for the lifecycle machines not drawn on this page. */
@@ -343,7 +325,6 @@ export interface Scene {
   hostTrail?: (id: string) => { at: number; host: string }[];
   /** A line of type's height in world units at the state level's fit zoom. */
   moonLH?: number;
-  hangar?: Hangar;
   fold?: FoldView;
   /** A state level that opens a primary machine: that machine drawn across the top in screen pixels, over `mStates`, `mEdges` and `machineTasks`. */
   top?: MachineTop;
@@ -416,9 +397,6 @@ export const textW = (s: string, size: number) => s.length * size * 0.56 + 6;
 export const NAME_MAX = 10;
 export const clip = (s: string) => (s.length > NAME_MAX ? `${s.slice(0, NAME_MAX - 1)}…` : s);
 
-/** The tethers the page draws: a DAG's own while it is hovered, and none at rest. */
-export const tethersDrawn = (scene: Scene, hovered: Star | null): [Star, Tether][] =>
-  Object.values(scene.stars).filter((s) => s === hovered && s.tether).map((s): [Star, Tether] => [s, s.tether!]);
 /** The events a machine takes from one of its states back to the same state. */
 const loopsOf = (flow: { machine: { transitions: Transition[] } }, id: string) => flow.machine.transitions.filter((t) => t.source === id && t.target === id).map((t) => t.event);
 /** A Board state's radius: GALAXY_MIN with no tasks, growing with the square root of its count to GALAXY_MAX, which it reaches near 450 tasks. */
@@ -505,10 +483,10 @@ const orbit = (n: number, r: number, r0: number) => (n ? rings(n, r0, 9, 8).oute
 
 const CLEAR = 20, HOLD = 16;
 /**
- * The last Board's routed paths and settled DAG bodies, each keyed on everything that places it. A stream delta rarely moves a state, so the
- * next Board reuses both searches instead of running them again on every task move.
+ * The last Board's routed paths, keyed on everything that places them. A stream delta rarely moves a state, so the next Board reuses the
+ * search instead of running it again on every task move.
  */
-const last = { routes: { key: "", curves: [] as (Curve | null)[] }, bodies: { key: "", at: [] as Pt[] } };
+const last = { routes: { key: "", curves: [] as (Curve | null)[] } };
 /** The point on `g`'s rim facing `c`, where a path bending through `c` meets it. */
 const rim = (g: Galaxy, c: Pt) => {
   const ex = c.x - g.x, ey = c.y - g.y, l = Math.hypot(ex, ey) || 1;
@@ -619,8 +597,6 @@ export function rings(n: number, r0: number, gap: number, ringGap: number) {
   return { slots, radii, outer: radii.length ? radii[radii.length - 1] : r0 };
 }
 
-/** The gap between launch-only DAG dots beside a moon's name, in world units. */
-export const OWNED = 12;
 export const PAGE_SIZE = 12;
 /** How many times its base width the Board's sky may grow before its states page their machines sooner than PAGE_SIZE, each by its own size. */
 export const BOARD_GROW = 1.5;
@@ -666,24 +642,12 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   const sunSized = (id: string) => id in S.suns, busiest = Math.max(0, ...Object.values(S.suns));
   const stateName = (id: string) => board.machine.states.find((s) => s.id === id)?.name || id;
   const scene: Scene = { w: 2460, h: 1340, galaxies: {}, bEdges: [], tasks: [], machineTasks: [], mStates: {}, mEdges: [], planets: [], moons: [], subStates: [], stars: {}, groups: [], sun: null, flow: null, hub: null, hops: [], entries: [], exits: [] };
-  // Several DAGs on one path fold into one body. It runs while any of them runs, else shows the status of the one that finished last.
-  const folds: Record<string, Dag & { fold: string[] }> = {};
-  const foldOf = (ns: string[]) => {
-    const ds = ns.map((n) => dagBy[n]), fin = ds.map((d) => d.finishedAt).filter(Boolean).sort().at(-1) ?? "";
-    return { ...stub(`${ns.length} DAGs`), fold: ns, finishedAt: fin, status: ds.some((d) => d.status === "running") ? "running" : ds.find((d) => d.finishedAt === fin)?.status || "not_started" };
-  };
-  // a fold is a fanned stack of up to three steps, one per DAG, in each one's status colour
-  const fan = (ns: string[]): Glyph => {
-    const top = ns.slice(0, 3);
-    return { nodes: top.map((n, i) => ({ name: n, status: dagBy[n]?.status || "not_started", x: (i - (top.length - 1) / 2) * 9, y: -(i - (top.length - 1) / 2) * 5 })), links: [], w: 18, h: 10, br: 18 };
-  };
   // a DAG's instance prefix is drawn only where another instance runs a DAG by the same bare name
   const bare = (name: string) => name.slice(name.indexOf("/") + 1), bareCount = new Map<string, number>();
   for (const n of Object.keys(dagBy)) bareCount.set(bare(n), (bareCount.get(bare(n)) ?? 0) + 1);
-  const labelOf = (name: string) => folds[name]?.name ?? (bareCount.get(bare(name)) === 1 ? bare(name) : name);
-  const glyphOf = (name: string) => (folds[name] ? fan(folds[name].fold) : glyph(dagBy[name] || stub(name)));
+  const labelOf = (name: string) => (bareCount.get(bare(name)) === 1 ? bare(name) : name);
   const star = (name: string, x: number, y: number): Star => {
-    const d = folds[name] || dagBy[name] || stub(name), g = glyphOf(name);
+    const d = dagBy[name] || stub(name), g = glyph(d);
     return { ...d, label: labelOf(name), x, y, glyph: g, br: g.br, group: S.dagGroup[name] || "", runnable: S.runnable.has(name) };
   };
   // lay DAG glyphs side by side, centred on cx, so wide step graphs never overlap their neighbours
@@ -703,57 +667,6 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     host.rings = o.radii;
     return o.outer;
   };
-  // A Board DAG writes a Board lane or is cued by a Board event. Every other DAG is free, a launcher included, and lives on the DAGs level.
-  const boardTied = (n: string) => !!dagBy[n] && (Object.values(S.writers).some((ws) => ws.some((w) => w.actor === n)) || S.cues.some((c) => c.dag === n && !!board.machine.states.some((x) => x.id === c.state)));
-  const freeDags = () => S.groups.flatMap((g) => g.dags.filter((n) => !boardTied(n)));
-
-  // The DAGs level: every free DAG in one row of blocks, one per domain with its DAGs in name order under the domain's name, every block the
-  // same number of rows. F is the world size of one screen pixel at fit, since names are drawn at screen size.
-  function dock(w: number, F: number) {
-    const size = (n: string) => {
-      const g = glyph(dagBy[n] || stub(n));
-      return { n, hw: Math.max(g.w / 2 + 12, (textW(labelOf(n), 11) * F) / 2 + 6), up: g.h / 2 + 10, dn: g.h / 2 + 16 * F + 12 };
-    };
-    type Item = ReturnType<typeof size>;
-    const doms = S.groups.map((g) => ({ name: g.name, items: g.dags.filter((n) => !boardTied(n)).map(size) })).filter((d) => d.items.length);
-    const GAP = 18, BGAP = 70, LBL = 24 * F;
-    for (let R = 1; ; R++) {
-      const blocks = doms.map((d) => {
-        const total = d.items.reduce((a, q) => a + 2 * q.hw, 0) + GAP * (d.items.length - 1), rows: Item[][] = [[]];
-        let acc = 0;
-        for (const q of d.items) {
-          if (rows.at(-1)!.length && rows.length < R && acc + GAP + q.hw > total / R) {
-            rows.push([]);
-            acc = 0;
-          }
-          acc += 2 * q.hw + (rows.at(-1)!.length ? GAP : 0);
-          rows.at(-1)!.push(q);
-        }
-        const rw = rows.map((r) => r.reduce((a, q) => a + 2 * q.hw, 0) + GAP * (r.length - 1)), up = rows.map((r) => Math.max(...r.map((q) => q.up))), dn = rows.map((r) => Math.max(...r.map((q) => q.dn)));
-        return { name: d.name, rows, rw, up, dn, w: Math.max(...rw), h: LBL + rows.reduce((a, _, i) => a + up[i] + dn[i], 0) + 8 * (rows.length - 1) };
-      });
-      const width = blocks.reduce((a, b) => a + b.w, 0) + BGAP * (blocks.length - 1);
-      if (width > w - 120 && R < 8) continue;
-      const items: { n: string; x: number; y: number }[] = [], labels: { name: string; x: number; y: number }[] = [];
-      let x = w / 2 - width / 2;
-      for (const b of blocks) {
-        const mid = x + b.w / 2;
-        let y = LBL;
-        labels.push({ name: b.name, x: mid, y: LBL * 0.4 });
-        b.rows.forEach((r, i) => {
-          let rx = mid - b.rw[i] / 2;
-          for (const q of r) {
-            items.push({ n: q.n, x: rx + q.hw, y: y + b.up[i] });
-            rx += 2 * q.hw + GAP;
-          }
-          y += b.up[i] + b.dn[i] + 8;
-        });
-        x += b.w + BGAP;
-      }
-      return { h: Math.max(0, ...blocks.map((b) => b.h)), width, items, labels, rows: R };
-    }
-  }
-
   function buildBoard() {
     // The Board's places come from its machine and its declared main line, scaled to the sky.
     const states = board.machine.states, transitions = board.machine.transitions;
@@ -813,20 +726,13 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // The sky takes the canvas's shape, and the states fill it.
     const A = W / H, MINW = 1860, GAP = 40;
     let w = Math.max(MINW, Math.round(950 * A)), F = w / (0.94 * W);
-    let hb = 0, clipped = false, Fcap = Infinity;
+    let clipped = false, Fcap = Infinity;
     const sizes: Record<string, number> = Object.fromEntries(states.map((st) => [st.id, PAGE_SIZE]));
     const w0 = w, hb0 = Math.round(w / A) - 40, sx = (w - 300) / spanX, sy = Math.min(1.25, (hb0 - 200) / spanY);
-    // No state reaches its neighbour: where a state's tasks come within GAP of the next state beside it (or, when DAGs write the path between
-    // the two, within the width of that path's DAG body, one DAG or its fold), that state and every state right of it move over until they
-    // clear. The sky then grows to hold them, keeping the canvas's shape, and to keep the stacked states and their names on it. A wider sky
-    // prints every name wider (F), so the sizes are measured again at each width until the sky holds them.
-    const pathDags = (a: { id: string }, b: { id: string }) => [...new Set(transitions.filter((t) => (t.source === a.id && t.target === b.id) || (t.source === b.id && t.target === a.id))
-      .flatMap((t) => [...(S.writers[t.event] || []).map((wr) => wr.actor), ...S.cues.filter((c) => c.event === t.event).map((c) => c.dag)]).filter(boardTied))];
-    const gapOf = (a: { id: string }, b: { id: string }) => {
-      const ds = pathDags(a, b);
-      return ds.length ? GAP + (ds.length > 1 ? Math.max(60, textW(`${ds.length} DAGs`, 11) * F) : Math.max(glyph(dagBy[ds[0]]).w, textW(ds[0], 11) * F)) + 24 : GAP;
-    };
-    const SIDE = 20, free = freeDags(), doms = S.groups.filter((g) => g.dags.some((n) => free.includes(n))).length;
+    // No state reaches its neighbour: where a state's tasks come within GAP of the next state beside it, that state and every state right of it
+    // move over until they clear. The sky then grows to hold them, keeping the canvas's shape, and to keep the stacked states and their names on
+    // it. A wider sky prints every name wider (F), so the sizes are measured again at each width until the sky holds them.
+    const SIDE = 20;
     const fit = (width: number) => {
       F = Math.min(width / (0.94 * W), Fcap);
       const sized = Object.fromEntries(states.map((st) => [st.id, radius(st)]));
@@ -850,18 +756,13 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
           for (const p of down) p.y += over / 2;
         }
       }
-      // the DAGs hangar holds the right end of the axis, opposite New, and keeps clear of the states beside it as a state does: its disc, its
-      // ring of dots and the name and count below it. It starts 2 px right of the last column, past the 1 px separate() reads as one column,
-      // so a state ending the axis there pushes it clear instead of sharing its place.
-      const hangHW = Math.max(31, (Math.max(textW("DAGs", 12.5), textW(`${free.length} · ${doms} domains`, 10.5)) * F) / 2);
-      const all = free.length ? [...ps, { id: "", R: 52 + 27 * F, x: Math.max(...ps.map((p) => p.x)) + 2, y: ps.find((p) => p.id === (board.machine.mainLine?.[0] ?? states[0].id))!.y }] : ps;
-      const reach = (p: { id: string; R: number }, sd: 1 | -1) => (p.id ? (sized[p.id].rows?.reach[sd > 0 ? 0 : 1] ?? p.R) : hangHW);
-      const shift = separate(all, gapOf, reach), grow = Math.max(0, ...shift.values());
+      const reach = (p: { id: string; R: number }, sd: 1 | -1) => sized[p.id].rows?.reach[sd > 0 ? 0 : 1] ?? p.R;
+      const shift = separate(ps, () => GAP, reach), grow = Math.max(0, ...shift.values());
       const over = Math.max(0, 56 * F - Math.min(...ps.map((p) => p.y - p.R)), Math.max(...ps.map((p) => p.y + p.R)) - (hb0 - 20));
       // the separation already widens the sky on the right; only the rest of the widening is centred
       const need = w0 + Math.ceil(Math.max(grow, 2 * over * A)), at = (p: (typeof ps)[number]) => p.x + shift.get(p)! + (need - w0 - grow) / 2;
-      const left = Math.max(0, SIDE - Math.min(...all.map((p) => at(p) - reach(p, -1)))), right = Math.max(0, Math.max(...all.map((p) => at(p) + reach(p, 1))) + left - (need - SIDE));
-      return { sized, ps: all, shift, grow, left, base: need, need: need + Math.ceil(left + right) };
+      const left = Math.max(0, SIDE - Math.min(...ps.map((p) => at(p) - reach(p, -1)))), right = Math.max(0, Math.max(...ps.map((p) => at(p) + reach(p, 1))) + left - (need - SIDE));
+      return { sized, ps, shift, grow, left, base: need, need: need + Math.ceil(left + right) };
     };
     // The width a sky needs rises about linearly with its width (names and rows are a fixed size on screen), so each pass solves the line
     // through the last two for where it meets the sky's own width; the widths are not sized apart, so a Board that cannot fit stops at the cap.
@@ -910,8 +811,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     w = Math.max(w, fitted.need);
     // each state's place and the sky's width ease toward the layout's targets, so a state changing size moves its neighbours and the fit smoothly
     for (const p of ps) {
-      p.x = ease(`${p.id || "hangar"}.x`, p.x + shift.get(p)! + (fitted.base - w0 - grow) / 2 + left + (w - fitted.need) / 2);
-      p.y = ease(`${p.id || "hangar"}.y`, p.y + (Math.round(w / A) - 40 - hb0) / 2);
+      p.x = ease(`${p.id}.x`, p.x + shift.get(p)! + (fitted.base - w0 - grow) / 2 + left + (w - fitted.need) / 2);
+      p.y = ease(`${p.id}.y`, p.y + (Math.round(w / A) - 40 - hb0) / 2);
     }
     w = ease("sky.w", w);
     F = Math.min(w / (0.94 * W), Fcap);
@@ -919,7 +820,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     scene.h = Math.round(w / A);
     scene.clipped = clipped;
     if (F < w / (0.94 * W)) scene.unit = F;
-    hb = scene.h - 40;
+    const hb = scene.h - 40;
     for (const st of states) {
       const p = ps.find((q) => q.id === st.id)!, { x, y } = p, { rows, ms, pg, here, on, at } = sized[st.id], r = ease(`${st.id}.r`, sized[st.id].r), R = ease(`${st.id}.R`, sized[st.id].R);
       const g: Galaxy = { id: st.id, name: st.name, x, y, r, n: stateCount(S, st.id), color: BOARD_COLOR[st.id] ?? "#94a3b8", final: st.final, today: daily(st) ? (S.today[st.id] ?? []).length : undefined, subs: SUBS[st.id] || [], R, moonR: 0, visR: 0, lab: { x, y }, reach: [R, R], loops: [] };
@@ -961,14 +862,13 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const gs = Object.values(scene.galaxies), pairs = merged(transitions, S.writers);
     const routeKey = JSON.stringify([w, hb, gs.map((g) => [g.id, g.x, g.y, g.R, g.final]), pairs.map((t) => [t.source, t.target]), [...routes]]);
     const reuse = last.routes.key === routeKey, curves: (Curve | null)[] = [];
-    const drawn = new Drawn(), stays: BEdge[] = [];
+    const drawn = new Drawn();
     for (const tr of pairs) {
       const a = scene.galaxies[tr.source], b = scene.galaxies[tr.target];
       if (!a || !b || a === b) curves.push(null);
       if (!a || !b) continue;
       if (a === b) {
         a.loops.push(...tr.events);
-        stays.push({ ...tr, loop: true });
         continue;
       }
       const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy), both = transitions.some((t) => t.source === tr.target && t.target === tr.source);
@@ -1002,194 +902,6 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const least = Math.min(...cands.map(on)), c = bestSide(cands.filter((x) => on(x) <= least + 1), pts);
       g.lab = { x: g.x, y: c.ly };
     }
-    // DAGs: one glyph and one name each. A Board DAG (it writes a Board transition or is cued by a Board event) keeps one tether, drawn only
-    // while it is hovered, to the middle of one path: the path carrying most of its criteria, a tie going to the path whose two states its
-    // criteria touch most. A cue rides the path of the event it runs beside. Several DAGs that sit on one path (or beside one state) fold into
-    // one body. A body settles beside its path so no glyph or name overlaps another, a state or a path. Every free DAG is on the DAGs level.
-    interface Crit { edge?: BEdge; states: string[]; cue: boolean; text: string }
-    const crit: Record<string, Crit[]> = {}, via = (e: BEdge) => `${stateName(e.source)} → ${stateName(e.target)}`;
-    for (const e of [...scene.bEdges, ...stays])
-      for (const wr of e.writers)
-        if (dagBy[wr.actor]) (crit[wr.actor] ||= []).push(e.loop
-          ? { states: [e.source], cue: false, text: `writes ${wr.event} (${stateName(e.source)})` }
-          : { edge: e, states: [e.source, e.target], cue: false, text: `writes ${wr.event} (${via(e)})` });
-    for (const c of S.cues) {
-      if (!scene.galaxies[c.state] || !dagBy[c.dag]) continue;
-      const e = scene.bEdges.find((x) => x.events.includes(c.event));
-      (crit[c.dag] ||= []).push({ edge: e, states: e ? [e.source, e.target] : [c.state], cue: true, text: `runs on ${c.on}, beside ${c.event} (${e ? via(e) : stateName(c.state)})` });
-    }
-    const tethers: Record<string, Tether> = {};
-    for (const [n, cs] of Object.entries(crit)) {
-      const tally: Record<string, number> = {};
-      for (const c of cs) for (const id of c.states) tally[id] = (tally[id] || 0) + 1;
-      const score = (e: BEdge) => [cs.filter((c) => c.edge === e).length, tally[e.source] + tally[e.target]];
-      const e = [...new Set(cs.flatMap((c) => (c.edge ? [c.edge] : [])))].sort((x, y) => { const [a1, a2] = score(x), [b1, b2] = score(y); return b1 - a1 || b2 - a2; })[0];
-      const cue = cs.every((c) => c.cue), text = cs.map((c) => c.text), g = scene.galaxies[Object.keys(tally).sort((x, y) => tally[y] - tally[x])[0]];
-      tethers[n] = e ? { ...bez(e.p0!, e.c!, e.p1!, 0.5), edge: e, cue, crit: text } : { x: g.x, y: g.y, g, cue, crit: text };
-    }
-    // DAGs on the same path (or beside the same state) fold into one body; its hover lists each of them with its criteria
-    const byKey = new Map<string, string[]>();
-    for (const n of Object.keys(tethers).sort()) {
-      const t = tethers[n], k = t.edge ? `${t.edge.source}>${t.edge.target}` : t.g!.id!;
-      byKey.set(k, [...(byKey.get(k) || []), n]);
-    }
-    for (const [k, ns] of byKey)
-      if (ns.length > 1) {
-        const key = `fold:${k}`;
-        folds[key] = foldOf(ns);
-        tethers[key] = { ...tethers[ns[0]], cue: ns.every((n) => tethers[n].cue), crit: ns.flatMap((n) => tethers[n].crit.map((t) => `${n}: ${t}`)) };
-        for (const n of ns) delete tethers[n];
-      }
-    // a body on a path sits off the middle of it, on the side the path bows to (above a straight one); one with no path sits on an arc round
-    // its state, centred on the side facing away from the middle of the Board
-    const homes: Record<string, Pt> = {}, taken = new Map<BEdge, number>(), rank: Record<string, number> = {}, byG = new Map<Galaxy, string[]>();
-    for (const n of Object.keys(tethers).sort()) {
-      const { edge, g } = tethers[n];
-      if (edge) {
-        rank[n] = taken.get(edge) || 0;
-        taken.set(edge, rank[n] + 1);
-      } else byG.set(g as Galaxy, [...(byG.get(g as Galaxy) || []), n]);
-    }
-    for (const [n, t] of Object.entries(tethers)) {
-      const e = t.edge;
-      if (!e) continue;
-      const gl = glyphOf(n), dx = e.p1!.x - e.p0!.x, dy = e.p1!.y - e.p0!.y, L = Math.hypot(dx, dy) || 1;
-      let nx = -dy / L, ny = dx / L;
-      const bow = (e.c!.x - (e.p0!.x + e.p1!.x) / 2) * nx + (e.c!.y - (e.p0!.y + e.p1!.y) / 2) * ny;
-      if (bow < -1 || (Math.abs(bow) <= 1 && ny > 0)) [nx, ny] = [-nx, -ny];
-      const r = 70 + Math.max(gl.w, gl.h) / 2 + 60 * rank[n];
-      homes[n] = { x: t.x + nx * r, y: t.y + ny * r };
-    }
-    for (const [g, ns] of byG) {
-      const ex = g.x - scene.w / 2, ey = g.y - hb / 2, l = Math.hypot(ex, ey), base = l > 40 ? Math.atan2(ey, ex) : Math.PI / 2, span = Math.min(Math.PI * 0.8, (ns.length - 1) * 0.6);
-      ns.forEach((n, i) => {
-        const a = base + (ns.length > 1 ? -span / 2 + (span * i) / (ns.length - 1) : 0), gl = glyphOf(n), r = g.R + 60 + Math.max(gl.w, gl.h) / 2;
-        homes[n] = { x: g.x + Math.cos(a) * r, y: g.y + Math.sin(a) * r };
-      });
-    }
-    const path = scene.bEdges.flatMap((e) => sample(curve(e), 40)), gal = Object.values(scene.galaxies);
-    const hwOf = (n: string) => Math.max(glyphOf(n).w / 2 + 12, (textW(labelOf(n), 11) * F) / 2 + 6);
-    const bodies = Object.keys(tethers).map((n) => {
-      const g = glyphOf(n), home = homes[n];
-      return { n, x: home.x, y: home.y, home, hw: hwOf(n), up: Math.max(g.h / 2 + 10, g.br + 6), dn: Math.max(g.h / 2, g.br) + 16 * F + 12, k: 0.03 };
-    });
-    const bodyKey = JSON.stringify([routeKey, scene.w, F, gal.map((g) => [g.name, g.lab.y, g.reach]), bodies.map((q) => [q.n, q.home.x, q.home.y, q.hw, q.up, q.dn])]);
-    if (last.bodies.key === bodyKey) bodies.forEach((q, i) => Object.assign(q, last.bodies.at[i]));
-    else settle();
-    last.bodies = { key: bodyKey, at: bodies.map((q) => ({ x: q.x, y: q.y })) };
-    function settle() {
-    // the path in runs of 8 points with each run's x extent, so a body skips every run beside it and checks the rest in path order
-    const px = Float64Array.from(path, (p) => p.x), py = Float64Array.from(path, (p) => p.y), runs = Math.ceil(px.length / 8);
-    const lo = Float64Array.from({ length: runs }, (_, r) => Math.min(...px.subarray(r * 8, r * 8 + 8))), hi = Float64Array.from({ length: runs }, (_, r) => Math.max(...px.subarray(r * 8, r * 8 + 8)));
-    // the pull toward home stops for the last tenth of the passes, so the separation settles exactly instead of balancing against it
-    for (let it = 0; it < 400; it++)
-      for (const q of bodies) {
-        const k = it < 360 ? q.k : 0;
-        q.x += (q.home.x - q.x) * k;
-        q.y += (q.home.y - q.y) * k;
-        for (const g of gal) {
-          const nx = Math.max(q.x - q.hw, Math.min(g.x, q.x + q.hw)), ny = Math.max(q.y - q.up, Math.min(g.y, q.y + q.dn)), d = Math.hypot(nx - g.x, ny - g.y), R = g.R + 34 + (g.lab.y < g.y ? 0 : 20);
-          if (d < R) {
-            const dx = q.x - g.x, dy = q.y - g.y, L = Math.hypot(dx, dy) || 1;
-            q.x += (dx / L) * Math.min(30, R - d);
-            q.y += (dy / L) * Math.min(30, R - d);
-          }
-          // a state's whole column of moon names is kept clear, not only its rim
-          if (g.reach[0] > g.R || g.reach[1] > g.R) {
-            const x0 = g.x - g.reach[1] - 10, x1 = g.x + g.reach[0] + 10, y0 = g.y - g.R - 10, y1 = g.y + g.R + 10;
-            if (q.x + q.hw > x0 && q.x - q.hw < x1 && q.y + q.dn > y0 && q.y - q.up < y1) q.y += (q.y < g.y ? -1 : 1) * Math.min(30, 1 + Math.min(q.y + q.dn - y0, y1 - (q.y - q.up)));
-          }
-          // the state's name and the count line under it
-          const lw = (Math.max(textW(g.name, 13), textW(`${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 11)) * F) / 2 + 8, ly = g.lab.y;
-          if (Math.abs(q.x - g.x) < q.hw + lw && ly > q.y - q.up - 30 && ly < q.y + q.dn + 30) q.y += (q.y < ly ? -1 : 1) * 6;
-        }
-        for (let ch = 0, x0 = q.x - q.hw - 6, x1 = q.x + q.hw + 6; ch < lo.length; ch++)
-          if (hi[ch] > x0 && lo[ch] < x1)
-            for (let i = ch * 8, end = Math.min(i + 8, px.length); i < end; i++)
-              if (px[i] > x0 && px[i] < x1 && py[i] > q.y - q.up - 6 && py[i] < q.y + q.dn + 6) q.y += (q.y < py[i] ? -1 : 1) * 1.5;
-        // neighbours last, so the other pulls cannot undo the separation and two DAGs that share a home end up apart
-        for (const o of bodies)
-          if (o !== q) {
-            const ox = q.hw + o.hw + 14 - Math.abs(q.x - o.x), oy = (q.y < o.y ? q.dn + o.up : o.dn + q.up) + 10 - Math.abs(q.y - o.y);
-            if (ox > 0 && oy > 0) {
-              // two bodies with no room to part vertically (one rests on the dock's edge) part sideways
-              const flat = Math.max(q.y, o.y) >= hb - Math.max(q.y > o.y ? q.dn : o.dn, 0) - 1;
-              if (flat || ox / (q.hw + o.hw) < oy / 60) q.x += ((q.x < o.x ? -1 : 1) * Math.min(ox, 12)) / 2;
-              else q.y += ((q.y < o.y ? -1 : 1) * Math.min(oy, 12)) / 2;
-            }
-          }
-        q.x = Math.max(q.hw + 20, Math.min(scene.w - q.hw - 20, q.x));
-        q.y = Math.max(q.up + 20, Math.min(hb - q.dn, q.y));
-      }
-    // bodies that still overlap (they were pressed against a state's ring) part vertically: the lower one moves down while the lane leaves room, else the upper one up
-    for (let pass = 0; pass < 40; pass++)
-      for (const q of bodies)
-        for (const o of bodies) {
-          const ox = q.hw + o.hw + 14 - Math.abs(q.x - o.x), oy = q.dn + o.up + 10 - (o.y - q.y);
-          if (o === q || q.y > o.y || ox <= 0 || oy <= 0) continue;
-          const down = Math.min(oy, Math.max(0, hb - o.dn - o.y));
-          o.y += down;
-          q.y -= oy - down;
-        }
-    // a body still on a state's name or its moon rows (caught between two names, the paths holding it there) takes the nearest height,
-    // up or down, where it clears every state, name and other body
-    const named = gal.map((g) => ({ g, lw: (Math.max(textW(g.name, 13), textW(`${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 11)) * F) / 2 + 8 }));
-    const clearAt = (q: (typeof bodies)[number], y: number) => named.every(({ g, lw }) => {
-      const wide = g.reach[0] > g.R || g.reach[1] > g.R, nx = Math.max(q.x - q.hw, Math.min(g.x, q.x + q.hw)), ny = Math.max(y - q.up, Math.min(g.y, y + q.dn));
-      if (wide ? q.x + q.hw > g.x - g.reach[1] - 10 && q.x - q.hw < g.x + g.reach[0] + 10 && y + q.dn > g.y - g.R - 10 && y - q.up < g.y + g.R + 10 : Math.hypot(nx - g.x, ny - g.y) < g.R + 10) return false;
-      return !(Math.abs(q.x - g.x) < q.hw + lw && y - q.up < g.lab.y + 21.5 * F + 6 && y + q.dn > g.lab.y - 6.5 * F - 6);
-    }) && bodies.every((o) => o === q || q.hw + o.hw + 14 <= Math.abs(q.x - o.x) || (y < o.y ? q.dn + o.up : o.dn + q.up) + 10 <= Math.abs(y - o.y));
-    for (const q of bodies)
-      if (!clearAt(q, q.y))
-        for (let d = 4; d < hb; d += 4) {
-          const y = [q.y - d, q.y + d].find((v) => v - q.up >= 20 && v + q.dn <= hb && clearAt(q, v));
-          if (y !== undefined) {
-            q.y = y;
-            break;
-          }
-        }
-    }
-    for (const q of bodies) scene.stars[q.n] = { ...star(q.n, q.x, q.y), tether: tethers[q.n] };
-    scene.groups.push({ name: "", head: false, lx: 0, ly: 0, stars: bodies.map((q) => scene.stars[q.n]) });
-    // every free DAG folds into one still body at the right end of the lifecycle axis, opposite New
-    const hangar = ps.find((p) => !p.id);
-    if (hangar) scene.hangar = { x: hangar.x, y: hangar.y, r: 22, names: free, doms };
-  }
-
-  // DAGs level: every free DAG in one row of domain blocks, centred on the canvas; a DAG opens its panel
-  function buildDags() {
-    const A = W / H;
-    let w = 1860, F = w / (0.94 * W), D = dock(w, F);
-    // the rows cap at eight, so many wide domains outgrow the scene: widen it until they fit
-    for (let i = 0; i < 8 && D.width > w - 120; i++) {
-      const nw = Math.ceil(D.width + 120), next = dock(nw, nw / (0.94 * W));
-      if (next.width / nw >= D.width / w) break; // names scale with the scene, so past some size more width stops helping
-      [w, D] = [nw, next];
-    }
-    w = Math.max(w, Math.round((D.h + 240) * A));
-    F = w / (0.94 * W);
-    D = dock(w, F);
-    scene.w = w;
-    scene.h = Math.round(w / A);
-    const top = (scene.h - D.h) / 2;
-    for (const q of D.items) scene.stars[q.n] = star(q.n, q.x, top + q.y);
-    for (const grp of S.groups) {
-      const lb = D.labels.find((x) => x.name === grp.name);
-      if (lb) scene.groups.push({ name: grp.name, head: true, lx: lb.x, ly: top + lb.y, stars: grp.dags.map((n) => scene.stars[n]).filter(Boolean) });
-    }
-    // the blocks can lay out wider than the scene (the row count caps), so the fit frames what is drawn
-    scene.box = boxOf([
-      ...Object.values(scene.stars).flatMap((s) => {
-        const hw = Math.max(s.glyph.w / 2, textW(s.label, 11) / 2) + 30;
-        return [[s.x - hw, s.y - s.glyph.h / 2 - 30], [s.x + hw, s.y + s.glyph.h / 2 + 40]];
-      }),
-      ...scene.groups.map((g) => [g.lx, g.ly - 20]),
-    ]);
-  }
-
-  // a band of related DAG stars across the top of a drilled-in level
-  function dagBand(names: string[], label: string) {
-    if (names.length) scene.groups.push({ name: label, lx: scene.w / 2, ly: 34, stars: row(names, scene.w / 2, 90, 150) });
   }
 
   // a lifecycle machine as a small solar system: its states on a ring (offsets from the planet centre), its transitions as chords
@@ -1332,68 +1044,6 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         }
         p.ext = c - p.rim!;
       }
-      // the DAGs tied to this state hold still on rings round the primary: those that write a Board path into or out of it, launch a machine inside
-      // it, or are cued by it. Hovering one draws its one tether. A DAG whose only tie is launching one skill machine orbits that machine instead
-      const crit: Record<string, string[]> = {}, want: Record<string, number> = {}, launched: Record<string, Set<Planet>> = {}, F = lh / 17;
-      for (const t of board.machine.transitions.filter((t) => t.source !== t.target && (t.source === sid || t.target === sid)))
-        for (const w of S.writers[t.event] || []) if (dagBy[w.actor]) (crit[w.actor] ||= []).push(`writes ${t.event} (${stateName(t.source)} → ${stateName(t.target)})`);
-      for (const l of S.launches) {
-        const p = scene.planets.find((q) => q.name === l.flow && !q.subState);
-        if (!p || !dagBy[l.dag]) continue;
-        (crit[l.dag] ||= []).push(`launches ${l.flow}`);
-        (launched[l.dag] ||= new Set()).add(p);
-        if (p !== hub) want[l.dag] = Math.atan2(p.y - cy0, p.x - cx0);
-      }
-      for (const c of S.cues) if (c.state === sid && dagBy[c.dag]) (crit[c.dag] ||= []).push(`runs on ${c.on}, beside ${c.event}`);
-      const tether = (n: string, to: Planet): Tether => ({ x: to.x, y: to.y, g: { x: to.x, y: to.y, R: to.rim! }, cue: crit[n].every((t) => t.startsWith("runs on")), crit: crit[n] });
-      const owned = new Map<Planet, string[]>();
-      for (const n of Object.keys(crit).sort()) {
-        const ps = [...(launched[n] || [])];
-        if (ps.length === 1 && ps[0] !== hub && crit[n].every((t) => t.startsWith("launches "))) owned.set(ps[0], [...(owned.get(ps[0]) || []), n]);
-      }
-      for (const [p, ns] of owned) {
-        p.owned = ns.length;
-        ns.forEach((n, i) => {
-          scene.stars[n] = Object.assign(star(n, p.x + (p.x < cx0 ? -1 : 1) * (p.rim! + p.ext! + 16 + OWNED * i), p.y), { owned: p, br: 5, tether: tether(n, p) });
-          delete crit[n];
-        });
-      }
-      // DAGs with the same ties here fold into one body, as on the Board
-      const byTies = new Map<string, string[]>();
-      for (const n of Object.keys(crit).sort()) byTies.set(crit[n].join("|"), [...(byTies.get(crit[n].join("|")) || []), n]);
-      for (const [k, ns] of byTies)
-        if (ns.length > 1) {
-          const key = `fold:${sid}:${k}`;
-          folds[key] = foldOf(ns);
-          crit[key] = ns.flatMap((n) => crit[n].map((t) => `${n}: ${t}`));
-          if (ns[0] in want) want[key] = want[ns[0]];
-          for (const n of ns) delete crit[n];
-        }
-      // angles round the primary that already carry something: each moon's path, the Board paths fanning in on the left and out on the right,
-      // and the primary's own label below it. An entry with a radius blocks only that ring. A DAG takes the free angle nearest the machine it
-      // launches (else straight above), and the next ring out when none is free
-      const deg = Math.PI / 180, taken: [number, number, number?][] = [...moons.map((p): [number, number] => [Math.atan2(p.y - cy0, p.x - cx0), 8 * deg]), [Math.PI, 26 * deg], [0, 26 * deg], [Math.PI / 2, 28 * deg]];
-      const norm = (a: number) => Math.atan2(Math.sin(a), Math.cos(a)), free = (a: number, w: number, r: number) => taken.every(([c, cw, tr]) => (tr && tr !== r) || Math.abs(norm(a - c)) > cw + w);
-      const nearestFree = (from: number, w: number, r: number) => {
-        for (let d = 0; d <= 180; d += 2) for (const sg of [1, -1]) if (free(from + sg * d * deg, w, r)) return from + sg * d * deg;
-        return null;
-      };
-      const radii = Array.from({ length: 8 }, (_, i) => hub.rim! + 150 + 95 * i);
-      const ring = Object.keys(crit).sort().map((n) => {
-        let a: number | null = null, rD = radii[0];
-        for (const r of radii) {
-          const w = (Math.max(glyphOf(n).w / 2, (textW(labelOf(n), 11) * F) / 2) + 18) / r;
-          a = nearestFree(want[n] ?? -Math.PI / 2, w, r);
-          if (a !== null) {
-            rD = r;
-            taken.push([a, w, r]);
-            break;
-          }
-        }
-        a ??= want[n] ?? -Math.PI / 2;
-        return (scene.stars[n] = Object.assign(star(n, cx0 + Math.cos(a) * rD, cy0 + Math.sin(a) * rD), { tether: tether(n, hub) }));
-      });
-      if (ring.length) scene.groups.push({ name: "", head: false, lx: cx0, ly: 0, stars: ring });
       // one path each way between the primary and each skill machine, rim to rim, bowed to opposite sides as the Board's paired transitions are
       for (const q of scene.planets.slice(1).filter((q) => !q.subState && !q.pager))
         for (const [a, b] of [[hub, q], [q, hub]]) {
@@ -1403,8 +1053,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         }
       scene.box = boxOf([
         // every moon is named beside it; a pager node's orbit reaches below the ring
-        ...moons.flatMap((p) => [[p.x + (p.x < cx0 ? -1 : 1) * (p.rim! + (p.ext ?? 0) + (p.owned ?? 0) * OWNED + 30 + (textW(p.label || p.name, 11.5) * lh) / 17), p.y], [p.x, p.y + p.rim!]]),
-        ...ring.flatMap((s) => [[s.x - 90, s.y - 30], [s.x + 90, s.y + 50]]),
+        ...moons.flatMap((p) => [[p.x + (p.x < cx0 ? -1 : 1) * (p.rim! + (p.ext ?? 0) + 30 + (textW(p.label || p.name, 11.5) * lh) / 17), p.y], [p.x, p.y + p.rim!]]),
         [hub.x - hub.outer! - 110, hub.y - hub.outer! - 50], [hub.x + hub.outer! + 110, hub.y + hub.outer! + 90],
       ] as [number, number][]);
     }
@@ -1462,14 +1111,9 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       place(p, a.x, a.y + 230);
       scene.planets.push(p);
     }
-    // every DAG lives on the Board; one also shows here only when this machine is its one declared relationship (it launches only this
-    // machine and writes no Board transition), so board-autopilot, which drives the Board, never appears inside a state
-    const writesBoard = (d: string) => Object.values(S.writers).some((ws) => ws.some((w) => w.actor === d));
-    dagBand([...new Set(S.launches.filter((x) => x.flow === name && dagBy[x.dag] && !writesBoard(x.dag) && S.launches.every((m) => m.dag !== x.dag || m.flow === name)).map((x) => x.dag))], "DAGs that launch this machine");
     scene.box = boxOf([
       ...Object.values(scene.mStates).flatMap((s) => { const w = textW(s.name, 12.5) / 2 + 10; return [[s.x - 50, s.y - 50], [s.x + 50, s.y + 50], [s.lab!.x - w, s.lab!.y - 20], [s.lab!.x + w, s.lab!.y + 20]]; }),
       ...scene.planets.flatMap((p) => [[p.x - p.R - 70, p.y - p.R - 40], [p.x + p.R + 70, p.y + p.R + 80]]),
-      ...scene.groups.flatMap((g) => [[g.lx - 180, g.ly - 20], ...g.stars.flatMap((s) => [[s.x - s.br - 70, s.y - s.br - 20], [s.x + s.br + 70, s.y + s.br + 40]])]),
     ]);
   }
 
@@ -1562,8 +1206,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     buildState(l.id);
     const top = topOf(SUBS, l);
     if (top) buildTop(top);
-  } else if (l.kind === "dags") buildDags();
-  else if (l.kind === "fold") buildFold(l);
+  } else if (l.kind === "fold") buildFold(l);
   else buildMachine(l.flow);
   return scene;
 }

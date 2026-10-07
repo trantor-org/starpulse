@@ -1,8 +1,7 @@
 // The page's level stack: Board, then a Board state's lifecycle system, then one
-// machine (and a machine's child), the DAGs level of every DAG free of the Board,
-// and a fold level over the Board path that several DAGs write. Pure: which
-// machines open where, the path to any of them, what a click on a DAG opens,
-// and where an old URL lands.
+// machine (and a machine's child), and a fold level, the Ledger of a Board path.
+// Pure: which machines open where, the path to any of them, and where an old URL
+// lands.
 import { pathOf, tiesOf, type Source } from "./ledger";
 import type { Snapshot } from "./types";
 
@@ -14,7 +13,7 @@ export interface Fold {
   /** The Board event whose Ledger the fold is, when it was opened from one; else the Ledger names it from the path and the DAGs. */
   event?: string;
 }
-export type Level = { kind: "board" } | { kind: "dags" } | { kind: "state"; id: string } | { kind: "machine"; flow: string } | ({ kind: "fold" } & Fold);
+export type Level = { kind: "board" } | { kind: "state"; id: string } | { kind: "machine"; flow: string } | ({ kind: "fold" } & Fold);
 export type Path = Level[];
 /** A machine that opens under one state of another machine. */
 export interface Child {
@@ -96,14 +95,8 @@ function valid(t: Tree, path: Path): boolean {
   const last = path[path.length - 1];
   if (last.kind === "machine") return same(pathTo(t, last.flow, hostOf(path)), path);
   if (last.kind === "state") return path.length === 2 && t.states.includes(last.id);
-  if (last.kind === "dags") return path.length === 2;
   if (last.kind !== "fold") return false;
   return path.length === 2 && last.dags.length > 0 && (last.path ?? []).every((id) => t.states.includes(id));
-}
-
-/** What a click on a DAG body opens: a single DAG's panel beside the level, or a fold's own level over the path it writes. */
-export function drill(o: { name: string; fold?: string[] }, crit: string[], path: [string, string] | null): { panel: string } | { push: Level } {
-  return o.fold ? { push: { kind: "fold", dags: o.fold, crit, path } } : { panel: o.name };
 }
 
 /**
@@ -118,7 +111,7 @@ export function startPath(pathname: string, hash: string, cached: Path | null, t
 }
 
 /** A level's name as the navigator and the cache key show it. */
-export const levelKey = (l: Level) => (l.kind === "board" ? "board" : l.kind === "dags" ? "dags" : l.kind === "state" ? l.id : l.kind === "machine" ? l.flow : l.dags.join("+"));
+export const levelKey = (l: Level) => (l.kind === "board" ? "board" : l.kind === "state" ? l.id : l.kind === "machine" ? l.flow : l.dags.join("+"));
 export const pathKey = (p: Path) => p.map(levelKey).join("/");
 
 /** The fold level that is a Board transition's Ledger: the DAGs that write its event or are cued by it, over the path it takes; null when no DAG is tied to it or it leaves its state where it was. */

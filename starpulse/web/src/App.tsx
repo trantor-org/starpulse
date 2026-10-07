@@ -49,6 +49,8 @@ export function App() {
   // a hovered Recent line lights its task on the view showing: the Kanban hears it as a task to spot and says why it has no card
   const [line, setLine] = useState<string | null>(null), [spotted, setSpotted] = useState<string | null>(null);
   const [why, setWhy] = useState<string | null>(null), [opening, setOpening] = useState<{ id: string } | null>(null);
+  // and a DAG-finished line lights its row in the DAGs view and opens its modal
+  const [spottedDag, setSpottedDag] = useState<string | null>(null), [openingDag, setOpeningDag] = useState<{ name: string } | null>(null);
   const folded = useSyncExternalStore(fold.subscribe, fold.get);
   // the Kanban's text search draws in the navigator's search slot and reports what it holds, for the folded strip's magnifier
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
@@ -105,7 +107,6 @@ export function App() {
     <>
       <canvas ref={canvas} id="c" />
       <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} kanbanQuery={kanbanQuery} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} toggle={() => fold.toggle()} open={open}
-        fly={(g) => renderer.current?.flyToGroup(g)} openDag={(d) => renderer.current?.openDag(d)}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       {view === "constellation" && <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} />}
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
@@ -117,19 +118,20 @@ export function App() {
         <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} onQuery={setKanbanQuery} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
           spot={spotted} note={setWhy} opening={opening} />
       )}
-      {view === "dags" && <Dags data={hud.dagData} openPath={open} />}
+      {view === "dags" && <Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} />}
       <Rail hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
-        can={(l) => (view === "kanban" ? !!l.task : view === "constellation" && !!(l.task || l.dag))}
+        can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
           setLine(l?.key ?? null);
           if (view === "kanban") return setSpotted(l?.task ?? null);
+          if (view === "dags") return setSpottedDag(l?.dag ?? null);
           const lane = (id: string) => hud.cards.find((c) => c.id === id)?.lane ?? "";
-          renderer.current?.spot(!l ? null : l.task ? { kind: "task", id: l.task, lane: lane(l.task) } : { kind: "dag", name: l.dag! }, true);
+          renderer.current?.spot(l?.task ? { kind: "task", id: l.task, lane: lane(l.task) } : null, true);
         }}
         pick={(l) => {
           if (view === "kanban") setOpening({ id: l.task! });
-          else if (l.task) renderer.current?.openTask(l.task);
-          else renderer.current?.openDag(l.dag!);
+          else if (view === "dags") setOpeningDag({ name: l.dag! });
+          else renderer.current?.openTask(l.task!);
         }} />
       <div ref={tip} id="tip" />
       <div ref={panel} id="panel" />
@@ -150,8 +152,8 @@ function SearchMagnifier({ view, query, open }: { view: ViewName; query: string;
   );
 }
 
-function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, hasLevel, toggle, open, fly, openDag, spot, selectTask }: {
-  hud: HudState; folded: boolean; view: ViewName; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; kanbanQuery: string; choose: (v: ViewName) => void; hasLevel: boolean; toggle: () => void; open: (p: Path) => void; fly: (group: string) => void; openDag: (dag: string) => void;
+function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, hasLevel, toggle, open, spot, selectTask }: {
+  hud: HudState; folded: boolean; view: ViewName; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; kanbanQuery: string; choose: (v: ViewName) => void; hasLevel: boolean; toggle: () => void; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -165,25 +167,24 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
     searchHost.current?.querySelector("input")?.focus();
   }, [folded]);
   const statePath = (id: string): Path => [...BOARD, { kind: "state", id }];
-  // a click drills into a sun or a machine, opens a DAG's panel, or pins a task on the Board
+  // a click drills into a sun or a machine, or pins a task on the Board
   const pick = (target: Target) => {
     spot(null);
     if (target.kind === "state") open(statePath(target.id));
     else if (target.kind === "machine") open(target.path);
-    else if (target.kind === "dag") openDag(target.name);
     else selectTask(target.id);
   };
   const t = hud.tree, q = query.trim().toLowerCase();
-  const hits = t && q ? search(q, { tree: t, states: hud.states, counts: hud.counts, hostCounts: hud.hostCounts, dags: hud.dags, cards: hud.cards }) : [];
+  const hits = t && q ? search(q, { tree: t, states: hud.states, counts: hud.counts, hostCounts: hud.hostCounts, cards: hud.cards }) : [];
   let body = null;
   if (t && q) {
-    // Searching: a flat list of every sun, machine, DAG and task the query names, however deep. Hovering one lights it on the canvas.
+    // Searching: a flat list of every sun, machine and task the query names, however deep. Hovering one lights it on the canvas.
     body = (
       <div className="kids" onMouseLeave={() => spot(null)}>
         <div className="lvl">Matches</div>
         {hits.length ? hits.map((h) => {
           const key = `${h.target.kind}:${h.label}:${h.sub ?? ""}`, flow = h.target.kind === "machine" ? h.target.flow : undefined;
-          const size = h.target.kind === "state" ? 10 : h.target.kind === "machine" ? (h.target.path.length > 3 ? 6 : 8) : h.target.kind === "dag" ? 7 : 5;
+          const size = h.target.kind === "state" ? 10 : h.target.kind === "machine" ? (h.target.path.length > 3 ? 6 : 8) : 5;
           return (
             <button key={key} data-kind={h.target.kind} className={`node hit${flow && hud.moving.includes(flow) ? " live" : ""}`} title={h.sub ?? h.label}
               onMouseEnter={() => spot(h.target)} onClick={() => pick(h.target)}>
@@ -239,7 +240,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
       {view !== "admin" && view !== "graph" && view !== "dags" && (
         <section className="away has-x search" ref={searchHost}>
           {view === "kanban" ? <div ref={slot} /> : <>
-            <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
+            <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States and lifecycle machines" aria-label="Search tasks, States and lifecycle machines" autoComplete="off" value={query}
               onChange={(e) => { setQuery(e.target.value); spot(null); }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") { setQuery(""); spot(null); }
@@ -252,19 +253,9 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
         </section>
       )}
       {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
-      {view === "graph" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
+      {view === "graph" && <section className="away note">Layers belong to the Star Map view; they return when it is open.</section>}
       {view === "dags" && <><section className="away note">Layers belong to the Star Map view; they return when it is open.</section><Queues pools={hud.pools} /></>}
-      {view === "constellation" && <>
-      {body && <section className="away matches">{body}</section>}
-      <section className="away">
-        <h3>DAGs</h3>
-        <div id="cons">
-          {hud.groups.map((g) => (
-            <button key={g.name} onClick={() => fly(g.name)}><i /><span>{g.name} · {g.n}</span></button>
-          ))}
-        </div>
-      </section>
-      <Queues pools={hud.pools} /></>}
+      {view === "constellation" && body && <section className="away matches">{body}</section>}
       <section className="views admin-sec">
         <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>
           <svg className="g admin-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>
@@ -308,8 +299,6 @@ export function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } &
         ) : (
           <>
             <span><i style={{ background: "#c4b5fd" }} />deep</span><span><i style={{ background: "#67e8f9" }} />standard</span><span><i style={{ background: "#fde68a" }} />other</span><br />
-            <span><i style={{ background: "#34d399" }} />ok</span><span><i style={{ background: "#fb7185" }} />failed</span>
-            <span><i style={{ border: "1px solid #dbe4f3", background: "none", boxSizing: "border-box" }} />runnable</span><br />
             <span><i style={{ background: "#c084fc" }} />lifecycle machine</span><span className="mapleg"><i />mapped machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />activity now</span>
           </>
         )}

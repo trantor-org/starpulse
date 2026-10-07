@@ -11,13 +11,13 @@ import { demoStep } from "./demo";
 import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
-import { BOARD, drill, hostOf, pathKey, pathLedger, startPath, taskKicker, type Level, type Path } from "./levels";
+import { BOARD, hostOf, pathKey, pathLedger, startPath, taskKicker, type Level, type Path } from "./levels";
 import { freshKeys, optionalSteps } from "./ledger";
 import { drawRows, CROSS, type Ink } from "./ledgerRows";
 import { spotIn, type Target } from "./search";
 import {
-  BOARD_COLOR, GALAXY_MIN, OWNED, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, tethersDrawn, textW, turnPage,
-  type BEdge, type Body, type Curve, type Galaxy, type GNode, type Hangar, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
+  BOARD_COLOR, GALAXY_MIN, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, textW, turnPage,
+  type BEdge, type Body, type Curve, type Galaxy, type GNode, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
   type LedgerView, type MachineTask, type Moon, type Pager, type Star, type SubState, type Sun,
 } from "./scene";
 import { FLARE, Moves, PULSE, RING, TRAVEL, countText, hosted, merge, stateCount, type Move, type Sky } from "./sky";
@@ -35,7 +35,7 @@ import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "./adminPrefs";
 import { clockHm, clockHms, stamp } from "./clock";
 import { sizes as ledgerSizes, slot as ledgerSlot } from "./machineLedger";
 import { canvasSpace, retired, viewOf, viewSearch } from "./nav";
-import { fitBox, fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
+import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
 export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
   aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155" };
@@ -86,7 +86,6 @@ type Hover =
   | { kind: "mtask"; o: MachineTask }
   | { kind: "task"; o: Body }
   | { kind: "dag"; o: Star }
-  | { kind: "hangar"; o: Hangar }
   | { kind: "state"; o: MState }
   | { kind: "planet"; o: Planet }
   | { kind: "sun"; o: Sun }
@@ -113,10 +112,8 @@ export interface Probe {
   targets: { name: string; opens: "level" | "panel" | "none"; x: number; y: number }[];
   /** The level's fit zoom. */
   fit: number;
-  /** Board only: each DAG glyph's screen box, each state's screen disc, and the screen centre of the DAGs hangar (null when no DAG is free of the Board). */
-  dags: { name: string; x0: number; y0: number; x1: number; y1: number }[];
+  /** Board only: each state's screen disc. */
   states: { id: string; x: number; y: number; r: number }[];
-  hangar: Pt | null;
 }
 
 export interface Renderer {
@@ -130,10 +127,6 @@ export interface Renderer {
   resize(): void;
   /** Whether the Star Map is the view showing; while another view hides it, the canvas draws no frame. */
   show(on: boolean): void;
-  /** Open a DAG's panel beside the level that is showing. */
-  openDag(name: string): void;
-  /** Fly to a domain's DAGs on the Board. */
-  flyToGroup(name: string): void;
   /** Light the body a navigator search result stands for, as a hover over it would; null clears it. With `near`, a task the level does not draw lights its state instead. */
   spot(target: Target | null, near?: boolean): void;
   /** Open a task's panel on the level showing: pinned, as a click on it would, where the level draws it, else its Board panel. */
@@ -415,7 +408,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       dags: sky.dags.map((d) => d.name),
       dagData: dagData(sky),
       pools: sky.pools,
-      groups: sky.groups.map((g) => ({ name: g.name, n: g.dags.length })),
       cards: kanbanTasks(sky),
       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
       claims: sky.claims,
@@ -593,7 +585,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     if (star) return { kind: "dag", o: star };
     for (const c of sc.fold?.ledger?.cols ?? []) if (x > c.x0 && x < c.x1 && y > c.y0 && y < c.y1) return { kind: "caption", o: c };
-    if (sc.hangar && near(sc.hangar, sc.hangar.r + 22)) return { kind: "hangar", o: sc.hangar };
     for (const s of Object.values(sc.mStates)) if (near(s, Math.max(stateR(s), px(9)))) return { kind: "state", o: s };
     for (const p of sc.planets) if (near(p, p.subState ? Math.max(p.R, px(8)) : p.moon ? Math.max(p.R + 4, px(10)) : p.R + 16)) return { kind: "planet", o: p };
     if (sc.sun && near(sc.sun, sc.sun.r + 8)) return { kind: "sun", o: sc.sun };
@@ -681,14 +672,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         return traceCard({ kind, id: o.id, title: "", goal: goalOf(sky.flows[o.flow]?.machine) }, runFor(at), prefs().clock);
       }
       case "dag": {
-        const o = h.o, crit = (o.tether?.crit ?? []).map(esc).join("<br>");
-        if (o.fold) return `<div class="k">${o.fold.length} DAGs on one ${o.tether?.edge ? "path" : "state"} · click to open them</div><div class="n">${o.fold.map(esc).join("<br>")}</div>${crit ? `<div class="k">${crit}</div>` : ""}`;
-        const l = o.tether?.crit.some((t) => t.startsWith("launches ")) ? [] : sky.launches.filter((x) => x.dag === o.name && x.flow).map((x) => x.flow!);
+        const o = h.o, crit = (o.tether?.crit ?? []).map(esc).join("<br>"), l = sky.launches.filter((x) => x.dag === o.name && x.flow).map((x) => x.flow!);
         return `<div class="k">DAG · ${esc(o.group)} · ${esc(o.active?.some((r) => r.status === "running") ? "running" : o.status)}${o.runnable ? " · runnable" : ""}</div><div class="n">${esc(o.name)}</div>${fanTip(o, S?.pools)}${crit ? `<div class="k">${crit}</div>` : ""}${l.length ? `<div class="k">launches ${l.map(esc).join(", ")}</div>` : ""}${o.steps.length} step${o.steps.length === 1 ? "" : "s"}: ${o.steps.map((s) => esc(s.name)).join(" → ")}${o.finishedAt ? `<div class="k">last run ${hhmm(finished(o.finishedAt))} MST</div>` : ""}`;
-      }
-      case "hangar": {
-        const run = h.o.names.filter((n) => sky.dagBy[n]?.status === "running");
-        return `<div class="k">DAGs that write no Board lane · click to open</div><div class="n">DAGs</div>${h.o.names.length} DAGs in ${h.o.doms} domain${h.o.doms === 1 ? "" : "s"}${run.length ? `<div class="k">running: ${run.map(esc).join(", ")}</div>` : ""}`;
       }
       case "galaxy":
         return `<div class="k">Board state · click to open</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.today === undefined ? "" : ` · ${h.o.today} today`}${h.o.subs.length ? ` · ${h.o.subs.length} lifecycle machines inside` : ""}`;
@@ -789,16 +774,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (h.kind === "planet") return push({ kind: "machine", flow: h.o.subState ? h.o.flow! : h.o.name }, fx, fy);
     // a moon opens its machine, and so does one of its sub-states (the machine the sub-state belongs to; its child opens from there)
     if (h.kind === "moon" || h.kind === "sat") return go([...path, { kind: "state", id: h.o.parent.id }, { kind: "machine", flow: h.kind === "moon" ? h.o.name : h.o.machine }], fx, fy);
-    if (h.kind === "hangar") return push({ kind: "dags" }, fx, fy);
     if (h.kind === "caption") return openDagPanel(scene!.stars[h.o.dag]);
     // a Board path opens its Ledger when a DAG writes one of its events or is cued by it
     const ledger = h.kind === "bedge" ? ledgerOfEdge(h.o) : null;
     if (ledger) return push(ledger, fx, fy);
-    // a fold drills into a level over the Board path its DAGs write; one DAG only opens its panel, on whatever level it is clicked
-    if (h.kind === "dag") {
-      const e = h.o.tether?.edge, d = drill(h.o, h.o.tether?.crit ?? [], e ? [e.source, e.target] : null);
-      return "push" in d ? push(d.push, fx, fy) : openDagPanel(h.o);
-    }
+    if (h.kind === "dag") return openDagPanel(h.o);
     const at = subjectOf(h);
     if (at && pinnable(at)) pin = at;
     if (h.kind === "task") panel.innerHTML = taskPanel(h.o, sky, stateName);
@@ -848,11 +828,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.fill();
   }
   const isHot = (kind: Hover["kind"], o: unknown) => !!hover && hover.kind === kind && hover.o === o;
-  const hotDags = () => (hover?.kind === "dag" ? hover.o.fold ?? [hover.o.name] : []);
-  const edgeLitBy = (e: BEdge) => {
-    const d = hotDags();
-    return e.writers.some((w) => d.includes(w.actor));
-  };
   function disc(x: number, y: number, r: number, col: string, hot: boolean, alpha = 0.16) {
     const grd = cx.createRadialGradient(x, y, 0, x, y, r);
     grd.addColorStop(0, rgba(col, alpha));
@@ -1026,7 +1001,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function drawBoardEdges() {
     const sc = scene!;
     for (const e of sc.bEdges) {
-      const lit = isHot("bedge", e) || edgeLitBy(e), col = sc.galaxies[e.source].color, heat = Math.max(hotEdge.has(`board:${e.source}>${e.target}`) ? 1 : 0, ...e.writers.map((w) => dagHeat(w.actor)));
+      const lit = isHot("bedge", e), col = sc.galaxies[e.source].color, heat = hotEdge.has(`board:${e.source}>${e.target}`) ? 1 : 0;
       flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
       cx.beginPath();
       cx.moveTo(e.p0!.x, e.p0!.y);
@@ -1051,7 +1026,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     for (const l of [...sc.entries, ...sc.exits]) {
       if (!l.p0) continue;
-      const lit = isHot("bedge", l) || edgeLitBy(l), heat = Math.max(l.busy ? 1 : 0, ...l.writers.map((w) => dagHeat(w.actor)));
+      const lit = isHot("bedge", l), heat = l.busy ? 1 : 0;
       flowLine({ ...l.p0, color: BOARD_COLOR[l.source] ?? "#94a3b8" }, { ...l.p1!, color: BOARD_COLOR[l.target] ?? "#94a3b8" }, lit ? 0.95 : (l.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
       stroke(l as Curve);
       label(l.lab!.name, l.lab!.x, l.lab!.y - 12 / K, lit, null, 10.5);
@@ -1188,7 +1163,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         if (mv.length) circle(p.x, p.y, p.R + 4, rgba(ACT, 0.85), 1.5);
         cx.letterSpacing = `${0.5 / K}px`;
         const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
-        machineName(p.label || p.name, p.x + sd * (past(p) + (p.owned ?? 0) * OWNED), p.y, labPx(11.5), col, sd < 0 ? "right" : "left", src);
+        machineName(p.label || p.name, p.x + sd * past(p), p.y, labPx(11.5), col, sd < 0 ? "right" : "left", src);
         cx.letterSpacing = "0px";
         continue;
       }
@@ -1226,51 +1201,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       label(p.name, p.x + ux * (off + Math.abs(ux) * hw * 1.05), p.y + uy * off + (uy < 0 ? -16 : 0), hot, sub, size);
     }
   }
-  // DAGs that launch only one skill machine sit beside it as small dots in their status colour, past its name; hover names them
-  function drawOwned() {
-    for (const s of Object.values(scene!.stars)) {
-      if (!s.owned) continue;
-      const hot = isHot("dag", s), col = DAG_COLOR[s.status] || "#94a3b8", fin = s.finishedAt ? finished(s.finishedAt) : 0;
-      dot(s.x, s.y, 4.2, "rgba(6,10,20,0.9)");
-      circle(s.x, s.y, 4.2, rgba(col, hot ? 1 : 0.8), hot ? 1.5 : 1);
-      dot(s.x, s.y, 1.6, rgba(col, 0.9));
-      if (s.status === "running" || (fin && fin <= T && T - fin < PULSE)) pulse(s.x, s.y, 5, s.status === "running" ? (clock % 2) / 2 : (T - fin) / PULSE, ACT, 18);
-      if (hot) label(s.name, s.x, s.y - 16 / K, true, null, 11);
-    }
-  }
-  // the one tether a hovered Board DAG draws, to the middle of the path most of its criteria sit on (or the rim of its state's galaxy); a fold's runs are its members'
-  function drawTethers() {
-    for (const [s, a] of tethersDrawn(scene!, draws(hover, pin).dag)) {
-      const heat = Math.max(...(s.fold ?? [s.name]).map(dagHeat)), L = a.g ? Math.hypot(s.x - a.g.x, s.y - a.g.y) || 1 : 1;
-      const tx = a.g ? a.g.x + ((s.x - a.g.x) / L) * a.g.R : a.x, ty = a.g ? a.g.y + ((s.y - a.g.y) / L) * a.g.R : a.y;
-      const lo = a.cue ? 0.5 : 1; // a cue is a looser tie than a write: half as bright, sparser dots
-      cx.strokeStyle = rgba("#fbbf24", (0.85 + heat * 0.15) * lo);
-      cx.lineWidth = 1.3 / K ** 0.5;
-      cx.setLineDash(a.cue ? [1.5 / K, 8 / K] : [2 / K, 5 / K]);
-      cx.lineDashOffset = (-clock * 8) / K;
-      cx.beginPath();
-      cx.moveTo(s.x, s.y);
-      cx.lineTo(tx, ty);
-      cx.stroke();
-      cx.setLineDash([]);
-      if (!a.g) dot(tx, ty, 2.2 / K ** 0.5, rgba("#fbbf24", 0.8));
-    }
-  }
-  function drawHangar() {
-    const h = scene!.hangar;
-    if (!h) return;
-    const hot = isHot("hangar", h), heat = Math.max(0, ...h.names.map(dagHeat)), col = "#5eead4";
-    disc(h.x, h.y, h.r, col, hot || heat > 0.5, 0.12 + heat * 0.25);
-    h.names.forEach((n, i) => {
-      const a = (i / h.names.length) * TAU - Math.PI / 2;
-      dot(h.x + Math.cos(a) * (h.r + 9), h.y + Math.sin(a) * (h.r + 9), 1.8, rgba(DAG_COLOR[S?.dagBy[n]?.status ?? ""] || "#94a3b8", 0.35 + 0.6 * dagHeat(n)));
-    });
-    label("DAGs", h.x, h.y + h.r + 30, hot, `${h.names.length} · ${h.doms} domain${h.doms === 1 ? "" : "s"}`, 12.5);
-  }
   function drawStars() {
-    if (!scene!.fold) drawTethers();
     for (const grp of scene!.groups) {
-      if (grp.head !== false) label(grp.name.toUpperCase(), grp.lx, grp.ly, false, null, 10.5);
       for (const s of grp.stars) {
         const live = !!s.active?.some((r) => r.status === "running"), status = live ? "running" : s.status;
         const col = DAG_COLOR[status] || "#94a3b8", hot = isHot("dag", s), g = s.glyph;
@@ -1320,7 +1252,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
           text(fan.text, bx + bw / 2, by + 0.5 / K, 10.5 / K, bc, "center", 500);
         }
         if (s.runnable) circle(s.x, s.y, s.br, rgba("#dbe4f3", 0.35), 1, [2, 3]);
-        for (const n of s.fold ?? [s.name]) for (const age of dagRings(moves.flare[n], T)) pulse(s.x, s.y, s.br, age, ACT, 38); // each run ending rings its DAG
+        for (const age of dagRings(moves.flare[s.name], T)) pulse(s.x, s.y, s.br, age, ACT, 38); // each run ending rings its DAG
       }
     }
   }
@@ -1722,13 +1654,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     drawStateLinks();
     drawSun();
     drawPlanets();
-    drawOwned();
     drawTasks();
     drawMachineEdges(scene!.mEdges);
     drawStates(scene!.mStates, true);
     drawSource();
     drawMachineTasks();
-    drawHangar();
     drawStars();
     drawTrace();
   }
@@ -1815,27 +1745,23 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   const probe = (): Probe => {
     const sc = scene, l = level(), canvas = { w: W, h: H }, open = panel.classList.contains("open");
-    if (!sc) return { path: pathKey(path), ready: false, canvas, panel: open, centre: { x: 0, y: 0 }, zoomed: false, targets: [], fit: fit.k, dags: [], states: [], hangar: null };
-    const rect = (ax: number, ay: number, bx: number, by: number) => { const a = toScreen(view, { x: ax, y: ay }), b = toScreen(view, { x: bx, y: by }); return { x0: a.x, y0: a.y, x1: b.x, y1: b.y }; };
+    if (!sc) return { path: pathKey(path), ready: false, canvas, panel: open, centre: { x: 0, y: 0 }, zoomed: false, targets: [], fit: fit.k, states: [] };
     const [x0, y0, x1, y1] = sc.box ?? [0, 0, sc.w, sc.h], at = (name: string, p: Pt, opens: Probe["targets"][number]["opens"] = "level") => ({ name, opens, ...toScreen(view, p) });
     const targets = l.kind === "board"
       ? [
           ...Object.values(sc.galaxies).map((g) => at(g.id, g)),
           ...sc.moons.map((m) => at(m.name, m)),
           ...sc.subStates.map((b) => at(`${b.machine}/${b.state}`, b)),
-          ...Object.values(sc.stars).map((s) => at(s.name, s, s.fold ? "level" : "panel")),
-          ...(sc.hangar ? [at("DAGs", sc.hangar)] : []),
           ...sc.tasks.filter((t) => !t.gone).map((t) => at(t.id, t, "panel")),
         ]
-      : l.kind === "dags" || l.kind === "fold" ? Object.values(sc.stars).map((s) => at(s.name, s, "panel"))
+      : l.kind === "fold" ? Object.values(sc.stars).map((s) => at(s.name, s, "panel"))
       : [
           ...sc.planets.filter((p) => l.kind === "state" || p.anchor).map((p) => at(p.name, p)),
           ...(l.kind === "machine" ? sc.machineTasks.filter((t) => t._x !== undefined).map((t) => at(t.id, { x: t._x!, y: t._y! }, "panel")) : []),
         ];
     const board = l.kind === "board";
-    const dags = board || l.kind === "dags" ? Object.values(sc.stars).map((s) => ({ name: s.name, ...rect(s.x - s.glyph.w / 2 - 10, s.y - s.glyph.h / 2 - 10, s.x + s.glyph.w / 2 + 10, s.y + s.glyph.h / 2 + 10) })) : [];
     const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k })) : [];
-    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, dags, states, hangar: board && sc.hangar ? toScreen(view, sc.hangar) : null };
+    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states };
   };
 
   return {
@@ -1891,21 +1817,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       resize(true);
       frame(performance.now()); // resizing blanks the canvas: repaint in the same task, or the next frame shown is black
       wake();
-    },
-    openDag(name) {
-      const d = S?.dagBy[name];
-      if (d) openDagPanel({ ...d, group: S!.dagGroup[name] ?? "", runnable: S!.runnable.has(name) });
-    },
-    flyToGroup(name) {
-      if (!S) return;
-      const box = () => {
-        const s = scene!.groups.find((g) => g.name === name)?.stars ?? [];
-        if (!s.length) return fit;
-        const xs = s.map((q) => q.x), ys = s.map((q) => q.y);
-        return inFitBox(fitBox({ x0: Math.min(...xs) - 60, y0: Math.min(...ys) - 80, x1: Math.max(...xs) + 60, y1: Math.max(...ys) + 80 }, FW, H, Infinity, 0.9));
-      };
-      if (level().kind !== "dags") go([...BOARD, { kind: "dags" }], W / 2, H / 2, box);
-      else flyTo(box());
     },
     spot(target, near = false) {
       spotted = target;

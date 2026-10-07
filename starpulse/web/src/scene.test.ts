@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { bez, BOARD_GROW, build, GALAXY_MAX, GALAXY_MIN, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, taskSlot, tethersDrawn, terminal, textW, turnPage, type BEdge, type Curve, type MState, type Pt, type Scene } from "./scene";
-import { drill, ledgerLevel, type Level } from "./levels";
+import { BOARD_GROW, build, GALAXY_MAX, GALAXY_MIN, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, taskSlot, terminal, textW, turnPage, type Curve, type MState, type Pt, type Scene } from "./scene";
+import { ledgerLevel, type Level } from "./levels";
 import { merge, Moves } from "./sky";
 import type { Cue, Dag, LedgerRow, Machine, Snapshot } from "./types";
 
@@ -142,7 +142,6 @@ const withTasks = (sky: ReturnType<typeof boardSky>, counts: Record<string, numb
 };
 const cue = (dagName: string, event: string, state: string): Cue => ({ dag: dagName, event, state, on: "each merge" });
 const edgeOf = (scene: Scene, event: string) => scene.bEdges.find((e) => e.event === event)!;
-const middle = (e: BEdge) => bez(e.p0!, e.c!, e.p1!, 0.5);
 
 describe("a starting or terminal Board state", () => {
   const today = () => {
@@ -294,161 +293,31 @@ describe("a Board path's route", () => {
   });
 });
 
-describe("a Board DAG's tether", () => {
-  it("runs to the middle of the path carrying most of its criteria, and its hover lists every criterion", () => {
-    const scene = build(boardSky({ writes: { multi: ["REVIEW", "MERGED"] }, cues: [cue("multi", "REVIEW", "review")] }), { kind: "board" }), t = scene.stars.multi.tether!;
+describe("a Board with DAGs in its snapshot", () => {
+  const loaded = () => {
+    const sky = boardSky({ writes: { alpha: ["CLAIM"], beta: ["CLAIM", "MERGED"] }, cues: [cue("graph-refresh", "MERGED", "done")], launches: ["pr-launcher"], free: { Ops: ["free-a", "free-b"] } });
+    sky.S.writers.REVIEW = [{ actor: "operator", trigger: "ui" }];
+    return sky;
+  };
 
-    expect(t.edge).toBe(edgeOf(scene, "REVIEW"));
-    expect([t.x, t.y]).toEqual([middle(t.edge!).x, middle(t.edge!).y]);
-    expect(t.crit).toEqual(["writes REVIEW (in_progress → review)", "writes MERGED (review → done)", "runs on each merge, beside REVIEW (in_progress → review)"]);
+  it("draws no DAG body, fold, tether or group, whatever the DAGs write, are cued by or launch", () => {
+    const scene = build(loaded(), { kind: "board" });
+
+    expect([Object.keys(scene.stars), scene.groups]).toEqual([[], []]);
   });
 
-  it("breaks a tie toward the path whose two states its criteria touch most", () => {
-    const scene = build(boardSky({ writes: { chain: ["CLAIM", "REVIEW", "MERGED"] } }), { kind: "board" });
+  it("lays the Board out as it does with no DAG at all", () => {
+    const at = (scene: Scene) => Object.values(scene.galaxies).map((g) => [g.id, g.x, g.y, g.r]);
 
-    // In Progress and Review each carry two of its criteria, so the path between them outranks Ready → In Progress and Review → Done
-    expect(scene.stars.chain.tether!.edge).toBe(edgeOf(scene, "REVIEW"));
+    expect(at(build(loaded(), { kind: "board" }))).toEqual(at(build(boardSky(), { kind: "board" })));
   });
 
-  it("rides a cue on the path of the event it runs beside, fainter than a writer's", () => {
-    const scene = build(boardSky({ cues: [cue("graph-refresh", "MERGED", "done")] }), { kind: "board" }), t = scene.stars["graph-refresh"].tether!;
+  it("keeps the states and the paths between them, and carries on them only the writers that are no DAG", () => {
+    const scene = build(loaded(), { kind: "board" }), writers = (event: string) => edgeOf(scene, event).writers;
 
-    expect(t.edge).toBe(edgeOf(scene, "MERGED"));
-    expect([t.cue, t.crit]).toEqual([true, ["runs on each merge, beside MERGED (review → done)"]]);
-  });
-
-  it("finds a merged path by any event on it, and names each criterion by its own event", () => {
-    const sky = boardSky({ writes: { second: ["SHIP"] }, cues: [cue("second", "SHIP", "review")] });
-    sky.S.flows.board.machine.transitions.push({ source: "in_progress", target: "review", event: "SHIP" });
-    const scene = build(sky, { kind: "board" }), t = scene.stars.second.tether!;
-
-    expect(t.edge!.events).toEqual(["REVIEW", "SHIP"]);
-    expect(t.crit).toEqual(["writes SHIP (in_progress → review)", "runs on each merge, beside SHIP (in_progress → review)"]);
-  });
-
-  it("never puts the tether on a self-transition, and falls back to the state when that is all it writes", () => {
-    const scene = build(boardSky({ writes: { loopy: ["STAY", "CLAIM"], stayer: ["STAY"] } }), { kind: "board" });
-
-    expect(scene.stars.loopy.tether!.edge).toBe(edgeOf(scene, "CLAIM"));
-    expect(scene.stars.loopy.tether!.crit).toHaveLength(2);
-    expect([scene.stars.stayer.tether!.edge, scene.stars.stayer.tether!.g]).toEqual([undefined, scene.galaxies.in_progress]);
-    expect(scene.stars.stayer.tether!.crit).toEqual(["writes STAY (in_progress)"]);
-  });
-});
-
-describe("DAG folds on the Board", () => {
-  it("folds two DAGs that write one path into one body that lists each with its criteria", () => {
-    const scene = build(boardSky({ writes: { alpha: ["CLAIM"], beta: ["CLAIM"], solo: ["MERGED"] } }), { kind: "board" }), f = scene.stars["fold:ready>in_progress"];
-
-    expect([f.name, f.fold]).toEqual(["2 DAGs", ["alpha", "beta"]]);
-    expect(f.tether!.crit).toEqual(["alpha: writes CLAIM (ready → in_progress)", "beta: writes CLAIM (ready → in_progress)"]);
-    expect(f.tether!.edge).toBe(edgeOf(scene, "CLAIM"));
-    expect([scene.stars.alpha, scene.stars.beta]).toEqual([undefined, undefined]);
-    expect(scene.stars.solo.fold).toBeUndefined();
-  });
-
-  it("folds DAGs with no path by the state they sit beside, and a fold of cues stays a cue tether", () => {
-    const scene = build(boardSky({ writes: { one: ["STAY"], two: ["STAY"] }, cues: [cue("c1", "MERGED", "done"), cue("c2", "MERGED", "done")] }), { kind: "board" });
-
-    expect(scene.stars["fold:in_progress"].fold).toEqual(["one", "two"]);
-    expect(scene.stars["fold:in_progress"].tether!.g).toBe(scene.galaxies.in_progress);
-    expect(scene.stars["fold:review>done"].tether!.cue).toBe(true);
-  });
-
-  it("draws a fold as a fan of up to three steps, one per DAG", () => {
-    const scene = build(boardSky({ writes: { a: ["CLAIM"], b: ["CLAIM"], c: ["CLAIM"], d: ["CLAIM"] } }), { kind: "board" }), f = scene.stars["fold:ready>in_progress"];
-
-    expect([f.name, f.glyph.nodes.map((n) => n.name)]).toEqual(["4 DAGs", ["a", "b", "c"]]);
-  });
-});
-
-describe("tethers are hover-only", () => {
-  const scene = build(boardSky({ writes: { alpha: ["CLAIM"], beta: ["CLAIM"], solo: ["REVIEW"] }, cues: [cue("graph-refresh", "MERGED", "done")] }), { kind: "board" });
-
-  it("draws none at rest and exactly the hovered DAG's one while it is hovered", () => {
-    expect(tethersDrawn(scene, null)).toEqual([]);
-    expect(tethersDrawn(scene, scene.stars.solo).map(([s, t]) => [s.name, t])).toEqual([["solo", scene.stars.solo.tether]]);
-    expect(tethersDrawn(scene, scene.stars["fold:ready>in_progress"])).toHaveLength(1);
-  });
-});
-
-describe("the DAGs free of the Board", () => {
-  const fixture = () => boardSky({ writes: { w: ["CLAIM"] }, cues: [cue("q", "MERGED", "done")], launches: ["pr-launcher"], free: { Ops: ["free-a", "free-b"], Docs: ["free-c"] } });
-
-  it("leaves every DAG that writes no lane and is no cue off the Board, launchers included", () => {
-    const scene = build(fixture(), { kind: "board" });
-
-    expect(Object.keys(scene.stars).sort()).toEqual(["q", "w"]);
-  });
-
-  it("folds them into one DAGs body at the right end of the axis, opposite New", () => {
-    const scene = build(fixture(), { kind: "board" }), h = scene.hangar!, xs = Object.values(scene.galaxies).map((g) => g.x);
-
-    expect([h.names, h.doms]).toEqual([["pr-launcher", "free-a", "free-b", "free-c"], 3]);
-    expect([h.x > Math.max(...xs), h.y]).toEqual([true, scene.galaxies.new.y]);
-  });
-
-  it("keeps the hangar clear of a final state that ends the axis", () => {
-    const snap: Snapshot = {
-      graphs: ["board", "runs"],
-      flows: [{ name: "board", agents: [], machine: {
-        ...machine(["to_do", "in_progress", "done"], { transitions: [{ source: "to_do", target: "in_progress", event: "START" }, { source: "in_progress", target: "done", event: "FINISH" }], mainLine: ["to_do", "in_progress", "done"] }),
-        states: [{ id: "to_do", name: "To Do", initial: true, final: false }, { id: "in_progress", name: "In Progress", initial: false, final: false }, { id: "done", name: "Done", initial: false, final: true }],
-      } }],
-      dags: ["free-a", "free-b"].map((n) => dag(n, [["run", []]])),
-      domains: [{ name: "Ops", dags: [{ name: "free-a", runSafe: false }, { name: "free-b", runSafe: false }] }],
-      cues: [], settled: {}, error: null, now: 1000,
-    };
-    const S = merge(snap), moves = new Moves();
-    moves.observe(S, 1000);
-    const scene = build({ S, moves, W: 1920, H: 1080, T: 1000 }, { kind: "board" }), h = scene.hangar!, done = scene.galaxies.done;
-
-    expect(h.x - h.r).toBeGreaterThanOrEqual(done.x + done.reach[0]);
-  });
-
-  it("draws no hangar when every DAG is tied to the Board", () => {
-    expect(build(boardSky({ writes: { w: ["CLAIM"] } }), { kind: "board" }).hangar).toBeUndefined();
-  });
-});
-
-describe("the DAGs level", () => {
-  const long = (p: string, n: number) => Array.from({ length: n }, (_, i) => `${p}-a-rather-long-dag-name-${String(i).padStart(2, "0")}`);
-  const rowsOf = (scene: Scene, name: string) => new Set(scene.groups.find((g) => g.name === name)!.stars.map((s) => s.y)).size;
-
-  it("lays out only the free DAGs, one block per domain in name order", () => {
-    const scene = build(boardSky({ writes: { w: ["CLAIM"] }, launches: ["pr-launcher"], free: { Ops: ["free-a", "free-b"] } }), { kind: "dags" });
-
-    expect(Object.keys(scene.stars).sort()).toEqual(["free-a", "free-b", "pr-launcher"]);
-    expect(scene.groups.map((g) => [g.name, g.stars.map((s) => s.name)])).toEqual([["Board", ["pr-launcher"]], ["Ops", ["free-a", "free-b"]]]);
-  });
-
-  // One row count R serves every block (the mockup's dock()): blocks with DAGs to spare split into R rows, and a block never has more rows
-  // than DAGs, so a single-DAG block stays one row.
-  it("splits every block with DAGs to spare into the same number of rows", () => {
-    const scene = build(boardSky({ free: { Wide: long("w", 24), Mid: long("m", 16), Narrow: ["n-only"] } }), { kind: "dags" });
-
-    expect(rowsOf(scene, "Wide")).toBeGreaterThan(1);
-    expect(rowsOf(scene, "Mid")).toBe(rowsOf(scene, "Wide"));
-    expect(rowsOf(scene, "Narrow")).toBe(1);
-  });
-
-  it("keeps each domain's DAGs in name order and inside the canvas", () => {
-    const scene = build(boardSky({ free: { Wide: long("w", 24) } }), { kind: "dags" }), stars = scene.groups.find((g) => g.name === "Wide")!.stars;
-
-    expect(stars.map((s) => s.name)).toEqual(long("w", 24));
-    for (const s of stars) expect([s.x > 0, s.x < scene.w, s.y > 0, s.y < scene.h]).toEqual([true, true, true, true]);
-  });
-
-  // Several wide domains can lay out wider than the scene (the row count caps at eight), so the fit frames the stars' own box, not the scene.
-  it("frames every DAG, name and domain label in its box, however many domains there are", () => {
-    const named = (p: string, n: number) => Array.from({ length: n }, (_, i) => `${p}-dag-${String(i).padStart(2, "0")}`);
-    const free = { A: named("delivery", 9), B: named("board", 3), C: named("agent-job", 10), D: named("retrieval", 8), E: named("host-ops", 10), Stress: named("machine", 40) };
-    const scene = build(boardSky({ free }), { kind: "dags" }), [x0, y0, x1, y1] = scene.box!;
-
-    for (const s of Object.values(scene.stars)) expect([s.x - s.glyph.w / 2 >= x0, s.x + s.glyph.w / 2 <= x1, s.y - s.glyph.h / 2 >= y0, s.y + s.glyph.h / 2 <= y1]).toEqual([true, true, true, true]);
-    for (const g of scene.groups) expect([g.lx >= x0, g.lx <= x1, g.ly >= y0]).toEqual([true, true, true]);
-    // the scene widens until the blocks fit it, so the names keep the room their widths were laid out for
-    expect(x1 - x0).toBeLessThanOrEqual(scene.w);
+    expect(scene.bEdges.map((e) => e.event)).toEqual(build(boardSky(), { kind: "board" }).bEdges.map((e) => e.event));
+    expect([writers("CLAIM"), writers("MERGED")]).toEqual([[], []]);
+    expect(writers("REVIEW")).toEqual([{ actor: "operator", trigger: "ui", event: "REVIEW" }]);
   });
 });
 
@@ -600,65 +469,6 @@ describe("the room between Board states", () => {
     const scene = build(busy(), { kind: "board" });
 
     expect(scene.w / scene.h).toBeCloseTo(1920 / 1080, 1);
-  });
-
-  it("leaves room on a path for the DAG body that writes it, wider for a fold of several", () => {
-    const wide = dag("wide-dag-with-a-long-name", [["a", []], ["b", ["a"]], ["c", ["b"]], ["d", ["c"]]]);
-    const writers = (n: number) => (snap: Snapshot) => {
-      snap.flows[0].machine.writers = { ready_in_progress: Array.from({ length: n }, (_, i) => ({ actor: i ? `dag-${i}` : wide.name, trigger: "dagu" })) };
-      snap.dags = [wide, ...Array.from({ length: n - 1 }, (_, i) => dag(`dag-${i + 1}`))];
-    };
-    const gap = (scene: ReturnType<typeof build>) => scene.galaxies.in_progress.x - scene.galaxies.in_progress.R - (scene.galaxies.ready.x + scene.galaxies.ready.R);
-    const one = build(busy(writers(1)), { kind: "board" }), fold = build(busy(writers(3)), { kind: "board" });
-
-    expect(gap(one)).toBeGreaterThanOrEqual(40 + glyph(wide).w);
-    expect(gap(fold)).toBeGreaterThanOrEqual(40 + 60);
-  });
-});
-
-// The live Board's crowding: busy states, two stub launchers of one machine under In progress, and two cued DAGs, one of them wide, by Done.
-describe("DAGs crowded round busy states", () => {
-  const chain = (name: string, n: number) => dag(name, Array.from({ length: n }, (_, i): [string, string[]] => [`s${i}`, i ? [`s${i - 1}`] : []]));
-  const wide = dag("apply-on-merge", [...Array.from({ length: 8 }, (_, i): [string, string[]] => [`c${i}`, i ? [`c${i - 1}`] : []]), ...Array.from({ length: 8 }, (_, i): [string, string[]] => [`p${i}`, ["c0"]])]);
-  const crowded = (W: number, H: number, more = 0) => savedBoardSky(W, H, (snap) => {
-    const board = snap.flows[0], counts: Record<string, number> = { ready: 47, waiting: 35, in_progress: 7, done: 47, review: 1, needs_attention: 4 };
-    board.agents = Object.entries(counts).flatMap(([state, n]) => Array.from({ length: n }, (_, i) => ({ id: `${state}-${i}`, title: "t", state, model: "", labels: [] })));
-    board.machine.subflows = [{ state: "in_progress", flow: "running-skill-evals", exits: {}, parent: "board", when: "" }, { state: "in_progress", flow: "auditing-infrastructure", exits: {}, parent: "board", when: "" }];
-    board.machine.launches = Object.fromEntries(["skill-eval", "skill-optimize"].map((d) => [d, { skill: "running-skill-evals", flow: "running-skill-evals" }]).concat([["nightly-audit", { skill: "auditing-infrastructure", flow: "auditing-infrastructure" }]]));
-    board.machine.writers = { done_completed: [{ actor: "main-follow", trigger: "dagu" }] };
-    snap.flows.push({ name: "running-skill-evals", agents: [], machine: machine(["fetch", "run"]) }, { name: "auditing-infrastructure", agents: [], machine: machine(["scan", "report"]) });
-    for (let i = 0; i < more; i++) {
-      board.machine.subflows!.push({ state: "in_progress", flow: `extra-${i}`, exits: {}, parent: "board", when: "" });
-      snap.flows.push({ name: `extra-${i}`, agents: [], machine: machine(["a", "b"]) });
-    }
-    snap.dags = [dag("skill-eval"), dag("skill-optimize"), chain("nightly-audit", 5), chain("main-follow", 2), wide, chain("graph-refresh", 3)];
-    snap.cues = [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge to main" }, { dag: "graph-refresh", event: "MERGED", state: "done", on: "each merge to main" }];
-  });
-  const box = (s: { x: number; y: number; glyph: { w: number; h: number } }) => ({ x0: s.x - s.glyph.w / 2 - 10, y0: s.y - s.glyph.h / 2 - 10, x1: s.x + s.glyph.w / 2 + 10, y1: s.y + s.glyph.h / 2 + 10 });
-
-  it.each([[1670, 1080, 0], [3190, 1440, 0], [1670, 1080, 20]])("keeps every DAG glyph off the other glyphs and every state at %ix%i with %i more machines under In progress", (W, H, more) => {
-    const scene = build(crowded(W, H, more), { kind: "board" }), boxes = Object.values(scene.stars).map((s) => ({ name: s.name, ...box(s) }));
-    const apart = (a: (typeof boxes)[number], b: (typeof boxes)[number]) => a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0;
-    const overlapping: string[] = [];
-
-    boxes.forEach((a, i) => boxes.slice(i + 1).forEach((b) => { if (!apart(a, b)) overlapping.push(`${a.name}/${b.name}`); }));
-    for (const a of boxes)
-      for (const g of Object.values(scene.galaxies)) {
-        const nx = Math.max(a.x0, Math.min(g.x, a.x1)), ny = Math.max(a.y0, Math.min(g.y, a.y1));
-        if (Math.hypot(nx - g.x, ny - g.y) < g.R) overlapping.push(`${a.name}/${g.id}`);
-      }
-    // the two cues beside Merged fold into one body; the launchers hold no place on the Board
-    expect(boxes.map((b) => b.name).sort()).toEqual(["2 DAGs", "main-follow"]);
-    expect(overlapping).toEqual([]);
-  });
-
-  it.each([0, 20])("keeps every state, with its moons and their names, inside the sky with %i more machines under In progress", (more) => {
-    const scene = build(crowded(1670, 1080, more), { kind: "board" });
-
-    for (const g of Object.values(scene.galaxies)) {
-      expect(g.x - g.reach[1]).toBeGreaterThanOrEqual(0);
-      expect(g.x + g.reach[0]).toBeLessThanOrEqual(scene.w);
-    }
   });
 });
 
@@ -1068,68 +878,6 @@ describe("the state level's tasks", () => {
   });
 });
 
-describe("the state level's related DAGs", () => {
-  const level = (ties: Parameters<typeof moonSky>[3]) => build(moonSky(4, 1920, 1080, ties), { kind: "state", id: "in_progress" });
-  const radii = (scene: Scene) => Array.from({ length: 8 }, (_, i) => scene.hub!.rim! + 150 + 95 * i);
-  const from = (scene: Scene, s: Pt) => Math.hypot(s.x - scene.hub!.x, s.y - scene.hub!.y);
-
-  it("holds each DAG tied to the state still on a ring round the primary, the first straight above it, and lists its ties on hover", () => {
-    const scene = level({ writes: { claimer: ["CLAIM"], reviewer: ["REVIEW"] }, cues: [{ dag: "refresher", event: "REVIEW", state: "in_progress", on: "each merge" }], launches: { delivering: "in-progress" } });
-    const stars = ["claimer", "delivering", "refresher", "reviewer"].map((n) => scene.stars[n]), [first] = stars;
-
-    for (const s of stars) expect(radii(scene).some((r) => Math.abs(from(scene, s) - r) < 0.5)).toBe(true);
-    expect([first.x, first.y]).toEqual([scene.hub!.x, scene.hub!.y - radii(scene)[0]]);
-    expect(scene.stars.claimer.tether!.crit).toEqual(["writes CLAIM (ready → in_progress)"]);
-    expect(scene.stars.delivering.tether!.crit).toEqual(["launches in-progress"]);
-    expect(scene.stars.refresher.tether).toMatchObject({ cue: true, crit: ["runs on each merge, beside REVIEW"] });
-    expect(scene.groups.flatMap((g) => g.stars)).toHaveLength(4);
-  });
-
-  it("gives every DAG a place that clears the Board paths, the moons and the others, taking the next ring out when one is full", () => {
-    const cues: Cue[] = Array.from({ length: 24 }, (_, i) => ({ dag: `cued-${String(i).padStart(2, "0")}`, event: "REVIEW", state: "in_progress", on: `run ${i}` })), scene = level({ cues });
-    const stars = cues.map((c) => scene.stars[c.dag]), hub = scene.hub!, moons = scene.planets.filter((p) => p.moon);
-
-    for (const [i, s] of stars.entries()) {
-      expect(radii(scene).some((r) => Math.abs(from(scene, s) - r) < 0.5)).toBe(true);
-      expect(Math.abs(Math.sin(Math.atan2(s.y - hub.y, s.x - hub.x)))).toBeGreaterThan(Math.sin((26 * Math.PI) / 180)); // not on the Board paths' left and right bands
-      for (const o of stars.slice(i + 1)) expect(Math.hypot(s.x - o.x, s.y - o.y)).toBeGreaterThan(40);
-      for (const m of moons) expect(Math.hypot(s.x - m.x, s.y - m.y)).toBeGreaterThan(m.rim! + 12);
-    }
-    expect(new Set(stars.map((s) => Math.round(from(scene, s)))).size).toBeGreaterThan(1);
-  });
-
-  it("folds DAGs with the same ties into one body, as on the Board", () => {
-    const scene = level({ writes: { a: ["CLAIM"], b: ["CLAIM"], c: ["REVIEW"] } }), key = Object.keys(scene.stars).find((k) => k.startsWith("fold:"))!;
-
-    expect(Object.keys(scene.stars).sort()).toEqual(["c", key]);
-    expect([scene.stars[key].name, scene.stars[key].fold]).toEqual(["2 DAGs", ["a", "b"]]);
-    expect(scene.stars[key].tether!.crit).toEqual(["a: writes CLAIM (ready → in_progress)", "b: writes CLAIM (ready → in_progress)"]);
-  });
-});
-
-describe("the state level's launch-only DAGs", () => {
-  const scene = build(moonSky(4, 1920, 1080, { writes: { both: ["CLAIM"] }, launches: { solo: "skill-01", both: "skill-01", primary: "in-progress" } }), { kind: "state", id: "in_progress" });
-  const moon = scene.planets.find((p) => p.name === "skill-01")!;
-
-  it("orbits the one machine its only tie launches, as a small dot past the moon's name side", () => {
-    const s = scene.stars.solo, out = Math.sign(moon.x - scene.hub!.x);
-
-    expect([s.owned, moon.owned]).toEqual([moon, 1]);
-    expect([s.br, s.y, (s.x - moon.x) * out > moon.rim!]).toEqual([5, moon.y, true]);
-    expect(s.tether).toMatchObject({ x: moon.x, y: moon.y, crit: ["launches skill-01"] });
-  });
-
-  it("draws its one tether, to the machine it orbits, only while it is hovered", () => {
-    expect(tethersDrawn(scene, null)).toEqual([]);
-    expect(tethersDrawn(scene, scene.stars.solo).map(([s, t]) => [s.name, t])).toEqual([["solo", scene.stars.solo.tether]]);
-  });
-
-  it("leaves a DAG with another tie, or one that launches the primary, on the rings", () => {
-    expect([scene.stars.both.owned, scene.stars.primary.owned]).toEqual([undefined, undefined]);
-    expect(scene.stars.both.tether!.crit).toEqual(["writes CLAIM (ready → in_progress)", "launches skill-01"]);
-  });
-});
-
 describe("a fold's level", () => {
   const fold = (path: [string, string] | null, event?: string): Level => ({ kind: "fold", event, dags: ["alpha", "beta", "delta"], crit: [], path });
   const cues: Cue[] = [
@@ -1186,16 +934,6 @@ describe("a fold's level", () => {
     const sk = sky(), src = { flows: [sk.S.board], cues: sk.S.cues };
 
     for (const [event, rows] of [["CLAIM", "task"], ["MERGED", "merge"]] as const) expect(build(sk, ledgerLevel(src, event)!).fold!.ledger).toMatchObject({ event, rows });
-  });
-
-  it("is what drilling the Board's fold on the Review → Done path opens, laid out from the snapshot's cues", () => {
-    const sk = boardSky({ writes: { alpha: ["MERGED"] }, cues: [{ dag: "beta", event: "MERGED", state: "done", on: "push to main", resolves: "forced" }, { dag: "delta", event: "MERGED", state: "done", on: "push to main", resolves: "next" }] });
-    const fold = Object.values(build(sk, { kind: "board" }).stars).find((s) => s.fold)!, edge = fold.tether!.edge!;
-    const d = drill(fold, fold.tether!.crit, [edge.source, edge.target]);
-
-    expect("push" in d && d.push).toMatchObject({ kind: "fold", path: ["review", "done"], dags: ["alpha", "beta", "delta"] });
-    const scene = build(sk, "push" in d ? d.push : { kind: "board" }), l = scene.fold!.ledger!;
-    expect([scene.fold!.a!.id, scene.fold!.b!.id, l.event, l.rows, l.cols.map((c) => [c.dag, c.role, c.resolves])]).toEqual(["review", "done", "MERGED", "merge", [["alpha", "writer", null], ["beta", "cue", "forced"], ["delta", "cue", "next"]]]);
   });
 
   describe("a merge Ledger's rows", () => {
@@ -1353,7 +1091,7 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
     for (const b of bs) expect([b.id, b.x0 >= 0, b.x1 <= scene.w, b.y0 >= 0, b.y1 <= scene.h]).toEqual([b.id, true, true, true, true]);
   });
 
-  /** Every state's disc, name and count line and moon rows, every DAG body with its name, and the DAGs hangar with its name, each as a box. */
+  /** Every state's disc, name and count line and moon rows, each as a box. */
   const labels = (scene: Scene, W: number) => {
     const F = scene.unit ?? scene.w / (0.94 * W), out: { o: string; x0: number; x1: number; y0: number; y1: number }[] = [];
     const add = (o: string, x: number, hw: number, y0: number, y1: number) => out.push({ o, x0: x - hw, x1: x + hw, y0, y1 });
@@ -1366,17 +1104,14 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
       const sg = m.x < m.parent.x ? -1 : 1, end = m.x + sg * (m.R + m.ext + 10 + textW(scene.clipped ? clip(m.label) : m.label, 10.5) * F);
       out.push({ o: m.parent.id, x0: Math.min(m.x - m.R, end), x1: Math.max(m.x + m.R, end), y0: m.y - Math.max(m.R, 5.25 * F), y1: m.y + Math.max(m.R, 5.25 * F) });
     }
-    for (const s of Object.values(scene.stars)) add(s.name, s.x, Math.max(s.glyph.w / 2, (textW(s.label, 11) * F) / 2), s.y - s.glyph.h / 2, s.y + s.glyph.h / 2 + 21.5 * F);
-    const h = scene.hangar!;
-    add("hangar", h.x, Math.max(h.r, (textW("DAGs", 12.5) * F) / 2, (textW(`${h.names.length} · ${h.doms} domains`, 10.5) * F) / 2), h.y - h.r, h.y + h.r + 30 + 27 * F);
     return out;
   };
 
-  it.each([[12, 1920], [20, 1920], [12, 1420], [20, 1420]])("keeps state names, DAG names and the DAGs hangar off each other and off every other state's rows at %i machines a state on a %i px canvas", (n, W) => {
+  it.each([[12, 1920], [20, 1920], [12, 1420], [20, 1420]])("keeps state names off each other and off every other state's rows at %i machines a state on a %i px canvas", (n, W) => {
     const scene = build(everyState(n, 4, W, 1080, ALL, false, true), { kind: "board" }), bs = labels(scene, W), hit: string[] = [];
     bs.forEach((a, i) => bs.slice(i + 1).forEach((b) => { if (a.o !== b.o && a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) hit.push(`${a.o}/${b.o}`); }));
 
-    expect([Object.keys(scene.stars).length, scene.hangar?.names.length, hit]).toEqual([4, 10, []]);
+    expect(hit).toEqual([]);
   });
 
   const shownOf = (scene: Scene) => ALL.map((id) => scene.moons.filter((m) => m.parent.id === id && !m.pager).length - 1);
@@ -1464,15 +1199,6 @@ describe("a task's trail on a state level", () => {
     const scene = build(inProgressSky(), { kind: "state", id: "in_progress" });
 
     expect(scene.hostTrail!("PROJ-1")).toEqual([{ at: 800, host: "in-progress#worktree_ready" }, { at: 900, host: "triaging-cr-reviews" }, { at: 980, host: "in-progress#worktree_ready" }]);
-  });
-});
-
-describe("a DAG's label", () => {
-  it("drops the namespace when no other DAG shares the bare name", () => {
-    const scene = build(boardSky({ writes: { "dagu/board-autopilot": ["CLAIM"], "dagu/nightly": ["MERGED"], "kit/nightly": ["REVIEW"] } }), { kind: "board" });
-
-    expect(scene.stars["dagu/board-autopilot"].label).toBe("board-autopilot");
-    expect([scene.stars["dagu/nightly"].label, scene.stars["kit/nightly"].label]).toEqual(["dagu/nightly", "kit/nightly"]);
   });
 });
 

@@ -702,7 +702,7 @@ body.dags canvas, body.dags #tip, body.dags #panel { visibility: hidden; }
 #dg .thead, #dg .trow { display: grid; grid-template-columns: var(--grid); align-items: center; column-gap: 12px; }
 #dg .thead { position: sticky; top: 0; z-index: 3; padding: 0 12px 6px; font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); background: var(--bg0); }
 #dg .trow { position: relative; box-sizing: border-box; min-height: 40px; margin-top: 7px; padding: 0 12px; border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); cursor: pointer; }
-#dg .trow:hover { border-color: color-mix(in srgb, var(--slate) 30%, transparent); }
+#dg .trow:hover, #dg .trow.spot { border-color: color-mix(in srgb, var(--slate) 30%, transparent); }
 #dg .trow:focus-visible { outline: 0; border-color: var(--agent); }
 #dg .trow.startable { padding-right: calc(max(30px, 30px * var(--fs)) + 12px); }
 #dg .trow > span, #dg .trow > svg { min-width: 0; }
