@@ -119,7 +119,7 @@ describe("hiding", () => {
 });
 
 describe("the cards drawn from a snapshot", () => {
-  const pull = (number: number, checks: Pull["checks"], threads = 0): Pull => ({ number, url: `https://github.com/o/r/pull/${number}`, checks, merged: false, threads, stale: false });
+  const pull = (number: number, checks: Pull["checks"], threads = 0): Pull => ({ number, url: `https://github.com/o/r/pull/${number}`, checks, merged: false, merge_sha: null, merged_at: null, threads, stale: false });
   const agent = (id: string, state: string, extra: Partial<RawAgent> = {}): RawAgent => ({ id, title: `title ${id}`, state, model: "", ...extra });
   const machine = { states: [], transitions: [] } as never;
   const snapshot = (): Snapshot => ({

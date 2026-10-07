@@ -84,7 +84,7 @@ describe("applyDelta", () => {
   });
 
   it("replaces the pull requests wholesale with the server's latest read", () => {
-    const pull = { number: 7, url: "https://github.com/o/r/pull/7", checks: "pass" as const, merged: false, threads: 2, stale: false };
+    const pull = { number: 7, url: "https://github.com/o/r/pull/7", checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 2, stale: false };
     const s = board([], { pulls: { "PROJ-1": [{ ...pull, number: 6 }], "PROJ-2": [pull] } });
 
     const next = applyDelta(s, { kind: "pulls", pulls: { "PROJ-1": [pull] } });

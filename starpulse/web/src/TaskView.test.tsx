@@ -10,7 +10,7 @@ const styles = readFileSync(new URL("./style.css", import.meta.url), "utf8");
 
 const task: KanbanTask = {
   id: "TASK-9", title: "Redraw the view", lane: "ready", milestone: "m-89", labels: ["needs-human"], assignee: "@agent-standard-high",
-  dependencies: ["TASK-1"], openDeps: 0, prs: [{ number: 12, url: "http://pr/12", checks: "pass", merged: false, threads: 0, stale: false }],
+  dependencies: ["TASK-1"], openDeps: 0, prs: [{ number: 12, url: "http://pr/12", checks: "pass", merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false }],
   description: "from the snapshot", live: null, released: false, entered: 0,
   moves: { in_progress: { allowed: true, reason: "", skill: "" }, review: { allowed: false, reason: "no review yet", skill: "completing-tasks" } },
 };

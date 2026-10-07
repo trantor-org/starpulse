@@ -13,11 +13,24 @@ REPO = "https://github.com/acme/widgets/pull"
 FIRST, SECOND = f"{REPO}/1750", f"{REPO}/1751"
 
 
-def _node(number: int, *, rollup: str | None, merged: bool = False, threads: tuple[bool, ...] = ()) -> dict:
-    """A GraphQL `pullRequest` node: its head commit's check rollup and its review threads' resolved flags."""
+SHA, MERGED_AT = "9f2c1ab07d3e4f5a6b7c8d9e0f1a2b3c4d5e6f70", "2026-10-06T21:14:09Z"
+
+
+def _node(
+    number: int,
+    *,
+    rollup: str | None,
+    merged: bool = False,
+    threads: tuple[bool, ...] = (),
+    merge_commit: str | None = None,
+    merged_at: str | None = None,
+) -> dict:
+    """A GraphQL `pullRequest` node: its head commit's check rollup, review threads' resolved flags and merge facts."""
     return {
         "number": number,
         "merged": merged,
+        "mergedAt": merged_at,
+        "mergeCommit": {"oid": merge_commit} if merge_commit else None,
         "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": rollup} if rollup else None}}]},
         "reviewThreads": {"nodes": [{"isResolved": resolved} for resolved in threads]},
     }
@@ -41,12 +54,23 @@ class _Github:
         return answer
 
 
-def _record(number: int, checks: str, *, merged: bool = False, threads: int = 0, stale: bool = False) -> dict:
+def _record(
+    number: int,
+    checks: str,
+    *,
+    merged: bool = False,
+    threads: int = 0,
+    stale: bool = False,
+    merge_sha: str | None = None,
+    merged_at: str | None = None,
+) -> dict:
     return {
         "number": number,
         "url": f"{REPO}/{number}",
         "checks": checks,
         "merged": merged,
+        "merge_sha": merge_sha,
+        "merged_at": merged_at,
         "threads": threads,
         "stale": stale,
     }
@@ -233,6 +257,22 @@ def test_the_record_carries_the_number_url_and_merged_state() -> None:
     assert fetch([FIRST], gh)[FIRST] == _record(1750, "pass", merged=True)
 
 
+def test_a_merged_prs_record_carries_the_merge_commit_sha_and_merge_time() -> None:
+    gh = _Gh({"p1750": _node(1750, rollup="SUCCESS", merged=True, merge_commit=SHA, merged_at=MERGED_AT)})
+
+    record = fetch([FIRST], gh)[FIRST]
+
+    assert (record["merge_sha"], record["merged_at"]) == (SHA, MERGED_AT)
+
+
+def test_an_open_prs_record_carries_no_merge_sha_or_merge_time() -> None:
+    gh = _Gh({"p1750": _node(1750, rollup="SUCCESS")})
+
+    record = fetch([FIRST], gh)[FIRST]
+
+    assert (record["merge_sha"], record["merged_at"]) == (None, None)
+
+
 def test_each_repository_is_asked_once_for_all_its_numbers() -> None:
     other = "https://github.com/other-org/tools/pull/9"
     gh = _Gh({"p1750": _node(1750, rollup=None), "p1751": _node(1751, rollup=None), "p9": _node(9, rollup=None)})
@@ -329,7 +369,7 @@ def test_one_gh_graphql_request_asks_for_every_number_in_the_repository(monkeypa
         "-f",
         "query=query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) "
         "{ p1: pullRequest(number: 1) { ...Pull } p2: pullRequest(number: 2) { ...Pull } } }"
-        "\nfragment Pull on PullRequest {\n  number\n  merged\n"
+        "\nfragment Pull on PullRequest {\n  number\n  merged\n  mergedAt\n  mergeCommit { oid }\n"
         "  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }\n"
         "  reviewThreads(first: 100) { nodes { isResolved } }\n}\n",
         "-f",

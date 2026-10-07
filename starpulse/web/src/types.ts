@@ -166,6 +166,10 @@ export interface Pull {
   /** The head commit's check rollup. */
   checks: "pass" | "failing" | "pending" | "none";
   merged: boolean;
+  /** The merge commit's SHA; null until the PR merges. */
+  merge_sha: string | null;
+  /** When the PR merged, ISO 8601 UTC; null until it does. */
+  merged_at: string | null;
   /** Unresolved review threads. */
   threads: number;
   /** True when the last read failed and this is the read before it. */

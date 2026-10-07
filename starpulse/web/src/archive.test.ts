@@ -6,7 +6,7 @@ const task = (id: string, lane: string, over: Partial<KanbanTask> = {}): KanbanT
   id, title: id, lane, milestone: "m-89", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null,
   released: false, moves: {}, entered: 0, ...over,
 });
-const pull = (over = {}) => ({ number: 7, url: "http://pr/7", checks: "pass" as const, merged: false, threads: 0, stale: false, ...over });
+const pull = (over = {}) => ({ number: 7, url: "http://pr/7", checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false, ...over });
 const reply = (status: number, body: object) => async () => new Response(JSON.stringify(body), { status });
 
 describe("posting an archive", () => {
