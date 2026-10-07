@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -64,7 +65,16 @@ def test_a_wrong_token_answers_401_and_writes_nothing(hub: Hub) -> None:
 
 
 def test_a_body_over_the_limit_answers_413_and_writes_nothing(hub: Hub) -> None:
-    status, _ = hub.post(b"x" * (MAX_FORWARD_BODY + 1))
+    # The server answers on the declared length and closes unread, so sending the body would race that close.
+    connection = http.client.HTTPConnection("127.0.0.1", hub.server.server_port, timeout=5)
+    try:
+        connection.putrequest("POST", "/api/forward")
+        connection.putheader("Authorization", "Bearer ana-secret")
+        connection.putheader("Content-Length", str(MAX_FORWARD_BODY + 1))
+        connection.endheaders()
+        status = connection.getresponse().status
+    finally:
+        connection.close()
 
     assert status == 413
     assert hub.stored() == []
