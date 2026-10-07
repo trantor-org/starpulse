@@ -300,20 +300,25 @@
       for (let it = 0; it < 4; it++) { const big = nf.filter((i) => low[i] > u); u = (x1 - x0 - named - big.reduce((a, i) => a + low[i], 0)) / Math.max(1, nf.length - big.length); }
       const gap = need.map((v, i) => Math.max(v ? 0 : u, v, low[i])), k = (x1 - x0) / Math.max(1, gap.reduce((a, b) => a + b, 0)), xs = [x0];
       gap.forEach((v) => xs.push(xs.at(-1) + v * k)); return xs; }
+    // the template: branch states far enough off the main line that their orbits of tasks never touch, two tiers of names above and below
+    function hdrOf(m, hn) { const g = G[m], oMax = Math.max(...hn.map(orbitOf)), oBr = Math.max(...hn.filter((n) => g.colN[n.s] > 1).map(orbitOf), 0), lab = PX.main() * 1.3, room = 3.3 * lab + 6,
+        rowGap = Math.max(2 * oBr + 6, Math.min(Math.max(2 * oMax + 10, 40 * FS), Math.max(26 * FS, (H * 0.4 - 2 * room - 2 * oMax) / Math.max(1, g.rmax - g.rmin)))),
+        span = g.rmax - g.rmin, base = 10 + 2 * room + 2 * oMax;
+      return { oMax, room, rowGap, span, base, h0: base + span * rowGap }; }
+    const tmplOf = (m) => M[m].states.map((st) => ({ m, s: st.id, r: rOf(tasksAt(m, st.id).length, null) }));
+    const tall = (h0) => h0 + clamp(Math.min(0.5 * h0, H * 0.6 - h0), 0, 0.5 * h0);
     function layout() {
       L = { nodes: new Map(), rows: new Map(), stars: [], list: [], ticks: [] };
       const g = G[topM], metaX = NX + 22, metaW = Math.round(clamp(186 * FS, 170, 290)), x0 = metaX + metaW + 34 * FS, x1 = NX + CW - 34, hx = colXs(topM, x0, x1, PX.main(), 40 * FS, null);
       Object.assign(L, { metaX, metaW, x0, x1 });
       const hn = M[topM].states.map((st) => Object.assign(addNode(topM, st.id, hx[g.depth[st.id]], null), { col: RAMP[Math.round((g.depth[st.id] / (g.ncols - 1)) * (RAMP.length - 1))] }));
       radii();
-      // the template: branch states far enough off the main line that their orbits of tasks never touch, two tiers of names above and below
-      const oMax = Math.max(...hn.map(orbitOf)), oBr = Math.max(...hn.filter((n) => g.colN[n.s] > 1).map(orbitOf), 0), lab = PX.main() * 1.3, room = 3.3 * lab + 6,
-        rowGap = Math.max(2 * oBr + 6, Math.min(Math.max(2 * oMax + 10, 40 * FS), Math.max(26 * FS, (H * 0.4 - 2 * room - 2 * oMax) / Math.max(1, g.rmax - g.rmin))));
-      // the template takes half again its natural height, short of 60% of the view: its branch rows spread apart, the rest pads it
-      const span = g.rmax - g.rmin, base = 10 + 2 * room + 2 * oMax, h0 = base + span * rowGap, extra = clamp(Math.min(0.5 * h0, H * 0.6 - h0), 0, 0.5 * h0),
-        gap = span ? rowGap + (extra * 0.6) / span : rowGap, padT = (h0 + extra - base - span * gap) / 2;
+      // in-progress takes half again its natural height, short of 60% of the view; a machine opened below it takes the same height,
+      // so every level's top is one size: its branch rows spread apart, the rest pads it above and below
+      const { oMax, room, rowGap, span, base, h0 } = hdrOf(topM, hn), hT = Math.max(h0, topM === IP ? tall(h0) : tall(hdrOf(IP, tmplOf(IP)).h0)),
+        gap = span ? Math.min(2 * rowGap, rowGap + ((hT - h0) * 0.6) / span) : rowGap, padT = (hT - base - span * gap) / 2;
       L.yMain = 10 + padT + room + oMax - g.rmin * gap; for (const n of hn) n.y = L.yMain + g.row[n.s] * gap;
-      L.hdrB = h0 + extra; L.laneTop = L.hdrB + 6;
+      L.hdrB = hT; L.laneTop = L.hdrB + 6;
       // each row is as tall as its meta or its machine (branches, names above and below), whichever is taller
       const rg = 32 * FS, pad = 26 * FS + PX.row() * 1.3, metaH = PX.name() * 1.4 + 2 * PX.sub() * 1.5 + 34 * FS;
       // a machine opened deep down may have only a few rows: they stretch, up to 3.2 times, so the lane is filled rather than left empty
