@@ -157,7 +157,7 @@ from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse.contracts import Move, StartFailedError
-from starpulse.event_log import EventLog
+from starpulse.event_log import EventLog, prune_forever
 from starpulse.harness import HARNESS_MACHINES
 from starpulse.harnesses import Harnesses
 from starpulse.history import HealthHistory, History, HistoryStore, LevelHistory, database_url, record_machine_events
@@ -1009,6 +1009,13 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     # The declared --hours is the default; an override Admin wrote beside the config replaces it from the first snapshot.
     url = database_url(config.database_url, base)
     log = EventLog(url)
+    threading.Thread(
+        target=prune_forever,
+        args=(log,),
+        kwargs={"retention_days": config.event_log_retention_days, "stop": threading.Event()},
+        name="event-log-prune",
+        daemon=True,
+    ).start()
     window = HistoryWindow(feed, args.hours, base / SETTINGS_FILE)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     history = history_store(config, base, board, feed.machines)

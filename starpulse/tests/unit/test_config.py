@@ -194,8 +194,8 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: aggregates_only, board, database_url, forward, "
-        "harnesses_file, hub_retention_days, level, mode, oidc, runs, session_start_url, sources, tracker_url"
+        "unknown config key(s) trakcer_url, zeta; known: aggregates_only, board, database_url, event_log_retention_days, "
+        "forward, harnesses_file, hub_retention_days, level, mode, oidc, runs, session_start_url, sources, tracker_url"
     )
 
 
@@ -478,3 +478,15 @@ def test_a_hub_takes_names_unless_it_is_configured_for_aggregates_only(tmp_path:
     assert load(None).aggregates_only is False
     assert load(_write(tmp_path, "aggregates_only = true\n")).aggregates_only is True
     assert _refusal(tmp_path, 'aggregates_only = "yes"\n') == "aggregates_only must be true or false"
+
+
+def test_the_event_log_keeps_seven_days_unless_the_config_says_otherwise(tmp_path: Path) -> None:
+    assert load(_write(tmp_path, "")).event_log_retention_days == 7
+    assert load(_write(tmp_path, "event_log_retention_days = 30\n")).event_log_retention_days == 30
+
+
+@pytest.mark.parametrize("value", ["0", "-3", "1.5", "true", '"7"'])
+def test_an_event_log_retention_that_is_not_a_whole_number_of_days_is_refused(tmp_path: Path, value: str) -> None:
+    assert "event_log_retention_days must be a whole number of days, 1 or more" in _refusal(
+        tmp_path, f"event_log_retention_days = {value}\n"
+    )

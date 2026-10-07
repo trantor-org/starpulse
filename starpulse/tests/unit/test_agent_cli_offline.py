@@ -129,6 +129,7 @@ class TestConfigCheck:
             "forward": None,
             "sources": [],
             "aggregates_only": False,
+            "event_log_retention_days": 7,
         }
 
     def test_with_no_file_it_reports_the_defaults(

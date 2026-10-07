@@ -42,6 +42,7 @@ _KEYS = {
     "session_start_url",
     "level",
     "hub_retention_days",
+    "event_log_retention_days",
     "oidc",
     "forward",
     "sources",
@@ -314,6 +315,8 @@ class Config:
     """The instances this hub takes forwarded events from, by their tokens."""
     aggregates_only: bool = False
     """A hub that takes aggregates only refuses an instance's opt-in to be named."""
+    event_log_retention_days: int = 7
+    """`serve` prunes the event log's rows older than this many days, hourly, so the table and every reader's boot replay stay bounded; a reader that was behind the oldest retained row records a gap."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -343,10 +346,10 @@ def discover(path: Path | None) -> Path | None:
     return path
 
 
-def _retention(value: object) -> int:
-    """The days a hub keeps raw events; a whole number, 1 or more."""
+def _retention(value: object, key: str) -> int:
+    """The days `key` keeps rows for; a whole number, 1 or more."""
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-        raise ConfigError("hub_retention_days must be a whole number of days, 1 or more")
+        raise ConfigError(f"{key} must be a whole number of days, 1 or more")
     return value
 
 
@@ -371,7 +374,8 @@ def load(path: Path | None) -> Config:
             )
     if not isinstance(session_start_url := raw.get("session_start_url"), str | None):
         raise ConfigError("session_start_url must be text")
-    retention = _retention(raw.get("hub_retention_days", 14))
+    retention = _retention(raw.get("hub_retention_days", 14), "hub_retention_days")
+    log_retention = _retention(raw.get("event_log_retention_days", 7), "event_log_retention_days")
     harnesses = None
     if path and (name := raw.get("harnesses_file")):
         if not (file := path.parent / name).is_file():
@@ -408,4 +412,5 @@ def load(path: Path | None) -> Config:
         _forward(raw.get("forward")),
         _sources(raw.get("sources", [])),
         _aggregates_only(raw.get("aggregates_only", False)),
+        event_log_retention_days=log_retention,
     )

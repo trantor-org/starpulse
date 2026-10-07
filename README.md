@@ -250,6 +250,11 @@ tracker_url = "https://tracker.example.com"
 # History in Postgres instead of SQLite; install the extra with `uvx --from 'starpulse[postgres]' starpulse serve`.
 database_url = "postgresql+psycopg://db.example.com/starpulse"
 
+# How long `serve` keeps the event log's rows: it prunes older ones at start and hourly, so the table, a SQLite file
+# and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept
+# row and records the span it missed in `starpulse_gaps`. A whole number of days, 1 or more.
+event_log_retention_days = 7   # the default
+
 # The board adapter: a module under `starpulse`, or the dotted path of one an installed package provides.
 # The rest of the table is that adapter's settings.
 # With no [board] table the view draws its own Markdown board, `type = "native"`:
