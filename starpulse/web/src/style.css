@@ -68,8 +68,10 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #feed div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #feed b { font-weight: 400; color: var(--ink); } #feed em { font-style: normal; opacity: .6; }
 /* a line that points at a task or DAG lights it on the view while hovered; the note says why the Kanban shows no card for it */
-#feed div.go { cursor: pointer; border-radius: 3px; } #feed div.go:hover { background: rgba(148,163,184,.1); } #feed div.go:hover b { color: #fff; }
-#feed .why { margin-left: .6em; color: #fbbf24; opacity: .85; }
+#feed div.go { position: relative; cursor: pointer; border-radius: 3px; } #feed div.go:hover { background: rgba(148,163,184,.1); } #feed div.go:hover b { color: #fff; }
+/* over the line's ellipsized tail, so it shows however long the line is, and the lines below don't move under the pointer */
+#feed .why { position: absolute; top: 0; right: 0; padding: 0 6px 0 2em; color: #fbbf24; border-radius: 0 3px 3px 0;
+  background: linear-gradient(to right, transparent, #161b26 1.6em); }
 #legend { line-height: 1.9; }
 #legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 5px 0 0; vertical-align: 0; box-sizing: border-box; }
 #legend span { display: inline-block; margin-right: 10px; white-space: nowrap; }

@@ -7,7 +7,7 @@ import { Admin } from "./Admin";
 import { AdminStore } from "./adminPrefs";
 import { ForwardingStore } from "./forwarding";
 import { HistoryWindowStore } from "./historyWindow";
-import { HudStore, useHud, type HudState } from "./hud";
+import { HudStore, useHud, type FeedLine, type HudState } from "./hud";
 import { BOARD, pathKey, type Path } from "./levels";
 import { FeedLines, Queues } from "./Fanout";
 import { Kanban } from "./Kanban";
@@ -279,12 +279,14 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
 }
 
 function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
+  // the lines hold still under the pointer, so a run starting mid-aim doesn't push the next line under the click
+  const [held, setHeld] = useState<FeedLine[] | null>(null);
   return (
     <aside id="rail">
       <section className="recent">
         <h3>Recent</h3>
-        <div id="feed">
-          <FeedLines lines={hud.feed} {...feed} />
+        <div id="feed" onPointerEnter={() => setHeld(hud.feed)} onPointerLeave={() => setHeld(null)}>
+          <FeedLines lines={held ?? hud.feed} {...feed} />
         </div>
       </section>
       <section id="legend">

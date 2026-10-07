@@ -72,4 +72,14 @@ describe("the Recent feed's lines", () => {
     expect(line).toMatchObject({ who: "dagu/deliver", where: "succeeded", dag: "dagu/deliver" });
     expect(line.task).toBeUndefined();
   });
+
+  it("keeps a move line's key when an older move ages out, so the line under the pointer is not remounted", () => {
+    const old = { flow: "delivery", task: "TASK-6", at: 5, event: "CLAIMED", to: "claimed", from: "ready" };
+    const kept = { flow: "delivery", task: "TASK-7", at: 10, event: "PR_OPENED", to: "pr_opened", from: "claimed" };
+
+    const before = feedOf([old, kept], [], [], 20).find((l) => l.task === "TASK-7");
+    const after = feedOf([kept], [], [], 20).find((l) => l.task === "TASK-7");
+
+    expect(after?.key).toBe(before?.key);
+  });
 });
