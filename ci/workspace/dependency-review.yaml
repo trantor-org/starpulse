@@ -1,0 +1,17 @@
+# Judging what a dependency bump breaks before it merges.
+name: DependencyReview
+states:
+  start: {initial: true}
+  changelog_read: {}
+  usages_found: {}
+  tests_run: {}
+  reported: {final: true}
+events:
+  CHANGELOG_READ:
+    - {from: start, to: changelog_read}
+  USAGES_FOUND:
+    - {from: changelog_read, to: usages_found}
+  TESTS_RUN:
+    - {from: usages_found, to: tests_run}
+  REPORTED:
+    - {from: tests_run, to: reported}

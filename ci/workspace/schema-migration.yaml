@@ -1,0 +1,17 @@
+# Changing a database schema without downtime.
+name: SchemaMigration
+states:
+  drafted: {initial: true}
+  dry_run: {}
+  backfilled: {}
+  switched: {}
+  old_dropped: {final: true}
+events:
+  DRY_RUN:
+    - {from: drafted, to: dry_run}
+  BACKFILLED:
+    - {from: dry_run, to: backfilled}
+  SWITCHED:
+    - {from: backfilled, to: switched}
+  DROPPED:
+    - {from: switched, to: old_dropped}

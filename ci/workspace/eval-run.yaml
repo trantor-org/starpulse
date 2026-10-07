@@ -1,0 +1,20 @@
+# Scoring an agent skill against its evaluation set.
+name: EvalRun
+states:
+  needed: {initial: true}
+  approved: {}
+  running: {}
+  scored: {}
+  recorded: {final: true}
+  declined: {final: true}
+events:
+  APPROVED:
+    - {from: needed, to: approved}
+  DECLINED:
+    - {from: needed, to: declined}
+  STARTED:
+    - {from: approved, to: running}
+  SCORED:
+    - {from: running, to: scored}
+  RECORDED:
+    - {from: scored, to: recorded}

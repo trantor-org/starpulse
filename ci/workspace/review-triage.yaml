@@ -1,0 +1,17 @@
+# Working a pull request's review threads to zero, opened from Delivery while its pull request is open.
+name: ReviewTriage
+states:
+  start: {initial: true}
+  threads_read: {}
+  fixes_pushed: {}
+  replies_posted: {}
+  resolved: {final: true}
+events:
+  THREADS_READ:
+    - {from: start, to: threads_read}
+  FIX_PUSHED:
+    - {from: threads_read, to: fixes_pushed}
+  REPLIED:
+    - {from: [threads_read, fixes_pushed], to: replies_posted}
+  RESOLVED:
+    - {from: replies_posted, to: resolved}
