@@ -696,7 +696,7 @@ body.dags canvas, body.dags #tip, body.dags #panel { visibility: hidden; }
 #dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
 .census { display: inline-flex; align-items: center; gap: 10px; margin-left: 8px; font-size: calc(11px * var(--fs)); font-weight: 400; letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
 .census > span { display: inline-flex; align-items: center; gap: 5px; }
-#dg #catalog { flex: 1; min-height: 0; padding-bottom: 16px; --grid: 18px minmax(120px, 1fr) minmax(150px, 1.5fr) minmax(130px, 1fr) minmax(110px, .7fr) minmax(100px, .8fr) 0; }
+#dg #catalog { flex: 1; min-height: 0; padding-bottom: 16px; --grid: 18px minmax(calc(110px * var(--fs)), 1fr) minmax(150px, 1.5fr) minmax(calc(120px * var(--fs)), 1fr) minmax(calc(90px * var(--fs)), .7fr) minmax(calc(100px * var(--fs)), .8fr) 0; }
 #dg .thead, #dg .trow { display: grid; grid-template-columns: var(--grid); align-items: center; column-gap: 12px; }
 #dg .thead { position: sticky; top: 0; z-index: 3; padding: 0 12px 6px; font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); background: var(--bg0); }
 #dg .trow { position: relative; box-sizing: border-box; min-height: 40px; margin-top: 7px; padding: 0 12px; border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
