@@ -94,6 +94,10 @@ def test_the_shipped_layers_mockup_builds_a_demo_that_leaks_nothing() -> None:
     assert leaks(sub_mockup(ROOT / "design" / "layers")) == []
 
 
+def test_the_shipped_task_modal_mockup_builds_a_demo_that_leaks_nothing() -> None:
+    assert leaks(sub_mockup(ROOT / "design" / "task-modal")) == []
+
+
 SHOTS = {
     FLOW_VIEW: [Path("shots/flow-view-star-map.png"), Path("shots/flow-view-kanban.png")],
     MOCKUP: [Path("shots/design-mockup.png")],
