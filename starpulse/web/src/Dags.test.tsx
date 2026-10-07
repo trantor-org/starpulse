@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DagData } from "./dags";
-import { DagLegend, Dags } from "./Dags";
+import { DagLegend, Dags, lastLine } from "./Dags";
+import { rows } from "./dags";
 import type { Dag, DagStep, Machine, RunStatus } from "./types";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status });
@@ -167,5 +168,18 @@ describe("the DAGs view's legend", () => {
     const html = renderToStaticMarkup(<DagLegend />);
 
     for (const word of ["running", "healthy", "last run failed", "never run", "steps", "agent step", "Board tie", "run-safe"]) expect(html).toContain(word);
+  });
+});
+
+describe("a row's last run cell for a run with no recorded time", () => {
+  const cell = (d: Dag) => renderToStaticMarkup(<>{lastLine(rows({ ...data, dags: [d] })[0], 3600)}</>).replace(/<[^>]+>/g, "");
+
+  it("names the step of a running DAG with no start time and no duration, rather than an age since the epoch", () => {
+    expect(cell(dag("runs/a", "running", { startedAt: "", finishedAt: "" }))).toBe("starting");
+  });
+
+  it("leaves out the age and duration of a healthy DAG that has no finish or start time", () => {
+    expect(cell(dag("runs/a", "succeeded", { startedAt: "", finishedAt: "" }))).toBe("ran");
+    expect(cell(dag("runs/a", "succeeded", { startedAt: "", finishedAt: "1970-01-01T00:55:00Z" }))).toBe("5m ago");
   });
 });

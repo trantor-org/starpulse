@@ -44,14 +44,15 @@ export function Strip({ r, w = 220, h = 20 }: { r: Row; w?: number; h?: number }
 
 /** What a row's last-run cell says: the step a run is in and for how long, the step a run failed at, or when the last run ended and how long it took. */
 export function lastLine(r: Row, now: number): ReactNode {
-  if (r.phase === "running") return <><b className="hot">{r.step || "starting"}</b> · {took(r.startedAt, now)}</>;
+  if (r.phase === "running") return <><b className="hot">{r.step || "starting"}</b>{r.startedAt ? ` · ${took(r.startedAt, now)}` : ""}</>;
   if (r.phase === "queued") return <b className="q">queued</b>;
   if (r.phase === "idle") return "never run";
   if (r.phase === "failed") {
     const at = Object.entries(r.steps).find(([, v]) => v === "failed" || v === "aborted")?.[0];
-    return <><span className="bad">{r.d.status === "aborted" ? "aborted" : "failed"}{at ? ` at ${at}` : ""}</span> · {ago(now, r.finishedAt)}</>;
+    return <><span className="bad">{r.d.status === "aborted" ? "aborted" : "failed"}{at ? ` at ${at}` : ""}</span>{r.finishedAt ? ` · ${ago(now, r.finishedAt)}` : ""}</>;
   }
-  return <>{ago(now, r.finishedAt)} · {took(r.startedAt, r.finishedAt)}</>;
+  if (!r.finishedAt) return "ran";
+  return <>{ago(now, r.finishedAt)}{r.startedAt ? ` · ${took(r.startedAt, r.finishedAt)}` : ""}</>;
 }
 
 export const poolText = (pools: Pool[], r: Row) => {
