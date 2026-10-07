@@ -59,8 +59,50 @@
       #mvfeed div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } #mvfeed b { font-weight: 400; color: #dbe4f3; } #mvfeed em { font-style: normal; opacity: .6; }
       #mvfeed div.new { animation: flash 1.2s; }
       #panel .mrow td:first-child i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+      /* the live navigator: a 250 px panel styled like the rail, always shown; every level is laid out between it and the rail */
+      body.mvnav #nav { width: var(--nav); padding: 20px 18px; background: rgba(8,12,22,.78); backdrop-filter: blur(6px); border-right: 1px solid rgba(148,163,184,.10); overflow: hidden; }
+      body.mvnav #nav::after, body.mvnav #full::before { display: none; }
+      body.mvnav #full { position: static; width: auto; height: 100%; padding: 0; opacity: 1; pointer-events: auto; gap: 18px; }
+      body.mvnav #crumbs { opacity: 1 !important; } body.mvnav #c { left: var(--nav); }
+      #full .mvhead { position: relative; }
+      #mvfold { all: unset; cursor: pointer; position: absolute; right: 0; top: -3px; width: 22px; height: 22px; box-sizing: border-box; border: 1px solid rgba(148,163,184,.22); border-radius: 6px; display: grid; place-items: center; color: #6b7a93; }
+      #mvfold:hover { color: var(--ink); border-color: rgba(148,163,184,.4); }
+      .mvviews .vw { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 6px; width: calc(100% + 16px); padding: 5px 8px; margin: 0 -8px; border-radius: 6px; color: var(--muted); font-size: 12px; }
+      .mvviews .vw:hover { color: var(--ink); } .mvviews .vw.on { background: linear-gradient(90deg, rgba(167,139,250,.18), rgba(167,139,250,0)); color: var(--ink); box-shadow: inset 2px 0 0 #a78bfa; }
+      .mvviews .vw b { font-weight: 400; font-size: 11px; color: var(--muted); } .mvviews svg { display: block; margin: auto; }
+      #mvadmin { display: grid; grid-template-columns: 22px 1fr; gap: 6px; align-items: center; padding-top: 14px; margin: 0 -18px; padding-left: 18px; border-top: 1px solid rgba(148,163,184,.10); font-size: 12px; color: var(--muted); cursor: default; }
+      /* folded ([ or the chevron): a 52 px strip that keeps only the Views icons, in the same place; no body moves */
+      body.mvnav.navfold #nav { width: 52px; padding: 20px 8px; }
+      body.mvnav.navfold #full > section:not(.mvhead):not(.mvviews), body.mvnav.navfold #mvadmin, body.mvnav.navfold .mvhead > :not(#mvfold),
+        body.mvnav.navfold .mvviews h3, body.mvnav.navfold .vw > :not(svg) { display: none; }
+      body.mvnav.navfold .mvhead { height: 22px; } body.mvnav.navfold #mvfold { right: auto; left: 7px; }
+      body.mvnav.navfold .mvviews .vw { grid-template-columns: 1fr; width: 36px; height: 30px; margin: 0; padding: 0; }
     `;
     document.head.append(css);
+
+    // ---- the live navigator, mocked over the page's own: views, search, layers (the current level's machines under its state), DAGs,
+    // queues and Admin. It stays open at 250 px; the canvas of every level starts at its edge, so the page's Board is fitted there too
+    const NAVL = 250, root = document.documentElement, navEl = document.getElementById("nav"), full = document.getElementById("full");
+    root.style.setProperty("--nav", `${NAVL}px`); document.body.classList.add("mvnav");
+    const svg = (d) => `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.2">${d}</svg>`;
+    const head = full.firstElementChild; head.classList.add("mvhead"); head.querySelector("h1").textContent = "StarPulse";
+    head.insertAdjacentHTML("beforeend", `<button id="mvfold" title="fold the navigator ([)">${svg('<path d="M8 3.5 5 6.5l3 3"/>')}</button>`);
+    const boardN = () => document.querySelector("#layers .node .n")?.textContent || "";
+    head.insertAdjacentHTML("afterend", `<section class="mvviews"><h3>Views</h3><button class="vw on">${svg('<circle cx="6.5" cy="6.5" r="4.5"/>')}<span>Star Map</span><b></b></button>`
+      + `<a class="vw" href="?view=kanban">${svg('<path d="M3 3v7M6.5 3v5M10 3v3" stroke-width="2"/>')}<span>Kanban</span><b class="kn"></b></a></section>`);
+    document.getElementById("q").placeholder = "search…";
+    for (const h of full.querySelectorAll("h3")) if (h.textContent === "Constellations") h.textContent = "DAGs";
+    full.insertAdjacentHTML("beforeend", `<div id="mvadmin" title="Admin is not part of this mockup">${svg('<circle cx="6.5" cy="6.5" r="2"/><path d="M6.5 1.5v2M6.5 9.5v2M1.5 6.5h2M9.5 6.5h2M3 3l1.4 1.4M8.6 8.6 10 10M3 10l1.4-1.4M8.6 4.4 10 3"/>')}<span>Admin</span></div>`);
+    const setFold = (on) => { document.body.classList.toggle("navfold", on); document.querySelector("#mvfold svg").innerHTML = on ? '<path d="M5 3.5 8 6.5l-3 3"/>' : '<path d="M8 3.5 5 6.5l-3 3"/>'; try { localStorage.setItem("fv.nav.folded", on ? "1" : ""); } catch {} };
+    document.getElementById("mvfold").addEventListener("click", () => setFold(!document.body.classList.contains("navfold")));
+    addEventListener("keydown", (e) => { if (e.key === "[" && !/INPUT|TEXTAREA/.test(e.target.tagName)) setFold(!document.body.classList.contains("navfold")); });
+    try { if (localStorage.getItem("fv.nav.folded")) setFold(true); } catch {}
+    setInterval(() => { const k = navEl.querySelector(".kn"); if (k && k.textContent !== boardN()) k.textContent = boardN(); }, 1000);
+    // the page sizes its canvas from innerWidth: run its resize with the panel's width taken off, its canvas moved to the panel's edge
+    const iw = Object.getOwnPropertyDescriptor(window, "innerWidth"), pageResize = window.resize;
+    window.resize = function () { const real = iw ? iw.get.call(window) : document.documentElement.clientWidth;
+      Object.defineProperty(window, "innerWidth", { configurable: true, get: () => real - NAVL }); try { pageResize(); } finally { iw ? Object.defineProperty(window, "innerWidth", iw) : delete window.innerWidth; } };
+    addEventListener("resize", () => window.resize()); window.resize();
     const cv = document.createElement("canvas"); cv.id = "mv"; document.body.prepend(cv);
     const mcx = cv.getContext("2d"), buf = document.createElement("canvas"), bcx = buf.getContext("2d");
     let cx = bcx; // the sky draws into an offscreen buffer; each frame lays it over the night sky, scaled while zooming through
@@ -164,45 +206,42 @@
     const planetOf = (m) => L.planets.find((p) => p.m === m);
     function addNode(m, s, x, y, planet) { const nd = { key: key(m, s), m, s, x, y, planet, final: isFinal(m, s), initial: initOf(m) === s, label: stName(m, s), r: 4 };
       L.nodes.set(nd.key, nd); return nd; }
-    // a row of planets, each wanting a centre x, packed left to right near their wants and pulled back inside the margin
-    function pack(items, margin) {
-      items.sort((a, b) => a.want - b.want); let right = margin;
-      for (const it of items) { it.x = Math.max(it.want, right + it.w / 2); right = it.x + it.w / 2; }
-      let shift = right - (CW - margin);
-      for (let i = items.length - 1; i >= 0 && shift > 0; i--) { const it = items[i], room = i ? it.x - it.w / 2 - (items[i - 1].x + items[i - 1].w / 2) : it.x - it.w / 2 - margin; it.x -= shift; shift = Math.max(0, shift - room); if (i) items[i - 1].x -= Math.max(0, items[i - 1].x + items[i - 1].w / 2 - (it.x - it.w / 2)); }
-    }
     const fac = (m, dim) => (0.75 + 0.05 * M[m].states.length) * (dim ? 0.72 : 1);
     function layout() {
       L = { nodes: new Map(), planets: [], stars: [], tethers: [] };
       const g = G[IP], mx = 56 * FS, rowGap = clamp(CH * 0.075, 44, 80), colW = (CW - 2 * mx) / (g.ncols - 1);
-      const labH = PX.name() * 1.3 + PX.sub() * 1.4 + 8, top0 = 10 * FS, starRoom = 26 * FS, bottom = 44, mainLab = 24 * FS, gapMin = 34;
-      const topMs = [...dagOnly.map((m) => ({ m, kind: "dag" })), ...dormant.map((m) => ({ m, kind: "idle", dim: true }))];
-      const fT = Math.max(0, ...topMs.map((o) => fac(o.m, o.dim))), fL = Math.max(0, ...tied.map((m) => fac(m)));
+      const labH = PX.name() * 1.3 + PX.sub() * 1.4 + 8, top0 = 10 * FS, starRoom = 26 * FS, bottom = 44, mainLab = 24 * FS, gapMin = 30 * FS, pad = 28 * FS, m0 = 14 * FS;
       const band = (g.rmax - g.rmin) * rowGap + 2 * mainLab;
-      // planets as large as the height allows: the top row (staggered when one row cannot hold it), the main band, the tied row
-      const fixed = (stag) => top0 + (topMs.length ? starRoom + labH + (stag ? 16 * FS : 0) : 0) + band + (tied.length ? labH : 0) + bottom + 2 * gapMin;
-      const rOf = (stag) => (CH - fixed(stag)) / (fT * (stag ? 2.8 : 2) + fL * 2 || 1);
-      const wOf = (m, R, dim) => Math.max(2 * R * fac(m, dim) + 30 * FS, textW(m, PX.name(), 400) + 30 * FS);
-      const fitsTop = (R, stag) => topMs.reduce((a, o) => a + (stag ? Math.max(2 * R * fac(o.m, o.dim) + 24 * FS, wOf(o.m, R, o.dim) * 0.55) : wOf(o.m, R, o.dim)), 0) <= CW - 0.8 * mx;
-      const fitsLow = (R) => tied.reduce((a, m) => a + wOf(m, R), 0) <= CW - 0.8 * mx;
-      let stag = false, R0 = rOf(false);
-      if (!fitsTop(R0, false)) { stag = true; R0 = rOf(true); }
-      R0 = clamp(R0, 22, 92); while (R0 > 22 && !(fitsTop(R0, stag) && fitsLow(R0))) R0 *= 0.95;
-      // the spare height is shared between the two gaps, so the three bands spread to fill the screen
-      const RT = fT * R0, RL = fL * R0, yTop = top0 + starRoom + RT, topBottom = topMs.length ? yTop + (stag ? 0.8 * RT + 16 * FS : 0) + RT + labH : top0;
-      const gap = Math.max(gapMin, (CH - bottom - topBottom - band - (tied.length ? 2 * RL + labH : 0)) / 2);
-      const yMain = topBottom + gap + mainLab - g.rmin * rowGap, yLow = topBottom + gap + band + gap + RL;
+      // every other machine is a planet in one of two bands, above and below the in-progress line, so neither band nor corner is left empty:
+      // a tied machine hangs below the state it is entered from; the machines only DAGs launch and the idle ones (dimmed) fill the other slots
+      const free = [...dagOnly.map((m) => ({ m, kind: "dag" })), ...dormant.map((m) => ({ m, kind: "idle", dim: true }))];
+      const nLow = Math.max(tied.length, Math.ceil((tied.length + free.length) / 2));
+      const lowFree = free.splice(free.length - Math.max(0, nLow - tied.length)), up = free;
+      const low = tied.map((m) => ({ m, kind: "tied" })).concat(lowFree);
+      const fMax = (list) => Math.max(0, ...list.map((o) => fac(o.m, o.dim)));
+      const fU = fMax(up), fL = fMax(low), sumF = (list) => list.reduce((a, o) => a + fac(o.m, o.dim), 0);
+      // planets as large as the height and both bands' widths allow; a name wider than its ring widens its slot
+      const wOf = (o, s) => Math.max(2 * s * fac(o.m, o.dim) + pad, textW(o.m, PX.name(), 400) + pad);
+      const avail = CW - 2 * m0, fits = (list, s) => list.reduce((a, o) => a + wOf(o, s), 0) <= avail;
+      const sH = (CH - top0 - (up.length ? starRoom + labH : 0) - band - 2 * gapMin - (low.length ? labH : 0) - bottom) / (2 * fU + 2 * fL || 1);
+      const sW = Math.min(...[up, low].filter((l) => l.length).map((l) => (avail - l.length * pad) / (2 * sumF(l))));
+      let sc = clamp(Math.min(sH, sW), 18, 150); while (sc > 18 && !(fits(up, sc) && fits(low, sc))) sc *= 0.96;
+      const yUp = top0 + starRoom + sc * fU, upBottom = up.length ? yUp + sc * fU + labH : top0, yLow = CH - bottom - (low.length ? labH + sc * fL : 0);
+      const bandTop = (upBottom + (low.length ? yLow - sc * fL : CH - bottom)) / 2 - band / 2, yMain = bandTop + mainLab - g.rmin * rowGap;
       for (const st of M[IP].states) addNode(IP, st.id, mx + g.depth[st.id] * colW, yMain + g.row[st.id] * rowGap).col = RAMP[Math.round((g.depth[st.id] / (g.ncols - 1)) * (RAMP.length - 1))];
-      const item = (m, o = {}) => { const R = R0 * fac(m, o.dim); return { m, R, w: wOf(m, R0, o.dim), want: o.want ?? 0, ...o }; };
-      // below: each tied machine under the state it is entered from, a machine entered from a planet beside that planet
+      // a band's planets share its spare width evenly
+      const spread = (list, y) => { const ws = list.map((o) => wOf(o, sc)), gap = (avail - ws.reduce((a, w) => a + w, 0)) / (list.length + 1); let x = m0 + gap;
+        return list.map((o, i) => { const it = { ...o, R: sc * fac(o.m, o.dim), w: ws[i], x: x + ws[i] / 2, y }; x += ws[i] + gap; return it; }); };
+      // below, the tied machines keep the order of the states they hang from (a machine entered from a planet beside that planet), and each
+      // free machine takes the place that moves the tied ones least from under their states
       const wantOf = (c) => (depthOf(c) === 1 ? node(primary[c].pm, primary[c].ps).x : wantOf(primary[c].pm) + 0.01 * depthOf(c));
-      const low = tied.map((c) => item(c, { want: wantOf(c), kind: "tied" }));
-      pack(low, mx * 0.4); low.forEach((it) => (it.y = yLow));
-      // above: machines only DAGs launch, then the idle ones, dimmed
-      const top = topMs.map((o) => item(o.m, o)), avail = CW - 0.8 * mx;
-      top.forEach((it, i) => { it.want = (avail * (i + 0.5)) / top.length + 0.4 * mx; if (stag) it.w = Math.max(2 * it.R + 24 * FS, it.w * 0.55); });
-      pack(top, mx * 0.4); top.forEach((it, i) => (it.y = yTop + (stag && i % 2 ? 0.8 * it.R + 16 * FS : 0)));
-      for (const it of [...top, ...low]) {
+      let order = low.filter((o) => o.kind === "tied").sort((a, b) => wantOf(a.m) - wantOf(b.m));
+      for (const o of lowFree) { let best = null;
+        for (let i = 0; i <= order.length; i++) { const cand = [...order.slice(0, i), o, ...order.slice(i)], pos = spread(cand, yLow);
+          const cost = pos.reduce((a, it) => a + (it.kind === "tied" ? Math.abs(it.x - wantOf(it.m)) : 0), 0); if (!best || cost < best.cost) best = { cost, cand }; }
+        order = best.cand; }
+      const top = spread(up, yUp), lowIt = spread(order, yLow);
+      for (const it of [...top, ...lowIt]) {
         const p = { m: it.m, x: it.x, y: it.y, R: it.R, dim: !!it.dim, kind: it.kind, beads: [], u: 0 }, g2 = G[it.m];
         const bw = 1.75 * p.R, rh = Math.min(0.42 * p.R, (1.15 * p.R) / Math.max(1, g2.rmax - g2.rmin)), rmid = (g2.rmin + g2.rmax) / 2;
         g2.order.forEach((s, i) => { const th = -Math.PI / 2 + (i * TAU) / g2.order.length, b = addNode(it.m, s, 0, 0, p);
@@ -215,10 +254,10 @@
       for (const p of L.planets) dagTies(p.m).forEach((t, k) => { const a = -2.35 + k * 0.42; L.stars.push({ t, dag: t.dag, child: p.m, host: p, a, x: p.x + (p.R + 16 * FS) * Math.cos(a), y: p.y + (p.R + 16 * FS) * Math.sin(a) }); });
       const s0 = node(IP, initOf(IP)); dagTies(IP).forEach((t, k) => L.stars.push({ t, dag: t.dag, child: IP, x: s0.x, y: s0.y - 44 * FS - k * 22 * FS }));
     }
-    const unfold = (p) => smooth((p.R * view.k - 80) / 110);
+    const unfold = () => smooth((view.k - 1.15) / 1.3); // every planet opens together as the view zooms in
     function place() {
       for (const p of L.planets) { p.u = unfold(p); for (const b of p.beads) { b.x = lerp(b.rx, b.fx, p.u); b.y = lerp(b.ry, b.fy, p.u); } }
-      for (const n of L.nodes.values()) { const c = tasksAt(n.m, n.s).length; n.r = n.planet ? (2.8 + 0.9 * Math.sqrt(c)) * (1 - 0.45 * n.planet.u) : 8 + 2.2 * Math.sqrt(c); }
+      for (const n of L.nodes.values()) { const c = tasksAt(n.m, n.s).length; n.r = n.planet ? (2.8 + 0.9 * Math.sqrt(c)) * clamp(n.planet.R / 90, 1, 1.4) * (1 - 0.45 * n.planet.u) : 8 + 2.2 * Math.sqrt(c); }
     }
 
     // ---- view: zoom 1 is the fit; the wheel zooms about the cursor and the view never leaves the sky
@@ -249,15 +288,17 @@
       for (const p of L.planets) if (p.u < 0.35) box(toScreen(p.x, p.y), (p.R + 4 / view.k ** 0.6) * view.k);
       for (const s of L.stars) box(toScreen(s.x, s.y), 7);
       const put = (cands, w, h, lab) => { for (const c of cands) { const r = { x0: c.x, y0: c.y, x1: c.x + w, y1: c.y + h };
-          if (r.x0 < X0 || r.x1 > X1 || r.y0 < 2 || r.y1 > H - 34) continue; const pad = { x0: r.x0 - 3, x1: r.x1 + 3, y0: r.y0 - 1, y1: r.y1 + 1 };
-          if (placed.some((q) => hits(pad, q))) continue; placed.push(pad); labels.push({ ...lab, x: r.x0, y: r.y0 + h / 2, w, h }); return true; } return false; };
+          if (r.x0 < X0 || r.x1 > X1 || r.y0 < 2 || r.y1 > H - 34) continue; const pad = { x0: r.x0 - 8, x1: r.x1 + 8, y0: r.y0 - 1, y1: r.y1 + 1 };
+          if (placed.some((q) => hits(pad, q))) continue; placed.push(pad); labels.push({ ...lab, lead: c.lead, x: r.x0, y: r.y0 + h / 2, w, h }); return true; } return false; };
       // above and below try centred, then flush to either edge of the orbit, before a side
       const sides = (p, rr, w, h, order) => order.flatMap((sd) => { const xs = [p.x - w / 2, p.x + rr - w, p.x - rr];
         return sd === "below" ? xs.map((x) => ({ x, y: p.y + rr + 3 })) : sd === "above" ? xs.map((x) => ({ x, y: p.y - rr - 3 - h }))
           : sd === "right" ? [{ x: p.x + rr + 5, y: p.y - h / 2 }] : [{ x: p.x - rr - 5 - w, y: p.y - h / 2 }]; });
       const order = (g, s) => (g.row[s] < 0 ? ["above", "right", "left", "below"] : g.row[s] > 0 ? ["below", "right", "left", "above"] : g.depth[s] % 2 ? ["above", "below", "right", "left"] : ["below", "above", "right", "left"]);
       for (const n of L.nodes.values()) if (!n.planet) { const px = PX.main(), w = textW(n.label, px), h = px * 1.3, p = toScreen(n.x, n.y);
-        put(sides(p, orbit(n), w, h, order(G[IP], n.s)), w, h, { node: n, px, a: 1 }); }
+        // a crowded row (large text) takes a second tier, joined to its state by a hairline, before a name is dropped
+        const rr = orbit(n), far = (dir, k) => [p.x - w / 2, p.x + rr - w, p.x - rr].map((x) => ({ x, y: dir > 0 ? p.y + rr + 3 + h * k : p.y - rr - 3 - h * (k + 1), lead: { x: p.x, y: p.y + dir * rr } }));
+        const o = order(G[IP], n.s), d = o[0] === "above" ? -1 : 1; put([...sides(p, rr, w, h, o), ...[1.1, 2.2].flatMap((k) => [...far(d, k), ...far(-d, k)])], w, h, { node: n, px, a: 1 }); }
       for (const p of L.planets) { const px = PX.name(), sp = PX.sub(), c = toScreen(p.x, p.y), rr = p.R * view.k, w = Math.max(textW(p.m, px, 400), textW(subLine(p.m), sp)), h = px * 1.3 + sp * 1.4;
         put([{ x: c.x - w / 2, y: c.y + rr + 6 }, { x: c.x - w / 2, y: c.y - rr - 6 - h }], w, h, { planet: p, px, sp }); }
       for (const p of L.planets) if (p.u > 0.35) for (const b of p.beads) { const px = PX.bead(), w = textW(b.label, px), h = px * 1.3, c = toScreen(b.x, b.y);
@@ -389,6 +430,7 @@
           text(p.m, l.x + l.w / 2, l.y - l.h / 2 + l.px * 0.65, l.px, rgba(INK, hot || on ? 0.95 : 0.78), "center", 400); text(subLine(p.m), l.x + l.w / 2, l.y + l.h / 2 - l.sp * 0.7, l.sp, rgba(SUB, hot ? 0.8 : 0.55), "center"); cx.globalAlpha = 1; continue; }
         if (l.star) { cx.globalAlpha = (l.star.host?.dim ? 0.65 : 0.9) * veil; text(l.star.dag, l.x, l.y, l.px, DAGC); cx.globalAlpha = 1; continue; }
         const n = l.node, hot = (hover?.kind === "node" && hover.o === n) || lit(n); cx.globalAlpha = l.a * (n.planet?.dim ? 0.75 : 1) * (hot ? 1 : veil);
+        if (l.lead) { const ty = l.lead.y > l.y ? l.y + l.h / 2 : l.y - l.h / 2; cx.strokeStyle = rgba(INK, 0.22); cx.lineWidth = 1; cx.beginPath(); cx.moveTo(l.lead.x, l.lead.y); cx.lineTo(l.lead.x, ty); cx.stroke(); }
         text(n.label, l.x, l.y, l.px, rgba(INK, hot ? 0.95 : n.planet ? 0.6 : 0.7), "left", kidsAt(n.m, n.s).length ? 400 : 300); cx.globalAlpha = 1; }
     }
     // the page's night sky, with its stars, so the zoom through from the Board is seamless
@@ -413,7 +455,7 @@
       else { // the page's zoom through: the Board blows up past the clicked point and fades while the sky grows out of it
         const q = Math.min(1, (now - enter.t0) / 520), e = ease(q), f = { x: enter.f.x * DPR, y: enter.f.y * DPR }, sN = 0.3 + 0.7 * e, sO = 1 + 2.5 * e;
         mcx.globalAlpha = e; mcx.drawImage(buf, f.x * (1 - sN), f.y * (1 - sN), buf.width * sN, buf.height * sN);
-        mcx.globalAlpha = 1 - e; mcx.drawImage(enter.snap, f.x * (1 - sO), f.y * (1 - sO), enter.snap.width * sO, enter.snap.height * sO); mcx.globalAlpha = 1; if (q >= 1) enter = null; }
+        mcx.globalAlpha = 1 - e; mcx.drawImage(enter.snap, f.x * (1 - sO) + NAVL * DPR * sO, f.y * (1 - sO), enter.snap.width * sO, enter.snap.height * sO); mcx.globalAlpha = 1; if (q >= 1) enter = null; }
       const pct = `${Math.round(view.k * 100)}%`; if (zoomEl.pct !== pct) { zoomEl.pct = pct; zoomEl.querySelector(".pct").textContent = pct; cv.classList.toggle("pan", view.k > 1.01); }
     }
 
@@ -429,13 +471,13 @@
     go = function (next, fx, fy, then) {
       const to = isSky(next);
       if (sky && !to) { // out: the page shrinks whatever its canvas shows, so it is handed the sky as it stands
-        const pc = cPage.getContext("2d"); pc.setTransform(1, 0, 0, 1, 0, 0); pc.drawImage(cv, 0, 0); setSky(false); return page.go(next, fx, fy, then); }
+        const pc = cPage.getContext("2d"); pc.setTransform(1, 0, 0, 1, 0, 0); pc.drawImage(cv, -NAVL * DPR, 0); setSky(false); return page.go(next, fx == null ? fx : fx - NAVL, fy, then); }
       if (!sky && to) {
         const snap = document.createElement("canvas"); snap.width = cPage.width; snap.height = cPage.height; snap.getContext("2d").drawImage(cPage, 0, 0);
-        page.go(next, fx, fy, then); page.trans = null; page.mouse = null; document.getElementById("tip").style.opacity = 0; setSky(true); enter = { snap, f: { x: fx ?? W / 2, y: fy ?? H / 2 }, t0: performance.now() }; return; }
+        page.go(next, fx, fy, then); page.trans = null; page.mouse = null; document.getElementById("tip").style.opacity = 0; setSky(true); enter = { snap, f: { x: fx == null ? NAVL + (W - NAVL) / 2 : fx + NAVL, y: fy ?? H / 2 }, t0: performance.now() }; return; }
       return page.go(next, fx, fy, then);
     };
-    const leave = (sx = W / 2, sy = H / 2) => go([{ kind: "board" }], sx, sy);
+    const leave = (sx = NX + CW / 2, sy = H / 2) => go([{ kind: "board" }], sx, sy);
     // step out the way the page does: close the panel, then undo any zoom, then (at the fit) zoom out to the Board
     const back = (sx, sy) => (panel.classList.contains("open") ? closePanel() : view.k > 1.01 || focus ? fit() : leave(sx, sy));
 
