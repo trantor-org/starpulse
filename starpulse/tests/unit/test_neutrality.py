@@ -1,4 +1,4 @@
-"""The public package names no workflow runner: only its Dagu adapter module (and tests) may say `dagu`."""
+"""The public package names no workflow runner: only its Dagu adapter module, the table of built-in adapters (and tests) may say `dagu`."""
 
 import re
 from pathlib import Path
@@ -12,7 +12,9 @@ def _sources() -> list[Path]:
     python = [
         p
         for p in PACKAGE.rglob("*.py")
-        if p.name not in ADAPTER and not {"tests", "web", "node_modules"} & set(p.relative_to(PACKAGE).parts)
+        if p.name not in ADAPTER
+        and p != PACKAGE / "adapters" / "__init__.py"
+        and not {"tests", "web", "node_modules"} & set(p.relative_to(PACKAGE).parts)
     ]
     pages = [
         p for p in (PACKAGE / "web" / "src").rglob("*.ts*") if ".test." not in p.name and "node_modules" not in p.parts

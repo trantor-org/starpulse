@@ -20,7 +20,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 
-from starpulse.machine_tasks import Table
+from starpulse.domain.transitions import Table
 from starpulse.store.events import STREAM
 from starpulse.store.tables import day_rollups, events
 

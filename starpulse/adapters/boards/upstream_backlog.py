@@ -23,10 +23,11 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
-from starpulse.board import Board, MoveWriter, Written
+from starpulse.adapters.boards.seam import Board, MoveWriter, Written
 from starpulse.contracts.adapters import BoardTask, Move, TaskKeys
 from starpulse.domain.machine_definition import Writer, load_machine
 from starpulse.domain.snapshot import Qualify, describe
+from starpulse.domain.transitions import lane_id
 
 if TYPE_CHECKING:
     from starpulse.board_feed import BoardFeed
@@ -93,11 +94,6 @@ def upstream_keys(prefix: str = DEFAULT_PREFIX) -> TaskKeys:
         key=re.compile(key, re.I),
         branch=re.compile(rf"(?:refs/heads/)?(?:[^/]+/)*?({key})(?=$|[-_/])", re.I),
     )
-
-
-def lane_id(status: str) -> str:
-    """A status as the Board machine's state id: lower-cased, spaces as `_`."""
-    return status.lower().replace(" ", "_")
 
 
 def board_machine(statuses: tuple[str, ...]) -> dict:

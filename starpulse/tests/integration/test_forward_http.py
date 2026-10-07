@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from starpulse.adapter_kit import serve, url
-from starpulse.ingest import MAX_FORWARD_BODY, ForwardIngest
+from starpulse.adapters.runs.ingest import MAX_FORWARD_BODY, ForwardIngest
 from starpulse.store import events
 from starpulse.store.event_log import EventLog, Tail
 

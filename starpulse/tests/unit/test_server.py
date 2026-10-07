@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import update
 
 from starpulse.adapter_kit import serve, task, url
-from starpulse.board import MoveWriter, Written
+from starpulse.adapters.boards.seam import MoveWriter, Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.server import _adapter, _config, _no_writer, keep_event_log, move_task, rerun_dag, run_dag, start_task
@@ -523,7 +523,7 @@ def test_an_instance_is_read_by_the_adapter_module_its_type_names() -> None:
 
     module = _adapter(parser, RunsInstance("ci", "dagu", "http://ci.test"))
 
-    assert module.__name__ == "starpulse.dagu"
+    assert module.__name__ == "starpulse.adapters.runs.dagu"
 
 
 def test_an_instance_type_that_is_not_a_runs_adapter_exits_naming_the_instance(
@@ -532,11 +532,11 @@ def test_an_instance_type_that_is_not_a_runs_adapter_exits_naming_the_instance(
     parser = argparse.ArgumentParser()
 
     with pytest.raises(SystemExit) as exited:
-        _adapter(parser, RunsInstance("ci", "config", "http://ci.test"))
+        _adapter(parser, RunsInstance("ci", "starpulse.config", "http://ci.test"))
 
     assert exited.value.code == 1
     assert capsys.readouterr().err == (
-        "runs instance ci: config is not a runs adapter: it needs start(url) and follow(url, runs, log)\n"
+        "runs instance ci: starpulse.config is not a runs adapter: it needs start(url) and follow(url, runs, log)\n"
     )
 
 

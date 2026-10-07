@@ -24,7 +24,8 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, get_args
 
-from starpulse import lane_events, run_events
+from starpulse import lane_events
+from starpulse.adapters.runs import run_events
 from starpulse.contracts.adapters import RunStatus
 from starpulse.forward import FIELDS, PERSON, project
 from starpulse.settings.config import MAX_BATCH, RunsInstance, Source

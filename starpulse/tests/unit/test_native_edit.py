@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board import Board
+from starpulse.adapters.boards.seam import Board
+from starpulse.adapters.boards.upstream_backlog import UpstreamBacklog, _split
 from starpulse.board_feed import BoardFeed
 from starpulse.server import archive_task, assemble, edit_task, task_record
 from starpulse.settings.config import load
 from starpulse.store.event_log import EventLog
-from starpulse.upstream_backlog import UpstreamBacklog, _split
 
 LAN = "192.168.0.42"
 FILE = """---

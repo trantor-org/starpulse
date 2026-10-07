@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from starpulse.adapter_kit import BoardAdapterKit, MachineEventsAdapterKit, RunsAdapterKit, _AdapterKit
-from starpulse.board import Written
+from starpulse.adapters.boards.seam import Written
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 

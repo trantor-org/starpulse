@@ -20,7 +20,7 @@ from starpulse import doctor, skill_install
 from starpulse.adapter_kit import serve as _real_serve
 from starpulse.adapter_kit import task
 from starpulse.adapter_kit import url as _url
-from starpulse.board import Written
+from starpulse.adapters.boards.seam import Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts.adapters import Move
 from starpulse.domain.level import Level, Orbit, Terminal

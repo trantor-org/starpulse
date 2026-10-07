@@ -44,7 +44,7 @@ from sqlalchemy import (
 )
 
 from starpulse.domain.level_metrics import UNATTRIBUTED
-from starpulse.machine_tasks import tables as transitions
+from starpulse.domain.transitions import tables as transitions
 from starpulse.store.tables import metadata
 
 BOARD = "board"

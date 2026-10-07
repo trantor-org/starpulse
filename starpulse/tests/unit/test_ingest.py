@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from starpulse import ingest, run_events
+from starpulse.adapters.runs import ingest, run_events
 from starpulse.settings.config import RunsInstance
 from starpulse.store.event_log import EventLog, Tail
 

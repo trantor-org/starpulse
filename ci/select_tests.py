@@ -57,10 +57,14 @@ INERT = (
     "bench/*",
 )
 
-#: `board.py` and `config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a test
-#: reaching either reaches each adapter whose name appears in a module it reaches: a configured `kind = "dagu"` in the
-#: test or a helper, or the loader's own default (`config.DEFAULT_TYPE`).
-NAMED_LOADERS = ("starpulse.board", "starpulse.settings.config")
+#: The board seam and `config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a
+#: test reaching either reaches each adapter whose name appears in a module it reaches: a configured `kind = "dagu"` in
+#: the test or a helper, or the loader's own default (`config.DEFAULT_TYPE`).
+NAMED_LOADERS = ("starpulse.adapters.boards.seam", "starpulse.settings.config")
+
+#: The module that lists every built-in adapter's name. Every loader reaches it, so its text names no adapter a test
+#: names: it would otherwise select every adapter's tests for a change to any loader.
+TYPE_TABLE = "starpulse.adapters"
 
 
 @dataclass(frozen=True)
@@ -186,7 +190,9 @@ def select(root: Path, changed: list[str]) -> Selection:
             requested = (uses for fixture, uses in fixtures.items() if re.search(rf"\b{fixture}\b", text))
             imports[test] |= always.union(*requested) & modules.keys()
     adapters = {
-        name: name.rpartition(".")[2] for name, path in modules.items() if name.count(".") == 1 and _is_adapter(path)
+        name: name.rpartition(".")[2]
+        for name, path in modules.items()
+        if name.startswith("starpulse.adapters.") and name.count(".") == 3 and _is_adapter(path)
     }
 
     def reaches(name: str) -> set[str]:
@@ -197,7 +203,7 @@ def select(root: Path, changed: list[str]) -> Selection:
                 seen.add(dep)
                 stack.append(dep)
             if not stack and seen & set(NAMED_LOADERS):
-                text = "\n".join(modules[m].read_text() for m in seen)
+                text = "\n".join(modules[m].read_text() for m in seen - {TYPE_TABLE})
                 named = {a for a, word in adapters.items() if re.search(rf"\b{word}\b", text)} - seen
                 seen |= named
                 stack.extend(named)

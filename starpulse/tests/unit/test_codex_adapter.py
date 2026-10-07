@@ -5,9 +5,9 @@ import subprocess
 from pathlib import Path
 
 from starpulse.adapter_kit import MachineEventsAdapterKit
-from starpulse.codex import CodexAdapter, git_branch
+from starpulse.adapters.harnesses.codex import CodexAdapter, git_branch
+from starpulse.adapters.harnesses.harness import HARNESS_MACHINES
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.harness import HARNESS_MACHINES
 from starpulse.tests.machines import MACHINES
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "codex" / "rollout.jsonl"

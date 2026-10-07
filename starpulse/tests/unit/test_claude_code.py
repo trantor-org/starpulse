@@ -5,11 +5,11 @@ import re
 from pathlib import Path
 
 from starpulse.adapter_kit import MachineEventsAdapterKit
-from starpulse.claude_code import ClaudeCodeAdapter, publisher
+from starpulse.adapters.harnesses.claude_code import ClaudeCodeAdapter, publisher
+from starpulse.adapters.harnesses.harness import HARNESS_MACHINES
+from starpulse.adapters.harnesses.otlp import BRANCH, LogEvent, parse
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.harness import HARNESS_MACHINES
-from starpulse.machine_tasks import Table
-from starpulse.otlp import BRANCH, LogEvent, parse
+from starpulse.domain.transitions import Table
 from starpulse.store.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES
 

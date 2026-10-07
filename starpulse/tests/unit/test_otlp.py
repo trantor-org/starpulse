@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from starpulse.otlp import LogEvent, parse
+from starpulse.adapters.harnesses.otlp import LogEvent, parse
 
 
 def attr(key: str, value: Any) -> dict[str, Any]:

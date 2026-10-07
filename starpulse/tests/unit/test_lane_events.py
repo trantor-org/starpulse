@@ -10,7 +10,7 @@ import pytest
 from starpulse import lane_events
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import BoardTask
-from starpulse.ingest import ForwardIngest
+from starpulse.adapters.runs.ingest import ForwardIngest
 from starpulse.store.event_log import EventLog, Tail
 from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES

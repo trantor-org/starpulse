@@ -1,6 +1,6 @@
 """What StarPulse draws, held in memory and kept current by the adapters.
 
-The board adapter (`starpulse.board`) places each Board task here, the server keeps each task's latest state,
+The board adapter (`starpulse.adapters.boards.seam`) places each Board task here, the server keeps each task's latest state,
 and every connected page gets one snapshot and then a delta per change. Each other machine's tasks arrive from
 the event log (`machine_tasks`), and each runs adapter instance's workflows from its adapter module.
 """
@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
 from starpulse import criteria, lane_events
+from starpulse.adapters.boards.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 from starpulse.analytics import LaneRow, move_shares
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.domain.machine_ties import derive, entries
@@ -36,7 +37,6 @@ from starpulse.ledger import (
 )
 from starpulse.settings.config import CommitKeys
 from starpulse.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
-from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 
 __all__ = ["BoardFeed", "BoardStore", "Followed", "Resumable"]
 

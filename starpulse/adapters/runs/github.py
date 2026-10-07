@@ -1,6 +1,6 @@
 """The GitHub adapter: a repository's pull requests, checks and Copilot work become events on two machines.
 
-    python -m starpulse.github --repo OWNER/NAME [--interval 300] [--config FILE] [--key RE --branch RE --key-format FMT]
+    python -m starpulse.adapters.runs.github --repo OWNER/NAME [--interval 300] [--config FILE] [--key RE --branch RE --key-format FMT]
 
 Every `--interval` seconds it reads the repository's 30 most recently updated pull requests and appends their events
 to the event log in the database `--config` names (default `starpulse.toml` in the working directory), the store
@@ -32,16 +32,18 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
+from starpulse.adapters.runs.github_actions import Transport, _get, connect, repo_of
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.domain.machine_definition import load_machine
 from starpulse.domain.snapshot import describe
-from starpulse.github_actions import Transport, _get, connect, repo_of
 from starpulse.store import events as machine_events
 from starpulse.store.event_log import EventLog
 from starpulse.store.history import open_event_log
 
-PULL_REQUEST = load_machine(Path(__file__).with_name("machines") / "github-pull-request.yaml")
-COPILOT = load_machine(Path(__file__).with_name("machines") / "copilot.yaml")
+#: The machine files beside the package: `adapters/runs/` is two levels below them.
+MACHINES = Path(__file__).parents[2] / "machines"
+PULL_REQUEST = load_machine(MACHINES / "github-pull-request.yaml")
+COPILOT = load_machine(MACHINES / "copilot.yaml")
 GITHUB_MACHINES = {m.name: describe(m.machine) for m in (PULL_REQUEST, COPILOT)}
 
 

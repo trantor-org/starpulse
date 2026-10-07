@@ -16,7 +16,7 @@ from starpulse.adapter_kit import next_event as _next_event
 from starpulse.adapter_kit import serve as _serve
 from starpulse.adapter_kit import task
 from starpulse.adapter_kit import url as _url
-from starpulse.board import Written
+from starpulse.adapters.boards.seam import Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts.adapters import Move
 from starpulse.machine_tasks import MachineTasks

@@ -7,8 +7,8 @@ Markdown board in `./.starpulse/board`, keeping its history in a SQLite file, wi
 The `[board]` table names the board adapter by `type` (`starpulse.board`); the rest of the table is that
 adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.history`).
 
-Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a name under
-`starpulse`, or the dotted path of a module an installed package provides), the `url` it reads (an instance with a
+Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a built-in name from
+`starpulse.adapters`, or the dotted path of a module an installed package provides), the `url` it reads (an instance with a
 `token_env` and neither `type` nor `url` is push-only: it pulls nothing and draws what the ingest receives), the workflows Run now may start (`run_safe`) and the `domains` that
 group its workflows on the page, and optionally `token_env`, the name of the environment variable that holds the
 token the HTTP ingest accepts for it (the token itself is never in this file). A workflow is shown as `<instance>/<workflow>`, so two instances can
@@ -30,15 +30,11 @@ from types import ModuleType
 from urllib.parse import urlsplit
 
 from starpulse.domain.level import Level, LevelError, parse_level
+from starpulse.adapters import module_name
 from starpulse.settings.harnesses import Harnesses, load_harnesses
 
 #: The board adapter type a config without a `[board]` table names.
 DEFAULT_TYPE = "native"
-
-
-def module_name(kind: str) -> str:
-    """The module a `[board]` or `[[runs]]` type names: a dotted path as it is, a bare name under `starpulse`."""
-    return kind if "." in kind else f"starpulse.{kind}"
 
 
 _KEYS = {
@@ -220,9 +216,11 @@ def runs_adapter(kind: str) -> ModuleType:
     """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`."""
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
         raise ConfigError(f"no runs adapter of type {kind}")
-    target = module_name(kind)
     try:
+        target = module_name(kind)
         module = importlib.import_module(target)
+    except ValueError as exc:
+        raise ConfigError(f"no runs adapter of type {kind}") from exc
     except ModuleNotFoundError as exc:
         if exc.name and (target == exc.name or target.startswith(f"{exc.name}.")):
             raise ConfigError(f"no runs adapter of type {kind}") from exc
@@ -511,7 +509,7 @@ def load(path: Path | None) -> Config:
         raise ConfigError(f"board type {kind!r} is not a module name")
     try:
         found = importlib.util.find_spec(module_name(kind))
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, ValueError):
         found = None
     if found is None:
         raise ConfigError(f"no board adapter of type {kind}")

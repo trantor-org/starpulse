@@ -19,7 +19,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import get_args
 
-from starpulse import run_events
+from starpulse.adapters.runs import run_events
 from starpulse.contracts.adapters import RunStatus
 from starpulse.store.event_log import EventLog
 from starpulse.store.history import open_event_log

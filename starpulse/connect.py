@@ -24,7 +24,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from starpulse import jira, native, upstream_backlog
+from starpulse.adapters.boards import jira, native, upstream_backlog
 from starpulse.contracts.adapters import BoardTask
 from starpulse.settings.config import ConfigError, load
 

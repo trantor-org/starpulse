@@ -484,16 +484,16 @@ run_safe = ["ui-preview.yml"]
 - **Run now** dispatches the workflow on the default branch (`workflow_dispatch`) and answers its run id. It is drawn
   only on a `run_safe` workflow whose file declares `workflow_dispatch`; any other workflow is refused.
 - **Events.** The repository is listed every 60 s. A `workflow_run` webhook, mapped with
-  `starpulse.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
+  `starpulse.adapters.runs.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
   at once.
 
 ### Show pull requests and Copilot work
 
-`python -m starpulse.github` reads a repository's 30 most recently updated pull requests every `--interval` seconds
+`python -m starpulse.adapters.runs.github` reads a repository's 30 most recently updated pull requests every `--interval` seconds
 (300 by default) and appends their events to the event log, beside the server:
 
 ```sh
-uvx --from starpulse python -m starpulse.github --repo trantor-org/starpulse
+uvx --from starpulse python -m starpulse.adapters.runs.github --repo trantor-org/starpulse
 ```
 
 - **`github-pull-request` machine.** `PR_OPENED`, then `CHECKS_PASSED` or `CHECKS_FAILED` once every check run on the
@@ -787,7 +787,7 @@ directory. The `Board` says:
   [Scaling notes](#flow-read-scaling)). A history that supplies only `lane_rows` and `level_runs`, as the Board adapter
   hook does, is read whole, and a level on a machine other than the Board reads that machine's events whole.
 
-`starpulse.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
+`starpulse.adapters.boards.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
 criteria, plan, notes and definition of done) back for the task view, applies an edit to a task's file in one write,
 and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments.
@@ -806,7 +806,7 @@ dependencies is workable. It is workable since the latest of when it entered its
 when a pass first saw its criteria all met. The server evaluates the criteria of Waiting tasks whose dependencies are
 done in the background every 30 seconds through the same cache, never per page, and keeps that first-met moment in
 `starpulse_criteria_met` while the criteria stay met, so a restart does not reset it.
-`starpulse.upstream_backlog` is the reference adapter for a tracker with its own
+`starpulse.adapters.boards.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
@@ -814,7 +814,7 @@ whose states are those lanes and whose `writers` reserve a move to an actor, suc
 with the `backlog` CLI, answering a failed write with the CLI's output. An adapter with a writer subclasses
 `BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
 the machine leaves to the operator is refused to the agent. A board kit also declares `teams`, the team key the
-adapter derives for each task it produces, and asserts each record carries it. `starpulse.jira` reads a Jira project and has no writer. It imports the named workflow from the site's
+adapter derives for each task it produces, and asserts each record carries it. `starpulse.adapters.boards.jira` reads a Jira project and has no writer. It imports the named workflow from the site's
 `workflows/search` as the Board machine (a state per status, an event per transition, a global transition leaving every
 other status), refusing a workflow with a status in no transition, two statuses that make one lane, or no single initial
 transition. Each issue is a task in the lane of its status and the team of its Jira project; an issue it `Blocks` waits on

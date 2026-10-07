@@ -5,7 +5,7 @@ import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
 
-from starpulse.claude_code import handler
+from starpulse.adapters.harnesses.claude_code import handler
 from starpulse.tests.unit.test_claude_code import adapter, exports, replay
 
 

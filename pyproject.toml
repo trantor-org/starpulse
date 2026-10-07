@@ -72,9 +72,17 @@ starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*
 root_package = "starpulse"
 
 [[tool.importlinter.contracts]]
-name = "store, settings, domain and contracts are layered"
+name = "adapters, store, settings, domain and contracts are layered"
 type = "layers"
-layers = ["starpulse.store", "starpulse.settings", "starpulse.domain | starpulse.contracts"]
+layers = [
+    "starpulse.adapters",
+    "starpulse.store",
+    "starpulse.settings",
+    "starpulse.domain | starpulse.contracts",
+]
+# The config resolves a bare adapter type through the table of built-in names, which imports nothing. The table lives in
+# `adapters` because an engine's name belongs only inside an adapter (StarPulse Runs Are Orchestrator-Neutral).
+ignore_imports = ["starpulse.settings.config -> starpulse.adapters"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

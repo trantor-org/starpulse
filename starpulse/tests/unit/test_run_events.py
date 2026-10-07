@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from starpulse import run_events
+from starpulse.adapters.runs import run_events
 
 
 def test_an_entry_omits_the_step_and_depends_of_a_run_level_event() -> None:

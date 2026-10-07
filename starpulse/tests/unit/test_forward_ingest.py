@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from starpulse import run_events
-from starpulse.ingest import ForwardIngest
+from starpulse.adapters.runs import run_events
+from starpulse.adapters.runs.ingest import ForwardIngest
 from starpulse.store import events
 from starpulse.store.event_log import EventLog, Tail
 
