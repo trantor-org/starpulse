@@ -17,9 +17,11 @@ from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
 from starpulse.analytics import LaneRow, move_shares
+from starpulse.config import CommitKeys
 from starpulse.contracts import BoardTask, TaskKeys
 from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
-from starpulse.snapshot import declared
+from starpulse.ledger import MERGE_EVENT, Occurrence, build, pull_occurrences
+from starpulse.snapshot import declared, qualifier
 from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 
 __all__ = ["BoardFeed", "BoardStore", "Followed", "Resumable"]
@@ -35,6 +37,8 @@ SAVE_INTERVAL = 60.0
 SUN_DAYS = 7
 #: Seconds between looks for a local midnight that has passed.
 SUN_INTERVAL = 60.0
+#: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
+LEDGER_WINDOW = 86400.0
 
 
 def task_agent(task: BoardTask) -> dict:
@@ -91,7 +95,8 @@ class BoardFeed:
     to (None: no links). `machines` are the machines the page draws, the Board's as `board` (None: a Board of
     Backlog.md's default statuses alone), and `cues` the board adapter's workflow cues. `domains` and `run_safe`
     are the config's, each workflow as `<instance>/<workflow>`. `source` names what the Board is read from, for the
-    page to show until the board adapter has read it.
+    page to show until the board adapter has read it. `commit` is each runs instance's `[runs.commit]` keys, by instance
+    name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain.
     """
 
     def __init__(
@@ -106,6 +111,7 @@ class BoardFeed:
         source: str = "the board",
         capabilities: Mapping[str, bool] | None = None,
         hint: str | None = None,
+        commit: Mapping[str, CommitKeys] | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._hint = hint
@@ -120,6 +126,10 @@ class BoardFeed:
         self._source = source
         self._drawn = machines if machines is not None else {"board": board_machine(DEFAULT_STATUSES)}
         self._board_url = board_url
+        self._commit = commit or {}
+        self._ties = self._tied_to_events(cues)
+        #: The Ledger as last published, so a change to it is sent once.
+        self._ledgers: dict[str, list[dict]] = {}
         self._lock = threading.RLock()
         self._window_s = window_s
         self._open: dict[str, dict] = {}
@@ -148,6 +158,22 @@ class BoardFeed:
         self._sized: tuple[datetime | None, dict[str, float]] = (None, {})
         #: Set once the stream has been read up to the last entry it held when the feed started.
         self.ready = threading.Event()
+
+    def _tied_to_events(self, cues: Sequence[dict]) -> dict[str, list[str]]:
+        """Each Board event with the workflows (`<instance>/<workflow>`) it cues or that write it."""
+        qualify = qualifier(self._domains)
+        ties: dict[str, list[str]] = {}
+        for cue in cues:
+            if "event" in cue:
+                ties.setdefault(cue["event"], []).append(qualify(cue["dag"]))
+        for event, writers in self._drawn["board"].get("writers", {}).items():
+            ties.setdefault(event, []).extend(writer["actor"] for writer in writers)
+        return {event: list(dict.fromkeys(dags)) for event, dags in ties.items()}
+
+    def tied(self, instance: str) -> frozenset[str]:
+        """The workflows of `instance` a Board event cues or that write one: those whose runs the Ledger pairs."""
+        prefix = f"{instance}/"
+        return frozenset(dag.removeprefix(prefix) for dags in self._ties.values() for dag in dags if dag.startswith(prefix))
 
     @property
     def machines(self) -> Mapping[str, dict]:
@@ -359,6 +385,7 @@ class BoardFeed:
                 return
             self._pulls = pulls
             self._publish("pulls", {"pulls": pulls})
+            self._refresh_ledgers()
 
     def refuse_claim(self, task: str, reason: str, at: float) -> None:
         """Keep the board writer's latest refusal of an agent's claim on `task` and publish it."""
@@ -432,6 +459,7 @@ class BoardFeed:
                 self._runs_errors[instance] = error
             if moved:
                 self._publish("dags", {"dags": self._workflows(), "pools": self._drawn_pools(), "error": self._error()})
+                self._refresh_ledgers()
             if changed:
                 self._publish("snapshot", self.snapshot())
 
@@ -449,12 +477,45 @@ class BoardFeed:
         """Every instance's workflows, each named `<instance>/<workflow>`; a pushed one an adapter lists is drawn by that adapter."""
         listed = {dag["name"] for instance, dags in self._dags.items() if instance != PUSHED_INSTANCE for dag in dags}
         return [
-            {**dag, "name": f"{instance}/{dag['name']}"}
+            {**{key: value for key, value in dag.items() if key != "recent"}, "name": f"{instance}/{dag['name']}"}
             | ({"pool": f"{instance}/{dag['pool']}"} if dag.get("pool") else {})
             for instance, dags in self._dags.items()
             for dag in dags
             if instance != PUSHED_INSTANCE or dag["name"] not in listed
         ]
+
+    def _ledger(self) -> dict[str, list[dict]]:
+        """Each tied Board event's occurrences, newest first, with the run of every workflow tied to it (`starpulse.ledger`).
+
+        The merge event's occurrences are the merged pull requests; any other event's are the tasks that entered the
+        lane it reaches within `LEDGER_WINDOW`, read from the lane history `size_suns` was given.
+        """
+        events: dict[str, list[Occurrence]] = {}
+        if MERGE_EVENT in self._ties:
+            events[MERGE_EVENT] = pull_occurrences(self._pulls)
+        reached = {
+            event: {t["target"] for t in self._drawn["board"].get("transitions", []) if t["event"] == event}
+            for event in self._ties.keys() - {MERGE_EVENT}
+        }
+        if reached and self._lane_rows is not None:
+            since = self._clock() - LEDGER_WINDOW
+            for task, at, _from, to in self._lane_rows():
+                for event, lanes in reached.items():
+                    if at >= since and lane_id(to) in lanes:
+                        events.setdefault(event, []).append(Occurrence(f"{task}@{at}", at, (task,)))
+        runs = {
+            f"{instance}/{dag['name']}": dag.get("recent", [])
+            for instance, dags in self._dags.items()
+            for dag in dags
+        }
+        return build(events, self._ties, runs, lambda dag: self._commit.get(dag.partition("/")[0]))
+
+    def _refresh_ledgers(self) -> None:
+        """Send the Ledger when it differs from the one last sent; the caller holds the lock."""
+        ledgers = self._ledger()
+        if ledgers != self._ledgers:
+            self._ledgers = ledgers
+            self._publish("ledgers", {"ledgers": ledgers})
 
     def _drawn_pools(self) -> list[dict]:
         """Every instance's concurrency pools, each named `<instance>/<pool>` like the `pool` a workflow names."""
@@ -506,6 +567,7 @@ class BoardFeed:
                 "dags": self._workflows(),
                 "pools": self._drawn_pools(),
                 "pulls": self._pulls,
+                "ledgers": self._ledger(),
                 "claims": dict(self._claims),
                 "insights": [
                     finding
@@ -530,6 +592,11 @@ class InstanceRuns:
     def __init__(self, feed: BoardFeed, instance: str) -> None:
         self._feed = feed
         self._instance = instance
+
+    @property
+    def tied(self) -> frozenset[str]:
+        """The workflows of this instance a Board event cues or that write one, whose recent runs the adapter reports."""
+        return self._feed.tied(self._instance)
 
     def set_dags(
         self, dags: list | None, error: str | None, pools: list | None = None, startable: list[str] | None = None

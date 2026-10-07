@@ -19,7 +19,7 @@ from starpulse.contracts import StartFailedError, TaskKeys
 from starpulse.dagu import _STATUS, DaguRuns, Transport, connect, dags, pools, start, starter, status_of
 from starpulse.dagu import follow as follow_instance
 from starpulse.event_log import EventLog
-from starpulse.tests.dagu_stub import InFlight, Queue, dagu, run_entry, step_entry
+from starpulse.tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
 
 LISTING = "/api/v1/dags?perPage=200"
 #: The listing is read at this time; an entry stamped before it is already in the listing.
@@ -1177,3 +1177,223 @@ def test_only_a_step_entry_of_the_latest_run_moves_the_steps_the_dag_itself_show
         "running",
         "r2",
     )
+
+
+APPLY = {"apply": ["validate", "deploy"]}
+#: A finished run of `apply` for the commit `a`*40, a failed one without a commit, and a run still in `deploy`.
+APPLIED = Past(
+    "apply",
+    "r1",
+    started_at="2026-10-05T23:00:00Z",
+    finished_at="2026-10-05T23:01:00Z",
+    params=f'REPOSITORY=trantor-org/trantor AFTER={"a" * 40} NOTE="two words"',
+    nodes=(("validate", "succeeded"), ("deploy", "succeeded")),
+)
+FAILED = Past(
+    "apply",
+    "r2",
+    label="failed",
+    started_at="2026-10-05T23:10:00Z",
+    finished_at="2026-10-05T23:11:00Z",
+    nodes=(("validate", "succeeded"), ("deploy", "failed")),
+)
+
+
+def recent(base_url: str, tied: set[str], **kwargs) -> list[dict]:
+    return next(d for d in dags(base_url, recent=tied, **kwargs) if d["name"] == "apply").get("recent", [])
+
+
+def test_a_tied_dag_carries_its_recent_runs_with_params_times_and_per_step_status() -> None:
+    with dagu(APPLY, history=(APPLIED, FAILED)) as (base_url, _):
+        runs = recent(base_url, {"apply"})
+
+    assert runs[0] == {
+        "runId": "r1",
+        "status": "succeeded",
+        "startedAt": "2026-10-05T23:00:00Z",
+        "finishedAt": "2026-10-05T23:01:00Z",
+        "params": {"REPOSITORY": "trantor-org/trantor", "AFTER": "a" * 40, "NOTE": "two words"},
+        "steps": {"validate": "succeeded", "deploy": "succeeded"},
+    }
+    assert (runs[1]["status"], runs[1].get("raw"), runs[1]["params"]) == ("failed", None, {})
+    assert runs[1]["steps"] == {"validate": "succeeded", "deploy": "failed"}
+
+
+def test_a_dag_no_cue_ties_is_listed_with_no_recent_runs_and_costs_dagu_no_history_read() -> None:
+    with dagu(APPLY, history=(APPLIED,)) as (base_url, calls):
+        runs = recent(base_url, set())
+
+    assert runs == []
+    assert not [c for c in calls if "name=" in c or c.startswith("/api/v1/dag-runs/apply")]
+
+
+def test_recent_runs_are_read_across_every_page_dagu_returns() -> None:
+    history = tuple(Past("apply", f"r{i}", started_at=f"2026-10-05T23:{i:02d}:00Z") for i in range(5))
+    with dagu(APPLY, history=history, page=2) as (base_url, _):
+        runs = recent(base_url, {"apply"})
+
+    assert [r["runId"] for r in runs] == ["r0", "r1", "r2", "r3", "r4"]
+
+
+def test_recent_runs_are_asked_for_within_the_last_day_of_the_named_dag_only() -> None:
+    with dagu(APPLY, history=(APPLIED,)) as (base_url, calls):
+        recent(base_url, {"apply"})
+
+    (listing,) = [c for c in calls if "name=apply" in c]
+    assert "fromDate=" in listing
+    assert int(listing.split("fromDate=")[1].split("&")[0]) > time.time() - 86400 - 60
+
+
+def test_a_finished_runs_steps_are_read_once_and_a_running_runs_every_time() -> None:
+    running = Past("apply", "r3", label="running", started_at="2026-10-05T23:20:00Z", nodes=(("validate", "running"),))
+    cache: dict = {}
+    with dagu(APPLY, history=(APPLIED, running)) as (base_url, calls):
+        recent(base_url, {"apply"}, finished=cache)
+        recent(base_url, {"apply"}, finished=cache)
+
+    details = [c for c in calls if c.startswith("/api/v1/dag-runs/apply/")]
+    assert sorted(details) == [
+        "/api/v1/dag-runs/apply/r1",
+        "/api/v1/dag-runs/apply/r3",
+        "/api/v1/dag-runs/apply/r3",
+    ]
+
+
+def test_a_recent_runs_status_keeps_dagus_own_label_as_raw_when_it_differs() -> None:
+    waiting = Past("apply", "r4", label="waiting", started_at="2026-10-05T23:30:00Z", nodes=(("deploy", "waiting"),))
+    with dagu(APPLY, history=(waiting,)) as (base_url, _):
+        (run,) = recent(base_url, {"apply"})
+
+    assert (run["status"], run["raw"], run["steps"]) == ("running", "waiting", {"deploy": "running"})
+
+
+def test_a_run_dagu_records_no_steps_for_is_listed_with_none() -> None:
+    with dagu(APPLY, history=(Past("apply", "r9", started_at="2026-10-05T23:30:00Z"),)) as (base_url, _):
+        (run,) = recent(base_url, {"apply"})
+
+    assert run["steps"] == {}
+
+
+class _Sink:
+    """What a runs adapter publishes to: the workflows it last set."""
+
+    def __init__(self) -> None:
+        self.dags: list[dict] = []
+
+    def set_dags(self, dags: list | None, error: str | None, pools: list | None = None, startable=None) -> None:
+        self.dags = dags or []
+
+    def recent(self) -> dict[str, dict]:
+        return {r["runId"]: r for d in self.dags if d["name"] == "apply" for r in d["recent"]}
+
+
+def follow_tied(base_url: str, tied: set[str] | None = None) -> tuple[_Sink, DaguRuns]:
+    """A reader of Dagu's `apply` DAG with `tied` workflows' recent runs (just `apply` by default), after its first listing."""
+    wanted = {"apply"} if tied is None else tied
+    sink = _Sink()
+    runs = DaguRuns(
+        sink,  # type: ignore[arg-type]
+        lambda only=None: dags(base_url, only, wanted),
+        lambda: pools(base_url),
+        tied=lambda: wanted,
+        clock=lambda: LISTED_AT,
+    )
+    runs.reconcile()
+    return sink, runs
+
+
+def test_a_listing_gives_a_tied_dag_its_recent_runs() -> None:
+    with dagu(APPLY, history=(APPLIED,)) as (base_url, _):
+        sink, _ = follow_tied(base_url)
+
+    assert sink.recent()["r1"]["params"]["AFTER"] == "a" * 40
+
+
+def test_a_start_entry_adds_the_run_to_a_tied_dags_recent_runs_with_its_parameters() -> None:
+    history: list[Past] = [APPLIED]
+    with dagu(APPLY, history=history) as (base_url, _):
+        sink, runs = follow_tied(base_url)
+        history.insert(
+            0,
+            Past("apply", "r5", label="running", started_at="2026-10-05T23:40:00Z", params=f"AFTER={'b' * 40}"),
+        )
+
+        runs.handle_entry(*run_entry("start", "apply", "r5", "running", at=101.0))
+
+    assert sink.recent()["r5"]["params"] == {"AFTER": "b" * 40}
+    assert sink.recent()["r5"]["status"] == "running"
+
+
+def test_a_start_entry_dagu_does_not_list_yet_still_shows_the_run_with_no_parameters() -> None:
+    with dagu(APPLY, history=()) as (base_url, _):
+        sink, runs = follow_tied(base_url)
+
+        runs.handle_entry(*run_entry("start", "apply", "r5", "running", at=101.0))
+
+    run = sink.recent()["r5"]
+    assert (run["status"], run["params"], run["startedAt"]) == ("running", {}, "1970-01-01T00:01:41Z")
+
+
+def test_a_step_entry_moves_that_step_of_the_run_in_the_tied_dags_recent_runs() -> None:
+    running = Past("apply", "r5", label="running", started_at="2026-10-05T23:40:00Z", nodes=(("validate", "running"),))
+    with dagu(APPLY, history=(running,)) as (base_url, _):
+        sink, runs = follow_tied(base_url)
+
+        runs.handle_entry(*step_entry("end", "apply", "r5", "validate", "succeeded", at=101.0))
+        runs.handle_entry(*step_entry("start", "apply", "r5", "deploy", "running", at=102.0))
+
+    assert sink.recent()["r5"]["steps"] == {"validate": "succeeded", "deploy": "running"}
+
+
+def test_an_end_entry_closes_the_run_in_the_tied_dags_recent_runs() -> None:
+    history = [Past("apply", "r5", label="running", started_at="2026-10-05T23:40:00Z", nodes=(("deploy", "running"),))]
+    with dagu(APPLY, {}, {"statusLabel": "running", "dagRunId": "r5"}, history=history) as (base_url, _):
+        sink, runs = follow_tied(base_url)
+        history[0] = Past(
+            "apply",
+            "r5",
+            label="failed",
+            started_at="2026-10-05T23:40:00Z",
+            finished_at="2026-10-05T23:41:00Z",
+            nodes=(("deploy", "failed"),),
+        )
+
+        runs.handle_entry(*run_entry("end", "apply", "r5", "failed", at=101.0))
+
+    run = sink.recent()["r5"]
+    assert (run["status"], run["finishedAt"], run["steps"]) == ("failed", "2026-10-05T23:41:00Z", {"deploy": "failed"})
+
+
+def test_the_end_of_a_run_no_longer_the_latest_closes_it_in_recent_runs_without_reading_dagu() -> None:
+    older = Past("apply", "r4", label="running", started_at="2026-10-05T22:00:00Z", nodes=(("deploy", "running"),))
+    with dagu(APPLY, {}, {"statusLabel": "succeeded", "dagRunId": "r5"}, history=(older,)) as (base_url, calls):
+        sink, runs = follow_tied(base_url)
+        calls.clear()
+
+        runs.handle_entry(*run_entry("end", "apply", "r4", "aborted", at=101.0))
+
+    assert (sink.recent()["r4"]["status"], sink.recent()["r4"]["finishedAt"]) == ("aborted", "1970-01-01T00:01:41Z")
+    assert calls == []
+
+
+def test_a_dag_no_cue_ties_gets_no_recent_runs_from_a_reader_that_ties_none() -> None:
+    with dagu(APPLY, history=(APPLIED,)) as (base_url, calls):
+        sink, runs = follow_tied(base_url, set())
+        runs.handle_entry(*run_entry("start", "apply", "r5", "running", at=101.0))
+
+    assert "recent" not in sink.dags[0]
+    assert not [c for c in calls if "name=" in c]
+
+
+def test_a_followed_instance_reads_the_recent_runs_of_the_workflows_its_sink_says_are_tied(
+    log: EventLog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("starpulse.dagu._reconcile_forever", lambda runs: None)
+    sink = _Sink()
+    sink.tied = frozenset({"apply"})  # type: ignore[attr-defined]
+    with dagu({**APPLY, "other": ["a"]}, history=(APPLIED,)) as (base_url, _):
+        follow_instance(base_url, sink, log, interval=0.01)  # type: ignore[arg-type]
+        _wait_until(lambda: sink.dags)
+
+    assert [d["name"] for d in sink.dags if "recent" in d] == ["apply"]
+    assert sink.recent()["r1"]["params"]["AFTER"] == "a" * 40

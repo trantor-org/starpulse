@@ -302,7 +302,36 @@ run_safe = ["nightly"]                   # the workflows the page's Run now may 
 domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
 token_env = "DAGU_INGEST_TOKEN"          # the environment variable holding the token `POST /api/runs/events` accepts for
                                          # this instance; the token never goes in this file; omit the key and the instance takes no pushed events
+
+# Optional: the run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain.
+# Each value names a parameter; a key left out is a parameter this instance has none of.
+[runs.commit]
+after = "AFTER"                          # the merge commit the run applies: pairs the run with that merge
+before = "BEFORE"                        # the commit before it
+force = "FORCE"                          # the parameter that marks a forced run
+task = "TASK"                            # the task a run is for: pairs a run with a task's entry into a lane (any Board event but MERGED)
 ```
+
+#### The Ledger
+
+A Board event a machine's `cues` name or that a workflow writes (`writers`) is *tied* to that workflow. The snapshot's
+`ledgers` (and the `ledgers` event after it) list, per tied event, each occurrence newest first with the run of every
+tied workflow that answered it: `{key, at, tasks, runs}`, and for the `MERGED` event `sha` and `pr` (`{repo, number, url}`)
+too. A run is `{runId, status, startedAt, finishedAt, steps, step, inferred, ambiguous}`: its status, its status per
+step, and the step it is in.
+
+- `MERGED` occurrences are merged pull requests, which carry their tasks. Any other event's are tasks entering the lane the
+  event reaches within the last day.
+- A run whose parameters name an occurrence under `[runs.commit]` (`after` for a merge's commit, a full or abbreviated
+  sha; `task` for a task) pairs with it and is not `inferred`. A run that names an occurrence StarPulse does not hold pairs
+  with nothing.
+- Any other run of a tied workflow pairs with the newest occurrence before it started and is `inferred`; its `ambiguous`
+  counts the older occurrences that landed since the workflow's previous run, any of which it may equally be for. Of several
+  inferred runs for one occurrence the earliest wins, and a keyed run outranks them.
+- A workflow's `recent` runs (`Dag.recent`, the last day's, with their parameters) are read from Dagu for tied workflows
+  only, and are left out of the `dags` the page draws.
+- Pull requests come from the one repository StarPulse reads, so a merge in another repository can pair by time with a
+  run that was not for it until the config can name each repository.
 
 ### Connect a tracker
 
@@ -658,7 +687,7 @@ The modules an adapter may import, each exporting exactly the names in its `__al
 
 - `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer and task protocols).
 - `starpulse.board_feed`: the feed a board adapter places tasks on (`BoardFeed`) and what following a stream needs of it.
-- `starpulse.contracts`: the board, machine-event, runs and insights (`Finding`) records, their JSON Schemas, and `RunsSink`.
+- `starpulse.contracts`: the board, machine-event, runs (`Dag`, `RecentRun`) and insights (`Finding`) records, their JSON Schemas, and `RunsSink`.
 - `starpulse.adapter_kit`: the test kit an adapter or insights engine author runs against their work, and the helpers that serve it.
 - `starpulse.machine_definition`: loading and validating a machine, and the `Registry` of guards and actions.
 - `starpulse.snapshot`: how a machine is described to the page, and how its workflows are named.

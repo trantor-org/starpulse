@@ -33,7 +33,7 @@ PUBLIC: dict[str, set[str]] = {
         "module_name",
     },
     "starpulse.board_feed": {"BoardFeed", "BoardStore", "Followed", "Resumable"},
-    "starpulse.config": {"Config", "ConfigError", "Forward", "RunsInstance", "Source", "load", "runs_adapter"},
+    "starpulse.config": {"CommitKeys", "Config", "ConfigError", "Forward", "RunsInstance", "Source", "load", "runs_adapter"},
     "starpulse.contracts": {
         "CONTRACTS",
         "FINDING_TEXT_MAX",
@@ -48,6 +48,7 @@ PUBLIC: dict[str, set[str]] = {
         "MachineEvent",
         "Move",
         "Pool",
+        "RecentRun",
         "RunStatus",
         "RunsSink",
         "StartFailedError",

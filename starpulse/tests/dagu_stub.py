@@ -3,7 +3,7 @@
 import itertools
 import json
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,6 +33,19 @@ class InFlight:
     nodes: tuple[tuple[str, str, str], ...] = ()
 
 
+@dataclass(frozen=True)
+class Past:
+    """One run in a DAG's history as `/api/v1/dag-runs?name=` lists it, its steps as `(name, label)` and its params as Dagu prints them."""
+
+    dag: str
+    run_id: str
+    label: str = "succeeded"
+    started_at: str = ""
+    finished_at: str = ""
+    params: str = ""
+    nodes: tuple[tuple[str, str], ...] = ()
+
+
 #: Dagu's numeric run statuses, as `/dag-runs?status=` filters by them.
 _STATUS_OF = {"running": 1, "queued": 5}
 
@@ -47,6 +60,8 @@ def dagu(
     queue_of: dict[str, str] | None = None,
     in_flight: tuple[InFlight, ...] = (),
     listed_since: str = "",
+    history: Sequence[Past] = (),
+    page: int = 100,
 ) -> Iterator[tuple[str, list[str]]]:
     """Serve one DAG per key of `steps` (its value is the step names, each depending on the one before).
 
@@ -55,7 +70,8 @@ def dagu(
     succeeded `r0` unless given. `queues` are the queues `/queues` reports (a Dagu without them answers 404),
     `queue_of` the queue each DAG declares, and `in_flight` the runs `/dag-runs` lists as running or queued.
     Like Dagu, whose listing starts at UTC midnight unless asked for a `fromDate`, a listing with no `fromDate` leaves
-    out the runs that began before `listed_since`.
+    out the runs that began before `listed_since`. `history` (read at each request, so a caller may add to it) are the runs `/dag-runs?name=` lists, `page` at a time with
+    a `nextCursor` while more remain; their detail is served like an in-flight run's.
     Yields the base URL and the list of every request path received, in order.
     """
     calls: list[str] = []
@@ -86,6 +102,20 @@ def dagu(
         nodes = [{"step": {"name": n}, "statusLabel": label, "startedAt": at} for n, label, at in r.nodes]
         return {"dagRunDetails": {**summary(r), "nodes": nodes}}
 
+    def past_summary(r: Past) -> dict:
+        return {
+            "name": r.dag,
+            "dagRunId": r.run_id,
+            "statusLabel": r.label,
+            "startedAt": r.started_at,
+            "finishedAt": r.finished_at,
+            "params": r.params,
+        }
+
+    def past_detail(r: Past) -> dict:
+        nodes = [{"step": {"name": n}, "statusLabel": label} for n, label in r.nodes]
+        return {"dagRunDetails": {**past_summary(r), "nodes": nodes}}
+
     def answer(path: str) -> tuple[int, dict]:
         url = urlsplit(path)
         parts = url.path.removeprefix("/api/v1/").split("/")
@@ -100,6 +130,15 @@ def dagu(
                     for n, q in queues.items()
                 ]
             }
+        if parts == ["dag-runs"] and "name" in parse_qs(url.query):
+            query = parse_qs(url.query)
+            mine = [r for r in history if r.dag == query["name"][0]]
+            first = int(query.get("cursor", ["0"])[0])
+            more = first + page < len(mine)
+            return 200, {
+                "dagRuns": [past_summary(r) for r in mine[first : first + page]],
+                **({"nextCursor": str(first + page)} if more else {}),
+            }
         if parts == ["dag-runs"]:
             query = parse_qs(url.query)
             status = int(query["status"][0])
@@ -107,6 +146,8 @@ def dagu(
             listed = [r for r in in_flight if _STATUS_OF[r.label] == status and (r.started_at or r.queued_at) >= since]
             return 200, {"dagRuns": [summary(r) for r in listed]}
         if parts[0] == "dag-runs":
+            if found := next((r for r in history if (r.dag, r.run_id) == (parts[1], parts[2])), None):
+                return 200, past_detail(found)
             return 200, run_detail(next(r for r in in_flight if (r.dag, r.run_id) == (parts[1], parts[2])))
         return 200, detail(parts[1])
 

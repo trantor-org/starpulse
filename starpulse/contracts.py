@@ -33,6 +33,7 @@ __all__ = [
     "MachineEvent",
     "Move",
     "Pool",
+    "RecentRun",
     "RunStatus",
     "RunsSink",
     "StartFailedError",
@@ -203,6 +204,32 @@ class Dag(_Contract):
     pool: str = Field(
         default="", description="The name of the concurrency `Pool` the DAG runs on; empty when it names none."
     )
+    recent: tuple[RecentRun, ...] = Field(
+        default=(),
+        description="The DAG's runs of the last day with the parameters each started with and its per-step status, "
+        "for the workflows a Board event cues or that write one; empty for any other or when the scheduler cannot "
+        "list them.",
+    )
+
+
+class RecentRun(_Contract):
+    """One run of a DAG within the last day, running or over, with the parameters it started with."""
+
+    run_id: str = Field(alias="runId", description="The run's id.")
+    status: RunStatus = Field(description="The run's status.")
+    raw: str | None = Field(
+        default=None, description="The engine's own status for the run when it differs from `status`, shown as is."
+    )
+    started_at: str = Field(
+        alias="startedAt", description="When the run started, ISO 8601 UTC (`2026-10-02T17:00:00Z`)."
+    )
+    finished_at: str = Field(
+        alias="finishedAt", description="When the run ended, ISO 8601 UTC; empty while it runs."
+    )
+    params: dict[str, str] = Field(
+        description="The `KEY=value` parameters the run started with, by name; empty when it had none."
+    )
+    steps: dict[str, RunStatus] = Field(description="Each step the run reached by name with its status in this run.")
 
 
 class ActiveRun(_Contract):

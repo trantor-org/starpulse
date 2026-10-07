@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.config import Config, ConfigError, Forward, OidcSettings, Source, load, runs_adapter
+from starpulse.config import CommitKeys, Config, ConfigError, Forward, OidcSettings, Source, load, runs_adapter
 from starpulse.harnesses import HarnessError
 
 
@@ -127,7 +127,7 @@ def test_an_unknown_instance_key_is_refused_by_name_beside_the_known_ones(tmp_pa
     text = '[[runs]]\nname = "ci"\ntype = "dagu"\nurl = "http://ci.test"\nrunsafe = []\nzeta = 1\n'
 
     assert _refusal(tmp_path, text) == (
-        "runs instance ci: unknown key(s) runsafe, zeta; known: domains, name, run_safe, token_env, type, url"
+        "runs instance ci: unknown key(s) runsafe, zeta; known: commit, domains, name, run_safe, token_env, type, url"
     )
 
 
@@ -489,4 +489,48 @@ def test_the_event_log_keeps_seven_days_unless_the_config_says_otherwise(tmp_pat
 def test_an_event_log_retention_that_is_not_a_whole_number_of_days_is_refused(tmp_path: Path, value: str) -> None:
     assert "event_log_retention_days must be a whole number of days, 1 or more" in _refusal(
         tmp_path, f"event_log_retention_days = {value}\n"
+    )
+
+
+_DAGU = '[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "http://dagu.test"\n'
+
+
+def test_an_instance_maps_commit_keys_onto_the_run_parameters_that_carry_them(tmp_path: Path) -> None:
+    text = _DAGU + '[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"\ntask = "TASK"\n'
+
+    (dagu,) = load(_write(tmp_path, text)).runs
+
+    assert dagu.commit == CommitKeys(after="AFTER", before="BEFORE", force="FORCE", task="TASK")
+
+
+def test_an_instance_may_declare_only_some_commit_keys(tmp_path: Path) -> None:
+    (dagu,) = load(_write(tmp_path, _DAGU + '[runs.commit]\nafter = "SHA"\n')).runs
+
+    assert dagu.commit == CommitKeys(after="SHA")
+
+
+def test_an_instance_with_no_commit_table_pairs_its_runs_by_time(tmp_path: Path) -> None:
+    (dagu,) = load(_write(tmp_path, _DAGU)).runs
+
+    assert dagu.commit is None
+
+
+@pytest.mark.parametrize("value", ["1", '""', '"has space"', "[]"])
+def test_a_commit_key_that_is_not_a_parameter_name_is_refused(tmp_path: Path, value: str) -> None:
+    text = _DAGU + f"[runs.commit]\nafter = {value}\n"
+
+    assert _refusal(tmp_path, text) == "runs instance dagu: commit.after must be the name of a run parameter"
+
+
+def test_an_unknown_commit_key_is_refused_beside_the_known_ones(tmp_path: Path) -> None:
+    text = _DAGU + '[runs.commit]\nafter = "AFTER"\nsha = "SHA"\n'
+
+    assert _refusal(tmp_path, text) == (
+        "runs instance dagu: commit: unknown key(s) sha; known: after, before, force, task"
+    )
+
+
+def test_a_commit_that_is_not_a_table_is_refused(tmp_path: Path) -> None:
+    assert _refusal(tmp_path, _DAGU.replace("[[runs]]\n", "[[runs]]\ncommit = 1\n")) == (
+        "runs instance dagu: commit must be a [runs.commit] table"
     )
