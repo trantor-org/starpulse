@@ -656,17 +656,14 @@ def test_a_rerun_the_adapter_fails_answers_with_its_reason() -> None:
     assert _rerun(failed) == (502, {"error": "Dagu unreachable: refused"})
 
 
-def _threads() -> set[str]:
-    return {t.name for t in threading.enumerate()}
-
-
 def test_a_hub_starts_no_event_log_row_prune_because_it_drops_day_partitions(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     stop = threading.Event()
+    before = set(threading.enumerate())  # an instance serve another test ran may still be pruning
 
     assert keep_event_log(log, load(None), tmp_path, hub=True, stop=stop) is None
 
-    assert "event-log-prune" not in _threads()
+    assert "event-log-prune" not in {t.name for t in set(threading.enumerate()) - before}
 
 
 def test_an_instance_serve_archives_the_rows_it_prunes_beside_the_config(tmp_path: Path) -> None:
