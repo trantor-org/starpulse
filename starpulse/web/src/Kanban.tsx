@@ -99,7 +99,8 @@ export function Card({ task, holds = 0, chain, now, marks, names, compact = fals
 }) {
   const labels = task.labels.filter((l) => !/^kind-|^agent-resolvable$/.test(l)).slice(0, 3);
   const live = task.live, claim = marks.claim;
-  const cls = ["card", chain && `chain-${chain}`, compact && "compact", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
+  const playing = onPlay && !claim && startLane(task);
+  const cls = ["card", chain && `chain-${chain}`, compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
   const guard = task.moves.in_progress?.allowed === false ? task.moves.in_progress.reason : "";
   return (
     <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={onPress}
@@ -107,12 +108,6 @@ export function Card({ task, holds = 0, chain, now, marks, names, compact = fals
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
         <span className="id">{task.id}</span><PullChip pulls={task.prs} />
-        {onPlay && !claim && startLane(task) && (
-          <button className="play" title={guard || "Start a session"} aria-label={`Start ${task.id}`} disabled={!startable(task)}
-            onClick={(e) => { e.stopPropagation(); onPlay(); }} onPointerDown={stop}
-            // only the keys that would open the card stop here: the question ▶ asks still answers 1, 2 and Esc while ▶ keeps focus
-            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()}>▶</button>
-        )}
       </div>
       <div className="t">{task.title}</div>
       {claim ? (
@@ -138,6 +133,13 @@ export function Card({ task, holds = 0, chain, now, marks, names, compact = fals
           {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
           {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
         </div>
+      )}
+      {playing && (
+        // a full-height strip on the card's right edge, so a near miss lands on the card and opens the task
+        <button className="play edge" title={guard || "Start a session"} aria-label={`Start ${task.id}`} disabled={!startable(task)}
+          onClick={(e) => { e.stopPropagation(); onPlay(); }} onPointerDown={stop}
+          // only the keys that would open the card stop here: the question ▶ asks still answers 1, 2 and Esc while ▶ keeps focus
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()}>▶</button>
       )}
       {marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
       {marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart ?? dismiss} />}

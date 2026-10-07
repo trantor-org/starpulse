@@ -359,11 +359,13 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 @keyframes kb-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 @media (prefers-reduced-motion: reduce) { #kb .card.saving::after, #kb .card.bad { animation: none; } }
 
-/* Starting a session, from the approved mockup: ▶ on a startable card, the start question, and the card that waits in
-   In progress on a dashed amber edge until its agent claims it. */
-#kb .play { all: unset; flex: none; cursor: pointer; padding: 0 8px; border-radius: 4px; border: 1px solid rgba(52,211,153,.4); color: #34d399; font-size: calc(9px * var(--fs)); line-height: 16px; }
-#kb .play:hover, #kb .play:focus-visible { background: rgba(52,211,153,.12); }
-#kb .play:disabled { cursor: default; opacity: .35; border-style: dashed; }
+/* Starting a session, from the approved mockups: ▶ as a full-height strip on a startable card's right edge (TASK-3016),
+   the start question, and the card that waits in In progress on a dashed amber edge until its agent claims it. */
+#kb .card.startable, #kb.compact .card.startable { padding-right: calc(max(30px, 30px * var(--fs)) + 9px); }
+#kb .play.edge { all: unset; position: absolute; top: 0; right: 0; bottom: 0; width: max(30px, calc(30px * var(--fs))); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border-left: 1px solid rgba(52,211,153,.28); border-radius: 0 6px 6px 0; background: rgba(52,211,153,.06); color: #34d399; font-size: calc(13px * var(--fs)); line-height: 1; }
+#kb .play.edge:hover, #kb .play.edge:focus-visible { background: rgba(52,211,153,.2); color: #6ee7b7; }
+#kb .play.edge:disabled { cursor: default; opacity: .35; border-left-style: dashed; background: transparent; }
 #kb .card.claiming { cursor: default; border: 1px dashed rgba(251,191,36,.7); }
 #kb .card.claiming::after { content: ""; position: absolute; right: 8px; bottom: 8px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #fbbf24; border-top-color: transparent; animation: kb-spin .8s linear infinite; }
 #kb .mach.sess b, #kb .mach.sess .s { color: #fbbf24; }
