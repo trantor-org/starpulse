@@ -1,5 +1,6 @@
 // The task view's model: the full record GET /api/task/<id> returns, and the Move to menu's keyboard.
 import { apiFetch } from "./demo";
+import type { KanbanTask } from "./kanban";
 
 export interface Item { n: number; text: string; checked: boolean }
 
@@ -194,4 +195,18 @@ export function markdown(text: string): Block[] {
   }
   flush(fence ? "pre" : "p");
   return blocks;
+}
+
+/** How many of the tasks a task holds the rail lists before it counts the rest. */
+export const HOLDS_SHOWN = 6;
+
+/** One task the rail's Dependencies section names: its id, its title and lane, or null for both when it is not on the board. */
+export interface DepRow { id: string; title: string | null; lane: string | null }
+
+/** What a task depends on, and the tasks that depend on it (the first six, with how many more follow). */
+export function dependencyRows(tasks: KanbanTask[], task: KanbanTask): { dependsOn: DepRow[]; holds: DepRow[]; more: number } {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const row = (id: string): DepRow => ({ id, title: byId.get(id)?.title ?? null, lane: byId.get(id)?.lane ?? null });
+  const held = tasks.filter((t) => t.dependencies.includes(task.id));
+  return { dependsOn: task.dependencies.map(row), holds: held.slice(0, HOLDS_SHOWN).map((t) => row(t.id)), more: Math.max(0, held.length - HOLDS_SHOWN) };
 }

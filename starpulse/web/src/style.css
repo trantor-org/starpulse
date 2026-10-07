@@ -335,8 +335,8 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tvmeta .copybtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); color: var(--slate); font-size: calc(11px * var(--fs)); }
 #kbm .tvmeta .copybtn:hover, #kbm .tvmeta .copybtn:focus-visible { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 50%, transparent); }
 #kbm .tvmeta .copybtn.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
-#kbm .tvmeta .tvlane { --c: var(--slate); display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px; border-radius: 999px; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); font-size: calc(11px * var(--fs)); white-space: nowrap; }
-#kbm .tvmeta .tvlane i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+#kbm .tvlane { --c: var(--slate); display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px; border-radius: 999px; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); font-size: calc(11px * var(--fs)); white-space: nowrap; }
+#kbm .tvlane i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
 #kbm .tvlane[data-lane=ready] { --c: var(--ready); } #kbm .tvlane[data-lane=waiting] { --c: var(--slate); } #kbm .tvlane[data-lane=in_progress] { --c: var(--run); }
 #kbm .tvlane[data-lane=review] { --c: var(--agent); } #kbm .tvlane[data-lane=needs_attention] { --c: var(--fail); } #kbm .tvlane[data-lane=done] { --c: var(--ok); }
 #kbm .tvmeta > a { font-size: calc(11px * var(--fs)); white-space: nowrap; }
@@ -349,11 +349,37 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tvcol { min-width: 0; padding: 18px 26px 26px; display: flex; flex-direction: column; gap: 20px; }
 #kbm .tvrail { padding: 16px 20px 24px; gap: 16px; background: color-mix(in srgb, var(--slate) 3%, transparent); border-left: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); }
 #kbm .tv table { margin-top: 0; }
-/* The rail is 320-440 px, too narrow for a label column beside a value at larger text, so each label sits above its value. */
-#kbm .tvrail table, #kbm .tvrail tbody, #kbm .tvrail tr, #kbm .tvrail td { display: block; }
-#kbm .tvrail tr { padding: 5px 0; }
-#kbm .tvrail td, #kbm .tvrail td:first-child { width: auto; padding: 0; }
-#kbm .tvrail td:first-child { font-size: calc(11px * var(--fs)); margin-bottom: 3px; }
+/* The right rail (approved mockup): live state first, one hairline between sections, a label column beside each Details value. */
+#kbm .tvrail .sec + .sec { border-top: 1px solid color-mix(in srgb, var(--slate) 8%, transparent); padding-top: 14px; }
+#kbm .tvrail .props { border-collapse: collapse; width: 100%; }
+#kbm .tvrail .props td { padding: 3px 10px 3px 0; vertical-align: top; }
+#kbm .tvrail .props td:first-child { width: calc(74px * var(--fs)); color: var(--muted); white-space: nowrap; }
+#kbm .tvrail .none { color: var(--faint); }
+#kbm .tvrail .rs .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#kbm .tvlane.sm { padding: 0 8px; }
+#kbm .tvrail .rs .row .tvlane { font-size: calc(12px * var(--fs)); padding: 2px 10px; }
+#kbm .tvrail .prs { display: flex; flex-direction: column; gap: 2px; }
+#kbm .tvrail .pull { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 2px 0; }
+#kbm .chk { display: inline-flex; align-items: center; gap: 5px; font-size: calc(11px * var(--fs)); color: var(--ink-3); }
+#kbm .chk i { width: 7px; height: 7px; border-radius: 50%; background: var(--slate); }
+#kbm .chk.pass i { background: var(--ok); } #kbm .chk.fail i { background: var(--fail); } #kbm .chk.pending i { background: var(--run); } #kbm .chk.merged i { background: var(--agent); }
+#kbm .thr { font-size: calc(11px * var(--fs)); color: var(--run); }
+#kbm .tvrail .deps { display: flex; flex-direction: column; gap: 3px; }
+#kbm .tvrail .deps .lb { font-size: calc(10.5px * var(--fs)); color: var(--muted); margin-top: 4px; }
+#kbm .tvrail .dep { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 2px 6px; margin: 0 -6px; border-radius: 5px; }
+#kbm .tvrail .dep:hover, #kbm .tvrail .dep:focus-visible { background: color-mix(in srgb, var(--slate) 8%, transparent); }
+#kbm .tvrail .dep:focus-visible { box-shadow: 0 0 0 1px var(--agent); }
+#kbm .tvrail .dep.off { cursor: default; } #kbm .tvrail .dep.off:hover { background: none; }
+#kbm .tvrail .dep .id { font: calc(11px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; color: var(--agent); }
+#kbm .tvrail .dep .tt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-3); }
+#kbm .tvrail .machs { display: flex; flex-direction: column; gap: 2px; }
+#kbm .tvrail .machs summary { cursor: pointer; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; list-style: none; padding: 2px 0; }
+#kbm .tvrail .machs summary::-webkit-details-marker { display: none; }
+#kbm .tvrail .machs summary .p { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--agent); box-shadow: 0 0 8px var(--agent); }
+#kbm .tvrail .machs summary b { font-weight: 400; color: var(--agent-text); }
+#kbm .tvrail .machs summary .s { color: var(--run); } #kbm .tvrail .machs summary .k { margin-left: auto; }
+#kbm .tvrail .machs ol { margin: 4px 0 6px 15px; padding: 0 0 0 12px; border-left: 1px solid color-mix(in srgb, var(--slate) 15%, transparent); list-style: none; font-size: calc(11px * var(--fs)); color: var(--slate); }
+#kbm .tvrail span.chips { display: flex; flex-wrap: wrap; gap: 4px; }
 #kbm .tv td { vertical-align: middle; padding: 3px 14px 3px 0; }
 #kbm .tv td:first-child { width: 104px; }
 #kbm .tv tr.ro td:last-child { color: var(--ink-3); }

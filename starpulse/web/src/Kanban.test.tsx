@@ -8,7 +8,7 @@ import { TaskView } from "./TaskView";
 
 const task: KanbanTask = {
   id: "PROJ-1", title: "A title long enough to need two lines in a comfortable card", lane: "in_progress", milestone: "m-1", labels: ["feature", "needs-human"], assignee: "@agent-standard-high",
-  dependencies: [], openDeps: 2, prs: [], description: "", live: { machine: "in-progress", state: "red_proven", at: 100 }, released: false, moves: {}, entered: 0,
+  dependencies: [], openDeps: 2, prs: [], description: "", live: { machine: "in-progress", state: "red_proven", at: 100 }, released: false, moves: {}, entered: 0, created: null, machines: [],
 };
 const draw = (compact: boolean) => renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
 
@@ -278,7 +278,7 @@ describe("a Done chain", () => {
 
   it("labels the task modal's stack section done chain, and a Waiting stack's waiting stack", () => {
     const draw = (lane: string) => renderToStaticMarkup(
-      <TaskView task={{ ...task, lane }} record={null} lane="" machine="—" profiles={[]} milestones={[]} refusal={null} startNote={null} capabilities={undefined}
+      <TaskView task={{ ...task, lane }} tasks={[]} record={null} lane="" now={0} open={() => {}} profiles={[]} milestones={[]} refusal={null} startNote={null} capabilities={undefined}
         saving={false} claiming={false} close={() => {}} hide={() => {}} constellation={() => {}} move={() => {}} start={() => {}}
         stack={<StackList stack={stack} id="T-2" open={() => {}} />} />,
     );

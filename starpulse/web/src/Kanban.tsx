@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { createPortal } from "react-dom";
 import { archiveDialogKey, withoutArchived } from "./archive";
 import { ArchiveDialog } from "./ArchiveConfirm";
+import { ago } from "./clock";
 import { ConnectTracker } from "./ConnectTracker";
 import type { HudState } from "./hud";
 import {
@@ -30,10 +31,6 @@ const milestoneName = (milestone: string) => milestone || "No milestone";
 /** A machine event this recent still pulses on its card, in seconds. */
 const HOT_S = 120;
 
-const ago = (seconds: number) => {
-  const m = Math.max(0, Math.round(seconds / 60));
-  return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
-};
 const profileColor = (a: string) => (/deep/.test(a) ? "#a78bfa" : /standard/.test(a) ? "#67e8f9" : /fast/.test(a) ? "#fbbf24" : "#94a3b8");
 const shortProfile = (a: string) => a.replace(/^@agent-/, "").replace(/^@/, "");
 const checksClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
@@ -254,9 +251,9 @@ export function HeldBy({ holders: held, open, hover }: {
   );
 }
 
-function Modal({ task, stack, names, marks, now, profiles, milestones, capabilities, close, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
-  task: KanbanTask; stack?: ReactNode; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
-  capabilities?: Capabilities; close: () => void; hide: () => void; archive: () => void; constellation: () => void;
+function Modal({ task, tasks, stack, names, marks, now, profiles, milestones, capabilities, close, open, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
+  task: KanbanTask; tasks: KanbanTask[]; stack?: ReactNode; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
+  capabilities?: Capabilities; close: () => void; open: (id: string) => void; hide: () => void; archive: () => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
   // the snapshot's entry lacks the plan, notes and checks: the full record is read when the task opens, and the entry draws meanwhile
@@ -267,8 +264,7 @@ function Modal({ task, stack, names, marks, now, profiles, milestones, capabilit
     return () => { current = false; };
   }, [task.id]);
   return (
-      <TaskView task={task} record={record} stack={stack} lane={names[task.lane] ?? task.lane} names={names}
-        machine={task.live ? `${task.live.machine} · ${task.live.state} · ${ago(now - task.live.at)} ago` : "—"}
+      <TaskView task={task} tasks={tasks} record={record} stack={stack} lane={names[task.lane] ?? task.lane} names={names} now={now} open={open}
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
         startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
@@ -746,7 +742,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
           start={() => answer("1")} manual={() => answer("2")} cancel={() => answer("Escape")} />
       )}
       {task && (
-        <Modal key={task.id} task={task} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
+        <Modal key={task.id} task={task} tasks={cards} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
           profiles={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task.id)} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to)) return void moves.drop(task, to); starts.ask(task, "modal"); setOpen(null); }}
