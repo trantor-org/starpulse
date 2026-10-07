@@ -63,12 +63,41 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
 
+  # trantor's check-config test-tier policy over this tree (ci/trantor_tier_policy.py). A commit that fails it would
+  # fail every trantor bump pinning it, so it must not go green here. Runs on the ai-vm-1 fleet beside dispatch.
+  tier-policy:
+    runs-on: [self-hosted, ai-vm-1]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: trantor
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: trantor-org/trantor
+          token: ${{ steps.app-token.outputs.token }}
+          path: .trantor
+          sparse-checkout: lib
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - env:
+          PYTHONPATH: .trantor/lib
+        run: >-
+          uv run --no-project --python 3.14 --with pyyaml
+          python ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py
+
   # Tells trantor which starpulse commit just passed so its starpulse-bump workflow opens one pull request pinned to
   # exactly that SHA. It runs on the generic ai-vm-1 fleet, not the validate lane, so validate-lane queue time is
   # unchanged, and it sends nothing for a pull request or a red run.
   dispatch:
     name: dispatch
-    needs: [python, web]
+    needs: [python, web, tier-policy]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5

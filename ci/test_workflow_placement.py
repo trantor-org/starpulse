@@ -42,8 +42,17 @@ def test_publishing_job_runs_on_a_hosted_runner(name):
     assert job("release.yml", name)["runs-on"] == HOSTED
 
 
-@pytest.mark.parametrize(("workflow", "name"), [("ci.yml", "web"), ("release.yml", "build"), ("ui-preview.yml", "render")])
+@pytest.mark.parametrize(
+    ("workflow", "name"), [("ci.yml", "web"), ("release.yml", "build"), ("ui-preview.yml", "render")]
+)
 def test_node_is_installed_before_pnpm(workflow, name):
     """`pnpm/action-setup` installs pnpm with the runner's `npm`, which fails under the system Node of a validate runner."""
     uses = [step["uses"].split("@")[0] for step in job(workflow, name)["steps"] if "uses" in step]
     assert uses.index("actions/setup-node") < uses.index("pnpm/action-setup")
+
+
+def test_trantor_tier_policy_gates_the_green_dispatch():
+    """A commit failing trantor's tier policy fails every bump that pins it, so it must not dispatch as green."""
+    run = next(step["run"] for step in job("ci.yml", "tier-policy")["steps"] if "run" in step)
+    assert "ci/trantor_tier_policy.py" in run
+    assert "tier-policy" in job("ci.yml", "dispatch")["needs"]

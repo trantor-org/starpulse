@@ -131,7 +131,7 @@ def test_a_non_python_file_whose_mapped_reader_is_gone_runs_the_full_suite(repo)
 def test_the_real_repository_selects_a_subset_for_one_adapter():
     root = Path(__file__).resolve().parents[1]
     selected = select(root, ["starpulse/jira.py"]).tests
-    assert "starpulse/tests/unit/test_jira.py" in selected
+    assert "starpulse/tests/integration/test_jira.py" in selected
     assert "ci/test_workflow_placement.py" not in selected
 
 
