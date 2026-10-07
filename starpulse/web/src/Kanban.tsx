@@ -7,7 +7,7 @@ import { ArchiveDialog } from "./ArchiveConfirm";
 import { ConnectTracker } from "./ConnectTracker";
 import type { HudState } from "./hud";
 import {
-  CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll,
+  CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll,
   STACKED, stackOf, stackStep, toggleFold, unstacked, whyHidden,
   type KanbanTask, type Option, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanban";
@@ -18,6 +18,7 @@ import {
   canDrag, dropAsks, placeClaims, profileOf, runsOn, startLane, startable,
   type Asking, type Claiming, type Failed, type Harnesses, type Pick, type StartStore,
 } from "./start";
+import { MilestoneOutline } from "./MilestoneOutline";
 import { NewTaskAction } from "./NewTask";
 import { SearchClear } from "./SearchClear";
 import { TaskView } from "./TaskView";
@@ -400,9 +401,10 @@ const LIFT_PX = 5;
  * The Kanban view. `spot` is the task a Recent line is hovered for: its card lights as a hovered card does and its column scrolls to it,
  * and `note` hears why it has no card in view. A new `opening` opens that task's modal.
  * `searchSlot` is the navigator's search slot, where the text search draws; `onQuery` tells the navigator what it holds.
+ * `outlineSlot` is the navigator's outline slot, where the milestone outline draws and sets the Milestone filter.
  */
-export function Kanban({ hud, moves, starts, compact, constellation, searchSlot, onQuery, spot = null, note, opening = null }: {
-  hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; onQuery: (query: string) => void;
+export function Kanban({ hud, moves, starts, compact, constellation, searchSlot, outlineSlot, onQuery, spot = null, note, opening = null }: {
+  hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; outlineSlot: HTMLElement | null; onQuery: (query: string) => void;
   spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
 }) {
   const [storage] = useState(browserStorage);
@@ -633,6 +635,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
   );
   const taskStack = task && stackOf(view, task.id);
+  const outline = useMemo(() => milestoneOutline(cards), [cards]);
   return (
     <main id="kb" className={compact ? "compact" : undefined}>
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
@@ -654,6 +657,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
         </div>,
         searchSlot,
       )}
+      {outlineSlot && createPortal(<MilestoneOutline rows={outline} chosen={prefs.milestone} choose={(milestone) => setPrefs((p) => ({ ...p, milestone }))} />, outlineSlot)}
       <div className="filters">
         <div className="fw">
           {chip("assignee", "Assignee", prefs.assignee, prefs.assignee ? shortProfile(prefs.assignee) : "unassigned")}

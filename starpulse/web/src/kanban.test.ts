@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanban";
+import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanban";
 import { merge } from "./sky";
 import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "./types";
@@ -472,5 +472,23 @@ describe("Done chains", () => {
 
   it("stop at a dependency cycle instead of recursing forever", () => {
     expect(stacks([done("T-1", "m-1", "T-2"), done("T-2", "m-1", "T-1")]).flat().sort()).toEqual(["T-1", "T-2"]);
+  });
+});
+
+describe("the milestone outline", () => {
+  it("lists each open milestone with its done and total, largest first, and leaves out finished milestones and tasks with none", () => {
+    const tasks = [
+      task("T-1", "done", "m-1"), task("T-2", "ready", "m-1"),
+      task("T-3", "done", "m-2"), task("T-4", "done", "m-2"),
+      task("T-5", "ready", "m-3"), task("T-6", "review", "m-3"), task("T-7", "waiting", "m-3"),
+      task("T-8", "ready", "m-4"), task("T-9", "done", "m-4"),
+      task("T-10", "ready"),
+    ];
+
+    expect(milestoneOutline(tasks)).toEqual([
+      { milestone: "m-3", done: 0, total: 3 },
+      { milestone: "m-4", done: 1, total: 2 },
+      { milestone: "m-1", done: 1, total: 2 },
+    ]);
   });
 });

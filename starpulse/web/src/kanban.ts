@@ -109,6 +109,24 @@ export const assigneeOptions = (tasks: KanbanTask[], columns = COLUMNS) =>
 /** Newest first, as the buckets run, with No milestone last. */
 export const milestoneOptions = (tasks: KanbanTask[], columns = COLUMNS) => options(tasks, columns, (t) => t.milestone, (a, b) => milestoneNumber(b.value) - milestoneNumber(a.value));
 
+/** One open milestone of the navigator's outline: how many of its tasks are done. */
+export interface Outline {
+  milestone: string;
+  done: number;
+  total: number;
+}
+/** The milestones with a task not Done, largest first and newest among equals; tasks with no milestone have no row. */
+export function milestoneOutline(tasks: KanbanTask[]): Outline[] {
+  const counts = new Map<string, Outline>();
+  for (const t of tasks.filter((x) => x.milestone)) {
+    const row = counts.get(t.milestone) ?? { milestone: t.milestone, done: 0, total: 0 };
+    row.total++;
+    if (t.lane === "done") row.done++;
+    counts.set(t.milestone, row);
+  }
+  return [...counts.values()].filter((r) => r.done < r.total).sort((a, b) => b.total - a.total || milestoneNumber(b.milestone) - milestoneNumber(a.milestone));
+}
+
 /** The labels containing the word being typed (the last word of the bar, after a `label:` prefix), most used first. */
 export function labelSuggestions(tasks: KanbanTask[], query: string, columns = COLUMNS): { label: string; count: number }[] {
   const word = /\S+$/.exec(query)?.[0].toLowerCase().replace(LABEL, "") ?? "";
