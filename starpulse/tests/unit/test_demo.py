@@ -716,3 +716,15 @@ def test_scrub_keeps_the_suns_a_capture_reports() -> None:
     live["suns"] = {"ready": 0.25, "review": 0.75}
 
     assert scrub(live)["suns"] == {"ready": 0.25, "review": 0.75}
+
+
+def test_scrub_sizes_the_suns_itself_when_the_capture_saw_no_moves() -> None:
+    live = _structured(
+        [{"id": "TASK-D1", "state": "review"}, {"id": "TASK-D2", "state": "ready"}, {"id": "TASK-D3", "state": "new"}],
+        [],
+    )
+    live["suns"] = {state["id"]: 0.0 for state in BOARD["states"]}  # a fresh server's all-zero shares
+
+    suns = scrub(live)["suns"]
+
+    assert suns["ready"] == pytest.approx(3 / 6)

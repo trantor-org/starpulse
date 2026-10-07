@@ -232,7 +232,7 @@ def scrub(live: dict) -> dict:
     seeded_dags, seeded_pools = (
         ([], []) if live.get("pools") else _seed_fanout(live["domains"], live["dags"], live["now"])
     )
-    history = _history(flows, live["now"])
+    history, captured = _history(flows, live["now"]), live.get("suns", {})  # a fresh server's shares are all zero
     return {
         **live,
         "boardUrl": None,
@@ -251,7 +251,7 @@ def scrub(live: dict) -> dict:
         "settled": day,
         "error": None,
         "history": history,
-        "suns": live.get("suns") or _suns(flows, history, live["now"]),
+        "suns": captured if any(captured.values()) else _suns(flows, history, live["now"]),
     }
 
 
