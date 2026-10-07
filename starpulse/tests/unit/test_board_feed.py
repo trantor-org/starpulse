@@ -282,6 +282,8 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "hint",
         "insights",
         "ledgers",
+        "mergePins",
+        "mergeStrip",
         "now",
         "pools",
         "pulls",
@@ -627,7 +629,7 @@ def ledger_feed() -> BoardFeed:
         machines={"board": LEDGER_MACHINE},
         domains={"ci": ["ci/apply", "ci/start"]},
         cues=[CUE],
-        commit={"ci": CommitKeys(after="AFTER", task="TASK")},
+        commit={"ci": CommitKeys(after="AFTER", force="FORCE", task="TASK")},
     )
 
 
@@ -821,3 +823,61 @@ def test_the_snapshot_links_a_pinned_repositorys_merge_to_the_bump_merge_that_ap
     assert rows["b" * 40]["runs"] == {}
     assert rows[SHA]["applies"] == ["b" * 40]
     assert rows[SHA]["runs"]["ci/apply"]["runId"] == "r1"
+
+
+def _merged(n: int, minute: int, day: int = 7) -> tuple[str, list[dict]]:
+    """Task `TASK-<n>`'s pull request, merged at `minute` past midnight UTC on October `day` as commit `<n>` repeated."""
+    at = f"2026-10-{day:02d}T{minute // 60:02d}:{minute % 60:02d}:00Z"
+    return f"TASK-{n}", [
+        {"url": f"https://github.com/o/trantor/pull/{n}", "merged": True, "merge_sha": f"{n:040x}", "merged_at": at}
+    ]
+
+
+def _paged_feed() -> BoardFeed:
+    """25 merges in the last 24 hours, minutes 0-24 of October 7th; one on October 5th, beyond the edge."""
+    feed = ledger_feed()
+    feed.set_pulls(dict([_merged(n, n) for n in range(25)] + [_merged(99, 0, day=5)]))
+    run = lambda rid, sha, start, **extra: {  # noqa: E731
+        **APPLIED, "runId": rid, "startedAt": f"2026-10-07T00:{start}:00Z", "params": {"AFTER": f"{sha:040x}", **extra},
+    }
+    failed = {**run("bad", 5, 30), "status": "failed"}
+    feed.set_dags("ci", [_dag("apply", failed, run("again", 3, 40, FORCE="true"))], None)
+    return feed
+
+
+def test_the_snapshot_carries_only_the_newest_page_of_merges_and_the_feed_serves_older_ones_to_the_edge() -> None:
+    feed = _paged_feed()
+
+    head = feed.snapshot()["ledgers"]["MERGED"]
+    older = feed.merges(before=head[-1]["at"], limit=20)
+
+    assert [row["tasks"] for row in head[:2]] == [["TASK-24"], ["TASK-23"]]
+    assert len(head) == 20
+    assert [row["tasks"] for row in older["merges"]] == [[f"TASK-{n}"] for n in range(4, -1, -1)]
+    assert older["more"] is False
+
+
+def test_the_snapshot_strip_counts_the_whole_day_of_merges_not_just_the_loaded_page() -> None:
+    strip = _paged_feed().snapshot()["mergeStrip"]
+
+    totals = {field: sum(b[field] for b in strip["buckets"]) for field in ("merges", "failed", "reruns")}
+    assert totals == {"merges": 25, "failed": 1, "reruns": 1}
+    assert strip["bucket"] == 900
+    assert len(strip["buckets"]) == 96
+
+
+def test_a_pinned_merge_older_than_the_loaded_page_still_rides_the_snapshot_and_the_ledgers_event() -> None:
+    feed = ledger_feed()
+    feed.set_pulls(dict(_merged(n, n) for n in range(25)))
+    failed = {
+        **APPLIED, "runId": "bad", "status": "failed", "startedAt": "2026-10-07T00:30:00Z", "params": {"AFTER": f"{2:040x}"},
+    }
+    _, deltas = feed.subscribe()
+    feed.set_dags("ci", [_dag("apply", failed)], None)
+    sent = dict(deltas.get_nowait() for _ in range(deltas.qsize()))
+
+    snapshot = feed.snapshot()
+
+    assert [row["tasks"] for row in snapshot["mergePins"]] == [["TASK-2"]]
+    assert all(row["tasks"] != ["TASK-2"] for row in snapshot["ledgers"]["MERGED"])
+    assert [row["tasks"] for row in sent["ledgers"]["mergePins"]] == [["TASK-2"]]

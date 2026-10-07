@@ -27,6 +27,7 @@ includes it (None until one does), and that merge's row lists it in `applies`.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -34,7 +35,7 @@ from datetime import datetime
 
 from starpulse.config import CommitKeys
 
-__all__ = ["MERGE_EVENT", "NEXT", "Occurrence", "build", "pair", "pull_occurrences"]
+__all__ = ["MERGE_EVENT", "NEXT", "PAGE", "STRIP_BUCKET", "Occurrence", "build", "page", "pair", "pull_occurrences", "reruns", "strip"]
 
 #: The Board event whose occurrences are pull request merges; every other event's are tasks entering a lane.
 MERGE_EVENT = "MERGED"
@@ -247,3 +248,53 @@ def build(
             for o in sorted(occurrences, key=lambda o: o.at, reverse=True)
         ]
     return ledgers
+
+
+#: Rows a page of the merge ledger holds.
+PAGE = 20
+
+
+def page(rows: Sequence[Mapping], *, before: float | None, limit: int, since: float) -> tuple[list[Mapping], bool]:
+    """The next `limit` rows of `rows` (newest first) older than `before`, none from before `since`, and whether older remain.
+
+    `before` is the `at` of the last row the reader holds (None: start at the newest). A page ends only between two
+    different `at`s, so rows sharing the boundary second travel together and the next page, which starts strictly
+    older, neither repeats nor skips one; such a page may hold more than `limit`.
+    """
+    live = [row for row in rows if row["at"] >= since and (before is None or row["at"] < before)]
+    end = limit
+    while 0 < end < len(live) and live[end]["at"] == live[end - 1]["at"]:
+        end += 1
+    return live[:end], end < len(live)
+
+
+#: The width of one strip bucket: a quarter-hour, so a day is 96.
+STRIP_BUCKET = 900.0
+
+
+def strip(rows: Sequence[Mapping], reruns: Sequence[float], *, now: float, span: float, bucket: float) -> dict:
+    """What the 24-hour strip draws without the rows: per `bucket` of the `span` ending `now`, how many merges landed,
+    how many of those had a workflow fail on them (`fails`), and how many forced reruns started.
+
+    `rows` are the merge ledger's and `reruns` the epoch starts of the forced runs (`reruns`). Anything outside the
+    span is left out.
+    """
+    since = now - span
+    buckets = [{"merges": 0, "failed": 0, "reruns": 0} for _ in range(math.ceil(span / bucket))]
+
+    def count(at: float, field: str) -> None:
+        if since <= at <= now:
+            buckets[min(int((at - since) // bucket), len(buckets) - 1)][field] += 1
+
+    for row in rows:
+        count(row["at"], "merges")
+        if row["fails"]:
+            count(row["at"], "failed")
+    for at in reruns:
+        count(at, "reruns")
+    return {"since": since, "bucket": bucket, "buckets": buckets}
+
+
+def reruns(runs: Sequence[Mapping], keys: CommitKeys | None) -> list[float]:
+    """The epoch starts of the runs started with the instance's `force` parameter set (`_forced`)."""
+    return [_epoch(r["startedAt"]) for r in runs if r.get("startedAt") and _forced(r, keys)]

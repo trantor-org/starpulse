@@ -327,8 +327,16 @@ tied workflow that answered it: `{key, at, tasks, runs}`, and for the `MERGED` e
 too. A run is `{runId, status, startedAt, finishedAt, steps, step, inferred, ambiguous}`: its status, its status per
 step, and the step it is in.
 
-- `MERGED` occurrences are merged pull requests, which carry their tasks. Any other event's are tasks entering the lane the
-  event reaches within the last day.
+- `MERGED` occurrences are merged pull requests, which carry their tasks, from the last day. Any other event's are tasks
+  entering the lane the event reaches within the last day.
+- The snapshot's `ledgers.MERGED` holds only the newest 20 merges (a page); `GET /api/merges?before=<at>&limit=20` returns
+  the next older page as `{merges, more}`, `before` being the `at` of the last row held. Rows sharing the boundary second
+  come together, so a page can run past `limit` and walking it neither repeats nor skips a merge; none is older than 24
+  hours. `mergeStrip` (snapshot, and with `ledgers` in the `ledgers` event; null with no workflow tied to `MERGED`)
+  counts the whole day without the rows: `{since, bucket, buckets}`, 96 buckets of 900 seconds from `since`, each
+  `{merges, failed, reruns}`: merges landed, those holding a failed run, and forced reruns started (a run whose
+  `[runs.commit]` `force` parameter is set and not `0` or `false`). `mergePins` (same two carriers) lists the pinned
+  merges of the last day that the newest page leaves out, so a failure waiting on its cue is never paged out of sight.
 - A run whose parameters name an occurrence under `[runs.commit]` (`after` for a merge's commit, a full or abbreviated
   sha; `task` for a task) pairs with it and is not `inferred`. A run that names an occurrence StarPulse does not hold pairs
   with nothing.

@@ -34,6 +34,12 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    Everything is held in memory: the Board from the configured board adapter, other machines' tasks
                    from machine:events, each instance's workflows from its adapter (`pushed/`: runs:events)
 GET /api/snapshot  the document /api/events sends on connect, as one response, for `starpulse snapshot|board|task`
+GET /api/merges[?before=T][&limit=N]
+                   {merges, more}: the merge ledger's next `limit` rows (default 20, at most 100) older than `before`
+                   (epoch seconds, the `at` of the last row held; none: the newest), each as the snapshot's
+                   `ledgers.MERGED` row. None is older than 24 hours, `more` says whether older ones remain, and
+                   rows sharing the boundary second all come in one page, so walking `before` neither repeats nor
+                   skips a merge. A `before` that is not a finite number, or a `limit` outside 1-100, is 400
 GET /api/history?task=TASK-N[&flow=NAME]
                    {task, path}: the task's Board lane changes as [{at, from, to}], oldest first (`at`
                    epoch seconds). With `flow`, {task, flow, path, steps}: its events on that lifecycle
@@ -134,6 +140,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import math
 import os
 import queue
 import shutil
@@ -181,6 +188,7 @@ from starpulse.history import (
 )
 from starpulse.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse.ingest import tokens as ingest_tokens
+from starpulse.ledger import PAGE
 from starpulse.insights import Insights, InsightStore, restore
 from starpulse.level import Level
 from starpulse.level_metrics import WindowPastHistory, level_metrics
@@ -230,6 +238,8 @@ _TASKS = "/api/tasks"
 _INGEST = "/api/runs/events"
 _FORWARD = "/api/forward"
 _INSIGHTS = "/api/insights"
+#: `/api/merges`' page size when `limit` is left out, and the most it serves at once.
+_MERGES_LIMIT = 100
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
 #: The details a create takes besides its title, as one text value or a list of them.
@@ -586,6 +596,18 @@ def _error(message: str) -> bytes:
     return json.dumps({"error": message}).encode()
 
 
+def merges_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes, int]:
+    """The body and status for `/api/merges`: the merge ledger's next page, older than `before`, at most `limit` long."""
+    try:
+        before = float(query["before"][0]) if "before" in query else None
+        limit = int(query["limit"][0]) if "limit" in query else PAGE
+    except ValueError:
+        return _error("merges takes a numeric ?before= and an integer ?limit="), 400
+    if before is not None and not math.isfinite(before) or not 0 < limit <= _MERGES_LIMIT:
+        return _error(f"merges takes a finite ?before= and a ?limit= from 1 to {_MERGES_LIMIT}"), 400
+    return json.dumps(feed.merges(before, limit)).encode(), 200
+
+
 def history_response(history: History, query: dict[str, list[str]], flows: Collection[str]) -> tuple[bytes, int]:
     """The body and status for `/api/history`: a task's lane path, or with `flow` its path on that machine.
 
@@ -865,6 +887,8 @@ def _handler(
                 self._stream_events()
             elif url.path == "/api/snapshot":
                 self._send(json.dumps(feed.snapshot()).encode())
+            elif url.path == "/api/merges":
+                self._send(*merges_response(feed, parse_qs(url.query)))
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows))
             elif url.path == "/api/analytics/health":

@@ -68,6 +68,8 @@ _SNAPSHOT_KEYS = (
     "pools",
     "pulls",
     "ledgers",
+    "mergeStrip",
+    "mergePins",
     "claims",
     "insights",
     "settled",
