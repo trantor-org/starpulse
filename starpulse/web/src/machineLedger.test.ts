@@ -41,6 +41,24 @@ describe("the machine ledger's top", () => {
     expect(top.hdrB).toBeCloseTo(H * 0.6, 5);
   });
 
+  it.each([100, 125, 150])("keeps the height of a two-way branch at %i% text when the branch fans six ways, its states packed apart", (scale) => {
+    const f = frame(scale, 1600), two = ledgerTop(machine(2), f), six = ledgerTop(machine(6), f);
+    expect(six.hdrB).toBeCloseTo(two.hdrB, 5);
+    for (const a of six.nodes) for (const b of six.nodes) if (a !== b && a.x === b.x) expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(a.r + b.r + 4);
+    named(six, f);
+  });
+
+  it("lays every state and name in the same place whatever tasks sit on it, so a moving task never shifts the machine", () => {
+    const f = frame(125, 1600), still = ledgerTop(machine(6), f);
+    const moves: Record<string, number>[] = [{}, { start: 1 }, { ...TASKS, pr_opened: 31, ci_green: 1 }, { spike_run: 4, checkpointed: 40 }];
+    for (const tasks of moves) {
+      const moved = ledgerTop({ ...machine(6), tasks }, f);
+      expect(moved.hdrB).toBe(still.hdrB);
+      expect(moved.nodes.map(({ id, x, y, r }) => ({ id, x, y, r }))).toEqual(still.nodes.map(({ id, x, y, r }) => ({ id, x, y, r })));
+      expect(moved.labels).toEqual(still.labels);
+    }
+  });
+
   it("is never shorter than its natural height, even where that passes 60% of the view", () => {
     const top = ledgerTop(machine(6), frame(150, 1350, 640));
     expect(top.natural).toBeGreaterThan(640 * 0.6);
@@ -68,8 +86,8 @@ function named(top: LedgerTop, f: LedgerFrame, every = true) {
 }
 
 describe("the machine ledger's state names", () => {
-  it.each([100, 125, 150])("names every state at %i% text on a 1350 and a 1600 px view, with and without a six-way branch", (scale) => {
-    for (const W of [1350, 1600]) {
+  it.each([100, 125, 150])("names every state at %i% text on the 1100 px canvas a 1600 px window leaves, and wider, with and without a six-way branch", (scale) => {
+    for (const W of [1100, 1350, 1600]) {
       for (const fan of [2, 6]) {
         const f = frame(scale, W), top = ledgerTop(machine(fan), f);
         named(top, f);

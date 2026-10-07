@@ -84,10 +84,11 @@ export function slot(r: number, i: number, scale: number): { R: number; a: numbe
     R += 7 * gs;
   }
 }
-/** A state's radius: it grows with the tasks sitting on it. */
-export const stateRadius = (tasks: number, scale: number) => (11 + 2.2 * Math.sqrt(tasks)) * sizes(scale).gs;
-/** How far a state's orbiting tasks reach from its centre. */
-export const orbitReach = (r: number, tasks: number, scale: number) => (tasks ? slot(r, tasks - 1, scale).R + sizes(scale).dot : r);
+/** A state's radius: one size for every state, so a task arriving or leaving never moves the machine; its orbit shows the load. */
+export const stateRadius = (scale: number) => 11 * sizes(scale).gs;
+/** The room kept round every state for its orbiting tasks, whatever sits on it: two full rings (`slot` puts the first 5 past the state, the next 7
+ * past that). A state holding more spills a ring past it rather than shift the machine. */
+export const orbitRoom = (scale: number) => stateRadius(scale) + 12 * sizes(scale).gs + sizes(scale).dot;
 
 interface Layers {
   depth: Record<string, number>;
@@ -99,7 +100,7 @@ interface Layers {
   rmax: number;
 }
 /** The machine as layers: breadth-first depth from its first state, the longest path to a final state on row 0, the rest alternating above and below it. */
-function layers(states: MachineState[], trans: Transition[], tasks: Record<string, number>): Layers {
+function layers(states: MachineState[], trans: Transition[]): Layers {
   const ids = states.map((s) => s.id), init = (states.find((s) => s.initial) ?? states[0]).id, depth: Record<string, number> = { [init]: 0 }, par: Record<string, string> = {}, q = [init];
   while (q.length) {
     const s = q.shift()!;
@@ -115,7 +116,7 @@ function layers(states: MachineState[], trans: Transition[], tasks: Record<strin
   const row: Record<string, number> = {}, colN: Record<string, number> = {};
   for (const col of cols) {
     if (!col) continue;
-    const mi = col.find((id) => main.has(id)), rest = col.filter((id) => id !== mi).sort((a, b) => (tasks[b] ?? 0) - (tasks[a] ?? 0));
+    const mi = col.find((id) => main.has(id)), rest = col.filter((id) => id !== mi);
     row[mi ?? rest.shift()!] = 0;
     rest.forEach((id, i) => (row[id] = (i % 2 ? 1 : -1) * (Math.floor(i / 2) + 1)));
     for (const id of col) colN[id] = col.length;
@@ -171,33 +172,29 @@ export function ledgerTop(m: LedgerMachine, f: LedgerFrame): LedgerTop {
   const { W, H, scale, measure } = f, { fs } = sizes(scale);
   const trans = m.transitions.filter((t) => t.source !== t.target);
   if (!m.states.length) return { nodes: [], labels: [], hdrB: 0, natural: 0, metaT: 0, metaX: 0, metaW: 0, x0: 0, x1: 0 };
-  const g = layers(m.states, trans, m.tasks), n = g.cols.length;
+  const g = layers(m.states, trans), n = g.cols.length;
   const metaX = 22, metaW = Math.round(clamp(186 * fs, 170, 290)), x0 = metaX + metaW + 34 * fs, x1 = W - 34;
-  const count = (id: string) => m.tasks[id] ?? 0, radius = (id: string) => stateRadius(count(id), scale), orbit = (id: string) => orbitReach(radius(id), count(id), scale);
+  // nothing here reads the tasks: every state keeps the same radius and the same room for its orbit, so tasks moving through never shift it
+  const r = stateRadius(scale), o = orbitRoom(scale), count = (id: string) => m.tasks[id] ?? 0, px = sizes(scale).main;
   // a column of three or more states names them beside it, so the gap after it widens to hold its longest name; the other gaps share what is left,
-  // each no closer than its orbits allow, and only then does everything shrink to fit
-  const orb = (c: string[]) => Math.max(...c.map(orbit)), oc = g.cols.map(orb), low = oc.slice(0, n - 1).map((o, i) => o + oc[i + 1] + 10), px = sizes(scale).main;
-  const wide = (c: string[]) => Math.max(...c.map((id) => measure(m.states.find((s) => s.id === id)!.name, px)));
-  const need = g.cols.map((c, i) => (c.length >= 3 ? wide(c) + oc[i] + oc[i + 1] + 40 * fs : g.cols[i + 1]?.length >= 3 ? wide(c) / 2 + oc[i + 1] + 20 * fs : 0)).slice(0, n - 1);
-  const free = need.map((_, i) => i).filter((i) => !need[i]), named = need.reduce((a, v, i) => a + (v ? Math.max(v, low[i]) : 0), 0);
-  let u = (x1 - x0 - named) / Math.max(1, free.length);
-  for (let it = 0; it < 4; it++) {
-    const big = free.filter((i) => low[i] > u);
-    u = (x1 - x0 - named - big.reduce((a, i) => a + low[i], 0)) / Math.max(1, free.length - big.length);
-  }
-  const gap = need.map((v, i) => Math.max(v ? 0 : u, v, low[i])), k = (x1 - x0) / Math.max(1, gap.reduce((a, b) => a + b, 0)), xs = [x0];
+  // each as far apart as two orbits if there is room, else no closer than two states, and only then does everything shrink to fit
+  const low = 2 * o + 10, floor = 2 * r + 10, wide = (c: string[]) => Math.max(...c.map((id) => measure(m.states.find((s) => s.id === id)!.name, px)));
+  const need = g.cols.map((c, i) => (c.length >= 3 ? wide(c) + 2 * o + 40 * fs : g.cols[i + 1]?.length >= 3 ? wide(c) / 2 + o + 20 * fs : 0)).slice(0, n - 1);
+  const free = need.filter((v) => !v).length, named = need.reduce((a, v) => a + (v ? Math.max(v, low) : 0), 0);
+  const u = Math.max(floor, (x1 - x0 - named) / Math.max(1, free));
+  const gap = need.map((v) => (v ? Math.max(v, low) : u)), k = (x1 - x0) / Math.max(1, gap.reduce((a, b) => a + b, 0)), xs = [x0];
   gap.forEach((v) => xs.push(xs[xs.length - 1] + v * k));
-  // the branch states sit far enough off the main line that their orbits never touch, two tiers of names above and below
-  const ids = m.states.map((s) => s.id), oMax = Math.max(...ids.map(orbit)), oBr = Math.max(0, ...ids.filter((id) => g.colN[id] > 1).map(orbit)), lab = px * 1.3, room = 3.3 * lab + 6;
-  const span = g.rmax - g.rmin, base = 10 + 2 * room + 2 * oMax;
-  const rowGap = Math.max(2 * oBr + 6, Math.min(Math.max(2 * oMax + 10, 40 * fs), Math.max(26 * fs, (H * 0.4 - 2 * room - 2 * oMax) / Math.max(1, span))));
-  const natural = base + span * rowGap;
-  // half again its natural height, short of 60% of the view: the branch rows spread apart and the rest pads it above and below
-  const hdrB = natural + clamp(Math.min(0.5 * natural, H * 0.6 - natural), 0, 0.5 * natural);
-  const spread = span ? Math.min(2 * rowGap, rowGap + ((hdrB - natural) * 0.6) / span) : rowGap, padT = (hdrB - base - span * spread) / 2;
-  const yMain = 10 + padT + room + oMax - g.rmin * spread;
+  // the top is as tall as the machine would be with one row of branches, however wide a branch fans: a wider fan packs its states into that
+  // height, never closer than their discs and names allow, and the top grows only when even that does not fit
+  const lab = px * 1.3, room = 3.3 * lab + 6, span = g.rmax - g.rmin, base = 10 + 2 * room + 2 * o, ref = Math.min(span, 1);
+  const rowGap = Math.max(2 * o + 6, Math.min(Math.max(2 * o + 10, 40 * fs), Math.max(26 * fs, H * 0.4 - 2 * room - 2 * o)));
+  const minGap = Math.max(2 * r + 6, lab + 4), one = base + ref * rowGap, packed = base + span * minGap, natural = Math.max(one, packed);
+  // half again that height, short of 60% of the view: the branch rows spread apart and the rest pads it above and below
+  const hdrB = Math.max(packed, one + clamp(Math.min(0.5 * one, H * 0.6 - one), 0, 0.5 * one));
+  const spread = span ? Math.max(minGap, Math.min(2 * rowGap, rowGap + ((hdrB - base - span * rowGap) * 0.6) / span, (hdrB - base) / span)) : rowGap;
+  const padT = (hdrB - base - span * spread) / 2, yMain = 10 + padT + room + o - g.rmin * spread;
   const nodes = m.states.map((s): LedgerNode => ({
-    id: s.id, name: s.name, x: xs[g.depth[s.id]], y: yMain + g.row[s.id] * spread, r: radius(s.id), orbit: orbit(s.id), u: n > 1 ? g.depth[s.id] / (n - 1) : 0,
+    id: s.id, name: s.name, x: xs[g.depth[s.id]], y: yMain + g.row[s.id] * spread, r, orbit: o, u: n > 1 ? g.depth[s.id] / (n - 1) : 0,
     initial: s.initial, final: s.final, n: count(s.id),
   }));
   return { nodes, labels: placeLabels(nodes, g, f, { hdrB, metaX, metaW }), hdrB, natural, metaT: f.inset ?? 0, metaX, metaW, x0, x1 };
