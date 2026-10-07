@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from starpulse.config import CommitKeys
-from starpulse.ledger import Occurrence, build, pair, pull_occurrences
+from starpulse.ledger import Occurrence, build, page, pair, pull_occurrences, reruns, strip
 
 KEYS = CommitKeys(after="AFTER", before="BEFORE", force="FORCE", task="TASK")
 SHA_A, SHA_B, SHA_C = "a" * 40, "b" * 40, "c" * 40
@@ -425,3 +425,74 @@ def test_a_merge_the_parent_does_not_pin_has_neither_link_key() -> None:
 
     assert "appliedBy" not in row
     assert "applies" not in row
+
+
+def rows(*times: float) -> list[dict]:
+    """Ledger rows at `times`, newest first as `build` returns them."""
+    return [{"key": f"m{at}", "at": at} for at in sorted(times, reverse=True)]
+
+
+def keys_of(found: list[dict]) -> list[str]:
+    return [row["key"] for row in found]
+
+
+def test_pages_walk_the_ledger_with_no_overlap_or_gap_and_end_at_the_oldest_row() -> None:
+    ledger = rows(*range(100, 107))
+    seen: list[str] = []
+    before: float | None = None
+    for _ in range(10):
+        found, more = page(ledger, before=before, limit=3, since=0)
+        seen += keys_of(found)
+        if not more:
+            break
+        before = found[-1]["at"]
+
+    assert seen == keys_of(ledger)
+    assert more is False
+
+
+def test_rows_sharing_the_boundary_second_travel_together_so_no_page_boundary_drops_one() -> None:
+    ledger = rows(105, 104, 104, 104, 103)
+
+    first, more = page(ledger, before=None, limit=2, since=0)
+    second, _ = page(ledger, before=first[-1]["at"], limit=2, since=0)
+
+    assert (len(first), more) == (4, True)
+    assert [row["at"] for row in second] == [103]
+
+
+def test_a_page_stops_at_the_since_edge_and_reports_nothing_older() -> None:
+    ledger = rows(10, 20, 30, 40)
+
+    found, more = page(ledger, before=None, limit=10, since=25)
+
+    assert ([row["at"] for row in found], more) == ([40, 30], False)
+
+
+def test_the_strip_counts_merges_failures_and_reruns_per_bucket_over_the_span() -> None:
+    now = t(0)
+    bad = {"dagu/apply": {"status": "failed"}}
+    ledger = [
+        {"key": "a", "at": now - 10, "fails": {}},
+        {"key": "b", "at": now - 20, "fails": bad},
+        {"key": "c", "at": now - 130, "fails": {}},
+        {"key": "old", "at": now - 1000, "fails": bad},
+    ]
+
+    found = strip(ledger, [now - 5, now - 135], now=now, span=300, bucket=100)
+
+    assert found["since"] == now - 300
+    assert found["bucket"] == 100
+    assert found["buckets"] == [
+        {"merges": 0, "failed": 0, "reruns": 0},
+        {"merges": 1, "failed": 0, "reruns": 1},
+        {"merges": 2, "failed": 1, "reruns": 1},
+    ]
+
+
+def test_a_run_whose_force_parameter_is_set_is_a_rerun_and_one_with_no_force_key_is_not() -> None:
+    forced, plain, off = run("f", 10, {"FORCE": "true"}), run("p", 20), run("o", 30, {"FORCE": "false"})
+
+    assert reruns([forced, plain, off], KEYS) == [t(10)]
+    assert reruns([forced], None) == []
+    assert reruns([forced], CommitKeys(after="AFTER")) == []

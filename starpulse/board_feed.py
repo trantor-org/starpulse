@@ -20,7 +20,18 @@ from starpulse.analytics import LaneRow, move_shares
 from starpulse.config import CommitKeys
 from starpulse.contracts import BoardTask, TaskKeys
 from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
-from starpulse.ledger import MERGE_EVENT, NEXT, Occurrence, build, pull_occurrences
+from starpulse.ledger import (
+    MERGE_EVENT,
+    NEXT,
+    PAGE,
+    STRIP_BUCKET,
+    Occurrence,
+    build,
+    page,
+    pull_occurrences,
+    reruns,
+    strip,
+)
 from starpulse.snapshot import declared, qualifier
 from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 
@@ -135,6 +146,8 @@ class BoardFeed:
         }
         #: The Ledger as last published, so a change to it is sent once.
         self._ledgers: dict[str, list[dict]] = {}
+        self._strip: dict | None = None
+        self._pins: list[dict] = []
         self._lock = threading.RLock()
         self._window_s = window_s
         self._open: dict[str, dict] = {}
@@ -490,36 +503,39 @@ class BoardFeed:
         ]
 
     def _ledger(self) -> dict[str, list[dict]]:
-        """Each tied Board event's occurrences, newest first, with the run of every workflow tied to it (`starpulse.ledger`).
+        """Every tied Board event's occurrences of the last `LEDGER_WINDOW`, newest first, with the run of every
+        workflow tied to it (`starpulse.ledger`).
 
         The merge event's occurrences are the merged pull requests; any other event's are the tasks that entered the
-        lane it reaches within `LEDGER_WINDOW`, read from the lane history `size_suns` was given.
+        lane it reaches, read from the lane history `size_suns` was given.
         """
         events: dict[str, list[Occurrence]] = {}
+        since = self._clock() - LEDGER_WINDOW
         if MERGE_EVENT in self._ties:
-            events[MERGE_EVENT] = pull_occurrences(self._pulls)
+            events[MERGE_EVENT] = [o for o in pull_occurrences(self._pulls) if o.at >= since]
         reached = {
             event: {t["target"] for t in self._drawn["board"].get("transitions", []) if t["event"] == event}
             for event in self._ties.keys() - {MERGE_EVENT}
         }
         if reached and self._lane_rows is not None:
-            since = self._clock() - LEDGER_WINDOW
             for task, at, _from, to in self._lane_rows():
                 for event, lanes in reached.items():
                     if at >= since and lane_id(to) in lanes:
                         events.setdefault(event, []).append(Occurrence(f"{task}@{at}", at, (task,)))
-        runs = {
+        return build(
+            events,
+            self._ties,
+            self._recent_runs(),
+            lambda dag: self._commit.get(dag.partition("/")[0]),
+            lambda event, dag: self._resolves.get((event, dag), NEXT),
+        )
+
+    def _recent_runs(self) -> dict[str, list]:
+        return {
             f"{instance}/{dag['name']}": dag.get("recent", [])
             for instance, dags in self._dags.items()
             for dag in dags
         }
-        return build(
-            events,
-            self._ties,
-            runs,
-            lambda dag: self._commit.get(dag.partition("/")[0]),
-            lambda event, dag: self._resolves.get((event, dag), NEXT),
-        )
 
     def commit_keys(self, instance: str) -> CommitKeys | None:
         """The `[runs.commit]` of runs instance `instance`, or None when it declares none."""
@@ -541,12 +557,56 @@ class BoardFeed:
         run = next((r for r in recent if newest and r["runId"] == newest["runId"]), None)
         return None if run is None else {"runId": run["runId"], "params": dict(run.get("params", {}))}
 
+    def _head(self, ledgers: dict[str, list[dict]]) -> dict[str, list[dict]]:
+        """`ledgers` with the merge event's rows cut to the newest page; older ones come from `merges`."""
+        if MERGE_EVENT not in ledgers:
+            return ledgers
+        found, _ = page(ledgers[MERGE_EVENT], before=None, limit=PAGE, since=self._clock() - LEDGER_WINDOW)
+        return {**ledgers, MERGE_EVENT: found}
+
+    def _merge_strip(self, ledgers: dict[str, list[dict]]) -> dict | None:
+        """The 24-hour strip of the merge ledger (`ledger.strip`), counted over every row rather than the page sent;
+        None when no workflow is tied to the merge event."""
+        if MERGE_EVENT not in ledgers:
+            return None
+        recent = self._recent_runs()
+        forced = [
+            at
+            for dag in self._ties[MERGE_EVENT]
+            for at in reruns(recent.get(dag, ()), self._commit.get(dag.partition("/")[0]))
+        ]
+        return strip(ledgers[MERGE_EVENT], forced, now=self._clock(), span=LEDGER_WINDOW, bucket=STRIP_BUCKET)
+
+    def _merge_pins(self, ledgers: dict[str, list[dict]], head: dict[str, list[dict]]) -> list[dict]:
+        """The pinned merge rows of the last day that the newest page leaves out, so a failure waiting on its cue is
+        never paged out of sight."""
+        shown = {row["key"] for row in head.get(MERGE_EVENT, ())}
+        return [row for row in ledgers.get(MERGE_EVENT, ()) if row["pinned"] and row["key"] not in shown]
+
+    def _ledger_view(self, full: dict[str, list[dict]]) -> dict:
+        head = self._head(full)
+        return {"ledgers": head, "mergeStrip": self._merge_strip(full), "mergePins": self._merge_pins(full, head)}
+
+    def _ledger_fields(self) -> dict:
+        return self._ledger_view(self._ledger())
+
+    def merges(self, before: float | None, limit: int) -> dict:
+        """`GET /api/merges`: the next `limit` merges older than `before` (None: the newest), `{merges, more}`, none
+        from beyond `LEDGER_WINDOW`."""
+        with self._lock:
+            found, more = page(
+                self._ledger().get(MERGE_EVENT, ()), before=before, limit=limit, since=self._clock() - LEDGER_WINDOW
+            )
+            return {"merges": found, "more": more}
+
     def _refresh_ledgers(self) -> None:
-        """Send the Ledger when it differs from the one last sent; the caller holds the lock."""
-        ledgers = self._ledger()
-        if ledgers != self._ledgers:
-            self._ledgers = ledgers
-            self._publish("ledgers", {"ledgers": ledgers})
+        """Send the Ledger when it or its strip differs from the one last sent; the caller holds the lock."""
+        view = self._ledger_view(self._ledger())
+        strip_ = view["mergeStrip"]
+        seen = (view["ledgers"], strip_ and strip_["buckets"], view["mergePins"])
+        if seen != (self._ledgers, self._strip and self._strip["buckets"], self._pins):
+            self._ledgers, self._strip, self._pins = view["ledgers"], strip_, view["mergePins"]
+            self._publish("ledgers", view)
 
     def _drawn_pools(self) -> list[dict]:
         """Every instance's concurrency pools, each named `<instance>/<pool>` like the `pool` a workflow names."""
@@ -598,7 +658,7 @@ class BoardFeed:
                 "dags": self._workflows(),
                 "pools": self._drawn_pools(),
                 "pulls": self._pulls,
-                "ledgers": self._ledger(),
+                **self._ledger_fields(),
                 "claims": dict(self._claims),
                 "insights": [
                     finding
