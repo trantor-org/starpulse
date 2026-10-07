@@ -153,5 +153,5 @@ export const chartHeight = (wide: number) => Math.max(110, 74 + (wide - 1) * 40)
 
 /** Why Run now is refused for a DAG, or null when it may start. Only a run-safe DAG has the button; the modal shows it disabled with this reason. */
 export const refusal = (r: Row, starting = false): string | null =>
-  r.phase === "running" ? "Already running" : r.phase === "queued" ? "Already queued" : !r.runSafe ? "Not run-safe: this DAG changes live state, so StarPulse will not start it. Run it from Dagu."
+  r.phase === "running" ? "Already running" : r.phase === "queued" ? "Already queued" : !r.runSafe ? "Not run-safe: this DAG changes live state, so StarPulse will not start it. Run it from its workflow runner."
     : starting ? "Starting…" : null;
