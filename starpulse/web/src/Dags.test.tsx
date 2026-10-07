@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DagData } from "./dags";
-import { DagLegend, Dags, lastLine } from "./Dags";
+import { lastLine } from "./DagParts";
+import { DagLegend, Dags } from "./Dags";
 import { rows } from "./dags";
 import type { Dag, DagStep, Machine, RunStatus } from "./types";
 

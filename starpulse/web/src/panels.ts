@@ -7,14 +7,18 @@ import type { RawAgent } from "./types";
 
 export const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
+const NOT_STARTED = "Not started: ";
+/** The reason a `startRun` line gives for a run that did not start, or null when it started. */
+export const refused = (line: string) => (line.startsWith(NOT_STARTED) ? line.slice(NOT_STARTED.length) : null);
+
 /** Start a run-safe DAG through the server's run endpoint: the line the panel shows once it answers. */
 export async function startRun(dag: string, post: (url: string, init?: RequestInit) => Promise<Response> = apiFetch): Promise<string> {
   try {
     const resp = await post(`/api/run/${dag.split("/").map(encodeURIComponent).join("/")}`, { method: "POST" });
     const body = await resp.json();
-    return resp.ok ? `Started run ${body.runId}.` : `Not started: ${body.error}`;
+    return resp.ok ? `Started run ${body.runId}.` : `${NOT_STARTED}${body.error}`;
   } catch (e) {
-    return `Not started: ${e instanceof Error ? e.message : String(e)}`;
+    return `${NOT_STARTED}${e instanceof Error ? e.message : String(e)}`;
   }
 }
 
