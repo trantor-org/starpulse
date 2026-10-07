@@ -309,8 +309,11 @@
       // the template: branch states far enough off the main line that their orbits of tasks never touch, two tiers of names above and below
       const oMax = Math.max(...hn.map(orbitOf)), oBr = Math.max(...hn.filter((n) => g.colN[n.s] > 1).map(orbitOf), 0), lab = PX.main() * 1.3, room = 3.3 * lab + 6,
         rowGap = Math.max(2 * oBr + 6, Math.min(Math.max(2 * oMax + 10, 40 * FS), Math.max(26 * FS, (H * 0.4 - 2 * room - 2 * oMax) / Math.max(1, g.rmax - g.rmin))));
-      L.yMain = 10 + room + oMax - g.rmin * rowGap; for (const n of hn) n.y = L.yMain + g.row[n.s] * rowGap;
-      L.hdrB = L.yMain + g.rmax * rowGap + oMax + room; L.laneTop = L.hdrB + 6;
+      // the template takes half again its natural height, short of 60% of the view: its branch rows spread apart, the rest pads it
+      const span = g.rmax - g.rmin, base = 10 + 2 * room + 2 * oMax, h0 = base + span * rowGap, extra = clamp(Math.min(0.5 * h0, H * 0.6 - h0), 0, 0.5 * h0),
+        gap = span ? rowGap + (extra * 0.6) / span : rowGap, padT = (h0 + extra - base - span * gap) / 2;
+      L.yMain = 10 + padT + room + oMax - g.rmin * gap; for (const n of hn) n.y = L.yMain + g.row[n.s] * gap;
+      L.hdrB = h0 + extra; L.laneTop = L.hdrB + 6;
       // each row is as tall as its meta or its machine (branches, names above and below), whichever is taller
       const rg = 32 * FS, pad = 26 * FS + PX.row() * 1.3, metaH = PX.name() * 1.4 + 2 * PX.sub() * 1.5 + 34 * FS;
       // a machine opened deep down may have only a few rows: they stretch, up to 3.2 times, so the lane is filled rather than left empty
