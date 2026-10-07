@@ -46,6 +46,7 @@ def dagu(
     queues: dict[str, Queue] | None = None,
     queue_of: dict[str, str] | None = None,
     in_flight: tuple[InFlight, ...] = (),
+    listed_since: str = "",
 ) -> Iterator[tuple[str, list[str]]]:
     """Serve one DAG per key of `steps` (its value is the step names, each depending on the one before).
 
@@ -53,6 +54,8 @@ def dagu(
     The listing gives every DAG the `latest` run (a dict the caller may change while the server runs), a
     succeeded `r0` unless given. `queues` are the queues `/queues` reports (a Dagu without them answers 404),
     `queue_of` the queue each DAG declares, and `in_flight` the runs `/dag-runs` lists as running or queued.
+    Like Dagu, whose listing starts at UTC midnight unless asked for a `fromDate`, a listing with no `fromDate` leaves
+    out the runs that began before `listed_since`.
     Yields the base URL and the list of every request path received, in order.
     """
     calls: list[str] = []
@@ -98,8 +101,11 @@ def dagu(
                 ]
             }
         if parts == ["dag-runs"]:
-            status = int(parse_qs(url.query)["status"][0])
-            return 200, {"dagRuns": [summary(r) for r in in_flight if _STATUS_OF[r.label] == status]}
+            query = parse_qs(url.query)
+            status = int(query["status"][0])
+            since = "" if "fromDate" in query else listed_since
+            listed = [r for r in in_flight if _STATUS_OF[r.label] == status and (r.started_at or r.queued_at) >= since]
+            return 200, {"dagRuns": [summary(r) for r in listed]}
         if parts[0] == "dag-runs":
             return 200, run_detail(next(r for r in in_flight if (r.dag, r.run_id) == (parts[1], parts[2])))
         return 200, detail(parts[1])

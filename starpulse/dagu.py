@@ -137,6 +137,8 @@ def _kind(step: dict) -> str | None:
 
 #: Dagu's numeric run statuses, as `/dag-runs?status=` filters by them.
 _RUNNING, _QUEUED = 1, 5
+#: How far back `/dag-runs` looks for runs still in flight; without a `fromDate` it starts at UTC midnight.
+_IN_FLIGHT_LOOKBACK = 7 * 86400
 
 
 def pools(base_url: str) -> list[dict]:
@@ -154,9 +156,10 @@ def pools(base_url: str) -> list[dict]:
 def _in_flight(base_url: str) -> dict[str, list[dict]]:
     """Each DAG's running runs, longest-running first, then its queued ones, oldest first; none when Dagu cannot list them."""
     out: dict[str, list[dict]] = {}
+    since = int(time.time()) - _IN_FLIGHT_LOOKBACK
     try:
         for status, begun in ((_RUNNING, "startedAt"), (_QUEUED, "queuedAt")):
-            listed = _get(f"{base_url}/api/v1/dag-runs?status={status}&perPage=200").get("dagRuns", [])
+            listed = _get(f"{base_url}/api/v1/dag-runs?status={status}&perPage=200&fromDate={since}").get("dagRuns", [])
             for run in sorted(listed, key=lambda r: r.get(begun, "")):
                 out.setdefault(run["name"], []).append(run)
     except OSError:
