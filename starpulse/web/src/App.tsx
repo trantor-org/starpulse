@@ -15,6 +15,7 @@ import { Dags, DagLegend } from "./Dags";
 import { FeedLines, Queues } from "./Fanout";
 import { SearchClear } from "./SearchClear";
 import { Kanban } from "./Kanban";
+import { Leaderboard } from "./Leaderboard";
 import { MoveStore, postMove } from "./move";
 import { OrbitCard } from "./OrbitCard";
 import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./nav";
@@ -157,6 +158,12 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  // the Leaderboard's ages move by the minute
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now() / 1000), 30_000);
+    return () => clearInterval(tick);
+  }, []);
   const searchBox = useRef<HTMLInputElement>(null);
   // the folded strip's magnifier unfolds the panel, then the active view's search takes the focus once it is shown
   const searchHost = useRef<HTMLElement>(null);
@@ -255,7 +262,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
       {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
       {view === "graph" && <section className="away note">Layers belong to the Star Map view; they return when it is open.</section>}
       {view === "dags" && <><section className="away note">Layers belong to the Star Map view; they return when it is open.</section><Queues pools={hud.pools} /></>}
-      {view === "constellation" && body && <section className="away matches">{body}</section>}
+      {view === "constellation" && (body ? <section className="away matches">{body}</section> : <Leaderboard tasks={hud.cards} now={now} open={selectTask} />)}
       <section className="views admin-sec">
         <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>
           <svg className="g admin-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>

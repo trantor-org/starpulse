@@ -87,6 +87,8 @@ export interface RawAgent {
   entered?: number;
   /** When a Board task was created, in epoch seconds; null or absent when the board does not say. */
   created?: number | null;
+  /** Since when a Board task has been workable, epoch seconds; null when a dependency or its Start Criteria hold it, absent before the server carries it. */
+  workable_since?: number | null;
   /** Drawn on a starting or terminal Board state as one of the day's arrivals there, not as the task's own place. */
   today?: boolean;
 }
