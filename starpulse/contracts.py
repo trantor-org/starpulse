@@ -1,8 +1,10 @@
-"""The contracts an adapter writes (board, machine events, runs and their pools) and the task key it declares.
+"""The contracts an adapter writes (board, machine events, runs and their pools, insights) and the task key it declares.
 
 An adapter is a producer of these records for StarPulse: a Backlog.md or Jira reader writes
 `BoardTask`s, a harness or git hook writes `MachineEvent`s, and a scheduler reader writes `Dag`s, each with its
-`ActiveRun`s, and the `Pool`s they run on.
+`ActiveRun`s, and the `Pool`s they run on. An external engine, a fourth kind of producer, posts `Finding`s through the
+hub's insights API; a finding is about a team, machine, state or task, and the contract has no
+field for a person.
 Each model is also published as a JSON Schema under `schemas/`, regenerated with
 `python -m starpulse.contracts`; `starpulse.adapter_kit` runs an adapter's output against them.
 """
@@ -19,10 +21,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "CONTRACTS",
+    "FINDING_TEXT_MAX",
     "SCHEMAS",
     "ActiveRun",
     "BoardTask",
     "Dag",
+    "Evidence",
+    "Finding",
+    "FindingEngine",
+    "FindingScope",
     "MachineEvent",
     "Move",
     "Pool",
@@ -241,12 +248,83 @@ class RunsSink(Protocol):
     ) -> None: ...
 
 
+class FindingEngine(_Contract):
+    """The engine that wrote a finding."""
+
+    name: str = Field(min_length=1, description="The engine's name, stable across its releases.")
+    version: str = Field(min_length=1, description="The engine release that wrote the finding.")
+
+
+class FindingScope(_Contract):
+    """What a finding is about. Every field is optional and a finding may name none; there is no field for a person,
+    so a finding about one cannot be written, and one that tries is refused as an unknown field."""
+
+    team: str | None = Field(default=None, description="The team key the finding is about, as a board task's `team`.")
+    machine: str | None = Field(default=None, description="The machine the finding is about, as `<repo>/<machine>`.")
+    state: str | None = Field(default=None, description="The state of that machine the finding is about.")
+    task: str | None = Field(default=None, description="The task key the finding is about.")
+
+
+class Evidence(_Contract):
+    """One thing a reader can open to check a finding: a labelled link, or a labelled query over the history store."""
+
+    label: str = Field(min_length=1, description="What the link or query shows, in a few words.")
+    url: str | None = Field(
+        default=None, description="A link to the evidence; exactly one of `url` and `query` is set."
+    )
+    query: str | None = Field(
+        default=None,
+        description="A read-only query over the history store's tables that returns the evidence; exactly one of "
+        "`url` and `query` is set.",
+    )
+
+    @model_validator(mode="after")
+    def _one_target(self) -> Self:
+        if (self.url is None) == (self.query is None):
+            raise ValueError("give evidence exactly one of url or query")
+        return self
+
+
+#: The longest finding text: a line in the page's rail, not a report.
+FINDING_TEXT_MAX = 280
+
+
+class Finding(_Contract):
+    """One thing an external engine says about the flow, posted to `POST /api/insights`; a re-post of an `id` replaces it."""
+
+    id: str = Field(min_length=1, description="The engine's stable key for the finding; posting it again replaces it.")
+    engine: FindingEngine = Field(description="The engine that wrote it, by name and version.")
+    scope: FindingScope = Field(
+        default_factory=FindingScope, description="What it is about: a team, machine, state or task, each optional."
+    )
+    severity: Literal["info", "warn", "act"] = Field(description="How much attention it asks for.")
+    text: str = Field(
+        min_length=1,
+        max_length=FINDING_TEXT_MAX,
+        description="What the engine found, in plain text of at most 280 characters.",
+    )
+    evidence: tuple[Evidence, ...] = Field(default=(), description="Where a reader can check it.")
+    created_at: float = Field(allow_inf_nan=False, description="When the engine wrote it, in epoch seconds.")
+    expires_at: float | None = Field(
+        default=None,
+        allow_inf_nan=False,
+        description="When the page should stop showing it, in epoch seconds, after `created_at`; None keeps it until it is retracted.",
+    )
+
+    @model_validator(mode="after")
+    def _expires_after_creation(self) -> Self:
+        if self.expires_at is not None and self.expires_at <= self.created_at:
+            raise ValueError("expires_at must be after created_at")
+        return self
+
+
 #: Each contract's model, by the name its checked-in schema file carries.
 CONTRACTS: dict[str, type[BaseModel]] = {
     "board": BoardTask,
     "machine-events": MachineEvent,
     "runs": Dag,
     "pools": Pool,
+    "insights": Finding,
 }
 #: Each contract's JSON Schema, by the same names.
 SCHEMAS: dict[str, dict] = {name: model.model_json_schema() for name, model in CONTRACTS.items()}

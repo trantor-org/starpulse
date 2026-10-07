@@ -24,7 +24,8 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    a `task` delta ({id, agent, settled}) per Board task change, a `move` delta ({flow, id, agent}) per task a machine placed, a
                    `dags` delta ({dags, pools, error}) per runs change, a `pulls` delta ({pulls}) per
                    change to a task's pull requests and a `claim` delta ({task, reason, at}) per
-                   refused agent claim the board adapter reports, with a `: ping` comment every 15 s.
+                   refused agent claim the board adapter reports, an `insight` delta ({id, finding}) per finding
+                   an engine posts or retracts (`finding` null), with a `: ping` comment every 15 s.
                    `pulls` maps each open task that cites a pull request to [{number, url, checks
                    (pass, failing, pending, none), merged, threads (unresolved), stale}], read from
                    GitHub through `gh` once a minute and held between reads; a failed read keeps the
@@ -85,6 +86,20 @@ POST /api/runs/events
                    401 for a missing or wrong token, 403 for another instance's workflow, 400 for an event the contract
                    does not allow, 413 over 64 KiB, 503 when the log refuses it, 404 when no instance has a token. A
                    refusal writes nothing. A GET answers 405
+POST /api/insights
+                   a hub's fourth contract (`serve --hub` with `engine_token_env` in `[oidc]`; any other server answers
+                   404): an external engine posts one `Finding` {id, engine {name, version}, scope {team, machine,
+                   state, task}, severity (info, warn, act), text (at most 280 characters), evidence [{label, url or
+                   query}], created_at[, expires_at]} with `Authorization: Bearer <engine token>`, which no viewer's
+                   session or forwarder's token replaces. 201 {id, replaced: false}; 200 {id, replaced: true} when a
+                   re-post of the id replaced a finding that was not retracted; 400 naming the field to fix, and a
+                   `scope` that names a person is one, since the contract has no person field; 413 over 64 KiB; 503
+                   when the history store refuses it. A refusal writes and sends nothing. The finding is kept in the
+                   history's `starpulse_insights` table, and `/api/events` sends an `insight` event {id, finding}, whose
+                   snapshot lists the live `insights`. A GET answers 405
+DELETE /api/insights/<id>
+                   retract a finding with the engine token: 200 {id, retracted: true}, and an `insight` event {id,
+                   finding: null}; 404 for an id that is unknown or already retracted. The row stays in the history
 POST /api/start    {task, assignee}: start a task's session at `session_start_url` (see Start in the README)
 """
 
@@ -130,6 +145,7 @@ from starpulse.harnesses import Harnesses
 from starpulse.history import HealthHistory, History, HistoryStore, LevelHistory, database_url, record_machine_events
 from starpulse.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse.ingest import tokens as ingest_tokens
+from starpulse.insights import Insights, InsightStore, restore
 from starpulse.level import Level
 from starpulse.level_metrics import WindowPastHistory, level_metrics
 from starpulse.machine_tasks import MachineTasks
@@ -173,6 +189,7 @@ _ARCHIVE = "/api/archive"
 _TASKS = "/api/tasks"
 _INGEST = "/api/runs/events"
 _FORWARD = "/api/forward"
+_INSIGHTS = "/api/insights"
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
 #: The details a create takes besides its title, as one text value or a list of them.
@@ -557,6 +574,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     archive: TaskArchiver | None
     create: TaskCreator | None
     ingest: Ingest | None
+    insights: Insights | None
     gate: Callable[[BaseHTTPRequestHandler], bool] | None
     forward: ForwardIngest | None
 
@@ -566,7 +584,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
-        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD}:
+        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS}:
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
             self.end_headers()
@@ -602,6 +620,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             status, body = self._pushed(self.ingest, MAX_BODY)
         elif path == _FORWARD and self.forward is not None:
             status, body = self._pushed(self.forward, MAX_FORWARD_BODY)
+        elif path == _INSIGHTS and self.insights is not None:
+            status, body = self._pushed(self.insights, MAX_BODY)
         elif path.startswith(_RUN):
             status, body = run_dag(self.client_address[0], unquote(path.removeprefix(_RUN)), self.starts, self.run_safe)
         else:
@@ -624,7 +644,12 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         self._window("PUT")
 
     def do_DELETE(self) -> None:
-        self._window("DELETE")
+        path = urlsplit(self.path).path
+        if path.startswith(f"{_INSIGHTS}/") and self.insights is not None:
+            status, body = self.insights.retract(unquote(path.removeprefix(f"{_INSIGHTS}/")))
+            self._send(json.dumps(body).encode(), status)
+        else:
+            self._window("DELETE")
 
     def _window(self, method: str) -> None:
         """Answer the history window's route for `method`; no other path takes a PUT or DELETE."""
@@ -669,6 +694,7 @@ def _handler(
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
     forward: ForwardIngest | None = None,
     level: Level | None = None,
+    insights: Insights | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -687,6 +713,7 @@ def _handler(
             self.archive = archive
             self.create = create
             self.ingest = ingest
+            self.insights = insights
             self.gate = gate
             self.forward = forward
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
@@ -943,6 +970,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         )
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
+    insights = None
+    if args.hub and config.oidc.engine_token_env:  # an engine writes findings only to a hub that names its token
+        store = InsightStore(url, engine=log.engine)
+        restore(store, feed)
+        insights = Insights(store, feed)
     announce(args.port, feed.snapshot()["hint"])
     handler = _handler(
         feed,
@@ -963,6 +995,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         gate=gate,
         forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,
         level=config.level if args.hub else None,
+        insights=insights,
     )
     serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 

@@ -10,7 +10,7 @@ so an IC instance runs without them. `Gate` is the callable the server's handler
   refuses an account whose groups claim holds none of `allowed_groups`, saying so on the page. A refused account gets no
   session.
 - An instance route (`/api/runs/events`) is open to the gate and checks its own per-instance bearer token. An engine
-  route needs the engine token. Neither token is ever a viewer's session, and a session is never either token: each
+  route (`/api/insights`, `/api/insights/<id>`) needs the engine token. Neither token is ever a viewer's session, and a session is never either token: each
   credential is accepted only on its own routes.
 
 Sessions live in this process's memory: a restart signs every viewer out.
@@ -39,11 +39,19 @@ import jwt
 
 from starpulse.config import OidcSettings
 
-__all__ = ["ENGINE", "INSTANCE", "PUBLIC", "ROUTES", "SESSION_S", "VIEWER", "Gate", "build"]
+__all__ = ["ENGINE", "INSTANCE", "PUBLIC", "ROUTES", "ROUTE_PREFIXES", "SESSION_S", "VIEWER", "Gate", "build"]
 
 PUBLIC, VIEWER, INSTANCE, ENGINE = "public", "viewer", "instance", "engine"
-#: The routes that are not viewer routes. The insights routes join it as `ENGINE` routes in their own slice.
-ROUTES: Mapping[str, str] = {"/auth/login": PUBLIC, "/auth/callback": PUBLIC, "/api/runs/events": INSTANCE, "/api/forward": INSTANCE}
+#: The routes that are not viewer routes.
+ROUTES: Mapping[str, str] = {
+    "/auth/login": PUBLIC,
+    "/auth/callback": PUBLIC,
+    "/api/runs/events": INSTANCE,
+    "/api/forward": INSTANCE,
+    "/api/insights": ENGINE,
+}
+#: Routes that are not viewer routes because their path starts so: `/api/insights/<id>` retracts a finding.
+ROUTE_PREFIXES: Mapping[str, str] = {"/api/insights/": ENGINE}
 #: How long a session lasts: a working day, after which the viewer signs in again.
 SESSION_S = 8 * 3600
 #: How long a started sign-in may take before its state is forgotten.
@@ -108,7 +116,9 @@ class Gate:
 
     def __call__(self, handler: BaseHTTPRequestHandler) -> bool:
         url = urllib.parse.urlsplit(handler.path)
-        access = self._routes.get(url.path, VIEWER)
+        access = self._routes.get(url.path) or next(
+            (access for prefix, access in ROUTE_PREFIXES.items() if url.path.startswith(prefix)), VIEWER
+        )
         if access == PUBLIC:
             self._sign_in(handler, url)
             return False

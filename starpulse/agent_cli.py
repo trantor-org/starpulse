@@ -66,6 +66,7 @@ _SNAPSHOT_KEYS = (
     "pools",
     "pulls",
     "claims",
+    "insights",
     "settled",
     "error",
     "cues",

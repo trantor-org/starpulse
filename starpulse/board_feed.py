@@ -129,6 +129,8 @@ class BoardFeed:
         self._pulls: dict[str, list[dict]] = {}
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
         self._claims: dict[str, dict] = {}
+        #: The findings an engine posted that are live, by id, as the contract's JSON (`put_insight`).
+        self._insights: dict[str, dict] = {}
         self._subscribers: list[queue.Queue] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too
         self._expected: tuple[int, int] | None = None
@@ -280,6 +282,26 @@ class BoardFeed:
         """Each open task's pull request links, for the tasks that cite any."""
         with self._lock:
             return {task: list(agent["prs"]) for task, agent in self._open.items() if agent["prs"]}
+
+    def put_insight(self, finding: dict) -> None:
+        """Draw a finding an engine posted, replacing the one of its id, and send it as an `insight` event.
+
+        A finding already past its `expires_at` is not drawn: it retracts the one it replaces, if any.
+        """
+        with self._lock:
+            expires = finding.get("expires_at")
+            if expires is not None and expires <= self._clock():
+                self.retract_insight(finding["id"])
+                return
+            self._insights[finding["id"]] = finding
+            self._publish("insight", {"id": finding["id"], "finding": finding})
+
+    def retract_insight(self, finding_id: str) -> None:
+        """Stop drawing a finding and send its retraction, an `insight` event whose `finding` is null; a finding that
+        is not drawn sends nothing."""
+        with self._lock:
+            if self._insights.pop(finding_id, None) is not None:
+                self._publish("insight", {"id": finding_id, "finding": None})
 
     def set_pulls(self, pulls: dict[str, list[dict]]) -> None:
         """Take each task's pull request state and publish it when it differs from before."""
@@ -436,6 +458,11 @@ class BoardFeed:
                 "pools": self._drawn_pools(),
                 "pulls": self._pulls,
                 "claims": dict(self._claims),
+                "insights": [
+                    finding
+                    for finding in self._insights.values()
+                    if finding.get("expires_at") is None or finding["expires_at"] > self._clock()
+                ],
                 "capabilities": dict(self._capabilities),
                 "settled": dict(self._settled),
                 "error": self._error(),

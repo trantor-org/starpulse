@@ -6,7 +6,7 @@ the tables they share are declared here, where neither module has to import the 
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Column, Date, Float, Index, Integer, MetaData, PrimaryKeyConstraint, String, Table
+from sqlalchemy import JSON, Column, Date, Float, Index, Integer, MetaData, PrimaryKeyConstraint, String, Table, Text
 
 metadata = MetaData()
 
@@ -62,4 +62,27 @@ day_rollups = Table(
     Column("open_entries", Integer, nullable=False),
     Column("seconds", Float, nullable=False),
     PrimaryKeyConstraint("day", "team", "machine", "state"),
+)
+
+#: The findings an engine posted through the insights API: one row per `id`, replaced by a re-post, and kept after a
+#: retraction (`retracted_at`) so the history shows what the engine said. An engine reads this table directly, so its
+#: columns are versioned with the package. A finding is live while `retracted_at` is null and `expires_at` is null or
+#: later than now.
+insights = Table(
+    "starpulse_insights",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("engine_name", String, nullable=False),
+    Column("engine_version", String, nullable=False),
+    Column("team", String),
+    Column("machine", String),
+    Column("state", String),
+    Column("task", String),
+    Column("severity", String, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("evidence", JSON, nullable=False),
+    Column("created_at", Float, nullable=False),
+    Column("expires_at", Float),
+    Column("retracted_at", Float),
+    Index("ix_starpulse_insights_live", "retracted_at", "expires_at"),
 )
