@@ -355,6 +355,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
     root = base / str(settings.get("path", DEFAULT_PATH))
     _create(root, base.resolve().name)
+    evaluate = criteria.evaluator(settings.get("criteria"), base)
 
     def assign(task: str, assignee: str, /) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
@@ -371,7 +372,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "writer": _writer(root, config.statuses),
             "assign": assign,
             "create": _creator(root, config),
-            "read": _reader(root, criteria.evaluator(settings.get("criteria"), base)),
+            "read": _reader(root, evaluate),
+            "evaluate": evaluate,
             "edit": _editor(root),
             "archive": _archiver(root),
         },

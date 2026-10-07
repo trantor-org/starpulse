@@ -790,6 +790,13 @@ reads a JSON array from its output, one object per criterion with `id`, `status`
 `observed`, `error` and `checked_at`; its exit status is ignored when it prints that array. A task's results are reused for 30
 seconds. A command that fails to start, runs longer than 10 seconds, prints no array, or leaves a criterion out marks the
 affected criteria `error` with why, and the record still builds. With no command each criterion is `not evaluated`.
+Each open task in the snapshot carries `workable` and `workable_since` (epoch seconds, null when not workable). A task is
+not workable while a dependency is not done (completed, or in the `done` lane) or while it is Waiting and its Start
+Criteria are not all met; `not evaluated` and `error` count as unmet, and a Waiting task with neither criteria nor
+dependencies is workable. It is workable since the latest of when it entered its lane, when each dependency was done and
+when a pass first saw its criteria all met. The server evaluates the criteria of Waiting tasks whose dependencies are
+done in the background every 30 seconds through the same cache, never per page, and keeps that first-met moment in
+`starpulse_criteria_met` while the criteria stay met, so a restart does not reset it.
 `starpulse.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes

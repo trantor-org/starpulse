@@ -132,6 +132,9 @@ class Board:
     """Archives a task from any column; None refuses every archive."""
     create: TaskCreator | None = None
     """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
+    evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None
+    """Evaluates a task's Start Criteria, given its id and description; None leaves each `not evaluated`, so a Waiting task
+    that declares any is never workable."""
 
     def __post_init__(self) -> None:
         if self.edit is not None and self.read is None:

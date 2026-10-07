@@ -344,6 +344,8 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "moves": {},  # an adapter that writes no verdicts offers no guarded column
             "entered": 7.0,
             "created": None,  # an adapter that does not say when a task was created
+            "workable": False,  # PROJ-0 is not on the Board, so it is not done
+            "workable_since": None,
         }
     ]
     assert changes.get_nowait()[0] == "task"

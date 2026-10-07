@@ -16,6 +16,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
+from starpulse import criteria
 from starpulse.analytics import LaneRow, move_shares
 from starpulse.config import CommitKeys
 from starpulse.contracts import BoardTask, TaskKeys
@@ -50,6 +51,10 @@ SAVE_INTERVAL = 60.0
 SUN_DAYS = 7
 #: Seconds between looks for a local midnight that has passed.
 SUN_INTERVAL = 60.0
+#: Seconds between passes that evaluate the Start Criteria of the Waiting tasks, as long as the evaluator caches a result.
+CRITERIA_INTERVAL = criteria.CACHE_SECONDS
+#: The lanes a task's workability reads: it can wait on Start Criteria in one, and a dependency is done in the other.
+WAITING, DONE = "waiting", "done"
 #: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
 LEDGER_WINDOW = 86400.0
 
@@ -104,6 +109,14 @@ class BoardStore(Protocol):
     def save_board_state(self, stream: str, cursor: str, state: dict) -> None: ...
 
 
+class CriteriaStore(Protocol):
+    """Where the feed keeps when each task's Start Criteria were first seen all met (`HistoryStore`)."""
+
+    def criteria_met(self) -> dict[str, float]: ...
+
+    def save_criteria_met(self, met: dict[str, float]) -> None: ...
+
+
 class BoardFeed:
     """Each task's latest projected state, as the page's Board snapshot and the deltas after it.
 
@@ -116,6 +129,11 @@ class BoardFeed:
     are the config's, each workflow as `<instance>/<workflow>`. `source` names what the Board is read from, for the
     page to show until the board adapter has read it. `commit` is each runs instance's `[runs.commit]` keys, by instance
     name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain.
+
+    Each open task carries `workable` and `workable_since`. A task is workable unless a dependency is not done (completed,
+    or in the `done` lane) or it waits on Start Criteria that are not all met; it is then workable since the latest of
+    when it entered its lane, when each dependency was done and when `evaluate_criteria` first saw its criteria all met.
+    A task that is not workable has `workable_since` None.
     """
 
     def __init__(
@@ -178,6 +196,13 @@ class BoardFeed:
         self._claims: dict[str, dict] = {}
         #: The findings an engine posted that are live, by id, as the contract's JSON (`put_insight`).
         self._insights: dict[str, dict] = {}
+        #: The Waiting tasks whose description declares Start Criteria, and for each task the open tasks that list it as a dependency.
+        self._gated: set[str] = set()
+        self._dependents: dict[str, set[str]] = {}
+        #: When each gated task's criteria were first seen all met, kept while they stay met; a task not here has unmet criteria.
+        self._met: dict[str, float] = {}
+        self._evaluate: Callable[[str, str], list[dict]] = criteria.unevaluated
+        self._criteria_store: CriteriaStore | None = None
         self._subscribers: list[queue.Queue] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too
         self._expected: tuple[int, int] | None = None
@@ -381,6 +406,10 @@ class BoardFeed:
                     agent["previous"] = previous
             if agent:
                 agent["entered"] = self._entered(task, before)
+                agent["workable"], agent["workable_since"] = self._workable(agent)
+            self._gated.discard(task.id)
+            if agent and task.lane == WAITING and criteria.authored(task.description):
+                self._gated.add(task.id)
             if before == agent and self._settled.get(task.id) == settled:
                 return None  # an hourly reconcile republishes every task; only a change reaches the page
             if agent is None:
@@ -390,16 +419,22 @@ class BoardFeed:
             else:
                 self._open[task.id] = agent
                 self._settled.pop(task.id, None)
+            self._link(task.id, before["dependencies"] if before else (), agent["dependencies"] if agent else ())
             self._publish("task", {"id": task.id, "agent": agent, "settled": settled})
+            self._reassess(self._dependents.get(task.id, ()))
             return agent["entered"] if agent and (before is None or before["state"] != agent["state"]) else None
 
     def retract(self, task_id: str) -> None:
         """Remove a task the adapter's source no longer holds, open or settled; a task not placed is a no-op."""
         with self._lock:
             self._assignees.pop(task_id, None)
-            if self._open.pop(task_id, None) is None and self._settled.pop(task_id, None) is None:
+            gone = self._open.pop(task_id, None)
+            if gone is None and self._settled.pop(task_id, None) is None:
                 return
+            self._gated.discard(task_id)
+            self._link(task_id, gone["dependencies"] if gone else (), ())
             self._publish("task", {"id": task_id, "agent": None, "settled": None})
+            self._reassess(self._dependents.get(task_id, ()))
 
     def _entered(self, task: BoardTask, before: dict | None) -> float:
         """When `task` entered its lane: kept while it stays there, now for a move read live, else the history's date."""
@@ -415,6 +450,95 @@ class BoardFeed:
             if dated:
                 return dated[-1]
         return self._clock()
+
+    def _link(self, task_id: str, before: Collection[str], after: Collection[str]) -> None:
+        """Keep each dependency's dependents current when `task_id` moves from depending on `before` to `after`."""
+        for dependency in set(before) - set(after):
+            self._dependents[dependency].discard(task_id)
+        for dependency in set(after) - set(before):
+            self._dependents.setdefault(dependency, set()).add(task_id)
+
+    def _done_at(self, task_id: str) -> float | None:
+        """When the task was done, or None when it is not: completed (0 when the board does not say when) or in the done lane."""
+        if (settled := self._settled.get(task_id)) is not None:
+            return (settled["at"] or 0.0) if settled["state"] == "completed" else None
+        agent = self._open.get(task_id)
+        return agent["entered"] if agent and agent["state"] == DONE else None
+
+    def _unblocked(self, agent: dict) -> bool:
+        return all(self._done_at(dependency) is not None for dependency in agent["dependencies"])
+
+    def _workable(self, agent: dict) -> tuple[bool, float | None]:
+        """Whether the task can be worked, and since when; the caller holds the lock."""
+        if not self._unblocked(agent) or (agent["id"] in self._gated and agent["id"] not in self._met):
+            return False, None
+        since = max(
+            [agent["entered"], self._met.get(agent["id"], 0.0)]
+            + [self._done_at(d) or 0.0 for d in agent["dependencies"]]
+        )
+        return True, since
+
+    def _reassess(self, task_ids: Collection[str]) -> None:
+        """Work out again whether each open task of `task_ids` is workable and publish those that changed."""
+        for task_id in sorted(task_ids):
+            if (agent := self._open.get(task_id)) is None:
+                continue
+            workable, since = self._workable(agent)
+            if (agent["workable"], agent["workable_since"]) != (workable, since):
+                agent = {**agent, "workable": workable, "workable_since": since}
+                self._open[task_id] = agent
+                self._publish("task", {"id": task_id, "agent": agent, "settled": None})
+
+    def track_criteria(self, evaluate: Callable[[str, str], list[dict]] | None, store: CriteriaStore | None) -> None:
+        """Evaluate Waiting tasks' Start Criteria with `evaluate` (None: each is `not evaluated`, so none is met).
+
+        `store` keeps when each task's criteria were first seen met, so a restart keeps how long a task has been
+        workable; None keeps it in memory only.
+        """
+        with self._lock:
+            self._evaluate = evaluate or criteria.unevaluated
+            self._criteria_store = store
+            if store is not None:
+                try:
+                    self._met = dict(store.criteria_met())
+                except Exception as exc:  # the store is down; the next pass dates each task afresh
+                    logger.warning("StarPulse: cannot read when Start Criteria were met: %s", exc)
+            self._reassess(list(self._open))
+
+    def evaluate_criteria(self) -> None:
+        """Evaluate the Start Criteria of every Waiting task whose dependencies are done, and publish each task whose
+        workability changed. A task whose criteria are all met keeps the moment it was first seen so; a task whose
+        criteria are not met, or that is no longer evaluated, is forgotten, so its next met moment is a new one."""
+        with self._lock:
+            due = [(t, self._open[t]["description"]) for t in sorted(self._gated) if self._unblocked(self._open[t])]
+            evaluate, now = self._evaluate, self._clock()
+        met = []
+        for task, description in due:
+            try:
+                results = evaluate(task, description)
+            except Exception as exc:  # an evaluator is meant to return errors as results; this one raised
+                logger.warning("StarPulse: cannot evaluate the Start Criteria of %s: %s", task, exc)
+                continue
+            if results and all(result["status"] == "met" for result in results):
+                met.append(task)
+        with self._lock:
+            kept = {task: self._met.get(task, now) for task in met}
+            if kept == self._met:
+                return
+            previous, self._met, store = self._met, kept, self._criteria_store
+            self._reassess(previous.keys() | kept.keys())
+        if store is not None:
+            try:
+                store.save_criteria_met(kept)
+            except Exception as exc:  # the store is down; the pass stands and the next change saves it
+                logger.warning("StarPulse: cannot save when Start Criteria were met: %s", exc)
+
+    def keep_criteria(self, stop: threading.Event, interval: float = CRITERIA_INTERVAL) -> None:
+        """Evaluate now and then every `interval` seconds until `stop` is set."""
+        while True:
+            self.evaluate_criteria()
+            if stop.wait(interval):
+                return
 
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
