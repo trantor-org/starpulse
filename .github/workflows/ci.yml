@@ -94,12 +94,48 @@ jobs:
           uv run --no-project --python 3.14 --with pyyaml
           python ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py
 
+  # trantor main's tests of this package, run against this tree in place of trantor's starpulse submodule: the same
+  # `make test-changed FILES=starpulse` trantor's Validate runs on a bump PR. A commit that fails them would fail every
+  # trantor bump pinning it, so it must not go green here. A change trantor must adopt (a new table needs an Alembic
+  # adoption; a test that pins a feed key this package owns) lands in trantor first, then here.
+  trantor-contract:
+    runs-on: [self-hosted, validate]
+    timeout-minutes: 30
+    steps:
+      # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: trantor
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: trantor-org/trantor
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+          path: .trantor
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .trantor/starpulse
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      # `uv lock` as trantor's bump does: this tree's dependencies may differ from the ones trantor's lock pins.
+      - working-directory: .trantor
+        run: |
+          uv lock
+          make sync
+          echo "PYTEST_WORKERS=$(uv run --no-project --python 3.14 bin/ci_pytest_workers.py)" >> "$GITHUB_ENV"
+      - working-directory: .trantor
+        run: make test-changed FILES=starpulse CI=1
+
   # Tells trantor which starpulse commit just passed so its starpulse-bump workflow opens one pull request pinned to
   # exactly that SHA. It runs on the generic ai-vm-1 fleet, not the validate lane, so validate-lane queue time is
   # unchanged, and it sends nothing for a pull request or a red run.
   dispatch:
     name: dispatch
-    needs: [python, web, tier-policy]
+    needs: [python, web, tier-policy, trantor-contract]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5
