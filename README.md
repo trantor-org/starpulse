@@ -291,6 +291,7 @@ event_log_retention_days = 7   # the default
 type = "native"
 # path = ".starpulse/board"  # the board's directory, relative to this file; created empty when absent
 # machine = "board.yaml"     # a machine file for the Board: its transitions and `writers` decide which moves are offered, and to whom
+# criteria = "my-evaluator {id}"  # evaluates a task's Start Criteria; {id} is the task's id (see below)
 
 # To draw a Backlog.md project instead:
 # [board]
@@ -734,7 +735,16 @@ directory. The `Board` says:
 `starpulse.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
 criteria, plan, notes and definition of done) back for the task view, applies an edit to a task's file in one write,
-and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments. `starpulse.upstream_backlog` is the reference adapter for a tracker with its own
+and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments.
+A task record also carries `start_criteria`: each criterion of the `start_criteria` YAML block under the
+description's `## Start Criteria` heading (`id`, `kind`, `expr`, `cmp` and `want` for its threshold), with its
+`status` (`met`, `unmet`, `error` or `not evaluated`), `observed` value, `error` and `checked` time. With `[board]
+criteria` set to a command, the server runs it in the config's directory with `{id}` replaced by the task's id, and
+reads a JSON array from its output, one object per criterion with `id`, `status` (`met`, `not-met` or `error`),
+`observed`, `error` and `checked_at`; its exit status is ignored when it prints that array. A task's results are reused for 30
+seconds. A command that fails to start, runs longer than 10 seconds, prints no array, or leaves a criterion out marks the
+affected criteria `error` with why, and the record still builds. With no command each criterion is `not evaluated`.
+`starpulse.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
