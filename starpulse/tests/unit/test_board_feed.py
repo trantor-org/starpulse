@@ -10,9 +10,9 @@ import pytest
 from sqlalchemy import text
 
 from starpulse.board_feed import BoardFeed
-from starpulse.config import CommitKeys
-from starpulse.contracts import BoardTask, TaskKeys
-from starpulse.history import HistoryStore
+from starpulse.contracts.adapters import BoardTask, TaskKeys
+from starpulse.settings.config import CommitKeys
+from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import FLOWS, MACHINES
 
 PR = "https://github.com/acme/widgets/pull/1750"

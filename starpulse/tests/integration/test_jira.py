@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from starpulse.adapter_kit import BoardAdapterKit
-from starpulse.contracts import BoardTask
+from starpulse.contracts.adapters import BoardTask
 from starpulse.jira import JiraProject, board, http_fetch, import_workflow, jira_keys
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "jira"

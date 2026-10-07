@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from starpulse.event_log import EventLog
+from starpulse.store.event_log import EventLog
 
 STREAM = "machine:events"
 

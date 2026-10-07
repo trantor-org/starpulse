@@ -7,8 +7,8 @@ import pytest
 
 from starpulse import criteria
 from starpulse.board_feed import BoardFeed
-from starpulse.contracts import BoardTask
-from starpulse.history import HistoryStore
+from starpulse.contracts.adapters import BoardTask
+from starpulse.store.history import HistoryStore
 
 BLOCK = """## Start Criteria
 

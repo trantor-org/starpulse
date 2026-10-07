@@ -7,9 +7,9 @@ from collections.abc import Iterable
 
 import pytest
 
-from starpulse.level import Level, Terminal
-from starpulse.level_metrics import Run, WindowPastHistory
-from starpulse.trajectories import betweenness, trajectory_analytics
+from starpulse.domain.level import Level, Terminal
+from starpulse.domain.level_metrics import Run, WindowPastHistory
+from starpulse.domain.trajectories import betweenness, trajectory_analytics
 
 H = 3600.0
 NOW = 100 * H

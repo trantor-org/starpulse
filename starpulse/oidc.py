@@ -37,7 +37,7 @@ from typing import Any
 
 import jwt
 
-from starpulse.config import OidcSettings
+from starpulse.settings.config import OidcSettings
 
 __all__ = ["ENGINE", "INSTANCE", "PUBLIC", "ROUTES", "ROUTE_PREFIXES", "SESSION_S", "VIEWER", "Gate", "build"]
 

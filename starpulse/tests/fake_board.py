@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board import Board, Written
-from starpulse.contracts import BoardTask, TaskKeys
+from starpulse.contracts.adapters import BoardTask, TaskKeys
 
 #: Each `(settings, base)` the view built this board from.
 BUILT: list[tuple[dict, Path]] = []

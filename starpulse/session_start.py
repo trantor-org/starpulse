@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 
-from starpulse.contracts import StartFailedError
+from starpulse.contracts.adapters import StartFailedError
 
 #: Seconds to wait for an answer: longer than the service's own minute for the bridge.
 _TIMEOUT_S = 75.0

@@ -12,7 +12,7 @@ import pytest
 
 from starpulse.adapter_kit import serve, url
 from starpulse.board_feed import BoardFeed
-from starpulse.config import CommitKeys
+from starpulse.settings.config import CommitKeys
 
 NOW = datetime(2026, 10, 7, 1, tzinfo=UTC).timestamp()
 MACHINE = {

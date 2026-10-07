@@ -30,6 +30,7 @@ starpulse = "starpulse.__main__:main"
 # Postgres-backed integration cases use a throwaway container when a container runtime is available.
 [dependency-groups]
 dev = [
+    "import-linter>=2.15",
     "pytest>=9",
     "pytest-xdist>=3.8.0",
 ]
@@ -63,7 +64,17 @@ exclude = ["starpulse.tests", "starpulse.tests.*"]
 
 # The built page and the machine schema are read from beside the module through `__file__`.
 [tool.setuptools.package-data]
-starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*.yaml", "skills/*/SKILL.md", "migrations/*.py", "migrations/versions/*.py"]
+starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*.yaml", "skills/*/SKILL.md", "store/migrations/*.py", "store/migrations/versions/*.py"]
+
+# The layers the package is organized in (docs: StarPulse Is Layered Around Its Event Log): a module imports from its own
+# layer or one below, never above. `settings` may be read by every layer above `domain` and imports only `domain`.
+[tool.importlinter]
+root_package = "starpulse"
+
+[[tool.importlinter.contracts]]
+name = "store, settings, domain and contracts are layered"
+type = "layers"
+layers = ["starpulse.store", "starpulse.settings", "starpulse.domain | starpulse.contracts"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

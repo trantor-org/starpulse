@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from starpulse.config import Config, RunsInstance, runs_adapter
+from starpulse.settings.config import Config, RunsInstance, runs_adapter
 
 #: Seconds a `gh` command may take.
 _COMMAND_TIMEOUT = 10

@@ -8,9 +8,10 @@ from typing import Any
 
 import pytest
 
-from starpulse import events, run_events
-from starpulse.event_log import EventLog, Tail
+from starpulse import run_events
 from starpulse.ingest import ForwardIngest
+from starpulse.store import events
+from starpulse.store.event_log import EventLog, Tail
 
 TOKENS = {"ana": "ana-secret", "bo": "bo-secret"}
 MOVED = {

@@ -18,8 +18,8 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from starpulse import events
-from starpulse.event_log import EventLog
+from starpulse.store import events
+from starpulse.store.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

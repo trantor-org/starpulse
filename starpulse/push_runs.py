@@ -15,7 +15,7 @@ from typing import Any, Protocol, get_args
 
 from starpulse import run_events
 from starpulse.board_feed import PUSHED_INSTANCE, InstanceRuns
-from starpulse.contracts import RunStatus
+from starpulse.contracts.adapters import RunStatus
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
 

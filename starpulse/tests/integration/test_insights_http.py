@@ -17,10 +17,10 @@ from sqlalchemy import select
 
 from starpulse.adapter_kit import next_event, serve, url
 from starpulse.board_feed import BoardFeed
-from starpulse.contracts import Finding
+from starpulse.contracts.adapters import Finding
 from starpulse.ingest import MAX_BODY
 from starpulse.insights import Insights, InsightStore, restore
-from starpulse.tables import insights as insight_table
+from starpulse.store.tables import insights as insight_table
 
 NOW = 1_700_000_100.0
 FINDING = {

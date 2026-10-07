@@ -15,8 +15,9 @@ from alembic.config import Config  # noqa: E402
 from alembic.runtime.migration import MigrationContext  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
 
-from starpulse import history, hub  # noqa: E402, F401 - history declares its tables on the shared metadata
-from starpulse.tables import metadata  # noqa: E402
+from starpulse import hub  # noqa: E402
+from starpulse.store import history  # noqa: E402, F401 - history declares its tables on the shared metadata
+from starpulse.store.tables import metadata  # noqa: E402
 
 
 def _url(engine: Engine) -> str:
@@ -24,7 +25,7 @@ def _url(engine: Engine) -> str:
 
 
 def _head() -> str:
-    script = ScriptDirectory(str(Path(hub.__file__).parent / "migrations"))
+    script = ScriptDirectory(str(Path(hub.__file__).parent / "store" / "migrations"))
     return script.get_current_head()
 
 
@@ -76,7 +77,7 @@ def test_preparing_a_database_already_at_head_changes_nothing(empty_database: En
 
 def test_events_a_hub_already_holds_survive_the_move_into_partitions(empty_database: Engine) -> None:
     config = Config()
-    config.set_main_option("script_location", str(Path(hub.__file__).parent / "migrations"))
+    config.set_main_option("script_location", str(Path(hub.__file__).parent / "store" / "migrations"))
     with empty_database.begin() as db:
         config.attributes["connection"] = db
         command.upgrade(config, "0001")
@@ -106,7 +107,7 @@ def test_events_a_hub_already_holds_survive_the_move_into_partitions(empty_datab
 def test_the_summaries_revision_adds_its_tables_and_a_downgrade_drops_them(empty_database: Engine) -> None:
     summaries = {"starpulse_step_summaries", "starpulse_cases", "starpulse_lane_intervals"}
     config = Config()
-    config.set_main_option("script_location", str(Path(hub.__file__).parent / "migrations"))
+    config.set_main_option("script_location", str(Path(hub.__file__).parent / "store" / "migrations"))
     with empty_database.begin() as db:
         config.attributes["connection"] = db
         command.upgrade(config, "0004")

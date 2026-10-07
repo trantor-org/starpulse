@@ -11,7 +11,7 @@ from starpulse import agent_cli as cli
 from starpulse import doctor
 from starpulse.adapter_kit import serve, task, url
 from starpulse.board_feed import BoardFeed
-from starpulse.config import CommitKeys, Config, Repo, RunsInstance
+from starpulse.settings.config import CommitKeys, Config, Repo, RunsInstance
 from starpulse.tests.dagu_stub import dagu
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES

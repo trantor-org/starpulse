@@ -7,9 +7,9 @@ draws it apart from a machine StarPulse's own actors move. The config's `[ci]` t
 from collections.abc import Collection, Mapping
 from pathlib import Path
 
-from starpulse.config import ConfigError
-from starpulse.machine_definition import load_machine
-from starpulse.snapshot import describe
+from starpulse.domain.machine_definition import load_machine
+from starpulse.domain.snapshot import describe
+from starpulse.settings.config import ConfigError
 
 CI = load_machine(Path(__file__).with_name("machines") / "ci.yaml")
 #: The machine as the page draws it, keyed by name like a board adapter's machines.

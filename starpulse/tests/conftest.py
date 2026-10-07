@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, create_engine, text
 
-from starpulse.history import HistoryStore
+from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.mock_issuer import IMAGE, answers
 

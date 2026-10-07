@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from starpulse import mermaid_import
-from starpulse.machine_definition import MachineDefinitionError, validate
+from starpulse.domain.machine_definition import MachineDefinitionError, validate
 from starpulse.mermaid_import import Diagram, draft_machine, parse
 
 SAMPLE = """\

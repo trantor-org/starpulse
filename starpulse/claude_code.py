@@ -31,12 +31,12 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse import events as machine_events
-from starpulse.contracts import TaskKeys
-from starpulse.event_log import EventLog
+from starpulse.contracts.adapters import TaskKeys
 from starpulse.harness import HARNESS
-from starpulse.history import open_event_log
 from starpulse.otlp import TOOL_RESULT, LogEvent, receiver
+from starpulse.store import events as machine_events
+from starpulse.store.event_log import EventLog
+from starpulse.store.history import open_event_log
 
 ACTOR = "claude-code"
 DEFAULT_PORT = 4318

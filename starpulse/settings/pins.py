@@ -15,7 +15,7 @@ import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
-from starpulse.config import Repo
+from starpulse.settings.config import Repo
 
 __all__ = ["GitHub", "Pins", "contained", "link"]
 

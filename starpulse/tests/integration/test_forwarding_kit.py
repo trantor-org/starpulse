@@ -15,13 +15,14 @@ from typing import Any
 
 import pytest
 
-from starpulse import events, forward
+from starpulse import forward
 from starpulse.adapter_kit import serve, url
-from starpulse.config import Forward
-from starpulse.event_log import EventLog, Tail
 from starpulse.forward import OPT_IN_FILE, Forwarder, OptIn, post
-from starpulse.history import HistoryStore
 from starpulse.ingest import ForwardIngest
+from starpulse.settings.config import Forward
+from starpulse.store import events
+from starpulse.store.event_log import EventLog, Tail
+from starpulse.store.history import HistoryStore
 
 TOKEN = "ana-secret"
 ACTOR, ASSIGNEE = "ana-the-person", "bob-the-assignee"

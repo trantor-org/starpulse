@@ -14,8 +14,8 @@ import pytest
 from starpulse.adapter_kit import serve, url
 from starpulse.analytics import board_health
 from starpulse.board_feed import BoardFeed
-from starpulse.history import HistoryStore
-from starpulse.level import Level, Orbit, Terminal
+from starpulse.domain.level import Level, Orbit, Terminal
+from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import BOARD, NOW, ROWS, H
 

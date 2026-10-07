@@ -14,8 +14,8 @@ from sqlalchemy import Engine, create_engine, event, text
 pytest.importorskip("alembic", reason="the hub extras are not installed")
 
 from starpulse import hub  # noqa: E402
-from starpulse.event_log import EventLog, Tail  # noqa: E402
 from starpulse.machine_tasks import tables  # noqa: E402
+from starpulse.store.event_log import EventLog, Tail  # noqa: E402
 from starpulse.tests.machines import MACHINES  # noqa: E402
 
 TODAY = date(2026, 10, 6)

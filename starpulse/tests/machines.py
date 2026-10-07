@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from starpulse.machine_definition import load_machine
-from starpulse.snapshot import describe
+from starpulse.domain.machine_definition import load_machine
+from starpulse.domain.snapshot import describe
 from starpulse.upstream_backlog import board_machine
 
 FIXTURES = Path(__file__).parent / "fixtures" / "machines"

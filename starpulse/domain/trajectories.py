@@ -20,8 +20,8 @@ from collections import Counter, defaultdict, deque
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from starpulse.level import Level
-from starpulse.level_metrics import Run, WindowPastHistory, collapse
+from starpulse.domain.level import Level
+from starpulse.domain.level_metrics import Run, WindowPastHistory, collapse
 
 __all__ = ["betweenness", "trajectory_analytics"]
 

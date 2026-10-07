@@ -168,8 +168,6 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse import analytics, doctor, forward, run_events
-from starpulse.forward import Forwarder
-from starpulse import events as machine_events
 from starpulse.board import (
     AssigneeWriter,
     Board,
@@ -184,12 +182,28 @@ from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.ci import attach
 from starpulse.ci_trail import CiTrail
-from starpulse.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
-from starpulse.contracts import Move, StartFailedError
-from starpulse.event_log import EventLog, prune_forever
+from starpulse.contracts.adapters import Move, StartFailedError
+from starpulse.domain.level import Level
+from starpulse.domain.level_metrics import WindowPastHistory, level_metrics
+from starpulse.domain.snapshot import qualifier
+from starpulse.domain.trajectories import trajectory_analytics
+from starpulse.forward import Forwarder
 from starpulse.harness import HARNESS_MACHINES
-from starpulse.harnesses import Harnesses
-from starpulse.history import (
+from starpulse.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
+from starpulse.ingest import tokens as ingest_tokens
+from starpulse.insights import Insights, InsightStore, restore
+from starpulse.ledger import PAGE
+from starpulse.machine_tasks import MachineTasks
+from starpulse.machine_tasks import tables as machine_tables
+from starpulse.pull_requests import PullRequests
+from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse.session_start import starter
+from starpulse.settings.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
+from starpulse.settings.harnesses import Harnesses
+from starpulse.settings.history_window import SETTINGS_FILE, HistoryWindow
+from starpulse.store import events as machine_events
+from starpulse.store.event_log import EventLog, prune_forever
+from starpulse.store.history import (
     HealthHistory,
     History,
     HistoryStore,
@@ -198,20 +212,6 @@ from starpulse.history import (
     database_url,
     record_machine_events,
 )
-from starpulse.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
-from starpulse.ingest import tokens as ingest_tokens
-from starpulse.ledger import PAGE
-from starpulse.insights import Insights, InsightStore, restore
-from starpulse.level import Level
-from starpulse.level_metrics import WindowPastHistory, level_metrics
-from starpulse.trajectories import trajectory_analytics
-from starpulse.machine_tasks import MachineTasks
-from starpulse.machine_tasks import tables as machine_tables
-from starpulse.pull_requests import PullRequests
-from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
-from starpulse.session_start import starter
-from starpulse.settings import SETTINGS_FILE, HistoryWindow
-from starpulse.snapshot import qualifier
 
 _HERE = Path(__file__).parent
 #: The Vite build of web/; it holds nothing but the page, so all of it is served.
@@ -892,7 +892,7 @@ def _cached(
     return get
 
 
-def _handler(
+def request_handler(
     feed: BoardFeed,
     static: Path,
     starts: Mapping[str, Callable[[str], str]],
@@ -1257,7 +1257,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     if forwarder is not None:
         forward.start(forwarder, forwarding)
     announce(args.port, feed.snapshot()["hint"])
-    handler = _handler(
+    handler = request_handler(
         feed,
         _STATIC,
         starts,

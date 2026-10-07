@@ -13,8 +13,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from starpulse.config import CommitKeys
 from starpulse.ledger import Occurrence, build, page, pair, pull_occurrences, reruns, strip
+from starpulse.settings.config import CommitKeys
 
 KEYS = CommitKeys(after="AFTER", before="BEFORE", force="FORCE", task="TASK")
 SHA_A, SHA_B, SHA_C = "a" * 40, "b" * 40, "c" * 40

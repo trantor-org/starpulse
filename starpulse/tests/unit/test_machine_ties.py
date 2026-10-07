@@ -3,7 +3,7 @@
 import pytest
 
 from starpulse.board_feed import BoardFeed
-from starpulse.machine_ties import STUCK_S, derive, entries, page, rows
+from starpulse.domain.machine_ties import STUCK_S, derive, entries, page, rows
 
 NOW = 1_000_000.0
 HOUR = 3600.0

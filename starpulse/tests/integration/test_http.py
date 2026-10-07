@@ -4,7 +4,6 @@ import http.client
 import json
 import mimetypes
 import time
-import mimetypes
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -19,9 +18,9 @@ from starpulse.adapter_kit import task
 from starpulse.adapter_kit import url as _url
 from starpulse.board import Written
 from starpulse.board_feed import BoardFeed
-from starpulse.config import CommitKeys
-from starpulse.contracts import Move
+from starpulse.contracts.adapters import Move
 from starpulse.machine_tasks import MachineTasks
+from starpulse.settings.config import CommitKeys
 from starpulse.tests.machines import MACHINES
 
 RUN_SAFE = frozenset({"dagu/whole-repo-gate"})

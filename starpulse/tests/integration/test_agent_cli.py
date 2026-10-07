@@ -22,13 +22,13 @@ from starpulse.adapter_kit import task
 from starpulse.adapter_kit import url as _url
 from starpulse.board import Written
 from starpulse.board_feed import BoardFeed
-from starpulse.contracts import Move
-from starpulse.history import HistoryStore
-from starpulse.level import Level, Orbit, Terminal
+from starpulse.contracts.adapters import Move
+from starpulse.domain.level import Level, Orbit, Terminal
 from starpulse.server import _no_writer
+from starpulse.store.history import HistoryStore
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
-from starpulse.tests.unit.test_analytics import H, NOW, ROWS
+from starpulse.tests.unit.test_analytics import NOW, ROWS, H
 
 VALID_MACHINE = Path(__file__).parent.parent.parent / "machines" / "harness.yaml"
 STARTED = [0]  # server lifecycles begun in this process, so a test can prove which fixtures a case builds

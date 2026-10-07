@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.config import (
+from starpulse.settings.config import (
     CommitKeys,
     Config,
     ConfigError,
@@ -16,7 +16,7 @@ from starpulse.config import (
     load,
     runs_adapter,
 )
-from starpulse.harnesses import HarnessError
+from starpulse.settings.harnesses import HarnessError
 
 
 def _write(tmp_path: Path, text: str) -> Path:

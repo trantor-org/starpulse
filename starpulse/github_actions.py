@@ -26,8 +26,8 @@ from urllib.parse import quote
 import yaml
 
 from starpulse import run_events
-from starpulse.contracts import RunsSink, RunStatus, StartFailedError
-from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
+from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
+from starpulse.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 
 #: Each status a run, job or step reports before it completes, and the status it becomes.
 #: A run held for a runner, an approval or a protection rule is `queued`; the label itself stays in `raw`.

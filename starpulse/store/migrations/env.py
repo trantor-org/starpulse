@@ -2,9 +2,9 @@
 
 from alembic import context
 
-from starpulse import history  # noqa: F401 - declares the history tables on the shared metadata
 from starpulse.hub import VERSION_TABLE
-from starpulse.tables import metadata
+from starpulse.store import history  # noqa: F401 - declares the history tables on the shared metadata
+from starpulse.store.tables import metadata
 
 context.configure(
     connection=context.config.attributes["connection"], target_metadata=metadata, version_table=VERSION_TABLE

@@ -32,13 +32,13 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from starpulse import events as machine_events
-from starpulse.contracts import TaskKeys
-from starpulse.event_log import EventLog
+from starpulse.contracts.adapters import TaskKeys
+from starpulse.domain.machine_definition import load_machine
+from starpulse.domain.snapshot import describe
 from starpulse.github_actions import Transport, _get, connect, repo_of
-from starpulse.history import open_event_log
-from starpulse.machine_definition import load_machine
-from starpulse.snapshot import describe
+from starpulse.store import events as machine_events
+from starpulse.store.event_log import EventLog
+from starpulse.store.history import open_event_log
 
 PULL_REQUEST = load_machine(Path(__file__).with_name("machines") / "github-pull-request.yaml")
 COPILOT = load_machine(Path(__file__).with_name("machines") / "copilot.yaml")

@@ -9,8 +9,8 @@ import pytest
 import yaml
 from statemachine import StateChart
 
-from starpulse import machine_definition
-from starpulse.machine_definition import (
+from starpulse.domain import machine_definition
+from starpulse.domain.machine_definition import (
     Cue,
     MachineDefinitionError,
     Registry,
@@ -155,7 +155,7 @@ class TestTheSchema:
             validate(_doc(writers=writers))
 
     def test_the_published_schema_is_the_one_that_validates(self) -> None:
-        schema = Path(machine_definition.__file__).with_name("machine.schema.json")
+        schema = Path(machine_definition.__file__).parents[1] / "machine.schema.json"
 
         assert json.loads(schema.read_text()) == machine_definition.SCHEMA
 

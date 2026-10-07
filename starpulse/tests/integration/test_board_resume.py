@@ -10,9 +10,9 @@ import pytest
 from sqlalchemy import delete
 
 from starpulse.board_feed import BoardFeed, follow
-from starpulse.contracts import BoardTask
-from starpulse.event_log import EventLog
-from starpulse.tables import events
+from starpulse.contracts.adapters import BoardTask
+from starpulse.store.event_log import EventLog
+from starpulse.store.tables import events
 
 STREAM = "board:tasks"
 

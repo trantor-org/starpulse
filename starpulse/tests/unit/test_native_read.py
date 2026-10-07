@@ -6,9 +6,9 @@ import pytest
 
 from starpulse.board import Board
 from starpulse.board_feed import BoardFeed
-from starpulse.config import load
-from starpulse.event_log import EventLog
 from starpulse.server import assemble, create_task, task_record
+from starpulse.settings.config import load
+from starpulse.store.event_log import EventLog
 from starpulse.upstream_backlog import UpstreamBacklog
 
 LAN = "127.0.0.1"

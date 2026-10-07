@@ -19,12 +19,13 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from starpulse import events, run_events
-from starpulse.event_log import EventLog, Tail
+from starpulse import run_events
+from starpulse.store import events
+from starpulse.store.event_log import EventLog, Tail
 
 if TYPE_CHECKING:
-    from starpulse.config import Config, Forward
-    from starpulse.history import HistoryStore
+    from starpulse.settings.config import Config, Forward
+    from starpulse.store.history import HistoryStore
 
 logger = logging.getLogger(__name__)
 

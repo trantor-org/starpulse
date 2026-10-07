@@ -18,9 +18,10 @@ from typing import Any, Protocol, runtime_checkable
 
 from starpulse import criteria
 from starpulse.analytics import LaneRow, move_shares
-from starpulse.config import CommitKeys
-from starpulse.contracts import BoardTask, TaskKeys
-from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
+from starpulse.contracts.adapters import BoardTask, TaskKeys
+from starpulse.domain.machine_ties import derive, entries
+from starpulse.domain.machine_ties import page as machine_page
+from starpulse.domain.snapshot import declared, qualifier
 from starpulse.ledger import (
     MERGE_EVENT,
     NEXT,
@@ -33,9 +34,8 @@ from starpulse.ledger import (
     reruns,
     strip,
 )
-from starpulse.machine_ties import derive, entries
-from starpulse.machine_ties import page as machine_page
-from starpulse.snapshot import declared, qualifier
+from starpulse.settings.config import CommitKeys
+from starpulse.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 
 __all__ = ["BoardFeed", "BoardStore", "Followed", "Resumable"]

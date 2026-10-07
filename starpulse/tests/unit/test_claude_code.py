@@ -6,11 +6,11 @@ from pathlib import Path
 
 from starpulse.adapter_kit import MachineEventsAdapterKit
 from starpulse.claude_code import ClaudeCodeAdapter, publisher
-from starpulse.contracts import TaskKeys
-from starpulse.event_log import EventLog, Tail
+from starpulse.contracts.adapters import TaskKeys
 from starpulse.harness import HARNESS_MACHINES
 from starpulse.machine_tasks import Table
 from starpulse.otlp import BRANCH, LogEvent, parse
+from starpulse.store.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES
 
 #: A two-turn session exported with `OTEL_LOG_TOOL_DETAILS=1`, scrubbed of account ids, prompt and reply text.

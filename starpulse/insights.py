@@ -30,9 +30,9 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse.board_feed import BoardFeed
-from starpulse.contracts import Finding
-from starpulse.event_log import create_tables
-from starpulse.tables import insights as table
+from starpulse.contracts.adapters import Finding
+from starpulse.store.event_log import create_tables
+from starpulse.store.tables import insights as table
 
 __all__ = ["Insights", "InsightStore", "restore"]
 

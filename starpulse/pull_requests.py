@@ -24,8 +24,8 @@ from typing import Protocol
 
 from starpulse.board_feed import BoardFeed
 from starpulse.ci_trail import PullHistory, parse
-from starpulse.config import Repo
-from starpulse.pins import GitHub, Pins, contained, link
+from starpulse.settings.config import Repo
+from starpulse.settings.pins import GitHub, Pins, contained, link
 
 logger = logging.getLogger(__name__)
 

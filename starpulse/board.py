@@ -15,13 +15,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
-from starpulse.contracts import TaskKeys
-from starpulse.snapshot import Qualify
+from starpulse.contracts.adapters import TaskKeys
+from starpulse.domain.snapshot import Qualify
+from starpulse.settings.config import DEFAULT_TYPE, module_name
 
 if TYPE_CHECKING:
     from starpulse.board_feed import BoardFeed
-    from starpulse.event_log import EventLog
-    from starpulse.history import History
+    from starpulse.store.event_log import EventLog
+    from starpulse.store.history import History
 
 __all__ = [
     "DEFAULT_TYPE",
@@ -36,9 +37,6 @@ __all__ = [
     "load",
     "module_name",
 ]
-
-DEFAULT_TYPE = "native"
-
 
 class Written(NamedTuple):
     """What a board writer did with a status change: `output` is its response, or its refusal and the `skill` that satisfies it.
@@ -141,11 +139,6 @@ class Board:
             raise ValueError(
                 "a board that edits tasks must also read them: an edit is checked against the current record"
             )
-
-
-def module_name(kind: str) -> str:
-    """The module a `[board]` or `[[runs]]` type names: a dotted path as it is, a bare name under `starpulse`."""
-    return kind if "." in kind else f"starpulse.{kind}"
 
 
 def load(kind: str, settings: Mapping[str, Any], base: Path) -> Board:

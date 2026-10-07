@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from starpulse.adapter_kit import BoardAdapterKit, MachineEventsAdapterKit, RunsAdapterKit, _AdapterKit
 from starpulse.board import Written
-from starpulse.contracts import TaskKeys
+from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 
 PROJ = TaskKeys(key=re.compile(r"PROJ-\d+"), branch=re.compile(r"feature/(PROJ-\d+)"))

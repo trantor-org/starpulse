@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from pydantic import ValidationError
 
 from starpulse.board_feed import BoardFeed, stream_id
-from starpulse.contracts import MachineEvent, TaskKeys
+from starpulse.contracts.adapters import MachineEvent, TaskKeys
 
 #: How many of a task's latest steps travel with it, so a page that connected after several steps can still walk each one.
 TRAIL = 12
