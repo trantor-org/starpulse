@@ -200,14 +200,16 @@
     // a filter also folds away the buckets it empties and says how many cards it left, as the toolbar's own filters do
     document.querySelectorAll("#kb .bucket").forEach((bk) => bk.classList.toggle("ly-hide", pick.kind === "hide" && !bk.querySelector(".card[data-id]:not(.ly-hide)")));
     document.querySelectorAll("#kb .heldby").forEach((h) => h.classList.toggle("ly-dimmed", !!pick.kind && pick.kind !== "lit"));
-    const shown = document.querySelector("#kb .shown");
-    if (shown) {
-      const total = shown.textContent.match(/of (\d+) tasks/)?.[1];
-      const want = pick.kind === "hide" && total ? `${document.querySelectorAll("#kb .card[data-id]:not(.ly-hide)").length} of ${total} tasks` : null;
-      if (want && !shown.dataset.lyOrig) shown.dataset.lyOrig = shown.textContent;
-      if (want && shown.textContent !== want) shown.textContent = want;
-      if (!want && shown.dataset.lyOrig) { shown.textContent = shown.dataset.lyOrig; delete shown.dataset.lyOrig; }
-    }
+    const patch = (node, want) => {
+      if (!node) return;
+      if (want != null && !node.dataset.lyOrig) node.dataset.lyOrig = node.textContent;
+      if (want != null && node.textContent !== want) node.textContent = want;
+      if (want == null && node.dataset.lyOrig) { node.textContent = node.dataset.lyOrig; delete node.dataset.lyOrig; }
+    };
+    const hiding = pick.kind === "hide", shown = document.querySelector("#kb .shown");
+    const total = (shown?.dataset.lyOrig || shown?.textContent || "").match(/of (\d+) tasks/)?.[1];
+    patch(shown, hiding && total ? `${document.querySelectorAll("#kb .card[data-id]:not(.ly-hide)").length} of ${total} tasks` : null);
+    document.querySelectorAll("#kb section.col").forEach((col) => patch(col.querySelector("h2 .c"), hiding ? String(col.querySelectorAll(".card[data-id]:not(.ly-hide)").length) : null));
   };
   const clearBtn = () => (pick.kind ? el("button", { class: "ly-clear", onclick: () => { pick = { kind: null }; mile = lens = lit = null; Object.keys(facetOn).forEach((key) => delete facetOn[key]); render(); } }, esc("clear ✕")) : null);
   const kanPanel = {
