@@ -20,10 +20,10 @@ function sky(n: number, page?: { machines: string[]; more: boolean }) {
   return merge(snap);
 }
 const level = { kind: "state", id: "in_progress" } as const;
-const laid = (S: ReturnType<typeof sky>, p = S.machinePage ? paging(S.machinePage, (n) => S.flows[n].last ?? 0) : null) => {
+const laid = (S: ReturnType<typeof sky>, p = S.machinePage ? paging(S.machinePage, (n) => S.flows[n].last ?? 0) : null, only?: { task: string; machines: string[] }) => {
   const moves = new Moves();
   moves.observe(S, NOW);
-  return build({ S, moves, W: 1600, H: 900, T: NOW, scale: 100, paging: p }, level).top!;
+  return build({ S, moves, W: 1600, H: 900, T: NOW, scale: 100, paging: p, only }, level).top!;
 };
 const names = (n: number) => Array.from({ length: n }, (_, i) => `kid${i}`);
 
@@ -47,6 +47,13 @@ describe("the machine ledger's lane under a page", () => {
   it("does not stretch the loaded rows to fill the lane while older machines remain", () => {
     const some = laid(sky(45, { machines: names(3), more: true })).rows[0].h, alone = laid(sky(3, { machines: names(3), more: false })).rows[0].h;
     expect(alone).toBeGreaterThan(some);
+  });
+
+  it("narrows the rows, and the rows the strip ticks, to the machines a pinned task has a session in, older ones with no footer", () => {
+    const top = laid(sky(45, { machines: names(20), more: true }), undefined, { task: "DEMO-7", machines: ["kid30", "kid3", "gone"] });
+    expect(top.rows.map((r) => r.name)).toEqual(["kid3", "kid30"]);
+    expect(top.ranked).toEqual(["kid3", "kid30"]);
+    expect([top.total, top.more, top.foot, top.task]).toEqual([2, 0, 0, "DEMO-7"]);
   });
 
   it("shows every machine when the snapshot sends no page", () => {

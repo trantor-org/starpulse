@@ -448,7 +448,8 @@ The page scrolls the rows under the fixed top by the wheel, Page Up and Page Dow
 draggable thumb, with `↑ back to newest` once scrolled; the rows are drawn only while in view. As the footer comes
 into view it loads the next 20 older machines from `/api/machines`. The 24 h strip under the rows draws a tick per
 entry, coloured by the state it was entered from (amber for a workflow launch), shades the rows in view as one
-stretch, and a click on a tick scrolls to its row. A demo page (`?demo`) takes `&many=N` to grow the machines under
+stretch, and a click on a tick scrolls to its row. A click on a task pins it and narrows the rows and the strip to
+the machines it holds a session in (`N machines holding <task>`); closing its card restores every row. A demo page (`?demo`) takes `&many=N` to grow the machines under
 the In Progress one to N, enough to scroll.
 
 ### Connect a tracker

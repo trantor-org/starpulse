@@ -254,7 +254,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const mp = S.machinePage;
     if (mp?.open && pg?.top !== mp.open) pg = paging(mp, (n) => S!.flows[n]?.last ?? 0); // the snapshot names the first page; the pages loaded after it are kept across snapshots
     const held = scene?.top && (overRows() || lpin || pickedRow) ? scene.top.rows.map((r) => r.name) : undefined; // the pointer over the rows, a pinned path or a focused row holds their order
-    scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held, paging: pg }, level());
+    // a pinned task narrows the rows to the machines it has a session in
+    const pinned = lpin && S.flows[lpin.flow]?.agents.find((a) => a.id === lpin!.id);
+    const only = pinned ? { task: pinned.task || pinned.title || pinned.id, machines: sessionsOf(S.flows, lpin!.flow, pinned).map((b) => b.machine) } : undefined;
+    scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held, paging: pg, only }, level());
     if (scene.top) {
       scrollGoal = Math.min(scrollGoal, scene.top.max);
       scrollPos = Math.min(scrollPos, scene.top.max);
@@ -914,11 +917,19 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     panel.classList.add("open");
     panel.querySelector<HTMLElement>(".x")!.onclick = () => closePanel();
   };
+  /** Pin a ledger task, or release it: the rows narrow to the machines it has a session in, or widen back, and show from the top. */
+  function pinLedger(to: typeof lpin) {
+    if (lpin?.flow === to?.flow && lpin?.id === to?.id) return;
+    lpin = to;
+    if (!scene?.top) return;
+    scrollGoal = scrollPos = 0;
+    layout(true);
+  }
   /** Close the panel if one is open; whether one was. */
   function closePanel() {
     pin = null;
     mergeSel = null;
-    lpin = null;
+    pinLedger(null);
     if (!panel.classList.contains("open")) return false;
     panel.classList.remove("open");
     return true;
@@ -976,12 +987,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   /** A click on a ledger task pins its path and lists its sessions and its steps in the panel. */
   function openLedgerTask(o: LTask) {
+    pinLedger({ flow: o.flow, id: o.agent.id });
     const sky = S!, top = scene!.top!, all = sessionsOf(sky.flows, o.flow, o.agent), steps = traceSteps(sky.flows, all, top.flow, ledgerHas);
     const colOf = (m: string) => {
       const init = sky.flows[m]?.machine.states.find((s) => s.initial)?.id ?? sky.flows[m]?.machine.states[0]?.id;
       return (m === top.flow ? scene!.mStates[init ?? ""]?.color : top.rows.find((r) => r.name === m)?.nodes.find((n) => n.id === init)?.color) ?? RAMP[2];
     };
-    lpin = { flow: o.flow, id: o.agent.id };
     panel.innerHTML = `<span class="x">✕</span><h2>${esc(o.agent.task || o.agent.title)}</h2><div class="k">${esc(boardTitle(o.agent) || o.agent.title || "")}</div>
       <table>${all.map((b) => `<tr class="mrow"><td><i style="background:${colOf(b.machine)}"></i>${esc(b.machine)}</td><td>${esc(stName(b.machine, b.agent.state))}</td><td style="text-align:right;color:#6b7a93">${hhmm(b.agent.active ?? 0)}</td></tr>`).join("")}</table>
       <div class="k" style="margin-top:10px">path · ${steps.length} steps, in order</div><table class="trace">${steps.map((s) => `<tr><td>${s.n}</td><td>${s.kind === "entry" ? `<b>${esc(s.b.machine)}</b> <span class="k">entered from ${esc(stName(s.a.machine, s.a.state))}</span>` : `${esc(stName(s.a.machine, s.a.state))} → ${esc(stName(s.b.machine, s.b.state))} <span class="k">${esc(s.b.machine)}</span>`}</td><td>${hhmm(s.at)}</td></tr>`).join("")}</table>`;
@@ -993,20 +1004,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (rail) return railClick(rail);
     if (h?.kind === "state" && scene?.top && h.o.flow === scene.top.flow && sky) {
       const to = firstOpened(sky.flows, scene.top.ranked, h.o.flow, h.o.id);
-      return to ? revealRow(to) : undefined; // a state of the top scrolls to the first machine it opens
+      if (to) revealRow(to); // a state of the top scrolls to the first machine it opens, and picks it out
+      return to ? setFocus(to) : undefined;
     }
     if (!h || !sky) return void closePanel();
     // a click anywhere on a row (its name, a state or a DAG star) opens that machine, nested or not
     if (h.kind === "row") return drill(h.o.name, fx, fy);
     if (h.kind === "rstate") return drill(scene!.top!.rows.find((r) => r.nodes.includes(h.o))!.name, fx, fy);
     pin = null;
-    lpin = null;
-    // a state of the top machine that machines are entered from picks out the first of them
-    if (h.kind === "state" && scene?.top) {
-      const kid = scene.top.rows.find((r) => S!.flows[r.name].ties?.[0]?.machine === scene!.top!.flow && S!.flows[r.name].ties?.[0]?.state === h.o.id);
-      return kid ? setFocus(kid.name) : undefined;
-    }
     if (h.kind === "ltask") return openLedgerTask(h.o);
+    pinLedger(null);
     if (h.kind === "galaxy") return push({ kind: "state", id: h.o.id }, fx, fy);
     if (h.kind === "moon" && h.o.pager) return changePage(h.o.pager);
     if (h.kind === "planet" && h.o.pager) return changePage(h.o.pager);
@@ -1972,7 +1979,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.letterSpacing = "0.6px";
     text(fitText(top.flow, mw, name * 1.08), mx, top.metaT + 4 + name * 0.6, name * 1.08, rgba(INK, 0.9), "left", 400);
     text(fitText(`template · ${top.nodes.length} states · ${flow?.agents.length ?? 0} tasks`, mw, sub), mx, top.metaT + 6 + name * 1.3 + sub * 0.6, sub, rgba(SUB, 0.7), "left", 300);
-    text(fitText(`${top.total} machine${top.total === 1 ? "" : "s"}${stuck ? ` · ${stuck} stuck` : " · newest first"}`, mw, sub), mx, top.hdrB - sub, sub, rgba(SUB, 0.6), "left", 300);
+    const count = (ink: number) => text(fitText(`${top.total} machine${top.total === 1 ? "" : "s"}${top.task ? ` holding ${top.task}` : stuck ? ` · ${stuck} stuck` : " · newest first"}`, mw, sub), mx, top.hdrB - sub, sub, rgba(SUB, ink), "left", 300);
+    count(0.6);
     cx.letterSpacing = "0px";
     cx.fillStyle = rgba(SUB, 0.16);
     cx.fillRect(mx - 10, top.hdrB, top.x1 + 22 - mx, 1);
@@ -2022,6 +2030,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (pinnedTask()) {
       cx.fillStyle = "rgba(4,6,11,0.66)";
       cx.fillRect(0, 0, FW, H);
+      cx.letterSpacing = "0.6px";
+      count(0.9); // the count names the task the rows are narrowed to, over the veil
+      cx.letterSpacing = "0px";
     }
     drawLedgerLabels(drawLedgerTrace());
   }
