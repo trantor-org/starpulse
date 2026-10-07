@@ -1946,7 +1946,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   const rowTop = new Map<string, number>();
   /** Where each row is drawn this frame (down the canvas), for the hover. */
-  let lane: { row: RowView; y: number }[] = [], sliding = false, heldRows = false;
+  let lane: { row: RowView; y: number }[] = [], sliding = false, rowsHeld = false;
   const overRows = () => !!(mouse && scene?.top && mouse.oy > scene.top.laneTop && mouse.oy < scene.top.laneBottom);
   /** The row the pointer is on, over its name or one of its states. */
   const hotRow = () => (hover?.kind === "row" ? hover.o.name : hover?.kind === "rstate" ? (scene!.top!.rows.find((r) => r.nodes.includes((hover as { o: RowView["nodes"][number] }).o))?.name ?? null) : null);
@@ -2116,8 +2116,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     last = now;
     T = Date.now() / 1000;
     if (scene && (grown.growing() || ((scene.fold || scene.top) && laidScale !== prefs().scale))) layout(true); // a state easing to a new size moves its neighbours, paths and the fit with it, frame by frame
-    if (scene?.top && (overRows() || !!lpin) !== heldRows) {
-      heldRows = !heldRows;
+    if (scene?.top && (overRows() || !!lpin) !== rowsHeld) {
+      rowsHeld = !rowsHeld;
       layout(true); // the order holds from the row the pointer entered, or while a path is pinned, and is released to the newest-first order after
     }
     if (anim) anim(now);
