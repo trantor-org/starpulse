@@ -16,7 +16,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
-from starpulse import criteria
+from starpulse import criteria, lane_events
 from starpulse.analytics import LaneRow, move_shares
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.domain.machine_ties import derive, entries
@@ -98,7 +98,8 @@ def stream_id(entry_id: str) -> tuple[int, int]:
 class LaneRecorder(Protocol):
     """Where a feed keeps each lane change it applies, idempotent on the event id (`HistoryStore`)."""
 
-    def record_lane(self, event_id: str, task: str, status: str, at: float) -> None: ...
+    def record_lane(self, event_id: str, task: str, status: str, at: float) -> bool | None:
+        """Keep one lane change; True when it wrote a row, False for a repeat of the task's last lane or a known id."""
 
 
 class BoardStore(Protocol):
@@ -157,6 +158,8 @@ class BoardFeed:
         self._lane_path: Callable[[str], list[dict]] = lambda _task: []
         #: Where a lane change the feed applies is kept (`HistoryStore`); None records nothing.
         self._lanes: LaneRecorder | None = None
+        #: Where each lane change `_lanes` wrote is also appended as a `lane_events` entry; None appends nothing.
+        self._lane_log: EventLog | None = None
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
@@ -340,13 +343,15 @@ class BoardFeed:
         """Date a lane the feed replays by the history's last change into it (`History.lane_path`), not by the replay."""
         self._lane_path = lane_path
 
-    def record_lanes(self, lanes: LaneRecorder) -> None:
-        """Keep each lane change the feed applies in `lanes` (`HistoryStore.record_lane`).
+    def record_lanes(self, lanes: LaneRecorder, log: EventLog | None = None) -> None:
+        """Keep each lane change the feed applies in `lanes` (`HistoryStore.record_lane`), and with a `log`, append
+        the change as a `lane_events` entry under the same event id once `lanes` has written it.
 
         The event id names the task, the lane and when it entered it, so a replay of a change the history holds
         repeats nothing. A history that cannot be written is logged: the task is still placed.
         """
         self._lanes = lanes
+        self._lane_log = log
 
     def size_suns(self, lane_rows: Callable[..., list[LaneRow]]) -> None:
         """Size each Board state's sun from its share of the lane moves in the week before local midnight, read through
@@ -389,7 +394,9 @@ class BoardFeed:
         entered = self._place(task)
         if entered is not None and self._lanes is not None:
             try:
-                self._lanes.record_lane(f"{task.id}@{task.lane}@{entered}", task.id, task.lane, entered)
+                event_id = f"{task.id}@{task.lane}@{entered}"
+                if self._lanes.record_lane(event_id, task.id, task.lane, entered) and self._lane_log is not None:
+                    lane_events.publish(self._lane_log, event_id, task, entered)
             except Exception as exc:  # the history is down; the task is placed and the next change is recorded
                 logger.warning("StarPulse: cannot record the lane change of %s: %s", task.id, exc)
 

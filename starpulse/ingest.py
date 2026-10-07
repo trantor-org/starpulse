@@ -24,7 +24,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, get_args
 
-from starpulse import run_events
+from starpulse import lane_events, run_events
 from starpulse.contracts.adapters import RunStatus
 from starpulse.forward import FIELDS, PERSON, project
 from starpulse.settings.config import MAX_BATCH, RunsInstance, Source
@@ -148,6 +148,21 @@ def _machine_event(fields: dict[str, Any]) -> str | None:
     return None
 
 
+def _lane_event(fields: dict[str, Any]) -> str | None:
+    """The reason `fields` is not a lane entry the contract allows, or None."""
+    for key in ("task", "lane"):
+        if not (isinstance(fields.get(key), str) and fields[key]):
+            return f"{key} must be non-empty text"
+    if any(key in fields and not isinstance(fields[key], str) for key in ("team", "milestone", *PERSON)):
+        return "team, milestone and assignee must be text"
+    if not _epoch(fields.get("time")):
+        return "time must be epoch seconds"
+    labels = fields.get("labels", [])
+    if not (isinstance(labels, list) and all(isinstance(label, str) for label in labels)):
+        return "labels must be a list of text"
+    return None
+
+
 class ForwardIngest:
     """Answers one `POST /api/forward`: `(authorization header, body)` to `(status, JSON body)`.
 
@@ -206,6 +221,9 @@ def _forwarded(source: str, opt_in: bool, item: object) -> tuple[str, str, dict[
         if isinstance(_run_event(kept), str):
             return None
         kept["instance"] = source
+    elif stream == lane_events.STREAM:
+        if _lane_event(kept) is not None:
+            return None
     elif _machine_event(kept) is not None:
         return None
     return stream, f"{source}/{event_id}", {**kept, "source": source}

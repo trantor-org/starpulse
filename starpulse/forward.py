@@ -1,6 +1,6 @@
 """What an IC sends a hub, and the filter that keeps a person's name at home.
 
-The forwarder reads only the machine and runs streams. Each entry is cut down to the fields the stream's contract
+The forwarder reads only the machine, runs and lane streams. Each entry is cut down to the fields the stream's contract
 names (`FIELDS`), so a field a producer added never leaves the IC. `actor` and `assignee` name a person, so they
 leave only while the IC is opted in (`OptIn`).
 """
@@ -19,7 +19,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from starpulse import run_events
+from starpulse import lane_events, run_events
 from starpulse.store import events
 from starpulse.store.event_log import EventLog, Tail
 
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 FIELDS: dict[str, tuple[str, ...]] = {
     events.STREAM: ("machine", "event", "task", "run", "actor", "assignee", "time"),
     run_events.STREAM: ("time", "phase", "workflow", "run_id", "status", "step", "depends"),
+    lane_events.STREAM: lane_events.FIELDS,
 }
 PERSON = ("actor", "assignee")
 #: How many of the next entries the status lists; the rest are only counted as "more".
@@ -75,6 +76,8 @@ class OptIn:
 #: How long one POST to the hub may take, and how long the forwarder rests when it has caught up.
 TIMEOUT = 10.0
 DEFAULT_INTERVAL = 5.0
+#: How often the forwarder sends every task's current lane again, besides once at its start.
+SNAPSHOT_EVERY = 24 * 3600.0
 
 Send = Callable[[str, str, bytes], tuple[int, dict[str, Any]]]
 
@@ -97,7 +100,7 @@ def post(url: str, token: str, body: bytes) -> tuple[int, dict[str, Any]]:
 
 
 class Forwarder:
-    """Sends this IC's machine and runs events to a hub, a batch at a time, in log order.
+    """Sends this IC's machine, runs and lane events to a hub, a batch at a time, in log order.
 
     It is a reader of the event log, not a Redis consumer: its cursor (the log id of the last entry the hub
     acknowledged) lives in the IC's store under `forward:<hub url>`, and moves only after the hub answers 200. A
@@ -129,6 +132,7 @@ class Forwarder:
         self._send = send
         self._refused = False  # the hub took no opt-in; send names-free until the instance opts out and in again
         self._clock = clock
+        self._snapshot_at: float | None = None  # when the hub last took this process's snapshot; None: not yet
         self.last_sent: float | None = None  # when the hub last acknowledged a batch, in this process
         self.problem: str | None = None  # why the last batch did not go through; None once one does
 
@@ -136,7 +140,7 @@ class Forwarder:
         """Send the next batch: how many entries the log held past the cursor, or None when it did not go through.
 
         The opt-in is read here, once per batch. Entries of streams that are not forwarded move the cursor and cost
-        no request.
+        no request. A lane snapshot goes once the log is sent, when this process has not sent one or the last was a day ago.
         """
         opted = self.opt_in.get()
         if not opted:
@@ -148,36 +152,55 @@ class Forwarder:
         if not entries:
             if tail.cursor != after:
                 self.store.save_cursor(self.name, tail.cursor)
+            if self._snapshot_due() and not self._snapshot(sent_opt_in):
+                return None
             return 0
-        body = json.dumps(
-            {
-                "opt_in": sent_opt_in,
-                "events": [
-                    {
-                        "event_id": e.event_id,
-                        "stream": e.stream,
-                        "fields": project(e.stream, e.fields, opt_in=sent_opt_in),
-                    }
-                    for e in entries
-                ],
-            }
-        ).encode()
+        batch = [
+            {"event_id": e.event_id, "stream": e.stream, "fields": project(e.stream, e.fields, opt_in=sent_opt_in)}
+            for e in entries
+        ]
+        if not self._deliver(batch, sent_opt_in):
+            return None
+        self.store.save_cursor(self.name, tail.cursor)
+        return len(entries)
+
+    def _snapshot_due(self) -> bool:
+        return self._snapshot_at is None or self._clock() - self._snapshot_at >= SNAPSHOT_EVERY
+
+    def _snapshot(self, sent_opt_in: bool) -> bool:
+        """Send every task's current lane as lane entries under the ids of the changes that put it there, a batch at a
+        time: True when the hub took them all. The hub folds an id it holds, or a lane the task is already in, as no
+        change, so a snapshot sent again adds no lane-change row. It goes only once the log is sent, so a lane
+        change the hub lacks never arrives after a newer one."""
+        lanes = self.store.current_lanes()
+        for start in range(0, len(lanes), self.forward.batch):
+            batch = [
+                {"event_id": event_id, "stream": lane_events.STREAM, "fields": {"task": task, "lane": lane, "time": at}}
+                for event_id, task, lane, at in lanes[start : start + self.forward.batch]
+            ]
+            if not self._deliver(batch, sent_opt_in):
+                return False
+        self._snapshot_at = self._clock()
+        return True
+
+    def _deliver(self, batch: list[dict[str, Any]], sent_opt_in: bool) -> bool:
+        """POST `batch` to the hub: True when it answered 200, else why not goes to `problem` and the log."""
+        body = json.dumps({"opt_in": sent_opt_in, "events": batch}).encode()
         try:
             status, answer = self._send(self.url, self.token, body)
         except OSError as exc:
             logger.warning("Forwarder: %s unreachable, retrying: %s", self.url, exc)
             self.problem = f"hub unreachable: {exc}"
-            return None
+            return False
         if status != 200:
             if status == 403 and sent_opt_in:
                 self._refused = True
             logger.warning("Forwarder: %s answered %s, retrying: %s", self.url, status, answer.get("error", ""))
             self.problem = f"hub answered {status}" + (f": {answer['error']}" if answer.get("error") else "")
-            return None
-        self.store.save_cursor(self.name, tail.cursor)
+            return False
         self.last_sent = self._clock()
         self.problem = None
-        return len(entries)
+        return True
 
     def status(self) -> dict[str, Any]:
         """What the next batch would send and why, for the instance's own page: the JSON body of `GET /api/forwarding`.

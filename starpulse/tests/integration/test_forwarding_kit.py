@@ -15,17 +15,18 @@ from typing import Any
 
 import pytest
 
-from starpulse import forward
+from starpulse import forward, lane_events
 from starpulse.adapter_kit import serve, url
+from starpulse.board_feed import BoardFeed
+from starpulse.contracts import BoardTask
 from starpulse.forward import OPT_IN_FILE, Forwarder, OptIn, post
 from starpulse.ingest import ForwardIngest
 from starpulse.settings.config import Forward
-from starpulse.store import events
 from starpulse.store.event_log import EventLog, Tail
 from starpulse.store.history import HistoryStore
 
 TOKEN = "ana-secret"
-ACTOR, ASSIGNEE = "ana-the-person", "bob-the-assignee"
+ASSIGNEE = "bob-the-assignee"
 
 
 class Killed(BaseException):
@@ -61,15 +62,15 @@ class Kit:
         self.ic_url = f"sqlite:///{tmp_path / 'ic.sqlite'}"
         self.ic_log = EventLog(self.ic_url)
         self.hub_log = hub_log
+        self.feed = BoardFeed(clock=lambda: 1.0)
+        self.feed.record_lanes(HistoryStore(self.ic_url, {}), self.ic_log)
         self.forward = Forward(hub_url, "HUB_TOKEN", 3)
         self.wire = Wire()
         self.opt_in = OptIn(tmp_path / OPT_IN_FILE)
 
     def move(self, task: str) -> None:
-        self.ic_log.append(
-            events.STREAM,
-            {"machine": "board", "event": "MOVED", "task": task, "actor": ACTOR, "assignee": ASSIGNEE, "time": 1.0},
-        )
+        """A real lane change: the Board feed places the task and appends the entry beside the history's row."""
+        self.feed.put(BoardTask(id=task, team="demo", title=f"title of {task}", lane="in_progress", assignee=ASSIGNEE))
 
     def forwarder(self, token: str = TOKEN) -> Forwarder:
         """A forwarder as a restarted process builds it: a new store connection, nothing remembered."""
@@ -84,10 +85,10 @@ class Kit:
             pass
 
     def at_the_ic(self) -> list[str]:
-        return [e.event_id for e in Tail(self.ic_log, events.STREAM).poll()]
+        return [e.event_id for e in Tail(self.ic_log, lane_events.STREAM).poll()]
 
     def at_the_hub(self) -> list[Any]:
-        return Tail(self.hub_log, events.STREAM).poll()
+        return Tail(self.hub_log, lane_events.STREAM).poll()
 
 
 def _kit(tmp_path: Path, hub_log: EventLog, **ingest: Any) -> Iterator[Kit]:
@@ -160,9 +161,9 @@ def test_the_bytes_a_non_opted_instance_sends_hold_no_name_and_no_assignee(kit: 
 
     assert kit.wire.bodies
     for body in kit.wire.bodies:
-        assert ACTOR.encode() not in body and ASSIGNEE.encode() not in body
-        assert all("actor" not in e["fields"] and "assignee" not in e["fields"] for e in json.loads(body)["events"])
-    assert all("actor" not in e.fields and "assignee" not in e.fields for e in kit.at_the_hub())
+        assert ASSIGNEE.encode() not in body
+        assert all("assignee" not in e["fields"] for e in json.loads(body)["events"])
+    assert all("assignee" not in e.fields for e in kit.at_the_hub())
 
 
 def test_an_opted_in_instance_sends_the_names_and_the_hub_keeps_them(kit: Kit) -> None:
@@ -172,7 +173,7 @@ def test_an_opted_in_instance_sends_the_names_and_the_hub_keeps_them(kit: Kit) -
     kit.drain(kit.forwarder())
 
     [stored] = kit.at_the_hub()
-    assert (stored.fields["actor"], stored.fields["assignee"]) == (ACTOR, ASSIGNEE)
+    assert stored.fields["assignee"] == ASSIGNEE
 
 
 def test_an_opt_out_applies_while_the_hub_is_unreachable(kit: Kit) -> None:
@@ -188,9 +189,8 @@ def test_an_opt_out_applies_while_the_hub_is_unreachable(kit: Kit) -> None:
 
     kit.wire.down = False
     kit.drain(forwarder)
-    (body,) = kit.wire.bodies
-    assert ACTOR.encode() not in body and ASSIGNEE.encode() not in body
-    assert all("actor" not in e.fields for e in kit.at_the_hub())
+    assert all(ASSIGNEE.encode() not in body for body in kit.wire.bodies)
+    assert all("assignee" not in e.fields for e in kit.at_the_hub())
 
 
 def test_an_opt_out_made_in_the_panel_stops_the_names_in_the_next_batch_with_the_hub_down(
@@ -212,21 +212,20 @@ def test_an_opt_out_made_in_the_panel_stops_the_names_in_the_next_batch_with_the
 
     with serve(tmp_path / "ic", forwarding=forwarder) as ic:
         listed = panel(ic, True)
-        assert listed["names"] is True and listed["next"][0]["fields"]["actor"] == ACTOR
+        assert listed["names"] is True and listed["next"][0]["fields"]["assignee"] == ASSIGNEE
         kit.wire.down = True
         assert forwarder.step() is None  # named, and refused by the network
 
         reached = kit.wire.attempts
         listed = panel(ic, False)
         assert kit.wire.attempts == reached  # the toggle needed no hub
-        assert listed["names"] is False and "actor" not in listed["next"][0]["fields"]
+        assert listed["names"] is False and "assignee" not in listed["next"][0]["fields"]
         assert "unreachable" in listed["problem"]
 
     kit.wire.down = False
     kit.drain(forwarder)
-    (body,) = kit.wire.bodies
-    assert ACTOR.encode() not in body and ASSIGNEE.encode() not in body
-    assert all("actor" not in e.fields and "assignee" not in e.fields for e in kit.at_the_hub())
+    assert all(ASSIGNEE.encode() not in body for body in kit.wire.bodies)
+    assert all("assignee" not in e.fields for e in kit.at_the_hub())
 
 
 def test_a_wrong_or_revoked_token_answers_401_and_writes_nothing(kit: Kit) -> None:
@@ -253,4 +252,4 @@ def test_a_hub_for_aggregates_only_refuses_an_opt_in_and_takes_the_batch_without
     assert forwarder.step() == 1
     assert kit.wire.statuses == [403, 200]
     [stored] = kit.at_the_hub()
-    assert "actor" not in stored.fields and "assignee" not in stored.fields
+    assert "assignee" not in stored.fields
