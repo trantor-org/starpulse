@@ -74,7 +74,7 @@ export function ForwardingBody({ view, clock, onToggle }: { view: ForwardingView
         <div className="row fw-wide"><div className="refusal">
           <div className="k">{current.refused ? "the hub refused names" : "the hub did not take the last batch"}</div>
           {current.problem}
-          {current.refused && " Names stay on this instance until the hub accepts them."}
+          {current.refused && <div>Names stay on this instance until the hub accepts them.</div>}
         </div></div>
       )}
       <div className="row fw-block"><div><div className="lb">What is sent</div></div><Contract status={current} /></div>

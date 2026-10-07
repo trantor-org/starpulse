@@ -56,6 +56,7 @@ describe("the Forwarding card", () => {
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain("the hub refused names");
     expect(html).toContain("Names stay on this instance");
+    expect(html).toContain("<div>Names stay on this instance until the hub accepts them.</div>");
     expect(html).not.toContain("alice");
   });
 
