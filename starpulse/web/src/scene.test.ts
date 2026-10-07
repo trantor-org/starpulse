@@ -944,14 +944,13 @@ describe("a fold's level", () => {
       return build({ ...sk, scale }, fold(["review", "done"], "MERGED"));
     };
 
-    it("hang newest first under the cue bus, one cell in each template's column", () => {
+    it("hang a viewport under the cue bus, whole rows tall, and one cell template in each template's column", () => {
       const scene = merged(), l = scene.fold!.ledger!, g = l.grid!;
 
-      expect(g.rows.map((r) => r.row.key)).toEqual(["c", "b", "a", "z"]);
-      expect(g.rows[0].y).toBeGreaterThan(l.bus);
-      g.rows.forEach((r, i) => i && expect(r.y - g.rows[i - 1].y).toBeCloseTo(g.rh));
-      expect(g.rows[0].cells.map((c) => c.dag)).toEqual(l.cols.map((c) => c.dag));
-      g.rows[0].cells.forEach((c, i) => expect([c.gx > l.cols[i].x0, c.tx < l.cols[i].x1, c.room > 0]).toEqual([true, true, true]));
+      expect(g.top).toBeGreaterThan(l.bus);
+      expect([g.view / g.rh, g.view % g.rh]).toEqual([rows.length + 1, 0]);
+      expect(g.cells.map((c) => c.dag)).toEqual(l.cols.map((c) => c.dag));
+      g.cells.forEach((c, i) => expect([c.gx > l.cols[i].x0, c.tx < l.cols[i].x1, c.room > 0]).toEqual([true, true, true]));
     });
 
     it("keep the left gutter wide enough for a row's time, task and title before the spine", () => {
@@ -962,20 +961,16 @@ describe("a fold's level", () => {
       expect(bare.grid).toBeUndefined();
     });
 
-    it("put another repository's merge on the cross lane, linked to the pin-bump row that applies it when that row is shown", () => {
-      const g = merged().fold!.ledger!.grid!, by = Object.fromEntries(g.rows.map((r) => [r.row.key, r]));
-
-      expect(g.rows.map((r) => r.cross)).toEqual([false, true, true, true]);
-      expect(g.lane).toBeGreaterThan(merged().fold!.ledger!.J.x);
-      expect([by.b.bump, by.a.bump, by.z.bump, by.c.bump]).toEqual(["c", null, null, null]);
+    it("put the cross lane just past the spine", () => {
+      expect(merged().fold!.ledger!.grid!.lane).toBeGreaterThan(merged().fold!.ledger!.J.x);
     });
 
-    it("shows only the rows that fit the level and grows the fit box to hold them", () => {
+    it("size the viewport to the rows that fit the level, however many are loaded, and grow the fit box to hold it", () => {
       const many = Array.from({ length: 80 }, (_, i) => row(`m${i}`, 1000 - i)), scene = merged(many), g = scene.fold!.ledger!.grid!;
 
-      expect(g.rows.length).toBeLessThan(80);
-      expect(g.rows.length).toBeGreaterThanOrEqual(1);
-      expect(g.rows.at(-1)!.y + g.rh / 2).toBeLessThanOrEqual(scene.box![3]);
+      expect(g.view / g.rh).toBeLessThan(80);
+      expect(g.view / g.rh).toBeGreaterThanOrEqual(1);
+      expect(g.top + g.view + g.rh / 2).toBeLessThanOrEqual(scene.box![3]);
       expect(scene.box![3]).toBeLessThanOrEqual(scene.h);
     });
 

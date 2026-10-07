@@ -39,6 +39,14 @@ describe("demoLedger", () => {
     expect(rows.every((r) => markOf(r.runs["apply-on-merge"]) === "keyed")).toBe(true);
   });
 
+  it("holds more than three pages of merges, every one within the last 24 hours, so the Ledger has rows to scroll to and load", () => {
+    const rows = demoLedger(snap(), NOW, "live");
+
+    expect(rows.length).toBeGreaterThan(60);
+    expect(rows.at(-1)!.at).toBeGreaterThan(NOW - 86_400);
+    expect(new Set(rows.map((r) => r.key)).size).toBe(rows.length);
+  });
+
   it("pairs every run by time in the infer scenario, some with another merge in their window", () => {
     const marks = demoLedger(snap(), NOW, "infer").flatMap((r) => Object.values(r.runs).map(markOf));
 

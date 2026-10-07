@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { build } from "./scene";
 import { merge, Moves } from "./sky";
-import { AMBER, CROSS, drawRows, type Ink, type RowsFrame } from "./ledgerRows";
+import { AMBER, CROSS, drawRows, type Box, type Ink, type RowsFrame } from "./ledgerRows";
+import { newScroll, place, take, type Scroll } from "./ledgerScroll";
 import { optionalSteps } from "./ledger";
 import { ledgerLevel } from "./levels";
 import type { Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "./types";
@@ -18,20 +19,36 @@ const cues: Cue[] = [{ dag: "apply-on-merge", event: "MERGED", state: "done", on
 const run = (over: Partial<LedgerRun> = {}): LedgerRun => ({ runId: "r", status: "succeeded", startedAt: iso(1000), finishedAt: iso(1042), steps: { build: "succeeded", apply: "succeeded" }, step: "", inferred: false, ambiguous: 0, ...over });
 const row = (key: string, at: number, over: Partial<LedgerRow> = {}): LedgerRow => ({ key, at, tasks: [`TASK-${at}`], sha: key.padEnd(10, "0"), pr: { repo: "trantor", number: at, url: "u" }, runs: {}, fails: {}, pinned: false, ...over });
 
-/** What the recorder saw: every text with its colour, every stroke with its colour and dash, and the circles and pulses. */
+/** What the recorder saw: every text with its colour and whether it was drawn under the clip, every stroke with its colour and dash, and the circles and pulses. */
 function recorder() {
-  const texts: { s: string; x: number; y: number; col: string }[] = [], strokes: { pts: { x: number; y: number }[]; col: string; dash?: number[] }[] = [];
-  const circles: { x: number; y: number; col: string }[] = [], pulses: { x: number; y: number; age: number }[] = [];
+  const texts: { s: string; x: number; y: number; col: string; clipped: boolean }[] = [], strokes: { pts: { x: number; y: number }[]; col: string; dash?: number[] }[] = [];
+  const circles: { x: number; y: number; col: string }[] = [], pulses: { x: number; y: number; age: number }[] = [], clips: Box[] = [], rects: Box[] = [];
+  let clipped = false;
   const ink: Ink = {
-    text: (s, x, y, _size, col) => void texts.push({ s, x, y, col }),
+    text: (s, x, y, _size, col) => void texts.push({ s, x, y, col, clipped }),
     fit: (s) => s,
+    width: (s) => s.length * 6,
     stroke: (pts, col, _w, dash) => void strokes.push({ pts, col, dash }),
     circle: (x, y, _r, col) => void circles.push({ x, y, col }),
     dot: () => {},
+    arc: () => {},
+    rect: (b) => void rects.push(b),
     pulse: (x, y, _r, age) => void pulses.push({ x, y, age }),
+    clip: (b, draw) => {
+      clips.push(b);
+      clipped = true;
+      draw();
+      clipped = false;
+    },
   };
-  return { ink, texts, strokes, circles, pulses };
+  return { ink, texts, strokes, circles, pulses, clips, rects };
 }
+
+/** `rows` loaded into a scroll under the level's viewport, `y` rows' worth down it. */
+const scrolled = (led: RowsFrame["led"], rows: LedgerRow[], y = 0, more?: boolean): Scroll => {
+  const sc = take(newScroll(), rows, led.grid!);
+  return { ...sc, y, ty: y, ...(more === undefined ? {} : { more }) };
+};
 
 function frame(rows: LedgerRow[], over: Partial<RowsFrame> = {}): RowsFrame {
   const snap: Snapshot = {
@@ -44,7 +61,7 @@ function frame(rows: LedgerRow[], over: Partial<RowsFrame> = {}): RowsFrame {
   const src = { flows: [S.flows.board], cues: S.cues }, level = ledgerLevel(src, "MERGED")!;
   const scene = build({ S, moves, W: 1920, H: 1080, T: 2000 }, level), led = scene.fold!.ledger!;
   return {
-    led, glyphs: Object.fromEntries(Object.entries(scene.stars).map(([n, s]) => [n, s.glyph])),
+    led, scroll: scrolled(led, rows), glyphs: Object.fromEntries(Object.entries(scene.stars).map(([n, s]) => [n, s.glyph])),
     ctx: { event: "MERGED", now: 1100, hm: (s) => `t${s % 1000}`, by: (k) => rows.find((r) => r.key === k) },
     optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(rows, c.dag)])),
     px: (n) => n, palette: PALETTE, clock: 5, age: () => undefined, ...over,
@@ -93,10 +110,10 @@ describe("drawRows", () => {
     drawRows(r.ink, f);
 
     const g = f.led.grid!, lane = g.lane;
-    expect(r.circles.some((c) => c.x === lane && c.y === g.rows[1].y && c.col.includes("192,132,252"))).toBe(true);
+    expect(r.circles.some((c) => c.x === lane && c.y === place(f.scroll, g)[1].y && c.col.includes("192,132,252"))).toBe(true);
     expect(r.texts.find((t) => t.s === "applied by its pin bump bmp0000")).toBeDefined();
-    const link = r.strokes.find((s) => s.dash && s.pts.length === 2 && s.pts[0].x === lane && s.pts[0].y === g.rows[1].y)!;
-    expect(link.pts[1].y).toBe(g.rows[0].y);
+    const link = r.strokes.find((s) => s.dash && s.pts.length === 2 && s.pts[0].x === lane && s.pts[0].y === place(f.scroll, g)[1].y)!;
+    expect(link.pts[1].y).toBe(place(f.scroll, g)[0].y);
     expect(link.col).toContain("192,132,252");
     expect(r.texts.some((t) => t.s === "pin bump")).toBe(true);
     expect(CROSS).toBe("#c084fc");
@@ -119,9 +136,9 @@ describe("drawRows", () => {
     expect(outlines()).toHaveLength(0);
 
     drawRows(r.ink, frame(rows, { lit: "bbb" }));
-    const [box] = outlines(), g = frame(rows).led.grid!;
+    const [box] = outlines(), f = frame(rows), g = f.led.grid!, y = place(f.scroll, g)[1].y;
     expect(outlines()).toHaveLength(1);
-    expect([box.pts[0].y, box.pts[2].y]).toEqual([g.rows[1].y - g.rh / 2, g.rows[1].y + g.rh / 2]);
+    expect([box.pts[0].y, box.pts[2].y]).toEqual([y - g.rh / 2, y + g.rh / 2]);
   });
 
   it("rings a row that just arrived, fades it in and lowers it from a row above until it settles", () => {
@@ -136,5 +153,72 @@ describe("drawRows", () => {
     expect(settled.pulses.length).toBe(0);
     expect(a.y).toBeLessThan(b.y);
     expect(alpha(a.col)).toBeLessThan(alpha(b.col));
+  });
+
+  describe("scrolled", () => {
+    const many = Array.from({ length: 500 }, (_, i) => row(`m${i}`, 100_000 - i * 60));
+    const labels = (r: ReturnType<typeof recorder>) => r.texts.filter((t) => /^t\d+ {2}TASK-/.test(t.s));
+
+    it("draws only the rows inside the viewport and one past each edge, out of five hundred, all under the clip", () => {
+      const r = recorder(), f = frame(many), g = f.led.grid!;
+      f.scroll = scrolled(f.led, many, 100 * g.rh + 10);
+
+      drawRows(r.ink, f);
+
+      const shown = labels(r), most = g.view / g.rh + 3;
+      expect(shown.length).toBeGreaterThanOrEqual(g.view / g.rh);
+      expect(shown.length).toBeLessThanOrEqual(most);
+      expect(shown.some((t) => t.s.includes(`TASK-${100_000 - 100 * 60}`))).toBe(true);
+      expect(shown.some((t) => t.s.includes("TASK-100000"))).toBe(false);
+      expect(shown.every((t) => t.clipped)).toBe(true);
+      expect(r.clips).toEqual([{ x0: expect.any(Number), y0: g.top, x1: expect.any(Number), y1: g.top + g.view }]);
+    });
+
+    it("writes the loading row under the last loaded merge while older ones remain", () => {
+      const r = recorder(), f = frame(many.slice(0, 20)), g = f.led.grid!;
+      f.scroll = scrolled(f.led, many.slice(0, 20), 21 * g.rh - g.view, true);
+
+      drawRows(r.ink, f);
+
+      expect(r.texts.find((t) => t.s === "loading older merges · 20 at a time")).toMatchObject({ clipped: true });
+      expect(r.texts.some((t) => t.s.startsWith("oldest merge"))).toBe(false);
+    });
+
+    it("writes the oldest-merge row, with the rows held, once none remain", () => {
+      const r = recorder(), f = frame(many.slice(0, 5));
+
+      drawRows(r.ink, f);
+
+      expect(r.texts.find((t) => t.s === "oldest merge in the last 24 h · 5 rows")).toBeDefined();
+      expect(r.texts.some((t) => t.s.startsWith("loading"))).toBe(false);
+    });
+
+    it("draws a thumb beside the rows and gives its box, and none when every row fits", () => {
+      const f = frame(many.slice(0, 40)), g = f.led.grid!;
+      f.scroll = scrolled(f.led, many.slice(0, 40), 100, true);
+
+      const hits = drawRows(recorder().ink, f);
+
+      expect(hits.thumb).toMatchObject({ y0: expect.any(Number), y1: expect.any(Number) });
+      expect(hits.thumb!.y0).toBeGreaterThanOrEqual(g.top);
+      expect(hits.thumb!.y1).toBeLessThanOrEqual(g.top + g.view);
+      expect(hits.thumb!.x0).toBeGreaterThan(f.led.cols.at(-1)!.x0);
+      expect(drawRows(recorder().ink, frame(many.slice(0, 3))).thumb).toBeNull();
+    });
+
+    it("shows the chip back to the newest once scrolled, counting merges that landed since, and none at the top", () => {
+      const f = frame(many.slice(0, 40)), up = recorder(), down = recorder(), fresh = recorder();
+      expect(drawRows(up.ink, f).chip).toBeNull();
+      f.scroll = scrolled(f.led, many.slice(0, 40), 200, true);
+
+      const hits = drawRows(down.ink, f);
+      f.scroll = { ...f.scroll, fresh: 2 };
+      drawRows(fresh.ink, f);
+
+      expect(down.texts.find((t) => t.s.startsWith("↑"))!.s).toBe("↑ back to newest");
+      expect(fresh.texts.find((t) => t.s.startsWith("↑"))!.s).toBe("↑ 2 new merges");
+      expect(hits.chip!.x1 - hits.chip!.x0).toBeGreaterThan(0);
+      expect(up.texts.some((t) => t.s.startsWith("↑"))).toBe(false);
+    });
   });
 });

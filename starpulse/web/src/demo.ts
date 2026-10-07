@@ -2,10 +2,11 @@
 // demo page (`starpulse.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
 import { demoLevel } from "./demoLevel";
 import { arriveMerge, demoContract, demoLedger, scenarioOf } from "./demoLedger";
+import { PAGE } from "./ledgerScroll";
 import { MERGE_EVENT } from "./ledger";
 import { columnsOf } from "./kanban";
 import type { LaneStep } from "./trace";
-import type { Machine, RawAgent, Snapshot } from "./types";
+import type { LedgerRow, Machine, RawAgent, Snapshot } from "./types";
 import type { TaskRecord } from "./taskView";
 
 let demoN = 0;
@@ -117,6 +118,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
   "/api/forwarding": (server, _path, _query, init) => server.forwarding(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
+  "/api/merges": (server, _path, query) => json(server.mergesBefore(query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
   "/api/level": (server, _path, query) => {
     const { status, body } = demoLevel(server.snapshot.now, Number(query.get("hours") ?? 168), new URLSearchParams(globalThis.location?.search ?? ""));
     return json(body, status);
@@ -164,6 +166,8 @@ export class DemoServer {
   lanes: Record<string, LaneStep[]>;
   records: Record<string, TaskRecord>;
   private created = new Set<string>();
+  /** Every merge of the demo's day, newest first: the snapshot holds only the newest page, `/api/merges` serves the rest. */
+  private day: LedgerRow[] = [];
   private optIn = false;
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -178,7 +182,8 @@ export class DemoServer {
     this.lanes = history ?? {};
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
     const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
-    this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? { ledgers: { [MERGE_EVENT]: ledger } } : {}), capabilities: { edit: true, archive: true, create: true } });
+    this.day = ledger;
+    this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? { ledgers: { [MERGE_EVENT]: ledger.slice(0, PAGE) } } : {}), capabilities: { edit: true, archive: true, create: true } });
   }
 
   subscribe(fn: (s: Snapshot) => void): () => void {
@@ -203,11 +208,19 @@ export class DemoServer {
 
   /** A merge lands on the Ledger: the runs in flight finish and the new merge's writer starts. A demo with no merge Ledger has none to land. */
   land() {
-    const rows = this.snapshot.ledgers?.[MERGE_EVENT];
-    if (!rows) return;
+    if (!this.snapshot.ledgers?.[MERGE_EVENT]) return;
     const next = structuredClone(this.snapshot);
-    next.ledgers = { ...next.ledgers, [MERGE_EVENT]: arriveMerge(next, rows, this.clock()) };
+    this.day = arriveMerge(next, this.day, this.clock());
+    next.ledgers = { ...next.ledgers, [MERGE_EVENT]: this.day.slice(0, PAGE) };
     this.publish(next);
+  }
+
+  /** `GET /api/merges`: up to `limit` merges older than `before` (none: the newest), and whether older ones remain. Merges of one second come whole, as the server's do. */
+  mergesBefore(before: number | undefined, limit: number): { merges: LedgerRow[]; more: boolean } {
+    const older = this.day.filter((r) => before === undefined || r.at < before);
+    let end = Math.min(limit, older.length);
+    while (end > 0 && end < older.length && older[end].at === older[end - 1].at) end++;
+    return { merges: older.slice(0, end), more: end < older.length };
   }
 
   /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains.

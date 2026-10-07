@@ -3,6 +3,7 @@ import { build } from "./scene";
 import { merge, Moves } from "./sky";
 import { optionalSteps } from "./ledger";
 import { ledgerLevel } from "./levels";
+import { newScroll, place, take } from "./ledgerScroll";
 import { bannerOf, ledgerHit, mergePanel, type DoctorBox, type PanelCtx } from "./ledgerPanel";
 import type { ContractReport, Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "./types";
 
@@ -37,15 +38,15 @@ function ledger(rows: LedgerRow[]) {
     optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(rows, c.dag)])), palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" },
     now: 2000, hm: (s) => `t${s % 1000}`, by: (k) => byKey.get(k), task: (id) => id,
   };
-  return { scene, led, ctx };
+  return { scene, led, ctx, shown: place(take(newScroll(), rows, led.grid!), led.grid!) };
 }
 const px = (n: number) => n;
 
 describe("clicking a merge row on the Ledger", () => {
   it("lands on the row under the pointer, and its panel lists each cued run with its step states and failure text", () => {
-    const { scene, led, ctx } = ledger(ROWS), at = led.grid!.rows[0];
+    const { scene, led, ctx, shown } = ledger(ROWS), at = shown[0];
 
-    const hit = ledgerHit(scene, null, led.J.x + 40, at.y, px);
+    const hit = ledgerHit(scene, null, led.J.x + 40, at.y, px, shown);
 
     expect(hit).toEqual({ kind: "lrow", o: ROWS[0] });
     const html = mergePanel((hit as { o: LedgerRow }).o, ctx);
@@ -56,17 +57,17 @@ describe("clicking a merge row on the Ledger", () => {
   });
 
   it("lands on the second row for a point at its height, and on nothing between the rows' gutter and the margin", () => {
-    const { scene, led } = ledger(ROWS), g = led.grid!;
+    const { scene, led, shown } = ledger(ROWS);
 
-    expect(ledgerHit(scene, null, led.J.x + 40, g.rows[1].y, px)).toEqual({ kind: "lrow", o: ROWS[1] });
-    expect(ledgerHit(scene, null, led.cols[led.cols.length - 1].x1 + 200, g.rows[1].y, px)).toBeNull();
+    expect(ledgerHit(scene, null, led.J.x + 40, shown[1].y, px, shown)).toEqual({ kind: "lrow", o: ROWS[1] });
+    expect(ledgerHit(scene, null, led.cols[led.cols.length - 1].x1 + 200, shown[1].y, px, shown)).toBeNull();
   });
 
   it("lands on a template's step and the junction before the rows", () => {
-    const { scene, led } = ledger(ROWS), star = scene.stars["apply-on-merge"], node = star.glyph.nodes[0];
+    const { scene, led, shown } = ledger(ROWS), star = scene.stars["apply-on-merge"], node = star.glyph.nodes[0];
 
-    expect(ledgerHit(scene, null, star.x + node.x, star.y + node.y, px)).toEqual({ kind: "lstep", o: node });
-    expect(ledgerHit(scene, null, led.J.x, led.J.y, px)).toEqual({ kind: "ljunction", o: led });
+    expect(ledgerHit(scene, null, star.x + node.x, star.y + node.y, px, shown)).toEqual({ kind: "lstep", o: node });
+    expect(ledgerHit(scene, null, led.J.x, led.J.y, px, shown)).toEqual({ kind: "ljunction", o: led });
   });
 });
 
@@ -74,10 +75,10 @@ describe("the doctor banner on the Ledger", () => {
   const FAIL: ContractReport = { ok: false, checks: [{ check: "cue:apply-on-merge", status: "fail", reason: "apply-on-merge declares no parameter for [runs.commit] after=AFTER" }] };
 
   it("states a failing contract report, and a point on it lands on the report", () => {
-    const { scene, led } = ledger(ROWS), box: DoctorBox = { x0: led.J.x - 300, y0: led.bus - 20, x1: led.J.x - 16, y1: led.bus + 20, report: FAIL };
+    const { scene, led, shown } = ledger(ROWS), box: DoctorBox = { x0: led.J.x - 300, y0: led.bus - 20, x1: led.J.x - 16, y1: led.bus + 20, report: FAIL };
 
     expect(bannerOf(FAIL)).toMatchObject({ tone: "fail", head: "✕ doctor · 1 contract check fails", sub: "cue:apply-on-merge" });
-    expect(ledgerHit(scene, box, led.J.x - 100, led.bus, px)).toEqual({ kind: "ldoctor", o: FAIL });
-    expect(ledgerHit(scene, null, led.J.x - 100, led.bus, px)).toBeNull();
+    expect(ledgerHit(scene, box, led.J.x - 100, led.bus, px, shown)).toEqual({ kind: "ldoctor", o: FAIL });
+    expect(ledgerHit(scene, null, led.J.x - 100, led.bus, px, shown)).toBeNull();
   });
 });

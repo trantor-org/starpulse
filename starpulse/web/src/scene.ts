@@ -7,8 +7,9 @@ import { ledgerTop, sizes as ledgerSizes, type LedgerTop } from "./machineLedger
 import { laneRows, type LaneNode, type LaneRow } from "./machineLanes";
 import { rankRows } from "./machineRows";
 import { ledgerOf, type Ledger, type Tie } from "./ledger";
+import type { Viewport } from "./ledgerScroll";
 import { countText, daily, HOUR, hosted, stateCount, type Move, type Moves, type Sky } from "./sky";
-import type { Dag, DagStep, LedgerRow, RawAgent, Transition, Writer } from "./types";
+import type { Dag, DagStep, RawAgent, Transition, Writer } from "./types";
 
 export const TAU = Math.PI * 2;
 export const BOARD_COLOR: Record<string, string> = { new: "#94a3b8", ready: "#60a5fa", waiting: "#fbbf24", blocked: "#fb7185", in_progress: "#a78bfa",
@@ -256,24 +257,16 @@ export interface GridCell {
   tx: number;
   room: number;
 }
-/** A merge row: where it sits, whether it is another repository's merge (on the cross lane), and the shown row that pin-bumps it, if any. */
-export interface GridRow {
-  row: LedgerRow;
-  y: number;
-  cross: boolean;
-  bump: string | null;
-  cells: GridCell[];
-}
-/** The merge rows under a Ledger's cue bus: newest first, each `rh` tall, the label gutter before the spine and the cross lane just past it. */
-export interface LedgerGrid {
-  rh: number;
+/** The merge rows under a Ledger's cue bus: a viewport `view` tall from `top`, `rh` a row, the label gutter before the spine and the cross lane just past it. The rows scroll through it, drawn from one cell template. */
+export interface LedgerGrid extends Viewport {
   /** The lane another repository's merges sit on. */
   lane: number;
   /** Where a row's time, task and title are written, and how wide that may run. */
   label: { x: number; w: number };
   /** A mini step's radius. */
   nr: number;
-  rows: GridRow[];
+  /** Each template's cell, the same in every row. */
+  cells: GridCell[];
 }
 /** A Ledger's frame: the junction every rail leaves from, the bus the cues hang from, and a caption cell for each DAG's template. */
 export interface LedgerView extends Pick<Ledger, "event" | "rows"> {
@@ -1209,19 +1202,16 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     scene.groups.push({ name: "", head: false, lx: 0, ly: 0, stars });
     let bottom = bus + 40 * F;
     if (merges.length) {
-      // a row is one merge: its label in the gutter, then each template's cell, its mini step graph beside the run's status line. Only the newest rows that
-      // fit are laid out, so the fit box never outgrows the level; scrolling older ones in is the Ledger's scroll
-      const rh = 34 * F, nr = 3 * F, top = bus + 26 * F, fit = Math.max(1, Math.floor((h - top - 24 * F) / rh)), shown = merges.slice(0, fit);
+      // a row is one merge: its label in the gutter, then each template's cell, its mini step graph beside the run's status line. The viewport holds the rows
+      // that fit the level (and a footer row), so the fit box never outgrows it; the rows beyond scroll through it (ledgerScroll)
+      const rh = 34 * F, nr = 3 * F, top = bus + 26 * F, fit = Math.max(1, Math.floor((h - top - 24 * F) / rh)), view = Math.min(fit, merges.length + 1) * rh;
       const ms = cols.map((c, i) => Math.min(0.6, (0.38 * (c.x1 - c.x0)) / Math.max(1, gl[i].w), (0.72 * rh) / Math.max(1, gl[i].h + 2 * nr)));
-      const rows = shown.map((row, r): GridRow => ({
-        row, y: top + rh / 2 + r * rh, cross: row.appliedBy !== undefined, bump: row.appliedBy && shown.some((n) => n.key === row.appliedBy) ? row.appliedBy : null,
-        cells: cols.map((c, i) => {
-          const gx = c.x0 + 14 * F + (gl[i].w * ms[i]) / 2, tx = Math.max(gx + (gl[i].w * ms[i]) / 2 + nr + 12 * F, c.x0 + 30 * F);
-          return { dag: c.dag, gx, ms: ms[i], tx, room: c.x1 - tx - 10 * F };
-        }),
-      }));
-      f.ledger.grid = { rh, lane: sx + 22 * F, label: { x: 16 * F, w: sx - 16 * F - 30 * F }, nr, rows };
-      bottom = top + shown.length * rh + 20 * F;
+      const cells = cols.map((c, i): GridCell => {
+        const gx = c.x0 + 14 * F + (gl[i].w * ms[i]) / 2, tx = Math.max(gx + (gl[i].w * ms[i]) / 2 + nr + 12 * F, c.x0 + 30 * F);
+        return { dag: c.dag, gx, ms: ms[i], tx, room: c.x1 - tx - 10 * F };
+      });
+      f.ledger.grid = { rh, top, view, lane: sx + 22 * F, label: { x: 16 * F, w: sx - 16 * F - 30 * F }, nr, cells };
+      bottom = top + view + 20 * F;
     }
     Object.assign(scene, { w, h, fold: f, box: [0, 0, w, bottom] });
   }
