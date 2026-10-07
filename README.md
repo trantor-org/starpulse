@@ -39,9 +39,10 @@ names one): a `config.yml`
 holding the project name (that directory's name, the team its tasks are in), the lanes (To Do, In Progress, Done) and an empty `tasks/` directory, one Markdown file per task. The
 Kanban view starts with no tasks: **New task**, at the top right beside the task count, opens a form for its title, description, priority, labels,
 milestone, assignee, dependencies and acceptance criteria and adds it to the first column, and
-**Connect a tracker** opens the `[board]` setting for each public adapter. If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
-line naming it and the `[board] type = "upstream_backlog"` setting that shows it instead (see Configure); the page's
-snapshot carries the same line as `hint`, and Connect a tracker shows it. StarPulse keeps its event log and history in
+**Connect a tracker** opens a modal with one collapsible row per tracker (the native board, Backlog.md, Jira), each expanding to
+numbered setup steps whose commands copy with one click (see Connect a tracker below). If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
+line naming it and the `starpulse connect backlog` command that shows it instead; the page's
+snapshot carries the same line as `hint`, and Connect a tracker shows it with the command as a copyable block. StarPulse keeps its event log and history in
 `starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on this machine only (`127.0.0.1`): `--host 0.0.0.0` widens it to
 every interface so another computer on your network can open it, which you do only on a network you trust. A write (move, edit,
 start, run, history window) is refused unless it is a JSON request (`Content-Type: application/json`) that either names no

@@ -1065,13 +1065,14 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
 def found_backlog(config: Config, base: Path) -> str | None:
     """The line that names a Backlog.md project beside `base` and how to switch to it, when the config names no board.
 
-    The default board is StarPulse's own; a project that already has a `backlog/` is told, not adopted.
+    The default board is StarPulse's own; a project that already has a `backlog/` is told, not adopted. The line ends
+    `run: <command>`, which the Connect a tracker modal draws as a copyable block.
     """
     if "type" in config.board or not (project := base / "backlog" / "config.yml").is_file():
         return None
     return (
         f"Found a Backlog.md project at {project}; StarPulse is showing its own board. "
-        'To show that project instead, add [board] type = "upstream_backlog" to your starpulse.toml.'
+        "To show that project instead, run: starpulse connect backlog --path backlog"
     )
 
 
