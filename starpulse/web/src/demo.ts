@@ -110,7 +110,17 @@ const HANDLERS: Record<string, Handler> = {
   "/api/edit": (server, _path, _query, init) => server.edit(String(init?.body ?? "{}")),
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
+  "/api/forwarding": (server, _path, _query, init) => server.forwarding(init?.method ?? "GET", String(init?.body ?? "")),
 };
+
+/** The hub a demo page pretends to forward to: `refused` answers an opt-in 403 (a hub that keeps no names), `down` never answers, `none` is an instance with no `[forward]` block. */
+export type ForwardDemo = "refused" | "down" | "none";
+/** The fields `forward.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
+const CONTRACT = {
+  "machine:events": ["machine", "event", "task", "run", "actor", "assignee", "time"],
+  "runs:events": ["time", "phase", "workflow", "run_id", "status", "step", "depends"],
+};
+const PERSON = ["actor", "assignee"];
 
 /**
  * Every /api route the page requests, and how a demo page answers it: `null` for one the demo serves (`/api/events` by
@@ -144,10 +154,11 @@ export class DemoServer {
   lanes: Record<string, LaneStep[]>;
   records: Record<string, TaskRecord>;
   private created = new Set<string>();
+  private optIn = false;
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false) {
+  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private forward?: ForwardDemo) {
     const { history, ...snap } = structuredClone(fixture);
     // the fixture's times are kept as ages, so what settled an hour before the capture settled an hour before the page opened
     const age = clock() - snap.now;
@@ -287,6 +298,36 @@ export class DemoServer {
     return json({ task: id }, 201);
   }
 
+  /** `/api/forwarding` as starpulse.server answers it: the moves the forwarder would send next, cut as it cuts them, and a PUT that flips the opt-in. */
+  forwarding(method: string, raw: string): Response {
+    if (this.forward === "none") return method === "PUT" ? json({ error: "this instance forwards nothing" }, 404) : json({ configured: false });
+    if (method === "PUT") {
+      let sent: unknown;
+      try { sent = (JSON.parse(raw) as { opt_in?: unknown }).opt_in; } catch { sent = undefined; }
+      if (typeof sent !== "boolean") return json({ error: 'forwarding takes {"opt_in": true} or {"opt_in": false}' }, 400);
+      this.optIn = sent;
+    } else if (method !== "GET") return json({ error: `${method} is not served here` }, 405);
+    const names = this.optIn && this.forward !== "refused";
+    const at = this.clock();
+    const board = this.snapshot.flows.find((f) => f.name === "board");
+    return json({
+      configured: true,
+      url: "https://hub.example/ingest",
+      optIn: this.optIn,
+      names,
+      refused: this.optIn && this.forward === "refused",
+      lastSent: this.forward === "down" ? null : at - 12,
+      problem: this.forward === "down" ? "hub unreachable: connection refused" : this.optIn && this.forward === "refused" ? "hub answered 403: this hub keeps aggregates only" : null,
+      next: (board?.agents ?? []).slice(0, 10).map((a, i) => ({
+        stream: "machine:events",
+        fields: { machine: "board", event: "MOVED", task: a.id, ...(names ? { actor: "demo-agent" } : {}), time: at - 5 * (i + 1) },
+        kept: ["from", "to"],
+      })),
+      more: false,
+      contract: Object.fromEntries(Object.entries(CONTRACT).map(([stream, fields]) => [stream, fields.map((field) => ({ field, person: PERSON.includes(field) }))])),
+    });
+  }
+
   fetch(input: string, init?: RequestInit): Promise<Response> {
     const [path, search = ""] = input.split("?", 2); // no URL(): a base address would be a host in the public file
     const route = Object.keys(ROUTES).find((r) => path === r || path.startsWith(`${r}/`));
@@ -346,8 +387,10 @@ let server: DemoServer | null = null;
 /** The page's one DemoServer when it embeds a fixture, else null: a served page asks starpulse.server. */
 export const demoServer = (): DemoServer | null => {
   const fixture = embedded();
-  const refuseEdits = new URLSearchParams(globalThis.location?.search ?? "").get("edit") === "refuse";
-  return fixture ? (server ??= new DemoServer(fixture, undefined, refuseEdits)) : null;
+  const query = new URLSearchParams(globalThis.location?.search ?? "");
+  const refuseEdits = query.get("edit") === "refuse";
+  const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
+  return fixture ? (server ??= new DemoServer(fixture, undefined, refuseEdits, forward)) : null;
 };
 
 /** A write says it is JSON, body or none: starpulse.server refuses any other, which a web page on another site cannot send without asking first. */

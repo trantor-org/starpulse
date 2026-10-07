@@ -3,6 +3,8 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { SCALE, labelPx, type AdminStore } from "./adminPrefs";
 import { clockHm } from "./clock";
+import { ForwardingCard } from "./ForwardingCard";
+import type { ForwardingStore } from "./forwarding";
 import { CHIPS, type HistoryWindowStore } from "./historyWindow";
 
 /** The Preview's Star Map label: a ring with a state's name and count beneath, sized as the renderer sizes them. */
@@ -106,7 +108,7 @@ function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" |
   );
 }
 
-export function Admin({ store, window: historyWindow }: { store: AdminStore; window: HistoryWindowStore }) {
+export function Admin({ store, window: historyWindow, forwarding }: { store: AdminStore; window: HistoryWindowStore; forwarding: ForwardingStore }) {
   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
   return (
     <div id="admin">
@@ -147,6 +149,7 @@ export function Admin({ store, window: historyWindow }: { store: AdminStore; win
             <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>
           </section>
           <ServerCard store={historyWindow} clock={clock} />
+          <ForwardingCard store={forwarding} clock={clock} />
         </div>
         <Preview scale={scale} compact={density === "compact"} />
       </div>

@@ -11,7 +11,7 @@ import pytest
 from starpulse import events, run_events
 from starpulse.config import Forward
 from starpulse.event_log import EventLog
-from starpulse.forward import Forwarder, OptIn
+from starpulse.forward import PREVIEW, Forwarder, OptIn
 from starpulse.history import HistoryStore
 
 URL = "https://hub.example.test"
@@ -230,3 +230,103 @@ def test_run_goes_on_after_a_step_that_raises(rig: Rig) -> None:
     )
 
     assert len(calls) == 2
+
+
+def _preview_fields(forwarder: Forwarder) -> list[dict]:
+    return [row["fields"] for row in forwarder.status()["next"]]
+
+
+def test_the_status_lists_the_next_batch_exactly_as_the_forwarder_sends_it(rig: Rig) -> None:
+    rig.move("T-1", actor="ana")
+    rig.move("T-2", actor="bo")
+    forwarder = rig.forwarder()
+    listed = forwarder.status()
+
+    forwarder.step()
+
+    [(_, _, body)] = rig.hub.posts
+    assert [row["fields"] for row in listed["next"]] == [e["fields"] for e in body["events"]]
+    assert [row["stream"] for row in listed["next"]] == [e["stream"] for e in body["events"]]
+    assert listed["next"] and all("actor" not in row["fields"] for row in listed["next"])
+    assert listed["names"] is False and listed["optIn"] is False
+
+
+def test_an_opt_in_puts_the_names_in_the_listing_and_an_opt_out_takes_them_out_at_once(rig: Rig) -> None:
+    rig.move("T-1", actor="ana")
+    forwarder = rig.forwarder()
+
+    rig.opt_in.set(True)
+    assert [f.get("actor") for f in _preview_fields(forwarder)] == ["ana"]
+    assert forwarder.status()["names"] is True
+
+    rig.opt_in.set(False)
+    assert [f.get("actor") for f in _preview_fields(forwarder)] == [None]
+    assert forwarder.status()["names"] is False
+
+
+def test_the_listing_names_the_fields_that_stay_on_the_instance(rig: Rig) -> None:
+    rig.log.append(events.STREAM, {"machine": "board", "event": "MOVED", "task": "T-1", "session": "s-1", "tool": "Bash"})
+
+    [row] = rig.forwarder().status()["next"]
+
+    assert row["kept"] == ["session", "tool"]
+    assert "session" not in row["fields"] and "tool" not in row["fields"]
+
+
+def test_a_hub_that_refused_the_opt_in_is_shown_as_withholding_names(rig: Rig) -> None:
+    rig.move("T-1", actor="ana")
+    rig.opt_in.set(True)
+    rig.hub.answers = [403]
+    forwarder = rig.forwarder()
+
+    forwarder.step()
+
+    listed = forwarder.status()
+    assert (listed["optIn"], listed["refused"], listed["names"]) == (True, True, False)
+    assert [f.get("actor") for f in _preview_fields(forwarder)] == [None]
+
+
+def test_the_status_reports_a_failing_hub_until_a_batch_goes_through(rig: Rig) -> None:
+    rig.move("T-1")
+    rig.hub.answers = [OSError("connection refused"), 401]
+    now = [100.0]
+    forwarder = Forwarder(
+        rig.log, rig.store, Forward(URL, "HUB_TOKEN", 50), "secret", rig.opt_in, send=rig.hub, clock=lambda: now[0]
+    )
+    assert forwarder.status()["lastSent"] is None and forwarder.status()["problem"] is None
+
+    forwarder.step()
+    assert "connection refused" in forwarder.status()["problem"]
+
+    forwarder.step()
+    assert "401" in forwarder.status()["problem"]
+
+    now[0] = 130.0
+    forwarder.step()
+    listed = forwarder.status()
+    assert (listed["lastSent"], listed["problem"], listed["next"]) == (130.0, None, [])
+
+
+def test_the_listing_is_capped_and_says_when_there_is_more(rig: Rig) -> None:
+    for n in range(PREVIEW + 3):
+        rig.move(f"T-{n}")
+
+    listed = rig.forwarder().status()
+
+    assert len(listed["next"]) == PREVIEW and listed["more"] is True
+    assert rig.forwarder().status()["url"] == f"{URL}/api/forward"
+
+
+def test_the_status_carries_the_contract_with_the_person_fields_marked(rig: Rig) -> None:
+    contract = rig.forwarder().status()["contract"]
+
+    assert [(f["field"], f["person"]) for f in contract[events.STREAM]] == [
+        ("machine", False),
+        ("event", False),
+        ("task", False),
+        ("run", False),
+        ("actor", True),
+        ("assignee", True),
+        ("time", False),
+    ]
+    assert "actor" not in {f["field"] for f in contract[run_events.STREAM]}

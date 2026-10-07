@@ -52,6 +52,7 @@ from starpulse.config import Config
 from starpulse.contracts import FINDING_TEXT_MAX, SCHEMAS, BoardTask, Dag, Finding, MachineEvent, Pool, TaskKeys
 from starpulse.harnesses import Harnesses
 from starpulse.history import History, HistoryStore
+from starpulse.forward import Forwarder
 from starpulse.ingest import ForwardIngest, Ingest
 from starpulse.insights import Insights, InsightStore
 from starpulse.level import Level
@@ -356,6 +357,7 @@ def serve(
     port: int = 0,
     forward: ForwardIngest | None = None,
     level: Level | None = None,
+    forwarding: Forwarder | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -385,6 +387,7 @@ def serve(
         forward,
         level,
         insights=insights,
+        forwarding=forwarding,
     )
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

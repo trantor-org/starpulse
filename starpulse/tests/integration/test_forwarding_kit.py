@@ -8,6 +8,7 @@ to cut the IC off at chosen points.
 from __future__ import annotations
 
 import json
+import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -189,6 +190,42 @@ def test_an_opt_out_applies_while_the_hub_is_unreachable(kit: Kit) -> None:
     (body,) = kit.wire.bodies
     assert ACTOR.encode() not in body and ASSIGNEE.encode() not in body
     assert all("actor" not in e.fields for e in kit.at_the_hub())
+
+
+def test_an_opt_out_made_in_the_panel_stops_the_names_in_the_next_batch_with_the_hub_down(
+    kit: Kit, tmp_path: Path
+) -> None:
+    kit.move("T-1")
+    forwarder = kit.forwarder()
+    (tmp_path / "ic").mkdir()
+
+    def panel(server: Any, opt_in: bool) -> dict[str, Any]:
+        request = urllib.request.Request(
+            url(server, "/api/forwarding"),
+            data=json.dumps({"opt_in": opt_in}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="PUT",
+        )
+        with urllib.request.urlopen(request) as answer:
+            return json.load(answer)
+
+    with serve(tmp_path / "ic", forwarding=forwarder) as ic:
+        listed = panel(ic, True)
+        assert listed["names"] is True and listed["next"][0]["fields"]["actor"] == ACTOR
+        kit.wire.down = True
+        assert forwarder.step() is None  # named, and refused by the network
+
+        reached = kit.wire.attempts
+        listed = panel(ic, False)
+        assert kit.wire.attempts == reached  # the toggle needed no hub
+        assert listed["names"] is False and "actor" not in listed["next"][0]["fields"]
+        assert "unreachable" in listed["problem"]
+
+    kit.wire.down = False
+    kit.drain(forwarder)
+    (body,) = kit.wire.bodies
+    assert ACTOR.encode() not in body and ASSIGNEE.encode() not in body
+    assert all("actor" not in e.fields and "assignee" not in e.fields for e in kit.at_the_hub())
 
 
 def test_a_wrong_or_revoked_token_answers_401_and_writes_nothing(kit: Kit) -> None:

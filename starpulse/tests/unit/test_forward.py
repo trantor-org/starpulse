@@ -11,7 +11,7 @@ import pytest
 from starpulse import events, forward, run_events
 from starpulse.config import Config, Forward
 from starpulse.event_log import EventLog
-from starpulse.forward import OPT_IN_FILE, OptIn, project, start
+from starpulse.forward import OPT_IN_FILE, OptIn, build, project, start
 from starpulse.history import HistoryStore
 
 MACHINE_ENTRY = {
@@ -133,10 +133,10 @@ def _ic(tmp_path: Path) -> tuple[EventLog, HistoryStore]:
     return EventLog(url), HistoryStore(url, {})
 
 
-def test_no_forward_block_starts_no_forwarder(tmp_path: Path) -> None:
+def test_no_forward_block_builds_no_forwarder(tmp_path: Path) -> None:
     log, store = _ic(tmp_path)
 
-    assert start(_config(), tmp_path, log, store, {}, threading.Event()) is None
+    assert build(_config(), tmp_path, log, store, {}) is None
 
 
 def test_a_forward_block_starts_a_forwarder_that_stops_with_the_event(tmp_path: Path) -> None:
@@ -144,7 +144,9 @@ def test_a_forward_block_starts_a_forwarder_that_stops_with_the_event(tmp_path: 
     stop = threading.Event()
     config = _config(Forward("http://127.0.0.1:9", "HUB_TOKEN", 50))
 
-    thread = start(config, tmp_path, log, store, {"HUB_TOKEN": "secret"}, stop)
+    forwarder = build(config, tmp_path, log, store, {"HUB_TOKEN": "secret"})
+    assert forwarder is not None
+    thread = start(forwarder, stop)
 
     assert thread is not None and thread.is_alive()
     stop.set()
@@ -157,7 +159,7 @@ def test_a_forward_block_without_its_token_is_refused_by_name(tmp_path: Path) ->
     config = _config(Forward("http://127.0.0.1:9", "HUB_TOKEN", 50))
 
     with pytest.raises(ValueError, match="HUB_TOKEN is not set"):
-        start(config, tmp_path, log, store, {}, threading.Event())
+        build(config, tmp_path, log, store, {})
 
 
 def test_a_hub_does_not_forward(tmp_path: Path) -> None:
@@ -165,4 +167,4 @@ def test_a_hub_does_not_forward(tmp_path: Path) -> None:
     config = _config(Forward("http://127.0.0.1:9", "HUB_TOKEN", 50))
 
     with pytest.raises(ValueError, match="hub"):
-        start(config, tmp_path, log, store, {"HUB_TOKEN": "secret"}, threading.Event(), hub=True)
+        build(config, tmp_path, log, store, {"HUB_TOKEN": "secret"}, hub=True)
