@@ -10,6 +10,7 @@ import { HistoryWindowStore } from "./historyWindow";
 import { HudStore, useHud, type HudState } from "./hud";
 import { BOARD, pathKey, type Path } from "./levels";
 import { FeedLines, Queues } from "./Fanout";
+import { SearchClear } from "./SearchClear";
 import { Kanban } from "./Kanban";
 import { MoveStore, postMove } from "./move";
 import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./nav";
@@ -124,6 +125,7 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const searchBox = useRef<HTMLInputElement>(null);
   const statePath = (id: string): Path => [...BOARD, { kind: "state", id }];
   // a click drills into a sun or a machine, opens a DAG's panel, or pins a task on the Board
   const pick = (target: Target) => {
@@ -215,7 +217,13 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
       <section className="views">
         <h3>Views</h3>
         <button className={`node${view === "constellation" ? " on here" : ""}`} title="Star Map" onClick={() => (view === "constellation" ? open(BOARD) : choose("constellation"))}>
-          <i className="g" style={{ width: 10, height: 10 }} />
+          <i className="g orbit">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <circle cx="12" cy="12" r="5" fill="currentColor" />
+              <ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" />
+            </svg>
+          </i>
           <span className="t">Star Map</span>
           <span className="n" />
         </button>
@@ -226,14 +234,15 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
         </button>
       </section>
       {view === "kanban" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
-      {view === "constellation" && <><section className="away">
-        <input id="q" type="search" placeholder="search…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
+      {view === "constellation" && <><section className="away has-x">
+        <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
           onChange={(e) => { setQuery(e.target.value); spot(null); }}
           onKeyDown={(e) => {
             if (e.key === "Escape") { setQuery(""); spot(null); }
             // Enter takes the first match, as a click on it would
             if (e.key === "Enter" && hits[0]) pick(hits[0].target);
           }} />
+        <SearchClear input={searchBox} value={query} clear={() => { setQuery(""); spot(null); }} />
       </section>
       <section className="away layers">
         <h3>Layers</h3>
