@@ -191,7 +191,7 @@ class Source:
 
 
 def runs_adapter(kind: str) -> ModuleType:
-    """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, log)`."""
+    """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)`."""
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
         raise ConfigError(f"no runs adapter of type {kind}")
     target = module_name(kind)

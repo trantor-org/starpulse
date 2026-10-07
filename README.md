@@ -293,7 +293,7 @@ type = "native"
 # interval = 30                          # seconds between polls
 
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
-# (it offers `start(url)` and `follow(url, runs, log)`); its workflows are drawn as `<name>/<workflow>`.
+# (it offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)`); its workflows are drawn as `<name>/<workflow>`.
 [[runs]]
 name = "dagu"
 type = "dagu"
@@ -330,6 +330,20 @@ step, and the step it is in.
   inferred runs for one occurrence the earliest wins, and a keyed run outranks them.
 - A workflow's `recent` runs (`Dag.recent`, the last day's, with their parameters) are read from Dagu for tied workflows
   only, and are left out of the `dags` the page draws.
+- A failed run of a cued workflow *pins* its occurrence: the row carries `fails` (`{<instance>/<workflow>: {runId, step,
+  startedAt, finishedAt, resolves, resolved}}`) and `pinned` while any failure is open. The cue's `resolves` decides the
+  clearing run, which must have started after the failure and succeeded: `next`, any such run of that workflow; `forced`,
+  one whose `[runs.commit]` `force` parameter is set (not empty, `0` or `false`) and which covers the failure, naming no
+  commit or task or an occurrence at least as new (a commit the Ledger does not hold covers nothing). A failure is
+  tracked apart from the run drawn for the occurrence, so a green plain retry of the same commit does not clear a
+  forced failure. A cue with no `resolves` rule, or an event no cue names, takes `next`. An instance with no `force`
+  key never clears a forced failure.
+- `POST /api/runs/<instance>/<workflow>/rerun` starts a run-safe workflow with `force` set to `1` and the `after`,
+  `before` and `task` parameters of its newest open failure, through the runs adapter's optional `rerun(url)` (the
+  Dagu adapter offers it). It answers `{runId}`; 409 when the instance declares no `force` or the workflow has no open
+  failure; 404 for a workflow outside `run_safe`; 403 off the LAN. A GET answers 405.
+- A pin lasts as long as StarPulse can still read the failed run: the last day of Dagu runs (`recent`) and the window of
+  merged pull requests and lane entries. An older failure drops out of the Ledger and cannot be rerun here.
 - Pull requests come from the one repository StarPulse reads, so a merge in another repository can pair by time with a
   run that was not for it until the config can name each repository.
 

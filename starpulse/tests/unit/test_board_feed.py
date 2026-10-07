@@ -704,3 +704,106 @@ def test_a_task_entering_the_lane_a_workflows_event_reaches_pairs_with_its_run_b
     assert rows[1]["runs"]["ci/start"]["runId"] == "s1"
     assert rows[1]["runs"]["ci/start"]["inferred"] is False
     assert rows[0]["runs"] == {}
+
+
+BEFORE = "0" * 40
+FAILED = {
+    **APPLIED,
+    "runId": "r-bad",
+    "status": "failed",
+    "params": {"AFTER": SHA, "BEFORE": BEFORE},
+    "steps": {"validate": "succeeded", "deploy": "failed"},
+}
+FORCED_GREEN = {
+    **APPLIED,
+    "runId": "r-forced",
+    "startedAt": "2026-10-07T00:10:00Z",
+    "finishedAt": "2026-10-07T00:11:00Z",
+    "params": {"AFTER": SHA, "BEFORE": BEFORE, "FORCE": "1"},
+}
+
+
+def cued_feed(resolves: str) -> BoardFeed:
+    feed = BoardFeed(
+        clock=lambda: datetime(2026, 10, 7, 1, tzinfo=ZoneInfo("UTC")).timestamp(),
+        machines={"board": LEDGER_MACHINE},
+        domains={"ci": ["ci/apply", "ci/start"]},
+        cues=[{**CUE, "resolves": resolves}],
+        commit={"ci": CommitKeys(after="AFTER", before="BEFORE", force="FORCE")},
+    )
+    feed.set_pulls({"TASK-1": [MERGED_PR]})
+    return feed
+
+
+def test_a_failed_cued_run_pins_its_merge_with_the_rule_its_cue_declares() -> None:
+    feed = cued_feed("forced")
+
+    feed.set_dags("ci", [_dag("apply", FAILED)], None)
+
+    (row,) = feed.snapshot()["ledgers"]["MERGED"]
+    assert row["pinned"] is True
+    fail = row["fails"]["ci/apply"]
+    assert (fail["runId"], fail["step"], fail["resolves"], fail["resolved"]) == ("r-bad", "deploy", "forced", None)
+
+
+def test_a_pinned_merge_unpins_on_the_run_its_cue_accepts_and_the_ledgers_event_says_so() -> None:
+    feed = cued_feed("forced")
+    feed.set_dags("ci", [_dag("apply", FAILED)], None)
+    _, deltas = feed.subscribe()
+
+    feed.set_dags("ci", [_dag("apply", FAILED, FORCED_GREEN)], None)
+
+    sent = {}
+    while not deltas.empty():
+        kind, data = deltas.get_nowait()
+        sent[kind] = data
+    assert sent["ledgers"]["ledgers"]["MERGED"][0]["pinned"] is False
+
+
+def test_a_failure_whose_cue_resolves_next_clears_on_any_later_green_run_but_a_forced_one_does_not() -> None:
+    later = {**APPLIED, "runId": "r-next", "startedAt": "2026-10-07T00:10:00Z", "params": {}}
+    nxt, forced = cued_feed("next"), cued_feed("forced")
+
+    for feed in (nxt, forced):
+        feed.set_dags("ci", [_dag("apply", FAILED, later)], None)
+
+    assert nxt.snapshot()["ledgers"]["MERGED"][0]["pinned"] is False
+    assert forced.snapshot()["ledgers"]["MERGED"][0]["pinned"] is True
+
+
+def test_the_open_failure_of_a_workflow_is_its_failed_run_with_the_parameters_it_started_with() -> None:
+    feed = cued_feed("forced")
+    feed.set_dags("ci", [_dag("apply", FAILED)], None)
+
+    assert feed.open_failure("ci/apply") == {"runId": "r-bad", "params": {"AFTER": SHA, "BEFORE": BEFORE}}
+
+
+def test_a_workflow_with_no_open_failure_has_none() -> None:
+    feed = cued_feed("forced")
+    feed.set_dags("ci", [_dag("apply", FAILED, FORCED_GREEN)], None)
+
+    assert feed.open_failure("ci/apply") is None
+    assert feed.open_failure("ci/start") is None
+    assert feed.open_failure("unknown/apply") is None
+
+
+def test_the_open_failure_is_the_newest_when_several_merges_are_pinned() -> None:
+    older = {**FAILED, "runId": "r-old", "startedAt": "2026-10-07T00:02:00Z", "params": {"AFTER": "b" * 40}}
+    feed = cued_feed("forced")
+    feed.set_pulls(
+        {
+            "TASK-1": [MERGED_PR],
+            "TASK-0": [{**MERGED_PR, "url": "https://github.com/o/trantor/pull/6", "merge_sha": "b" * 40, "merged_at": "2026-10-06T23:00:00Z"}],
+        }
+    )
+
+    feed.set_dags("ci", [_dag("apply", older, {**FAILED, "startedAt": "2026-10-07T00:20:00Z"})], None)
+
+    assert feed.open_failure("ci/apply")["runId"] == "r-bad"
+
+
+def test_the_commit_keys_of_an_instance_are_those_its_config_declares() -> None:
+    feed = cued_feed("forced")
+
+    assert feed.commit_keys("ci") == CommitKeys(after="AFTER", before="BEFORE", force="FORCE")
+    assert feed.commit_keys("other") is None

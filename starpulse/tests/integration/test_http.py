@@ -19,6 +19,7 @@ from starpulse.adapter_kit import task
 from starpulse.adapter_kit import url as _url
 from starpulse.board import Written
 from starpulse.board_feed import BoardFeed
+from starpulse.config import CommitKeys
 from starpulse.contracts import Move
 from starpulse.machine_tasks import MachineTasks
 from starpulse.tests.machines import MACHINES
@@ -198,6 +199,40 @@ def test_a_run_is_started_by_post_and_never_by_get(tmp_path: Path) -> None:
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
     assert posted == (200, "application/json", {"runId": "run-7"})
     assert sent == ["whole-repo-gate"]
+
+
+class _Failing(BoardFeed):
+    """A feed whose workflow has one unresolved failure, started with a known commit."""
+
+    def commit_keys(self, instance: str) -> CommitKeys:
+        return CommitKeys(after="AFTER", force="FORCE")
+
+    def open_failure(self, dag: str) -> dict:
+        return {"runId": "r-bad", "params": {"AFTER": "a" * 40}}
+
+
+def test_a_forced_rerun_is_started_by_post_and_never_by_get_through_the_reruns_path(tmp_path: Path) -> None:
+    sent: list[tuple[str, dict]] = []
+
+    def rerun(workflow: str, params: dict) -> str:
+        sent.append((workflow, params))
+        return "run-8"
+
+    with _serve(tmp_path, feed=_Failing(machines=MACHINES), reruns={"dagu": rerun}, run_safe=RUN_SAFE) as server:
+        path = "/api/runs/dagu/whole-repo-gate/rerun"
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, path), timeout=5)
+        request = urllib.request.Request(_url(server, path), data=b"", headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            posted = (resp.status, json.load(resp))
+        plain = urllib.request.Request(_url(server, path), data=b"", headers={"Content-Type": "text/plain"}, method="POST")
+        with pytest.raises(urllib.error.HTTPError) as foreign:
+            urllib.request.urlopen(plain, timeout=5)
+
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+    assert posted == (200, {"runId": "run-8"})
+    assert sent == [("whole-repo-gate", {"FORCE": "1", "AFTER": "a" * 40})]
+    assert foreign.value.code == 415
 
 
 def test_a_refused_run_answers_json_with_its_status(tmp_path: Path) -> None:

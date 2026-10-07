@@ -20,7 +20,7 @@ from starpulse.analytics import LaneRow, move_shares
 from starpulse.config import CommitKeys
 from starpulse.contracts import BoardTask, TaskKeys
 from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
-from starpulse.ledger import MERGE_EVENT, Occurrence, build, pull_occurrences
+from starpulse.ledger import MERGE_EVENT, NEXT, Occurrence, build, pull_occurrences
 from starpulse.snapshot import declared, qualifier
 from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 
@@ -128,6 +128,11 @@ class BoardFeed:
         self._board_url = board_url
         self._commit = commit or {}
         self._ties = self._tied_to_events(cues)
+        qualify = qualifier(self._domains)
+        #: How a failure of each workflow a machine event cues resolves, by `(event, workflow)`; any other resolves on its next success.
+        self._resolves = {
+            (cue["event"], qualify(cue["dag"])): cue["resolves"] for cue in cues if "event" in cue and "resolves" in cue
+        }
         #: The Ledger as last published, so a change to it is sent once.
         self._ledgers: dict[str, list[dict]] = {}
         self._lock = threading.RLock()
@@ -508,7 +513,33 @@ class BoardFeed:
             for instance, dags in self._dags.items()
             for dag in dags
         }
-        return build(events, self._ties, runs, lambda dag: self._commit.get(dag.partition("/")[0]))
+        return build(
+            events,
+            self._ties,
+            runs,
+            lambda dag: self._commit.get(dag.partition("/")[0]),
+            lambda event, dag: self._resolves.get((event, dag), NEXT),
+        )
+
+    def commit_keys(self, instance: str) -> CommitKeys | None:
+        """The `[runs.commit]` of runs instance `instance`, or None when it declares none."""
+        return self._commit.get(instance)
+
+    def open_failure(self, dag: str) -> dict | None:
+        """The newest unresolved failure of workflow `dag` (`<instance>/<workflow>`) as `{runId, params}`, the parameters
+        that run started with, or None when it has none or the runs adapter no longer lists the run."""
+        with self._lock:
+            open_ = [
+                fail
+                for rows in self._ledger().values()
+                for row in rows
+                if (fail := row["fails"].get(dag)) and fail["resolved"] is None
+            ]
+            instance, _, workflow = dag.partition("/")
+            recent = next((d.get("recent", []) for d in self._dags.get(instance, []) if d["name"] == workflow), [])
+        newest = max(open_, key=lambda fail: fail["startedAt"], default=None)
+        run = next((r for r in recent if newest and r["runId"] == newest["runId"]), None)
+        return None if run is None else {"runId": run["runId"], "params": dict(run.get("params", {}))}
 
     def _refresh_ledgers(self) -> None:
         """Send the Ledger when it differs from the one last sent; the caller holds the lock."""

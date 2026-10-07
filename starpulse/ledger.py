@@ -15,6 +15,10 @@ A run that carries the key but names no occurrence we hold pairs with nothing; t
 Pairing is per workflow, so one occurrence can hold a run of each tied workflow. A rerun of an occurrence replaces
 its earlier run, and a keyed run outranks an inferred one. Among inferred runs the earliest after the occurrence
 wins, since a later one more likely answers a later trigger.
+
+A workflow's latest failed run of an occurrence is an *open failure*, and pins the occurrence, until its cue's `resolves` rule clears it: `next`
+on the next successful run of that workflow, `forced` only on a successful forced run (the instance's `force`
+parameter set) that covers the occurrence, that is one that names a commit (or task) no older than it, or none.
 """
 
 from __future__ import annotations
@@ -26,10 +30,15 @@ from datetime import datetime
 
 from starpulse.config import CommitKeys
 
-__all__ = ["MERGE_EVENT", "Occurrence", "build", "pair", "pull_occurrences"]
+__all__ = ["MERGE_EVENT", "NEXT", "Occurrence", "build", "pair", "pull_occurrences"]
 
 #: The Board event whose occurrences are pull request merges; every other event's are tasks entering a lane.
 MERGE_EVENT = "MERGED"
+
+#: How a cue's failure resolves when its machine declares no `resolves`: on the workflow's next success.
+NEXT = "next"
+#: A `force` parameter set to one of these is a plain run.
+_UNFORCED = frozenset({"", "0", "false"})
 
 _PULL = re.compile(r"https://github\.com/[^/]+/([^/]+)/pull/(\d+)")
 #: The shortest abbreviated commit a run parameter may name and still pair with a merge.
@@ -98,16 +107,15 @@ def _entry(run: Mapping, inferred: bool, ambiguous: int) -> dict:
     }
 
 
-def pair(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: CommitKeys | None) -> dict[str, dict]:
-    """Each occurrence's run of one workflow, by occurrence key.
+def _matches(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: CommitKeys | None) -> list[tuple]:
+    """Every run of one workflow with the occurrence it pairs with, oldest run first: `(occurrence, start, run, inferred, ambiguous)`.
 
-    `runs` are the workflow's recent runs (`Dag.recent`), `keys` its instance's `[runs.commit]` (None: time only).
-    An occurrence no run pairs with is left out.
+    A run that pairs with no occurrence is left out.
     """
     ordered = sorted(occurrences, key=lambda o: o.at)
     by_sha = any(o.sha is not None for o in ordered)
     param = None if keys is None else keys.after if by_sha else keys.task
-    paired: dict[str, tuple[tuple[int, float], dict]] = {}
+    out = []
     previous = float("-inf")
     for start, run in sorted(((_epoch(r["startedAt"]), r) for r in runs if r.get("startedAt")), key=lambda p: p[0]):
         value = run.get("params", {}).get(param) if param else None
@@ -119,10 +127,80 @@ def pair(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: Commi
         else:
             match = _keyed(ordered, value, by_sha)
         previous = start
+        if match is not None:
+            out.append((match, start, run, inferred, ambiguous))
+    return out
+
+
+def pair(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: CommitKeys | None) -> dict[str, dict]:
+    """Each occurrence's run of one workflow, by occurrence key.
+
+    `runs` are the workflow's recent runs (`Dag.recent`), `keys` its instance's `[runs.commit]` (None: time only).
+    An occurrence no run pairs with is left out.
+    """
+    paired: dict[str, tuple[tuple[int, float], dict]] = {}
+    for match, start, run, inferred, ambiguous in _matches(occurrences, runs, keys):
         rank = (0, -start) if inferred else (1, start)
-        if match is not None and (match.key not in paired or rank > paired[match.key][0]):
+        if match.key not in paired or rank > paired[match.key][0]:
             paired[match.key] = (rank, _entry(run, inferred, ambiguous))
     return {key: entry for key, (_, entry) in paired.items()}
+
+
+def _forced(run: Mapping, keys: CommitKeys | None) -> bool:
+    """Whether `run` was started with the instance's `force` parameter set."""
+    flag = run.get("params", {}).get(keys.force) if keys is not None and keys.force else None
+    return flag is not None and flag.lower() not in _UNFORCED
+
+
+def _covers(failed: Occurrence, forced: Mapping, ordered: Sequence[Occurrence], keys: CommitKeys | None) -> bool:
+    """Whether the forced run `forced` reapplies `failed`: it names no commit (or task), or one at least as new.
+
+    A commit the ledger does not hold covers nothing, as it is more likely older than the failure than newer.
+    """
+    by_sha = failed.sha is not None
+    param = None if keys is None else keys.after if by_sha else keys.task
+    value = forced.get("params", {}).get(param) if param else None
+    if value is None:
+        return True
+    named = _keyed(ordered, value, by_sha)
+    return named is not None and named.at >= failed.at
+
+
+def _resolution(
+    failed: Occurrence, began: float, runs: Sequence[Mapping], rule: str, keys: CommitKeys | None, ordered: Sequence[Occurrence]
+) -> dict | None:
+    """The first successful run after the one that failed at `began` that the cue's `rule` accepts, as `{runId, at}`, else None."""
+    for start, run in sorted(((_epoch(r["startedAt"]), r) for r in runs if r.get("startedAt")), key=lambda p: p[0]):
+        if run["status"] != "succeeded" or start <= began:
+            continue
+        if rule == NEXT or (_forced(run, keys) and _covers(failed, run, ordered, keys)):
+            return {"runId": run["runId"], "at": run.get("finishedAt", "")}
+    return None
+
+
+def failures(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: CommitKeys | None, rule: str) -> dict[str, dict]:
+    """Each occurrence's failure of one workflow, by occurrence key: its latest run that failed, whichever run the row shows.
+
+    A failure is `{runId, step, startedAt, finishedAt, resolves, resolved}`: the step that failed, the `rule` its cue
+    resolves by and the run that cleared it (None while it is open). A later run of the occurrence that succeeds does
+    not clear a `forced` failure, so the failure is judged apart from the run `pair` shows.
+    """
+    ordered = sorted(occurrences, key=lambda o: o.at)
+    latest: dict[str, tuple[float, Mapping, Occurrence]] = {}
+    for match, start, run, _inferred, _ambiguous in _matches(occurrences, runs, keys):
+        if run["status"] == "failed":
+            latest[match.key] = (start, run, match)
+    return {
+        key: {
+            "runId": run["runId"],
+            "step": next((name for name, status in run.get("steps", {}).items() if status == "failed"), ""),
+            "startedAt": run["startedAt"],
+            "finishedAt": run.get("finishedAt", ""),
+            "resolves": rule,
+            "resolved": _resolution(match, start, runs, rule, keys, ordered),
+        }
+        for key, (start, run, match) in latest.items()
+    }
 
 
 def build(
@@ -130,16 +208,20 @@ def build(
     ties: Mapping[str, Sequence[str]],
     runs: Mapping[str, Sequence[Mapping]],
     keys: Callable[[str], CommitKeys | None],
+    resolves: Callable[[str, str], str] = lambda event, dag: NEXT,
 ) -> dict[str, list[dict]]:
     """Each tied event's rows, newest occurrence first: the occurrence and the run of every workflow tied to it.
 
-    `ties` lists the workflows (`<instance>/<workflow>`) tied to each event, `runs` each workflow's recent runs and
-    `keys` the `[runs.commit]` of a workflow's instance.
+    `ties` lists the workflows (`<instance>/<workflow>`) tied to each event, `runs` each workflow's recent runs,
+    `keys` the `[runs.commit]` of a workflow's instance and `resolves` how a failure of a workflow cued by an event
+    resolves (`next` or `forced`). A row's `fails` holds each workflow's failure of it (`failures`), and the row is
+    `pinned` while any is open.
     """
     ledgers: dict[str, list[dict]] = {}
     for event, dags in ties.items():
         occurrences = events.get(event, ())
         paired = {dag: pair(occurrences, runs.get(dag, ()), keys(dag)) for dag in dags}
+        failed = {dag: failures(occurrences, runs.get(dag, ()), keys(dag), resolves(event, dag)) for dag in dags}
         ledgers[event] = [
             {
                 "key": o.key,
@@ -147,6 +229,8 @@ def build(
                 "tasks": list(o.tasks),
                 **({"sha": o.sha, "pr": dict(o.pr)} if o.sha is not None and o.pr is not None else {}),
                 "runs": {dag: found[o.key] for dag, found in paired.items() if o.key in found},
+                "fails": (fails := {dag: found[o.key] for dag, found in failed.items() if o.key in found}),
+                "pinned": any(fail["resolved"] is None for fail in fails.values()),
             }
             for o in sorted(occurrences, key=lambda o: o.at, reverse=True)
         ]
