@@ -72,3 +72,8 @@ export function rowMeta(flows: Record<string, FlowSnapshot>, name: string, top: 
 
 /** What an empty lane says: the machine on top has none entered from it, and Escape is the way back. */
 export const emptyNote = (machine: string): string => `nothing is entered from ${machine} · Esc steps back out`;
+
+/** The first row, in the order `rows` run, with a tie to `state` of `top`: where a click on that state of the top scrolls to. */
+export function firstOpened(flows: Record<string, FlowSnapshot>, rows: readonly string[], top: string, state: string): string | null {
+  return rows.find((r) => flows[r]?.ties?.some((t) => t.kind !== "dag" && t.machine === top && t.state === state)) ?? null;
+}

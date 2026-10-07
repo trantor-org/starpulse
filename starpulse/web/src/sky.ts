@@ -3,7 +3,7 @@
 // plays each move once, when the stream first delivers it.
 import { stepRings, type StepRing } from "./fanout";
 import { tree, type Tree } from "./levels";
-import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MergeStrip, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
+import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -66,6 +66,10 @@ export interface Sky {
   mergeStrip: MergeStrip | null;
   /** The pinned merges the Ledger's newest page leaves out. */
   mergePins: LedgerRow[];
+  /** The first page of the machine ledger's rows; null when the server sent none, which shows every machine. */
+  machinePage: MachinePage | null;
+  /** The last 24 hours of machine entries, oldest first; empty when the server sent none. */
+  machineEntries: MachineEntry[];
   /** The day's arrivals on each starting and terminal Board state: tasks created, or settled there, since local midnight. */
   today: Record<string, RawAgent[]>;
   error: string | null;
@@ -152,6 +156,8 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     ledgers: snap.ledgers ?? {},
     mergeStrip: snap.mergeStrip ?? null,
     mergePins: snap.mergePins ?? [],
+    machinePage: snap.machinePage ?? null,
+    machineEntries: snap.machineStrip?.entries ?? [],
     today: arrivals(board, snap.settled, since),
     error: snap.error,
     reading: !!snap.reading,

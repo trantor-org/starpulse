@@ -7,7 +7,7 @@
 // Click drills in, right-click steps out (after clearing any zoom), the wheel
 // zooms about the cursor between the level's fit and eight times it, and a drag
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
-import { demoLive, demoStep } from "./demo";
+import { apiFetch, demoLive, demoStep } from "./demo";
 import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
@@ -35,15 +35,18 @@ import { createHistory } from "./history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
 import { dagData } from "./dags";
-import type { ContractReport, Dag, LedgerRow, Machine, RawAgent, Snapshot, Writer } from "./types";
+import type { ContractReport, Dag, LedgerRow, Machine, MachineEntry, RawAgent, Snapshot, Writer } from "./types";
 import { fanBadge, fanTip, stepStatus } from "./fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "./fan";
 import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "./adminPrefs";
 import { clockHm, clockHms, stamp } from "./clock";
 import { sizes as ledgerSizes, slot as ledgerSlot } from "./machineLedger";
-import { entryAt, entryPath, rowLabels } from "./machineLanes";
-import { emptyNote, rowMeta, stuckCount } from "./machineRows";
+import { entryAt, entryPath, PAGE, rowLabels } from "./machineLanes";
+import { emptyNote, firstOpened, rowMeta, stuckCount } from "./machineRows";
+import { asked, arrived as pageArrived, failed, nextQuery, paging, reveal, RETRY, wantNext, type Paging } from "./machinePaging";
+import { dragTo, inputGoal, revealGoal, thumbOf, windowOf, type ScrollInput, type Thumb } from "./machineScroll";
+import { stripLabel, stripScale, tickAt, ticks, viewSpan, type Tick } from "./machineStrip";
 import { sessionsOf, traceSteps, type Spot } from "./machineTrace";
 import { backStep, canvasSpace, levelParams, levelSearch, retired, viewOf, viewSearch } from "./nav";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
@@ -189,6 +192,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** The ledger row picked out on the top machine's level (its tie stays drawn), and the row that glows after stepping back out onto it. */
   let pickedRow: string | null = null, glow: { name: string; t0: number } | null = null;
   const pages: Record<string, number> = {};
+  // the machine ledger's loaded pages, and the rows' scroll (the goal the input sets and the position drawn, eased to it)
+  let pg: Paging | null = null, scrollGoal = 0, scrollPos = 0, thumbDrag: { y: number; g0: number } | null = null;
   // what a navigator search result under the pointer stands for, lit while the pointer is off the canvas
   let spotted: Target | null = null, spotNear = false;
   let hover: Hover | null = null, mouse: { ox: number; oy: number; cx: number; cy: number } | null = null;
@@ -246,8 +251,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (!S || !W) return;
     const was = fit;
     laidScale = prefs().scale;
+    const mp = S.machinePage;
+    if (mp?.open && pg?.top !== mp.open) pg = paging(mp, (n) => S!.flows[n]?.last ?? 0); // the snapshot names the first page; the pages loaded after it are kept across snapshots
     const held = scene?.top && (overRows() || lpin || pickedRow) ? scene.top.rows.map((r) => r.name) : undefined; // the pointer over the rows, a pinned path or a focused row holds their order
-    scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held }, level());
+    scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held, paging: pg }, level());
+    if (scene.top) {
+      scrollGoal = Math.min(scrollGoal, scene.top.max);
+      scrollPos = Math.min(scrollPos, scene.top.max);
+    }
     // the machine across a level's top is laid out in screen pixels: it is drawn at 1:1 from the fit box's left edge and never zooms or pans
     fit = scene.top ? { k: 1, x: I, y: 0 } : fitScene();
     if (scene.hub) edgePaths(scene, { k: fit.k, x: fit.x - I }, FW, stateName);
@@ -315,6 +326,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     panel.classList.remove("open");
     setHover(null);
     anim = null;
+    pg = null; // a level's machine ledger opens at its first page, newest first
+    scrollGoal = scrollPos = 0;
     layout(false);
     if (then) view = then();
     // stepping out of a machine zooms back down onto the row it came from, which glows a moment
@@ -344,9 +357,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   // step out one thing at a time: the open panel, the picked row, any zoom, then up a level (a machine, then the Board)
   const back = (fx?: number, fy?: number) => {
-    const step = backStep({ panel: panel.classList.contains("open"), focus: pickedRow, scrolled: !scene?.top && !zoomedOut(), depth: path.length });
+    const step = backStep({ panel: panel.classList.contains("open"), focus: pickedRow, scrolled: scene?.top ? scrollGoal > 0 : !zoomedOut(), depth: path.length });
     if (step === "panel") closePanel();
     else if (step === "focus") setFocus(null);
+    else if (step === "scroll" && scene?.top) scrollGoal = 0;
     else if (step === "scroll") flyTo(fit);
     else if (step === "up") go(path.slice(0, -1), fx, fy);
   };
@@ -367,7 +381,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       scroll = wheelScroll(scroll, grid, e, view.k);
       return;
     }
-    if (scene.top) return;
+    if (scene.top) {
+      scrollBy({ wheel: e.deltaY, lines: e.deltaMode === 1 });
+      return;
+    }
     anim = null;
     view = zoomAbout(view, fit, { x: e.offsetX, y: e.offsetY }, wheelFactor(e.deltaY, e.deltaMode, H)) ?? fit;
     save();
@@ -383,9 +400,17 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       scroll = dragStart(scroll, e.clientY);
       return;
     }
+    if (scene?.top && !trans && railHit(e.offsetX - view.x, e.offsetY)?.kind === "thumb") {
+      thumbDrag = { y: e.clientY, g0: scrollGoal };
+      return;
+    }
     drag = { fixed: zoomedOut(), x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
   };
   const onUp = (e: MouseEvent) => {
+    if (thumbDrag) {
+      thumbDrag = null;
+      return;
+    }
     if (scroll.drag) scroll = { ...scroll, drag: null };
     else if (drag && !drag.moved && e.target === cv) {
       const grid = ledgerPort();
@@ -395,6 +420,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     drag = null;
   };
   const onMove = (e: MouseEvent) => {
+    if (thumbDrag && railThumb && scene?.top) {
+      scrollGoal = scrollPos = dragTo(railThumb, thumbDrag.g0, e.clientY - thumbDrag.y, scene.top.max);
+      return;
+    }
     if (scroll.drag) {
       const grid = ledgerPort();
       if (grid) scroll = dragMove(scroll, grid, e.clientY, view.k, labPx(24));
@@ -425,6 +454,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       scroll = next;
       return;
     }
+    if (scene?.top && !trans && scrollBy({ key: e.key })) return void e.preventDefault();
     if (e.key === "Escape" || e.key === "Backspace") back();
     if (e.key === "0" && scene) flyTo(fit);
   };
@@ -959,6 +989,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   function click(fx: number, fy: number) {
     const h = hover, sky = S;
+    const rail = scene?.top ? railHit(fx - view.x, fy) : null;
+    if (rail) return railClick(rail);
+    if (h?.kind === "state" && scene?.top && h.o.flow === scene.top.flow && sky) {
+      const to = firstOpened(sky.flows, scene.top.ranked, h.o.flow, h.o.id);
+      return to ? revealRow(to) : undefined; // a state of the top scrolls to the first machine it opens
+    }
     if (!h || !sky) return void closePanel();
     // a click anywhere on a row (its name, a state or a DAG star) opens that machine, nested or not
     if (h.kind === "row") return drill(h.o.name, fx, fy);
@@ -1926,7 +1962,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   function drawTop() {
     const sc = scene!, top = sc.top!, scale = prefs().scale, { fs, gs } = ledgerSizes(scale), nodes = new Map(top.nodes.map((n) => [n.id, n]));
-    const flow = S!.flows[top.flow], names = top.rows.map((r) => r.name), stuck = stuckCount(S!.flows, names);
+    const flow = S!.flows[top.flow], stuck = stuckCount(S!.flows, top.ranked);
     const name = 12 * fs, sub = 10 * fs, mx = top.metaX, mw = top.metaW;
     ledTasks = [];
     ledLabs = [];
@@ -1936,7 +1972,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.letterSpacing = "0.6px";
     text(fitText(top.flow, mw, name * 1.08), mx, top.metaT + 4 + name * 0.6, name * 1.08, rgba(INK, 0.9), "left", 400);
     text(fitText(`template · ${top.nodes.length} states · ${flow?.agents.length ?? 0} tasks`, mw, sub), mx, top.metaT + 6 + name * 1.3 + sub * 0.6, sub, rgba(SUB, 0.7), "left", 300);
-    text(fitText(`${names.length} machine${names.length === 1 ? "" : "s"}${stuck ? ` · ${stuck} stuck` : " · newest first"}`, mw, sub), mx, top.hdrB - sub, sub, rgba(SUB, 0.6), "left", 300);
+    text(fitText(`${top.total} machine${top.total === 1 ? "" : "s"}${stuck ? ` · ${stuck} stuck` : " · newest first"}`, mw, sub), mx, top.hdrB - sub, sub, rgba(SUB, 0.6), "left", 300);
     cx.letterSpacing = "0px";
     cx.fillStyle = rgba(SUB, 0.16);
     cx.fillRect(mx - 10, top.hdrB, top.x1 + 22 - mx, 1);
@@ -1981,6 +2017,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     cx.restore();
     drawLane();
+    drawRail();
     // a pinned path is the focused setting: the rest of the ledger steps back under the page's dark veil
     if (pinnedTask()) {
       cx.fillStyle = "rgba(4,6,11,0.66)";
@@ -2119,9 +2156,149 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       });
     cx.letterSpacing = "0px";
   }
+  // ---- the machine ledger's scroll, the footer that loads older machines, and the 24 h strip along the bottom ----
+  type Box = { x0: number; y0: number; x1: number; y1: number };
+  type Rail = { kind: "thumb" } | { kind: "chip" } | { kind: "foot" } | { kind: "tick"; tick: Tick };
+  /** Where the rail was drawn this frame, in the ledger's pixels, for the hover and the clicks. */
+  const railBox = { thumbX: 0, laneTop: 0, chip: null as Box | null, foot: null as Box | null, stripT: 0, sx0: 0, sx1: 0 };
+  let railThumb: Thumb | null = null, railTicks: Tick[] = [], railHover: Rail | null = null, railMoving = false;
+  /** What the rail is under (x, y) of the ledger: the back-to-newest chip, the thumb, a tick of the strip or the footer. */
+  function railHit(x: number, y: number): Rail | null {
+    const r = railBox, within = (b: Box | null) => !!b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
+    if (!scene?.top) return null;
+    if (within(r.chip)) return { kind: "chip" };
+    if (railThumb && Math.abs(x - r.thumbX) < 8 && y > r.laneTop + railThumb.y0 && y < r.laneTop + railThumb.y1) return { kind: "thumb" };
+    if (y >= r.stripT) {
+      const t = x < r.sx0 - 4 || x > r.sx1 + 4 ? null : tickAt(railTicks, x);
+      return t ? { kind: "tick", tick: t } : null;
+    }
+    return within(r.foot) ? { kind: "foot" } : null;
+  }
+  /** Move the scroll's goal by an input; false for a key that does not scroll. */
+  function scrollBy(input: ScrollInput): boolean {
+    const top = scene?.top;
+    if (!top) return false;
+    const to = inputGoal(input, scrollGoal, { h: top.laneBottom - top.laneTop, fs: ledgerSizes(prefs().scale).fs }, top.max);
+    if (to === null) return false;
+    scrollGoal = to;
+    return true;
+  }
+  /** Scroll the machine's row to the middle of the lane, bringing in the older machines between it and the page held if it is not loaded. */
+  function revealRow(name: string) {
+    if (pg) {
+      pg = reveal(pg, S!.flows[name]?.last ?? 0);
+      layout(true);
+    }
+    const top = scene!.top!, i = top.rows.findIndex((r) => r.name === name);
+    if (i >= 0) scrollGoal = revealGoal(top.rows, i, { h: top.laneBottom - top.laneTop, fs: ledgerSizes(prefs().scale).fs }, top.max);
+    loop.wake();
+  }
+  /** The next 20 older machines: asked once for a footer in view, and again a few seconds after a failure. */
+  function loadNext() {
+    const p = pg;
+    if (!p?.more || p.busy) return;
+    pg = asked(p);
+    apiFetch(nextQuery(p))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((b: { machines: { name: string; last: number | null }[]; more: boolean }) => {
+        if (pg?.top !== p.top) return;
+        pg = pageArrived(pg, b.machines, b.more);
+        layout(true);
+        loop.wake();
+      })
+      .catch(() => {
+        if (pg?.top === p.top) pg = failed(pg, Date.now() / 1000);
+        window.setTimeout(() => loop.wake(), RETRY * 1000 + 100);
+      });
+  }
+  function railClick(r: Rail) {
+    if (r.kind === "chip") scrollGoal = 0;
+    else if (r.kind === "tick") revealRow(r.tick.entry.row);
+    else if (r.kind === "foot") loadNext();
+    loop.wake();
+  }
+  /** One frame of the scroll: ease to the goal, and ask for the next page when the footer is in view. */
+  function scrollStep() {
+    const top = scene!.top!, d = scrollGoal - scrollPos;
+    scrollPos = Math.abs(d) < 0.5 ? scrollGoal : scrollPos + d * 0.3;
+    railMoving = scrollPos !== scrollGoal;
+    if (wantNext(pg, top.more > 0 && top.laneTop + top.content - top.foot - scrollPos < top.laneBottom, T)) loadNext();
+  }
+  /** The colour a tick takes: the state its machine was entered from, amber for a DAG launch. */
+  function entryColor(e: MachineEntry): string {
+    const sc = scene!, top = sc.top!;
+    if (e.dag != null) return DAGC;
+    if (!e.from) return PLANET;
+    if (e.from.machine === top.flow) return sc.mStates[e.from.state]?.color ?? PLANET;
+    const st = S!.flows[e.from.machine]?.machine.states ?? [], j = st.findIndex((s) => s.id === e.from!.state);
+    return j < 0 ? PLANET : RAMP[Math.round((st.length > 1 ? j / (st.length - 1) : 0) * (RAMP.length - 1))];
+  }
+  /** The thumb, the back-to-newest chip and the strip of the last 24 h of machine entries under the lane, with the rows in view shaded on it. */
+  function drawRail() {
+    const top = scene!.top!, { fs } = ledgerSizes(prefs().scale), sp = 10 * fs, stripT = top.laneBottom, sx0 = top.metaX, sx1 = top.x1, hot = hotRow();
+    cx.fillStyle = rgba(SUB, 0.16);
+    cx.fillRect(top.metaX - 10, stripT, top.x1 + 20 - top.metaX, 1);
+    railThumb = thumbOf(top.content, { h: stripT - top.laneTop, fs }, scrollPos, top.max);
+    Object.assign(railBox, { thumbX: top.x1 + 18, laneTop: top.laneTop, stripT, sx0, sx1, chip: null, foot: null });
+    if (railThumb) {
+      const t = railThumb, x = railBox.thumbX;
+      cx.fillStyle = rgba(SUB, 0.08);
+      cx.fillRect(x - 1, top.laneTop + t.y0, 2, t.y1 - t.y0);
+      cx.fillStyle = rgba(SUB, railHover?.kind === "thumb" || thumbDrag ? 0.65 : 0.32);
+      cx.beginPath();
+      cx.roundRect(x - 2, top.laneTop + t.ty, 4, t.th, 2);
+      cx.fill();
+    }
+    if (top.more) {
+      const footY = top.laneTop + top.content - top.foot - scrollPos;
+      railBox.foot = { x0: top.metaX - 10, x1: top.x1 + 20, y0: Math.max(top.laneTop, footY), y1: Math.min(stripT, footY + top.foot) };
+    }
+    if (scrollPos > 8) {
+      const label = "↑ back to newest", w = nameWidth(label, sp) + 24 * fs, h = 20 * fs, x0 = (top.x0 + top.x1) / 2 - w / 2, y0 = top.laneTop + 8;
+      railBox.chip = { x0, y0, x1: x0 + w, y1: y0 + h };
+      cx.beginPath();
+      cx.roundRect(x0, y0, w, h, h / 2);
+      cx.fillStyle = "rgba(12,19,34,0.92)";
+      cx.fill();
+      cx.strokeStyle = `rgba(167,139,250,${railHover?.kind === "chip" ? 0.7 : 0.35})`;
+      cx.lineWidth = 1;
+      cx.stroke();
+      cx.letterSpacing = "0.6px";
+      text(label, x0 + w / 2, y0 + h / 2, sp, rgba(INK, 0.9), "center", 400);
+      cx.letterSpacing = "0px";
+    }
+    // the strip: one continuous stretch shaded for the rows in view, a tick per entry, hours along the axis
+    const scale = stripScale(sx0, sx1, T), by = stripT + 30 * fs;
+    railTicks = ticks(S!.machineEntries, top.ranked, scale);
+    const inView = windowOf(top.rows, scrollPos, { h: stripT - top.laneTop, fs }).inView.map((i) => S!.flows[top.rows[i].name]?.last ?? null), span = viewSpan(inView, scale.t0);
+    if (span) {
+      const a = scale.x(span.from), b = scale.x(span.to);
+      cx.fillStyle = rgba(PLANET, 0.12);
+      cx.fillRect(a - 3, by - 14 * fs, b - a + 6, 14 * fs);
+      cx.fillStyle = rgba(PLANET, 0.5);
+      cx.fillRect(a - 3, by, b - a + 6, 1);
+    }
+    cx.fillStyle = rgba(SUB, 0.22);
+    cx.fillRect(sx0, by, sx1 - sx0, 1);
+    cx.letterSpacing = "0.6px";
+    for (let h = Math.ceil(scale.t0 / 10800) * 10800; h <= scale.t1; h += 10800) {
+      const x = scale.x(h);
+      cx.fillStyle = rgba(SUB, 0.3);
+      cx.fillRect(x, by, 1, 4);
+      if (x - sx0 > 18 && sx1 - x > 18) text(hhmm(h), x, by + 11 * fs, sp * 0.95, rgba(SUB, 0.5), "center", 300);
+    }
+    for (const t of railTicks) {
+      const on = hot === t.entry.row || (railHover?.kind === "tick" && railHover.tick === t), len = (on ? 13 : 8) * fs;
+      cx.fillStyle = rgba(entryColor(t.entry), on ? 1 : 0.62);
+      cx.fillRect(t.x - 0.75, by - len, 1.5, len);
+    }
+    text("24 h · machine entries", sx0, stripT + 8 * fs, sp, rgba(SUB, 0.6), "left", 300);
+    text(stripLabel(span, top.rows.length, top.total, hhmm), sx1, stripT + 8 * fs, sp, rgba(SUB, 0.7), "right", 300);
+    cx.letterSpacing = "0px";
+  }
   const rowTop = new Map<string, number>();
   /** Where each row is drawn this frame (down the canvas), for the hover. */
-  let lane: { row: RowView; y: number }[] = [], sliding = false, rowsHeld = false;
+  let lane: { row: RowView; y: number; to: number }[] = [], sliding = false, rowsHeld = false;
   const overRows = () => !!(mouse && scene?.top && mouse.oy > scene.top.laneTop && mouse.oy < scene.top.laneBottom);
   /** The row the pointer is on, over its name or one of its states. */
   const hotRow = () => (hover?.kind === "row" ? hover.o.name : hover?.kind === "rstate" ? (scene!.top!.rows.find((r) => r.nodes.includes((hover as { o: RowView["nodes"][number] }).o))?.name ?? null) : null);
@@ -2202,18 +2379,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     // each row eases to its place, so a row that moves slides (and fades while it does)
     sliding = false;
     lane = top.rows.map((row) => {
-      const to = top.laneTop + row.y, was = rowTop.get(row.name), y = was === undefined || Math.abs(was - to) > 1500 ? to : Math.abs(to - was) < 0.3 ? to : was + (to - was) * 0.3;
-      rowTop.set(row.name, y);
-      if (y !== to) sliding = true;
-      return { row, y };
+      const to = top.laneTop + row.y, was = rowTop.get(row.name), eased = was === undefined || Math.abs(was - to) > 1500 ? to : Math.abs(to - was) < 0.3 ? to : was + (to - was) * 0.3;
+      rowTop.set(row.name, eased);
+      if (eased !== to) sliding = true;
+      return { row, y: eased - scrollPos, to: to - scrollPos };
     });
     if (fl) sliding = true; // the glow fades over frames
     if (!top.rows.length) text(emptyNote(top.flow), (top.x0 + top.x1) / 2, (top.laneTop + top.laneBottom) / 2, subP, rgba(SUB, 0.6), "center", 300);
+    const shown = lane.filter(({ row, y }) => y + row.h > top.laneTop && y < top.laneBottom);
     const pos = (row: RowView, y: number) => new Map(row.nodes.map((n) => [n.id, { x: n.x, y: y + row.c + n.oy, r: n.r, color: n.color, orbit: n.orbit }]));
-    const spots = new Map(lane.map((d) => [d.row.name, pos(d.row, d.y)]));
-    for (const { row, y } of lane) {
-      if (y + row.h < top.laneTop || y > top.laneBottom) continue;
-      const f = S!.flows[row.name], m = rowMeta(S!.flows, row.name, top.flow, now), ns = spots.get(row.name)!, picked = pickedRow === row.name, on = hot === row.name || picked, fade = Math.abs(y - (top.laneTop + row.y)) > 3 ? 0.3 : 1;
+    const spots = new Map(shown.map((d) => [d.row.name, pos(d.row, d.y)])); // only the rows in view are placed
+    for (const { row, y, to: place } of shown) {
+      const f = S!.flows[row.name], m = rowMeta(S!.flows, row.name, top.flow, now), ns = spots.get(row.name)!, picked = pickedRow === row.name, on = hot === row.name || picked, fade = Math.abs(y - place) > 3 ? 0.3 : 1;
       for (const [id, p] of ns) ledSpots.set(`${row.name}:${id}`, { ...p, y0: top.laneTop, y1: top.laneBottom, row: row.h });
       cx.globalAlpha = fade;
       const lit = Math.max(on ? (picked ? 0.09 : 0.055) : 0, glow?.name === row.name ? 0.16 * fl : 0);
@@ -2283,6 +2460,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         ledLabs.push({ key: `${row.name}:${l.id}`, text: l.text, x: l.x, y: y + l.y + l.h / 2, px: l.px, ink: on ? 0.85 : 0.5, ga: fade, weight: 300, hot: hover?.kind === "rstate" && hover.o.id === l.id && on, y0: top.laneTop, y1: top.laneBottom });
       cx.globalAlpha = 1;
     }
+    if (top.more) {
+      const footY = top.laneTop + top.content - top.foot - scrollPos, busy = pg?.busy, wait = pg?.failedAt != null && !busy;
+      cx.letterSpacing = "0.6px";
+      text(busy ? `loading ${Math.min(PAGE, top.more)} more…` : wait ? `could not load ${Math.min(PAGE, top.more)} more · trying again` : `${top.more} more · scroll to load`, (top.x0 + top.x1) / 2, footY + top.foot / 2, subP, rgba(wait ? OFF : SUB, 0.7), "center", 300);
+      cx.letterSpacing = "0px";
+    }
     // a row's tie, drawn while the row or the state it is entered from is under the pointer, along the path its sessions take in; it crosses the
     // gap under the top machine, so it clips to the lane's bottom rather than its top
     cx.restore();
@@ -2290,7 +2473,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.beginPath();
     cx.rect(0, 0, FW, top.laneBottom);
     cx.clip();
-    for (const { row } of lane) {
+    for (const { row } of shown) {
       const f = S!.flows[row.name], to = spots.get(row.name)!.get(row.init);
       if (!to) continue;
       f.ties?.forEach((t, i) => {
@@ -2352,6 +2535,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       rowsHeld = !rowsHeld;
       layout(true); // the order holds from the row the pointer entered, or while a path is pinned, and is released to the newest-first order after
     }
+    if (scene?.top) {
+      scrollStep();
+      railHover = mouse && !trans ? railHit(mouse.ox - view.x, mouse.oy) : null;
+      cv.style.cursor = railHover ? "pointer" : "";
+    }
     if (anim) anim(now);
     if (scene) update(clock);
     if (mouse && scene) setHover(hit((mouse.ox - view.x) / view.k, (mouse.oy - view.y) / view.k), mouse.cx, mouse.cy);
@@ -2401,7 +2589,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
   };
   /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
-  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || sliding || scrolling());
+  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || sliding || scrolling() || railMoving);
   /** The loop settled: the feed and moving list get their last write, and the next wake starts the ambient clock afresh. */
   const settle = () => {
     last = 0;

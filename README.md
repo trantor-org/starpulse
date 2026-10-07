@@ -444,6 +444,13 @@ a machine. An unknown `open` is 404; a `before` that is not a finite number or a
 nested machine counts on the row above it; `from` is the `{machine, state}` the task's session was entered from (null
 when no earlier session is known); `dag` is the workflow that launched a session with no task.
 
+The page scrolls the rows under the fixed top by the wheel, Page Up and Page Down, the arrow keys, Home and End and a
+draggable thumb, with `↑ back to newest` once scrolled; the rows are drawn only while in view. As the footer comes
+into view it loads the next 20 older machines from `/api/machines`. The 24 h strip under the rows draws a tick per
+entry, coloured by the state it was entered from (amber for a workflow launch), shades the rows in view as one
+stretch, and a click on a tick scrolls to its row. A demo page (`?demo`) takes `&many=N` to grow the machines under
+the In Progress one to N, enough to scroll.
+
 ### Connect a tracker
 
 `starpulse connect` checks that a tracker answers, then writes the `[board]` table of `starpulse.toml` for you, keeping
