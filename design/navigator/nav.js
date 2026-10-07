@@ -1,4 +1,4 @@
-// Mockup layer (TASK-3013): a real Star Map icon in the navigator's Views, the Kanban search docked in the Star Map
+// Navigator mockup layer: a real Star Map icon in the navigator's Views, the Kanban search docked in the Star Map
 // search's slot, an ✕ that clears either search while it holds text, and a strip magnifier while the navigator is folded.
 // Injected over a scrubbed capture of the live page; it only adds elements and styles, so React keeps owning the page.
 (() => {
@@ -17,6 +17,8 @@
   let next = null;
   try { next = JSON.parse(sessionStorage.getItem("nv.next") || "null"); sessionStorage.removeItem("nv.next"); } catch {}
   const qs = new URLSearchParams(next && !new URLSearchParams(location.search).get("s") ? next : location.search);
+  // a frame that passes only a bare #anchor can still link a state: #kanban-label
+  if (!qs.get("s") && location.hash.slice(1) in STATES) qs.set("s", location.hash.slice(1));
   const sKey = qs.get("s") in STATES ? qs.get("s") : null;
   const preset = sKey ? STATES[sKey] : null;
   let icon = ICONS.includes(qs.get("icon")) ? qs.get("icon") : "sextant";
