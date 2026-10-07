@@ -19,7 +19,9 @@
   hovering a task retraces its path in order, across every machine it has a session in, along those same lines; clicking
   it pins the trace and opens the panel. &level=in_progress opens on the ledger, &fs=125 or &fs=150 sets the browser text
   size, &open=<machine> opens drilled into that machine, &focus=<machine> opens scrolled to that row (opening its parent first), &pick=busy pins the task on the most machines at once, &many=N seeds
-  N more machines (24 by default, 0 for the snapshot alone). running-skill-evals had no session in the saved snapshot, so
+  N more machines (24 by default, 0 for the snapshot alone), and &fan=N (3 to 8) widens the branch at Checkpointed and Red
+  proven to N states on one level, in the template and in the triaging-alerts row, to show a wide machine: a column of
+  three or more states names them beside it and takes the width its names need. running-skill-evals had no session in the saved snapshot, so
   two are seeded from the live shape (a task drafting a skill asks for a run); seeded rows say so.
 */
 (() => {
@@ -136,6 +138,13 @@
       M[n] = { name: n, states: f.machine.states, all: f.machine.transitions, trans: f.machine.transitions.filter((t) => t.source !== t.target),
         agents: f.agents.map((a) => ({ ...a, trail: [...(a.trail || [])], m: n })) };
     }
+    // &fan=N widens the template's column after Worktree ready to N states, as if more paths branched there beside Checkpointed and
+    // Red proven, each rejoining at Checkpointed; tasks waiting at Checkpointed are spread across them so their orbits show
+    const FAN = Math.min(8, Math.max(0, +P.get("fan") || 0)), FANS = ["Spike run", "Repro written", "Design asked", "Deps pinned", "Spec drafted", "Data migrated"];
+    if (FAN > 2 && M[IP]) { const add = FANS.slice(0, FAN - 2).map((name) => ({ id: name.toLowerCase().replace(/ /g, "_"), name })), mm = M[IP];
+      mm.states = [...mm.states]; mm.states.splice(mm.states.findIndex((x) => x.id === "checkpointed"), 0, ...add);
+      for (const x of add) mm.trans.push({ source: "worktree_ready", target: x.id, event: "BRANCHED" }, { source: x.id, target: "checkpointed", event: "CHECKPOINTED" });
+      mm.agents.filter((a) => a.state === "checkpointed").forEach((a, i) => { if (i % 3 === 2) return; const x = add[i % add.length]; a.state = x.id; a.trail.push({ state: x.id, event: "BRANCHED", at: a.active }); }); }
     const SUBS = Object.keys(M).filter((n) => n !== IP);
     const isFinal = (m, s) => !!M[m].states.find((x) => x.id === s)?.final;
     const stName = (m, s) => M[m].states.find((x) => x.id === s)?.name || s;
@@ -167,11 +176,14 @@
     let rs = 3015; const rnd = () => (rs = (rs * 1103515245 + 12345) % 2147483648) / 2147483648;
     const ipTasks = (M[IP]?.agents || []).filter((a) => a.task && a.trail.length);
     for (let i = 0; i < Math.min(MANY, NAMES.length) && ipTasks.length; i++) {
-      const n = NAMES[i], sh = SHAPES[i % SHAPES.length], cap = (s) => s[0].toUpperCase() + s.slice(1);
+      const n = NAMES[i], sh = [...SHAPES[i % SHAPES.length]], cap = (s) => s[0].toUpperCase() + s.slice(1);
       const states = sh.map((id, k) => ({ id, name: cap(id), initial: !k, final: k === sh.length - 1 })), trans = sh.slice(1).map((id, k) => ({ source: sh[k], target: id, event: id.toUpperCase() }));
-      if (i % 3 === 1) { states.splice(2, 0, { id: "blocked", name: "Blocked" }); trans.push({ source: sh[1], target: "blocked", event: "BLOCKED" }, { source: "blocked", target: sh[2], event: "UNBLOCKED" }); }
+      if (FAN > 2 && n === "triaging-alerts") { const br = ["paged", "silenced", "muted", "escalated", "deduped", "snoozed", "rerouted", "acked"].slice(0, FAN);
+        states.splice(1, states.length - 2, ...br.map((id) => ({ id, name: cap(id) }))); trans.length = 0;
+        for (const b of br) trans.push({ source: sh[0], target: b, event: b.toUpperCase() }, { source: b, target: sh.at(-1), event: "CLOSED" }); sh.splice(1, sh.length - 2, ...br.slice(0, 1)); }
+      else if (i % 3 === 1) { states.splice(2, 0, { id: "blocked", name: "Blocked" }); trans.push({ source: sh[1], target: "blocked", event: "BLOCKED" }, { source: "blocked", target: sh[2], event: "UNBLOCKED" }); }
       M[n] = { name: n, states, all: trans, trans, agents: [] }; SUBS.push(n); seeded.add(n);
-      const kind = i % 7 === 3 ? "idle" : i === 1 || i === 9 ? "stuck" : "live", nA = kind === "idle" ? 1 + (i % 2) : kind === "stuck" ? 2 : 1 + Math.floor(rnd() * 5);
+      const kind = i % 7 === 3 ? "idle" : i === 1 || i === 9 ? "stuck" : "live", nA = n === "triaging-alerts" && FAN > 2 ? FAN : kind === "idle" ? 1 + (i % 2) : kind === "stuck" ? 2 : 1 + Math.floor(rnd() * 5);
       // a few are entered from another machine's sessions instead, so the ledger nests three deep: in-progress › authoring-skills ›
       // running-skill-evals › verifying-claims; one of them from the oldest session there, so stuck work sits two machines down
       const par = NEST[n] && M[NEST[n][0]]?.agents.filter((a) => a.task).sort((x, y) => x.active - y.active);
@@ -185,6 +197,9 @@
         for (let k = 0; k <= upto; k++) tr.push({ state: sh[k], event: k ? sh[k].toUpperCase() : "ENTERED", at: t0 + k * 150 });
         M[n].agents.push({ id: `seed-${n}-${j}`, title: p.title, model: p.model, kind: "interactive", badges: [], task: p.task, m: n, state: sh[upto], steps: tr.length, trail: tr, active: tr.at(-1).at });
       }
+      // the fan machine's tasks wait one on each branch
+      if (n === "triaging-alerts" && FAN > 2) M[n].agents.forEach((a, j) => { const b = M[n].states[1 + (j % FAN)].id; a.trail = [a.trail[0], { state: b, event: b.toUpperCase(), at: a.trail[0].at + 150 }];
+        a.state = b; a.steps = 2; a.active = a.trail[1].at; });
     }
 
     // ---- ties: declared (a state's flow:), observed (the state a task held when its session entered), DAG launches
@@ -236,7 +251,8 @@
         if (mi !== undefined) row[mi] = 0; else row[rest.shift()] = 0;
         rest.forEach((id, i) => (row[id] = (i % 2 ? 1 : -1) * (Math.floor(i / 2) + 1))); }
       const rows = Object.values(row);
-      return { init, depth, row, main, ncols: cols.length, rmin: Math.min(...rows), rmax: Math.max(...rows), order: ids.slice().sort((a, b) => depth[a] - depth[b] || row[a] - row[b]) };
+      const colN = Object.fromEntries(ids.map((id) => [id, cols[depth[id]].length]));
+      return { init, depth, row, main, colN, ncols: cols.length, rmin: Math.min(...rows), rmax: Math.max(...rows), order: ids.slice().sort((a, b) => depth[a] - depth[b] || row[a] - row[b]) };
     }
     const G = Object.fromEntries(Object.keys(M).map((m) => [m, graph(m)]));
 
@@ -268,30 +284,40 @@
     const orbitOf = (n) => { const c = tasksAt(n.m, n.s).length; return c ? slot(n, c - 1).R + dotR() : n.r; };
     const fit = (s, px, w, wt) => { if (textW(s, px, wt) <= w) return s; let t = s; while (t.length > 1 && textW(`${t}…`, px, wt) > w) t = t.slice(0, -1); return `${t}…`; };
     const FOOT = () => 34 * FS;
+    // a column of three or more states names them beside their nodes, so the gap after it is widened to hold its longest name;
+    // the other gaps share what is left evenly
+    function colXs(m, x0, x1, px, orb) { const g = G[m], n = g.ncols, cols = []; for (const st of M[m].states) (cols[g.depth[st.id]] ||= []).push(st.id);
+      const wide = (c) => Math.max(...c.map((id) => textW(stName(m, id), px)));
+  // a fan column's names go beside it, and the column before a fan keeps room for half its name above or below
+  const need = cols.map((c, i) => (!c ? 0 : c.length >= 3 ? wide(c) + orb + 26 : cols[i + 1]?.length >= 3 ? wide(c) / 2 + orb / 2 + 14 : 0)).slice(0, n - 1);
+      const fan = need.filter(Boolean), u = fan.length < n - 1 ? Math.max(0, x1 - x0 - fan.reduce((a, b) => a + b, 0)) / (n - 1 - fan.length) : 0;
+      const gap = need.map((v) => Math.max(u, v)), k = (x1 - x0) / Math.max(1, gap.reduce((a, b) => a + b, 0)), xs = [x0];
+      gap.forEach((v) => xs.push(xs.at(-1) + v * k)); return xs; }
     function layout() {
       L = { nodes: new Map(), rows: new Map(), stars: [], pin: [], list: [], ticks: [] };
-      const g = G[topM], metaX = NX + 22, metaW = Math.round(clamp(186 * FS, 170, 290)), x0 = metaX + metaW + 34 * FS, x1 = NX + CW - 34, colW = (x1 - x0) / (g.ncols - 1);
+      const g = G[topM], metaX = NX + 22, metaW = Math.round(clamp(186 * FS, 170, 290)), x0 = metaX + metaW + 34 * FS, x1 = NX + CW - 34, hx = colXs(topM, x0, x1, PX.main(), 64 * FS);
       Object.assign(L, { metaX, metaW, x0, x1 });
-      const hn = M[topM].states.map((st) => Object.assign(addNode(topM, st.id, x0 + g.depth[st.id] * colW, null), { col: RAMP[Math.round((g.depth[st.id] / (g.ncols - 1)) * (RAMP.length - 1))] }));
+      const hn = M[topM].states.map((st) => Object.assign(addNode(topM, st.id, hx[g.depth[st.id]], null), { col: RAMP[Math.round((g.depth[st.id] / (g.ncols - 1)) * (RAMP.length - 1))] }));
       radii();
       // the template: branch states far enough off the main line that their orbits of tasks never touch, two tiers of names above and below
-      const oMax = Math.max(...hn.map(orbitOf)), lab = PX.main() * 1.3, rowGap = Math.max(2 * oMax + 10, 40 * FS), room = 3.3 * lab + 6;
+      const oMax = Math.max(...hn.map(orbitOf)), lab = PX.main() * 1.3, room = 3.3 * lab + 6,
+        rowGap = Math.min(Math.max(2 * oMax + 10, 40 * FS), Math.max(26 * FS, (H * 0.4 - 2 * room - 2 * oMax) / Math.max(1, g.rmax - g.rmin)));
       L.yMain = 10 + room + oMax - g.rmin * rowGap; for (const n of hn) n.y = L.yMain + g.row[n.s] * rowGap;
       L.hdrB = L.yMain + g.rmax * rowGap + oMax + room; L.laneTop = L.hdrB + 6;
       // each row is as tall as its meta or its machine (branches, names above and below), whichever is taller
-      const rg = 15 * FS, pad = 14 + PX.row() * 1.3, metaH = PX.name() * 1.4 + 2 * PX.sub() * 1.5 + 14;
+      const rg = 22 * FS, pad = 20 + PX.row() * 1.3, metaH = PX.name() * 1.4 + 2 * PX.sub() * 1.5 + 34 * FS;
       // a machine opened deep down may have only a few rows: they stretch, up to 3.2 times, so the lane is filled rather than left empty
       L.stripT = H - 50 * FS; const hOf = (g2) => Math.max(metaH, 2 * pad + (g2.rmax - g2.rmin) * rg), tot = KIDS[topM].reduce((a, m) => a + hOf(G[m]), 0);
       const k = KIDS[topM].length <= PAGE ? clamp(((L.stripT - L.laneTop) * 0.97) / Math.max(1, tot), 1, 3.2) : 1;
-      KIDS[topM].forEach((m) => { const g2 = G[m], dx = (x1 - x0) / Math.max(1, g2.ncols - 1), r = { m, cy: null, k };
-        r.nodes = g2.order.map((s, j) => Object.assign(addNode(m, s, x0 + g2.depth[s] * dx, r), { oy: g2.row[s] * rg * k, col: RAMP[Math.round((j / Math.max(1, g2.order.length - 1)) * (RAMP.length - 1))] }));
+      KIDS[topM].forEach((m) => { const g2 = G[m], rx = colXs(m, x0, x1, PX.row(), 10), r = { m, cy: null, k };
+        r.nodes = g2.order.map((s, j) => Object.assign(addNode(m, s, rx[g2.depth[s]], r), { oy: g2.row[s] * rg * k, col: RAMP[Math.round((j / Math.max(1, g2.order.length - 1)) * (RAMP.length - 1))] }));
         r.h = hOf(g2) * k; r.c = r.h / 2 - ((g2.rmax + g2.rmin) / 2) * rg * k; L.rows.set(m, r);
         const ds = dagTies(m); ds.forEach((t, k) => L.stars.push({ t, dag: t.dag, child: m, row: r, x: x0 - 18 * FS, dy: (k - (ds.length - 1) / 2) * 12 * FS })); });
       const s0 = node(topM, initOf(topM)); dagTies(topM).forEach((t, k) => L.stars.push({ t, dag: t.dag, child: topM, x: s0.x - orbitOf(s0) - 14, y: s0.y + k * 14 }));
       const rv = revEl.getBoundingClientRect(); L.sx0 = Math.max(x0, rv.right + 24); L.sx1 = x1;
       order = rankRows(); place(performance.now());
     }
-    function radii() { for (const n of L.nodes.values()) { const c = tasksAt(n.m, n.s).length; n.r = n.row ? (3.4 + 0.8 * Math.sqrt(c)) * Math.min(2, n.row.k) ** 0.6 : 8 + 2.2 * Math.sqrt(c); } }
+    function radii() { for (const n of L.nodes.values()) { const c = tasksAt(n.m, n.s).length; n.r = n.row ? (4.6 + 0.9 * Math.sqrt(c)) * Math.min(2, n.row.k) ** 0.6 : 8 + 2.2 * Math.sqrt(c); } }
     const regionOf = (r) => (r.pinned ? [L.laneTop, L.pinB] : [L.pinB, L.stripT]);
     const shown = (r) => { if (!r.pinned && !r.on) return false; const [a, b] = regionOf(r); return r.cy < b && r.cy + r.h > a; };
     const reg = (n) => (!n.row ? [0, L.hdrB] : regionOf(n.row));
@@ -327,12 +353,14 @@
       const put = (cands, w, h, lab) => { for (const c of cands) { const r = { x0: c.x, y0: c.y, x1: c.x + w, y1: c.y + h };
           if (r.x0 < X0 || r.x1 > X1 || r.y0 < 2 || r.y1 > Y1) continue; const pad = { x0: r.x0 - 8, x1: r.x1 + 8, y0: r.y0 - 1, y1: r.y1 + 1 };
           if (placed.some((q) => hits(pad, q))) continue; placed.push(pad); labels.push({ ...lab, lead: c.lead, x: r.x0, y: r.y0 + h / 2, w, h }); return true; } return false; };
-      const sides = (p, rr, w, h, ord) => ord.flatMap((sd) => { const xs = [p.x - w / 2, p.x + rr - w, p.x - rr];
+      const sides = (p, rr, w, h, ord) => ord.flatMap((sd) => { const xs = [p.x - w / 2, p.x + rr - w, p.x - rr, p.x - w];
         return sd === "below" ? xs.map((x) => ({ x, y: p.y + rr + 3 })) : sd === "above" ? xs.map((x) => ({ x, y: p.y - rr - 3 - h }))
-          : sd === "right" ? [{ x: p.x + rr + 5, y: p.y - h / 2 }] : [{ x: p.x - rr - 5 - w, y: p.y - h / 2 }]; });
-      const ordOf = (g, s) => (g.row[s] < 0 ? ["above", "right", "left", "below"] : g.row[s] > 0 ? ["below", "right", "left", "above"] : g.depth[s] % 2 ? ["above", "below", "right", "left"] : ["below", "above", "right", "left"]);
-      for (const n of L.nodes.values()) if (!n.row) { const px = PX.main(), w = textW(n.label, px), h = px * 1.3, p = n, rr = orbitOf(n) + 2;
-        const far = (dir, k) => [p.x - w / 2, p.x + rr - w, p.x - rr].map((x) => ({ x, y: dir > 0 ? p.y + rr + 3 + h * k : p.y - rr - 3 - h * (k + 1), lead: { x: p.x, y: p.y + dir * rr } }));
+          : sd === "right" ? [{ x: p.x + rr + 10, y: p.y - h / 2 }] : [{ x: p.x - rr - 10 - w, y: p.y - h / 2 }]; });
+      const ordOf = (g, s) => (g.colN[s] >= 3 ? ["right", "left", "above", "below"] : g.row[s] < 0 ? ["above", "right", "left", "below"] : g.row[s] > 0 ? ["below", "right", "left", "above"] : g.depth[s] % 2 ? ["above", "below", "right", "left"] : ["below", "above", "right", "left"]);
+      // the main line is named first, so a wide fan of branches beside it never takes the places its names need
+      const hg = G[topM], heads = [...L.nodes.values()].filter((n) => !n.row).sort((a, b) => (hg.row[a.s] !== 0) - (hg.row[b.s] !== 0));
+      for (const n of heads) { const px = PX.main(), w = textW(n.label, px), h = px * 1.3, p = n, rr = orbitOf(n) + 2;
+        const far = (dir, k) => [p.x - w / 2, p.x + rr - w, p.x - rr, p.x - w].map((x) => ({ x, y: dir > 0 ? p.y + rr + 3 + h * k : p.y - rr - 3 - h * (k + 1), lead: { x: p.x, y: p.y + dir * rr } }));
         const o = ordOf(G[topM], n.s), d = o[0] === "above" ? -1 : 1; put([...sides(p, rr, w, h, o), ...[1.1, 2.2].flatMap((k) => [...far(d, k), ...far(-d, k)])], w, h, { node: n, px, a: 1 }); }
       for (const s of L.stars) if (!s.row) { const px = PX.dag(), w = textW(s.dag, px), h = px * 1.3;
         put([{ x: s.x - w / 2, y: s.y - 9 - h }, { x: s.x - w / 2, y: s.y + 9 }, { x: s.x - 9 - w, y: s.y - h / 2 }], w, h, { star: s, px }); }
@@ -457,9 +485,11 @@
     // a row's state names alternate below and above its line; a name that would touch another, or leave the row, waits for the tooltip
     function rowLabels(r, hot) { const placed = [...r.nodes.map((n) => ({ x: n.x, y: n.y, r: orbitOf(n) + 1 })), ...L.stars.filter((s) => s.row === r).map((s) => ({ x: s.x, y: s.y, r: 11 }))], px = PX.row(), h = px * 1.3, g2 = G[r.m];
       for (const n of r.nodes) { n.lab = null; const w = textW(n.label, px), o = orbitOf(n) + 1, up = n.oy < 0 || (n.oy === 0 && g2.depth[n.s] % 2 === 1), xx = clamp(n.x - w / 2, L.x0 - 26 * FS, L.x1 - w);
-        for (const u of up ? [true, false] : [false, true]) { const yy = u ? n.y - o - 1.5 - h : n.y + o + 1.5, b = { x0: xx - 6, x1: xx + w + 6, y0: yy, y1: yy + h };
-          if (b.y0 < r.cy + 1 || b.y1 > r.cy + r.h - 1 || placed.some((q) => hits(b, q))) continue;
-          placed.push(b); n.lab = { x: xx, y: yy + h / 2, px }; text(n.label, xx, yy + h / 2, px, rgba(INK, hot ? 0.85 : 0.5)); break; } } }
+        // in a fan of three or more, the states above and below hold those places, so the name goes beside the state
+        const side = [{ x: n.x + o + 8, y: n.y - h / 2 }, { x: n.x - o - 8 - w, y: n.y - h / 2 }], vert = (up ? [true, false] : [false, true]).map((u) => ({ x: xx, y: u ? n.y - o - 1.5 - h : n.y + o + 1.5 }));
+        for (const c of g2.colN[n.s] >= 3 ? [...side, ...vert] : vert) { const b = { x0: c.x - 6, x1: c.x + w + 6, y0: c.y, y1: c.y + h };
+          if (b.y0 < r.cy + 1 || b.y1 > r.cy + r.h - 1 || b.x0 < L.x0 - 30 * FS || b.x1 > L.x1 + 8 || placed.some((q) => hits(b, q))) continue;
+          placed.push(b); n.lab = { x: c.x, y: c.y + h / 2, px }; text(n.label, c.x, c.y + h / 2, px, rgba(INK, hot ? 0.85 : 0.5)); break; } } }
     // a row's tie, drawn while the row, its source state or a fresh entry calls for it, along the path its sessions take in
     function drawTies(now) {
       const hm = hotM(), hs = hover?.kind === "node" && !hover.o.row ? hover.o : null;
@@ -611,10 +641,10 @@
       if (sy >= L.stripT) { if (sx < L.sx0 - 4 || sx > L.sx1 + 4) return null; let best = null;
         for (const t of L.ticks) { const d = Math.abs(t.x - sx); if (d < 4 && (!best || d < best.d)) best = { d, t }; } return best ? { kind: "tick", o: best.t } : null; }
       if (L.thumb && Math.abs(sx - L.thumb.x) < 8 && sy > L.thumb.y0 && sy < L.thumb.y1) return { kind: "thumb" };
-      for (const [ag, p] of taskPos) if (Math.hypot(p.x - sx, p.y - sy) < 6) return { kind: "task", o: ag };
+      for (const [ag, p] of taskPos) if (Math.hypot(p.x - sx, p.y - sy) < 9) return { kind: "task", o: ag };
       const inReg = (n) => { const [a, b] = reg(n); return sy >= a && sy <= b && (!n.row || shown(n.row)); };
-      for (const s of L.stars) if (inReg(s) && Math.hypot(s.x - sx, s.y - sy) < 9) return { kind: "star", o: s };
-      for (const n of L.nodes.values()) if (inReg(n) && Math.hypot(n.x - sx, n.y - sy) < n.r + 6) return { kind: "node", o: n };
+      for (const s of L.stars) if (inReg(s) && Math.hypot(s.x - sx, s.y - sy) < 13) return { kind: "star", o: s };
+      for (const n of L.nodes.values()) if (inReg(n) && Math.hypot(n.x - sx, n.y - sy) < Math.max(n.r + 9, 15)) return { kind: "node", o: n };
       for (const l of labels) if (sx >= l.x && sx <= l.x + l.w && Math.abs(sy - l.y) < l.h / 2) return l.star ? { kind: "star", o: l.star } : { kind: "node", o: l.node };
       if (sy > L.laneTop && sx > L.metaX - 12 && sx < L.x1 + 8) { for (const r of [...L.pin, ...L.list]) { if (!shown(r)) continue; const [a, b] = regionOf(r); if (sy >= Math.max(a, r.cy) && sy < Math.min(b, r.cy + r.h)) return { kind: "row", o: r }; }
         if (L.more && sy >= Math.max(L.pinB, L.footY) && sy < L.footY + FOOT()) return { kind: "foot" }; }
