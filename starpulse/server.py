@@ -161,7 +161,15 @@ from starpulse.contracts import Move, StartFailedError
 from starpulse.event_log import EventLog, prune_forever
 from starpulse.harness import HARNESS_MACHINES
 from starpulse.harnesses import Harnesses
-from starpulse.history import HealthHistory, History, HistoryStore, LevelHistory, database_url, record_machine_events
+from starpulse.history import (
+    HealthHistory,
+    History,
+    HistoryStore,
+    LaneHistory,
+    LevelHistory,
+    database_url,
+    record_machine_events,
+)
 from starpulse.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse.ingest import tokens as ingest_tokens
 from starpulse.insights import Insights, InsightStore, restore
@@ -1021,7 +1029,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     history = history_store(config, base, board, feed.machines)
     feed.date_lanes(history.lane_path)
-    if isinstance(history, HealthHistory):
+    if isinstance(history, LaneHistory):
         feed.size_suns(history.lane_rows)
         threading.Thread(target=feed.keep_suns, args=(threading.Event(),), name="board-suns", daemon=True).start()
     if args.hub:

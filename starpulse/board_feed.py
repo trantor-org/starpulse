@@ -246,7 +246,7 @@ class BoardFeed:
 
     def size_suns(self, lane_rows: Callable[[], list[LaneRow]]) -> None:
         """Size each Board state's sun from its share of the lane moves in the week before local midnight, read through
-        `lane_rows` (`HealthHistory.lane_rows`). The shares are worked out once a day, the first time a snapshot is
+        `lane_rows` (`LaneHistory.lane_rows`). The shares are worked out once a day, the first time a snapshot is
         taken after midnight, so a move made since then changes none until the next one."""
         self._lane_rows = lane_rows
 
