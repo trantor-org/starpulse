@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError
 from starpulse import events
 from starpulse.event_log import EventLog
 from starpulse.history import HistoryStore, record_machine_events
+from starpulse.level_metrics import UNATTRIBUTED, Run
 from starpulse.tables import metadata
 from starpulse.tests.machines import MACHINES
 
@@ -358,3 +359,33 @@ def test_a_database_that_cannot_be_reached_leaves_the_entry_to_be_recorded_on_th
     _stop(stop, thread)
 
     assert (len(failures), len(_event_ids(store))) == (1, 1)
+
+
+def test_board_level_runs_are_each_sources_tasks_lane_by_lane_with_the_lane_read_as_its_state(
+    store: HistoryStore,
+) -> None:
+    store.record_lane("a/1", "T-1", "To Do", 1.0)
+    store.record_lane("a/2", "T-1", "In Progress", 5.0)
+    store.record_lane("a/3", "T-1", "Elsewhere", 6.0)  # no state of the Board machine
+    store.record_lane("a/4", "T-1", "Done", 9.0)
+    store.record_lane("b/1", "T-2", "ready", 2.0)  # a lane named by its state's id
+    store.record_lane("local-1", "T-3", "To Do", 3.0)  # no source prefix: no forwarder named it
+
+    assert sorted(store.level_runs("board"), key=lambda run: run.task) == [
+        Run("a", "T-1", ((1.0, "to_do"), (5.0, "in_progress"), (9.0, "done"))),
+        Run("b", "T-2", ((2.0, "ready"),)),
+        Run(UNATTRIBUTED, "T-3", ((3.0, "to_do"),)),
+    ]
+
+
+def test_level_runs_of_another_machine_place_each_tasks_events_and_skip_runs_with_no_task(store: HistoryStore) -> None:
+    store.record_machine("1-0", _CLAIM | {"event_id": "a/e1", "event": "WORKTREE_READY", "time": "100"})
+    store.record_machine("2-0", _CLAIM | {"event_id": "a/e2", "event": "RED_PROVEN", "time": "102"})
+    store.record_machine("3-0", _CLAIM | {"event_id": "e3", "event": "WORKTREE_READY", "time": "101", "task": "PROJ-8"})
+    store.record_machine("4-0", _RUN | {"machine": "in-progress", "event_id": "a/r1"})  # keyed by run, not task
+    store.record_machine("5-0", _CLAIM | {"event_id": "a/e5", "machine": "pull-request", "event": "PUSHED"})
+
+    assert sorted(store.level_runs("in-progress"), key=lambda run: run.task) == [
+        Run("a", "PROJ-7", ((100.0, "worktree_ready"), (102.0, "red_proven"))),
+        Run(UNATTRIBUTED, "PROJ-8", ((101.0, "worktree_ready"),)),
+    ]

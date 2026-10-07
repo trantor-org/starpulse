@@ -40,6 +40,7 @@ from sqlalchemy.exc import OperationalError
 from starpulse import events as machine_events
 from starpulse.config import discover, load
 from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables
+from starpulse.level_metrics import UNATTRIBUTED, Run
 from starpulse.machine_tasks import Table as Transitions
 from starpulse.tables import gaps as _gaps
 from starpulse.tables import metadata
@@ -118,6 +119,19 @@ class HealthHistory(History, Protocol):
     def lane_rows(self) -> list[tuple[str, float, str | None, str]]: ...
 
     def gaps(self) -> list[dict]: ...
+
+
+@runtime_checkable
+class LevelHistory(History, Protocol):
+    """A history that can also answer `/api/level`: each task's trajectory on a machine, by its reporting source."""
+
+    def level_runs(self, flow: str) -> list[Run]: ...
+
+
+def _source(event_id: str) -> str:
+    """The source an event id names (`<source>/<id>`), `UNATTRIBUTED` when it carries none."""
+    source, slash, _ = event_id.partition("/")
+    return source if slash and source else UNATTRIBUTED
 
 
 def database_url(configured: str | None, directory: Path) -> str:
@@ -270,6 +284,43 @@ class HistoryStore:
         with self.engine.connect() as db:
             rows = db.execute(select(c.task, c.observed_at, c.old_status, c.new_status).order_by(*_LANE_ORDER)).all()
         return [tuple(row) for row in rows]
+
+    def level_runs(self, flow: str) -> list[Run]:
+        """Every task's trajectory on `flow` as a `Run` of the source its event ids name, for the level's aggregates.
+
+        The Board's trajectories are its lane changes, each lane read as the state of that name or id (a lane that is
+        no state is skipped); another machine's are its events placed as `machine_steps` places them. A source is the
+        `<source>/` an event id carries, which is how the hub namespaces a forwarded event; an id with none is no
+        forwarder's and its run is `UNATTRIBUTED`. A run is one source's one task.
+        """
+        machine = self._machines[flow]
+        if flow == "board":
+            states = {key: state["id"] for state in machine["states"] for key in (state["name"], state["id"])}
+            c = _lane_changes.c
+            query = select(c.event_id, c.task, c.observed_at, c.new_status).order_by(*_LANE_ORDER)
+            rows = [(event_id, task, at, states.get(lane)) for event_id, task, at, lane in self._read(query)]
+        else:
+            table, current = Transitions(machine), {}
+            c = _machine_events.c
+            query = (
+                select(c.event_id, c.task, c.occurred_at, c.event)
+                .where(c.machine == flow, c.task.is_not(None))
+                .order_by(*_STEP_ORDER)
+            )
+            rows = []
+            for event_id, task, at, event in self._read(query):
+                key = (_source(event_id), task)
+                current[key] = table.target(current.get(key), event) or current.get(key, table.initial)
+                rows.append((event_id, task, at, current[key]))
+        steps: dict[tuple[str, str], list[tuple[float, str]]] = {}
+        for event_id, task, at, state in rows:
+            if state is not None:
+                steps.setdefault((_source(event_id), task), []).append((at, state))
+        return [Run(source, task, tuple(path)) for (source, task), path in steps.items()]
+
+    def _read(self, query):
+        with self.engine.connect() as db:
+            return [tuple(row) for row in db.execute(query).all()]
 
     def lane_path(self, task: str) -> list[dict]:
         """`{at, from, to}` for each time the task changed lane, oldest first; a task never seen has none."""
