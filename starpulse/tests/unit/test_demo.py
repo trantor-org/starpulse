@@ -274,6 +274,19 @@ def test_scrub_keeps_when_each_board_task_entered_its_lane_so_the_demo_orders_it
     assert [a.get("entered") for a in board] == [30.0, None]
 
 
+def test_scrub_keeps_since_when_each_board_task_has_been_workable_so_the_demo_draws_the_leaderboard() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = [
+        {"id": "PROJ-1", "title": SECRET, "state": "ready", "workable_since": 30.0},
+        {"id": "PROJ-2", "title": SECRET, "state": "waiting", "workable_since": None},
+        {"id": "PROJ-3", "title": SECRET, "state": "ready"},
+    ]
+
+    board = scrub(live)["flows"][0]["agents"]
+
+    assert [a.get("workable_since", "absent") for a in board] == [30.0, None, "absent"]
+
+
 def test_scrub_names_a_session_of_a_task_off_the_board_after_the_board_tasks() -> None:
     live = _live()
     live["flows"][1]["agents"].append({"id": "PROJ-9999", "state": "committed", "model": ""})
@@ -346,6 +359,21 @@ def test_scrub_seeds_the_days_arrivals_with_the_board_it_seeds() -> None:
     assert created and all(now - 7200 < at <= now for at in created)
 
 
+def test_the_seeded_board_says_since_when_each_open_task_has_been_workable_so_the_leaderboard_has_rows() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+
+    board = scrub(live)["flows"][0]["agents"]
+
+    now = live["now"]
+    for state in ("needs_attention", "in_progress", "review", "waiting", "ready"):
+        since = [a["workable_since"] for a in board if a["state"] == state]
+        assert any(s is not None and 0 < now - s < 4 * 86400 for s in since), state
+    assert all(a["workable_since"] is None for a in board if a["dependencies"] and a["state"] not in ("done", "waiting"))
+    assert any(a["workable_since"] is None for a in board if a["state"] == "waiting")
+    assert all("workable_since" not in a for a in board if a["state"] in ("new", "done"))
+
+
 def test_the_seeded_board_has_a_waiting_chain_for_the_kanban_stack() -> None:
     live = _live()
     live["flows"][0]["agents"] = []
@@ -412,6 +440,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
         "dependencies": [],
         "description": f"Synthetic demo task: {TITLES[0].lower()}.",
         "created": live["now"] - 900,
+        "workable_since": live["now"] - 900,
     }
     assert board[3]["dependencies"] == ["DEMO-1"] and board[3]["labels"] == ["size-5", "needs-human"]
     assert demo["pulls"]["DEMO-9"] == [

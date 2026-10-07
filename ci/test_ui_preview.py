@@ -44,6 +44,7 @@ ROOT = Path(__file__).resolve().parents[1]
         (["starpulse/web/src/App.tsx"], [FLOW_VIEW]),
         (["ci/preview.toml"], [FLOW_VIEW]),
         ([".github/workflows/ui-preview.yml"], [FLOW_VIEW]),
+        (["starpulse/demo.py"], [FLOW_VIEW]),
         (["design/hub/index.html"], [MOCKUP]),
         (["design/elements/index.html"], [MOCKUP, ELEMENTS]),
         (["starpulse/web/src/style.css"], [FLOW_VIEW, ELEMENTS]),

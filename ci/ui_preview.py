@@ -36,7 +36,8 @@ ELEMENTS = "element-sheet"
 ELEMENTS_DIR = "elements"
 #: The paths whose change renders each surface; the workflow's `paths` filter is their union.
 SURFACE_GLOBS = {
-    FLOW_VIEW: ("starpulse/web/**", "ci/**", ".github/workflows/ui-preview.yml"),
+    # the demo's scrub decides what the flow view's demo can draw
+    FLOW_VIEW: ("starpulse/web/**", "starpulse/demo.py", "ci/**", ".github/workflows/ui-preview.yml"),
     MOCKUP: ("design/**",),
     # the sheet draws the real stylesheet, so a palette change re-renders it too
     ELEMENTS: ("design/elements/**", "starpulse/web/src/style.css"),
