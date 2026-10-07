@@ -30,6 +30,9 @@ _TABLES = (
     "starpulse_board_state",
     "starpulse_day_rollups",
     "starpulse_insights",
+    "starpulse_step_summaries",
+    "starpulse_cases",
+    "starpulse_lane_intervals",
 )
 
 if "db.testing" not in sys.modules:
