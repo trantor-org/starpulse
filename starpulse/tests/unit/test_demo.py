@@ -10,7 +10,7 @@ import jsonschema
 import pytest
 
 from starpulse.contracts import SCHEMAS, Dag, Pool
-from starpulse.demo import TITLES, _send_back, capture, mockup, page, scrub, scrub_mockup
+from starpulse.demo import TITLES, _send_back, capture, mockup, page, scrub, scrub_board, scrub_mockup
 
 SECRET = "Rotate the router admin password"
 
@@ -525,6 +525,67 @@ def test_mockup_escapes_a_closing_tag_in_the_data(tmp_path: Path) -> None:
 
     assert '"trigger": "<\\/script>"' in html
     assert html.count("</script>") == 1
+
+
+def _board() -> dict:
+    task = {
+        "id": "PROJ-2202",
+        "title": SECRET,
+        "lane": "waiting",
+        "milestone": "m-7",
+        "labels": ["vm-only", "kind-execute", "needs-human"],
+        "assignee": "@agent-deep-high",
+        "dependencies": ["PROJ-3000"],
+        "prs": [
+            {"number": 2404, "checks": "pass", "merged": False, "threads": 1, "url": "https://example.test/pr/2404"}
+        ],
+        "live": {"machine": "delivering", "state": "ci", "at": 5.0},
+        "moves": {"ready": {"allowed": True, "skill": ""}, "review": {"allowed": False, "skill": "completing-tasks"}},
+        "entered": 4.0,
+        "description": SECRET,
+    }
+    blocker = {**task, "id": "PROJ-3000", "dependencies": [], "prs": [], "assignee": "Jane Doe", "live": None}
+    return {"now": 6.0, "names": {"waiting": "Waiting"}, "tasks": [task, blocker]}
+
+
+def test_scrub_board_renames_like_the_mockup_board_and_numbers_the_rest_on() -> None:
+    demo = scrub_board(_board(), {"PROJ-2201": "DEMO-1", "PROJ-2202": "DEMO-2"})
+
+    task, blocker = demo["tasks"]
+    assert (task["id"], blocker["id"], task["dependencies"]) == ("DEMO-2", "DEMO-3", ["DEMO-3"])
+    assert task["title"] in TITLES and blocker["title"] in TITLES
+    assert task["labels"] == ["kind-execute", "needs-human"]
+    assert task["prs"] == [{"number": 1, "checks": "pass", "merged": False, "threads": 1}]
+    assert (task["assignee"], blocker["assignee"]) == ("@agent-deep-high", "")
+    assert {k: task[k] for k in ("lane", "milestone", "live", "moves", "entered")} == {
+        k: _board()["tasks"][0][k] for k in ("lane", "milestone", "live", "moves", "entered")
+    }
+    assert "description" not in task and (demo["now"], demo["names"]) == (6.0, {"waiting": "Waiting"})
+    assert SECRET not in json.dumps(demo)
+
+
+def test_scrub_board_drops_a_dependency_off_the_board() -> None:
+    board = _board()
+    board["tasks"][1]["dependencies"] = ["PROJ-9999"]
+
+    assert scrub_board(board, {})["tasks"][1]["dependencies"] == []
+
+
+def test_scrub_board_refuses_a_key_it_does_not_know() -> None:
+    with pytest.raises(ValueError, match="secrets"):
+        scrub_board({**_board(), "secrets": []}, {})
+
+
+def test_mockup_inlines_its_board_renamed_like_its_data(tmp_path: Path) -> None:
+    (tmp_path / "data.js").write_text("window.SNAP = " + json.dumps(_snap()) + ";\n")
+    (tmp_path / "board.js").write_text("// saved Board\nwindow.BOARD = " + json.dumps(_board()) + ";\n")
+    (tmp_path / "index.html").write_text('<script src="data.js"></script><script src="board.js"></script>')
+
+    html = mockup(tmp_path)
+
+    board = json.dumps(scrub_board(_board(), {"PROJ-2201": "DEMO-1", "PROJ-2202": "DEMO-2"})).replace("</", "<\\/")
+    assert f"<script>window.BOARD = {board};</script>" in html
+    assert "PROJ-" not in html and SECRET not in html
 
 
 def _machine(initial: str, edges: list[tuple[str, str, str]], final: str = "") -> dict:

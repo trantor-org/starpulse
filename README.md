@@ -620,7 +620,8 @@ push to `main`.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 [`bench/`](bench/README.md) holds the hub-ingest and instance event-log benchmarks.
 
-[`design/`](design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`); view it with
+[`design/`](design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`) and, behind
+`?view=kanban`, a saved Board (`board.js`) drawn by `kanban.js`; view it with
 `uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse.demo --mockup design --out
 mockup.html` writes it as one scrubbed file. A pull request that changes the page (`starpulse/web/**`), the mockup or
 the preview itself gets one UI-preview comment from
