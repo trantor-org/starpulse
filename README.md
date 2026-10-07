@@ -182,7 +182,8 @@ flagged rather than left out. `throughput` is `{count, per_day}`, the entries in
 gap the history recorded (`kind` `gap`: entries trimmed before it read them, so counts may miss them) and each lane
 the Board machine has no state for. History starts at a task's first recorded lane change, so a stay before it is not
 counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive number, and 501 when the history
-(a board adapter's own) does not list every task's lane changes through `lane_rows()` and `gaps()`.
+(a board adapter's own) does not list every task's lane changes through `lane_rows(since=None)` and `gaps()`; `since`
+is an epoch the Ledger passes so it reads only its last 24 hours, and None asks for every change.
 
 `analytics level` reads `GET /api/level[?hours=N]` (a window of 168 hours by default), served by a hub (`serve --hub`)
 whose config has a `[level]` table. It counts the level's machine on the Backlog flow metric definitions, merged across

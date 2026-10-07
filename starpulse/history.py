@@ -118,7 +118,9 @@ class History(Protocol):
 class LaneHistory(History, Protocol):
     """A history that can list every task's lane changes: what sizes a Board state's sun."""
 
-    def lane_rows(self) -> list[tuple[str, float, str | None, str]]: ...
+    def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
+        """`(task, at, from, to)` for every task's lane changes at or after epoch `since` (None: all), oldest first."""
+        ...
 
 
 @runtime_checkable
@@ -333,11 +335,15 @@ class HistoryStore:
             # pragma: no mutate end
         return [{"stream": s, "after_id": a, "before_id": b, "lost": n} for s, a, b, n in rows]
 
-    def lane_rows(self) -> list[tuple[str, float, str | None, str]]:
-        """`(task, at, from, to)` for every lane change of every task, oldest first."""
+    def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
+        """`(task, at, from, to)` for every lane change of every task at or after epoch `since` (None: all), oldest
+        first."""
         c = _lane_changes.c
+        query = select(c.task, c.observed_at, c.old_status, c.new_status).order_by(*_LANE_ORDER)
+        if since is not None:
+            query = query.where(c.observed_at >= since)
         with self.engine.connect() as db:
-            rows = db.execute(select(c.task, c.observed_at, c.old_status, c.new_status).order_by(*_LANE_ORDER)).all()
+            rows = db.execute(query).all()
         return [tuple(row) for row in rows]
 
     def level_runs(self, flow: str) -> list[Run]:

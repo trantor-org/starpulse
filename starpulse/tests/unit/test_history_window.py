@@ -210,7 +210,7 @@ def test_a_history_with_lane_rows_and_no_gaps_can_size_suns_but_not_answer_healt
         def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]:
             return [], 0
 
-        def lane_rows(self) -> list[tuple[str, float, str | None, str]]:
+        def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
             return []
 
     assert isinstance(LanesOnly(), LaneHistory)

@@ -699,7 +699,7 @@ def test_a_ledgers_event_is_sent_when_a_run_or_a_pull_changes_a_ledger_and_not_w
 def test_a_task_entering_the_lane_a_workflows_event_reaches_pairs_with_its_run_by_the_task_parameter() -> None:
     feed = ledger_feed()
     entered = datetime(2026, 10, 7, 0, 5, tzinfo=ZoneInfo("UTC")).timestamp()
-    feed.size_suns(lambda: [("TASK-1", entered, "To Do", "In Progress"), ("TASK-2", entered + 1, "To Do", "In Progress")])
+    feed.size_suns(lambda since=None: [("TASK-1", entered, "To Do", "In Progress"), ("TASK-2", entered + 1, "To Do", "In Progress")])
     started = {**APPLIED, "runId": "s1", "startedAt": "2026-10-07T00:06:00Z", "params": {"TASK": "TASK-1"}}
 
     feed.set_dags("ci", [_dag("start", started)], None)
@@ -710,6 +710,20 @@ def test_a_task_entering_the_lane_a_workflows_event_reaches_pairs_with_its_run_b
     assert rows[1]["runs"]["ci/start"]["runId"] == "s1"
     assert rows[1]["runs"]["ci/start"]["inferred"] is False
     assert rows[0]["runs"] == {}
+
+
+def test_the_ledger_reads_only_the_lane_changes_of_its_window_from_the_history() -> None:
+    feed = ledger_feed()
+    asked: list[float | None] = []
+
+    def lane_rows(since: float | None = None) -> list:
+        asked.append(since)
+        return []
+
+    feed.size_suns(lane_rows)
+    feed.set_dags("ci", [_dag("apply", APPLIED)], None)
+
+    assert asked == [datetime(2026, 10, 6, 1, tzinfo=ZoneInfo("UTC")).timestamp()]
 
 
 BEFORE = "0" * 40
