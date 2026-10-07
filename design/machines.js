@@ -7,13 +7,18 @@
   the template state it is entered from (a notch under that state's column, in its colour: filled when the state's flow:
   declares it, hollow when only the trails show it). A DAG is a star at the head of the row it launches.
 
+  Nesting: a row is only a machine entered from the one at the top. A machine with machines entered from it carries an
+  "n nested ›" chip; clicking it (or double-clicking the row) zooms through, that machine takes the top and its machines
+  become the rows, with a breadcrumb back up. Escape steps back out one machine at a time. A row stands for everything
+  nested under it: stuck work anywhere below pins it and names where, and its entries land on its ticks in the strip.
+
   Rows run newest activity first; a row with a task stuck over 2 h is pinned under the template. The wheel, PgUp/PgDn,
   Home/End and the thumb scroll the rest under it, 20 loaded at a time as the footer comes into view, as the DAG ledger
   does; a 24 h strip of machine entries runs along the bottom with the rows in view shaded. Flow lines are the page's own:
   a dashed gradient between the colours of the two states, streaming the way the flow runs. Hovering a row draws its tie;
   hovering a task retraces its path in order, across every machine it has a session in, along those same lines; clicking
   it pins the trace and opens the panel. &level=in_progress opens on the ledger, &fs=125 or &fs=150 sets the browser text
-  size, &focus=<machine> opens scrolled to that row, &pick=busy pins the task on the most machines at once, &many=N seeds
+  size, &open=<machine> opens drilled into that machine, &focus=<machine> opens scrolled to that row (opening its parent first), &pick=busy pins the task on the most machines at once, &many=N seeds
   N more machines (24 by default, 0 for the snapshot alone). running-skill-evals had no session in the saved snapshot, so
   two are seeded from the live shape (a task drafting a skill asks for a run); seeded rows say so.
 */
@@ -120,6 +125,7 @@
       <span style="color:${RAMP[2]}">▼</span> declared entry <span style="color:${RAMP[2]};margin-left:8px">▽</span> observed<br>
       <span style="color:${DAGC}">✦</span> DAG <span style="margin-left:10px">${dash(RAMP[1], RAMP[5], 2.4)}task path</span><br>
       <span><i style="background:${OFF};border-radius:0;width:2px"></i>stuck over 2 h, pinned</span><br>
+      <span style="color:${PLANET}">n nested ›</span> opens a machine · Esc steps out<br>
       <span><i style="background:${ACT};box-shadow:0 0 6px ${ACT}"></i>activity now</span>`;
     let pageLegend = legendEl.innerHTML;
 
@@ -157,6 +163,7 @@
       "drafting-adrs", "replaying-trails", "sweeping-scratch", "probing-endpoints", "restoring-backups", "linting-docs", "watching-ci"];
     const SHAPES = [["started", "gathered", "drafted", "checked", "done"], ["queued", "running", "reviewed", "merged"], ["asked", "planned", "applied", "verified", "closed"],
       ["opened", "probed", "diagnosed", "fixed", "proved", "closed"]];
+    const NEST = { "verifying-claims": ["running-skill-evals", "old"], "benchmarking-models": ["running-skill-evals", "new"], "authoring-docs": ["authoring-skills", "new"] };
     let rs = 3015; const rnd = () => (rs = (rs * 1103515245 + 12345) % 2147483648) / 2147483648;
     const ipTasks = (M[IP]?.agents || []).filter((a) => a.task && a.trail.length);
     for (let i = 0; i < Math.min(MANY, NAMES.length) && ipTasks.length; i++) {
@@ -165,6 +172,13 @@
       if (i % 3 === 1) { states.splice(2, 0, { id: "blocked", name: "Blocked" }); trans.push({ source: sh[1], target: "blocked", event: "BLOCKED" }, { source: "blocked", target: sh[2], event: "UNBLOCKED" }); }
       M[n] = { name: n, states, all: trans, trans, agents: [] }; SUBS.push(n); seeded.add(n);
       const kind = i % 7 === 3 ? "idle" : i === 1 || i === 9 ? "stuck" : "live", nA = kind === "idle" ? 1 + (i % 2) : kind === "stuck" ? 2 : 1 + Math.floor(rnd() * 5);
+      // a few are entered from another machine's sessions instead, so the ledger nests three deep: in-progress › authoring-skills ›
+      // running-skill-evals › verifying-claims; one of them from the oldest session there, so stuck work sits two machines down
+      const par = NEST[n] && M[NEST[n][0]]?.agents.filter((a) => a.task).sort((x, y) => x.active - y.active);
+      if (par?.length) { for (let j = 0; j < 2; j++) { const p = NEST[n][1] === "old" ? par[0] : par[(par.length - 1 - j + par.length) % par.length], upto = NEST[n][1] === "old" ? 1 : Math.min(j + 1, sh.length - 2);
+          const t0 = Math.min(p.active + 30 + j * 20, S.now - upto * 150 - 60), tr = []; for (let k = 0; k <= upto; k++) tr.push({ state: sh[k], event: k ? sh[k].toUpperCase() : "ENTERED", at: t0 + k * 150 });
+          M[n].agents.push({ id: `seed-${n}-${j}`, title: p.title, model: p.model, kind: "interactive", badges: [], task: p.task, m: n, state: sh[upto], steps: tr.length, trail: tr, active: tr.at(-1).at }); }
+        continue; }
       for (let j = 0; j < nA; j++) {
         const p = ipTasks[(i * 7 + j * 13) % ipTasks.length], age = kind === "idle" ? 3600 * (3 + rnd() * 18) : kind === "stuck" && !j ? 3600 * (2.5 + rnd() * 2) : 60 * (2 + rnd() * 80);
         const upto = kind === "idle" ? sh.length - 1 : Math.floor(rnd() * (sh.length - 1)), t0 = S.now - age - upto * 150, tr = [];
@@ -199,6 +213,13 @@
     const kidsAt = (m, s) => SUBS.filter((c) => primary[c] && primary[c].pm === m && primary[c].ps === s);
     const tied = SUBS.filter((c) => primary[c]), dagOnly = SUBS.filter((c) => !primary[c] && dagTies(c).length), dormant = SUBS.filter((c) => !primary[c] && !dagTies(c).length);
     const depthOf = (m) => (m === IP ? 0 : primary[m] ? 1 + depthOf(primary[m].pm) : 1);
+    // ---- nesting: a machine sits under the machine its primary tie enters it from; untied machines, and a loop of ties, sit under the template
+    const up = {};
+    for (const m of SUBS) { const p = primary[m]?.pm; up[m] = p && p !== m && M[p] && p !== IP ? p : IP; }
+    for (const m of SUBS) { let p = up[m], k = 0; while (p !== IP && p !== m && k++ < SUBS.length) p = up[p]; if (p === m) up[m] = IP; }
+    const KIDS = Object.fromEntries([IP, ...SUBS].map((m) => [m, SUBS.filter((c) => up[c] === m)]));
+    const desc = (m) => KIDS[m].flatMap((c) => [c, ...desc(c)]);
+    const chain = (m) => (m === IP ? [] : [...chain(up[m]), up[m]]);
 
     // ---- one machine as layers: breadth-first depth from its initial state, the longest-reaching path on row 0
     const tasksAt = (m, s) => M[m].agents.filter((a) => a.state === s && !a.move);
@@ -235,7 +256,13 @@
     function addNode(m, s, x, row) { const nd = { key: key(m, s), m, s, x, y: 0, oy: 0, row, final: isFinal(m, s), initial: initOf(m) === s, label: stName(m, s), r: 4 }; L.nodes.set(nd.key, nd); return nd; }
     const lastOf = (m) => Math.max(0, ...M[m].agents.map((a) => a.active));
     const stuckOf = (m) => M[m].agents.filter((a) => !isFinal(m, a.state) && simT - a.active > STUCK);
-    const rankRows = () => SUBS.slice().sort((a, b) => (stuckOf(b).length > 0) - (stuckOf(a).length > 0) || lastOf(b) - lastOf(a) || (a < b ? -1 : 1));
+    // a row stands for its machine and every machine nested under it: it is stuck, and as recent, as the most stuck and newest of them
+    const stuckIn = (m) => stuckOf(m).length > 0 || desc(m).some((d) => stuckOf(d).length > 0);
+    const lastIn = (m) => Math.max(lastOf(m), ...desc(m).map(lastOf));
+    const rankRows = () => [...L.rows.keys()].sort((a, b) => stuckIn(b) - stuckIn(a) || lastIn(b) - lastIn(a) || (a < b ? -1 : 1));
+    // the machine at the top: in-progress, or the machine drilled into; its rows are the machines entered from it
+    let topM = IP;
+    const rowAt = (m) => { let x = m; while (x !== IP && up[x] !== topM) x = up[x]; return x === IP ? null : x; };
     let order = [], loaded = PAGE, loadingAt = 0, scroll = 0, goal = 0, selRow = null, pointer = null;
     const srcOf = (m) => { const t = primary[m]; return t && node(t.pm, t.ps); };
     const orbitOf = (n) => { const c = tasksAt(n.m, n.s).length; return c ? slot(n, c - 1).R + dotR() : n.r; };
@@ -243,9 +270,9 @@
     const FOOT = () => 34 * FS;
     function layout() {
       L = { nodes: new Map(), rows: new Map(), stars: [], pin: [], list: [], ticks: [] };
-      const g = G[IP], metaX = NX + 22, metaW = Math.round(clamp(186 * FS, 170, 290)), x0 = metaX + metaW + 34 * FS, x1 = NX + CW - 34, colW = (x1 - x0) / (g.ncols - 1);
+      const g = G[topM], metaX = NX + 22, metaW = Math.round(clamp(186 * FS, 170, 290)), x0 = metaX + metaW + 34 * FS, x1 = NX + CW - 34, colW = (x1 - x0) / (g.ncols - 1);
       Object.assign(L, { metaX, metaW, x0, x1 });
-      const hn = M[IP].states.map((st) => Object.assign(addNode(IP, st.id, x0 + g.depth[st.id] * colW, null), { col: RAMP[Math.round((g.depth[st.id] / (g.ncols - 1)) * (RAMP.length - 1))] }));
+      const hn = M[topM].states.map((st) => Object.assign(addNode(topM, st.id, x0 + g.depth[st.id] * colW, null), { col: RAMP[Math.round((g.depth[st.id] / (g.ncols - 1)) * (RAMP.length - 1))] }));
       radii();
       // the template: branch states far enough off the main line that their orbits of tasks never touch, two tiers of names above and below
       const oMax = Math.max(...hn.map(orbitOf)), lab = PX.main() * 1.3, rowGap = Math.max(2 * oMax + 10, 40 * FS), room = 3.3 * lab + 6;
@@ -253,15 +280,18 @@
       L.hdrB = L.yMain + g.rmax * rowGap + oMax + room; L.laneTop = L.hdrB + 6;
       // each row is as tall as its meta or its machine (branches, names above and below), whichever is taller
       const rg = 15 * FS, pad = 14 + PX.row() * 1.3, metaH = PX.name() * 1.4 + 2 * PX.sub() * 1.5 + 14;
-      SUBS.forEach((m) => { const g2 = G[m], dx = (x1 - x0) / Math.max(1, g2.ncols - 1), r = { m, cy: null };
-        r.nodes = g2.order.map((s, k) => Object.assign(addNode(m, s, x0 + g2.depth[s] * dx, r), { oy: g2.row[s] * rg, col: RAMP[Math.round((k / Math.max(1, g2.order.length - 1)) * (RAMP.length - 1))] }));
-        r.h = Math.max(metaH, 2 * pad + (g2.rmax - g2.rmin) * rg); r.c = r.h / 2 - ((g2.rmax + g2.rmin) / 2) * rg; L.rows.set(m, r);
+      // a machine opened deep down may have only a few rows: they stretch, up to 3.2 times, so the lane is filled rather than left empty
+      L.stripT = H - 50 * FS; const hOf = (g2) => Math.max(metaH, 2 * pad + (g2.rmax - g2.rmin) * rg), tot = KIDS[topM].reduce((a, m) => a + hOf(G[m]), 0);
+      const k = KIDS[topM].length <= PAGE ? clamp(((L.stripT - L.laneTop) * 0.97) / Math.max(1, tot), 1, 3.2) : 1;
+      KIDS[topM].forEach((m) => { const g2 = G[m], dx = (x1 - x0) / Math.max(1, g2.ncols - 1), r = { m, cy: null, k };
+        r.nodes = g2.order.map((s, j) => Object.assign(addNode(m, s, x0 + g2.depth[s] * dx, r), { oy: g2.row[s] * rg * k, col: RAMP[Math.round((j / Math.max(1, g2.order.length - 1)) * (RAMP.length - 1))] }));
+        r.h = hOf(g2) * k; r.c = r.h / 2 - ((g2.rmax + g2.rmin) / 2) * rg * k; L.rows.set(m, r);
         const ds = dagTies(m); ds.forEach((t, k) => L.stars.push({ t, dag: t.dag, child: m, row: r, x: x0 - 18 * FS, dy: (k - (ds.length - 1) / 2) * 12 * FS })); });
-      const s0 = node(IP, initOf(IP)); dagTies(IP).forEach((t, k) => L.stars.push({ t, dag: t.dag, child: IP, x: s0.x - orbitOf(s0) - 14, y: s0.y + k * 14 }));
-      L.stripT = H - 50 * FS; const rv = revEl.getBoundingClientRect(); L.sx0 = Math.max(x0, rv.right + 24); L.sx1 = x1;
+      const s0 = node(topM, initOf(topM)); dagTies(topM).forEach((t, k) => L.stars.push({ t, dag: t.dag, child: topM, x: s0.x - orbitOf(s0) - 14, y: s0.y + k * 14 }));
+      const rv = revEl.getBoundingClientRect(); L.sx0 = Math.max(x0, rv.right + 24); L.sx1 = x1;
       order = rankRows(); place(performance.now());
     }
-    function radii() { for (const n of L.nodes.values()) { const c = tasksAt(n.m, n.s).length; n.r = n.row ? 3.4 + 0.8 * Math.sqrt(c) : 8 + 2.2 * Math.sqrt(c); } }
+    function radii() { for (const n of L.nodes.values()) { const c = tasksAt(n.m, n.s).length; n.r = n.row ? (3.4 + 0.8 * Math.sqrt(c)) * Math.min(2, n.row.k) ** 0.6 : 8 + 2.2 * Math.sqrt(c); } }
     const regionOf = (r) => (r.pinned ? [L.laneTop, L.pinB] : [L.pinB, L.stripT]);
     const shown = (r) => { if (!r.pinned && !r.on) return false; const [a, b] = regionOf(r); return r.cy < b && r.cy + r.h > a; };
     const reg = (n) => (!n.row ? [0, L.hdrB] : regionOf(n.row));
@@ -270,7 +300,7 @@
       let y = L.laneTop; L.pin = []; L.list = [];
       // stuck rows pin under the template up to about a third of the lane; the rest of them lead the scrolling list, still marked
       const capH = (L.stripT - L.laneTop) * 0.38; let used = 0; L.nStuck = 0;
-      for (const m of order) { const r = L.rows.get(m); r.stuck = stuckOf(m).length > 0; if (r.stuck) L.nStuck++; r.pinned = r.stuck && (!L.pin.length || used + r.h <= capH); if (r.pinned) used += r.h; (r.pinned ? L.pin : L.list).push(r); }
+      for (const m of order) { const r = L.rows.get(m); r.stuck = stuckIn(m); if (r.stuck) L.nStuck++; r.pinned = r.stuck && (!L.pin.length || used + r.h <= capH); if (r.pinned) used += r.h; (r.pinned ? L.pin : L.list).push(r); }
       for (const r of L.pin) { r.y = y; y += r.h; } L.pinB = y + (L.pin.length ? 6 : 0);
       const n = Math.min(loaded, L.list.length);
       L.more = L.list.length - n; L.content = L.list.slice(0, n).reduce((a, r) => a + r.h, 0) + (L.more ? FOOT() : 0); L.maxScroll = Math.max(0, L.content - (L.stripT - L.pinB));
@@ -303,14 +333,14 @@
       const ordOf = (g, s) => (g.row[s] < 0 ? ["above", "right", "left", "below"] : g.row[s] > 0 ? ["below", "right", "left", "above"] : g.depth[s] % 2 ? ["above", "below", "right", "left"] : ["below", "above", "right", "left"]);
       for (const n of L.nodes.values()) if (!n.row) { const px = PX.main(), w = textW(n.label, px), h = px * 1.3, p = n, rr = orbitOf(n) + 2;
         const far = (dir, k) => [p.x - w / 2, p.x + rr - w, p.x - rr].map((x) => ({ x, y: dir > 0 ? p.y + rr + 3 + h * k : p.y - rr - 3 - h * (k + 1), lead: { x: p.x, y: p.y + dir * rr } }));
-        const o = ordOf(G[IP], n.s), d = o[0] === "above" ? -1 : 1; put([...sides(p, rr, w, h, o), ...[1.1, 2.2].flatMap((k) => [...far(d, k), ...far(-d, k)])], w, h, { node: n, px, a: 1 }); }
+        const o = ordOf(G[topM], n.s), d = o[0] === "above" ? -1 : 1; put([...sides(p, rr, w, h, o), ...[1.1, 2.2].flatMap((k) => [...far(d, k), ...far(-d, k)])], w, h, { node: n, px, a: 1 }); }
       for (const s of L.stars) if (!s.row) { const px = PX.dag(), w = textW(s.dag, px), h = px * 1.3;
         put([{ x: s.x - w / 2, y: s.y - 9 - h }, { x: s.x - w / 2, y: s.y + 9 }, { x: s.x - 9 - w, y: s.y - h / 2 }], w, h, { star: s, px }); }
     }
 
     // ---- geometry shared by the flow lines, the moving tasks and the trace, so a highlight runs exactly where its line is
     let T = 0, last = performance.now();
-    const hotM = () => (hover?.kind === "row" ? hover.o.m : hover?.kind === "tick" ? hover.o.m : hover?.kind === "star" ? hover.o.child : hover?.kind === "node" && hover.o.row ? hover.o.m : null);
+    const hotM = () => (hover?.kind === "row" || hover?.kind === "drill" ? hover.o.m : hover?.kind === "tick" ? hover.o.m : hover?.kind === "star" ? hover.o.child : hover?.kind === "node" && hover.o.row ? hover.o.m : null);
     function curve(a, b, bend = 0.12) { const dx = b.x - a.x, dy = b.y - a.y; return { p0: a, p1: b, c: { x: (a.x + b.x) / 2 - dy * bend, y: (a.y + b.y) / 2 + dx * bend } }; }
     // a back edge bows over its line, no further than its row allows
     function edgeCurve(s, q) { if (q.x >= s.x - 1) return curve(s, q, s.row ? 0.04 : 0.08); const len = Math.hypot(q.x - s.x, q.y - s.y) || 1; return curve(s, q, s.row ? Math.min(0.28, (s.row.h * 0.6) / len) : 0.28); }
@@ -335,7 +365,7 @@
         flow(s, q, Math.min(1, (hot ? 0.95 : s.row ? 0.36 : 0.4) + h * 0.5), h + (hot ? 0.8 : 0), s.row ? [1.5, 4] : [2, 5]); along(e, t0, t1, 16); cx.setLineDash([]); }
     }
     function drawNodesOf(m) { // the page's state: a coloured rim and centre over a faint wash of its own colour
-      for (const n of (m === IP ? [...L.nodes.values()].filter((x) => !x.row) : L.rows.get(m).nodes)) { const hot = hover?.kind === "node" && hover.o === n;
+      for (const n of (m === topM ? [...L.nodes.values()].filter((x) => !x.row) : L.rows.get(m).nodes)) { const hot = hover?.kind === "node" && hover.o === n;
         cx.fillStyle = rgba(n.col, hot ? 0.3 : 0.12); cx.beginPath(); cx.arc(n.x, n.y, n.r, 0, TAU); cx.fill();
         cx.strokeStyle = rgba(n.col, hot ? 1 : 0.85); cx.lineWidth = hot ? 2 : n.row ? 1.2 : 1.6; cx.stroke();
         if (n.final) { cx.strokeStyle = rgba(n.col, 0.45); cx.lineWidth = 1; cx.beginPath(); cx.arc(n.x, n.y, n.r + 2.5, 0, TAU); cx.stroke(); }
@@ -354,7 +384,7 @@
     const taskPos = new Map();
     function pulse(x, y, u) { cx.strokeStyle = rgba(ACT, 0.7 * (1 - u)); cx.lineWidth = 1.2; cx.beginPath(); cx.arc(x, y, 3 + 18 * u, 0, TAU); cx.stroke(); }
     function drawTasksOf(m, y0, y1, now) {
-      for (const n of (m === IP ? [...L.nodes.values()].filter((x) => !x.row) : L.rows.get(m).nodes))
+      for (const n of (m === topM ? [...L.nodes.values()].filter((x) => !x.row) : L.rows.get(m).nodes))
         tasksAt(n.m, n.s).forEach((ag, i) => { const sl = slot(n, i), th = sl.a + T * 0.06, x = n.x + sl.R * Math.cos(th), y = n.y + sl.R * Math.sin(th);
           if (y > y0 && y < y1) taskPos.set(ag, { x, y }); cx.fillStyle = rgba(TIER[tierOf(ag.model)], 0.9); cx.beginPath(); cx.arc(x, y, dotR(), 0, TAU); cx.fill();
           if (ag.kind === "unattended") { cx.strokeStyle = "rgba(6,10,20,.9)"; cx.lineWidth = 0.8; cx.stroke(); }
@@ -371,38 +401,59 @@
     }
     // the template's own name, the spine under it, and a faint guide down the lane from each state some row is entered from
     function drawHeader(now) {
-      const px = PX.name(), sp = PX.sub(), mx = L.metaX, nT = M[IP].agents.length;
-      text("in-progress", mx, 20 + px * 0.5, px * 1.08, rgba(INK, 0.9), "left", 400);
-      text(fit(`template · ${M[IP].states.length} states · ${nT} tasks`, sp, L.metaW), mx, 22 + px * 1.3 + sp * 0.6, sp, rgba(SUB, 0.7));
-      text(fit(`${SUBS.length} machines${L.nStuck ? ` · ${L.nStuck} stuck` : ""} · newest first`, sp, L.metaW), mx, L.hdrB - sp, sp, rgba(SUB, 0.6));
+      const px = PX.name(), sp = PX.sub(), mx = L.metaX, nT = M[topM].agents.length, dy = topM === IP ? 0 : sp * 1.4;
+      // drilled in: the machines above this one, each a way back up, and where this one is entered from
+      L.crumbs = [];
+      if (topM !== IP) { let cs = chain(topM), cut = false; const sep = " › ", wOf = (xs) => textW(`↑ ${cut ? `…${sep}` : ""}${xs.join(sep)}`, sp);
+        while (cs.length > 1 && wOf(cs) > L.metaW) { cs = cs.slice(1); cut = true; }
+        let x = mx; const y = 8 + sp * 0.6, put = (str, col) => { text(str, x, y, sp, col); const w = textW(str, sp); x += w; return w; };
+        put("↑ ", rgba(SUB, 0.6)); if (cut) { put("…", rgba(SUB, 0.6)); put(sep, rgba(SUB, 0.45)); }
+        cs.forEach((m, i) => { const hot = hover?.kind === "crumb" && hover.o.m === m, x0 = x, w = put(fit(m, sp, Math.max(24, mx + L.metaW - x)), rgba(PLANET, hot ? 1 : 0.72));
+          L.crumbs.push({ m, x0, x1: x0 + w, y0: y - sp * 0.8, y1: y + sp * 0.8 }); if (i < cs.length - 1) put(sep, rgba(SUB, 0.45)); }); }
+      text(fit(topM, px * 1.08, L.metaW, 400), mx, 20 + px * 0.5 + dy, px * 1.08, rgba(INK, 0.9), "left", 400);
+      text(fit(`${topM === IP ? "template" : "machine"} · ${M[topM].states.length} states · ${nT} tasks`, sp, L.metaW), mx, 22 + px * 1.3 + sp * 0.6 + dy, sp, rgba(SUB, 0.7));
+      const tr = topM !== IP && primary[topM];
+      if (tr) { const src = M[tr.pm] && G[tr.pm] ? RAMP[Math.round((G[tr.pm].depth[tr.ps] / Math.max(1, G[tr.pm].ncols - 1)) * (RAMP.length - 1))] : PLANET, ly = 22 + px * 1.3 + sp * 2.1 + dy;
+        cx.fillStyle = rgba(src, 0.95); cx.beginPath(); cx.arc(mx + 3, ly, 2.6, 0, TAU); cx.fill();
+        text(fit(`from ${stName(tr.pm, tr.ps)} · ${tr.kind === "declared" ? "declared" : `×${tr.count}`}`, sp, L.metaW - 11), mx + 11, ly, sp, rgba(INK, 0.62)); }
+      text(fit(`${L.rows.size} machines${L.nStuck ? ` · ${L.nStuck} stuck` : " · newest first"}`, sp, L.metaW), mx, L.hdrB - sp, sp, rgba(SUB, 0.6));
       cx.fillStyle = rgba(SUB, 0.16); cx.fillRect(mx - 10, L.hdrB, L.x1 + 22 - mx, 1);
-      const cols = new Map(); for (const r of L.rows.values()) { const t = primary[r.m]; if (t && t.pm === IP) cols.set(t.ps, node(IP, t.ps)); }
+      const cols = new Map(); for (const r of L.rows.values()) { const t = primary[r.m]; if (t && t.pm === topM) cols.set(t.ps, node(topM, t.ps)); }
       for (const n of cols.values()) { const hot = hover?.kind === "node" && hover.o === n;
         cx.fillStyle = rgba(n.col, 0.9); cx.beginPath(); cx.arc(n.x, L.hdrB + 0.5, 2.2, 0, TAU); cx.fill();
         clip(L.laneTop, L.stripT, () => { cx.strokeStyle = rgba(n.col, hot ? 0.35 : 0.1); cx.lineWidth = 1; cx.setLineDash([2, 5]); cx.beginPath(); cx.moveTo(n.x, L.hdrB + 3); cx.lineTo(n.x, L.stripT); cx.stroke(); }); }
-      clip(0, L.hdrB, () => { drawEdgesOf(IP, now); drawNodesOf(IP); for (const s of L.stars) if (!s.row) { drawStarLine(s, now); drawStar(s); } drawTasksOf(IP, 0, L.hdrB, now); });
+      clip(0, L.hdrB, () => { drawEdgesOf(topM, now); drawNodesOf(topM); for (const s of L.stars) if (!s.row) { drawStarLine(s, now); drawStar(s); } drawTasksOf(topM, 0, L.hdrB, now); });
     }
     function drawRow(r, now) {
       const ga = Math.abs(r.cy - r.y) > 3 ? 0.3 : 1; cx.globalAlpha = ga;
       const hot = hotM() === r.m || selRow === r, t = primary[r.m], src = srcOf(r.m), y = r.cy, mx = L.metaX, [y0, y1] = regionOf(r);
-      if (hot) { cx.fillStyle = rgba(PLANET, selRow === r ? 0.09 : 0.055); cx.fillRect(mx - 10, y, L.x1 + 20 - mx, r.h); }
+      const fl = Math.max(0, 1 - (now - (r.flash ?? -1e9)) / 1800); // the row just stepped out of glows for a moment
+      if (hot || fl) { cx.fillStyle = rgba(PLANET, Math.max(hot ? (selRow === r ? 0.09 : 0.055) : 0, 0.16 * fl)); cx.fillRect(mx - 10, y, L.x1 + 20 - mx, r.h); }
       cx.fillStyle = rgba(SUB, 0.09); cx.fillRect(mx - 10, y + r.h - 1, L.x1 + 20 - mx, 1);
       if (r.stuck) { cx.fillStyle = rgba(OFF, 0.85); cx.fillRect(mx - 10, y + 6, 2, r.h - 12); }
       // the notch under the column of the template state this machine is entered from: filled when declared, hollow when observed
-      if (t && t.pm === IP && src) { cx.fillStyle = rgba(src.col, 0.95); cx.strokeStyle = rgba(src.col, 0.95); cx.lineWidth = 1.2; cx.beginPath(); cx.moveTo(src.x - 4.5, y + 1.5); cx.lineTo(src.x + 4.5, y + 1.5); cx.lineTo(src.x, y + 8); cx.closePath(); t.kind === "declared" ? cx.fill() : cx.stroke(); }
+      if (t && t.pm === topM && src) { cx.fillStyle = rgba(src.col, 0.95); cx.strokeStyle = rgba(src.col, 0.95); cx.lineWidth = 1.2; cx.beginPath(); cx.moveTo(src.x - 4.5, y + 1.5); cx.lineTo(src.x + 4.5, y + 1.5); cx.lineTo(src.x, y + 8); cx.closePath(); t.kind === "declared" ? cx.fill() : cx.stroke(); }
       // meta: its name, where it is entered from, and what its tasks are doing
-      const px = PX.name(), sp = PX.sub(), ag = M[r.m].agents, idle = !ag.length || simT - lastOf(r.m) > IDLE, ty = y + r.h / 2 - (px * 1.4 + 2 * sp * 1.5) / 2, st = stuckOf(r.m);
+      const px = PX.name(), sp = PX.sub(), ag = M[r.m].agents, idle = simT - lastIn(r.m) > IDLE, ty = y + r.h / 2 - (px * 1.4 + 2 * sp * 1.5) / 2, st = stuckOf(r.m);
       r.nameAt = { x: mx, y: ty + px * 0.7 };
+      // a machine with machines entered from it carries a chip that opens it: it takes the top and they become the rows
+      const nk = KIDS[r.m].length; let cw = 0; r.chip = null;
+      if (nk) { const ct = `${nk} nested ›`, ch = sp * 1.55, chot = hover?.kind === "drill" && hover.o === r; cw = textW(ct, sp) + 12;
+        const c = { x0: mx + L.metaW - cw, x1: mx + L.metaW, y0: ty + px * 1.4 + sp * 0.75 - ch / 2, y1: ty + px * 1.4 + sp * 0.75 + ch / 2 }; r.chip = c;
+        cx.fillStyle = rgba(PLANET, chot ? 0.22 : 0.08); cx.strokeStyle = rgba(PLANET, chot ? 0.95 : 0.5); cx.lineWidth = 1; cx.beginPath(); cx.roundRect(c.x0, c.y0, cw, ch, ch / 2); cx.fill(); cx.stroke();
+        text(ct, c.x0 + cw / 2, c.y0 + ch / 2 + 0.5, sp, rgba(INK, chot ? 1 : 0.8), "center"); }
       text(fit(r.m, px, L.metaW, 400), mx, ty + px * 0.7, px, rgba(INK, hot ? 0.97 : idle ? 0.55 : 0.85), "left", 400);
       let l2 = "no tie this hour", c2 = rgba(SUB, 0.5), dot = null;
-      if (t) { dot = src?.col; l2 = `${t.pm === IP ? "from" : "on"} ${t.pm === IP ? stName(t.pm, t.ps) : `${t.pm} › ${stName(t.pm, t.ps)}`} · ${t.kind === "declared" ? "declared" : `×${t.count}`}`; c2 = rgba(INK, 0.62); }
+      if (t) { dot = src?.col; l2 = `${t.pm === topM ? "from" : "on"} ${t.pm === topM ? stName(t.pm, t.ps) : `${t.pm} › ${stName(t.pm, t.ps)}`} · ${t.kind === "declared" ? "declared" : `×${t.count}`}`; c2 = rgba(INK, 0.62); }
       else if (dagTies(r.m).length) { l2 = `✦ ${dagTies(r.m).map((d) => d.dag).join(", ")}`; c2 = rgba(DAGC, 0.75); }
       if (dot) { cx.fillStyle = rgba(dot, 0.95); cx.beginPath(); cx.arc(mx + 3, ty + px * 1.4 + sp * 0.75, 2.6, 0, TAU); cx.fill(); }
-      text(fit(l2, sp, L.metaW - (dot ? 11 : 0)), mx + (dot ? 11 : 0), ty + px * 1.4 + sp * 0.75, sp, c2);
+      text(fit(l2, sp, L.metaW - (dot ? 11 : 0) - (cw ? cw + 6 : 0)), mx + (dot ? 11 : 0), ty + px * 1.4 + sp * 0.75, sp, c2);
       const age = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}` : `${Math.max(1, Math.round(s / 60))}m`);
-      const l3 = st.length ? `stuck ${age(simT - Math.min(...st.map((a) => a.active)))} in ${stName(r.m, st[0].state)}` : !ag.length ? "no sessions this hour"
-        : `${ag.length} task${ag.length === 1 ? "" : "s"} · ${idle ? `idle ${age(simT - lastOf(r.m))}` : `last ${hhmm(lastOf(r.m))}`}`;
-      text(fit(l3 + (seeded.has(r.m) ? " · seeded" : ""), sp, L.metaW), mx, ty + px * 1.4 + sp * 2.25, sp, st.length ? rgba(OFF, 0.9) : rgba(SUB, idle ? 0.5 : 0.7));
+      const ns = st.length ? [] : desc(r.m).flatMap((d) => stuckOf(d).map((a) => ({ a, d }))).sort((p, q) => p.a.active - q.a.active);
+      const l3 = st.length ? `stuck ${age(simT - Math.min(...st.map((a) => a.active)))} in ${stName(r.m, st[0].state)}` : ns.length ? `nested stuck ${age(simT - ns[0].a.active)} in ${ns[0].d}`
+        : !ag.length ? (nk ? `${desc(r.m).reduce((n, d) => n + M[d].agents.length, 0)} tasks nested · last ${hhmm(lastIn(r.m))}` : "no sessions this hour")
+        : `${ag.length} task${ag.length === 1 ? "" : "s"} · ${idle ? `idle ${age(simT - lastIn(r.m))}` : `last ${hhmm(lastIn(r.m))}`}`;
+      text(fit(l3 + (seeded.has(r.m) ? " · seeded" : ""), sp, L.metaW), mx, ty + px * 1.4 + sp * 2.25, sp, st.length || ns.length ? rgba(OFF, 0.9) : rgba(SUB, idle ? 0.5 : 0.7));
       for (const s of L.stars) if (s.row === r) { drawStarLine(s, now); drawStar(s); }
       cx.globalAlpha = ga * (idle && !hot ? 0.75 : 1); drawEdgesOf(r.m, now); drawNodesOf(r.m); cx.globalAlpha = ga; drawTasksOf(r.m, y0, y1, now); rowLabels(r, hot); cx.globalAlpha = 1;
     }
@@ -427,16 +478,16 @@
     // the last 24 h of machine entries: a tick per session, in the colour of the state it was entered from (amber for a DAG launch)
     function drawStrip() {
       const { sx0, sx1, stripT } = L, t1 = simT, t0 = t1 - 86400, X = (t) => sx0 + ((t - t0) / 86400) * (sx1 - sx0), by = stripT + 30 * FS, sp = PX.sub();
-      const inV = L.list.filter((r) => shown(r)).map((r) => lastOf(r.m)).filter((t) => t > t0);
+      const inV = L.list.filter((r) => shown(r)).map((r) => lastIn(r.m)).filter((t) => t > t0);
       if (inV.length) { const a = X(Math.min(...inV)), b = X(Math.max(...inV)); cx.fillStyle = rgba(PLANET, 0.12); cx.fillRect(a - 3, by - 14 * FS, b - a + 6, 14 * FS); cx.fillStyle = rgba(PLANET, 0.5); cx.fillRect(a - 3, by, b - a + 6, 1); }
       cx.fillStyle = rgba(SUB, 0.22); cx.fillRect(sx0, by, sx1 - sx0, 1);
       for (let h = Math.ceil(t0 / 10800) * 10800; h <= t1; h += 10800) { const x = X(h); cx.fillStyle = rgba(SUB, 0.3); cx.fillRect(x, by, 1, 4); if (x - sx0 > 18 && sx1 - x > 18) text(hhmm(h), x, by + 11 * FS, sp * 0.95, rgba(SUB, 0.5), "center"); }
       L.ticks = [];
-      for (const m of SUBS) for (const a of M[m].agents) { const t = start(a); if (t < t0) continue; const x = X(t), hot = hotM() === m || (hover?.kind === "tick" && hover.o.a === a), col = a.task ? srcOf(m)?.col || PLANET : DAGC;
-        L.ticks.push({ x, m, a }); cx.fillStyle = rgba(col, hot ? 1 : 0.62); cx.fillRect(x - 0.75, by - (hot ? 13 : 8) * FS, 1.5, (hot ? 13 : 8) * FS); }
+      for (const d of desc(topM)) { const m = rowAt(d); for (const a of M[d].agents) { const t = start(a); if (t < t0) continue; const x = X(t), hot = hotM() === m || (hover?.kind === "tick" && hover.o.a === a), col = a.task ? srcOf(d)?.col || srcOf(m)?.col || PLANET : DAGC;
+        L.ticks.push({ x, m, a }); cx.fillStyle = rgba(col, hot ? 1 : 0.62); cx.fillRect(x - 0.75, by - (hot ? 13 : 8) * FS, 1.5, (hot ? 13 : 8) * FS); } }
       const nL = L.pin.length + L.list.filter((r) => r.on).length;
       text("24 h · machine entries", sx0, stripT + 8 * FS, sp, rgba(SUB, 0.6));
-      text(`${inV.length ? `${hhmm(Math.min(...inV))}–${hhmm(Math.max(...inV))} in view · ` : ""}${nL} of ${SUBS.length} loaded`, sx1, stripT + 8 * FS, sp, rgba(SUB, 0.7), "right");
+      text(`${inV.length ? `${hhmm(Math.min(...inV))}–${hhmm(Math.max(...inV))} in view · ` : ""}${nL} of ${L.rows.size} loaded`, sx1, stripT + 8 * FS, sp, rgba(SUB, 0.7), "right");
     }
 
     // ---- the trace: a task's path, in time order, across every machine it has a session in. Each hop is retraced along the
@@ -515,9 +566,9 @@
       nightSky(now); mcx.setTransform(1, 0, 0, 1, 0, 0);
       if (!enter) mcx.drawImage(buf, 0, 0);
       else { // the page's zoom through: the Board blows up past the clicked point and fades while the ledger grows out of it
-        const q = Math.min(1, (now - enter.t0) / 520), e = ease(q), f = { x: enter.f.x * DPR, y: enter.f.y * DPR }, sN = 0.3 + 0.7 * e, sO = 1 + 2.5 * e;
+        const q = Math.min(1, (now - enter.t0) / 520), e = ease(q), f = { x: enter.f.x * DPR, y: enter.f.y * DPR }, out = enter.dir < 0, sN = out ? 2.2 - 1.2 * e : 0.3 + 0.7 * e, sO = out ? 1 - 0.7 * e : 1 + 2.5 * e;
         mcx.globalAlpha = e; mcx.drawImage(buf, f.x * (1 - sN), f.y * (1 - sN), buf.width * sN, buf.height * sN);
-        mcx.globalAlpha = 1 - e; mcx.drawImage(enter.snap, f.x * (1 - sO) + NAVL * DPR * sO, f.y * (1 - sO), enter.snap.width * sO, enter.snap.height * sO); mcx.globalAlpha = 1; if (q >= 1) enter = null; }
+        mcx.globalAlpha = 1 - e; mcx.drawImage(enter.snap, f.x * (1 - sO) + (enter.off ?? NAVL) * DPR * sO, f.y * (1 - sO), enter.snap.width * sO, enter.snap.height * sO); mcx.globalAlpha = 1; if (q >= 1) enter = null; }
       const showTop = scroll > 8; topEl.style.display = showTop ? "block" : "none"; if (showTop) { topEl.style.left = `${(L.x0 + L.x1) / 2}px`; topEl.style.top = `${L.pinB + 8}px`; }
     }
 
@@ -527,8 +578,8 @@
     function setSky(on) {
       if (on && !sky) pageLegend = legendEl.innerHTML;
       sky = on; document.body.classList.toggle("mv", on); legendEl.innerHTML = on ? skyLegend : pageLegend;
-      if (on) { selRow = null; goal = scroll = 0; resize(); } else { setHover(null); pinned = null; }
-      const q = new URLSearchParams(location.search); on ? q.set("level", "in_progress") : (q.delete("level"), q.delete("focus"), q.delete("pick")); history.replaceState(null, "", `?${q}`);
+      if (on) { selRow = null; goal = scroll = 0; resize(); } else { setHover(null); pinned = null; topM = IP; }
+      const q = new URLSearchParams(location.search); on ? (q.set("level", "in_progress"), topM !== IP ? q.set("open", topM) : q.delete("open")) : (q.delete("level"), q.delete("focus"), q.delete("pick"), q.delete("open")); history.replaceState(null, "", `?${q}`);
     }
     go = function (next, fx, fy, then) {
       const to = isSky(next);
@@ -540,12 +591,26 @@
       return page.go(next, fx, fy, then);
     };
     const leave = (sx = NX + CW / 2, sy = H / 2) => go([{ kind: "board" }], sx, sy);
-    // step out the way the page does: close the panel, then drop the selection, then scroll back to the newest, then zoom out to the Board
-    const back = (sx, sy) => (panel.classList.contains("open") ? closePanel() : selRow ? ((selRow = null), syncUrl()) : goal > 0 ? (goal = 0) : leave(sx, sy));
+    // drill: a machine takes the top and the machines entered from it become the rows, zooming through the point it was opened
+    // from; stepping out zooms back down onto the row it now sits in, which glows a moment
+    function drill(m, f, dir = 1) {
+      if (!M[m] || m === topM) return; const prev = topM, snap = document.createElement("canvas"); snap.width = cv.width; snap.height = cv.height; snap.getContext("2d").drawImage(cv, 0, 0);
+      topM = m; selRow = null; closePanel(); setHover(null); goal = scroll = 0; loaded = PAGE; loadingAt = 0; layout();
+      const r = dir < 0 && L.rows.get(rowAt(prev));
+      if (r) { reveal(r); selRow = null; scroll = goal; for (const q of L.rows.values()) q.cy = null; place(performance.now()); r.flash = performance.now(); f = { x: L.metaX + L.metaW / 2, y: clamp(r.cy + r.h / 2, L.laneTop, L.stripT) }; }
+      syncUrl(); if (f) enter = { snap, f, t0: performance.now(), off: 0, dir };
+    }
+    const outOne = (sx = NX + CW / 2, sy = H / 2) => drill(up[topM] ?? IP, { x: sx, y: sy }, -1);
+    // a machine anywhere below the top: open the machine it is entered from, then bring its row on screen
+    function focusMachine(m) { if (!M[m]) return; if (m === IP) { if (topM !== IP) drill(IP, null, -1); selRow = null; goal = 0; syncUrl(); return; }
+      if (up[m] !== topM) drill(up[m], null, up[m] === IP || chain(topM).includes(up[m]) ? -1 : 1); reveal(L.rows.get(m)); }
+    // step out the way the page does: close the panel, drop the selection, scroll back to the newest, up a machine, then zoom out to the Board
+    const back = (sx, sy) => (panel.classList.contains("open") ? closePanel() : selRow ? ((selRow = null), syncUrl()) : goal > 0 ? (goal = 0) : topM !== IP ? outOne(sx, sy) : leave(sx, sy));
 
     // ---- input: hover names and traces, click pins a task or selects a row, the wheel scrolls the rows
     function hit(sx, sy) {
       if (!L) return null;
+      for (const c of L.crumbs || []) if (sx >= c.x0 - 3 && sx <= c.x1 + 3 && sy >= c.y0 && sy <= c.y1) return { kind: "crumb", o: c };
       if (sy >= L.stripT) { if (sx < L.sx0 - 4 || sx > L.sx1 + 4) return null; let best = null;
         for (const t of L.ticks) { const d = Math.abs(t.x - sx); if (d < 4 && (!best || d < best.d)) best = { d, t }; } return best ? { kind: "tick", o: best.t } : null; }
       if (L.thumb && Math.abs(sx - L.thumb.x) < 8 && sy > L.thumb.y0 && sy < L.thumb.y1) return { kind: "thumb" };
@@ -554,12 +619,12 @@
       for (const s of L.stars) if (inReg(s) && Math.hypot(s.x - sx, s.y - sy) < 9) return { kind: "star", o: s };
       for (const n of L.nodes.values()) if (inReg(n) && Math.hypot(n.x - sx, n.y - sy) < n.r + 6) return { kind: "node", o: n };
       for (const l of labels) if (sx >= l.x && sx <= l.x + l.w && Math.abs(sy - l.y) < l.h / 2) return l.star ? { kind: "star", o: l.star } : { kind: "node", o: l.node };
-      if (sy > L.laneTop && sx > L.metaX - 12 && sx < L.x1 + 8) { for (const r of [...L.pin, ...L.list]) { if (!shown(r)) continue; const [a, b] = regionOf(r); if (sy >= Math.max(a, r.cy) && sy < Math.min(b, r.cy + r.h)) return { kind: "row", o: r }; }
+      if (sy > L.laneTop && sx > L.metaX - 12 && sx < L.x1 + 8) { for (const r of [...L.pin, ...L.list]) { if (!shown(r)) continue; const [a, b] = regionOf(r); if (sy >= Math.max(a, r.cy) && sy < Math.min(b, r.cy + r.h)) { const c = r.chip; return c && sx >= c.x0 - 2 && sx <= c.x1 + 2 && sy >= c.y0 - 2 && sy <= c.y1 + 2 ? { kind: "drill", o: r } : { kind: "row", o: r }; } }
         if (L.more && sy >= Math.max(L.pinB, L.footY) && sy < L.footY + FOOT()) return { kind: "foot" }; }
       return null;
     }
     const tieText = (t) => (t.kind === "declared" ? `opens from <b>${esc(stName(t.pm, t.ps))}</b> <span class="k">declared${t.when ? `, while ${esc(t.when)}` : ""}</span>`
-      : `entered from <b>${esc(stName(t.pm, t.ps))}</b> <span class="k">${t.pm !== IP ? `on ${esc(t.pm)} · ` : ""}observed ×${t.count}</span>`);
+      : `entered from <b>${esc(stName(t.pm, t.ps))}</b> <span class="k">${t.pm !== topM ? `on ${esc(t.pm)} · ` : ""}observed ×${t.count}</span>`);
     function tipHtml(h) {
       if (h.kind === "task") { const ag = h.o, oth = (byTask[ag.task] || []).filter((b) => b !== ag);
         return `<b>${esc(ag.task || ag.title)}</b> <span class="k">${esc(boardTitle[ag.task] || "")}</span><br>${esc(stName(ag.m, ag.state))} <span class="k">on ${esc(ag.m)} · ${hhmm(ag.active)}</span>` +
@@ -572,9 +637,13 @@
         return `<b>${esc(m)}</b> <span class="k">${esc(subLine(m))}</span>` + (p ? `<br>${tieText(p)}` : "") + o.map((t) => `<br>${tieText(t)}`).join("") +
           (d.length ? `<br>launched by <b>${d.map((t) => esc(t.dag)).join(", ")}</b>` : "") + (!p && !d.length ? `<br><span class="k">no tie this hour</span>` : "") +
           (st.length ? `<br><span style="color:${OFF}">${st.length} task${st.length === 1 ? "" : "s"} stuck over 2 h${h.o.pinned ? " · pinned" : ""}</span>` : "") +
-          `<div class="k">${selRow === h.o ? "click to let go" : "click to keep its tie drawn"}</div>`; }
-      if (h.kind === "star") { const t = h.o.t; return `<b>${esc(t.dag)}</b> <span class="k">DAG</span><br>launches ${esc(t.child)}${t.child === IP ? "" : ` <span class="k">· ${t.count} session${t.count === 1 ? "" : "s"} with no task</span>`}`; }
-      if (h.kind === "tick") { const { a, m } = h.o; return `<b>${esc(a.task || "unattended run")}</b> entered <b>${esc(m)}</b> <span class="k">${hhmm(start(a))}</span><div class="k">click to scroll to its row</div>`; }
+          (KIDS[m].length ? `<br>${KIDS[m].length} nested: ${KIDS[m].map(esc).join(", ")}${desc(m).length > KIDS[m].length ? ` <span class="k">+${desc(m).length - KIDS[m].length} deeper</span>` : ""}` : "") +
+          `<div class="k">${selRow === h.o ? "click to let go" : "click to keep its tie drawn"}${KIDS[m].length ? " · double-click to open it" : ""}</div>`; }
+      if (h.kind === "drill") { const m = h.o.m; return `open <b>${esc(m)}</b><br>${KIDS[m].map((c) => `${esc(c)} <span class="k">from ${esc(stName(m, primary[c].ps))}</span>`).join("<br>")}` +
+          `<div class="k">it takes the top; its machines become the rows · Esc steps back out</div>`; }
+      if (h.kind === "crumb") return `back up to <b>${esc(h.o.m)}</b>`;
+      if (h.kind === "star") { const t = h.o.t; return `<b>${esc(t.dag)}</b> <span class="k">DAG</span><br>launches ${esc(t.child)}${t.child === topM ? "" : ` <span class="k">· ${t.count} session${t.count === 1 ? "" : "s"} with no task</span>`}`; }
+      if (h.kind === "tick") { const { a, m } = h.o; return `<b>${esc(a.task || "unattended run")}</b> entered <b>${esc(a.m)}</b> <span class="k">${a.m !== m ? `in ${esc(m)} · ` : ""}${hhmm(start(a))}</span><div class="k">click to scroll to its row</div>`; }
       if (h.kind === "foot") return `<span class="k">loads the next ${PAGE}</span>`;
       return "";
     }
@@ -598,11 +667,15 @@
       if (!h) return closePanel();
       if (h.kind === "task") return openTask(h.o);
       if (h.kind === "row") return select(h.o);
+      if (h.kind === "drill") return drill(h.o.m, { x: e.clientX, y: e.clientY });
+      if (h.kind === "crumb") return drill(h.o.m, { x: e.clientX, y: e.clientY }, -1);
       if (h.kind === "node" && h.o.row) return select(h.o.row);
-      if (h.kind === "node") { const k = kidsAt(IP, h.o.s).map((m) => L.rows.get(m)).sort((a, b) => order.indexOf(a.m) - order.indexOf(b.m)); return k.length && reveal(k[0]); }
+      if (h.kind === "node") { const k = kidsAt(topM, h.o.s).map((m) => L.rows.get(m)).sort((a, b) => order.indexOf(a.m) - order.indexOf(b.m)); return k.length && reveal(k[0]); }
       if (h.kind === "star" && h.o.row) return select(h.o.row);
       if (h.kind === "tick") return reveal(L.rows.get(h.o.m));
       if (h.kind === "foot") loaded += PAGE; });
+    cv.addEventListener("dblclick", (e) => { if (drag || enter) return; const h = hit(e.clientX, e.clientY), r = h?.kind === "row" ? h.o : h?.kind === "node" && h.o.row ? h.o.row : null;
+      if (r && KIDS[r.m].length) drill(r.m, { x: e.clientX, y: e.clientY }); });
     cv.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!enter) back(e.clientX, e.clientY); });
     cv.addEventListener("wheel", (e) => { e.preventDefault(); if (enter) return; goal = clamp(goal + e.deltaY * (e.deltaMode === 1 ? 18 : 1), 0, L.maxScroll); setHover(hit(e.clientX, e.clientY), e.clientX, e.clientY); }, { passive: false });
     topEl.addEventListener("click", () => (goal = 0));
@@ -612,12 +685,12 @@
       if (used) { goal = clamp(goal, 0, L.maxScroll); e.stopPropagation(); e.preventDefault(); } }, true);
     // navigator rows: a machine row scrolls the ledger to that machine's row (zooming in from the Board first); In progress goes back to the newest
     document.getElementById("layers").addEventListener("click", (e) => { const b = e.target.closest(".node"), t = b?.querySelector(".t")?.textContent?.trim(); if (!b || e.target.classList.contains("chev")) return;
-      if (sky && b.classList.contains("here")) { e.stopPropagation(); selRow = null; goal = 0; return; }
+      if (sky && b.classList.contains("here")) { e.stopPropagation(); focusMachine(IP); return; }
       if (!(t && M[t])) return;
-      e.stopPropagation(); if (!sky) go(SKY); setTimeout(() => (t === IP ? (goal = 0) : reveal(L.rows.get(t))), sky ? 0 : 540); }, true);
+      e.stopPropagation(); if (!sky) go(SKY); setTimeout(() => focusMachine(t), sky ? 0 : 540); }, true);
 
     // ---- the address that reproduces the view, and the review-only text size switch
-    function syncUrl() { const q = new URLSearchParams(location.search); selRow ? q.set("focus", selRow.m) : q.delete("focus"); q.delete("pick"); history.replaceState(null, "", `?${q}`); }
+    function syncUrl() { const q = new URLSearchParams(location.search); selRow ? q.set("focus", selRow.m) : q.delete("focus"); topM !== IP ? q.set("open", topM) : q.delete("open"); q.delete("pick"); history.replaceState(null, "", `?${q}`); }
     function setFS(p) { document.documentElement.style.fontSize = p === 100 ? "" : `${p}%`; const q = new URLSearchParams(location.search); p === 100 ? q.delete("fs") : q.set("fs", p); history.replaceState(null, "", `?${q}`); dispatchEvent(new Event("resize")); }
     function renderRev() { const fs = Math.round(FS * 100); revEl.innerHTML = `review · text ` + [100, 125, 150].map((p) => `<button data-fs="${p}" class="${p === fs ? "on" : ""}">${p}%</button>`).join("");
       revEl.querySelectorAll("[data-fs]").forEach((b) => (b.onclick = () => setFS(+b.dataset.fs))); }
@@ -660,12 +733,13 @@
     let tick = 0; setInterval(() => { if (document.hidden || !sky) return; simStep(); retire(); if (++tick % 3 === 0 && !frozen()) order = rankRows(); }, 1700);
 
     // ---- start where the address says: the Board by default, the ledger for &level=in_progress, &focus= or &pick=
-    const want = P.get("level") === "in_progress" || P.get("focus") || P.get("pick");
+    const want = P.get("level") === "in_progress" || P.get("focus") || P.get("pick") || P.get("open");
+    if (KIDS[P.get("open")]?.length && P.get("open") !== IP) topM = P.get("open");
     if (want && !isSky(page.stack)) { page.go(SKY); page.trans = null; }
     else if (!want && !P.get("level") && page.stack.length !== 1) { page.go([{ kind: "board" }]); page.trans = null; }
     resize(); renderFeed(); renderClock(); addEventListener("resize", resize); document.fonts?.ready.then(() => { wcache.clear(); resize(); });
     setSky(isSky(page.stack));
-    const f0 = P.get("focus"); if (sky && f0 && L.rows.get(f0)) reveal(L.rows.get(f0));
+    const f0 = P.get("focus"); if (sky && f0 && M[f0] && f0 !== IP) focusMachine(f0);
     if (sky && P.get("pick") === "busy") { const t = Object.entries(byTask).filter(([, v]) => !v.every((a) => seeded.has(a.m) || a.m === IP)).sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1))[0]; if (t) openTask(t[1].find((a) => a.m !== IP) || t[1][0]); }
     requestAnimationFrame(frame);
   }
