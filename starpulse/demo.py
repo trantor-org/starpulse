@@ -22,6 +22,7 @@ from pathlib import Path
 
 from starpulse.analytics import move_shares
 from starpulse.board_feed import SUN_DAYS
+from starpulse.upstream_backlog import board_machine
 
 STATIC = Path(__file__).parent / "static"
 #: Board labels that say what kind of work a task is and nothing about it.
@@ -142,6 +143,10 @@ SEED = [
 ]
 
 
+#: The lanes `SEED` fills, as the Board machine a capture with no board of its own is drawn on: CI's native board has
+#: three lanes, which the Kanban would draw as three columns and leave every other seeded card without one.
+SEED_LANES = ("Ready", "Waiting", "In Progress", "Review", "Needs attention", "Done")
+
 #: How long before the capture each seeded task created that day was created, by its index in `SEED`.
 SEED_CREATED = {0: 900, 1: 2400}
 #: The seeded tasks settled that day: where each settled, how long before the capture, and its assignee.
@@ -188,6 +193,12 @@ def scrub(live: dict) -> dict:
     pulls, settled = live.get("pulls", {}), live.get("settled", {})
     if not board:
         board, pulls, settled = _seed(live["now"])
+        live = {
+            **live,
+            "flows": [
+                {**f, "machine": board_machine(SEED_LANES)} if f["name"] == "board" else f for f in live["flows"]
+            ],
+        }
     for a in board:  # the Board's tasks are DEMO-1.. in Board order, whichever flow comes first
         names.setdefault(a["id"], f"DEMO-{len(names) + 1}")
     keys = sorted({a["milestone"] for a in board if a.get("milestone")}, key=lambda k: (len(k), k))

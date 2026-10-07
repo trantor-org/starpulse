@@ -64,7 +64,7 @@ MARKER = "<!-- starpulse:ui-preview -->"
 _CAVEATS = {
     FLOW_VIEW: (
         "Rendered from the scrubbed demo `starpulse.demo` builds off a server running `ci/preview.toml`: "
-        "the default board's machine and synthetic tasks, with no real board or runs adapter behind it."
+        "a six-lane board machine with synthetic tasks in every lane, and no real board or runs adapter behind it."
     ),
     MOCKUP: "Rendered from the scrubbed demo `starpulse.demo --mockup design` builds from the saved mockup data.",
 }

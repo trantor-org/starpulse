@@ -332,6 +332,36 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
     assert not re.search(r"PROJ-\d|github\.com", json.dumps(demo))
 
 
+def test_scrub_draws_every_kanban_lane_with_a_card_when_the_capture_board_is_the_native_three_lane_machine() -> None:
+    live = _live()
+    native = [("to_do", True, False), ("in_progress", False, False), ("done", False, True)]
+    live["flows"][0] = {
+        "name": "board",
+        "agents": [],
+        "machine": {
+            "states": [{"id": i, "name": i, "initial": init, "final": fin} for i, init, fin in native],
+            "transitions": [],
+            "mainLine": [i for i, _, _ in native],
+        },
+    }
+
+    demo = scrub(live)
+
+    board = demo["flows"][0]
+    lanes = [s["id"] for s in board["machine"]["states"]]
+    assert lanes == ["ready", "waiting", "in_progress", "review", "needs_attention", "done"]
+    assert {a["state"] for a in board["agents"]} == set(lanes)
+    assert board["machine"]["mainLine"] == lanes
+
+
+def test_scrub_keeps_the_machine_of_a_capture_that_has_its_own_board() -> None:
+    live = _live()
+    machine = {"states": [{"id": "to_do", "name": "To Do", "initial": True}], "transitions": []}
+    live["flows"][0] = {**live["flows"][0], "machine": machine}
+
+    assert scrub(live)["flows"][0]["machine"] == machine
+
+
 def test_capture_reads_the_snapshot_a_connection_to_the_event_stream_opens_with(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
