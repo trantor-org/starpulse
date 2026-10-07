@@ -367,6 +367,18 @@ def test_the_seeded_board_has_a_done_chain_for_the_kanban_stack() -> None:
     chain = board[12], *board[17:19]
     assert [a["dependencies"] for a in board[17:19]] == [["DEMO-13"], ["DEMO-18"]]
     assert all(a["state"] == "done" and a["milestone"] == chain[0]["milestone"] for a in chain)
+def test_the_seeded_board_has_a_review_task_with_two_pulls_and_a_task_holding_three_others() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+
+    demo = scrub(live)
+
+    board = demo["flows"][0]["agents"]
+    assert board[20]["state"] == "review" and len(demo["pulls"][board[20]["id"]]) == 2
+    held = [a for a in board if board[6]["id"] in a["dependencies"]]
+    assert [a["state"] for a in held] == ["waiting"] * 3
+
+
 def test_the_seeded_board_has_a_waiting_task_blocked_from_another_milestone_for_the_kanban_link() -> None:
     live = _live()
     live["flows"][0]["agents"] = []

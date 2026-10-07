@@ -276,6 +276,12 @@ SEED = [
     ("done", "m-1", ["size-1", "kind-feature"], 17, "@agent-deep-high", ("pass", True, 0)),
     # A Waiting task in m-1 blocked by the Waiting head in m-2: it cannot stack, so the Kanban links it to that blocker.
     ("waiting", "m-1", ["size-2", "kind-feature"], 3, "@agent-fast-low", None),
+    # A Review task with two pull requests, one merged and one open, so the task modal's rail draws more than one.
+    ("review", "m-2", ["size-3", "kind-feature"], None, "@agent-standard-high", (("pass", True, 0), ("pass", False, 1))),
+    # Three Waiting tasks on index 6, so that task's modal draws a Holds list of three.
+    ("waiting", "m-1", ["size-1"], 6, "@agent-fast-low", None),
+    ("waiting", "m-1", ["size-2", "kind-bug"], 6, "", None),
+    ("waiting", "m-2", ["size-2"], 6, "@agent-standard-high", None),
 ]
 
 
@@ -347,8 +353,10 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
             | ({"created": created} if created is not None else {})
         )
         if pull:
-            checks, merged, threads = pull
-            pulls[ids[i]] = [{"checks": checks, "merged": merged, "threads": threads}]
+            pulls[ids[i]] = [
+                {"checks": checks, "merged": merged, "threads": threads}
+                for checks, merged, threads in (pull if isinstance(pull[0], tuple) else (pull,))
+            ]
     settled = {
         f"seed-settled-{i}": {"state": state, "at": now - age, "created": None, "title": "", "model": model}
         for i, (state, age, model) in enumerate(SEED_SETTLED)
