@@ -57,6 +57,14 @@ GET /api/level[?hours=N]
                    A `hours` that is no positive number is 400, as is one longer than the history, with
                    `history_s` its length; a server with no `[level]` table or not serving `--hub` is 404, and a
                    history that does not keep runs is 501
+GET /api/level/trajectories[?hours=N]
+                   the trajectory analytics (`trajectories.trajectory_analytics`) of the level's runs that ended in a
+                   terminal in the last `hours`, default 168: `variants` and the `norm`, `outliers` ranked by
+                   Levenshtein distance from it, the absorbing `chain` (expected days and `p_goal` per state),
+                   `betweenness` and the path-time `bottleneck`, per configured gate whether it is `bypassable` with
+                   the bypassing run's `witness` path, and per run its own `gates` with their `dominators` and
+                   `post_dominators`, computed on that run's graph and never the union of all runs'. The window and
+                   its refusals are `/api/level`'s
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
 POST /api/run/<instance>/<workflow>
                    start a run-safe workflow through its instance's optional `start`: {runId}, or {error}
@@ -149,6 +157,7 @@ from starpulse.ingest import tokens as ingest_tokens
 from starpulse.insights import Insights, InsightStore, restore
 from starpulse.level import Level
 from starpulse.level_metrics import WindowPastHistory, level_metrics
+from starpulse.trajectories import trajectory_analytics
 from starpulse.machine_tasks import MachineTasks
 from starpulse.machine_tasks import tables as machine_tables
 from starpulse.pull_requests import PullRequests
@@ -541,6 +550,25 @@ def level_response(
 
     A window longer than the history is 400 with the history's length (`history_s`), never answered with its missing
     days as zero; a server with no level is 404."""
+    return _level_view(history, query, level, machines, now, level_metrics)
+
+
+def trajectories_response(
+    history: History, query: dict[str, list[str]], level: Level | None, machines: Mapping[str, dict], now: float
+) -> tuple[bytes, int]:
+    """The body and status for `/api/level/trajectories`: the trajectory analytics of the runs that ended in the last
+    `hours` as of `now`, refused as `level_response` refuses a window."""
+    return _level_view(history, query, level, machines, now, trajectory_analytics)
+
+
+def _level_view(
+    history: History,
+    query: dict[str, list[str]],
+    level: Level | None,
+    machines: Mapping[str, dict],
+    now: float,
+    view: Callable[..., dict[str, Any]],
+) -> tuple[bytes, int]:
     if level is None:
         return _error("this server has no level: add a [level] table and serve with --hub"), 404
     window = _hours(query, "hours", _HEALTH_HOURS)
@@ -549,12 +577,11 @@ def level_response(
     if not isinstance(history, LevelHistory):
         return _error("this history does not keep every task's trajectory, so it cannot report the level"), 501
     try:
-        metrics = level_metrics(
-            level, machines[level.machine], history.level_runs(level.machine), now=now, window_s=window * 3600
-        )
+        runs = history.level_runs(level.machine)
+        answer = view(level, machines[level.machine], runs, now=now, window_s=window * 3600)
     except WindowPastHistory as exc:
         return json.dumps({"error": str(exc), "history_s": exc.history_s}).encode(), 400
-    return json.dumps(metrics).encode(), 200
+    return json.dumps(answer).encode(), 200
 
 
 class _ApiHandler(SimpleHTTPRequestHandler):
@@ -731,6 +758,8 @@ def _handler(
                 self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
             elif url.path == "/api/level":
                 self._send(*level_response(history, parse_qs(url.query), level, feed.machines, clock()))
+            elif url.path == "/api/level/trajectories":
+                self._send(*trajectories_response(history, parse_qs(url.query), level, feed.machines, clock()))
             elif url.path.startswith(_TASK):
                 status, body = task_record(feed, read, unquote(url.path.removeprefix(_TASK)))
                 self._send(json.dumps(body).encode(), status)

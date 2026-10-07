@@ -19,12 +19,18 @@ from starpulse.level import Level, Orbit, Terminal
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import BOARD, NOW, ROWS, H
 
-LEVEL = Level("board", "done", (Terminal("done", "goal"),), orbit=Orbit("working", ("in_progress", "review")))
+LEVEL = Level(
+    "board",
+    "done",
+    (Terminal("done", "goal"),),
+    gates=("review",),
+    orbit=Orbit("working", ("in_progress", "review")),
+)
 
 
-def _get(server: ThreadingHTTPServer, query: str = "") -> tuple[int, dict]:
+def _get(server: ThreadingHTTPServer, query: str = "", path: str = "/api/level") -> tuple[int, dict]:
     try:
-        with urllib.request.urlopen(url(server, f"/api/level{query}"), timeout=5) as resp:
+        with urllib.request.urlopen(url(server, f"{path}{query}"), timeout=5) as resp:
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read())
@@ -128,5 +134,74 @@ def test_a_history_that_cannot_list_runs_is_not_implemented(tmp_path: Path) -> N
 
     with serve(tmp_path, BoardFeed(machines=MACHINES), history=Paths(), level=LEVEL) as server:
         status, body = _get(server, "?hours=48")
+
+    assert (status, "does not keep" in body["error"]) == (501, True)
+
+
+def _trajectories(server: ThreadingHTTPServer, query: str = "") -> tuple[int, dict]:
+    return _get(server, query, "/api/level/trajectories")
+
+
+def test_trajectories_cover_the_runs_that_ended_in_the_window(server: ThreadingHTTPServer) -> None:
+    status, body = _trajectories(server, "?hours=48")
+
+    assert status == 200
+    assert (body["ended"], body["window_s"], body["history_s"]) == (2, 48 * H, 90 * H)  # A at 90h, B at 95h; F at 40h
+    assert [(run["task"], run["path"]) for run in body["runs"]] == [
+        ("A", ["to_do", "ready", "in_progress", "review", "done"]),
+        ("B", ["ready", "in_progress", "review", "in_progress", "done"]),
+    ]
+    assert body["norm"]["count"] == 1
+    assert body["chain"]["in_progress"]["p_goal"] == pytest.approx(1.0)  # every ended run reached the goal
+
+
+def test_a_run_that_detoured_through_the_gate_leaves_it_bypassable_with_that_runs_own_path(
+    server: ThreadingHTTPServer,
+) -> None:
+    _, body = _trajectories(server, "?hours=48")
+
+    assert body["gates"] == [
+        {
+            "gate": "review",
+            "runs": 2,
+            "crossed": 2,
+            "mandatory": 1,  # A; B went back to in progress and on to done
+            "bypassed": 1,
+            "bypassable": True,
+            "witness": {"task": "B", "path": ["ready", "in_progress", "done"]},
+        }
+    ]
+
+
+def test_trajectories_refuse_a_window_longer_than_the_history_with_its_length(server: ThreadingHTTPServer) -> None:
+    status, body = _trajectories(server, "?hours=91")
+
+    assert (status, body["history_s"], "90 hours" in body["error"]) == (400, 90 * H, True)
+
+
+@pytest.mark.parametrize("query", ["?hours=0", "?hours=soon"])
+def test_trajectories_refuse_a_window_that_is_not_a_positive_number(server: ThreadingHTTPServer, query: str) -> None:
+    status, body = _trajectories(server, query)
+
+    assert (status, "positive number" in body["error"]) == (400, True)
+
+
+def test_a_server_with_no_level_has_no_trajectories(tmp_path: Path, store: HistoryStore) -> None:
+    with serve(tmp_path, BoardFeed(machines=MACHINES), history=store, clock=lambda: NOW) as server:
+        status, body = _trajectories(server, "?hours=48")
+
+    assert (status, "no level" in body["error"]) == (404, True)
+
+
+def test_a_history_that_cannot_list_runs_cannot_report_trajectories(tmp_path: Path) -> None:
+    class Paths:
+        def lane_path(self, task: str) -> list[dict]:
+            return []
+
+        def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]:
+            return [], 0
+
+    with serve(tmp_path, BoardFeed(machines=MACHINES), history=Paths(), level=LEVEL) as server:
+        status, body = _trajectories(server, "?hours=48")
 
     assert (status, "does not keep" in body["error"]) == (501, True)

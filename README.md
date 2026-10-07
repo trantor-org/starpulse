@@ -109,6 +109,8 @@ starpulse runs start prod/nightly                # start a run-safe workflow thr
 starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
 starpulse analytics health --hours 72            # dwell and WIP per state, throughput and stuck tasks, with gap warnings
 starpulse analytics level --hours 48             # the level's WIP, throughput, aging and per-source orbit shares
+starpulse analytics trajectories --hours 48      # variants, outliers, expected days and chance of the goal, betweenness
+starpulse analytics gates --task PROJ-45         # which gates a run can bypass, with the path that skips each
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
@@ -148,6 +150,8 @@ lists exactly the verbs there are.
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
 | `analytics health` | `--hours`, `--stuck-hours` | `now`, `window_s`, `stuck_after_s`, `states`, `throughput`, `stuck` and `warnings`, below |
 | `analytics level` | `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `wip`, `throughput`, `time_in_state`, `aging`, `orbit` and `sources`, below; a window longer than the history exits 1 and a server with no level exits 3 |
+| `analytics trajectories` | `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `variants`, `norm`, `outliers`, `chain`, `betweenness` and `bottleneck`, below; refusals as `analytics level` |
+| `analytics gates` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `gates` and `runs`, below; `--task` keeps one run and exits 4 when it ended nowhere in the window; refusals as `analytics level` |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
@@ -179,6 +183,23 @@ per terminal and the working time per working state, and each of `sources` carri
 for a source with nothing ended or worked. History begins at the first event the hub holds: a window longer than it is
 refused (exit 1, the error naming the history's hours, `history_s` in the HTTP body), never padded with zero days. A
 server with no level is 404 (exit 3).
+
+`analytics trajectories` and `analytics gates` read `GET /api/level/trajectories[?hours=N]`, with the window, history and
+refusals of `analytics level`. They cover the runs of the level's machine that ended in a terminal inside the window,
+each a whole path with its self-loops collapsed. `variants` counts each distinct path (`{path, count, share}`, most
+common first) and `norm` is the most common; `outliers` ranks the other runs by Levenshtein distance from the norm,
+furthest first. `chain` is an absorbing Markov chain over the observed transitions, terminals absorbing: per state
+`expected_days` to finish and `p_goal`, solved from the fundamental matrix N = (I - Q)^-1 with N times the mean stay
+and N times the chance of stepping into the goal. `betweenness` is Brandes centrality per state on the transition
+graph and `bottleneck` the state holding the most path time, `{state, path_days}`. `gates` has one entry per
+configured gate over the runs that reached the goal: how many `crossed` it, how many had to cross it (`mandatory`),
+`bypassed`, `bypassable`, and a `witness` `{task, path}`, the shortest path a bypassing run could have taken to the
+goal without the gate. Dominators are computed per run, on the graph of that run's own steps (`runs`: each
+`{source, task, path, reached_goal, gates}` with each gate's `crossed`, `mandatory`, `dominators` (the states every
+path from the run's first state to the gate crosses), `post_dominators` (every path from the gate to the goal) and
+`witness`), never on the union of every run's graph, which holds paths no run took. A gate a run visited only on a
+detour is bypassable. A trajectory joined with its agent sessions is not computed here: the history keeps task steps,
+not sessions.
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}` with `actor` `operator` when
