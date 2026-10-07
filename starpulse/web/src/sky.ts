@@ -113,6 +113,8 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
   const boardTasks = new Map((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((a) => [a.id, a]));
   const flows = Object.fromEntries(snap.flows.map((f) => [f.name, f.name === "board" ? f : { ...f, agents: f.agents.map((a) => joined(a, boardTasks)) }]));
   const board = flows.board ?? EMPTY, t = tree(snap), groups = (snap.domains ?? []).map((d) => ({ name: d.name, dags: d.dags.map((x) => x.name) }));
+  // the writers the Star Map draws on a Board path are the ones that are no DAG; a DAG's own are on the DAGs view and a Ledger
+  const actors = new Set([...(board.machine.dagActors ?? []), ...snap.dags.map((d) => d.name)]);
   const child: Sky["child"] = {}, latest: Sky["latest"] = {}, active: Record<string, number> = {};
   for (const f of Object.values(flows))
     if (f.name !== "board")
@@ -126,7 +128,7 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     dags: snap.dags,
     pools: snap.pools ?? [],
     dagBy: Object.fromEntries(snap.dags.map((d) => [d.name, d])),
-    writers: board.machine.writers ?? {},
+    writers: Object.fromEntries(Object.entries(board.machine.writers ?? {}).map(([event, ws]) => [event, ws.filter((w) => !actors.has(w.actor))])),
     launches: Object.entries(board.machine.launches ?? {}).map(([dag, l]) => ({ dag, skill: l.skill, flow: l.flow })),
     cues: snap.cues ?? [],
     groups,

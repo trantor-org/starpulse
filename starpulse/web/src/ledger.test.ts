@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD, drill, pathKey } from "./levels";
+import { BOARD, pathKey } from "./levels";
 import { ledgerLevel, pathLedger } from "./levels";
 import { freshKeys, ledgerOf, markOf, optionalSteps, shortApplied, statusLine, worst, type LineCtx, type Tie } from "./ledger";
 import type { LedgerRow, LedgerRun, Snapshot } from "./types";
@@ -50,12 +50,6 @@ describe("a Board transition's Ledger level", () => {
     expect(ledgerLevel(snap(), "STAY")).toBeNull();
     expect(ledgerLevel(snap(), "NOPE")).toBeNull();
   });
-
-  it("is what drilling the fold on the Review → Done path pushes", () => {
-    const level = ledgerLevel(snap(), "MERGED")!;
-
-    expect(drill({ name: "3 DAGs", fold: level.dags }, level.crit, level.path)).toEqual({ push: { kind: "fold", dags: level.dags, crit: level.crit, path: level.path } });
-  });
 });
 
 describe("a Board path's Ledger", () => {
@@ -84,7 +78,7 @@ describe("a Ledger's frame", () => {
     expect([rows("MERGED"), rows("CLAIM")]).toEqual(["merge", "task"]);
   });
 
-  it("names the event a Board fold's path carries by the DAGs it holds, when the fold is drilled from the Board", () => {
+  it("names the event a Board fold's path carries by the DAGs it holds, when the fold is entered from a Board path", () => {
     const fold = { kind: "fold" as const, dags: ["dagu/main-follow", "dagu/graph-refresh"], crit: [], path: ["review", "done"] as [string, string] };
 
     expect(ledgerOf(snap(), fold)!.event).toBe("MERGED");

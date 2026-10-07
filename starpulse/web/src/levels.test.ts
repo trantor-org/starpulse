@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD, drill, hostOf, pathKey, pathTo, startPath, taskKicker, topOf, tree, type Level, type Path } from "./levels";
+import { BOARD, hostOf, pathKey, pathTo, startPath, taskKicker, topOf, tree, type Level, type Path } from "./levels";
 import type { Machine, Snapshot } from "./types";
 
 const machine = (ids: string[], subflows: Machine["subflows"] = [], source?: string): Machine => ({
@@ -73,39 +73,23 @@ describe("old URLs", () => {
     expect(startPath("/flow/retired-skill", "", DELIVERY, T)).toEqual(BOARD);
   });
 
-  it("reopen the DAGs level one step below the Board, and no deeper", () => {
-    const dags: Path = [...BOARD, { kind: "dags" }];
+  it("fall back to the Board from a cached DAGs level, which the Star Map no longer has", () => {
+    const dags = [...BOARD, { kind: "dags" }] as unknown as Path;
 
-    expect(startPath("/", "", dags, T)).toEqual(dags);
-    expect(startPath("/", "", [...dags, { kind: "state", id: "review" }], T)).toEqual(BOARD);
+    expect(startPath("/", "", dags, T)).toEqual(BOARD);
   });
 
-  it("reopen a fold one step below the Board while its states still exist, and never from the DAGs level", () => {
+  it("reopen a fold one step below the Board while its states still exist", () => {
     const fold: Level = { kind: "fold", dags: ["a", "b"], crit: ["a: writes X (ready → review)"], path: ["ready", "review"] };
     const gone: Level = { ...fold, path: ["ready", "retired"] };
 
     expect(startPath("/", "", [...BOARD, fold], T)).toEqual([...BOARD, fold]);
     expect(startPath("/", "", [...BOARD, gone], T)).toEqual(BOARD);
-    expect(startPath("/", "", [...BOARD, { kind: "dags" }, fold], T)).toEqual(BOARD);
     expect(startPath("/", "", [...BOARD, { ...fold, path: null }], T)).toEqual([...BOARD, { ...fold, path: null }]);
   });
 
   it("key a fold by the DAGs it holds", () => {
     expect(pathKey([...BOARD, { kind: "fold", dags: ["a", "b"], crit: [], path: null }])).toBe("board/a+b");
-  });
-});
-
-describe("drill", () => {
-  const crit = ["a: writes X (ready → review)", "b: runs on Y, beside X (ready → review)"];
-
-  it("opens a single DAG's panel and leaves the level alone", () => {
-    expect(drill({ name: "a" }, crit, ["ready", "review"])).toEqual({ panel: "a" });
-  });
-
-  it("pushes a fold level over the path a fold's DAGs write", () => {
-    expect(drill({ name: "2 DAGs", fold: ["a", "b"] }, crit, ["ready", "review"])).toEqual({
-      push: { kind: "fold", dags: ["a", "b"], crit, path: ["ready", "review"] },
-    });
   });
 });
 

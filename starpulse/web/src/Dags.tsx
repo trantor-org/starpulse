@@ -44,8 +44,8 @@ function Census({ rs }: { rs: Row[] }) {
   );
 }
 
-function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle }: {
-  data: DagData; rs: Row[]; now: number; why: (r: Row) => string | null; run: (r: Row) => void; open: (r: Row) => void; ledger?: LedgerGo; folded: Set<string>; toggle: (k: string) => void;
+function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle, spot }: {
+  data: DagData; rs: Row[]; now: number; spot: string | null; why: (r: Row) => string | null; run: (r: Row) => void; open: (r: Row) => void; ledger?: LedgerGo; folded: Set<string>; toggle: (k: string) => void;
 }) {
   const doms = [...new Set([...data.domains.map((d) => d.name), ...rs.map((r) => r.domain)])].filter((d) => rs.some((r) => r.domain === d));
   return (
@@ -58,7 +58,7 @@ function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle }: {
             {list.map((r) => {
               const t = ties(data, r.d.name)[0];
               return (
-                <div key={r.d.name} className={`trow p-${r.phase}${r.runSafe ? " startable" : ""}`} tabIndex={0} onClick={() => open(r)}
+                <div key={r.d.name} className={`trow p-${r.phase}${r.runSafe ? " startable" : ""}${r.d.name === spot ? " spot" : ""}`} data-dag={r.d.name} tabIndex={0} onClick={() => open(r)}
                   onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && open(r)}>
                   <Orb phase={r.phase} /><span className="nm" title={r.d.name}>{short(r.d.name)}</span><Strip r={r} />
                   <span className="last">{lastLine(r, now)}</span><span className="pool">{poolText(data.pools, r) || "—"}</span>
@@ -76,8 +76,8 @@ function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle }: {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-/** `openPath` takes the page to a level of the Star Map: the Ledger of a tied transition is the fold level over its path. */
-export function Dags({ data, post, openPath }: { data: DagData | null; post?: Post; openPath?: (p: Path) => void }) {
+/** The DAGs view. `spot` is the DAG a Recent line is hovered for: its row lights as a hovered row does and scrolls into view. A new `opening` opens that DAG's modal. */
+export function Dags({ data, post, openPath, spot = null, opening = null }: { data: DagData | null; post?: Post; openPath?: (p: Path) => void; spot?: string | null; opening?: { name: string } | null }) {
   const [q, setQ] = useState("");
   const [only, setOnly] = useState<Exclude<Phase, "queued"> | null>(null);
   const [dom, setDom] = useState<string | null>(null);
@@ -87,6 +87,14 @@ export function Dags({ data, post, openPath }: { data: DagData | null; post?: Po
   const [starting, setStarting] = useState<Set<string>>(new Set());
   const [opened, setOpened] = useState<string | null>(null);
   const [refusedRun, setRefusedRun] = useState<string | null>(null);
+  const [seenOpening, setSeenOpening] = useState(opening);
+  if (opening !== seenOpening) {
+    setSeenOpening(opening);
+    if (opening) setOpened(opening.name);
+  }
+  useEffect(() => {
+    if (spot) [...document.querySelectorAll<HTMLElement>("#catalog .trow")].find((el) => el.dataset.dag === spot)?.scrollIntoView?.({ block: "nearest" });
+  }, [spot]);
   // the server's clock, read at each snapshot and counted on between them, so a browser clock that is off does not skew "5m ago"
   const [now, setNow] = useState(data?.now ?? 0), [seen, setSeen] = useState(data?.now ?? 0);
   if (data && data.now !== seen) { setSeen(data.now); setNow(data.now); }
@@ -157,7 +165,7 @@ export function Dags({ data, post, openPath }: { data: DagData | null; post?: Po
         {(only || dom || q) && <button className="clear" onClick={() => { setOnly(null); setDom(null); setQ(""); }}>clear</button>}
         <span className="shown">{rs.length === all.length ? `${all.length} shown` : `${rs.length} of ${all.length} shown`}</span>
       </div>
-      {rs.length ? <Catalog data={data} rs={rs} now={now} why={why} run={run} ledger={ledger} open={(r) => { setRefusedRun(null); setOpened(r.d.name); }} folded={folded} toggle={toggle} /> : <div className="none">No DAG matches the filters.</div>}
+      {rs.length ? <Catalog data={data} rs={rs} now={now} spot={spot} why={why} run={run} ledger={ledger} open={(r) => { setRefusedRun(null); setOpened(r.d.name); }} folded={folded} toggle={toggle} /> : <div className="none">No DAG matches the filters.</div>}
       {shown && <DagModal data={data} r={shown} now={now} starting={starting.has(shown.d.name)} refused={refusedRun} run={() => void run(shown)} close={() => setOpened(null)} ledger={ledger} />}
       {toast && <div className="dtoast" key={toast.n} role="status">{toast.text}</div>}
     </main>

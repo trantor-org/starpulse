@@ -42,7 +42,7 @@ beforeEach(async () => {
   host = document.body.appendChild(document.createElement("div"));
   root = createRoot(host);
   await act(async () => root.render(<App />));
-  act(() => stores[0].set({ dags: dagData.dags.map((d) => d.name), dagData, pools: dagData.pools, groups: [{ name: "Board", n: 2 }] }));
+  act(() => stores[0].set({ dags: dagData.dags.map((d) => d.name), dagData, pools: dagData.pools }));
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -86,5 +86,47 @@ describe("the DAGs view's navigator and legend", () => {
     expect(legend).toContain("last run failed");
     expect(legend).toContain("run-safe");
     expect(legend).not.toContain("checks pass");
+  });
+});
+
+describe("the Star Map's navigator and legend", () => {
+  it("lists no DAGs and no Queues, and the legend has no DAG entries", () => {
+    expect(q("#cons")).toBeNull();
+    expect(q("#queues")).toBeNull();
+    expect([...host.querySelectorAll("#nav h3")].map((h) => h.textContent)).toEqual(["Views"]);
+    expect(q("#legend")!.textContent).not.toMatch(/\bok\b|failed|runnable/);
+  });
+
+  it("names no DAG in its search, and finds none", () => {
+    expect(q("#q")!.getAttribute("aria-label")).not.toContain("DAG");
+  });
+});
+
+describe("a DAG's line in the Recent rail", () => {
+  const feed = [
+    { key: "t", at: 2, time: "12:01", who: "TASK-1", what: "claimed", where: "Ready → In progress", task: "TASK-1" },
+    { key: "d", at: 1, time: "12:00", who: "runs/pr-watch", what: "finished", where: "ok", tone: "ok" as const, dag: "runs/pr-watch" },
+  ];
+  const lines = () => [...host.querySelectorAll<HTMLElement>("#feed > div")];
+  const hover = (el: HTMLElement) => act(() => void el.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })));
+  beforeEach(() => act(() => stores[0].set({ feed })));
+
+  it("is inert on the Star Map, which draws no DAG", () => {
+    expect(lines().map((l) => l.classList.contains("go"))).toEqual([true, false]);
+  });
+
+  it("lights the DAG's row in the DAGs view while hovered, and its click opens the DAG's modal", () => {
+    act(() => dagsNode().click());
+    const [task, dag] = lines();
+
+    expect([task.classList.contains("go"), dag.classList.contains("go")]).toEqual([false, true]);
+    hover(dag);
+    expect([...host.querySelectorAll<HTMLElement>("#dg .trow.spot")].map((r) => r.dataset.dag)).toEqual(["runs/pr-watch"]);
+    act(() => void dag.dispatchEvent(new MouseEvent("pointerout", { bubbles: true })));
+    expect(q("#dg .trow.spot")).toBeNull();
+
+    expect(q("#dg .dgm")).toBeNull();
+    act(() => dag.click());
+    expect(q('.dgm[role="dialog"]')!.getAttribute("aria-label")).toBe("runs/pr-watch");
   });
 });
