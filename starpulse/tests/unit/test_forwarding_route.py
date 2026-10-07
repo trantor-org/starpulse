@@ -129,3 +129,13 @@ def test_a_delete_of_the_forwarding_route_is_a_404(tmp_path: Path, rig: Rig) -> 
 
     assert refused.value.code == 404
     assert rig.opt_in.get() is True
+
+
+def test_the_contract_lists_the_lane_streams_fields_and_marks_the_assignee_as_a_person(rig: Rig) -> None:
+    status, body = forwarding("127.0.0.1", "GET", b"", rig.forwarder())
+
+    assert status == 200
+    lanes = body["contract"]["board:lanes"]
+    assert [entry["field"] for entry in lanes] == ["task", "lane", "time", "team", "milestone", "labels", "assignee"]
+    assert [entry["field"] for entry in lanes if entry["person"]] == ["assignee"]
+    assert "title" not in {entry["field"] for entry in lanes}

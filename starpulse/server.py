@@ -167,7 +167,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse import analytics, doctor, forward, run_events
+from starpulse import analytics, doctor, forward, lane_events, run_events
 from starpulse.board import (
     AssigneeWriter,
     Board,
@@ -210,6 +210,7 @@ from starpulse.store.history import (
     LaneHistory,
     LevelHistory,
     database_url,
+    record_lane_events,
     record_machine_events,
 )
 
@@ -1204,7 +1205,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store, history = history_store(config, base, board, feed.machines)
     feed.date_lanes(history.lane_path)
-    feed.record_lanes(store)
+    if config.forward is not None:
+        # before the adapter starts, so the history precedes the live changes in the log
+        lane_events.replay(store, log)
+    feed.record_lanes(store, log if config.forward is not None else None)
     feed.track_criteria(board.evaluate, store)
     threading.Thread(target=feed.keep_criteria, args=(threading.Event(),), name="board-criteria", daemon=True).start()
     if isinstance(history, LaneHistory):
@@ -1234,6 +1238,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     threading.Thread(
         target=record_machine_events, args=(store, log, threading.Event()), name="machine-history", daemon=True
     ).start()
+    if args.hub:  # the lane changes the hub's sources forward become its Board trajectories
+        threading.Thread(
+            target=record_lane_events, args=(store, log, threading.Event()), name="lane-history", daemon=True
+        ).start()
     # The learned step graphs persist only in StarPulse's own store.
     pushed = PushRuns(feed.runs(PUSHED_INSTANCE), store)
     follow(pushed, log, run_events.STREAM, pushed.handle_entry)

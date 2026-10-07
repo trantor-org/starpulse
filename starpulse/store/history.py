@@ -30,7 +30,6 @@ from sqlalchemy import (
     String,
     Table,
     Text,
-    bindparam,
     create_engine,
     delete,
     select,
@@ -38,6 +37,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import OperationalError
 
+from starpulse import lane_events
 from starpulse.domain.level_metrics import Run
 from starpulse.machine_tasks import Table as Transitions
 from starpulse.settings.config import discover, load
@@ -105,12 +105,13 @@ _cursors = Table(
 _LANE_ORDER = (_lane_changes.c.observed_at, _lane_changes.c.id)
 _STEP_ORDER = (_machine_events.c.occurred_at, _machine_events.c.id)
 #: A task's last lane: its latest observation, the later insert on a tie.
-_LAST_LANE = (
-    select(_lane_changes.c.new_status)
-    .where(_lane_changes.c.task == bindparam("task"))
-    .order_by(_lane_changes.c.observed_at.desc(), _lane_changes.c.id.desc())
-    .limit(1)
-)
+def _last_lane(db: Connection, task: str, source_name: str | None) -> str | None:
+    """The status of the task's latest lane change; with a `source_name`, of the change that source forwarded."""
+    c = _lane_changes.c
+    query = select(c.new_status).where(c.task == task).order_by(c.observed_at.desc(), c.id.desc()).limit(1)
+    if source_name is not None:
+        query = query.where(c.event_id.startswith(f"{source_name}/", autoescape=True))
+    return db.execute(query).scalar()
 
 
 class History(Protocol):
@@ -241,22 +242,39 @@ class HistoryStore:
         save = self._insert(_cursors).values(stream=stream, after_id=after_id)
         db.execute(save.on_conflict_do_update(index_elements=["stream"], set_={"after_id": save.excluded.after_id}))
 
-    def record_lane(self, event_id: str, task: str, status: str, at: float) -> None:
-        """Write a task's lane change and fold it into the summaries; a status that repeats the task's last one (a
-        reconcile) is no change, and neither is an event id the store already holds."""
+    def record_lane(self, event_id: str, task: str, status: str, at: float, *, cursor: int | None = None) -> bool:
+        """Write a task's lane change and fold it into the summaries; True when a row was written. A status that
+        repeats the task's last one (a reconcile) is no change, and neither is an event id the store already holds.
+
+        A forwarded change (`<source>/<id>`) repeats only the last status of the same source's task: two sources may
+        key a task alike. `cursor`, the entry's id in the log, is saved in the same transaction.
+        """
         with self.engine.begin() as db:
-            last = db.execute(_LAST_LANE, {"task": task}).scalar()
-            if last == status:
-                return
-            change = self._insert(_lane_changes).values(
-                event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at
-            )
-            if db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is not None:
-                who = self._summariser
-                key = who.lane_key(task, event_id)
-                if (step := who.lane_step(read_case(db, key), status, at, event_id)) is not None:
-                    write_step(db, self._insert, key, step)
-                write_lane(db, event_id, task, status, at)
+            written = self._fold_lane(db, event_id, task, status, at)
+            if cursor is not None:
+                self._save_cursor(db, lane_events.STREAM, cursor)
+        return written
+
+    def record_lane_entry(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> bool:
+        """Fold one `lane_events` entry (`fields`) into the lane history as `record_lane` does, under its log id."""
+        return self.record_lane(fields.get("event_id") or entry_id, fields["task"], fields["lane"], float(fields["time"]), cursor=cursor)
+
+    def _fold_lane(self, db: Connection, event_id: str, task: str, status: str, at: float) -> bool:
+        name, slash, _ = event_id.partition("/")
+        last = _last_lane(db, task, name if slash and name else None)
+        if last == status:
+            return False
+        change = self._insert(_lane_changes).values(
+            event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at
+        )
+        if db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is None:
+            return False
+        who = self._summariser
+        key = who.lane_key(task, event_id)
+        if (step := who.lane_step(read_case(db, key), status, at, event_id)) is not None:
+            write_step(db, self._insert, key, step)
+        write_lane(db, event_id, task, status, at)
+        return True
 
     def build_summaries(self) -> None:
         """Build the summaries from the raw rows when they are empty: the start-up pass for a store that predates them.
@@ -365,6 +383,15 @@ class HistoryStore:
             rows = db.execute(query).all()
         return [tuple(row) for row in rows]
 
+    def lane_changes(self) -> list[tuple[str, str, str, float]]:
+        """`(event_id, task, lane, at)` for every lane change of every task, oldest first."""
+        c = _lane_changes.c
+        return self._read(select(c.event_id, c.task, c.new_status, c.observed_at).order_by(*_LANE_ORDER))
+
+    def current_lanes(self) -> list[tuple[str, str, str, float]]:
+        """`(event_id, task, lane, at)` for the latest lane change of each task, in the order the tasks first moved."""
+        return list({row[1]: row for row in self.lane_changes()}.values())
+
     def level_runs(self, flow: str) -> list[Run]:
         """Every task's trajectory on `flow` as a `Run` of the source its event ids name, for the level's aggregates.
 
@@ -442,6 +469,31 @@ def record_machine_events(
         return
     Tail(log, stream, after=after, interval=interval).run(
         lambda entry: store.record_machine(entry.event_id, entry.fields, cursor=entry.id),
+        stop,
+        transient=(OperationalError,),
+    )
+
+
+def record_lane_events(
+    store: HistoryStore, log: EventLog, stop: threading.Event, *, interval: float = DEFAULT_POLL_INTERVAL
+) -> None:
+    """Fold the log's lane entries into `store`'s lane history until `stop`, resuming after the cursor the store holds.
+
+    This is how a hub learns the lane changes its sources forward; it reads as `record_machine_events` reads, and
+    each entry is written with its cursor in one transaction.
+    """
+    stream = lane_events.STREAM
+    while not stop.is_set():
+        try:
+            after = store.cursor(stream)
+            break
+        except OperationalError as exc:
+            logger.warning("history: cannot read the %s cursor, retrying in %ss: %s", stream, interval, exc)
+            stop.wait(interval)
+    else:
+        return
+    Tail(log, stream, after=after, interval=interval).run(
+        lambda entry: store.record_lane_entry(entry.event_id, entry.fields, cursor=entry.id),
         stop,
         transient=(OperationalError,),
     )
