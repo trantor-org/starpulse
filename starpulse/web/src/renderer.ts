@@ -311,11 +311,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     // the canvas is fixed at a known left edge, so the client point less that edge is the canvas point; offsetX would force a layout on every move
     mouse = e.target === cv && !trans ? { ox: e.clientX - L, oy: e.clientY, cx: e.clientX, cy: e.clientY } : null;
-    if (!mouse) setHover(null);
+    if (!mouse && !spotted) setHover(null); // the pointer moving along the Recent rail keeps the card of the line it spots
   };
   const onLeave = () => {
     mouse = null;
-    setHover(null);
+    if (!spotted) setHover(null);
   };
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") closePanel();
@@ -1397,10 +1397,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // A hovered task lights the path it took through this level, in order; a pinned one is the focused setting, and everything else steps back
   // under a dark veil from the click itself. A state level lights the bodies (primary, moons, sub-states) the task's session moved through.
   function drawTrace() {
-    const t = draws(hover, pin).trace, sc = scene!;
+    const t = draws(hover, pin, !mouse && spotted?.kind === "task" ? { kind: "task", id: spotted.id } : null).trace, sc = scene!;
     if (!t || !S || !pinnable(t.subject)) return;
     const body = bodyOf(t.subject), mode = level().kind as Mode, board = mode === "board", run = runFor(t.subject);
-    if (!body) return;
     if (typeof run !== "string" && (board ? sc.bEdges.length : mode === "state" ? sc.planets.length : sc.mEdges.length)) {
       const { routes, pills, first } = traceLayout(run, placesOf(mode), edgeOf(mode), board, K), thick = 2.6 / Math.max(1, ZS);
       if (t.veil) {
@@ -1448,6 +1447,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         for (const m of ses.subs) circle(m.x, m.y, (m.r ?? 6) + 5, rgba(TRACE, 0.95), 1.4 / Math.max(1, ZS));
       }
     }
+    // a rail-spotted task the level draws no dot for still has its path; its state body is lit in its place
+    if (!body) return;
     circle(body.x, body.y, 9 / K, rgba(TRACE, 0.9), 1.6 / K);
     dot(body.x, body.y, 4.5 / K, rgba(tierColor(body.model), 1));
   }
@@ -1488,7 +1489,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (anim) anim(now);
     if (scene) update(clock);
     if (mouse && scene) setHover(hit((mouse.ox - view.x) / view.k, (mouse.oy - view.y) / view.k), mouse.cx, mouse.cy);
-    else if (spotted && scene && !trans) hover = (spotIn(scene, spotted) ?? (spotNear && spotted.kind === "task" ? spotIn(scene, { kind: "state", id: spotted.lane }) : null)) as Hover | null;
+    else if (spotted && scene && !trans) {
+      // a rail spot is a hover without a pointer: its card sits beside the spotted body, where a pointer on it would put it, and steps
+      // aside once a click opens the panel, which the pointer resting on the rail would otherwise leave it covering
+      const h = (spotIn(scene, spotted) ?? (spotNear && spotted.kind === "task" ? spotIn(scene, { kind: "state", id: spotted.lane }) : null)) as Hover | null;
+      const at = h?.o as Partial<Pt> | undefined;
+      setHover(h, L + view.x + (at?.x ?? 0) * view.k, view.y + (at?.y ?? 0) * view.k);
+      if (panel.classList.contains("open")) tip.style.opacity = "0";
+    }
     const dpr = devicePixelRatio || 1;
     cx.globalAlpha = 1;
     cx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1643,7 +1651,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     spot(target, near = false) {
       spotted = target;
       spotNear = near;
-      if (!target) hover = null;
+      if (!target) setHover(null);
       loop.wake();
     },
     refresh() {

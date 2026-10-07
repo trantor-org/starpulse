@@ -213,6 +213,12 @@ describe("what a hover draws", () => {
     expect(draws(dag, null)).toEqual({ trace: null, dag: dag.o });
   });
 
+  it("traces a task the Recent rail spots even when the level lights its state body in its place", () => {
+    const spot: Subject = { kind: "task", id: "PROJ-9" };
+    expect(draws({ kind: "galaxy", o: {} }, null, spot)).toEqual({ trace: { subject: spot, veil: false }, dag: null });
+    expect(draws(other, pin, spot).trace).toEqual({ subject: { kind: "task", id: "PROJ-8" }, veil: false });
+  });
+
   it("draws nothing for any other hover", () => {
     expect(draws({ kind: "state", o: {} }, null)).toEqual({ trace: null, dag: null });
     expect(draws(null, null)).toEqual({ trace: null, dag: null });

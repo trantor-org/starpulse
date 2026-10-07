@@ -227,9 +227,10 @@ const same = (a: Subject, b: Subject | null) => !!b && a.kind === b.kind && a.id
  * What a hover and a pin draw. A task is traced and never tethered to its DAGs; a DAG is tethered and never traces. Only a pinned subject veils
  * the level, so a hover alone highlights, and the veil holds from the click while the pointer still rests on the dot.
  */
-export function draws<H extends Hovered>(hover: H, pin: Subject | null): { trace: Traced | null; dag: DagOf<H> | null } {
+export function draws<H extends Hovered>(hover: H, pin: Subject | null, spot: Subject | null = null): { trace: Traced | null; dag: DagOf<H> | null } {
   if (hover?.kind === "dag") return { trace: null, dag: hover.o as DagOf<H> };
-  const subject = subjectOf(hover) ?? pin;
+  // a task the Recent rail spots is traced too, even where the level lights its state body because it draws no dot for it
+  const subject = subjectOf(hover) ?? spot ?? pin;
   return { trace: subject && { subject, veil: same(subject, pin) }, dag: null };
 }
 
