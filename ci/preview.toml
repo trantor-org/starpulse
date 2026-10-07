@@ -1,8 +1,11 @@
-# The demo config the UI preview renders the flow view against (ci/ui_preview.py). It names no real board or
-# runs adapter: the board is the default adapter with no backlog, the one runs instance points at a closed port, and
-# the domains only give the DAG layer something to lay out. `starpulse.demo` then replaces every task with a
-# synthetic one.
+# The demo config the UI preview renders the flow view against (ci/ui_preview.py). It names no real board or runs
+# system: the board is the synthetic workspace in `ci/demo_workspace.py` (its machines in `ci/workspace`), the one runs
+# instance points at a closed port, and the domains give the DAG layer a working team's job layout to draw.
+# `starpulse.demo` then seeds every task, session and run.
 mode = "ic"
+
+[board]
+type = "ci.demo_workspace"
 
 [[runs]]
 name = "dagu"
@@ -10,5 +13,55 @@ type = "dagu"
 url = "http://127.0.0.1:9"
 
 [runs.domains]
-"Delivery & CI" = ["deliver", "apply-on-merge", "whole-repo-gate"]
-"Board" = ["backlog-sweep", "board-autopilot"]
+"Delivery & CI" = [
+  "deliver",
+  "merge-apply",
+  "full-repo-gate",
+  "flaky-test-sweep",
+  "coverage-report",
+  "ruleset-drift",
+  "ci-queue-metrics",
+  "mutation-sweep",
+  "preview-deploy",
+  "release-cut",
+]
+"Board" = [
+  "backlog-sweep",
+  "board-autopilot",
+  "dependency-promotion",
+  "board-lint",
+  "drift-to-task",
+  "stale-branch-reap",
+  "main-follow",
+  "duplicate-detect",
+]
+"Agent jobs & evals" = [
+  "alert-triage",
+  "dependency-update-review",
+  "nightly-audit",
+  "ci-fix",
+  "session-stats",
+  "skill-conformance",
+  "eval-suite",
+  "prompt-optimize",
+  "weekly-code-audit",
+]
+"Retrieval & search" = [
+  "index-refresh",
+  "docs-reindex",
+  "search-metrics",
+  "embedding-backfill",
+  "tag-optimizer",
+  "link-check",
+  "rag-audit",
+]
+"Host ops & backups" = [
+  "healthcheck",
+  "db-backup",
+  "db-restore-verify",
+  "image-prune",
+  "log-rotate",
+  "cert-renew",
+  "disk-report",
+  "metrics-snapshot",
+]

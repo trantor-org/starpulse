@@ -728,7 +728,10 @@ the preview itself gets one UI-preview comment from
 [`.github/workflows/ui-preview.yml`](.github/workflows/ui-preview.yml): screenshots of each changed surface's
 scrubbed demo, built by [`ci/ui_preview.py`](ci/ui_preview.py) against the demo config
 [`ci/preview.toml`](ci/preview.toml), with the demos published to `trantor-org/starpulse-demo` under `pr-<N>/`
-while the pull request is open. The preview is review context and never gates the pull request. A push to `main`
+while the pull request is open. That config draws a fictional workspace at a working team's scale: the Board adapter
+[`ci/demo_workspace.py`](ci/demo_workspace.py) serves a nine-lane Board whose In Progress opens a delivery machine and
+the lifecycle machines in [`ci/workspace/`](ci/workspace), beside five DAG domains, and `starpulse.demo` fills it with
+synthetic tasks, sessions, runs and pools. The preview is review context and never gates the pull request. A push to `main`
 that touches the same paths republishes both demos under `main/`, the live demo linked above.
 
 ## Contributing

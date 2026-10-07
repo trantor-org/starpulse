@@ -1,0 +1,71 @@
+# The UI preview's Board: the nine lanes a team's tracker walks a task through, with the workflows that move it.
+name: Board
+states:
+  new: {initial: true}
+  ready: {}
+  waiting: {}
+  in_progress: {}
+  review: {}
+  needs_attention: {}
+  done: {}
+  completed: {final: true}
+  archived: {final: true}
+events:
+  CREATE_READY:
+    - {from: new, to: ready}
+  CREATE_WAITING:
+    - {from: new, to: waiting}
+  CLAIM:
+    - {from: ready, to: in_progress}
+  WAIT_ON_DEPS:
+    - {from: ready, to: waiting}
+  PARK:
+    - {from: in_progress, to: waiting}
+  DEPS_DONE:
+    - {from: waiting, to: ready}
+  PR_READY:
+    - {from: in_progress, to: review}
+  SEND_BACK:
+    - {from: review, to: in_progress}
+  DEFER:
+    - {from: [ready, in_progress, review], to: needs_attention}
+  RETURN_READY:
+    - {from: needs_attention, to: ready}
+  MERGED:
+    - {from: review, to: done}
+  SWEEP:
+    - {from: done, to: completed}
+  ARCHIVE:
+    - {from: [new, ready, waiting, needs_attention], to: archived}
+writers:
+  CREATE_READY:
+    - {actor: agent, trigger: "tracker create"}
+    - {actor: dagu/drift-to-task, trigger: "file a drift task"}
+  CREATE_WAITING:
+    - {actor: agent, trigger: "tracker create --depends"}
+  CLAIM:
+    - {actor: dagu/board-autopilot, trigger: "dispatch the next Ready task"}
+    - {actor: agent, trigger: "tracker start"}
+  WAIT_ON_DEPS:
+    - {actor: dagu/dependency-promotion, trigger: "hold a task on an open dependency"}
+  PARK:
+    - {actor: agent, trigger: "tracker park"}
+  DEPS_DONE:
+    - {actor: dagu/dependency-promotion, trigger: "promote a task whose dependencies are done"}
+  PR_READY:
+    - {actor: dagu/deliver, trigger: "mark the pull request ready"}
+  SEND_BACK:
+    - {actor: operator, trigger: "request changes"}
+  DEFER:
+    - {actor: agent, trigger: "tracker park --needs-human"}
+  RETURN_READY:
+    - {actor: operator, trigger: "answer the blocker"}
+  MERGED:
+    - {actor: operator, trigger: "merge the pull request"}
+  SWEEP:
+    - {actor: dagu/backlog-sweep, trigger: "sweep merged work to Completed"}
+  ARCHIVE:
+    - {actor: operator, trigger: "archive"}
+cues:
+  - {event: MERGED, dag: dagu/merge-apply, on: "each merge to main", resolves: next}
+  - {event: MERGED, dag: dagu/index-refresh, on: "each merge to main", resolves: next}

@@ -44,6 +44,38 @@ TITLES = [
     "Trim unused dashboard panels",
     "Alert on certificate expiry",
     "Cut cold-start time of the API",
+    "Cache the search index between deploys",
+    "Paginate the audit log endpoint",
+    "Rotate the service signing keys",
+    "Add a dry-run flag to the importer",
+    "Retire the legacy webhook relay",
+    "Bound the worker pool's memory",
+    "Surface queue depth on the status page",
+    "Deduplicate retries in the mailer",
+    "Pin the base image digests",
+    "Backfill missing invoice events",
+    "Shard the event store by tenant",
+    "Add a health probe to the scheduler",
+    "Speed up the integration test suite",
+    "Clean up orphaned preview environments",
+    "Make the config loader reject unknown keys",
+    "Record why each deploy was rolled back",
+    "Compress cold storage snapshots",
+    "Expose p95 latency per route",
+    "Fix flaky timeout in the upload test",
+    "Move feature flags to the settings store",
+    "Index the docs site for search",
+    "Report stale branches weekly",
+    "Throttle the reindex job at peak hours",
+    "Drop the unused gRPC gateway",
+    "Write a runbook for queue backlog",
+    "Validate webhook signatures",
+    "Add a canary stage to the release",
+    "Trace slow queries in the reports view",
+    "Gate merges on the license check",
+    "Split the monolith's auth module",
+    "Warm the CDN after each release",
+    "Alert when the backup restore test fails",
 ]
 
 
@@ -60,14 +92,58 @@ DELIVER_STEPS = ("refuse", "lint", "commit", "push", "open_pr", "wait_ci", "read
 SEEDED_RUNS = (("wait_ci", 300), ("lint", 60), ("wait_ci", 450))
 #: The seeded concurrency pools and their caps; `deliver` is the one the seeded runs hold.
 SEEDED_POOLS = {"deliver": 32, "default": 2}
+#: How many of each domain's other DAGs get a finished run, the seconds between their finishes, and their steps.
+FINISHED_PER_DOMAIN = 3
+FINISHED_GAP_S = 1100
+FINISHED_STEPS = ("prepare", "run", "report")
 
 
 def _iso(at: float) -> str:
     return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _finished(domains: list[dict], deliver: str, prefix: str, now: float) -> tuple[list[dict], list[dict]]:
+    """A finished run on the first few DAGs of each domain other than `deliver`, on a pool per domain, so the page's
+    Recent feed and Queues open with a working day's runs. A domain with no other DAG gets neither."""
+    dags, pools, k = [], [], 0
+    for domain in domains:
+        names = [d["name"] for d in domain["dags"] if d["name"] != deliver][:FINISHED_PER_DOMAIN]
+        if not names:
+            continue
+        pool = f"{prefix}{_slug(domain['name'])}"
+        pools.append({"name": pool, "cap": 4, "running": 0, "queued": 0})
+        for name in names:
+            k += 1
+            failed = k % 7 == 0
+            end = now - FINISHED_GAP_S * k
+            status = ["succeeded"] * len(FINISHED_STEPS)
+            if failed:
+                status[-1] = "failed"
+            dags.append(
+                {
+                    "name": name,
+                    "status": "failed" if failed else "succeeded",
+                    "runId": f"finished-demo-{k}",
+                    "startedAt": _iso(end - 240),
+                    "finishedAt": _iso(end),
+                    "steps": [
+                        {"name": s, "depends": [FINISHED_STEPS[i - 1]] if i else [], "status": st, "kind": None}
+                        for i, (s, st) in enumerate(zip(FINISHED_STEPS, status))
+                    ],
+                    "active": [],
+                    "pool": pool,
+                }
+            )
+    return dags, pools
+
+
 def _seed_fanout(domains: list[dict], dags: list[dict], now: float) -> tuple[list[dict], list[dict]]:
-    """A `deliver` DAG with runs in flight and the pools it runs on, for a capture whose runs adapter reports none.
+    """A `deliver` DAG with runs in flight and the pools it runs on, for a capture whose runs adapter reports none,
+    with a finished run on each domain's first other DAGs (`_finished`).
 
     CI's server has no runs adapter to read, so the page's Queues section and each DAG's fan-out would draw nothing.
     The DAG takes the instance prefix of the `deliver` workflow the domains declare; none declared, or one the capture
@@ -113,7 +189,8 @@ def _seed_fanout(domains: list[dict], dags: list[dict], now: float) -> tuple[lis
         {"name": f"{prefix}{p}", "cap": cap, "running": len(runs) if p == "deliver" else 0, "queued": 0}
         for p, cap in SEEDED_POOLS.items()
     ]
-    return [dag], pools
+    finished, domain_pools = _finished(domains, name, prefix, now)
+    return [dag, *finished], pools + domain_pools
 
 
 def capture(server: str) -> dict:
@@ -167,17 +244,57 @@ SEED_SETTLED = [
 ]
 #: How far back a settled task is still the day's; a capture keeps no older one.
 DAY_S = 86400
+#: How many more tasks fill each lane of a Board machine that draws its own main line, so the demo has a working
+#: team's scale; the day's settled tasks it adds, by where they settled.
+FILL = {"new": 40, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "needs_attention": 3, "done": 8}
+FILL_SETTLED = {"completed": 9, "archived": 2}
+PROFILES = ("@agent-standard-high", "@agent-fast-low", "@agent-deep-high", "")
+SIZES = ("size-1", "size-2", "size-3", "size-5", "size-8")
+KINDS = ("kind-feature", "kind-bug", "kind-execute")
+#: The pull request each filled lane's tasks carry: (checks, merged) by lane, threads cycling 0..2.
+FILL_PULLS = {
+    "in_progress": ("pending", False),
+    "review": ("pass", False),
+    "needs_attention": ("failing", False),
+    "done": ("pass", True),
+}
 
 
-def _seed(now: float) -> tuple[list[dict], dict, dict]:
-    """`SEED` as a live Board's tasks, the pull requests the server would have read for them, and the day's settled tasks."""
-    ids = [f"seed-{i}" for i in range(len(SEED))]
+def _fill(line: list[str], start: int, now: float) -> list[tuple]:
+    """`FILL`'s tasks for each lane of `line`, as `SEED` rows numbered from `start`, each with when it was created
+    that day or None: all of New was filed that morning, since the New lane counts only the day's; a Waiting task
+    waits on the Ready one filled alongside it, every fourth on the Waiting task before it, so the Kanban folds
+    stacks."""
+    rows, first = [], {}
+    for lane in line:
+        first[lane] = start + len(rows)
+        for j in range(FILL.get(lane, 0)):
+            k = start + len(rows)
+            after = None
+            if lane == "waiting":
+                after = k - 1 if j % 4 == 3 else first.get("ready", 0) + j % max(FILL.get("ready", 1), 1)
+            labels = [SIZES[k % len(SIZES)], KINDS[k % len(KINDS)]] + (
+                ["needs-human"] if lane == "needs_attention" else []
+            )
+            pull = (*FILL_PULLS[lane], j % 3) if lane in FILL_PULLS else None
+            model = "" if lane == "new" else PROFILES[k % len(PROFILES)]
+            created = now - 500 * (j + 1) if lane == "new" else None
+            rows.append((lane, f"m-{k % 4 + 1}" if k % 3 else "", labels, after, model, pull, created))
+    return rows
+
+
+def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
+    """`SEED` as a live Board's tasks, the pull requests the server would have read for them, and the day's settled
+    tasks; with the Board machine's main `line`, `_fill`'s tasks and `FILL_SETTLED` too."""
+    rows = [(*row, now - SEED_CREATED[i] if i in SEED_CREATED else None) for i, row in enumerate(SEED)]
+    rows += _fill(list(line), len(rows), now)
+    ids = [f"seed-{i}" for i in range(len(rows))]
     agents, pulls = [], {}
-    for i, (state, milestone, labels, after, model, pull) in enumerate(SEED):
+    for i, (state, milestone, labels, after, model, pull, created) in enumerate(rows):
         agents.append(
             {"id": ids[i], "state": state, "model": model, "milestone": milestone, "labels": labels}
             | ({"dependencies": [ids[after]]} if after is not None else {})
-            | ({"created": now - SEED_CREATED[i]} if i in SEED_CREATED else {})
+            | ({"created": created} if created is not None else {})
         )
         if pull:
             checks, merged, threads = pull
@@ -186,6 +303,18 @@ def _seed(now: float) -> tuple[list[dict], dict, dict]:
         f"seed-settled-{i}": {"state": state, "at": now - age, "created": None, "title": "", "model": model}
         for i, (state, age, model) in enumerate(SEED_SETTLED)
     }
+    if line:
+        more = [(state, n) for state, count in FILL_SETTLED.items() for n in range(count)]
+        settled |= {
+            f"seed-settled-fill-{i}": {
+                "state": state,
+                "at": now - 2100 * (i + 1),
+                "created": None,
+                "title": "",
+                "model": PROFILES[i % len(PROFILES)] if state == "completed" else "",
+            }
+            for i, (state, _) in enumerate(more)
+        }
     return agents, pulls, settled
 
 
@@ -201,13 +330,17 @@ def scrub(live: dict) -> dict:
     board = [a for f in live["flows"] if f["name"] == "board" for a in f["agents"]]
     pulls, settled = live.get("pulls", {}), live.get("settled", {})
     if not board:
-        board, pulls, settled = _seed(live["now"])
-        live = {
-            **live,
-            "flows": [
-                {**f, "machine": board_machine(SEED_LANES)} if f["name"] == "board" else f for f in live["flows"]
-            ],
-        }
+        # a Board machine whose main line already has every seeded lane is drawn as it is, and filled at its scale
+        line = next((f["machine"].get("mainLine", []) for f in live["flows"] if f["name"] == "board"), [])
+        keep = {row[0] for row in SEED} <= set(line)
+        board, pulls, settled = _seed(live["now"], line if keep else [])
+        if not keep:
+            live = {
+                **live,
+                "flows": [
+                    {**f, "machine": board_machine(SEED_LANES)} if f["name"] == "board" else f for f in live["flows"]
+                ],
+            }
     for a in board:  # the Board's tasks are DEMO-1.. in Board order, whichever flow comes first
         names.setdefault(a["id"], f"DEMO-{len(names) + 1}")
     keys = sorted({a["milestone"] for a in board if a.get("milestone")}, key=lambda k: (len(k), k))
@@ -335,34 +468,40 @@ def _walk(machine: dict, state: str, i: int, now: float, via: str | None = None,
 
 def _seed_delivery(flows: list[dict], now: float) -> None:
     """Place each In Progress Board task on the Board's delivery machine when the capture placed none there, at a varied
-    state along that machine, so its level and its back-trace have a task to show."""
+    state along that machine, so its level and its back-trace have a task to show; and on every other machine the
+    capture placed none on, a few sessions working those tasks, as an agent's other skills run beside delivery."""
     board = next(f for f in flows if f["name"] == "board")
     sub = next(iter(board["machine"].get("subflows", [])), None)
     if sub is None:
         return
-    flow = next((f for f in flows if f["name"] == sub["flow"]), None)
-    if not flow or flow["agents"]:
-        return
-    m = flow["machine"]
-    # the states a task can be in mid-flow: reachable from the start (the start itself has an empty route), not final
-    inner = [s["id"] for s in m["states"] if not s.get("final") and _route(m, s["id"])]
-    if not inner:
-        return
-    for i, a in enumerate(x for x in board["agents"] if x["state"] == sub["state"]):
-        state = inner[i % len(inner)]
-        trail = _walk(m, state, i, now)
-        flow["agents"].append(
-            {
-                "id": a["id"],
-                "title": a["title"],
-                "task": a["id"],
-                "state": state,
-                "model": a["model"],
-                "steps": len(trail),
-                "trail": trail,
-                "active": trail[-1]["at"],
-            }
-        )
+    working = [x for x in board["agents"] if x["state"] == sub["state"]]
+    empty = [f for f in flows if f["name"] != "board" and not f["agents"]]
+    for k, flow in enumerate(empty):
+        m = flow["machine"]
+        # the states a task can be in mid-flow: reachable from the start (the start itself has an empty route), not final
+        inner = [s["id"] for s in m["states"] if not s.get("final") and _route(m, s["id"])]
+        if not inner:
+            continue
+        if flow["name"] == sub["flow"]:
+            placed = [(a["id"], a) for a in working]
+        else:
+            n = (2 + k % 3) if working else 0
+            placed = [(f"{flow['name']}-{j + 1}", working[(k + j) % len(working)]) for j in range(n)]
+        for i, (id_, a) in enumerate(placed):
+            state = inner[i % len(inner)]
+            trail = _walk(m, state, i, now)
+            flow["agents"].append(
+                {
+                    "id": id_,
+                    "title": a["title"],
+                    "task": a["id"],
+                    "state": state,
+                    "model": a["model"],
+                    "steps": len(trail),
+                    "trail": trail,
+                    "active": trail[-1]["at"],
+                }
+            )
 
 
 def _history(flows: list[dict], now: float) -> dict[str, list[dict]]:

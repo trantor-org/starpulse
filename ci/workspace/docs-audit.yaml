@@ -1,0 +1,17 @@
+# Reviewing one document for accuracy and stale claims.
+name: DocsAudit
+states:
+  start: {initial: true}
+  reading: {}
+  claims_checked: {}
+  passages_classified: {}
+  reported: {final: true}
+events:
+  READ:
+    - {from: start, to: reading}
+  CHECKED:
+    - {from: reading, to: claims_checked}
+  CLASSIFIED:
+    - {from: claims_checked, to: passages_classified}
+  REPORTED:
+    - {from: passages_classified, to: reported}

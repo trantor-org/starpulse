@@ -144,13 +144,13 @@ def test_scrub_keeps_the_structure_and_replaces_every_task() -> None:
     }
     assert board[8] == {
         "id": "DEMO-9",
-        "title": TITLES[0],
+        "title": TITLES[8],
         "state": "ready",
         "model": "",
         "milestone": "",
         "labels": [],
         "dependencies": [],
-        "description": f"Synthetic demo task: {TITLES[0].lower()}.",
+        "description": f"Synthetic demo task: {TITLES[8].lower()}.",
     }
     # the machine's task keeps the name its Board task was given, so it still sits on the Board
     assert placed == [

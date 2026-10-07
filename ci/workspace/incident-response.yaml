@@ -1,0 +1,20 @@
+# Answering a firing alert: who acts, what changed, and the follow-up it leaves.
+name: IncidentResponse
+states:
+  paged: {initial: true}
+  acknowledged: {}
+  evidence_read: {}
+  cause_named: {}
+  mitigated: {}
+  follow_up_filed: {final: true}
+events:
+  ACK:
+    - {from: paged, to: acknowledged}
+  EVIDENCE_READ:
+    - {from: acknowledged, to: evidence_read}
+  CAUSE_NAMED:
+    - {from: evidence_read, to: cause_named}
+  MITIGATED:
+    - {from: cause_named, to: mitigated}
+  FILED:
+    - {from: mitigated, to: follow_up_filed}

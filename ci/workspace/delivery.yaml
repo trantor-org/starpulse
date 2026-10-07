@@ -1,0 +1,43 @@
+# What an agent session does while its task is In Progress, from a fresh branch to a pull request ready for review.
+name: Delivery
+states:
+  start: {initial: true}
+  branch_ready: {}
+  red_proven: {}
+  green: {}
+  checkpointed: {}
+  docs_updated: {}
+  lint_green: {}
+  pushed: {}
+  pr_opened: {}
+  ci_green: {}
+  pr_ready: {}
+  handed_off: {final: true}
+  needs_attention: {final: true}
+events:
+  BRANCH_READY:
+    - {from: start, to: branch_ready}
+  RED_PROVEN:
+    - {from: [branch_ready, green], to: red_proven}
+  GREEN:
+    - {from: [branch_ready, red_proven], to: green}
+  CHECKPOINTED:
+    - {from: green, to: checkpointed}
+  DOCS_UPDATED:
+    - {from: checkpointed, to: docs_updated}
+  LINT_GREEN:
+    - {from: docs_updated, to: lint_green}
+  PUSHED:
+    - {from: lint_green, to: pushed}
+  PR_OPENED:
+    - {from: pushed, to: pr_opened}
+  CI_GREEN:
+    - {from: pr_opened, to: ci_green}
+  CI_RED:
+    - {from: ci_green, to: pr_opened}
+  PR_READY:
+    - {from: ci_green, to: pr_ready}
+  HANDED_OFF:
+    - {from: pr_ready, to: handed_off}
+  BLOCKED:
+    - {from: [pr_opened, ci_green], to: needs_attention}
