@@ -12,14 +12,16 @@ import os
 import re
 import threading
 from collections.abc import Callable, Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from starpulse.board import Board, MoveWriter, TaskCreator, TaskReader, Written
+from starpulse.board import Board, MoveWriter, TaskArchiver, TaskCreator, TaskEditor, TaskReader, Written
 from starpulse.upstream_backlog import (
     _FOLDERS,
+    _HEADED_DESCRIPTION,
     _NOTES,
     DEFAULT_PREFIX,
     DEFAULT_STATUSES,
@@ -125,6 +127,140 @@ def _reader(root: Path) -> TaskReader:
     return read
 
 
+#: The sections an edit rewrites as text: the field's name, the markers' name and the heading a new section gets.
+_TEXT_SECTIONS = {
+    "description": ("DESCRIPTION", "Description"),
+    "plan": ("PLAN", "Implementation Plan"),
+    "notes": ("NOTES", "Implementation Notes"),
+}
+#: The checklists an edit rewrites: the field's name, the markers' name, the heading a new section gets and its pattern.
+_CHECKLISTS = {
+    "acceptanceCriteria": ("AC", "Acceptance Criteria", _CRITERIA),
+    "definitionOfDone": ("DOD", "Definition of Done", _DONE),
+}
+_SCALARS = {"title": "title", "priority": "priority", "milestone": "milestone"}
+_LISTS = {"labels": "labels", "dependencies": "dependencies"}
+_COMMENTS = re.compile(r"[ \t]*<!-- COMMENTS:END -->")
+
+
+def _text(field: str, value: Any) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be text")
+    return value.strip()
+
+
+def _marked(body: str, marker: str, heading: str, inner: str, *, after: str = "") -> str:
+    """`body` with the section between `marker`'s comments holding `inner`, which a body without the section gets appended."""
+    section = re.compile(rf"(<!-- {marker}:BEGIN -->).*?(<!-- {marker}:END -->)", re.S)
+    if section.search(body):
+        return section.sub(lambda found: f"{found[1]}{inner}{found[2]}", body, count=1)
+    return body.rstrip("\n") + f"\n\n## {heading}\n{after}<!-- {marker}:BEGIN -->{inner}<!-- {marker}:END -->\n"
+
+
+def _set_text(body: str, field: str, value: Any) -> str:
+    name, heading = _TEXT_SECTIONS[field]
+    text = _text(field, value)
+    if field == "description" and not re.search(r"<!-- SECTION:DESCRIPTION:BEGIN -->", body):
+        if headed := _HEADED_DESCRIPTION.search(body):  # a description under its heading, with no markers
+            marked = f"\n<!-- SECTION:DESCRIPTION:BEGIN -->\n{text}\n<!-- SECTION:DESCRIPTION:END -->\n\n"
+            return body[: headed.start(1)] + marked + body[headed.end(1) :]
+    return _marked(body, f"SECTION:{name}", heading, f"\n{text}\n", after="\n")
+
+
+def _set_items(task: str, body: str, field: str, value: Any) -> str:
+    """`body` with the checklist `field` set to `value`: an item with a number keeps it and one without takes the next."""
+    marker, heading, pattern = _CHECKLISTS[field]
+    if not isinstance(value, list) or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("text"), str)
+        and item["text"].strip()
+        and isinstance(item.get("checked"), bool)
+        for item in value
+    ):
+        raise ValueError(f"{field} must be a list of items, each with text and checked")
+    known = {item["n"] for item in _items(pattern, body)}
+    if unknown := [item["n"] for item in value if "n" in item and item["n"] not in known]:
+        raise ValueError(f"{task} has no {heading} item #{unknown[0]}")
+    following = max(known, default=0)
+    lines = []
+    for item in value:
+        if "n" not in item:
+            following += 1
+        lines.append(f"- [{'x' if item['checked'] else ' '}] #{item.get('n', following)} {item['text'].strip()}\n")
+    return _marked(body, marker, heading, "\n" + "".join(lines), after="")
+
+
+def _comment(body: str, text: str) -> str:
+    """`body` with `text` appended to its comments, as the Backlog this workspace runs writes one."""
+    entry = f"created: {datetime.now():%Y-%m-%d %H:%M}\n---\n{text.strip()}\n---\n\n"
+    if _COMMENTS.search(body):
+        return _COMMENTS.sub(lambda end: f"{entry}{end.group()}", body, count=1)
+    return body.rstrip("\n") + f"\n\n## Comments\n\n<!-- COMMENTS:BEGIN -->\n{entry}<!-- COMMENTS:END -->\n"
+
+
+def _editor(root: Path) -> TaskEditor:
+    """A board writer that applies every change to a task's file in one write, or refuses the whole edit.
+
+    `changes` holds the new value of each field `read` names. An empty priority, milestone or assignee removes its key,
+    a checklist item without a number is new, and a non-blank `comment` is appended to the task's comments.
+    """
+
+    def edit(task: str, changes: Mapping[str, Any], comment: str, /) -> Written:
+        def apply(frontmatter: dict, body: str) -> str:
+            for field, value in changes.items():
+                if field in _SCALARS:
+                    text = _text(field, value)
+                    if not text and field == "title":
+                        raise ValueError("title cannot be empty")
+                    frontmatter[field] = text
+                    if not text:
+                        del frontmatter[field]
+                elif field == "profile":
+                    frontmatter["assignee"] = [_text(field, value)]
+                    if not frontmatter["assignee"][0]:
+                        del frontmatter["assignee"]
+                elif field in _LISTS:
+                    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                        raise ValueError(f"{field} must be a list of text")
+                    frontmatter[field] = [item.strip() for item in value if item.strip()]
+                elif field in _TEXT_SECTIONS:
+                    body = _set_text(body, field, value)
+                elif field in _CHECKLISTS:
+                    body = _set_items(task, body, field, value)
+                else:
+                    raise ValueError(f"{field} is not an editable field")
+            return _comment(body, comment) if comment.strip() else body
+
+        try:
+            return _update(root, task, apply)
+        except ValueError as refusal:  # raised before the file is written, so a refusal writes nothing
+            return Written(False, f"{task}: {refusal}")
+
+    return edit
+
+
+def _archiver(root: Path) -> TaskArchiver:
+    """A board writer that moves a task's file to `archive/tasks/`, from any lane, after recording a non-blank reason as a comment."""
+
+    def archive(task: str, reason: str, /) -> Written:
+        if (path := _find(root, task)) is None:
+            return Written(False, f"{task} has no task file in {root / 'tasks'}")
+        if (
+            reason.strip()
+            and not (noted := _update(root, task, lambda _, body: _comment(body, f"Archived: {reason.strip()}"))).ok
+        ):
+            return noted
+        target = root / "archive" / "tasks" / path.name
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(path, target)
+        except OSError as error:
+            return Written(False, f"{path}: {error}")
+        return Written(True, f"Archived task {task}")
+
+    return archive
+
+
 def _holder(body: str, session: str) -> str:
     """`body` with `**Holder:** <session>` appended to its notes, which the board reads the holder from."""
     line = f"**Holder:** {session}"
@@ -207,7 +343,7 @@ def _creator(root: Path, config: BacklogConfig) -> TaskCreator:
 def board(settings: Mapping[str, Any], base: Path) -> Board:
     """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, as the project named for `base`'s directory, polled every `interval` seconds.
 
-    Moves, assignee changes and creates write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
+    Moves, assignee changes, creates, edits and archives write the task files directly, and `read` returns a task's record from its file. Any lane reaches any other unless `machine` names a
     machine file, whose transitions and `writers` then decide which moves are offered, and to whom.
     """
     if unknown := sorted(settings.keys() - _SETTINGS):
@@ -231,5 +367,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "assign": assign,
             "create": _creator(root, config),
             "read": _reader(root),
+            "edit": _editor(root),
+            "archive": _archiver(root),
         },
     )

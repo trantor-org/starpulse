@@ -553,8 +553,9 @@ directory. The `Board` says:
   `capabilities.create`), and its own `history`.
 
 `starpulse.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
-assignee changes and new tasks to them in Python, and reads a task's full record (priority, description, acceptance
-criteria, plan, notes and definition of done) back for the task view; it offers no edit or archive yet. `starpulse.upstream_backlog` is the reference adapter for a tracker with its own
+assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
+criteria, plan, notes and definition of done) back for the task view, applies an edit to a task's file in one write,
+and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments. `starpulse.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
