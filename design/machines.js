@@ -416,7 +416,7 @@
       if (tr) { const src = M[tr.pm] && G[tr.pm] ? RAMP[Math.round((G[tr.pm].depth[tr.ps] / Math.max(1, G[tr.pm].ncols - 1)) * (RAMP.length - 1))] : PLANET, ly = 22 + px * 1.3 + sp * 2.1 + dy;
         cx.fillStyle = rgba(src, 0.95); cx.beginPath(); cx.arc(mx + 3, ly, 2.6, 0, TAU); cx.fill();
         text(fit(`from ${stName(tr.pm, tr.ps)} · ${tr.kind === "declared" ? "declared" : `×${tr.count}`}`, sp, L.metaW - 11), mx + 11, ly, sp, rgba(INK, 0.62)); }
-      text(fit(`${L.rows.size} machines${L.nStuck ? ` · ${L.nStuck} stuck` : " · newest first"}`, sp, L.metaW), mx, L.hdrB - sp, sp, rgba(SUB, 0.6));
+      text(fit(`${L.rows.size} machine${L.rows.size === 1 ? "" : "s"}${L.nStuck ? ` · ${L.nStuck} stuck` : " · newest first"}`, sp, L.metaW), mx, L.hdrB - sp, sp, rgba(SUB, 0.6));
       cx.fillStyle = rgba(SUB, 0.16); cx.fillRect(mx - 10, L.hdrB, L.x1 + 22 - mx, 1);
       const cols = new Map(); for (const r of L.rows.values()) { const t = primary[r.m]; if (t && t.pm === topM) cols.set(t.ps, node(topM, t.ps)); }
       for (const n of cols.values()) { const hot = hover?.kind === "node" && hover.o === n;
