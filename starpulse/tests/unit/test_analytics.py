@@ -160,3 +160,12 @@ def test_a_window_with_no_moves_gives_every_state_a_zero_share() -> None:
     shares = move_shares(BOARD, SHARE_ROWS, start=30 * H, end=40 * H)
 
     assert shares == {"to_do": 0.0, "ready": 0.0, "in_progress": 0.0, "review": 0.0, "done": 0.0}
+
+
+def test_a_status_the_backlog_spells_in_its_own_case_counts_for_the_state_its_lane_id_names() -> None:
+    machine = {"states": [{"id": "needs_attention", "name": "Needs Attention"}, {"id": "done", "name": "Done"}]}
+    rows = [("A", 11 * H, "Needs attention", "Done")]  # Backlog's status is "Needs attention", the state's name differs
+
+    shares = move_shares(machine, rows, start=10 * H, end=20 * H)
+
+    assert shares == {"needs_attention": 0.5, "done": 0.5}

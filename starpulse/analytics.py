@@ -13,6 +13,8 @@ from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
 
+from starpulse.upstream_backlog import lane_id
+
 #: A lane change as the history keeps it: `(task, at, from, to)`, `at` in epoch seconds.
 LaneRow = tuple[str, float, str | None, str]
 _DAY_S = 86400.0
@@ -110,14 +112,14 @@ def move_shares(machine: dict, rows: Iterable[LaneRow], *, start: float, end: fl
 
     A move counts toward the state it left and the state it entered, so a state's share is its part of the traffic
     through the Board; a first sighting enters a state and leaves none. A lane that is no state of `machine` counts
-    toward none. The shares sum to 1, or are all 0 when the window holds no move.
+    toward none; a status counts for the state its `lane_id` names, so "Needs attention" is "Needs Attention". The shares sum to 1, or are all 0 when the window holds no move.
     """
     states = {key: state["id"] for state in machine["states"] for key in (state["name"], state["id"])}
     counts = dict.fromkeys((state["id"] for state in machine["states"]), 0)
     for _task, at, old, new in rows:
         if start <= at < end:
-            for lane in (old, new):
-                if (state := states.get(lane)) is not None:
+            for lane in filter(None, (old, new)):
+                if (state := states.get(lane) or states.get(lane_id(lane))) is not None:
                     counts[state] += 1
     total = sum(counts.values())
     return {state: count / total if total else 0.0 for state, count in counts.items()}
