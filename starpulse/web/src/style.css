@@ -66,6 +66,8 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #nav .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--run); margin-right: 7px; vertical-align: 1px; box-shadow: 0 0 8px currentColor; }
 #nav .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); } #nav .dot.off { background: var(--fail); }
 #clock { color: var(--run); font: calc(10.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
+/* the panel opens over the clock's corner, so the clock steps out rather than showing through it */
+body:has(#panel.open) #clock { opacity: 0; }
 #q, #kbq, #dgq { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: color-mix(in srgb, var(--slate) 6%, transparent);
   font-size: calc(12px * var(--fs)); color: var(--ink); }
 #q:focus, #kbq:focus, #dgq:focus { border-color: var(--agent); }
@@ -142,6 +144,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #panel td { padding: 2px 8px 2px 0; vertical-align: top; } #panel td:first-child { color: var(--muted); white-space: nowrap; }
 #panel .run { margin-top: 12px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); cursor: pointer; font: inherit; }
 #panel .run[disabled] { border-color: var(--faint); color: var(--dim); background: none; cursor: not-allowed; }
+#panel .mrow td:first-child i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
 #panel table.trace td:first-child { color: var(--run); width: 22px; } #panel table.trace td:last-child { text-align: right; color: var(--muted); }
 #panel .note { margin-top: 6px; color: var(--muted); font-size: calc(11px * var(--fs)); }
 #panel a { color: var(--agent); text-decoration: none; } #panel a:hover { text-decoration: underline; }

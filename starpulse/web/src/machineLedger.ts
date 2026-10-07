@@ -90,7 +90,7 @@ const stateRadius = (scale: number) => 15 * sizes(scale).gs;
  * next 17 past that). A state holding more spills a ring past it rather than shift the machine. */
 const orbitRoom = (scale: number) => stateRadius(scale) + 13 * sizes(scale).gs + sizes(scale).dot;
 
-interface Layers {
+export interface Layers {
   depth: Record<string, number>;
   row: Record<string, number>;
   /** States sharing a column with each state, itself included. */
@@ -100,7 +100,7 @@ interface Layers {
   rmax: number;
 }
 /** The machine as layers: breadth-first depth from its first state, the longest path to a final state on row 0, the rest alternating above and below it. */
-function layers(states: MachineState[], trans: Transition[]): Layers {
+export function layers(states: MachineState[], trans: Transition[]): Layers {
   const ids = states.map((s) => s.id), init = (states.find((s) => s.initial) ?? states[0]).id, depth: Record<string, number> = { [init]: 0 }, par: Record<string, string> = {}, q = [init];
   while (q.length) {
     const s = q.shift()!;
@@ -125,14 +125,14 @@ function layers(states: MachineState[], trans: Transition[]): Layers {
   return { depth, row, colN, cols: cols.filter(Boolean), rmin: Math.min(...rows), rmax: Math.max(...rows) };
 }
 
-interface Block {
+export interface Block {
   x0: number;
   y0: number;
   x1: number;
   y1: number;
 }
 /** A state's tasks keep a disc clear of any name; a name keeps a box clear of the others. */
-const hits = (a: Block, b: Block | { x: number; y: number; r: number }) =>
+export const hits = (a: Block, b: Block | { x: number; y: number; r: number }) =>
   "r" in b
     ? Math.hypot(Math.max(a.x0 - b.x, 0, b.x - a.x1), Math.max(a.y0 - b.y, 0, b.y - a.y1)) < b.r
     : a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
