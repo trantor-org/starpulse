@@ -84,6 +84,48 @@ def test_scrub_seeds_pools_and_runs_that_follow_the_contract() -> None:
         jsonschema.validate(Pool.model_validate(pool).model_dump(mode="json", by_alias=True), SCHEMAS["pools"])
 
 
+def _with_catalog(live: dict) -> dict:
+    names = ("deliver", "apply-on-merge", "whole-repo-gate", "backlog-sweep", "board-autopilot")
+    live["domains"] = [
+        {"name": "Delivery", "dags": [{"name": f"dagu/{n}", "runSafe": False} for n in names[:3]]},
+        {"name": "Board", "dags": [{"name": f"dagu/{n}", "runSafe": False} for n in names[3:]]},
+    ]
+    live["dags"] = []
+    return live
+
+
+def test_scrub_seeds_every_other_declared_dag_in_a_state_of_its_own_and_marks_some_run_safe() -> None:
+    demo = scrub(_with_catalog(_live()))
+
+    by = {d["name"]: d for d in demo["dags"]}
+    assert {n.removeprefix("dagu/"): d["status"] for n, d in by.items()} == {
+        "deliver": "running",
+        "apply-on-merge": "failed",
+        "whole-repo-gate": "succeeded",
+        "backlog-sweep": "not_started",
+        "board-autopilot": "queued",
+    }
+    failed = by["dagu/apply-on-merge"]
+    assert "failed" in {s["status"] for s in failed["steps"]}
+    assert failed["finishedAt"]
+    assert by["dagu/backlog-sweep"]["finishedAt"] == ""
+    safe = {x["name"]: x["runSafe"] for g in demo["domains"] for x in g["dags"]}
+    assert safe["dagu/deliver"] is False
+    assert any(safe.values()) and not all(safe.values())
+    for dag in demo["dags"]:
+        jsonschema.validate(Dag.model_validate(dag).model_dump(mode="json", by_alias=True), SCHEMAS["runs"])
+
+
+def test_scrub_seeds_no_catalog_when_the_capture_reports_pools() -> None:
+    live = _with_catalog(_live())
+    live["pools"] = [{"name": "dagu/deliver", "cap": 8, "running": 0, "queued": 0}]
+
+    demo = scrub(live)
+
+    assert demo["dags"] == []
+    assert not any(x["runSafe"] for g in demo["domains"] for x in g["dags"])
+
+
 def test_scrub_keeps_the_pools_a_capture_reports_and_seeds_nothing() -> None:
     live = _with_deliver(_live())
     live["pools"] = [{"name": "dagu/deliver", "cap": 8, "running": 0, "queued": 0}]
