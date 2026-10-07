@@ -1,7 +1,10 @@
 """The Board the view draws, held in memory from what the board adapter places, and the runs beside it."""
 
 import re
+import threading
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -282,6 +285,7 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "pulls",
         "reading",
         "settled",
+        "suns",
     ]
     assert body["graphs"] == [*FLOWS, "runs"]
     assert (body["flows"][0]["name"], body["flows"][0]["machine"]) == ("board", MACHINES["board"])
@@ -497,3 +501,85 @@ def test_a_workflow_the_adapter_reports_startable_but_config_does_not_declare_ru
     feed.runs("gh").set_dags([], None, startable=["ci.yml", "ui.yml"])
 
     assert _run_flags(feed) == {"gh/ci.yml": False, "gh/ui.yml": True}
+
+
+def test_suns_are_sized_from_the_trailing_week_at_local_midnight_and_stay_until_the_next(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TZ", "America/Phoenix")
+    time.tzset()
+    phoenix = ZoneInfo("America/Phoenix")
+
+    def at(day: int, hour: int, minute: int = 0) -> float:
+        return datetime(2026, 10, day, hour, minute, tzinfo=phoenix).timestamp()
+
+    rows = [
+        ("A", datetime(2026, 9, 29, 12, tzinfo=phoenix).timestamp(), None, "To Do"),  # before either week opens
+        ("A", at(2, 12), "To Do", "In Progress"),
+        ("A", at(6, 12), "In Progress", "Done"),
+    ]
+    now = [at(7, 9)]
+    feed = BoardFeed(clock=lambda: now[0])
+    feed.size_suns(lambda: rows)
+
+    sized = feed.snapshot()["suns"]
+    rows.append(("B", at(7, 10), "To Do", "In Progress"))  # live activity after the midnight that sized them
+    now[0] = at(7, 23, 59)
+    held = feed.snapshot()["suns"]
+    now[0] = at(8, 0, 1)
+    resized = feed.snapshot()["suns"]
+
+    assert sized == {"to_do": 1 / 4, "in_progress": 2 / 4, "done": 1 / 4}
+    assert held == sized
+    assert resized == {"to_do": 2 / 6, "in_progress": 3 / 6, "done": 1 / 6}
+
+
+def test_an_open_page_gets_the_resized_suns_once_when_local_midnight_passes_and_never_for_live_moves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TZ", "America/Phoenix")
+    time.tzset()
+    phoenix = ZoneInfo("America/Phoenix")
+
+    def at(day: int, hour: int, minute: int = 0) -> float:
+        return datetime(2026, 10, day, hour, minute, tzinfo=phoenix).timestamp()
+
+    rows = [("A", at(6, 12), "To Do", "In Progress")]
+    now = [at(7, 9)]
+    feed = BoardFeed(clock=lambda: now[0])
+    feed.size_suns(lambda: rows)
+    _, deltas = feed.subscribe()
+
+    rows.append(("B", at(7, 10), "In Progress", "Done"))  # a live move
+    now[0] = at(7, 23, 59)
+    feed.resize_suns()
+    assert deltas.empty()
+
+    now[0] = at(8, 0, 1)
+    feed.resize_suns()
+    feed.resize_suns()
+
+    kind, body = deltas.get_nowait()
+    assert deltas.empty()
+    assert (kind, body) == ("suns", {"suns": {"to_do": 1 / 4, "in_progress": 2 / 4, "done": 1 / 4}})
+
+
+def test_the_suns_keeper_resizes_on_its_interval_until_stopped() -> None:
+    day = 86400.0
+    now = [10 * day]
+    rows = [("A", 8 * day, "To Do", "Done")]
+    feed = BoardFeed(clock=lambda: now[0])
+    feed.size_suns(lambda: rows)
+    _, deltas = feed.subscribe()
+    stop = threading.Event()
+    keeper = threading.Thread(target=feed.keep_suns, args=(stop, 0.01), daemon=True)
+    keeper.start()
+    try:
+        rows.append(("B", 9 * day, "In Progress", "Done"))
+        now[0] = 12 * day  # the next local day, whatever zone the test runs in
+        kind, _ = deltas.get(timeout=5)
+    finally:
+        stop.set()
+        keeper.join(5)
+
+    assert (kind, keeper.is_alive()) == ("suns", False)

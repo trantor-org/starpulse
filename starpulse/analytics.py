@@ -103,3 +103,21 @@ def _gap_message(gap: dict) -> str:
 
 def _lane_message(lane: str) -> str:
     return f"lane {lane!r} is not a state of the Board machine, so its stays are not counted"
+
+
+def move_shares(machine: dict, rows: Iterable[LaneRow], *, start: float, end: float) -> dict[str, float]:
+    """Each Board state's share of the lane moves in `[start, end)`, from lane changes `rows`.
+
+    A move counts toward the state it left and the state it entered, so a state's share is its part of the traffic
+    through the Board; a first sighting enters a state and leaves none. A lane that is no state of `machine` counts
+    toward none. The shares sum to 1, or are all 0 when the window holds no move.
+    """
+    states = {key: state["id"] for state in machine["states"] for key in (state["name"], state["id"])}
+    counts = dict.fromkeys((state["id"] for state in machine["states"]), 0)
+    for _task, at, old, new in rows:
+        if start <= at < end:
+            for lane in (old, new):
+                if (state := states.get(lane)) is not None:
+                    counts[state] += 1
+    total = sum(counts.values())
+    return {state: count / total if total else 0.0 for state, count in counts.items()}

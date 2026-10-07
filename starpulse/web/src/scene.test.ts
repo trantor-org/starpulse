@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bez, BOARD_GROW, build, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, taskSlot, tethersDrawn, terminal, textW, turnPage, type BEdge, type Curve, type MState, type Pt, type Scene } from "./scene";
+import { bez, BOARD_GROW, build, GALAXY_MAX, GALAXY_MIN, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, taskSlot, tethersDrawn, terminal, textW, turnPage, type BEdge, type Curve, type MState, type Pt, type Scene } from "./scene";
 import type { Level } from "./levels";
 import { merge, Moves } from "./sky";
 import type { Cue, Dag, Machine, Snapshot } from "./types";
@@ -1353,5 +1353,44 @@ describe("a DAG's label", () => {
 
     expect(scene.stars["dagu/board-autopilot"].label).toBe("board-autopilot");
     expect([scene.stars["dagu/nightly"].label, scene.stars["kit/nightly"].label]).toEqual(["dagu/nightly", "kit/nightly"]);
+  });
+});
+
+describe("a Board state's sun sized from its share of the week's moves", () => {
+  const sized = (suns: Record<string, number>, counts: Record<string, number> = {}) => {
+    const sky = withTasks(boardSky(), counts);
+    sky.S.suns = suns;
+    return build(sky, { kind: "board" }).galaxies;
+  };
+  const shares = { new: 0.1, ready: 0.1, in_progress: 0.2, review: 0.2, done: 0.4 };
+
+  it("has an area proportional to its share, the busiest state's reaching the maximum", () => {
+    const g = sized(shares);
+
+    expect(g.done.r).toBe(GALAXY_MAX);
+    expect((g.review.r / g.done.r) ** 2).toBeCloseTo(0.5);
+    expect((g.ready.r / g.done.r) ** 2).toBeCloseTo(0.25);
+  });
+  it("never falls below the minimum, however quiet the state, so it stays visible", () => {
+    const g = sized({ ...shares, new: 0.001, ready: 0 });
+
+    expect([g.new.r, g.ready.r]).toEqual([GALAXY_MIN, GALAXY_MIN]);
+  });
+  it("is the minimum on every state when the week held no move", () => {
+    const g = sized({ new: 0, ready: 0, in_progress: 0, review: 0, done: 0 });
+
+    expect([g.new.r, g.ready.r, g.review.r, g.done.r]).toEqual([GALAXY_MIN, GALAXY_MIN, GALAXY_MIN, GALAXY_MIN]);
+  });
+  it("does not follow the state's live tasks, so activity never resizes it", () => {
+    const quiet = sized(shares), busy = sized(shares, { new: 5, ready: 80, review: 120, done: 3000 });
+
+    for (const id of Object.keys(quiet)) expect(busy[id].r).toBe(quiet[id].r);
+  });
+  it("sizes the state's own level's sun the same as the Board's state", () => {
+    const sky = boardSky();
+    sky.S.suns = shares;
+
+    expect(build(sky, { kind: "state", id: "done" }).sun!.r).toBe(GALAXY_MAX);
+    expect(build(sky, { kind: "state", id: "review" }).sun!.r).toBe(build(sky, { kind: "board" }).galaxies.review.r);
   });
 });

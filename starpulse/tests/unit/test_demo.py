@@ -695,3 +695,24 @@ def test_scrub_seeds_nothing_when_the_capture_lacks_the_boards_delivery_flow() -
     demo = scrub(live)
 
     assert [f["name"] for f in demo["flows"]] == ["board"]
+
+
+def test_scrub_sizes_the_demo_suns_from_its_own_week_of_lane_changes() -> None:
+    live = _structured(
+        [{"id": "TASK-D1", "state": "review"}, {"id": "TASK-D2", "state": "ready"}, {"id": "TASK-D3", "state": "new"}],
+        [],
+    )
+
+    suns = scrub(live).get("suns")
+
+    # the six lane ends of the synthetic history above: ready 3, in progress 2, review 1
+    assert suns is not None
+    assert (suns["ready"], suns["in_progress"], suns["review"]) == pytest.approx((3 / 6, 2 / 6, 1 / 6))
+    assert sum(suns.values()) == pytest.approx(1)
+
+
+def test_scrub_keeps_the_suns_a_capture_reports() -> None:
+    live = _structured([{"id": "TASK-D1", "state": "review"}], [])
+    live["suns"] = {"ready": 0.25, "review": 0.75}
+
+    assert scrub(live)["suns"] == {"ready": 0.25, "review": 0.75}

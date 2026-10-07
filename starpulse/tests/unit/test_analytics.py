@@ -1,6 +1,6 @@
 """Board health from lane changes: dwell, WIP and throughput equal hand-computed values, an open stay counts to now."""
 
-from starpulse.analytics import board_health
+from starpulse.analytics import board_health, move_shares
 from starpulse.tests.machines import MACHINES
 
 H = 3600.0
@@ -137,3 +137,26 @@ def test_a_lane_may_name_its_state_by_id() -> None:
     by_id = [(task, at, old, new and new.lower().replace(" ", "_")) for task, at, old, new in ROWS]
 
     assert _health(by_id) == _health()
+
+
+#: Moves inside [10h, 20h): a move counts toward the state it left and the state it entered.
+SHARE_ROWS = [
+    ("A", 12 * H, None, "Ready"),  # a first sighting enters Ready, and leaves nothing
+    ("A", 14 * H, "Ready", "In Progress"),
+    ("B", 15 * H, "In Progress", "done"),  # a lane may be named by its state's id
+    ("C", 20 * H, "Ready", "In Progress"),  # the window's end is outside it
+    ("D", 9 * H, "Ready", "Review"),  # and so is anything before its start
+    ("E", 16 * H, "Ready", "Elsewhere"),  # a lane that is no Board state counts toward none
+]
+
+
+def test_a_states_share_is_its_part_of_the_moves_into_and_out_of_every_state_in_the_window() -> None:
+    shares = move_shares(BOARD, SHARE_ROWS, start=10 * H, end=20 * H)
+
+    assert shares == {"to_do": 0.0, "ready": 3 / 6, "in_progress": 2 / 6, "review": 0.0, "done": 1 / 6}
+
+
+def test_a_window_with_no_moves_gives_every_state_a_zero_share() -> None:
+    shares = move_shares(BOARD, SHARE_ROWS, start=30 * H, end=40 * H)
+
+    assert shares == {"to_do": 0.0, "ready": 0.0, "in_progress": 0.0, "review": 0.0, "done": 0.0}
