@@ -3,7 +3,9 @@
 // DAGs as step-graph glyphs beside them, a state's lifecycle system as planets
 // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
 import { topOf, type Fold, type Level } from "./levels";
-import { ledgerTop, type LedgerTop } from "./machineLedger";
+import { ledgerTop, sizes as ledgerSizes, type LedgerTop } from "./machineLedger";
+import { laneRows, type LaneNode, type LaneRow } from "./machineLanes";
+import { rankRows } from "./machineRows";
 import { ledgerOf, type Ledger, type Tie } from "./ledger";
 import { countText, daily, HOUR, hosted, stateCount, type Move, type Moves, type Sky } from "./sky";
 import type { Dag, DagStep, LedgerRow, RawAgent, Transition, Writer } from "./types";
@@ -333,6 +335,16 @@ export interface Scene {
 export interface MachineTop extends LedgerTop {
   flow: string;
   entered: string[];
+  /** The machines entered from this one, newest activity first: each row's height and states, the lane's top and bottom in canvas pixels. */
+  rows: RowView[];
+  laneTop: number;
+  laneBottom: number;
+}
+/** One machine entered from the top, placed in the lane; `y` is down from the lane's top. */
+export interface RowView extends Omit<LaneRow, "nodes"> {
+  nodes: (LaneNode & { color: string })[];
+  /** The machine's first state, where a tie or a DAG launch arrives. */
+  init: string;
 }
 export interface Ctx {
   S: Sky;
@@ -358,6 +370,8 @@ export interface Ctx {
   measure?: (s: string, px: number, weight?: number) => number;
   /** The boxes the page draws over the canvas (its crumb and clock), and how far down the crumb ends: a state level's top keeps its names and header clear of them. */
   chrome?: { avoid: { x0: number; y0: number; x1: number; y1: number }[]; inset: number };
+  /** The order the page is holding its machine ledger rows in while the pointer is over them: the rows keep it, and a new machine goes last. */
+  held?: string[];
 }
 
 export const bez = (p0: Pt, c: Pt, p1: Pt, t: number): Pt => {
@@ -1119,14 +1133,25 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
 
   // The machine across the top of a state level that opens a primary machine (machineLedger.ts): its states, flow lines and tasks in screen
   // pixels, so the hover and panels the machine level has work on it unchanged.
+  const tasksOf = (f: { agents: { state: string }[] }) => {
+    const n: Record<string, number> = {};
+    for (const a of f.agents) n[a.state] = (n[a.state] ?? 0) + 1;
+    return n;
+  };
   function buildTop(name: string) {
     const flow = S.flows[name];
     if (!flow) return;
-    const tasks: Record<string, number> = {};
-    for (const a of flow.agents) tasks[a.state] = (tasks[a.state] ?? 0) + 1;
+    const tasks = tasksOf(flow);
     const entered = [...new Set([...Object.keys(S.child[name] ?? {}), ...Object.values(S.flows).flatMap((f) => (f.ties?.[0]?.machine === name && f.ties[0].state ? [f.ties[0].state] : []))])];
     const top = ledgerTop({ states: flow.machine.states, transitions: flow.machine.transitions, tasks, entered }, { W, H, scale: ctx.scale ?? 100, measure: ctx.measure ?? ((t, px) => t.length * (px * 0.56 + 0.6)), ...ctx.chrome });
-    scene.top = { ...top, flow: name, entered };
+    const { fs } = ledgerSizes(ctx.scale ?? 100), laneTop = top.hdrB + 6, laneBottom = H - 50 * fs;
+    const order = rankRows(S.flows, name, ctx.held), machines = order.map((m) => ({ name: m, states: S.flows[m].machine.states, transitions: S.flows[m].machine.transitions, tasks: tasksOf(S.flows[m]) }));
+    const lane = laneRows(machines, { x0: top.x0, x1: top.x1 }, { scale: ctx.scale ?? 100, laneH: laneBottom - laneTop });
+    const rows = lane.rows.map((r): RowView => {
+      const st = S.flows[r.name].machine.states;
+      return { ...r, init: (st.find((x) => x.initial) ?? st[0]).id, nodes: r.nodes.map((n) => ({ ...n, color: RAMP[Math.round(n.u * (RAMP.length - 1))] })) };
+    });
+    scene.top = { ...top, flow: name, entered, rows, laneTop, laneBottom };
     for (const n of top.nodes) scene.mStates[n.id] = { id: n.id, name: n.name, final: n.final, initial: n.initial, flow: name, n: n.n, x: n.x, y: n.y, loops: loopsOf(flow, n.id), color: RAMP[Math.round(n.u * (RAMP.length - 1))] };
     scene.mEdges = flow.machine.transitions.map((t) => {
       const a = scene.mStates[t.source], b = scene.mStates[t.target];
