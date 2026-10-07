@@ -13,7 +13,8 @@
   const STALE_H = +qs.get("stale") || 4;
   const store = (key, v) => { try { localStorage.setItem(key, v); } catch {} };
   const read = (key) => { try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; } };
-  if (fs) store("fv.admin.prefs", JSON.stringify({ ...(read("fv.admin.prefs") || {}), scale: fs }));
+  // every link opens its own view and text size, whatever the last visit left in the page's stored prefs
+  store("fv.admin.prefs", JSON.stringify({ ...(read("fv.admin.prefs") || {}), view: kanban ? "kanban" : "constellation", scale: fs || 100 }));
   store("fv.nav.folded", "0");
   store("fv.kanban.prefs", JSON.stringify({ query: "", assignee: null, milestone: null, folded: [], hiddenMilestones: [], hiddenTasks: [] }));
   const root = document.documentElement;
@@ -53,9 +54,11 @@
   html.ly-nodags #nav section.away:has(#cons) { display: none !important; }
   /* every scrolling box wears the Kanban columns' thin, quiet scrollbar */
   #root, #root *, #ly-pop { ${thin} }
-  #nav section.ly-panel { flex: 1; min-height: 0; overflow: auto; }
+  /* rows bleed 6px each side for their hover; the panel's own padding holds the bleed, so it never scrolls sideways */
+  #nav section.ly-panel { flex: 1; min-height: 0; overflow: hidden auto; box-sizing: border-box; width: calc(var(--nav) - 24px); padding: 0 6px; margin-left: -6px; margin-right: -6px; }
   #nav section.ly-panel:empty { display: none; }
   .ly-tog { all: unset; cursor: pointer; display: flex; width: 100%; align-items: baseline; }
+  .ly-h3 { display: flex; align-items: baseline; }
   .ly-tog .n { margin-left: auto; letter-spacing: 0; font-variant-numeric: tabular-nums; }
   .ly-tog:hover, .ly-tog:focus-visible { color: var(--ink); }
   .ly-row { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 1fr auto; column-gap: 10px; align-items: baseline;
@@ -146,7 +149,7 @@
     patch(shown, keep && total ? `${document.querySelectorAll("#kb .card[data-id]:not(.ly-hide)").length} of ${total} tasks` : null);
     document.querySelectorAll("#kb section.col").forEach((col) => patch(col.querySelector("h2 .c"), keep ? String(col.querySelectorAll(".card[data-id]:not(.ly-hide)").length) : null));
   };
-  const kanPanel = () => [el("h3", { class: "ly-tog", style: "cursor:default" }, esc("Milestones"), mile ? el("button", { class: "ly-clear", onclick: () => { mile = null; render(); } }, esc("clear ✕")) : null),
+  const kanPanel = () => [el("h3", { class: "ly-h3" }, esc("Milestones"), mile ? el("button", { class: "ly-clear", onclick: () => { mile = null; render(); } }, esc("clear ✕")) : null),
     MS.map(([m, v]) => el("button", { class: "ly-row" + (mile === m ? " on" : ""), onclick: () => { mile = mile === m ? null : m; render(); } },
       el("span", { class: "id" }, esc(m)), el("span", { class: "w" }, esc(`${v.done}/${v.total}`)), el("span", { class: "ly-bar" }, el("i", { style: `width:${Math.round((v.done / v.total) * 100)}%` }))))];
 
@@ -195,7 +198,7 @@
   // ---- the switcher: every choice is a link, so each state can be sent ----
   const go = (patch) => { const n = new URLSearchParams(location.search); for (const [a, v] of Object.entries(patch)) v == null ? n.delete(a) : n.set(a, v); location.search = n.toString(); };
   const btn = (text, on, patch) => el("button", { class: on ? "on" : null, onclick: () => go(patch) }, esc(text));
-  const sw = el("div", { id: "ly-sw" }, el("b", { title: "Minimise", onclick: () => sw.classList.toggle("min") }, esc("D5 MOCKUP")),
+  const sw = el("div", { id: "ly-sw" }, el("b", { title: "Minimise", onclick: () => sw.classList.toggle("min") }, esc("D5 MOCKUP · round 3")),
     el("span", { class: "grp" }, btn("Star Map", !kanban, { view: null }), btn("Kanban", kanban, { view: "kanban" })),
     kanban ? null : el("span", { class: "grp" }, esc("attention"), MAP.map((x) => btn(x, x === p, { p: x })), esc(" drill"), DRILL.map((x) => btn(x === "state" ? "In Progress" : x === "machine" ? "authoring-skills" : "Board", x === d, { d: x }))),
     el("span", { class: "grp" }, esc("DAGs"), btn("in panel", qs.get("dags") !== "0", { dags: null }), btn("moved out", qs.get("dags") === "0", { dags: "0" })),
