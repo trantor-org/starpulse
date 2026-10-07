@@ -18,6 +18,7 @@ from typing import Any
 
 import yaml
 
+from starpulse import criteria
 from starpulse.board import Board, MoveWriter, TaskArchiver, TaskCreator, TaskEditor, TaskReader, Written
 from starpulse.upstream_backlog import (
     _FOLDERS,
@@ -36,8 +37,8 @@ from starpulse.upstream_backlog import (
 #: Where the board lives, relative to the config's directory (or the working directory without a config).
 DEFAULT_PATH = ".starpulse/board"
 #: The `[board]` settings this adapter reads: `path` is the board's directory, `machine` a machine file for the Board,
-#: relative to the config.
-_SETTINGS = {"type", "path", "interval", "machine"}
+#: relative to the config, `criteria` the command that evaluates a task's Start Criteria (`{id}` is the task's id).
+_SETTINGS = {"type", "path", "interval", "machine", "criteria"}
 _NOTES_END = re.compile(r"\s*<!-- SECTION:NOTES:END -->")
 _PLAN = re.compile(r"<!-- SECTION:PLAN:BEGIN -->(.*?)<!-- SECTION:PLAN:END -->", re.S)
 _CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
@@ -100,8 +101,10 @@ def _items(pattern: re.Pattern[str], body: str) -> list[dict[str, Any]]:
     ]
 
 
-def _reader(root: Path) -> TaskReader:
-    """A board reader: the record of the task's file, keyed by the fields the task view draws and edits."""
+def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) -> TaskReader:
+    """A board reader: the record of the task's file, keyed by the fields the task view draws and edits.
+
+    `start_criteria` is the description's Start Criteria, each with the result `evaluate` gives it."""
 
     def read(task: str, /) -> dict[str, Any] | None:
         if (path := _find(root, task)) is None:
@@ -110,6 +113,7 @@ def _reader(root: Path) -> TaskReader:
             frontmatter, body = _split(path.read_text())
         except OSError:
             return None  # moved or removed while reading
+        description = _description(body)
         return {
             "title": str(frontmatter.get("title") or ""),
             "profile": next(iter(_strings(frontmatter.get("assignee"))), ""),
@@ -117,7 +121,8 @@ def _reader(root: Path) -> TaskReader:
             "labels": list(_strings(frontmatter.get("labels"))),
             "milestone": str(frontmatter.get("milestone") or ""),
             "dependencies": list(_strings(frontmatter.get("dependencies"))),
-            "description": _description(body),
+            "description": description,
+            "start_criteria": evaluate(task, description),
             "plan": _section(_PLAN, body),
             "notes": _section(_NOTES, body),
             "acceptanceCriteria": _items(_CRITERIA, body),
@@ -366,7 +371,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "writer": _writer(root, config.statuses),
             "assign": assign,
             "create": _creator(root, config),
-            "read": _reader(root),
+            "read": _reader(root, criteria.evaluator(settings.get("criteria"), base)),
             "edit": _editor(root),
             "archive": _archiver(root),
         },

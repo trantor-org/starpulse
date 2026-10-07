@@ -108,6 +108,7 @@ def test_a_task_file_reads_as_every_field_the_task_view_draws(tmp_path: Path, mo
         "milestone": "m-1",
         "dependencies": ["task-2"],
         "description": "Draw it.",
+        "start_criteria": [],
         "plan": "1. read\n2. draw",
         "notes": "kept in the file",
         "acceptanceCriteria": [
@@ -135,6 +136,7 @@ def test_a_task_file_with_only_front_matter_reads_with_empty_fields(
         "milestone": "",
         "dependencies": [],
         "description": "",
+        "start_criteria": [],
         "plan": "",
         "notes": "",
         "acceptanceCriteria": [],
