@@ -98,6 +98,16 @@ The body takes `emit`'s fields as JSON (`phase`, `workflow`, `run_id`, `status`,
 missing or wrong token answers 401, another instance's workflow 403, an event the contract does not allow 400, and
 none of them writes anything. The page draws an accepted event as `pushed/<instance>/<workflow>`.
 
+An instance that only receives pushes needs no adapter: give the `[[runs]]` table a `name` and a `token_env`, and
+leave out `type` and `url`. It pulls nothing, has no Run now (so no `run_safe`), and draws only what the ingest
+receives from its token:
+
+```toml
+[[runs]]
+name = "cron"
+token_env = "CRON_INGEST_TOKEN"
+```
+
 ### Work the board from an agent
 
 ```sh
@@ -307,6 +317,7 @@ run_safe = ["nightly"]                   # the workflows the page's Run now may 
 domains = { Data = ["nightly", "etl"] }  # how the page groups this instance's workflows
 token_env = "DAGU_INGEST_TOKEN"          # the environment variable holding the token `POST /api/runs/events` accepts for
                                          # this instance; the token never goes in this file; omit the key and the instance takes no pushed events
+                                         # an instance with `token_env` and neither `type` nor `url` is push-only (see above)
 
 # Optional: the run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain.
 # Each value names a parameter; a key left out is a parameter this instance has none of.

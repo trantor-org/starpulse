@@ -8,7 +8,8 @@ The `[board]` table names the board adapter by `type` (`starpulse.board`); the r
 adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.history`).
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a name under
-`starpulse`, or the dotted path of a module an installed package provides), the `url` it reads, the workflows Run now may start (`run_safe`) and the `domains` that
+`starpulse`, or the dotted path of a module an installed package provides), the `url` it reads (an instance with a
+`token_env` and neither `type` nor `url` is push-only: it pulls nothing and draws what the ingest receives), the workflows Run now may start (`run_safe`) and the `domains` that
 group its workflows on the page, and optionally `token_env`, the name of the environment variable that holds the
 token the HTTP ingest accepts for it (the token itself is never in this file). A workflow is shown as `<instance>/<workflow>`, so two instances can
 carry the same workflow name.
@@ -103,9 +104,10 @@ class RunsInstance:
     """One configured runs adapter: the workflows it lists are shown as `<name>/<workflow>`."""
 
     name: str
-    type: str
-    """The adapter module that reads the instance: a name under `starpulse`, or a dotted module path."""
-    url: str
+    type: str | None
+    """The adapter module that reads the instance: a name under `starpulse`, or a dotted module path; none: a push-only instance."""
+    url: str | None
+    """What the adapter reads; none with no type."""
     run_safe: tuple[str, ...] = ()
     """The workflows Run now may start; any other answers 404, so none is startable by default."""
     domains: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
@@ -226,7 +228,9 @@ def runs_adapter(kind: str) -> ModuleType:
 def _instance(raw: object) -> RunsInstance:
     if not isinstance(raw, dict):
         raise ConfigError("runs must be a list of [[runs]] tables")
-    for key in ("name", "type", "url"):
+    # An instance with a token and neither half of a pull adapter pulls nothing: it draws what the ingest receives.
+    push_only = "token_env" in raw and "type" not in raw and "url" not in raw
+    for key in ("name",) if push_only else ("name", "type", "url"):
         if key not in raw:
             raise ConfigError(f"a runs instance needs {key}")
     name = raw["name"]
@@ -237,16 +241,19 @@ def _instance(raw: object) -> RunsInstance:
             f"runs instance {name}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_INSTANCE_KEYS))}",
             [f"runs.{name}.{key}" for key in unknown],
         )
-    kind, url = raw["type"], raw["url"]
-    try:
-        runs_adapter(kind)
-    except ConfigError as exc:
-        raise ConfigError(f"runs instance {name}: {exc}") from exc
-    if not isinstance(url, str):
-        raise ConfigError(f"runs instance {name}: url must be text")
+    kind, url = raw.get("type"), raw.get("url")
+    if not push_only:
+        try:
+            runs_adapter(kind)
+        except ConfigError as exc:
+            raise ConfigError(f"runs instance {name}: {exc}") from exc
+        if not isinstance(url, str):
+            raise ConfigError(f"runs instance {name}: url must be text")
     run_safe, domains = raw.get("run_safe", []), raw.get("domains", {})
     if not _names(run_safe):
         raise ConfigError(f"runs instance {name}: run_safe must be a list of workflow names")
+    if push_only and run_safe:
+        raise ConfigError(f"runs instance {name}: a push-only instance has no start, so run_safe does not apply")
     if not isinstance(domains, dict) or not all(_names(workflows) for workflows in domains.values()):
         raise ConfigError(f"runs instance {name}: domains must map each domain name to a list of workflow names")
     token_env = raw.get("token_env")

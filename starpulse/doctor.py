@@ -46,8 +46,8 @@ def _command(probes: Probes, *argv: str) -> tuple[int, str]:
 
 
 def _adapters(snapshot: dict[str, Any] | str, config: Config | str) -> list[dict[str, str]]:
-    """One result per producer: the Board, then each configured runs instance."""
-    instances = [] if isinstance(config, str) else [i.name for i in config.runs]
+    """One result per producer: the Board, then each configured runs instance that pulls (a push-only one has no adapter)."""
+    instances = [] if isinstance(config, str) else [i.name for i in config.runs if i.type]
     if isinstance(snapshot, str):
         return [_result(f"adapter:{name}", False, "the server is unreachable") for name in ["board", *instances]]
     errors = (snapshot["error"] or "").split("; ")
