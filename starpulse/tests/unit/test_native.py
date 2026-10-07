@@ -183,7 +183,7 @@ def test_with_a_backlog_md_project_beside_the_default_config_the_snapshot_and_ba
 
     hint = feed.snapshot()["hint"]
     assert str(tmp_path / "backlog" / "config.yml") in hint
-    assert '[board] type = "upstream_backlog"' in hint
+    assert hint.endswith("run: starpulse connect backlog --path backlog")
     assert "\n" not in hint
     announce(8766, hint)
     assert capsys.readouterr().out.splitlines() == ["StarPulse on :8766", hint]
