@@ -1110,7 +1110,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     if shutil.which("gh"):  # without the GitHub CLI there is no source, and a task simply carries no PR state
-        threading.Thread(target=PullRequests(feed).run_forever, name="pull-requests", daemon=True).start()
+        pull_requests = PullRequests(feed, repos=config.repos)
+        threading.Thread(target=pull_requests.run_forever, name="pull-requests", daemon=True).start()
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)
     if isinstance(history, HistoryStore):

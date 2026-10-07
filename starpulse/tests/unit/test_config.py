@@ -5,7 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.config import CommitKeys, Config, ConfigError, Forward, OidcSettings, Source, load, runs_adapter
+from starpulse.config import (
+    CommitKeys,
+    Config,
+    ConfigError,
+    Forward,
+    OidcSettings,
+    Repo,
+    Source,
+    load,
+    runs_adapter,
+)
 from starpulse.harnesses import HarnessError
 
 
@@ -195,7 +205,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, board, database_url, event_log_retention_days, "
-        "forward, harnesses_file, hub_retention_days, level, mode, oidc, runs, session_start_url, sources, tracker_url"
+        "forward, harnesses_file, hub_retention_days, level, mode, oidc, repos, runs, session_start_url, sources, tracker_url"
     )
 
 
@@ -534,3 +544,34 @@ def test_a_commit_that_is_not_a_table_is_refused(tmp_path: Path) -> None:
     assert _refusal(tmp_path, _DAGU.replace("[[runs]]\n", "[[runs]]\ncommit = 1\n")) == (
         "runs instance dagu: commit must be a [runs.commit] table"
     )
+
+
+def test_a_repos_table_names_a_repository_whose_merges_apply_through_the_parents_pin_bump(tmp_path: Path) -> None:
+    text = '[[repos]]\nname = "starpulse"\npath = "starpulse"\napplied_by = "pin-bump"\n'
+
+    assert load(_write(tmp_path, text)).repos == (Repo(name="starpulse", path="starpulse", applied_by="pin-bump"),)
+
+
+def test_a_config_with_no_repos_table_declares_no_pin_bump_repository(tmp_path: Path) -> None:
+    assert load(_write(tmp_path, "")).repos == ()
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ('[[repos]]\nname = "a"\npath = "a"\napplied_by = "rsync"\n', "applied_by must be pin-bump"),
+        ('[[repos]]\nname = "a"\npath = "a"\n', "a repos entry needs applied_by"),
+        ('[[repos]]\nname = "a"\npath = "../a"\napplied_by = "pin-bump"\n', "path must be a relative path inside"),
+        ('[[repos]]\nname = "a"\npath = "a"\napplied_by = "pin-bump"\nurl = "x"\n', "unknown key(s) url"),
+        ('[[repos]]\nname = "a/b"\npath = "a"\napplied_by = "pin-bump"\n', "names must be non-empty text without a /"),
+        (
+            '[[repos]]\nname = "a"\npath = "a"\napplied_by = "pin-bump"\n'
+            '[[repos]]\nname = "a"\npath = "b"\napplied_by = "pin-bump"\n',
+            "repos entry a is configured twice",
+        ),
+    ],
+)
+def test_a_repos_entry_the_loader_cannot_use_is_refused_with_the_key_to_fix(
+    tmp_path: Path, text: str, message: str
+) -> None:
+    assert message in _refusal(tmp_path, text)

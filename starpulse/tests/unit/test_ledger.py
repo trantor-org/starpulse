@@ -8,6 +8,7 @@ for certain; a run with no such parameter pairs with the newest occurrence befor
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -355,3 +356,72 @@ def test_a_merge_that_failed_several_times_holds_its_latest_failure() -> None:
 
     assert rows[SHA_A]["fails"]["dagu/apply"]["runId"] == "f2"
     assert rows[SHA_A]["pinned"] is True
+
+
+def child(sha: str, at: float, applied_by: str | None) -> Occurrence:
+    merged = Occurrence(key=sha, at=t(at), tasks=(), sha=sha, pr={"repo": "skills", "number": 2, "url": "u"})
+    return replace(merged, child=True, applied_by=applied_by)
+
+
+def test_a_pinned_repositorys_merge_is_an_occurrence_that_names_the_merge_applying_it() -> None:
+    url = "https://github.com/o/skills/pull/7"
+    record = {"url": url, "merged": True, "merge_sha": SHA_A, "merged_at": BASE.isoformat(), "applied_by": SHA_B}
+    pulls = {"TASK-1": [record]}
+
+    (occurrence,) = pull_occurrences(pulls)
+
+    assert (occurrence.child, occurrence.applied_by) == (True, SHA_B)
+
+
+def test_a_merge_with_no_pin_bump_yet_is_a_child_and_unapplied() -> None:
+    url = "https://github.com/o/skills/pull/7"
+    record = {"url": url, "merged": True, "merge_sha": SHA_A, "merged_at": BASE.isoformat(), "applied_by": None}
+    pulls = {"TASK-1": [record]}
+
+    (occurrence,) = pull_occurrences(pulls)
+
+    assert (occurrence.child, occurrence.applied_by) == (True, None)
+
+
+def test_a_merge_the_parent_does_not_pin_is_not_a_child() -> None:
+    url = "https://github.com/o/trantor/pull/7"
+    pulls = {"TASK-1": [{"url": url, "merged": True, "merge_sha": SHA_A, "merged_at": BASE.isoformat()}]}
+
+    (occurrence,) = pull_occurrences(pulls)
+
+    assert occurrence.child is False
+
+
+def test_a_child_merge_row_links_to_its_bump_and_the_bump_row_lists_what_it_applies() -> None:
+    events = {"MERGED": [merge(SHA_A, 10), child(SHA_B, 20, SHA_A)]}
+
+    rows = {row["key"]: row for row in build(events, {"MERGED": ["dagu/apply"]}, {}, lambda dag: None)["MERGED"]}
+
+    assert rows[SHA_B]["appliedBy"] == SHA_A
+    assert rows[SHA_A]["applies"] == [SHA_B]
+
+
+def test_a_child_merge_before_any_bump_has_no_applier() -> None:
+    events = {"MERGED": [child(SHA_B, 20, None)]}
+
+    (row,) = build(events, {"MERGED": ["dagu/apply"]}, {}, lambda dag: None)["MERGED"]
+
+    assert row["appliedBy"] is None
+
+
+def test_a_child_merge_takes_no_run_and_does_not_make_the_parents_pairing_ambiguous() -> None:
+    events = {"MERGED": [merge(SHA_A, 10), child(SHA_B, 20, None)]}
+    runs = {"dagu/apply": [run("r1", 25)]}
+
+    rows = {row["key"]: row for row in build(events, {"MERGED": ["dagu/apply"]}, runs, lambda dag: None)["MERGED"]}
+
+    assert rows[SHA_B]["runs"] == {}
+    assert rows[SHA_A]["runs"]["dagu/apply"]["runId"] == "r1"
+    assert rows[SHA_A]["runs"]["dagu/apply"]["ambiguous"] == 0
+
+
+def test_a_merge_the_parent_does_not_pin_has_neither_link_key() -> None:
+    (row,) = build({"MERGED": [merge(SHA_A, 10)]}, {"MERGED": ["dagu/apply"]}, {}, lambda dag: None)["MERGED"]
+
+    assert "appliedBy" not in row
+    assert "applies" not in row

@@ -19,6 +19,10 @@ wins, since a later one more likely answers a later trigger.
 A workflow's latest failed run of an occurrence is an *open failure*, and pins the occurrence, until its cue's `resolves` rule clears it: `next`
 on the next successful run of that workflow, `forced` only on a successful forced run (the instance's `force`
 parameter set) that covers the occurrence, that is one that names a commit (or task) no older than it, or none.
+
+A merge in a repository the parent pins (`[[repos]]`, see `starpulse.pins`) is a *child* merge: it takes no run of its
+own and does not count toward a parent merge's ambiguity. Its row names `appliedBy`, the parent merge whose pin bump
+includes it (None until one does), and that merge's row lists it in `applies`.
 """
 
 from __future__ import annotations
@@ -56,6 +60,10 @@ class Occurrence:
     sha: str | None = None
     pr: Mapping[str, object] | None = None
     """For a merge, the pull request as `{repo, number, url}`."""
+    child: bool = False
+    """The merge is in a repository the parent pins (`[[repos]]`): a pin bump applies it, not a run of its own."""
+    applied_by: str | None = None
+    """For a child merge, the key of the parent merge whose pin bump includes it; none while no bump has."""
 
 
 def _epoch(iso: str) -> float:
@@ -76,7 +84,7 @@ def pull_occurrences(pulls: Mapping[str, Sequence[Mapping]]) -> list[Occurrence]
             seen = merged.get(sha)
             tasks = (*seen.tasks, task) if seen and task not in seen.tasks else seen.tasks if seen else (task,)
             pr = {"repo": found[1], "number": int(found[2]), "url": record["url"]}
-            merged[sha] = Occurrence(sha, _epoch(at), tasks, sha, pr)
+            merged[sha] = Occurrence(sha, _epoch(at), tasks, sha, pr, "applied_by" in record, record.get("applied_by"))
     return list(merged.values())
 
 
@@ -220,14 +228,18 @@ def build(
     ledgers: dict[str, list[dict]] = {}
     for event, dags in ties.items():
         occurrences = events.get(event, ())
-        paired = {dag: pair(occurrences, runs.get(dag, ()), keys(dag)) for dag in dags}
-        failed = {dag: failures(occurrences, runs.get(dag, ()), keys(dag), resolves(event, dag)) for dag in dags}
+        own = [o for o in occurrences if not o.child]
+        paired = {dag: pair(own, runs.get(dag, ()), keys(dag)) for dag in dags}
+        failed = {dag: failures(own, runs.get(dag, ()), keys(dag), resolves(event, dag)) for dag in dags}
+        applies = {o.key: [c.key for c in occurrences if c.applied_by == o.key] for o in own}
         ledgers[event] = [
             {
                 "key": o.key,
                 "at": o.at,
                 "tasks": list(o.tasks),
                 **({"sha": o.sha, "pr": dict(o.pr)} if o.sha is not None and o.pr is not None else {}),
+                **({"appliedBy": o.applied_by} if o.child else {}),
+                **({"applies": applies[o.key]} if applies.get(o.key) else {}),
                 "runs": {dag: found[o.key] for dag, found in paired.items() if o.key in found},
                 "fails": (fails := {dag: found[o.key] for dag, found in failed.items() if o.key in found}),
                 "pinned": any(fail["resolved"] is None for fail in fails.values()),

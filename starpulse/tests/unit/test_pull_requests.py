@@ -7,6 +7,7 @@ import pytest
 
 from starpulse.adapter_kit import task
 from starpulse.board_feed import BoardFeed
+from starpulse.config import Repo
 from starpulse.pull_requests import GhUnavailableError, PullRequests, Pulls, fetch, read_repository
 
 REPO = "https://github.com/acme/widgets/pull"
@@ -420,3 +421,29 @@ def test_a_missing_or_hung_gh_is_a_failed_read_naming_why(
 
     with pytest.raises(GhUnavailableError, match=message):
         read_repository("acme/widgets", [1])
+
+
+class _Pins:
+    """Stands in for the pin reads: the widgets merge pins POINTER, which contains the skills merge."""
+
+    def pointer(self, repo: str, sha: str, path: str) -> str | None:
+        return "pointer" if (repo, sha, path) == ("acme/widgets", SHA, "skills") else None
+
+    def reaches(self, repo: str, sha: str, pointer: str) -> bool:
+        return (repo, sha, pointer) == ("acme/skills", "5" * 40, "pointer")
+
+
+def test_a_merged_pr_of_a_pinned_repository_carries_the_parent_merge_that_applies_it() -> None:
+    child = "https://github.com/acme/skills/pull/7"
+    github = _Github(pr1750=_record(1750, "pass", merged=True, merge_sha=SHA, merged_at=MERGED_AT))
+    github.records[child] = {
+        **_record(7, "pass", merged=True, merge_sha="5" * 40, merged_at="2026-10-06T20:00:00Z"),
+        "url": child,
+    }
+    feed = _feed(proj_7=[FIRST], proj_8=[child])
+    repos = (Repo(name="skills", path="skills", applied_by="pin-bump"),)
+
+    PullRequests(feed, github, repos=repos, pins=_Pins()).refresh()
+
+    assert _pulls(feed)["PROJ-8"][0]["applied_by"] == SHA
+    assert "applied_by" not in _pulls(feed)["PROJ-7"][0]

@@ -807,3 +807,17 @@ def test_the_commit_keys_of_an_instance_are_those_its_config_declares() -> None:
 
     assert feed.commit_keys("ci") == CommitKeys(after="AFTER", before="BEFORE", force="FORCE")
     assert feed.commit_keys("other") is None
+
+
+def test_the_snapshot_links_a_pinned_repositorys_merge_to_the_bump_merge_that_applies_it() -> None:
+    skills = {**MERGED_PR, "url": "https://github.com/o/skills/pull/2", "merge_sha": "b" * 40, "applied_by": SHA}
+    feed = ledger_feed()
+    feed.set_pulls({"TASK-1": [MERGED_PR], "TASK-2": [skills]})
+    feed.set_dags("ci", [_dag("apply", APPLIED)], None)
+
+    rows = {row["sha"]: row for row in feed.snapshot()["ledgers"]["MERGED"]}
+
+    assert rows["b" * 40]["appliedBy"] == SHA
+    assert rows["b" * 40]["runs"] == {}
+    assert rows[SHA]["applies"] == ["b" * 40]
+    assert rows[SHA]["runs"]["ci/apply"]["runId"] == "r1"
