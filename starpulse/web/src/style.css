@@ -239,7 +239,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .stack > .spine { position: absolute; left: 4px; top: 22px; bottom: 8px; width: 2px; border-radius: 1px; opacity: 0; transition: opacity .2s .08s;
   background: linear-gradient(rgba(251,146,60,.65), rgba(251,146,60,.15)); }
 #kb .stack.open > .spine { opacity: 1; }
-#kb .stack .rest { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows .26s cubic-bezier(.3,.7,.2,1), visibility 0s .26s; }
+#kb .stack .rest { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows .26s cubic-bezier(.3,.7,.2,1), visibility 0s .26s; }
 #kb .stack.open .rest { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows .26s cubic-bezier(.3,.7,.2,1), visibility 0s; }
 #kb .stack .restin { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
 #kb .stack.open .restin { overflow: visible; transition: overflow 0s .26s allow-discrete; }

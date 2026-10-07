@@ -156,8 +156,8 @@ describe("a Waiting stack", () => {
     d.root().props.onPointerEnter();
 
     expect(d.html()).toContain('class="stack open"');
-    expect(d.html()).toContain("⧗ waits on <span class=\"nw\">T-1</span>");
-    expect(d.html()).toContain("⧗ waits on <span class=\"nw\">T-2</span>");
+    expect(d.html()).toContain("⧗ waits on</span> <span class=\"nw\">T-1</span>");
+    expect(d.html()).toContain("⧗ waits on</span> <span class=\"nw\">T-2</span>");
 
     d.root().props.onPointerLeave();
 

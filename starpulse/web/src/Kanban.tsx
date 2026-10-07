@@ -114,7 +114,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, waits
       <div className="top">
         <span className="id">{task.id}</span><PullChip pulls={task.prs} />{compact && badge}
       </div>
-      {waitsOn && waitsOn.length > 0 && <div className="uw">⧗ waits on {waitsOn.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
+      {waitsOn && waitsOn.length > 0 && <div className="uw"><span className="nw">⧗ waits on</span>{" "}{waitsOn.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>
       {claim ? (
         <div className="mach sess">
