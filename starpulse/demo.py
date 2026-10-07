@@ -139,6 +139,10 @@ SEED = [
     ("done", "m-2", ["size-2"], None, "@agent-fast-low", ("pass", True, 0)),
     ("done", "m-1", ["size-3", "kind-feature"], None, "@agent-deep-high", ("pass", True, 0)),
     ("done", "", ["size-1"], None, "@agent-standard-high", ("pass", True, 0)),
+    # A Waiting chain under index 3, so the Kanban folds them into a stack: 14 waits on 3, 15 and 16 on 14.
+    ("waiting", "m-2", ["size-3", "kind-feature"], 3, "@agent-standard-high", None),
+    ("waiting", "m-2", ["size-2"], 14, "@agent-fast-low", None),
+    ("waiting", "m-2", ["size-1", "kind-bug"], 14, "", None),
 ]
 
 

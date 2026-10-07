@@ -303,6 +303,18 @@ def test_scrub_seeds_the_days_arrivals_with_the_board_it_seeds() -> None:
     assert created and all(now - 7200 < at <= now for at in created)
 
 
+def test_the_seeded_board_has_a_waiting_chain_for_the_kanban_stack() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+
+    board = scrub(live)["flows"][0]["agents"]
+
+    waiting = {a["id"]: a for a in board if a["state"] == "waiting" and a["milestone"] == "m-2"}
+    assert board[3]["id"] in waiting  # the head: it waits on a Ready task, so no Waiting blocker
+    assert [a["dependencies"] for a in board[14:17]] == [["DEMO-4"], ["DEMO-15"], ["DEMO-15"]]
+    assert all(a["id"] in waiting for a in board[14:17])
+
+
 def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
     live = _live()
     live["flows"][0]["agents"] = []
