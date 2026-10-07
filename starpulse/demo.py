@@ -259,8 +259,9 @@ FILL_PULLS = {
 
 def _fill(line: list[str], start: int, now: float) -> list[tuple]:
     """`FILL`'s tasks for each lane of `line`, as `SEED` rows numbered from `start`, each with when it was created
-    that day or None: some of New was filed today, a Waiting task waits on the Ready one filled alongside it, every
-    fourth on the Waiting task before it, so the Kanban folds stacks."""
+    that day or None: all of New was filed that morning, since the New lane counts only the day's; a Waiting task
+    waits on the Ready one filled alongside it, every fourth on the Waiting task before it, so the Kanban folds
+    stacks."""
     rows, first = [], {}
     for lane in line:
         first[lane] = start + len(rows)
@@ -274,7 +275,7 @@ def _fill(line: list[str], start: int, now: float) -> list[tuple]:
             )
             pull = (*FILL_PULLS[lane], j % 3) if lane in FILL_PULLS else None
             model = "" if lane == "new" else PROFILES[k % len(PROFILES)]
-            created = now - 1500 * (j + 1) if lane == "new" and j < 6 else None
+            created = now - 500 * (j + 1) if lane == "new" else None
             rows.append((lane, f"m-{k % 4 + 1}" if k % 3 else "", labels, after, model, pull, created))
     return rows
 

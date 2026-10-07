@@ -93,6 +93,14 @@ def test_the_demo_keeps_the_nine_lanes_and_fills_them_at_a_real_workspaces_scale
     assert {e["state"] for e in demo["settled"].values()} == {"completed", "archived"}
 
 
+def test_the_demo_files_new_tasks_that_morning_so_the_new_lane_counts_them() -> None:
+    board = _flows(scrub(_capture()))["board"]
+
+    new = [a for a in board["agents"] if a["state"] == "new"]
+    assert len(new) >= 30
+    assert all(NOW - 6 * 3600 <= a.get("created", 0) <= NOW for a in new)
+
+
 def test_the_demo_places_sessions_on_the_delivery_machine_and_on_at_least_three_lifecycle_machines() -> None:
     flows = _flows(scrub(_capture()))
 
