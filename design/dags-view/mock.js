@@ -52,7 +52,8 @@
     window.__DAG_REFUSE__ = { "dagu/healthcheck": "Dagu refused the run: the DAG is suspended." };
   }
   // A DAG tied to a Board state opens that transition's Ledger; the one mocked so far is MERGED's, in its own public mockup.
-  window.__DAG_LEDGER__ = { MERGED: "https://trantor-org.github.io/starpulse-demo/pr-95/design-mockup.html?merged=c&ms=live" };
+  // relative, so it resolves beside this demo in the public demo tree (the LAN preview has no pr-95 beside it)
+  window.__DAG_LEDGER__ = { MERGED: "../pr-95/design-mockup.html?merged=c&ms=live" };
   // The DAGs view keeps every DAG; the Star Map, on ?map=bare, draws none of them: no DAG bodies, no writer lines, no cues.
   if (F) {
     window.__DAGS__ = JSON.parse(JSON.stringify({ dags: F.dags, domains: F.domains, pools: F.pools, cues: F.cues || [], flows: F.flows, now: F.now }));
