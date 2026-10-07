@@ -11,12 +11,12 @@ import { demoStep } from "./demo";
 import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
-import { BOARD, drill, pathKey, startPath, type Level, type Path } from "./levels";
+import { BOARD, drill, pathKey, pathLedger, startPath, type Level, type Path } from "./levels";
 import { spotIn, type Target } from "./search";
 import {
   BOARD_COLOR, GALAXY_MIN, OWNED, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, tethersDrawn, textW, turnPage,
   type BEdge, type Body, type Curve, type Galaxy, type GNode, type Hangar, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
-  type MachineTask, type Moon, type Pager, type Star, type SubState, type Sun,
+  type LedgerView, type MachineTask, type Moon, type Pager, type Star, type SubState, type Sun,
 } from "./scene";
 import { FLARE, Moves, PULSE, RING, TRAVEL, countText, merge, stateCount, type Move, type Sky } from "./sky";
 import { kanbanTasks } from "./kanban";
@@ -91,7 +91,8 @@ type Hover =
   | { kind: "sat"; o: SubState }
   | { kind: "medge"; o: MEdge }
   | { kind: "bedge"; o: BEdge }
-  | { kind: "link"; o: Hop };
+  | { kind: "link"; o: Hop }
+  | { kind: "caption"; o: LedgerView["cols"][number] };
 
 /** What the Playwright probe reads: the level, where its box sits on screen, and what a click there opens. */
 export interface Probe {
@@ -203,7 +204,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function layout(keepView: boolean) {
     if (!S || !W) return;
     const was = fit;
-    scene = build({ S, moves, W: FW, H, T, pages, ease: sized, routes: bends }, level());
+    laidScale = prefs().scale;
+    scene = build({ S, moves, W: FW, H, T, pages, ease: sized, routes: bends, scale: laidScale }, level());
     fit = fitScene();
     if (scene.hub) edgePaths(scene, { k: fit.k, x: fit.x - I }, FW, stateName);
     if (keepView) view = refitView(view, was, fit); // a view at the old fit follows the new one, so the sky zooms out smoothly as a state grows
@@ -223,7 +225,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     loop.wake();
   }
   // the canvas's left edge on the page (the folded navigator's width); the fit box's offset in it and its width
-  let L = 0, I = 0, FW = 0;
+  let L = 0, I = 0, FW = 0, laidScale = 100;
   const resize = (keepView = false) => {
     const dpr = devicePixelRatio || 1;
     ({ left: L, width: W, inset: I, fitWidth: FW } = canvasSpace(innerWidth, navWidths(), railW()));
@@ -556,6 +558,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       if (d < Math.max(s.br, px(10)) && d < sd) [star, sd] = [s, d];
     }
     if (star) return { kind: "dag", o: star };
+    for (const c of sc.fold?.ledger?.cols ?? []) if (x > c.x0 && x < c.x1 && y > c.y0 && y < c.y1) return { kind: "caption", o: c };
     if (sc.hangar && near(sc.hangar, sc.hangar.r + 22)) return { kind: "hangar", o: sc.hangar };
     for (const s of Object.values(sc.mStates)) if (near(s, Math.max(stateR(s), px(9)))) return { kind: "state", o: s };
     for (const p of sc.planets) if (near(p, p.subState ? Math.max(p.R, px(8)) : p.moon ? Math.max(p.R + 4, px(10)) : p.R + 16)) return { kind: "planet", o: p };
@@ -672,12 +675,17 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         if (o.subState) return `<div class="k">state of the ${esc(o.machine!)} machine · opens ${esc(o.flow!)} ${esc(o.when ?? "")} · click to open it</div><div class="n">${esc(o.title!)}</div>${o.n} task${o.n === 1 ? "" : "s"} here now`;
         return `<div class="k">lifecycle machine · click to open${o.when ? ` · ${esc(o.when)}` : ""}</div><div class="n">${esc(o.name)}</div>${Object.keys(o.states).length} states · ${o.n} task${o.n === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
       }
+      case "caption": {
+        const o = h.o, ev = sky.board.machine.transitions.find((t) => t.event === scene!.fold?.ledger?.event);
+        const yaml = o.role === "writer" ? [`writes: ${scene!.fold!.ledger!.event}`, `trigger: ${o.on}`] : [`cue:`, `  event: ${scene!.fold!.ledger!.event}`, `  state: ${ev?.target ?? ""}`, `  on: ${o.on}`, ...(o.resolves ? [`  resolves: ${o.resolves}`] : [])];
+        return `<div class="k">declared contract · click for the DAG</div><div class="n">${esc(o.dag)}: ${o.role === "writer" ? "writes" : "cued by"} ${esc(scene!.fold!.ledger!.event)}</div><pre>${yaml.map(esc).join("\n")}</pre>${o.resolves ? `<div class="k">a failed run clears ${o.resolves === "forced" ? "only on a green forced rerun" : "on the DAG's next green run"}</div>` : ""}`;
+      }
       case "link":
         return `<div class="k">machine path · ${esc(h.o.from)} → ${esc(h.o.to)}</div><div class="n">${h.o.back ? "the task returns from the skill" : "a task opens this skill"}</div>`;
       case "medge":
         return `<div class="k">${esc(h.o.flow)} transition · ${esc(h.o.source)} → ${esc(h.o.target)}</div><div class="n">${esc(h.o.event)}</div>`;
       case "bedge":
-        return `<div class="k">Board transition${h.o.events.length > 1 ? `s (${h.o.events.length})` : ""} · ${esc(h.o.source)} → ${esc(h.o.target)}</div><div class="n">${h.o.events.map(esc).join("<br>")}</div>${h.o.writers.length ? h.o.writers.map(writerLine).join("<br>") : '<span class="k">no writer declared</span>'}`;
+        return `<div class="k">Board transition${h.o.events.length > 1 ? `s (${h.o.events.length})` : ""} · ${esc(h.o.source)} → ${esc(h.o.target)}${ledgerOfEdge(h.o) ? " · click for its Ledger" : ""}</div><div class="n">${h.o.events.map(esc).join("<br>")}</div>${h.o.writers.length ? h.o.writers.map(writerLine).join("<br>") : '<span class="k">no writer declared</span>'}`;
     }
   }
 
@@ -736,6 +744,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     };
     openPanel();
   }
+  const ledgerOfEdge = (e: BEdge) => (S ? pathLedger({ flows: [S.board], cues: S.cues }, e.events) : null);
   function click(fx: number, fy: number) {
     const h = hover, sky = S;
     if (!h || !sky) return void closePanel();
@@ -747,6 +756,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     // a moon opens its machine, and so does one of its sub-states (the machine the sub-state belongs to; its child opens from there)
     if (h.kind === "moon" || h.kind === "sat") return go([...path, { kind: "state", id: h.o.parent.id }, { kind: "machine", flow: h.kind === "moon" ? h.o.name : h.o.machine }], fx, fy);
     if (h.kind === "hangar") return push({ kind: "dags" }, fx, fy);
+    if (h.kind === "caption") return openDagPanel(scene!.stars[h.o.dag]);
+    // a Board path opens its Ledger when a DAG writes one of its events or is cued by it
+    const ledger = h.kind === "bedge" ? ledgerOfEdge(h.o) : null;
+    if (ledger) return push(ledger, fx, fy);
     // a fold drills into a level over the Board path its DAGs write; one DAG only opens its panel, on whatever level it is clicked
     if (h.kind === "dag") {
       const e = h.o.tether?.edge, d = drill(h.o, h.o.tether?.crit ?? [], e ? [e.source, e.target] : null);
@@ -1206,8 +1219,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     label("DAGs", h.x, h.y + h.r + 30, hot, `${h.names.length} · ${h.doms} domain${h.doms === 1 ? "" : "s"}`, 12.5);
   }
   function drawStars() {
-    if (scene!.fold) drawFoldTies();
-    else drawTethers();
+    if (!scene!.fold) drawTethers();
     for (const grp of scene!.groups) {
       if (grp.head !== false) label(grp.name.toUpperCase(), grp.lx, grp.ly, false, null, 10.5);
       for (const s of grp.stars) {
@@ -1263,49 +1275,105 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       }
     }
   }
-  // a fold's level: every DAG's ties to the events it writes or runs beside stay drawn, brighter on the hovered DAG; a cue is fainter and sparser
-  function drawFoldTies() {
-    for (const t of scene!.fold!.ties) {
-      const s = scene!.stars[t.dag], hot = isHot("dag", s), lo = t.cue ? 0.5 : 1;
-      cx.strokeStyle = rgba("#fbbf24", (hot ? 0.85 : 0.45) * lo);
-      cx.lineWidth = (hot ? 1.3 : 1) / K ** 0.5;
-      cx.setLineDash(t.cue ? [1.5 / K, 8 / K] : [2 / K, 5 / K]);
-      cx.lineDashOffset = (-clock * 8) / K;
-      cx.beginPath();
-      cx.moveTo(s.x, s.y);
-      cx.lineTo(t.x, t.y);
-      cx.stroke();
-      cx.setLineDash([]);
-      dot(t.x, t.y, 2.2 / K ** 0.5, rgba("#fbbf24", hot ? 0.8 : 0.3));
+  /** `s` cut to `max` px at `size`, ending in an ellipsis when it was cut. */
+  function fitText(s: string, max: number, size: number) {
+    cx.font = `400 ${size}px Inter, system-ui, sans-serif`;
+    if (cx.measureText(s).width <= max) return s;
+    let lo = 0, hi = s.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (cx.measureText(`${s.slice(0, mid)}…`).width <= max) lo = mid;
+      else hi = mid - 1;
     }
+    return `${s.slice(0, lo)}…`;
   }
-  // a fold's level: the Board path its DAGs write, from one state's disc to the other's, with the events they tie to marked on it
-  function drawFold() {
-    const f = scene!.fold;
-    if (!f?.a || !f.b || !f.p0 || !f.p1) return;
-    const hot = hover?.kind === "dag" ? hover.o : null, lit = !!hot, heat = Math.max(hotEdge.has(`board:${f.a.id}>${f.b.id}`) ? 1 : 0, ...scene!.groups.flatMap((g) => g.stars).map((s) => dagHeat(s.name)));
-    flowLine({ ...f.p0, color: f.a.color }, { ...f.p1, color: f.b.color }, (lit ? 0.75 : 0.4) + heat * 0.4, heat + (lit ? 0.5 : 0));
+  /** A stroked polyline at screen weight `w`. */
+  function stroke(pts: Pt[], col: string, w = 1, dash?: number[]) {
+    cx.strokeStyle = col;
+    cx.lineWidth = w / K ** 0.5;
+    cx.setLineDash((dash ?? []).map((d) => d / K));
     cx.beginPath();
-    cx.moveTo(f.p0.x, f.p0.y);
-    cx.lineTo(f.p1.x, f.p1.y);
+    pts.forEach((p, i) => (i ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y)));
     cx.stroke();
     cx.setLineDash([]);
-    const L = 7 / Math.max(1, ZS);
-    cx.fillStyle = rgba(f.b.color, 0.6);
+  }
+  /** A rail: the dashed stream the page draws for every action, brighter and moving while its DAG runs; a cue's dots are sparser. */
+  function rail(pts: (Pt & { c?: Pt })[], a: string, b: string, heat: number, cue: boolean) {
+    flowLine({ ...pts[0], color: a }, { ...pts[pts.length - 1], color: b }, (cue ? 0.32 : 0.45) + heat * 0.45, heat, cue ? [1.5, 7] : [2, 5]);
     cx.beginPath();
-    cx.moveTo(f.p1.x, f.p1.y);
-    cx.lineTo(f.p1.x - L * Math.cos(-0.4), f.p1.y - L * Math.sin(-0.4));
-    cx.lineTo(f.p1.x - L * Math.cos(0.4), f.p1.y - L * Math.sin(0.4));
-    cx.fill();
-    for (const e of [f.a, f.b]) {
-      body(e, false);
-      label(e.name, e.x, e.y + e.r + 24 / K, false, null, 13);
+    pts.forEach((p, i) => (i ? (p.c ? cx.quadraticCurveTo(p.c.x, p.c.y, p.x, p.y) : cx.lineTo(p.x, p.y)) : cx.moveTo(p.x, p.y)));
+    cx.stroke();
+    cx.setLineDash([]);
+  }
+  // a fold's level: the Board path an event takes, with the Ledger hung from it. Under the path's first state the PR (or task) that moves it meets
+  // the junction every rail leaves from; the DAG that writes the event is fed straight from it and ties up to the event's mark on the path, and
+  // each cue hangs off a bus below the templates. Each template keeps its own column, its caption stating the contract it declares.
+  function drawFold() {
+    const f = scene!.fold, led = f?.ledger;
+    if (!f?.a || !f.b || !f.p0 || !f.p1 || !led) return;
+    const { a, b, p0, p1 } = f, sc = scene!, named = hover?.kind === "dag" ? hover.o.name : hover?.kind === "caption" ? hover.o.dag : null, lit = !!named;
+    const heat = (n: string) => dagHeat(n), top = led.J.y - Math.min(...Object.values(sc.stars).map((s) => s.glyph.h)) / 2 - 50 / K, bottom = led.bus + 30 / K;
+    const hairs = rgba("#94a3b8", 0.1), writer = led.cols.find((c) => c.role === "writer");
+    // the grid: a column down from each template, and the spine the junction hangs from
+    for (const c of led.cols) stroke([{ x: c.x0, y: top }, { x: c.x0, y: bottom }], hairs);
+    stroke([{ x: led.J.x, y: led.J.y + 8 / K }, { x: led.J.x, y: bottom }], rgba(ACT, 0.35), 1.4);
+    if (led.rows === "merge") {
+      const lane = led.J.x + 22 / K;
+      stroke([{ x: lane, y: led.bus + 4 / K }, { x: lane, y: bottom }], rgba("#c084fc", 0.35), 1, [2, 4]);
+      text("other repos", lane + 4 / K, led.bus + 14 / K, labPx(9.5), rgba("#c084fc", 0.6), "left");
     }
-    for (const e of f.events) {
-      const on = !!hot && f.ties.some((t) => t.dag === hot.name && t.ev === e.name), r = 4 / K ** 0.5;
-      dot(e.x, e.y, r, "rgba(6,10,20,0.95)");
-      circle(e.x, e.y, r, rgba("#fbbf24", on ? 1 : 0.6), 1.2 / K ** 0.5);
-      label(e.name, e.x, e.y + 22 / K, on, null, 11);
+    // the path, with an arrow into the second state
+    flowLine({ ...p0, color: a.color }, { ...p1, color: b.color }, (lit ? 0.75 : 0.4) + Math.max(0, ...led.cols.map((c) => heat(c.dag))) * 0.4, Math.max(hotEdge.has(`board:${a.id}>${b.id}`) ? 1 : 0, ...led.cols.map((c) => heat(c.dag))) + (lit ? 0.5 : 0));
+    cx.beginPath();
+    cx.moveTo(p0.x, p0.y);
+    cx.lineTo(p1.x, p1.y);
+    cx.stroke();
+    cx.setLineDash([]);
+    arrow(p0, p1, rgba(b.color, 0.6), 7 / Math.max(1, ZS) * K);
+    for (const e of [a, b]) body(e, false);
+    text(a.name, a.x - a.r - 14 / K, a.y, labPx(13), rgba("#cfd9ea", 0.85), "right");
+    label(b.name, b.x, b.y + b.r + 24 / K, false, null, 13);
+    // the event's mark on the path, and the DAG that writes it tied up to it
+    const r = 4.5 / K ** 0.5, hotMark = !!writer && named === writer.dag;
+    dot(led.mark.x, led.mark.y, r, "rgba(6,10,20,0.95)");
+    circle(led.mark.x, led.mark.y, r, rgba(ACT, hotMark ? 1 : 0.7), 1.3 / K ** 0.5);
+    text(led.event, led.mark.x, led.mark.y - 14 / K, labPx(11), rgba("#dbe4f3", 0.8), "center", 500);
+    const rootOf = (s: Star) => ({ x: s.x + s.glyph.nodes[0].x, y: s.y + s.glyph.nodes[0].y }), nrOf = (s: Star) => (s.glyph.nodes.length === 1 ? 5.5 : 4);
+    for (const c of led.cols) if (c.role === "writer") {
+      const s = sc.stars[c.dag];
+      stroke([{ x: s.x, y: s.y - s.glyph.h / 2 - nrOf(s) - 3 / K }, { x: led.mark.x, y: led.mark.y + 6 / K }], rgba(ACT, 0.7), 1.2, [2, 4]);
+    }
+    if (writer) text(`writes ${led.event}`, sc.stars[writer.dag].x + 8 / K, (sc.stars[writer.dag].y + led.mark.y) / 2 + 6 / K, labPx(10.5), rgba(ACT, 0.8), "left");
+    // the junction: the PR (or task) that moves the path's first state meets it, and every rail leaves from it
+    const jr = 6 / K ** 0.5, mergeRow = led.rows === "merge";
+    rail([{ x: a.x, y: a.y + a.r + 4 / K }, { x: led.J.x, y: led.J.y - 9 / K, c: { x: a.x, y: (a.y + led.J.y) / 2 } }], a.color, ACT, 0, false);
+    cx.save();
+    cx.translate(led.J.x, led.J.y);
+    cx.rotate(Math.PI / 4);
+    cx.fillStyle = "rgba(6,10,20,0.95)";
+    cx.fillRect(-jr, -jr, 2 * jr, 2 * jr);
+    cx.strokeStyle = rgba(ACT, 0.8);
+    cx.lineWidth = 1.4 / K ** 0.5;
+    cx.strokeRect(-jr, -jr, 2 * jr, 2 * jr);
+    cx.restore();
+    text(mergeRow ? "merge to main" : led.event, led.J.x - 16 / K, led.J.y, labPx(12.5), rgba("#dbe4f3", 0.85), "right", 500);
+    text(mergeRow ? "PR merges" : "task moves", a.x - 8 / K, (a.y + a.r + led.J.y) / 2, labPx(10.5), rgba("#94a3b8", 0.55), "right");
+    // the rails: the writer straight from the junction, every other DAG off the bus under the templates
+    const feeds = led.cols.filter((c, i) => c.role === "cue" || i > 0);
+    if (writer && led.cols[0] === writer) {
+      const s = sc.stars[writer.dag], root = rootOf(s);
+      rail([{ x: led.J.x + 9 / K, y: led.J.y }, { x: root.x - nrOf(s) - 3 / K, y: root.y }], ACT, ACT, heat(writer.dag), false);
+    }
+    for (const c of feeds) {
+      const s = sc.stars[c.dag], root = rootOf(s);
+      rail([{ x: led.J.x, y: led.bus }, { x: root.x - 40 / K, y: led.bus }, { x: root.x - nrOf(s) - 2 / K, y: root.y, c: { x: root.x - 14 / K, y: led.bus } }], ACT, ACT, heat(c.dag), c.role === "cue");
+    }
+    if (feeds.length) text(mergeRow ? "cue · each merge to main" : `cue · each ${led.event}`, led.J.x + 10 / K, led.bus - 8 / K, labPx(10), rgba("#94a3b8", 0.55), "left");
+    // each template's caption: the contract it declares, cut to its column
+    for (const c of led.cols) {
+      const s = sc.stars[c.dag], hot = named === c.dag, size = labPx(10.5), y = s.y + s.glyph.h / 2 + 16 / K, max = c.x1 - c.x0 - 8 / K;
+      const lines = [c.role === "writer" ? `on ${c.on}` : `cue · on ${c.on}`, ...(c.resolves ? [`clears on ${c.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
+      lines.forEach((t, i) => text(fitText(t, max, size), s.x, y + (15 + 15 * i) / K, size, rgba("#94a3b8", hot ? 0.9 : 0.6), "center"));
     }
   }
   const TRACE = "#fbbf24", OFF = "#fb7185";
@@ -1485,7 +1553,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     clock += last ? Math.min(now - last, 100) / 1000 : 0;
     last = now;
     T = Date.now() / 1000;
-    if (scene && grown.growing()) layout(true); // a state easing to a new size moves its neighbours, paths and the fit with it, frame by frame
+    if (scene && (grown.growing() || (scene.fold && laidScale !== prefs().scale))) layout(true); // a state easing to a new size moves its neighbours, paths and the fit with it, frame by frame
     if (anim) anim(now);
     if (scene) update(clock);
     if (mouse && scene) setHover(hit((mouse.ox - view.x) / view.k, (mouse.oy - view.y) / view.k), mouse.cx, mouse.cy);

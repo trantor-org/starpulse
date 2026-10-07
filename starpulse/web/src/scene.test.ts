@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bez, BOARD_GROW, build, GALAXY_MAX, GALAXY_MIN, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, taskSlot, tethersDrawn, terminal, textW, turnPage, type BEdge, type Curve, type MState, type Pt, type Scene } from "./scene";
-import type { Level } from "./levels";
+import { drill, ledgerLevel, type Level } from "./levels";
 import { merge, Moves } from "./sky";
 import type { Cue, Dag, Machine, Snapshot } from "./types";
 
@@ -122,7 +122,7 @@ const boardSky = ({ writes = {}, cues = [], launches = [], free = {} }: { writes
         ],
         subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }],
         launches: Object.fromEntries(launches.map((d) => [d, { skill: "delivering", flow: "in-progress" }])),
-        writers, mainLine: ["new", "ready", "in_progress", "review", "done"],
+        writers, dagActors: Object.keys(writes), mainLine: ["new", "ready", "in_progress", "review", "done"],
       }) },
       { name: "in-progress", agents: [], machine: machine(["worktree_ready", "pr_opened"]) },
     ],
@@ -1103,54 +1103,96 @@ describe("the state level's launch-only DAGs", () => {
 });
 
 describe("a fold's level", () => {
-  const fold = (path: [string, string] | null, crit: string[]): Level => ({ kind: "fold", dags: ["alpha", "beta", "gamma", "loose"], crit, path });
-  const CRIT = [
-    "alpha: writes CLAIM (ready → in_progress)",
-    "beta: runs on each merge, beside CLAIM (ready → in_progress)",
-    "beta: writes OTHER (ready → in_progress)",
-    "gamma: writes OTHER (ready → in_progress)",
-    "gamma: writes REVIEW (in_progress → review)",
+  const fold = (path: [string, string] | null, event?: string): Level => ({ kind: "fold", event, dags: ["alpha", "beta", "delta"], crit: [], path });
+  const cues: Cue[] = [
+    { dag: "beta", event: "CLAIM", state: "in_progress", on: "each merge", resolves: "next" },
+    { dag: "delta", event: "CLAIM", state: "in_progress", on: "each claim", resolves: "forced" },
+    { dag: "beta", event: "MERGED", state: "done", on: "push to main", resolves: "next" },
   ];
-  const sky = () => boardSky({ writes: { alpha: ["CLAIM"], beta: ["CLAIM"], gamma: ["CLAIM"], loose: ["CLAIM"] } });
+  const sky = () => boardSky({ writes: { alpha: ["CLAIM"] }, cues, free: { Other: ["loose"] } });
+  const ledger = (level = fold(["ready", "in_progress"], "CLAIM"), scale?: number) => build({ ...sky(), scale }, level);
 
-  it("runs the path between its two states, with each event the DAGs tie to spaced along it", () => {
-    const f = build(sky(), fold(["ready", "in_progress"], CRIT)).fold!;
+  it("lays the event's DAGs as templates in one row, the DAG that writes it first and each cue after it", () => {
+    const { stars } = ledger();
+
+    expect(Object.keys(stars)).toEqual(["alpha", "beta", "delta"]);
+    expect(stars.alpha.x).toBeLessThan(stars.beta.x);
+    expect(stars.beta.x).toBeLessThan(stars.delta.x);
+    expect(new Set(Object.values(stars).map((s) => s.y)).size).toBe(1);
+  });
+
+  it("runs the path between its two states with the event marked above the DAG that writes it", () => {
+    const f = ledger().fold!, l = f.ledger!, alpha = ledger().stars.alpha;
 
     expect([f.a!.id, f.b!.id, f.a!.y === f.b!.y]).toEqual(["ready", "in_progress", true]);
-    expect(f.events.map((e) => e.name)).toEqual(["CLAIM", "OTHER"]);
-    f.events.forEach((e, i) => expect(e.x).toBeCloseTo(f.p0!.x + ((f.p1!.x - f.p0!.x) * (i + 1)) / 3));
+    expect([l.event, l.mark.x, l.mark.y]).toEqual(["CLAIM", alpha.x, f.a!.y]);
+    expect(l.mark.x).toBeGreaterThan(f.p0!.x);
+    expect(l.mark.x).toBeLessThan(f.p1!.x);
   });
 
-  it("lists the DAGs left to right by the middle of the events they tie to, and ties each to its events", () => {
-    const scene = build(sky(), fold(["ready", "in_progress"], CRIT)), f = scene.fold!, at = (n: string) => scene.stars[n].x;
+  it("marks the event mid-path when no DAG writes it, only cues", () => {
+    const f = ledger(fold(["review", "done"], "MERGED")).fold!;
 
-    expect(at("alpha")).toBeLessThan(at("beta"));
-    expect(at("beta")).toBeLessThan(at("gamma"));
-    expect(f.ties.map((t) => [t.dag, t.ev, t.cue])).toEqual([["alpha", "CLAIM", false], ["beta", "CLAIM", true], ["beta", "OTHER", false], ["gamma", "OTHER", false]]);
-    expect(f.ties.every((t) => t.x === f.events.find((e) => e.name === t.ev)!.x)).toBe(true);
+    expect(f.ledger!.mark.x).toBeCloseTo((f.p0!.x + f.p1!.x) / 2);
   });
 
-  it("draws each DAG as itself, and a DAG with no criterion on the path hangs untethered", () => {
-    const scene = build(sky(), fold(["ready", "in_progress"], CRIT));
+  it("hangs the junction under the path's first state, level with the templates, and a cue bus below them", () => {
+    const scene = ledger(), f = scene.fold!, l = f.ledger!, row = scene.stars.alpha;
 
-    expect(Object.keys(scene.stars).sort()).toEqual(["alpha", "beta", "gamma", "loose"]);
-    expect(Object.values(scene.stars).every((s) => s.fold === undefined)).toBe(true);
-    expect(scene.fold!.ties.some((t) => t.dag === "loose")).toBe(false);
-    expect(scene.stars.beta.tether!.crit).toEqual(["runs on each merge, beside CLAIM (ready → in_progress)", "writes OTHER (ready → in_progress)"]);
+    expect([l.J.x, l.J.y]).toEqual([f.a!.x, row.y]);
+    expect(l.J.y).toBeGreaterThan(f.a!.y + f.a!.r);
+    expect(l.bus).toBeGreaterThan(row.y + row.glyph.h / 2);
   });
 
-  it("frames the path ends and every DAG", () => {
-    const scene = build(sky(), fold(["ready", "in_progress"], CRIT)), [x0, y0, x1, y1] = scene.box!, f = scene.fold!;
+  it("gives each template a caption cell that names its role and contract, side by side without overlap", () => {
+    const scene = ledger(), cols = scene.fold!.ledger!.cols;
+
+    expect(cols.map((c) => [c.dag, c.role, c.on, c.resolves])).toEqual([["alpha", "writer", "dagu", null], ["beta", "cue", "each merge", "next"], ["delta", "cue", "each claim", "forced"]]);
+    cols.forEach((c, i) => {
+      expect([c.x0 < scene.stars[c.dag].x, scene.stars[c.dag].x < c.x1]).toEqual([true, true]);
+      if (i) expect(c.x0).toBeGreaterThanOrEqual(cols[i - 1].x1);
+    });
+  });
+
+  it("opens from every Board transition a DAG writes or is cued by, MERGED or not", () => {
+    const sk = sky(), src = { flows: [sk.S.board], cues: sk.S.cues };
+
+    for (const [event, rows] of [["CLAIM", "task"], ["MERGED", "merge"]] as const) expect(build(sk, ledgerLevel(src, event)!).fold!.ledger).toMatchObject({ event, rows });
+  });
+
+  it("is what drilling the Board's fold on the Review → Done path opens, laid out from the snapshot's cues", () => {
+    const sk = boardSky({ writes: { alpha: ["MERGED"] }, cues: [{ dag: "beta", event: "MERGED", state: "done", on: "push to main", resolves: "forced" }, { dag: "delta", event: "MERGED", state: "done", on: "push to main", resolves: "next" }] });
+    const fold = Object.values(build(sk, { kind: "board" }).stars).find((s) => s.fold)!, edge = fold.tether!.edge!;
+    const d = drill(fold, fold.tether!.crit, [edge.source, edge.target]);
+
+    expect("push" in d && d.push).toMatchObject({ kind: "fold", path: ["review", "done"], dags: ["alpha", "beta", "delta"] });
+    const scene = build(sk, "push" in d ? d.push : { kind: "board" }), l = scene.fold!.ledger!;
+    expect([scene.fold!.a!.id, scene.fold!.b!.id, l.event, l.rows, l.cols.map((c) => [c.dag, c.role, c.resolves])]).toEqual(["review", "done", "MERGED", "merge", [["alpha", "writer", null], ["beta", "cue", "forced"], ["delta", "cue", "next"]]]);
+  });
+
+  it("gives a merge's Ledger rows of merges and any other event's rows of tasks", () => {
+    expect([ledger().fold!.ledger!.rows, ledger(fold(["review", "done"], "MERGED")).fold!.ledger!.rows]).toEqual(["task", "merge"]);
+  });
+
+  it("frames the path ends and every template", () => {
+    const scene = ledger(), [x0, y0, x1, y1] = scene.box!, f = scene.fold!;
 
     for (const s of Object.values(scene.stars)) expect([s.x > x0, s.x < x1, s.y > y0, s.y < y1]).toEqual([true, true, true, true]);
-    expect([f.a!.x - f.a!.r > x0, f.b!.x + f.b!.r < x1, f.a!.y + f.a!.r < y1]).toEqual([true, true, true]);
+    expect([f.a!.x - f.a!.r > x0, f.b!.x + f.b!.r < x1, f.ledger!.bus < y1]).toEqual([true, true, true]);
   });
 
-  it("lays DAGs that sit beside one state in a row, with no path drawn", () => {
-    const scene = build(sky(), fold(null, ["alpha: runs on each merge, beside CLAIM (in_progress)"])), f = scene.fold!;
+  it("leaves the gutter its junction's label needs, wider as the text scale grows, and still keeps the cells apart", () => {
+    const at = (scale: number) => ledger(undefined, scale).fold!;
 
-    expect([f.a, f.b, f.events, f.ties]).toEqual([undefined, undefined, [], []]);
-    expect(Object.keys(scene.stars)).toHaveLength(4);
+    expect(at(150).a!.x).toBeGreaterThan(at(100).a!.x);
+    at(150).ledger!.cols.forEach((c, i, cols) => i && expect(c.x0).toBeGreaterThanOrEqual(cols[i - 1].x1));
+  });
+
+  it("lays DAGs that sit beside one state in a row, with no path or Ledger drawn", () => {
+    const scene = ledger(fold(null)), f = scene.fold!;
+
+    expect([f.a, f.b, f.ledger]).toEqual([undefined, undefined, undefined]);
+    expect(Object.keys(scene.stars)).toEqual(["alpha", "beta", "delta"]);
   });
 });
 
