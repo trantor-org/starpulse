@@ -130,6 +130,20 @@ describe("the DAGs view's filters", () => {
     type("ops");
     expect(names()).toEqual(["deploy", "never"]);
   });
+
+  it("hides a DAG last run before the Last run window, keeps one running, and counts each window", async () => {
+    await draw({ ...data, now: 40 * 86400 });
+    await click(chip("Last run"));
+
+    expect(all(".menu button").map((b) => b.textContent)).toEqual(["Past hour1", "Past day1", "Past week1", "Past month1", "Past year3"]);
+    await click(all(".menu button").find((b) => b.textContent!.startsWith("Past week"))!);
+    expect(names()).toEqual(["deploy"]);
+    expect(chip("Last run").textContent).toBe("Last run: Past week ▾");
+    expect(q(".shown").textContent).toBe("1 of 4 shown");
+
+    await click(q(".clear"));
+    expect(names()).toHaveLength(4);
+  });
 });
 
 describe("Run now", () => {

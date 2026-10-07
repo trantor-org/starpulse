@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bigPlace, chartHeight, dagData, filterRows, order, place, refusal, rows, ties, type DagData } from "./dags";
+import { bigPlace, chartHeight, dagData, filterRows, order, place, RECENCY, refusal, rows, ties, type DagData } from "./dags";
 import type { Dag, DagStep, Machine, RunStatus } from "./types";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status });
@@ -117,6 +117,21 @@ describe("filtering the catalog", () => {
     expect(names(filterRows(all, { only: "failed" }))).toEqual(["runs/lost", "runs/triage"]);
     expect(names(filterRows(all, { only: "failed", dom: "Ops" }))).toEqual(["runs/lost"]);
     expect(names(filterRows(all, { dom: "Board", q: "sweeper" }))).toEqual(["runs/sweeper"]);
+  });
+
+  it("keeps, within a Last run window, a DAG active now or last run inside it, and drops one last run earlier or never", () => {
+    const at = (s: number) => new Date(s * 1000).toISOString();
+    const recent = rows({ ...data, now: 10 * 86400, dags: [
+      dag("runs/fresh", "succeeded", { startedAt: at(10 * 86400 - 1800), finishedAt: at(10 * 86400 - 1700) }),
+      dag("runs/stale", "failed", { startedAt: at(86400), finishedAt: at(86400 + 60) }),
+      dag("runs/live", "running", { startedAt: at(86400) }),
+      dag("runs/waiting", "queued"),
+      dag("runs/never", "not_started"),
+    ] });
+
+    expect(names(filterRows(recent, { since: 10 * 86400 - 3600 }))).toEqual(["runs/fresh", "runs/live", "runs/waiting"]);
+    expect(names(filterRows(recent, { since: 0 }))).toHaveLength(5);
+    expect(RECENCY.map(([l, s]) => [l, s])).toEqual([["Past hour", 3600], ["Past day", 86400], ["Past week", 604800], ["Past month", 2592000], ["Past year", 31536000]]);
   });
 });
 
