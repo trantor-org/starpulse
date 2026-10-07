@@ -12,6 +12,9 @@ A state may open another machine file with `flow:`. The child's states nest
 under that state as `<state>_<child state>`, and the child's own states may
 not open a further file: one level of subflows.
 
+A top-level `source:` names the third party that moves the machine; StarPulse only observes it, and the snapshot
+carries the name so the page can draw it apart from a machine its own actors move.
+
 A top-level `writers:` block names, per event, who fires it: each entry is an
 `actor` (`agent`, `operator`, or a workflow as `<instance>/<workflow>`) and
 the `trigger` it fires through. `refuse_unlisted` refuses a workflow no
@@ -161,6 +164,7 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     except InvalidDefinition as error:
         raise MachineDefinitionError(f"{path}: {error}", path) from error
     setattr(machine, "writers", writers)
+    setattr(machine, "source", document.get("source"))
     return Compiled(document["name"], machine, bindings, writers, cues)
 
 

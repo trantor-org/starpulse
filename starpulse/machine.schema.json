@@ -7,6 +7,11 @@
   "required": ["name", "states", "events"],
   "properties": {
     "name": {"$ref": "#/$defs/name"},
+    "source": {
+      "description": "The third party that moves this machine, such as GitHub. Only that party's events move it; StarPulse observes, and the page draws the machine apart from one StarPulse's own actors move.",
+      "type": "string",
+      "minLength": 1
+    },
     "states": {
       "type": "object",
       "minProperties": 1,

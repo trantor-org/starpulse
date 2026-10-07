@@ -292,6 +292,11 @@ type = "native"
 # user = "ada@example.com"               # Jira Cloud: the account the API token belongs to
 # interval = 30                          # seconds between polls
 
+# Draw each task's pull-request CI as a sub-flow of these Board states: StarPulse ships one `ci` machine, which GitHub
+# moves and StarPulse only observes (its `source` is GitHub). Each name is a Board state id; one the Board lacks is refused.
+# [ci]
+# states = ["in_progress", "review"]
+
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
 # (it offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)`); its workflows are drawn as `<name>/<workflow>`.
 [[runs]]

@@ -52,6 +52,12 @@ class TestTheDefinitionHash:
             != definition(_written(tmp_path, PULL_REQUEST, "b.yaml")).digest
         )
 
+    def test_a_changed_source_changes_the_hash(self, tmp_path: Path) -> None:
+        local = definition(_written(tmp_path, PULL_REQUEST, "a.yaml"))
+        mapped = definition(_written(tmp_path, {**PULL_REQUEST, "source": "GitHub"}, "b.yaml"))
+
+        assert mapped.digest != local.digest
+
     def test_an_explicit_false_flag_is_the_same_as_none(self, tmp_path: Path) -> None:
         explicit = yaml.safe_load(yaml.safe_dump(PULL_REQUEST))
         explicit["states"]["ci_red"] = {"initial": False}

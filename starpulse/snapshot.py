@@ -38,7 +38,8 @@ def _titled(name: str) -> str:
 
 
 def describe(machine: Any) -> dict:
-    """The machine's states and transitions, self-loops included, and the workflows among its YAML-declared writers.
+    """The machine's states and transitions, self-loops included, its `source` when a third party moves it, and the
+    workflows among its YAML-declared writers.
 
     A writer is a workflow when its actor is named `<instance>/<workflow>`; a machine with none carries no
     `writers`.
@@ -53,6 +54,8 @@ def describe(machine: Any) -> dict:
             for t in s.transitions
         ],
     }
+    if source := getattr(machine, "source", None):
+        body["source"] = source
     drawn = {event: _workflows(ws) for event, ws in writers(machine).items()}
     if workflow_writers := {event: ws for event, ws in drawn.items() if ws}:
         body["writers"] = workflow_writers

@@ -172,6 +172,7 @@ from starpulse.board import (
 )
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
+from starpulse.ci import attach
 from starpulse.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse.contracts import Move, StartFailedError
 from starpulse.event_log import EventLog, prune_forever
@@ -974,6 +975,8 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
     drawn = board.machines(qualify, [name for names in domains.values() for name in names])
     # Every harness adapter writes this one machine, so the page draws it unless the board declares a machine of that name.
     machines = {**drawn, **{name: m for name, m in HARNESS_MACHINES.items() if name not in drawn}}
+    if config.ci:
+        machines = attach(machines, config.ci)
     if config.level:
         config.level.check(machines)
     feed = BoardFeed(
