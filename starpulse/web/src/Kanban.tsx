@@ -17,6 +17,7 @@ import {
   type Asking, type Claiming, type Failed, type Harnesses, type Pick, type StartStore,
 } from "./start";
 import { NewTaskAction } from "./NewTask";
+import { DesignBar, laneTag, readDesign, VARIANT_NAME, variantFor, writeDesign, type Design, type Variant } from "./startVariants";
 import { TaskView } from "./TaskView";
 import { fetchRecord, type TaskRecord } from "./taskView";
 import type { Capabilities, Pull } from "./types";
@@ -93,26 +94,30 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
 export type Chain = "self" | "holds" | "waits";
 
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
-export function Card({ task, holds = 0, chain, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
+export function Card({ task, holds = 0, chain, now, marks, names, compact = false, variant = "current", onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
   task: KanbanTask; holds?: number; chain?: Chain; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
-  onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
+  variant?: Variant; onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
   const labels = task.labels.filter((l) => !/^kind-|^agent-resolvable$/.test(l)).slice(0, 3);
   const live = task.live, claim = marks.claim;
-  const cls = ["card", chain && `chain-${chain}`, compact && "compact", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
+  const playing = !!onPlay && !claim && startLane(task);
+  const side = playing && (variant === "edge" || variant === "split");
+  const cls = ["card", chain && `chain-${chain}`, compact && "compact", side && `sv-${variant}`, marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
   const guard = task.moves.in_progress?.allowed === false ? task.moves.in_progress.reason : "";
+  const play = (className: string, body: React.ReactNode) => (
+    <button className={className} title={guard || "Start a session"} aria-label={`Start ${task.id}`} disabled={!startable(task)}
+      onClick={(e) => { e.stopPropagation(); onPlay?.(); }} onPointerDown={stop}
+      // only the keys that would open the card stop here: the question ▶ asks still answers 1, 2 and Esc while ▶ keeps focus
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()}>{body}</button>
+  );
   return (
     <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={onPress}
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
         <span className="id">{task.id}</span><PullChip pulls={task.prs} />
-        {onPlay && !claim && startLane(task) && (
-          <button className="play" title={guard || "Start a session"} aria-label={`Start ${task.id}`} disabled={!startable(task)}
-            onClick={(e) => { e.stopPropagation(); onPlay(); }} onPointerDown={stop}
-            // only the keys that would open the card stop here: the question ▶ asks still answers 1, 2 and Esc while ▶ keeps focus
-            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()}>▶</button>
-        )}
+        {playing && variant === "current" && play("play", "▶")}
+        {playing && variant === "pill" && play("play big", <>▶<span className="l">Start</span></>)}
       </div>
       <div className="t">{task.title}</div>
       {claim ? (
@@ -139,6 +144,8 @@ export function Card({ task, holds = 0, chain, now, marks, names, compact = fals
           {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
         </div>
       )}
+      {playing && variant === "edge" && play("play edge", "▶")}
+      {playing && variant === "split" && play("play split", <><span className="g">▶</span><span className="l">Start session</span></>)}
       {marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
       {marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart ?? dismiss} />}
     </div>
@@ -318,7 +325,14 @@ interface Press {
 /** Pixels a press travels before it lifts the card instead of opening it. */
 const LIFT_PX = 5;
 
-export function Kanban({ hud, moves, starts, compact, constellation }: { hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void }) {
+export function Kanban({ hud, moves, starts, compact: chosenCompact, constellation }: { hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void }) {
+  const [design, setDesign] = useState<Design | null>(() => readDesign(location.search));
+  useLayoutEffect(() => {
+    if (!design) return;
+    document.documentElement.style.setProperty("--fs", String(design.fs / 100));
+    history.replaceState(null, "", `${location.pathname}${writeDesign(location.search, design)}`);
+  }, [design]);
+  const compact = design ? design.compact : chosenCompact;
   const [storage] = useState(browserStorage);
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(storage, location.search));
   const [open, setOpen] = useState<string | null>(() => linkedTask(location.search));
@@ -526,7 +540,8 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
   const heldTask = held ? cards.find((t) => t.id === held.id) : undefined;
   const openCard = (id: string) => () => !clickEnds.current && setOpen(id);
   return (
-    <main id="kb" className={compact ? "compact" : undefined}>
+    <main id="kb" className={[compact && "compact", design?.hits && "sv-hits"].filter(Boolean).join(" ") || undefined}>
+      {design && <DesignBar design={design} set={setDesign} />}
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
       <div className="filters">
         <div className="fw">
@@ -577,10 +592,12 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
         {view.columns.map((col) => {
           const target = lift?.kinds[col.id];
           const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
+          const tag = laneTag(design, col.id);
           const colCls = ["col", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
           return (
             <section key={col.id} className={colCls} data-lane={col.id}>
               <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
+                {tag && <span className="svtag" title={VARIANT_NAME[tag]}>{VARIANT_NAME[tag].slice(0, 1)}</span>}
                 {inChain > 0 && <span className="cc" title={`${inChain} of this column's tasks are in the hovered task's chain`}>⛓{inChain}</span>}
                 {target && target.kind !== "here" && (
                   <span className="hint">{target.kind === "ok" ? "drop" : target.kind === "guard" ? `guarded · ${target.skill || "refused"}` : "no transition"}</span>
@@ -598,7 +615,7 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
                       <button className="hide" title="Hide this milestone" onClick={(e) => { e.stopPropagation(); setPrefs((p) => hideMilestone(p, b.milestone)); }}>hide</button>
                     </div>
                     {!b.folded && b.tasks.map((t) => (
-                      <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
+                      <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} now={now} names={hud.names} compact={compact} variant={variantFor(design, col.id)} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
                         style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
                         onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
                         onHover={(on) => setHovered((h) => (on ? t.id : h === t.id ? null : h))}

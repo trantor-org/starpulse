@@ -548,3 +548,36 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #kb .trackers h4 { margin: 10px 0 2px; font-size: calc(12px * var(--fs)); }
 #kb .trackers pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: rgba(2,6,23,.7); white-space: pre-wrap; font-size: calc(11px * var(--fs)); }
 #kb .trackers .found { margin: 8px 0; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(167,139,250,.5); background: rgba(167,139,250,.10); line-height: 1.5; }
+
+/* TASK-3016 design mockup (draft PR): the start-session control's candidate variants, drawn only under `?start=`. */
+#kb .play.big { display: inline-flex; align-items: center; gap: 5px; box-sizing: border-box; min-height: 24px; height: calc(22px * var(--fs)); margin: -3px -2px -3px 0;
+  padding: 0 12px; border-radius: 6px; background: rgba(52,211,153,.08); font-size: calc(11px * var(--fs)); line-height: 1; }
+#kb .play.big .l { font-family: system-ui, sans-serif; letter-spacing: .02em; }
+#kb .card.sv-edge { padding-right: calc(max(30px, 30px * var(--fs)) + 9px); }
+#kb .play.edge { position: absolute; top: 0; right: 0; bottom: 0; width: max(30px, calc(30px * var(--fs))); display: flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-left: 1px solid rgba(52,211,153,.28); border-radius: 0 6px 6px 0; background: rgba(52,211,153,.06); font-size: calc(13px * var(--fs)); line-height: 1; }
+#kb .play.edge:hover, #kb .play.edge:focus-visible { background: rgba(52,211,153,.2); color: #6ee7b7; }
+#kb .play.edge:disabled { border-left-style: dashed; background: transparent; }
+#kb .card.sv-split .top { padding-right: calc(16px * var(--fs)); }
+#kb .play.split { position: absolute; top: 0; right: 0; bottom: 0; width: 34%; min-width: 76px; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-start;
+  gap: 4px; box-sizing: border-box; padding: 8px 9px; border: 0; border-left: 1px dashed rgba(52,211,153,.16); border-radius: 0 6px 6px 0; background: transparent;
+  font-size: calc(10px * var(--fs)); line-height: 1.2; transition: background .12s, padding .12s; }
+#kb .play.split .g { font-size: calc(10px * var(--fs)); }
+#kb .play.split .l { display: none; font-family: system-ui, sans-serif; font-size: calc(11px * var(--fs)); text-align: center; }
+#kb .card:hover .play.split:not(:disabled), #kb .play.split:focus-visible { align-items: center; justify-content: center; border-left-style: solid; border-left-color: rgba(52,211,153,.35);
+  background: rgba(13,22,36,.98); }
+#kb .card:hover .play.split:not(:disabled) .g, #kb .play.split:focus-visible .g { font-size: calc(15px * var(--fs)); }
+#kb .card:hover .play.split:not(:disabled) .l, #kb .play.split:focus-visible .l { display: block; }
+#kb .card .play.split:hover:not(:disabled), #kb .card .play.split:focus-visible { background: rgb(17,78,61); border-left-color: #34d399; color: #a7f3d0; }
+#kb .play.split:disabled { background: transparent; }
+#kb.sv-hits .play { outline: 2px dashed #f0abfc; outline-offset: -2px; }
+#kb .col h2 .svtag { margin-left: auto; padding: 1px 6px; border-radius: 4px; background: rgba(52,211,153,.12); color: #6ee7b7; letter-spacing: 0; text-transform: none;
+  font-size: calc(10px * var(--fs)); white-space: nowrap; }
+#svbar { position: fixed; z-index: 50; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; flex-wrap: wrap; gap: 4px; max-width: calc(100vw - 32px);
+  padding: 6px 8px; border-radius: 10px; background: rgba(8,13,24,.96); border: 1px solid rgba(167,139,250,.45); box-shadow: 0 10px 30px rgba(0,0,0,.55);
+  font: 12px/1.3 system-ui, sans-serif; color: #cbd5e1; }
+#svbar .k { margin: 0 4px 0 6px; color: #8b95a8; }
+#svbar .sep { width: 1px; height: 18px; margin: 0 4px; background: rgba(148,163,184,.25); }
+#svbar button { all: unset; cursor: pointer; padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(148,163,184,.2); }
+#svbar button:hover, #svbar button:focus-visible { border-color: rgba(167,139,250,.7); }
+#svbar button[aria-pressed="true"] { background: rgba(167,139,250,.22); border-color: #a78bfa; color: #fff; }
