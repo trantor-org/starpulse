@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from http.client import HTTPResponse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import jsonschema
 from pydantic import BaseModel
@@ -359,6 +359,7 @@ def serve(
     level: Level | None = None,
     forwarding: Forwarder | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
+    contract: Callable[[], dict[str, Any]] | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -390,6 +391,7 @@ def serve(
         insights=insights,
         forwarding=forwarding,
         reruns=reruns,
+        contract=contract,
     )
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

@@ -40,6 +40,9 @@ GET /api/merges[?before=T][&limit=N]
                    `ledgers.MERGED` row. None is older than 24 hours, `more` says whether older ones remain, and
                    rows sharing the boundary second all come in one page, so walking `before` neither repeats nor
                    skips a merge. A `before` that is not a finite number, or a `limit` outside 1-100, is 400
+GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
+                   each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
+                   No checks (and ok) when the server runs with no config to check
 GET /api/machines[?open=NAME][&before=T][&limit=N]
                    {open, machines, more}: the next `limit` machines (default 20, at most 100) entered from the machine
                    `open` (default the In Progress machine), newest activity first, each whole as a snapshot `flows`
@@ -164,7 +167,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse import analytics, forward, run_events
+from starpulse import analytics, doctor, forward, run_events
 from starpulse.forward import Forwarder
 from starpulse import events as machine_events
 from starpulse.board import (
@@ -868,6 +871,27 @@ def _no_writer(task: str, status: str, actor: str = OPERATOR) -> Written:
     return Written(False, "no board writer is configured", unavailable=True)
 
 
+#: How long `/api/doctor` holds its report: the checks read the scheduler and run `git`.
+_CONTRACT_TTL_S = 60
+
+
+def _cached(
+    read: Callable[[], dict[str, Any]], ttl: float, clock: Callable[[], float] = time.monotonic
+) -> Callable[[], dict[str, Any]]:
+    """`read`, asked at most once in `ttl` seconds; the page that asks while it is stale waits for the fresh read."""
+    held: tuple[float, dict[str, Any]] | None = None
+    lock = threading.Lock()
+
+    def get() -> dict[str, Any]:
+        nonlocal held
+        with lock:
+            if held is None or clock() - held[0] >= ttl:
+                held = (clock(), read())
+            return held[1]
+
+    return get
+
+
 def _handler(
     feed: BoardFeed,
     static: Path,
@@ -891,6 +915,7 @@ def _handler(
     insights: Insights | None = None,
     forwarding: Forwarder | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
+    contract: Callable[[], dict[str, Any]] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -924,6 +949,8 @@ def _handler(
                 self._send(json.dumps(feed.snapshot()).encode())
             elif url.path == "/api/merges":
                 self._send(*merges_response(feed, parse_qs(url.query)))
+            elif url.path == "/api/doctor":
+                self._send(json.dumps(contract() if contract else {"ok": True, "checks": []}).encode())
             elif url.path == "/api/machines":
                 self._send(*machines_response(feed, parse_qs(url.query)))
             elif url.path == "/api/history":
@@ -1249,6 +1276,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         insights=insights,
         forwarding=forwarder,
         reruns=reruns,
+        contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),
     )
     serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 

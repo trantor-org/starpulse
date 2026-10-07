@@ -163,6 +163,8 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #panel .strip i.succeeded { background: var(--ok); } #panel .strip i.running { background: var(--run); box-shadow: 0 0 6px color-mix(in srgb, var(--run) 60%, transparent); } #panel .strip i.failed { background: var(--fail); }
 @keyframes fan-flash { from { background: color-mix(in srgb, var(--run) 18%, transparent); } to { background: none; } }
 .chip { display: inline-block; padding: 0 6px; margin: 2px 4px 0 0; border-radius: 4px; background: color-mix(in srgb, var(--slate) 12%, transparent); font-size: calc(11px * var(--fs)); }
+/* A merge's run in the Ledger panel: its steps as chips ringed in the step's own colour. */
+#panel .steps { margin-top: 4px; line-height: 1.9; } #panel .steps .chip { margin: 0 4px 0 0; border: 1px solid; background: none; line-height: 1.5; }
 
 /* The Kanban view: the Board's open tasks in six columns between the navigator and the rail. The page never scrolls; only a column body does.
    Everything is scoped under #kb and #kbm so the constellation's panel, chips and nodes keep their own styles. */

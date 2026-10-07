@@ -37,6 +37,8 @@ export interface RowsFrame {
   clock: number;
   /** Seconds since a row arrived, while it is still arriving. */
   age: (key: string) => number | undefined;
+  /** The key of the row the viewer is on (hovered or open), outlined. */
+  lit?: string;
 }
 
 const rgba = (h: string, a: number) => {
@@ -59,6 +61,10 @@ export function drawRows(ink: Ink, f: RowsFrame) {
     const { y, a, age } = at(r.row.key, r.y), row = r.row;
     ys.set(row.key, y);
     ink.stroke([{ x: J.x, y: y + g.rh / 2 }, { x: right, y: y + g.rh / 2 }], rgba(MUTED, 0.07 * a), 1);
+    if (row.key === f.lit) {
+      const x0 = Math.min(g.label.x, J.x) - px(6), y0 = y - g.rh / 2, y1 = y + g.rh / 2;
+      ink.stroke([{ x: x0, y: y0 }, { x: right, y: y0 }, { x: right, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 }], rgba(ACT, 0.5), 1);
+    }
     if (r.cross) {
       ink.dot(g.lane, y, px(3.6), "rgba(6,10,20,1)");
       ink.circle(g.lane, y, px(3.6), rgba(CROSS, 0.9 * a), px(1.3));
