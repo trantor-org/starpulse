@@ -98,7 +98,47 @@ export interface Settled {
   model: string;
 }
 
-export interface FlowSnapshot {
+/**
+ * Where a lifecycle machine is entered from. `declared` is a SubFlow on `machine`'s `state`; `observed` is the
+ * state the task held on `machine` when its session entered this one; `dag` is a launch by `dag`, which names no
+ * machine or state. `count` is the sessions entered through it, null for a launch.
+ */
+export interface Tie {
+  kind: "declared" | "observed" | "dag";
+  machine: string | null;
+  state: string | null;
+  count: number | null;
+  dag: string | null;
+  /** What has to hold for a declared tie to run; empty otherwise. */
+  when: string;
+}
+
+/** The longest-stuck task of a machine and every machine nested below it: idle over two hours outside a final state. */
+export interface Stuck {
+  machine: string;
+  state: string;
+  /** When the task last moved, epoch seconds. */
+  since: number;
+}
+
+/** What the server derives for a lifecycle machine other than the Board, from every machine's tasks. */
+export interface MachineTies {
+  /** Leading tie first (declared, then most observed), then DAG launches. */
+  ties: Tie[];
+  /** The machine its leading tie enters it from, else the In Progress machine; null for the In Progress machine. */
+  parent: string | null;
+  /** 0 for the In Progress machine, 1 for a machine entered from it, and so on. */
+  depth: number;
+  /** The machines above it, outermost first, the In Progress machine left out. */
+  chain: string[];
+  /** Every machine nested below it. */
+  nested: string[];
+  /** When a task of this machine or one nested below it last moved, epoch seconds; null with no tasks. */
+  last: number | null;
+  stuck: Stuck | null;
+}
+
+export interface FlowSnapshot extends Partial<MachineTies> {
   name: string;
   machine: Machine;
   agents: RawAgent[];
