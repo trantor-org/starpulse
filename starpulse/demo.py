@@ -20,6 +20,9 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
+from starpulse.analytics import move_shares
+from starpulse.board_feed import SUN_DAYS
+
 STATIC = Path(__file__).parent / "static"
 #: Board labels that say what kind of work a task is and nothing about it.
 LABELS = re.compile(r"^(kind-[a-z]+|size-\d+|agent-resolvable|needs-human|adr-needed|bug|feature)$")
@@ -233,6 +236,7 @@ def scrub(live: dict) -> dict:
     seeded_dags, seeded_pools = (
         ([], []) if live.get("pools") else _seed_fanout(live["domains"], live["dags"], live["now"])
     )
+    history, captured = _history(flows, live["now"]), live.get("suns", {})  # a fresh server's shares are all zero
     return {
         **live,
         "boardUrl": None,
@@ -250,7 +254,8 @@ def scrub(live: dict) -> dict:
         },
         "settled": day,
         "error": None,
-        "history": _history(flows, live["now"]),
+        "history": history,
+        "suns": captured if any(captured.values()) else _suns(flows, history, live["now"]),
     }
 
 
@@ -354,6 +359,13 @@ def _history(flows: list[dict], now: float) -> dict[str, list[dict]]:
             {"at": s["at"], "from": trail[k - 1]["state"] if k else None, "to": s["state"]} for k, s in enumerate(trail)
         ]
     return history
+
+
+def _suns(flows: list[dict], history: dict[str, list[dict]], now: float) -> dict[str, float]:
+    """The Board states' sun shares from the demo's synthetic lane changes, as the server sizes them from the store."""
+    board = next(f for f in flows if f["name"] == "board")
+    rows = [(t, c["at"], c["from"], c["to"]) for t, changes in history.items() for c in changes]
+    return move_shares(board["machine"], rows, start=now - SUN_DAYS * DAY_S, end=now)
 
 
 def _task(i: int, a: dict) -> dict:

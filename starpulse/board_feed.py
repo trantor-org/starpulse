@@ -13,8 +13,10 @@ import re
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
+from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
+from starpulse.analytics import LaneRow, move_shares
 from starpulse.contracts import BoardTask, TaskKeys
 from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 from starpulse.snapshot import declared
@@ -29,6 +31,10 @@ _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 PUSHED_INSTANCE = "pushed"
 #: How often a running reader saves the Board, in seconds; a restart reads again what arrived since.
 SAVE_INTERVAL = 60.0
+#: The days of lane moves, before local midnight, a Board state's sun is sized from.
+SUN_DAYS = 7
+#: Seconds between looks for a local midnight that has passed.
+SUN_INTERVAL = 60.0
 
 
 def task_agent(task: BoardTask) -> dict:
@@ -137,6 +143,9 @@ class BoardFeed:
         self._seen = (0, 0)
         self._saved = (0, 0)
         self._store: tuple[BoardStore, str] | None = None
+        self._lane_rows: Callable[[], list[LaneRow]] | None = None
+        #: The local midnight the suns were last sized at, and the shares it gave them.
+        self._sized: tuple[datetime | None, dict[str, float]] = (None, {})
         #: Set once the stream has been read up to the last entry it held when the feed started.
         self.ready = threading.Event()
 
@@ -234,6 +243,40 @@ class BoardFeed:
     def date_lanes(self, lane_path: Callable[[str], list[dict]]) -> None:
         """Date a lane the feed replays by the history's last change into it (`History.lane_path`), not by the replay."""
         self._lane_path = lane_path
+
+    def size_suns(self, lane_rows: Callable[[], list[LaneRow]]) -> None:
+        """Size each Board state's sun from its share of the lane moves in the week before local midnight, read through
+        `lane_rows` (`LaneHistory.lane_rows`). The shares are worked out once a day, the first time a snapshot is
+        taken after midnight, so a move made since then changes none until the next one."""
+        self._lane_rows = lane_rows
+
+    def resize_suns(self) -> None:
+        """Publish the suns a local midnight has resized since the last snapshot or delta; a day that changes no share
+        publishes nothing."""
+        with self._lock:
+            before = self._sized[1]
+            if self._suns() != before:
+                self._publish("suns", {"suns": self._sized[1]})
+
+    def keep_suns(self, stop: threading.Event, interval: float = SUN_INTERVAL) -> None:
+        """Resize the suns every `interval` seconds until `stop` is set, so a page open across midnight is told."""
+        while not stop.wait(interval):
+            self.resize_suns()
+
+    def _suns(self) -> dict[str, float]:
+        """The shares the last local midnight set (empty until `size_suns`); the caller holds the lock."""
+        if self._lane_rows is None:
+            return {}
+        today = datetime.fromtimestamp(self._clock()).replace(hour=0, minute=0, second=0, microsecond=0)
+        if self._sized[0] != today:
+            week = move_shares(
+                self._drawn["board"],
+                self._lane_rows(),
+                start=(today - timedelta(days=SUN_DAYS)).timestamp(),
+                end=today.timestamp(),
+            )
+            self._sized = (today, week)
+        return self._sized[1]
 
     def put(self, task: BoardTask) -> None:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
@@ -476,6 +519,7 @@ class BoardFeed:
                 **declared(self._domains, self._runnable(), self._cues),
                 "boardUrl": self._board_url,
                 "hint": self._hint,
+                "suns": self._suns(),
                 "now": time.time(),
             }
 

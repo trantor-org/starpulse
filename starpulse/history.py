@@ -113,10 +113,15 @@ class History(Protocol):
 
 
 @runtime_checkable
-class HealthHistory(History, Protocol):
-    """A history that can also answer `/api/analytics/health`: every task's lane changes and the gaps it recorded."""
+class LaneHistory(History, Protocol):
+    """A history that can list every task's lane changes: what sizes a Board state's sun."""
 
     def lane_rows(self) -> list[tuple[str, float, str | None, str]]: ...
+
+
+@runtime_checkable
+class HealthHistory(LaneHistory, Protocol):
+    """A history that can also answer `/api/analytics/health`: the gaps it recorded as well as the lane changes."""
 
     def gaps(self) -> list[dict]: ...
 

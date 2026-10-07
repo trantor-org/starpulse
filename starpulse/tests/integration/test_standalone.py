@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from starpulse import server
-from starpulse.history import DEFAULT_FILE
+from starpulse.history import DEFAULT_FILE, HistoryStore
 
 _CLIENT_MODULE = "re" + "dis"
 _ENV_DROPPED = (f"{_CLIENT_MODULE.upper()}_URL", f"{_CLIENT_MODULE.upper()}_PASSWORD", "DATABASE_URI")
@@ -105,6 +105,36 @@ def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_histor
             assert proc.poll() is None, "the server exited"
             assert time.monotonic() < deadline, "the emitted run never reached the snapshot"
             time.sleep(0.2)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=30)
+
+
+@pytest.mark.usefixtures("build")
+def test_the_served_snapshot_sizes_each_suns_share_from_the_history_the_server_keeps(tmp_path: Path) -> None:
+    port = _free_port()
+    config = tmp_path / "starpulse.toml"
+    config.write_text("")
+    history = HistoryStore(f"sqlite:///{tmp_path / DEFAULT_FILE}", {})
+    day = 86400.0
+    history.record_lane("l1", "T-1", "In Progress", time.time() - 3 * day)  # a first sighting: enters In Progress
+    history.record_lane("l2", "T-1", "Done", time.time() - 2 * day)  # a move out of it, into Done
+    history.engine.dispose()
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "starpulse.server", "--port", str(port), "--config", str(config)], env=_env()
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while True:
+            assert proc.poll() is None, "the server exited before serving"
+            try:
+                status, snapshot = _get(port, "/api/snapshot")
+                break
+            except OSError:
+                assert time.monotonic() < deadline, "the server never came up"
+                time.sleep(0.2)
+        assert status == 200
+        assert snapshot["suns"] == {"to_do": 0.0, "in_progress": 2 / 3, "done": 1 / 3}
     finally:
         proc.terminate()
         proc.wait(timeout=30)

@@ -170,7 +170,9 @@ def test_the_server_answers_get_put_and_delete_on_the_history_window_route(tmp_p
     feed, window = _window(tmp_path, 6)
 
     def call(method: str, body: bytes | None = None) -> tuple[int, dict]:
-        request = urllib.request.Request(url(server, "/api/history-window"), data=body, headers={"Content-Type": "application/json"}, method=method)
+        request = urllib.request.Request(
+            url(server, "/api/history-window"), data=body, headers={"Content-Type": "application/json"}, method=method
+        )
         try:
             with urllib.request.urlopen(request) as resp:
                 return resp.status, json.load(resp)
@@ -196,3 +198,21 @@ def test_a_put_or_delete_to_any_other_path_is_a_404_and_leaves_the_window(tmp_pa
 
     assert refused.value.code == 404
     assert window.state()["overridden"] is False
+
+
+def test_a_history_with_lane_rows_and_no_gaps_can_size_suns_but_not_answer_health() -> None:
+    from starpulse.history import HealthHistory, LaneHistory
+
+    class LanesOnly:
+        def lane_path(self, task: str) -> list[dict]:
+            return []
+
+        def machine_path(self, task: str, flow: str) -> tuple[list[dict], int]:
+            return [], 0
+
+        def lane_rows(self) -> list[tuple[str, float, str | None, str]]:
+            return []
+
+    assert isinstance(LanesOnly(), LaneHistory)
+    assert not isinstance(LanesOnly(), HealthHistory)
+    assert not isinstance(object(), LaneHistory)

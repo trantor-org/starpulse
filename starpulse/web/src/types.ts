@@ -186,7 +186,8 @@ export type Delta =
   | { kind: "move"; flow: string; id: string; agent: RawAgent }
   | { kind: "dags"; dags: Dag[]; pools?: Pool[]; error: string | null }
   | { kind: "pulls"; pulls: Record<string, Pull[]> }
-  | { kind: "claim"; task: string; reason: string; at: number };
+  | { kind: "claim"; task: string; reason: string; at: number }
+  | { kind: "suns"; suns: Record<string, number> };
 
 /** What the board writes beyond moves: the page draws Edit, Archive… and New task only for what its board does. */
 export interface Capabilities {
@@ -214,6 +215,8 @@ export interface Snapshot {
   pulls?: Record<string, Pull[]>;
   /** Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds). */
   claims?: Record<string, { reason: string; at: number }>;
+  /** Each Board state's share of the lane moves in the week before the last local midnight, which sizes its sun. */
+  suns?: Record<string, number>;
   /** What the board writes: the task modal draws Edit and Archive only when its board does. */
   capabilities?: Capabilities;
   settled: Record<string, Settled>;
