@@ -1,8 +1,9 @@
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { Card, HeldBy } from "./Kanban";
-import type { KanbanTask } from "./kanban";
+import { Card, HeldBy, StackList, StackView, Stacks } from "./Kanban";
+import { CLOSED, NO_PREFS, layout, stackOf, stackStep, stacksOf, type KanbanTask, type StackEvent } from "./kanban";
+import { place } from "./move";
 
 const task: KanbanTask = {
   id: "PROJ-1", title: "A title long enough to need two lines in a comfortable card", lane: "in_progress", milestone: "m-1", labels: ["feature", "needs-human"], assignee: "@agent-standard-high",
@@ -122,5 +123,93 @@ describe("a Kanban card's start control", () => {
 
   it("draws no strip on a card in a lane a session does not start from", () => {
     expect(play(card({ ...ready(), lane: "in_progress" }))).toBeUndefined();
+  });
+});
+
+describe("a Waiting stack", () => {
+  const wait = (id: string, ...dependencies: string[]): KanbanTask => ({ ...task, id, title: `Title of ${id}`, lane: "waiting", dependencies, openDeps: dependencies.length, live: null });
+  const chain = [wait("T-1"), wait("T-2", "T-1"), wait("T-3", "T-2")];
+  const stack = stacksOf(chain)[0];
+  const card = (t: KanbanTask, extra: { under?: boolean; stacked?: number; waitsOn?: string[] } = {}) =>
+    <Card key={t.id} task={t} holds={t.id === "T-1" ? 2 : undefined} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} {...extra} />;
+  type Root = ReactElement<{ onPointerEnter: () => void; onPointerLeave: () => void; onFocus: () => void; onBlur: (e: unknown) => void; onKeyDown: (e: { key: string }) => void }>;
+  /** The stack drawn from its state, with the events it raises applied to that state, as the Kanban's stack does. */
+  const drive = () => {
+    let state = CLOSED;
+    const root = () => StackView({ stack, state, card, onEvent: (e: StackEvent) => (state = stackStep(state, e)) }) as Root;
+    return { root, html: () => renderToStaticMarkup(root()) };
+  };
+
+  it("folds to its top card whole, with a count badge beside the ⛓ and one or two card edges peeking below", () => {
+    const html = drive().html();
+
+    expect(html).toContain('class="stack"');
+    expect(html).toMatch(/data-id="T-1"/);
+    expect(html).toMatch(/class="sk"[^>]*>.*?2<\/span><span class="holds"[^>]*>⛓2/);
+    expect(html.match(/class="edge"/g)).toHaveLength(2);
+    expect(renderToStaticMarkup(<StackView stack={stacksOf(chain.slice(0, 2))[0]} state={CLOSED} card={card} onEvent={() => {}} />).match(/class="edge"/g)).toHaveLength(1);
+    expect(html).not.toContain("waits on");
+  });
+
+  it("unstacks on hover, each card below the top saying what it waits on, and folds when the pointer leaves", () => {
+    const d = drive();
+    d.root().props.onPointerEnter();
+
+    expect(d.html()).toContain('class="stack open"');
+    expect(d.html()).toContain("⧗ waits on <span class=\"nw\">T-1</span>");
+    expect(d.html()).toContain("⧗ waits on <span class=\"nw\">T-2</span>");
+
+    d.root().props.onPointerLeave();
+
+    expect(d.html()).toContain('class="stack"');
+    expect(d.html()).not.toContain("waits on");
+  });
+
+  it("unstacks on focus and folds when focus leaves the stack, not when it moves between its cards", () => {
+    const d = drive();
+    d.root().props.onFocus();
+    expect(d.html()).toContain("⧗ waits on");
+
+    d.root().props.onBlur({ currentTarget: { contains: () => true }, relatedTarget: {} });
+    expect(d.html()).toContain("⧗ waits on");
+
+    d.root().props.onBlur({ currentTarget: { contains: () => false }, relatedTarget: null });
+    expect(d.html()).not.toContain("⧗ waits on");
+  });
+
+  it("folds on Escape even with the pointer still over it, and ignores any other key", () => {
+    const d = drive();
+    d.root().props.onPointerEnter();
+    d.root().props.onFocus();
+
+    d.root().props.onKeyDown({ key: "ArrowDown" });
+    expect(d.html()).toContain("⧗ waits on");
+
+    d.root().props.onKeyDown({ key: "Escape" });
+    expect(d.html()).not.toContain("⧗ waits on");
+  });
+
+  it("lists the stack in the task modal, the open task in bold and the others as buttons that open them", () => {
+    const html = renderToStaticMarkup(<StackList stack={stack} id="T-2" open={() => {}} />);
+
+    expect(html).toMatch(/▣ <button[^>]*>T-1<\/button>/);
+    expect(html).toMatch(/↳ <b>T-2<\/b>/);
+    expect(html).toMatch(/↳ <button[^>]*>T-3<\/button>/);
+  });
+
+  it("re-forms when a drag moves a stacked task out of Waiting, so the badge and its cards go with it", () => {
+    const draw = (tasks: KanbanTask[]) => renderToStaticMarkup(
+      <>{layout(tasks, { waiting: "Waiting" }, NO_PREFS).columns.find((c) => c.id === "waiting")!.buckets.map((b) => <Stacks key={b.milestone} stacks={b.stacks} card={card} enabled />)}</>,
+    );
+    const moved = place(chain, { pending: { "T-2": { from: "waiting", to: "ready", saving: true, at: 1 } }, refused: {} });
+
+    expect(draw(chain)).toContain('class="stack"');
+    expect(stackOf(layout(chain, {}, NO_PREFS), "T-3")?.members).toHaveLength(3);
+    const after = draw(moved);
+    expect(after).not.toContain('class="stack"');
+    expect(after).not.toContain('class="sk"');
+    expect(after).not.toContain("T-2");
+    expect(after).toContain('data-id="T-1"');
+    expect(after).toContain('data-id="T-3"');
   });
 });
