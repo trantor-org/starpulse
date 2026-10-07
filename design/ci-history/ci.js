@@ -9,7 +9,7 @@
 //             another, a push's workflows on another. Inside a state, a CHECKS caption repeats the line; click it for the PR list.
 // Definitions (operator interview): a run is one push (head commit) of a PR; re-runs (GitHub attempt > 1) and rebases
 // (a push that rewrote the branch) are counted apart; conflicts are each time the PR turned CONFLICTING against main.
-// The Kanban task modal is left alone until its rework (TASK-3012) lands.
+// The Kanban task modal is left alone until its two-column rework lands.
 (() => {
   const STATES = {
     map: {},
