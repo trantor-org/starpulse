@@ -29,6 +29,8 @@ export interface Tree {
   subs: Record<string, string[]>;
   /** The machines that open under a machine's states. */
   children: Record<string, Child[]>;
+  /** Each mapped machine's third-party source, by flow name. */
+  sources?: Record<string, string>;
 }
 export const BOARD: Path = [{ kind: "board" }];
 
@@ -39,7 +41,8 @@ export const BOARD: Path = [{ kind: "board" }];
  */
 export function tree(snap: Pick<Snapshot, "graphs" | "flows">): Tree {
   const board = snap.flows.find((f) => f.name === "board")?.machine;
-  const t: Tree = { states: board?.states.map((s) => s.id) ?? [], subs: {}, children: {} };
+  const t: Tree = { states: board?.states.map((s) => s.id) ?? [], subs: {}, children: {}, sources: {} };
+  for (const f of snap.flows) if (f.machine.source) t.sources![f.name] = f.machine.source;
   const inner = new Set<string>();
   for (const link of board?.subflows ?? []) {
     (t.subs[link.state] ??= []).push(link.flow);
@@ -56,6 +59,9 @@ export function tree(snap: Pick<Snapshot, "graphs" | "flows">): Tree {
     for (const g of snap.graphs) if (g !== "board" && g !== "runs" && !inner.has(g)) t.subs[primary].push(g);
   return t;
 }
+
+/** A machine task's kicker line on its tooltip and panel; a task on a mapped machine names the third party that moves it. */
+export const taskKicker = (flow: string, state: string, source?: string): string => `task · ${flow}${source ? ` · mapped from ${source}` : ""} · ${state}`;
 
 /** The Board state a path runs under, which scopes the tasks a machine level shows; undefined above any state. */
 export const hostOf = (path: Path): string | undefined => path.find((l): l is Extract<Level, { kind: "state" }> => l.kind === "state")?.id;

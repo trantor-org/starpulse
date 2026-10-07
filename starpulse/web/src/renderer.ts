@@ -11,7 +11,7 @@ import { demoStep } from "./demo";
 import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
-import { BOARD, drill, hostOf, pathKey, pathLedger, startPath, type Level, type Path } from "./levels";
+import { BOARD, drill, hostOf, pathKey, pathLedger, startPath, taskKicker, type Level, type Path } from "./levels";
 import { freshKeys, optionalSteps } from "./ledger";
 import { drawRows, CROSS, type Ink } from "./ledgerRows";
 import { spotIn, type Target } from "./search";
@@ -648,7 +648,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at), prefs().clock);
       }
       case "mtask": {
-        const o = h.o, at = subjectOf(h)!, kind = `task · ${o.flow} · ${o._state || o.state} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
+        const o = h.o, at = subjectOf(h)!, kind = `${taskKicker(o.flow, o._state || o.state, sourceOf(o.flow))} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
         return traceCard({ kind, id: o.id, title: "", goal: goalOf(sky.flows[o.flow]?.machine) }, runFor(at), prefs().clock);
       }
       case "dag": {
@@ -666,7 +666,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       case "moon": {
         const o = h.o, mv = moving(o.name).length, nAgents = hosted(sky, o.name, o.parent.id).length;
         if (o.pager) return pagerTip(o.pager);
-        return `<div class="k">lifecycle machine inside ${esc(o.parent.name)} · click to open it</div><div class="n">${esc(o.name)}</div>${o.nStates} states · ${nAgents} session${nAgents === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
+        return `<div class="k">${sourceOf(o.name) ? `machine mapped from ${esc(sourceOf(o.name)!)}` : "lifecycle machine"} inside ${esc(o.parent.name)} · click to open it</div><div class="n">${esc(o.name)}</div>${o.nStates} states · ${nAgents} session${nAgents === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
       }
       case "sat":
         return `<div class="k">state of the ${esc(h.o.machine)} machine · opens ${esc(h.o.flow)} ${esc(h.o.when)} · click to open ${esc(h.o.machine)}</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} orbiting`;
@@ -678,7 +678,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         const o = h.o, mv = moving(o.name).length;
         if (o.pager) return pagerTip(o.pager);
         if (o.subState) return `<div class="k">state of the ${esc(o.machine!)} machine · opens ${esc(o.flow!)} ${esc(o.when ?? "")} · click to open it</div><div class="n">${esc(o.title!)}</div>${o.n} task${o.n === 1 ? "" : "s"} here now`;
-        return `<div class="k">lifecycle machine · click to open${o.when ? ` · ${esc(o.when)}` : ""}</div><div class="n">${esc(o.name)}</div>${Object.keys(o.states).length} states · ${o.n} task${o.n === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
+        return `<div class="k">${sourceOf(o.name) ? `machine mapped from ${esc(sourceOf(o.name)!)}` : "lifecycle machine"} · click to open${o.when ? ` · ${esc(o.when)}` : ""}</div><div class="n">${esc(o.name)}</div>${Object.keys(o.states).length} states · ${o.n} task${o.n === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
       }
       case "caption": {
         const o = h.o, ev = sky.board.machine.transitions.find((t) => t.event === scene!.fold?.ledger?.event);
@@ -775,7 +775,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (h.kind === "task") panel.innerHTML = taskPanel(h.o, sky, stateName);
     else if (h.kind === "mtask") {
       const o = h.o;
-      panel.innerHTML = `<span class="x">✕</span><div class="k">task · ${esc(o.flow)} · ${esc(o._state || o.state)}</div><h2>${esc(o.id)} — ${esc(o.title)}</h2>
+      panel.innerHTML = `<span class="x">✕</span><div class="k">${esc(taskKicker(o.flow, o._state || o.state, sourceOf(o.flow)))}</div><h2>${esc(o.id)} — ${esc(o.title)}</h2>
         <table>${(o.trail ?? []).slice(-12).map((t) => `<tr><td>${hhmm(t.at)}</td><td>${esc(t.event)} → ${esc(t.state)}</td></tr>`).join("")}</table>`;
     } else return;
     // the hop table sits under the facts, above the board link
@@ -889,9 +889,21 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     for (const R of host.rings || []) circle(host.x, host.y, R, rgba(col, 0.11));
   };
   // a lifecycle machine is a flat disc with a thin ring outside it, the one mark that tells it from a state
-  function machine(x: number, y: number, r: number, hot: boolean, alpha: number) {
-    disc(x, y, r, "#c084fc", hot, alpha);
-    circle(x, y, r + 3, rgba("#c084fc", hot ? 0.9 : 0.5), 1);
+  function machine(x: number, y: number, r: number, hot: boolean, alpha: number, mapped = false) {
+    const col = mapped ? EXT : "#c084fc";
+    disc(x, y, r, col, hot, alpha);
+    circle(x, y, r + 3, rgba(col, hot ? 0.9 : 0.5), 1);
+  }
+  /** A mapped machine (machine.source: a third party moves it) is drawn like a local one, in a colour of its own: blue, never purple. */
+  const EXT = "#60a5fa";
+  const sourceOf = (flow: string | null | undefined) => (flow ? S?.flows[flow]?.machine.source : undefined);
+  /** A machine's name; a mapped machine's name and source are in its colour, and the pair keeps the alignment the name had. */
+  function machineName(s: string, x: number, y: number, size: number, col: string, align: CanvasTextAlign, src?: string) {
+    if (!src) return text(s, x, y, size, col, align, 300);
+    cx.font = `300 ${size}px Inter, system-ui, sans-serif`;
+    const wm = cx.measureText(s).width, gap = size * 0.45, ws = cx.measureText(src).width, x0 = align === "left" ? x : align === "right" ? x - wm - gap - ws : x - (wm + gap + ws) / 2;
+    text(s, x0, y, size, rgba(EXT, 0.95), "left", 300);
+    text(src, x0 + wm + gap, y, size, rgba(EXT, 0.6), "left", 300);
   }
 
   function drawGalaxies() {
@@ -910,13 +922,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     for (const m of sc.moons) {
       const hot = isHot("moon", m), flows = m.pager?.hidden ?? [m.name], mv = flows.flatMap(moving).length, busy = flows.some((name) => !!hosted(S!, name, m.parent.id).length);
       drawTrackRings(m, "#c084fc");
-      machine(m.x, m.y, m.r!, hot, busy ? 0.32 : 0.14);
+      const src = m.pager ? undefined : sourceOf(m.name);
+      machine(m.x, m.y, m.r!, hot, busy ? 0.32 : 0.14, !!src);
       if (mv) circle(m.x, m.y, m.r! + 4, rgba(ACT, 0.85), 1.5);
       // named beside the moon on the side away from its state, past its chain of sub-states
       const left = m.x < m.parent.x - 1;
       cx.letterSpacing = `${0.5 / K}px`;
       const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
-      text(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, labPx(10.5), col, left ? "right" : "left", 300);
+      machineName(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, labPx(10.5), col, left ? "right" : "left", src);
       cx.letterSpacing = "0px";
     }
     for (const b of sc.subStates) {
@@ -1141,14 +1154,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       // the DAGs that orbit it; hover adds its states and sessions
       if (p.moon) {
         const sd = p.x < sc.hub!.x ? -1 : 1;
-        machine(p.x, p.y, p.R, hot, p.n ? 0.32 : 0.14);
+        const src = p.pager ? undefined : sourceOf(p.name);
+        machine(p.x, p.y, p.R, hot, p.n ? 0.32 : 0.14, !!src);
         if (mv.length) circle(p.x, p.y, p.R + 4, rgba(ACT, 0.85), 1.5);
         cx.letterSpacing = `${0.5 / K}px`;
         const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
-        text(p.label || p.name, p.x + sd * (past(p) + (p.owned ?? 0) * OWNED), p.y, labPx(11.5), col, sd < 0 ? "right" : "left", 300);
+        machineName(p.label || p.name, p.x + sd * (past(p) + (p.owned ?? 0) * OWNED), p.y, labPx(11.5), col, sd < 0 ? "right" : "left", src);
         cx.letterSpacing = "0px";
         continue;
       }
+      const psrc = sourceOf(p.name);
       dot(p.x, p.y, p.R + 14, "rgba(10,14,26,0.85)");
       if (mv.length) {
         const g = cx.createRadialGradient(p.x, p.y, p.R + 14, p.x, p.y, p.R + 30);
@@ -1160,7 +1175,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         cx.arc(p.x, p.y, p.R + 14, 0, TAU, true);
         cx.fill();
       }
-      circle(p.x, p.y, p.R + 14, mv.length ? rgba(ACT, 0.6) : rgba("#c084fc", hot ? 0.9 : p.n ? 0.45 : 0.22), hot ? 2 : 1.2);
+      circle(p.x, p.y, p.R + 14, mv.length ? rgba(ACT, 0.6) : rgba(psrc ? EXT : "#c084fc", hot ? 0.9 : psrc ? 0.6 : p.n ? 0.45 : 0.22), hot ? 2 : 1.2);
       drawMachineEdges(p.edges, true);
       drawStates(p.states, false);
       for (const e of mv) {
@@ -1171,7 +1186,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       }
       // a skill machine's name sits on its side facing away from the primary, so it never crosses the paths between them; the primary's goes below
       const nt = sc.tasks.filter((k) => k.host === p && !k.gone).length, size = p.primary ? 14 : 12;
-      const sub = `${Object.keys(p.states).length} states${nt ? ` · ${nt} task${nt === 1 ? "" : "s"} orbiting` : ""} · ${p.n} task${p.n === 1 ? "" : "s"}${mv.length ? ` · ${mv.length} moving` : ""}`;
+      const sub = `${psrc ? `mapped from ${psrc} · ` : ""}${Object.keys(p.states).length} states${nt ? ` · ${nt} task${nt === 1 ? "" : "s"} orbiting` : ""} · ${p.n} task${p.n === 1 ? "" : "s"}${mv.length ? ` · ${mv.length} moving` : ""}`;
       let ux = 0, uy = 1;
       const hub = sc.hub;
       if (hub && p !== hub) {
@@ -1572,6 +1587,15 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     circle(body.x, body.y, 9 / K, rgba(TRACE, 0.9), 1.6 / K);
     dot(body.x, body.y, 4.5 / K, rgba(tierColor(body.model), 1));
   }
+  /** A mapped machine's level names, above its states and in its colour, whose events move it. */
+  function drawSource() {
+    const lv = level(), src = lv.kind === "machine" ? sourceOf(lv.flow) : undefined, st = Object.values(scene!.mStates);
+    if (!src || !st.length) return;
+    const top = Math.min(...st.map((s) => s.y)), xs = st.map((s) => s.x);
+    cx.letterSpacing = `${0.6 / K}px`;
+    text(`mapped from ${src} · ${src} moves it, StarPulse observes`, (Math.min(...xs) + Math.max(...xs)) / 2, top - 70 / K, labPx(11), rgba(EXT, 0.8), "center", 300);
+    cx.letterSpacing = "0px";
+  }
   function drawScene(k: number, x: number, y: number) {
     const dpr = devicePixelRatio || 1;
     cx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
@@ -1588,6 +1612,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     drawTasks();
     drawMachineEdges(scene!.mEdges);
     drawStates(scene!.mStates, true);
+    drawSource();
     drawMachineTasks();
     drawHangar();
     drawStars();

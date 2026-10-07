@@ -35,6 +35,24 @@ describe("a Kanban card's density", () => {
   });
 });
 
+describe("a Kanban card's machine line", () => {
+  const line = (live: KanbanTask["live"]) => renderToStaticMarkup(<Card task={{ ...task, live }} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
+
+  it("marks the dot mapped and names the source when the latest machine has one", () => {
+    const html = line({ machine: "ci", state: "running", at: 100, source: "GitHub" });
+
+    expect(html).toContain('class="p mapped"');
+    expect(html).toContain('title="mapped from GitHub"');
+  });
+
+  it("leaves a local machine's dot unmarked", () => {
+    const html = line({ machine: "in-progress", state: "red_proven", at: 100 });
+
+    expect(html).toContain('class="p"');
+    expect(html).not.toContain("mapped");
+  });
+});
+
 describe("what holds the Waiting lane", () => {
   const holder = (id: string, holds: number, labels: string[] = []) => ({ task: { ...task, id, labels }, holds });
 

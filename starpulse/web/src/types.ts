@@ -37,6 +37,8 @@ export interface Launch {
 }
 
 export interface Machine {
+  /** The third party whose events move this machine ("GitHub"); absent for a machine StarPulse's own actors move. */
+  source?: string;
   states: MachineState[];
   transitions: Transition[];
   /** The flows that open under this machine's states; the board's first is its In Progress delivery machine. */
