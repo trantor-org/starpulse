@@ -1,15 +1,16 @@
 // Layers discovery mockup layer (D5): the navigator's Layers tree goes; a breadcrumb on the canvas takes over the way
-// back out. The Star Map shows one of three minimal attention variants; the Kanban gets a milestone outline.
+// back out. The Star Map shows a leaderboard of tasks longest in their status (round 4) or one of three attention variants; the Kanban gets a milestone outline.
 // Injected over a scrubbed capture of the live page; it only adds elements and styles, so React keeps owning the page.
 // Seeded, synthetic data (the snapshot has no such fields yet): park reasons and one failing pull request.
 (() => {
   const F = window.__FLOW_FIXTURE__;
-  const MAP = ["none", "line", "crumb"], DRILL = ["board", "state", "machine"], SIZES = [100, 125, 150];
+  const MAP = ["lb", "none", "line", "crumb"], DRILL = ["board", "state", "machine"], SIZES = [100, 125, 150];
   const qs = new URLSearchParams(location.search);
   const kanban = qs.get("view") === "kanban";
-  const p = MAP.includes(qs.get("p")) ? qs.get("p") : "line";
+  const p = MAP.includes(qs.get("p")) ? qs.get("p") : "lb";
   const d = DRILL.includes(qs.get("d")) ? qs.get("d") : "board";
   const fs = SIZES.includes(+qs.get("fs")) ? +qs.get("fs") : null;
+  const LB_ALL = qs.get("lb") === "all";
   const STALE_H = +qs.get("stale") || 4;
   const store = (key, v) => { try { localStorage.setItem(key, v); } catch {} };
   const read = (key) => { try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; } };
@@ -45,6 +46,13 @@
     ...board.filter((a) => a.state === "in_progress" && quiet(a.id) > STALE_H * 3600).sort((x, y) => quiet(y.id) - quiet(x.id))
       .map((a) => ({ a, word: `quiet ${hrs(quiet(a.id))}`, why: `no session activity for ${hrs(quiet(a.id))}` })),
   ].filter((r) => !seen.has(r.a.id) && seen.add(r.a.id));
+  // leaderboard: open tasks ranked by time in their current status. By default only the statuses where time means stuck;
+  // ?lb=all adds Ready and Waiting, which are queues and fill the top with ties.
+  const WORD = { in_progress: "working", needs_attention: "needs you", review: "review", ready: "ready", waiting: "waiting" };
+  const LB_STATES = LB_ALL ? Object.keys(WORD) : ["in_progress", "needs_attention", "review"];
+  const age = (s) => (s < 3600 ? `${Math.max(1, Math.floor(s / 60))}m` : hrs(s));
+  const LB = board.filter((a) => LB_STATES.includes(a.state) && a.entered).map((a) => ({ a, t: now - a.entered }))
+    .sort((x, y) => y.t - x.t || x.a.id.localeCompare(y.a.id, undefined, { numeric: true })).slice(0, 10);
   const MS = Object.entries(board.reduce((m, a) => { if (a.milestone && a.state !== "archived") { (m[a.milestone] ||= { done: 0, total: 0 }).total++; if (a.state === "done") m[a.milestone].done++; } return m; }, {}))
     .filter(([, v]) => v.done < v.total).sort((x, y) => y[1].total - x[1].total);
 
@@ -58,14 +66,15 @@
   #nav section.ly-panel { flex: 1; min-height: 0; overflow: hidden auto; box-sizing: border-box; width: calc(var(--nav) - 24px); padding: 0 6px; margin-left: -6px; margin-right: -6px; }
   #nav section.ly-panel:empty { display: none; }
   .ly-tog { all: unset; cursor: pointer; display: flex; width: 100%; align-items: baseline; }
-  .ly-h3 { display: flex; align-items: baseline; }
+  .ly-h3 { display: flex; align-items: baseline; white-space: nowrap; }
+  .ly-sub { margin-left: auto; letter-spacing: .04em; text-transform: none; }
   .ly-tog .n { margin-left: auto; letter-spacing: 0; font-variant-numeric: tabular-nums; }
   .ly-tog:hover, .ly-tog:focus-visible { color: var(--ink); }
   .ly-row { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 1fr auto; column-gap: 10px; align-items: baseline;
     padding: 3px 6px; margin: 0 -6px; width: calc(100% + 12px); border-radius: 4px; font-size: calc(12px * var(--fs)); line-height: 1.4; }
   .ly-row:hover, .ly-row:focus-visible { background: rgba(148,163,184,.08); }
   .ly-row.on { background: rgba(167,139,250,.14); }
-  .ly-row .id { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: calc(11.5px * var(--fs)); color: var(--ink); }
+  .ly-row .id { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: calc(11.5px * var(--fs)); color: var(--ink); white-space: nowrap; }
   .ly-row .w { font-size: calc(11px * var(--fs)); color: var(--muted); font-variant-numeric: tabular-nums; }
   .ly-bar { grid-column: 1 / -1; height: 2px; border-radius: 1px; background: rgba(148,163,184,.12); overflow: hidden; margin-top: 3px; }
   .ly-bar > i { display: block; height: 100%; background: rgba(167,139,250,.7); }
@@ -127,6 +136,10 @@
     line: () => (ATTN.length ? [el("h3", {}, el("button", { class: "ly-tog", "aria-expanded": String(open), onclick: toggle },
       esc(`${open ? "▾" : "▸"} Attention`), el("span", { class: "n" }, esc(ATTN.length)))), open ? attnRows() : null] : []),
     crumb: () => [],
+    lb: () => (LB.length ? [el("h3", { class: "ly-h3" }, esc("Leaderboard"), el("span", { class: "ly-sub" }, esc(LB_ALL ? "all open" : "stuck"))),
+      LB.map((r) => el("button", { class: "ly-row", title: `${r.a.title}\n${WORD[r.a.state]} for ${age(r.t)}`, onclick: () => pinTask(r.a.id) },
+        el("span", { class: "id" }, esc(r.a.id)), el("span", { class: "w" }, esc(`${WORD[r.a.state]} ${age(r.t)}`)),
+        el("span", { class: "ly-bar" }, el("i", { style: `width:${Math.max(2, Math.round((r.t / LB[0].t) * 100))}%` }))))] : []),
   };
 
   // ---- Kanban: the milestone outline filters the board to one milestone ----
@@ -198,9 +211,9 @@
   // ---- the switcher: every choice is a link, so each state can be sent ----
   const go = (patch) => { const n = new URLSearchParams(location.search); for (const [a, v] of Object.entries(patch)) v == null ? n.delete(a) : n.set(a, v); location.search = n.toString(); };
   const btn = (text, on, patch) => el("button", { class: on ? "on" : null, onclick: () => go(patch) }, esc(text));
-  const sw = el("div", { id: "ly-sw" }, el("b", { title: "Minimise", onclick: () => sw.classList.toggle("min") }, esc("D5 MOCKUP · round 3")),
+  const sw = el("div", { id: "ly-sw" }, el("b", { title: "Minimise", onclick: () => sw.classList.toggle("min") }, esc("D5 MOCKUP · round 4")),
     el("span", { class: "grp" }, btn("Star Map", !kanban, { view: null }), btn("Kanban", kanban, { view: "kanban" })),
-    kanban ? null : el("span", { class: "grp" }, esc("attention"), MAP.map((x) => btn(x, x === p, { p: x })), esc(" drill"), DRILL.map((x) => btn(x === "state" ? "In Progress" : x === "machine" ? "authoring-skills" : "Board", x === d, { d: x }))),
+    kanban ? null : el("span", { class: "grp" }, esc("panel"), MAP.map((x) => btn(x === "lb" ? "leaderboard" : x, x === p, { p: x })), p === "lb" ? [btn("stuck", !LB_ALL, { lb: null }), btn("all open", LB_ALL, { lb: "all" })] : null, esc(" drill"), DRILL.map((x) => btn(x === "state" ? "In Progress" : x === "machine" ? "authoring-skills" : "Board", x === d, { d: x }))),
     el("span", { class: "grp" }, esc("DAGs"), btn("in panel", qs.get("dags") !== "0", { dags: null }), btn("moved out", qs.get("dags") === "0", { dags: "0" })),
     el("span", { class: "grp" }, esc("text"), SIZES.map((x) => btn(`${x}%`, (fs || 100) === x, { fs: x }))));
 
