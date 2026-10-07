@@ -11,6 +11,8 @@
     starpulse watch --machine in-progress --task PROJ-45
     starpulse analytics health --hours 72
     starpulse analytics level --hours 48
+    starpulse analytics trajectories --hours 48
+    starpulse analytics gates --task PROJ-45
     starpulse doctor
     starpulse skills install --claude --codex
     starpulse help --agent
@@ -89,6 +91,21 @@ _LEVEL_KEYS = (
     "orbit",
     "sources",
 )
+_TRAJECTORY_KEYS = (
+    "now",
+    "window_s",
+    "history_s",
+    "machine",
+    "goal",
+    "ended",
+    "variants",
+    "norm",
+    "outliers",
+    "chain",
+    "betweenness",
+    "bottleneck",
+)
+_GATE_KEYS = ("now", "window_s", "history_s", "machine", "goal", "ended", "gates", "runs")
 _HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
 _TASK_KEYS = (
     "id",
@@ -473,21 +490,48 @@ def _health(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     return {key: document[key] for key in _HEALTH_KEYS}
 
 
-def _level(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The level's flow numbers and orbit shares as `/api/level` answers them.
+def _level_read(
+    args: argparse.Namespace, environ: Mapping[str, str], route: str, keys: Sequence[str]
+) -> dict[str, Any]:
+    """`keys` of what the level route `route` answers over `--hours`.
 
     A window the server refuses, including one longer than its history, is `refused`; a server with no level is
     `unavailable`.
     """
     base = server_url(args.server, environ)
     query = urllib.parse.urlencode({} if args.hours is None else {"hours": args.hours})
-    path = f"/api/level?{query}"
+    path = f"{route}?{query}"
     status, document = _get(base, path)
     if status in {400, 404, 501} and isinstance(document, dict) and "error" in document:
         raise CliError("refused" if status == 400 else "unavailable", document["error"])
-    if status != 200 or not isinstance(document, dict) or not document.keys() >= set(_LEVEL_KEYS):
+    if status != 200 or not isinstance(document, dict) or not document.keys() >= set(keys):
         raise CliError("unavailable", f"{base} answered {status} for {path}: is it a StarPulse server?")
-    return {key: document[key] for key in _LEVEL_KEYS}
+    return {key: document[key] for key in keys}
+
+
+def _level(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The level's flow numbers and orbit shares as `/api/level` answers them."""
+    return _level_read(args, environ, "/api/level", _LEVEL_KEYS)
+
+
+def _trajectories(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The level's variants, norm, outliers, absorbing chain and betweenness as `/api/level/trajectories` answers."""
+    return _level_read(args, environ, "/api/level/trajectories", _TRAJECTORY_KEYS)
+
+
+def _gates(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Each gate's bypassability and witness for the level, and each run's own dominators and post-dominators.
+
+    `--task` keeps one run's trajectory; the level's summary stays the level's. A task with no run that ended in the
+    window is `not_found`.
+    """
+    document = _level_read(args, environ, "/api/level/trajectories", _GATE_KEYS)
+    if args.task:
+        runs = [run for run in document["runs"] if run["task"] == args.task]
+        if not runs:
+            raise CliError("not_found", f"{args.task} has no run that ended inside the window")
+        document["runs"] = runs
+    return document
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -817,6 +861,35 @@ def _parser() -> argparse.ArgumentParser:
     level.add_argument(
         "--hours", type=float, help="the window to count over, in hours; past the history it is refused (default 168)"
     )
+    trajectories = leaf(
+        analytics_verbs,
+        "trajectories",
+        "the runs that ended in the window as paths: variants and the norm, ranked outliers, the absorbing chain's "
+        "expected days and chance of the goal, betweenness and the path-time bottleneck",
+        _trajectories,
+        _TRAJECTORY_KEYS,
+        (0, 1, 2, 3),
+    )
+    trajectories.add_argument(
+        "--hours",
+        type=float,
+        help="the window the runs ended in, in hours; past the history it is refused (default 168)",
+    )
+    gates = leaf(
+        analytics_verbs,
+        "gates",
+        "each configured gate's bypassable flag and bypass witness path, and each run's own dominators and "
+        "post-dominators of it",
+        _gates,
+        _GATE_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    gates.add_argument(
+        "--hours",
+        type=float,
+        help="the window the runs ended in, in hours; past the history it is refused (default 168)",
+    )
+    gates.add_argument("--task", help="only this task's trajectory (`PROJ-45`); the level's gate summary is unchanged")
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(

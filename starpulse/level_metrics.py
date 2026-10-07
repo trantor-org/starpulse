@@ -17,7 +17,7 @@ from typing import Any
 
 from starpulse.level import Level
 
-__all__ = ["UNATTRIBUTED", "Run", "WindowPastHistory", "level_metrics"]
+__all__ = ["UNATTRIBUTED", "Run", "WindowPastHistory", "collapse", "level_metrics"]
 
 #: The source of a run that no forwarder named: it counts in the aggregate and no one's Board holds it.
 UNATTRIBUTED = "unattributed"
@@ -57,7 +57,7 @@ def level_metrics(level: Level, machine: dict, runs: Iterable[Run], *, now: floa
     with its time shares: a source with nothing ended or no working time has no shares, not zero ones. Raises
     `WindowPastHistory` when the window is longer than the history.
     """
-    held = [(run, _collapse(run.steps)) for run in runs]
+    held = [(run, collapse(run.steps)) for run in runs]
     first = min((steps[0][0] for _, steps in held if steps), default=now)
     if window_s > now - first:
         raise WindowPastHistory(window_s, now - first)
@@ -126,7 +126,7 @@ def level_metrics(level: Level, machine: dict, runs: Iterable[Run], *, now: floa
     }
 
 
-def _collapse(steps: Sequence[tuple[float, str]]) -> list[tuple[float, str]]:
+def collapse(steps: Sequence[tuple[float, str]]) -> list[tuple[float, str]]:
     """The steps oldest first, a step that repeats the state before it dropped: staying put is no transition."""
     kept: list[tuple[float, str]] = []
     for at, state in sorted(steps, key=lambda step: step[0]):
