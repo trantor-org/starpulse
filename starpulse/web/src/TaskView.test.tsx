@@ -1,10 +1,10 @@
 // @ts-expect-error Vitest runs this test in Node; production source stays browser-only.
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanban";
 import { TaskView } from "./TaskView";
-import type { TaskRecord } from "./taskView";
+import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type TaskRecord } from "./taskView";
 
 const styles = readFileSync(new URL("./style.css", import.meta.url), "utf8");
 
@@ -26,6 +26,9 @@ const draw = (over: Partial<Parameters<typeof TaskView>[0]> = {}) => renderToSta
     move={() => {}} start={() => {}} {...over} />,
 );
 
+const headOf = (html: string) => html.slice(html.indexOf('class="tvhead"'), html.indexOf('class="tvbody"'));
+const lanes = (lane: string, over: Partial<KanbanTask> = {}) => ({ task: { ...task, lane, ...over }, lane });
+
 describe("the task view in read mode", () => {
   it("draws the plan, notes and checks the record carries", () => {
     const html = draw();
@@ -37,21 +40,14 @@ describe("the task view in read mode", () => {
     expect(html).toContain("1/2");
   });
 
-  it("frames every editable field with the faint frame, locked against input", () => {
+  it("frames the title, the details and the checks, locked against input, and draws the long text unframed", () => {
     const html = draw();
     const framed = html.match(/class="fv[ "][^>]*>/g) ?? [];
 
-    // title, profile, priority, labels, milestone, dependencies, description, two checklists' items, plan and notes
-    expect(framed.length).toBeGreaterThanOrEqual(12);
-    expect(html).toMatch(/<textarea[^>]*class="fv[^"]*long[^>]*readOnly=""|<textarea[^>]*readOnly=""[^>]*class="fv[^"]*long/);
+    // title, profile, priority, labels, milestone, dependencies
+    expect(framed.length).toBeGreaterThanOrEqual(6);
+    expect(html).not.toMatch(/<textarea[^>]*data-field="(description|plan|notes)"/);
     expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*disabled=""/);
-  });
-
-  it("keeps the scrolling plan and notes boxes reachable by keyboard so they can be scrolled", () => {
-    const boxes = draw().match(/<textarea[^>]*class="fv long"[^>]*>/g) ?? [];
-
-    expect(boxes).toHaveLength(2);
-    for (const box of boxes) expect(box).not.toContain('tabindex="-1"');
   });
 
   it("draws Edit and Archive only when the board can", () => {
@@ -61,15 +57,6 @@ describe("the task view in read mode", () => {
     expect(readOnly).not.toContain("Archive…");
     expect(readOnly).not.toContain("Edit");
     expect(draw({ capabilities: undefined })).not.toContain("Archive…");
-  });
-
-  it("puts Start session beside the Move to menu in the footer", () => {
-    const html = draw();
-    const foot = html.slice(html.indexOf('class="tvfoot"'));
-
-    expect(foot).toContain("Move to");
-    expect(foot).toContain("▶ Start session");
-    expect(foot.indexOf("Move to")).toBeLessThan(foot.indexOf("▶ Start session"));
   });
 
   it("selects the priority's own option when the board stores it in lower case", () => {
@@ -95,7 +82,8 @@ describe("the task view in edit mode", () => {
     const read = draw();
     const edit = draw({ initialEditing: true });
 
-    expect(frames(edit)).toEqual(frames(read));
+    // the long text and the checks are plain read rows that become these framed boxes only in edit mode
+    expect(frames(edit).filter(([field]) => !["description", "plan", "notes", "acceptanceCriteria", "definitionOfDone"].includes(field))).toEqual(frames(read));
     expect(frames(edit).map(([field]) => field)).toEqual(expect.arrayContaining([
       "title", "profile", "priority", "labels", "milestone", "dependencies", "description", "acceptanceCriteria",
       "definitionOfDone", "plan", "notes",
@@ -104,17 +92,97 @@ describe("the task view in edit mode", () => {
     expect(edit).toContain("Save");
     expect(edit).toContain("Cancel");
     expect(edit).toContain('class="modal tv editing"');
-    expect(read.match(/class="remove"/g)).toHaveLength(edit.match(/class="remove"/g)?.length ?? 0);
-    expect(read.match(/class="add"/g)).toHaveLength(edit.match(/class="add"/g)?.length ?? 0);
-    expect(styles).toMatch(/\.tvhead \{[^}]*grid-template-columns: minmax\(0, 1fr\) 330px/);
+    expect(read).not.toContain('class="remove"');
+    expect(edit.match(/class="remove"/g)).toHaveLength(3);
     expect(styles).toMatch(/\.item \{[^}]*grid-template-columns: 22px 1fr 20px/);
   });
 
   it("disables Move and Start for the whole edit", () => {
     const html = draw({ initialEditing: true });
-    const foot = html.slice(html.indexOf('class="tvfoot"'));
+    const head = headOf(html);
 
-    expect(foot).toMatch(/class="mvbtn"[^>]*disabled=""/);
-    expect(foot).toMatch(/class="startbtn"[^>]*disabled=""/);
+    expect(head).toMatch(/class="mvbtn"[^>]*disabled=""/);
+    expect(head).toMatch(/class="startbtn"[^>]*disabled=""/);
+  });
+});
+
+describe("the task view's header", () => {
+  it("draws the id, Copy, lane, Open in Star Map and the actions in one row, with the title below", () => {
+    const head = headOf(draw());
+    const at = (text: string) => head.indexOf(text);
+
+    for (const text of ["TASK-9", "Copy", ">Ready<", "Open in Star Map ↗", "▶ Start session", "Move to", "Hide task", "Archive…", 'aria-label="Close"']) expect(at(text), text).toBeGreaterThan(-1);
+    const order = ["TASK-9", "Copy", ">Ready<", "Open in Star Map ↗", "▶ Start session", "Move to", "Hide task", "Archive…", 'aria-label="Close"'].map(at);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(at('data-field="title"')).toBeGreaterThan(at('aria-label="Close"'));
+    expect(draw()).not.toContain('class="tvfoot"');
+  });
+
+  it("offers Start session only from Ready, Waiting and Needs attention while no start is in flight", () => {
+    for (const lane of ["ready", "waiting", "needs_attention"]) expect(headOf(draw(lanes(lane)))).toContain("▶ Start session");
+    for (const lane of ["in_progress", "review", "done"]) expect(headOf(draw(lanes(lane)))).not.toContain("▶ Start session");
+    expect(headOf(draw({ claiming: true }))).not.toContain("▶ Start session");
+  });
+
+  it("draws the Move to menu with a row per column the task has a verdict for", () => {
+    const head = headOf(draw());
+
+    expect(head).toContain('aria-haspopup="menu"');
+    expect(head.match(/role="menuitem"/g)).toHaveLength(2);
+    expect(head).toContain("no review yet");
+    expect(head).toMatch(/class="mvmenu"[^>]*hidden=""/);
+  });
+
+  it("moves the task on the menu's Enter and closes the menu on Escape without closing the task", () => {
+    expect(menuKey({ open: true, on: 1 }, "Enter", [true, true])).toEqual({ state: { open: false, on: -1 }, pick: 1, handled: true });
+    expect(menuKey({ open: true, on: 0 }, "Escape", [true, true])).toMatchObject({ pick: null, handled: true, state: { open: false } });
+  });
+
+  it("copies 'TASK-N title' to the clipboard", async () => {
+    const writeText = vi.fn(async () => {});
+
+    expect(copyText(task, "A new title")).toBe("TASK-9 A new title");
+    expect(await copyToClipboard("TASK-9 Redraw the view", { writeText })).toBe(true);
+    expect(writeText).toHaveBeenCalledWith("TASK-9 Redraw the view");
+    expect(await copyToClipboard("x", { writeText: async () => { throw new Error("refused"); } })).toBe(false);
+    expect(await copyToClipboard("x", undefined)).toBe(false);
+  });
+
+  it("closes on a click outside the dialog or Escape, but not while editing", () => {
+    const scrim = {}, dialog = {};
+
+    expect(onScrim(scrim, scrim)).toBe(true);
+    expect(onScrim(dialog, scrim)).toBe(false);
+    expect(closesOnKey("Escape", false)).toBe(true);
+    expect(closesOnKey("Escape", true)).toBe(false);
+    expect(closesOnKey("Enter", false)).toBe(false);
+  });
+});
+
+describe("the task view's body", () => {
+  it("draws two columns: the read view on the left, the fields and live state in the rail", () => {
+    const html = draw();
+    const left = html.slice(html.indexOf('class="tvcol tvleft"'), html.indexOf('class="tvcol tvrail"'));
+    const rail = html.slice(html.indexOf('class="tvcol tvrail"'));
+
+    for (const text of ["Description", "Acceptance criteria", "1/2", "Definition of done", "0/1", "Implementation plan", "1. Write the test", "Notes", "Checked against the live config"]) expect(left, text).toContain(text);
+    for (const text of ["pull requests", "machine", "priority"]) expect(rail, text).toContain(text);
+    expect(left).not.toContain("pull requests");
+  });
+
+  it("draws the description as Markdown paragraphs, headings and code", () => {
+    const html = draw({ record: { ...record, description: "First para\n\n## Background\n\nSecond para\n\n```yaml\nstart_criteria: []\n```" } });
+
+    expect(html).toContain("<p>First para</p>");
+    expect(html).toContain("<h4>Background</h4>");
+    expect(html).toContain("<p>Second para</p>");
+    expect(html).toContain("<pre>start_criteria: []</pre>");
+  });
+
+  it("sizes the dialog and scrolls each column on its own, stacking rail-first below 1100px", () => {
+    expect(styles).toMatch(/#kbm \.modal\.tv \{[^}]*width: clamp\(860px, 65vw, 1500px\)[^}]*height: min\(84vh, 980px\)/);
+    expect(styles).toMatch(/#kbm \.tvbody \{[^}]*grid-template-columns: minmax\(0, 1fr\) clamp\(320px, 31%, 440px\)/);
+    expect(styles).toMatch(/#kbm \.tvcol \{[^}]*overflow-y: auto/);
+    expect(styles).toMatch(/@media \(max-width: 1100px\) \{[^@]*#kbm \.tvbody \{[^}]*column-reverse/);
   });
 });

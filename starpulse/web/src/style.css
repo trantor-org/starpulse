@@ -232,12 +232,27 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 
 /* The task view (approved mockup): fixed chrome around one set of field frames. Read is 3% tint/10% outline; edit unlocks
    those same boxes at 6%/22%, so switching modes never moves a field. */
-#kbm .modal.tv { display: flex; flex-direction: column; padding: 0; overflow: hidden; max-height: min(86vh, 860px); }
-#kbm .tvhead { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) 330px; align-items: flex-start; gap: 16px; padding: 18px 54px 14px 26px; border-bottom: 1px solid rgba(148,163,184,.12); }
-#kbm .tvhead .ttl { min-width: 0; }
-#kbm .tv .acts { display: flex; justify-content: flex-end; align-items: center; gap: 8px; min-height: 30px; }
+#kbm .modal.tv { display: flex; flex-direction: column; padding: 0; overflow: hidden; width: clamp(860px, 65vw, 1500px); max-width: calc(100vw - 32px); height: min(84vh, 980px); max-height: none; }
+/* Header: one meta row (id, Copy, lane, Open in Star Map, then the actions), the title on its own row beneath. */
+#kbm .tvhead { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 14px 20px 12px 26px; border-bottom: 1px solid rgba(148,163,184,.12); }
+#kbm .tvmeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: 30px; }
+#kbm .tvmeta .tid { font: calc(12px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; color: #b8c4d8; letter-spacing: .02em; }
+#kbm .tvmeta .copybtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 6px; border: 1px solid rgba(148,163,184,.22); color: #94a3b8; font-size: calc(11px * var(--fs)); }
+#kbm .tvmeta .copybtn:hover, #kbm .tvmeta .copybtn:focus-visible { color: var(--ink); border-color: rgba(148,163,184,.5); }
+#kbm .tvmeta .copybtn.ok { color: #34d399; border-color: rgba(52,211,153,.5); }
+#kbm .tvmeta .tvlane { --c: #94a3b8; display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px; border-radius: 999px; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); font-size: calc(11px * var(--fs)); white-space: nowrap; }
+#kbm .tvmeta .tvlane i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+#kbm .tvlane[data-lane=ready] { --c: #60a5fa; } #kbm .tvlane[data-lane=waiting] { --c: #94a3b8; } #kbm .tvlane[data-lane=in_progress] { --c: #fbbf24; }
+#kbm .tvlane[data-lane=review] { --c: #a78bfa; } #kbm .tvlane[data-lane=needs_attention] { --c: #fb7185; } #kbm .tvlane[data-lane=done] { --c: #34d399; }
+#kbm .tvmeta > a { font-size: calc(11px * var(--fs)); white-space: nowrap; }
+#kbm .tv .acts { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
 #kbm .tv .acts button { flex: none; white-space: nowrap; }
-#kbm .tvbody { overflow-y: auto; padding: 18px 26px 26px; display: flex; flex-direction: column; gap: 20px; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.25) transparent; }
+#kbm .tv .acts .tvx { all: unset; cursor: pointer; color: var(--muted); font-size: calc(14px * var(--fs)); padding: 2px 6px; margin-left: 4px; }
+#kbm .tv .acts .tvx:hover, #kbm .tv .acts .tvx:focus-visible { color: var(--ink); }
+/* Body: two columns that scroll apart; the rail is the right one. */
+#kbm .tvbody { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 31%, 440px); }
+#kbm .tvcol { min-width: 0; overflow-y: auto; padding: 18px 26px 26px; display: flex; flex-direction: column; gap: 20px; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.25) transparent; }
+#kbm .tvrail { padding: 16px 20px 24px; gap: 16px; background: rgba(148,163,184,.03); border-left: 1px solid rgba(148,163,184,.10); }
 #kbm .tv table { margin-top: 0; }
 #kbm .tv td { vertical-align: middle; padding: 3px 14px 3px 0; }
 #kbm .tv td:first-child { width: 104px; }
@@ -282,7 +297,13 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv .evidence.missing { color: #fda4af; }
 #kbm .tv .evidence.missing textarea { border-color: rgba(251,113,133,.8); }
 #kbm .tv .evidence-note { color: #fbbf24; font-size: calc(10.5px * var(--fs)); }
-#kbm .tvhead .k a { color: #a78bfa; }
+#kbm .tv .md { color: #b8c4d8; max-width: 92ch; } #kbm .tv .md p { margin: 0 0 10px; white-space: pre-line; } #kbm .tv .md.pre { white-space: pre-wrap; }
+#kbm .tv .md h4 { margin: 16px 0 6px; font-size: calc(11px * var(--fs)); font-weight: 500; color: #94a3b8; letter-spacing: .06em; text-transform: uppercase; }
+#kbm .tv .md pre { margin: 0 0 10px; padding: 8px 10px; border-radius: 6px; background: rgba(2,6,23,.7); white-space: pre-wrap; font-size: calc(11px * var(--fs)); }
+#kbm .tv .rlist { display: flex; flex-direction: column; gap: 4px; }
+#kbm .tv .ritem { display: grid; grid-template-columns: 16px 26px minmax(0, 1fr); gap: 6px; align-items: start; color: #b8c4d8; }
+#kbm .tv .ritem input[type=checkbox] { accent-color: #a78bfa; margin: 4px 0 0; } #kbm .tv .ritem .nn { color: #64748b; font-size: calc(11px * var(--fs)); padding-top: 1px; }
+#kbm .tv .ritem.done .tx { color: #7c8aa3; } #kbm .tv .none { color: #475569; }
 #kbm .tv .archbtn { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(248,113,113,.4); color: #f87171; font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .archbtn:hover, #kbm .tv .archbtn:focus-visible { background: rgba(248,113,113,.10); }
 #kbm .tv .editbtn { all: unset; cursor: pointer; padding: 4px 14px; border-radius: 6px; border: 1px solid rgba(167,139,250,.6); background: rgba(167,139,250,.16); color: #ede9fe; font-size: calc(11.5px * var(--fs)); }
@@ -304,26 +325,32 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv .discardacts { display: flex; justify-content: center; gap: 8px; }
 #kbm .tv .discardacts button { cursor: pointer; padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(148,163,184,.3); background: rgba(148,163,184,.08); color: var(--ink); }
 #kbm .tv .discardacts .danger { border-color: rgba(251,113,133,.5); color: #fda4af; }
-/* Move to opens upward from the fixed footer's right corner; Start session sits to its right. */
-#kbm .tvfoot { flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 26px; border-top: 1px solid rgba(148,163,184,.12); }
-#kbm .tvfoot .mv { position: relative; }
-#kbm .tvfoot .startbtn { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 6px; border: 1px solid rgba(52,211,153,.55); background: rgba(52,211,153,.12); color: #a7f3d0; font-size: calc(11.5px * var(--fs)); white-space: nowrap; }
-#kbm .tvfoot .startbtn:hover, #kbm .tvfoot .startbtn:focus-visible { background: rgba(52,211,153,.22); }
-#kbm .tvfoot .startbtn:disabled { opacity: .4; cursor: default; background: rgba(52,211,153,.12); }
-#kbm .tvfoot .mvbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 12px; border-radius: 6px; border: 1px solid rgba(148,163,184,.3); color: #cbd5e1; font-size: calc(11.5px * var(--fs)); }
-#kbm .tvfoot .mvbtn::after { content: ""; width: 5px; height: 5px; border: solid #6b7a93; border-width: 0 1.5px 1.5px 0; transform: translateY(1px) rotate(225deg); }
-#kbm .tvfoot .mvbtn[aria-expanded=false]::after { transform: translateY(-2px) rotate(45deg); }
-#kbm .tvfoot .mvbtn:hover, #kbm .tvfoot .mvbtn:focus-visible, #kbm .tvfoot .mvbtn[aria-expanded=true] { border-color: #a78bfa; background: rgba(167,139,250,.10); }
-#kbm .tvfoot .mvbtn:disabled { opacity: .4; cursor: default; background: none; border-color: rgba(148,163,184,.3); }
-#kbm .tvfoot .mvmenu { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 6; min-width: 200px; padding: 4px; background: #0c1322; border: 1px solid rgba(148,163,184,.3); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
-#kbm .tvfoot .mvmenu[hidden] { display: none; }
-#kbm .tvfoot .mvmenu div { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 5px; font-size: calc(12px * var(--fs)); color: #cbd5e1; cursor: pointer; white-space: nowrap; }
-#kbm .tvfoot .mvmenu div.guard { color: #fbbf24; }
-#kbm .tvfoot .mvmenu div.on { background: rgba(167,139,250,.16); color: #ede9fe; }
-#kbm .tvfoot .mvmenu div[aria-disabled=true] { opacity: .4; cursor: default; }
-#kbm .tvfoot .mvmenu .g { width: 14px; text-align: center; color: #6b7a93; }
+/* Move to opens downward, right-aligned under its button in the header. */
+#kbm .tvhead .mv { position: relative; }
+#kbm .tvhead .startbtn { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 6px; border: 1px solid rgba(52,211,153,.55); background: rgba(52,211,153,.12); color: #a7f3d0; font-size: calc(11.5px * var(--fs)); white-space: nowrap; }
+#kbm .tvhead .startbtn:hover, #kbm .tvhead .startbtn:focus-visible { background: rgba(52,211,153,.22); }
+#kbm .tvhead .startbtn:disabled { opacity: .4; cursor: default; background: rgba(52,211,153,.12); }
+#kbm .tvhead .mvbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 12px; border-radius: 6px; border: 1px solid rgba(148,163,184,.3); color: #cbd5e1; font-size: calc(11.5px * var(--fs)); }
+#kbm .tvhead .mvbtn::after { content: ""; width: 5px; height: 5px; border: solid #6b7a93; border-width: 0 1.5px 1.5px 0; transform: translateY(1px) rotate(225deg); }
+#kbm .tvhead .mvbtn[aria-expanded=false]::after { transform: translateY(-2px) rotate(45deg); }
+#kbm .tvhead .mvbtn:hover, #kbm .tvhead .mvbtn:focus-visible, #kbm .tvhead .mvbtn[aria-expanded=true] { border-color: #a78bfa; background: rgba(167,139,250,.10); }
+#kbm .tvhead .mvbtn:disabled { opacity: .4; cursor: default; background: none; border-color: rgba(148,163,184,.3); }
+#kbm .tvhead .mvmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; min-width: 200px; padding: 4px; background: #0c1322; border: 1px solid rgba(148,163,184,.3); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+#kbm .tvhead .mvmenu[hidden] { display: none; }
+#kbm .tvhead .mvmenu div { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 5px; font-size: calc(12px * var(--fs)); color: #cbd5e1; cursor: pointer; white-space: nowrap; }
+#kbm .tvhead .mvmenu div.guard { color: #fbbf24; }
+#kbm .tvhead .mvmenu div.on { background: rgba(167,139,250,.16); color: #ede9fe; }
+#kbm .tvhead .mvmenu div[aria-disabled=true] { opacity: .4; cursor: default; }
+#kbm .tvhead .mvmenu .g { width: 14px; text-align: center; color: #6b7a93; }
 @keyframes kb-scrim { from { background: rgba(2,4,10,0); } } @keyframes kb-modal { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 @media (prefers-reduced-motion: reduce) { #kbm, #kbm .modal { animation: none; } }
+/* Narrow windows: one column, the rail first so the task's live state stays on top. */
+@media (max-width: 1100px) {
+  #kbm .modal.tv { width: calc(100vw - 24px); height: calc(100vh - 24px); }
+  #kbm .tvbody { display: flex; flex-direction: column-reverse; overflow-y: auto; }
+  #kbm .tvcol { overflow: visible; flex: none; }
+  #kbm .tvrail { border-left: 0; border-bottom: 1px solid rgba(148,163,184,.10); }
+}
 
 /* Drag and moves, from the approved mockup: a press that travels lifts the card, legal columns light and the rest dim,
    an allowed drop lands at once with a spinner until the writer confirms, a refusal stays on the card. */
