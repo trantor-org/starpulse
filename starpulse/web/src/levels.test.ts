@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD, hostOf, pathKey, pathTo, startPath, taskKicker, topOf, tree, type Level, type Path } from "./levels";
+import { BOARD, hostOf, pathKey, pathTo, startPath, taskKicker, topFlow, topOf, tree, type Level, type Path } from "./levels";
 import type { Machine, Snapshot } from "./types";
 
 const machine = (ids: string[], subflows: Machine["subflows"] = [], source?: string): Machine => ({
@@ -144,5 +144,47 @@ describe("the machine drawn across a level's top", () => {
     expect(topOf(T.subs, { kind: "state", id: "review" })).toBeNull();
     expect(topOf(T.subs, { kind: "machine", flow: "in-progress" })).toBeNull();
     expect(topOf(T.subs, { kind: "board" })).toBeNull();
+  });
+});
+
+describe("machines entered from the top, each a level of its own", () => {
+  // The server's derivation (machine_ties.py): In Progress is the top, audit is entered from it, scan from audit, lint from scan.
+  const derived = (name: string, parent: string | null, chain: string[]) => ({ name, agents: [], machine: machine(["a", "b"]), parent, chain, depth: parent === null ? 0 : chain.length + 1, nested: [], ties: [], last: null, stuck: null });
+  const deep: Snapshot = {
+    graphs: ["board", "in-progress", "audit", "scan", "lint", "runs"],
+    flows: [
+      { name: "board", agents: [], machine: machine(["ready", "in_progress"], [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }]) },
+      derived("in-progress", null, []),
+      derived("audit", "in-progress", []),
+      derived("scan", "audit", ["audit"]),
+      derived("lint", "scan", ["audit", "scan"]),
+    ],
+    dags: [], settled: {}, error: null, now: 0,
+  };
+  const D = tree(deep);
+  const down = (...flows: string[]): Path => [...IN_PROGRESS, ...flows.map((flow): Level => ({ kind: "machine", flow }))];
+
+  it("opens one level per machine above it, and the top machine is the state level itself", () => {
+    expect(pathTo(D, "in-progress")).toEqual(IN_PROGRESS);
+    expect(pathTo(D, "audit")).toEqual(down("audit"));
+    expect(pathTo(D, "lint")).toEqual(down("audit", "scan", "lint"));
+    expect(pathKey(down("audit", "scan", "lint"))).toBe("board/in_progress/audit/scan/lint");
+  });
+
+  it("names the machine on top at each level", () => {
+    expect([IN_PROGRESS, down("audit"), down("audit", "scan", "lint"), BOARD].map((p) => topFlow(D.subs, p))).toEqual(["in-progress", "audit", "lint", null]);
+  });
+
+  it("reopens a cached deep path while its chain still holds, and the Board when it does not", () => {
+    expect(startPath("/", "", down("audit", "scan", "lint"), D)).toEqual(down("audit", "scan", "lint"));
+    expect(startPath("/", "", down("lint"), D)).toEqual(BOARD);
+  });
+
+  it("opens the level `open=` names over the cached one, and the level a `focus=` row is entered from when only that is named", () => {
+    expect(startPath("/", "", down("audit"), D, { open: "scan" })).toEqual(down("audit", "scan"));
+    expect(startPath("/", "", null, D, { focus: "lint" })).toEqual(down("audit", "scan"));
+    expect(startPath("/", "", null, D, { focus: "audit" })).toEqual(IN_PROGRESS);
+    expect(startPath("/", "", down("audit"), D, { open: "gone" })).toEqual(down("audit"));
+    expect(startPath("/", "", null, D, { open: "in-progress" })).toEqual(IN_PROGRESS);
   });
 });

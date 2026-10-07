@@ -11,7 +11,7 @@ import { demoStep } from "./demo";
 import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
-import { BOARD, hostOf, pathKey, pathLedger, startPath, taskKicker, type Level, type Path } from "./levels";
+import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
 import { freshKeys, optionalSteps, statusLine } from "./ledger";
 import { bannerOf, doctorTip, focusRow, junctionTip, ledgerHit, mergePanel, mergeTip, stepStates, stepTip, type DoctorBox, type PanelCtx } from "./ledgerPanel";
 import { createContract } from "./contract";
@@ -39,9 +39,9 @@ import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "./adminPrefs";
 import { clockHm, clockHms, stamp } from "./clock";
 import { sizes as ledgerSizes, slot as ledgerSlot } from "./machineLedger";
 import { entryAt, entryPath, rowLabels } from "./machineLanes";
-import { rowMeta, stuckCount } from "./machineRows";
+import { emptyNote, rowMeta, stuckCount } from "./machineRows";
 import { sessionsOf, traceSteps, type Spot } from "./machineTrace";
-import { canvasSpace, retired, viewOf, viewSearch } from "./nav";
+import { backStep, canvasSpace, levelParams, levelSearch, retired, viewOf, viewSearch } from "./nav";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
 export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
@@ -182,6 +182,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let mergeSel: string | null = null;
   // the machine ledger's pinned task, by machine and session id, found again each frame in the newest snapshot
   let lpin: { flow: string; id: string } | null = null;
+  /** The ledger row picked out on the top machine's level (its tie stays drawn), and the row that glows after stepping back out onto it. */
+  let pickedRow: string | null = null, glow: { name: string; t0: number } | null = null;
   const pages: Record<string, number> = {};
   // what a navigator search result under the pointer stands for, lit while the pointer is off the canvas
   let spotted: Target | null = null, spotNear = false;
@@ -240,7 +242,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (!S || !W) return;
     const was = fit;
     laidScale = prefs().scale;
-    const held = scene?.top && (overRows() || lpin) ? scene.top.rows.map((r) => r.name) : undefined; // the pointer over the rows, or a pinned path, holds their order
+    const held = scene?.top && (overRows() || lpin || pickedRow) ? scene.top.rows.map((r) => r.name) : undefined; // the pointer over the rows, a pinned path or a focused row holds their order
     scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held }, level());
     // the machine across a level's top is laid out in screen pixels: it is drawn at 1:1 from the fit box's left edge and never zooms or pans
     fit = scene.top ? { k: 1, x: I, y: 0 } : fitScene();
@@ -299,26 +301,55 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     shot.width = cv.width;
     shot.height = cv.height;
     shot.getContext("2d")!.drawImage(cv, 0, 0);
-    const inward = next.length >= path.length;
+    const inward = next.length >= path.length, came = next.length === path.length - 1 ? path[path.length - 1] : null;
     path = next;
     keep("fv.path", path);
     pin = null;
+    lpin = null;
+    pickedRow = glow = null;
     mergeSel = null;
     panel.classList.remove("open");
     setHover(null);
     anim = null;
     layout(false);
     if (then) view = then();
+    // stepping out of a machine zooms back down onto the row it came from, which glows a moment
+    const top = scene?.top, row = came?.kind === "machine" ? top?.rows.find((r) => r.name === came.flow) : undefined;
+    if (top && row) {
+      glow = { name: row.name, t0: performance.now() };
+      fx = I + top.metaX + top.metaW / 2;
+      fy = Math.min(top.laneBottom, Math.max(top.laneTop, top.laneTop + row.y + row.h / 2));
+    }
+    syncUrl();
     hud.set({ path });
     trans = { snap: shot, inward, f: { x: fx, y: fy }, t0: performance.now() };
     loop.wake();
   }
   const zoomedOut = () => view.k <= fit.k * 1.02;
   const push = (l: Level, fx: number, fy: number) => go([...path, l], fx, fy);
-  // step out: first undo any zoom, then (already at the default size) go up one level; at the top level it only clears zoom
-  const pop = (fx?: number, fy?: number) => {
-    if (!zoomedOut()) return flyTo(fit);
-    if (path.length > 1) go(path.slice(0, -1), fx, fy);
+  /** The address that reproduces this level: the machine on top when it is not the state's own, and the row picked out on it. */
+  function syncUrl() {
+    if (fixture || !S) return;
+    const open = path[path.length - 1].kind === "machine" ? topFlow(S.tree.subs, path) : null;
+    history.replaceState(null, "", location.pathname + levelSearch(location.search, { open, focus: pickedRow }) + location.hash);
+  }
+  const setFocus = (name: string | null) => {
+    pickedRow = name;
+    syncUrl();
+    loop.wake();
+  };
+  // step out one thing at a time: the open panel, the picked row, any zoom, then up a level (a machine, then the Board)
+  const back = (fx?: number, fy?: number) => {
+    const step = backStep({ panel: panel.classList.contains("open"), focus: pickedRow, scrolled: !scene?.top && !zoomedOut(), depth: path.length });
+    if (step === "panel") closePanel();
+    else if (step === "focus") setFocus(null);
+    else if (step === "scroll") flyTo(fit);
+    else if (step === "up") go(path.slice(0, -1), fx, fy);
+  };
+  /** A ledger row opens its machine on top, zooming through the point it was clicked. */
+  const drill = (name: string, fx: number, fy: number) => {
+    const to = S && pathTo(S.tree, name, hostOf(path));
+    if (to) go(to, fx, fy);
   };
 
   const worldAt = (ox: number, oy: number) => ({ x: (ox - view.x) / view.k, y: (oy - view.y) / view.k });
@@ -337,10 +368,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     view = zoomAbout(view, fit, { x: e.offsetX, y: e.offsetY }, wheelFactor(e.deltaY, e.deltaMode, H)) ?? fit;
     save();
   };
-  // right-click closes an open panel and stays on the level; with none open it steps out
+  // right-click steps out, as Escape does
   const onContext = (e: MouseEvent) => {
     e.preventDefault();
-    if (!closePanel()) pop(e.offsetX, e.offsetY);
+    back(e.offsetX, e.offsetY);
   };
   const onDown = (e: MouseEvent) => {
     if (e.button !== 0) return;
@@ -382,15 +413,15 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (!spotted) setHover(null);
   };
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") closePanel();
-    if (e.target instanceof HTMLInputElement) return;
+    if (e.target instanceof HTMLInputElement) return void (e.key === "Escape" && closePanel());
+    if (away) return;
     const grid = ledgerGrid(), next = grid && !e.ctrlKey && !e.metaKey && !e.altKey ? keyScroll(scroll, grid, e.key) : null;
     if (next) {
       e.preventDefault();
       scroll = next;
       return;
     }
-    if (e.key === "Backspace") pop();
+    if (e.key === "Escape" || e.key === "Backspace") back();
     if (e.key === "0" && scene) flyTo(fit);
   };
   /** A hidden tab stops animating, so it drops the stream; on return the stream's fresh snapshot places everyone at once, replaying nothing missed. */
@@ -436,11 +467,17 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     runEvents.observe(S.dags, T);
     if (first) {
       // A retired per-graph address opens its level; the page's one address is the root.
-      path = startPath(location.pathname, location.hash, recall<Path>("fv.path"), S.tree);
+      const at = levelParams(location.search);
+      path = startPath(location.pathname, location.hash, recall<Path>("fv.path"), S.tree, at);
       if (!fixture && retired(location.pathname, location.hash)) history.replaceState(null, "", "/" + viewSearch(location.search, viewOf(location.search), prefs().view));
       keep("fv.path", path);
     }
     layout(!first);
+    if (first) {
+      const named = levelParams(location.search).focus;
+      pickedRow = named && scene?.top?.rows.some((r) => r.name === named) ? named : null; // the address restores the row picked out, if this level still has it
+      syncUrl();
+    }
     publish();
     paintFan();
     paintMerge();
@@ -684,7 +721,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     tip.style.opacity = "1";
   }
   // ---- the back-trace: the path a hovered or pinned task took through this level's machine ----
-  const pinnable = (s: Subject) => (s.kind === "task" ? level().kind === "board" || level().kind === "state" : level().kind === "machine");
+  const pinnable = (s: Subject) => !scene?.top && (s.kind === "task" ? level().kind === "board" || level().kind === "state" : level().kind === "machine");
   const goalOf = (m?: Machine) => m?.states.find((x) => x.final)?.name ?? "its end";
   /** A task's run, or why there is none yet. */
   function runFor(s: Subject): Run | "loading" | "unavailable" {
@@ -911,9 +948,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function click(fx: number, fy: number) {
     const h = hover, sky = S;
     if (!h || !sky) return void closePanel();
-    if (h.kind === "row" || h.kind === "rstate") return; // a ledger row takes no click yet (TASK-3121); a pinned path stays pinned
+    // a click anywhere on a row (its name, a state or a DAG star) opens that machine, nested or not
+    if (h.kind === "row") return drill(h.o.name, fx, fy);
+    if (h.kind === "rstate") return drill(scene!.top!.rows.find((r) => r.nodes.includes(h.o))!.name, fx, fy);
     pin = null;
     lpin = null;
+    // a state of the top machine that machines are entered from picks out the first of them
+    if (h.kind === "state" && scene?.top) {
+      const kid = scene.top.rows.find((r) => S!.flows[r.name].ties?.[0]?.machine === scene!.top!.flow && S!.flows[r.name].ties?.[0]?.state === h.o.id);
+      return kid ? setFocus(kid.name) : undefined;
+    }
     if (h.kind === "ltask") return openLedgerTask(h.o);
     if (h.kind === "galaxy") return push({ kind: "state", id: h.o.id }, fx, fy);
     if (h.kind === "moon" && h.o.pager) return changePage(h.o.pager);
@@ -2041,7 +2085,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** The machine ledger's rows under the top: each machine entered from it, newest activity first, with its tie, its stuck mark and its DAG launches. */
   function drawLane() {
     const sc = scene!, top = sc.top!, scale = prefs().scale, { fs, gs } = ledgerSizes(scale), mx = top.metaX, mw = top.metaW, nameP = 12 * fs, subP = 10 * fs, top0 = new Map(top.nodes.map((n) => [n.id, n]));
-    const hot = hotRow(), hs = hover?.kind === "state" ? hover.o : null, now = T;
+    const hot = hotRow(), hs = hover?.kind === "state" ? hover.o : null, now = T, fl = glow ? Math.max(0, 1 - (performance.now() - glow.t0) / 1600) : 0;
+    if (!fl) glow = null;
     cx.save();
     cx.beginPath();
     cx.rect(0, top.laneTop, FW, top.laneBottom - top.laneTop);
@@ -2067,15 +2112,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       if (y !== to) sliding = true;
       return { row, y };
     });
+    if (fl) sliding = true; // the glow fades over frames
+    if (!top.rows.length) text(emptyNote(top.flow), (top.x0 + top.x1) / 2, (top.laneTop + top.laneBottom) / 2, subP, rgba(SUB, 0.6), "center", 300);
     const pos = (row: RowView, y: number) => new Map(row.nodes.map((n) => [n.id, { x: n.x, y: y + row.c + n.oy, r: n.r, color: n.color, orbit: n.orbit }]));
     const spots = new Map(lane.map((d) => [d.row.name, pos(d.row, d.y)]));
     for (const { row, y } of lane) {
       if (y + row.h < top.laneTop || y > top.laneBottom) continue;
-      const f = S!.flows[row.name], m = rowMeta(S!.flows, row.name, top.flow, now), ns = spots.get(row.name)!, on = hot === row.name, fade = Math.abs(y - (top.laneTop + row.y)) > 3 ? 0.3 : 1;
+      const f = S!.flows[row.name], m = rowMeta(S!.flows, row.name, top.flow, now), ns = spots.get(row.name)!, picked = pickedRow === row.name, on = hot === row.name || picked, fade = Math.abs(y - (top.laneTop + row.y)) > 3 ? 0.3 : 1;
       for (const [id, p] of ns) ledSpots.set(`${row.name}:${id}`, { ...p, y0: top.laneTop, y1: top.laneBottom, row: row.h });
       cx.globalAlpha = fade;
-      if (on) {
-        cx.fillStyle = rgba(PLANET, 0.055);
+      const lit = Math.max(on ? (picked ? 0.09 : 0.055) : 0, glow?.name === row.name ? 0.16 * fl : 0);
+      if (lit) {
+        cx.fillStyle = rgba(PLANET, lit);
         cx.fillRect(mx - 10, y, top.x1 + 20 - mx, row.h);
       }
       cx.fillStyle = rgba(SUB, 0.09);
@@ -2153,7 +2201,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         if (t.kind === "dag" || !t.machine || !t.state) return;
         const a = t.machine === top.flow ? top0.get(t.state) : spots.get(t.machine)?.get(t.state);
         if (!a) return;
-        const al = hot === row.name || (hs && hs.flow === t.machine && hs.id === t.state) ? (i ? 0.45 : 0.9) : 0;
+        const al = hot === row.name || pickedRow === row.name || (hs && hs.flow === t.machine && hs.id === t.state) ? (i ? 0.45 : 0.9) : 0;
         if (!al) return;
         const col = t.machine === top.flow ? sc.mStates[t.state].color : (a as { color: string }).color, e = entryPath(a, to), len = Math.hypot(to.x - a.x, to.y - a.y) || 1, t0 = Math.min(0.4, (a.r + 2) / len), t1 = 1 - Math.min(0.4, (to.r + 3) / len);
         flowLine({ x: a.x, y: a.y, color: col }, { x: to.x, y: to.y, color: to.color }, al, 0.5, t.kind === "observed" ? [1.5, 6] : [2, 5]);

@@ -1075,59 +1075,6 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     for (const k of scene.tasks) k.bev = bevOf(k.id);
   }
 
-  function layered(name: string, x0: number, y0: number, w: number, h: number) {
-    const flow = S.flows[name], st = flow.machine.states, layer: Record<string, number> = {}, q: string[] = [];
-    st.filter((s) => s.initial).forEach((s) => { layer[s.id] = 0; q.push(s.id); });
-    while (q.length) {
-      const u = q.shift()!;
-      for (const t of flow.machine.transitions) if (t.source === u && layer[t.target] === undefined) { layer[t.target] = layer[u] + 1; q.push(t.target); }
-    }
-    st.forEach((s) => { if (layer[s.id] === undefined) layer[s.id] = 0; });
-    const max = Math.max(0, ...Object.values(layer)), cols: Record<number, typeof st> = {}, counts: Record<string, number> = {}, out: Record<string, MState> = {};
-    st.forEach((s) => (cols[layer[s.id]] ||= []).push(s));
-    hosted(S, name, ctx.host).forEach((a) => (counts[a.state] = (counts[a.state] || 0) + 1));
-    for (const [l, list] of Object.entries(cols))
-      list.forEach((s, i) => {
-        out[s.id] = { id: s.id, name: s.name, final: s.final, initial: s.initial, flow: name, n: counts[s.id] || 0, loops: loopsOf(flow, s.id),
-          x: x0 + (w * Number(l)) / Math.max(1, max), y: y0 + (h * (i + 1)) / (list.length + 1), color: RAMP[Math.round((Number(l) / Math.max(1, max)) * (RAMP.length - 1))] };
-      });
-    return out;
-  }
-
-  function buildMachine(name: string) {
-    Object.assign(scene, { w: 1800, h: 1000, flow: name });
-    const flow = S.flows[name];
-    if (!flow) return;
-    scene.mStates = layered(name, 180, 260, 1440, flow.machine.states.length > 8 ? 380 : 300);
-    scene.mEdges = flow.machine.transitions.map((t) => ({ ...t, flow: name, a: scene.mStates[t.source], b: scene.mStates[t.target] }));
-    // each state name takes the side (below, above, right, left) that crosses the fewest drawn paths, clear of its outermost ring of tasks
-    const pts = scene.mEdges.flatMap((e) => (!e.a || !e.b || e.a === e.b ? [] : sample(curveOf(e.a, e.b), 34)));
-    for (const s of Object.values(scene.mStates)) {
-      const R = s.n ? taskSlot(stateR(s) + 7, s.n - 1).rr + 3 : stateR(s), w = textW(s.name, 12.5) / 2, up = R + 12;
-      const c = bestSide([
-        { x0: s.x - w, x1: s.x + w, y0: s.y + R + 4, y1: s.y + R + 26, lx: s.x, ly: s.y + R + 16 },
-        { x0: s.x - w, x1: s.x + w, y0: s.y - up - 22, y1: s.y - up, lx: s.x, ly: s.y - up - 10 },
-        { x0: s.x + R + 6, x1: s.x + R + 14 + 2 * w, y0: s.y - 11, y1: s.y + 11, lx: s.x + R + 10 + w, ly: s.y },
-        { x0: s.x - R - 14 - 2 * w, x1: s.x - R - 6, y0: s.y - 11, y1: s.y + 11, lx: s.x - R - 10 - w, ly: s.y },
-      ], pts);
-      s.lab = { x: c.lx!, y: c.ly };
-    }
-    hosted(S, name, ctx.host).forEach((s) => scene.machineTasks.push({ ...s, flow: name }));
-    for (const [sid, c] of Object.entries(S.child[name] || {})) {
-      const a = scene.mStates[sid];
-      if (!a || !S.flows[c.flow]) continue;
-      const p = planet(c.flow, 0, 0, 50, false, ctx.host);
-      p.anchor = a;
-      p.when = c.when;
-      place(p, a.x, a.y + 230);
-      scene.planets.push(p);
-    }
-    scene.box = boxOf([
-      ...Object.values(scene.mStates).flatMap((s) => { const w = textW(s.name, 12.5) / 2 + 10; return [[s.x - 50, s.y - 50], [s.x + 50, s.y + 50], [s.lab!.x - w, s.lab!.y - 20], [s.lab!.x + w, s.lab!.y + 20]]; }),
-      ...scene.planets.flatMap((p) => [[p.x - p.R - 70, p.y - p.R - 40], [p.x + p.R + 70, p.y + p.R + 80]]),
-    ]);
-  }
-
   // The machine across the top of a state level that opens a primary machine (machineLedger.ts): its states, flow lines and tasks in screen
   // pixels, so the hover and panels the machine level has work on it unchanged.
   const tasksOf = (f: { agents: { state: string }[] }) => {
@@ -1135,12 +1082,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     for (const a of f.agents) n[a.state] = (n[a.state] ?? 0) + 1;
     return n;
   };
-  function buildTop(name: string) {
+  function buildTop(name: string, like?: string) {
     const flow = S.flows[name];
     if (!flow) return;
-    const tasks = tasksOf(flow);
+    const agents = hosted(S, name, ctx.host), tasks = tasksOf({ agents });
+    const frame = { W, H, scale: ctx.scale ?? 100, measure: ctx.measure ?? ((t: string, px: number) => t.length * (px * 0.56 + 0.6)), ...ctx.chrome };
+    // a machine opened from a row stands as tall as the machine it was opened from
+    const model = like && S.flows[like], height = model ? ledgerTop({ states: model.machine.states, transitions: model.machine.transitions, tasks: tasksOf(model), entered: [] }, frame).hdrB : undefined;
     const entered = [...new Set([...Object.keys(S.child[name] ?? {}), ...Object.values(S.flows).flatMap((f) => (f.ties?.[0]?.machine === name && f.ties[0].state ? [f.ties[0].state] : []))])];
-    const top = ledgerTop({ states: flow.machine.states, transitions: flow.machine.transitions, tasks, entered }, { W, H, scale: ctx.scale ?? 100, measure: ctx.measure ?? ((t, px) => t.length * (px * 0.56 + 0.6)), ...ctx.chrome });
+    const top = ledgerTop({ states: flow.machine.states, transitions: flow.machine.transitions, tasks, entered }, { ...frame, height });
     const { fs } = ledgerSizes(ctx.scale ?? 100), laneTop = top.hdrB + 6, laneBottom = H - 50 * fs;
     const order = rankRows(S.flows, name, ctx.held), machines = order.map((m) => ({ name: m, states: S.flows[m].machine.states, transitions: S.flows[m].machine.transitions, tasks: tasksOf(S.flows[m]) }));
     const lane = laneRows(machines, { x0: top.x0, x1: top.x1 }, { scale: ctx.scale ?? 100, laneH: laneBottom - laneTop });
@@ -1154,7 +1104,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       const a = scene.mStates[t.source], b = scene.mStates[t.target];
       return { ...t, flow: name, a, b, bend: a && b && b.x < a.x - 1 ? 0.28 : 0.08 };
     });
-    flow.agents.forEach((a) => scene.machineTasks.push({ ...a, flow: name }));
+    agents.forEach((a) => scene.machineTasks.push({ ...a, flow: name }));
   }
 
   // Fold level. A fold over a Board path is that path's Ledger (ledger.ts): the DAGs tied to the event as templates in one row, the DAG that
@@ -1241,7 +1191,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const top = topOf(SUBS, l);
     if (top) buildTop(top);
   } else if (l.kind === "fold") buildFold(l);
-  else buildMachine(l.flow);
+  else buildTop(l.flow, topOf(SUBS, { kind: "state", id: ctx.host ?? "" }) ?? Object.values(SUBS)[0]?.[0]);
   return scene;
 }
 

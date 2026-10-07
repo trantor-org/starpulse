@@ -83,3 +83,30 @@ export function queryString(params: URLSearchParams): string {
   const text = params.toString().replace(/=(?=&|$)/g, "");
   return text ? `?${text}` : "";
 }
+
+/** What Escape, Backspace and a right-click undo next: the open panel, the focused row, the scroll, then a level up. */
+export type Back = "panel" | "focus" | "scroll" | "up";
+
+/** The next thing to undo, one per press, or null on the Board. `depth` is the path's length. */
+export function backStep(at: { panel: boolean; focus: string | null; scrolled: boolean; depth: number }): Back | null {
+  if (at.panel) return "panel";
+  if (at.focus) return "focus";
+  if (at.scrolled) return "scroll";
+  return at.depth > 1 ? "up" : null;
+}
+
+/** The machine level and the row focused on it that an address names; each null when absent. */
+export function levelParams(search: string): { open: string | null; focus: string | null } {
+  const params = new URLSearchParams(search);
+  return { open: params.get("open"), focus: params.get("focus") };
+}
+
+/** The query string that reproduces a machine level and its focused row, keeping every other parameter. */
+export function levelSearch(search: string, at: { open: string | null; focus: string | null }): string {
+  const params = new URLSearchParams(search);
+  params.delete("open");
+  params.delete("focus");
+  if (at.open) params.set("open", at.open);
+  if (at.focus) params.set("focus", at.focus);
+  return queryString(params);
+}

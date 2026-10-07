@@ -69,3 +69,6 @@ export function rowMeta(flows: Record<string, FlowSnapshot>, name: string, top: 
     sub: `${f.machine.states.length} states · ${n} task${n === 1 ? "" : "s"}`,
   };
 }
+
+/** What an empty lane says: the machine on top has none entered from it, and Escape is the way back. */
+export const emptyNote = (machine: string): string => `nothing is entered from ${machine} · Esc steps back out`;
