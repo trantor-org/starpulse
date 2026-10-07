@@ -386,8 +386,8 @@ describe("Waiting stacks", () => {
     const bucket = waiting(tasks)[0];
 
     expect(stacks(tasks)).toEqual([["T-3", "T-4"], ["T-1", "T-2", "T-5"]]);
-    expect(bucket.stacks[0].waitsOn.get("T-4")).toEqual(["T-2", "T-3"]);
-    expect(bucket.stacks[1].waitsOn.get("T-5")).toEqual(["T-3", "T-1"]);
+    expect(bucket.stacks[0].links.get("T-4")).toEqual(["T-2", "T-3"]);
+    expect(bucket.stacks[1].links.get("T-5")).toEqual(["T-3", "T-1"]);
   });
 
   it("leave a task whose only open dependency is not Waiting, or is in another milestone, a stack of its own", () => {
@@ -420,5 +420,57 @@ describe("Waiting stacks", () => {
 
   it("stop at a dependency cycle instead of recursing forever", () => {
     expect(stacks([wait("T-1", "m-1", "T-2"), wait("T-2", "m-1", "T-1")]).flat().sort()).toEqual(["T-1", "T-2"]);
+  });
+});
+
+describe("Done chains", () => {
+  const done = (id: string, milestone: string, ...dependencies: string[]): KanbanTask => ({ ...task(id, "done", milestone), dependencies });
+  const finished = (tasks: KanbanTask[], prefs = NO_PREFS) => column(view(tasks, prefs), "done").buckets;
+  const stacks = (tasks: KanbanTask[], prefs = NO_PREFS) => finished(tasks, prefs).flatMap((b) => b.stacks.map((s) => s.members.map((t) => t.id)));
+
+  it("fold a Done task under the Done task that depends on it, the chain's last finished on top and the rest by distance from it", () => {
+    // T-3 finished last: T-2 unblocked it, T-1 unblocked T-2, and T-4 sat beside T-2
+    const tasks = [done("T-1", "m-1"), done("T-2", "m-1", "T-1"), done("T-4", "m-1", "T-1"), done("T-3", "m-1", "T-2", "T-4")];
+    const bucket = finished(tasks)[0];
+
+    expect(stacks(tasks)).toEqual([["T-3", "T-2", "T-4", "T-1"]]);
+    expect(bucket.stacks[0].top.id).toBe("T-3");
+    expect(bucket.stacks[0].links.get("T-1")).toEqual(["T-2", "T-4"]);
+  });
+
+  it("fold the tasks a milestone's retro depends on under the retro", () => {
+    const tasks = [done("T-9", "m-1", "T-1", "T-2", "T-10"), done("T-10", "m-1"), done("T-1", "m-1"), done("T-2", "m-1")];
+
+    expect(stacks(tasks)).toEqual([["T-9", "T-1", "T-2", "T-10"]]);
+  });
+
+  it("leave a Done task whose dependency is in another milestone, not Done or off the board a stack of its own", () => {
+    const tasks = [done("T-1", "m-1", "T-2", "R-1", "X-1"), done("T-2", "m-2"), { ...task("R-1", "ready", "m-1") }];
+
+    expect(stacks(tasks)).toEqual([["T-2"], ["T-1"]]);
+  });
+
+  it("build stacks from the visible cards, so a filtered-out or hidden task leaves its chain", () => {
+    const tasks = [done("T-1", "m-1"), done("T-2", "m-1", "T-1"), done("T-3", "m-1", "T-2")];
+
+    expect(stacks(tasks, hideTask(NO_PREFS, "T-2"))).toEqual([["T-3"], ["T-1"]]);
+    expect(stacks(tasks, { ...NO_PREFS, query: "T-1" })).toEqual([["T-1"]]);
+  });
+
+  it("stack only the Waiting and Done lanes", () => {
+    const tasks = [{ ...task("T-1", "review", "m-1") }, { ...task("T-2", "review", "m-1"), dependencies: ["T-1"] }];
+
+    expect(column(view(tasks), "review").buckets[0].stacks).toEqual([]);
+  });
+
+  it("find the Done chain a task sits in, only when it has company", () => {
+    const l = view([done("T-1", "m-1"), done("T-2", "m-1", "T-1"), done("T-3", "m-1")]);
+
+    expect(stackOf(l, "T-1")?.members.map((t) => t.id)).toEqual(["T-2", "T-1"]);
+    expect(stackOf(l, "T-3")).toBeUndefined();
+  });
+
+  it("stop at a dependency cycle instead of recursing forever", () => {
+    expect(stacks([done("T-1", "m-1", "T-2"), done("T-2", "m-1", "T-1")]).flat().sort()).toEqual(["T-1", "T-2"]);
   });
 });

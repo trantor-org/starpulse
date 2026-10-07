@@ -8,7 +8,7 @@ import { ConnectTracker } from "./ConnectTracker";
 import type { HudState } from "./hud";
 import {
   CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll,
-  stackOf, stackStep, toggleFold, unstacked, whyHidden,
+  STACKED, stackOf, stackStep, toggleFold, unstacked, whyHidden,
   type KanbanTask, type Option, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanban";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
@@ -96,17 +96,18 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
 export type Chain = "self" | "holds" | "waits";
 
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
-export function Card({ task, holds = 0, chain, stacked = 0, under = false, waitsOn, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
+export function Card({ task, holds = 0, chain, stacked = 0, under = false, links, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
   task: KanbanTask; holds?: number; chain?: Chain;
-  /** The Waiting tasks stacked under this one, on a stack's top card; whether this card sits under one, and the open tasks it waits on while that stack is unstacked. */
-  stacked?: number; under?: boolean; waitsOn?: string[]; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  /** The tasks stacked under this one, on a stack's top card; whether this card sits under one, and while that stack is unstacked the open tasks it waits on, or the Done tasks it unblocked. */
+  stacked?: number; under?: boolean; links?: string[]; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
   const labels = task.labels.filter((l) => !/^kind-|^agent-resolvable$/.test(l)).slice(0, 3);
   const live = task.live, claim = marks.claim;
   const playing = onPlay && !claim && startLane(task);
   const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
-  const badge = stacked > 0 && <StackBadge count={stacked} />;
+  const finished = task.lane === "done";
+  const badge = stacked > 0 && <StackBadge count={stacked} done={finished} />;
   const guard = task.moves.in_progress?.allowed === false ? task.moves.in_progress.reason : "";
   return (
     <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={onPress}
@@ -115,7 +116,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, waits
       <div className="top">
         <span className="id">{task.id}</span><PullChip pulls={task.prs} />{compact && badge}
       </div>
-      {waitsOn && waitsOn.length > 0 && <div className="uw"><span className="nw">⧗ waits on</span>{" "}{waitsOn.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
+      {links && links.length > 0 && <div className={`uw${finished ? " dn" : ""}`}><span className="nw">{finished ? "✓ unblocked" : "⧗ waits on"}</span>{" "}{links.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>
       {claim ? (
         <div className="mach sess">
@@ -155,21 +156,21 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, waits
   );
 }
 
-/** The count of Waiting tasks stacked under a card, beside its ⛓. */
-function StackBadge({ count }: { count: number }) {
+/** The count of tasks stacked under a card, beside its ⛓: Waiting tasks stacked under it, or in a green Done chain the Done tasks its chain finished first. */
+function StackBadge({ count, done }: { count: number; done: boolean }) {
   return (
-    <span className="sk" title={`${count} Waiting task${count === 1 ? "" : "s"} stacked under this one; hover to unstack`}>
+    <span className={`sk${done ? " dn" : ""}`} title={`${count} ${done ? "Done" : "Waiting"} task${count === 1 ? "" : "s"} ${done ? "this one's chain finished first" : "stacked under this one"}; hover to unstack`}>
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="2.5" y="2" width="11" height="7" rx="1.5" /><path d="M3.5 11.5h9M5 14h6" /></svg>{count}
     </span>
   );
 }
 
 /** How a stack's cards are drawn: the card for a task, with what the stack adds to it. */
-type DrawCard = (task: KanbanTask, extra?: { stacked?: number; under?: boolean; waitsOn?: string[] }) => ReactNode;
+type DrawCard = (task: KanbanTask, extra?: { stacked?: number; under?: boolean; links?: string[] }) => ReactNode;
 
 /**
- * One Waiting stack. Folded, the top card is whole and one or two card edges peek below it; unstacked, the cards under it open downward,
- * pushing what is below, each saying what it waits on. The rest are always drawn so the unfold can animate; the style hides them folded.
+ * One Waiting stack or Done chain. Folded, the top card is whole and one or two card edges peek below it; unstacked, the cards under it open downward,
+ * pushing what is below, each saying what it waits on, or in a Done chain which task it unblocked. The rest are always drawn so the unfold can animate; the style hides them folded.
  */
 export function StackView({ stack, state, onEvent, card }: { stack: Stack; state: StackOpen; onEvent: (e: StackEvent) => void; card: DrawCard }) {
   const open = unstacked(state), under = stack.members.slice(1);
@@ -182,7 +183,7 @@ export function StackView({ stack, state, onEvent, card }: { stack: Stack; state
       <div className="spine" />
       {card(stack.top, { stacked: under.length })}
       <div className="rest"><div className="restin">
-        {under.map((t) => card(t, { under: true, waitsOn: open ? stack.waitsOn.get(t.id) : undefined }))}
+        {under.map((t) => card(t, { under: true, links: open ? stack.links.get(t.id) : undefined }))}
       </div></div>
     </div>
   );
@@ -206,12 +207,12 @@ function OpenStack({ stack, card, enabled }: { stack: Stack; card: DrawCard; ena
   return <StackView stack={stack} state={state} onEvent={onEvent} card={card} />;
 }
 
-/** A bucket's Waiting stacks: a task with nothing stacked under it is a plain card. */
+/** A bucket's Waiting stacks or Done chains: a task with nothing stacked under it is a plain card. */
 export function Stacks({ stacks, card, enabled }: { stacks: Stack[]; card: DrawCard; enabled: boolean }) {
   return <>{stacks.map((s) => (s.members.length > 1 ? <OpenStack key={s.top.id} stack={s} card={card} enabled={enabled} /> : card(s.top)))}</>;
 }
 
-/** The Waiting stack in the task modal: its members top first, each opening its own task. */
+/** The Waiting stack or Done chain in the task modal: its members top first, each opening its own task. */
 export function StackList({ stack, id, open }: { stack: Stack; id: string; open: (id: string) => void }) {
   return (
     <>
@@ -708,7 +709,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
                       <span className="tw">▾</span><span className="bn">{milestoneName(b.milestone)}</span><span className="c">{b.tasks.length}</span>
                       <button className="hide" title="Hide this milestone" onClick={(e) => { e.stopPropagation(); setPrefs((p) => hideMilestone(p, b.milestone)); }}>hide</button>
                     </div>
-                    {!b.folded && (col.id === "waiting" ? <Stacks stacks={b.stacks} card={drawCard} enabled={!lift} /> : b.tasks.map((t) => drawCard(t)))}
+                    {!b.folded && (STACKED.includes(col.id) ? <Stacks stacks={b.stacks} card={drawCard} enabled={!lift} /> : b.tasks.map((t) => drawCard(t)))}
                   </div>
                 ))}
               </div>
