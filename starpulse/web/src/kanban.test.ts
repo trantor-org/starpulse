@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, whyHidden, type KanbanTask } from "./kanban";
+import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanban";
 import { merge } from "./sky";
 import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "./types";
@@ -360,5 +360,65 @@ describe("why a task the Recent rail points at has no card in view", () => {
   it("says a task off every column, or off the board, has no card", () => {
     expect(why("PROJ-3")).toBe("not on the board");
     expect(why("PROJ-404")).toBe("not on the board");
+  });
+});
+
+describe("Waiting stacks", () => {
+  const wait = (id: string, milestone: string, ...dependencies: string[]): KanbanTask => ({ ...task(id, "waiting", milestone), dependencies, openDeps: dependencies.length });
+  const waiting = (tasks: KanbanTask[], prefs = NO_PREFS) => column(view(tasks, prefs), "waiting").buckets;
+  const stacks = (tasks: KanbanTask[], prefs = NO_PREFS) => waiting(tasks, prefs).flatMap((b) => b.stacks.map((s) => s.members.map((t) => t.id)));
+
+  it("fold a Waiting task under the Waiting dependency in its bucket, the rest in chain depth then id order", () => {
+    // a four-deep chain, entered out of order, with a sibling slice beside the second link
+    const tasks = [wait("T-5", "m-1", "T-3"), wait("T-3", "m-1", "T-2"), wait("T-4", "m-1", "T-2"), wait("T-2", "m-1", "T-1"), wait("T-1", "m-1")];
+
+    expect(stacks(tasks)).toEqual([["T-1", "T-2", "T-3", "T-4", "T-5"]]);
+    expect(waiting(tasks)[0].stacks[0].top.id).toBe("T-1");
+  });
+
+  it("order ids by number, not text", () => {
+    expect(stacks([wait("T-10", "m-1", "T-1"), wait("T-9", "m-1", "T-1"), wait("T-1", "m-1")])).toEqual([["T-1", "T-9", "T-10"]]);
+  });
+
+  it("stack a task with two Waiting blockers under the one that unblocks first, lowest chain depth then id, and name both on its card", () => {
+    // T-4 waits on T-3 (depth 0) and T-2 (depth 1); T-5 waits on T-3 and T-1, both depth 0
+    const tasks = [wait("T-1", "m-1"), wait("T-2", "m-1", "T-1"), wait("T-3", "m-1"), wait("T-4", "m-1", "T-2", "T-3"), wait("T-5", "m-1", "T-3", "T-1")];
+    const bucket = waiting(tasks)[0];
+
+    expect(stacks(tasks)).toEqual([["T-3", "T-4"], ["T-1", "T-2", "T-5"]]);
+    expect(bucket.stacks[0].waitsOn.get("T-4")).toEqual(["T-2", "T-3"]);
+    expect(bucket.stacks[1].waitsOn.get("T-5")).toEqual(["T-3", "T-1"]);
+  });
+
+  it("leave a task whose only open dependency is not Waiting, or is in another milestone, a stack of its own", () => {
+    const tasks = [wait("T-1", "m-1", "R-1"), { ...task("R-1", "ready", "m-1") }, wait("T-2", "m-2", "T-3"), wait("T-3", "m-3")];
+
+    expect(stacks(tasks)).toEqual([["T-3"], ["T-2"], ["T-1"]]);
+  });
+
+  it("build stacks from the visible cards, so a filtered-out or hidden task leaves its stack", () => {
+    const tasks = [wait("T-1", "m-1"), wait("T-2", "m-1", "T-1"), wait("T-3", "m-1", "T-2")];
+
+    expect(stacks(tasks, hideTask(NO_PREFS, "T-2"))).toEqual([["T-3"], ["T-1"]]);
+    expect(stacks(tasks, { ...NO_PREFS, query: "T-3" })).toEqual([["T-3"]]);
+  });
+
+  it("re-form when a member moves out of Waiting, and leave the other lanes unstacked", () => {
+    const tasks = [wait("T-1", "m-1"), wait("T-2", "m-1", "T-1"), wait("T-3", "m-1", "T-2")];
+    const moved = tasks.map((t) => (t.id === "T-2" ? { ...t, lane: "ready" } : t));
+
+    expect(stacks(moved)).toEqual([["T-3"], ["T-1"]]);
+    expect(column(view(moved), "ready").buckets[0].stacks).toEqual([]);
+  });
+
+  it("find the stack a task sits in, only when it has company", () => {
+    const l = view([wait("T-1", "m-1"), wait("T-2", "m-1", "T-1"), wait("T-3", "m-1")]);
+
+    expect(stackOf(l, "T-2")?.members.map((t) => t.id)).toEqual(["T-1", "T-2"]);
+    expect(stackOf(l, "T-3")).toBeUndefined();
+  });
+
+  it("stop at a dependency cycle instead of recursing forever", () => {
+    expect(stacks([wait("T-1", "m-1", "T-2"), wait("T-2", "m-1", "T-1")]).flat().sort()).toEqual(["T-1", "T-2"]);
   });
 });

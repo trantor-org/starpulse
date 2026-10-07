@@ -1,13 +1,14 @@
 // The Kanban view: the Board's open tasks as six columns of milestone buckets, with drag and modal moves and sessions started from a card.
 // The model is kanban.ts, move.ts and start.ts; this draws them.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { archiveDialogKey, withoutArchived } from "./archive";
 import { ArchiveDialog } from "./ArchiveConfirm";
 import { ConnectTracker } from "./ConnectTracker";
 import type { HudState } from "./hud";
 import {
-  applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, whyHidden,
-  type KanbanTask, type Option, type Prefs,
+  CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll,
+  stackOf, stackStep, toggleFold, unstacked, whyHidden,
+  type KanbanTask, type Option, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanban";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
 import { codeParts, place, targets, type MoveStore, type Refusal, type Target } from "./move";
@@ -94,22 +95,26 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
 export type Chain = "self" | "holds" | "waits";
 
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
-export function Card({ task, holds = 0, chain, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
-  task: KanbanTask; holds?: number; chain?: Chain; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
+export function Card({ task, holds = 0, chain, stacked = 0, under = false, waitsOn, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
+  task: KanbanTask; holds?: number; chain?: Chain;
+  /** The Waiting tasks stacked under this one, on a stack's top card; whether this card sits under one, and the open tasks it waits on while that stack is unstacked. */
+  stacked?: number; under?: boolean; waitsOn?: string[]; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
   const labels = task.labels.filter((l) => !/^kind-|^agent-resolvable$/.test(l)).slice(0, 3);
   const live = task.live, claim = marks.claim;
   const playing = onPlay && !claim && startLane(task);
-  const cls = ["card", chain && `chain-${chain}`, compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
+  const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
+  const badge = stacked > 0 && <StackBadge count={stacked} />;
   const guard = task.moves.in_progress?.allowed === false ? task.moves.in_progress.reason : "";
   return (
     <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={onPress}
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
-        <span className="id">{task.id}</span><PullChip pulls={task.prs} />
+        <span className="id">{task.id}</span><PullChip pulls={task.prs} />{compact && badge}
       </div>
+      {waitsOn && waitsOn.length > 0 && <div className="uw"><span className="nw">⧗ waits on</span>{" "}{waitsOn.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>
       {claim ? (
         <div className="mach sess">
@@ -130,6 +135,7 @@ export function Card({ task, holds = 0, chain, now, marks, names, compact = fals
           {labels.map((l) => (
             <span key={l} title={l} className={`lab${l === "needs-human" ? " nh" : /^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
           ))}
+          {badge}
           {holds > 0 && <span className="holds" title={`holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>⛓{holds}</span>}
           {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
           {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
@@ -145,6 +151,73 @@ export function Card({ task, holds = 0, chain, now, marks, names, compact = fals
       {marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
       {marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart ?? dismiss} />}
     </div>
+  );
+}
+
+/** The count of Waiting tasks stacked under a card, beside its ⛓. */
+function StackBadge({ count }: { count: number }) {
+  return (
+    <span className="sk" title={`${count} Waiting task${count === 1 ? "" : "s"} stacked under this one; hover to unstack`}>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="2.5" y="2" width="11" height="7" rx="1.5" /><path d="M3.5 11.5h9M5 14h6" /></svg>{count}
+    </span>
+  );
+}
+
+/** How a stack's cards are drawn: the card for a task, with what the stack adds to it. */
+type DrawCard = (task: KanbanTask, extra?: { stacked?: number; under?: boolean; waitsOn?: string[] }) => ReactNode;
+
+/**
+ * One Waiting stack. Folded, the top card is whole and one or two card edges peek below it; unstacked, the cards under it open downward,
+ * pushing what is below, each saying what it waits on. The rest are always drawn so the unfold can animate; the style hides them folded.
+ */
+export function StackView({ stack, state, onEvent, card }: { stack: Stack; state: StackOpen; onEvent: (e: StackEvent) => void; card: DrawCard }) {
+  const open = unstacked(state), under = stack.members.slice(1);
+  return (
+    <div className={`stack${open ? " open" : ""}`} style={{ "--peek": `${Math.min(2, under.length) * 5}px` } as CSSProperties}
+      onPointerEnter={() => onEvent("enter")} onPointerLeave={() => onEvent("leave")} onFocus={() => onEvent("focus")}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && onEvent("blur")}
+      onKeyDown={(e) => e.key === "Escape" && onEvent("escape")}>
+      {under.slice(0, 2).map((t, i) => <div key={t.id} className="edge" style={{ "--i": i } as CSSProperties} />)}
+      <div className="spine" />
+      {card(stack.top, { stacked: under.length })}
+      <div className="rest"><div className="restin">
+        {under.map((t) => card(t, { under: true, waitsOn: open ? stack.waitsOn.get(t.id) : undefined }))}
+      </div></div>
+    </div>
+  );
+}
+
+/** Milliseconds the pointer rests on a stack before it unstacks, so sweeping across a column does not open every stack it crosses. */
+const INTENT_MS = 140;
+
+function OpenStack({ stack, card, enabled }: { stack: Stack; card: DrawCard; enabled: boolean }) {
+  const [state, setState] = useState(CLOSED);
+  const intent = useRef<number>(undefined);
+  useEffect(() => () => clearTimeout(intent.current), []);
+  const onEvent = (e: StackEvent) => {
+    if (e === "enter") {
+      if (enabled) intent.current = window.setTimeout(() => setState((s) => stackStep(s, "enter")), INTENT_MS);
+      return;
+    }
+    if (e === "leave") clearTimeout(intent.current);
+    setState((s) => stackStep(s, e));
+  };
+  return <StackView stack={stack} state={state} onEvent={onEvent} card={card} />;
+}
+
+/** A bucket's Waiting stacks: a task with nothing stacked under it is a plain card. */
+export function Stacks({ stacks, card, enabled }: { stacks: Stack[]; card: DrawCard; enabled: boolean }) {
+  return <>{stacks.map((s) => (s.members.length > 1 ? <OpenStack key={s.top.id} stack={s} card={card} enabled={enabled} /> : card(s.top)))}</>;
+}
+
+/** The Waiting stack in the task modal: its members top first, each opening its own task. */
+export function StackList({ stack, id, open }: { stack: Stack; id: string; open: (id: string) => void }) {
+  return (
+    <>
+      {stack.members.map((t, i) => (
+        <div key={t.id}>{i ? "↳ " : "▣ "}{t.id === id ? <b>{t.id}</b> : <button onClick={() => open(t.id)} title={t.title}>{t.id}</button>}</div>
+      ))}
+    </>
   );
 }
 
@@ -168,8 +241,8 @@ export function HeldBy({ holders: held, open, hover }: {
   );
 }
 
-function Modal({ task, names, marks, now, profiles, milestones, capabilities, close, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
-  task: KanbanTask; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
+function Modal({ task, stack, names, marks, now, profiles, milestones, capabilities, close, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
+  task: KanbanTask; stack?: ReactNode; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
   capabilities?: Capabilities; close: () => void; hide: () => void; archive: () => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
@@ -181,7 +254,7 @@ function Modal({ task, names, marks, now, profiles, milestones, capabilities, cl
     return () => { current = false; };
   }, [task.id]);
   return (
-      <TaskView task={task} record={record} lane={names[task.lane] ?? task.lane} names={names}
+      <TaskView task={task} record={record} stack={stack} lane={names[task.lane] ?? task.lane} names={names}
         machine={task.live ? `${task.live.machine} · ${task.live.state} · ${ago(now - task.live.at)} ago` : "—"}
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
@@ -548,6 +621,14 @@ export function Kanban({ hud, moves, starts, compact, constellation, spot = null
   const lifted = lift ? cards.find((t) => t.id === lift.id) : undefined;
   const heldTask = held ? cards.find((t) => t.id === held.id) : undefined;
   const openCard = (id: string) => () => !clickEnds.current && setOpen(id);
+  const drawCard: DrawCard = (t, extra) => (
+    <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} {...extra} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
+      style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
+      onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
+      onHover={(on) => setHovered((h) => (on ? t.id : h === t.id ? null : h))}
+      dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
+  );
+  const taskStack = task && stackOf(view, task.id);
   return (
     <main id="kb" className={compact ? "compact" : undefined}>
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
@@ -621,13 +702,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, spot = null
                       <span className="tw">▾</span><span className="bn">{milestoneName(b.milestone)}</span><span className="c">{b.tasks.length}</span>
                       <button className="hide" title="Hide this milestone" onClick={(e) => { e.stopPropagation(); setPrefs((p) => hideMilestone(p, b.milestone)); }}>hide</button>
                     </div>
-                    {!b.folded && b.tasks.map((t) => (
-                      <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
-                        style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
-                        onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
-                        onHover={(on) => setHovered((h) => (on ? t.id : h === t.id ? null : h))}
-                        dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
-                    ))}
+                    {!b.folded && (col.id === "waiting" ? <Stacks stacks={b.stacks} card={drawCard} enabled={!lift} /> : b.tasks.map((t) => drawCard(t)))}
                   </div>
                 ))}
               </div>
@@ -650,7 +725,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, spot = null
           start={() => answer("1")} manual={() => answer("2")} cancel={() => answer("Escape")} />
       )}
       {task && (
-        <Modal key={task.id} task={task} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
+        <Modal key={task.id} task={task} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
           profiles={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task.id)} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to)) return void moves.drop(task, to); starts.ask(task, "modal"); setOpen(null); }}

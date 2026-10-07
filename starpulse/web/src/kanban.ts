@@ -120,9 +120,19 @@ export function labelSuggestions(tasks: KanbanTask[], query: string, columns = C
 /** The bar with the word being typed written as `label:<name>`, ready for the next word. */
 export const applySuggestion = (query: string, label: string) => `${query.replace(/\S*$/, "")}${LABEL}${label} `;
 
+/** Waiting tasks of one bucket folded along their dependency chains: the top waits on nothing else Waiting in the bucket, the rest sit under it in unblock order. */
+export interface Stack {
+  top: KanbanTask;
+  /** The top first, then the rest by chain depth, then id. */
+  members: KanbanTask[];
+  /** Each member's Waiting dependencies in the bucket, as the task lists them. */
+  waitsOn: ReadonlyMap<string, string[]>;
+}
 export interface Bucket {
   milestone: string;
   tasks: KanbanTask[];
+  /** The Waiting lane's tasks folded into stacks, in the order their tops sit in `tasks`; empty in every other lane. */
+  stacks: Stack[];
   folded: boolean;
 }
 export interface Column {
@@ -151,6 +161,48 @@ const milestoneNumber = (milestone: string) => (milestone ? Number(/^m-(\d+)/.ex
 const filtered = (t: KanbanTask, prefs: Prefs) =>
   matches(t, prefs.query) && (prefs.assignee === null || t.assignee === prefs.assignee) && (prefs.milestone === null || t.milestone === prefs.milestone);
 
+const byId = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+
+/**
+ * A bucket's Waiting tasks as stacks. A task folds under its first blocker: of its Waiting dependencies in the bucket, the one that
+ * unblocks first (lowest chain depth, then id). A dependency in another milestone, or one that is not Waiting, does not stack.
+ */
+export function stacksOf(tasks: KanbanTask[]): Stack[] {
+  const here = new Map(tasks.map((t) => [t.id, t]));
+  const waitsOn = new Map(tasks.map((t) => [t.id, t.dependencies.filter((d) => d !== t.id && here.has(d))]));
+  const depth = new Map<string, number>();
+  // a cycle stops counting where it closes
+  const depthOf = (id: string, path: string[] = []): number => {
+    if (path.includes(id)) return 0;
+    let d = depth.get(id);
+    if (d === undefined) depth.set(id, d = Math.max(-1, ...waitsOn.get(id)!.map((x) => depthOf(x, [...path, id]))) + 1);
+    return d;
+  };
+  const first = (id: string) => [...waitsOn.get(id)!].sort((a, b) => depthOf(a) - depthOf(b) || byId(a, b))[0];
+  const rootOf = (id: string, path: string[] = []): string => {
+    const f = path.includes(id) ? undefined : first(id);
+    return f === undefined ? id : rootOf(f, [...path, id]);
+  };
+  const roots = new Map(tasks.map((t) => [t.id, rootOf(t.id)]));
+  return tasks.filter((t) => roots.get(t.id) === t.id).map((top) => ({
+    top,
+    members: tasks.filter((t) => roots.get(t.id) === top.id).sort((a, b) => depthOf(a.id) - depthOf(b.id) || byId(a.id, b.id)),
+    waitsOn,
+  }));
+}
+
+/** What holds a stack unstacked: the pointer over it or focus inside it. Escape drops both, so it folds under a pointer that has not left. */
+export interface StackOpen { hover: boolean; focus: boolean }
+export type StackEvent = "enter" | "leave" | "focus" | "blur" | "escape";
+export const CLOSED: StackOpen = { hover: false, focus: false };
+export const stackStep = (s: StackOpen, e: StackEvent): StackOpen =>
+  e === "escape" ? CLOSED : e === "enter" || e === "leave" ? { ...s, hover: e === "enter" } : { ...s, focus: e === "focus" };
+export const unstacked = (s: StackOpen) => s.hover || s.focus;
+
+/** The stack a task sits in, when it has company. */
+export const stackOf = (l: Layout, id: string): Stack | undefined =>
+  l.columns.flatMap((c) => c.buckets).flatMap((b) => b.stacks).find((s) => s.members.length > 1 && s.members.some((t) => t.id === id));
+
 export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs): Layout {
   const lanes = columnsOf(names);
   const drawn = tasks.filter((t) => lanes.includes(t.lane));
@@ -159,7 +211,10 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs
   const columns = lanes.map((id): Column => {
     const here = visible.filter((t) => t.lane === id).sort((a, b) => b.entered - a.entered || b.id.localeCompare(a.id, undefined, { numeric: true }));
     const keys = [...new Set(here.map((t) => t.milestone))].sort((a, b) => milestoneNumber(b) - milestoneNumber(a));
-    const buckets = keys.map((milestone) => ({ milestone, tasks: here.filter((t) => t.milestone === milestone), folded: prefs.folded.has(milestone) }));
+    const buckets = keys.map((milestone): Bucket => {
+      const inBucket = here.filter((t) => t.milestone === milestone);
+      return { milestone, tasks: inBucket, stacks: id === "waiting" ? stacksOf(inBucket) : [], folded: prefs.folded.has(milestone) };
+    });
     return { id, name: names[id] ?? id, count: here.length, buckets };
   });
   const done = columns.find((c) => c.id === "done")?.count ?? 0;

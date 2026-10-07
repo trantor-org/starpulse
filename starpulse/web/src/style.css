@@ -198,8 +198,8 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
   line-height: 1.4; cursor: pointer; outline: none; }
 #kb .card:hover, #kb .card:focus-visible { border-color: rgba(148,163,184,.3); }
 #kb .card:focus-visible { box-shadow: 0 0 0 1px var(--violet, #a78bfa); }
-#kb .card .top { display: flex; align-items: center; gap: 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
-#kb .card .id { margin-right: auto; font-family: "JetBrains Mono", ui-monospace, monospace; color: #94a3b8; }
+#kb .card .top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
+#kb .card .id { margin-right: auto; white-space: nowrap; font-family: "JetBrains Mono", ui-monospace, monospace; color: #94a3b8; }
 #kb .card .t { margin: 4px 0 6px; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #kb .pr { display: flex; align-items: center; gap: 4px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10px * var(--fs)); padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(148,163,184,.2); color: #94a3b8; }
 #kb .pr i { width: 6px; height: 6px; border-radius: 50%; background: #475569; }
@@ -227,6 +227,29 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .heldby .hb:hover, #kb .heldby .hb:focus-visible { outline: 1px solid rgba(251,146,60,.6); }
 #kb .heldby .more { color: var(--muted); }
 #kb .col h2 .cc { margin-left: 6px; color: #fb923c; font-weight: 600; letter-spacing: 0; }
+/* A Waiting stack (approved mockup, starpulse#89). Folded, the top card is whole and one or two card edges peek below it; unstacked, the
+   cards under it open downward in the column's flow, pushing what is below, joined by a spine. The rest sit in a grid row that grows
+   from 0fr, so the unfold needs no measuring; folded they are hidden from the pointer and the tab order. */
+#kb .nw { white-space: nowrap; }
+#kb .stack { position: relative; flex: none; isolation: isolate; padding-bottom: var(--peek); transition: padding-bottom .26s cubic-bezier(.3,.7,.2,1); }
+#kb .stack.open { padding-bottom: 0; }
+#kb .stack > .edge { position: absolute; z-index: -1; height: 10px; left: calc((var(--i) + 1) * 5px); right: calc((var(--i) + 1) * 5px); bottom: calc(var(--peek) - 4px - var(--i) * 5px);
+  border-radius: 0 0 7px 7px; background: rgb(17,25,43); border: 1px solid rgba(148,163,184,.30); border-top: 0; box-sizing: border-box; transition: opacity .18s; }
+#kb .stack.open > .edge { opacity: 0; }
+#kb .stack > .spine { position: absolute; left: 4px; top: 22px; bottom: 8px; width: 2px; border-radius: 1px; opacity: 0; transition: opacity .2s .08s;
+  background: linear-gradient(rgba(251,146,60,.65), rgba(251,146,60,.15)); }
+#kb .stack.open > .spine { opacity: 1; }
+#kb .stack .rest { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows .26s cubic-bezier(.3,.7,.2,1), visibility 0s .26s; }
+#kb .stack.open .rest { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows .26s cubic-bezier(.3,.7,.2,1), visibility 0s; }
+#kb .stack .restin { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px; }
+#kb .stack.open .restin { overflow: visible; transition: overflow 0s .26s allow-discrete; }
+#kb .stack .restin > .card { margin-top: 0; transition: margin-left .26s; }
+#kb .stack .restin > .card:first-child { margin-top: 7px; }
+#kb .stack.open .restin > .card { margin-left: 12px; }
+#kb .card .uw { margin: -2px 0 4px; font-size: calc(10px * var(--fs)); color: #fdba74; }
+#kb .sk { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 9px; line-height: 15px; font-weight: 600; color: #fed7aa; background: rgba(251,146,60,.16); border: 1px solid rgba(251,146,60,.45); }
+#kb .sk svg { width: 1em; height: 1em; }
+@media (prefers-reduced-motion: reduce) { #kb .stack, #kb .stack > .edge, #kb .stack > .spine, #kb .stack .rest, #kb .stack .restin > .card { transition: none; } }
 #kb .card.chain-self { box-shadow: 0 0 0 1px #e2e8f0, 0 0 14px rgba(226,232,240,.18); }
 #kb .card.chain-holds { box-shadow: 0 0 0 1px #fb923c, 0 0 12px rgba(251,146,60,.28); }
 #kb .card.chain-waits { box-shadow: 0 0 0 1px #67e8f9, 0 0 12px rgba(103,232,249,.25); }
@@ -242,6 +265,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm table { border-collapse: collapse; margin-top: 8px; width: 100%; }
 #kbm td { padding: 2px 8px 2px 0; vertical-align: top; } #kbm td:first-child { color: var(--muted); white-space: nowrap; }
 #kbm a { color: #a78bfa; text-decoration: none; cursor: pointer; } #kbm a:hover { text-decoration: underline; }
+#kbm .stacklist button { all: unset; cursor: pointer; color: #a78bfa; } #kbm .stacklist button:hover, #kbm .stacklist button:focus-visible { text-decoration: underline; }
 #kbm .hidebtn { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(148,163,184,.25); color: #94a3b8; font-size: calc(11.5px * var(--fs)); }
 #kbm .hidebtn:hover, #kbm .hidebtn:focus-visible { color: var(--ink); border-color: rgba(148,163,184,.5); }
 
