@@ -1064,7 +1064,7 @@ describe("a fold's level", () => {
 
     it("scale a wide fan's template and mini graph to the mockup's apply-on-merge, and grow the rows to hold the mini", () => {
       const sk = boardSky({ writes: { alpha: ["MERGED"] }, cues: cues.filter((c) => c.event === "MERGED"), ledgers: { MERGED: rows } });
-      sk.S.dagBy.beta.steps = [{ name: "r", depends: [], status: "succeeded" }, ...Array.from({ length: 9 }, (_, i) => ({ name: `s${i}`, depends: ["r"], status: "succeeded" as const })), { name: "z", depends: Array.from({ length: 9 }, (_, i) => `s${i}`), status: "succeeded" }];
+      sk.S.dagBy.beta.steps = [{ name: "r", depends: [], status: "succeeded", kind: null }, ...Array.from({ length: 9 }, (_, i) => ({ name: `s${i}`, depends: ["r"], status: "succeeded" as const, kind: null })), { name: "z", depends: Array.from({ length: 9 }, (_, i) => `s${i}`), status: "succeeded", kind: null }];
       const scene = build(sk, fold(["review", "done"], "MERGED")), g = scene.fold!.ledger!.grid!, { u } = px(scene), fan = glyph(sk.S.dagBy.beta), cell = g.cells[1];
 
       expect([fan.w, fan.h]).toEqual([56, 144]);
