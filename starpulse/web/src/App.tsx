@@ -10,6 +10,7 @@ import { HistoryWindowStore } from "./historyWindow";
 import { HudStore, useHud, type FeedLine, type HudState } from "./hud";
 import { LevelStore } from "./levelData";
 import { BOARD, pathKey, type Path } from "./levels";
+import { Crumb } from "./Crumb";
 import { FeedLines, Queues } from "./Fanout";
 import { SearchClear } from "./SearchClear";
 import { Kanban } from "./Kanban";
@@ -91,16 +92,20 @@ export function App() {
     return () => removeEventListener("keydown", onKey);
   }, [fold]);
 
+  // a level from the navigator's search or the breadcrumb opens on the Star Map, refitted when it is already the one shown
+  const open = (p: Path) => {
+    choose("constellation");
+    if (pathKey(p) === pathKey(hud.path)) renderer.current?.fitView();
+    else renderer.current?.go(p);
+  };
+
   return (
     <>
       <canvas ref={canvas} id="c" />
-      <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} kanbanQuery={kanbanQuery} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} toggle={() => fold.toggle()} open={(p) => {
-          choose("constellation");
-          if (pathKey(p) === pathKey(hud.path)) renderer.current?.fitView();
-          else renderer.current?.go(p);
-        }}
+      <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} kanbanQuery={kanbanQuery} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} toggle={() => fold.toggle()} open={open}
         fly={(g) => renderer.current?.flyToGroup(g)} openDag={(d) => renderer.current?.openDag(d)}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
+      {view === "constellation" && <Crumb path={hud.path} states={hud.states} open={open} />}
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
       {view === "admin" && <Admin store={admin} window={historyWindow} forwarding={forwarding} />}
       {view === "graph" && (
@@ -129,8 +134,6 @@ export function App() {
   );
 }
 
-const CAP = 5;
-
 /** The folded strip's search button, at the search's height: lit with a dot while the active view's search holds a query. It sits in the search's section, so only the folded strip shows it. */
 function SearchMagnifier({ view, query, open }: { view: ViewName; query: string; open: () => void }) {
   const name = view === "kanban" ? "Kanban" : "Star Map";
@@ -140,29 +143,6 @@ function SearchMagnifier({ view, query, open }: { view: ViewName; query: string;
         <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
         <path d="M15.4 15.4 L21 21" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
       </svg>
-    </button>
-  );
-}
-
-/** One level in the navigator: a glyph sized by depth, its name, and its live count. */
-function Node({ hud, path, label, count, size, flow, chev, open, onChev }: {
-  hud: HudState; path: Path; label: string; count?: number; size: number; flow?: string;
-  chev?: boolean; onChev?: () => void; open: (p: Path) => void;
-}) {
-  const key = pathKey(path), now = pathKey(hud.path);
-  const on = now === key || now.startsWith(key + "/");
-  // a lifecycle node glows while its machine is moving
-  const cls = ["node", on && "on", now === key && "here", flow && hud.moving.includes(flow) && "live"].filter(Boolean).join(" ");
-  return (
-    <button className={cls} onClick={() => open(path)}>
-      <i className="g" style={{ width: size, height: size }} />
-      <span className="t">{label}</span>
-      <span className="n">
-        {onChev && (
-          <span className="chev" onClick={(e) => { e.stopPropagation(); onChev(); }}>{chev ? "▾" : "▸"}</span>
-        )}
-        {count ?? ""}
-      </span>
     </button>
   );
 }
@@ -190,16 +170,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
     else if (target.kind === "dag") openDag(target.name);
     else selectTask(target.id);
   };
-  const [opened, setOpened] = useState<Set<string>>(new Set());
-  const [all, setAll] = useState<Set<string>>(new Set());
   const t = hud.tree, q = query.trim().toLowerCase();
-  const flip = (s: Set<string>, id: string) => {
-    const n = new Set(s);
-    if (n.has(id)) n.delete(id);
-    else n.add(id);
-    return n;
-  };
-  const props = { hud, open };
   const hits = t && q ? search(q, { tree: t, states: hud.states, counts: hud.counts, dags: hud.dags, cards: hud.cards }) : [];
   let body = null;
   if (t && q) {
@@ -219,44 +190,6 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
             </button>
           );
         }) : <div className="lvl">nothing matches</div>}
-      </div>
-    );
-  } else if (t) {
-    const onPath = hud.path.map((l) => (l.kind === "machine" ? l.flow : ""));
-    const live = (a: string, b: string) => (hud.counts[b] ?? 0) - (hud.counts[a] ?? 0);
-    body = (
-      <div className="kids">
-        {hud.states.map((s) => {
-          const sp = statePath(s.id), subs = [...(t.subs[s.id] ?? [])].sort(live);
-          const here = pathKey(hud.path).startsWith(pathKey(sp));
-          const isOpen = subs.length > 0 && (opened.has(s.id) || here);
-          const shown = all.has(s.id) ? subs : subs.filter((m, i) => i < CAP || onPath.includes(m));
-          return [
-            <Node key={s.id} {...props} path={sp} label={s.name} count={s.count} size={subs.length ? 11 : 9}
-              chev={isOpen} onChev={subs.length ? () => setOpened((o) => flip(o, s.id)) : undefined} />,
-            isOpen && (
-              <div key={`${s.id}:kids`} className="kids">
-                {shown.map((m) => {
-                  const mp: Path = [...sp, { kind: "machine", flow: m }];
-                  const kids = onPath.includes(m) ? (t.children[m] ?? []) : [];
-                  return [
-                    <Node key={m} {...props} path={mp} label={m} count={hud.counts[m]} size={8} flow={m} />,
-                    kids.length > 0 && (
-                      <div key={`${m}:kids`} className="kids">
-                        {kids.map((c) => (
-                          <Node key={c.flow} {...props} path={[...mp, { kind: "machine", flow: c.flow }]} label={c.flow} count={hud.counts[c.flow]} size={6} flow={c.flow} />
-                        ))}
-                      </div>
-                    ),
-                  ];
-                })}
-                {shown.length < subs.length && (
-                  <button className="more" onClick={() => setAll((a) => flip(a, s.id))}>+ {subs.length - shown.length} more lifecycle machines</button>
-                )}
-              </div>
-            ),
-          ];
-        })}
       </div>
     );
   }
@@ -313,13 +246,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
       {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
       {view === "graph" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
       {view === "constellation" && <>
-      <section className="away layers">
-        <h3>Layers</h3>
-        <div id="layers">
-          <Node {...props} path={BOARD} label="Board" count={hud.counts.board} size={14} flow="board" />
-          {body}
-        </div>
-      </section>
+      {body && <section className="away matches">{body}</section>}
       <section className="away">
         <h3>DAGs</h3>
         <div id="cons">
