@@ -152,9 +152,24 @@ class PullRequests:
         if self._repos:
             self._last = link(self._last, self._repos, self._pins.pointer, self._pins.reaches)
         held = {task: [self._last[url] for url in prs if url in self._last] for task, prs in wanted.items()}
-        self._feed.set_pulls({task: pulls for task, pulls in held.items() if pulls})
+        self._feed.set_pulls({task: pulls for task, pulls in held.items() if pulls}, self.answers())
+
+    def answers(self) -> dict:
+        """The records and pin answers read so far, for the feed to save with the Board."""
+        pins = self._pins.answers() if isinstance(self._pins, GitHub) else {}
+        return {"records": self._last, "pins": pins}
+
+    def restore(self) -> None:
+        """Start from the answers the feed resumed with (`BoardFeed.pull_answers`), so a restart reads GitHub warm."""
+        saved = self._feed.pull_answers()
+        self._last = {**saved.get("records", {}), **self._last}
+        if isinstance(self._pins, GitHub):
+            self._pins.restore(saved.get("pins", {}))
 
     def run_forever(self, interval_s: float = REFRESH_S) -> None:  # pragma: no mutate block — timer loop
+        """Refresh once the Board replay is done, so the first read sees every task, then every `interval_s`."""
+        self._feed.wait_replayed()
+        self.restore()
         while True:
             self.refresh()
             time.sleep(interval_s)

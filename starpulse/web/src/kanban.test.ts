@@ -194,6 +194,14 @@ describe("the cards drawn from a snapshot", () => {
     expect([tasks.find((t) => t.id === "PROJ-1")!.entered, tasks.find((t) => t.id === "PROJ-2")!.entered]).toEqual([450, 0]);
   });
 
+  it("list the pull requests a task cites before GitHub has been read for them, as unread", () => {
+    const snap = snapshot();
+    snap.pulls = {};
+    const [t] = kanbanTasks(merge(snap)).filter((x) => x.id === "PROJ-1");
+
+    expect(t.prs).toEqual([{ ...pull(7, "none"), stale: true }]);
+  });
+
   it("have no milestone, pull requests or machine when the snapshot names none", () => {
     expect(kanbanTasks(merge(snapshot())).find((t) => t.id === "PROJ-2")).toMatchObject({ milestone: "", prs: [], live: null });
   });

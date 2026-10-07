@@ -280,6 +280,12 @@ export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, pr
   return prefs.folded.has(t.milestone) ? "in a folded milestone" : null;
 }
 
+/** Each pull request a task cites, as GitHub was last read for it; one not read yet is drawn unread (`stale`) rather than left off. */
+const cited = (urls: string[], read: Pull[]): Pull[] => {
+  const unread = urls.filter((url) => !read.some((p) => p.url === url));
+  return [...read, ...unread.map((url) => ({ number: Number(/(\d+)\/?$/.exec(url)?.[1] ?? 0), url, checks: "none" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: true }))];
+};
+
 /** The Board's tasks as cards: its own fields, the pull requests the server read for it and the machine that last placed it. */
 export function kanbanTasks(sky: Sky): KanbanTask[] {
   const open = new Set(sky.board.agents.filter((a) => a.state !== "done").map((a) => a.id));
@@ -287,7 +293,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
     const latest = sky.latest[a.id], dependencies = a.dependencies ?? [];
     return {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
-      openDeps: dependencies.filter((d) => open.has(d)).length, prs: sky.pulls[a.id] ?? [], description: a.description ?? "",
+      openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
       released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0,
     };

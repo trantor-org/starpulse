@@ -95,6 +95,20 @@ class GitHub:
             self._reaches[key] = status in _CONTAINS
         return self._reaches.get(key, False)
 
+    def answers(self) -> dict[str, list[list]]:
+        """Every answer kept, as JSON a saved Board can hold; `restore` takes it back."""
+        return {
+            "pointers": [[*key, found] for key, found in self._pointers.items()],
+            "reaches": [[*key, contained] for key, contained in self._reaches.items()],
+        }
+
+    def restore(self, answers: Mapping[str, list[list]]) -> None:
+        """Keep the answers `answers` saved, so those reads are never asked again; an unreadable entry is skipped."""
+        for repo, sha, path, found in (row for row in answers.get("pointers", []) if len(row) == 4):
+            self._pointers.setdefault((repo, sha, path), found)
+        for repo, sha, pointer, contained in (row for row in answers.get("reaches", []) if len(row) == 4):
+            self._reaches.setdefault((repo, sha, pointer), bool(contained))
+
 
 def _api(endpoint: str, jq: str) -> str | None:
     """`jq` of the endpoint's answer, None when `gh` fails or prints nothing."""
