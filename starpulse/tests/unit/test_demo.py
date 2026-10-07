@@ -10,7 +10,7 @@ import jsonschema
 import pytest
 
 from starpulse.contracts import SCHEMAS, Dag, Pool
-from starpulse.demo import TITLES, _send_back, capture, mockup, page, scrub, scrub_board, scrub_mockup
+from starpulse.demo import TITLES, _send_back, capture, elements, mockup, page, scrub, scrub_board, scrub_mockup
 
 SECRET = "Rotate the router admin password"
 
@@ -831,3 +831,18 @@ def test_scrub_sizes_the_suns_itself_when_the_capture_saw_no_moves() -> None:
     suns = scrub(live)["suns"]
 
     assert suns["ready"] == pytest.approx(3 / 6)
+
+
+def test_elements_inlines_the_local_stylesheet_and_script_and_leaves_a_remote_link(tmp_path: Path) -> None:
+    (tmp_path / "up").mkdir()
+    (tmp_path / "up/real.css").write_text("/* TASK-1 */ :root { --ok: #34d399; }")
+    (tmp_path / "sheet").mkdir()
+    (tmp_path / "sheet/index.html").write_text(
+        '<link rel="stylesheet" href="../up/real.css"><link rel="stylesheet" href="https://x.test/f.css">'
+        '<script src="sheet.js"></script>'
+    )
+    (tmp_path / "sheet/sheet.js").write_text("const s = '</script>';")
+    html = elements(tmp_path / "sheet")
+    assert "<style> :root { --ok: #34d399; }</style>" in html  # the comment is dropped
+    assert '<link rel="stylesheet" href="https://x.test/f.css">' in html
+    assert "<script>const s = '<\\/script>';</script>" in html

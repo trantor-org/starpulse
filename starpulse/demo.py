@@ -2,13 +2,15 @@
 
     .venv/bin/python -m starpulse.demo --server http://127.0.0.1:8766 --out .tmp/flow-demo.html
     .venv/bin/python -m starpulse.demo --mockup <the design mockup directory> --out .tmp/mockup-demo.html
+    .venv/bin/python -m starpulse.demo --elements design/elements --out .tmp/element-sheet.html
 
 It reads a running starpulse.server's snapshot for its structure (the
 machines, the DAGs and their steps) and replaces every task with a synthetic
 one in the same state, so no task text, PR or address leaves. The
 built page in `static/` is inlined around the result, which the page reads as
 `window.__FLOW_FIXTURE__` and animates as `?demo` does. `--mockup` does the same
-for a design mockup's saved `data.js`, keeping each session's link to its task.
+for a design mockup's saved `data.js`, keeping each session's link to its task. `--elements` inlines the element
+sheet's stylesheet and script, so the palette page is one file too.
 """
 
 import argparse
@@ -496,6 +498,22 @@ def mockup(design: Path) -> str:
     return re.sub(r'<script src="([\w.-]+\.js)"></script>', lambda m: f"<script>{body(m[1])}</script>", html)
 
 
+def elements(sheet: Path) -> str:
+    """`sheet/index.html` as one file: each local stylesheet link inlined as a `<style>` without its comments, each local
+    script as a `<script>`."""
+
+    def style(m: re.Match) -> str:
+        css = (sheet / m[1]).resolve().read_text()
+        return f"<style>{re.sub(r'/\*.*?\*/', '', css, flags=re.DOTALL)}</style>"  # its comments name tasks
+
+    def script(m: re.Match) -> str:
+        return f"<script>{(sheet / m[1]).read_text().replace('</script', '<\\/script')}</script>"
+
+    html = (sheet / "index.html").read_text()
+    html = re.sub(r'<link rel="stylesheet" href="((?![a-z]+:)[^"]+)">', style, html)
+    return re.sub(r'<script src="([\w.-]+\.js)"></script>', script, html)
+
+
 def page(static: Path, fixture: dict) -> str:
     """`static/index.html` with its bundle inlined and `fixture` embedded ahead of it."""
     html = (static / "index.html").read_text()
@@ -512,9 +530,10 @@ def page(static: Path, fixture: dict) -> str:
     return re.sub(r'<link rel="stylesheet" crossorigin href="/([^"]+)">', style, html)
 
 
-def build(out: Path, server: str, design: Path | None = None) -> Path:
-    """Write the demo page to `out`: from the design mockup in `design` when given, else from `server`'s snapshot."""
-    out.write_text(mockup(design) if design else page(STATIC, scrub(capture(server))))
+def build(out: Path, server: str, design: Path | None = None, sheet: Path | None = None) -> Path:
+    """Write the demo page to `out`: the element sheet in `sheet` or the design mockup in `design` when given, else
+    `server`'s snapshot."""
+    out.write_text(elements(sheet) if sheet else mockup(design) if design else page(STATIC, scrub(capture(server))))
     return out
 
 
@@ -522,9 +541,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     ap.add_argument("--server", default="http://127.0.0.1:8766")
     ap.add_argument("--mockup", type=Path, help="a design mockup directory to build instead of StarPulse")
+    ap.add_argument("--elements", type=Path, help="the element sheet directory to build instead of StarPulse")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
-    print(build(args.out, args.server, args.mockup))
+    print(build(args.out, args.server, args.mockup, args.elements))
 
 
 if __name__ == "__main__":

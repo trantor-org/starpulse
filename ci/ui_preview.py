@@ -1,11 +1,11 @@
 """Render a pull request's StarPulse UI and post the screenshots as one PR comment; publish main's live demo.
 
 `.github/workflows/ui-preview.yml` runs this on every pull request that touches the page (`starpulse/web/**`), the
-design mockup (`design/**`) or this preview. It builds each changed surface's scrubbed one-file demo with
+design mockup and element sheet (`design/**`) or this preview. It builds each changed surface's scrubbed one-file demo with
 `starpulse.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
 inlined, screenshots the demos, publishes them to the public `starpulse-demo` Pages repository while the
 pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
-touches the same paths runs it with `--main`, which republishes both demos as `main/`, the live demo the README
+touches the same paths runs it with `--main`, which republishes every demo as `main/`, the live demo the README
 links. The flow view is rendered against `ci/preview.toml`, a demo config naming no real board or runs adapter.
 """
 
@@ -31,18 +31,24 @@ from typing import Any
 
 FLOW_VIEW = "flow-view"
 MOCKUP = "design-mockup"
+ELEMENTS = "element-sheet"
+#: The design directory the element sheet owns; it is a surface of its own, not a sub-mockup, so its stylesheet link is inlined.
+ELEMENTS_DIR = "elements"
 #: The paths whose change renders each surface; the workflow's `paths` filter is their union.
 SURFACE_GLOBS = {
     FLOW_VIEW: ("starpulse/web/**", "ci/**", ".github/workflows/ui-preview.yml"),
     MOCKUP: ("design/**",),
+    # the sheet draws the real stylesheet, so a palette change re-renders it too
+    ELEMENTS: ("design/elements/**", "starpulse/web/src/style.css"),
 }
-UI_GLOBS = tuple(g for globs in SURFACE_GLOBS.values() for g in globs)
+UI_GLOBS = tuple(dict.fromkeys(g for globs in SURFACE_GLOBS.values() for g in globs))
 PREVIEW_CONFIG = "ci/preview.toml"
 DESIGN = "design"
 #: Each surface's screenshots: a name and the query string the demo file opens with.
 PAGES = {
     FLOW_VIEW: {"flow-view-star-map": "", "flow-view-kanban": "?view=kanban"},
     MOCKUP: {"design-mockup": ""},
+    ELEMENTS: {"element-sheet": ""},
 }
 
 
@@ -61,8 +67,9 @@ def demo_name(surface: str) -> str:
 
 
 def sub_mockups(changed: Iterable[str]) -> list[str]:
-    """The design sub-mockups a change touches: each `design/<dir>/` holding a changed path, sorted."""
-    return sorted({p.parts[1] for p in map(PurePosixPath, changed) if len(p.parts) > 2 and p.parts[0] == DESIGN})
+    """The design sub-mockups a change touches: each `design/<dir>/` holding a changed path, sorted, bar the element sheet."""
+    dirs = {p.parts[1] for p in map(PurePosixPath, changed) if len(p.parts) > 2 and p.parts[0] == DESIGN}
+    return sorted(dirs - {ELEMENTS_DIR})
 
 
 def sub_mockup_name(directory: str) -> str:
@@ -94,6 +101,7 @@ _CAVEATS = {
         "a six-lane board machine with synthetic tasks in every lane, and no real board or runs adapter behind it."
     ),
     MOCKUP: "Rendered from the scrubbed demo `starpulse.demo --mockup design` builds from the saved mockup data.",
+    ELEMENTS: "Rendered from `starpulse.demo --elements design/elements`: the palette tokens and each element, drawn by the real stylesheet.",
 }
 
 
@@ -330,6 +338,10 @@ def _build_demos(names: Sequence[str], out: Path) -> list[Path]:  # pragma: no c
     if demo_name(MOCKUP) in names:
         target = out / demo_name(MOCKUP)
         _run(sys.executable, "-m", "starpulse.demo", "--mockup", DESIGN, "--out", str(target))
+        built.append(target)
+    if demo_name(ELEMENTS) in names:
+        target = out / demo_name(ELEMENTS)
+        _run(sys.executable, "-m", "starpulse.demo", "--elements", f"{DESIGN}/{ELEMENTS_DIR}", "--out", str(target))
         built.append(target)
     return built
 
