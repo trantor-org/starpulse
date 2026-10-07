@@ -715,6 +715,8 @@ body.dags canvas, body.dags #tip, body.dags #panel { visibility: hidden; }
 #dg .pool { color: var(--muted); font-size: calc(11px * var(--fs)); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #dg .tie, #kbm .dgm .tie { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: 3px; line-height: 15px; font-size: calc(10.5px * var(--fs));
   color: var(--tc); background: color-mix(in srgb, var(--tc) 12%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 35%, transparent); }
+#dg a.tie, #kbm .dgm a.tie { text-decoration: none; cursor: pointer; }
+#dg a.tie:hover, #kbm .dgm a.tie:hover, #dg a.tie:focus-visible, #kbm .dgm a.tie:focus-visible { background: color-mix(in srgb, var(--tc) 26%, transparent); }
 #dg .none { color: var(--ghost); }
 div#dg > .none { margin: 18px auto; font-size: calc(11px * var(--fs)); }
 svg.dstrip { display: block; }
@@ -746,6 +748,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kbm .dgm .slots span { margin-left: 6px; }
 #kbm .dgm .tierow { display: flex; gap: 10px; align-items: baseline; }
 #kbm .dgm .tierow .tie { flex: none; max-width: 45%; }
+#kbm .dgm .tierow .lgnote { margin-left: auto; flex: none; font-size: calc(10.5px * var(--fs)); white-space: nowrap; }
 #kbm .dgm .tvfoot { flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 26px; border-top: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
 #kbm .dgm .tvfoot .startbtn { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-text); font-size: calc(11.5px * var(--fs)); white-space: nowrap; }
 #kbm .dgm .tvfoot .startbtn:hover, #kbm .dgm .tvfoot .startbtn:focus-visible { background: color-mix(in srgb, var(--ok) 22%, transparent); }

@@ -3,9 +3,10 @@
 // Kanban's ▶ edge strip. It reuses the Kanban's filter chips, menus and folds, and the Star Map's DAG colors (DAG_COLOR).
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { DagModal } from "./DagModal";
-import { lastLine, Orb, poolText, Strip, TieChip } from "./DagParts";
+import { lastLine, Orb, poolText, Strip, TieChip, type LedgerGo } from "./DagParts";
 import { filterRows, group, order, PHASES, refusal, rows, short, ties, type DagData, type Phase, type Row } from "./dags";
 import { ChoiceMenu } from "./Kanban";
+import { BOARD, ledgerLevel, type Path } from "./levels";
 import { refused, startRun } from "./panels";
 import { DAG_COLOR } from "./renderer";
 
@@ -43,8 +44,8 @@ function Census({ rs }: { rs: Row[] }) {
   );
 }
 
-function Catalog({ data, rs, now, why, run, open, folded, toggle }: {
-  data: DagData; rs: Row[]; now: number; why: (r: Row) => string | null; run: (r: Row) => void; open: (r: Row) => void; folded: Set<string>; toggle: (k: string) => void;
+function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle }: {
+  data: DagData; rs: Row[]; now: number; why: (r: Row) => string | null; run: (r: Row) => void; open: (r: Row) => void; ledger?: LedgerGo; folded: Set<string>; toggle: (k: string) => void;
 }) {
   const doms = [...new Set([...data.domains.map((d) => d.name), ...rs.map((r) => r.domain)])].filter((d) => rs.some((r) => r.domain === d));
   return (
@@ -61,7 +62,7 @@ function Catalog({ data, rs, now, why, run, open, folded, toggle }: {
                   onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && open(r)}>
                   <Orb phase={r.phase} /><span className="nm" title={r.d.name}>{short(r.d.name)}</span><Strip r={r} />
                   <span className="last">{lastLine(r, now)}</span><span className="pool">{poolText(data.pools, r) || "—"}</span>
-                  <span>{t ? <TieChip t={t} /> : <span className="none">—</span>}</span>
+                  <span>{t ? <TieChip t={t} ledger={ledger} /> : <span className="none">—</span>}</span>
                   <RunBtn r={r} why={why(r)} run={run} />
                 </div>
               );
@@ -75,7 +76,8 @@ function Catalog({ data, rs, now, why, run, open, folded, toggle }: {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-export function Dags({ data, post }: { data: DagData | null; post?: Post }) {
+/** `openPath` takes the page to a level of the Star Map: the Ledger of a tied transition is the fold level over its path. */
+export function Dags({ data, post, openPath }: { data: DagData | null; post?: Post; openPath?: (p: Path) => void }) {
   const [q, setQ] = useState("");
   const [only, setOnly] = useState<Exclude<Phase, "queued"> | null>(null);
   const [dom, setDom] = useState<string | null>(null);
@@ -109,6 +111,11 @@ export function Dags({ data, post }: { data: DagData | null; post?: Post }) {
     setRefusedRun(refused(line));
     setStarting((s) => { const n = new Set(s); n.delete(name); return n; });
     setToast((t) => ({ text: `${short(name)}: ${line}`, n: (t?.n ?? 0) + 1 }));
+  };
+  // a tie links to the Ledger of its transition, when the Board has one for the event
+  const ledger: LedgerGo = (ev) => {
+    const level = openPath && ev ? ledgerLevel(data, ev) : null;
+    return level ? () => openPath!([...BOARD, level]) : null;
   };
   const rs = filterRows(all, { q, only, dom });
   const shown = opened ? all.find((r) => r.d.name === opened) : undefined;
@@ -150,8 +157,8 @@ export function Dags({ data, post }: { data: DagData | null; post?: Post }) {
         {(only || dom || q) && <button className="clear" onClick={() => { setOnly(null); setDom(null); setQ(""); }}>clear</button>}
         <span className="shown">{rs.length === all.length ? `${all.length} shown` : `${rs.length} of ${all.length} shown`}</span>
       </div>
-      {rs.length ? <Catalog data={data} rs={rs} now={now} why={why} run={run} open={(r) => { setRefusedRun(null); setOpened(r.d.name); }} folded={folded} toggle={toggle} /> : <div className="none">No DAG matches the filters.</div>}
-      {shown && <DagModal data={data} r={shown} now={now} starting={starting.has(shown.d.name)} refused={refusedRun} run={() => void run(shown)} close={() => setOpened(null)} />}
+      {rs.length ? <Catalog data={data} rs={rs} now={now} why={why} run={run} ledger={ledger} open={(r) => { setRefusedRun(null); setOpened(r.d.name); }} folded={folded} toggle={toggle} /> : <div className="none">No DAG matches the filters.</div>}
+      {shown && <DagModal data={data} r={shown} now={now} starting={starting.has(shown.d.name)} refused={refusedRun} run={() => void run(shown)} close={() => setOpened(null)} ledger={ledger} />}
       {toast && <div className="dtoast" key={toast.n} role="status">{toast.text}</div>}
     </main>
   );
