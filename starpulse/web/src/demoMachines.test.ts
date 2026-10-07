@@ -50,6 +50,6 @@ describe("padding a demo's machines", () => {
     expect(entries.every((e) => e.at > out.now - DAY && e.row === e.machine)).toBe(true);
     expect(entries.map((e) => e.at)).toEqual([...entries.map((e) => e.at)].sort((x, y) => x - y));
     expect(entries.some((e) => e.dag)).toBe(true);
-    expect(entries.some((e) => e.from)).toBe(true);
+    expect(new Set(entries.flatMap((e) => (e.from ? [e.from.state] : []))).size).toBeGreaterThan(1);
   });
 });

@@ -4,6 +4,7 @@ import type { FlowSnapshot, MachineEntry, Snapshot } from "./types";
 
 const DAY = 86400;
 /** The seconds from now to a machine's last move, spread over the day: close together near now, wide apart far back. */
+const FROM = ["ready", "in_progress", "review", "waiting"];
 const age = (i: number, n: number) => 90 + Math.round((DAY - 600) * (i / Math.max(1, n - 1)) ** 1.6);
 
 /** `snap` with the machines under its open one cloned from the ones it has until there are `n`, their last moves spread over the 24 hours, the first page and the strip drawn over them. */
@@ -30,7 +31,7 @@ export function padMachines(snap: Snapshot, n: number): Snapshot {
         at: s.at,
         machine: f.name,
         row: f.name,
-        from: j === 0 ? { machine: "board", state: "in_progress" } : null,
+        from: j === 0 ? { machine: "board", state: FROM[(i + k) % FROM.length] } : null,
         dag: j === 0 && k === 0 && i % 7 === 3 ? "nightly-sweep" : null,
       })),
     ),
