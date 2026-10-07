@@ -25,6 +25,10 @@ STATIC = Path(__file__).parent / "static"
 LABELS = re.compile(r"^(kind-[a-z]+|size-\d+|agent-resolvable|needs-human|adr-needed|bug|feature)$")
 #: The mockup data keys `scrub_mockup` knows how to clean; any other key is refused rather than passed through.
 MOCKUP_KEYS = {"now", "dags", "writers", "launches", "cues", "domains", "descriptions", "flows"}
+#: The saved Board keys `scrub_board` knows how to clean, refused the same way.
+BOARD_KEYS = {"now", "names", "tasks"}
+#: An agent profile assignee, the only kind a demo keeps.
+PROFILE = re.compile(r"^@agent-[a-z-]+$")
 TITLES = [
     "Add retry budget to the ingest worker",
     "Tighten the nightly backup window",
@@ -409,9 +413,42 @@ def scrub_mockup(snap: dict) -> dict:
     }
 
 
+def scrub_board(board: dict, renames: dict[str, str]) -> dict:
+    """A design mockup's saved Board (`window.BOARD`) with each task renamed as `renames` names it, the rest numbered on
+    after them, and only its lane, milestone, kind labels, profile, pull request states and move verdicts kept."""
+    if unknown := set(board) - BOARD_KEYS:
+        raise ValueError(f"mockup board has keys the scrub does not know: {sorted(unknown)}")
+    names, more = dict(renames), itertools.count(len(renames) + 1)
+    for t in board["tasks"]:
+        if t["id"] not in names:
+            names[t["id"]] = f"DEMO-{next(more)}"
+    prs = itertools.count(1)
+
+    def task(i: int, t: dict) -> dict:
+        return {
+            "id": names[t["id"]],
+            "title": TITLES[i % len(TITLES)],
+            "lane": t["lane"],
+            "milestone": t.get("milestone"),
+            "labels": [x for x in t.get("labels", []) if LABELS.match(x)],
+            "assignee": t["assignee"] if PROFILE.match(t.get("assignee") or "") else "",
+            "dependencies": [names[d] for d in t.get("dependencies", []) if d in names],
+            "prs": [
+                {"number": next(prs), **{k: p[k] for k in ("checks", "merged", "threads") if k in p}}
+                for p in t.get("prs", [])
+            ],
+            "live": t.get("live"),
+            "moves": t.get("moves", {}),
+            "entered": t.get("entered"),
+        }
+
+    return {**board, "tasks": [task(i, t) for i, t in enumerate(board["tasks"])]}
+
+
 def mockup(design: Path) -> str:
     """`design/index.html` with every local script inlined: `data.js` scrubbed, `history.js` (lane changes keyed by
-    task id) renamed like the Board with tasks off it dropped, and any other script as it is."""
+    task id) renamed like the Board with tasks off it dropped, `board.js` (a saved Board) renamed like it too, and any
+    other script as it is."""
     text = (design / "data.js").read_text()
     snap = json.loads(text[text.index("{") : text.rindex("}") + 1])
     renames = _renames(snap)
@@ -423,6 +460,9 @@ def mockup(design: Path) -> str:
         if name == "history.js":
             hist = json.loads(src[src.index("{") : src.rindex("}") + 1])
             return "window.HIST = " + json.dumps({renames[k]: v for k, v in hist.items() if k in renames}) + ";"
+        if name == "board.js":
+            board = json.loads(src[src.index("{") : src.rindex("}") + 1])
+            return "window.BOARD = " + json.dumps(scrub_board(board, renames)).replace("</", "<\\/") + ";"
         return src.replace("</script", "<\\/script")
 
     html = (design / "index.html").read_text()

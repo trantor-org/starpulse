@@ -1422,5 +1422,8 @@ addEventListener("resize", resize);
 addEventListener("keydown", (e) => { if (e.key === "Escape") { panel.classList.remove("open"); pinned = null; } if (e.target.id === "q") return; if (e.key === "Backspace") pop(); if (e.key === "0") flyTo(fitScene()); });
 requestAnimationFrame(frame);
 </script>
+<!-- ?view=kanban: the Kanban's Waiting stacks mockup over a saved live Board -->
+<script src="board.js"></script>
+<script src="kanban.js"></script>
 </body>
 </html>
