@@ -32,6 +32,7 @@ from starpulse.ledger import (
     reruns,
     strip,
 )
+from starpulse.machine_ties import derive
 from starpulse.snapshot import declared, qualifier
 from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 
@@ -639,22 +640,23 @@ class BoardFeed:
     def snapshot(self) -> dict[str, Any]:
         """What the page draws: every machine with its tasks, the workflow declarations, the workflows and their pools."""
         with self._lock:
-            since = time.time() - self._window_s if self._window_s is not None else None
+            now = time.time()
+            since = now - self._window_s if self._window_s is not None else None
+            flows = [
+                {"name": "board", "machine": self._drawn["board"], "agents": list(self._open.values())},
+                *(
+                    {
+                        "name": name,
+                        "machine": self._drawn[name],
+                        "agents": [self._modelled(a) for a in agents.values() if since is None or a["active"] >= since],
+                    }
+                    for name, agents in self._machines.items()
+                ),
+            ]
+            derived = derive(flows, now)
             return {
                 "graphs": [*self._drawn, "runs"],
-                "flows": [
-                    {"name": "board", "machine": self._drawn["board"], "agents": list(self._open.values())},
-                    *(
-                        {
-                            "name": name,
-                            "machine": self._drawn[name],
-                            "agents": [
-                                self._modelled(a) for a in agents.values() if since is None or a["active"] >= since
-                            ],
-                        }
-                        for name, agents in self._machines.items()
-                    ),
-                ],
+                "flows": [{**f, **derived.get(f["name"], {})} for f in flows],
                 "dags": self._workflows(),
                 "pools": self._drawn_pools(),
                 "pulls": self._pulls,
@@ -673,7 +675,7 @@ class BoardFeed:
                 "boardUrl": self._board_url,
                 "hint": self._hint,
                 "suns": self._suns(),
-                "now": time.time(),
+                "now": now,
             }
 
 
