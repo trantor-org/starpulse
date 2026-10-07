@@ -3,9 +3,13 @@
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
-from starpulse.event_log import Entry, EventLog, Tail
+from sqlalchemy import select, update
+
+from starpulse.event_log import Entry, EventLog, Tail, prune_forever
+from starpulse.tables import events, gaps
 
 _APPEND = (
     "import sys; from starpulse.event_log import EventLog; "
@@ -81,3 +85,32 @@ def test_starpulse_emit_in_another_process_reaches_the_tail_of_the_database_the_
     assert [(e.fields["workflow"], e.fields["run_id"], e.fields["status"]) for e in tail.poll()] == [
         ("nightly", "r1", "running")
     ]
+
+
+def test_a_reader_left_behind_by_the_prune_timer_records_a_gap(database_url: str) -> None:
+    log = EventLog(database_url)
+    for n in range(1, 5):
+        log.append("machine:events", {"n": n})
+    reader = Tail(log, "machine:events")
+    assert [e.id for e in reader.poll()] == [1, 2, 3, 4]
+    for n in range(5, 8):
+        log.append("machine:events", {"n": n})
+    with log.engine.begin() as db:  # rows 1 to 5 are 10 days old; the reader's cursor is row 1, so 2 to 5 go unread
+        db.execute(update(events).where(events.c.id.between(1, 5)).values(at=time.time() - 10 * 86400))
+    reader.cursor = 1
+
+    stop = threading.Event()
+    timer = threading.Thread(target=prune_forever, args=(log,), kwargs={"retention_days": 7, "stop": stop})
+    timer.start()
+    try:
+        deadline = time.monotonic() + 10
+        while log.oldest() != 6 and time.monotonic() < deadline:
+            time.sleep(0.05)
+    finally:
+        stop.set()
+        timer.join()
+
+    assert [e.id for e in reader.poll()] == [6, 7]
+    with log.engine.connect() as db:
+        gaps_ = [tuple(r) for r in db.execute(select(gaps.c.stream, gaps.c.after_id, gaps.c.before_id, gaps.c.lost))]
+    assert gaps_ == [("machine:events", "1", "6", 4)]

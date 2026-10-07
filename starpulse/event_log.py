@@ -3,8 +3,9 @@
 Every producer on the host appends one row (`EventLog.append`), which never raises, so reporting an event never
 fails the work that caused it. Every reader keeps its own cursor, the `id` of the last row it passed, and
 polls `id > cursor` (`Tail`); there are no consumer groups. A tail without a cursor replays the retained log, one
-given a cursor resumes after it, and `EventLog.prune` drops rows older than a retention. A cursor below the oldest
-retained row means rows were pruned unread, which is recorded in `starpulse_gaps`.
+given a cursor resumes after it, and `EventLog.prune` drops rows older than a retention, which `serve` runs hourly
+(`prune_forever`). A cursor below the oldest retained row means rows were pruned unread, which is recorded in
+`starpulse_gaps`.
 
 The database is the history store's: SQLite by default (in WAL mode, so processes on the host append while the
 server reads) or the Postgres a `database_url` names. Delivery is at-least-once within retention, so a handler
@@ -274,6 +275,19 @@ class Tail:
                     logger.exception("Tail %s: handler failed on entry %s", self.stream, entry.id)
             if retry or len(entries) < self.batch:
                 stop.wait(self.interval)
+
+
+def prune_forever(log: EventLog, *, retention_days: int, stop: threading.Event, interval: float = 3600) -> None:
+    """Prune the rows older than `retention_days` at start and then every `interval` seconds until `stop` is set. A
+    pass that fails is logged and the next one retries, so a database that was briefly away does not end the pruning."""
+    while True:
+        try:
+            if pruned := log.prune(retention_days * 86400):
+                logger.info("EventLog: pruned %d rows older than %d days", pruned, retention_days)
+        except Exception:  # the database is unreachable or locked; the next pass retries
+            logger.exception("EventLog: prune failed; retrying in %ss", interval)
+        if stop.wait(interval):
+            return
 
 
 def _create_engine(url: str) -> Engine:
