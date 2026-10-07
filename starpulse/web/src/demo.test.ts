@@ -208,6 +208,49 @@ describe("the demo server", () => {
     expect((await reply.json()).error).toBe(ROUTES["/api/run"]);
   });
 
+  it("answers /api/forwarding with the board's moves as the forwarder would cut them, and flips the names with the opt-in", async () => {
+    const s = new DemoServer(fixture(), () => 100);
+    const put = (optIn: unknown) => body(s.fetch("/api/forwarding", { method: "PUT", body: JSON.stringify({ opt_in: optIn }) }));
+
+    const listed = await body(s.fetch("/api/forwarding"));
+
+    expect(listed).toMatchObject({ configured: true, optIn: false, names: false, refused: false, problem: null });
+    expect(listed.next.map((r: { fields: { task: string } }) => r.fields.task)).toEqual(["DEMO-1", "DEMO-2"]);
+    expect(listed.next.every((r: { fields: object }) => !("actor" in r.fields))).toBe(true);
+    expect(listed.contract["machine:events"].filter((f: { person: boolean }) => f.person).map((f: { field: string }) => f.field)).toEqual(["actor", "assignee"]);
+
+    const named = await put(true);
+    expect(named).toMatchObject({ optIn: true, names: true });
+    expect(named.next.every((r: { fields: { actor?: string } }) => typeof r.fields.actor === "string")).toBe(true);
+    expect((await put(false)).next.every((r: { fields: object }) => !("actor" in r.fields))).toBe(true);
+  });
+
+  it("names its stand-in hub without a URL, which the demo publisher refuses in a public page", async () => {
+    const listed = await new DemoServer(fixture(), () => 100).fetch("/api/forwarding").then((r) => r.json());
+
+    expect(JSON.stringify(listed)).not.toMatch(/https?:\/\//);
+  });
+
+  it("refuses an opt-in that is not a boolean, as the server does", async () => {
+    const s = new DemoServer(fixture());
+
+    const reply = await s.fetch("/api/forwarding", { method: "PUT", body: JSON.stringify({ opt_in: "yes" }) });
+
+    expect(reply.status).toBe(400);
+  });
+
+  it("can stand in for a hub that refuses names, a hub that is down, and an instance that forwards nothing", async () => {
+    const refused = new DemoServer(fixture(), () => 100, false, "refused");
+    const down = new DemoServer(fixture(), () => 100, false, "down");
+    const none = new DemoServer(fixture(), () => 100, false, "none");
+    const optIn = { method: "PUT", body: JSON.stringify({ opt_in: true }) };
+
+    expect(await body(refused.fetch("/api/forwarding", optIn))).toMatchObject({ optIn: true, names: false, refused: true });
+    expect(await body(down.fetch("/api/forwarding"))).toMatchObject({ lastSent: null, problem: expect.stringContaining("unreachable") });
+    expect(await body(none.fetch("/api/forwarding"))).toEqual({ configured: false });
+    expect((await none.fetch("/api/forwarding", optIn)).status).toBe(404);
+  });
+
   it("creates a task in the first lane, as the served board does, and says so in its snapshot", async () => {
     const s = new DemoServer(fixture());
     const reply = await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) });

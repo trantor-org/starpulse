@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
@@ -33,8 +34,10 @@ FIELDS: dict[str, tuple[str, ...]] = {
     run_events.STREAM: ("time", "phase", "workflow", "run_id", "status", "step", "depends"),
 }
 PERSON = ("actor", "assignee")
+#: How many of the next entries the status lists; the rest are only counted as "more".
+PREVIEW = 10
 
-__all__ = ["FIELDS", "OPT_IN_FILE", "PERSON", "Forwarder", "OptIn", "main", "post", "project", "start"]
+__all__ = ["FIELDS", "OPT_IN_FILE", "PERSON", "PREVIEW", "Forwarder", "OptIn", "build", "main", "post", "project", "start"]
 
 
 def project(stream: str, fields: dict[str, Any], *, opt_in: bool) -> dict[str, Any]:
@@ -112,6 +115,7 @@ class Forwarder:
         *,
         send: Send = post,
         interval: float = DEFAULT_INTERVAL,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.log = log
         self.store = store
@@ -123,6 +127,9 @@ class Forwarder:
         self.interval = interval
         self._send = send
         self._refused = False  # the hub took no opt-in; send names-free until the instance opts out and in again
+        self._clock = clock
+        self.last_sent: float | None = None  # when the hub last acknowledged a batch, in this process
+        self.problem: str | None = None  # why the last batch did not go through; None once one does
 
     def step(self) -> int | None:
         """Send the next batch: how many entries the log held past the cursor, or None when it did not go through.
@@ -158,14 +165,52 @@ class Forwarder:
             status, answer = self._send(self.url, self.token, body)
         except OSError as exc:
             logger.warning("Forwarder: %s unreachable, retrying: %s", self.url, exc)
+            self.problem = f"hub unreachable: {exc}"
             return None
         if status != 200:
             if status == 403 and sent_opt_in:
                 self._refused = True
             logger.warning("Forwarder: %s answered %s, retrying: %s", self.url, status, answer.get("error", ""))
+            self.problem = f"hub answered {status}" + (f": {answer['error']}" if answer.get("error") else "")
             return None
         self.store.save_cursor(self.name, tail.cursor)
+        self.last_sent = self._clock()
+        self.problem = None
         return len(entries)
+
+    def status(self) -> dict[str, Any]:
+        """What the next batch would send and why, for the instance's own page: the JSON body of `GET /api/forwarding`.
+
+        `next` is the first `PREVIEW` entries past the cursor, cut by `project()` with the opt-in `step` would use, so
+        the page lists the fields the hub is about to get, not a second reading of the contract; `kept` names the
+        fields of an entry that stay on the instance. `names` is whether a person's name leaves in that batch: an
+        opt-in a hub refused (`refused`) does not. Reading the log can note the same gap `step` would.
+        """
+        opted = self.opt_in.get()
+        names = opted and not self._refused
+        tail = Tail(self.log, self.name, streams=tuple(FIELDS), after=self.store.cursor(self.name), batch=PREVIEW + 1)
+        entries = tail.poll()
+        return {
+            "url": self.url,
+            "optIn": opted,
+            "names": names,
+            "refused": opted and self._refused,
+            "lastSent": self.last_sent,
+            "problem": self.problem,
+            "next": [
+                {
+                    "stream": e.stream,
+                    "fields": project(e.stream, e.fields, opt_in=names),
+                    "kept": sorted(set(e.fields) - set(FIELDS[e.stream])),
+                }
+                for e in entries[:PREVIEW]
+            ],
+            "more": len(entries) > PREVIEW,
+            "contract": {
+                stream: [{"field": field, "person": field in PERSON} for field in fields]
+                for stream, fields in FIELDS.items()
+            },
+        }
 
     def run(self, stop: threading.Event) -> None:
         """Forward until `stop` is set: straight on while batches come back full, else rest for the interval."""
@@ -200,17 +245,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def start(
-    config: Config,
-    base: Path,
-    log: EventLog,
-    store: HistoryStore,
-    environ: Mapping[str, str],
-    stop: threading.Event,
-    *,
-    hub: bool = False,
-) -> threading.Thread | None:
-    """Start the forwarder `[forward]` configures, as a daemon thread that ends when `stop` is set; None without one.
+def build(
+    config: Config, base: Path, log: EventLog, store: HistoryStore, environ: Mapping[str, str], *, hub: bool = False
+) -> Forwarder | None:
+    """The forwarder `[forward]` configures; None without one.
 
     `base` is the config's directory, where the opt-in file lives. Raises `ValueError` for `[forward]` on a hub, which
     is an IC's setting, and for a `token_env` that names an unset variable.
@@ -221,7 +259,11 @@ def start(
         raise ValueError("[forward] sends an IC's events to a hub; a hub does not forward")
     if not (token := environ.get(config.forward.token_env)):
         raise ValueError(f"[forward]: {config.forward.token_env} is not set")
-    forwarder = Forwarder(log, store, config.forward, token, OptIn(base / OPT_IN_FILE))
+    return Forwarder(log, store, config.forward, token, OptIn(base / OPT_IN_FILE))
+
+
+def start(forwarder: Forwarder, stop: threading.Event) -> threading.Thread:
+    """Run `forwarder` as a daemon thread that ends when `stop` is set."""
     thread = threading.Thread(target=forwarder.run, args=(stop,), name="forwarder", daemon=True)
     thread.start()
     return thread

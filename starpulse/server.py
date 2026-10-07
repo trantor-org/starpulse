@@ -2,7 +2,7 @@
 
     .venv/bin/python -m starpulse.server [--host 127.0.0.1] [--port 8766] [--hours 6] [--config starpulse.toml]
 
-Every write (POST /api/..., PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
+Every write (POST /api/..., PUT /api/forwarding, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
 no `Origin` or this server's own (else 403), so a web page on another site cannot write through the operator's browser.
 It listens on --host, 127.0.0.1 by default.
 
@@ -109,6 +109,14 @@ DELETE /api/insights/<id>
                    retract a finding with the engine token: 200 {id, retracted: true}, and an `insight` event {id,
                    finding: null}; 404 for an id that is unknown or already retracted. The row stays in the history
 POST /api/start    {task, assignee}: start a task's session at `session_start_url` (see Start in the README)
+GET /api/forwarding
+                   what this instance's forwarder would send the hub next, as the Admin view lists it: {configured,
+                   url, optIn, names, refused, lastSent, problem, next, more, contract}. `next` holds the first entries
+                   past the forwarder's cursor, each cut as the batch is cut; `{"configured": false}` without a
+                   `[forward]` block. 403 outside loopback and RFC 1918
+PUT /api/forwarding {opt_in: bool}: let a person's name leave this instance, or stop it, by writing the opt-in file the
+                   forwarder reads before every batch, and answer the status as a GET does; 400 for anything but a
+                   boolean, 404 without a `[forward]` block, 403 outside loopback and RFC 1918
 """
 
 from __future__ import annotations
@@ -133,6 +141,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse import analytics, forward, run_events
+from starpulse.forward import Forwarder
 from starpulse import events as machine_events
 from starpulse.board import (
     AssigneeWriter,
@@ -193,6 +202,7 @@ _MOVE = "/api/move"
 OPERATOR = "operator"
 _START = "/api/start"
 _WINDOW = "/api/history-window"
+_FORWARDING = "/api/forwarding"
 _TASK = "/api/task/"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
@@ -491,6 +501,31 @@ def history_window(source: str, method: str, raw: bytes, window: HistoryWindow) 
     return 200, window.state()
 
 
+def forwarding(source: str, method: str, raw: bytes, forwarder: Forwarder | None) -> tuple[int, dict[str, Any]]:
+    """Read (`GET`) what `forwarder` would send next, or set (`PUT {"opt_in": bool}`) whether a person's name may leave,
+    for a browser at `source`: the HTTP status and JSON body, the forwarder's status or the refusal.
+
+    An instance with no `[forward]` block has no forwarder: a read answers `{"configured": false}` so the page can say
+    so, and a write is a 404. The opt-in is the file the forwarder reads before every batch, so a PUT takes effect at
+    the next send.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Forwarding answers only loopback and private network (RFC 1918) browsers"}
+    if forwarder is None:
+        if method == "PUT":
+            return 404, {"error": "this instance forwards nothing: it has no [forward] block"}
+        return 200, {"configured": False}
+    if method == "PUT":
+        try:
+            opt_in = json.loads(raw)["opt_in"]
+        except ValueError, TypeError, KeyError:
+            opt_in = None
+        if not isinstance(opt_in, bool):
+            return 400, {"error": 'forwarding takes {"opt_in": true} or {"opt_in": false}'}
+        forwarder.opt_in.set(opt_in)
+    return 200, {"configured": True, **forwarder.status()}
+
+
 def _error(message: str) -> bytes:
     return json.dumps({"error": message}).encode()
 
@@ -605,6 +640,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     insights: Insights | None
     gate: Callable[[BaseHTTPRequestHandler], bool] | None
     forward: ForwardIngest | None
+    forwarding: Forwarder | None
 
     def parse_request(self) -> bool:
         """Parse the request, then let the gate (a hub's sign-in) answer or admit it before any route sees it."""
@@ -680,8 +716,15 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             self._window("DELETE")
 
     def _window(self, method: str) -> None:
-        """Answer the history window's route for `method`; no other path takes a PUT or DELETE."""
-        if urlsplit(self.path).path != _WINDOW:
+        """Answer the route a PUT or DELETE names: the history window's, or a PUT to the forwarding opt-in."""
+        path = urlsplit(self.path).path
+        if path == _FORWARDING and method == "PUT":
+            if self._refused_write():
+                return
+            declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
+            self._send(*self._forwarding(method, self.rfile.read(int(declared or 0))))
+            return
+        if path != _WINDOW:
             self.send_error(404)
             return
         if method != "GET" and self._refused_write():
@@ -689,6 +732,10 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
         status, body = history_window(self.client_address[0], method, self.rfile.read(int(declared or 0)), self.window)
         self._send(json.dumps(body).encode(), status)
+
+    def _forwarding(self, method: str, raw: bytes) -> tuple[bytes, int]:
+        status, body = forwarding(self.client_address[0], method, raw, self.forwarding)
+        return json.dumps(body).encode(), status
 
     def _send(self, body: bytes, status: int = 200) -> None:
         self.send_response(status)
@@ -723,6 +770,7 @@ def _handler(
     forward: ForwardIngest | None = None,
     level: Level | None = None,
     insights: Insights | None = None,
+    forwarding: Forwarder | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -744,6 +792,7 @@ def _handler(
             self.insights = insights
             self.gate = gate
             self.forward = forward
+            self.forwarding = forwarding
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
         def do_GET(self) -> None:
@@ -767,6 +816,8 @@ def _handler(
                 self._send(harnesses_body)
             elif url.path == _WINDOW:
                 self._window("GET")  # pragma: no mutate: any method but PUT and DELETE reads the window
+            elif url.path == _FORWARDING:
+                self._send(*self._forwarding("GET", b""))
             elif url.path in _PAGES or url.path.startswith("/flow/") and url.path[6:] in flows - {"board"}:
                 self.path = "/index.html"
                 super().do_GET()
@@ -991,13 +1042,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     follow(pushed, log, run_events.STREAM, pushed.handle_entry)
     forwarding = threading.Event()  # never set: the forwarder lives as long as the process
     try:
-        forward.start(
+        forwarder = forward.build(
             config,
             base,
             log,
             history if isinstance(history, HistoryStore) else HistoryStore(url, feed.machines),
             os.environ,
-            forwarding,
             hub=args.hub,
         )
     except ValueError as exc:
@@ -1007,6 +1057,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         store = InsightStore(url, engine=log.engine)
         restore(store, feed)
         insights = Insights(store, feed)
+    if forwarder is not None:
+        forward.start(forwarder, forwarding)
     announce(args.port, feed.snapshot()["hint"])
     handler = _handler(
         feed,
@@ -1028,6 +1080,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,
         level=config.level if args.hub else None,
         insights=insights,
+        forwarding=forwarder,
     )
     serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 

@@ -467,6 +467,21 @@ body.admin #c, body.admin #tip, body.admin #panel, body.admin .hud { visibility:
 #admin .sw { all: unset; cursor: pointer; position: relative; display: block; width: 30px; height: 16px; border-radius: 8px; background: rgba(148,163,184,.25); transition: background .15s; }
 #admin .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #dbe4f3; transition: left .15s; }
 #admin .sw[aria-checked=true] { background: #7c3aed; } #admin .sw[aria-checked=true]::after { left: 16px; }
+#admin .fw-url { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11px * var(--fs)); color: #94a3b8; overflow-wrap: anywhere; }
+#admin .sw[disabled] { opacity: .45; cursor: default; }
+#admin .row.fw-block { align-items: start; }
+#admin .row.fw-wide { grid-template-columns: 1fr; }
+#admin .row.fw-wide .refusal { margin-top: 0; }
+#admin .fw-contract { border-collapse: collapse; width: 100%; font-size: calc(11px * var(--fs)); }
+#admin .fw-contract th { text-align: left; padding: 6px 0 2px; font-weight: 400; font-size: calc(10px * var(--fs)); letter-spacing: .12em; color: var(--muted); }
+#admin .fw-contract .stream:first-child th { padding-top: 0; }
+#admin .fw-contract td { padding: 2px 12px 2px 0; font-family: "JetBrains Mono", ui-monospace, monospace; color: #cbd5e1; }
+#admin .fw-contract td.sent { color: #34d399; } #admin .fw-contract td.after { color: #fbbf24; }
+#admin .fw-next { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+#admin .fw-next li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 6px 8px; border-radius: 6px; background: rgba(148,163,184,.07); font-size: calc(11px * var(--fs)); color: var(--ink); }
+#admin .fw-next .stream { font-size: calc(10px * var(--fs)); letter-spacing: .08em; color: var(--muted); }
+#admin .fw-next .kv b { font-weight: 400; color: var(--muted); }
+#admin .fw-next li.more { background: none; padding: 0 8px; color: var(--muted); }
 #admin .pvcard.compact { padding: 4px 8px; }
 #admin .pvcard.compact .t { margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
