@@ -184,7 +184,7 @@ class BoardFeed:
         self._seen = (0, 0)
         self._saved = (0, 0)
         self._store: tuple[BoardStore, str] | None = None
-        self._lane_rows: Callable[[], list[LaneRow]] | None = None
+        self._lane_rows: Callable[..., list[LaneRow]] | None = None
         #: The local midnight the suns were last sized at, and the shares it gave them.
         self._sized: tuple[datetime | None, dict[str, float]] = (None, {})
         #: Set once the stream has been read up to the last entry it held when the feed started.
@@ -323,7 +323,7 @@ class BoardFeed:
         """
         self._lanes = lanes
 
-    def size_suns(self, lane_rows: Callable[[], list[LaneRow]]) -> None:
+    def size_suns(self, lane_rows: Callable[..., list[LaneRow]]) -> None:
         """Size each Board state's sun from its share of the lane moves in the week before local midnight, read through
         `lane_rows` (`LaneHistory.lane_rows`). The shares are worked out once a day, the first time a snapshot is
         taken after midnight, so a move made since then changes none until the next one."""
@@ -561,7 +561,8 @@ class BoardFeed:
         workflow tied to it (`starpulse.ledger`).
 
         The merge event's occurrences are the merged pull requests; any other event's are the tasks that entered the
-        lane it reaches, read from the lane history `size_suns` was given.
+        lane it reaches, read from the lane history `size_suns` was given. Only the window's changes are read: this runs
+        under the lock on every run and pull update, and the whole history is far larger than a day.
         """
         events: dict[str, list[Occurrence]] = {}
         since = self._clock() - LEDGER_WINDOW
@@ -572,9 +573,9 @@ class BoardFeed:
             for event in self._ties.keys() - {MERGE_EVENT}
         }
         if reached and self._lane_rows is not None:
-            for task, at, _from, to in self._lane_rows():
+            for task, at, _from, to in self._lane_rows(since):
                 for event, lanes in reached.items():
-                    if at >= since and lane_id(to) in lanes:
+                    if lane_id(to) in lanes:
                         events.setdefault(event, []).append(Occurrence(f"{task}@{at}", at, (task,)))
         return build(
             events,
