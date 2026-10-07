@@ -176,7 +176,13 @@ def listing(transport: Transport, repo: str, only: Collection[str] | None = None
         runs = _get(transport, f"/repos/{repo}/actions/workflows/{workflow['id']}/runs?per_page=1")["workflow_runs"]
         run = runs[0] if runs else None
         ran = _get(transport, f"/repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100")["jobs"] if run else []
-        name, definition = posixpath.basename(workflow["path"]), _definition(transport, repo, workflow["path"])
+        name = posixpath.basename(workflow["path"])
+        try:
+            definition = _definition(transport, repo, workflow["path"])
+        except GitHubError as exc:  # a GitHub-managed dynamic workflow's path is no file: list it from its run alone
+            if exc.status != 404:
+                raise
+            definition = {}
         if declares_dispatch(definition):
             startable.append(name)
         out.append(
