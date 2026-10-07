@@ -602,7 +602,7 @@ index 2fe63bb..e9e3434 100644
  
  /** The query string that opens `view`, keeping every other parameter; the view a bare address opens (`fallback`) needs no parameter. */
 diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
-index 7bcaec6..ffcdafa 100644
+index 7bcaec6..81cc616 100644
 --- a/starpulse/web/src/style.css
 +++ b/starpulse/web/src/style.css
 @@ -548,3 +548,156 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
@@ -698,7 +698,7 @@ index 7bcaec6..ffcdafa 100644
 +#dg .last .hot, .dgm .hot { color: #fcd34d; font-weight: 400; } #dg .last .q { color: #93c5fd; font-weight: 400; } #dg .last .bad, .dgm .bad { color: #fda4af; }
 +#dg .dcard .foot { display: flex; align-items: center; gap: 6px; font-size: calc(10px * var(--fs)); color: var(--muted); min-height: 18px; }
 +#dg .pool { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10px * var(--fs)); color: #7c8aa3; white-space: nowrap; }
-+.tie { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 3px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
++.tie { flex: 0 1 auto; min-width: 0; display: inline-block; vertical-align: middle; padding: 0 6px; border-radius: 3px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 +  color: var(--tc, #c084fc); background: color-mix(in srgb, var(--tc, #c084fc) 12%, transparent); font-size: calc(10px * var(--fs)); }
 +#dg .run, .dgm .run { all: unset; box-sizing: border-box; margin-left: auto; flex: none; cursor: pointer; display: grid; place-items: center; width: 22px; height: 18px; border-radius: 5px;
 +  border: 1px solid rgba(52,211,153,.45); background: rgba(52,211,153,.08); color: #a7f3d0; font-size: calc(8.5px * var(--fs)); }
