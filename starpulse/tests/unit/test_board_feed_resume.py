@@ -251,3 +251,40 @@ def test_a_stopped_server_saves_the_board_before_it_exits() -> None:
         signal.signal(signal.SIGTERM, before)
 
     assert store.saved[STREAM][0] == "7-0"
+
+
+PULL = {"number": 7, "url": "https://github.com/acme/widgets/pull/7", "checks": "pass", "merged": False, "stale": False}
+
+
+def test_a_saved_boards_pull_requests_are_in_the_first_snapshot_before_github_is_read() -> None:
+    store = _Store()
+    first = _feed_with_tasks()
+    first.resume(store, STREAM, lambda cursor: False)
+    first.set_pulls({"TASK-1": [PULL]}, {"records": {PULL["url"]: PULL}})
+    first.save()
+
+    feed, _ = _resumed(store)
+    feed.expect("7-0")
+
+    assert feed.snapshot()["pulls"] == {"TASK-1": [PULL]}
+    assert feed.pull_answers() == {"records": {PULL["url"]: PULL}}
+
+
+def test_new_pull_requests_are_saved_even_when_no_board_entry_was_read_since_the_last_save() -> None:
+    store = _Store()
+    first = _feed_with_tasks()
+    first.resume(store, STREAM, lambda cursor: False)
+    first.save()
+    first.set_pulls({"TASK-1": [PULL]})
+    first.save()
+
+    assert store.saved[STREAM][1]["pulls"] == {"TASK-1": [PULL]}
+
+
+def test_a_board_saved_before_pull_requests_were_kept_still_resumes_with_none() -> None:
+    store = _Store({STREAM: ("7-0", {"open": {}, "settled": {}, "assignees": {}})})
+
+    feed, cursor = _resumed(store)
+
+    assert cursor == "7-0"
+    assert feed.pull_answers() == {}

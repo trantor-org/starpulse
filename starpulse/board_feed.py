@@ -171,6 +171,9 @@ class BoardFeed:
         self._startable: dict[str, frozenset[str]] = {}
         self._runs_errors: dict[str, str] = {}
         self._pulls: dict[str, list[dict]] = {}
+        #: What the pull request reader learned from GitHub (`PullRequests.answers`), saved so a restart reads warm.
+        self._pull_answers: dict = {}
+        self._pulls_unsaved = False
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
         self._claims: dict[str, dict] = {}
         #: The findings an engine posted that are live, by id, as the contract's JSON (`put_insight`).
@@ -254,11 +257,13 @@ class BoardFeed:
             return None
         cursor, state = saved
         try:
-            seen, open_, settled, assignees = (
+            seen, open_, settled, assignees, pulls, answers = (
                 stream_id(cursor),
                 dict(state["open"]),
                 dict(state["settled"]),
                 dict(state["assignees"]),
+                dict(state.get("pulls", {})),  # a Board saved before pull requests were kept has none
+                dict(state.get("pull_answers", {})),
             )
             if not all(isinstance(entry, dict) for entry in settled.values()):
                 raise TypeError("a settled task saved before settled entries carried their time")
@@ -267,6 +272,7 @@ class BoardFeed:
             return None
         with self._lock:
             self._open, self._settled, self._assignees, self._seen, self._saved = open_, settled, assignees, seen, seen
+            self._pulls, self._pull_answers = pulls, answers
         logger.warning("StarPulse: resuming after %s", cursor)
         return cursor
 
@@ -277,16 +283,27 @@ class BoardFeed:
             return
         store, stream = self._store
         with self._lock:
-            if self._seen == self._saved:
+            if self._seen == self._saved and not self._pulls_unsaved:
                 return
             seen = self._seen
-            state = {"open": dict(self._open), "settled": dict(self._settled), "assignees": dict(self._assignees)}
+            state = {
+                "open": dict(self._open),
+                "settled": dict(self._settled),
+                "assignees": dict(self._assignees),
+                "pulls": dict(self._pulls),
+                "pull_answers": dict(self._pull_answers),
+            }
         try:
             store.save_board_state(stream, "-".join(map(str, seen)), state)
         except Exception as exc:  # the store is down; the Board still draws and the next save retries
             logger.warning("StarPulse: cannot save the Board of %s: %s", stream, exc)
             return
-        self._saved = seen
+        self._saved, self._pulls_unsaved = seen, False
+
+    def pull_answers(self) -> dict:
+        """What the pull request reader last handed `set_pulls`, as saved; empty when nothing was."""
+        with self._lock:
+            return dict(self._pull_answers)
 
     def keep_saved(self, stop: threading.Event, interval: float = SAVE_INTERVAL) -> None:
         """Save every `interval` seconds, and once more when `stop` is set."""
@@ -424,11 +441,15 @@ class BoardFeed:
             if self._insights.pop(finding_id, None) is not None:
                 self._publish("insight", {"id": finding_id, "finding": None})
 
-    def set_pulls(self, pulls: dict[str, list[dict]]) -> None:
-        """Take each task's pull request state and publish it when it differs from before."""
+    def set_pulls(self, pulls: dict[str, list[dict]], answers: dict | None = None) -> None:
+        """Take each task's pull request state and publish it when it differs from before; `answers` is what the
+        reader learned from GitHub, kept with the saved Board so a restart need not ask again."""
         with self._lock:
+            if answers is not None and answers != self._pull_answers:
+                self._pull_answers, self._pulls_unsaved = answers, True
             if pulls == self._pulls:
                 return
+            self._pulls_unsaved = True
             self._pulls = pulls
             self._publish("pulls", {"pulls": pulls})
             self._refresh_ledgers()
@@ -463,6 +484,11 @@ class BoardFeed:
         """Say the stream has not been reached yet, so a page shows that instead of an empty Board."""
         with self._lock:
             self._awaiting = True
+
+    def wait_replayed(self) -> None:
+        """Block until the stream has been read up to where it stood at the start; at once for a feed that reads none."""
+        if self._awaiting:
+            self.ready.wait()
 
     def runs(self, instance: str) -> InstanceRuns:
         """Where the runs adapter instance `instance` publishes its workflows."""

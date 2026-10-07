@@ -1,6 +1,7 @@
 """Each task's pull requests as the snapshot carries them: read from GitHub, cached, kept when GitHub fails."""
 
 import subprocess
+import threading
 from collections.abc import Collection
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from starpulse.adapter_kit import task
 from starpulse.board_feed import BoardFeed
 from starpulse.config import Repo
+from starpulse.pins import GitHub
 from starpulse.pull_requests import GhUnavailableError, PullRequests, Pulls, fetch, read_repository
 
 REPO = "https://github.com/acme/widgets/pull"
@@ -447,3 +449,64 @@ def test_a_merged_pr_of_a_pinned_repository_carries_the_parent_merge_that_applie
 
     assert _pulls(feed)["PROJ-8"][0]["applied_by"] == SHA
     assert "applied_by" not in _pulls(feed)["PROJ-7"][0]
+
+
+def _pinned_github() -> tuple[_Github, str]:
+    child = "https://github.com/acme/skills/pull/7"
+    github = _Github(pr1750=_record(1750, "pass", merged=True, merge_sha=SHA, merged_at=MERGED_AT))
+    github.records[child] = {
+        **_record(7, "pass", merged=True, merge_sha="5" * 40, merged_at="2026-10-06T20:00:00Z"),
+        "url": child,
+    }
+    return github, child
+
+
+def _gh_pins(asked: list[str]):
+    """`gh api` answering the widgets merge's pointer and a compare that contains the skills merge, noting each call."""
+
+    def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        asked.append(command[2])
+        answer = "pointer" if "/contents/" in command[2] else "ahead"
+        return subprocess.CompletedProcess(command, 0, answer, "")
+
+    return run
+
+
+def test_pin_answers_saved_with_the_board_spare_a_restarted_reader_every_pointer_and_compare_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[str] = []
+    monkeypatch.setattr(subprocess, "run", _gh_pins(asked))
+    repos = (Repo(name="skills", path="skills", applied_by="pin-bump"),)
+    github, child = _pinned_github()
+    before = _feed(proj_7=[FIRST], proj_8=[child])
+    PullRequests(before, github, repos=repos, pins=GitHub()).refresh()
+    assert len(asked) == 2
+
+    after = _feed(proj_7=[FIRST], proj_8=[child])
+    after.set_pulls({}, before.pull_answers())  # what `BoardFeed.resume` restores
+    asked.clear()
+    restarted = PullRequests(after, github, repos=repos, pins=GitHub())
+    restarted.restore()
+    restarted.refresh()
+
+    assert asked == []
+    assert _pulls(after)["PROJ-8"][0]["applied_by"] == SHA
+
+
+def test_the_first_refresh_waits_for_the_board_replay_and_then_runs_without_waiting_the_interval() -> None:
+    feed = _feed(proj_7=[FIRST])
+    feed.await_stream()
+    asked = threading.Event()
+    github = _Github(pr1750=_record(1750, "pass"))
+
+    def read(urls: Collection[str]) -> Pulls:
+        asked.set()
+        return github(urls)
+
+    source = PullRequests(feed, read)
+    threading.Thread(target=source.run_forever, kwargs={"interval_s": 3600}, daemon=True).start()
+
+    assert not asked.wait(0.2)
+    feed.expect("0-0")
+    assert asked.wait(5)
