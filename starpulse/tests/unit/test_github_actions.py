@@ -140,6 +140,17 @@ def test_a_disabled_workflow_is_not_listed() -> None:
     ]
 
 
+def test_a_workflow_with_no_file_lists_from_its_run_alone_and_leaves_the_others_listed() -> None:
+    """GitHub-managed dynamic workflows (`dynamic/dependabot/update-graph`) have a path that is not a file."""
+    gone = {f"/repos/{REPO}/contents/.github/workflows/ci.yml": (404, {})}
+    github = Recorded(runs={"ci": "ci-success"}, overrides=gone)
+    dags, startable = listing(github, REPO)
+    assert [dag["name"] for dag in dags] == ["ci.yml", "release.yml", "ui-preview.yml"]
+    ci = next(dag for dag in dags if dag["name"] == "ci.yml")
+    assert ci["runId"] and {step["name"] for step in ci["steps"]} >= {"python", "web"}
+    assert "ci.yml" not in startable
+
+
 def test_a_workflow_that_never_ran_is_not_started_with_every_job_not_started() -> None:
     never = {f"/repos/{REPO}/actions/workflows/374969302/runs?per_page=1": (200, {"workflow_runs": []})}
     release = listed(overrides=never)["release.yml"]
