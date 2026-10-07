@@ -30,6 +30,8 @@ _FRAGMENT = """
 fragment Pull on PullRequest {
   number
   merged
+  mergedAt
+  mergeCommit { oid }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   reviewThreads(first: 100) { nodes { isResolved } }
 }
@@ -76,6 +78,8 @@ def _read_pulls(
                     "url": url,
                     "checks": _CHECKS.get(rollup["state"], "none") if rollup else "none",
                     "merged": node["merged"],
+                    "merge_sha": (node["mergeCommit"] or {}).get("oid"),
+                    "merged_at": node["mergedAt"],
                     "threads": sum(not thread["isResolved"] for thread in node["reviewThreads"]["nodes"]),
                     "stale": False,
                 }
@@ -91,9 +95,10 @@ class Pulls(dict[str, dict]):
 
 
 def fetch(urls: Collection[str], read: Callable[[str, list[int]], dict] = read_repository) -> Pulls:
-    """Each URL's `{number, url, checks, merged, threads, stale}`; a URL GitHub does not return is left out.
+    """Each URL's `{number, url, checks, merged, merge_sha, merged_at, threads, stale}`; a URL GitHub does not return is left out.
 
-    `checks` is `pass`, `failing`, `pending` or `none`; `threads` counts the unresolved review threads. A
+    `checks` is `pass`, `failing`, `pending` or `none`; `threads` counts the unresolved review threads; `merge_sha` and
+    `merged_at` (ISO 8601 UTC) are the merge commit and merge time of a merged PR and `None` for an open one. A
     repository GitHub cannot read is logged, left out and named in `unread` so the others still answer; only when every repository
     fails does the read raise `GhUnavailableError`, for `PullRequests.refresh` to keep its last answer.
     """

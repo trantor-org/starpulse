@@ -28,7 +28,7 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    refused agent claim the board adapter reports, an `insight` delta ({id, finding}) per finding
                    an engine posts or retracts (`finding` null), with a `: ping` comment every 15 s.
                    `pulls` maps each open task that cites a pull request to [{number, url, checks
-                   (pass, failing, pending, none), merged, threads (unresolved), stale}], read from
+                   (pass, failing, pending, none), merged, merge_sha, merged_at (null until merged), threads (unresolved), stale}], read from
                    GitHub through `gh` once a minute and held between reads; a failed read keeps the
                    last value with `stale` true.
                    Everything is held in memory: the Board from the configured board adapter, other machines' tasks
