@@ -316,6 +316,8 @@ type = "native"
 
 # Draw each task's pull-request CI as a sub-flow of these Board states: StarPulse ships one `ci` machine, which GitHub
 # moves and StarPulse only observes (its `source` is GitHub). Each name is a Board state id; one the Board lacks is refused.
+# With `gh` available, each task with a PR is one agent in that flow, and its trail is the PR's pushes, check results,
+# re-runs, conflicts, rebases and merge, read from GitHub every minute and kept in the event log (`machine:events`).
 # [ci]
 # states = ["in_progress", "review"]
 

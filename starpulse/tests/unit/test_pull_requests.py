@@ -3,11 +3,13 @@
 import subprocess
 import threading
 from collections.abc import Collection
+from datetime import UTC, datetime
 
 import pytest
 
 from starpulse.adapter_kit import task
 from starpulse.board_feed import BoardFeed
+from starpulse.ci_trail import PullHistory, parse
 from starpulse.config import Repo
 from starpulse.pins import GitHub
 from starpulse.pull_requests import GhUnavailableError, PullRequests, Pulls, fetch, read_repository
@@ -17,6 +19,7 @@ FIRST, SECOND = f"{REPO}/1750", f"{REPO}/1751"
 
 
 SHA, MERGED_AT = "9f2c1ab07d3e4f5a6b7c8d9e0f1a2b3c4d5e6f70", "2026-10-06T21:14:09Z"
+OPENED_AT = "2026-10-06T20:00:00Z"
 
 
 def _node(
@@ -27,6 +30,8 @@ def _node(
     threads: tuple[bool, ...] = (),
     merge_commit: str | None = None,
     merged_at: str | None = None,
+    mergeable: str = "MERGEABLE",
+    suites: tuple[dict, ...] = (),
 ) -> dict:
     """A GraphQL `pullRequest` node: its head commit's check rollup, review threads' resolved flags and merge facts."""
     return {
@@ -34,9 +39,32 @@ def _node(
         "merged": merged,
         "mergedAt": merged_at,
         "mergeCommit": {"oid": merge_commit} if merge_commit else None,
-        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": rollup} if rollup else None}}]},
+        "createdAt": OPENED_AT,
+        "mergeable": mergeable,
+        "commits": {
+            "nodes": [
+                {
+                    "commit": {
+                        "oid": "abc123",
+                        "statusCheckRollup": {"state": rollup} if rollup else None,
+                        "checkSuites": {"nodes": suites},
+                    }
+                }
+            ]
+        },
+        "timelineItems": {"nodes": []},
         "reviewThreads": {"nodes": [{"isResolved": resolved} for resolved in threads]},
     }
+
+
+class _Trail:
+    """Stands in for `CiTrail`: keeps what a refresh handed it."""
+
+    def __init__(self) -> None:
+        self.recorded: list[dict] = []
+
+    def record(self, pulls: dict) -> None:
+        self.recorded.append(pulls)
 
 
 class _Github:
@@ -47,6 +75,7 @@ class _Github:
         self.requests: list[Collection[str]] = []
         self.down = False
         self.unread: set[str] = set()
+        self.history: dict[str, PullHistory] = {}
 
     def __call__(self, urls: Collection[str]) -> Pulls:
         self.requests.append(urls)
@@ -54,6 +83,7 @@ class _Github:
             raise GhUnavailableError("gh: network unreachable")
         answer = Pulls({url: self.records[url] for url in urls if url in self.records and url not in self.unread})
         answer.unread = frozenset(self.unread)
+        answer.history = self.history
         return answer
 
 
@@ -373,7 +403,11 @@ def test_one_gh_graphql_request_asks_for_every_number_in_the_repository(monkeypa
         "query=query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) "
         "{ p1: pullRequest(number: 1) { ...Pull } p2: pullRequest(number: 2) { ...Pull } } }"
         "\nfragment Pull on PullRequest {\n  number\n  merged\n  mergedAt\n  mergeCommit { oid }\n"
-        "  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }\n"
+        "  createdAt\n  mergeable\n"
+        "  commits(last: 100) { nodes { commit { oid statusCheckRollup { state } "
+        "checkSuites(first: 20) { nodes { status conclusion createdAt updatedAt workflowRun { runAttempt } } } } } }\n"
+        "  timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT]) "
+        "{ nodes { ... on HeadRefForcePushedEvent { createdAt afterCommit { oid } } } }\n"
         "  reviewThreads(first: 100) { nodes { isResolved } }\n}\n",
         "-f",
         "owner=acme",
@@ -510,3 +544,46 @@ def test_the_first_refresh_waits_for_the_board_replay_and_then_runs_without_wait
     assert not asked.wait(0.2)
     feed.expect("0-0")
     assert asked.wait(5)
+
+
+def test_the_fetched_history_carries_when_the_pr_opened_its_head_pushes_conflict_and_merge() -> None:
+    suite = {
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "createdAt": "2026-10-06T20:01:00Z",
+        "updatedAt": "2026-10-06T20:05:00Z",
+        "workflowRun": {"runAttempt": 2},
+    }
+    gh = _Gh({"p1750": _node(1750, rollup="FAILURE", mergeable="CONFLICTING", suites=(suite,))})
+
+    history = fetch([FIRST], gh).history[FIRST]
+
+    assert (history.url, history.opened, history.conflicting, history.merged_at) == (
+        FIRST,
+        datetime(2026, 10, 6, 20, 0, tzinfo=UTC).timestamp(),
+        True,
+        None,
+    )
+    (head,) = history.heads
+    assert (head.oid, head.suites[0].attempt, head.suites[0].conclusion) == ("abc123", 2, "FAILURE")
+
+
+def test_a_refresh_hands_each_tasks_histories_to_the_ci_trail() -> None:
+    github = _Github(pr1750=_record(1750, "pass"), pr1751=_record(1751, "pass"))
+    first, second = parse(FIRST, _node(1750, rollup="SUCCESS")), parse(SECOND, _node(1751, rollup="SUCCESS"))
+    github.history = {FIRST: first, SECOND: second}
+    trail = _Trail()
+
+    PullRequests(_feed(proj_7=[FIRST, SECOND]), github, trail=trail).refresh()
+
+    assert trail.recorded == [{"PROJ-7": [first, second]}]
+
+
+def test_a_refresh_github_cannot_answer_hands_the_ci_trail_nothing_new() -> None:
+    github = _Github()
+    github.down = True
+    trail = _Trail()
+
+    PullRequests(_feed(proj_7=[FIRST]), github, trail=trail).refresh()
+
+    assert trail.recorded == []
