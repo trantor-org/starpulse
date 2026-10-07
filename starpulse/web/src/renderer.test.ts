@@ -82,4 +82,12 @@ describe("the Recent feed's lines", () => {
 
     expect(after?.key).toBe(before?.key);
   });
+
+  it("keys a task's repeated move apart from its earlier one, so a note lands on the hovered line alone", () => {
+    const red = (at: number) => ({ flow: "delivery", task: "TASK-7", at, event: "CI_RED", to: "ci_red", from: "ci_red" });
+
+    const [late, early] = feedOf([red(5), red(10)], [], [], 20);
+
+    expect(late.key).not.toBe(early.key);
+  });
 });

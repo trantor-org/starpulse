@@ -141,7 +141,7 @@ export interface Renderer {
 
 /** The Recent feed's newest 40 lines at `now`: each move, each DAG run's line, and a DAG's own line for a run no run line ended. */
 export function feedOf(moves: Move[], dags: Dag[], runs: RunLine[], now: number): Omit<FeedLine, "time">[] {
-  const ev: Omit<FeedLine, "time">[] = moves.filter((e) => e.at <= now).map((e) => ({ key: `m${e.flow}:${e.task ?? ""}:${e.event}`, at: e.at, who: e.task ?? "", what: e.event.toLowerCase(), where: e.flow, task: e.task ?? undefined }));
+  const ev: Omit<FeedLine, "time">[] = moves.filter((e) => e.at <= now).map((e) => ({ key: `m${e.flow}:${e.task ?? ""}:${e.event}:${e.at}`, at: e.at, who: e.task ?? "", what: e.event.toLowerCase(), where: e.flow, task: e.task ?? undefined }));
   // a run line already says how its run ended, so the DAG's own line for that run is left out
   const told = new Set(runs.filter((l) => l.tone).map((l) => l.runId));
   for (const d of dags) {
