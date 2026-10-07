@@ -17,7 +17,7 @@ export interface TaskViewProps {
   milestones: string[];
   refusal: ReactNode;
   startNote: ReactNode;
-  /** The Waiting stack the task sits in, listed in its own row. */
+  /** The Waiting stack or Done chain the task sits in, listed in its own row. */
   stack?: ReactNode;
   capabilities?: Capabilities;
   names?: Record<string, string>;
@@ -349,7 +349,7 @@ export function TaskView(p: TaskViewProps) {
               <tr><td>labels</td><td><Chips {...fp("labels")} values={draft.labels} flag="needs-human" label="Labels" onChange={(value) => change("labels", value)} /></td></tr>
               <tr><td>milestone</td><td><Select {...fp("milestone")} label="Milestone" value={draft.milestone} options={[["", "—"], ...p.milestones.map((v): [string, string] => [v, v])]} onChange={(value) => change("milestone", value)} /></td></tr>
               <tr><td>depends on</td><td><Chips {...fp("dependencies")} values={draft.dependencies} label="Dependencies" onChange={(value) => change("dependencies", value)} /></td></tr>
-              {p.stack && <tr className="ro"><td>waiting stack</td><td className="stacklist">{p.stack}</td></tr>}
+              {p.stack && <tr className="ro"><td>{p.task.lane === "done" ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr>}
               <tr className="ro"><td>pull requests</td><td>{p.task.prs.length ? p.task.prs.map((pr) => (
                 <div key={pr.number}><a href={pr.url} target="_blank" rel="noopener">#{pr.number}</a> <span className="k">{pr.merged ? "merged" : pr.checks}{pr.threads ? `, ${pr.threads} open threads` : ""}</span></div>
               )) : "—"}</td></tr>

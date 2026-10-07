@@ -120,18 +120,21 @@ export function labelSuggestions(tasks: KanbanTask[], query: string, columns = C
 /** The bar with the word being typed written as `label:<name>`, ready for the next word. */
 export const applySuggestion = (query: string, label: string) => `${query.replace(/\S*$/, "")}${LABEL}${label} `;
 
-/** Waiting tasks of one bucket folded along their dependency chains: the top waits on nothing else Waiting in the bucket, the rest sit under it in unblock order. */
+/**
+ * Tasks of one bucket folded along their dependency chains. A Waiting stack's top waits on nothing else Waiting in the bucket and the rest
+ * sit under it in unblock order; a Done chain runs the other way, its top the last finished, which nothing else Done in the bucket depends on.
+ */
 export interface Stack {
   top: KanbanTask;
   /** The top first, then the rest by chain depth, then id. */
   members: KanbanTask[];
-  /** Each member's Waiting dependencies in the bucket, as the task lists them. */
-  waitsOn: ReadonlyMap<string, string[]>;
+  /** Each member's neighbours toward the top, id-ordered in a Done chain: the Waiting dependencies it waits on, or the Done tasks it unblocked, in the bucket. */
+  links: ReadonlyMap<string, string[]>;
 }
 export interface Bucket {
   milestone: string;
   tasks: KanbanTask[];
-  /** The Waiting lane's tasks folded into stacks, in the order their tops sit in `tasks`; empty in every other lane. */
+  /** The Waiting and Done lanes' tasks folded into stacks, in the order their tops sit in `tasks`; empty in every other lane. */
   stacks: Stack[];
   folded: boolean;
 }
@@ -163,22 +166,34 @@ const filtered = (t: KanbanTask, prefs: Prefs) =>
 
 const byId = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
 
+/** The lanes whose tasks fold into stacks. */
+export const STACKED = ["waiting", "done"];
+
 /**
- * A bucket's Waiting tasks as stacks. A task folds under its first blocker: of its Waiting dependencies in the bucket, the one that
- * unblocks first (lowest chain depth, then id). A dependency in another milestone, or one that is not Waiting, does not stack.
+ * A bucket's tasks of one lane as stacks. A Waiting task folds under its first blocker: of its Waiting dependencies in the bucket, the one
+ * that unblocks first (lowest chain depth, then id). A Done task folds the other way, under the Done task that depends on it, so the chain's
+ * last finished sits on top. A dependency in another milestone, or in another lane, does not stack.
  */
-export function stacksOf(tasks: KanbanTask[]): Stack[] {
+export function stacksOf(tasks: KanbanTask[], lane = "waiting"): Stack[] {
   const here = new Map(tasks.map((t) => [t.id, t]));
-  const waitsOn = new Map(tasks.map((t) => [t.id, t.dependencies.filter((d) => d !== t.id && here.has(d))]));
+  const links = new Map(tasks.map((t) => [t.id, [] as string[]]));
+  for (const t of tasks) {
+    for (const d of t.dependencies) {
+      if (d === t.id || !here.has(d)) continue;
+      if (lane === "done") links.get(d)!.push(t.id);
+      else links.get(t.id)!.push(d);
+    }
+  }
+  if (lane === "done") for (const l of links.values()) l.sort(byId);
   const depth = new Map<string, number>();
   // a cycle stops counting where it closes
   const depthOf = (id: string, path: string[] = []): number => {
     if (path.includes(id)) return 0;
     let d = depth.get(id);
-    if (d === undefined) depth.set(id, d = Math.max(-1, ...waitsOn.get(id)!.map((x) => depthOf(x, [...path, id]))) + 1);
+    if (d === undefined) depth.set(id, d = Math.max(-1, ...links.get(id)!.map((x) => depthOf(x, [...path, id]))) + 1);
     return d;
   };
-  const first = (id: string) => [...waitsOn.get(id)!].sort((a, b) => depthOf(a) - depthOf(b) || byId(a, b))[0];
+  const first = (id: string) => [...links.get(id)!].sort((a, b) => depthOf(a) - depthOf(b) || byId(a, b))[0];
   const rootOf = (id: string, path: string[] = []): string => {
     const f = path.includes(id) ? undefined : first(id);
     return f === undefined ? id : rootOf(f, [...path, id]);
@@ -187,7 +202,7 @@ export function stacksOf(tasks: KanbanTask[]): Stack[] {
   return tasks.filter((t) => roots.get(t.id) === t.id).map((top) => ({
     top,
     members: tasks.filter((t) => roots.get(t.id) === top.id).sort((a, b) => depthOf(a.id) - depthOf(b.id) || byId(a.id, b.id)),
-    waitsOn,
+    links,
   }));
 }
 
@@ -213,7 +228,7 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs
     const keys = [...new Set(here.map((t) => t.milestone))].sort((a, b) => milestoneNumber(b) - milestoneNumber(a));
     const buckets = keys.map((milestone): Bucket => {
       const inBucket = here.filter((t) => t.milestone === milestone);
-      return { milestone, tasks: inBucket, stacks: id === "waiting" ? stacksOf(inBucket) : [], folded: prefs.folded.has(milestone) };
+      return { milestone, tasks: inBucket, stacks: STACKED.includes(id) ? stacksOf(inBucket, id) : [], folded: prefs.folded.has(milestone) };
     });
     return { id, name: names[id] ?? id, count: here.length, buckets };
   });

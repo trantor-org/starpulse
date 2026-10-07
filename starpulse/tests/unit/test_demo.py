@@ -315,6 +315,17 @@ def test_the_seeded_board_has_a_waiting_chain_for_the_kanban_stack() -> None:
     assert all(a["id"] in waiting for a in board[14:17])
 
 
+def test_the_seeded_board_has_a_done_chain_for_the_kanban_stack() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+
+    board = scrub(live)["flows"][0]["agents"]
+
+    chain = board[12], *board[17:19]
+    assert [a["dependencies"] for a in board[17:19]] == [["DEMO-13"], ["DEMO-18"]]
+    assert all(a["state"] == "done" and a["milestone"] == chain[0]["milestone"] for a in chain)
+
+
 def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
     live = _live()
     live["flows"][0]["agents"] = []

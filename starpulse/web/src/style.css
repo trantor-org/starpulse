@@ -252,7 +252,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .heldby .hb:hover, #kb .heldby .hb:focus-visible { outline: 1px solid color-mix(in srgb, var(--hold) 60%, transparent); }
 #kb .heldby .more { color: var(--muted); }
 #kb .col h2 .cc { margin-left: 6px; color: var(--hold); font-weight: 600; letter-spacing: 0; }
-/* A Waiting stack (approved mockup, starpulse#89). Folded, the top card is whole and one or two card edges peek below it; unstacked, the
+/* A Waiting stack or Done chain (approved mockup, starpulse#89). Folded, the top card is whole and one or two card edges peek below it; unstacked, the
    cards under it open downward in the column's flow, pushing what is below, joined by a spine. The rest sit in a grid row that grows
    from 0fr, so the unfold needs no measuring; folded they are hidden from the pointer and the tab order. */
 #kb .nw { white-space: nowrap; }
@@ -274,6 +274,10 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .card .uw { margin: -2px 0 4px; font-size: calc(10px * var(--fs)); color: var(--hold-text); }
 #kb .sk { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 9px; line-height: 15px; font-weight: 600; color: var(--hold-hi); background: color-mix(in srgb, var(--hold) 16%, transparent); border: 1px solid color-mix(in srgb, var(--hold) 45%, transparent); }
 #kb .sk svg { width: 1em; height: 1em; }
+/* A Done chain draws the stack in green: the spine, the count badge and the line saying which task each card unblocked. */
+#kb .col[data-lane="done"] .stack > .spine { background: linear-gradient(color-mix(in srgb, var(--ok) 65%, transparent), color-mix(in srgb, var(--ok) 15%, transparent)); }
+#kb .sk.dn { color: var(--ok-text); background: color-mix(in srgb, var(--ok) 12%, transparent); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+#kb .card .uw.dn { color: var(--ok-text); }
 @media (prefers-reduced-motion: reduce) { #kb .stack, #kb .stack > .edge, #kb .stack > .spine, #kb .stack .rest, #kb .stack .restin > .card { transition: none; } }
 #kb .card.chain-self { box-shadow: 0 0 0 1px var(--ink-hi), 0 0 14px color-mix(in srgb, var(--ink-hi) 18%, transparent); }
 #kb .card.chain-holds { box-shadow: 0 0 0 1px var(--hold), 0 0 12px color-mix(in srgb, var(--hold) 28%, transparent); }

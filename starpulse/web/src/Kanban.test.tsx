@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Card, HeldBy, StackList, StackView, Stacks } from "./Kanban";
 import { CLOSED, NO_PREFS, layout, stackOf, stackStep, stacksOf, type KanbanTask, type StackEvent } from "./kanban";
 import { place } from "./move";
+import { TaskView } from "./TaskView";
 
 const task: KanbanTask = {
   id: "PROJ-1", title: "A title long enough to need two lines in a comfortable card", lane: "in_progress", milestone: "m-1", labels: ["feature", "needs-human"], assignee: "@agent-standard-high",
@@ -130,7 +131,7 @@ describe("a Waiting stack", () => {
   const wait = (id: string, ...dependencies: string[]): KanbanTask => ({ ...task, id, title: `Title of ${id}`, lane: "waiting", dependencies, openDeps: dependencies.length, live: null });
   const chain = [wait("T-1"), wait("T-2", "T-1"), wait("T-3", "T-2")];
   const stack = stacksOf(chain)[0];
-  const card = (t: KanbanTask, extra: { under?: boolean; stacked?: number; waitsOn?: string[] } = {}) =>
+  const card = (t: KanbanTask, extra: { under?: boolean; stacked?: number; links?: string[] } = {}) =>
     <Card key={t.id} task={t} holds={t.id === "T-1" ? 2 : undefined} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} {...extra} />;
   type Root = ReactElement<{ onPointerEnter: () => void; onPointerLeave: () => void; onFocus: () => void; onBlur: (e: unknown) => void; onKeyDown: (e: { key: string }) => void }>;
   /** The stack drawn from its state, with the events it raises applied to that state, as the Kanban's stack does. */
@@ -211,5 +212,60 @@ describe("a Waiting stack", () => {
     expect(after).not.toContain("T-2");
     expect(after).toContain('data-id="T-1"');
     expect(after).toContain('data-id="T-3"');
+  });
+});
+
+describe("a Done chain", () => {
+  const fin = (id: string, ...dependencies: string[]): KanbanTask => ({ ...task, id, title: `Title of ${id}`, lane: "done", dependencies, openDeps: 0, live: null });
+  const chain = [fin("T-1"), fin("T-2", "T-1"), fin("T-3", "T-2")];
+  const stack = stacksOf(chain, "done")[0];
+  const card = (t: KanbanTask, extra: { under?: boolean; stacked?: number; links?: string[] } = {}) =>
+    <Card key={t.id} task={t} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} {...extra} />;
+  type Root = ReactElement<{ onPointerEnter: () => void; onPointerLeave: () => void }>;
+  const drive = () => {
+    let state = CLOSED;
+    const root = () => StackView({ stack, state, card, onEvent: (e: StackEvent) => (state = stackStep(state, e)) }) as Root;
+    return { root, html: () => renderToStaticMarkup(root()) };
+  };
+
+  it("folds to the chain's last finished task with a green count badge", () => {
+    const html = drive().html();
+
+    expect(html).toMatch(/data-id="T-3"/);
+    expect(html).toMatch(/class="sk dn"[^>]*title="2 Done tasks this one&#x27;s chain finished first; hover to unstack"/);
+    expect(html).not.toContain("unblocked");
+  });
+
+  it("draws the Waiting badge without the green on a Waiting stack's top", () => {
+    const html = renderToStaticMarkup(<Card task={{ ...task, lane: "waiting" }} stacked={2} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
+
+    expect(html).toContain('class="sk"');
+    expect(html).not.toContain("sk dn");
+  });
+
+  it("unstacks on hover, each card below the top saying which task it unblocked, and folds when the pointer leaves", () => {
+    const d = drive();
+    d.root().props.onPointerEnter();
+
+    expect(d.html()).toContain('class="stack open"');
+    expect(d.html()).toContain('✓ unblocked</span> <span class="nw">T-3</span>');
+    expect(d.html()).toContain('✓ unblocked</span> <span class="nw">T-2</span>');
+    expect(d.html()).not.toContain("waits on");
+
+    d.root().props.onPointerLeave();
+
+    expect(d.html()).toContain('class="stack"');
+    expect(d.html()).not.toContain("unblocked");
+  });
+
+  it("labels the task modal's stack section done chain, and a Waiting stack's waiting stack", () => {
+    const draw = (lane: string) => renderToStaticMarkup(
+      <TaskView task={{ ...task, lane }} record={null} lane="" machine="—" profiles={[]} milestones={[]} refusal={null} startNote={null} capabilities={undefined}
+        saving={false} claiming={false} close={() => {}} hide={() => {}} constellation={() => {}} move={() => {}} start={() => {}}
+        stack={<StackList stack={stack} id="T-2" open={() => {}} />} />,
+    );
+
+    expect(draw("done")).toMatch(/<td>done chain<\/td><td class="stacklist"><div>▣ <button[^>]*>T-3<\/button><\/div><div>↳ <b>T-2<\/b>/);
+    expect(draw("waiting")).toContain("<td>waiting stack</td>");
   });
 });
