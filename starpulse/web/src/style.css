@@ -291,6 +291,13 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .col[data-lane="done"] .stack > .spine { background: linear-gradient(color-mix(in srgb, var(--ok) 65%, transparent), color-mix(in srgb, var(--ok) 15%, transparent)); }
 #kb .sk.dn { color: var(--ok-text); background: color-mix(in srgb, var(--ok) 12%, transparent); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
 #kb .card .uw.dn { color: var(--ok-text); }
+/* A Waiting card's link to its blocker in another milestone (approved mockup, starpulse#89): a dashed badge in the footer that opens the blocker.
+   Milestone and id never break; the badge wraps between them and stays inside the card at 150% text. */
+#kb .xm { all: unset; cursor: pointer; display: inline-flex; align-items: center; flex-wrap: wrap; gap: 3px; max-width: 100%; box-sizing: border-box; padding: 0 5px; border-radius: 3px; line-height: 1.5; white-space: normal;
+  color: var(--agent-text); background: color-mix(in srgb, var(--agent) 12%, transparent); border: 1px dashed color-mix(in srgb, var(--agent) 50%, transparent); }
+#kb .xm:hover, #kb .xm:focus-visible { color: var(--agent-hi); border-style: solid; }
+/* the milestone and id may break inside a narrow card (150% text beside the start strip) rather than poke out of the badge */
+#kb .xm .nw { white-space: normal; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { #kb .stack, #kb .stack > .edge, #kb .stack > .spine, #kb .stack .rest, #kb .stack .restin > .card { transition: none; } }
 #kb .card.chain-self { box-shadow: 0 0 0 1px var(--ink-hi), 0 0 14px color-mix(in srgb, var(--ink-hi) 18%, transparent); }
 #kb .card.chain-holds { box-shadow: 0 0 0 1px var(--hold), 0 0 12px color-mix(in srgb, var(--hold) 28%, transparent); }

@@ -475,6 +475,45 @@ describe("Done chains", () => {
   });
 });
 
+describe("Waiting cards linked to a blocker in another milestone", () => {
+  const wait = (id: string, milestone: string, ...dependencies: string[]): KanbanTask => ({ ...task(id, "waiting", milestone), dependencies, openDeps: dependencies.length });
+  const cross = (tasks: KanbanTask[], prefs = NO_PREFS) => [...view(tasks, prefs).cross].map(([id, held]) => [id, held.map((t) => t.id)]);
+
+  it("map a Waiting task to its Waiting dependencies in other milestones, which do not stack", () => {
+    const tasks = [wait("T-1", "m-1"), wait("T-2", "m-2", "T-1"), wait("T-3", "m-2", "T-1")];
+
+    expect(cross(tasks)).toEqual([["T-2", ["T-1"]], ["T-3", ["T-1"]]]);
+    expect(column(view(tasks), "waiting").buckets.flatMap((b) => b.stacks).every((s) => s.members.length === 1)).toBe(true);
+  });
+
+  it("leave a same-milestone blocker to the stack, and a blocker that is not Waiting to the Held by strip", () => {
+    const tasks = [wait("T-1", "m-1"), wait("T-2", "m-1", "T-1"), task("T-3", "in_progress", "m-2"), wait("T-4", "m-1", "T-3")];
+
+    expect(cross(tasks)).toEqual([]);
+  });
+
+  it("link a stacked task to its other-milestone blocker too, and list every such blocker", () => {
+    const tasks = [wait("T-1", "m-1"), wait("T-2", "m-2"), wait("T-3", "m-2", "T-2", "T-1"), wait("T-4", "m-3", "T-1", "T-2")];
+
+    expect(cross(tasks)).toEqual([["T-3", ["T-1"]], ["T-4", ["T-1", "T-2"]]]);
+    expect(stackOf(view(tasks), "T-3")?.members.map((t) => t.id)).toEqual(["T-2", "T-3"]);
+  });
+
+  it("draw only the visible blockers, so a hidden or filtered-out blocker leaves no link", () => {
+    const tasks = [wait("T-1", "m-1"), wait("T-2", "m-2", "T-1")];
+
+    expect(cross(tasks, hideTask(NO_PREFS, "T-1"))).toEqual([]);
+    expect(cross(tasks, { ...NO_PREFS, query: "T-2" })).toEqual([]);
+    expect(cross(tasks, { ...NO_PREFS, query: "T-1" })).toEqual([]);
+  });
+
+  it("follow a blocker that leaves Waiting, which is then no longer linked", () => {
+    const tasks = [wait("T-1", "m-1"), wait("T-2", "m-2", "T-1")];
+
+    expect(cross(tasks.map((t) => (t.id === "T-1" ? { ...t, lane: "ready" } : t)))).toEqual([]);
+  });
+});
+
 describe("the milestone outline", () => {
   it("lists each open milestone with its done and total, largest first, and leaves out finished milestones and tasks with none", () => {
     const tasks = [
