@@ -65,7 +65,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
 
-  # The page's API types are generated from the pydantic models in starpulse/contracts_api.py. Regenerate both outputs
+  # The page's API types are generated from the pydantic models in starpulse/contracts/api.py. Regenerate both outputs
   # and fail when either differs from what is committed: a model change ships with its schema and types.
   api-types:
     runs-on: [self-hosted, validate]
@@ -81,7 +81,7 @@ jobs:
           dest: ${{ runner.temp }}/setup-pnpm
       - run: uv sync --locked
       - run: pnpm --dir starpulse/web install --frozen-lockfile
-      - run: uv run --no-sync python -m starpulse.contracts_api
+      - run: uv run --no-sync python -m starpulse.contracts.api
       - run: pnpm --dir starpulse/web run gen:types
       - name: Fail when a generated file is stale
         run: git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts

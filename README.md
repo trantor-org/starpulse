@@ -882,8 +882,8 @@ push to `main`.
 `uv run lint-imports` checks the package layers: `store` imports from `settings`, `domain` and `contracts`; `settings` from
 `domain`; none import upward.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
-Every `/api` body is a pydantic model in `starpulse/contracts_api.py`, and the server builds each response through it.
-The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts_api`
+Every `/api` body is a pydantic model in `starpulse/contracts/api.py`, and the server builds each response through it.
+The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts.api`
 (writes `starpulse/api.schema.json`) and `pnpm --dir starpulse/web run gen:types` (writes `starpulse/web/src/api/types.gen.ts`),
 and commit both. CI's `api-types` job regenerates them and fails on any difference.
 [`bench/`](bench/README.md) holds the hub-ingest, instance event-log and flow-read benchmarks.

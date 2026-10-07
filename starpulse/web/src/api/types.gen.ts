@@ -1,4 +1,4 @@
-/* Generated from starpulse/api.schema.json by pnpm run gen:types; edit contracts_api.py, not this file. */
+/* Generated from starpulse/api.schema.json by pnpm run gen:types; edit starpulse/contracts/api.py, not this file. */
 
 /**
  * The root of `api.schema.json`: every body as a property, so the generated types name each one.

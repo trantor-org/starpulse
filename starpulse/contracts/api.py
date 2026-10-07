@@ -3,7 +3,7 @@
 `starpulse.server` builds every response through these models (`encode`), so a body that drifts from its model is a
 500 rather than a page that reads a missing field. Each model is also published as one JSON Schema,
 `api.schema.json`, and `web/src/api/types.gen.ts` is generated from that; regenerate both with
-`python -m starpulse.contracts_api` and `pnpm --dir starpulse/web run gen:types`.
+`python -m starpulse.contracts.api` and `pnpm --dir starpulse/web run gen:types`.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.json_schema import GenerateJsonSchema
 
-from starpulse.contracts import ActiveRun, Finding, Move, Pool, RunStatus, Step
+from starpulse.contracts.adapters import ActiveRun, Finding, Move, Pool, RunStatus, Step
 
 __all__ = [
     "BODIES",
@@ -1153,7 +1153,7 @@ class ApiContract(_Api):
 
 
 #: Where the schema is written: beside `machine.schema.json`, not among the adapter contracts' `schemas/`, which ship.
-SCHEMA = Path(__file__).parent / "api.schema.json"
+SCHEMA = Path(__file__).parent.parent / "api.schema.json"
 
 
 class _Generator(GenerateJsonSchema):

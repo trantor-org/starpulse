@@ -185,7 +185,7 @@ from starpulse.board_feed import BoardFeed, follow
 from starpulse.ci import attach
 from starpulse.ci_trail import CiTrail
 from starpulse.contracts.adapters import Move, StartFailedError
-from starpulse.contracts_api import encode, event
+from starpulse.contracts.api import encode, event
 from starpulse.domain.level import Level
 from starpulse.domain.level_metrics import RunWindow, WindowPastHistory, level_metrics
 from starpulse.domain.snapshot import qualifier
@@ -256,7 +256,7 @@ _TASKS = "/api/tasks"
 _INGEST = "/api/runs/events"
 _FORWARD = "/api/forward"
 _INSIGHTS = "/api/insights"
-#: The body each write route answers, by `contracts_api.BODIES`; a run and a rerun answer `run`.
+#: The body each write route answers, by `contracts.api.BODIES`; a run and a rerun answer `run`.
 _WRITES = {
     _MOVE: "move",
     _START: "start",

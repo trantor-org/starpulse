@@ -12,9 +12,9 @@ from pydantic import TypeAdapter
 
 from starpulse.adapter_kit import serve, task, url
 from starpulse.board_feed import BoardFeed
-from starpulse.contracts_api import RESPONSES
-from starpulse.history import HistoryStore
-from starpulse.level import Level, Orbit, Terminal
+from starpulse.contracts.api import RESPONSES
+from starpulse.store.history import HistoryStore
+from starpulse.domain.level import Level, Orbit, Terminal
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import NOW, ROWS
 from starpulse.tests.unit.test_board_feed import _paged_feed
@@ -57,7 +57,7 @@ def _model(route: str) -> object | None:
 
 def _validate(server: ThreadingHTTPServer, route: str) -> None:
     model = _model(route)
-    assert model is not None, f"{route} has no response model in contracts_api.RESPONSES"
+    assert model is not None, f"{route} has no response model in contracts.api.RESPONSES"
 
     with urllib.request.urlopen(url(server, route), timeout=5) as resp:
         body = json.loads(resp.read())
