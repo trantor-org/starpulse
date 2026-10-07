@@ -312,7 +312,7 @@ export class DemoServer {
     const board = this.snapshot.flows.find((f) => f.name === "board");
     return json({
       configured: true,
-      url: "https://hub.example/ingest",
+      url: "hub.demo/api/forward",
       optIn: this.optIn,
       names,
       refused: this.optIn && this.forward === "refused",

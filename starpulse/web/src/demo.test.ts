@@ -225,6 +225,12 @@ describe("the demo server", () => {
     expect((await put(false)).next.every((r: { fields: object }) => !("actor" in r.fields))).toBe(true);
   });
 
+  it("names its stand-in hub without a URL, which the demo publisher refuses in a public page", async () => {
+    const listed = await new DemoServer(fixture(), () => 100).fetch("/api/forwarding").then((r) => r.json());
+
+    expect(JSON.stringify(listed)).not.toMatch(/https?:\/\//);
+  });
+
   it("refuses an opt-in that is not a boolean, as the server does", async () => {
     const s = new DemoServer(fixture());
 
