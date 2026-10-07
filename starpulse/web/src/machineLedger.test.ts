@@ -48,6 +48,18 @@ describe("the machine ledger's top", () => {
     named(six, f);
   });
 
+  it.each([100, 125, 150])("spreads a six-way fan at %i% text over the top's whole height, its states three radii apart, beside the names", (scale) => {
+    for (const W of [1100, 1600]) {
+      const f = { ...frame(scale, W), inset: 40 * (scale / 100) }, two = ledgerTop(machine(2), f), six = ledgerTop(machine(6), f);
+      const col = six.nodes.filter((n) => six.nodes.filter((o) => o.x === n.x).length >= 3).sort((a, b) => a.y - b.y);
+      expect(six.hdrB).toBeCloseTo(two.hdrB, 5);
+      for (let i = 1; i < col.length; i++) expect(col[i].y - col[i - 1].y).toBeGreaterThanOrEqual(3 * col[i].r);
+      expect(col[0].y - col[0].orbit).toBeGreaterThanOrEqual(f.inset);
+      expect(col[col.length - 1].y + col[col.length - 1].orbit).toBeLessThanOrEqual(six.hdrB);
+      named(six, f);
+    }
+  });
+
   it("lays every state and name in the same place whatever tasks sit on it, so a moving task never shifts the machine", () => {
     const f = frame(125, 1600), still = ledgerTop(machine(6), f);
     const moves: Record<string, number>[] = [{}, { start: 1 }, { ...TASKS, pr_opened: 31, ci_green: 1 }, { spike_run: 4, checkpointed: 40 }];

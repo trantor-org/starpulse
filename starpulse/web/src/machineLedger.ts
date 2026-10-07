@@ -193,8 +193,15 @@ export function ledgerTop(m: LedgerMachine, f: LedgerFrame): LedgerTop {
   const hdrB = Math.max(packed, one + clamp(Math.min(0.5 * one, H * 0.6 - one), 0, 0.5 * one));
   const spread = span ? Math.max(minGap, Math.min(2 * rowGap, rowGap + ((hdrB - base - span * rowGap) * 0.6) / span, (hdrB - base) / span)) : rowGap;
   const padT = (hdrB - base - span * spread) / 2, yMain = 10 + padT + room + o - g.rmin * spread;
+  // a column of three or more names its states beside it, so it needs no room above or below for names: it spreads over the top's whole
+  // height, from under the page's crumb to the hairline, never farther apart than a branch row sits from the main line
+  const top = (f.inset ?? 0) + o, bot = hdrB - o;
+  const step = g.cols.map((c) => {
+    const rs = c.map((id) => g.row[id]), lo = Math.min(...rs), hi = Math.max(...rs);
+    return c.length < 3 ? spread : Math.max(spread, Math.min(rowGap, lo < 0 ? (yMain - top) / -lo : Infinity, hi > 0 ? (bot - yMain) / hi : Infinity));
+  });
   const nodes = m.states.map((s): LedgerNode => ({
-    id: s.id, name: s.name, x: xs[g.depth[s.id]], y: yMain + g.row[s.id] * spread, r, orbit: o, u: n > 1 ? g.depth[s.id] / (n - 1) : 0,
+    id: s.id, name: s.name, x: xs[g.depth[s.id]], y: yMain + g.row[s.id] * step[g.depth[s.id]], r, orbit: o, u: n > 1 ? g.depth[s.id] / (n - 1) : 0,
     initial: s.initial, final: s.final, n: count(s.id),
   }));
   return { nodes, labels: placeLabels(nodes, g, f, { hdrB, metaX, metaW }), hdrB, natural, metaT: f.inset ?? 0, metaX, metaW, x0, x1 };
