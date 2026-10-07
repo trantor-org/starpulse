@@ -1,11 +1,18 @@
 """How a lifecycle machine is entered: its ties, where it nests, when it was last active and what is stuck in it."""
 
+import pytest
+
 from starpulse.board_feed import BoardFeed
-from starpulse.machine_ties import STUCK_S, derive
+from starpulse.machine_ties import STUCK_S, derive, entries, page, rows
 
 NOW = 1_000_000.0
 HOUR = 3600.0
 IP = "delivery"
+
+
+@pytest.fixture(autouse=True)
+def _now(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("starpulse.board_feed.time.time", lambda: NOW)
 
 
 def _machine(*states: str, subflows: list[dict] | None = None, **extra: object) -> dict:
@@ -237,3 +244,202 @@ class TestSnapshot:
         assert flows["audit"]["parent"] == IP
         assert flows["audit"]["stuck"]["state"] == "scan"
         assert flows["review"]["ties"][0]["kind"] == "declared"
+
+
+def _ranked(lasts: dict[str, float | None], parent: str = IP) -> dict[str, dict]:
+    """The derivation of machines entered from `parent`, each with the given rolled-up `last`."""
+    return {IP: {"parent": None, "last": NOW}, **{n: {"parent": parent, "last": t} for n, t in lasts.items()}}
+
+
+class TestRows:
+    def test_rows_are_the_machines_entered_from_the_open_one_newest_activity_first(self) -> None:
+        sessions = {
+            IP: [_session("T1", [("start", 5000), ("pr_opened", 4000)])],
+            "review": [_session("T1", [("triage", 60)])],
+            "audit": [_session("T2", [("scan", 500)])],
+            "fix": [_session("T3", [("diagnose", 900)])],
+        }
+
+        assert rows(_derived(sessions), IP) == ["review", "audit", "fix"]
+
+    def test_a_machine_nested_below_a_row_is_not_a_row_of_the_level_above(self) -> None:
+        sessions = {
+            IP: [_session("T1", [("start", 5000)])],
+            "audit": [_session("T1", [("scan", 4000), ("report", 1000)])],
+            "fix": [_session("T1", [("diagnose", 800)])],
+        }
+        derived = _derived(sessions)
+
+        assert rows(derived, IP) == ["audit", "review"]
+        assert rows(derived, "audit") == ["fix"]
+
+    def test_machines_with_the_same_activity_rank_by_name_and_those_with_none_come_last(self) -> None:
+        derived = _ranked({"zeta": NOW - 5, "alpha": NOW - 5, "idle": None, "mid": NOW - 50})
+
+        assert rows(derived, IP) == ["alpha", "zeta", "mid", "idle"]
+
+
+class TestPage:
+    def test_a_page_is_the_next_limit_rows_older_than_the_cursor_and_says_whether_more_remain(self) -> None:
+        derived = _ranked({f"m{i}": NOW - 100 * i for i in range(1, 6)})
+
+        first = page(derived, IP, before=None, limit=2)
+        second = page(derived, IP, before=derived[first[0][-1]]["last"], limit=2)
+        third = page(derived, IP, before=derived[second[0][-1]]["last"], limit=2)
+
+        assert first == (["m1", "m2"], True)
+        assert second == (["m3", "m4"], True)
+        assert third == (["m5"], False)
+
+    def test_machines_sharing_the_boundary_activity_travel_together_so_no_page_skips_or_repeats_one(self) -> None:
+        derived = _ranked({"a": NOW - 10, "b": NOW - 20, "c": NOW - 20, "d": NOW - 20, "e": NOW - 30})
+
+        first, more = page(derived, IP, before=None, limit=2)
+        rest, _ = page(derived, IP, before=derived[first[-1]]["last"], limit=2)
+
+        assert (first, more) == (["a", "b", "c", "d"], True)
+        assert rest == ["e"]
+
+    def test_machines_with_no_activity_page_as_the_last_group(self) -> None:
+        derived = _ranked({"a": NOW - 10, "x": None, "y": None})
+
+        first, _ = page(derived, IP, before=None, limit=1)
+        rest = page(derived, IP, before=derived[first[-1]]["last"], limit=1)
+
+        assert (first, rest) == (["a"], (["x", "y"], False))
+
+    def test_a_level_with_nothing_entered_from_it_has_no_rows(self) -> None:
+        assert page(_ranked({"a": NOW}), "a", before=None, limit=20) == ([], False)
+
+
+def _entries(sessions: dict[str, list[dict]], launches: dict | None = None, span: float = 24 * HOUR) -> list[dict]:
+    flows = _flows(sessions, launches)
+    return entries(flows, derive(flows, NOW), NOW, span)
+
+
+class TestEntries:
+    def test_an_entry_has_its_time_and_the_state_the_machine_was_entered_from(self) -> None:
+        sessions = {
+            IP: [_session("T1", [("start", 3000), ("pr_opened", 1500)])],
+            "audit": [_session("T1", [("scan", 1000), ("report", 500)])],
+        }
+
+        assert _entries(sessions) == [
+            {
+                "at": NOW - 1000,
+                "machine": "audit",
+                "row": "audit",
+                "from": {"machine": IP, "state": "pr_opened"},
+                "dag": None,
+            }
+        ]
+
+    def test_an_entry_into_a_nested_machine_counts_on_the_row_above_it(self) -> None:
+        sessions = {
+            IP: [_session("T1", [("start", 5000)])],
+            "audit": [_session("T1", [("scan", 4000), ("report", 1000)])],
+            "fix": [_session("T1", [("diagnose", 800)])],
+        }
+        found = {e["machine"]: e for e in _entries(sessions)}
+
+        assert found["fix"]["row"] == "audit"
+        assert found["fix"]["from"] == {"machine": "audit", "state": "report"}
+        assert found["audit"]["row"] == "audit"
+
+    def test_an_entry_by_a_dag_launch_names_the_dag_and_no_state(self) -> None:
+        launches = {"ops/nightly": {"skill": "audit", "flow": None}}
+        run = {"id": "run-1", "state": "scan", "trail": [{"state": "scan", "event": "SCAN", "at": NOW - 600}]}
+        run["active"] = NOW - 600
+
+        assert _entries({"audit": [run]}, launches) == [
+            {"at": NOW - 600, "machine": "audit", "row": "audit", "from": None, "dag": "ops/nightly"}
+        ]
+
+    def test_entries_run_oldest_first_and_leave_out_the_in_progress_machine_and_anything_past_the_span(self) -> None:
+        sessions = {
+            IP: [_session("T1", [("start", 90_000), ("pr_opened", 80_000)])],
+            "review": [_session("T1", [("triage", 70_000)])],
+            "audit": [_session("T2", [("scan", 100_000)]), _session("T3", [("scan", 300)])],
+        }
+
+        assert [(e["machine"], e["at"]) for e in _entries(sessions)] == [("review", NOW - 70_000), ("audit", NOW - 300)]
+
+
+def _full(session: dict) -> dict:
+    return session | {"title": session["task"], "model": "", "steps": len(session["trail"])}
+
+
+def _crowded_feed(extra: int = 24) -> BoardFeed:
+    """The fixture machines plus `extra` more, `m00` the most and `m<extra-1>` the least recently active, each entered
+    from the In Progress machine by a task of its own."""
+    machines = {f["name"]: f["machine"] for f in _flows()}
+    machines |= {f"m{i:02d}": _machine("a", "b") for i in range(extra)}
+    feed = BoardFeed(machines=machines)
+    for i in range(extra):
+        feed.move(f"m{i:02d}", _full(_session(f"X{i}", [("a", 600 + 10 * i)])))
+    return feed
+
+
+class TestFeedPages:
+    def test_the_snapshot_carries_the_first_twenty_rows_of_the_in_progress_machine_and_whether_more_follow(
+        self,
+    ) -> None:
+        snapshot = _crowded_feed().snapshot()
+
+        assert snapshot["machinePage"] == {
+            "open": IP,
+            "machines": [f"m{i:02d}" for i in range(20)],
+            "more": True,
+        }
+
+    def test_the_machines_route_pages_by_open_machine_cursor_and_limit_with_no_overlap_or_gap(self) -> None:
+        feed = _crowded_feed()
+        seen: list[str] = []
+        before = None
+        for _ in range(10):
+            got = feed.machine_rows(IP, before, 10)
+            seen += [m["name"] for m in got["machines"]]
+            if not got["more"]:
+                break
+            before = got["machines"][-1]["last"]
+        rows_ = [m for m in seen if m.startswith("m")]
+
+        assert rows_ == [f"m{i:02d}" for i in range(24)]
+        assert len(seen) == len(set(seen)) == 24 + 3
+
+    def test_a_page_holds_each_machine_whole_with_its_derivation(self) -> None:
+        got = _crowded_feed().machine_rows(IP, None, 1)
+
+        assert got["open"] == IP
+        assert got["machines"][0]["agents"][0]["task"] == "X0"
+        assert got["machines"][0]["parent"] == IP
+        assert got["machines"][0]["machine"]["states"][0]["id"] == "a"
+
+    def test_a_level_below_a_row_pages_the_machines_entered_from_it(self) -> None:
+        feed = BoardFeed(machines={f["name"]: f["machine"] for f in _flows()})
+        feed.move(IP, _full(_session("T1", [("start", 5000)])))
+        feed.move("audit", _full(_session("T1", [("scan", 4000), ("report", 1000)])))
+        feed.move("fix", _full(_session("T1", [("diagnose", 800)])))
+
+        assert [m["name"] for m in feed.machine_rows("audit", None, 20)["machines"]] == ["fix"]
+
+    def test_the_default_open_machine_is_the_in_progress_one_and_an_unknown_one_has_no_page(self) -> None:
+        feed = _crowded_feed(3)
+
+        assert feed.machine_rows(None, None, 20)["open"] == IP
+        assert feed.machine_rows("nope", None, 20) is None
+
+
+class TestFeedStrip:
+    def test_the_snapshot_lists_the_last_24_hours_of_machine_entries_with_the_row_each_lands_on(self) -> None:
+        feed = BoardFeed(machines={f["name"]: f["machine"] for f in _flows()})
+        feed.move(IP, _full(_session("T1", [("start", 5000)])))
+        feed.move("audit", _full(_session("T1", [("scan", 4000), ("report", 1000)])))
+        feed.move("fix", _full(_session("T1", [("diagnose", 800)])))
+        feed.move("review", _full(_session("T9", [("triage", 25 * HOUR)])))
+        strip = feed.snapshot()["machineStrip"]
+
+        assert [(e["machine"], e["row"], e["at"]) for e in strip["entries"]] == [
+            ("audit", "audit", NOW - 4000),
+            ("fix", "audit", NOW - 800),
+        ]

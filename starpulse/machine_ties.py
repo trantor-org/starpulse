@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-__all__ = ["STUCK_S", "derive"]
+__all__ = ["STUCK_S", "derive", "entries", "page", "rows"]
 
 #: A task idle in a working state for longer than this (seconds) is stuck.
 STUCK_S = 7200
@@ -112,11 +112,7 @@ def _rank(tie: dict) -> int:
 
 def _observe(ties: _Ties, machines: Mapping[str, Mapping[str, Any]], ip: str | None) -> None:
     """Count each task's session on a machine against the state its task held on the session it was entered from."""
-    sessions: dict[str, list[tuple[str, dict]]] = {}
-    for name, f in machines.items():
-        for agent in f["agents"]:
-            if agent.get("task"):
-                sessions.setdefault(agent["task"], []).append((name, agent))
+    sessions = _sessions(machines)
     for name, f in machines.items():
         if name == ip:
             continue
@@ -126,6 +122,16 @@ def _observe(ties: _Ties, machines: Mapping[str, Mapping[str, Any]], ip: str | N
             machine, state = origin
             tie = ties.get(name, "declared", machine, state) or ties.add(name, machine, state, "observed", None)
             tie["count"] += 1
+
+
+def _sessions(machines: Mapping[str, Mapping[str, Any]]) -> dict[str, list[tuple[str, dict]]]:
+    """Every task's sessions as (machine, session)."""
+    sessions: dict[str, list[tuple[str, dict]]] = {}
+    for name, f in machines.items():
+        for agent in f["agents"]:
+            if agent.get("task"):
+                sessions.setdefault(agent["task"], []).append((name, agent))
+    return sessions
 
 
 def _start(agent: Mapping[str, Any]) -> float:
@@ -195,3 +201,64 @@ def _activity(machines: Mapping[str, Mapping[str, Any]], names: Sequence[str], n
         "last": last,
         "stuck": None if stuck is None else {"machine": stuck[1], "state": stuck[2], "since": stuck[0]},
     }
+
+
+def _activity_of(derived: Mapping[str, Mapping[str, Any]], name: str) -> float:
+    return derived[name]["last"] or 0.0
+
+
+def rows(derived: Mapping[str, Mapping[str, Any]], open_: str | None) -> list[str]:
+    """The machines entered from `open_` (their `parent`), newest rolled-up activity first, then by name; a machine
+    with no task has no activity and comes last."""
+    return sorted((n for n, d in derived.items() if d["parent"] == open_), key=lambda n: (-_activity_of(derived, n), n))
+
+
+def page(
+    derived: Mapping[str, Mapping[str, Any]], open_: str | None, *, before: float | None, limit: int
+) -> tuple[list[str], bool]:
+    """The next `limit` rows of `open_` with activity older than `before` (None: the newest), and whether older remain.
+
+    `before` is the activity of the last row the reader holds (0 for a machine with none). A page ends only between two
+    different activities, so rows sharing the boundary travel together and the next page, which starts strictly older,
+    neither repeats nor skips one; such a page may hold more than `limit`.
+    """
+    live = [n for n in rows(derived, open_) if before is None or _activity_of(derived, n) < before]
+    end = limit
+    while 0 < end < len(live) and _activity_of(derived, live[end]) == _activity_of(derived, live[end - 1]):
+        end += 1
+    return live[:end], end < len(live)
+
+
+def entries(
+    flows: Sequence[Mapping[str, Any]], derived: Mapping[str, Mapping[str, Any]], now: float, span: float
+) -> list[dict]:
+    """Every machine entry of the last `span` seconds, oldest first: a session starting in a machine other than the
+    In Progress one, as `{at, machine, row, from, dag}`.
+
+    `row` is the machine on the In Progress level it lands on, so an entry into a nested machine counts on the row
+    above it. A task's session names `from` as `{machine, state}` (None when no earlier session of the task is
+    known); a session with no task is a DAG launch and names the `dag` that launches its machine.
+    """
+    machines = {f["name"]: f for f in flows if f["name"] in derived}
+    ip = next((n for n, d in derived.items() if d["depth"] == 0), None)
+    sessions = _sessions(machines)
+    found = []
+    for name, f in machines.items():
+        if name == ip:
+            continue
+        dag = next((t["dag"] for t in derived[name]["ties"] if t["kind"] == "dag"), None)
+        for agent in f["agents"]:
+            at = _start(agent)
+            if not now - span <= at <= now:
+                continue
+            origin = _entered_from(agent, name, sessions[agent["task"]], ip) if agent.get("task") else None
+            found.append(
+                {
+                    "at": at,
+                    "machine": name,
+                    "row": (derived[name]["chain"] or [name])[0],
+                    "from": None if origin is None else {"machine": origin[0], "state": origin[1]},
+                    "dag": None if agent.get("task") else dag,
+                }
+            )
+    return sorted(found, key=lambda e: (e["at"], e["machine"]))

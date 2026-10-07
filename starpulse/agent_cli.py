@@ -70,6 +70,8 @@ _SNAPSHOT_KEYS = (
     "ledgers",
     "mergeStrip",
     "mergePins",
+    "machinePage",
+    "machineStrip",
     "claims",
     "insights",
     "settled",
