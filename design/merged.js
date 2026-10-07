@@ -456,7 +456,8 @@ function renderCtl() {
   ctl.querySelector('[data-act="merge"]').onclick = () => { arrive(); nextAt = now() + 25; };
   ctl.querySelector('[data-act="rerun"]')?.addEventListener("click", forceRerun);
 }
-setInterval(() => { const on = mine(), fs = rootFs(); if (ctl.hidden === on) { ctl.hidden = !on; if (on) renderCtl(); }
+// another mockup view (?view=kanban) owns the screen, so the switcher shows only on this fold level without one
+setInterval(() => { const on = mine() && !P.has("view"), fs = rootFs(); if (ctl.hidden === on) { ctl.hidden = !on; if (on) renderCtl(); }
   if (fs !== F) { F = fs; if (on) { resize(); renderCtl(); } } }, 250);
 if (P.has("merged")) { stack = [{ kind: "board" }, { kind: "fold", id: "apply-on-merge+graph-refresh+main-follow", dags: [NM.aom, NM.gr, NM.mf], crit: [], path: ["review", "done"] }];
   localStorage.setItem("fv.path", JSON.stringify(stack)); resize(); renderNav(); }
