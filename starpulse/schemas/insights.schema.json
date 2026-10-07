@@ -1,0 +1,202 @@
+{
+  "$defs": {
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "One thing a reader can open to check a finding: a labelled link, or a labelled query over the history store.",
+      "properties": {
+        "label": {
+          "description": "What the link or query shows, in a few words.",
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A link to the evidence; exactly one of `url` and `query` is set.",
+          "title": "Url"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A read-only query over the history store's tables that returns the evidence; exactly one of `url` and `query` is set.",
+          "title": "Query"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "FindingEngine": {
+      "additionalProperties": false,
+      "description": "The engine that wrote a finding.",
+      "properties": {
+        "name": {
+          "description": "The engine's name, stable across its releases.",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "description": "The engine release that wrote the finding.",
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "FindingEngine",
+      "type": "object"
+    },
+    "FindingScope": {
+      "additionalProperties": false,
+      "description": "What a finding is about. Every field is optional and a finding may name none; there is no field for a person,\nso a finding about one cannot be written, and one that tries is refused as an unknown field.",
+      "properties": {
+        "team": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The team key the finding is about, as a board task's `team`.",
+          "title": "Team"
+        },
+        "machine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The machine the finding is about, as `<repo>/<machine>`.",
+          "title": "Machine"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The state of that machine the finding is about.",
+          "title": "State"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The task key the finding is about.",
+          "title": "Task"
+        }
+      },
+      "title": "FindingScope",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One thing an external engine says about the flow, posted to `POST /api/insights`; a re-post of an `id` replaces it.",
+  "properties": {
+    "id": {
+      "description": "The engine's stable key for the finding; posting it again replaces it.",
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "engine": {
+      "$ref": "#/$defs/FindingEngine",
+      "description": "The engine that wrote it, by name and version."
+    },
+    "scope": {
+      "$ref": "#/$defs/FindingScope",
+      "description": "What it is about: a team, machine, state or task, each optional."
+    },
+    "severity": {
+      "description": "How much attention it asks for.",
+      "enum": [
+        "info",
+        "warn",
+        "act"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "text": {
+      "description": "What the engine found, in plain text of at most 280 characters.",
+      "maxLength": 280,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "evidence": {
+      "default": [],
+      "description": "Where a reader can check it.",
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "created_at": {
+      "description": "When the engine wrote it, in epoch seconds.",
+      "title": "Created At",
+      "type": "number"
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "When the page should stop showing it, in epoch seconds, after `created_at`; None keeps it until it is retracted.",
+      "title": "Expires At"
+    }
+  },
+  "required": [
+    "id",
+    "engine",
+    "severity",
+    "text",
+    "created_at"
+  ],
+  "title": "Finding",
+  "type": "object"
+}

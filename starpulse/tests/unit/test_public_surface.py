@@ -10,6 +10,7 @@ import pytest
 PUBLIC: dict[str, set[str]] = {
     "starpulse.adapter_kit": {
         "BoardAdapterKit",
+        "InsightsEngineKit",
         "MachineEventsAdapterKit",
         "RunsAdapterKit",
         "assembled",
@@ -35,10 +36,15 @@ PUBLIC: dict[str, set[str]] = {
     "starpulse.config": {"Config", "ConfigError", "Forward", "RunsInstance", "Source", "load", "runs_adapter"},
     "starpulse.contracts": {
         "CONTRACTS",
+        "FINDING_TEXT_MAX",
         "SCHEMAS",
         "ActiveRun",
         "BoardTask",
         "Dag",
+        "Evidence",
+        "Finding",
+        "FindingEngine",
+        "FindingScope",
         "MachineEvent",
         "Move",
         "Pool",

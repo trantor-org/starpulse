@@ -22,10 +22,12 @@ pytest.importorskip("jwt", reason="the hub extras are not installed")
 
 from starpulse import server
 from starpulse.adapter_kit import serve, url
+from starpulse.board_feed import BoardFeed
 from starpulse.config import OidcSettings
 from starpulse.event_log import EventLog
 from starpulse.ingest import ForwardIngest, Ingest
-from starpulse.oidc import ENGINE, INSTANCE, PUBLIC, ROUTES, SESSION_S, Gate
+from starpulse.insights import Insights, InsightStore
+from starpulse.oidc import ENGINE, INSTANCE, PUBLIC, ROUTE_PREFIXES, ROUTES, SESSION_S, Gate
 from starpulse.tests import mock_issuer
 from starpulse.tests.mock_issuer import Answer, call, session_of
 
@@ -35,7 +37,7 @@ FORWARD_TOKEN = "laptop-secret"
 ENGINE_TOKEN = "engine-secret"
 #: What a sign-in refuses to answer before the viewer has signed in: the sign-in's own two endpoints.
 SIGN_IN = {"/auth/login", "/auth/callback"}
-#: A route only the engine may call; the insights routes that use it land in their own slice.
+#: A route only the engine may call that no handler serves, to see a request pass the gate and reach a 404.
 PROBE = "/api/engine-probe"
 
 
@@ -99,11 +101,15 @@ def hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
         routes={PROBE: ENGINE},
         clock=lambda: now[0],
     )
+    feed = BoardFeed()
+    insights = Insights(InsightStore(f"sqlite:///{tmp_path / 'history.sqlite'}"), feed)
     with serve(
         tmp_path,
+        feed,
         gate=gate,
         ingest=Ingest({"cron": INSTANCE_TOKEN}, log),
         forward=ForwardIngest({"laptop": FORWARD_TOKEN}, log),
+        insights=insights,
         port=port,
     ) as running:
         yield Hub(running, issuer, log, redirect_uri, now)
@@ -200,10 +206,48 @@ def test_the_engine_token_passes_only_on_engine_routes(hub: Hub) -> None:
     assert hub.call("/api/runs/events", "POST", {**engine, "Content-Type": "application/json"}, b"{}")[0] == 401
 
 
-def test_the_built_in_routes_open_to_the_gate_are_the_sign_in_and_the_instance_token_routes_only() -> None:
+FINDING = {
+    "id": "slow-review",
+    "engine": {"name": "skill-coach", "version": "1.4.0"},
+    "scope": {"team": "platform"},
+    "severity": "warn",
+    "text": "Review takes four times as long as the norm.",
+    "created_at": 1_700_000_000.0,
+}
+
+
+def test_the_engine_token_posts_and_retracts_a_finding_through_the_gate(hub: Hub) -> None:
+    engine = {"Authorization": f"Bearer {ENGINE_TOKEN}", "Content-Type": "application/json"}
+
+    assert hub.call("/api/insights", "POST", engine, json.dumps(FINDING).encode())[0] == 201
+    assert hub.call("/api/insights/slow-review", "DELETE", engine)[0] == 200
+    assert hub.call("/api/insights/slow-review", "DELETE", engine)[0] == 404
+
+
+def test_no_other_credential_reaches_the_insights_routes(hub: Hub) -> None:
+    body = json.dumps(FINDING).encode()
+    viewer = {"Cookie": session_of(sign_in(hub, "alice", ["ops"]))}
+    credentials = {
+        "none": {},
+        "viewer": viewer,
+        "instance": {"Authorization": f"Bearer {INSTANCE_TOKEN}"},
+        "wrong engine": {"Authorization": "Bearer not-the-engine-token"},
+    }
+
+    for name, headers in credentials.items():
+        sent = {**headers, "Content-Type": "application/json"}
+        assert hub.call("/api/insights", "POST", sent, body)[0] == 401, name
+        assert hub.call("/api/insights/slow-review", "DELETE", sent)[0] == 401, name
+
+
+def test_the_built_in_routes_open_to_the_gate_are_the_sign_in_the_instance_token_routes_and_the_engine_insights_only() -> (
+    None
+):
     assert {path for path, access in ROUTES.items() if access == PUBLIC} == SIGN_IN
     assert {path for path, access in ROUTES.items() if access == INSTANCE} == {"/api/runs/events", "/api/forward"}
-    assert set(ROUTES.values()) == {PUBLIC, INSTANCE}
+    assert {path for path, access in ROUTES.items() if access == ENGINE} == {"/api/insights"}
+    assert ROUTE_PREFIXES == {"/api/insights/": ENGINE}
+    assert set(ROUTES.values()) == {PUBLIC, INSTANCE, ENGINE}
 
 
 def test_a_session_ends_after_its_lifetime(hub: Hub) -> None:

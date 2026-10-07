@@ -125,7 +125,7 @@ lists exactly the verbs there are.
 
 | Verb | Arguments | Document |
 |---|---|---|
-| `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `settled`, ... |
+| `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `insights`, `settled`, ... |
 | `board` | `--state`, `--milestone`, `--label`, `--assignee` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, milestone, labels, dependencies, waiting_on, prs, moves}` |
 | `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
@@ -364,6 +364,46 @@ hub_retention_days = 14   # the default; a whole number of days, 1 or more
   none. Trends older than retention read this table; anything that needs individual events is limited to the
   retained days.
 
+### Post findings from an engine
+
+A hub with `engine_token_env` set takes findings from an external engine: a separate package that reads the hub's
+history and says what it found. This package holds no engine code; the insights API is the fourth contract beside the
+board, machine-event and runs records, and its record is `Finding` (`starpulse/schemas/insights.schema.json`):
+
+```sh
+curl -X POST https://hub.example.com/api/insights -H "Authorization: Bearer $STARPULSE_ENGINE_TOKEN" -d '{
+  "id": "slow-review",
+  "engine": {"name": "skill-coach", "version": "1.4.0"},
+  "scope": {"team": "platform", "state": "review"},
+  "severity": "warn",
+  "text": "Review takes four times as long as the norm.",
+  "evidence": [{"label": "time in review", "url": "https://hub.example.com/history?state=review"}],
+  "created_at": 1700000000
+}'
+curl -X DELETE https://hub.example.com/api/insights/slow-review -H "Authorization: Bearer $STARPULSE_ENGINE_TOKEN"
+```
+
+- **Fields.** `id` names the finding, `engine` the `name` and `version` that made it, `severity` is `info`, `warn` or
+  `act`, `text` is at most 280 characters, and `created_at` and the optional `expires_at` are epoch seconds. `evidence`
+  lists labelled links, each exactly one of a `url` or a history `query`. `scope` may name a `team`, `machine`, `state`
+  and `task`, all optional. The contract has no field for a person, and a body with an unknown field, a scope that
+  names an assignee or a user included, is refused: a finding is about work, never about someone.
+- **Answers.** A new id answers 201 `{id, replaced: false}`. A re-post of an id replaces its finding and answers 200
+  `{id, replaced: true}`. A body the contract refuses answers 400 naming the field to fix, one over 64 KiB 413, and a
+  history store that refuses the write 503; none of them writes or sends anything. `DELETE /api/insights/<id>` retracts
+  a finding (200 `{id, retracted: true}`), and an id that is unknown or already retracted answers 404.
+- **Credentials.** Only the engine token reaches these routes, and no viewer's session or forwarder's token does. A hub
+  without `engine_token_env`, and an instance without `--hub`, has no insights routes and answers 404.
+- **History and stream.** Findings are kept in `starpulse_insights`, a retracted one with its `retracted_at`. The
+  stream sends an `insight` event `{id, finding}` for each post and re-post and `{id, finding: null}` for a retraction,
+  and the snapshot's `insights` lists the findings neither retracted nor past their `expires_at`, so a page that
+  connects later draws them, as does a hub that restarts.
+
+An engine author tests against the real routes with `InsightsEngineKit` from `starpulse.adapter_kit`: override
+`produce()` to return the engine's findings as plain dicts, and the kit checks each against the contract and schema,
+posts, re-posts and retracts each through a served stack and asserts the stream sends every state, and asserts a
+finding scoped to a person is refused.
+
 ### Configure a level
 
 A hub draws one level above the Board: a flow graph over the trajectories of one Board machine, merged across
@@ -508,8 +548,8 @@ The modules an adapter may import, each exporting exactly the names in its `__al
 
 - `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer and task protocols).
 - `starpulse.board_feed`: the feed a board adapter places tasks on (`BoardFeed`) and what following a stream needs of it.
-- `starpulse.contracts`: the board, machine-event and runs records, their JSON Schemas, and `RunsSink`.
-- `starpulse.adapter_kit`: the test kit an adapter author runs against their adapter, and the helpers that serve it.
+- `starpulse.contracts`: the board, machine-event, runs and insights (`Finding`) records, their JSON Schemas, and `RunsSink`.
+- `starpulse.adapter_kit`: the test kit an adapter or insights engine author runs against their work, and the helpers that serve it.
 - `starpulse.machine_definition`: loading and validating a machine, and the `Registry` of guards and actions.
 - `starpulse.snapshot`: how a machine is described to the page, and how its workflows are named.
 - `starpulse.history`: the history a board adapter may keep itself, and placing a task's events on a machine.
