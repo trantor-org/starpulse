@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD, drill, pathKey, pathTo, startPath, tree, type Level, type Path } from "./levels";
+import { BOARD, drill, hostOf, pathKey, pathTo, startPath, tree, type Level, type Path } from "./levels";
 import type { Machine, Snapshot } from "./types";
 
 const machine = (ids: string[], subflows: Machine["subflows"] = []): Machine => ({
@@ -87,5 +87,47 @@ describe("drill", () => {
     expect(drill({ name: "2 DAGs", fold: ["a", "b"] }, crit, ["ready", "review"])).toEqual({
       push: { kind: "fold", dags: ["a", "b"], crit, path: ["ready", "review"] },
     });
+  });
+});
+
+describe("one flow under several Board states", () => {
+  // The live shape of the mapped CI machine: In Progress and Review each open the same `ci` flow.
+  const shared: Snapshot = {
+    graphs: ["board", "in-progress", "ci", "runs"],
+    flows: [
+      { name: "board", agents: [], machine: machine(["ready", "in_progress", "review"], [
+        { state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" },
+        { state: "in_progress", flow: "ci", exits: {}, parent: "board", when: "a PR is open" },
+        { state: "review", flow: "ci", exits: {}, parent: "board", when: "a PR is open" },
+      ]) },
+      { name: "in-progress", agents: [], machine: machine(["worktree_ready"]) },
+      { name: "ci", agents: [], machine: machine(["opened", "running"]) },
+    ],
+    dags: [], settled: {}, error: null, now: 0,
+  };
+  const S = tree(shared);
+  const under = (state: string): Path => [...BOARD, { kind: "state", id: state }, { kind: "machine", flow: "ci" }];
+
+  it("lists the flow under each host", () => {
+    expect(S.subs).toEqual({ in_progress: ["in-progress", "ci"], review: ["ci"] });
+  });
+
+  it("resolves the (state, flow) pair to its own level, and a bare flow to its first host", () => {
+    expect(pathTo(S, "ci", "review")).toEqual(under("review"));
+    expect(pathTo(S, "ci", "in_progress")).toEqual(under("in_progress"));
+    expect(pathTo(S, "ci")).toEqual(under("in_progress"));
+    expect(pathTo(S, "ci", "ready")).toBeNull();
+    expect(pathKey(under("review"))).toBe("board/review/ci");
+  });
+
+  it("names the Board state a level sits under", () => {
+    expect(hostOf(under("review"))).toBe("review");
+    expect(hostOf(BOARD)).toBeUndefined();
+  });
+
+  it("reopens a cached path under either host, and the Board when the flow is not under that state", () => {
+    expect(startPath("/", "", under("review"), S)).toEqual(under("review"));
+    expect(startPath("/", "", under("in_progress"), S)).toEqual(under("in_progress"));
+    expect(startPath("/", "", under("ready"), S)).toEqual(BOARD);
   });
 });

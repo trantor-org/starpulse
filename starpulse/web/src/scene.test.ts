@@ -1486,3 +1486,53 @@ describe("a Board state's sun sized from its share of the week's moves", () => {
     expect(build(sky, { kind: "state", id: "review" }).sun!.r).toBe(build(sky, { kind: "board" }).galaxies.review.r);
   });
 });
+
+describe("a flow shared by two Board states", () => {
+  // `ci` opens under In Progress and under Review; each machine task names the Board task it works.
+  const shared = () => {
+    const snap: Snapshot = {
+      graphs: ["board", "ci", "runs"],
+      flows: [
+        { name: "board", machine: machine(["ready", "in_progress", "review"], { subflows: [
+          { state: "in_progress", flow: "ci", exits: {}, parent: "board", when: "a PR is open" },
+          { state: "review", flow: "ci", exits: {}, parent: "board", when: "a PR is open" },
+        ] }), agents: [
+          { id: "T-1", title: "a", state: "in_progress", model: "", labels: [] },
+          { id: "T-2", title: "b", state: "review", model: "", labels: [] },
+          { id: "T-3", title: "c", state: "review", model: "", labels: [] },
+        ] },
+        { name: "ci", machine: machine(["opened", "running"]), agents: [
+          { id: "ci-1", task: "T-1", title: "a", state: "running", model: "", labels: [] },
+          { id: "ci-2", task: "T-2", title: "b", state: "running", model: "", labels: [] },
+          { id: "ci-3", task: "T-3", title: "c", state: "opened", model: "", labels: [] },
+        ] },
+      ],
+      dags: [], settled: {}, error: null, now: 1000,
+    };
+    const S = merge(snap), moves = new Moves();
+    moves.observe(S, 1000);
+    return { S, moves, W: 1670, H: 1080, T: 1000 };
+  };
+  const level: Level = { kind: "machine", flow: "ci" };
+  const ids = (host?: string) => build({ ...shared(), host }, level).machineTasks.map((t) => t.task).sort();
+
+  it("draws at each host only the tasks that sit in that Board state", () => {
+    expect(ids("in_progress")).toEqual(["T-1"]);
+    expect(ids("review")).toEqual(["T-2", "T-3"]);
+  });
+
+  it("counts a machine state's tasks from the host's tasks alone", () => {
+    const at = (host: string) => Object.fromEntries(Object.values(build({ ...shared(), host }, level).mStates).map((s) => [s.id, s.n]));
+    expect(at("in_progress")).toEqual({ opened: 0, running: 1 });
+    expect(at("review")).toEqual({ opened: 1, running: 1 });
+  });
+
+  it("draws every task when no host is named", () => {
+    expect(ids()).toEqual(["T-1", "T-2", "T-3"]);
+  });
+
+  it("sizes the flow's moon on each host by that host's tasks", () => {
+    const orbiting = (state: string) => build(shared(), { kind: "state", id: state }).planets.find((p) => p.name === "ci")?.n;
+    expect([orbiting("in_progress"), orbiting("review")]).toEqual([1, 2]);
+  });
+});

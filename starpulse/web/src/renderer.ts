@@ -11,7 +11,7 @@ import { demoStep } from "./demo";
 import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
-import { BOARD, drill, pathKey, pathLedger, startPath, type Level, type Path } from "./levels";
+import { BOARD, drill, hostOf, pathKey, pathLedger, startPath, type Level, type Path } from "./levels";
 import { freshKeys, optionalSteps } from "./ledger";
 import { drawRows, CROSS, type Ink } from "./ledgerRows";
 import { spotIn, type Target } from "./search";
@@ -20,7 +20,7 @@ import {
   type BEdge, type Body, type Curve, type Galaxy, type GNode, type Hangar, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
   type LedgerView, type MachineTask, type Moon, type Pager, type Star, type SubState, type Sun,
 } from "./scene";
-import { FLARE, Moves, PULSE, RING, TRAVEL, countText, merge, stateCount, type Move, type Sky } from "./sky";
+import { FLARE, Moves, PULSE, RING, TRAVEL, countText, hosted, merge, stateCount, type Move, type Sky } from "./sky";
 import { kanbanTasks } from "./kanban";
 import { embedded, openStream } from "./stream";
 import { createHistory } from "./history";
@@ -208,7 +208,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (!S || !W) return;
     const was = fit;
     laidScale = prefs().scale;
-    scene = build({ S, moves, W: FW, H, T, pages, ease: sized, routes: bends, scale: laidScale }, level());
+    scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale }, level());
     fit = fitScene();
     if (scene.hub) edgePaths(scene, { k: fit.k, x: fit.x - I }, FW, stateName);
     if (keepView) view = refitView(view, was, fit); // a view at the old fit follows the new one, so the sky zooms out smoothly as a state grows
@@ -391,6 +391,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       stats: sky.error ? `live · ${at} MST · ${sky.error}` : `live · ${at} MST`,
       states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: stateCount(sky, s.id) })),
       counts: Object.fromEntries(Object.values(sky.flows).map((f) => [f.name, f.agents.length])),
+      hostCounts: Object.fromEntries(Object.entries(sky.tree.subs).flatMap(([state, flows]) => flows.map((f) => [`${state}/${f}`, hosted(sky, f, state).length]))),
       dags: sky.dags.map((d) => d.name),
       dagData: dagData(sky),
       pools: sky.pools,
@@ -663,9 +664,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       case "galaxy":
         return `<div class="k">Board state · click to open</div><div class="n">${esc(h.o.name)}</div>${h.o.n} tasks${h.o.today === undefined ? "" : ` · ${h.o.today} today`}${h.o.subs.length ? ` · ${h.o.subs.length} lifecycle machines inside` : ""}`;
       case "moon": {
-        const o = h.o, mv = moving(o.name).length, f = sky.flows[o.name];
+        const o = h.o, mv = moving(o.name).length, nAgents = hosted(sky, o.name, o.parent.id).length;
         if (o.pager) return pagerTip(o.pager);
-        return `<div class="k">lifecycle machine inside ${esc(o.parent.name)} · click to open it</div><div class="n">${esc(o.name)}</div>${o.nStates} states · ${f?.agents.length ?? 0} session${f?.agents.length === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
+        return `<div class="k">lifecycle machine inside ${esc(o.parent.name)} · click to open it</div><div class="n">${esc(o.name)}</div>${o.nStates} states · ${nAgents} session${nAgents === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
       }
       case "sat":
         return `<div class="k">state of the ${esc(h.o.machine)} machine · opens ${esc(h.o.flow)} ${esc(h.o.when)} · click to open ${esc(h.o.machine)}</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} orbiting`;
@@ -907,7 +908,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const sc = scene!;
     for (const g of Object.values(sc.galaxies)) if (sc.moons.some((m) => m.parent === g)) circle(g.x, g.y, g.moonR, rgba(g.color, isHot("galaxy", g) ? 0.6 : 0.25), 1, [2, 5]);
     for (const m of sc.moons) {
-      const hot = isHot("moon", m), flows = m.pager?.hidden ?? [m.name], mv = flows.flatMap(moving).length, busy = flows.some((name) => !!S!.flows[name]?.agents.length);
+      const hot = isHot("moon", m), flows = m.pager?.hidden ?? [m.name], mv = flows.flatMap(moving).length, busy = flows.some((name) => !!hosted(S!, name, m.parent.id).length);
       drawTrackRings(m, "#c084fc");
       machine(m.x, m.y, m.r!, hot, busy ? 0.32 : 0.14);
       if (mv) circle(m.x, m.y, m.r! + 4, rgba(ACT, 0.85), 1.5);

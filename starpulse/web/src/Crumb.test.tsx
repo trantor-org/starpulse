@@ -19,6 +19,14 @@ describe("the levels a breadcrumb lists", () => {
   });
 });
 
+describe("a machine several Board states open", () => {
+  it("is listed under the state it was opened from", () => {
+    const under = (state: string): Path => [...BOARD, { kind: "state", id: state }, { kind: "machine", flow: "ci" }];
+    expect(crumbs(under("review"), states).map((c) => c.label)).toEqual(["Board", "Review", "ci"]);
+    expect(crumbs(under("in_progress"), states).map((c) => c.label)).toEqual(["Board", "In Progress", "ci"]);
+  });
+});
+
 describe("the canvas breadcrumb", () => {
   let host: HTMLDivElement, root: Root;
   const open = vi.fn();

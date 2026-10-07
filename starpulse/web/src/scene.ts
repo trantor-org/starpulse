@@ -4,7 +4,7 @@
 // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
 import type { Fold, Level } from "./levels";
 import { ledgerOf, type Ledger, type Tie } from "./ledger";
-import { countText, daily, HOUR, stateCount, type Move, type Moves, type Sky } from "./sky";
+import { countText, daily, HOUR, hosted, stateCount, type Move, type Moves, type Sky } from "./sky";
 import type { Dag, DagStep, LedgerRow, RawAgent, Transition, Writer } from "./types";
 
 export const TAU = Math.PI * 2;
@@ -351,6 +351,8 @@ export interface Ctx {
   H: number;
   /** The page clock, in seconds. */
   T: number;
+  /** The Board state a machine level opens under; a machine several states open shows only that state's tasks. */
+  host?: string;
   /** The selected zero-based machine page for each Board state. */
   pages?: Record<string, number>;
   /** The value a layout value `v` named `key` shows: the renderer eases it from the value it showed when a snapshot changes it. The layout
@@ -1177,15 +1179,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   }
 
   // a lifecycle machine as a small solar system: its states on a ring (offsets from the planet centre), its transitions as chords
-  function planet(name: string, cx: number, cy: number, R: number, primary: boolean): Planet {
-    const flow = S.flows[name] ?? { name, machine: { states: [], transitions: [] }, agents: [] }, st = flow.machine.states, out: Record<string, MState> = {}, counts: Record<string, number> = {};
-    flow.agents.forEach((a) => (counts[a.state] = (counts[a.state] || 0) + 1));
+  function planet(name: string, cx: number, cy: number, R: number, primary: boolean, host?: string): Planet {
+    const flow = S.flows[name] ?? { name, machine: { states: [], transitions: [] }, agents: [] }, st = flow.machine.states, out: Record<string, MState> = {}, counts: Record<string, number> = {}, agents = hosted(S, name, host);
+    agents.forEach((a) => (counts[a.state] = (counts[a.state] || 0) + 1));
     st.forEach((s, i) => {
       const t = (i / st.length) * TAU - Math.PI / 2;
       out[s.id] = { id: s.id, name: s.name, final: s.final, initial: s.initial, flow: name, n: counts[s.id] || 0, loops: loopsOf(flow, s.id), mini: true,
         dx: Math.cos(t) * R, dy: Math.sin(t) * R, x: 0, y: 0, color: RAMP[Math.round((i / st.length) * (RAMP.length - 1))] };
     });
-    const p: Planet = { name, R, primary, states: out, edges: flow.machine.transitions.map((t) => ({ ...t, flow: name, a: out[t.source], b: out[t.target] })), n: flow.agents.length, x: 0, y: 0 };
+    const p: Planet = { name, R, primary, states: out, edges: flow.machine.transitions.map((t) => ({ ...t, flow: name, a: out[t.source], b: out[t.target] })), n: agents.length, x: 0, y: 0 };
     place(p, cx, cy);
     return p;
   }
@@ -1213,15 +1215,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       scene.box = [sun.x - sun.R - 120, sun.y - sun.R - 120, sun.x + sun.R + 120, sun.y + sun.R + 120];
     } else {
       // the skill machines are moons: small named bodies the primary's machine opens, held still in rows once their orbits are known
-      const allSkills = subs.slice(1), pg = paged(sid, allSkills, ctx.pages?.[sid] ?? 0), skills = pg.shown, hub = planet(subs[0], cx0, cy0, 104, true);
-      const moons = skills.map((name) => Object.assign(planet(name, 0, 0, 9, false), { moon: true }));
+      const allSkills = subs.slice(1), pg = paged(sid, allSkills, ctx.pages?.[sid] ?? 0), skills = pg.shown, hub = planet(subs[0], cx0, cy0, 104, true, sid);
+      const moons = skills.map((name) => Object.assign(planet(name, 0, 0, 9, false, sid), { moon: true }));
       for (const pager of pg.pagers) moons.push({ name: pager.title, label: pager.title, pager, moon: true, primary: false, R: 9, x: 0, y: 0, states: {}, edges: [], chain: [], n: 0 });
       scene.hub = hub;
       // a skill machine's sub-states (its states that open a child machine) are small bodies in a chain beside its moon, each opening that machine
       const chains = moons.filter((p) => !p.pager).flatMap((p) => {
         const qs = S.flows[p.name].machine.states.filter((q) => S.child[p.name]?.[q.id]);
         p.chain = qs.map((q) => ({ name: `${p.name}>${q.id}`, title: q.name.replace(/^Pr /, "PR "), machine: p.name, state: q.id, flow: S.child[p.name][q.id].flow, when: S.child[p.name][q.id].when, subState: true,
-          primary: false, R: 6, x: 0, y: 0, states: {}, edges: [], n: S.flows[p.name].agents.filter((a) => a.state === q.id).length }));
+          primary: false, R: 6, x: 0, y: 0, states: {}, edges: [], n: hosted(S, p.name, sid).filter((a) => a.state === q.id).length }));
         if (p.chain.length) p.label = `${p.name} › ${p.chain.map((b) => b.title).join(" · ")}`;
         return p.chain;
       });
@@ -1409,7 +1411,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     st.forEach((s) => { if (layer[s.id] === undefined) layer[s.id] = 0; });
     const max = Math.max(0, ...Object.values(layer)), cols: Record<number, typeof st> = {}, counts: Record<string, number> = {}, out: Record<string, MState> = {};
     st.forEach((s) => (cols[layer[s.id]] ||= []).push(s));
-    flow.agents.forEach((a) => (counts[a.state] = (counts[a.state] || 0) + 1));
+    hosted(S, name, ctx.host).forEach((a) => (counts[a.state] = (counts[a.state] || 0) + 1));
     for (const [l, list] of Object.entries(cols))
       list.forEach((s, i) => {
         out[s.id] = { id: s.id, name: s.name, final: s.final, initial: s.initial, flow: name, n: counts[s.id] || 0, loops: loopsOf(flow, s.id),
@@ -1436,11 +1438,11 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       ], pts);
       s.lab = { x: c.lx!, y: c.ly };
     }
-    flow.agents.forEach((s) => scene.machineTasks.push({ ...s, flow: name }));
+    hosted(S, name, ctx.host).forEach((s) => scene.machineTasks.push({ ...s, flow: name }));
     for (const [sid, c] of Object.entries(S.child[name] || {})) {
       const a = scene.mStates[sid];
       if (!a || !S.flows[c.flow]) continue;
-      const p = planet(c.flow, 0, 0, 50, false);
+      const p = planet(c.flow, 0, 0, 50, false, ctx.host);
       p.anchor = a;
       p.when = c.when;
       place(p, a.x, a.y + 230);
