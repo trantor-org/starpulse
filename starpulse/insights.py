@@ -11,10 +11,10 @@ names a person, since the contract has no person field; 413 over 64 KiB; 503 whe
 retraction answers 200 `{id, retracted: true}`, or 404 for an id that is unknown or already retracted. A refusal writes
 and sends nothing.
 
-Each state reaches the history store (`starpulse_insights`, kept after a retraction) and the page: `/api/events` sends an
-`insight` event `{id, finding}` for a post or re-post and `{id, finding: null}` for a retraction, and its snapshot lists
-the `insights` that are live, so a page that connects later draws them. A finding past its `expires_at` is not drawn,
-and a hub that restarts draws the live ones again from the store (`restore`).
+Each state reaches the history store (`starpulse_insights`, kept after a retraction) and the stream: `/api/events` sends
+an `insight` event `{id, finding}` for a post or re-post and `{id, finding: null}` for a retraction, and its snapshot
+lists the `insights` that are live, so a client that connects later reads them. A finding past its `expires_at` is not
+listed, and a hub that restarts lists the live ones again from the store (`restore`). The page draws none of them.
 """
 
 from __future__ import annotations

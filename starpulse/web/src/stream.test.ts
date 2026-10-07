@@ -24,6 +24,7 @@ describe("applyDelta", () => {
     expect(applyDelta(s, { kind: "suns", suns: { done: 1 } }).suns).toEqual({ done: 1 });
     expect(s.suns).toEqual({ to_do: 1 });
   });
+
   it("replaces a task already on the Board and adds one that is not", () => {
     const s = board([agent("PROJ-1", "to_do")]);
 

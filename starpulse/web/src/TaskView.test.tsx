@@ -184,7 +184,9 @@ describe("the task view's body", () => {
   it("sizes the dialog and scrolls each column on its own, stacking rail-first below 1100px", () => {
     expect(styles).toMatch(/#kbm \.modal\.tv \{[^}]*width: clamp\(860px, 65vw, 1500px\)[^}]*height: min\(84vh, 980px\)/);
     expect(styles).toMatch(/#kbm \.tvbody \{[^}]*grid-template-columns: minmax\(0, 1fr\) clamp\(320px, 31%, 440px\)/);
-    expect(styles).toMatch(/#kbm \.tvcol \{[^}]*overflow-y: auto/);
+    // each column scrolls through the page's one scrolling rule (scroll.test.ts); below 1100px the body scrolls instead
+    expect(styles).toMatch(/#kbm \.tvcol,[^{}]*\{[^}]*overflow-y: auto/);
+    expect(styles).toMatch(/@media \(max-width: 1100px\) \{[^@]*#kbm \.tvbody \.tvcol \{[^}]*overflow: visible/);
     expect(styles).toMatch(/#kbm \.tvrail td \{[^}]*display: block/);
     expect(styles).toMatch(/@media \(max-width: 1100px\) \{[^@]*#kbm \.tvbody \{[^}]*flex-direction: column;/);
     expect(styles).toMatch(/@media \(max-width: 1100px\) \{[^@]*#kbm \.tvrail \{[^}]*order: -1/);

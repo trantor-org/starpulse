@@ -1,5 +1,6 @@
 // The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
 // demo page (`starpulse.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
+import { demoLevel } from "./demoLevel";
 import { columnsOf } from "./kanban";
 import type { LaneStep } from "./trace";
 import type { Machine, RawAgent, Snapshot } from "./types";
@@ -111,6 +112,10 @@ const HANDLERS: Record<string, Handler> = {
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
   "/api/forwarding": (server, _path, _query, init) => server.forwarding(init?.method ?? "GET", String(init?.body ?? "")),
+  "/api/level": (server, _path, query) => {
+    const { status, body } = demoLevel(server.snapshot.now, Number(query.get("hours") ?? 168), new URLSearchParams(globalThis.location?.search ?? ""));
+    return json(body, status);
+  },
 };
 
 /** The hub a demo page pretends to forward to: `refused` answers an opt-in 403 (a hub that keeps no names), `down` never answers, `none` is an instance with no `[forward]` block. */
