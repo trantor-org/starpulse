@@ -91,9 +91,10 @@ def test_serving_in_an_empty_directory_creates_the_default_lanes_and_an_empty_ta
         "statuses": LANES,
         "task_prefix": "task",
     }
-    (flow,) = feed.snapshot()["flows"]
+    flow, harness = feed.snapshot()["flows"]
     assert [state["id"] for state in flow["machine"]["states"]] == ["to_do", "in_progress", "done"]
     assert flow["agents"] == []
+    assert harness["name"] == "harness"
 
 
 def test_serving_again_leaves_a_board_the_user_edited_as_it_is(tmp_path: Path) -> None:
