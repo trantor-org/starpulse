@@ -13,6 +13,11 @@ let demoN = 0;
 /** Seconds between two merges landing on a demo page's Ledger. */
 const MERGE_EVERY_S = 25;
 
+/** The page's own snapshot with what the demo server keeps live: the runs instances' workflows and the Ledger, its merges, 24-hour strip and pins. The page plays the machines itself. */
+export function demoLive(prev: Snapshot, next: Snapshot): Snapshot {
+  return { ...prev, dags: next.dags, ledgers: next.ledgers, mergeStrip: next.mergeStrip, mergePins: next.mergePins };
+}
+
 export function demoStep(prev: Snapshot, random = Math.random): Snapshot {
   const snap = structuredClone(prev);
   const f = snap.flows[Math.floor(random() * snap.flows.length)];

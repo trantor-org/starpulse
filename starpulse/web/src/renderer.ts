@@ -7,7 +7,7 @@
 // Click drills in, right-click steps out (after clearing any zoom), the wheel
 // zooms about the cursor between the level's fit and eight times it, and a drag
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
-import { demoStep } from "./demo";
+import { demoLive, demoStep } from "./demo";
 import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
@@ -443,7 +443,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function onSnapshot(next: Snapshot) {
     const first = !S;
     if (demo && snap) {
-      snap = { ...snap, dags: next.dags }; // the demo plays the machines itself and keeps only the runs instances' workflows live
+      snap = demoLive(snap, next);
       return;
     }
     apply(next);

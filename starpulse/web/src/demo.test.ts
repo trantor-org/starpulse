@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DemoServer, ROUTES, stepRuns, type DemoFixture } from "./demo";
+import { DemoServer, ROUTES, demoLive, stepRuns, type DemoFixture } from "./demo";
 import { PAGE } from "./ledgerScroll";
 import { NO_HARNESSES, fetchHarnesses, postStart } from "./start";
 import type { LedgerRow, Machine, RawAgent, RunStatus, Snapshot } from "./types";
@@ -122,6 +122,22 @@ describe("the demo server's 24-hour strip and forced reruns", () => {
 
     expect([none.status, (await none.json()).error]).toEqual([409, "main-follow has no unresolved failure to rerun."]);
     expect([busy.status, (await busy.json()).error]).toEqual([409, "apply-on-merge already has a forced rerun running."]);
+  });
+});
+
+describe("the page's snapshot in a demo", () => {
+  it("keeps its own machines and takes the server's workflows and Ledger, so a forced rerun's resolution reaches the page", () => {
+    const own = new DemoServer(tied(), () => 1000).snapshot, served = structuredClone(own);
+    served.dags = [];
+    served.ledgers = { MERGED: [] };
+    served.mergeStrip = { since: 1, bucket: 900, buckets: [] };
+    served.mergePins = [];
+    served.flows = [];
+
+    const live = demoLive(own, served);
+
+    expect([live.dags, live.ledgers, live.mergeStrip, live.mergePins]).toEqual([[], { MERGED: [] }, served.mergeStrip, []]);
+    expect(live.flows).toBe(own.flows);
   });
 });
 
