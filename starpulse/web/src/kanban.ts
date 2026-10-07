@@ -33,6 +33,8 @@ export interface KanbanTask {
   entered: number;
   /** When the task was created, epoch seconds; null when the board does not say. */
   created: number | null;
+  /** Since when the task has been workable, epoch seconds; null when a dependency or its Start Criteria hold it. */
+  workableSince: number | null;
   /** Every lifecycle machine the task is in: its state there, when it last moved, the machine's third-party source and its trail. */
   machines: { machine: string; state: string; at: number; source?: string; trail: TrailStep[] }[];
 }
@@ -299,7 +301,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
-      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null,
+      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: Object.values(sky.flows).filter((f) => f.name !== "board").flatMap((f) => f.agents.filter((m) => m.task === a.id)
         .map((m) => ({ machine: f.name, state: m.state, at: m.active ?? 0, source: f.machine.source, trail: m.trail ?? [] }))),
     };

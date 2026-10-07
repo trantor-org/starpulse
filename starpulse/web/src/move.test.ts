@@ -5,7 +5,7 @@ import { MoveStore, codeParts, place, postMove, targets, type Post, type Reply }
 const OK = { allowed: true, reason: "", skill: "" };
 const GUARD = { allowed: false, reason: "a checked criterion opening `Operator approved the render:` is not recorded", skill: "designing-ui" };
 const task = (id: string, lane: string, moves: KanbanTask["moves"] = {}): KanbanTask => ({
-  id, title: id, lane, milestone: "", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves, entered: 0, created: null, machines: [],
+  id, title: id, lane, milestone: "", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves, entered: 0, created: null, workableSince: null, machines: [],
 });
 /** A writer the test settles by hand, so the card can be read while the request is in flight. */
 const writer = () => {

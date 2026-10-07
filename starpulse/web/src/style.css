@@ -175,19 +175,22 @@ body.kanban { background: radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var
 body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #nav .kb-glyph { border: 0; border-radius: 0; fill: currentColor; }
 #nav .note { font-size: calc(10.5px * var(--fs)); line-height: 1.6; color: var(--faint); }
-/* The Kanban's milestone outline fills the room the Star Map gives Layers. Its rows bleed 6px each side for their hover; the section's padding holds the bleed, so it never scrolls sideways. */
-#nav > section.outline { flex: 1; min-height: 0; box-sizing: border-box; width: calc(var(--nav) - 24px); padding: 0 6px; margin: 0 -6px; }
-#nav .outline h3 { display: flex; align-items: baseline; white-space: nowrap; }
+/* The Kanban's milestone outline and the Star Map's Leaderboard fill the navigator's room below the search; both draw rows of an ID, a figure and a bar. Its rows bleed 6px each side for their hover; the section's padding holds the bleed, so it never scrolls sideways. */
+#nav > section:is(.outline, .leaderboard) { flex: 1; min-height: 0; box-sizing: border-box; width: calc(var(--nav) - 24px); padding: 0 6px; margin: 0 -6px; }
+#nav :is(.outline, .leaderboard) h3 { display: flex; align-items: baseline; white-space: nowrap; }
 #nav .outline .clear { all: unset; cursor: pointer; margin-left: auto; letter-spacing: .04em; text-transform: none; }
 #nav .outline .clear:hover, #nav .outline .clear:focus-visible { color: var(--ink); }
-#nav .outline .ms { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 1fr auto; column-gap: 10px; align-items: baseline; padding: 3px 6px; margin: 0 -6px; width: calc(100% + 12px);
+#nav :is(.outline .ms, .leaderboard .lb-row) { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 1fr auto; column-gap: 10px; align-items: baseline; padding: 3px 6px; margin: 0 -6px; width: calc(100% + 12px);
   border-radius: 4px; font-size: calc(12px * var(--fs)); line-height: 1.4; }
-#nav .outline .ms:hover, #nav .outline .ms:focus-visible { background: color-mix(in srgb, var(--slate) 8%, transparent); }
+#nav :is(.outline .ms, .leaderboard .lb-row):is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slate) 8%, transparent); }
 #nav .outline .ms.on { background: color-mix(in srgb, var(--agent) 14%, transparent); }
-#nav .outline .id { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: calc(11.5px * var(--fs)); color: var(--ink); white-space: nowrap; }
-#nav .outline .w { font-size: calc(11px * var(--fs)); color: var(--muted); font-variant-numeric: tabular-nums; }
-#nav .outline .bar { grid-column: 1 / -1; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--slate) 12%, transparent); overflow: hidden; margin-top: 3px; }
-#nav .outline .bar > i { display: block; height: 100%; background: color-mix(in srgb, var(--agent) 70%, transparent); }
+#nav :is(.outline, .leaderboard) .id { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: calc(11.5px * var(--fs)); color: var(--ink); white-space: nowrap; }
+#nav :is(.outline, .leaderboard) .w { font-size: calc(11px * var(--fs)); color: var(--muted); font-variant-numeric: tabular-nums; }
+#nav :is(.outline, .leaderboard) .bar { grid-column: 1 / -1; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--slate) 12%, transparent); overflow: hidden; margin-top: 3px; }
+#nav :is(.outline, .leaderboard) .bar > i { display: block; height: 100%; background: color-mix(in srgb, var(--agent) 70%, transparent); }
+#nav .leaderboard .sub { margin-left: auto; letter-spacing: .04em; text-transform: none; }
+#nav .leaderboard .lb-grp { display: flex; align-items: baseline; margin: 8px 0 1px; font-size: calc(10.5px * var(--fs)); color: var(--muted); white-space: nowrap; }
+#nav .leaderboard .lb-grp .n { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
 /* z-index 3 puts the task modal, which is fixed inside #kb, over the navigator and rail as well */
 :is(#kb, #dg) { position: fixed; z-index: 3; top: 0; bottom: 0; left: calc(var(--nav) + 20px); right: calc(var(--rail) + 20px); display: flex; flex-direction: column;
   font-size: calc(12px * var(--fs)); transition: left .3s cubic-bezier(.4,0,.2,1); }
@@ -858,7 +861,7 @@ body.graph #c, body.graph #tip, body.graph #panel, body.graph .hud { visibility:
 
 /* Every scrolling box on the page, in one place: it scrolls only vertically, never sideways, and wears the Kanban
    columns' thin, quiet scrollbar. A box that needs to scroll joins this list rather than setting its own overflow. */
-#nav .matches, #nav .outline, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tv textarea.fv.long, #dg #catalog, #admin, #feed, #og .og-panel {
+#nav .matches, #nav .outline, #nav .leaderboard, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #tkm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tv textarea.fv.long, #dg #catalog, #admin, #feed, #og .og-panel {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 /* a machine a third party moves (machine.source) is drawn like a local one, in blue instead of purple */
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }

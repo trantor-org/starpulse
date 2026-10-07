@@ -9,7 +9,7 @@ import { MoveStore } from "./move";
 import { StartStore } from "./start";
 
 const card = (id: string, title: string, assignee: string, labels: string[] = []): KanbanTask => ({
-  id, title, lane: "ready", milestone: "", labels, assignee, dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0, created: null, machines: [],
+  id, title, lane: "ready", milestone: "", labels, assignee, dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
 });
 const cards = [card("TASK-1", "plain", "@agent-a"), card("TASK-2", "needle", "@agent-a", ["backup"]), card("TASK-3", "plain", "@agent-b")];
 const hud = { cards, names: {}, claims: {}, boardUrl: null } as unknown as HudState;

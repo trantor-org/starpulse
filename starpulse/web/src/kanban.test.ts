@@ -6,7 +6,7 @@ import type { Pull, RawAgent, Snapshot } from "./types";
 
 const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
 const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): KanbanTask => ({
-  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered, created: null, machines: [],
+  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered, created: null, workableSince: null, machines: [],
 });
 const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, prefs);
 const column = (v: ReturnType<typeof view>, id: string) => v.columns.find((c) => c.id === id)!;
