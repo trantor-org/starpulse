@@ -50,15 +50,23 @@ viewing, and `starpulse-settings.json` beside the config keeps the override acro
 
 ### Show your Claude Code sessions
 
-Run the receiver beside the server, then start Claude Code with its log export pointed at it:
+Run the receiver beside the server, then start Claude Code with its log export pointed at it. The receiver publishes
+through the event log of the history database the server reads, so give it the server's `--config`
+(`starpulse-history.sqlite` beside that file; without one, the working directory's). Port 4318, OpenTelemetry's
+default, is often taken: `--port` moves the receiver, and the endpoint below follows it.
 
 ```sh
-uvx --from starpulse python -m starpulse.claude_code
+uvx --from starpulse python -m starpulse.claude_code --config starpulse.toml --port 4319
 
-CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_LOGS_EXPORTER=otlp OTEL_EXPORTER_OTLP_PROTOCOL=http/json \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_LOG_TOOL_DETAILS=1 \
-OTEL_RESOURCE_ATTRIBUTES="vcs.ref.head.name=$(git branch --show-current)" claude
+claude --settings '{"env": {
+  "CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp", "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+  "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4319", "OTEL_LOG_TOOL_DETAILS": "1",
+  "OTEL_RESOURCE_ATTRIBUTES": "vcs.ref.head.name='"$(git branch --show-current)"'"}}'
 ```
+
+Pass the variables through `--settings`, not the shell: an `env` block in your user-level `settings.json` overrides
+`OTEL_*` variables set in the shell, so a shell export can leave a session exporting somewhere else. The session
+moves the task its branch names (`TASK-<n>` in the branch), so start Claude Code on that branch.
 
 The receiver decodes each export but publishes only which session moved, on which event and when; prompt,
 reply and tool text is neither stored nor forwarded.
@@ -233,7 +241,7 @@ type = "native"
 # [board]
 # type = "upstream_backlog"
 # path = "backlog"       # the project's backlog/ directory, relative to this file
-# command = "backlog"    # the Backlog.md CLI that writes a move (`backlog task edit <id> -s <status>`)
+# command = "backlog"    # the upstream Backlog.md CLI (`npm i -g backlog.md`) that writes a move (`backlog task edit <id> -s <status>`); a fork of it that lacks `backlog init` is not it
 # machine = "board.yaml" # as above
 
 # To draw a Jira project instead (read-only; building the board reads the site once, to import the workflow):

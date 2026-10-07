@@ -141,6 +141,7 @@ from starpulse.board_feed import BoardFeed, follow
 from starpulse.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse.contracts import Move, StartFailedError
 from starpulse.event_log import EventLog
+from starpulse.harness import HARNESS_MACHINES
 from starpulse.harnesses import Harnesses
 from starpulse.history import HealthHistory, History, HistoryStore, LevelHistory, database_url, record_machine_events
 from starpulse.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
@@ -802,7 +803,9 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
     board = load_board(config.board_type, config.board, base)
     domains = config.qualified_domains()
     qualify = qualifier(domains)
-    machines = board.machines(qualify, [name for names in domains.values() for name in names])
+    drawn = board.machines(qualify, [name for names in domains.values() for name in names])
+    # Every harness adapter writes this one machine, so the page draws it unless the board declares a machine of that name.
+    machines = {**drawn, **{name: m for name, m in HARNESS_MACHINES.items() if name not in drawn}}
     if config.level:
         config.level.check(machines)
     feed = BoardFeed(

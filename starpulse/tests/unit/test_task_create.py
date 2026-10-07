@@ -58,7 +58,7 @@ def test_a_create_writes_a_task_file_in_the_first_lane_and_the_next_scan_carries
     text = (_tasks(tmp_path) / files[0]).read_text()
     assert "status: To Do\n" in text and "title: Draw the board\n" in text
     UpstreamBacklog(tmp_path / ".starpulse" / "board", feed.put).scan()
-    (flow,) = feed.snapshot()["flows"]
+    flow, _harness = feed.snapshot()["flows"]
     assert [(agent["id"], agent["title"], agent["state"]) for agent in flow["agents"]] == [
         ("task-1", "Draw the board", "to_do"),
         ("task-2", "Ship it", "to_do"),
@@ -124,7 +124,7 @@ def test_a_create_writes_every_detail_as_backlog_markdown_and_the_next_scan_read
         "- [ ] #2 A reader can create a task\n<!-- AC:END -->"
     ) in body
     UpstreamBacklog(tmp_path / ".starpulse" / "board", feed.put).scan()
-    (flow,) = feed.snapshot()["flows"]
+    flow, _harness = feed.snapshot()["flows"]
     agent = next(agent for agent in flow["agents"] if agent["id"] == "task-2")
     assert {key: agent[key] for key in ("state", "model", "labels", "milestone", "dependencies", "description")} == {
         "state": "to_do",
