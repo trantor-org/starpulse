@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyFan, fanRows, LINGER_FAILED_S, LINGER_S, queueRow, stepRuns, track } from "./fan";
+import { RunEvents } from "./fanout";
 import type { ActiveRun, Dag, Pool, RunStatus } from "./types";
 
 const STEPS = ["refuse", "lint", "wait_ci"];
@@ -108,10 +109,21 @@ describe("a run that ends", () => {
     expect(otherEnds).toEqual([["r1", "failed"]]);
   });
 
-  it("does not linger a queued run that never started", () => {
-    const waiting = dag([queued("r9")]), empty = dag([]);
+  it("gives a run that left the list the outcome the feed's line gives it, a queued run included", () => {
+    const cases: [string, Dag, Dag][] = [
+      ["succeeded", dag([run("r1", "lint")]), dag([], { runId: "r1", status: "succeeded" })],
+      ["failed", dag([run("r1", "lint", { steps: { refuse: "succeeded", lint: "failed", wait_ci: "not_started" } })]), dag([], { runId: "r2" })],
+      ["succeeded", dag([queued("r1")]), dag([])],
+    ];
+    for (const [state, before, after] of cases) {
+      const events = new RunEvents();
+      events.observe([before], 1000);
+      events.observe([after], 1100);
+      const rows = fanRows(track(seen(before, 1000), after, 1100), after, 1100);
 
-    expect(fanRows(track(seen(waiting, 1000), empty, 1100), empty, 1100)).toEqual([]);
+      expect(rows.map((r) => r.state)).toEqual([state]);
+      expect(events.lines[0].tone).toBe(state === "succeeded" ? "ok" : "failed");
+    }
   });
 });
 

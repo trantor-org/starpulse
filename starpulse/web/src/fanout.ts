@@ -64,13 +64,13 @@ export interface RunLine {
 }
 
 /** The task a run id embeds (`deliver-agent-task-2787-…` is TASK-2787, a demo run's `…-demo-4` is DEMO-4), else the run id itself. */
-const taskIn = (runId: string) => {
+export const taskIn = (runId: string) => {
   const m = /(?:^|-)(task|demo)-(\d+)/i.exec(runId);
   return m ? `${m[1].toUpperCase()}-${m[2]}` : undefined;
 };
 
 /** How a run that left `active` ended: the DAG's own verdict when the run is its latest, else the steps the run was last seen in. */
-function outcome(dag: Dag, last: ActiveRun): { what: string; tone: "ok" | "failed" } {
+export function outcome(dag: Dag, last: ActiveRun): { what: string; tone: "ok" | "failed" } {
   if (dag.runId === last.runId) {
     if (dag.status === "succeeded") return { what: "succeeded", tone: "ok" };
     if (dag.status === "failed" || dag.status === "aborted") return { what: dag.status, tone: "failed" };
