@@ -21,10 +21,10 @@ def test_help_names_every_subcommand(capsys: pytest.CaptureFixture[str]) -> None
 
     assert exited.value.code == 0
     out = capsys.readouterr().out
-    assert "serve" in out and "emit" in out and "forward" in out
+    assert "serve" in out and "emit" in out and "forward" in out and "connect" in out
 
 
-@pytest.mark.parametrize("command", ["serve", "emit", "forward"])
+@pytest.mark.parametrize("command", ["serve", "emit", "forward", "connect"])
 def test_help_lists_the_subcommand_with_a_description(capsys: pytest.CaptureFixture[str], command: str) -> None:
     with pytest.raises(SystemExit):
         cli.main(["--help"])
@@ -33,16 +33,16 @@ def test_help_lists_the_subcommand_with_a_description(capsys: pytest.CaptureFixt
     assert any(line.split()[:1] == [command] and len(line.split()) > 1 for line in listed.splitlines())
 
 
-def test_the_manifest_leaves_out_serve_emit_and_forward_because_they_do_not_read_a_running_server(
+def test_the_manifest_leaves_out_serve_emit_forward_and_connect_because_they_do_not_read_a_running_server(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert cli.main(["help", "--agent"]) == 0
 
     verbs = {v["verb"] for v in json.loads(capsys.readouterr().out)["verbs"]}
-    assert not {"serve", "emit", "forward"} & verbs
+    assert not {"serve", "emit", "forward", "connect"} & verbs
 
 
-@pytest.mark.parametrize("command", ["serve", "emit", "forward"])
+@pytest.mark.parametrize("command", ["serve", "emit", "forward", "connect"])
 def test_a_subcommand_gets_the_rest_of_the_line(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
     seen: list[list[str]] = []
     monkeypatch.setitem(cli.COMMANDS, command, lambda argv: seen.append(argv) or 3)
