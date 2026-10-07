@@ -1,4 +1,5 @@
 // A DAG's runs in flight, as the panel lists them: one row per run, the queue they share and what each step holds.
+import { outcome, taskIn } from "./fanout";
 import type { ActiveRun, Dag, Pool, RunStatus } from "./types";
 
 /** Seconds a finished run's row stays in its outcome colour; a failed run's stays twice as long. */
@@ -48,12 +49,6 @@ export const emptyFan = (): Fan => ({ primed: false, seen: {}, moved: {}, ended:
 const seconds = (iso: string) => (iso ? Date.parse(iso) / 1000 : 0);
 const lingers = (e: Ended, now: number) => now - e.at < (e.outcome === "failed" ? LINGER_FAILED_S : LINGER_S);
 
-/** How a run that left the DAG's active list ended: the DAG's own status when it is the latest run, else whether its last-seen steps held a failure. */
-function outcome(dag: Dag, run: ActiveRun): Ended["outcome"] {
-  if (dag.runId === run.runId && dag.status !== "running") return dag.status === "succeeded" ? "succeeded" : "failed";
-  return Object.values(run.steps).includes("failed") ? "failed" : "succeeded";
-}
-
 /** The fan after the DAG's next listing: a run it has not seen or that entered a step is marked moved, a run that left the list ended, and an ended run past its linger gone. */
 export function track(prev: Fan, dag: Dag, now: number): Fan {
   const seen: Fan["seen"] = {}, moved: Fan["moved"] = {}, ended: Fan["ended"] = {};
@@ -63,21 +58,16 @@ export function track(prev: Fan, dag: Dag, now: number): Fan {
     moved[run.runId] = !prev.primed ? -Infinity : before && before.step === run.step && before.status === run.status ? prev.moved[run.runId] : now;
   }
   for (const [id, e] of Object.entries(prev.ended)) if (lingers(e, now)) ended[id] = e;
-  for (const [id, run] of Object.entries(prev.seen)) if (!seen[id] && run.status !== "queued") ended[id] = { run, outcome: outcome(dag, run), at: now };
+  for (const [id, run] of Object.entries(prev.seen)) if (!seen[id]) ended[id] = { run, outcome: outcome(dag, run).tone === "ok" ? "succeeded" : "failed", at: now };
   return { primed: true, seen, moved, ended };
 }
 
 const stripOf = (dag: Dag, steps: ActiveRun["steps"]) => dag.steps.map((s) => ({ name: s.name, status: steps[s.name] ?? ("not_started" as const) }));
-/** The Board task a run id carries (`deliver-agent-task-2787-…` carries TASK-2787): the longest id of `tasks` that sits in it whole, not as the front of a longer number. */
-function taskOf(runId: string, tasks: readonly string[]): string | null {
-  const rid = runId.toLowerCase();
-  let best: string | null = null;
-  for (const id of tasks) {
-    const at = rid.indexOf(id.toLowerCase());
-    if (at >= 0 && !/[a-z0-9]/.test(rid[at + id.length] ?? "") && id.length > (best?.length ?? 0)) best = id;
-  }
-  return best;
-}
+/** The Board task a run id names, when `tasks` holds it. */
+const taskOf = (runId: string, tasks: readonly string[]) => {
+  const id = taskIn(runId);
+  return id && tasks.some((t) => t.toLowerCase() === id.toLowerCase()) ? id : null;
+};
 
 /** One row per run in flight and per run that just ended, longest-running first, then the queued runs; `tasks` are the Board's task ids a run id may name. */
 export function fanRows(fan: Fan, dag: Dag, now: number, tasks: readonly string[] = []): FanRow[] {
