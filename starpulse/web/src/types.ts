@@ -182,6 +182,8 @@ export interface Cue {
   event: string;
   state: string;
   on: string;
+  /** How a failed run of the DAG clears: `forced` only on a green forced rerun, `next` on the DAG's next green run. */
+  resolves?: "forced" | "next";
 }
 
 /** One change the server pushes after the snapshot: a Board task that moved (`agent` null once it left the lanes), a task a machine event placed on another machine, or a runs instance's workflows. */

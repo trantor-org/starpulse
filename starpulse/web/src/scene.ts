@@ -3,6 +3,7 @@
 // DAGs as step-graph glyphs beside them, a state's lifecycle system as planets
 // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
 import type { Fold, Level } from "./levels";
+import { ledgerOf, type Ledger, type Tie } from "./ledger";
 import { countText, daily, HOUR, stateCount, type Move, type Moves, type Sky } from "./sky";
 import type { Dag, DagStep, RawAgent, Transition, Writer } from "./types";
 
@@ -260,14 +261,23 @@ export interface FoldEnd extends Pt {
   color: string;
   r: number;
 }
-/** A fold's level: the path between two Board states with its events marked, and a tie from each DAG to every event it writes or runs beside. */
+/** A Ledger's frame: the junction every rail leaves from, the bus the cues hang from, and a caption cell for each DAG's template. */
+export interface LedgerView extends Pick<Ledger, "event" | "rows"> {
+  /** The event's mark on the path: over the DAG that writes it, else mid-path. */
+  mark: Pt;
+  J: Pt;
+  /** The bus's height under the templates, and where their captions start. */
+  bus: number;
+  cap: number;
+  cols: (Tie & { x0: number; x1: number; y0: number; y1: number })[];
+}
+/** A fold's level: the DAGs one Board fold stands for. Over a Board path they are the Ledger of the event they are tied to, between the path's two states. */
 export interface FoldView {
   a?: FoldEnd;
   b?: FoldEnd;
   p0?: Pt;
   p1?: Pt;
-  events: (Pt & { name: string })[];
-  ties: (Pt & { dag: string; ev: string; cue: boolean })[];
+  ledger?: LedgerView;
 }
 export interface Scene {
   w: number;
@@ -320,6 +330,8 @@ export interface Ctx {
   /** Each bent Board path's last bend (`x` along source → target, `y` across it, as fractions of its length), kept by the renderer from one
    *  Board to the next so a path keeps its route while that still clears (routed). */
   routes?: Map<string, Pt>;
+  /** The page's text size, as a percentage: a Ledger's captions are type, so its columns widen with it. */
+  scale?: number;
 }
 
 export const bez = (p0: Pt, c: Pt, p1: Pt, t: number): Pt => {
@@ -1414,42 +1426,53 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     ]);
   }
 
-  // Fold level: the DAGs one Board fold stands for, as stars over the path they write. The path runs between its two states with each event the
-  // DAGs write (or run beside) marked on it, and every DAG's ties to those events stay drawn, brighter on hover. A criterion's event and path
-  // read from its text: "<dag>: writes EVENT (From → To)" or "<dag>: runs on X, beside EVENT (From → To)".
-  const CRIT = /(writes|beside) ([A-Z_]+) \((.+?) → (.+?)\)/;
+  // Fold level. A fold over a Board path is that path's Ledger (ledger.ts): the DAGs tied to the event as templates in one row, the DAG that
+  // writes it first, under the path with the event marked on it, a junction every rail leaves from and a bus the cues hang from. Type is a
+  // fixed size on screen, so what its captions need is laid out in world units through F, a screen pixel's world size at fit. A fold with no
+  // path, or none an event is tied to, is its DAGs in a row.
   function buildFold(l: Fold) {
-    const w = 1800, h = Math.round(w / (W / H)), y = h * 0.62, f: FoldView = { events: [], ties: [] };
-    Object.assign(scene, { w, h, fold: f });
-    const end = (id: string, x: number): FoldEnd => ({ id, name: stateName(id), final: !!board.machine.states.find((s) => s.id === id)?.final, color: BOARD_COLOR[id] || "#94a3b8", x, y, r: 34 });
-    const ties = (n: string) => l.crit.filter((t) => t.startsWith(`${n}: `)).map((t) => ({ text: t.slice(n.length + 2), m: CRIT.exec(t) }));
-    if (l.path) {
-      const [a, b] = l.path.map(stateName);
-      f.a = end(l.path[0], 360);
-      f.b = end(l.path[1], w - 360);
-      f.p0 = { x: f.a.x + f.a.r + 8, y };
-      f.p1 = { x: f.b.x - f.b.r - 8, y };
-      const on = (m: RegExpExecArray | null) => m?.[3] === a && m?.[4] === b;
-      const evs = [...new Set(l.dags.flatMap((n) => ties(n).filter((t) => on(t.m)).map((t) => t.m![2])))];
-      f.events = evs.map((name, i) => ({ name, x: f.p0!.x + ((f.p1!.x - f.p0!.x) * (i + 1)) / (evs.length + 1), y }));
+    const led = ledgerOf({ flows: [board], cues: S.cues }, l), R = 34, f: FoldView = {};
+    let w = 1800, h = Math.round(w / (W / H));
+    const crit = (n: string) => l.crit.filter((t) => t.startsWith(`${n}: `)).map((t) => t.slice(n.length + 2));
+    if (!led) {
+      const stars = row(l.dags, w / 2, h / 2, 170);
+      for (const st of stars) st.tether = { x: st.x, y: st.y, cue: crit(st.name).every((t) => t.includes("beside")), crit: crit(st.name) };
+      scene.groups.push({ name: "", head: false, lx: 0, ly: 0, stars });
+      Object.assign(scene, { w, h, fold: f, box: [Math.min(...stars.map((q) => q.x)) - 140, h / 2 - 160, Math.max(...stars.map((q) => q.x)) + 140, h / 2 + 160] });
+      return;
     }
-    // the DAGs run in the order of the middle of the events each ties to along the path, so their ties do not cross
-    const at = (n: string) => {
-      const is = f.events.map((e, i) => (ties(n).some((t) => t.m?.[2] === e.name) ? i : -1)).filter((i) => i >= 0);
-      return is.length ? is.reduce((p, q) => p + q) / is.length : Infinity;
-    };
-    const names = [...l.dags].sort((p, q) => at(p) - at(q) || p.localeCompare(q)), stars = row(names, w / 2, y - 280, 170);
-    for (const st of stars) {
-      const ts = ties(st.name);
-      for (const e of f.events) {
-        const mine = ts.filter((t) => t.m?.[2] === e.name);
-        if (mine.length) f.ties.push({ dag: st.name, ev: e.name, x: e.x, y: e.y, cue: mine.every((t) => t.m![1] === "beside") });
-      }
-      st.tether = { x: st.x, y: st.y, cue: ts.length > 0 && ts.every((t) => t.m?.[1] === "beside"), crit: ts.map((t) => t.text) };
-    }
+    const gl = led.ties.map((t) => glyph(dagBy[t.dag] || stub(t.dag))), sc = (ctx.scale ?? 100) / 100, gh = Math.max(...gl.map((g) => g.h));
+    const lines = (t: Tie) => [t.role === "writer" ? `on ${t.on}` : `cue · on ${t.on}`, ...(t.resolves ? [`clears on ${t.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
+    const lead = (F: number) => F * (textW("merge to main", 12.5) + 64), base = (F: number) => gl.map((g) => g.w + 36 * F);
+    // wide enough for the templates and the gutter the junction's label needs, which grow with F as the scene does
+    let F = (w / W) * sc;
+    for (let i = 0; i < 4 && lead(F) + 46 * F + base(F).reduce((p, q) => p + q, 0) + 2 * R + 100 * F > w; i++) F = ((w = Math.ceil(lead(F) + 46 * F + base(F).reduce((p, q) => p + q, 0) + 2 * R + 100 * F)) / W) * sc;
+    h = Math.round(w / (W / H));
+    const sx = lead(F) + 24 * F, c0 = sx + 46 * F, dnx = w - R - 60 * F, avail = dnx - R - 30 * F - c0;
+    // each caption cell is its template plus the widest of its lines, shrunk to share what the row has when they do not all fit, else spread across it
+    const want = led.ties.map((t, i) => Math.max(0, F * Math.max(textW(labelOf(t.dag), 12), ...lines(t).map((x) => textW(x, 10.5))) - gl[i].w)), basis = base(F);
+    const free = avail - basis.reduce((p, q) => p + q, 0), wantSum = want.reduce((p, q) => p + q, 0), g = wantSum > free ? Math.max(0, free) / wantSum : 1, slack = Math.max(0, free - wantSum * g) / led.ties.length;
+    const yP = R + 40 * F, yH = yP + R + 46 * F + gh / 2, cap = yH + gh / 2 + 14 * F, bus = yH + gh / 2 + 56 * F;
+    let x = c0;
+    const cols = led.ties.map((t, i) => {
+      const x0 = x, x1 = (x += basis[i] + want[i] * g + slack);
+      return { ...t, x0, x1, y0: cap - 9 * F, y1: cap + 34 * F };
+    });
+    const end = (id: string, x: number): FoldEnd => ({ id, name: stateName(id), final: !!board.machine.states.find((s) => s.id === id)?.final, color: BOARD_COLOR[id] || "#94a3b8", x, y: yP, r: R });
+    f.a = end(led.from, sx);
+    f.b = end(led.to, dnx);
+    f.p0 = { x: sx + R + 8, y: yP };
+    f.p1 = { x: dnx - R - 8, y: yP };
+    const stars = cols.map((c) => {
+      const st = star(c.dag, (c.x0 + c.x1) / 2, yH), via = `(${stateName(led.from)} → ${stateName(led.to)})`;
+      scene.stars[c.dag] = st;
+      st.tether = { x: st.x, y: st.y, cue: c.role === "cue", crit: [c.role === "writer" ? `writes ${led.event} ${via}` : `runs on ${c.on}, beside ${led.event} ${via}`] };
+      return st;
+    });
+    const writer = stars.find((_, i) => cols[i].role === "writer");
+    f.ledger = { event: led.event, rows: led.rows, mark: { x: writer ? writer.x : (f.p0.x + f.p1.x) / 2, y: yP }, J: { x: sx, y: yH }, bus, cap, cols };
     scene.groups.push({ name: "", head: false, lx: 0, ly: 0, stars });
-    const xs = [...stars.map((q) => q.x), f.a?.x ?? w / 2, f.b?.x ?? w / 2];
-    scene.box = [Math.min(...xs) - 140, y - 360, Math.max(...xs) + 140, y + 110];
+    Object.assign(scene, { w, h, fold: f, box: [0, 0, w, bus + 40 * F] });
   }
 
   if (l.kind === "board") buildBoard();

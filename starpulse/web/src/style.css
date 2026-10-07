@@ -123,6 +123,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #tip { position: fixed; z-index: 4; pointer-events: none; padding: 8px 11px; border-radius: 8px; font-size: calc(12px * var(--fs)); line-height: 1.5;
   background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); backdrop-filter: blur(6px); max-width: 380px; opacity: 0; transition: opacity .12s; }
 #tip .k { color: var(--muted); font-size: calc(11px * var(--fs)); } #tip .n { font-weight: 500; }
+#tip pre { margin: 6px 0 2px; font: 11px/1.45 ui-monospace, monospace; font-size: calc(11px * var(--fs)); white-space: pre-wrap; color: var(--slate-3); }
 #tip .stats { display: flex; gap: 12px; margin: 6px 0 2px; } #tip .stats b { color: var(--run); font-weight: 600; }
 #tip .fc { margin-top: 4px; color: var(--slate-3); font-size: calc(11px * var(--fs)); border-top: 1px dashed color-mix(in srgb, var(--slate) 25%, transparent); padding-top: 4px; }
 #panel { position: fixed; z-index: 3; top: 20px; right: calc(var(--rail) + 20px); width: 380px; max-height: calc(100% - 40px); box-sizing: border-box;
