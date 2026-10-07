@@ -32,6 +32,8 @@ export interface Scroll {
   seen: ReadonlySet<string> | null;
   /** The thumb being dragged: where the pointer took it, and the offset then. */
   drag: { y: number; ty: number } | null;
+  /** Keys of rows drawn elsewhere (the unresolved band): the list scrolls without them. */
+  skip: ReadonlySet<string>;
 }
 
 /** A row's place under the current offset: its index and its centre in world units. */
@@ -41,10 +43,13 @@ export interface Placed {
   y: number;
 }
 
-export const newScroll = (): Scroll => ({ y: 0, ty: 0, rows: [], more: false, fetching: false, retryAt: 0, fresh: 0, seen: null, drag: null });
+export const newScroll = (): Scroll => ({ y: 0, ty: 0, rows: [], more: false, fetching: false, retryAt: 0, fresh: 0, seen: null, drag: null, skip: new Set() });
+
+/** The rows the viewport scrolls through: every merge loaded but those drawn elsewhere. */
+const list = (sc: Scroll): readonly LedgerRow[] => (sc.skip.size ? sc.rows.filter((r) => !sc.skip.has(r.key)) : sc.rows);
 
 /** The rows, then a footer row, make the content; the offset runs from 0 to what is left past the viewport. */
-const maxOf = (sc: Scroll, vp: Viewport) => Math.max(0, (sc.rows.length + 1) * vp.rh - vp.view);
+const maxOf = (sc: Scroll, vp: Viewport) => Math.max(0, (list(sc).length + 1) * vp.rh - vp.view);
 const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
 const byTime = (a: LedgerRow, b: LedgerRow) => b.at - a.at;
 
@@ -109,13 +114,13 @@ export function ease(sc: Scroll, dt: number): Scroll {
 
 /** The rows to draw: those crossing the viewport and one past each edge, where the clip cuts them. */
 export function place(sc: Scroll, vp: Viewport): Placed[] {
-  const from = Math.max(0, Math.floor(sc.y / vp.rh) - 1), to = Math.min(sc.rows.length, Math.ceil((sc.y + vp.view) / vp.rh) + 1);
-  return sc.rows.slice(from, to).map((row, k) => ({ row, i: from + k, y: vp.top + vp.rh / 2 + (from + k) * vp.rh - sc.y }));
+  const rows = list(sc), from = Math.max(0, Math.floor(sc.y / vp.rh) - 1), to = Math.min(rows.length, Math.ceil((sc.y + vp.view) / vp.rh) + 1);
+  return rows.slice(from, to).map((row, k) => ({ row, i: from + k, y: vp.top + vp.rh / 2 + (from + k) * vp.rh - sc.y }));
 }
 
 /** Whether to ask for the next page now: older merges remain, none is on its way, and the footer row is in view. */
 export const wantsPage = (sc: Scroll, vp: Viewport, now: number): boolean =>
-  sc.more && !sc.fetching && now >= sc.retryAt && sc.rows.length * vp.rh < sc.y + vp.view;
+  sc.more && !sc.fetching && now >= sc.retryAt && list(sc).length * vp.rh < sc.y + vp.view;
 
 export const begin = (sc: Scroll): Scroll => ({ ...sc, fetching: true });
 
@@ -130,8 +135,8 @@ export const fail = (sc: Scroll, now: number): Scroll => ({ ...sc, fetching: fal
 
 /** The row under the last one loaded, while it is in view: `loading` older merges, or the `end` of the day, with the rows held. */
 export function footer(sc: Scroll, vp: Viewport): { y: number; end: boolean; rows: number } | null {
-  const y = vp.top + sc.rows.length * vp.rh - sc.y + vp.rh / 2;
-  return y - vp.rh / 2 < vp.top + vp.view && y + vp.rh / 2 > vp.top ? { y, end: !sc.more, rows: sc.rows.length } : null;
+  const rows = list(sc).length, y = vp.top + rows * vp.rh - sc.y + vp.rh / 2;
+  return y - vp.rh / 2 < vp.top + vp.view && y + vp.rh / 2 > vp.top ? { y, end: !sc.more, rows } : null;
 }
 
 /** The chip over a scrolled Ledger: how many merges landed since, else the way back to the newest; none at the top. */
@@ -142,7 +147,7 @@ export function chip(sc: Scroll, vp: Viewport): string | null {
 
 /** Scroll a loaded merge to the middle of the view, unless it is in view already. */
 export function scrollToKey(sc: Scroll, vp: Viewport, key: string): Scroll {
-  const i = sc.rows.findIndex((r) => r.key === key);
+  const i = list(sc).findIndex((r) => r.key === key);
   if (i < 0) return sc;
   const top = i * vp.rh;
   return top < sc.ty || top + vp.rh > sc.ty + vp.view ? aim(sc, vp, top - vp.view / 2 + vp.rh / 2) : sc;

@@ -1,7 +1,7 @@
 // The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
 // demo page (`starpulse.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
 import { demoLevel } from "./demoLevel";
-import { arriveMerge, demoContract, demoLedger, scenarioOf } from "./demoLedger";
+import { arriveMerge, demoContract, demoLedger, demoPins, demoStrip, scenarioOf } from "./demoLedger";
 import { PAGE } from "./ledgerScroll";
 import { MERGE_EVENT } from "./ledger";
 import { columnsOf } from "./kanban";
@@ -119,6 +119,10 @@ const HANDLERS: Record<string, Handler> = {
   "/api/forwarding": (server, _path, _query, init) => server.forwarding(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
   "/api/merges": (server, _path, query) => json(server.mergesBefore(query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
+  "/api/runs": (server, path, _query, init) => {
+    const dag = path.match(/^\/api\/runs\/(.+)\/rerun$/)?.[1];
+    return dag && init?.method === "POST" ? server.rerun(decodeURIComponent(dag)) : json({ error: `This demo does not serve ${path}.` }, 404);
+  },
   "/api/level": (server, _path, query) => {
     const { status, body } = demoLevel(server.snapshot.now, Number(query.get("hours") ?? 168), new URLSearchParams(globalThis.location?.search ?? ""));
     return json(body, status);
@@ -168,6 +172,9 @@ export class DemoServer {
   private created = new Set<string>();
   /** Every merge of the demo's day, newest first: the snapshot holds only the newest page, `/api/merges` serves the rest. */
   private day: LedgerRow[] = [];
+  /** When each forced rerun started, and the DAGs whose forced run is still going. */
+  private reruns: number[] = [];
+  private forcing = new Set<string>();
   private optIn = false;
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -183,7 +190,7 @@ export class DemoServer {
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
     const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
     this.day = ledger;
-    this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? { ledgers: { [MERGE_EVENT]: ledger.slice(0, PAGE) } } : {}), capabilities: { edit: true, archive: true, create: true } });
+    this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? this.ledgerFields() : {}), capabilities: { edit: true, archive: true, create: true } });
   }
 
   subscribe(fn: (s: Snapshot) => void): () => void {
@@ -211,7 +218,43 @@ export class DemoServer {
     if (!this.snapshot.ledgers?.[MERGE_EVENT]) return;
     const next = structuredClone(this.snapshot);
     this.day = arriveMerge(next, this.day, this.clock());
-    next.ledgers = { ...next.ledgers, [MERGE_EVENT]: this.day.slice(0, PAGE) };
+    Object.assign(next, this.ledgerFields(next));
+    this.publish(next);
+  }
+
+  /** The Ledger's part of a snapshot: the newest page of merges, the day's strip counted over all of them, and the pins the page leaves out. */
+  private ledgerFields(from: Pick<Snapshot, "ledgers"> = {}): Pick<Snapshot, "ledgers" | "mergeStrip" | "mergePins"> {
+    const head = this.day.slice(0, PAGE);
+    return { ledgers: { ...from.ledgers, [MERGE_EVENT]: head }, mergeStrip: demoStrip(this.day, this.reruns, this.clock()), mergePins: demoPins(this.day, head) };
+  }
+
+  /** `POST /api/runs/<dag>/rerun`: a forced run of a DAG with an unresolved failure, refused as the server refuses one with nothing to rerun or one already going; it clears the failures a few seconds later. */
+  rerun(dag: string): Response {
+    const cell = this.snapshot.dags.find((d) => d.name === dag);
+    if (!cell) return json({ error: `no workflow ${dag}` }, 404);
+    if (!this.day.some((r) => r.fails[dag]?.resolved === null)) return json({ error: `${dag} has no unresolved failure to rerun.` }, 409);
+    if (this.forcing.has(dag)) return json({ error: `${dag} already has a forced rerun running.` }, 409);
+    const now = this.clock(), runId = `${dag}-forced-${this.reruns.length + 1}`, names = cell.steps.map((s) => s.name);
+    const next = structuredClone(this.snapshot);
+    (next.dags.find((d) => d.name === dag)!.active ??= []).push({ runId, status: "running", startedAt: iso(now), step: names[0] ?? "", stepStartedAt: iso(now), steps: Object.fromEntries(names.map((n, i) => [n, i ? "not_started" : "running"])) });
+    this.forcing.add(dag);
+    this.reruns.push(now);
+    this.publish(next);
+    setTimeout(() => this.finishRerun(dag, runId), 4000);
+    return json({ runId });
+  }
+  private finishRerun(dag: string, runId: string) {
+    const at = iso(this.clock());
+    this.forcing.delete(dag);
+    this.day = this.day.map((r) => {
+      if (r.fails[dag]?.resolved !== null) return r;
+      const fails = { ...r.fails, [dag]: { ...r.fails[dag], resolved: { runId, at } } };
+      return { ...r, fails, pinned: Object.values(fails).some((f) => f.resolved === null) };
+    });
+    const next = structuredClone(this.snapshot);
+    const cell = next.dags.find((d) => d.name === dag);
+    if (cell?.active) cell.active = cell.active.filter((a) => a.runId !== runId);
+    Object.assign(next, this.ledgerFields(next));
     this.publish(next);
   }
 

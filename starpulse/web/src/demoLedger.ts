@@ -1,9 +1,9 @@
 // The merge Ledger a self-contained demo page shows. A served page gets its rows from starpulse.ledger; a demo page has no server, so this builds the
 // same rows from the snapshot's ties: the merges of the last day, a run of every tied DAG on each, and a new merge now and then.
-// `?ms=` picks what the rows show: `live` (the default) keys every run by commit with the newest still running, `fail` pins one failed apply,
+// `?ms=` picks what the rows show: `live` (the default) keys every run by commit with the newest still running, `fail` pins two failed applies (one past the head page),
 // `cross` adds another repository's merges and the pin bump that applies one, and `infer` is an install that declares no commit key, so time pairs every run.
 import { MERGE_EVENT, tiesOf, type Tie } from "./ledger";
-import type { ContractCheck, ContractReport, LedgerRow, LedgerRun, RunStatus, Snapshot } from "./types";
+import type { ContractCheck, ContractReport, LedgerRow, LedgerRun, MergeStrip, RunStatus, Snapshot } from "./types";
 
 export type Scenario = "live" | "fail" | "cross" | "infer";
 const SCENARIOS: Scenario[] = ["live", "fail", "cross", "infer"];
@@ -50,7 +50,7 @@ export function demoLedger(snap: Snapshot, now: number, scenario: Scenario): Led
   const ties = tiesOf(snap, MERGE_EVENT);
   if (!ties.length) return [];
   const rows = AGO.map((ago, i): LedgerRow => {
-    const at = now - ago, last = ties.filter((t) => t.role === "cue").at(-1)?.dag, failing = scenario === "fail" && i === 2, fails: LedgerRow["fails"] = {};
+    const at = now - ago, last = ties.filter((t) => t.role === "cue").at(-1)?.dag, failing = scenario === "fail" && (i === 2 || i === 30), fails: LedgerRow["fails"] = {};
     const runs = Object.fromEntries(ties.map((t) => {
       const state = i === 0 ? (t.role === "cue" ? "running" : "done") : failing && t.dag === last ? "failed" : "done";
       const run = runOf(snap, t, at, i, scenario, state);
@@ -85,3 +85,20 @@ export function arriveMerge(snap: Snapshot, rows: LedgerRow[], now: number): Led
   }
   return [{ key: sha(n), at: now, tasks: [`DEMO-${n}`], sha: sha(n), pr: { repo: "trantor", number: 300 + n, url: "#" }, runs: writer, fails: {}, pinned: false }, ...next];
 }
+
+const DAY = 86400, BUCKET = 900;
+
+/** The 24-hour strip the server sends with a snapshot (`ledger.strip`): the day's merges counted over every row, not the head page, with the forced reruns `reruns` started. */
+export function demoStrip(rows: readonly LedgerRow[], reruns: readonly number[], now: number): MergeStrip {
+  const since = now - DAY, buckets = Array.from({ length: DAY / BUCKET }, () => ({ merges: 0, failed: 0, reruns: 0 }));
+  const at = (t: number) => Math.min(buckets.length - 1, Math.floor((t - since) / BUCKET));
+  for (const r of rows) if (r.at >= since && r.at <= now) {
+    buckets[at(r.at)].merges++;
+    if (Object.keys(r.fails).length) buckets[at(r.at)].failed++;
+  }
+  for (const t of reruns) if (t >= since && t <= now) buckets[at(t)].reruns++;
+  return { since, bucket: BUCKET, buckets };
+}
+
+/** The pinned merges of `rows` that the head page leaves out, as the server sends them so a failure waiting on its cue is never paged out of sight. */
+export const demoPins = (rows: readonly LedgerRow[], head: readonly LedgerRow[]): LedgerRow[] => rows.filter((r) => r.pinned && !head.some((h) => h.key === r.key));

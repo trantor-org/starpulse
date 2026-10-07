@@ -219,6 +219,18 @@ describe("openStream", () => {
     expect(ids(seen.at(-1)!)).toEqual(["PROJ-1:to_do"]);
   });
 
+  it("folds the 24-hour strip and the pins the head left out with the Ledger rows", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+    const mergeStrip = { since: 0, bucket: 900, buckets: [{ merges: 1, failed: 1, reruns: 0 }] };
+    const pin = { key: "p", at: 1, tasks: [], runs: {}, fails: {}, pinned: true };
+
+    last().send("ledgers", { ledgers: { MERGED: [] }, mergeStrip, mergePins: [pin] });
+
+    expect(seen.at(-1)!.mergeStrip).toEqual(mergeStrip);
+    expect(seen.at(-1)!.mergePins?.map((r) => r.key)).toEqual(["p"]);
+  });
+
   it("folds a refused claim the writer published into the snapshot", () => {
     openStream(handlers, open);
     last().send("snapshot", board([agent("TASK-D1", "waiting")]));
