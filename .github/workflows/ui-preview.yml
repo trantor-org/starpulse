@@ -10,6 +10,7 @@ on:
     types: [opened, synchronize, reopened, closed]
     paths:
       - starpulse/web/**
+      - starpulse/demo.py
       - ci/**
       - .github/workflows/ui-preview.yml
       - design/**
@@ -19,6 +20,7 @@ on:
     branches: [main]
     paths:
       - starpulse/web/**
+      - starpulse/demo.py
       - ci/**
       - .github/workflows/ui-preview.yml
       - design/**
