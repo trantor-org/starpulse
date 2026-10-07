@@ -30,4 +30,4 @@ def test_each_pytest_job_sizes_its_workers_before_it_runs_pytest(name):
     sizing = next(i for i, run in enumerate(runs) if "ci/xdist_workers.py" in run)
     assert "PYTEST_ADDOPTS=-n" in runs[sizing]
     assert "--dist loadgroup" in runs[sizing]  # keeps each xdist_group (shared checkout state) on one worker
-    assert sizing < next(i for i, run in enumerate(runs) if run.endswith("pytest"))
+    assert sizing < next(i for i, run in enumerate(runs) if run.endswith("pytest $PYTEST_TARGETS"))

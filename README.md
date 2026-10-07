@@ -614,6 +614,9 @@ integration cases; otherwise those cases are skipped. `uv sync --no-group hub` i
 instance runs, and the suite then skips the Postgres and hub cases.
 `uv run pytest -n 4 --dist loadgroup` spreads it over four pytest-xdist workers; `loadgroup` keeps the tests that
 share checkout state on one worker. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
+A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import
+graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite, and so does every
+push to `main`.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 [`bench/`](bench/README.md) holds the hub-ingest and instance event-log benchmarks.
 
