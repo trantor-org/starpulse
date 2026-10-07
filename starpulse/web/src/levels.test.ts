@@ -187,4 +187,8 @@ describe("machines entered from the top, each a level of its own", () => {
     expect(startPath("/", "", down("audit"), D, { open: "gone" })).toEqual(down("audit"));
     expect(startPath("/", "", null, D, { open: "in-progress" })).toEqual(IN_PROGRESS);
   });
+
+  it("reads `open=` on a demo page, whose address is a file under a folder, not a graph name", () => {
+    expect(startPath("/starpulse-demo/pr-1/flow-view.html", "", null, D, { open: "scan" })).toEqual(down("audit", "scan"));
+  });
 });
