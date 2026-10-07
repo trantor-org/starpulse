@@ -1,11 +1,11 @@
 // Design mockup layer (the DAGs tied to a state, back on the Star Map), never part of the page. The page above is a scrubbed capture of the
-// real StarPulse page, built from a source copy that draws each DAG tied to a Board state beside the transition it writes, the event that
-// cues it or the machine it launches (dag-ties-src.patch). This layer adds the review bar, the text size (?fs=100|125|150) and their runs,
-// simulated on a loop shaped like the live day: autopilot claims, reconciliation releases, a merge cues apply-on-merge and graph-refresh,
-// the sweep, a skill eval. ?sim=live (the loop, where a forced rerun clears apply-on-merge's failure), rest (nothing running) or fail
-// (apply-on-merge failed and left unresolved: the loop skips the rerun);
-// ?at=<seconds> opens the loop at that moment. ?motion=sweep|glow picks how a run shows; ?names=0 hides names until hover (the bar no longer
-// offers it: names are always shown).
+// real StarPulse page, built from a source copy that draws one DAGs hub at the right end of the Board's axis, an orbiter per DAG tied to a
+// Board transition, and one chip under In Progress for the DAGs that only launch work (dag-ties-src.patch). This layer adds the review bar,
+// the text size (?fs=100|125|150) and their runs, simulated on a loop shaped like the live day: autopilot claims, reconciliation releases, a
+// merge cues apply-on-merge and graph-refresh, the sweep, a skill eval. ?sim=live (the loop, where a forced rerun clears apply-on-merge's
+// failure), rest (nothing running) or fail (apply-on-merge failed and left unresolved: the loop skips the rerun); ?at=<seconds> opens the loop
+// at that moment. ?ring=aim|even turns each orbiter toward its transition or spaces them evenly; ?motion=hub|edge sends a write's comet
+// between orbiter and transition or along the transition's edge.
 // It runs before the page's module.
 (() => {
   const q = new URLSearchParams(location.search);
@@ -66,11 +66,10 @@
         #mockbar a { padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(148,163,184,.18); color: #b6c0d3; text-decoration: none; }
         #mockbar a.on { border-color: #fbbf24; color: #fde68a; background: rgba(251,191,36,.10); }
       </style><b>MOCKUP</b>`;
-      const cur = { place: q.get("place") || "dock", launch: q.get("launch") || "chip", names: q.get("names") || "1", motion: q.get("motion") || "sweep", sim, fs: q.get("fs") || "100" };
+      const cur = { ring: q.get("ring") || "aim", motion: q.get("motion") || "hub", sim, fs: q.get("fs") || "100" };
       const groups = [
-        ["Placement", "place", [["dock", "Docked"], ["shelf", "Shelf"]]],
-        ["Launchers", "launch", [["chip", "One chip"], ["row", "A row"]]],
-        ["Motion", "motion", [["sweep", "Sweep"], ["glow", "Glow only"]]],
+        ["Orbiters", "ring", [["aim", "Aimed"], ["even", "Even"]]],
+        ["Comet", "motion", [["hub", "Hub ↔ transition"], ["edge", "Along the edge"]]],
         ["Runs", "sim", [["live", "Live loop"], ["rest", "At rest"], ["fail", "Failure"]]],
         ["Text", "fs", [["100", "100%"], ["125", "125%"], ["150", "150%"]]],
       ];
