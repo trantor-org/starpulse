@@ -762,7 +762,7 @@
 
     // ---- start where the address says: the Board by default, the ledger for &level=in_progress, &focus= or &pick=
     const want = P.get("level") === "in_progress" || P.get("focus") || P.get("pick") || P.get("open");
-    if (KIDS[P.get("open")]?.length && P.get("open") !== IP) topM = P.get("open");
+    if (M[P.get("open")] && P.get("open") !== IP) topM = P.get("open");
     if (want && !isSky(page.stack)) { page.go(SKY); page.trans = null; }
     else if (!want && !P.get("level") && page.stack.length !== 1) { page.go([{ kind: "board" }]); page.trans = null; }
     resize(); renderFeed(); renderClock(); addEventListener("resize", resize); document.fonts?.ready.then(() => { wcache.clear(); resize(); });
