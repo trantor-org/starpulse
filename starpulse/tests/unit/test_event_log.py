@@ -123,6 +123,30 @@ def test_a_tail_resumes_after_the_cursor_it_is_given(log: EventLog) -> None:
     assert _gaps(log) == []
 
 
+def test_a_tail_over_several_streams_reads_them_in_log_order_under_one_cursor(log: EventLog) -> None:
+    log.append("a", {"n": 1})
+    log.append("other", {"n": 2})
+    log.append("b", {"n": 3})
+    log.append("a", {"n": 4})
+
+    tail = Tail(log, "forward", streams=("a", "b"))
+
+    assert [(e.stream, e.fields["n"]) for e in tail.poll()] == [("a", 1), ("b", 3), ("a", 4)]
+    assert tail.cursor == 4
+    assert tail.poll() == []
+
+
+def test_a_gap_before_a_multi_stream_tail_is_recorded_under_the_readers_name(log: EventLog) -> None:
+    for n in range(4):
+        log.append("a", {"n": n})
+    log.prune(0, now=time.time() + 1)
+    log.append("a", {"n": 9})
+
+    Tail(log, "forward", streams=("a", "b"), after=2).poll()
+
+    assert [row[0] for row in _gaps(log)] == ["forward"]
+
+
 def test_a_poll_reads_at_most_one_batch(log: EventLog) -> None:
     for n in range(5):
         log.append("a", {"n": str(n)})

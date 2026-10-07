@@ -1,0 +1,227 @@
+"""What an IC sends a hub, and the filter that keeps a person's name at home.
+
+The forwarder reads only the machine and runs streams. Each entry is cut down to the fields the stream's contract
+names (`FIELDS`), so a field a producer added never leaves the IC. `actor` and `assignee` name a person, so they
+leave only while the IC is opted in (`OptIn`).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import threading
+import urllib.error
+import urllib.request
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from starpulse import events, run_events
+from starpulse.event_log import EventLog, Tail
+
+if TYPE_CHECKING:
+    from starpulse.config import Config, Forward
+    from starpulse.history import HistoryStore
+
+logger = logging.getLogger(__name__)
+
+#: The fields each forwarded stream may carry, and the ones among them that name a person.
+FIELDS: dict[str, tuple[str, ...]] = {
+    events.STREAM: ("machine", "event", "task", "run", "actor", "assignee", "time"),
+    run_events.STREAM: ("time", "phase", "workflow", "run_id", "status", "step", "depends"),
+}
+PERSON = ("actor", "assignee")
+
+__all__ = ["FIELDS", "OPT_IN_FILE", "PERSON", "Forwarder", "OptIn", "main", "post", "project", "start"]
+
+
+def project(stream: str, fields: dict[str, Any], *, opt_in: bool) -> dict[str, Any]:
+    """The part of one `stream` entry's `fields` that may leave the IC; a person's name stays unless `opt_in`."""
+    return {k: fields[k] for k in FIELDS[stream] if k in fields and (opt_in or k not in PERSON)}
+
+
+#: Where the opt-in lives, in the directory of the `--config` file (the working directory without one).
+OPT_IN_FILE = "starpulse-forward.json"
+
+
+class OptIn:
+    """Whether this instance lets a person's name leave: the flag in `path`, off unless the file says `true`.
+
+    It is a file, not config, so flipping it needs no restart and no hub: the forwarder reads it before every batch,
+    and a file that is missing or unreadable leaves the instance opted out.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def get(self) -> bool:
+        try:
+            return json.loads(self.path.read_text())["opt_in"] is True
+        except OSError, ValueError, KeyError, TypeError:
+            return False
+
+    def set(self, value: bool) -> None:
+        scratch = self.path.with_name(f"{self.path.name}.tmp")
+        scratch.write_text(json.dumps({"opt_in": value}))
+        os.replace(scratch, self.path)  # a reader sees the old file or the new one, never half of one
+
+
+#: How long one POST to the hub may take, and how long the forwarder rests when it has caught up.
+TIMEOUT = 10.0
+DEFAULT_INTERVAL = 5.0
+
+Send = Callable[[str, str, bytes], tuple[int, dict[str, Any]]]
+
+
+def post(url: str, token: str, body: bytes) -> tuple[int, dict[str, Any]]:
+    """POST `body` to `url` under `token`: `(status, JSON answer)`. A hub that cannot be reached raises `OSError`."""
+    request = urllib.request.Request(
+        url, data=body, method="POST", headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as answer:
+            status, raw = answer.status, answer.read()
+    except urllib.error.HTTPError as refusal:
+        status, raw = refusal.code, refusal.read()
+    try:
+        decoded = json.loads(raw)
+    except ValueError:
+        return status, {}
+    return status, decoded if isinstance(decoded, dict) else {}
+
+
+class Forwarder:
+    """Sends this IC's machine and runs events to a hub, a batch at a time, in log order.
+
+    It is a reader of the event log, not a Redis consumer: its cursor (the log id of the last entry the hub
+    acknowledged) lives in the IC's store under `forward:<hub url>`, and moves only after the hub answers 200. A
+    batch is never kept: each attempt rebuilds it from the log past the cursor, so a batch that failed while the
+    instance was opted in goes out without names once it opts out. A send that dies between the hub's write and its
+    answer repeats the batch, which the hub drops because it stores each `event_id` once.
+    """
+
+    def __init__(
+        self,
+        log: EventLog,
+        store: HistoryStore,
+        forward: Forward,
+        token: str,
+        opt_in: OptIn,
+        *,
+        send: Send = post,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> None:
+        self.log = log
+        self.store = store
+        self.forward = forward
+        self.token = token
+        self.opt_in = opt_in
+        self.name = f"forward:{forward.url}"
+        self.url = f"{forward.url.rstrip('/')}/api/forward"
+        self.interval = interval
+        self._send = send
+        self._refused = False  # the hub took no opt-in; send names-free until the instance opts out and in again
+
+    def step(self) -> int | None:
+        """Send the next batch: how many entries the log held past the cursor, or None when it did not go through.
+
+        The opt-in is read here, once per batch. Entries of streams that are not forwarded move the cursor and cost
+        no request.
+        """
+        opted = self.opt_in.get()
+        if not opted:
+            self._refused = False
+        sent_opt_in = opted and not self._refused
+        after = self.store.cursor(self.name)
+        tail = Tail(self.log, self.name, streams=tuple(FIELDS), after=after, batch=self.forward.batch)
+        entries = tail.poll()
+        if not entries:
+            if tail.cursor != after:
+                self.store.save_cursor(self.name, tail.cursor)
+            return 0
+        body = json.dumps(
+            {
+                "opt_in": sent_opt_in,
+                "events": [
+                    {
+                        "event_id": e.event_id,
+                        "stream": e.stream,
+                        "fields": project(e.stream, e.fields, opt_in=sent_opt_in),
+                    }
+                    for e in entries
+                ],
+            }
+        ).encode()
+        try:
+            status, answer = self._send(self.url, self.token, body)
+        except OSError as exc:
+            logger.warning("Forwarder: %s unreachable, retrying: %s", self.url, exc)
+            return None
+        if status != 200:
+            if status == 403 and sent_opt_in:
+                self._refused = True
+            logger.warning("Forwarder: %s answered %s, retrying: %s", self.url, status, answer.get("error", ""))
+            return None
+        self.store.save_cursor(self.name, tail.cursor)
+        return len(entries)
+
+    def run(self, stop: threading.Event) -> None:
+        """Forward until `stop` is set: straight on while batches come back full, else rest for the interval."""
+        while not stop.is_set():
+            try:
+                sent = self.step()
+            except Exception:  # the log or store failed; the next step retries from the saved cursor
+                logger.exception("Forwarder: step failed, retrying in %ss", self.interval)
+                sent = None
+            if sent != self.forward.batch:
+                stop.wait(self.interval)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """`starpulse forward opt-in|opt-out|status`: set or show whether a person's name may leave this instance.
+
+    The flag is `OPT_IN_FILE` in the directory of `--config` (the working directory without one), where the running
+    server's forwarder reads it before every batch, so the change needs no restart and no hub.
+    """
+    parser = argparse.ArgumentParser(
+        prog="starpulse forward", description="let a person's name leave this instance for the hub, or stop it"
+    )
+    parser.add_argument("action", choices=("opt-in", "opt-out", "status"))
+    parser.add_argument(
+        "--config", type=Path, help="the TOML config the server runs with; the flag is stored beside it"
+    )
+    args = parser.parse_args(argv)
+    flag = OptIn((args.config.parent if args.config else Path.cwd()) / OPT_IN_FILE)
+    if args.action != "status":
+        flag.set(args.action == "opt-in")
+    print(f"{flag.path}: {'opted in' if flag.get() else 'opted out'}")
+    return 0
+
+
+def start(
+    config: Config,
+    base: Path,
+    log: EventLog,
+    store: HistoryStore,
+    environ: Mapping[str, str],
+    stop: threading.Event,
+    *,
+    hub: bool = False,
+) -> threading.Thread | None:
+    """Start the forwarder `[forward]` configures, as a daemon thread that ends when `stop` is set; None without one.
+
+    `base` is the config's directory, where the opt-in file lives. Raises `ValueError` for `[forward]` on a hub, which
+    is an IC's setting, and for a `token_env` that names an unset variable.
+    """
+    if config.forward is None:
+        return None
+    if hub:
+        raise ValueError("[forward] sends an IC's events to a hub; a hub does not forward")
+    if not (token := environ.get(config.forward.token_env)):
+        raise ValueError(f"[forward]: {config.forward.token_env} is not set")
+    forwarder = Forwarder(log, store, config.forward, token, OptIn(base / OPT_IN_FILE))
+    thread = threading.Thread(target=forwarder.run, args=(stop,), name="forwarder", daemon=True)
+    thread.start()
+    return thread

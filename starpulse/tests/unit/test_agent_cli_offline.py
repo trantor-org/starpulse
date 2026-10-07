@@ -126,6 +126,9 @@ class TestConfigCheck:
             "level": None,
             "hub_retention_days": 14,
             "oidc": None,
+            "forward": None,
+            "sources": [],
+            "aggregates_only": False,
         }
 
     def test_with_no_file_it_reports_the_defaults(

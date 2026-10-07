@@ -49,7 +49,7 @@ from starpulse.config import Config
 from starpulse.contracts import SCHEMAS, BoardTask, Dag, MachineEvent, Pool, TaskKeys
 from starpulse.harnesses import Harnesses
 from starpulse.history import History, HistoryStore
-from starpulse.ingest import Ingest
+from starpulse.ingest import ForwardIngest, Ingest
 from starpulse.machine_tasks import MachineTasks
 from starpulse.server import _handler, move_task
 from starpulse.server import assemble as _assemble
@@ -273,6 +273,7 @@ def serve(
     ingest: Ingest | None = None,
     gate: Callable[[BaseHTTPRequestHandler], bool] | None = None,
     port: int = 0,
+    forward: ForwardIngest | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -299,6 +300,7 @@ def serve(
         clock,
         ingest,
         gate,
+        forward,
     )
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

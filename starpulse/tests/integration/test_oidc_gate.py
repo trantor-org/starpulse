@@ -24,13 +24,14 @@ from starpulse import server
 from starpulse.adapter_kit import serve, url
 from starpulse.config import OidcSettings
 from starpulse.event_log import EventLog
-from starpulse.ingest import Ingest
+from starpulse.ingest import ForwardIngest, Ingest
 from starpulse.oidc import ENGINE, INSTANCE, PUBLIC, ROUTES, SESSION_S, Gate
 from starpulse.tests import mock_issuer
 from starpulse.tests.mock_issuer import Answer, call, session_of
 
 ALLOWED = ("ops", "admins")
 INSTANCE_TOKEN = "cron-secret"
+FORWARD_TOKEN = "laptop-secret"
 ENGINE_TOKEN = "engine-secret"
 #: What a sign-in refuses to answer before the viewer has signed in: the sign-in's own two endpoints.
 SIGN_IN = {"/auth/login", "/auth/callback"}
@@ -98,7 +99,13 @@ def hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
         routes={PROBE: ENGINE},
         clock=lambda: now[0],
     )
-    with serve(tmp_path, gate=gate, ingest=Ingest({"cron": INSTANCE_TOKEN}, log), port=port) as running:
+    with serve(
+        tmp_path,
+        gate=gate,
+        ingest=Ingest({"cron": INSTANCE_TOKEN}, log),
+        forward=ForwardIngest({"laptop": FORWARD_TOKEN}, log),
+        port=port,
+    ) as running:
         yield Hub(running, issuer, log, redirect_uri, now)
 
 
@@ -166,6 +173,15 @@ def test_a_viewer_session_does_not_pass_on_the_instance_ingest_route(hub: Hub) -
     assert hub.call("/api/runs/events", "POST", {**post, "Authorization": f"Bearer {INSTANCE_TOKEN}"}, event)[0] == 201
 
 
+def test_a_viewer_session_does_not_pass_on_the_forward_route_but_a_source_token_does(hub: Hub) -> None:
+    cookie = session_of(sign_in(hub, "alice", ["ops"]))
+    batch = json.dumps({"opt_in": False, "events": []}).encode()
+    post = {"Content-Type": "application/json", "Cookie": cookie}
+
+    assert hub.call("/api/forward", "POST", post, batch)[0] == 401
+    assert hub.call("/api/forward", "POST", {**post, "Authorization": f"Bearer {FORWARD_TOKEN}"}, batch)[0] == 200
+
+
 def test_an_instance_token_does_not_pass_as_a_viewer(hub: Hub) -> None:
     assert hub.call("/api/snapshot", headers={"Authorization": f"Bearer {INSTANCE_TOKEN}"})[0] == 401
     assert hub.call("/", headers={"Authorization": f"Bearer {INSTANCE_TOKEN}"})[0] == 401
@@ -184,9 +200,9 @@ def test_the_engine_token_passes_only_on_engine_routes(hub: Hub) -> None:
     assert hub.call("/api/runs/events", "POST", {**engine, "Content-Type": "application/json"}, b"{}")[0] == 401
 
 
-def test_the_built_in_routes_open_to_the_gate_are_the_sign_in_and_the_instance_ingest_only() -> None:
+def test_the_built_in_routes_open_to_the_gate_are_the_sign_in_and_the_instance_token_routes_only() -> None:
     assert {path for path, access in ROUTES.items() if access == PUBLIC} == SIGN_IN
-    assert {path for path, access in ROUTES.items() if access == INSTANCE} == {"/api/runs/events"}
+    assert {path for path, access in ROUTES.items() if access == INSTANCE} == {"/api/runs/events", "/api/forward"}
     assert set(ROUTES.values()) == {PUBLIC, INSTANCE}
 
 

@@ -194,7 +194,8 @@ class Tail:
     `after` is the `id` of the last row the reader already handled (the history recorder's persisted cursor); None
     replays everything the log still retains, which is not a gap however much was pruned before. Rows of other
     streams share the ids, so the cursor advances past them and a gap's `lost` counts every pruned id in its span,
-    an upper bound for this stream.
+    an upper bound for this stream. A reader of several streams (`streams`, which default to `stream` alone) reads
+    them in log order under one cursor, and `stream` then names the reader.
     """
 
     def __init__(
@@ -205,9 +206,11 @@ class Tail:
         after: int | None = None,
         interval: float = DEFAULT_POLL_INTERVAL,
         batch: int = 500,
+        streams: Sequence[str] | None = None,
     ) -> None:
         self.log = log
         self.stream = stream
+        self.streams = tuple(streams or (stream,))
         self.cursor = after
         self.interval = interval
         self.batch = batch
@@ -229,7 +232,7 @@ class Tail:
             start = oldest - 1 if gap else cursor or 0
             rows = db.execute(
                 select(events)
-                .where(events.c.stream == self.stream, events.c.id > start, events.c.id <= head)
+                .where(events.c.stream.in_(self.streams), events.c.id > start, events.c.id <= head)
                 .order_by(events.c.id)
                 .limit(self.batch)
             ).all()

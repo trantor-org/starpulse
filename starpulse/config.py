@@ -43,6 +43,9 @@ _KEYS = {
     "level",
     "hub_retention_days",
     "oidc",
+    "forward",
+    "sources",
+    "aggregates_only",
 }
 _OIDC_KEYS = {
     "issuer",
@@ -55,10 +58,12 @@ _OIDC_KEYS = {
     "engine_token_env",
 }
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env"}
+_FORWARD_KEYS = {"url", "token_env", "batch"}
+_SOURCE_KEYS = {"name", "token_env"}
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-__all__ = ["Config", "ConfigError", "RunsInstance", "load", "runs_adapter"]
+__all__ = ["Config", "ConfigError", "Forward", "RunsInstance", "Source", "load", "runs_adapter"]
 
 
 class ConfigError(ValueError):
@@ -144,6 +149,28 @@ def _oidc(raw: object) -> OidcSettings:
     )
 
 
+#: The most events one forwarded batch may hold; a hub refuses a longer one.
+MAX_BATCH = 200
+
+
+@dataclass(frozen=True)
+class Forward:
+    """Where an IC forwards its events: the hub's address, the variable holding this instance's token there, and
+    how many events one POST carries."""
+
+    url: str
+    token_env: str
+    batch: int = 50
+
+
+@dataclass(frozen=True)
+class Source:
+    """An instance a hub accepts forwarded events from; `token_env` names the variable holding its token."""
+
+    name: str
+    token_env: str
+
+
 def runs_adapter(kind: str) -> ModuleType:
     """The runs adapter module `kind` names, which offers `start(url)` and `follow(url, runs, log)`."""
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
@@ -196,6 +223,68 @@ def _instance(raw: object) -> RunsInstance:
     )
 
 
+def _token_env(raw: object, who: str) -> str:
+    if not (isinstance(raw, str) and _ENV_NAME.fullmatch(raw)):
+        raise ConfigError(f"{who} token_env must be the name of an environment variable")
+    return raw
+
+
+def _unknown(raw: dict, known: set[str], who: str) -> None:
+    if unknown := sorted(raw.keys() - known):
+        raise ConfigError(f"{who}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(known))}")
+
+
+def _forward(raw: object) -> Forward | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ConfigError("forward must be a [forward] table")
+    _unknown(raw, _FORWARD_KEYS, "forward")
+    for key in ("url", "token_env"):
+        if key not in raw:
+            raise ConfigError(f"forward needs {key}")
+    url, batch = raw["url"], raw.get("batch", 50)
+    if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+        raise ConfigError("forward url must be an http:// or https:// address")
+    token_env = _token_env(raw["token_env"], "forward")
+    if not (isinstance(batch, int) and not isinstance(batch, bool) and 1 <= batch <= MAX_BATCH):
+        raise ConfigError(f"forward batch must be a whole number from 1 to {MAX_BATCH}")
+    return Forward(url, token_env, batch)
+
+
+def _source(raw: object) -> Source:
+    if not isinstance(raw, dict):
+        raise ConfigError("sources must be a list of [[sources]] tables")
+    for key in ("name", "token_env"):
+        if key not in raw:
+            raise ConfigError(f"a source needs {key}")
+    name = raw["name"]
+    if not isinstance(name, str) or not name or "/" in name:
+        raise ConfigError("source names must be non-empty text without a /")
+    _unknown(raw, _SOURCE_KEYS, f"source {name}")
+    return Source(name, _token_env(raw["token_env"], f"source {name}:"))
+
+
+def _aggregates_only(raw: object) -> bool:
+    if not isinstance(raw, bool):
+        raise ConfigError("aggregates_only must be true or false")
+    return raw
+
+
+def _sources(raw: object) -> tuple[Source, ...]:
+    if not isinstance(raw, list):
+        raise ConfigError("sources must be a list of [[sources]] tables")
+    sources = tuple(_source(table) for table in raw)
+    for at, source in enumerate(sources):
+        if any(source.name == earlier.name for earlier in sources[:at]):
+            raise ConfigError(f"source {source.name} is configured twice")
+        if shared := next((e for e in sources[:at] if e.token_env == source.token_env), None):
+            raise ConfigError(
+                f"sources {shared.name} and {source.name} share token_env {source.token_env}; each needs its own token"
+            )
+    return sources
+
+
 @dataclass(frozen=True)
 class Config:
     tracker_url: str | None
@@ -219,6 +308,12 @@ class Config:
     """A hub keeps raw events for this many days before today, then drops each older day's partition after rolling it up."""
     oidc: OidcSettings | None = None
     """The hub's sign-in (`[oidc]`); a hub refuses to start without it, and an IC instance without `--hub` refuses it."""
+    forward: Forward | None = None
+    """The hub this instance forwards its events to; none: nothing leaves the machine."""
+    sources: tuple[Source, ...] = ()
+    """The instances this hub takes forwarded events from, by their tokens."""
+    aggregates_only: bool = False
+    """A hub that takes aggregates only refuses an instance's opt-in to be named."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -248,6 +343,13 @@ def discover(path: Path | None) -> Path | None:
     return path
 
 
+def _retention(value: object) -> int:
+    """The days a hub keeps raw events; a whole number, 1 or more."""
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ConfigError("hub_retention_days must be a whole number of days, 1 or more")
+    return value
+
+
 def load(path: Path | None) -> Config:
     """The config in `path`, or the defaults when there is none."""
     raw = tomllib.loads(path.read_text()) if path else {}
@@ -269,9 +371,7 @@ def load(path: Path | None) -> Config:
             )
     if not isinstance(session_start_url := raw.get("session_start_url"), str | None):
         raise ConfigError("session_start_url must be text")
-    retention = raw.get("hub_retention_days", 14)
-    if not isinstance(retention, int) or isinstance(retention, bool) or retention < 1:
-        raise ConfigError("hub_retention_days must be a whole number of days, 1 or more")
+    retention = _retention(raw.get("hub_retention_days", 14))
     harnesses = None
     if path and (name := raw.get("harnesses_file")):
         if not (file := path.parent / name).is_file():
@@ -305,4 +405,7 @@ def load(path: Path | None) -> Config:
         _level(raw),
         retention,
         oidc,
+        _forward(raw.get("forward")),
+        _sources(raw.get("sources", [])),
+        _aggregates_only(raw.get("aggregates_only", False)),
     )
