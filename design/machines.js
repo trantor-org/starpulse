@@ -10,10 +10,10 @@
   Nesting: a row is only a machine entered from the one at the top. A machine with machines entered from it says how
   many on its name line; clicking anywhere on its row zooms through, that machine takes the top and its machines
   become the rows, with a breadcrumb back up. Escape steps back out one machine at a time. A row stands for everything
-  nested under it: stuck work anywhere below pins it and names where, and its entries land on its ticks in the strip.
+  nested under it: stuck work anywhere below marks it and names where, and its entries land on its ticks in the strip.
 
-  Rows run newest activity first; a row with a task stuck over 2 h is pinned under the template. The wheel, PgUp/PgDn,
-  Home/End and the thumb scroll the rest under it, 20 loaded at a time as the footer comes into view, as the DAG ledger
+  Rows run newest activity first; one sequence, so the rows in view are one span of time; a row with a task stuck
+  over 2 h is marked red in its place. The wheel, PgUp/PgDn, Home/End and the thumb scroll them, 20 loaded at a time as the footer comes into view, as the DAG ledger
   does; a 24 h strip of machine entries runs along the bottom with the rows in view shaded. Flow lines are the page's own:
   a dashed gradient between the colours of the two states, streaming the way the flow runs. Hovering a row draws its tie;
   hovering a task retraces its path in order, across every machine it has a session in, along those same lines; clicking
@@ -126,8 +126,8 @@
       <span><i style="background:${TIER.deep}"></i>deep</span><span><i style="background:${TIER.standard}"></i>standard</span><span><i style="background:${TIER.other}"></i>other</span><br>
       <span style="color:${RAMP[2]}">▼</span> declared entry <span style="color:${RAMP[2]};margin-left:8px">▽</span> observed<br>
       <span style="color:${DAGC}">✦</span> DAG <span style="margin-left:10px">${dash(RAMP[1], RAMP[5], 2.4)}task path</span><br>
-      <span><i style="background:${OFF};border-radius:0;width:2px"></i>stuck over 2 h, pinned</span><br>
-      <span style="color:${PLANET}">n nested</span> click opens it · Esc steps out<br>
+      <span><i style="background:${OFF};border-radius:0;width:2px"></i>stuck over 2 h</span><br>
+      <span style="color:${PLANET}">›</span> click any row to open it<br>
       <span><i style="background:${ACT};box-shadow:0 0 6px ${ACT}"></i>activity now</span>`;
     let pageLegend = legendEl.innerHTML;
 
@@ -264,8 +264,8 @@
     const subLine = (m) => { const n = M[m].agents.length; return `${M[m].states.length} states · ${n} task${n === 1 ? "" : "s"}${seeded.has(m) ? " (seeded)" : ""}`; };
 
     // ---- the ledger, in screen pixels. in-progress runs fixed across the top as the template; every other machine is a row under
-    // it, its states in one line from first (left) to last (right) across the lane. A row with a task stuck over 2 h is pinned
-    // under the template; the rest run newest activity first and scroll beneath it, PAGE loaded at a time.
+    // it, its states in one line from first (left) to last (right) across the lane. Rows run newest activity first in one
+    // sequence and scroll beneath it, PAGE loaded at a time; a row with a task stuck over 2 h is marked in its place.
     let L = null, W = 0, H = 0, DPR = 1, CW = 0, CH = 0, NX = 52;
     const view = { k: 1, x: 0, y: 0 }, STUCK = 7200, IDLE = 3600, PAGE = 20;
     const key = (m, s) => `${m}:${s}`, node = (m, s) => L.nodes.get(key(m, s));
@@ -275,7 +275,7 @@
     // a row stands for its machine and every machine nested under it: it is stuck, and as recent, as the most stuck and newest of them
     const stuckIn = (m) => stuckOf(m).length > 0 || desc(m).some((d) => stuckOf(d).length > 0);
     const lastIn = (m) => Math.max(lastOf(m), ...desc(m).map(lastOf));
-    const rankRows = () => [...L.rows.keys()].sort((a, b) => stuckIn(b) - stuckIn(a) || lastIn(b) - lastIn(a) || (a < b ? -1 : 1));
+    const rankRows = () => [...L.rows.keys()].sort((a, b) => lastIn(b) - lastIn(a) || (a < b ? -1 : 1));
     // the machine at the top: in-progress, or the machine drilled into; its rows are the machines entered from it
     let topM = IP;
     const rowAt = (m) => { let x = m; while (x !== IP && up[x] !== topM) x = up[x]; return x === IP ? null : x; };
@@ -301,7 +301,7 @@
       const gap = need.map((v, i) => Math.max(v ? 0 : u, v, low[i])), k = (x1 - x0) / Math.max(1, gap.reduce((a, b) => a + b, 0)), xs = [x0];
       gap.forEach((v) => xs.push(xs.at(-1) + v * k)); return xs; }
     function layout() {
-      L = { nodes: new Map(), rows: new Map(), stars: [], pin: [], list: [], ticks: [] };
+      L = { nodes: new Map(), rows: new Map(), stars: [], list: [], ticks: [] };
       const g = G[topM], metaX = NX + 22, metaW = Math.round(clamp(186 * FS, 170, 290)), x0 = metaX + metaW + 34 * FS, x1 = NX + CW - 34, hx = colXs(topM, x0, x1, PX.main(), 40 * FS, null);
       Object.assign(L, { metaX, metaW, x0, x1 });
       const hn = M[topM].states.map((st) => Object.assign(addNode(topM, st.id, hx[g.depth[st.id]], null), { col: RAMP[Math.round((g.depth[st.id] / (g.ncols - 1)) * (RAMP.length - 1))] }));
@@ -325,28 +325,26 @@
       order = rankRows(); place(performance.now());
     }
     function radii() { for (const n of L.nodes.values()) n.r = rOf(tasksAt(n.m, n.s).length, n.row); }
-    const regionOf = (r) => (r.pinned ? [L.laneTop, L.pinB] : [L.pinB, L.stripT]);
-    const shown = (r) => { if (!r.pinned && !r.on) return false; const [a, b] = regionOf(r); return r.cy < b && r.cy + r.h > a; };
+    const regionOf = () => [L.laneTop, L.stripT];
+    const shown = (r) => r.on && r.cy < L.stripT && r.cy + r.h > L.laneTop;
     const reg = (n) => (!n.row ? [0, L.hdrB] : regionOf(n.row));
     function place(now) {
       radii();
-      let y = L.laneTop; L.pin = []; L.list = [];
-      // stuck rows pin under the template up to about a third of the lane; the rest of them lead the scrolling list, still marked
-      const capH = (L.stripT - L.laneTop) * 0.38; let used = 0; L.nStuck = 0;
-      for (const m of order) { const r = L.rows.get(m); r.stuck = stuckIn(m); if (r.stuck) L.nStuck++; r.pinned = r.stuck && (!L.pin.length || used + r.h <= capH); if (r.pinned) used += r.h; (r.pinned ? L.pin : L.list).push(r); }
-      for (const r of L.pin) { r.y = y; y += r.h; } L.pinB = y + (L.pin.length ? 6 : 0);
+      L.list = [];
+      // one sequence, newest activity first: a stuck row keeps its place and is marked, so the rows in view are one span of time
+      L.nStuck = 0; for (const m of order) { const r = L.rows.get(m); r.stuck = stuckIn(m); if (r.stuck) L.nStuck++; L.list.push(r); }
       const n = Math.min(loaded, L.list.length);
-      L.more = L.list.length - n; L.content = L.list.slice(0, n).reduce((a, r) => a + r.h, 0) + (L.more ? FOOT() : 0); L.maxScroll = Math.max(0, L.content - (L.stripT - L.pinB));
+      L.more = L.list.length - n; L.content = L.list.slice(0, n).reduce((a, r) => a + r.h, 0) + (L.more ? FOOT() : 0); L.maxScroll = Math.max(0, L.content - (L.stripT - L.laneTop));
       goal = clamp(goal, 0, L.maxScroll); scroll += (goal - scroll) * 0.3; if (Math.abs(goal - scroll) < 0.5) scroll = goal; scroll = clamp(scroll, 0, L.maxScroll);
-      let s = L.pinB - scroll; L.footY = s; L.list.forEach((r, i) => { r.on = i < n; r.y = s; s += r.h; if (i === n - 1) L.footY = s; });
+      let s = L.laneTop - scroll; L.footY = s; L.list.forEach((r, i) => { r.on = i < n; r.y = s; s += r.h; if (i === n - 1) L.footY = s; });
       // the footer coming into view loads the next page, as the DAG ledger does
       if (L.more && L.footY < L.stripT && !loadingAt) loadingAt = now; if (loadingAt && now - loadingAt > 480) { loaded += PAGE; loadingAt = 0; }
       for (const r of L.rows.values()) { r.cy = r.cy == null || Math.abs(r.cy - r.y) > 1500 ? r.y : lerp(r.cy, r.y, 0.3); if (Math.abs(r.cy - r.y) < 0.3) r.cy = r.y; for (const nd of r.nodes) nd.y = r.cy + r.c + nd.oy; }
       for (const st of L.stars) if (st.row) st.y = st.row.cy + st.row.c + st.dy;
     }
     // bring a row on screen: load the page it is on, scroll it to the middle of the lane and select it
-    function reveal(r) { if (!r) return; selRow = r; syncUrl(); if (r.pinned) return; const i = L.list.indexOf(r); if (i >= loaded) loaded = (Math.floor(i / PAGE) + 1) * PAGE;
-      const off = L.list.slice(0, i).reduce((a, q) => a + q.h, 0); goal = off - (L.stripT - L.pinB - r.h) / 2; }
+    function reveal(r) { if (!r) return; selRow = r; syncUrl(); const i = L.list.indexOf(r); if (i >= loaded) loaded = (Math.floor(i / PAGE) + 1) * PAGE;
+      const off = L.list.slice(0, i).reduce((a, q) => a + q.h, 0); goal = off - (L.stripT - L.laneTop - r.h) / 2; }
 
     // ---- labels of the template: one that would overprint another takes a second tier on a hairline, else it waits for the tooltip
     const hits = (a, b) => (b.r ? Math.hypot(Math.max(a.x0 - b.x, 0, b.x - a.x1), Math.max(a.y0 - b.y, 0, b.y - a.y1)) < b.r : a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1);
@@ -471,9 +469,9 @@
       // meta: its name, where it is entered from, and what its tasks are doing
       const px = PX.name(), sp = PX.sub(), ag = M[r.m].agents, idle = simT - lastIn(r.m) > IDLE, ty = y + r.h / 2 - (px * 1.4 + 2 * sp * 1.5) / 2, st = stuckOf(r.m);
       r.nameAt = { x: mx, y: ty + px * 0.7 };
-      // a machine with machines entered from it says how many beside its name; a click anywhere on its row opens it
+      // every row opens: a click anywhere on it zooms through to that machine; one with machines entered from it says how many
       const nk = KIDS[r.m].length; let cw = 0;
-      if (nk) { const ct = `${nk} nested ›`; cw = textW(ct, sp) + 8; text(ct, mx + L.metaW, ty + px * 0.7, sp, rgba(PLANET, hot ? 1 : 0.7), "right"); }
+      { const ct = nk ? `${nk} nested ›` : "›"; cw = textW(ct, sp) + 8; text(ct, mx + L.metaW, ty + px * 0.7, sp, rgba(PLANET, hot ? 1 : 0.7), "right"); }
       text(fit(r.m, px, L.metaW - cw, 400), mx, ty + px * 0.7, px, rgba(INK, hot ? 0.97 : idle ? 0.55 : 0.85), "left", 400);
       let l2 = "no tie this hour", c2 = rgba(SUB, 0.5), dot = null;
       if (t) { dot = src?.col; l2 = `${t.pm === topM ? "from" : "on"} ${t.pm === topM ? stName(t.pm, t.ps) : `${t.pm} › ${stName(t.pm, t.ps)}`} · ${t.kind === "declared" ? "declared" : `×${t.count}`}`; c2 = rgba(INK, 0.62); }
@@ -507,7 +505,7 @@
           const e = entryPath(a, b), [t0, t1] = trim(e, a.r + 2, b.r + 3); flow(a, b, al, fl + (on ? 0.5 : 0), t.kind === "observed" ? [1.5, 6] : [2, 5]); along(e, t0, t1, 28); cx.setLineDash([]);
           arrow(at(e, t1 - 0.02), at(e, t1), rgba(b.col, al), 7); } }
     }
-    function drawThumb() { L.thumb = null; if (!L.maxScroll) return; const x = L.x1 + 18, y0 = L.pinB + 4, y1 = L.stripT - 6, th = Math.max(24, ((y1 - y0) * (L.stripT - L.pinB)) / L.content), ty = y0 + ((y1 - y0 - th) * scroll) / L.maxScroll;
+    function drawThumb() { L.thumb = null; if (!L.maxScroll) return; const x = L.x1 + 18, y0 = L.laneTop + 4, y1 = L.stripT - 6, th = Math.max(24, ((y1 - y0) * (L.stripT - L.laneTop)) / L.content), ty = y0 + ((y1 - y0 - th) * scroll) / L.maxScroll;
       L.thumb = { x, y0, y1, th, ty }; cx.fillStyle = rgba(SUB, 0.08); cx.fillRect(x - 1, y0, 2, y1 - y0); cx.fillStyle = rgba(SUB, hover?.kind === "thumb" || drag?.thumb ? 0.65 : 0.32); cx.beginPath(); cx.roundRect(x - 2, ty, 4, th, 2); cx.fill(); }
     // the last 24 h of machine entries: a tick per session, in the colour of the state it was entered from (amber for a DAG launch)
     function drawStrip() {
@@ -519,7 +517,7 @@
       L.ticks = [];
       for (const d of desc(topM)) { const m = rowAt(d); for (const a of M[d].agents) { const t = start(a); if (t < t0) continue; const x = X(t), hot = hotM() === m || (hover?.kind === "tick" && hover.o.a === a), col = a.task ? srcOf(d)?.col || srcOf(m)?.col || PLANET : DAGC;
         L.ticks.push({ x, m, a }); cx.fillStyle = rgba(col, hot ? 1 : 0.62); cx.fillRect(x - 0.75, by - (hot ? 13 : 8) * FS, 1.5, (hot ? 13 : 8) * FS); } }
-      const nL = L.pin.length + L.list.filter((r) => r.on).length;
+      const nL = L.list.filter((r) => r.on).length;
       text("24 h · machine entries", sx0, stripT + 8 * FS, sp, rgba(SUB, 0.6));
       text(`${inV.length ? `${hhmm(Math.min(...inV))}–${hhmm(Math.max(...inV))} in view · ` : ""}${nL} of ${L.rows.size} loaded`, sx1, stripT + 8 * FS, sp, rgba(SUB, 0.7), "right");
     }
@@ -588,10 +586,10 @@
       taskPos.clear();
       cx.setTransform(1, 0, 0, 1, 0, 0); cx.clearRect(0, 0, buf.width, buf.height); cx.setTransform(DPR, 0, 0, DPR, 0, 0);
       drawHeader(now);
-      clip(L.pinB, L.stripT, () => { const sliding = (r) => Math.abs(r.cy - r.y) > 3; for (const k of [true, false]) for (const r of L.list) if (shown(r) && sliding(r) === k) drawRow(r, now);
+      clip(L.laneTop, L.stripT, () => { const sliding = (r) => Math.abs(r.cy - r.y) > 3; for (const k of [true, false]) for (const r of L.list) if (shown(r) && sliding(r) === k) drawRow(r, now);
+        // a machine with nothing entered from it still opens: its own states and tasks at the top, and the lane says so
+        if (!L.list.length) text(`nothing is entered from ${topM} · Esc steps back out`, (L.x0 + L.x1) / 2, (L.laneTop + L.stripT) / 2, PX.sub(), rgba(SUB, 0.6), "center");
         if (L.more) text(loadingAt ? `loading ${Math.min(PAGE, L.more)} more…` : `${L.more} more · scroll to load`, (L.x0 + L.x1) / 2, L.footY + FOOT() / 2, PX.sub(), rgba(SUB, 0.7), "center"); });
-      clip(L.laneTop, L.pinB, () => { for (const r of L.pin) drawRow(r, now); });
-      if (L.pin.length) { cx.fillStyle = rgba(OFF, 0.22); cx.fillRect(L.metaX - 10, L.pinB - 3, L.x1 + 20 - L.metaX, 1); }
       clip(0, L.stripT, () => { drawTies(now); drawMoves(now); });
       cx.fillStyle = rgba(SUB, 0.16); cx.fillRect(L.metaX - 10, L.stripT, L.x1 + 20 - L.metaX, 1); drawThumb(); drawStrip();
       // a pinned trace is the focused setting: the rest of the ledger steps back under the page's dark veil
@@ -603,7 +601,7 @@
         const q = Math.min(1, (now - enter.t0) / 520), e = ease(q), f = { x: enter.f.x * DPR, y: enter.f.y * DPR }, out = enter.dir < 0, sN = out ? 2.2 - 1.2 * e : 0.3 + 0.7 * e, sO = out ? 1 - 0.7 * e : 1 + 2.5 * e;
         mcx.globalAlpha = e; mcx.drawImage(buf, f.x * (1 - sN), f.y * (1 - sN), buf.width * sN, buf.height * sN);
         mcx.globalAlpha = 1 - e; mcx.drawImage(enter.snap, f.x * (1 - sO) + (enter.off ?? NAVL) * DPR * sO, f.y * (1 - sO), enter.snap.width * sO, enter.snap.height * sO); mcx.globalAlpha = 1; if (q >= 1) enter = null; }
-      const showTop = scroll > 8; topEl.style.display = showTop ? "block" : "none"; if (showTop) { topEl.style.left = `${(L.x0 + L.x1) / 2}px`; topEl.style.top = `${L.pinB + 8}px`; }
+      const showTop = scroll > 8; topEl.style.display = showTop ? "block" : "none"; if (showTop) { topEl.style.left = `${(L.x0 + L.x1) / 2}px`; topEl.style.top = `${L.laneTop + 8}px`; }
     }
 
     // ---- into and out of the ledger: the page's go() still moves between levels; this layer takes over the In Progress one
@@ -653,8 +651,8 @@
       for (const s of L.stars) if (inReg(s) && Math.hypot(s.x - sx, s.y - sy) < 15) return { kind: "star", o: s };
       for (const n of L.nodes.values()) if (inReg(n) && Math.hypot(n.x - sx, n.y - sy) < Math.max(n.r + 10, 20)) return { kind: "node", o: n };
       for (const l of labels) if (sx >= l.x && sx <= l.x + l.w && Math.abs(sy - l.y) < l.h / 2) return l.star ? { kind: "star", o: l.star } : { kind: "node", o: l.node };
-      if (sy > L.laneTop && sx > L.metaX - 12 && sx < L.x1 + 8) { for (const r of [...L.pin, ...L.list]) { if (!shown(r)) continue; const [a, b] = regionOf(r); if (sy >= Math.max(a, r.cy) && sy < Math.min(b, r.cy + r.h)) return { kind: "row", o: r }; }
-        if (L.more && sy >= Math.max(L.pinB, L.footY) && sy < L.footY + FOOT()) return { kind: "foot" }; }
+      if (sy > L.laneTop && sx > L.metaX - 12 && sx < L.x1 + 8) { for (const r of L.list) { if (!shown(r)) continue; const [a, b] = regionOf(); if (sy >= Math.max(a, r.cy) && sy < Math.min(b, r.cy + r.h)) return { kind: "row", o: r }; }
+        if (L.more && sy >= Math.max(L.laneTop, L.footY) && sy < L.footY + FOOT()) return { kind: "foot" }; }
       return null;
     }
     const tieText = (t) => (t.kind === "declared" ? `opens from <b>${esc(stName(t.pm, t.ps))}</b> <span class="k">declared${t.when ? `, while ${esc(t.when)}` : ""}</span>`
@@ -670,9 +668,9 @@
       if (h.kind === "row") { const m = h.o.m, p = primary[m], o = others(m), d = dagTies(m), st = stuckOf(m);
         return `<b>${esc(m)}</b> <span class="k">${esc(subLine(m))}</span>` + (p ? `<br>${tieText(p)}` : "") + o.map((t) => `<br>${tieText(t)}`).join("") +
           (d.length ? `<br>launched by <b>${d.map((t) => esc(t.dag)).join(", ")}</b>` : "") + (!p && !d.length ? `<br><span class="k">no tie this hour</span>` : "") +
-          (st.length ? `<br><span style="color:${OFF}">${st.length} task${st.length === 1 ? "" : "s"} stuck over 2 h${h.o.pinned ? " · pinned" : ""}</span>` : "") +
+          (st.length ? `<br><span style="color:${OFF}">${st.length} task${st.length === 1 ? "" : "s"} stuck over 2 h</span>` : "") +
           (KIDS[m].length ? `<br>${KIDS[m].length} nested: ${KIDS[m].map(esc).join(", ")}${desc(m).length > KIDS[m].length ? ` <span class="k">+${desc(m).length - KIDS[m].length} deeper</span>` : ""}` : "") +
-          `<div class="k">${KIDS[m].length ? "click to open it · Esc steps back out" : selRow === h.o ? "click to let go" : "click to keep its tie drawn"}</div>`; }
+          `<div class="k">click to open it · Esc steps back out</div>`; }
       if (h.kind === "crumb") return `back up to <b>${esc(h.o.m)}</b>`;
       if (h.kind === "star") { const t = h.o.t; return `<b>${esc(t.dag)}</b> <span class="k">DAG</span><br>launches ${esc(t.child)}${t.child === topM ? "" : ` <span class="k">· ${t.count} session${t.count === 1 ? "" : "s"} with no task</span>`}`; }
       if (h.kind === "tick") { const { a, m } = h.o; return `<b>${esc(a.task || "unattended run")}</b> entered <b>${esc(a.m)}</b> <span class="k">${a.m !== m ? `in ${esc(m)} · ` : ""}${hhmm(start(a))}</span><div class="k">click to scroll to its row</div>`; }
@@ -688,7 +686,7 @@
       panel.classList.add("open"); panel.querySelector(".x").onclick = closePanel; }
     function closePanel() { panel.classList.remove("open"); pinned = null; }
     // a row with machines nested in it opens on a click anywhere on it; any other row is selected, keeping its tie drawn
-    const select = (r, e) => (KIDS[r.m].length ? drill(r.m, { x: e.clientX, y: e.clientY }) : ((selRow = selRow === r ? null : r), syncUrl()));
+    const select = (r, e) => drill(r.m, { x: e.clientX, y: e.clientY });
     let drag = null;
     cv.addEventListener("mousemove", (e) => { pointer = { x: e.clientX, y: e.clientY }; if (enter) return;
       if (drag) { const k = L.maxScroll / Math.max(1, L.thumb ? L.thumb.y1 - L.thumb.y0 - L.thumb.th : 1); goal = scroll = clamp(drag.g0 + (e.clientY - drag.y) * k, 0, L.maxScroll); return; }
@@ -709,7 +707,7 @@
     cv.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!enter) back(e.clientX, e.clientY); });
     cv.addEventListener("wheel", (e) => { e.preventDefault(); if (enter) return; goal = clamp(goal + e.deltaY * (e.deltaMode === 1 ? 18 : 1), 0, L.maxScroll); setHover(hit(e.clientX, e.clientY), e.clientX, e.clientY); }, { passive: false });
     topEl.addEventListener("click", () => (goal = 0));
-    addEventListener("keydown", (e) => { if (!sky || e.target.tagName === "INPUT") return; let used = true; const pg = (L.stripT - L.pinB) * 0.9;
+    addEventListener("keydown", (e) => { if (!sky || e.target.tagName === "INPUT") return; let used = true; const pg = (L.stripT - L.laneTop) * 0.9;
       if (e.key === "PageDown") goal += pg; else if (e.key === "PageUp") goal -= pg; else if (e.key === "Home" || e.key === "0") goal = 0; else if (e.key === "End") goal = 1e9;
       else if (e.key === "ArrowDown") goal += 60 * FS; else if (e.key === "ArrowUp") goal -= 60 * FS; else if (e.key === "Escape" || e.key === "Backspace") back(); else used = false;
       if (used) { goal = clamp(goal, 0, L.maxScroll); e.stopPropagation(); e.preventDefault(); } }, true);
