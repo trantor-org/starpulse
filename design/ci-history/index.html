@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
 <!--
-  Design mockup of CI history in StarPulse, under operator review; not served by starpulse.
+  Design mockup of CI history in StarPulse, approved 2026-10-07; not served by starpulse.
   CI is a lifecycle machine with a fixed model (Opened, Running, Passing, Failing, Conflicting, Merged), mapped onto the
   In Progress and Review Board states and drawn like any other sub-machine: a moon on each mapped state, each task with
   a PR on the state its CI trail left it in, the trail as its hover back trace and its click panel. Its machine carries
   source "GitHub", so the page draws it unlike a local machine wherever it appears (renderer.patch, applied to
-  starpulse/web/src before the bundle was built): a slate square with a source badge, states inside a boundary.
+  starpulse/web/src before the bundle was built): a local machine's shapes in blue instead of purple.
   A scrubbed capture of the live page (starpulse.demo, claims dropped) with ci.js injecting the ci flow into the fixture.
   CI history is synthetic, shaped on 24 real merged PRs.
   States (?s=<state>): map, in-progress, review, ci, hover, panel, review-ci, kanban.
