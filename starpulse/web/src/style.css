@@ -33,7 +33,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #nav .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; margin-right: 7px; vertical-align: 1px; box-shadow: 0 0 8px currentColor; }
 #nav .dot.on { background: #34d399; box-shadow: 0 0 8px #34d399; } #nav .dot.off { background: #fb7185; }
 #clock { color: #fbbf24; font: calc(10.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
-#q { all: unset; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid rgba(148,163,184,.2); background: rgba(148,163,184,.06);
+#q { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid rgba(148,163,184,.2); background: rgba(148,163,184,.06);
   font-size: calc(12px * var(--fs)); color: var(--ink); }
 #q:focus { border-color: #a78bfa; }
 
