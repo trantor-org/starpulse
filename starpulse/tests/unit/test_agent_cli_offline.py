@@ -131,6 +131,7 @@ class TestConfigCheck:
             "sources": [],
             "aggregates_only": False,
             "event_log_retention_days": 7,
+            "event_log_archive_dir": "starpulse-archive",
             "ci": [],
         }
 

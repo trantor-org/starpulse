@@ -229,7 +229,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
-        "unknown config key(s) trakcer_url, zeta; known: aggregates_only, board, ci, database_url, event_log_retention_days, "
+        "unknown config key(s) trakcer_url, zeta; known: aggregates_only, board, ci, database_url, event_log_archive_dir, event_log_retention_days, "
         "forward, harnesses_file, hub_retention_days, level, mode, oidc, repos, runs, session_start_url, sources, tracker_url"
     )
 
@@ -518,6 +518,16 @@ def test_a_hub_takes_names_unless_it_is_configured_for_aggregates_only(tmp_path:
 def test_the_event_log_keeps_seven_days_unless_the_config_says_otherwise(tmp_path: Path) -> None:
     assert load(_write(tmp_path, "")).event_log_retention_days == 7
     assert load(_write(tmp_path, "event_log_retention_days = 30\n")).event_log_retention_days == 30
+
+
+def test_the_event_log_archive_is_a_directory_beside_the_config_unless_the_config_names_one(tmp_path: Path) -> None:
+    assert load(None).event_log_archive_dir == "starpulse-archive"
+    assert load(_write(tmp_path, 'event_log_archive_dir = "/mnt/history"\n')).event_log_archive_dir == "/mnt/history"
+
+
+@pytest.mark.parametrize("value", ["7", "true", '""'])
+def test_an_event_log_archive_dir_that_is_not_a_path_is_refused(tmp_path: Path, value: str) -> None:
+    assert _refusal(tmp_path, f"event_log_archive_dir = {value}\n") == "event_log_archive_dir must be a directory path"
 
 
 @pytest.mark.parametrize("value", ["0", "-3", "1.5", "true", '"7"'])
