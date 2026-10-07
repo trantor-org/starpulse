@@ -380,7 +380,7 @@ def scrub(live: dict) -> dict:
     """`live` with its structure kept and every task, settled task, run id and address replaced.
 
     A task keeps one demo name wherever it is drawn, so a machine's task still sits on the Board. A Board task keeps
-    its lane and when it entered it, its milestone (renamed `m-N`), its kind and size labels, the dependencies that
+    its lane, when it entered it and since when it has been workable, its milestone (renamed `m-N`), its kind and size labels, the dependencies that
     are on the Board and a synthetic description; its pull requests keep their checks and threads but lose their
     number and address.
     """
@@ -416,6 +416,7 @@ def scrub(live: dict) -> dict:
                     "dependencies": [names[d] for d in a.get("dependencies", []) if d in names],
                     "description": f"Synthetic demo task: {demo['title'].lower()}.",
                     **({"entered": a["entered"]} if "entered" in a else {}),
+                    **({"workable_since": a["workable_since"]} if "workable_since" in a else {}),
                 }
                 | ({"created": a["created"]} if a.get("created") is not None else {})
             )
