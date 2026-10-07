@@ -36,6 +36,17 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #q { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid rgba(148,163,184,.2); background: rgba(148,163,184,.06);
   font-size: calc(12px * var(--fs)); color: var(--ink); }
 #q:focus { border-color: #a78bfa; }
+/* The Star Map entry's orbit icon draws in place of the ring every other node keeps. */
+.node .g.orbit { border: 0; border-radius: 0; width: 14px; height: 14px; display: grid; place-items: center; }
+.node .g.orbit svg { display: block; }
+/* One ✕ per search at the input's right end, scaled with the text; the browser's own cancel button would draw a second. */
+.has-x { position: relative; }
+#q { padding-right: calc(24px * var(--fs)); }
+#kb .filters #kbq { padding-right: calc(24px * var(--fs)); }
+#q::-webkit-search-cancel-button, #kbq::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+.sx { all: unset; box-sizing: border-box; position: absolute; z-index: 1; top: 50%; right: 5px; transform: translateY(-50%); cursor: pointer; display: grid; place-items: center;
+  width: calc(18px * var(--fs)); height: calc(18px * var(--fs)); border-radius: 4px; color: var(--muted); font-size: calc(11px * var(--fs)); line-height: 1; }
+.sx:hover, .sx:focus-visible { color: var(--ink); background: rgba(148,163,184,.14); }
 
 /* One node per level; a dashed spine joins a level to its children, and the current path is lit. */
 .node { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 6px;

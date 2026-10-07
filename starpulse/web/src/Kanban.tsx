@@ -17,6 +17,7 @@ import {
   type Asking, type Claiming, type Failed, type Harnesses, type Pick, type StartStore,
 } from "./start";
 import { NewTaskAction } from "./NewTask";
+import { SearchClear } from "./SearchClear";
 import { TaskView } from "./TaskView";
 import { fetchRecord, type TaskRecord } from "./taskView";
 import type { Capabilities, Pull } from "./types";
@@ -339,6 +340,7 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
   const started = useSyncExternalStore(starts.subscribe, starts.get);
   // a card dropped on In progress waits where it was dropped until the start question is answered
   const [held, setHeld] = useState<{ id: string; rect: DOMRect; w: number } | null>(null);
+  const searchBox = useRef<HTMLInputElement>(null);
   const ghost = useRef<HTMLDivElement>(null);
   const press = useRef<Press | null>(null);
   const dropRect = useRef<{ id: string; rect: DOMRect } | null>(null);
@@ -532,9 +534,10 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
       <div className="filters">
         <div className="fw">
-          <input id="kbq" type="text" value={prefs.query} placeholder="filter by id, title or label…" aria-label="Filter tasks by id, title or label" autoComplete="off" spellCheck={false}
+          <input id="kbq" ref={searchBox} type="text" value={prefs.query} placeholder="filter by id, title or label…" aria-label="Filter tasks by id, title or label" autoComplete="off" spellCheck={false}
             onChange={(e) => { setPrefs((p) => ({ ...p, query: e.target.value })); setPick(0); }}
             onFocus={() => setTyping(true)} onBlur={() => setTyping(false)} onKeyDown={onSearchKey} />
+          <SearchClear input={searchBox} value={prefs.query} clear={() => { setPrefs((p) => ({ ...p, query: "" })); setPick(0); }} />
           {typing && suggestions.length > 0 && (
             <div className="menu sug" role="listbox" aria-label="Labels">
               <div className="hd">Filter by label</div>
