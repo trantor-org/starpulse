@@ -59,6 +59,7 @@ PUBLIC: dict[str, set[str]] = {
     "starpulse.history": {"History", "machine_steps"},
     "starpulse.machine_definition": {
         "Compiled",
+        "Cue",
         "MachineDefinitionError",
         "Registry",
         "Writer",

@@ -16,7 +16,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -311,14 +311,20 @@ def cli_writer(root: Path, statuses: tuple[str, ...], command: list[str]) -> Mov
     return write
 
 
-def _machine(path: Path, config: BacklogConfig) -> tuple[dict, dict[str, tuple[Writer, ...]]]:
-    """The Board machine a file declares, drawn, with its writers; refused unless its states are the project's lanes."""
+def _machine(path: Path, config: BacklogConfig) -> tuple[dict, dict[str, tuple[Writer, ...]], list[dict]]:
+    """The Board machine a file declares, drawn, with its writers and its cues, each beside the lane its event reaches;
+    refused unless its states are the project's lanes and each cued event reaches one."""
     compiled = load_machine(path)
     drawn = describe(compiled.machine)
     ids = [lane_id(status) for status in config.statuses]
     if mismatch := sorted(set(ids) ^ {state["id"] for state in drawn["states"]}):
         raise ValueError(f"board: machine {path} and the project's statuses disagree on lanes {mismatch}")
-    return {**drawn, "mainLine": ids}, dict(compiled.writers)
+    cues = []
+    for cue in compiled.cues:
+        if len(lanes := {t["target"] for t in drawn["transitions"] if t["event"] == cue.event}) != 1:
+            raise ValueError(f"board: machine {path} cues on event {cue.event}, which must reach exactly one lane")
+        cues.append({**asdict(cue), "state": lanes.pop()})
+    return {**drawn, "mainLine": ids}, dict(compiled.writers), cues
 
 
 def project_board(
@@ -333,9 +339,9 @@ def project_board(
     config = read_config(root)
     require_project(root, config)
     if "machine" in settings:
-        drawn, declared = _machine(base / str(settings["machine"]), config)
+        drawn, declared, cues = _machine(base / str(settings["machine"]), config)
     else:
-        drawn, declared = board_machine(config.statuses), {}
+        drawn, declared, cues = board_machine(config.statuses), {}, []
     moves = board_moves(drawn, declared)
 
     def machines(qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
@@ -344,7 +350,14 @@ def project_board(
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         UpstreamBacklog(root, feed.put, moves, feed.retract).start(interval)
 
-    return Board(machines=machines, start=start, keys=upstream_keys(config.prefix), source=str(root), **writers(config))
+    return Board(
+        machines=machines,
+        start=start,
+        keys=upstream_keys(config.prefix),
+        cues=lambda qualify: cues,
+        source=str(root),
+        **writers(config),
+    )
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:

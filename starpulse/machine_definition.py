@@ -37,6 +37,7 @@ from statemachine.io import create_machine_class_from_definition
 
 __all__ = [
     "Compiled",
+    "Cue",
     "MachineDefinitionError",
     "Registry",
     "Writer",
@@ -75,6 +76,17 @@ class Writer:
     trigger: str
 
 
+@dataclass(frozen=True)
+class Cue:
+    """A workflow `dag` an `event` cues, `on` the occasion the page names, and how its failure `resolves`:
+    `forced` stays pinned until a forced rerun, `next` clears on the DAG's next run."""
+
+    event: str
+    dag: str
+    on: str
+    resolves: str
+
+
 def refuse_unlisted(machine: str, writers: Mapping[str, tuple[Writer, ...]], listed: Collection[str]) -> None:
     """Refuse a machine whose writers name a workflow (`<instance>/<workflow>`) that `listed` lacks, by name."""
     if missing := sorted({w.actor for ws in writers.values() for w in ws if "/" in w.actor} - set(listed)):
@@ -89,6 +101,7 @@ class Compiled:
     machine: type[StateChart]
     bindings: Mapping[str, str]
     writers: Mapping[str, tuple[Writer, ...]]
+    cues: tuple[Cue, ...] = ()
 
 
 def writers_of(machine: type[StateChart]) -> Mapping[str, tuple[Writer, ...]]:
@@ -140,12 +153,15 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
     }
     if unknown := sorted(writers.keys() - document["events"].keys()):
         raise MachineDefinitionError(f"{path}: writers name events the machine lacks: {unknown}", path)
+    cues = tuple(Cue(**cue) for cue in document.get("cues", ()))
+    if unknown := sorted({cue.event for cue in cues} - document["events"].keys()):
+        raise MachineDefinitionError(f"{path}: cues name events the machine lacks: {unknown}", path)
     try:
         machine = create_machine_class_from_definition(document["name"], states=states)
     except InvalidDefinition as error:
         raise MachineDefinitionError(f"{path}: {error}", path) from error
     setattr(machine, "writers", writers)
-    return Compiled(document["name"], machine, bindings, writers)
+    return Compiled(document["name"], machine, bindings, writers, cues)
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -155,9 +171,18 @@ def _read(path: Path) -> dict[str, Any]:
     except (OSError, yaml.YAMLError) as error:
         mark = getattr(error, "problem_mark", None)
         raise MachineDefinitionError(f"{path}: {error}", path, mark.line + 1 if mark else None) from error
+    _spell_on(document)
     if (error := _schema_error(document)) is not None:
         raise MachineDefinitionError(f"{path}: {_describe(error)}", path, _line_of(text, error.absolute_path))
     return document
+
+
+def _spell_on(document: Any) -> None:
+    """Read a cue's bare `on:` key as the word it is: YAML 1.1 loads it as the boolean `True`."""
+    cues = document.get("cues") if isinstance(document, dict) else None
+    for cue in cues if isinstance(cues, list) else ():
+        if isinstance(cue, dict) and True in cue:
+            cue["on"] = cue.pop(True)
 
 
 def _compile(

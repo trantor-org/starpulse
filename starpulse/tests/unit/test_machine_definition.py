@@ -11,6 +11,7 @@ from statemachine import StateChart
 
 from starpulse import machine_definition
 from starpulse.machine_definition import (
+    Cue,
     MachineDefinitionError,
     Registry,
     Writer,
@@ -157,6 +158,57 @@ class TestTheSchema:
         schema = Path(machine_definition.__file__).with_name("machine.schema.json")
 
         assert json.loads(schema.read_text()) == machine_definition.SCHEMA
+
+
+_CUE = {"event": "GO", "dag": "dagu/apply-on-merge", "on": "push to main", "resolves": "forced"}
+
+
+class TestCues:
+    def test_a_cues_block_loads_with_its_event_dag_on_and_resolves(self, tmp_path: Path) -> None:
+        other = {"event": "GO", "dag": "dagu/graph-refresh", "on": "push to main", "resolves": "next"}
+
+        compiled = load_machine(_written(tmp_path, _doc(cues=[_CUE, other])))
+
+        assert compiled.cues == (
+            Cue("GO", "dagu/apply-on-merge", "push to main", "forced"),
+            Cue("GO", "dagu/graph-refresh", "push to main", "next"),
+        )
+
+    def test_a_bare_on_key_in_the_yaml_is_the_cues_on_not_a_boolean(self, tmp_path: Path) -> None:
+        path = tmp_path / "sample.yaml"
+        path.write_text(
+            "name: sample\nstates: {a: {initial: true}, b: {final: true}}\nevents: {GO: [{from: a, to: b}]}\n"
+            "cues:\n  - event: GO\n    dag: dagu/apply-on-merge\n    on: push to main\n    resolves: forced\n"
+        )
+
+        assert load_machine(path).cues == (Cue("GO", "dagu/apply-on-merge", "push to main", "forced"),)
+
+    def test_a_machine_without_a_cues_block_has_no_cues(self, tmp_path: Path) -> None:
+        assert load_machine(_written(tmp_path, _doc())).cues == ()
+
+    @pytest.mark.parametrize(
+        "cues",
+        [
+            [{k: v for k, v in _CUE.items() if k != "dag"}],
+            [{k: v for k, v in _CUE.items() if k != "event"}],
+            [{k: v for k, v in _CUE.items() if k != "on"}],
+            [{k: v for k, v in _CUE.items() if k != "resolves"}],
+            [{**_CUE, "resolves": "never"}],
+            [{**_CUE, "dag": ""}],
+            [{**_CUE, "run": "rm -rf /"}],
+            {"GO": _CUE},
+            [],
+        ],
+    )
+    def test_a_cue_missing_a_field_or_resolving_any_other_way_is_rejected(self, cues: object) -> None:
+        with pytest.raises(MachineDefinitionError):
+            validate(_doc(cues=cues))
+
+    def test_a_cue_on_an_event_the_machine_lacks_is_refused_naming_the_event(self, tmp_path: Path) -> None:
+        path = _written(tmp_path, _doc(cues=[{**_CUE, "event": "STOP"}]))
+
+        with pytest.raises(MachineDefinitionError, match=r"cues name events the machine lacks: \['STOP'\]"):
+            load_machine(path)
 
 
 class TestCompiling:

@@ -662,6 +662,40 @@ def machine_project(tmp_path: Path):
     return project(tmp_path, machine="board.yaml")
 
 
+def test_a_machines_cues_are_the_boards_cues_beside_the_lane_their_event_reaches(tmp_path: Path) -> None:
+    (tmp_path / "board.yaml").write_text(
+        _OPERATOR_ONLY
+        + "cues:\n"
+        + "  - {event: to_done, dag: dagu/apply-on-merge, on: push to main, resolves: forced}\n"
+    )
+    write_config(tmp_path / "backlog")
+
+    built = board({"command": "backlog", "machine": "board.yaml"}, tmp_path)
+
+    assert built.cues(lambda name: name) == [
+        {"event": "to_done", "dag": "dagu/apply-on-merge", "on": "push to main", "resolves": "forced", "state": "done"}
+    ]
+
+
+def test_a_cue_on_an_event_that_reaches_two_lanes_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "board.yaml").write_text(
+        _OPERATOR_ONLY.replace(
+            "to_done: [{from: review, to: done}]", "to_done: [{from: review, to: done}, {from: doing, to: review}]"
+        )
+        + "cues:\n  - {event: to_done, dag: dagu/apply-on-merge, on: push to main, resolves: next}\n"
+    )
+    write_config(tmp_path / "backlog")
+
+    with pytest.raises(ValueError, match="cues on event to_done, which must reach exactly one lane"):
+        board({"command": "backlog", "machine": "board.yaml"}, tmp_path)
+
+
+def test_a_machine_without_cues_gives_the_board_none(tmp_path: Path) -> None:
+    _, built = machine_project(tmp_path)
+
+    assert built.cues(lambda name: name) == []
+
+
 def served(built, monkeypatch: pytest.MonkeyPatch) -> BoardFeed:
     """A feed the board's tasks are on after one scan."""
     monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: self.scan())
