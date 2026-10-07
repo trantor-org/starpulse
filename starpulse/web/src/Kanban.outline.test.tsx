@@ -9,7 +9,7 @@ import { MoveStore } from "./move";
 import { StartStore } from "./start";
 
 const card = (id: string, lane: string, milestone: string): KanbanTask => ({
-  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0,
+  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0, created: null, machines: [],
 });
 // m-1 is open (1 of 2 done), m-2 is finished, m-3 is open and the largest (0 of 3)
 const cards = [

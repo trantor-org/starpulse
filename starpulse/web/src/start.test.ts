@@ -9,7 +9,7 @@ import {
 const OK = { allowed: true, reason: "", skill: "" };
 const GUARD = { allowed: false, reason: "TASK-D3 is not Done", skill: "" };
 const task = (id: string, lane: string, assignee = "", moves: KanbanTask["moves"] = { in_progress: OK }): KanbanTask => ({
-  id, title: id, lane, milestone: "", labels: [], assignee, dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves, entered: 0,
+  id, title: id, lane, milestone: "", labels: [], assignee, dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves, entered: 0, created: null, machines: [],
 });
 const HARNESSES: Harnesses = {
   tiers: ["fast", "standard", "deep"],

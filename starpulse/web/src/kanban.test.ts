@@ -6,7 +6,7 @@ import type { Pull, RawAgent, Snapshot } from "./types";
 
 const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
 const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): KanbanTask => ({
-  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered,
+  id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered, created: null, machines: [],
 });
 const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, prefs);
 const column = (v: ReturnType<typeof view>, id: string) => v.columns.find((c) => c.id === id)!;
@@ -200,6 +200,28 @@ describe("the cards drawn from a snapshot", () => {
     const [t] = kanbanTasks(merge(snap)).filter((x) => x.id === "PROJ-1");
 
     expect(t.prs).toEqual([{ ...pull(7, "none"), stale: true }]);
+  });
+
+  it("carry when the task was created, and null when the board does not say", () => {
+    const snap = snapshot();
+    snap.flows[0].agents[0].created = 120;
+    const tasks = kanbanTasks(merge(snap));
+
+    expect([tasks.find((t) => t.id === "PROJ-1")!.created, tasks.find((t) => t.id === "PROJ-2")!.created]).toEqual([120, null]);
+  });
+
+  it("carry every machine the task is in with its state, source, when it last moved and its trail, and none for a task in no machine", () => {
+    const snap = snapshot();
+    const trail = [{ state: "branch_pushed", event: "push", at: 400 }, { state: "pr_opened", event: "pr", at: 500 }];
+    snap.flows[1].agents[0].trail = trail;
+    snap.flows.push({ name: "ci", machine: { states: [], transitions: [], source: "GitHub" } as never, agents: [agent("PROJ-1", "running", { task: "PROJ-1", active: 550 })] });
+    const tasks = kanbanTasks(merge(snap));
+
+    expect(tasks.find((t) => t.id === "PROJ-1")!.machines).toEqual([
+      { machine: "in-progress", state: "pr_opened", at: 500, trail },
+      { machine: "ci", state: "running", at: 550, source: "GitHub", trail: [] },
+    ]);
+    expect(tasks.find((t) => t.id === "PROJ-2")!.machines).toEqual([]);
   });
 
   it("have no milestone, pull requests or machine when the snapshot names none", () => {

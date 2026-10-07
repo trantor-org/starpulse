@@ -1,7 +1,7 @@
 // The Kanban view's model: the Board's open tasks laid out as columns of milestone buckets. Pure, so the view only draws it.
 import type { Sky } from "./sky";
 import type { TaskRecord } from "./taskView";
-import type { Pull } from "./types";
+import type { Pull, TrailStep } from "./types";
 
 /** The Board states drawn as columns, in order. New is the creation pseudo-state and Completed and Archived have left the lanes. */
 export const COLUMNS = ["ready", "waiting", "in_progress", "review", "needs_attention", "done"];
@@ -31,6 +31,10 @@ export interface KanbanTask {
   moves: Record<string, { allowed: boolean; reason: string; skill: string }>;
   /** When the task entered its column, epoch seconds; 0 when the server gave no time. */
   entered: number;
+  /** When the task was created, epoch seconds; null when the board does not say. */
+  created: number | null;
+  /** Every lifecycle machine the task is in: its state there, when it last moved, the machine's third-party source and its trail. */
+  machines: { machine: string; state: string; at: number; source?: string; trail: TrailStep[] }[];
 }
 
 /** Refresh the snapshot-sized card with the fields a successful full-record edit can change. */
@@ -295,7 +299,9 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
-      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0,
+      released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null,
+      machines: Object.values(sky.flows).filter((f) => f.name !== "board").flatMap((f) => f.agents.filter((m) => m.task === a.id)
+        .map((m) => ({ machine: f.name, state: m.state, at: m.active ?? 0, source: f.machine.source, trail: m.trail ?? [] }))),
     };
   });
 }

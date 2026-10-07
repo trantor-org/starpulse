@@ -1,18 +1,22 @@
 // The task view: the same framed fields in read and edit mode, with one guarded write for the complete diff.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { ago, fmtAt } from "./clock";
 import { columnsOf, type KanbanTask } from "./kanban";
 import { startLane, startable } from "./start";
-import type { Capabilities } from "./types";
+import type { Capabilities, Pull } from "./types";
 import {
-  PRIORITIES, changedFields, closesOnKey, copyText, copyToClipboard, discardMessage, editKey, markdown, menuKey, newlyChecked, onScrim, saveTask,
-  type Item, type MenuState, type TaskField, type TaskRecord,
+  PRIORITIES, changedFields, closesOnKey, copyText, copyToClipboard, dependencyRows, discardMessage, editKey, markdown, menuKey, newlyChecked, onScrim, saveTask,
+  type DepRow, type Item, type MenuState, type TaskField, type TaskRecord,
 } from "./taskView";
 
 export interface TaskViewProps {
   task: KanbanTask;
+  /** Every card on the board: the titles and lanes of the tasks this one depends on, and the tasks that depend on it. */
+  tasks: KanbanTask[];
   record: TaskRecord | null;
   lane: string;
-  machine: string;
+  /** The page's clock in epoch seconds, for the time in the lane and the ages in the rail. */
+  now: number;
   profiles: string[];
   milestones: string[];
   refusal: ReactNode;
@@ -24,6 +28,8 @@ export interface TaskViewProps {
   saving: boolean;
   claiming: boolean;
   close: () => void;
+  /** Open another task's modal. */
+  open: (id: string) => void;
   hide: () => void;
   constellation: () => void;
   move: (to: string) => void;
@@ -58,23 +64,74 @@ function Select({ value, options, label, onChange, ...f }: FieldProps & {
   const known = options.some(([v]) => v === value) ? options : [...options, [value, value] as [string, string]];
   return (
     <select data-field={f.field} className={fieldClass("fv", f.dirty, f.bad)} aria-label={label} value={value}
-      disabled={!f.editing} onChange={(e) => onChange(e.currentTarget.value)}>
+      onChange={(e) => onChange(e.currentTarget.value)}>
       {known.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
     </select>
   );
 }
 
-function Chips({ values, flag, label, onChange, ...f }: FieldProps & {
-  values: string[]; flag?: string; label: string; onChange: (values: string[]) => void;
-}) {
+/** Labels in the rail's read table: a chip each, with the one that needs the operator highlighted. */
+function ChipList({ values, flag }: { values: string[]; flag: string }) {
+  return values.length ? <span className="chips">{values.map((v) => <span key={v} className={`chip${v === flag ? " nh" : ""}`}>{v}</span>)}</span> : <span className="k">—</span>;
+}
+
+/** The edit-mode box for a list of ids or labels, one comma-separated input. */
+function Chips({ values, label, onChange, ...f }: FieldProps & { values: string[]; label: string; onChange: (values: string[]) => void }) {
   return (
     <div data-field={f.field} className={fieldClass("fv chips", f.dirty, f.bad)}>
-      {f.editing ? (
-        <input className="chipinput" value={values.join(", ")} aria-label={label}
-          onChange={(e) => onChange(e.currentTarget.value.split(",").map((v) => v.trim()).filter(Boolean))} />
-      ) : values.length ? values.map((v) => <span key={v} className={`chip${v === flag ? " nh" : ""}`}>{v}</span>) : <span className="none">—</span>}
+      <input className="chipinput" value={values.join(", ")} aria-label={label}
+        onChange={(e) => onChange(e.currentTarget.value.split(",").map((v) => v.trim()).filter(Boolean))} />
     </div>
   );
+}
+
+const LanePill = ({ lane, name, small = false }: { lane: string; name: string; small?: boolean }) =>
+  <span className={`tvlane${small ? " sm" : ""}`} data-lane={lane}><i />{name}</span>;
+
+/** One section of the right rail: a small-caps heading with its count, the live state first. */
+function RailSection({ name, count, children }: { name: string; count?: number; children: ReactNode }) {
+  return <section className="sec rs"><div className="sh"><span className="t">{name}</span>{count ? <span className="n">{count}</span> : null}</div>{children}</section>;
+}
+
+const checkClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
+
+function PullRows({ pulls }: { pulls: Pull[] }) {
+  return pulls.length ? (
+    <div className="prs">
+      {pulls.map((p) => (
+        <div key={p.number} className="pull">
+          <a href={p.url} target="_blank" rel="noopener">#{p.number} ↗</a>
+          <span className={`chk ${checkClass(p)}`}><i />{p.merged ? "merged" : `checks ${p.checks}`}</span>
+          {p.threads ? <span className="thr">{p.threads} open thread{p.threads === 1 ? "" : "s"}</span> : <span className="k">no open threads</span>}
+          {p.stale && <span className="thr">last read failed</span>}
+        </div>
+      ))}
+    </div>
+  ) : <span className="none">None yet</span>;
+}
+
+/** A dependency or a held task: its id, title and lane, opening that task's modal; a task off the board is only named. */
+function DepRows({ rows, names, open }: { rows: DepRow[]; names: Record<string, string>; open: (id: string) => void }) {
+  return rows.map((r) => r.lane === null ? (
+    <div key={r.id} className="dep off"><span className="id">{r.id}</span><span className="tt">not on the board</span></div>
+  ) : (
+    <button key={r.id} className="dep" onClick={() => open(r.id)}><span className="id">{r.id}</span><span className="tt">{r.title}</span><LanePill lane={r.lane} name={names[r.lane] ?? r.lane} small /></button>
+  ));
+}
+
+/** Each machine the task is in, closed to its state and open to its last five transitions. */
+function MachineRows({ machines, now }: { machines: KanbanTask["machines"]; now: number }) {
+  return machines.length ? (
+    <div className="machs">
+      {machines.map((m) => (
+        <details key={m.machine} className="m">
+          <summary><span className={m.source ? "p mapped" : "p"} title={m.source && `mapped from ${m.source}`} /><b>{m.machine}</b><span className="s">{m.state.replace(/_/g, " ")}</span>
+            <span className="k">{m.at ? `${ago(now - m.at)} ago` : ""}</span></summary>
+          {m.trail.length > 0 && <ol>{m.trail.slice(-5).map((t, i) => <li key={i}><code>{t.event}</code> → {t.state.replace(/_/g, " ")}<span className="k"> {fmtAt(t.at)}</span></li>)}</ol>}
+        </details>
+      ))}
+    </div>
+  ) : <span className="none">In no machine right now</span>;
 }
 
 function Checks({ name, field, items, base, editing, dirty, bad, evidence, tried, change, setEvidence }: {
@@ -272,6 +329,7 @@ export function TaskView(p: TaskViewProps) {
     return () => removeEventListener("keydown", onKey, true);
   }, [cancelEdit, diff.fields.length, editing, save]);
 
+  const deps = dependencyRows(p.tasks, p.task);
   const offered = columnsOf(names).filter((c) => c in p.task.moves).map((c) => ({
     to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason,
   }));
@@ -300,7 +358,7 @@ export function TaskView(p: TaskViewProps) {
             <button className={`copybtn${copied ? " ok" : ""}`} title={`Copy “${copyText(p.task, base.title)}”`} aria-label="Copy id and title" onClick={copy}>
               <span className="g">⧉</span>{copied ? "Copied" : "Copy"}
             </button>
-            <span className="tvlane" data-lane={p.task.lane}><i />{p.lane}</span>
+            <LanePill lane={p.task.lane} name={p.lane} />
             {p.saving && <span className="k">saving</span>}
             <a href="/" onClick={(e) => { e.preventDefault(); p.constellation(); }}>Open in Star Map ↗</a>
             <div className="acts">
@@ -343,18 +401,33 @@ export function TaskView(p: TaskViewProps) {
           <div className="tvcol tvrail">
             {p.refusal}
             {p.startNote}
-            <table><tbody>
-              <tr><td>profile</td><td><Select {...fp("profile")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /></td></tr>
-              <tr><td>priority</td><td><Select {...fp("priority")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /></td></tr>
-              <tr><td>labels</td><td><Chips {...fp("labels")} values={draft.labels} flag="needs-human" label="Labels" onChange={(value) => change("labels", value)} /></td></tr>
-              <tr><td>milestone</td><td><Select {...fp("milestone")} label="Milestone" value={draft.milestone} options={[["", "—"], ...p.milestones.map((v): [string, string] => [v, v])]} onChange={(value) => change("milestone", value)} /></td></tr>
-              <tr><td>depends on</td><td><Chips {...fp("dependencies")} values={draft.dependencies} label="Dependencies" onChange={(value) => change("dependencies", value)} /></td></tr>
-              {p.stack && <tr className="ro"><td>{p.task.lane === "done" ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr>}
-              <tr className="ro"><td>pull requests</td><td>{p.task.prs.length ? p.task.prs.map((pr) => (
-                <div key={pr.number}><a href={pr.url} target="_blank" rel="noopener">#{pr.number}</a> <span className="k">{pr.merged ? "merged" : pr.checks}{pr.threads ? `, ${pr.threads} open threads` : ""}</span></div>
-              )) : "—"}</td></tr>
-              <tr className="ro"><td>machine</td><td>{p.machine}</td></tr>
-            </tbody></table>
+            <RailSection name="Status">
+              <div className="row"><LanePill lane={p.task.lane} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
+              {p.stack && <table className="props"><tbody><tr className="ro"><td>{p.task.lane === "done" ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
+            </RailSection>
+            <RailSection name="Pull requests" count={p.task.prs.length}><PullRows pulls={p.task.prs} /></RailSection>
+            <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
+              <div className="deps">
+                <div className="lb">Depends on</div>
+                {editing ? <Chips {...fp("dependencies")} label="Dependencies" values={draft.dependencies} onChange={(value) => change("dependencies", value)} />
+                  : deps.dependsOn.length ? <DepRows rows={deps.dependsOn} names={names} open={p.open} /> : <span className="none">—</span>}
+                {deps.holds.length > 0 && <>
+                  <div className="lb">Holds</div>
+                  <DepRows rows={deps.holds} names={names} open={p.open} />
+                  {deps.more > 0 && <div className="k">+{deps.more} more</div>}
+                </>}
+              </div>
+            </RailSection>
+            <RailSection name="Machines" count={p.task.machines.length}><MachineRows machines={p.task.machines} now={p.now} /></RailSection>
+            <RailSection name="Details">
+              <table className="props"><tbody>
+                <tr><td>profile</td><td>{editing ? <Select {...fp("profile")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—"}</td></tr>
+                <tr><td>priority</td><td>{editing ? <Select {...fp("priority")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /> : priorityValue(draft.priority) || "—"}</td></tr>
+                <tr><td>labels</td><td>{editing ? <Chips {...fp("labels")} values={draft.labels} label="Labels" onChange={(value) => change("labels", value)} /> : <ChipList values={draft.labels} flag="needs-human" />}</td></tr>
+                <tr><td>milestone</td><td>{editing ? <Select {...fp("milestone")} label="Milestone" value={draft.milestone} options={[["", "—"], ...p.milestones.map((v): [string, string] => [v, v])]} onChange={(value) => change("milestone", value)} /> : draft.milestone || "—"}</td></tr>
+                <tr><td>created</td><td><span className="k">{p.task.created ? `${ago(p.now - p.task.created)} ago` : "—"}</span></td></tr>
+              </tbody></table>
+            </RailSection>
           </div>
         </div>
         {discard && <div className="discard" role="alertdialog" aria-label="Discard changes">
