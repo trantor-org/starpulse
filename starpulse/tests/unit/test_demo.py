@@ -375,6 +375,7 @@ def test_the_seeded_board_has_a_review_task_with_two_pulls_and_a_task_holding_th
 
     board = demo["flows"][0]["agents"]
     assert board[20]["state"] == "review" and len(demo["pulls"][board[20]["id"]]) == 2
+    assert len({p["number"] for p in demo["pulls"][board[20]["id"]]}) == 2
     held = [a for a in board if board[6]["id"] in a["dependencies"]]
     assert [a["state"] for a in held] == ["waiting"] * 3
 
