@@ -3,10 +3,11 @@
 import itertools
 import json
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import MappingProxyType
 from urllib.parse import parse_qs, urlsplit
 
 _ids = itertools.count(1)  # Event ids rise; each entry built here takes the next
@@ -62,6 +63,7 @@ def dagu(
     listed_since: str = "",
     history: Sequence[Past] = (),
     page: int = 100,
+    params: Mapping[str, list[str]] = MappingProxyType({}),
 ) -> Iterator[tuple[str, list[str]]]:
     """Serve one DAG per key of `steps` (its value is the step names, each depending on the one before).
 
@@ -71,7 +73,8 @@ def dagu(
     `queue_of` the queue each DAG declares, and `in_flight` the runs `/dag-runs` lists as running or queued.
     Like Dagu, whose listing starts at UTC midnight unless asked for a `fromDate`, a listing with no `fromDate` leaves
     out the runs that began before `listed_since`. `history` (read at each request, so a caller may add to it) are the runs `/dag-runs?name=` lists, `page` at a time with
-    a `nextCursor` while more remain; their detail is served like an in-flight run's.
+    a `nextCursor` while more remain; their detail is served like an in-flight run's. `params` are the `NAME=default`
+    words each DAG declares, as its detail reports them.
     Yields the base URL and the list of every request path received, in order.
     """
     calls: list[str] = []
@@ -149,7 +152,9 @@ def dagu(
             if found := next((r for r in history if (r.dag, r.run_id) == (parts[1], parts[2])), None):
                 return 200, past_detail(found)
             return 200, run_detail(next(r for r in in_flight if (r.dag, r.run_id) == (parts[1], parts[2])))
-        return 200, detail(parts[1])
+        body = detail(parts[1])
+        body["dag"]["params"] = params.get(parts[1], [])
+        return 200, body
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
