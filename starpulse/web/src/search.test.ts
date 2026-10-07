@@ -27,6 +27,15 @@ describe("the navigator search", () => {
     expect(ci.kind === "machine" && ci.path.map((l) => ("flow" in l ? l.flow : "id" in l ? l.id : l.kind))).toEqual(["board", "in_progress", "delivery", "ci-watch"]);
   });
 
+  it("lists a flow under two Board states once under each, at that state's path", () => {
+    const twice: Tree = { states: ["in_progress", "review"], subs: { in_progress: ["ci"], review: ["ci"] }, children: {} };
+    const hits = search("ci", { ...sources, tree: twice, counts: { ci: 3 }, hostCounts: { "in_progress/ci": 2, "review/ci": 1 } });
+    const paths = hits.flatMap((h) => (h.target.kind === "machine" ? [h.target.path.map((l) => ("flow" in l ? l.flow : "id" in l ? l.id : l.kind)).join("/")] : []));
+    expect(paths).toEqual(["board/in_progress/ci", "board/review/ci"]);
+    expect(hits.map((h) => h.count)).toEqual([2, 1]);
+    expect(hits.map((h) => h.sub)).toEqual(["In progress", "Review"]);
+  });
+
   it("returns nothing for a blank query", () => {
     expect(search("  ", sources)).toEqual([]);
   });

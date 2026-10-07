@@ -57,14 +57,20 @@ export function tree(snap: Pick<Snapshot, "graphs" | "flows">): Tree {
   return t;
 }
 
-/** The path down to a machine, or null when no level holds it. */
-export function pathTo(t: Tree, flow: string): Path | null {
+/** The Board state a path runs under, which scopes the tasks a machine level shows; undefined above any state. */
+export const hostOf = (path: Path): string | undefined => path.find((l): l is Extract<Level, { kind: "state" }> => l.kind === "state")?.id;
+
+/**
+ * The path down to a machine, or null when no level holds it. A flow several Board states open is one level
+ * under each, so `host` picks the (state, flow) pair; without it the first host that opens the flow answers.
+ */
+export function pathTo(t: Tree, flow: string, host?: string): Path | null {
   if (flow === "board" || flow === "runs") return BOARD;
   for (const [state, subs] of Object.entries(t.subs))
-    if (subs.includes(flow)) return [...BOARD, { kind: "state", id: state }, { kind: "machine", flow }];
+    if ((host === undefined || state === host) && subs.includes(flow)) return [...BOARD, { kind: "state", id: state }, { kind: "machine", flow }];
   for (const [parent, kids] of Object.entries(t.children))
     if (kids.some((c) => c.flow === flow)) {
-      const up = pathTo(t, parent);
+      const up = pathTo(t, parent, host);
       return up && [...up, { kind: "machine", flow }];
     }
   return null;
@@ -76,7 +82,7 @@ const same = (a: Path | null, b: Path) => JSON.stringify(a) === JSON.stringify(b
 function valid(t: Tree, path: Path): boolean {
   if (path[0]?.kind !== "board") return false;
   const last = path[path.length - 1];
-  if (last.kind === "machine") return same(pathTo(t, last.flow), path);
+  if (last.kind === "machine") return same(pathTo(t, last.flow, hostOf(path)), path);
   if (last.kind === "state") return path.length === 2 && t.states.includes(last.id);
   if (last.kind === "dags") return path.length === 2;
   if (last.kind !== "fold") return false;

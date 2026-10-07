@@ -77,6 +77,17 @@ const joined = (a: RawAgent, board: Map<string, RawAgent>): RawAgent => {
   return b ? { ...a, title: b.title, model: b.model || a.model, labels: b.labels, dependencies: b.dependencies, prs: b.prs, description: b.description } : a;
 };
 
+/**
+ * A machine's tasks at one Board state. A flow several states open (the mapped CI machine under In Progress and Review) shows each
+ * state only the tasks whose Board task sits there; a flow one state opens, or a level above any state, shows them all.
+ */
+export function hosted(sky: Pick<Sky, "flows" | "board" | "tree">, flow: string, host?: string): RawAgent[] {
+  const agents = sky.flows[flow]?.agents ?? [];
+  if (host === undefined || Object.values(sky.tree.subs).filter((fs) => fs.includes(flow)).length < 2) return agents;
+  const state = new Map(sky.board.agents.map((a) => [a.id, a.state]));
+  return agents.filter((a) => state.get(a.task ?? a.id) === host);
+}
+
 /** Local midnight today, in epoch seconds. */
 export const midnight = (now = new Date()) => new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
 

@@ -174,7 +174,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
     else selectTask(target.id);
   };
   const t = hud.tree, q = query.trim().toLowerCase();
-  const hits = t && q ? search(q, { tree: t, states: hud.states, counts: hud.counts, dags: hud.dags, cards: hud.cards }) : [];
+  const hits = t && q ? search(q, { tree: t, states: hud.states, counts: hud.counts, hostCounts: hud.hostCounts, dags: hud.dags, cards: hud.cards }) : [];
   let body = null;
   if (t && q) {
     // Searching: a flat list of every sun, machine, DAG and task the query names, however deep. Hovering one lights it on the canvas.
@@ -182,7 +182,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
       <div className="kids" onMouseLeave={() => spot(null)}>
         <div className="lvl">Matches</div>
         {hits.length ? hits.map((h) => {
-          const key = `${h.target.kind}:${h.label}`, flow = h.target.kind === "machine" ? h.target.flow : undefined;
+          const key = `${h.target.kind}:${h.label}:${h.sub ?? ""}`, flow = h.target.kind === "machine" ? h.target.flow : undefined;
           const size = h.target.kind === "state" ? 10 : h.target.kind === "machine" ? (h.target.path.length > 3 ? 6 : 8) : h.target.kind === "dag" ? 7 : 5;
           return (
             <button key={key} data-kind={h.target.kind} className={`node hit${flow && hud.moving.includes(flow) ? " live" : ""}`} title={h.sub ?? h.label}

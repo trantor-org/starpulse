@@ -38,6 +38,8 @@ export interface HudState {
   states: BoardState[];
   /** Tasks per machine; the Board's are its open tasks. */
   counts: Record<string, number>;
+  /** Tasks per machine at one Board state, by `<state>/<flow>`: a flow several states open shows each its own. */
+  hostCounts: Record<string, number>;
   /** Every DAG, which the navigator's search finds and opens in its panel. */
   dags: string[];
   /** The machines with a move in flight, so their navigator node glows. */
@@ -64,7 +66,7 @@ export interface HudState {
 
 export class HudStore {
   private state: HudState = {
-    stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, dags: [], dagData: null,
+    stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, hostCounts: {}, dags: [], dagData: null,
     moving: [], groups: [], pools: [], feed: [], cards: [], names: {}, claims: {}, boardUrl: null,
   };
   private listeners = new Set<() => void>();
