@@ -1,16 +1,18 @@
 // Design round (doc-111 D9): what happens between Review and Done. The fold on the Board's Review → Done path opens this level, redrawn
 // here as three candidate views of one causal sequence: a PR merges to main, main-follow (on push) writes MERGED and the task moves to
 // Done, and the merge cues apply-on-merge and graph-refresh. ?merged=a|b|c picks the view (Junction, Orrery, Ledger), ?ms=live|fail|cross
-// the scenario and ?ts=125|150 the browser text size. Merges, runs and timings are simulated from the snapshot's tasks and DAG steps, with
+// the scenario and ?ts=125|150 the browser text size. The contract each draws from is the one doc-111 records: the machine YAML's writers: and
+// cues: (each cue with resolves: forced|next) and the [[runs]] instance's commit keys; ?ms=infer is an install that declares none. Merges, runs and timings are simulated from the snapshot's tasks and DAG steps, with
 // volume (about ten an hour in working hours) and run durations shaped like a day of live apply-on-merge, graph-refresh and main-follow runs.
 "use strict";
 {
 const P = new URLSearchParams(location.search);
 const VARS = { a: "Junction", b: "Orrery", c: "Ledger" };
 const SCNS = {
-  live: "A normal day: a merge every ~25 s. Three hours ago apply-on-merge failed seven times in a row at apply_deploy; a forced rerun cleared it.",
-  fail: "apply-on-merge keeps failing at apply_deploy. A later merge applies only its own diff, so each failure stays pinned until a forced rerun.",
+  live: "A normal day: a merge every ~25 s. Three hours ago apply-on-merge failed seven times at apply_deploy; a forced rerun cleared it. A graph-refresh failure cleared on its next success.",
+  fail: "apply-on-merge keeps failing at apply_deploy: resolves: forced, so each stays pinned until a forced rerun. The newest graph-refresh failure is resolves: next and clears on its own.",
   cross: "A skills merge: nothing applies here, the 5-minute main-follow pass writes MERGED, and its pin bump merge applies it later.",
+  infer: "A new install whose [[runs]] instance declares no commit key: each run pairs with the newest merge before it started, drawn dashed; amber where a second merge landed first. Doctor names the key.",
 };
 const VAR = VARS[P.get("merged")] ? P.get("merged") : "c", SCN = SCNS[P.get("ms")] ? P.get("ms") : "live";
 if (+P.get("ts")) document.documentElement.style.fontSize = `${+P.get("ts")}%`;
@@ -18,7 +20,17 @@ const rootFs = () => parseFloat(getComputedStyle(document.documentElement).fontS
 let F = rootFs(); // browser text size: canvas type and the room it takes scale with it
 const NM = { mf: "main-follow", aom: "apply-on-merge", gr: "graph-refresh" }, KS = ["mf", "aom", "gr"];
 const mine = (l = level()) => l?.kind === "fold" && l.path?.[0] === "review" && l.path?.[1] === "done";
-const SKIP = "#3b4760", RED = DAG_COLOR.failed, CROSS = "#c4b5fd";
+const SKIP = "#3b4760", RED = DAG_COLOR.failed, CROSS = "#c4b5fd", AMB = "#fbbf24", KEYED = SCN !== "infer";
+// the declared contract: who writes MERGED, what it cues, how a cue's failure resolves, and the runs instance's commit keys
+const RES = { mf: "next", aom: "forced", gr: "next" };
+const RULE = { forced: "clears only on a forced rerun whose BEFORE..AFTER covers it (resolves: forced)", next: "clears on the next successful run (resolves: next)" };
+const CONTRACT = {
+  mf: "# board machine YAML\nwriters:\n  MERGED:\n    - actor: dagu/main-follow\n      trigger: bin/board_reconcile_merged.py",
+  aom: "# board machine YAML\ncues:\n  - event: MERGED\n    dag: dagu/apply-on-merge\n    on: push to main\n    resolves: forced",
+  gr: "# board machine YAML\ncues:\n  - event: MERGED\n    dag: dagu/graph-refresh\n    on: push to main\n    resolves: next",
+};
+const RUNS_TOML = KEYED ? '# flow-view.toml\n[[runs]]\nname = "dagu"\n[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"'
+  : '# flow-view.toml\n[[runs]]\nname = "dagu"\n# no [runs.commit]: runs pair by time';
 const SCOL = (st) => (st === "skipped" ? SKIP : st === "waiting" ? CROSS : DAG_COLOR[st] || "#94a3b8");
 
 // ---- simulated merges ----
@@ -37,7 +49,7 @@ for (const k of KS) { const steps = dagBy[NM[k]].steps, by = Object.fromEntries(
   steps.forEach((s) => dep(s.name)); DEPTH[k] = d; NL[k] = Math.max(0, ...Object.values(d)) + 1; STEPS[k] = steps.map((s) => s.name); }
 const CHAIN = ["apply_migrations", "apply_images", "apply_deploy", "apply_systemd", "push_dashboards"].filter((n) => STEPS.aom.includes(n));
 const BRANCH = STEPS.aom.filter((n) => DEPTH.aom[n] === 2 && !CHAIN.includes(n)), ALWAYS = STEPS.aom.filter((n) => !CHAIN.includes(n) && !BRANCH.includes(n));
-const FAILS = CHAIN.includes("apply_deploy") ? "apply_deploy" : CHAIN.at(-1);
+const FAILS = CHAIN.includes("apply_deploy") ? "apply_deploy" : CHAIN.at(-1), GRFAIL = STEPS.gr.reduce((a, n) => (DEPTH.gr[n] >= DEPTH.gr[a] ? n : a));
 const PIN = { skills: BRANCH.filter((n) => n.startsWith("apply_skills")), "backlog.md": BRANCH.filter((n) => n === "apply_board"), starpulse: BRANCH.filter((n) => n === "apply_flow_view") };
 // classify picks what a merge applies from the paths it changed; the deploy chain runs as one
 function pickApplied(chain) { const s = new Set(ALWAYS); if (chain || rn() < 0.3) CHAIN.forEach((n) => s.add(n));
@@ -50,9 +62,9 @@ function stepSt(r, name, t) {
   if (!r) return "not_started";
   const L = NL[r.k], d = DEPTH[r.k][name], s = r.start + (r.dur * d) / L, e = r.start + (r.dur * (d + 1)) / L, clsEnd = r.start + (r.dur * 2) / L;
   if (r.k === "aom" && !r.applied.has(name)) return t >= clsEnd ? "skipped" : "not_started";
-  if (r.k === "aom" && r.fail) { const fd = DEPTH.aom[r.fail];
-    if (CHAIN.includes(name) && d > fd) return t >= r.start + (r.dur * (fd + 1)) / L ? "skipped" : "not_started";
-    if (name === r.fail || name === "verify_applied") return t < s ? "not_started" : t < e ? "running" : "failed"; }
+  if (r.fail) { const fd = DEPTH[r.k][r.fail];
+    if ((r.k !== "aom" || CHAIN.includes(name)) && d > fd) return t >= r.start + (r.dur * (fd + 1)) / L ? "skipped" : "not_started";
+    if (name === r.fail || (r.k === "aom" && name === "verify_applied")) return t < s ? "not_started" : t < e ? "running" : "failed"; }
   return t < s ? "not_started" : t < e ? "running" : "succeeded";
 }
 const runSt = (r, t) => (!r ? null : t < r.start ? "queued" : t < r.end ? "running" : r.fail ? "failed" : "succeeded");
@@ -67,31 +79,38 @@ const merges = [], RERUNS = []; let prSeq = 1830, tuI = 0;
 function addMerge(o) {
   const m = { t: o.t, task: o.task || null, title: o.title || o.task?.title || "", repo: o.repo || "trantor", pr: o.pr || prSeq--, sha: hex(7), cross: !!o.cross, bumpOf: o.bumpOf || null, bump: null };
   const tu = TU[tuI++ % TU.length];
-  if (m.cross) { const s = Math.ceil((m.t + 4) / 300) * 300 + 2; m.runs = { mf: { k: "mf", start: s, dur: 11 + Math.round(rn() * 6) } }; }
-  else m.runs = { mf: { k: "mf", start: m.t + tu[1], dur: tu[4] }, aom: { k: "aom", start: m.t + tu[0], dur: tu[3], applied: o.applied || pickApplied(!!o.fail), fail: o.fail || null }, gr: { k: "gr", start: m.t + tu[2], dur: tu[5] } };
-  for (const r of Object.values(m.runs)) r.end = r.start + r.dur;
+  // a scheduled 5-minute pass carries no params, so other repos' merges pair by time even when commit keys are declared
+  if (m.cross) { const s = Math.ceil((m.t + 4) / 300) * 300 + 2; m.runs = { mf: { k: "mf", start: s, dur: 11 + Math.round(rn() * 6), inf: true } }; }
+  else m.runs = { mf: { k: "mf", start: m.t + tu[1], dur: tu[4] }, aom: { k: "aom", start: m.t + tu[0], dur: tu[3], applied: o.applied || pickApplied(!!o.fail), fail: o.fail || null }, gr: { k: "gr", start: m.t + tu[2], dur: tu[5], fail: o.grFail || null } };
+  for (const r of Object.values(m.runs)) { r.end = r.start + r.dur; if (!KEYED) r.inf = true; }
   m.mergedAt = m.runs.mf.end; m.ref = { kind: "mgMerge", o: m };
   merges.push(m); merges.sort((a, b) => b.t - a.t); return m;
 }
 { const times = [];
   for (let h = Math.floor((NOW0 - 86400) / 3600) * 3600; h < NOW0; h += 3600) for (let i = 0, n = HOURLY[mstHour(h)] || 0; i < n; i++) { const t = Math.round(h + rn() * 3600); if (t > NOW0 - 86400 && t < NOW0 - 150) times.push(t); }
   times.sort((a, b) => b - a);
-  const anyCross = DONE.some((t) => prOf(t) && prOf(t).repo !== "trantor"), streak = times.findIndex((t) => NOW0 - t > 3 * 3600);
+  const anyCross = DONE.some((t) => prOf(t) && prOf(t).repo !== "trantor"), streak = times.findIndex((t) => NOW0 - t > 3 * 3600), grAt = times.findIndex((t) => NOW0 - t > 5400);
   times.forEach((t, i) => { const task = DONE[i % DONE.length], pr = i < DONE.length ? prOf(task) : null;
     const cross = anyCross ? (pr && pr.repo !== "trantor" ? pr.repo : null) : i === 4 ? "backlog.md" : i === 13 ? "skills" : null;
     const fail = cross ? null : SCN === "fail" ? (i < 3 ? FAILS : null) : SCN === "live" && i >= streak && i < streak + 7 ? FAILS : null;
-    addMerge({ t, task, cross, repo: cross || "trantor", pr: cross ? pr?.n || 20 + Math.floor(rn() * 40) : pr?.n, fail }); });
+    const grFail = cross ? null : (SCN === "fail" && i === 0) || (SCN === "live" && i === grAt) ? GRFAIL : null;
+    addMerge({ t, task, cross, repo: cross || "trantor", pr: cross ? pr?.n || 20 + Math.floor(rn() * 40) : pr?.n, fail, grFail }); });
   if (SCN === "live" && streak >= 0) RERUNS.push({ start: times[streak] + 240, dur: 52, upto: times[streak] });
   for (const m of merges.filter((x) => x.cross)) { const bt = m.mergedAt + 600 + rn() * 900; if (bt < NOW0 - 150) m.bump = addMerge({ t: Math.round(bt), title: `bump the ${m.repo} pin`, applied: new Set([...ALWAYS, ...(PIN[m.repo] || [])]), bumpOf: m }); } }
 for (const r of RERUNS) { r.end = r.start + r.dur; r.ref = { kind: "mgRerun", o: r }; }
-// a failed apply stays unapplied until a later run applies the same step or a forced rerun reapplies everything since
-function resolver(m, t) {
-  const r = m.runs.aom; if (!r?.fail) return null;
-  const rr = RERUNS.find((x) => x.end <= t && x.upto >= m.t && x.start >= r.end - 1); if (rr) return { at: rr.end, by: "a forced rerun" };
-  const x = merges.filter((y) => y.t > m.t && y.runs.aom && !y.runs.aom.fail && y.runs.aom.applied.has(r.fail) && y.runs.aom.end <= t).at(-1);
-  return x ? { at: x.runs.aom.end, by: `merge ${x.sha}, which applied ${r.fail}` } : null;
+// a cued run's failure resolves by its cue's declared rule: forced (a forced rerun covering the merge) or next (the DAG's next success)
+function resolver(m, t, k) {
+  const r = m.runs[k]; if (!r?.fail) return null;
+  if (RES[k] === "forced") { const rr = RERUNS.find((x) => x.end <= t && x.upto >= m.t && x.start >= r.end - 1); return rr ? { at: rr.end, by: "a forced rerun" } : null; }
+  const x = merges.filter((y) => y.t > m.t && y.runs[k] && !y.runs[k].fail && y.runs[k].end <= t).at(-1);
+  return x ? { at: x.runs[k].end, by: `the next ${NM[k]} success (${x.sha})` } : null;
 }
-const pinnedAt = (t) => merges.filter((m) => m.runs.aom?.fail && m.runs.aom.end <= t && !resolver(m, t));
+const failsOf = (m, t) => KS.filter((k) => m.runs[k]?.fail && m.runs[k].end <= t), openFails = (m, t) => failsOf(m, t).filter((k) => !resolver(m, t, k));
+const pinnedAt = (t) => merges.filter((m) => openFails(m, t).length);
+const failHtml = (m, t, cls) => failsOf(m, t).map((k) => { const res = resolver(m, t, k);
+  return `<div class="${cls}" style="color:${res ? DAG_COLOR.succeeded : RED}">${esc(NM[k])} ✕ ${esc(m.runs[k].fail)}: ${res ? `resolved ${hhmm(res.at)} MST by ${esc(res.by)}` : `unresolved, ${RULE[RES[k]]}`}</div>`; }).join("");
+// with no commit key a run pairs with the newest merge before it started; another merge landing in between makes the pairing a guess
+const ambOf = (m, k) => { const r = m.runs[k]; return !r?.inf || m.cross ? 0 : merges.filter((n) => n !== m && !n.cross && n.t > m.t && n.t < r.start).length; };
 const worst = (m, t) => { const s = Object.values(m.runs).map((r) => runSt(r, t)); return s.includes("failed") ? "failed" : s.includes("running") ? "running" : s.includes("queued") ? "queued" : m.cross && !m.bump ? "waiting" : "succeeded"; };
 
 // ---- live: the Review queue merges one task about every 25 s; each waits in Review until main-follow writes MERGED ----
@@ -185,8 +204,9 @@ function drawTemplates(L) {
     if (runningAny(k)) { const glow = cx.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(b.w, b.h) * 0.8); glow.addColorStop(0, rgba(ACT, 0.07)); glow.addColorStop(1, rgba(ACT, 0)); cx.fillStyle = glow; cx.beginPath(); cx.arc(p.x, p.y, Math.max(b.w, b.h) * 0.8, 0, TAU); cx.fill(); }
     const ly = p.y + b.h / 2 + 14 * F, st = r ? runSt(r, t) : null, ax = p.capX ?? p.x, al = p.capX !== undefined ? "left" : "center";
     T_(NM[k], ax, ly, 12, INK(hot ? 1 : 0.85), al, 500);
-    T_(k === "mf" ? "on push · every 5 min" : "cue · each merge to main", ax, ly + 15 * F, 10.5, MUTED(0.6), al);
-    if (m) T_(r ? `${m === merges[0] ? "newest" : hhmm(m.t)} ${m.sha} · ${st === "running" ? `running ${curStep(r, t) || ""}` : st === "queued" ? "waiting to start" : st === "failed" ? `✕ ${r.fail}` : `✓ ${dur(r.dur)}`}` : `${hhmm(m.t)} ${m.sha} · no run: other repo`, ax, ly + 30 * F, 10.5, rgba(SCOL(st || "waiting"), 0.85), al); }
+    T_(k === "mf" ? "on push · every 5 min" : `cue · clears on ${RES[k] === "forced" ? "forced rerun" : "next success"}`, ax, ly + 15 * F, 10.5, MUTED(0.6), al);
+    const cw = 92 * F; HITS.push({ x0: al === "left" ? ax : ax - cw, y0: ly - 9 * F, x1: ax + cw, y1: ly + 22 * F, ref: ref("mgContract", k, { k }) });
+    if (m) T_(r ? `${m === merges[0] ? "newest" : hhmm(m.t)} ${m.sha} · ${r.inf ? "≈ " : ""}${st === "running" ? `running ${curStep(r, t) || ""}` : st === "queued" ? "waiting to start" : st === "failed" ? `✕ ${r.fail}` : `✓ ${dur(r.dur)}`}` : `${hhmm(m.t)} ${m.sha} · no run: other repo`, ax, ly + 30 * F, 10.5, rgba(SCOL(st || "waiting"), 0.85), al); }
   // main-follow writes MERGED on the path; the 5-minute schedule feeds it as well as each push
   const mf = L.tpl.mf, n = out.mf; line([{ x: mf.x, y: mf.y - n.nr - 3 }, { x: L.mg.x, y: L.mg.y + 6 }], rgba(ACT, 0.7), 1.2, [2, 4]);
   T_("writes MERGED", mf.x + 8, (mf.y + L.mg.y) / 2 + 6 * F, 10.5, rgba(ACT, 0.8), "left");
@@ -196,8 +216,9 @@ function drawTemplates(L) {
 }
 const statusLine = (m, k, t) => { const r = m.runs[k]; if (!r) return [m.bump ? `applied by its pin bump ${m.bump.sha}` : "waits for its pin bump", m.bump ? hhmm(m.bump.t) + " MST" : "", "waiting"];
   const st = runSt(r, t), main = st === "queued" ? `starts in ${dur(r.start - t)}` : st === "running" ? `${curStep(r, t) || "running"} · ${dur(t - r.start)}` : st === "failed" ? `✕ ${r.fail} · ${dur(r.dur)}` : `✓ ${dur(r.dur)}`;
-  const sub = k === "mf" ? (t >= m.mergedAt ? `MERGED ${hhmm(m.mergedAt)}${m.cross ? " · 5-min pass" : ""}` : m.cross ? `5-min pass ${hhmm(r.start)}` : "MERGED next") : k === "aom" ? shortApplied(r) : `${hhmm(r.start)} MST`;
-  return [main, sub, st]; };
+  let sub = k === "mf" ? (t >= m.mergedAt ? `MERGED ${hhmm(m.mergedAt)}${m.cross ? " · 5-min pass" : ""}` : m.cross ? `5-min pass ${hhmm(r.start)}` : "MERGED next") : k === "aom" ? shortApplied(r) : `${hhmm(r.start)} MST`;
+  const n = ambOf(m, k); if (r.inf) sub = `≈ ${n ? `${n + 1} in window${sub ? " · " : ""}` : ""}${sub || "by time"}`;
+  return [main, sub, st, r.inf ? (n ? "amb" : "inf") : "key"]; };
 // the 24-hour strip: one tick per merge, red where an apply failed (bright while unresolved), purple for another repo's merge
 function drawStrip(L) {
   const s = L.strip, t = now(), X = (tt) => s.x0 + ((tt - (t - 86400)) / 86400) * (s.x1 - s.x0), pins = new Set(pinnedAt(t));
@@ -244,7 +265,7 @@ function drawC(L) {
   line([{ x: L.sx, y: L.J.y + 8 }, { x: L.sx, y: yLast }], rgba(ACT, 0.35), 1.4);
   line([{ x: L.lane, y: L.yR0 - L.rh / 2 }, { x: L.lane, y: yLast }], rgba(CROSS, 0.35), 1, [2, 4]); T_("other repos", L.lane + 4, L.yR0 - L.rh / 2 - 9 * F, 9.5, rgba(CROSS, 0.6));
   if (showPins.length) { const y0 = showPins[0]._y - L.rh / 2, y1 = showPins.at(-1)._y + L.rh / 2; cx.fillStyle = rgba(RED, 0.05); cx.fillRect(64, y0, x1 - 64, y1 - y0); line([{ x: L.sx, y: y0 }, { x: L.sx, y: y1 }], rgba(RED, 0.7), 2);
-    T_(`UNRESOLVED · ${pins.length} failed apply${pins.length > 1 ? "s" : ""}${pins.length > showPins.length ? ` (${pins.length - showPins.length} more on the strip)` : ""}`, 64, y0 - 9 * F, 10, rgba(RED, 0.9), "left", 500);
+    const nf = pins.reduce((n, m) => n + openFails(m, t).length, 0); T_(`UNRESOLVED · ${nf} failed run${nf > 1 ? "s" : ""}${pins.length > showPins.length ? ` (${pins.length - showPins.length} more on the strip)` : ""}`, 64, y0 - 9 * F, 10, rgba(RED, 0.9), "left", 500);
     const rr = RERUNS.find((r) => t >= r.start && t < r.end); if (rr) T_(`↻ forced rerun running · ${dur(t - rr.start)}`, x1, y0 - 9 * F, 10, ACT, "right", 500); }
   const T = drawTemplates(L);
   // rails: main-follow on push, straight from the junction; apply-on-merge and graph-refresh cued off a bus under the templates
@@ -252,11 +273,18 @@ function drawC(L) {
   T_("on push", (L.J.x + mfn.root.x) / 2, L.J.y - 9 * F, 10.5, MUTED(0.6), "center");
   for (const k of ["aom", "gr"]) { const r = T[k].root; rail([{ x: L.sx, y: L.yB }, { x: r.x - 40, y: L.yB }, { x: r.x - T[k].nr - 2, y: r.y, c: { x: r.x - 14, y: L.yB } }], ACT, ACT, runningAny(k), true); }
   T_("cue · each merge to main", L.sx + 10, L.yB - 8 * F, 10, MUTED(0.55));
-  drawPath(L); drawJunction(L);
+  drawPath(L); drawJunction(L); drawDoctor(L.sx - 16, L.yB - 12 * F, "right");
   for (const m of rows) drawRowC(L, m, pins.includes(m), t);
   for (const m of rows) if (m.cross && m.bump && target.has(m.bump)) { const a = { x: L.lane, y: m._y }, b = { x: L.sx, y: m.bump._y };
     line([a, b].length && [a, { x: b.x + 4, y: b.y }], rgba(CROSS, 0.6), 1, [2, 3]); T_("pin bump", (a.x + b.x) / 2 + 6, (a.y + b.y) / 2, 9.5, rgba(CROSS, 0.7)); }
   drawStrip(L);
+}
+// starpulse doctor's verdict on the contract against the last day of runs; hover for what it checked or the key to add
+function drawDoctor(x, y, al) {
+  const c = KEYED ? DAG_COLOR.succeeded : AMB, hot = hover?.kind === "mgDoctor", w = 230 * F;
+  T_(KEYED ? "✓ doctor · contract matches runs" : "⚠ doctor · no commit key declared", x, y, 10.5, rgba(c, hot ? 1 : 0.85), al, 500);
+  T_(KEYED ? "writers, cues and commit keys" : "runs pair with merges by time", x, y + 14 * F, 10, MUTED(hot ? 0.8 : 0.55), al);
+  HITS.push({ x0: al === "right" ? x - w : x, y0: y - 9 * F, x1: al === "right" ? x : x + w, y1: y + 22 * F, ref: ref("mgDoctor", "d", {}) });
 }
 function drawRowC(L, m, pin, t) {
   const y = m._y, a = m._a ?? 1, hot = hover === m.ref || panelSel() === m, x1 = W - 60, f = F;
@@ -270,10 +298,13 @@ function drawRowC(L, m, pin, t) {
   cx.font = `500 ${(12.5 * f) / K}px Inter, system-ui, sans-serif`; const used = cx.measureText(`${hhmm(m.t)}  ${who}`).width + 8 * f;
   if (used < lw - 40 * f) T_(clip(`${m.repo} #${m.pr} · ${m.sha}`, lw - used, 10.5), 64 + used, y - 8 * f, 10.5, MUTED(0.6 * a));
   T_(clip(m.title, lw, 11), 64, y + 9 * f, 11, MUTED(0.7 * a));
-  for (const k of KS) { const c = L.cols[k], gx = L.tpl[k].x, [main, sub, st] = statusLine(m, k, t); let tx = c.x0 + 14;
-    if (m.runs[k]) { const g = drawGlyph(k, gx, y, L.msc[k], (n) => stepSt(m.runs[k], n, t), { mini: true, alpha: a, pulses: `${m.sha}${k}` }); tx = Math.max(gx + g.w / 2 + g.nr + 12, c.x0 + 30 * f); }
+  for (const k of KS) { const c = L.cols[k], gx = L.tpl[k].x, [main, sub, st, pair] = statusLine(m, k, t); let tx = c.x0 + 14;
+    if (m.runs[k]) { const g = drawGlyph(k, gx, y, L.msc[k], (n) => stepSt(m.runs[k], n, t), { mini: true, alpha: a, pulses: `${m.sha}${k}` }); tx = Math.max(gx + g.w / 2 + g.nr + 12, c.x0 + 30 * f);
+      // a run paired by time, not by commit key, sits in a dashed box: amber when a second merge landed before it started
+      if (pair !== "key") { const bw = g.w / 2 + g.nr + 4, bh = Math.max(g.h / 2 + g.nr + 3, 8);
+        line([{ x: gx - bw, y: y - bh }, { x: gx + bw, y: y - bh }, { x: gx + bw, y: y + bh }, { x: gx - bw, y: y + bh }, { x: gx - bw, y: y - bh }], pair === "amb" ? rgba(AMB, 0.8 * a) : MUTED(0.45 * a), 1, [2, 3]); } }
     const room = c.x0 + c.w - tx - 10; T_(clip(main, room, 11.5, 500), tx, y - 7 * f, 11.5, rgba(SCOL(st), st === "succeeded" ? 0.85 * a : a), "left", 500);
-    if (sub) T_(clip(sub, room, 10.5), tx, y + 8 * f, 10.5, MUTED(0.6 * a)); }
+    if (sub) T_(clip(sub, room, 10.5), tx, y + 8 * f, 10.5, pair === "amb" ? rgba(AMB, 0.85 * a) : MUTED(0.6 * a)); }
 }
 
 // ---- A: Junction. The causal sequence large across the top, the templates the one constellation; below it the 24-hour strip, every
@@ -359,29 +390,33 @@ const runRow = (m, k, t) => { const [main, sub, st] = statusLine(m, k, t); retur
 tipHtml = function (h) {
   tip.classList.toggle("mg", !!scene.mg); if (!scene.mg || !h.kind.startsWith("mg")) return _tipHtml(h);
   const t = now(), o = h.o;
-  if (h.kind === "mgMerge") { const res = o.runs.aom?.fail && t >= o.runs.aom.end ? resolver(o, t) : null;
+  if (h.kind === "mgMerge") {
     return `<div class="k">${o.bumpOf ? `pin bump for ${esc(o.bumpOf.repo)} #${o.bumpOf.pr}` : `merge to ${esc(o.repo)}`} · ${hms(o.t)} MST · #${o.pr} · ${esc(o.sha)}</div><div class="n">${esc(o.task?.id || "pin bump")}</div>${esc(o.title)}
-      ${KS.map((k) => runRow(o, k, t)).join("")}${o.runs.aom?.fail && t >= o.runs.aom.end ? `<div class="k" style="color:${res ? DAG_COLOR.succeeded : RED}">${res ? `resolved ${hhmm(res.at)} MST by ${esc(res.by)}` : `unresolved: a later merge applies only its own diff, so ${esc(o.runs.aom.fail)} stays unapplied until a forced rerun`}</div>` : ""}
+      ${KS.map((k) => runRow(o, k, t)).join("")}${failHtml(o, t, "k")}
       ${o.cross ? `<div class="k">another repo's merge: main-follow's 5-minute pass writes MERGED; nothing applies until the trantor pin bump</div>` : ""}<div class="k">click for its runs</div>`; }
   if (h.kind === "mgStep") { const m = focusM(), r = m?.runs[o.k], deps = dagBy[NM[o.k]].steps.find((s) => s.name === o.name).depends;
     return `<div class="k">step of ${esc(NM[o.k])}${deps.length ? ` · after ${deps.map(esc).join(", ")}` : ""}</div><div class="n">${esc(o.name)}</div>${m ? `${esc(stepSt(r, o.name, t).replace("_", " "))} in ${m === merges[0] ? "the newest merge" : `the ${hhmm(m.t)} merge`} (${esc(m.sha)})` : ""}<div class="k">hover a merge to see its run here · click for the DAG</div>`; }
   if (h.kind === "mgJ") return `<div class="k">merge to main · ${merges.filter((m) => m.t > t - 3600).length} in the last hour</div><div class="n">A PR merges</div>main-follow runs on the push and writes MERGED, moving the task Review → Done. The merge also cues apply-on-merge and graph-refresh, which apply and index it.`;
   if (h.kind === "mgQ") return `<div class="k">task in Review</div><div class="n">${esc(o.t.id)}</div>${esc(o.t.title)}<div class="k">${o.merged ? `PR merged ${hhmm(o.merged.t)} MST · waiting for main-follow to write MERGED` : "waiting for its PR to merge"}</div>`;
   if (h.kind === "mgState") return `<div class="k">Board state · click to open</div><div class="n">${esc(stateName(o.id))}</div>${board.agents.filter((a) => a.state === o.id).length} tasks at snapshot`;
+  if (h.kind === "mgContract") return `<div class="k">declared contract · hover a caption</div><div class="n">${esc(NM[o.k])}: ${o.k === "mf" ? "writes MERGED" : "cued by MERGED"}</div><pre>${esc(CONTRACT[o.k])}\n\n${esc(RUNS_TOML)}</pre>
+    <div class="k">${o.k === "mf" ? "The Board's MERGED transition names this writer; a scheduled 5-minute pass writes it for other repos' merges and carries no commit." : `A failure ${esc(RULE[RES[o.k]])}.`} ${KEYED ? "Runs pair with merges by the AFTER param." : "No commit key, so runs pair with merges by time."}</div>`;
+  if (h.kind === "mgDoctor") return KEYED ? `<div class="k">starpulse doctor · last 24 h</div><div class="n">Contract matches the runs</div>✓ apply-on-merge, graph-refresh and main-follow exist on dagu<br>✓ every push-triggered run carries AFTER, BEFORE and FORCE<br>✓ main-follow wrote MERGED after each merge<br><span class="k">≈ 5-minute main-follow passes carry no params, so other repos' merges pair by time</span>`
+    : `<div class="k">starpulse doctor · runs instance dagu</div><div class="n">No commit key declared</div>Each run pairs with the newest merge before it started (dashed). At ~10 merges an hour a second merge can land first (amber). Recent runs carry params naming the commit; declare them:<pre>[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"</pre>`;
   if (h.kind === "mgRerun") return `<div class="k">forced apply-on-merge rerun · ${hms(o.start)} MST</div><div class="n">${t >= o.end ? `✓ ${dur(o.dur)}` : `running · ${dur(t - o.start)}`}</div>reapplies everything since the last good apply, clearing every failure before it`;
   return "";
 };
 function openMerge(m) {
-  sel = m; const t = now(), res = m.runs.aom?.fail && t >= m.runs.aom.end ? resolver(m, t) : null, unres = m.runs.aom?.fail && t >= m.runs.aom.end && !res;
+  sel = m; const t = now(), unres = openFails(m, t).includes("aom");
   const runs = KS.map((k) => { const r = m.runs[k]; if (!r) return `<tr><td>${esc(NM[k])}</td><td class="k">${m.bump ? `no run: applied by its pin bump ${esc(m.bump.sha)} at ${hhmm(m.bump.t)} MST` : "no run: waits for its pin bump"}</td></tr>`;
     const st = runSt(r, t), chips = STEPS[k].map((n) => { const s = stepSt(r, n, t), c = SCOL(s); return `<span class="chip" style="color:${c};border-color:${rgba(c, 0.4)}" title="${esc(s)}">${esc(n)}</span>`; }).join(" ");
-    return `<tr><td>${esc(NM[k])}</td><td><b style="color:${SCOL(st)}">${st === "queued" ? "waiting to start" : esc(st)}</b> · ${hms(r.start)}${t >= r.end ? `–${hms(r.end)} MST · ${dur(r.dur)}` : " MST"}${k === "aom" ? `<div class="k">applied: ${esc(shortApplied(r))}</div>` : ""}<div class="steps">${chips}</div></td></tr>`; }).join("");
+    return `<tr><td>${esc(NM[k])}</td><td><b style="color:${SCOL(st)}">${st === "queued" ? "waiting to start" : esc(st)}</b> · ${hms(r.start)}${t >= r.end ? `–${hms(r.end)} MST · ${dur(r.dur)}` : " MST"}${k === "aom" ? `<div class="k">applied: ${esc(shortApplied(r))}</div>` : ""}<div class="k" style="${r.inf && ambOf(m, k) ? `color:${AMB}` : ""}">${r.inf ? `≈ paired by time: the newest merge before the run started${ambOf(m, k) ? `; ${ambOf(m, k)} more merge${ambOf(m, k) > 1 ? "s" : ""} landed first, so it may be theirs` : ""}` : `paired by commit: AFTER=${esc(m.sha)}`}</div><div class="steps">${chips}</div></td></tr>`; }).join("");
   panel.className = "mg open";
   panel.innerHTML = `<span class="x">✕</span><div class="k">${m.bumpOf ? `pin bump for ${esc(m.bumpOf.repo)} #${m.bumpOf.pr}` : `merge to ${esc(m.repo)}`} · ${hms(m.t)} MST</div><h2>${esc(m.task?.id || "pin bump")} — ${esc(m.title)}</h2>
     <table><tr><td>Commit</td><td>${esc(m.repo)} #${m.pr} · ${esc(m.sha)}</td></tr>
     <tr><td>Board</td><td>${t >= m.mergedAt ? `Review → Done: main-follow wrote MERGED ${hms(m.mergedAt)} MST, ${dur(m.mergedAt - m.t)} after the merge` : "in Review until main-follow writes MERGED"}</td></tr>
     ${m.cross ? `<tr><td>Other repo</td><td>Its merge starts no run here. ${m.bump ? `The pin bump ${esc(m.bump.sha)} applied it at ${hhmm(m.bump.t)} MST.` : "It applies when trantor's pin bump merges."}</td></tr>` : ""}${runs}</table>
-    ${unres ? `<div class="note" style="color:${RED}">Unresolved: a later merge applies only its own diff, so ${esc(m.runs.aom.fail)} stays unapplied until a forced rerun.</div><button class="run" id="mgRerun">↻ Force rerun apply-on-merge</button>` : res ? `<div class="note" style="color:${DAG_COLOR.succeeded}">Resolved ${hhmm(res.at)} MST by ${esc(res.by)}.</div>` : ""}
+    ${failHtml(m, t, "note")}${unres ? `<button class="run" id="mgRerun">↻ Force rerun apply-on-merge</button>` : ""}
     <div class="note">Open on board ↗ · PR ↗ · Dagu run ↗ (the build slice links them)</div>`;
   panel.querySelector(".x").onclick = () => { panel.classList.remove("open"); sel = null; };
   panel.querySelector("#mgRerun")?.addEventListener("click", forceRerun);
@@ -406,6 +441,7 @@ document.head.insertAdjacentHTML("beforeend", `<style>
 #panel.mg td:first-child { white-space: nowrap; vertical-align: top; padding-right: .6rem; color: var(--muted); } #panel.mg .steps { margin-top: .25rem; line-height: 1.9; }
 #panel.mg .chip { display: inline-block; padding: 0 .35rem; border: 1px solid; border-radius: 4px; font-size: .625rem; line-height: 1.5; }
 #tip.mg { font-size: .75rem; max-width: 24rem; } #tip.mg .k { font-size: .6875rem; }
+#tip.mg pre { margin: .35rem 0; padding: .35rem .5rem; border-radius: 4px; background: rgba(148,163,184,.08); font: .6875rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); white-space: pre; }
 </style>`);
 document.body.insertAdjacentHTML("beforeend", '<div id="mctl" hidden></div>');
 const ctl = document.getElementById("mctl"), addr = (k, v) => { const q = new URLSearchParams(location.search); q.set(k, v); return `?${q}`; };
