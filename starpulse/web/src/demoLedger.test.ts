@@ -84,11 +84,10 @@ describe("arriveMerge", () => {
     expect(rows[0].runs["apply-on-merge"].status).toBe("running");
   });
 
-  it("gives a queued run a start when the next merge settles it, so its duration reads in seconds", () => {
-    const s = snap(), first = arriveMerge(s, demoLedger(s, NOW, "live"), NOW + 25), settled = arriveMerge(s, first, NOW + 50), run = settled[1].runs["apply-on-merge"];
+  it("starts a queued run when it settles, so its duration is the time it ran", () => {
+    const s = snap(), once = arriveMerge(s, demoLedger(s, NOW, "live"), NOW + 25), run = arriveMerge(s, once, NOW + 50)[1].runs["apply-on-merge"];
 
     expect(run.status).toBe("succeeded");
-    expect(Date.parse(run.startedAt)).toBeGreaterThan(0);
-    expect(Date.parse(run.finishedAt) - Date.parse(run.startedAt)).toBeLessThan(120_000);
+    expect((Date.parse(run.finishedAt) - Date.parse(run.startedAt)) / 1000).toBe(19);
   });
 });

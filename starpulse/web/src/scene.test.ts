@@ -974,6 +974,43 @@ describe("a fold's level", () => {
       expect(scene.box![3]).toBeLessThanOrEqual(scene.h);
     });
 
+    // the approved mockup (starpulse#95, view C) lays the Ledger out in screen pixels: u world units a pixel, F one at the reader's text size
+    const px = (scene: Scene, scale = 100) => ({ u: scene.w / 1920, F: (scene.w / 1920) * (scale / 100) });
+
+    it("lay the path, the gutter and the columns out in the mockup's proportions", () => {
+      for (const scale of [100, 150]) {
+        const scene = merged(rows, scale), f = scene.fold!, l = f.ledger!, g = l.grid!, { u, F } = px(scene, scale), lt = Math.min(340 * F, 0.26 * scene.w);
+
+        expect([f.a!.x, l.J.x, f.a!.y, f.a!.r]).toEqual([64 * u + lt, 64 * u + lt, 62 * F, 22 * u]);
+        expect(f.b!.x).toBeCloseTo(scene.w - 40 * u - 60 * F);
+        expect(l.cols[0].x0).toBeCloseTo(l.J.x + 46 * F);
+        expect(l.cols.at(-1)!.x1).toBeCloseTo(scene.w - 70 * u);
+        expect([g.label.x, g.label.w]).toEqual([64 * u, lt - 10 * u]);
+        // a one-step template is a single node 5 px in radius, so the tallest template here is 10 px
+        expect(l.J.y).toBeCloseTo(f.a!.y + 64 * F + 5 * u);
+      }
+    });
+
+    it("hang each row's mini graph under its template, rows the mockup's 60 px tall at least", () => {
+      for (const scale of [100, 200]) {
+        const scene = merged(rows, scale), l = scene.fold!.ledger!, g = l.grid!, { u, F } = px(scene, scale);
+
+        expect(g.cells.map((c) => c.gx)).toEqual(l.cols.map((c) => scene.stars[c.dag].x));
+        expect(g.rh).toBeCloseTo(Math.max(60 * u, 34 * F));
+      }
+    });
+
+    it("scale a wide fan's template and mini graph to the mockup's apply-on-merge, and grow the rows to hold the mini", () => {
+      const sk = boardSky({ writes: { alpha: ["MERGED"] }, cues: cues.filter((c) => c.event === "MERGED"), ledgers: { MERGED: rows } });
+      sk.S.dagBy.beta.steps = [{ name: "r", depends: [], status: "succeeded" }, ...Array.from({ length: 9 }, (_, i) => ({ name: `s${i}`, depends: ["r"], status: "succeeded" as const })), { name: "z", depends: Array.from({ length: 9 }, (_, i) => `s${i}`), status: "succeeded" }];
+      const scene = build(sk, fold(["review", "done"], "MERGED")), g = scene.fold!.ledger!.grid!, { u } = px(scene), fan = glyph(sk.S.dagBy.beta), cell = g.cells[1];
+
+      expect([fan.w, fan.h]).toEqual([56, 144]);
+      expect(scene.stars.beta.glyph.h).toBeCloseTo(104 * u);
+      expect(scene.stars.beta.glyph.h * cell.ms).toBeCloseTo(43 * u);
+      expect(g.rh).toBeCloseTo(43 * u + 2 * g.nr + 12 * u);
+    });
+
     it("draws a task event's Ledger with no rows even when merges are loaded", () => {
       const sk = boardSky({ writes: { alpha: ["CLAIM"] }, cues, ledgers: { MERGED: rows } });
 

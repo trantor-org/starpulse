@@ -67,6 +67,8 @@ export interface RowsFrame {
   age: (key: string) => number | undefined;
   /** The key of the row the viewer is on (hovered or open), outlined. */
   lit?: string;
+  /** A task's title, when the page holds the task. */
+  title?: (task: string) => string | undefined;
 }
 
 const rgba = (h: string, a: number) => {
@@ -136,9 +138,13 @@ function drawRow(ink: Ink, f: RowsFrame, row: LedgerRow, where: { y: number; a: 
     ink.stroke([{ x: J.x, y }, { x: g.lane - px(4), y }], rgba(CROSS, 0.25 * a), 1);
   } else ink.dot(J.x, y, px(3.4), rgba(ACT, 0.85 * a));
   if (age !== undefined && age < RING * 1.3) ink.pulse(cross ? g.lane : J.x, y, px(3.4), age / RING, ACT, 22);
-  const who = row.tasks[0] ?? (row.applies?.length ? "pin bump" : "—"), sha = (row.sha ?? row.key).slice(0, 7);
-  ink.text(ink.fit(`${f.ctx.hm(row.at)}  ${who}`, g.label.w, px(12.5)), g.label.x, y - px(8), px(12.5), rgba(INK, 0.92 * a), "left", 500);
-  ink.text(ink.fit(row.pr ? `${row.pr.repo} #${row.pr.number} · ${sha}` : sha, g.label.w, px(10.5)), g.label.x, y + px(9), px(10.5), rgba(MUTED, 0.6 * a), "left");
+  // the label: the time and task, the PR and commit after them while there is room, and the task's title under them
+  const who = row.tasks[0] ?? (row.applies?.length ? "pin bump" : "—"), sha = (row.sha ?? row.key).slice(0, 7), head = ink.fit(`${f.ctx.hm(row.at)}  ${who}`, g.label.w, px(12.5));
+  ink.text(head, g.label.x, y - px(8), px(12.5), rgba(INK, 0.92 * a), "left", 500);
+  const used = ink.width(head, px(12.5), 500) + px(8);
+  if (used < g.label.w - px(40)) ink.text(ink.fit(row.pr ? `${row.pr.repo} #${row.pr.number} · ${sha}` : sha, g.label.w - used, px(10.5)), g.label.x + used, y - px(8), px(10.5), rgba(MUTED, 0.6 * a), "left");
+  const title = row.tasks[0] ? f.title?.(row.tasks[0]) : undefined;
+  if (title) ink.text(ink.fit(title, g.label.w, px(11)), g.label.x, y + px(9), px(11), rgba(MUTED, 0.7 * a), "left");
   led.cols.forEach((tie, i) => {
     const cell = g.cells[i], run = row.runs[tie.dag], gl = f.glyphs[tie.dag], line = statusLine(row, tie, run, { ...f.ctx, optional: f.optional[tie.dag] ?? NONE });
     let tx = tie.x0 + px(14);

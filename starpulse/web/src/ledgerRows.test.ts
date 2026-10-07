@@ -81,6 +81,18 @@ describe("drawRows", () => {
     expect(by("MERGED t990")).toBeDefined();
   });
 
+  it("labels a row as the mockup does: time and task with its PR and commit after them, the task's title under them", () => {
+    const r = recorder(), f = frame([row("aaa", 990)], { title: (id) => (id === "TASK-990" ? "Ship the ledger" : undefined) }), y = place(f.scroll, f.led.grid!)[0].y;
+
+    drawRows(r.ink, f);
+
+    const by = (s: string) => r.texts.find((t) => t.s === s)!, head = by("t990  TASK-990");
+    expect([head.x, head.y]).toEqual([f.led.grid!.label.x, y - 8]);
+    expect(by("trantor #990 · aaa0000").y).toBe(head.y);
+    expect(by("trantor #990 · aaa0000").x).toBeGreaterThan(head.x + r.ink.width(head.s, 12.5));
+    expect([by("Ship the ledger").x, by("Ship the ledger").y]).toEqual([head.x, y + 9]);
+  });
+
   it("draws one mini step graph per run, its steps ringed in the step's own colour", () => {
     const r = recorder(), rows = [row("aaa", 990, { runs: { "apply-on-merge": run({ steps: { build: "succeeded", apply: "failed" } }) } })];
 

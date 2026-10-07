@@ -69,12 +69,12 @@ export function demoLedger(snap: Snapshot, now: number, scenario: Scenario): Led
   return [...rows, bump, kid(5041, 540, bump.key), kid(5042, 30, null)].sort((a, b) => b.at - a.at);
 }
 
-/** `rows` after a merge lands at `now`: the runs in flight finish, and the new merge's writer runs while its cues queue. Returns new rows; `rows` is left as it was. */
+/** `rows` after a merge lands at `now`: the runs in flight finish (a queued one as if it started 6 s after its merge), and the new merge's writer runs while its cues queue. Returns new rows; `rows` is left as it was. */
 export function arriveMerge(snap: Snapshot, rows: LedgerRow[], now: number): LedgerRow[] {
   const ties = tiesOf(snap, MERGE_EVENT), next = structuredClone(rows);
   for (const row of next)
     for (const run of Object.values(row.runs))
-      if (run.status === "running" || run.status === "queued") Object.assign(run, { status: "succeeded", step: "", startedAt: run.startedAt || iso(row.at), finishedAt: iso(now), steps: Object.fromEntries(Object.keys(run.steps).map((n) => [n, "succeeded"])) });
+      if (run.status === "running" || run.status === "queued") Object.assign(run, { status: "succeeded", step: "", startedAt: run.startedAt || iso(row.at + 6), finishedAt: iso(now), steps: Object.fromEntries(Object.keys(run.steps).map((n) => [n, "succeeded"])) });
   const n = rows.length + 6000, writer: Record<string, LedgerRun> = {};
   for (const t of ties) {
     const names = stepsOf(snap, t.dag), live = t.role === "writer";
