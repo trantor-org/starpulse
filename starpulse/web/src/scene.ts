@@ -1194,7 +1194,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // each caption cell is its template plus what its caption needs past it, shrunk to share what the row has when they do not all fit, else spread across it
     const want = cw.map((c, i) => Math.max(0, c - widths[i])), basis = base(u, F);
     const free = avail - basis.reduce((p, q) => p + q, 0), wantSum = want.reduce((p, q) => p + q, 0), g = wantSum > free ? Math.max(0, free) / wantSum : 1, slack = Math.max(0, free - wantSum * g) / led.ties.length;
-    const yP = 62 * F, yH = yP + 64 * F + th / 2, cap = yH + gh / 2 + 14 * F, bus = yH + gh / 2 + 78 * F;
+    // the bus sits under a template's name, two caption lines and the focused merge's status, with its own label clear of them
+    const yP = 62 * F, yH = yP + 64 * F + th / 2, cap = yH + gh / 2 + 14 * F, bus = yH + gh / 2 + 88 * F;
     let x = c0;
     const cols = led.ties.map((t, i) => {
       const x0 = x, x1 = (x += basis[i] + want[i] * g + slack);
