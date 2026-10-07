@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { changedFields, discardMessage, editKey, fetchRecord, menuKey, saveTask, type MenuState, type TaskRecord } from "./taskView";
+import { changedFields, discardMessage, editKey, fetchRecord, markdown, menuKey, saveTask, type MenuState, type TaskRecord } from "./taskView";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-human"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -115,5 +115,18 @@ describe("the Move to menu's keyboard", () => {
 
   it("leaves a menu with no items closed", () => {
     expect(menuKey(closed, "ArrowDown", []).state.open).toBe(false);
+  });
+});
+
+describe("markdown", () => {
+  it("keeps a fenced block whole across its blank lines and a paragraph's line breaks", () => {
+    expect(markdown("one\ntwo\n\n## Head\n\n```yaml\na: 1\n\nb: 2\n```\nafter")).toEqual([
+      { kind: "p", text: "one\ntwo" }, { kind: "h", text: "Head" }, { kind: "pre", text: "a: 1\n\nb: 2" }, { kind: "p", text: "after" },
+    ]);
+  });
+
+  it("closes an unterminated fence at the end and draws nothing for an empty description", () => {
+    expect(markdown("```\nopen")).toEqual([{ kind: "pre", text: "open" }]);
+    expect(markdown("")).toEqual([]);
   });
 });

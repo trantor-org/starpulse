@@ -377,7 +377,6 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
         return;
       }
       if (e.key !== "Escape") return;
-      setOpen(null);
       setMenu(null);
     };
     addEventListener("keydown", onKey);

@@ -135,3 +135,63 @@ export function menuKey(state: MenuState, key: string, enabled: boolean[]): Menu
     default: return { state, pick: null, handled: false };
   }
 }
+
+/** The text Copy puts on the clipboard: the task's id and its title. */
+export const copyText = (task: { id: string }, title: string): string => `${task.id} ${title}`;
+
+/** Write `text` to the clipboard; false when the browser refuses. A page served over plain http has no async clipboard, so a selection copy stands in. */
+export async function copyToClipboard(text: string, clipboard: Pick<Clipboard, "writeText"> | undefined = globalThis.navigator?.clipboard): Promise<boolean> {
+  try {
+    if (clipboard) {
+      await clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // refused: fall back to a selection copy
+  }
+  if (typeof document === "undefined") return false;
+  const box = document.createElement("textarea");
+  box.value = text;
+  box.style.cssText = "position:fixed;opacity:0";
+  document.body.append(box);
+  box.select();
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    box.remove();
+  }
+}
+
+/** A press on the dimmed scrim, not on the dialog above it, dismisses the modal. */
+export const onScrim = (target: unknown, scrim: unknown): boolean => target === scrim;
+
+/** Escape closes the modal, except in the edit form, whose own shortcuts own it. */
+export const closesOnKey = (key: string, editing: boolean): boolean => key === "Escape" && !editing;
+
+export interface Block { kind: "p" | "h" | "pre"; text: string }
+
+/** A task description's Markdown as the blocks the read view draws: paragraphs, `##` headings and fenced code. */
+export function markdown(text: string): Block[] {
+  const blocks: Block[] = [];
+  let lines: string[] = [];
+  let fence = false;
+  const flush = (kind: Block["kind"]) => {
+    if (lines.length || kind === "pre") blocks.push({ kind, text: lines.join("\n") });
+    lines = [];
+  };
+  for (const line of text.split("\n")) {
+    if (line.startsWith("```")) {
+      flush(fence ? "pre" : "p");
+      fence = !fence;
+    } else if (fence) lines.push(line);
+    else if (line.startsWith("## ")) {
+      flush("p");
+      blocks.push({ kind: "h", text: line.slice(3) });
+    } else if (line.trim()) lines.push(line);
+    else flush("p");
+  }
+  flush(fence ? "pre" : "p");
+  return blocks;
+}
