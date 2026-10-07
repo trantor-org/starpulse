@@ -1,5 +1,5 @@
 // Design mockup layer (the DAGs view), never part of the page. The page above is a scrubbed capture of the real StarPulse page,
-// built from a source copy that adds a DAGs view beside the Kanban (four layouts: ?layout=domains|status|atlas|catalog) and takes
+// built from a source copy that adds a DAGs view beside the Kanban (a catalog, one row per DAG, in the Kanban's own elements) and takes
 // the DAGs off the Star Map (?map=bare; ?map=today keeps them). This layer adds the review bar, a demo set of run-safe DAGs so Run
 // now can be tried (?safe=live shows today's flags, where none is run-safe), the text size (?fs=100|125|150) and synthetic DAGs for
 // scale (?n=150|400). A DAG tied to a Board state opens that transition's Ledger; MERGED's is its own public mockup. It runs before
@@ -45,7 +45,6 @@
     }
   }
 
-  window.__DAG_LAYOUT__ = q.get("layout") || "domains";
   if ((q.get("safe") || "demo") === "demo") {
     window.__DAG_RUNSAFE__ = ["dagu/board-lint", "dagu/cleanup-workspace", "dagu/postgres-restore-verify", "dagu/mutation-sweep", "dagu/memory-reindex",
       "dagu/task-duplicate-retrain", "dagu/graph-refresh", "dagu/healthcheck"];
@@ -82,9 +81,8 @@
     #mockbar a { padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(148,163,184,.18); color: #b6c0d3; text-decoration: none; }
     #mockbar a.on { border-color: #fbbf24; color: #fde68a; background: rgba(251,191,36,.10); }
   </style><b>MOCKUP</b>`;
-  const cur = { layout: q.get("layout") || "domains", map: q.get("map") || "bare", safe: q.get("safe") || "demo", n: q.get("n") || "", fs: q.get("fs") || "100" };
+  const cur = { map: q.get("map") || "bare", safe: q.get("safe") || "demo", n: q.get("n") || "", fs: q.get("fs") || "100" };
   const groups = [
-    ["Layout", "layout", [["domains", "Domain columns"], ["status", "Status columns"], ["atlas", "Atlas"], ["catalog", "Catalog"]]],
     ["Star Map", "map", [["bare", "Without DAGs"], ["today", "Today"]]],
     ["Run-safe", "safe", [["demo", "Demo set"], ["live", "Live flags"]]],
     ["DAGs", "n", [["", "Live"], ["150", "150"], ["400", "400"]]],
@@ -97,8 +95,7 @@
       const a = document.createElement("a"), u = new URLSearchParams(location.search);
       if (v) u.set(key, v);
       else u.delete(key);
-      // a Layout link opens the DAGs view; the Star Map links open the Star Map
-      if (key === "layout") u.set("view", "dags");
+      // the Star Map links open the Star Map
       if (key === "map") u.set("view", "constellation");
       a.href = `?${u}`;
       a.textContent = l;
