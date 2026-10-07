@@ -86,10 +86,10 @@ index b319701..1222ccb 100644
          )}
 diff --git a/starpulse/web/src/Dags.tsx b/starpulse/web/src/Dags.tsx
 new file mode 100644
-index 0000000..45658b2
+index 0000000..93387e6
 --- /dev/null
 +++ b/starpulse/web/src/Dags.tsx
-@@ -0,0 +1,472 @@
+@@ -0,0 +1,489 @@
 +// DESIGN MOCKUP ONLY (DAGs view). A view of its own for the DAGs, beside the Kanban: every DAG as a card or a tile in its
 +// domain, drawn in the Star Map's language (a running DAG is a sun, a failed run collapses to a black hole, a DAG never run is a
 +// dim body) with its steps as a small constellation. The layout is a review choice (`?layout=domains|status|atlas|catalog`).
@@ -99,7 +99,7 @@ index 0000000..45658b2
 +import type { Cue, Dag, DagStep, Domain, Machine, Pool } from "./types";
 +
 +interface Src { dags: Dag[]; domains: Domain[]; pools: Pool[]; cues: Cue[]; flows: { name: string; machine: Machine }[]; now: number }
-+type G = typeof globalThis & { __DAGS__?: Src; __FLOW_FIXTURE__?: Src; __DAG_LAYOUT__?: string; __DAG_RUNSAFE__?: string[]; __DAG_REFUSE__?: Record<string, string> };
++type G = typeof globalThis & { __DAGS__?: Src; __FLOW_FIXTURE__?: Src; __DAG_LAYOUT__?: string; __DAG_RUNSAFE__?: string[]; __DAG_REFUSE__?: Record<string, string>; __DAG_LEDGER__?: Record<string, string> };
 +const g = globalThis as G;
 +const src = (): Src | null => g.__DAGS__ ?? g.__FLOW_FIXTURE__ ?? null;
 +const LOADED = Date.now() / 1000;
@@ -157,24 +157,26 @@ index 0000000..45658b2
 +const order = (a: Row, b: Row) => RANK[a.phase] - RANK[b.phase] || b.finishedAt - a.finishedAt || a.d.name.localeCompare(b.d.name);
 +
 +/** Where a DAG touches the Board: the event it is cued by, the transitions it writes, the skill it launches. */
-+interface Tie { kind: "cue" | "writes" | "launches" | "acts"; text: string; note: string; color: string }
++/** `ev`: the state transition a DAG writes or is cued by, which has a Ledger hung from it on the Star Map. */
++interface Tie { kind: "cue" | "writes" | "launches" | "acts"; text: string; note: string; color: string; ev?: string }
 +function ties(s: Src, name: string): Tie[] {
 +  const out: Tie[] = [];
 +  const board = s.flows.find((f) => f.name === "board")?.machine;
 +  const sn = (m: Machine, id: string) => m.states.find((x) => x.id === id)?.name ?? id;
-+  for (const c of s.cues ?? []) if (c.dag === name) out.push({ kind: "cue", text: `on ${c.event}`, note: `${c.on}; the task lands in ${board ? sn(board, c.state) : c.state}`, color: BOARD_COLOR[c.state] ?? "#94a3b8" });
++  for (const c of s.cues ?? []) if (c.dag === name) out.push({ kind: "cue", ev: c.event, text: `on ${c.event}`, note: `${c.on}; the task lands in ${board ? sn(board, c.state) : c.state}`, color: BOARD_COLOR[c.state] ?? "#94a3b8" });
 +  for (const f of s.flows) {
 +    const m = f.machine;
 +    for (const [ev, ws] of Object.entries(m.writers ?? {})) if (ws.some((w) => w.actor === name)) {
 +      const t = m.transitions.find((x) => x.event === ev);
-+      out.push({ kind: "writes", text: t ? sn(m, t.target) : ev, note: t ? `${ev}: ${sn(m, t.source)} → ${sn(m, t.target)}${f.name === "board" ? "" : ` (${f.name})`}` : ev, color: (t && BOARD_COLOR[t.target]) ?? "#c084fc" });
++      out.push({ kind: "writes", ev: t ? ev : undefined, text: t ? sn(m, t.target) : ev, note: t ? `${ev}: ${sn(m, t.source)} → ${sn(m, t.target)}${f.name === "board" ? "" : ` (${f.name})`}` : ev, color: (t && BOARD_COLOR[t.target]) ?? "#c084fc" });
 +    }
 +    const l = m.launches?.[name];
 +    if (l) out.push({ kind: "launches", text: l.skill, note: l.flow ? `launches ${l.skill}, which runs the ${l.flow} machine` : `launches ${l.skill}`, color: "#c084fc" });
 +  }
 +  if (board?.dagActors?.includes(name) && !out.some((t) => t.kind === "writes")) out.push({ kind: "acts", text: "Board", note: "acts on Board tasks", color: "#c084fc" });
 +  const seen = new Set<string>();
-+  return out.filter((t) => !seen.has(t.kind + t.text) && seen.add(t.kind + t.text));
++  out.sort((a, b) => Number(!a.ev) - Number(!b.ev));
++  return out.filter((t) => !seen.has(t.kind + t.text + (t.ev ?? "")) && seen.add(t.kind + t.text + (t.ev ?? "")));
 +}
 +
 +/** Steps placed by depth (longest path from a root): one column per depth, a wide fan folded into a small cluster of
@@ -218,6 +220,9 @@ index 0000000..45658b2
 +  return place(steps, w, h, Math.max(44, lw / 2 + 6), 5, Math.max(92, lw + 16), 120, 40, px);
 +};
 +
++/** A name cut to `n` characters with an ellipsis: the strip draws outside its box so a halo is never clipped, so its text must fit. */
++const fit = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, Math.max(1, Math.floor(n) - 1))}…`);
++
 +/** A DAG's steps as a constellation: one star per step in its status colour, joined by its dependencies; the running step burns. */
 +function Strip({ r, w = 240, h = 24, big = false, center = false }: { r: Row; w?: number; h?: number; big?: boolean; center?: boolean }) {
 +  const st = r.d.steps;
@@ -242,7 +247,7 @@ index 0000000..45658b2
 +          </g>
 +        );
 +      })}
-+      {!big && !center && st.length === 1 && <text x={7 + 9} y={h / 2 + 3.5} className="one">{st[0].name}</text>}
++      {!big && !center && st.length === 1 && <text x={7 + 9} y={h / 2 + 3.5} className="one">{fit(st[0].name, (w - 22) / (LABEL_PX() * 0.88))}</text>}
 +    </svg>
 +  );
 +}
@@ -275,6 +280,15 @@ index 0000000..45658b2
 +  );
 +}
 +
++/** A Board tie as a chip; a state tie opens that transition's Ledger on the Star Map (here, the mockup's Ledger where one exists). */
++function TieChip({ t, dot, label }: { t: Tie; dot?: boolean; label?: string }) {
++  const url = t.ev ? (globalThis as G).__DAG_LEDGER__?.[t.ev] : undefined, text = dot ? "⇢" : `⇢ ${label ?? t.text}`;
++  const title = `${dot ? "Board: " : ""}${t.note}${t.ev ? `. Opens the ${t.ev} Ledger${url ? "" : " (not mocked yet)"}` : ""}`;
++  const cls = `tie${dot ? " dot" : ""}${t.ev ? " lg" : ""}`, st = { "--tc": t.color } as CSSProperties;
++  return url ? <a className={cls} href={url} target="_blank" rel="noreferrer" title={title} style={st} onClick={(e) => e.stopPropagation()}>{text}</a>
++    : <span className={cls} title={title} style={st}>{text}</span>;
++}
++
 +function Card({ c, r, dense }: { c: Ctx; r: Row; dense?: boolean }) {
 +  const t = ties(c.s, r.d.name)[0], pool = poolText(c, r);
 +  return (
@@ -283,7 +297,7 @@ index 0000000..45658b2
 +      <Strip r={r} />
 +      <div className="foot">
 +        {pool && <span className="pool" title={`pool ${r.d.pool}: running/cap +queued`}>{pool}</span>}
-+        {t && <span className="tie" title={t.note} style={{ "--tc": t.color } as CSSProperties}>⇢ {t.text}</span>}
++        {t && <TieChip t={t} />}
 +        <RunBtn c={c} r={r} />
 +      </div>
 +    </div>
@@ -294,7 +308,8 @@ index 0000000..45658b2
 +  const f = folded.has(k);
 +  return (
 +    <div className={`bucket${f ? " folded" : ""}${className ? ` ${className}` : ""}`}>
-+      <div className="bh" onClick={() => toggle(k)} role="button" aria-expanded={!f}><span className="tw">▾</span>{glyph}<span className="bn">{title}</span><span className="c">{n}</span></div>
++      <div className="bh" onClick={() => toggle(k)} role="button" tabIndex={0} aria-expanded={!f}
++        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle(k))}><span className="tw">▾</span>{glyph}<span className="bn">{title}</span><span className="c">{n}</span></div>
 +      {!f && children}
 +    </div>
 +  );
@@ -320,7 +335,7 @@ index 0000000..45658b2
 +            <h2><i className="cg" /><span className="nm" title={d}>{d}</span><span className="c">{list.length}</span><Census rs={list} /></h2>
 +            <div className="cbody">
 +              {hot.map((r) => <Card key={r.d.name} c={c} r={r} />)}
-+              {ok.length > 0 && <Fold k={`ok`} title="Healthy" n={ok.length} folded={folded} toggle={toggle} glyph={<Body phase="ok" />}>{ok.map((r) => <Card key={r.d.name} c={c} r={r} />)}</Fold>}
++              {ok.length > 0 && <Fold k={`ok|${d}`} title="Healthy" n={ok.length} folded={folded} toggle={toggle} glyph={<Body phase="ok" />}>{ok.map((r) => <Card key={r.d.name} c={c} r={r} />)}</Fold>}
 +            </div>
 +          </section>
 +        );
@@ -369,7 +384,7 @@ index 0000000..45658b2
 +                    <Strip r={r} w={150} h={44} center />
 +                    <div className="nm" title={r.d.name}><Body phase={r.phase} />{short(r.d.name)}</div>
 +                    <div className="last">{lastLine(r)}</div>
-+                    {t && <span className="tie dot" title={`Board: ${t.note}`} style={{ "--tc": t.color } as CSSProperties}>⇢</span>}
++                    {t && <TieChip t={t} dot />}
 +                    <RunBtn c={c} r={r} />
 +                  </div>
 +                );
@@ -397,7 +412,7 @@ index 0000000..45658b2
 +                <div key={r.d.name} className={`trow p-${r.phase}`} tabIndex={0} onClick={() => c.open(r)} onKeyDown={(e) => e.key === "Enter" && c.open(r)}>
 +                  <Body phase={r.phase} /><span className="nm" title={r.d.name}>{short(r.d.name)}</span><Strip r={r} w={220} h={20} />
 +                  <span className="last">{lastLine(r)}</span><span className="pool">{poolText(c, r) || "—"}</span>
-+                  <span>{t ? <span className="tie" title={t.note} style={{ "--tc": t.color } as CSSProperties}>⇢ {t.text}</span> : <span className="none">—</span>}</span>
++                  <span>{t ? <TieChip t={t} /> : <span className="none">—</span>}</span>
 +                  <RunBtn c={c} r={r} />
 +                </div>
 +              );
@@ -441,7 +456,9 @@ index 0000000..45658b2
 +            <tr><td>run now</td><td>{why ? <span className="k">{why}</span> : "run-safe: StarPulse may start it"}</td></tr>
 +          </tbody></table>
 +          <section className="sec"><div className="sh"><span className="t">Board</span></div>
-+            {ts.length ? ts.map((t) => <div className="tierow" key={t.kind + t.text}><span className="tie" style={{ "--tc": t.color } as CSSProperties}>⇢ {t.kind === "cue" ? t.text : t.kind === "writes" ? `writes ${t.text}` : t.kind === "launches" ? t.text : "acts"}</span><span className="k">{t.note}</span></div>)
++            {ts.length ? ts.map((t) => <div className="tierow" key={t.kind + t.text + (t.ev ?? "")}><TieChip t={t} label={t.kind === "writes" ? `writes ${t.text}` : t.kind === "acts" ? "acts" : t.text} /><span className="k">{t.note}</span>
++              {t.ev && ((u) => u ? <a className="lgnote" href={u} target="_blank" rel="noreferrer">open the {t.ev} Ledger ↗</a>
++                : <span className="lgnote">{t.ev} Ledger: on the Star Map, not mocked yet</span>)((globalThis as G).__DAG_LEDGER__?.[t.ev])}</div>)
 +              : <div className="k">No Board tie: this DAG neither moves a task nor is cued by one.</div>}
 +          </section>
 +        </div>
@@ -585,10 +602,10 @@ index 2fe63bb..e9e3434 100644
  
  /** The query string that opens `view`, keeping every other parameter; the view a bare address opens (`fallback`) needs no parameter. */
 diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
-index 7bcaec6..8d13db2 100644
+index 7bcaec6..ffcdafa 100644
 --- a/starpulse/web/src/style.css
 +++ b/starpulse/web/src/style.css
-@@ -548,3 +548,148 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
+@@ -548,3 +548,156 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
  #kb .trackers h4 { margin: 10px 0 2px; font-size: calc(12px * var(--fs)); }
  #kb .trackers pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: rgba(2,6,23,.7); white-space: pre-wrap; font-size: calc(11px * var(--fs)); }
  #kb .trackers .found { margin: 8px 0; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(167,139,250,.5); background: rgba(167,139,250,.10); line-height: 1.5; }
@@ -737,3 +754,11 @@ index 7bcaec6..8d13db2 100644
 +  color: var(--ink); font-size: calc(11.5px * var(--fs)); box-shadow: 0 10px 30px rgba(0,0,0,.5); animation: kb-modal .15s ease-out; }
 +#legend .body { width: 9px; height: 9px; margin-right: 5px; }
 +#kbm .dgm .run.lbl:disabled { border-color: rgba(148,163,184,.18); background: none; color: #5b6984; cursor: default; }
++#dg a.tie, .dgm a.tie { text-decoration: none; cursor: pointer; }
++#dg a.tie:hover, .dgm a.tie:hover, #dg a.tie:focus-visible { background: color-mix(in srgb, var(--tc) 26%, transparent); }
++.dgm .tierow .lgnote { margin-left: auto; color: #64748b; font-size: calc(10.5px * var(--fs)); }
++.dgm .tierow a.lgnote { color: #93c5fd; text-decoration: none; }
++.dgm .tierow a.lgnote:hover { text-decoration: underline; }
++/* the name keeps at least two fifths of the row; a long last-run line gives way first */
++#dg .dcard .nm { flex: 1 1 0; min-width: 40%; }
++#dg .dcard .last { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

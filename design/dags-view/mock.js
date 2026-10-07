@@ -2,7 +2,8 @@
 // built from a source copy that adds a DAGs view beside the Kanban (four layouts: ?layout=domains|status|atlas|catalog) and takes
 // the DAGs off the Star Map (?map=bare; ?map=today keeps them). This layer adds the review bar, a demo set of run-safe DAGs so Run
 // now can be tried (?safe=live shows today's flags, where none is run-safe), the text size (?fs=100|125|150) and synthetic DAGs for
-// scale (?n=150|400). It runs before the page's module.
+// scale (?n=150|400). A DAG tied to a Board state opens that transition's Ledger; MERGED's is its own public mockup. It runs before
+// the page's module.
 (() => {
   const q = new URLSearchParams(location.search), F = window.__FLOW_FIXTURE__;
   // the mockup opens on the DAGs view; the Views buttons move between it and the Star Map as on the page
@@ -33,7 +34,10 @@
       const status = rnd() < 0.04 ? "failed" : rnd() < 0.1 ? "not_started" : "succeeded";
       const ss = Array.from({ length: len }, (_, j) => ({ name: `${steps[j % steps.length]}${j >= steps.length ? j : ""}`, kind: "code", status,
         depends: j === 0 ? [] : [fanOut && j > 1 ? steps[0] : `${steps[(j - 1) % steps.length]}${j - 1 >= steps.length ? j - 1 : ""}`] }));
-      F.dags.push({ name, status, runId: "", startedAt: "", finishedAt: "", steps: ss, active: [], pool: "default" });
+      // a run in the last two days, a few seconds to a few minutes long; a never-run DAG has none
+      const end = F.now - Math.floor(rnd() * 2 * 86400), took = 3 + Math.floor(rnd() * rnd() * 300), iso = (s) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
+      const ran = status !== "not_started";
+      F.dags.push({ name, status, runId: ran ? `demo-${i}` : "", startedAt: ran ? iso(end - took) : "", finishedAt: ran ? iso(end) : "", steps: ss, active: [], pool: "default" });
       const dn = doms[Math.floor(rnd() * doms.length)];
       let d = F.domains.find((x) => x.name === dn);
       if (!d) F.domains.push((d = { name: dn, dags: [] }));
@@ -47,6 +51,8 @@
       "dagu/task-duplicate-retrain", "dagu/graph-refresh", "dagu/healthcheck"];
     window.__DAG_REFUSE__ = { "dagu/healthcheck": "Dagu refused the run: the DAG is suspended." };
   }
+  // A DAG tied to a Board state opens that transition's Ledger; the one mocked so far is MERGED's, in its own public mockup.
+  window.__DAG_LEDGER__ = { MERGED: "https://trantor-org.github.io/starpulse-demo/pr-95/design-mockup.html?merged=c&ms=live" };
   // The DAGs view keeps every DAG; the Star Map, on ?map=bare, draws none of them: no DAG bodies, no writer lines, no cues.
   if (F) {
     window.__DAGS__ = JSON.parse(JSON.stringify({ dags: F.dags, domains: F.domains, pools: F.pools, cues: F.cues || [], flows: F.flows, now: F.now }));
