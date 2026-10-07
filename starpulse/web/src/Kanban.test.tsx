@@ -282,6 +282,8 @@ describe("a Waiting card linked to a blocker in another milestone", () => {
 
     expect(html).toMatch(/<button[^>]*class="xm"[^>]*>↗ <span class="nw">m-1<\/span> · <span class="nw">T-1<\/span><\/button>/);
     expect(html).toContain("Waits on T-1 in m-1");
+    expect(html.indexOf("⧗1")).toBeLessThan(html.indexOf('class="xm"'));
+    expect(html.indexOf('class="xm"')).toBeLessThan(html.indexOf('class="who"'));
     expect(badge(card(() => {}, () => {}, []))).toBeUndefined();
     expect(renderToStaticMarkup(<Card task={waiting} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />)).not.toContain("↗");
   });

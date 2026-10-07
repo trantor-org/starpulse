@@ -141,6 +141,8 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
             <span key={l} title={l} className={`lab${l === "needs-human" ? " nh" : /^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
           ))}
           {badge}
+          {holds > 0 && <span className="holds" title={`holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>⛓{holds}</span>}
+          {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
           {cross?.map((d) => (
             // a button of its own on the card: it opens the blocker, so the click, press and keys that would open or lift the card stop here
             <button key={d.id} className="xm" title={`Waits on ${d.id} in ${d.milestone || "No milestone"} (Waiting): open it`}
@@ -149,8 +151,6 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
               ↗ <span className="nw">{d.milestone || "no milestone"}</span> · <span className="nw">{d.id}</span>
             </button>
           ))}
-          {holds > 0 && <span className="holds" title={`holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>⛓{holds}</span>}
-          {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
           {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
         </div>
       )}
