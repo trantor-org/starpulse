@@ -361,7 +361,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 
 /* Starting a session, from the approved mockups: ▶ as a full-height strip on a startable card's right edge (TASK-3016),
    the start question, and the card that waits in In progress on a dashed amber edge until its agent claims it. */
-#kb .card.startable { padding-right: calc(max(30px, 30px * var(--fs)) + 9px); }
+#kb .card.startable, #kb.compact .card.startable { padding-right: calc(max(30px, 30px * var(--fs)) + 9px); }
 #kb .play.edge { all: unset; position: absolute; top: 0; right: 0; bottom: 0; width: max(30px, calc(30px * var(--fs))); display: flex; align-items: center; justify-content: center;
   cursor: pointer; border-left: 1px solid rgba(52,211,153,.28); border-radius: 0 6px 6px 0; background: rgba(52,211,153,.06); color: #34d399; font-size: calc(13px * var(--fs)); line-height: 1; }
 #kb .play.edge:hover, #kb .play.edge:focus-visible { background: rgba(52,211,153,.2); color: #6ee7b7; }
