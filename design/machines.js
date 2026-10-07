@@ -344,8 +344,8 @@
     }
 
     // ---- the trace: a task's path, in time order, across every machine it has a session in. Each hop is retraced along the
-    // flow line it took, in the colours of its two states, one after another; a hop the machine has no line for bows off
-    // in red and dashed; an entry into a machine runs down its tether. Then a comet keeps running the whole path.
+    // flow line it took, in the colours of its two states, all at once as on the Star Map; a hop the machine has no line
+    // for bows off in red and dashed; an entry into a machine runs down its tether.
     let trace = null;
     function traceSegs(ag) {
       const list = (ag.task ? byTask[ag.task] || [ag] : [ag]).slice().sort((a, b) => start(a) - start(b)), segs = [];
@@ -362,25 +362,22 @@
       cx.font = font(px, 600); cx.fillStyle = "#fef3c7"; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.fillText(txt, p.x, p.y + 0.5 / view.k); }
     function drawTrace(now) {
       const src = hover?.kind === "task" ? hover.o : pinned; if (!src) return (trace = null);
-      const id = src.task || src.id; if (trace?.id !== id) trace = { id, t0: now };
-      const segs = traceSegs(src), n = segs.length, D = Math.min(220, 2600 / Math.max(1, n)), el = now - trace.t0, geo = [];
+      trace = { id: src.task || src.id };
+      const segs = traceSegs(src), geo = [];
       trace.keys = new Set(segs.flatMap((s) => [s.a.key, s.b.key]));
-      for (const [i, s] of segs.entries()) { const e = segCurve(s), [t0, t1] = trim(e, s.a.r + 2 / view.k, s.b.r + 4 / view.k), q = clamp((el - i * D) / D, 0, 1); geo.push({ e, t0, t1, s });
-        if (q <= 0) continue; const col = s.off ? OFF : null, g = cx.createLinearGradient(s.a.x, s.a.y, s.b.x, s.b.y);
+      for (const s of segs) { const e = segCurve(s), [t0, t1] = trim(e, s.a.r + 2 / view.k, s.b.r + 4 / view.k); geo.push({ e, t0, t1, s });
+        const col = s.off ? OFF : null, g = cx.createLinearGradient(s.a.x, s.a.y, s.b.x, s.b.y);
         g.addColorStop(0, rgba(col || s.a.col, 0.95)); g.addColorStop(1, rgba(col || (s.kind === "entry" ? s.b.col : s.b.col), 0.95));
-        cx.strokeStyle = g; cx.lineWidth = 2.4 / view.k; cx.setLineDash(s.off ? [5 / view.k, 5 / view.k] : []); const tq = t0 + (t1 - t0) * q; along(e, t0, tq, 24); cx.setLineDash([]);
-        arrow(at(e, Math.max(t0, tq - 0.02)), at(e, tq), rgba(col || s.b.col, 0.95), 8); }
+        cx.strokeStyle = g; cx.lineWidth = 2.4 / view.k; cx.setLineDash(s.off ? [5 / view.k, 5 / view.k] : []); along(e, t0, t1, 24); cx.setLineDash([]);
+        arrow(at(e, t1 - 0.02), at(e, t1), rgba(col || s.b.col, 0.95), 8); }
       // each state the path visits: its rim firms up
       for (const k of trace.keys) { const nd = L.nodes.get(k); if (!nd) continue; cx.strokeStyle = rgba(nd.col, 1); cx.lineWidth = 2 / view.k; cx.beginPath(); cx.arc(nd.x, nd.y, nd.r, 0, TAU); cx.stroke(); }
       // step numbers at each line's middle, a line taken twice carrying both, slid along it clear of the others
-      const byLine = new Map(); geo.forEach((g, i) => { if (el < (i + 1) * D) return; const k = `${g.s.a.key}>${g.s.b.key}>${g.s.kind}`; if (!byLine.has(k)) byLine.set(k, { g, nums: [] }); byLine.get(k).nums.push(g.s.n); });
+      const byLine = new Map(); geo.forEach((g) => { const k = `${g.s.a.key}>${g.s.b.key}>${g.s.kind}`; if (!byLine.has(k)) byLine.set(k, { g, nums: [] }); byLine.get(k).nums.push(g.s.n); });
       const taken = [];
       for (const { g, nums } of byLine.values()) { const txt = nums.join(" · "), w = (Math.max(16, textW(txt, 10, 600) + 10) + 4) / view.k, h = 19 / view.k;
         const p = [0.5, 0.38, 0.62, 0.28, 0.72].map((t) => at(g.e, lerp(g.t0, g.t1, t))).find((q) => !taken.some((o) => Math.abs(o.x - q.x) < w && Math.abs(o.y - q.y) < h)) || at(g.e, lerp(g.t0, g.t1, 0.5));
         taken.push({ x: p.x, y: p.y }); badge(p, txt, g.s.off ? OFF : ACT); }
-      // once drawn, a comet runs the whole path in order and loops
-      if (n && el > n * D) { const C = Math.max(2400, n * 420), u = (((el - n * D) % C) / C) * n, i = Math.min(n - 1, Math.floor(u)), f = u - i, g = geo[i];
-        for (let j = 6; j >= 0; j--) { const t = lerp(g.t0, g.t1, Math.max(0, f - j * 0.03)), p = at(g.e, t); cx.fillStyle = rgba(ACT, j ? 0.5 * (1 - j / 7) : 1); cx.beginPath(); cx.arc(p.x, p.y, (j ? 2 : 3.4) / view.k, 0, TAU); cx.fill(); } }
       // the traced task's own dots, ringed
       for (const ag of src.task ? byTask[src.task] || [] : [src]) { const p = taskPos.get(ag); if (!p) continue; cx.strokeStyle = rgba(ACT, 0.95); cx.lineWidth = 1.4 / view.k; cx.beginPath(); cx.arc(p.x, p.y, 6 / view.k, 0, TAU); cx.stroke(); }
     }
