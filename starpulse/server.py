@@ -1062,7 +1062,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     base = args.config.parent if args.config else Path.cwd()
     if not (_STATIC / "index.html").is_file():
         parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter flow-view build` first\n")
-    adapters = [(instance, _adapter(parser, instance)) for instance in config.runs]
+    adapters = [(instance, _adapter(parser, instance)) for instance in config.runs if instance.type]  # push-only: none
     starts = {instance.name: start for instance, adapter in adapters if (start := adapter.start(instance.url))}
     # Run now is drawn only for an instance whose adapter can start a run, and only on its run-safe workflows.
     reruns = {

@@ -133,6 +133,31 @@ def test_an_instance_needs_a_name_a_type_and_a_url(tmp_path: Path, missing: str)
     assert _refusal(tmp_path, text) == f"a runs instance needs {missing}"
 
 
+def test_an_instance_with_a_token_and_no_type_or_url_is_push_only(tmp_path: Path) -> None:
+    (only,) = load(_write(tmp_path, '[[runs]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\n')).runs
+
+    assert (only.name, only.type, only.url, only.token_env) == ("cron", None, None, "CRON_INGEST_TOKEN")
+
+
+def test_an_instance_with_neither_a_type_nor_a_token_is_refused(tmp_path: Path) -> None:
+    assert _refusal(tmp_path, '[[runs]]\nname = "cron"\n') == "a runs instance needs type"
+
+
+@pytest.mark.parametrize("given", ['type = "dagu"', 'url = "http://ci.test"'])
+def test_a_push_only_instance_takes_neither_half_of_a_pull_adapter(tmp_path: Path, given: str) -> None:
+    text = f'[[runs]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\n{given}\n'
+
+    assert _refusal(tmp_path, text) == f"a runs instance needs {'url' if given.startswith('type') else 'type'}"
+
+
+def test_a_push_only_instance_has_nothing_to_start_so_run_safe_is_refused(tmp_path: Path) -> None:
+    text = '[[runs]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\nrun_safe = ["nightly"]\n'
+
+    assert _refusal(tmp_path, text) == (
+        "runs instance cron: a push-only instance has no start, so run_safe does not apply"
+    )
+
+
 def test_an_unknown_instance_key_is_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     text = '[[runs]]\nname = "ci"\ntype = "dagu"\nurl = "http://ci.test"\nrunsafe = []\nzeta = 1\n'
 

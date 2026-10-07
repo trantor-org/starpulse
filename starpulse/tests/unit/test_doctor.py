@@ -43,6 +43,15 @@ def test_every_check_passes_against_a_healthy_host_and_server() -> None:
     assert all(c["status"] == "pass" and c["reason"] for c in report["checks"])
 
 
+def test_a_push_only_instance_has_no_adapter_to_check() -> None:
+    push_only = Config(None, "ic", (*CONFIG.runs, RunsInstance("cron", None, None, token_env="CRON_INGEST_TOKEN")))
+
+    report = doctor.run_checks(snapshot(), push_only, FakeHost().probes(), "http://localhost:8766")
+
+    assert report["ok"] is True
+    assert [c["check"] for c in report["checks"]] == CHECKS
+
+
 FAULTS: list[tuple[str, str, Callable[[], tuple[Any, ...]], str]] = [
     ("config", "starpulse.toml: bad key", lambda: (snapshot(), "starpulse.toml: bad key", FakeHost()), "bad key"),
     (

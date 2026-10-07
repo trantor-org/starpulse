@@ -18,8 +18,10 @@ import pytest
 from starpulse import run_events
 from starpulse.adapter_kit import serve, url
 from starpulse.board_feed import BoardFeed, follow
+from starpulse.config import load
 from starpulse.event_log import EventLog, Tail
 from starpulse.ingest import MAX_BODY, Ingest
+from starpulse.ingest import tokens as ingest_tokens
 from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
 
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}
@@ -135,3 +137,27 @@ def test_a_server_with_no_instance_token_has_no_ingest_route(tmp_path: Path) -> 
 
     assert status == 404
     assert Tail(log, run_events.STREAM).poll() == []
+
+
+def test_a_push_only_instance_from_the_readmes_config_draws_its_pushed_run_with_no_run_now(tmp_path: Path) -> None:
+    config_file = tmp_path / "starpulse.toml"
+    config_file.write_text('[[runs]]\nname = "cron"\ntoken_env = "CRON_INGEST_TOKEN"\n')
+    config = load(config_file)
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    feed = BoardFeed(domains=config.qualified_domains(), run_safe=config.qualified_run_safe())
+    pushed = PushRuns(feed.runs(PUSHED_INSTANCE), None)
+    stop = threading.Event()
+    follow(pushed, log, run_events.STREAM, pushed.handle_entry, stop=stop, interval=0.01)
+    tokens = ingest_tokens(config.runs, {"CRON_INGEST_TOKEN": "cron-secret"})
+
+    with serve(tmp_path, feed, ingest=Ingest(tokens, log)) as server:
+        stack = Stack(server, feed, log)
+        # the README's curl example
+        status, _ = stack.post(
+            {"phase": "start", "workflow": "cron/nightly", "run_id": "2026-10-03", "status": "running"}, "cron-secret"
+        )
+        dag = stack.until_drawn("pushed/cron/nightly")
+    stop.set()
+
+    assert (status, dag["status"], dag["runId"]) == (201, "running", "2026-10-03")
+    assert not any(d["runSafe"] for domain in feed.snapshot()["domains"] for d in domain["dags"])
