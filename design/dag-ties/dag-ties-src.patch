@@ -1,12 +1,12 @@
 diff --git a/starpulse/web/src/dagTies.ts b/starpulse/web/src/dagTies.ts
 new file mode 100644
-index 0000000..c2b57bf
+index 0000000..ded1b66
 --- /dev/null
 +++ b/starpulse/web/src/dagTies.ts
-@@ -0,0 +1,170 @@
-+// Design mockup only (design/dag-ties): the DAGs tied to a Board state, drawn back onto the Star Map as one DAGs hub. Which DAGs are tied, the
-+// transition each writes or is cued by, and where the hub and each DAG's orbiter sit; the renderer draws them (drawTies) and mock.js simulates
-+// their runs.
+@@ -0,0 +1,207 @@
++// Design mockup only (design/dag-ties): the DAGs tied to a Board state, drawn back onto the Star Map as a small DAGs hangar docked beside each
++// state they act on. Which DAGs are tied, the transition each writes or is cued by, the state each belongs to, and where each hangar and its
++// orbiters sit; the renderer draws them (drawTies) and mock.js simulates their runs.
 +//   write   — the DAG writes a Board transition (the machine's `writers`)
 +//   cue     — a Board event cues the DAG (the machine's `cues`)
 +//   launch  — the DAG launches a skill, into a drawn lifecycle machine (a moon of In Progress) or none
@@ -15,10 +15,6 @@ index 0000000..c2b57bf
 +import type { Sky } from "./sky";
 +
 +export type TieKind = "write" | "cue" | "launch" | "sub";
-+/** How the hub's orbiters sit: each turned toward the transition it docks by, or evenly round the ring (the old DAGs hangar). */
-+export type Ring = "aim" | "even";
-+/** How a write or cue shows: a comet between the DAG's orbiter and the transition, or a comet along the transition's own edge. */
-+export type Motion = "hub" | "edge";
 +export interface Anchor extends Pt {
 +  kind: TieKind;
 +  /** The Board event (or sub-machine event) the tie is about; a launch names the flow it launches. */
@@ -28,6 +24,8 @@ index 0000000..c2b57bf
 +  diamond: boolean;
 +  /** For a launch: the flow, when the page draws it. */
 +  flow?: string | null;
++  /** The state the tie acts on: a write's source (the state the DAG moves work out of), a cue's state (where the event lands). */
++  state?: string;
 +}
 +export interface Orbiter extends Pt {
 +  dag: string;
@@ -40,6 +38,8 @@ index 0000000..c2b57bf
 +  a: number;
 +}
 +export interface Hub extends Pt {
++  /** The state it docks beside. */
++  state: string;
 +  /** The disc's radius and the orbit's, in world units. */
 +  r: number;
 +  orbit: number;
@@ -52,7 +52,7 @@ index 0000000..c2b57bf
 +  anchors: Anchor[];
 +}
 +export interface Ties {
-+  hub: Hub | null;
++  hubs: Hub[];
 +  chip: Chip | null;
 +  /** World units a screen pixel at the Board's fit, and the page's text size as a factor. */
 +  u: number;
@@ -60,13 +60,12 @@ index 0000000..c2b57bf
 +}
 +
 +const short = (d: string) => d.replace(/^[^/]+\//, "");
-+export const ringOf = (q: URLSearchParams): Ring => (q.get("ring") === "even" ? "even" : "aim");
-+export const motionOf = (q: URLSearchParams): Motion => (q.get("motion") === "edge" ? "edge" : "hub");
-+/** Screen pixels: the hub disc, its orbit, and the least angle between two orbiters. */
-+const DISC = 22, ORBIT = 44, SEP = (26 * Math.PI) / 180;
++/** Screen pixels: a hangar's disc, its orbit, and the least angle between two orbiters. */
++const DISC = 13, ORBIT = 28, SEP = (40 * Math.PI) / 180;
 +
-+/** The tied DAGs of the Board level: the hub and its orbiters for the DAGs that write or are cued by a transition, and the chip for the rest. */
-+export function boardTies(sc: Scene, sky: Sky, ring: Ring, u: number, ts = 1): Ties {
++/** The tied DAGs of the Board level: a hangar per state with its orbiters for the DAGs that write or are cued by a transition, and the chip for
++ *  the DAGs that only launch work. */
++export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
 +  const board = sky.board.machine, byDag = new Map<string, Orbiter>();
 +  const tie = (dag: string): Orbiter | null => {
 +    if (!sky.dagBy[dag]) return null;
@@ -87,11 +86,11 @@ index 0000000..c2b57bf
 +      if (!t || !tr) continue;
 +      const e = edgeOf(event), m = e && !e.loop ? mid(e) : null;
 +      const p = m ?? (sc.galaxies[tr.source] ? rimOf(tr.source, { x: sc.galaxies[tr.source].x, y: sc.galaxies[tr.source].y - 1 }) : null);
-+      if (p) t.anchors.push({ ...p, kind: "write", event, edge: e, diamond: true });
++      if (p) t.anchors.push({ ...p, kind: "write", event, edge: e, diamond: true, state: tr.source });
 +    }
 +  for (const c of sky.cues) {
 +    const t = tie(c.dag), e = edgeOf(c.event), m = e ? mid(e) : null;
-+    if (t && m) t.anchors.push({ ...m, kind: "cue", event: c.event, edge: e, diamond: true });
++    if (t && m) t.anchors.push({ ...m, kind: "cue", event: c.event, edge: e, diamond: true, state: c.state || e?.target });
 +  }
 +  const ip = sc.galaxies.in_progress;
 +  for (const l of sky.launches) {
@@ -103,8 +102,15 @@ index 0000000..c2b57bf
 +    const sub = !!flow && Object.values(sky.flows[flow]?.machine.writers ?? {}).some((ws) => ws.some((w) => w.actor === l.dag));
 +    t.anchors.push({ ...at, kind: sub ? "sub" : "launch", event: flow ?? l.skill, diamond: false, flow });
 +  }
-+  const all = [...byDag.values()], own = (t: Orbiter) => t.anchors.filter((a) => a.diamond);
-+  // each DAG docks by one transition: the one whose edge holds the fewest DAGs so far, the DAGs with fewest ties choosing first
++  const all = [...byDag.values()];
++  // each DAG belongs to the state most of its ties act on (the first, on a tie), and docks by one of that state's transitions
++  const home = (t: Orbiter) => {
++    const n = new Map<string, number>();
++    for (const a of t.anchors) if (a.diamond && a.state && sc.galaxies[a.state]) n.set(a.state, (n.get(a.state) ?? 0) + 1);
++    return [...n].reduce<[string, number] | null>((b, x) => (!b || x[1] > b[1] ? x : b), null)?.[0];
++  };
++  const own = (t: Orbiter) => t.anchors.filter((a) => a.diamond && a.state === home(t));
++  // among them, the one whose edge holds the fewest DAGs so far, the DAGs with fewest ties choosing first
 +  const load = new Map<BEdge | undefined, number>();
 +  for (const t of all.filter((t) => own(t).length).sort((a, b) => own(a).length - own(b).length)) {
 +    const a = own(t).reduce((x, y) => ((load.get(y.edge) ?? 0) < (load.get(x.edge) ?? 0) ? y : x));
@@ -116,43 +122,74 @@ index 0000000..c2b57bf
 +  const chip = launchers.length && ip
 +    ? { label: `✦ ${launchers.length} DAGs launch work here`, dags: launchers, anchors: launchers.flatMap((t) => t.anchors), x: ip.x, y: ip.y + Math.max(ip.visR, ip.moonR) + 34 * u }
 +    : null;
-+  return { hub: orbs.length ? place(sc, orbs, ring, u, ts) : null, chip, u, ts };
++  const byState = new Map<string, Orbiter[]>();
++  for (const t of orbs) byState.set(t.primary!.state!, [...(byState.get(t.primary!.state!) ?? []), t]);
++  const hubs: Hub[] = [];
++  for (const [state, os] of byState) hubs.push(place(sc, state, os, hubs, chip, u, ts));
++  return { hubs, chip, u, ts };
 +}
 +
-+/** The hub holds the right end of the Board's axis, as the DAGs hangar did: in the last column of states, level with In Progress, clear of the
-+ *  states above and below it. Each orbiter turns toward the transition it docks by, spread so no two touch, or sits evenly round the ring. */
-+function place(sc: Scene, orbs: Orbiter[], ring: Ring, u: number, ts: number): Hub {
-+  const gs = Object.values(sc.galaxies), ip = sc.galaxies.in_progress, r = DISC * u, orbit = ORBIT * u;
-+  const hub: Hub = { x: Math.max(...gs.map((g) => g.x)), y: ip ? ip.y : (sc.box ? (sc.box[1] + sc.box[3]) / 2 : sc.h / 2), r, orbit, orbs };
-+  // its orbit above and its name below (two lines) keep off every state's disc and the name over it
-+  const up = orbit + 8 * u, down = orbit + (14 + 44 * ts) * u;
-+  const top = (g: (typeof gs)[number]) => Math.min(g.y - Math.max(g.R, g.visR), g.lab.y - 16 * u * ts);
-+  const bottom = (g: (typeof gs)[number]) => Math.max(g.y + Math.max(g.R, g.visR), g.lab.y + 26 * u * ts);
-+  for (let i = 0; i < 40; i++) {
-+    const hit = gs.find((g) => Math.abs(g.x - hub.x) < Math.max(g.R, g.visR) + orbit && (g.y < hub.y ? hub.y - up - bottom(g) : top(g) - (hub.y + down)) < 0);
-+    if (!hit) break;
-+    hub.y += (hit.y < hub.y ? 6 : -6) * u;
-+  }
++/** A hangar docks beside its state, in the first open spot round it (above right, above left, below right, below left, then square on): clear
++ *  of every state's disc and name, of the hangars already placed and of the launch chip, with room for its own name under it, and nearer its
++ *  own state than any other. Each orbiter
++ *  turns toward the transition it docks by, spread so no two touch. */
++function place(sc: Scene, state: string, orbs: Orbiter[], placed: Hub[], chip: Chip | null, u: number, ts: number): Hub {
++  const g = sc.galaxies[state], gs = Object.values(sc.galaxies), r = DISC * u, orbit = ORBIT * u;
++  type Box = [number, number, number, number];
++  const over = (a: Box, b: Box) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
++  const keep: Box[] = gs.map((s) => {
++    // its disc, and its name and count, which can run wider than the disc
++    const R = Math.max(s.R, s.visR, s.moonR), w = Math.max(R, (s.name.length * 4 + 6) * u * ts);
++    return [s.x - w, Math.min(s.y - R, s.lab.y - 16 * u * ts), s.x + w, Math.max(s.y + R, s.lab.y + 26 * u * ts)];
++  });
++  // the map's own width: a hangar keeps between the outermost states, never under the side panels
++  const x0 = Math.min(...keep.map((b) => b[0])) - 30 * u, x1 = Math.max(...keep.map((b) => b[2])) + 30 * u;
++  // a moon's name runs out on the side away from its state, cut to a few words
++  for (const m of sc.moons) keep.push(m.x < m.parent.x ? [m.x - 80 * u * ts, m.y - 9 * u * ts, m.x + 8 * u, m.y + 9 * u * ts] : [m.x - 8 * u, m.y - 9 * u * ts, m.x + 80 * u * ts, m.y + 9 * u * ts]);
++  for (const h of placed) keep.push(boxOf(h.x, h.y, h.orbit, widest(h.orbs), u, ts));
++  if (chip) keep.push([chip.x - 110 * u * ts, chip.y - 14 * u, chip.x + 110 * u * ts, chip.y + 14 * u]);
++  const R = Math.max(g.R, g.visR, g.moonR), gap = orbit + 6 * u, name = widest(orbs);
++  const tries: Pt[] = [];
++  for (const d of [R + gap, R + gap + 24 * u, R + gap + 56 * u, R + gap + 96 * u])
++    for (const deg of [-40, -140, 40, 140, 0, 180, -90, 90, -65, -115, 65, 115, -20, -160, 20, 160]) tries.push({ x: g.x + Math.cos((deg * Math.PI) / 180) * d, y: g.y + Math.sin((deg * Math.PI) / 180) * d });
++  // the first clear spot nearest its own state, else the one that costs least
++  const cost = (p: Pt) => {
++    const box = boxOf(p.x, p.y, orbit, name, u, ts);
++    return keep.reduce((n, b) => n + over(box, b), 0) + (box[0] < x0 || box[2] > x1 ? 1e9 : 0);
++  };
++  // and nearer its own state's rim than any other's, so it reads as that state's
++  const rim = (s: (typeof gs)[number], p: Pt) => Math.hypot(p.x - s.x, p.y - s.y) - Math.max(s.R, s.visR, s.moonR);
++  const mine = (p: Pt) => gs.every((s) => s === g || rim(s, p) > rim(g, p) + 12 * u);
++  // a spot that reads as another state's costs more than grazing a neighbour's corner
++  const score = (p: Pt) => cost(p) + (mine(p) ? 0 : 2500 * u * u);
++  const at = tries.find((p) => score(p) === 0) ?? tries.reduce((a, b) => (score(b) < score(a) ? b : a));
++  const hub: Hub = { x: at.x, y: at.y, state, r, orbit, orbs };
 +  const aim = (t: Orbiter) => Math.atan2(t.primary!.y - hub.y, t.primary!.x - hub.x);
 +  const order = [...orbs].sort((a, b) => aim(a) - aim(b));
-+  if (ring === "even") order.forEach((t, i) => (t.a = (i / order.length) * Math.PI * 2 + aim(order[0])));
-+  else {
-+    order.forEach((t) => (t.a = aim(t)));
-+    // neighbours closer than SEP push apart, half each, until none are; the ring wraps
-+    const sep = Math.min(SEP, (Math.PI * 2) / order.length);
-+    for (let pass = 0; pass < 60; pass++)
-+      for (let i = 0; i < order.length; i++) {
-+        const p = order[i], q = order[(i + 1) % order.length];
-+        let d = q.a - p.a;
-+        if (i === order.length - 1) d += Math.PI * 2;
-+        if (order.length < 2 || d >= sep) continue;
-+        p.a -= (sep - d) / 2;
-+        q.a += (sep - d) / 2;
-+      }
-+  }
++  order.forEach((t) => (t.a = aim(t)));
++  // neighbours closer than SEP push apart, half each, until none are; the ring wraps
++  const sep = Math.min(SEP, (Math.PI * 2) / order.length);
++  for (let pass = 0; pass < 60; pass++)
++    for (let i = 0; i < order.length; i++) {
++      const p = order[i], q = order[(i + 1) % order.length];
++      let d = q.a - p.a;
++      if (i === order.length - 1) d += Math.PI * 2;
++      if (order.length < 2 || d >= sep) continue;
++      p.a -= (sep - d) / 2;
++      q.a += (sep - d) / 2;
++    }
 +  for (const t of orbs) Object.assign(t, { x: hub.x + Math.cos(t.a) * orbit, y: hub.y + Math.sin(t.a) * orbit });
 +  return hub;
 +}
++/** A hangar's name: its one DAG, or how many it holds. */
++export const nameOf = (orbs: Orbiter[]) => (orbs.length === 1 ? orbs[0].label : `${orbs.length} DAGs`);
++/** The widest line a hangar's name can show: its name, or one member's "<dag> running". */
++const widest = (orbs: Orbiter[]) => (orbs.length === 1 ? orbs[0].label : orbs.reduce((w, o) => (o.label.length + 8 > w.length ? `${o.label} running` : w), nameOf(orbs)));
++/** The room a hangar takes: its orbit, and its name (up to two lines) under it. */
++const boxOf = (x: number, y: number, orbit: number, name: string, u: number, ts: number): [number, number, number, number] => {
++  const w = Math.max(orbit + 8 * u, (name.length * 3.4 + 4) * u * ts);
++  return [x - w, y - orbit - 8 * u, x + w, y + orbit + (10 + 32 * ts) * u];
++};
 +
 +/** The flow a DAG launches: the machine tie the server derived (D8), else the launch's own flow name when the page draws one. */
 +function launchedFlow(sky: Sky, dag: string, flow: string | null): string | null {
@@ -175,14 +212,14 @@ index 0000000..c2b57bf
 +}
 +export const simOf = (dag: string): SimRun | undefined => (window as unknown as { __ties?: Record<string, SimRun> }).__ties?.[dag];
 diff --git a/starpulse/web/src/renderer.ts b/starpulse/web/src/renderer.ts
-index 0f35d40..dca4905 100644
+index 0f35d40..507c71b 100644
 --- a/starpulse/web/src/renderer.ts
 +++ b/starpulse/web/src/renderer.ts
 @@ -27,6 +27,7 @@ import { createHistory } from "./history";
  import { sizes } from "./grow";
  import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
  import { dagData } from "./dags";
-+import { boardTies, motionOf, ringOf, simOf, type Chip, type Hub, type Orbiter, type SimRun, type Ties } from "./dagTies";
++import { boardTies, nameOf, simOf, type Chip, type Hub, type Orbiter, type SimRun, type Ties } from "./dagTies";
  import type { Dag, Machine, Snapshot, Writer } from "./types";
  import { fanBadge, fanTip, stepStatus } from "./fanout";
  import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
@@ -201,8 +238,8 @@ index 0f35d40..dca4905 100644
      }
      if (star) return { kind: "dag", o: star };
 +    const tz = ties();
-+    for (const o of tz?.hub?.orbs ?? []) if (near(o, px(9))) return { kind: "tie", o };
-+    if (tz?.hub && near(tz.hub, tz.hub.orbit - px(6))) return { kind: "hub", o: tz.hub };
++    for (const h of tz?.hubs ?? []) for (const o of h.orbs) if (near(o, px(9))) return { kind: "tie", o };
++    for (const h of tz?.hubs ?? []) if (near(h, h.orbit - px(4))) return { kind: "hub", o: h };
 +    if (tz?.chip) {
 +      const c = tz.chip, w = textW(c.label, labPx(11.5) * K) / K / 2 + px(9);
 +      if (Math.abs(x - c.x) < w && Math.abs(y - c.y) < px(12)) return { kind: "chip", o: c };
@@ -226,7 +263,7 @@ index 0f35d40..dca4905 100644
 +          const r = simOf(o.dag), st = r ? (r.status === "failed" && r.unresolved ? "failed · unresolved" : r.status) : sky.dagBy[o.dag]?.status ?? "";
 +          return `${esc(o.label)} <span class="k">${o.primary?.kind === "cue" ? "cued by" : "writes"} ${esc(o.primary?.event ?? "")} · ${esc(st)}</span>`;
 +        });
-+        return `<div class="k">DAGs tied to a Board transition · click for the DAGs view</div><div class="n">DAGs</div>${rows.join("<br>")}`;
++        return `<div class="k">DAGs that act on ${esc(stateName(h.o.state))} · click for the DAGs view</div><div class="n">DAGs · ${esc(stateName(h.o.state))}</div>${rows.join("<br>")}`;
 +      }
 +      case "tie": {
 +        const o = h.o, d = sky.dagBy[o.dag], run = simOf(o.dag), cue = (e: string) => sky.cues.find((c) => c.dag === o.dag && c.event === e);
@@ -265,18 +302,17 @@ index 0f35d40..dca4905 100644
        flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
        cx.beginPath();
        cx.moveTo(e.p0!.x, e.p0!.y);
-@@ -1256,6 +1299,138 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1256,6 +1299,129 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
        }
      }
    }
 +  // ---- design mockup (design/dag-ties): the DAGs tied to a Board state ----
-+  const Q = new URLSearchParams(location.search), RING_MODE = ringOf(Q), MOTION = motionOf(Q);
 +  const tieCache = new WeakMap<Scene, Ties>();
 +  function ties(): Ties | null {
 +    const sc = scene;
 +    if (!sc || !S || level().kind !== "board") return null;
 +    let t = tieCache.get(sc);
-+    if (!t) tieCache.set(sc, (t = boardTies(sc, S, RING_MODE, 1 / Math.max(fit.k, sc.unit ? 1 / sc.unit : 0), prefs().scale / 100)));
++    if (!t) tieCache.set(sc, (t = boardTies(sc, S, 1 / Math.max(fit.k, sc.unit ? 1 / sc.unit : 0), prefs().scale / 100)));
 +    return t;
 +  }
 +  function tiesMoving() {
@@ -322,11 +358,6 @@ index 0f35d40..dca4905 100644
 +    // hovered, it rings the machines its DAGs launch
 +    if (hot) for (const a of t.anchors) if (!a.diamond) circle(a.x, a.y, 10 / K, rgba(AGENT, 0.9), 1.4 / K, [2 / K, 2 / K]);
 +  }
-+  /** The curve a comet takes between an orbiter and the transition it writes: a gentle bow off the straight line. */
-+  function bow(a: Pt, b: Pt): Curve {
-+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y;
-+    return { p0: a, c: { x: mx - dy * 0.15, y: my + dx * 0.15 }, p1: b };
-+  }
 +  /** The moment a run touches its transition, and which way: a write when it lands (orbiter to transition), a cue when it starts (transition to orbiter). */
 +  function touch(o: Orbiter, run: SimRun | undefined) {
 +    if (!run) return null;
@@ -335,21 +366,22 @@ index 0f35d40..dca4905 100644
 +    const at = a.kind === "cue" ? run.t0 : run.wrote;
 +    return at === undefined ? null : { a, at, out: a.kind !== "cue" };
 +  }
-+  // One DAGs hub at the right end of the axis, as the DAGs hangar was: a disc, and round it one orbiter per DAG tied to a Board transition. At rest
-+  // each orbiter wears its last run's colour and each tied transition a small diamond; nothing joins them. A running DAG's orbiter fills amber.
-+  // The moment it writes its transition (or a cue fires it) one comet, the ticket's own, crosses once between orbiter and diamond (or runs the
-+  // edge, ?motion=edge) in a ticket's travel time and rings where it lands. Hovering an orbiter lights the edges it writes; the hub's name says
-+  // which DAG is running or failed.
++  // A small DAGs hangar docked beside each state the tied DAGs act on, as the DAGs hangar was: a disc, and round it one orbiter per DAG, each
++  // turned toward the transition it docks by. At rest each orbiter wears its last run's colour and each tied transition a small diamond;
++  // nothing joins them. A running DAG's orbiter fills amber. The moment it writes its transition (or a cue fires it) one comet, the ticket's
++  // own, runs that transition's edge in a ticket's travel time and rings where it lands. Hovering an orbiter lights the edges it writes; a
++  // hangar's name says which DAG is running or failed.
 +  function drawTies() {
 +    const tz = ties(), sc = scene!, lightEdge = hover?.kind === "bedge" ? hover.o : null;
 +    if (!tz) return;
-+    const SLATE = "#94a3b8", TEAL = "#5eead4", FAIL = DAG_COLOR.failed, OK = DAG_COLOR.succeeded;
 +    if (tz.chip) drawChip(tz.chip, isHot("chip", tz.chip));
-+    const h = tz.hub;
-+    if (!h) return;
++    for (const h of tz.hubs) drawHub(h, sc, lightEdge);
++  }
++  function drawHub(h: Hub, sc: Scene, lightEdge: BEdge | null) {
++    const SLATE = "#94a3b8", TEAL = "#5eead4", FAIL = DAG_COLOR.failed, OK = DAG_COLOR.succeeded;
 +    const hubHot = isHot("hub", h), runs = h.orbs.map((o) => ({ o, run: simOf(o.dag) }));
 +    const live = runs.filter((r) => r.run?.status === "running"), bad = runs.filter((r) => r.run?.status === "failed" && r.run.unresolved);
-+    // the transitions: a diamond each DAG docks by at rest; a hovered orbiter, or the hub, brings up every tie
++    // the transitions: a diamond each DAG docks by at rest; a hovered orbiter, or its hangar, brings up every tie
 +    for (const { o, run } of runs) {
 +      const hot = isHot("tie", o) || hubHot || (!!lightEdge && o.anchors.some((a) => a.edge === lightEdge)), tc = touch(o, run), failed = run?.status === "failed" && !!run.unresolved;
 +      for (const a of o.anchors) {
@@ -359,7 +391,7 @@ index 0f35d40..dca4905 100644
 +      }
 +      if (hot && isHot("tie", o)) for (const a of o.anchors) if (!a.diamond) circle(a.x, a.y, 10 / K, rgba("#a78bfa", 0.9), 1.4 / K, [2 / K, 2 / K]);
 +    }
-+    // the hub: the hangar's teal disc, warmer while a member runs, and its orbit
++    // the hangar: the teal disc, warmer while a member runs, and its orbit
 +    disc(h.x, h.y, h.r, TEAL, hubHot, 0.12 + (live.length ? 0.14 + 0.05 * Math.sin(clock * 2.4) : 0));
 +    circle(h.x, h.y, h.orbit, rgba(TEAL, 0.14), 1 / K);
 +    for (const { o, run } of runs) {
@@ -376,35 +408,31 @@ index 0f35d40..dca4905 100644
 +      if (failed) circle(o.x, o.y, r + 4 / K, rgba(FAIL, 0.7), 1 / K, [2 / K, 2 / K]);
 +      if (run?.fin !== undefined && T >= run.fin && T - run.fin < PULSE) pulse(o.x, o.y, r, (T - run.fin) / PULSE, run.status === "failed" ? FAIL : OK, 16);
 +    }
-+    // the moment a run touches its transition: one comet, a ticket's, in a ticket's travel time, and one ring where it lands
++    // the moment a run touches its transition: the ticket's comet along that edge, in a ticket's travel time, and one ring where it lands
 +    for (const { o, run } of runs) {
 +      const tc = touch(o, run);
 +      if (!tc || T < tc.at) continue;
 +      const u = (T - tc.at) / TRAVEL, e = tc.a.edge?.p0 && tc.a.edge.c && tc.a.edge.p1 && !tc.a.edge.loop ? tc.a.edge : undefined;
-+      if (MOTION === "edge" && e) {
-+        if (u < 1) comet(e.p0!, e.c!, e.p1!, easeO(u), 3, ACT);
-+        const g = sc.galaxies[e.target], pa = (T - tc.at - TRAVEL) / PULSE;
-+        if (tc.out && g && pa >= 0 && pa < 1) pulse(g.x, g.y, g.R, pa, ACT);
-+        if (!tc.out && u >= 1 && u < 1 + PULSE / TRAVEL) pulse(o.x, o.y, 5 / K, (u - 1) * (TRAVEL / PULSE), ACT, 16);
-+        continue;
-+      }
-+      const c = tc.out ? bow(o, tc.a) : bow(tc.a, o), end = tc.out ? tc.a : o;
-+      if (u < 1) comet(c.p0, c.c, c.p1, easeO(u), 3, ACT);
-+      else if (u < 1 + PULSE / TRAVEL) pulse(end.x, end.y, 5 / K, (u - 1) * (TRAVEL / PULSE), ACT, 18);
++      if (e && u < 1) comet(e.p0!, e.c!, e.p1!, easeO(u), 3, ACT);
++      const g = e ? sc.galaxies[e.target] : undefined, pa = (T - tc.at - TRAVEL) / PULSE;
++      if (tc.out && g && pa >= 0 && pa < 1) pulse(g.x, g.y, g.R, pa, ACT);
++      // a cue's comet lands in the state, then rings the orbiter it wakes
++      if (!tc.out && pa >= 0 && pa < 1) pulse(o.x, o.y, 5 / K, pa, ACT, 16);
 +    }
-+    // the hub's name, and under it how many DAGs it holds, or the one running or failed now
-+    const ls = labPx(12.5), ss = labPx(11), ny = h.y + h.orbit + 10 / K + ls / 2;
-+    label("DAGs", h.x, ny, hubHot, null, 12.5);
++    // the hangar's name: its one DAG, or how many it holds; under it the one running or failed now
++    const ls = labPx(11.5), ss = labPx(10.5), ny = h.y + h.orbit + 8 / K + ls / 2;
++    label(nameOf(h.orbs), h.x, ny, hubHot, null, 11.5);
 +    const subs: [string, string][] = [];
-+    if (bad.length) subs.push([`${bad.map((r) => r.o.label).join(", ")} failed`, rgba(FAIL, 0.95)]);
-+    if (live.length) subs.push([`${live.map((r) => r.o.label).join(", ")} running`, rgba(ACT, 0.95)]);
-+    if (!subs.length) subs.push([`${h.orbs.length} tied to the Board`, rgba("#94a3b8", 0.7)]);
-+    subs.forEach(([s, col], i) => text(s, h.x, ny + ls / 2 + 4 / K + ss / 2 + i * (ss + 3 / K), ss, col, "center", 400));
++    // a lone DAG is named by the hangar already; one of several names itself; more than one is counted (hover names them)
++    const who = (rs: typeof runs) => (h.orbs.length === 1 ? "" : rs.length === 1 ? `${rs[0].o.label} ` : `${rs.length} `);
++    if (bad.length) subs.push([`${who(bad)}failed`, rgba(FAIL, 0.95)]);
++    if (live.length) subs.push([`${who(live)}running`, rgba(ACT, 0.95)]);
++    subs.forEach(([s, col], i) => text(s, h.x, ny + ls / 2 + 3 / K + ss / 2 + i * (ss + 3 / K), ss, col, "center", 400));
 +  }
    /** `s` cut to `max` px at `size`, ending in an ellipsis when it was cut. */
    function fitText(s: string, max: number, size: number) {
      cx.font = `400 ${size}px Inter, system-ui, sans-serif`;
-@@ -1651,6 +1826,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1651,6 +1817,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      drawGalaxies();
      drawMoons();
      drawBoardEdges();
@@ -412,7 +440,7 @@ index 0f35d40..dca4905 100644
      drawStateLinks();
      drawSun();
      drawPlanets();
-@@ -1724,7 +1900,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1724,7 +1891,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      }
    };
    /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
