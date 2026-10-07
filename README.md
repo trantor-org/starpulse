@@ -183,7 +183,7 @@ flagged rather than left out. `throughput` is `{count, per_day}`, the entries in
 gap the history recorded (`kind` `gap`: entries trimmed before it read them, so counts may miss them) and each lane
 the Board machine has no state for. History starts at a task's first recorded lane change, so a stay before it is not
 counted. The endpoint is 400 for an `hours` or `stuck_hours` that is no positive number, and 501 when the history
-(a board adapter's own) does not list every task's lane changes through `lane_rows(since=None)` and `gaps()`; `since`
+does not list every task's lane changes through `lane_rows(since=None)` and `gaps()`; `since`
 is an epoch the Ledger passes so it reads only its last 24 hours, and None asks for every change.
 
 `analytics level` reads `GET /api/level[?hours=N]` (a window of 168 hours by default), served by a hub (`serve --hub`)
@@ -768,9 +768,9 @@ directory. The `Board` says:
   archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `create(title, details)` that
   makes a task in the board's starting lane with the details the page filled (description, priority, labels,
   milestone, assignee, dependencies, acceptance criteria) and answers with its id (`POST /api/tasks`;
-  `capabilities.create`), and its own `history`: the page reads it in place of StarPulse's store, while `serve` still
-  records every machine event (task- and run-keyed) and each Board lane change it places into StarPulse's own store
-  (`starpulse_machine_events`, `starpulse_lane_changes`). In the same transaction the store folds each of them into
+  `capabilities.create`). `serve` records every machine event (task- and run-keyed) and each Board lane change it
+  places into StarPulse's own store (`starpulse_machine_events`, `starpulse_lane_changes`), and the page reads that
+  store: a `Board` has no history of its own. In the same transaction the store folds each of them into
   summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
   seconds in the from-state, per UTC day, machine, from-state and to-state), `starpulse_cases` (each task's or run's
   current state, when it entered it and its last event), `starpulse_lane_intervals` (each stay in a lane) and
@@ -819,6 +819,13 @@ adapter derives for each task it produces, and asserts each record carries it. `
 other status), refusing a workflow with a status in no transition, two statuses that make one lane, or no single initial
 transition. Each issue is a task in the lane of its status and the team of its Jira project; an issue it `Blocks` waits on
 the blocker, and a status in Jira's done category settles it as `completed`. Name your module in `[board] type` and StarPulse imports it.
+
+**Migrating from `Board.history`.** `Board.history` is removed: StarPulse's store is the only history, so a `Board`
+that passes `history=` fails with `TypeError: Board.__init__() got an unexpected keyword argument 'history'`. Delete
+the argument, and have the adapter report what happens to a task through `start` (the feed records each lane change it
+places) or the event log; the page, `/api/history`, `/api/analytics/health` and `/api/level` read the store. To keep an
+existing history, copy its lane changes and machine events into the store's `starpulse_lane_changes` and
+`starpulse_machine_events` tables once; `HistoryStore.rebuild_summaries` then rebuilds the summaries over them.
 
 ## Public surface
 

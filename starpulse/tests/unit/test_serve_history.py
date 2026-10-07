@@ -1,4 +1,4 @@
-"""`serve` always records into StarPulse's own store, whatever history the board adapter keeps for reads."""
+"""`serve` records every machine event and lane change into StarPulse's own store."""
 
 import time
 from pathlib import Path
@@ -25,19 +25,15 @@ def _until(done) -> None:
         time.sleep(0.01)
 
 
-def test_serve_records_run_and_task_machine_events_when_the_board_keeps_its_own_history(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    kept = HistoryStore(f"sqlite:///{tmp_path / 'kept.db'}", {})
+def test_serve_records_run_and_task_machine_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(fake_board, "BUILT", [])
-    monkeypatch.setattr(fake_board, "KEPT", [kept])
     static = tmp_path / "static"
     static.mkdir()
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
     monkeypatch.setattr(server, "serve_until_stopped", lambda httpd, feed: None)
     config = tmp_path / "starpulse.toml"
-    config.write_text('[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["open", "shut"]\nkeeps_history = true\n')
+    config.write_text('[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["open", "shut"]\n')
 
     server.main(["--config", str(config), "--port", "0"])
 
@@ -52,4 +48,3 @@ def test_serve_records_run_and_task_machine_events_when_the_board_keeps_its_own_
         (None, "run-1", "authoring-skills", "GUIDANCE_READ"),
     ]
     assert _rows(own, "starpulse_lane_changes", "task, old_status, new_status") == [("FAKE-1", None, "open")]
-    assert _rows(kept, "starpulse_machine_events", "id") == [], "the board's own history is read, never written"
