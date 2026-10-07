@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from starpulse.config import Repo
-from starpulse.pins import GitHub, link
+from starpulse.pins import GitHub, contained, link
 
 REPOS = (Repo(name="skills", path="skills", applied_by="pin-bump"),)
 CHILD_SHA, LATER_SHA = "c1" * 20, "c2" * 20
@@ -136,3 +136,64 @@ def test_a_gh_that_cannot_run_answers_that_nothing_is_pinned(monkeypatch: pytest
     monkeypatch.setattr(subprocess, "run", missing)
 
     assert GitHub().pointer("trantor-org/trantor", "p1", "skills") is None
+
+
+def page(*commits: tuple[str, str], more: bool = False) -> dict:
+    return {
+        "history": {
+            "pageInfo": {"hasNextPage": more},
+            "nodes": [{"oid": oid, "committedDate": date} for oid, date in commits],
+        }
+    }
+
+
+MERGED_AT = "2026-10-07T10:00:00Z"
+
+
+@pytest.mark.parametrize(
+    ("history", "answer"),
+    [
+        (page(("a" * 40, "2026-10-07T12:00:00Z"), (CHILD_SHA, MERGED_AT)), True),
+        (page(("a" * 40, "2026-10-07T12:00:00Z"), (CHILD_SHA, MERGED_AT), more=True), True),
+        (page(("a" * 40, "2026-10-07T09:00:00Z"), more=True), False),
+        (page(("a" * 40, "2026-10-07T12:00:00Z"), ("b" * 40, "2026-10-07T09:00:00Z")), False),
+        (page(("a" * 40, "2026-10-07T12:00:00Z"), ("b" * 40, "2026-10-07T11:00:00Z"), more=True), None),
+        (page(("a" * 40, MERGED_AT), more=True), None),
+        (page(), None),
+        (None, None),
+    ],
+    ids=[
+        "in a whole page",
+        "in a full page",
+        "not in a page that reaches back past the merge",
+        "not in a page that holds the whole history",
+        "older than a full page",
+        "as old as a full page's oldest commit",
+        "empty page",
+        "pointer GitHub could not read",
+    ],
+)
+def test_a_history_page_says_whether_it_holds_a_merge_or_is_too_short_to_tell(
+    history: dict | None, answer: bool | None
+) -> None:
+    assert contained(CHILD_SHA, MERGED_AT, history) is answer
+
+
+def test_answers_learned_from_the_batched_read_are_never_asked_of_gh_and_are_saved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gh = Gh({})
+    monkeypatch.setattr(subprocess, "run", gh)
+    github = GitHub()
+
+    github.learn(
+        {("trantor-org/trantor", "p1", "skills"): NEW_POINTER}, {("trantor-org/skills", CHILD_SHA, NEW_POINTER): True}
+    )
+
+    assert github.pointer("trantor-org/trantor", "p1", "skills") == NEW_POINTER
+    assert github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is True
+    assert gh.asked == []
+    assert github.answers() == {
+        "pointers": [["trantor-org/trantor", "p1", "skills", NEW_POINTER]],
+        "reaches": [["trantor-org/skills", CHILD_SHA, NEW_POINTER, True]],
+    }

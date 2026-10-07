@@ -3,7 +3,10 @@
 The Board's tasks cite their pull requests as links; nothing on the projection says whether a PR's checks pass,
 whether it merged or how many review threads are open. `fetch` asks GitHub for that (one `gh api graphql` request
 per repository, however many PRs it holds), and `PullRequests` keeps the answer in the feed so a snapshot is served
-from memory and never waits on GitHub. When GitHub cannot be reached for any repository the last answer stays, marked `stale`.
+from memory and never waits on GitHub. That one request also carries each PR's changed files and, for the pin bumps of
+`[[repos]]`, the submodule pointer each parent merge pins and the history of each pointer in the child repository, so
+`pins.link` needs no REST call unless a child merge is older than a history page. When GitHub cannot be reached for any
+repository the last answer stays, marked `stale`.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ import re
 import subprocess
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
+from functools import partial
 from itertools import groupby
 from types import MappingProxyType
 from typing import Protocol
@@ -21,7 +25,7 @@ from typing import Protocol
 from starpulse.board_feed import BoardFeed
 from starpulse.ci_trail import PullHistory, parse
 from starpulse.config import Repo
-from starpulse.pins import GitHub, Pins, link
+from starpulse.pins import GitHub, Pins, contained, link
 
 logger = logging.getLogger(__name__)
 
@@ -31,18 +35,26 @@ _GH_TIMEOUT_S = 30
 _PULL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 #: GitHub's `StatusState` for a head commit's check rollup, as the page names it; no rollup at all is `none`.
 _CHECKS = {"SUCCESS": "pass", "FAILURE": "failing", "ERROR": "failing", "PENDING": "pending", "EXPECTED": "pending"}
-_FRAGMENT = """
-fragment Pull on PullRequest {
+_COMMIT_ID = re.compile(r"[0-9a-f]{40}")
+_HISTORY = "history(first: 100) { pageInfo { hasNextPage } nodes { oid committedDate } }"
+
+
+def _fragment(paths: Sequence[str]) -> str:
+    """The `Pull` fragment; `pin<i>` reads what the merge commit has at `paths[i]`, a submodule's pinned commit."""
+    pins = "".join(f" pin{i}: file(path: {json.dumps(path)}) {{ oid }}" for i, path in enumerate(paths))
+    return f"""
+fragment Pull on PullRequest {{
   number
   merged
   mergedAt
-  mergeCommit { oid }
+  mergeCommit {{ oid{pins} }}
+  files(first: 100) {{ nodes {{ path }} }}
   createdAt
   mergeable
-  commits(last: 100) { nodes { commit { oid statusCheckRollup { state } checkSuites(first: 20) { nodes { status conclusion createdAt updatedAt workflowRun { runAttempt } } } } } }
-  timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT]) { nodes { ... on HeadRefForcePushedEvent { createdAt afterCommit { oid } } } }
-  reviewThreads(first: 100) { nodes { isResolved } }
-}
+  commits(last: 100) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} checkSuites(first: 20) {{ nodes {{ status conclusion createdAt updatedAt workflowRun {{ runAttempt }} }} }} }} }} }}
+  timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT]) {{ nodes {{ ... on HeadRefForcePushedEvent {{ createdAt afterCommit {{ oid }} }} }} }}
+  reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
+}}
 """
 
 
@@ -50,12 +62,22 @@ class GhUnavailableError(Exception):
     """GitHub could not be read: `gh` is missing, refused, timed out or answered something unreadable."""
 
 
-def read_repository(repo: str, numbers: list[int]) -> dict:
-    """The GraphQL `repository` node holding each of `numbers` as `p<number>`, through `gh`."""
+def read_repository(repo: str, numbers: list[int], paths: Sequence[str] = (), pointers: Sequence[str] = ()) -> dict:
+    """The GraphQL `repository` node holding each of `numbers` as `p<number>`, through `gh`.
+
+    `paths` are submodule paths each merge commit reports as `mergeCommit.pin<i>`; `pointers` are commits whose history
+    page comes back as `h<i>`. A pointer that is not a full commit id is left out.
+    """
     owner, name = repo.split("/")
-    pulls = " ".join(f"p{number}: pullRequest(number: {number}) {{ ...Pull }}" for number in numbers)
+    selections = [f"p{number}: pullRequest(number: {number}) {{ ...Pull }}" for number in numbers]
+    selections += [
+        f'h{i}: object(oid: "{oid}") {{ ... on Commit {{ {_HISTORY} }} }}'
+        for i, oid in enumerate(pointers)
+        if _COMMIT_ID.fullmatch(oid)
+    ]
     query = (
-        f"query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{ {pulls} }} }}{_FRAGMENT}"
+        "query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) "
+        f"{{ {' '.join(selections)} }} }}{_fragment(paths)}"
     )
     command = ["gh", "api", "graphql", "-f", f"query={query}", "-f", f"owner={owner}", "-f", f"name={name}"]
     try:
@@ -72,59 +94,96 @@ def read_repository(repo: str, numbers: list[int]) -> dict:
 
 
 def _read_pulls(
-    repo: str, wanted: list[tuple[str, int, str]], read: Callable[[str, list[int]], dict]
-) -> tuple[dict[str, dict], dict[str, PullHistory]]:
-    """One repository's records and CI histories by URL; a PR GitHub does not return is left out."""
-    nodes = read(repo, [number for _, number, _ in wanted])
-    out: dict[str, dict] = {}
+    repo: str,
+    wanted: list[tuple[str, int, str]],
+    read: Callable[..., dict],
+    out: Pulls,
+    pinned: dict[str, str],
+) -> dict[str, PullHistory]:
+    """Add one repository's records to `out`, a PR GitHub does not return left out; returns their CI histories by URL.
+
+    A parent repository's merges also add the pointer each pins at every `pinned` path; a pinned repository is read
+    after the parents and asks for the history of every pointer they returned, adding which pointers hold its merges.
+    """
+    child = repo.split("/")[1] in pinned
+    paths = () if child else tuple(pinned.values())
+    pointers = tuple(sorted(set(out.pointers.values()))) if child else ()
+    nodes = read(repo, [number for _, number, _ in wanted], paths, pointers)
+    records: dict[str, dict] = {}
+    pinned_at: dict[tuple[str, str, str], str] = {}
+    reached: dict[tuple[str, str, str], bool] = {}
     history: dict[str, PullHistory] = {}
     try:
         for _, number, url in wanted:
             if node := nodes.get(f"p{number}"):
                 rollup = node["commits"]["nodes"][-1]["commit"]["statusCheckRollup"]
-                out[url] = {
+                commit = node["mergeCommit"] or {}
+                record = records[url] = {
                     "number": node["number"],
                     "url": url,
                     "checks": _CHECKS.get(rollup["state"], "none") if rollup else "none",
                     "merged": node["merged"],
-                    "merge_sha": (node["mergeCommit"] or {}).get("oid"),
+                    "merge_sha": commit.get("oid"),
                     "merged_at": node["mergedAt"],
+                    "files": [file["path"] for file in node["files"]["nodes"]],
                     "threads": sum(not thread["isResolved"] for thread in node["reviewThreads"]["nodes"]),
                     "stale": False,
                 }
                 history[url] = parse(url, node)
+                for i, path in enumerate(paths):
+                    if pin := commit.get(f"pin{i}"):
+                        pinned_at[(repo, record["merge_sha"], path)] = pin["oid"]
+                for i, pointer in enumerate(pointers if record["merge_sha"] else ()):
+                    found = contained(record["merge_sha"], record["merged_at"], nodes.get(f"h{i}"))
+                    if found is not None:
+                        reached[(repo, record["merge_sha"], pointer)] = found
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise GhUnavailableError(f"unexpected GraphQL answer for {repo}: {exc!r}") from exc
-    return out, history
+    out |= records
+    out.pointers |= pinned_at
+    out.reaches |= reached
+    return history
 
 
 class Pulls(dict[str, dict]):
     """A `fetch` answer: the records read, `unread`, the URLs of repositories GitHub could not be asked about, and
-    `history`, what GitHub dates of each record's CI."""
+    `history`, what GitHub dates of each record's CI.
+
+    `pointers` maps (parent repo, merge commit, path) to the commit the merge pins there, and `reaches` maps (child
+    repo, merge commit, pointer) to whether the pointer contains that merge; only what the batched read could settle.
+    """
 
     unread: frozenset[str] = frozenset()
     history: Mapping[str, PullHistory] = MappingProxyType({})
 
+    def __init__(self, *records: dict[str, dict]) -> None:
+        super().__init__(*records)
+        self.pointers: dict[tuple[str, str, str], str] = {}
+        self.reaches: dict[tuple[str, str, str], bool] = {}
 
-def fetch(urls: Collection[str], read: Callable[[str, list[int]], dict] = read_repository) -> Pulls:
-    """Each URL's `{number, url, checks, merged, merge_sha, merged_at, threads, stale}`; a URL GitHub does not return is left out.
 
-    `checks` is `pass`, `failing`, `pending` or `none`; `threads` counts the unresolved review threads; `merge_sha` and
-    `merged_at` (ISO 8601 UTC) are the merge commit and merge time of a merged PR and `None` for an open one. A
-    repository GitHub cannot read is logged, left out and named in `unread` so the others still answer; only when every repository
-    fails does the read raise `GhUnavailableError`, for `PullRequests.refresh` to keep its last answer.
+def fetch(urls: Collection[str], read: Callable[..., dict] = read_repository, repos: Sequence[Repo] = ()) -> Pulls:
+    """Each URL's `{number, url, checks, merged, merge_sha, merged_at, files, threads, stale}`; a URL GitHub does not return is left out.
+
+    `checks` is `pass`, `failing`, `pending` or `none`; `threads` counts the unresolved review threads; `files` lists
+    the paths the PR changes; `merge_sha` and `merged_at` (ISO 8601 UTC) are the merge commit and merge time of a
+    merged PR and `None` for an open one. Each repository is read once, repositories `repos` pins last, and the
+    answer's `pointers` and `reaches` hold the pin bump facts those reads settled. A repository GitHub cannot read is
+    logged, left out and named in `unread` so the others still answer; only when every repository fails does the read
+    raise `GhUnavailableError`, for `PullRequests.refresh` to keep its last answer.
     """
+    pinned = {repo.name: repo.path for repo in repos}
     pulls = sorted((m[1], int(m[2]), url) for url in urls if (m := _PULL.fullmatch(url)))
     out = Pulls()
     history: dict[str, PullHistory] = {}
     unread: set[str] = set()
     failures: list[GhUnavailableError] = []
     groups = [(repo, list(group)) for repo, group in groupby(pulls, key=lambda pull: pull[0])]
+    # Parents first: the pointers their merges pin go in the query of the repository pinned.
+    groups.sort(key=lambda group: group[0].split("/")[1] in pinned)
     for repo, wanted in groups:
         try:
-            records, dated = _read_pulls(repo, wanted, read)
-            out |= records
-            history |= dated
+            history |= _read_pulls(repo, wanted, read, out, pinned)
         except GhUnavailableError as exc:
             logger.warning("pull requests: %s", exc)
             failures.append(exc)
@@ -149,7 +208,7 @@ class PullRequests:
     def __init__(
         self,
         feed: BoardFeed,
-        fetch: Callable[[Collection[str]], Pulls] = fetch,
+        fetch: Callable[[Collection[str]], Pulls] | None = None,
         repos: Sequence[Repo] = (),
         pins: Pins | None = None,
         trail: CiRecorder | None = None,
@@ -166,7 +225,9 @@ class PullRequests:
         wanted = self._feed.pull_requests()
         urls = list(dict.fromkeys(url for prs in wanted.values() for url in prs))
         try:
-            fresh = self._fetch(urls) if urls else Pulls()
+            fresh = (self._fetch or partial(fetch, repos=self._repos))(urls) if urls else Pulls()
+            if isinstance(self._pins, GitHub):
+                self._pins.learn(fresh.pointers, fresh.reaches)
             kept = {url: {**self._last[url], "stale": True} for url in fresh.unread if url in self._last}
             self._last = {**fresh, **kept}
             if self._trail:
