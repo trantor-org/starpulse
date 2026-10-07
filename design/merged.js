@@ -226,7 +226,7 @@ function drawStrip(L) {
   for (let h = Math.ceil((t - 86400) / 3600) * 3600; h <= t; h += 3600) { const x = X(h); line([{ x, y: s.y + s.h / 2 + 2 }, { x, y: s.y + s.h / 2 + 5 }], MUTED(0.3)); if (mstHour(h) % 3 === 0) T_(hhmm(h), x, s.y + s.h / 2 + 14 * F, 10, MUTED(0.5), "center"); }
   T_(`last 24 h · ${merges.filter((m) => m.t > t - 86400).length} merges`, s.x0, s.y - s.h / 2 - 12 * F, 10.5, MUTED(0.7));
   if (L.shown?.length) { const a = X(Math.min(...L.shown.map((m) => m.t))), b = X(Math.max(...L.shown.map((m) => m.t))); cx.fillStyle = rgba(ACT, 0.06); cx.fillRect(a - 3, s.y - s.h / 2 - 3, b - a + 6, s.h + 6);
-    T_(L.shownLabel || "shown above", b, s.y - s.h / 2 - 12 * F, 10, rgba(ACT, 0.6), "right"); }
+    T_(L.shownLabel || "shown above", s.x1, s.y - s.h / 2 - 12 * F, 10, rgba(ACT, 0.6), "right"); }
   for (const m of merges) { if (m.t < t - 86400) continue; const x = X(m.t), hot = hover === m.ref || panelSel() === m;
     if (s.dots) KS.forEach((k, i) => { const r = m.runs[k], st = r ? runSt(r, t) : "waiting"; dot(x, s.y + (i - 1) * 7 * Math.min(1.4, F), hot ? 2.6 : 1.8, rgba(SCOL(st), st === "succeeded" ? 0.6 : 0.95)); });
     else { const w = worst(m, t), col = m.cross ? CROSS : SCOL(w), al = w === "failed" ? (pins.has(m) ? 1 : 0.5) : w === "succeeded" ? 0.5 : 0.95; line([{ x, y: s.y - s.h / 2 }, { x, y: s.y + s.h / 2 }], rgba(col, hot ? 1 : al), hot ? 2.2 : 1.2); }
@@ -237,7 +237,8 @@ function drawStrip(L) {
 }
 
 // ---- C: Ledger. Main's history is a spine under Review; each merge is a row hung from it, with its own copy of each DAG's figure in
-// that DAG's column, so the rows and the templates make one grid. Unresolved failures pin above the spine's newest merge ----
+// that DAG's column, so the rows and the templates make one grid. Unresolved failures pin above the spine's newest merge; the rows
+// below them scroll (wheel, keys, thumb) rather than zoom, loading older merges a page at a time ----
 function layC() {
   const f = F, L = { labLeft: true };
   L.lt = Math.min(340 * f, W * 0.26); L.sx = 64 + L.lt; L.lane = L.sx + 22 * f;
@@ -252,20 +253,37 @@ function layC() {
   L.cap = Math.max(2, Math.floor((L.yEnd - L.yR0 + L.rh / 2) / L.rh)); L.dn.r = 22; L.prLabRight = false;
   return L;
 }
+// the wheel scrolls the rows under the fixed templates instead of zooming; older merges load a page at a time from the server
+// (simulated here: a 1.5 s fetch when the footer row scrolls into view), the unresolved pins stay stuck above the scrolled rows
+const PAGE = 20, SC = { y: 0, ty: 0, loaded: PAGE, loadAt: 0, fresh: 0, n: 0, max: 0, view: 0, drag: null };
+const scrollRows = (y) => (SC.ty = Math.max(0, Math.min(SC.max, y)));
+function scrollToMerge(m) { const L = scene.mg, i = L?.list?.indexOf(m) ?? -1, j = i >= 0 ? i : (L?.rest?.indexOf(m) ?? -1); if (j < 0) return;
+  SC.loaded = Math.max(SC.loaded, Math.ceil((j + 1) / PAGE) * PAGE); const top = j * L.rh;
+  if (top < SC.ty || top + L.rh > SC.ty + SC.view) { SC.max = Math.max(SC.max, top); scrollRows(top - SC.view / 2 + L.rh / 2); } }
 function drawC(L) {
-  const t = now(), pins = pinnedAt(t), gap = pins.length ? 18 * F : 0, rest = merges.filter((m) => !pins.includes(m)), room = L.cap - (gap ? 1 : 0);
-  const showPins = pins.slice(0, Math.max(1, Math.min(pins.length, Math.floor(room / 2)))), rows = [...showPins, ...rest.slice(0, Math.max(0, room - showPins.length))];
-  L.shown = rows.filter((m) => !pins.includes(m)); L.shownLabel = `newest ${L.shown.length} shown above`;
-  const target = new Map(rows.map((m, i) => [m, L.yR0 + i * L.rh + (i >= showPins.length ? gap : 0)])), dt = Math.min(0.1, clock - lastClock);
-  for (const m of rows) { const y = target.get(m); m._y = m._y === undefined || m._gone ? y - (m.fresh && clock - m.fresh < 1 ? L.rh : 0) : m._y + (y - m._y) * Math.min(1, dt * 7); m._gone = false; }
-  for (const m of merges) if (!target.has(m)) m._gone = true;
-  const yLast = (rows.at(-1)?._y ?? L.yR0) + L.rh / 2, x1 = W - 60;
+  const t = now(), pins = pinnedAt(t), gap = pins.length ? 18 * F : 0, dt = Math.min(0.1, clock - lastClock);
+  const showPins = pins.slice(0, Math.max(1, Math.min(pins.length, Math.floor(L.cap / 2)))), rest = merges.filter((m) => !showPins.includes(m));
+  // a merge arriving while the reader is scrolled down keeps their rows still and counts on the "new merges" chip instead
+  if (SC.n && merges.length > SC.n && SC.ty > L.rh / 2) { const d = merges.length - SC.n; SC.y += d * L.rh; SC.ty += d * L.rh; SC.loaded += d; SC.fresh += d; }
+  SC.n = merges.length; if (SC.ty < L.rh / 2) SC.fresh = 0;
+  if (SC.loadAt && clock >= SC.loadAt) { for (const m of rest.slice(SC.loaded, SC.loaded + PAGE)) m._a = 0; SC.loaded += PAGE; SC.loadAt = 0; }
+  const list = rest.slice(0, SC.loaded), more = SC.loaded < rest.length; L.list = list; L.rest = rest;
+  L.vy0 = L.yR0 - L.rh / 2 + showPins.length * L.rh + gap; L.vy1 = L.yEnd; SC.view = L.vy1 - L.vy0;
+  SC.max = Math.max(0, (list.length + 1) * L.rh - SC.view); scrollRows(SC.ty); SC.y += (SC.ty - SC.y) * Math.min(1, dt * 14); if (Math.abs(SC.ty - SC.y) < 0.5) SC.y = SC.ty;
+  const ease = (m, y) => (m._b = m._b === undefined || m._gone ? y - (m.fresh && clock - m.fresh < 1 ? L.rh : 0) : m._b + (y - m._b) * Math.min(1, dt * 7));
+  showPins.forEach((m, i) => { m._y = ease(m, L.yR0 + i * L.rh); m._gone = false; });
+  const i0 = Math.max(0, Math.floor(SC.y / L.rh) - 1), i1 = Math.min(list.length, Math.ceil((SC.y + SC.view) / L.rh) + 1), rows = [...showPins, ...list.slice(i0, i1)];
+  list.forEach((m, i) => { if (i < i0 || i >= i1) { m._b = undefined; return; } m._y = ease(m, L.vy0 + L.rh / 2 + i * L.rh) - SC.y; m._gone = false; });
+  for (const m of merges) if (!rows.includes(m)) m._gone = true;
+  L.shown = list.slice(i0, i1).filter((m) => m._y > L.vy0 && m._y < L.vy1);
+  L.shownLabel = L.shown.length ? `${hhmm(Math.min(...L.shown.map((m) => m.t)))}–${hhmm(Math.max(...L.shown.map((m) => m.t)))} in view · ${list.length} of ${rest.length} loaded` : "";
+  const target = new Set(rows), yFoot = L.vy0 + list.length * L.rh - SC.y, yLast = Math.min(L.vy1, yFoot + L.rh), x1 = W - 60;
   // the grid: columns down from each template, a hairline between rows, the spine (main) and the lane for other repos' merges
   for (const k of KS) line([{ x: L.cols[k].x0, y: L.yH - 50 * F }, { x: L.cols[k].x0, y: yLast }], MUTED(0.1));
   line([{ x: L.sx, y: L.J.y + 8 }, { x: L.sx, y: yLast }], rgba(ACT, 0.35), 1.4);
   line([{ x: L.lane, y: L.yR0 - L.rh / 2 }, { x: L.lane, y: yLast }], rgba(CROSS, 0.35), 1, [2, 4]); T_("other repos", L.lane + 4, L.yR0 - L.rh / 2 - 9 * F, 9.5, rgba(CROSS, 0.6));
   if (showPins.length) { const y0 = showPins[0]._y - L.rh / 2, y1 = showPins.at(-1)._y + L.rh / 2; cx.fillStyle = rgba(RED, 0.05); cx.fillRect(64, y0, x1 - 64, y1 - y0); line([{ x: L.sx, y: y0 }, { x: L.sx, y: y1 }], rgba(RED, 0.7), 2);
-    const nf = pins.reduce((n, m) => n + openFails(m, t).length, 0); T_(`UNRESOLVED · ${nf} failed run${nf > 1 ? "s" : ""}${pins.length > showPins.length ? ` (${pins.length - showPins.length} more on the strip)` : ""}`, 64, y0 - 9 * F, 10, rgba(RED, 0.9), "left", 500);
+    const nf = pins.reduce((n, m) => n + openFails(m, t).length, 0); T_(`UNRESOLVED · ${nf} failed run${nf > 1 ? "s" : ""}${pins.length > showPins.length ? ` (+${pins.length - showPins.length} below)` : ""}`, 64, y0 - 9 * F, 10, rgba(RED, 0.9), "left", 500);
     const rr = RERUNS.find((r) => t >= r.start && t < r.end); if (rr) T_(`↻ forced rerun running · ${dur(t - rr.start)}`, x1, y0 - 9 * F, 10, ACT, "right", 500); }
   const T = drawTemplates(L);
   // rails: main-follow on push, straight from the junction; apply-on-merge and graph-refresh cued off a bus under the templates
@@ -274,10 +292,34 @@ function drawC(L) {
   for (const k of ["aom", "gr"]) { const r = T[k].root; rail([{ x: L.sx, y: L.yB }, { x: r.x - 40, y: L.yB }, { x: r.x - T[k].nr - 2, y: r.y, c: { x: r.x - 14, y: L.yB } }], ACT, ACT, runningAny(k), true); }
   T_("cue · each merge to main", L.sx + 10, L.yB - 8 * F, 10, MUTED(0.55));
   drawPath(L); drawJunction(L); drawDoctor(L.sx - 16, L.yB - 12 * F, "right");
-  for (const m of rows) drawRowC(L, m, pins.includes(m), t);
+  for (const m of showPins) drawRowC(L, m, true, t);
+  cx.save(); cx.beginPath(); cx.rect(0, L.vy0, W, L.vy1 - L.vy0); cx.clip();
+  for (const m of rows) if (!showPins.includes(m)) drawRowC(L, m, pins.includes(m), t);
   for (const m of rows) if (m.cross && m.bump && target.has(m.bump)) { const a = { x: L.lane, y: m._y }, b = { x: L.sx, y: m.bump._y };
-    line([a, b].length && [a, { x: b.x + 4, y: b.y }], rgba(CROSS, 0.6), 1, [2, 3]); T_("pin bump", (a.x + b.x) / 2 + 6, (a.y + b.y) / 2, 9.5, rgba(CROSS, 0.7)); }
+    line([a, { x: b.x + 4, y: b.y }], rgba(CROSS, 0.6), 1, [2, 3]); T_("pin bump", (a.x + b.x) / 2 + 6, (a.y + b.y) / 2, 9.5, rgba(CROSS, 0.7)); }
+  drawFoot(L, yFoot + L.rh / 2, more, rest.length);
+  cx.restore();
+  drawScroll(L);
   drawStrip(L);
+}
+// the row under the last loaded merge: the next page loading, or the end of the 24 hours
+function drawFoot(L, y, more, total) {
+  if (y - L.rh / 2 > L.vy1) return;
+  if (more && !SC.loadAt) SC.loadAt = clock + 1.5;
+  if (more) { const a0 = clock * 5; cx.beginPath(); cx.arc(L.sx, y, 5 / K ** 0.5, a0, a0 + 4.2); cx.strokeStyle = rgba(ACT, 0.8); cx.lineWidth = 1.4 / K; cx.stroke();
+    T_(`loading older merges · ${PAGE} at a time`, 64, y, 11, MUTED(0.7)); }
+  else { dot(L.sx, y, 2.4 / K ** 0.5, MUTED(0.5)); T_(`oldest merge in the last 24 h · ${total} rows`, 64, y, 11, MUTED(0.55)); }
+}
+// the scrollbar beside the rows (drag the thumb) and, once scrolled, a chip back to the newest merge counting the ones that landed since
+function drawScroll(L) {
+  if (SC.max <= 0) { L.thumb = null; return; }
+  const x = W - 50, h = Math.max(24 * F, (SC.view * SC.view) / (SC.view + SC.max)), y = L.vy0 + (SC.y / SC.max) * (SC.view - h), hot = SC.drag || hover?.kind === "mgThumb";
+  line([{ x, y: L.vy0 }, { x, y: L.vy1 }], MUTED(0.12), 3); line([{ x, y: y + 2 }, { x, y: y + h - 2 }], MUTED(hot ? 0.75 : 0.4), 4);
+  L.thumb = { x0: x - 8, y0: y, x1: x + 8, y1: y + h, track: SC.view - h }; HITS.push({ ...L.thumb, ref: ref("mgThumb", "t", {}) });
+  if (SC.y > L.rh) { const s = SC.fresh ? `↑ ${SC.fresh} new merge${SC.fresh > 1 ? "s" : ""}` : "↑ back to newest", cxm = (L.sx + W - 60) / 2, y0 = Math.min(L.vy0 + 14 * F, (L.vy0 + L.vy1) / 2);
+    cx.font = `500 ${(11 * F) / K}px Inter, system-ui, sans-serif`; const w = cx.measureText(s).width + 22 * F, hotC = hover?.kind === "mgTop";
+    cx.fillStyle = "rgba(6,10,20,0.92)"; cx.fillRect(cxm - w / 2, y0 - 10 * F, w, 20 * F); cx.strokeStyle = rgba(SC.fresh ? ACT : "#94a3b8", hotC ? 1 : 0.6); cx.lineWidth = 1 / K; cx.strokeRect(cxm - w / 2, y0 - 10 * F, w, 20 * F);
+    T_(s, cxm, y0, 11, SC.fresh ? ACT : INK(0.85), "center", 500); HITS.push({ x0: cxm - w / 2, y0: y0 - 10 * F, x1: cxm + w / 2, y1: y0 + 10 * F, ref: ref("mgTop", "top", {}) }); }
 }
 // starpulse doctor's verdict on the contract against the last day of runs; hover for what it checked or the key to add
 function drawDoctor(x, y, al) {
@@ -290,7 +332,7 @@ function drawRowC(L, m, pin, t) {
   const y = m._y, a = m._a ?? 1, hot = hover === m.ref || panelSel() === m, x1 = W - 60, f = F;
   if (hot) { cx.fillStyle = "rgba(219,228,243,0.045)"; cx.fillRect(64, y - L.rh / 2 + 1, x1 - 64, L.rh - 2); }
   line([{ x: L.sx, y: y + L.rh / 2 }, { x: x1, y: y + L.rh / 2 }], MUTED(0.07));
-  HITS.push({ x0: 64, y0: y - L.rh / 2, x1, y1: y + L.rh / 2, ref: m.ref });
+  const h0 = Math.max(y - L.rh / 2, pin ? -1e9 : L.vy0), h1 = Math.min(y + L.rh / 2, pin ? 1e9 : L.vy1); if (h1 > h0) HITS.push({ x0: 64, y0: h0, x1, y1: h1, ref: m.ref });
   if (pin) star4(L.sx, y, 6.5, RED); else if (m.cross) { dot(L.lane, y, 3.6 / K ** 0.5, "rgba(6,10,20,1)"); circle(L.lane, y, 3.6 / K ** 0.5, rgba(CROSS, 0.9 * a), 1.3 / K ** 0.5); line([{ x: L.sx, y }, { x: L.lane - 4, y }], rgba(CROSS, 0.25)); }
   else { dot(L.sx, y, 3.4 / K ** 0.5, rgba(ACT, 0.85 * a)); if (m.fresh && clock - m.fresh < 1.3) pulse(L.sx, y, 3.4, (clock - m.fresh) / 1.2, ACT, 22, [0]); }
   const who = m.task?.id || (m.bumpOf ? "pin bump" : "—"), lw = L.lt - 10;
@@ -403,6 +445,8 @@ tipHtml = function (h) {
     <div class="k">${o.k === "mf" ? "The Board's MERGED transition names this writer; a scheduled 5-minute pass writes it for other repos' merges and carries no commit." : `A failure ${esc(RULE[RES[o.k]])}.`} ${KEYED ? "Runs pair with merges by the AFTER param." : "No commit key, so runs pair with merges by time."}</div>`;
   if (h.kind === "mgDoctor") return KEYED ? `<div class="k">starpulse doctor · last 24 h</div><div class="n">Contract matches the runs</div>✓ apply-on-merge, graph-refresh and main-follow exist on dagu<br>✓ every push-triggered run carries AFTER, BEFORE and FORCE<br>✓ main-follow wrote MERGED after each merge<br><span class="k">≈ 5-minute main-follow passes carry no params, so other repos' merges pair by time</span>`
     : `<div class="k">starpulse doctor · runs instance dagu</div><div class="n">No commit key declared</div>Each run pairs with the newest merge before it started (dashed). At ~10 merges an hour a second merge can land first (amber). Recent runs carry params naming the commit; declare them:<pre>[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"</pre>`;
+  if (h.kind === "mgThumb") return `<div class="k">${SC.loaded >= (scene.mg.rest?.length ?? 0) ? "all merges of the last 24 h loaded" : `${SC.loaded} merges loaded · scroll to load ${PAGE} more`}</div>drag to scroll · wheel, PgUp/PgDn, Home`;
+  if (h.kind === "mgTop") return `<div class="k">${SC.fresh ? `${SC.fresh} merged while you were scrolled down` : "scrolled into older merges"}</div>click (or Home) to return to the newest merge`;
   if (h.kind === "mgRerun") return `<div class="k">forced apply-on-merge rerun · ${hms(o.start)} MST</div><div class="n">${t >= o.end ? `✓ ${dur(o.dur)}` : `running · ${dur(t - o.start)}`}</div>reapplies everything since the last good apply, clearing every failure before it`;
   return "";
 };
@@ -425,18 +469,31 @@ function forceRerun() { if (RERUNS.some((r) => now() < r.end)) return; const r =
 click = function (fx, fy) {
   if (!scene.mg) return _click(fx, fy);
   const h = hover; if (!h?.kind.startsWith("mg")) { panel.className = ""; sel = null; return _click(fx, fy); }
-  if (h.kind === "mgMerge") return openMerge(h.o);
+  if (h.kind === "mgMerge") { scrollToMerge(h.o); return openMerge(h.o); }
+  if (h.kind === "mgTop") return scrollRows(0);
   if (h.kind === "mgState") return push({ kind: "state", id: h.o.id }, fx, fy);
   if (h.kind === "mgStep") { panel.className = ""; return openDagPanel(STAR[h.o.k]); }
   if (h.kind === "mgQ" && h.o.merged) return openMerge(h.o.merged);
 };
 
+// ---- Ledger input: the wheel, the keys and the thumb scroll the rows; nothing zooms in this view ----
+const ledger = () => scene.mg && VAR === "c", world = (e) => ({ x: (e.offsetX - view.x) / view.k, y: (e.offsetY - view.y) / view.k });
+addEventListener("wheel", (e) => { if (e.target !== cv || !ledger()) return; e.preventDefault(); e.stopImmediatePropagation();
+  const L = scene.mg, d = e.deltaMode === 1 ? e.deltaY * L.rh / 3 : e.deltaMode === 2 ? e.deltaY * SC.view : e.deltaY / view.k; scrollRows(SC.ty + d); }, { capture: true, passive: false });
+addEventListener("keydown", (e) => { if (!ledger() || e.target.id === "q") return; const L = scene.mg;
+  const to = { PageDown: SC.ty + SC.view * 0.9, PageUp: SC.ty - SC.view * 0.9, ArrowDown: SC.ty + L.rh, ArrowUp: SC.ty - L.rh, Home: 0, End: SC.max }[e.key];
+  if (to === undefined) return; e.preventDefault(); e.stopImmediatePropagation(); scrollRows(to); }, true);
+addEventListener("mousedown", (e) => { if (e.target !== cv || e.button !== 0 || !ledger() || !scene.mg.thumb) return; const p = world(e), th = scene.mg.thumb;
+  if (p.x < th.x0 || p.x > th.x1 || p.y < th.y0 || p.y > th.y1) return; e.stopImmediatePropagation(); SC.drag = { y: e.clientY, ty: SC.ty, k: view.k }; }, true);
+addEventListener("mousemove", (e) => { if (!SC.drag) return; const th = scene.mg?.thumb; if (th?.track > 0) { SC.ty = SC.drag.ty + ((e.clientY - SC.drag.y) / SC.drag.k) * (SC.max / th.track); scrollRows(SC.ty); SC.y = SC.ty; } }, true);
+addEventListener("mouseup", (e) => { if (SC.drag) { SC.drag = null; e.stopImmediatePropagation(); } }, true);
+
 // ---- design-review controls: the view, the scenario and the text size, each a linkable address ----
 document.head.insertAdjacentHTML("beforeend", `<style>
-#mctl { position: fixed; z-index: 4; left: calc(var(--nav) + 16px); right: calc(var(--rail) + 16px); bottom: 10px; display: flex; flex-wrap: wrap; gap: .375rem; align-items: center; justify-content: center; font-size: .6875rem; color: var(--muted); }
+#mctl { position: fixed; z-index: 4; left: calc(var(--nav) + 16px); right: calc(var(--rail) + 16px); bottom: 10px; display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; justify-content: center; font-size: .6875rem; color: var(--muted); }
 #mctl button { all: unset; cursor: pointer; white-space: nowrap; padding: .2rem .55rem; border-radius: 5px; border: 1px solid rgba(148,163,184,.25); color: var(--muted); background: rgba(6,10,20,.85); }
 #mctl button:hover { color: var(--ink); } #mctl button.on { color: #fbbf24; border-color: #fbbf24; }
-#mctl .g { margin-left: .6rem; letter-spacing: .14em; text-transform: uppercase; font-size: .625rem; } #mctl .note { flex-basis: 100%; text-align: center; }
+#mctl .g { margin-left: .3rem; letter-spacing: .14em; text-transform: uppercase; font-size: .625rem; } #mctl .note { flex-basis: 100%; text-align: center; }
 #panel.mg { font-size: .75rem; width: 26rem; } #panel.mg h2 { font-size: .875rem; } #panel.mg .k, #panel.mg .note { font-size: .6875rem; }
 #panel.mg td:first-child { white-space: nowrap; vertical-align: top; padding-right: .6rem; color: var(--muted); } #panel.mg .steps { margin-top: .25rem; line-height: 1.9; }
 #panel.mg .chip { display: inline-block; padding: 0 .35rem; border: 1px solid; border-radius: 4px; font-size: .625rem; line-height: 1.5; }
@@ -450,7 +507,7 @@ function renderCtl() {
   ctl.innerHTML = `<span class="g">View</span>${Object.entries(VARS).map(([k, n]) => b(k === VAR, `data-go="${addr("merged", k)}"`, `${k.toUpperCase()} · ${n}`)).join("")}
     <span class="g">Scenario</span>${Object.keys(SCNS).map((k) => b(k === SCN, `data-go="${addr("ms", k)}"`, k)).join("")}
     <span class="g">Text</span>${[100, 125, 150].map((v) => b(v === ts, `data-ts="${v}"`, `${v}%`)).join("")}
-    <span class="g"></span>${b(false, 'data-act="merge"', "+ merge")}${SCN === "fail" ? b(false, 'data-act="rerun"', "↻ force rerun") : ""}<span class="note">${esc(SCNS[SCN])}</span>`;
+    ${b(false, 'data-act="merge"', "+ merge")}${SCN === "fail" ? b(false, 'data-act="rerun"', "↻ force rerun") : ""}<span class="note">${esc(SCNS[SCN])}</span>`;
   ctl.querySelectorAll("[data-go]").forEach((e) => (e.onclick = () => (location.search = e.dataset.go)));
   ctl.querySelectorAll("[data-ts]").forEach((e) => (e.onclick = () => { document.documentElement.style.fontSize = e.dataset.ts === "100" ? "" : `${e.dataset.ts}%`; history.replaceState(null, "", addr("ts", e.dataset.ts)); }));
   ctl.querySelector('[data-act="merge"]').onclick = () => { arrive(); nextAt = now() + 25; };
