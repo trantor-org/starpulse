@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from starpulse import session_start
-from starpulse.contracts import StartFailedError
+from starpulse.contracts.adapters import StartFailedError
 from starpulse.session_start import starter
 
 

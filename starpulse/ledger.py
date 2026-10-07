@@ -20,7 +20,7 @@ A workflow's latest failed run of an occurrence is an *open failure*, and pins t
 on the next successful run of that workflow, `forced` only on a successful forced run (the instance's `force`
 parameter set) that covers the occurrence, that is one that names a commit (or task) no older than it, or none.
 
-A merge in a repository the parent pins (`[[repos]]`, see `starpulse.pins`) is a *child* merge: it takes no run of its
+A merge in a repository the parent pins (`[[repos]]`, see `starpulse.settings.pins`) is a *child* merge: it takes no run of its
 own and does not count toward a parent merge's ambiguity. Its row names `appliedBy`, the parent merge whose pin bump
 includes it (None until one does), and that merge's row lists it in `applies`.
 """
@@ -33,7 +33,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from starpulse.config import CommitKeys
+from starpulse.settings.config import CommitKeys
 
 __all__ = ["MERGE_EVENT", "NEXT", "PAGE", "STRIP_BUCKET", "Occurrence", "build", "page", "pair", "pull_occurrences", "reruns", "strip"]
 

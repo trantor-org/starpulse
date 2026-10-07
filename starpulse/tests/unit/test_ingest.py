@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 
 from starpulse import ingest, run_events
-from starpulse.config import RunsInstance
-from starpulse.event_log import EventLog, Tail
+from starpulse.settings.config import RunsInstance
+from starpulse.store.event_log import EventLog, Tail
 
 NOW = 1_700_000_000.0
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}

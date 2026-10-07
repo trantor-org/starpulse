@@ -8,11 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from starpulse import events, forward, run_events
-from starpulse.config import Config, Forward
-from starpulse.event_log import EventLog
+from starpulse import forward, run_events
 from starpulse.forward import OPT_IN_FILE, OptIn, build, project, start
-from starpulse.history import HistoryStore
+from starpulse.settings.config import Config, Forward
+from starpulse.store import events
+from starpulse.store.event_log import EventLog
+from starpulse.store.history import HistoryStore
 
 MACHINE_ENTRY = {
     "machine": "board",

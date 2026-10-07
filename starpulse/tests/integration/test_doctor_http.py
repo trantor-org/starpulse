@@ -6,9 +6,9 @@ from pathlib import Path
 
 from starpulse.adapter_kit import serve, url
 from starpulse.board_feed import BoardFeed
-from starpulse.config import Config, Repo, RunsInstance
 from starpulse.doctor import contract
 from starpulse.server import _cached
+from starpulse.settings.config import Config, Repo, RunsInstance
 from starpulse.tests.hosts import FakeHost
 
 CONFIG = Config(

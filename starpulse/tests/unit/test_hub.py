@@ -110,9 +110,11 @@ for name in ("alembic", "psycopg", "jwt"):
 import tempfile, threading
 from pathlib import Path
 
-from starpulse import __main__, events, server
-from starpulse.event_log import EventLog
-from starpulse.history import HistoryStore, record_machine_events
+from starpulse import __main__, server
+
+from starpulse.store import events
+from starpulse.store.event_log import EventLog
+from starpulse.store.history import HistoryStore, record_machine_events
 from starpulse.tests.machines import MACHINES
 
 url = f"sqlite:///{Path(tempfile.mkdtemp()) / 'ic.sqlite'}"

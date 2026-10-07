@@ -9,9 +9,9 @@ import pytest
 from starpulse.adapter_kit import task
 from starpulse.board import Board, Written
 from starpulse.board_feed import BoardFeed
-from starpulse.config import load
-from starpulse.contracts import Move
+from starpulse.contracts.adapters import Move
 from starpulse.server import archive_task, assemble, edit_task, task_record
+from starpulse.settings.config import load
 from starpulse.tests import fake_board
 from starpulse.tests.machines import MACHINES
 

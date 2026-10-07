@@ -11,7 +11,6 @@ Each model is also published as a JSON Schema under `schemas/`, regenerated with
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -355,10 +354,5 @@ CONTRACTS: dict[str, type[BaseModel]] = {
 }
 #: Each contract's JSON Schema, by the same names.
 SCHEMAS: dict[str, dict] = {name: model.model_json_schema() for name, model in CONTRACTS.items()}
-SCHEMA_DIR = Path(__file__).parent / "schemas"
+SCHEMA_DIR = Path(__file__).parents[1] / "schemas"
 
-
-if __name__ == "__main__":
-    SCHEMA_DIR.mkdir(exist_ok=True)
-    for schema_name, schema in SCHEMAS.items():
-        (SCHEMA_DIR / f"{schema_name}.schema.json").write_text(json.dumps(schema, indent=2) + "\n")

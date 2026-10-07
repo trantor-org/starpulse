@@ -10,9 +10,9 @@ from typing import Any, get_args
 import pytest
 
 from starpulse import emit
-from starpulse.contracts import RunStatus
-from starpulse.event_log import EventLog, Tail
-from starpulse.history import DEFAULT_FILE
+from starpulse.contracts.adapters import RunStatus
+from starpulse.store.event_log import EventLog, Tail
+from starpulse.store.history import DEFAULT_FILE
 
 NOW = 1_700_000_000.0
 

@@ -22,7 +22,7 @@ from typing import Any
 
 import yaml
 
-from starpulse.machine_definition import MachineDefinitionError, validate
+from starpulse.domain.machine_definition import MachineDefinitionError, validate
 
 __all__ = ["Diagram", "Edge", "draft_machine", "dump", "parse"]
 

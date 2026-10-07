@@ -15,7 +15,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from starpulse.level import Level
+from starpulse.domain.level import Level
 
 __all__ = ["UNATTRIBUTED", "Run", "WindowPastHistory", "collapse", "level_metrics"]
 

@@ -22,7 +22,7 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/dagu.py": "def start(): ...\ndef follow(): ...\n",
         "starpulse/server.py": "",
         "starpulse/hub.py": "from starpulse import leaf\n",
-        "starpulse/migrations/versions/0001_initial.py": "",
+        "starpulse/store/migrations/versions/0001_initial.py": "",
         "starpulse/jira.py": "def board(settings, base):\n    return None\n",
         "starpulse/tests/__init__.py": "",
         "starpulse/tests/conftest.py": "",
@@ -73,7 +73,7 @@ def test_a_package_init_selects_every_test_under_the_package(repo):
 
 
 def test_a_migration_selects_the_tests_of_the_module_that_runs_migrations(repo):
-    assert select(repo, ["starpulse/migrations/versions/0001_initial.py"]) == Selection(
+    assert select(repo, ["starpulse/store/migrations/versions/0001_initial.py"]) == Selection(
         ["starpulse/tests/unit/test_hub.py"]
     )
 

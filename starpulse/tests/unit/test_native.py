@@ -10,12 +10,12 @@ import yaml
 from starpulse.adapter_kit import BoardAdapterKit
 from starpulse.board import Board
 from starpulse.board_feed import BoardFeed
-from starpulse.config import load
-from starpulse.contracts import BoardTask
-from starpulse.event_log import EventLog
-from starpulse.machine_definition import Writer
+from starpulse.contracts.adapters import BoardTask
+from starpulse.domain.machine_definition import Writer
 from starpulse.native import board
 from starpulse.server import announce, assemble, move_task
+from starpulse.settings.config import load
+from starpulse.store.event_log import EventLog
 from starpulse.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
 
 LANES = ["To Do", "In Progress", "Done"]

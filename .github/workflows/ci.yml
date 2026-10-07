@@ -19,6 +19,8 @@ jobs:
           fetch-depth: 2 # the pull request's merge commit and its base parent, for ci/select_tests.py
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --locked
+      # The package layers (pyproject's [tool.importlinter]) hold on every pull request, not only for the tests it selects.
+      - run: uv run --no-sync lint-imports
       # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
       - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
       # A pull request runs only the tests its changed files can reach (ci/select_tests.py); a push to main runs all.

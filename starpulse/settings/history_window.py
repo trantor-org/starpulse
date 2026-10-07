@@ -4,9 +4,7 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Any, TypeGuard
-
-from starpulse.board_feed import BoardFeed
+from typing import Any, Protocol, TypeGuard
 
 #: The history window Admin may set, in hours.
 MIN_HOURS, MAX_HOURS = 1, 72
@@ -18,6 +16,12 @@ def _valid(hours: object) -> TypeGuard[float]:
     return isinstance(hours, int | float) and not isinstance(hours, bool) and MIN_HOURS <= hours <= MAX_HOURS
 
 
+class _Feed(Protocol):
+    """What the window drives: the feed that draws the Board, by the seconds back a task's latest move counts."""
+
+    def set_window(self, window_s: float | None) -> None: ...
+
+
 class HistoryWindow:
     """How far back a task's latest move counts: the declared `--hours`, or the override Admin wrote over it.
 
@@ -25,7 +29,7 @@ class HistoryWindow:
     or holds a value outside the range leaves the declared hours. Every change reaches `feed` at once.
     """
 
-    def __init__(self, feed: BoardFeed, declared_hours: float, path: Path) -> None:
+    def __init__(self, feed: _Feed, declared_hours: float, path: Path) -> None:
         self._feed = feed
         self._declared = declared_hours
         self._path = path

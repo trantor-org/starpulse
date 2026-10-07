@@ -5,8 +5,8 @@ import urllib.request
 from pathlib import Path
 
 from starpulse.adapter_kit import assembled, serve, url
-from starpulse.config import load
-from starpulse.history import HistoryStore
+from starpulse.settings.config import load
+from starpulse.store.history import HistoryStore
 from starpulse.tests.unit.test_claude_code import replay
 
 

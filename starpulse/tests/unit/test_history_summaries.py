@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from starpulse.history import HistoryStore
+from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 
 #: 2026-09-22 00:00 UTC, so an event a few seconds before it falls on the day before.

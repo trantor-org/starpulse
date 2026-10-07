@@ -39,7 +39,7 @@ READERS = {
     "starpulse/web/*": ("starpulse/tests/unit/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
     "ci/preview.toml": ("ci/ui_preview.py",),
-    "starpulse/migrations/*": ("starpulse/hub.py",),
+    "starpulse/store/migrations/*": ("starpulse/hub.py",),
 }
 
 #: Workflow files are read by the `ci/` tests that assert on them.
@@ -59,8 +59,8 @@ INERT = (
 
 #: `board.py` and `config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a test
 #: reaching either reaches each adapter whose name appears in a module it reaches: a configured `kind = "dagu"` in the
-#: test or a helper, or the loader's own default (`board.DEFAULT_TYPE`).
-NAMED_LOADERS = ("starpulse.board", "starpulse.config")
+#: test or a helper, or the loader's own default (`config.DEFAULT_TYPE`).
+NAMED_LOADERS = ("starpulse.board", "starpulse.settings.config")
 
 
 @dataclass(frozen=True)

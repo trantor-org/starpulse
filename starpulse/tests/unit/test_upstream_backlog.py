@@ -11,10 +11,10 @@ import pytest
 
 from starpulse.adapter_kit import BoardAdapterKit
 from starpulse.board_feed import BoardFeed
-from starpulse.contracts import BoardTask, Move
-from starpulse.event_log import EventLog
-from starpulse.machine_definition import Writer
+from starpulse.contracts.adapters import BoardTask, Move
+from starpulse.domain.machine_definition import Writer
 from starpulse.server import move_task
+from starpulse.store.event_log import EventLog
 from starpulse.upstream_backlog import (
     BacklogConfig,
     UpstreamBacklog,

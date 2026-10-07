@@ -21,7 +21,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from starpulse.contracts import TaskKeys
+from starpulse.contracts.adapters import TaskKeys
 from starpulse.harness import HARNESS
 
 ACTOR = "codex"

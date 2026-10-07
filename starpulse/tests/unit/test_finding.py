@@ -6,8 +6,8 @@ import jsonschema
 import pytest
 from pydantic import ValidationError
 
-from starpulse import contracts
-from starpulse.contracts import CONTRACTS, SCHEMAS, Evidence, Finding, FindingEngine, FindingScope
+from starpulse.contracts import adapters as contracts
+from starpulse.contracts.adapters import CONTRACTS, SCHEMAS, Evidence, Finding, FindingEngine, FindingScope
 
 FINDING = {
     "id": "slow-review",

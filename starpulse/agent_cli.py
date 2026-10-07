@@ -48,9 +48,9 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from starpulse import demo, doctor, mermaid_import, skill_install
-from starpulse.config import ConfigError, load
-from starpulse.contracts import Move
-from starpulse.machine_definition import MachineDefinitionError, Registry, load_machine
+from starpulse.contracts.adapters import Move
+from starpulse.domain.machine_definition import MachineDefinitionError, Registry, load_machine
+from starpulse.settings.config import ConfigError, load
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"

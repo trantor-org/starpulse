@@ -13,8 +13,15 @@ import pytest
 from sqlalchemy import inspect, text, update
 from sqlalchemy.exc import OperationalError
 
-from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, _sqlite_pragmas, create_tables, prune_forever
-from starpulse.tables import events, metadata
+from starpulse.store.event_log import (
+    DEFAULT_POLL_INTERVAL,
+    EventLog,
+    Tail,
+    _sqlite_pragmas,
+    create_tables,
+    prune_forever,
+)
+from starpulse.store.tables import events, metadata
 
 
 @pytest.fixture

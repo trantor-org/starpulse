@@ -11,10 +11,10 @@ import pytest
 
 from starpulse import run_events
 from starpulse.board_feed import BoardFeed, follow
-from starpulse.contracts import Dag
-from starpulse.event_log import EventLog
-from starpulse.history import HistoryStore
+from starpulse.contracts.adapters import Dag
 from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse.store.event_log import EventLog
+from starpulse.store.history import HistoryStore
 
 START = 1_700_000_000.0
 

@@ -25,8 +25,8 @@ from pathlib import Path
 from typing import Any
 
 from starpulse import jira, native, upstream_backlog
-from starpulse.config import ConfigError, load
-from starpulse.contracts import BoardTask
+from starpulse.contracts.adapters import BoardTask
+from starpulse.settings.config import ConfigError, load
 
 __all__ = ["main"]
 

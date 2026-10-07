@@ -7,9 +7,20 @@ import jsonschema
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from starpulse import contracts
 from starpulse.board_feed import BoardFeed
-from starpulse.contracts import CONTRACTS, SCHEMAS, ActiveRun, BoardTask, Dag, MachineEvent, Pool, RecentRun, Step, TaskKeys
+from starpulse.contracts import adapters as contracts
+from starpulse.contracts.adapters import (
+    CONTRACTS,
+    SCHEMAS,
+    ActiveRun,
+    BoardTask,
+    Dag,
+    MachineEvent,
+    Pool,
+    RecentRun,
+    Step,
+    TaskKeys,
+)
 from starpulse.machine_tasks import MachineTasks
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_machine_tasks import _agents, _entry

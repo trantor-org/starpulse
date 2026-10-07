@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from starpulse.machine_definition import MachineDefinitionError, _read
+from starpulse.domain.machine_definition import MachineDefinitionError, _read
 
 __all__ = ["Definition", "Drift", "Merged", "Source", "definition", "merge"]
 

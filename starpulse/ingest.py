@@ -25,10 +25,10 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any, get_args
 
 from starpulse import run_events
-from starpulse.config import MAX_BATCH, RunsInstance, Source
-from starpulse.contracts import RunStatus
-from starpulse.event_log import EventLog
+from starpulse.contracts.adapters import RunStatus
 from starpulse.forward import FIELDS, PERSON, project
+from starpulse.settings.config import MAX_BATCH, RunsInstance, Source
+from starpulse.store.event_log import EventLog
 
 #: The largest event body accepted: a run event is a few hundred bytes, so this only stops a sender filling memory.
 MAX_BODY = 64 * 1024

@@ -517,7 +517,7 @@ The two machine definitions ship in the package under `starpulse/machines/`.
 Install the hub extras (`uvx --from 'starpulse[hub]' starpulse serve --hub`) and set `database_url` to a Postgres
 database in the config; a config with none, or with a SQLite URL, is refused before anything starts. The hub brings
 the database's schema to the latest revision on every start: the history tables are versioned with the package by
-Alembic (`starpulse/migrations`, revisions recorded in `starpulse_alembic_version`), so upgrading the package and
+Alembic (`starpulse/store/migrations`, revisions recorded in `starpulse_alembic_version`), so upgrading the package and
 restarting upgrades the schema. An instance without `--hub` keeps its SQLite file and never imports the hub extras.
 
 A hub also requires an `[oidc]` table, because viewers sign in with the hub's OpenID Connect issuer before anything is
@@ -855,6 +855,8 @@ share checkout state on one worker. CI sizes `-n` to its runner's memory with `c
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import
 graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite, and so does every
 push to `main`.
+`uv run lint-imports` checks the package layers: `store` imports from `settings`, `domain` and `contracts`; `settings` from
+`domain`; none import upward.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 [`bench/`](bench/README.md) holds the hub-ingest and instance event-log benchmarks.
 

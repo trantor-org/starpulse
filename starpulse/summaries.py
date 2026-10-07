@@ -40,9 +40,9 @@ from sqlalchemy import (
     update,
 )
 
-from starpulse.level_metrics import UNATTRIBUTED
+from starpulse.domain.level_metrics import UNATTRIBUTED
 from starpulse.machine_tasks import tables as transitions
-from starpulse.tables import metadata
+from starpulse.store.tables import metadata
 
 BOARD = "board"
 #: How many differences of one summary a consistency check lists before it counts the rest.

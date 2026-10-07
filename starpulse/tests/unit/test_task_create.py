@@ -11,9 +11,9 @@ import pytest
 from starpulse.adapter_kit import serve, url
 from starpulse.board import Board
 from starpulse.board_feed import BoardFeed
-from starpulse.config import load
-from starpulse.event_log import EventLog
 from starpulse.server import assemble, create_task
+from starpulse.settings.config import load
+from starpulse.store.event_log import EventLog
 from starpulse.upstream_backlog import UpstreamBacklog, _split
 
 LAN = "192.168.0.42"

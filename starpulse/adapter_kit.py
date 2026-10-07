@@ -48,18 +48,27 @@ from starpulse.board import (
     Written,
 )
 from starpulse.board_feed import BoardFeed
-from starpulse.config import Config
-from starpulse.contracts import FINDING_TEXT_MAX, SCHEMAS, BoardTask, Dag, Finding, MachineEvent, Pool, TaskKeys
-from starpulse.harnesses import Harnesses
-from starpulse.history import History, HistoryStore
+from starpulse.contracts.adapters import (
+    FINDING_TEXT_MAX,
+    SCHEMAS,
+    BoardTask,
+    Dag,
+    Finding,
+    MachineEvent,
+    Pool,
+    TaskKeys,
+)
+from starpulse.domain.level import Level
 from starpulse.forward import Forwarder
 from starpulse.ingest import ForwardIngest, Ingest
 from starpulse.insights import Insights, InsightStore
-from starpulse.level import Level
 from starpulse.machine_tasks import MachineTasks
-from starpulse.server import _handler, move_task
 from starpulse.server import assemble as _assemble
-from starpulse.settings import HistoryWindow
+from starpulse.server import move_task, request_handler
+from starpulse.settings.config import Config
+from starpulse.settings.harnesses import Harnesses
+from starpulse.settings.history_window import HistoryWindow
+from starpulse.store.history import History, HistoryStore
 
 __all__ = [
     "BoardAdapterKit",
@@ -368,7 +377,7 @@ def serve(
     (static / "assets" / "index-abc123.js").write_text("")
     (tmp_path / "secret.txt").write_text("")
     served = feed or BoardFeed()
-    handler = _handler(
+    handler = request_handler(
         served,
         static,
         starts or {},

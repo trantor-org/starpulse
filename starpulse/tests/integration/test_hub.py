@@ -15,8 +15,8 @@ from sqlalchemy import Engine, create_engine, text
 
 pytest.importorskip("alembic", reason="the hub extras are not installed")
 
-from starpulse import events  # noqa: E402
-from starpulse.event_log import EventLog  # noqa: E402
+from starpulse.store import events  # noqa: E402
+from starpulse.store.event_log import EventLog  # noqa: E402
 from starpulse.tests.integration.test_standalone import (  # noqa: E402, F401 - `build` is a fixture
     _free_port,
     build,

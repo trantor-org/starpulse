@@ -24,13 +24,13 @@ from typing import TYPE_CHECKING, Any, Literal
 import yaml
 
 from starpulse.board import Board, MoveWriter, Written
-from starpulse.contracts import BoardTask, Move, TaskKeys
-from starpulse.machine_definition import Writer, load_machine
-from starpulse.snapshot import Qualify, describe
+from starpulse.contracts.adapters import BoardTask, Move, TaskKeys
+from starpulse.domain.machine_definition import Writer, load_machine
+from starpulse.domain.snapshot import Qualify, describe
 
 if TYPE_CHECKING:
     from starpulse.board_feed import BoardFeed
-    from starpulse.event_log import EventLog
+    from starpulse.store.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

@@ -18,11 +18,11 @@ import pytest
 from starpulse import run_events
 from starpulse.adapter_kit import serve, url
 from starpulse.board_feed import BoardFeed, follow
-from starpulse.config import load
-from starpulse.event_log import EventLog, Tail
 from starpulse.ingest import MAX_BODY, Ingest
 from starpulse.ingest import tokens as ingest_tokens
 from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse.settings.config import load
+from starpulse.store.event_log import EventLog, Tail
 
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}
 EVENT = {"phase": "start", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}

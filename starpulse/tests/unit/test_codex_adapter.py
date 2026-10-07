@@ -6,7 +6,7 @@ from pathlib import Path
 
 from starpulse.adapter_kit import MachineEventsAdapterKit
 from starpulse.codex import CodexAdapter, git_branch
-from starpulse.contracts import TaskKeys
+from starpulse.contracts.adapters import TaskKeys
 from starpulse.harness import HARNESS_MACHINES
 from starpulse.tests.machines import MACHINES
 
