@@ -138,7 +138,7 @@ def test_the_lane_counts_revision_counts_the_lanes_the_intervals_hold_and_a_down
                 "('C', 'Ready', 4, NULL, 'e4')"
             )
         )
-        command.upgrade(config, "0006")
+        command.upgrade(config, "0007")
         assert {
             (source, lane): (open_tasks, first_at)
             for source, lane, open_tasks, first_at in db.execute(
@@ -149,7 +149,7 @@ def test_the_lane_counts_revision_counts_the_lanes_the_intervals_hold_and_a_down
             i["name"] for i in inspect(db).get_indexes("starpulse_lane_intervals")
         }
         assert "ix_starpulse_cases_state" in {i["name"] for i in inspect(db).get_indexes("starpulse_cases")}
-        command.downgrade(config, "0005")
+        command.downgrade(config, "0006")
         assert "starpulse_lanes" not in inspect(db).get_table_names()
         assert "ix_starpulse_lane_intervals_lane" not in {
             i["name"] for i in inspect(db).get_indexes("starpulse_lane_intervals")

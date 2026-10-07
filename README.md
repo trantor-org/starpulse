@@ -777,7 +777,7 @@ directory. The `Board` says:
   `starpulse_lanes` (per source and lane, the tasks in it now and when one first entered it). A store whose summaries
   are empty builds them from its rows when it opens (`HistoryStore.build_summaries`), and one that predates the lane
   counts counts them from its intervals; `rebuild_summaries` replaces them and `summary_differences` lists where they
-  differ from the rows. A hub gets the tables from its migrations (revisions `0005` and `0006`). The summaries follow
+  differ from the rows. A hub gets the tables from its migrations (revisions `0005` and `0007`). The summaries follow
   the order events were recorded, and cover only the machines the page draws when the store opens.
   `/api/analytics/health` and `/api/level` (with `/api/level/trajectories`) read these summaries and never scan the two
   raw tables: health reads the stays that ended in its window or are still going and takes the tasks in each lane from
