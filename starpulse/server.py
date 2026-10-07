@@ -1177,6 +1177,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     store, history = history_store(config, base, board, feed.machines)
     feed.date_lanes(history.lane_path)
     feed.record_lanes(store)
+    feed.track_criteria(board.evaluate, store)
+    threading.Thread(target=feed.keep_criteria, args=(threading.Event(),), name="board-criteria", daemon=True).start()
     if isinstance(history, LaneHistory):
         feed.size_suns(history.lane_rows)
         threading.Thread(target=feed.keep_suns, args=(threading.Event(),), name="board-suns", daemon=True).start()

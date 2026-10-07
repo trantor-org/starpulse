@@ -22,7 +22,7 @@ from typing import Any
 
 import yaml
 
-__all__ = ["CACHE_SECONDS", "TIMEOUT", "Evaluator", "authored"]
+__all__ = ["CACHE_SECONDS", "TIMEOUT", "Evaluator", "authored", "unevaluated"]
 
 #: Seconds the evaluator command may run before every criterion is marked `error`.
 TIMEOUT = 10.0
@@ -128,8 +128,11 @@ class Evaluator:
             return evaluated
 
 
+def unevaluated(task: str, description: str) -> list[dict[str, Any]]:
+    """The criteria `description` declares, each `not evaluated`: the result where no `criteria` command is configured."""
+    return [{**criterion, **_outcome(NOT_EVALUATED)} for criterion in authored(description)]
+
+
 def evaluator(command: object, cwd: Path) -> Callable[[str, str], list[dict[str, Any]]]:
     """The function that gives a task's criteria their results: `command` evaluates them, or none does and each is `not evaluated`."""
-    if command:
-        return Evaluator(str(command), cwd)
-    return lambda task, description: [{**c, **_outcome(NOT_EVALUATED)} for c in authored(description)]
+    return Evaluator(str(command), cwd) if command else unevaluated

@@ -78,6 +78,13 @@ _lane_changes = Table(
     Column("observed_at", Float, nullable=False),
     Index("ix_starpulse_lane_changes_task", "task", "observed_at"),
 )
+#: When each Waiting task's Start Criteria were first seen all met, for as long as they have stayed met: one row per task.
+_criteria_met = Table(
+    "starpulse_criteria_met",
+    metadata,
+    Column("task", String, primary_key=True),
+    Column("met_at", Float, nullable=False),
+)
 _learned_steps = Table(
     "starpulse_learned_steps",
     metadata,
@@ -288,6 +295,18 @@ class HistoryStore:
         for event_id, task, lane, at in db.execute(lanes.execution_options(yield_per=5000)):
             folded.lane(self._summariser, event_id, task, lane, at)
         return folded
+
+    def criteria_met(self) -> dict[str, float]:
+        """When each task's Start Criteria were first seen all met, by task."""
+        with self.engine.connect() as db:
+            return dict(db.execute(select(_criteria_met.c.task, _criteria_met.c.met_at)).all())
+
+    def save_criteria_met(self, met: dict[str, float]) -> None:
+        """Keep `met` as the whole set: a task it leaves out is forgotten, so its next met moment is a new one."""
+        with self.engine.begin() as db:
+            db.execute(_criteria_met.delete())
+            if met:
+                db.execute(self._insert(_criteria_met), [{"task": task, "met_at": at} for task, at in met.items()])
 
     def record_gap(self, stream: str, after_id: str, before_id: str, lost: int) -> None:
         """Note that `lost` entries of `stream` between `after_id` and `before_id` were trimmed unread."""
