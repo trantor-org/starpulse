@@ -1,0 +1,312 @@
+diff --git a/starpulse/web/src/App.tsx b/starpulse/web/src/App.tsx
+index b319701..faeb984 100644
+--- a/starpulse/web/src/App.tsx
++++ b/starpulse/web/src/App.tsx
+@@ -242,14 +242,6 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
+           {body}
+         </div>
+       </section>
+-      <section className="away">
+-        <h3>DAGs</h3>
+-        <div id="cons">
+-          {hud.groups.map((g) => (
+-            <button key={g.name} onClick={() => fly(g.name)}><i /><span>{g.name} · {g.n}</span></button>
+-          ))}
+-        </div>
+-      </section>
+       <Queues pools={hud.pools} /></>}
+       <section className="views admin-sec">
+         <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>
+diff --git a/starpulse/web/src/mock.ts b/starpulse/web/src/mock.ts
+new file mode 100644
+index 0000000..8f42c08
+--- /dev/null
++++ b/starpulse/web/src/mock.ts
+@@ -0,0 +1,18 @@
++// TASK-3014 design mockup switches, read from the address. Design-only: never committed to the page source.
++const q = typeof location === "undefined" ? new URLSearchParams() : new URLSearchParams(location.search);
++/** glyph: quiet (point-star constellation) | radiant (one star, a ray per step) | live (today's step graph).
++ *  free: sky (domain clusters in the Board's open sky) | marks (one mark per domain, opens the DAGs level) | live (one hangar). */
++const scale = (() => {
++  try {
++    return Number(JSON.parse(localStorage.getItem("fv.admin.prefs") || "{}").scale) || 100;
++  } catch {
++    return 100;
++  }
++})();
++/** T: the Admin text size as a factor, so the free-DAG placement keeps clear of labels at 125 and 150%. */
++export const MOCK = { glyph: q.get("glyph") || "quiet", free: q.get("free") || "sky", T: scale / 100 };
++export const hash = (s: string) => {
++  let h = 2166136261;
++  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
++  return ((h >>> 0) % 10000) / 10000;
++};
+diff --git a/starpulse/web/src/renderer.ts b/starpulse/web/src/renderer.ts
+index 9b27536..28e4f3d 100644
+--- a/starpulse/web/src/renderer.ts
++++ b/starpulse/web/src/renderer.ts
+@@ -31,6 +31,7 @@ import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "./fan";
+ import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "./adminPrefs";
+ import { clockHm, clockHms, stamp } from "./clock";
+ import { canvasSpace, retired, viewOf, viewSearch } from "./nav";
++import { MOCK } from "./mock";
+ import { fitBox, fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
+ 
+ const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
+@@ -551,6 +552,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     }
+     if (star) return { kind: "dag", o: star };
+     if (sc.hangar && near(sc.hangar, sc.hangar.r + 22)) return { kind: "hangar", o: sc.hangar };
++    for (const m of sc.marks ?? []) if (near(m, m.r + 18)) return { kind: "hangar", o: m };
+     for (const s of Object.values(sc.mStates)) if (near(s, Math.max(stateR(s), px(9)))) return { kind: "state", o: s };
+     for (const p of sc.planets) if (near(p, p.subState ? Math.max(p.R, px(8)) : p.moon ? Math.max(p.R + 4, px(10)) : p.R + 16)) return { kind: "planet", o: p };
+     if (sc.sun && near(sc.sun, sc.sun.r + 8)) return { kind: "sun", o: sc.sun };
+@@ -645,6 +647,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+       }
+       case "hangar": {
+         const run = h.o.names.filter((n) => sky.dagBy[n]?.status === "running");
++        if (h.o.name) return `<div class="k">DAG domain · click to open the DAGs level</div><div class="n">${esc(h.o.name)}</div>${h.o.names.length} DAG${h.o.names.length === 1 ? "" : "s"}: ${h.o.names.map((n) => esc(n.slice(n.indexOf("/") + 1))).join(", ")}${run.length ? `<div class="k">running: ${run.map(esc).join(", ")}</div>` : ""}`;
+         return `<div class="k">DAGs that write no Board lane · click to open</div><div class="n">DAGs</div>${h.o.names.length} DAGs in ${h.o.doms} domain${h.o.doms === 1 ? "" : "s"}${run.length ? `<div class="k">running: ${run.map(esc).join(", ")}</div>` : ""}`;
+       }
+       case "galaxy":
+@@ -1188,7 +1191,30 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+       if (!a.g) dot(tx, ty, 2.2 / K ** 0.5, rgba("#fbbf24", 0.8));
+     }
+   }
++  function drawMarks() {
++    // TASK-3014 mock: a domain mark is its DAGs as a small ring of point stars, neutral unless one failed or runs, its name and count below
++    for (const m of scene!.marks ?? []) {
++      const hot = isHot("hangar", m);
++      m.names.forEach((n, i) => {
++        const a = (i / m.names.length) * TAU - Math.PI / 2, st = S?.dagBy[n]?.status ?? "", c = st === "failed" ? DAG_COLOR.failed : st === "running" ? ACT : "#e2e8f0";
++        const rr = m.names.length === 1 ? 0 : m.r * (0.55 + 0.45 * ((i * 7) % 5) / 4);
++        star(m.x + Math.cos(a) * rr, m.y + Math.sin(a) * rr, hot ? 1.9 : 1.5, c, st === "not_started" ? 0.35 : 0.85);
++      });
++      label(m.name!, m.x, m.y + m.r + 18 / K, hot, `${m.names.length} DAG${m.names.length === 1 ? "" : "s"}`, 11);
++    }
++  }
++  function star(x: number, y: number, r: number, c: string, a: number) {
++    const glow = cx.createRadialGradient(x, y, 0, x, y, r * 4);
++    glow.addColorStop(0, rgba(c, 0.22 * a));
++    glow.addColorStop(1, rgba(c, 0));
++    cx.fillStyle = glow;
++    cx.beginPath();
++    cx.arc(x, y, r * 4, 0, TAU);
++    cx.fill();
++    dot(x, y, r, rgba(c, a));
++  }
+   function drawHangar() {
++    drawMarks();
+     const h = scene!.hangar;
+     if (!h) return;
+     const hot = isHot("hangar", h), heat = Math.max(0, ...h.names.map(dagHeat)), col = "#5eead4";
+@@ -1217,6 +1243,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+           cx.arc(s.x, s.y, s.br * 1.3, 0, TAU);
+           cx.fill();
+         }
++        if (MOCK.glyph !== "live") {
++          quietStar(s, hot, status);
++          continue;
++        }
+         label(s.label, s.x, s.y + g.h / 2 + 16 / K, hot, null, 11);
+         // the DAG's own step graph in miniature: rounded links streaming toward the step that waits, ringed steps
+         const nr = (g.nodes.length === 1 ? 5.5 : 4) * (hot ? 1.15 : 1);
+@@ -1257,6 +1287,61 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+       }
+     }
+   }
++  // TASK-3014 mock: a DAG as a constellation of point stars (quiet) or one star with a ray per step (radiant). Colour only where it
++  // means something: a failed step is red, a running one amber, every other step one neutral white, a step not run yet dimmer. A Board
++  // DAG and the DAGs level always name their DAGs; a free DAG in the sky is named on hover or when zoomed in.
++  function quietStar(s: Star, hot: boolean, status: string) {
++    const g = s.glyph, ss = (n: GNode) => stepStatus(s, n.name, n.status), one = g.nodes.length === 1;
++    const colOf = (st: string) => (st === "failed" ? DAG_COLOR.failed : st === "running" ? ACT : "#e2e8f0");
++    const alphaOf = (st: string) => (st === "not_started" ? 0.35 : 0.9);
++    const lvl = path.at(-1)?.kind, named = hot || !!s.tether || lvl !== "board" || zoomedIn(view, fit);
++    if (named) label(s.label, s.x, s.y + g.h / 2 + 14 / K, hot, null, 11);
++    const r = (one ? 2.4 : 1.7) * (hot ? 1.25 : 1);
++    cx.lineWidth = (hot ? 1.1 : 0.8) / K;
++    if (MOCK.glyph === "radiant" && !one) {
++      const core = colOf(status === "failed" || status === "running" ? status : "");
++      for (const n of g.nodes) {
++        const st = ss(n), c = colOf(st), L = Math.hypot(n.x, n.y) || 1;
++        cx.strokeStyle = rgba(c, hot ? 0.75 : st === "not_started" ? 0.22 : 0.45);
++        cx.beginPath();
++        cx.moveTo(s.x + (n.x / L) * (r + 2), s.y + (n.y / L) * (r + 2));
++        cx.lineTo(s.x + n.x, s.y + n.y);
++        cx.stroke();
++        if (st === "failed" || st === "running") dot(s.x + n.x, s.y + n.y, 1.3, rgba(c, 0.95));
++        for (const rg of moves.rings) if (rg.dag === s.name && rg.step === n.name) pulse(s.x + n.x, s.y + n.y, 2, (T - rg.at) / RING, DAG_COLOR[rg.status], 12);
++      }
++      star(s.x, s.y, 2.6 * (hot ? 1.2 : 1), core, 0.95);
++    } else {
++      for (const [p, q] of g.links) {
++        const a = { x: s.x + p.x, y: s.y + p.y }, b = { x: s.x + q.x, y: s.y + q.y }, L = Math.hypot(b.x - a.x, b.y - a.y) || 1, ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
++        const run = ss(p) === "running" || ss(q) === "running";
++        cx.strokeStyle = rgba(run ? ACT : "#cbd5e1", hot ? 0.5 : run ? 0.45 : 0.16);
++        cx.beginPath();
++        cx.moveTo(a.x + ux * (r + 2), a.y + uy * (r + 2));
++        cx.lineTo(b.x - ux * (r + 2), b.y - uy * (r + 2));
++        cx.stroke();
++      }
++      for (const n of g.nodes) {
++        const st = ss(n), x = s.x + n.x, y = s.y + n.y;
++        star(x, y, r, colOf(st), alphaOf(st));
++        for (const rg of moves.rings) if (rg.dag === s.name && rg.step === n.name) pulse(x, y, r + 1, (T - rg.at) / RING, DAG_COLOR[rg.status], 12);
++      }
++    }
++    const fan = fanBadge(s, S?.pools);
++    if (fan) {
++      const bc = fan.full ? DAG_COLOR.failed : ACT, bw = textW(fan.text, 10.5) / K + 6 / K, bh = 15 / K;
++      const bx = s.x + g.w / 2 + 8 / K, by = s.y - g.h / 2 - 8 / K;
++      cx.fillStyle = "rgba(6,10,20,0.85)";
++      cx.strokeStyle = rgba(bc, 0.8);
++      cx.lineWidth = 1 / K;
++      cx.beginPath();
++      cx.roundRect(bx, by - bh / 2, bw, bh, bh / 2);
++      cx.fill();
++      cx.stroke();
++      text(fan.text, bx + bw / 2, by + 0.5 / K, 10.5 / K, bc, "center", 500);
++    }
++    for (const n of s.fold ?? [s.name]) for (const age of dagRings(moves.flare[n], T)) pulse(s.x, s.y, s.br, age, ACT, 38);
++  }
+   // a fold's level: every DAG's ties to the events it writes or runs beside stay drawn, brighter on the hovered DAG; a cue is fainter and sparser
+   function drawFoldTies() {
+     for (const t of scene!.fold!.ties) {
+diff --git a/starpulse/web/src/scene.ts b/starpulse/web/src/scene.ts
+index 96a885b..dd0fc90 100644
+--- a/starpulse/web/src/scene.ts
++++ b/starpulse/web/src/scene.ts
+@@ -3,6 +3,7 @@
+ // DAGs as step-graph glyphs beside them, a state's lifecycle system as planets
+ // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
+ import type { Fold, Level } from "./levels";
++import { hash, MOCK } from "./mock";
+ import { countText, daily, HOUR, stateCount, type Move, type Moves, type Sky } from "./sky";
+ import type { Dag, DagStep, RawAgent, Transition, Writer } from "./types";
+ 
+@@ -63,6 +64,8 @@ export interface Hangar extends Pt {
+   r: number;
+   names: string[];
+   doms: number;
++  /** TASK-3014 mock: the domain a mark stands for. */
++  name?: string;
+ }
+ /** Anything tasks orbit: a Board state, a state level's sun, or a lifecycle machine. */
+ export interface Host extends Pt {
+@@ -302,6 +305,8 @@ export interface Scene {
+   /** A line of type's height in world units at the state level's fit zoom. */
+   moonLH?: number;
+   hangar?: Hangar;
++  /** TASK-3014 mock: one mark per domain in place of the hangar. */
++  marks?: Hangar[];
+   fold?: FoldView;
+ }
+ export interface Ctx {
+@@ -531,15 +536,25 @@ function columns(steps: DagStep[]) {
+ 
+ /** A DAG drawn as its own step graph: steps layered by dependency depth, one link per dependency. */
+ export function glyph(d: Pick<Dag, "name" | "status" | "steps">): Glyph {
+-  const steps = d.steps || [], { cols, L } = columns(steps), SX = 28, SY = 18, pos: Record<string, GNode> = {}, nodes: GNode[] = [];
++  const steps = d.steps || [];
++  if (MOCK.glyph === "radiant" && steps.length > 1) {
++    // one star, a ray per step, clockwise from the top in dependency order
++    const { cols } = columns(steps), order = Object.keys(cols).sort((a, b) => Number(a) - Number(b)).flatMap((k) => cols[Number(k)]);
++    const R = 7 + Math.min(order.length, 16) * 0.55;
++    const nodes = order.map((s, i) => ({ name: s.name, status: s.status, x: Math.cos((i / order.length) * TAU - Math.PI / 2) * R, y: Math.sin((i / order.length) * TAU - Math.PI / 2) * R }));
++    return { nodes, links: [], w: 2 * R, h: 2 * R, br: R + 6 };
++  }
++  const quiet = MOCK.glyph === "quiet", { cols, L } = columns(steps), SX = quiet ? 20 : 28, SY = quiet ? 13 : 18, pos: Record<string, GNode> = {}, nodes: GNode[] = [];
+   for (const [l, list] of Object.entries(cols))
+     list.forEach((s, i) => {
+-      const n = { name: s.name, status: s.status, x: (Number(l) - (L - 1) / 2) * SX, y: (i - (list.length - 1) / 2) * SY };
++      // quiet: the layered layout loosened by a fixed per-step offset, so a DAG reads as a constellation rather than a grid
++      const jx = quiet && L > 1 ? (hash(d.name + s.name) - 0.5) * SX * 0.55 : 0, jy = quiet && steps.length > 1 ? (hash(s.name + d.name) - 0.5) * SY * 0.8 : 0;
++      const n = { name: s.name, status: s.status, x: (Number(l) - (L - 1) / 2) * SX + jx, y: (i - (list.length - 1) / 2) * SY + jy };
+       pos[s.name] = n;
+       nodes.push(n);
+     });
+   const links = steps.flatMap((s) => s.depends.filter((x) => pos[x]).map((x): [GNode, GNode] => [pos[x], pos[s.name]]));
+-  const w = (L - 1) * SX, h = (Math.max(1, ...Object.values(cols).map((c) => c.length)) - 1) * SY;
++  const w = quiet ? 2 * Math.max(0, ...nodes.map((n) => Math.abs(n.x))) : (L - 1) * SX, h = quiet ? 2 * Math.max(0, ...nodes.map((n) => Math.abs(n.y))) : (Math.max(1, ...Object.values(cols).map((c) => c.length)) - 1) * SY;
+   return { nodes: nodes.length ? nodes : [{ name: d.name, status: d.status, x: 0, y: 0 }], links, w, h, br: Math.hypot(w, h) / 2 + 8 };
+ }
+ 
+@@ -788,7 +803,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+       // ring of dots and the name and count below it. It starts 2 px right of the last column, past the 1 px separate() reads as one column,
+       // so a state ending the axis there pushes it clear instead of sharing its place.
+       const hangHW = Math.max(31, (Math.max(textW("DAGs", 12.5), textW(`${free.length} · ${doms} domains`, 10.5)) * F) / 2);
+-      const all = free.length ? [...ps, { id: "", R: 52 + 27 * F, x: Math.max(...ps.map((p) => p.x)) + 2, y: ps.find((p) => p.id === (board.machine.mainLine?.[0] ?? states[0].id))!.y }] : ps;
++      const all = free.length && MOCK.free === "live" ? [...ps, { id: "", R: 52 + 27 * F, x: Math.max(...ps.map((p) => p.x)) + 2, y: ps.find((p) => p.id === (board.machine.mainLine?.[0] ?? states[0].id))!.y }] : ps;
+       const reach = (p: { id: string; R: number }, sd: 1 | -1) => (p.id ? (sized[p.id].rows?.reach[sd > 0 ? 0 : 1] ?? p.R) : hangHW);
+       const shift = separate(all, gapOf, reach), grow = Math.max(0, ...shift.values());
+       const over = Math.max(0, 56 * F - Math.min(...ps.map((p) => p.y - p.R)), Math.max(...ps.map((p) => p.y + p.R)) - (hb0 - 20));
+@@ -1088,6 +1103,68 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+     // every free DAG folds into one still body at the right end of the lifecycle axis, opposite New
+     const hangar = ps.find((p) => !p.id);
+     if (hangar) scene.hangar = { x: hangar.x, y: hangar.y, r: 22, names: free, doms };
++    const F0 = F;
++    if (MOCK.free !== "live" && free.length) skyDags();
++    // TASK-3014 mock: free DAGs leave the hangar for the Board's open sky. sky: each domain a loose cluster of its DAGs under the
++    // domain's name, names on hover or zoom; marks: one small mark per domain that opens the DAGs level. Every cluster or mark takes
++    // the place farthest from the lifecycle axis that clears every state, its moons and name, every path and every Board DAG.
++    function skyDags() {
++      type Box = [number, number, number, number];
++      const F = F0 * MOCK.T; // labels draw at the Admin text size
++      const boxes: Box[] = [];
++      for (const g of gal) {
++        boxes.push([g.x - Math.max(g.R, g.reach[1]) - 30, g.y - g.R - 30, g.x + Math.max(g.R, g.reach[0]) + 30, g.y + g.R + 30]);
++        const lw = (Math.max(textW(g.name, 13), textW(`${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 11)) * F) / 2 + 14;
++        boxes.push([g.x - lw, g.lab.y - 16 * F - 8, g.x + lw, g.lab.y + 24 * F + 8]);
++      }
++      for (const q of bodies) boxes.push([q.x - q.hw - 14, q.y - q.up - 14, q.x + q.hw + 14, q.y + q.dn + 14]);
++      for (let i = 0; i < path.length; i += 3) boxes.push([path[i].x - 16, path[i].y - 16, path[i].x + 16, path[i].y + 16]);
++      const clear = (b: Box) => b[0] > 24 && b[1] > 24 && b[2] < scene.w - 24 && b[3] < hb && boxes.every((o) => b[2] < o[0] || b[0] > o[2] || b[3] < o[1] || b[1] > o[3]);
++      const mid = hb / 2, placed: Pt[] = [];
++      const doms = S.groups.map((g) => ({ name: g.name, ns: g.dags.filter((n) => free.includes(n)) })).filter((d) => d.ns.length).sort((a, b) => b.ns.length - a.ns.length);
++      for (const d of doms) {
++        const pts: { n: string; x: number; y: number; r: number }[] = [];
++        if (MOCK.free === "sky")
++          for (const n of [...d.ns].sort((a, b) => glyphOf(b).br - glyphOf(a).br || (a < b ? -1 : 1))) {
++            const r = Math.max(glyphOf(n).br, 7) + 3;
++            for (let k = 0; ; k++) {
++              const a = k * 2.39996, rr = 7 * Math.sqrt(k), x = Math.cos(a) * rr * 1.3, y = Math.sin(a) * rr * 0.8;
++              if (pts.every((p) => Math.hypot(p.x - x, (p.y - y) * 1.15) >= p.r + r)) {
++                pts.push({ n, x, y, r });
++                break;
++              }
++            }
++          }
++        const lw = (textW(d.name.toUpperCase(), 10.5) * F) / 2 + 6;
++        const ext = MOCK.free === "sky"
++          ? [Math.min(...pts.map((p) => p.x - p.r)), Math.min(...pts.map((p) => p.y - p.r)), Math.max(...pts.map((p) => p.x + p.r)), Math.max(...pts.map((p) => p.y + p.r))]
++          : [-16, -16, 16, 16];
++        // the box a cluster or mark takes at (x, y): its stars, its name above (sky) or name and count below (a mark)
++        const at = (x: number, y: number, sky: boolean): Box => sky
++          ? [x + Math.min(ext[0], -lw) - 10, y + ext[1] - 26 * F - 10, x + Math.max(ext[2], lw) + 10, y + ext[3] + 10]
++          : [x - Math.max(lw, 40) - 10, y - 26, x + Math.max(lw, 40) + 10, y + 16 + 34 * F + 10];
++        const spot = (sky: boolean) => {
++          let best: Pt | null = null, score = -Infinity;
++          for (let y = 40; y < hb; y += 12)
++            for (let x = 40; x < scene.w - 40; x += 16) {
++              if (!clear(at(x, y, sky))) continue;
++              const s = Math.min(Math.abs(y - mid), 260) + 1.2 * Math.min(700, ...placed.map((p) => Math.hypot(p.x - x, p.y - y)));
++              if (s > score) [best, score] = [{ x, y }, s];
++            }
++          return best;
++        };
++        // sky: a domain whose cluster finds no open sky folds into a mark, so the sky never overprints
++        let sky = MOCK.free === "sky", best = sky ? spot(true) : null;
++        if (!best) [sky, best] = [false, spot(false)];
++        const c = best ?? { x: scene.w / 2, y: hb - 60 };
++        boxes.push(at(c.x, c.y, sky));
++        placed.push(c);
++        if (sky) {
++          for (const p of pts) scene.stars[p.n] = star(p.n, c.x + p.x, c.y + p.y);
++          scene.groups.push({ name: d.name, head: true, lx: c.x, ly: c.y + ext[1] - 14 * F, stars: pts.map((p) => scene.stars[p.n]) });
++        } else (scene.marks ||= []).push({ x: c.x, y: c.y, r: 12, names: d.ns, doms: 1, name: d.name });
++      }
++    }
+   }
+ 
+   // DAGs level: every free DAG in one row of domain blocks, centred on the canvas; a DAG opens its panel
