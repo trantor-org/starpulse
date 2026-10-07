@@ -378,7 +378,9 @@ starpulse connect jira --url https://acme.atlassian.net --project PAY --workflow
 `type = "github_actions"` reads one repository's workflows: each active workflow file is a workflow named for the file
 (`ci.yml`), its jobs are the steps (waiting on their `needs`), and a job a run took once also lists its steps. A run's
 `status` and `conclusion` become StarPulse's statuses (`queued`, `running`, `succeeded`, `failed`, `aborted`,
-`skipped`) and GitHub's own label stays in `raw`; a label the mapping lacks is an error, never a failure.
+`skipped`) and GitHub's own label stays in `raw`; a label the mapping lacks is an error, never a failure. A
+GitHub-managed dynamic workflow (`dynamic/dependabot/update-graph`) has a path that is no file: it is listed from its
+latest run's jobs alone and cannot be started.
 
 ```toml
 [[runs]]
