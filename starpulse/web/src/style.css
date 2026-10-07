@@ -692,7 +692,7 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #tkm .tk-row .about { color: var(--muted); font-size: calc(11px * var(--fs)); line-height: 1.45; min-width: 0; }
 #tkm .tk-body { margin: 0; padding: 0 14px 14px 52px; color: var(--ink-3); display: flex; flex-direction: column; gap: 10px; } #tkm .tk-body li { padding-left: 4px; } #tkm .tk-body li > div:first-child { margin-bottom: 5px; }
 #tkm .cmd { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 7px 8px 7px 12px; border-radius: 6px; background: color-mix(in srgb, var(--code) 70%, transparent); }
-#tkm .cmd .pr { color: var(--faint); font: calc(11.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; line-height: 1.6; } #tkm .cmd code { font-size: calc(11.5px * var(--fs)); line-height: 1.6; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+#tkm .cmd .ps { color: var(--faint); font: calc(11.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; line-height: 1.6; } #tkm .cmd code { font-size: calc(11.5px * var(--fs)); line-height: 1.6; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 #tkm .tm-copy { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); background: var(--pop); color: var(--slate); font: inherit; font-size: calc(11px * var(--fs)); }
 #tkm .tm-copy:hover, #tkm .tm-copy:focus-visible { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 50%, transparent); } #tkm .tm-copy.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
 #tkm .tm-copy .g { font-size: calc(12px * var(--fs)); }

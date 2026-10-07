@@ -72,7 +72,7 @@ describe("Connect a tracker", () => {
     expect(cmds[1]).toMatch(/^starpulse connect jira --url https:\/\/<your-site>\.atlassian\.net --project PAY --workflow "Payments Software Workflow" --user /);
     expect(cmds[2]).toBe("starpulse serve");
     expect(all(".out").map((o) => o.textContent)).toEqual(["prints ✓ Imported Payments Software Workflow (7 states) · read 42 issues from PAY · wrote [board] to starpulse.toml"]);
-    expect(all(".cmd .pr").every((p) => p.textContent === "$")).toBe(true);
+    expect(all(".cmd .ps").every((p) => p.textContent === "$")).toBe(true);
   });
 
   it("copies the exact command with its Copy button and says so", async () => {

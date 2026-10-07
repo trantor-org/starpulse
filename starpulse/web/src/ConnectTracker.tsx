@@ -51,7 +51,7 @@ function CmdBlock({ cmd }: { cmd: string }) {
   }, [copied]);
   return (
     <div className="cmd">
-      <span className="pr">$</span>
+      <span className="ps">$</span>
       <code>{cmd}</code>
       <button className={`tm-copy${copied ? " ok" : ""}`} aria-label={`Copy ${cmd}`} onClick={() => void copyToClipboard(cmd).then((ok) => ok && setCopied(true))}>
         <span className="g">⧉</span>{copied ? "Copied" : "Copy"}
@@ -84,7 +84,7 @@ export function TrackerModal({ hint, close }: { hint?: string | null; close: () 
   return (
     <div id="tkm" onClick={(e) => e.target === e.currentTarget && close()}>
       <div className="modal tk" role="dialog" aria-label="Connect a tracker" tabIndex={-1} ref={dialog}>
-        <header className="tkhead"><h2>Connect a tracker</h2><button className="x" aria-label="Close" onClick={close}>✕</button></header>
+        <div className="tkhead"><h2>Connect a tracker</h2><button className="x" aria-label="Close" onClick={close}>✕</button></div>
         <p className="k">StarPulse draws its own Markdown board until you connect another. <code>starpulse connect</code> checks that the tracker answers, then writes the board settings into <code>starpulse.toml</code> for you; <code>starpulse connect --help</code> lists every option.</p>
         {hint && <Found hint={hint} />}
         <div className="tklist">
