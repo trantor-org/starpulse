@@ -21,6 +21,10 @@ from starpulse.history import DEFAULT_FILE
 _CLIENT_MODULE = "re" + "dis"
 _ENV_DROPPED = (f"{_CLIENT_MODULE.upper()}_URL", f"{_CLIENT_MODULE.upper()}_PASSWORD", "DATABASE_URI")
 
+# The `build` stub writes and removes the checkout's shared static directory, so under pytest-xdist these tests share
+# one worker (`--dist loadgroup`): another worker's teardown would delete the page out from under a running server.
+pytestmark = pytest.mark.xdist_group("static-build")
+
 
 @pytest.fixture
 def build() -> Iterator[None]:
