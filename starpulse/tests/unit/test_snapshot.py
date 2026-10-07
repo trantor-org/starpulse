@@ -1,8 +1,13 @@
 """The static shape the page draws: a machine's states and transitions, and the declared workflow relationships."""
 
+from pathlib import Path
+
+import pytest
+import yaml
 from statemachine import State, StateChart
 
 from starpulse import snapshot
+from starpulse.machine_definition import MachineDefinitionError, load_machine
 from starpulse.snapshot import describe
 
 
@@ -87,3 +92,28 @@ class TestStateNames:
 
     def test_titling_changes_only_first_letters(self) -> None:
         assert snapshot._titled("PR opened  twice") == "PR Opened  Twice"
+
+
+class TestSource:
+    """A machine a third party moves says so: the snapshot carries its `source`, and a local machine has none."""
+
+    @staticmethod
+    def _drawn(tmp_path: Path, **extra: object) -> dict:
+        document = {
+            "name": "sample",
+            "states": {"a": {"initial": True}, "b": {"final": True}},
+            "events": {"GO": [{"from": "a", "to": "b"}]},
+        }
+        path = tmp_path / "sample.yaml"
+        path.write_text(yaml.safe_dump(document | extra))
+        return describe(load_machine(path).machine)
+
+    def test_a_machine_that_declares_a_source_carries_it_to_the_snapshot(self, tmp_path: Path) -> None:
+        assert self._drawn(tmp_path, source="GitHub")["source"] == "GitHub"
+
+    def test_a_machine_without_a_source_has_none(self, tmp_path: Path) -> None:
+        assert "source" not in self._drawn(tmp_path)
+
+    def test_an_empty_source_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(MachineDefinitionError, match="source"):
+            self._drawn(tmp_path, source="")

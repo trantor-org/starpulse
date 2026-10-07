@@ -1,6 +1,6 @@
 """Machines are namespaced `<repo>/<machine>`; two merge only when their compiled definitions hash equal.
 
-A definition reduces to a set of facts: one per state flag, per transition (one for each source state, with its
+A definition reduces to a set of facts: one for its `source`, one per state flag, per transition (one for each source state, with its
 guards and action), per binding and per writer, a `flow:` child's facts under the state that opens it. The hash is
 over the sorted facts, so the order of keys, states, events and `from` lists never moves it, and the difference of
 two fact sets is the transition diff a drift record carries.
@@ -35,6 +35,8 @@ def definition(path: Path) -> Definition:
     facts |= {f"binding {adapter} -> {event}" for adapter, event in document.get("bindings", {}).items()}
     for event, writers in document.get("writers", {}).items():
         facts |= {f"writer {event} {writer['actor']} via {writer['trigger']}" for writer in writers}
+    if "source" in document:
+        facts.add(f"source {document['source']}")
     digest = hashlib.sha256("\n".join(sorted(facts)).encode()).hexdigest()
     return Definition(document["name"], digest, frozenset(facts))
 

@@ -42,6 +42,7 @@ _KEYS = {
     "database_url",
     "session_start_url",
     "level",
+    "ci",
     "hub_retention_days",
     "event_log_retention_days",
     "oidc",
@@ -398,6 +399,8 @@ class Config:
     """`serve` prunes the event log's rows older than this many days, hourly, so the table and every reader's boot replay stay bounded; a reader that was behind the oldest retained row records a gap."""
     repos: tuple[Repo, ...] = ()
     """The repositories whose merges apply through the parent's pin bump (`[[repos]]`)."""
+    ci: tuple[str, ...] = ()
+    """The Board states the shipped `ci` machine is attached to as a sub-flow (`[ci] states`); none: it is not drawn."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -418,6 +421,19 @@ def _level(raw: Mapping[str, object]) -> Level | None:
         return parse_level(raw["level"]) if "level" in raw else None
     except LevelError as exc:
         raise ConfigError(str(exc)) from exc
+
+
+def _ci(raw: Mapping[str, object]) -> tuple[str, ...]:
+    """The Board states the `[ci]` table names, or none when the config has no such table."""
+    if "ci" not in raw:
+        return ()
+    table = raw["ci"]
+    if not isinstance(table, dict) or table.keys() != {"states"}:
+        raise ConfigError("ci: the [ci] table takes one key, states")
+    states = table["states"]
+    if not isinstance(states, list) or not states or not all(isinstance(s, str) and s for s in states):
+        raise ConfigError("ci: states must be a non-empty list of Board state ids")
+    return tuple(states)
 
 
 def discover(path: Path | None) -> Path | None:
@@ -495,4 +511,5 @@ def load(path: Path | None) -> Config:
         _aggregates_only(raw.get("aggregates_only", False)),
         event_log_retention_days=log_retention,
         repos=_repos(raw.get("repos", [])),
+        ci=_ci(raw),
     )

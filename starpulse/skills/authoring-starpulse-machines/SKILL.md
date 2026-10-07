@@ -43,6 +43,8 @@ data only: no expressions or code, so never write a condition as a script.
 7. A subflow is a state with `flow: child.yaml`, a path relative to this file. The child's states nest under it as
    `<state>_<child state>`. Only one level is allowed, a `flow` state cannot be `final`, and a child may not bind an
    adapter event the parent binds.
+8. `source` names a third party that moves the machine, such as `GitHub`. StarPulse only observes a machine with a
+   `source`, and the page draws it apart from one its own actors move. Leave it out for a machine StarPulse moves.
 
 Done when the file names its states, events, bindings and writers and every event a writer fires is declared.
 
