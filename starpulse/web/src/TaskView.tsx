@@ -284,7 +284,7 @@ export function TaskView(p: TaskViewProps) {
   });
   const { close } = p;
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => closesOnKey(event.key, editing) && close();
+    const onKey = (event: KeyboardEvent) => !event.defaultPrevented && closesOnKey(event.key, editing) && close();
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [close, editing]);
@@ -292,7 +292,7 @@ export function TaskView(p: TaskViewProps) {
   return (
     <div id="kbm" onClick={(event) => onScrim(event.target, event.currentTarget) && (editing ? askLeave("close") : p.close())}>
       <div className={`modal tv${editing ? " editing" : ""}`} role="dialog" aria-label={`${p.task.id} ${base.title}`}>
-        <header className="tvhead">
+        <div className="tvhead">
           <div className="tvmeta">
             <span className="tid">{p.task.id}</span>
             <button className={`copybtn${copied ? " ok" : ""}`} title={`Copy “${copyText(p.task, base.title)}”`} aria-label="Copy id and title" onClick={copy}>
@@ -319,7 +319,7 @@ export function TaskView(p: TaskViewProps) {
             </div>
           </div>
           <Txt {...fp("title")} value={draft.title} label="Title" className="title" onChange={(value) => change("title", value)} />
-        </header>
+        </div>
         <div className="tvbody">
           <div className="tvcol tvleft">
             {saved && <div className="saveok">✓ {saved}</div>}

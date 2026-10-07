@@ -116,6 +116,8 @@ describe("the task view's header", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(at('data-field="title"')).toBeGreaterThan(at('aria-label="Close"'));
     expect(draw()).not.toContain('class="tvfoot"');
+    // a <header> inside the board matches `#kb header`, which would centre the row and set the title in capitals
+    expect(draw()).not.toMatch(/<header/);
   });
 
   it("offers Start session only from Ready, Waiting and Needs attention while no start is in flight", () => {
@@ -183,6 +185,9 @@ describe("the task view's body", () => {
     expect(styles).toMatch(/#kbm \.modal\.tv \{[^}]*width: clamp\(860px, 65vw, 1500px\)[^}]*height: min\(84vh, 980px\)/);
     expect(styles).toMatch(/#kbm \.tvbody \{[^}]*grid-template-columns: minmax\(0, 1fr\) clamp\(320px, 31%, 440px\)/);
     expect(styles).toMatch(/#kbm \.tvcol \{[^}]*overflow-y: auto/);
-    expect(styles).toMatch(/@media \(max-width: 1100px\) \{[^@]*#kbm \.tvbody \{[^}]*column-reverse/);
+    expect(styles).toMatch(/#kbm \.tvrail td \{[^}]*display: block/);
+    expect(styles).toMatch(/@media \(max-width: 1100px\) \{[^@]*#kbm \.tvbody \{[^}]*flex-direction: column;/);
+    expect(styles).toMatch(/@media \(max-width: 1100px\) \{[^@]*#kbm \.tvrail \{[^}]*order: -1/);
+    expect(styles).not.toMatch(/column-reverse/);
   });
 });
