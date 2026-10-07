@@ -11,7 +11,7 @@
     "folded-kanban": { view: "kanban", kq: "backup", folded: true },
     "folded-map": { view: "constellation", folded: true },
   };
-  const ICONS = ["sextant", "chart", "current"];
+  const ICONS = ["constellation", "compass", "orbit", "chart", "sextant", "current"];
   const SIZES = [100, 125, 150];
   // a switcher choice survives the reload in sessionStorage too, for a frame that drops the query string
   let next = null;
@@ -21,7 +21,7 @@
   if (!qs.get("s") && location.hash.slice(1) in STATES) qs.set("s", location.hash.slice(1));
   const sKey = qs.get("s") in STATES ? qs.get("s") : null;
   const preset = sKey ? STATES[sKey] : null;
-  let icon = ICONS.includes(qs.get("icon")) ? qs.get("icon") : "sextant";
+  let icon = ICONS.includes(qs.get("icon")) ? qs.get("icon") : "constellation";
   const fs = SIZES.includes(+qs.get("fs")) ? +qs.get("fs") : null;
 
   // ---- a linked state seeds the page's own stores before the app reads them ----
@@ -38,7 +38,7 @@
   document.documentElement.classList.add("nv-" + icon);
   if (qs.get("chrome") === "0") document.documentElement.classList.add("nv-nochrome");
 
-  // ---- the two icon concepts, drawn on a 24-unit grid and shown at 14 px in the glyph's place ----
+  // ---- the icon concepts, drawn on a 24-unit grid and shown at 14 px in the glyph's place ----
   const SVG = {
     sextant: `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
       <defs><mask id="nv-cut"><rect width="24" height="24" fill="#fff"/><path d="M17 10 L11.5 19.5 A11 11 0 0 0 22.5 19.5 Z" fill="#000" stroke="#000" stroke-width="3.4" stroke-linejoin="round"/></mask></defs>
@@ -56,6 +56,20 @@
       <path d="M12 6.3 L13.5 10.5 L17.7 12 L13.5 13.5 L12 17.7 L10.5 13.5 L6.3 12 L10.5 10.5 Z" fill="currentColor"/>
       <circle cx="17" cy="7.2" r="1" fill="currentColor"/><circle cx="7.4" cy="16.6" r=".8" fill="currentColor"/>
     </svg>`,
+    constellation: `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <path d="M3 17.5 L8.5 12 L13.5 14.5 L20 5 M13.5 14.5 L18.5 20.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".65"/>
+      <circle cx="3" cy="17.5" r="2" fill="currentColor"/><circle cx="8.5" cy="12" r="2.2" fill="currentColor"/><circle cx="13.5" cy="14.5" r="2" fill="currentColor"/>
+      <circle cx="20" cy="5" r="2.5" fill="currentColor"/><circle cx="18.5" cy="20.5" r="1.7" fill="currentColor"/>
+    </svg>`,
+    compass: `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <circle cx="12" cy="12" r="9.6" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M12 4.2 L14.8 12 H9.2 Z" fill="currentColor"/><path d="M12 19.8 L9.2 12 H14.8 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+    </svg>`,
+    orbit: `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <circle cx="12" cy="12" r="5" fill="currentColor"/>
+      <ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <circle cx="20.6" cy="3.6" r="1.1" fill="currentColor"/>
+    </svg>`,
   };
   const MAG = `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.4 15.4 L21 21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`;
 
@@ -67,6 +81,8 @@
   /* both searches: room for the ✕ at the right end */
   #q, #kb .filters > .fw:first-child input { padding-right: calc(24px * var(--fs)) !important; }
   #nav section.away:has(> #q) { position: relative; }
+  /* the browser's own search-field clear button would draw a second ✕ beside ours */
+  #q::-webkit-search-cancel-button, #kb .filters > .fw:first-child input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
   .nv-x { all: unset; box-sizing: border-box; position: absolute; z-index: 1; top: 50%; right: 5px; transform: translateY(-50%); cursor: pointer; display: none; place-items: center;
     width: calc(18px * var(--fs)); height: calc(18px * var(--fs)); border-radius: 4px; color: var(--muted); font-size: calc(11px * var(--fs)); line-height: 1; }
   .nv-x.on { display: grid; }
@@ -161,7 +177,7 @@
       try { history.replaceState(null, "", location.pathname + "?" + p.toString()); } catch {}
       location.reload();
     };
-    const iconGrp = ICONS.map((k) => `<button data-icon="${k}" class="${k === icon ? "on" : ""}">${{ sextant: "Map + sextant", chart: "Star chart", current: "Today's ring" }[k]}</button>`).join("");
+    const iconGrp = ICONS.map((k) => `<button data-icon="${k}" class="${k === icon ? "on" : ""}">${{ constellation: "Constellation", compass: "Compass", orbit: "Orbit", chart: "Star chart", sextant: "Map + sextant", current: "Today's ring" }[k]}</button>`).join("");
     const sizeGrp = SIZES.map((n) => `<button data-fs="${n}" class="${n === (fs ?? 100) ? "on" : ""}">${n}%</button>`).join("");
     const opts = Object.keys(STATES).map((k) => `<option value="${k}" ${k === sKey ? "selected" : ""}>${k}</option>`).join("");
     sw.innerHTML = `<b title="Fold the mockup controls">MOCKUP ▾</b><span class="grp">icon ${iconGrp}</span><span class="grp">text ${sizeGrp}</span><span class="grp">state <select aria-label="Mockup state">${sKey ? "" : "<option>—</option>"}${opts}</select></span>`;
