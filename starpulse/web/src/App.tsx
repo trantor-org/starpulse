@@ -107,7 +107,7 @@ export function App() {
       <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} kanbanQuery={kanbanQuery} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} toggle={() => fold.toggle()} open={open}
         fly={(g) => renderer.current?.flyToGroup(g)} openDag={(d) => renderer.current?.openDag(d)}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
-      {view === "constellation" && <Crumb path={hud.path} states={hud.states} open={open} />}
+      {view === "constellation" && <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} />}
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
       {view === "admin" && <Admin store={admin} window={historyWindow} forwarding={forwarding} />}
       {view === "graph" && (
