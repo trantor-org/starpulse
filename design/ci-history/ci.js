@@ -1,24 +1,29 @@
-// Mockup layer: a task's CI history on the Star Map dot and task panel and on the Kanban card and task modal,
-// injected over a capture of the live page. The history is synthetic; the server that would record it does not exist yet.
+// Mockup layer: CI history in StarPulse, injected over a capture of the live page. The history is synthetic; the server
+// that would record it does not exist yet.
+// The operator's model (2026-10-06): CI belongs to the Board states configured for GitHub (here In Progress and Review),
+// not to the dots; a dot is a cursor to a state. Detail is deferred until the user asks for it:
+//   glance  - each configured state carries one CI line under its label, problems only ("✗ 2 failing · ⚠ 1 conflict"),
+//             or "✓ checks green"; the Kanban column for the state carries the same line under its header
+//   hover   - hovering the state (or that line on Kanban) lists the tasks behind each count
+//   click   - a task's dot opens its panel with a CI summary; its history opens on a further click, a PR's pushes on
+//             another, a push's workflows on another. Inside a state, a CHECKS caption repeats the line; click it for the PR list.
 // Definitions (operator interview): a run is one push (head commit) of a PR; re-runs (GitHub attempt > 1) and rebases
 // (a push that rewrote the branch) are counted apart; conflicts are each time the PR turned CONFLICTING against main.
-// A dot carries a mark only when there is a story: checks failing or pending now, more than one push, a re-run, a
-// rebase or a conflict. A task with several PRs shows its total, with each PR broken out in the panel and modal.
+// The Kanban task modal is left alone until its rework (TASK-3012) lands.
 (() => {
   const STATES = {
     map: {},
-    "map-panel": { panel: "fail" },
-    "map-multi": { panel: "multi" },
-    "map-clean": { panel: "clean" },
+    "map-hover": { hover: "in_progress" },
+    state: { drill: "in_progress" },
+    panel: { panel: "fail" },
+    "panel-multi": { panel: "multi" },
+    "panel-clean": { panel: "clean" },
     kanban: { view: "kanban" },
-    modal: { view: "kanban", modal: "fail" },
-    "modal-conflict": { view: "kanban", modal: "conflict" },
-    "modal-multi": { view: "kanban", modal: "multi" },
   };
+  // the Board states whose config opts them into GitHub observability; the page draws CI only where the server sends it
+  const GH = new Set(["in_progress", "review"]);
   const qs = new URLSearchParams(location.search);
   const preset = STATES[qs.get("s")] || null;
-  const MARKS = ["ring", "pip", "tag"];
-  let mark = MARKS.includes(qs.get("mark")) ? qs.get("mark") : "ring";
   const COL = { pass: "#34d399", fail: "#fb7185", pending: "#fbbf24", cancelled: "#94a3b8", conflict: "#fb923c", merged: "#a78bfa", none: "#64748b" };
   const H = 3600;
 
@@ -69,54 +74,12 @@
     t.story = t.current === "fail" || t.current === "pending" || t.conflicting || t.pushes > prs.length || t.reruns > 0 || t.rebases > 0 || t.conflicts > 0;
     return t;
   }
-
-  // ---- intercept the capture's fixture: give a few open tasks the open PRs a live board would show, then derive every task's history ----
-  const CI = new Map(), PICK = {}, CAND = {};
-  let FX;
-  Object.defineProperty(window, "__FLOW_FIXTURE__", {
-    configurable: true,
-    get: () => FX,
-    set(fx) {
-      FX = fx;
-      const board = (fx.flows || []).find((f) => f.name === "board")?.agents || [];
-      const pulls = (fx.pulls = fx.pulls || {});
-      const now = fx.now || Date.now() / 1000;
-      let num = 9000;
-      const open = (state, checks) => board.find((a) => a.state === state && !pulls[a.id] && !Object.values(PICK).includes(a.id) && (pulls[a.id] = [{ number: num++, url: "#", checks, merged: false, threads: 0, stale: false }]));
-      // open PRs on the tasks that would hold them: Review and a few In Progress, one per story the mockup must show
-      const force = {};
-      const want = [["fail", "in_progress", "failing", { pushes: 4, rerunAt: 1, rebaseAt: 2, conflicts: 1 }], ["pending", "in_progress", "pending", { pushes: 2 }],
-        ["conflict", "in_progress", "pass", { pushes: 3, conflictNow: true, rebaseAt: 1 }], ["rerun", "review", "pass", { pushes: 1, rerunAt: 0 }]];
-      for (const [key, state, checks, f] of want) {
-        const held = key === "rerun" && board.find((x) => x.state === state && pulls[x.id]?.some((p) => !p.merged));
-        const a = held || open(state, checks);
-        if (a) { PICK[key] = a.id; force[a.id] = f; }
-      }
-      // the scrubbed capture repeats a task's PR number and drops each task's PR links; number every PR once and link it back
-      // from its task, so the page's own "Pull request" row and the CI block name the same PRs
-      let n = 100;
-      for (const a of board) for (const p of pulls[a.id] || []) { p.number = n++; p.url = `#pull/${p.number}`; }
-      for (const a of board) {
-        const ps = pulls[a.id];
-        if (!ps?.length) continue;
-        a.prs = ps.map((p) => p.url);
-        CI.set(a.id, totals(ps.map((p, k) => history(a.id, p, k, now, k === ps.length - 1 ? force[a.id] : null))));
-      }
-      // the panel and modal presets: the forced stories, a task with several PRs, and a clean one-shot task
-      const multi = [...CI].filter(([, t]) => t.prs.length >= 3 && t.story);
-      CAND.multi = (multi.length ? multi : [...CI].filter(([, t]) => t.prs.length >= 2)).map(([id]) => id);
-      CAND.clean = [...CI].filter(([, t]) => !t.story && t.prs.length === 1).map(([id]) => id);
-      PICK.multi = CAND.multi[0]; PICK.clean = CAND.clean[0];
-      window.__CI = { CI, PICK, CAND };
-    },
-  });
-
   // ---- formatting ----
   const ago = (s) => { const m = Math.max(0, Math.round(s / 60)); return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`; };
   const nowS = () => FX?.now || Date.now() / 1000;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const word = { pass: "passing", fail: "failing", pending: "running", merged: "merged", conflict: "conflicts with main", none: "no checks", cancelled: "cancelled" };
-  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : /(sh|ch|s|x)$/.test(w) ? "es" : "s"}`;
   const ICON = { push: "●", rerun: "↻", rebase: "⤴", conflict: "⚠" };
   const counts = (t, sep = " ") => [
     `<span title="${plural(t.pushes, "push")} across ${plural(t.prs.length, "PR")}">${t.pushes}×</span>`,
@@ -126,94 +89,6 @@
   ].filter(Boolean).join(sep);
   // one bar per push, coloured by its outcome; the last bar is the PR's state now
   const strip = (pushes, cls = "") => `<span class="cistrip ${cls}">${pushes.map((p, i) => `<i class="${p.outcome}${p.reruns ? " rr" : ""}${p.rebase ? " rb" : ""}${i === pushes.length - 1 ? " last" : ""}" title="${esc(p.sha)} · ${word[p.outcome]}${p.reruns ? " after a re-run" : ""}${p.rebase ? " · rebased" : ""}"></i>`).join("")}</span>`;
-
-  // ---- the Star Map dot mark, drawn by the capture's hook in drawTasks ----
-  const TAU = Math.PI * 2;
-  window.__ciMark = (cx, t, K, r, hot) => {
-    const c = CI.get(t.id);
-    if (!c || !c.story) return;
-    const px = 1 / K, cur = COL[c.current] || COL.none;
-    cx.save();
-    // a merged task's history is settled: its mark recedes so the Done sun's crowd does not outshout the open work, and firms up on hover
-    if (c.current === "merged" && !hot) cx.globalAlpha = 0.4;
-    if (mark === "ring") {
-      // the push ring: one arc per push clockwise from twelve o'clock, each coloured by its outcome; the last is the state now
-      const pushes = c.prs.flatMap((q) => q.pushes).slice(-8), n = pushes.length, R = r + 3.2 * px, gap = n > 1 ? Math.min(0.5, 1.4 / n) : 0;
-      cx.lineWidth = (hot ? 2 : 1.6) * px;
-      pushes.forEach((q, i) => {
-        const a0 = -Math.PI / 2 + (TAU * i) / n + gap / 2, a1 = -Math.PI / 2 + (TAU * (i + 1)) / n - gap / 2;
-        cx.strokeStyle = COL[i === n - 1 ? c.current === "conflict" ? q.outcome : c.current === "merged" ? "pass" : c.current : q.outcome] || COL.none;
-        cx.setLineDash(q.reruns ? [1.2 * px, 1.2 * px] : []);
-        cx.beginPath(); cx.arc(t.x, t.y, R, a0, a1); cx.stroke();
-      });
-      cx.setLineDash([]);
-      if (c.conflicting || c.conflicts) {
-        // a conflict: a small diamond on the ring at twelve o'clock, solid while it is open, hollow once cleared
-        const d = 2 * px, x = t.x, y = t.y - R - 2.2 * px;
-        cx.beginPath(); cx.moveTo(x, y - d); cx.lineTo(x + d, y); cx.lineTo(x, y + d); cx.lineTo(x - d, y); cx.closePath();
-        if (c.conflicting) { cx.fillStyle = COL.conflict; cx.fill(); } else { cx.strokeStyle = COL.conflict; cx.lineWidth = 0.9 * px; cx.stroke(); }
-      }
-    } else if (mark === "pip") {
-      // the pip: a satellite at one o'clock in the state colour, with the push count beside it once there is more than one
-      const x = t.x + (r + 4) * px * 0.9, y = t.y - (r + 4) * px * 0.9;
-      cx.fillStyle = "rgba(6,10,20,0.9)"; cx.beginPath(); cx.arc(x, y, 2.9 * px, 0, TAU); cx.fill();
-      cx.fillStyle = c.conflicting ? COL.conflict : cur; cx.beginPath(); cx.arc(x, y, 2.1 * px, 0, TAU); cx.fill();
-      if (c.pushes > c.prs.length || c.reruns || c.conflicts) {
-        cx.font = `500 ${9 * px}px Inter, system-ui, sans-serif`; cx.textBaseline = "middle"; cx.fillStyle = "rgba(219,228,243,0.85)";
-        cx.fillText(`${c.pushes}${c.reruns ? "↻" : ""}${c.conflicts ? "⚠" : ""}`, x + 4 * px, y);
-      }
-    } else {
-      // the tag: a pill right of the dot, outlined in the state colour, holding the push count and any re-runs or conflicts
-      const label = `${c.pushes}×${c.reruns ? ` ↻${c.reruns}` : ""}${c.conflicts ? ` ⚠${c.conflicts}` : ""}`;
-      cx.font = `500 ${9 * px}px Inter, system-ui, sans-serif`;
-      const w = cx.measureText(label).width + 7 * px, h = 12 * px, x = t.x + r + 4 * px, y = t.y - h / 2;
-      cx.fillStyle = "rgba(6,10,20,0.88)"; cx.strokeStyle = c.conflicting ? COL.conflict : cur; cx.lineWidth = 1 * px;
-      cx.beginPath(); cx.roundRect(x, y, w, h, h / 2); cx.fill(); cx.stroke();
-      cx.fillStyle = "rgba(219,228,243,0.9)"; cx.textBaseline = "middle"; cx.fillText(label, x + 3.5 * px, t.y + 0.5 * px);
-    }
-    cx.restore();
-  };
-
-  // ---- the Star Map tooltip and task panel ----
-  const idIn = (el) => /DEMO-\d+(?!\d)/.exec(el?.textContent || "")?.[0];
-  function tipLine(id) {
-    const c = CI.get(id);
-    if (!c) return "";
-    return `<div class="citip">${strip(c.prs.flatMap((p) => p.pushes).slice(-12))}<span class="cw ${c.current}">${word[c.current]}</span><span class="cn">${counts(c)}</span></div>`;
-  }
-  function panelBlock(id) {
-    const c = CI.get(id);
-    if (!c) return `<div class="cipanel"><div class="cih"><b>CI</b><span class="k">no pull request yet</span></div></div>`;
-    const firstTime = !c.story;
-    const rows = c.prs.map((p) => {
-      const f = p.pushes.filter((q) => q.outcome === "fail").length, rr = p.pushes.reduce((s, q) => s + q.reruns, 0), rb = p.pushes.filter((q) => q.rebase).length;
-      return `<tr><td><a href="${esc(p.url)}">#${p.number}</a></td><td>${strip(p.pushes, "wide")}</td><td><span class="cw ${p.current}">${word[p.current]}</span></td>
-        <td class="num">${p.pushes.length}</td><td class="num">${f || "·"}</td><td class="num">${rr || "·"}</td><td class="num">${rb || "·"}</td><td class="num">${p.conflicts.length ? `<span class="cf${p.conflicting ? " now" : ""}">${p.conflicts.length}</span>` : "·"}</td></tr>`;
-    }).join("");
-    return `<div class="cipanel">
-      <div class="cih"><b>CI</b><span class="cw ${c.current}">${word[c.current]}</span>${firstTime ? `<span class="k">· green on its first push</span>` : ""}</div>
-      <div class="cinums">
-        <div><b>${c.pushes}</b><span>pushes</span></div><div class="${c.fails ? "bad" : ""}"><b>${c.fails}</b><span>failed</span></div>
-        <div><b>${c.reruns}</b><span>re-runs</span></div><div><b>${c.rebases}</b><span>rebases</span></div>
-        <div class="${c.conflicting ? "cfnow" : ""}"><b>${c.conflicts}</b><span>conflicts</span></div>
-      </div>
-      <table class="ciprs"><tr class="hd"><td>PR</td><td>pushes, oldest first</td><td>now</td><td title="pushes">●</td><td title="failed">✗</td><td title="re-runs">↻</td><td title="rebases">⤴</td><td title="conflicts">⚠</td></tr>${rows}</table>
-      ${c.conflicting ? `<div class="cinote cf">⚠ #${c.head.number} conflicts with main since ${ago(nowS() - c.head.conflicts.at(-1).at)} ago</div>` : ""}
-    </div>`;
-  }
-
-  // ---- the Kanban card badge and the task modal section ----
-  function cardBadge(id) {
-    const c = CI.get(id);
-    if (!c || !c.story) return null;
-    const b = document.createElement("span");
-    b.className = `cibadge ${c.current}`;
-    b.title = `CI: ${plural(c.pushes, "push")}, ${c.fails} failed, ${plural(c.reruns, "re-run")}, ${plural(c.rebases, "rebase")}, ${plural(c.conflicts, "conflict")}; ${word[c.current]} now`;
-    // the state word only when it asks for action; a green or merged task's border and strip say enough
-    const act = ["fail", "conflict", "pending"].includes(c.current) ? `<span class="cw ${c.current}">${word[c.current]}</span>` : "";
-    b.innerHTML = `${strip(c.prs.flatMap((p) => p.pushes).slice(-6))}${act}${counts(c)}`;
-    return b;
-  }
   function event(kind, at, html, cls = "") {
     return { at, html: `<div class="ev ${cls}"><span class="ic ${kind}">${ICON[kind] || "·"}</span><span class="tx">${html}</span><span class="ago">${ago(nowS() - at)}</span></div>` };
   }
@@ -232,105 +107,266 @@
     }
     return evs.sort((a, b) => b.at - a.at).map((e) => e.html).join("");
   }
-  function modalSection(id) {
-    const c = CI.get(id);
-    const s = document.createElement("section");
-    s.className = "sec cisec";
-    if (!c) { s.innerHTML = `<div class="sh"><span class="t">CI history</span></div><div class="k">No pull request yet.</div>`; return s; }
-    s.innerHTML = `<div class="sh"><span class="t">CI history</span><span class="cw ${c.current}">${word[c.current]}</span></div>
-      <div class="cinums">
-        <div><b>${c.pushes}</b><span>pushes</span></div><div class="${c.fails ? "bad" : ""}"><b>${c.fails}</b><span>failed</span></div>
-        <div><b>${c.reruns}</b><span>re-runs</span></div><div><b>${c.rebases}</b><span>rebases</span></div>
-        <div class="${c.conflicting ? "cfnow" : ""}"><b>${c.conflicts}</b><span>conflicts</span></div>
-      </div>
-      ${c.prs.slice().reverse().map((p, k) => `<details class="cipr" ${k === 0 ? "open" : ""}><summary><a href="${esc(p.url)}" onclick="event.stopPropagation()">#${p.number}</a> ${strip(p.pushes, "wide")} <span class="cw ${p.current}">${word[p.current]}</span><span class="k">${plural(p.pushes.length, "push")}${p.conflicts.length ? ` · ${plural(p.conflicts.length, "conflict")}` : ""}</span></summary>
-        <div class="tl">${prTimeline(p)}</div></details>`).join("")}
-      <div class="k foot">A push is one head commit; its workflows open on click.</div>`;
-    // a push row is a toggle: the pointer or Enter/Space opens its workflows
-    s.querySelectorAll(".ev.push").forEach((e) => {
-      const flip = () => e.setAttribute("aria-expanded", e.classList.toggle("open"));
-      Object.assign(e, { tabIndex: 0 }); e.setAttribute("role", "button"); e.setAttribute("aria-expanded", e.classList.contains("open"));
-      e.addEventListener("click", flip);
-      e.addEventListener("keydown", (k) => { if (k.key === "Enter" || k.key === " ") { k.preventDefault(); flip(); } });
+
+  // ---- intercept the capture's fixture: give the configured states the open PRs a live board would show, then derive every task's history ----
+  const CI = new Map(), PICK = {}, CAND = {}, STATE = {}, NAME = {};
+  let FX;
+  Object.defineProperty(window, "__FLOW_FIXTURE__", {
+    configurable: true,
+    get: () => FX,
+    set(fx) {
+      FX = fx;
+      const flow = (fx.flows || []).find((f) => f.name === "board"), board = flow?.agents || [];
+      for (const s of flow?.machine?.states || []) NAME[s.name] = s.id;
+      const pulls = (fx.pulls = fx.pulls || {});
+      const now = fx.now || Date.now() / 1000;
+      const openPr = (a) => pulls[a.id]?.some((p) => !p.merged);
+      const free = (state) => board.find((a) => a.state === state && !pulls[a.id] && !Object.values(PICK).includes(a.id));
+      const force = {};
+      // In Progress: two failing (one with a long story), one running, two green; Review: the PRs it holds, one gone conflicting
+      const want = [["fail", "failing", { pushes: 4, rerunAt: 1, rebaseAt: 2, conflicts: 1 }], ["fail2", "failing", { pushes: 2 }],
+        ["pending", "pending", { pushes: 2 }], ["green", "pass", { pushes: 3, rebaseAt: 1 }], ["green2", "pass", { pushes: 1 }]];
+      for (const [key, checks, f] of want) {
+        const a = free("in_progress");
+        if (!a) continue;
+        pulls[a.id] = [{ number: 0, url: "#", checks, merged: false, threads: 0, stale: false }];
+        PICK[key] = a.id; force[a.id] = f;
+      }
+      // the live board may hold nothing in Review; move two In Progress tasks along so the mockup shows that state's line
+      for (let k = board.filter((a) => a.state === "review").length; k < 2; k++) { const a = free("in_progress"); if (a) a.state = "review"; }
+      const rev = board.filter((a) => a.state === "review" && openPr(a));
+      for (const a of board.filter((x) => x.state === "review" && !openPr(x)).slice(0, Math.max(0, 2 - rev.length))) {
+        (pulls[a.id] = pulls[a.id] || []).push({ number: 0, url: "#", checks: "pass", merged: false, threads: 0, stale: false });
+        rev.push(a);
+      }
+      if (rev[0]) { PICK.conflict = rev[0].id; force[rev[0].id] = { pushes: 3, conflictNow: true, rebaseAt: 1 }; }
+      // the scrubbed capture repeats a task's PR number and drops each task's PR links; number every PR once and link it back
+      let n = 100;
+      for (const a of board) for (const p of pulls[a.id] || []) { p.number = n++; p.url = `#pull/${p.number}`; }
+      for (const a of board) {
+        STATE[a.id] = a.state;
+        const ps = pulls[a.id];
+        if (!ps?.length) continue;
+        a.prs = ps.map((p) => p.url);
+        CI.set(a.id, totals(ps.map((p, k) => history(a.id, p, k, now, k === ps.length - 1 ? force[a.id] : null))));
+        CI.get(a.id).title = a.title || "";
+      }
+      const multi = [...CI].filter(([, t]) => t.prs.length >= 3 && t.story);
+      CAND.multi = (multi.length ? multi : [...CI].filter(([, t]) => t.prs.length >= 2)).map(([id]) => id);
+      CAND.clean = [...CI].filter(([, t]) => !t.story && t.prs.length === 1).map(([id]) => id);
+      CAND.fail = [PICK.fail];
+      PICK.multi = CAND.multi[0]; PICK.clean = CAND.clean[0];
+      window.__CI = { CI, PICK, CAND, buckets };
+    },
+  });
+
+  // a configured state's open PRs, by what each asks of the user now
+  function buckets(state) {
+    const b = { fail: [], conflict: [], pending: [], pass: [] };
+    if (!GH.has(state)) return b;
+    for (const [id, c] of CI) {
+      if (STATE[id] !== state || !c.prs.some((p) => !p.merged)) continue;
+      (b[c.current] || b.pass).push(id);
+    }
+    return b;
+  }
+  const BUCKET = [["fail", "✗", (n) => `${n} failing`], ["conflict", "⚠", (n) => `${n} conflict${n === 1 ? "" : "s"}`], ["pending", "◌", (n) => `${n} running`]];
+  // the glance line: problems only, worst first; a state with open PRs and no problem says so once
+  function glance(b) {
+    const segs = BUCKET.filter(([k]) => b[k].length).map(([k, g, w]) => ({ k, t: `${g} ${w(b[k].length)}` }));
+    return segs.length ? segs : b.pass.length ? [{ k: "pass", t: "✓ checks green" }] : [];
+  }
+
+  // ---- the state's CI line on the Star Map, drawn by the capture's hook under a galaxy's label ----
+  const POS = (window.__ciPOS = {});
+  window.__ciState = (cx, name, x, y, size, hot, K, bx, by) => {
+    const id = NAME[name];
+    if (!GH.has(id)) return;
+    const m = cx.getTransform(), dpr = devicePixelRatio || 1, cv = cx.canvas.getBoundingClientRect();
+    POS[id] = { x: cv.left + (m.a * bx + m.c * by + m.e) / dpr, y: cv.top + (m.b * bx + m.d * by + m.f) / dpr };
+    const segs = glance(buckets(id));
+    if (!segs.length) return;
+    cx.save();
+    cx.font = `400 ${size}px Inter, system-ui, sans-serif`;
+    cx.textBaseline = "middle"; cx.textAlign = "left";
+    const gap = size * 0.9, w = segs.map((s) => cx.measureText(s.t).width), total = w.reduce((a, b) => a + b, 0) + gap * (segs.length - 1);
+    let at = x - total / 2;
+    segs.forEach((s, i) => {
+      cx.fillStyle = COL[s.k]; cx.globalAlpha = s.k === "pass" ? (hot ? 0.8 : 0.55) : hot ? 1 : 0.9;
+      cx.fillText(s.t, at, y);
+      at += w[i] + gap;
     });
-    return s;
+    cx.restore();
+  };
+
+  // ---- hover: the state's tooltip lists the tasks behind each count ----
+  const idIn = (el) => /DEMO-\d+(?!\d)/.exec(el?.textContent || "")?.[0];
+  function taskRow(id, k) {
+    const c = CI.get(id), p = c.head;
+    const why = k === "fail" ? (p.pushes.at(-1).workflows.find((w) => w.outcome === "fail")?.name || "") : k === "conflict" ? "conflicts with main" : k === "pending" ? "checks running" : "";
+    return `<div class="r"><span class="cw ${k}">${{ fail: "✗", conflict: "⚠", pending: "◌", pass: "✓" }[k]}</span><b>${esc(id)}</b><span class="tt">${esc(c.title)}</span><span class="k">#${p.number}${why ? ` · ${esc(why)}` : ""}</span></div>`;
+  }
+  function stateList(state, max = 6) {
+    const b = buckets(state), rows = [];
+    for (const [k] of BUCKET) for (const id of b[k]) rows.push(taskRow(id, k));
+    const more = rows.length > max ? `<div class="k">+${rows.length - max} more</div>` : "";
+    const green = b.pass.length ? `<div class="k g">✓ ${plural(b.pass.length, "PR")} green</div>` : "";
+    return rows.length || green ? `${rows.slice(0, max).join("")}${more}${green}` : `<div class="k">no open pull requests</div>`;
+  }
+  function tipState(tip) {
+    if (tip.querySelector(".cistate")) return;
+    const k = tip.querySelector(".k")?.textContent || "", id = NAME[tip.querySelector(".n")?.textContent || ""];
+    if (!k.startsWith("Board state") || !GH.has(id)) return;
+    tip.insertAdjacentHTML("beforeend", `<div class="cistate"><div class="h">checks on its pull requests${k.includes("click to open") ? "" : " · click for the list"}</div>${stateList(id)}</div>`);
+  }
+
+  // ---- click: a task's panel carries its CI summary, with each further level of history one click deeper ----
+  function summary(c) {
+    if (!c.story) return "green on its first push";
+    return [plural(c.pushes, "push"), c.fails && `${c.fails} failed`, c.reruns && plural(c.reruns, "re-run"), c.rebases && plural(c.rebases, "rebase"), c.conflicts && plural(c.conflicts, "conflict")].filter(Boolean).join(" · ");
+  }
+  function panelBlock(id) {
+    const c = CI.get(id);
+    const prs = c.prs.slice().reverse();
+    const prBody = (p) => `<div class="tl">${prTimeline(p)}</div>`;
+    const hist = prs.length === 1 ? prBody(prs[0])
+      : prs.map((p) => `<details class="cipr"><summary><a href="${esc(p.url)}" onclick="event.stopPropagation()">#${p.number}</a>${strip(p.pushes)}<span class="cw ${p.current}">${word[p.current]}</span><span class="k">${plural(p.pushes.length, "push")}</span></summary>${prBody(p)}</details>`).join("");
+    return `<div class="cipanel">
+      <div class="cih"><b>Checks</b><span class="cw ${c.current}">${word[c.current]}</span>${strip(c.prs.flatMap((p) => p.pushes).slice(-12))}</div>
+      <div class="cis">${summary(c)}</div>
+      ${c.conflicting ? `<div class="cinote cf">⚠ #${c.head.number} conflicts with main since ${ago(nowS() - c.head.conflicts.at(-1).at)} ago</div>` : ""}
+      <details class="cihist"><summary>History${prs.length > 1 ? ` · ${plural(prs.length, "pull request")}` : ` · #${prs[0].number}`}</summary>${hist}</details>
+    </div>`;
+  }
+  // on a configured state's own level, clicking the state opens its PR list; a row opens that task's panel
+  function statePanel(state) {
+    const panel = document.getElementById("panel");
+    const name = Object.keys(NAME).find((n) => NAME[n] === state);
+    panel.innerHTML = `<span class="x">✕</span><div class="k">Board state · checks on its pull requests</div><h2>${esc(name)}</h2><div class="cistate inpanel">${stateList(state, 99)}</div>`;
+    panel.classList.add("open");
+    panel.querySelector(".x").addEventListener("click", () => panel.classList.remove("open"));
+    panel.querySelectorAll(".cistate .r").forEach((r) => {
+      Object.assign(r, { tabIndex: 0 }); r.setAttribute("role", "button");
+      const go = () => openPanel(null, [idIn(r)]);
+      r.addEventListener("click", go);
+      r.addEventListener("keydown", (k) => { if (k.key === "Enter" || k.key === " ") { k.preventDefault(); go(); } });
+    });
+  }
+  // on a configured state's own level, a caption over the canvas carries the same line; hover lists, click opens the list as a panel
+  function caption() {
+    const at = window.flowProbe?.().path.split("/"), state = at?.length === 2 ? at[1] : null;
+    let cap = document.getElementById("cicap");
+    if (!GH.has(state) || document.querySelector("#kb")) return cap && cap.remove();
+    if (cap?.dataset.state === state) return;
+    cap?.remove();
+    const segs = glance(buckets(state));
+    if (!segs.length) return;
+    cap = Object.assign(document.createElement("div"), { id: "cicap", tabIndex: 0 });
+    cap.dataset.state = state;
+    cap.setAttribute("role", "button");
+    cap.setAttribute("aria-label", `Checks: ${segs.map((x) => x.t.slice(2)).join(", ")}. Open the list`);
+    cap.innerHTML = `<span class="h">checks</span>${segs.map((x) => `<span class="cw ${x.k}">${x.t}</span>`).join("")}<div class="pop"><div class="cistate">${stateList(state)}</div></div>`;
+    const cv = document.querySelector("canvas").getBoundingClientRect();
+    cap.style.left = `${cv.left + cv.width / 2}px`;
+    cap.addEventListener("click", () => { cap.blur(); statePanel(state); });
+    cap.addEventListener("keydown", (k) => { if (k.key === "Enter" || k.key === " ") { k.preventDefault(); statePanel(state); } });
+    document.body.appendChild(cap);
+  }
+  setInterval(caption, 250);
+
+  // ---- Kanban: the configured state's column carries the same line under its header; hovering it lists the tasks ----
+  function columnLine(col) {
+    const state = col.dataset.lane, segs = glance(buckets(state));
+    const d = document.createElement("div");
+    d.className = "cicol";
+    if (!segs.length) { d.hidden = true; return d; }
+    d.tabIndex = 0;
+    d.setAttribute("aria-label", `Checks: ${segs.map((s) => s.t.slice(2)).join(", ")}`);
+    d.innerHTML = `${segs.map((s) => `<span class="cw ${s.k}">${s.t}</span>`).join("")}<div class="pop"><div class="cistate">${stateList(state, 99)}</div></div>`;
+    d.querySelectorAll(".pop .r").forEach((r) => r.addEventListener("click", () => {
+      const card = document.querySelector(`#kb .card[data-id="${idIn(r)}"]`);
+      if (!card) return;
+      card.scrollIntoView({ block: "center", behavior: "smooth" });
+      card.classList.add("ciflash"); setTimeout(() => card.classList.remove("ciflash"), 1600);
+      d.blur();
+    }));
+    return d;
   }
 
   // ---- styles ----
   const css = `
   .cistrip { display: inline-flex; gap: 1.5px; align-items: flex-end; vertical-align: middle; }
   .cistrip i { width: 3px; height: 9px; border-radius: 1px; background: ${COL.none}; }
-  .cistrip.wide i { width: 5px; height: 11px; }
   .cistrip i.pass { background: ${COL.pass}; } .cistrip i.fail { background: ${COL.fail}; } .cistrip i.cancelled { background: ${COL.cancelled}; opacity: .55; }
   .cistrip i.pending { background: ${COL.pending}; animation: cipulse 1.4s ease-in-out infinite; }
-  .cistrip i.rr { background-image: repeating-linear-gradient(0deg, transparent 0 2px, rgba(6,10,20,.85) 2px 3px); }
-  .cistrip i.rb { box-shadow: 0 -2px 0 0 #93c5fd; }
   @keyframes cipulse { 50% { opacity: .35; } }
-  .cw { font-size: calc(10.5px * var(--fs)); padding: 0 5px; border-radius: 4px; border: 1px solid currentColor; line-height: 1.5; white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { .cistrip i.pending { animation: none; } }
+  .cw { white-space: nowrap; }
   .cw.pass { color: ${COL.pass}; } .cw.fail { color: ${COL.fail}; } .cw.pending { color: ${COL.pending}; } .cw.merged { color: ${COL.merged}; } .cw.conflict { color: ${COL.conflict}; } .cw.cancelled, .cw.none { color: ${COL.cancelled}; }
-  .rr { color: #93c5fd; } .rb { color: #93c5fd; } .cf { color: ${COL.conflict}; } .cf.now { font-weight: 600; }
-  #tip .citip { display: flex; gap: 8px; align-items: center; margin-top: 6px; padding-top: 5px; border-top: 1px dashed rgba(148,163,184,.25); font-size: calc(11px * var(--fs)); }
-  #tip .citip .cn { display: inline-flex; gap: 6px; color: #94a3b8; }
-  .cipanel { margin: 10px 0 6px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,.15); }
-  .cih { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; font-size: calc(12px * var(--fs)); }
-  .cinums { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 4px 0 8px; }
-  .cinums div { background: rgba(148,163,184,.06); border-radius: 6px; padding: 4px 6px; display: flex; flex-direction: column; min-width: 0; }
-  .cinums b { font-size: calc(15px * var(--fs)); font-weight: 500; color: var(--ink); }
-  .cinums span { font-size: calc(10px * var(--fs)); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cinums .bad b { color: ${COL.fail}; } .cinums .cfnow { outline: 1px solid ${COL.conflict}; } .cinums .cfnow b { color: ${COL.conflict}; }
-  #panel table.ciprs { width: 100%; font-size: calc(11px * var(--fs)); }
-  #panel table.ciprs td { padding: 2px 3px; vertical-align: middle; }
-  #panel table.ciprs td.num { text-align: right; font-variant-numeric: tabular-nums; color: #94a3b8; }
-  #panel table.ciprs tr.hd td { color: var(--muted); font-size: calc(10px * var(--fs)); }
-  .cinote { margin-top: 6px; font-size: calc(11px * var(--fs)); } .cinote.cf { color: ${COL.conflict}; }
-  #kb .card .cibadge { display: flex; width: fit-content; max-width: 100%; margin: 4px 0 2px; align-items: center; gap: 4px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10px * var(--fs)); padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(148,163,184,.2); color: #94a3b8; white-space: nowrap; }
-  #kb .card .cibadge.fail { border-color: rgba(251,113,133,.55); } #kb .card .cibadge.conflict { border-color: rgba(251,146,60,.65); } #kb .card .cibadge.pending { border-color: rgba(251,191,36,.5); }
-  #kb .card .cibadge .cistrip i { width: 2.5px; height: 8px; } #kb .card .cibadge .cw { font-family: Inter, system-ui, sans-serif; border: 0; padding: 0; }
-  #kbm .cisec .sh { display: flex; gap: 8px; align-items: center; }
-  #kbm .cisec .cinums { max-width: 460px; }
-  #kbm .cipr { border: 1px solid rgba(148,163,184,.13); border-radius: 7px; margin: 6px 0; padding: 4px 8px; }
-  #kbm .cipr summary { cursor: pointer; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: calc(12px * var(--fs)); }
-  #kbm .cipr summary .k { margin-left: auto; }
-  #kbm .tl { margin: 6px 0 2px; border-left: 1px solid rgba(148,163,184,.2); padding-left: 10px; }
-  #kbm .ev { display: grid; grid-template-columns: 16px 1fr auto; gap: 6px; align-items: baseline; padding: 3px 0; font-size: calc(11.5px * var(--fs)); }
-  #kbm .ev.push { cursor: pointer; } #kbm .ev .wfs { display: none; margin: 3px 0 2px; color: #cbd5e1; } #kbm .ev.open .wfs { display: block; }
-  #kbm .ev .ic { text-align: center; color: #94a3b8; } #kbm .ev .ic.rerun, #kbm .ev .ic.rebase { color: #93c5fd; } #kbm .ev .ic.conflict { color: ${COL.conflict}; }
-  #kbm .ev.push.fail .ic { color: ${COL.fail}; } #kbm .ev.push.pass .ic { color: ${COL.pass}; } #kbm .ev.push.pending .ic { color: ${COL.pending}; }
-  #kbm .ev.open .tx > .cw { } #kbm .ev.push:focus-visible { outline: 1px solid #a78bfa; outline-offset: 1px; border-radius: 4px; } #kbm .ev .ago { color: var(--muted); font-size: calc(10.5px * var(--fs)); }
-  #kbm .ev .sha { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 400; color: #cbd5e1; }
-  #kbm .cisec .foot { margin-top: 4px; font-size: calc(10.5px * var(--fs)); }
-  #cimock { position: fixed; z-index: 9; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 4px; align-items: center; padding: 4px 6px 4px 10px; border-radius: 9px;
+  .cistate { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(148,163,184,.15); font-size: calc(11.5px * var(--fs)); max-width: 340px; }
+  .cistate .h { color: var(--muted); font-size: calc(10.5px * var(--fs)); margin-bottom: 3px; }
+  .cistate .r { display: grid; grid-template-columns: 14px auto minmax(0, 1fr) auto; gap: 6px; align-items: baseline; padding: 1px 0; }
+  .cistate .r b { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 400; color: #cbd5e1; }
+  .cistate .r .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+  .cistate .k { color: var(--muted); } .cistate .k.g { color: ${COL.pass}; opacity: .8; margin-top: 2px; }
+  #panel .cistate.inpanel { border: 0; max-width: none; } #panel .cistate.inpanel .r { cursor: pointer; padding: 4px 2px; border-radius: 4px; }
+  #panel .cistate.inpanel .r:hover, #panel .cistate.inpanel .r:focus-visible { background: rgba(148,163,184,.08); outline: none; }
+  .cipanel { margin: 10px 0 6px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,.15); font-size: calc(12px * var(--fs)); }
+  .cih { display: flex; gap: 8px; align-items: center; } .cih b { font-weight: 500; }
+  .cis { color: var(--muted); margin: 3px 0 0; font-size: calc(11.5px * var(--fs)); }
+  .cinote { margin-top: 4px; font-size: calc(11.5px * var(--fs)); } .cinote.cf { color: ${COL.conflict}; }
+  .cipanel details > summary { cursor: pointer; color: #94a3b8; font-size: calc(11.5px * var(--fs)); list-style: none; display: flex; gap: 6px; align-items: center; }
+  .cipanel details > summary::before { content: "▸"; color: var(--muted); } .cipanel details[open] > summary::before { content: "▾"; }
+  .cipanel details > summary:focus-visible { outline: 1px solid #a78bfa; outline-offset: 2px; border-radius: 3px; }
+  .cihist { margin-top: 8px; } .cipr { margin: 4px 0 0 12px; } .cipr summary .k { margin-left: auto; color: var(--muted); }
+  .cipanel .tl { margin: 6px 0 2px 4px; border-left: 1px solid rgba(148,163,184,.2); padding-left: 10px; }
+  .cipanel .ev { display: grid; grid-template-columns: 14px 1fr auto; gap: 6px; align-items: baseline; padding: 2px 0; font-size: calc(11.5px * var(--fs)); }
+  .cipanel .ev.push { cursor: pointer; } .cipanel .ev .wfs { display: none; margin: 3px 0 2px; color: #cbd5e1; } .cipanel .ev.open .wfs { display: block; }
+  .cipanel .ev .ic { text-align: center; color: #94a3b8; } .cipanel .ev .ic.conflict { color: ${COL.conflict}; }
+  .cipanel .ev.push.fail .ic { color: ${COL.fail}; } .cipanel .ev.push.pass .ic { color: ${COL.pass}; } .cipanel .ev.push.pending .ic { color: ${COL.pending}; }
+  .cipanel .ev.push:focus-visible { outline: 1px solid #a78bfa; outline-offset: 1px; border-radius: 4px; } .cipanel .ev .ago { color: var(--muted); font-size: calc(10.5px * var(--fs)); }
+  .cipanel .ev .sha { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 400; color: #cbd5e1; } .cipanel .ev .k { color: var(--muted); }
+  #kb .col .cicol { position: relative; display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 0 12px 8px; font-size: calc(11.5px * var(--fs)); cursor: default; }
+  #kb .col .cicol:focus-visible { outline: 1px solid #a78bfa; outline-offset: -2px; border-radius: 4px; }
+  #kb .col .cicol .pop { display: none; position: absolute; z-index: 20; top: 100%; left: 8px; right: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(10,16,30,.98); border: 1px solid rgba(148,163,184,.22); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+  #kb .col .cicol:hover .pop, #kb .col .cicol:focus-within .pop { display: block; }
+  #kb .col .cicol .pop .cistate, #kb .col .cicol .pop { max-width: none; } #kb .col .cicol .pop .r { cursor: pointer; } #kb .col .cicol .pop .r:hover .tt { text-decoration: underline; }
+  #cicap { position: fixed; z-index: 8; top: 64px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 5px 12px; border-radius: 8px; cursor: pointer;
+    background: rgba(10,16,30,.85); border: 1px solid rgba(148,163,184,.16); font: calc(12px * var(--fs)) Inter, system-ui, sans-serif; }
+  #cicap .h { color: var(--muted); font-size: calc(10.5px * var(--fs)); letter-spacing: .08em; text-transform: uppercase; }
+  #cicap:hover, #cicap:focus-visible { border-color: rgba(167,139,250,.6); outline: none; }
+  #cicap .pop { display: none; position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: 340px; padding: 8px 10px; border-radius: 8px; background: rgba(10,16,30,.98); border: 1px solid rgba(148,163,184,.22); box-shadow: 0 8px 24px rgba(0,0,0,.45); cursor: default; }
+  #cicap:hover .pop { display: block; } #cicap .pop .r { cursor: default; }
+  .pop .cistate { border: 0; margin: 0; padding: 0; max-width: none; }
+  #kb .card.ciflash { outline: 1px solid #a78bfa; outline-offset: 1px; transition: outline-color 1.6s; }
+  #cimock { position: fixed; z-index: 9; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; padding: 4px 6px 4px 10px; border-radius: 9px;
     background: rgba(12,19,34,.94); border: 1px dashed rgba(167,139,250,.6); font: 12px Inter, system-ui, sans-serif; color: #cbd5e1; }
-  #cimock button { font: inherit; color: inherit; background: transparent; border: 1px solid rgba(148,163,184,.25); border-radius: 6px; padding: 2px 9px; cursor: pointer; }
-  #cimock button.on { background: rgba(167,139,250,.25); border-color: #a78bfa; color: #fff; }
-  #cimock select { font: inherit; color: inherit; background: rgba(15,23,42,.9); border: 1px solid rgba(148,163,184,.25); border-radius: 6px; padding: 2px 4px; margin-right: 6px; }
-  #cimock .lg { margin-left: 8px; color: #94a3b8; font-size: 11px; }
+  #cimock select { font: inherit; color: inherit; background: rgba(15,23,42,.9); border: 1px solid rgba(148,163,184,.25); border-radius: 6px; padding: 2px 4px; }
   `;
 
-  // ---- wiring: observe the page and add the CI pieces wherever it draws a task ----
+  // ---- wiring: observe the page and add the CI pieces wherever it draws a configured state or a task's panel ----
   function decorate() {
     const tip = document.getElementById("tip");
-    if (tip && !tip.querySelector(".citip")) { const id = idIn(tip.querySelector(".n") || tip); if (id && CI.has(id)) tip.insertAdjacentHTML("beforeend", tipLine(id)); }
+    if (tip) tipState(tip);
     const panel = document.getElementById("panel");
-    if (panel && panel.querySelector("h2") && !panel.querySelector(".cipanel")) {
+    if (panel && panel.querySelector("h2") && !panel.querySelector(".cipanel, .cistate")) {
       const id = idIn(panel.querySelector("h2"));
       const table = panel.querySelector(":scope > table");
       // a Board task's panel only; a machine task's reads "task · <flow> · <state>"
-      if (id && table && (panel.querySelector(".k")?.textContent || "").startsWith("task · click")) table.insertAdjacentHTML("afterend", panelBlock(id));
+      if (id && CI.has(id) && table && (panel.querySelector(".k")?.textContent || "").startsWith("task · click")) {
+        table.insertAdjacentHTML("afterend", panelBlock(id));
+        // a push row is a toggle: the pointer or Enter/Space opens its workflows
+        panel.querySelectorAll(".cipanel .ev.push").forEach((e) => {
+          const flip = () => e.setAttribute("aria-expanded", e.classList.toggle("open"));
+          Object.assign(e, { tabIndex: 0 }); e.setAttribute("role", "button"); e.setAttribute("aria-expanded", "false");
+          e.addEventListener("click", flip);
+          e.addEventListener("keydown", (k) => { if (k.key === "Enter" || k.key === " ") { k.preventDefault(); flip(); } });
+        });
+      }
     }
-    for (const card of document.querySelectorAll("#kb .card[data-id]")) {
-      const top = card.querySelector(".top");
-      if (!top || card.querySelector(".cibadge, .cinone")) continue;
-      // its own row under the title: the top row already holds the id, the PR chip and the run button at the narrowest column
-      const b = cardBadge(card.dataset.id), t = card.querySelector(".t");
-      if (b && t) t.after(b);
-      else top.append(Object.assign(document.createElement("i"), { className: "cinone", hidden: true }));
-    }
-    const modal = document.querySelector("#kbm .modal.tv");
-    if (modal && !modal.querySelector(".cisec")) {
-      const id = idIn(modal.querySelector(".tvhead .k"));
-      const desc = [...modal.querySelectorAll(".tvbody > section.sec")][0];
-      if (id && desc) desc.before(modalSection(id));
+    for (const col of document.querySelectorAll("#kb section.col[data-lane]")) {
+      if (!GH.has(col.dataset.lane) || col.querySelector(":scope > .cicol")) continue;
+      col.querySelector(":scope > h2")?.after(columnLine(col));
     }
   }
 
@@ -339,17 +375,8 @@
     const bar = document.createElement("div");
     bar.id = "cimock";
     // the state picker reloads into a preset, for viewers that cannot edit the address (an embedded copy)
-    const pick = `<select aria-label="Mockup state"><option value="">state…</option>${Object.keys(STATES).map((k) => `<option value="${k}">${k}</option>`).join("")}</select>`;
-    bar.innerHTML = `<span>mockup</span>${pick}<span>dot mark</span>${MARKS.map((m) => `<button data-m="${m}" class="${m === mark ? "on" : ""}">${m}</button>`).join("")}<span class="lg">● push · ↻ re-run · ⤴ rebase · ⚠ conflict</span>`;
-    bar.querySelector("select").addEventListener("change", (e) => { if (e.target.value) location.search = `?s=${e.target.value}&mark=${mark}`; });
-    bar.addEventListener("click", (e) => {
-      const m = e.target.closest("button")?.dataset.m;
-      if (!m) return;
-      mark = m;
-      bar.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.m === m));
-      const p = new URLSearchParams(location.search); p.set("mark", m); window.history.replaceState(null, "", "?" + p);
-      window.dispatchEvent(new Event("resize")); // the canvas draws only on a change; a resize repaints it
-    });
+    bar.innerHTML = `<span>mockup</span><select aria-label="Mockup state"><option value="">state…</option>${Object.keys(STATES).map((k) => `<option value="${k}">${k}</option>`).join("")}</select>`;
+    bar.querySelector("select").addEventListener("change", (e) => { if (e.target.value) location.search = `?s=${e.target.value}`; });
     document.body.appendChild(bar);
   }
 
@@ -364,10 +391,18 @@
     setTimeout(() => {
       q.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       setTimeout(() => {
-        if (idIn(document.querySelector("#panel.open h2")) === id) return void (PICK[key] = id);
+        if (idIn(document.querySelector("#panel.open h2")) === id) return key && void (PICK[key] = id);
         if (tries > 0) openPanel(key, order.length > 1 && idIn(document.querySelector("#panel.open h2")) ? order.slice(1) : order, tries - 1);
       }, 300);
     }, 100);
+  }
+  // hover or open a configured state's galaxy the way a pointer does, at the point its hook last drew it
+  function pointAt(state, click, tries = 40) {
+    const p = POS[state], cv = document.querySelector("canvas");
+    if (!p || !cv) return tries > 0 && setTimeout(() => pointAt(state, click, tries - 1), 150);
+    const at = { clientX: p.x, clientY: p.y, bubbles: true, view: window };
+    cv.dispatchEvent(new MouseEvent("mousemove", at));
+    if (click) setTimeout(() => { cv.dispatchEvent(new MouseEvent("mousedown", { ...at, button: 0 })); cv.dispatchEvent(new MouseEvent("mouseup", { ...at, button: 0 })); }, 250);
   }
 
   {
@@ -382,13 +417,7 @@
     new MutationObserver(decorate).observe(document.body, { childList: true, subtree: true, characterData: true });
     decorate();
     if (preset?.panel) setTimeout(() => openPanel(preset.panel), 900);
-    if (preset?.modal) {
-      const open = (tries = 60) => {
-        const card = document.querySelector(`#kb .card[data-id="${PICK[preset.modal]}"]`);
-        if (!card) return tries > 0 && setTimeout(() => open(tries - 1), 150);
-        card.scrollIntoView({ block: "center" }); card.click();
-      };
-      setTimeout(open, 600);
-    }
+    if (preset?.hover) setTimeout(() => pointAt(preset.hover, false), 900);
+    if (preset?.drill) setTimeout(() => pointAt(preset.drill, true), 900);
   });
 })();
