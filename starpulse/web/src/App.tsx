@@ -227,7 +227,7 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
       </section>
       {view === "kanban" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
       {view === "constellation" && <><section className="away">
-        <input id="q" type="search" placeholder="search tasks, states, DAGs…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
+        <input id="q" type="search" placeholder="search…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
           onChange={(e) => { setQuery(e.target.value); spot(null); }}
           onKeyDown={(e) => {
             if (e.key === "Escape") { setQuery(""); spot(null); }
