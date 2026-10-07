@@ -267,6 +267,9 @@ describe("a Done chain", () => {
 
     expect(draw("done")).toMatch(/<td>done chain<\/td><td class="stacklist"><div>▣ <button[^>]*>T-3<\/button><\/div><div>↳ <b>T-2<\/b>/);
     expect(draw("waiting")).toContain("<td>waiting stack</td>");
+  });
+});
+
 describe("a Waiting card linked to a blocker in another milestone", () => {
   type El = ReactElement<{ children?: ReactNode; className?: string; title?: string; onClick?: (e: unknown) => void; onPointerDown?: (e: unknown) => void; onKeyDown?: (e: unknown) => void }>;
   const blocker: KanbanTask = { ...task, id: "T-1", milestone: "m-1", lane: "waiting" };

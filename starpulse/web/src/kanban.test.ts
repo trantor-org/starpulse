@@ -472,6 +472,9 @@ describe("Done chains", () => {
 
   it("stop at a dependency cycle instead of recursing forever", () => {
     expect(stacks([done("T-1", "m-1", "T-2"), done("T-2", "m-1", "T-1")]).flat().sort()).toEqual(["T-1", "T-2"]);
+  });
+});
+
 describe("Waiting cards linked to a blocker in another milestone", () => {
   const wait = (id: string, milestone: string, ...dependencies: string[]): KanbanTask => ({ ...task(id, "waiting", milestone), dependencies, openDeps: dependencies.length });
   const cross = (tasks: KanbanTask[], prefs = NO_PREFS) => [...view(tasks, prefs).cross].map(([id, held]) => [id, held.map((t) => t.id)]);
