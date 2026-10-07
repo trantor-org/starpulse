@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD, drill, hostOf, pathKey, pathTo, startPath, taskKicker, tree, type Level, type Path } from "./levels";
+import { BOARD, drill, hostOf, pathKey, pathTo, startPath, taskKicker, topOf, tree, type Level, type Path } from "./levels";
 import type { Machine, Snapshot } from "./types";
 
 const machine = (ids: string[], subflows: Machine["subflows"] = [], source?: string): Machine => ({
@@ -148,5 +148,17 @@ describe("one flow under several Board states", () => {
     expect(startPath("/", "", under("review"), S)).toEqual(under("review"));
     expect(startPath("/", "", under("in_progress"), S)).toEqual(under("in_progress"));
     expect(startPath("/", "", under("ready"), S)).toEqual(BOARD);
+  });
+});
+
+describe("the machine drawn across a level's top", () => {
+  it("is what drilling the Board state that opens the primary machine shows, named by that machine", () => {
+    expect(topOf(T.subs, { kind: "state", id: "in_progress" })).toBe("in-progress");
+  });
+
+  it("is no other Board state, and no machine level under it", () => {
+    expect(topOf(T.subs, { kind: "state", id: "review" })).toBeNull();
+    expect(topOf(T.subs, { kind: "machine", flow: "in-progress" })).toBeNull();
+    expect(topOf(T.subs, { kind: "board" })).toBeNull();
   });
 });

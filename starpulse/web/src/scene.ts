@@ -2,7 +2,8 @@
 // (the design mockup): the Board's states as galaxies with the
 // DAGs as step-graph glyphs beside them, a state's lifecycle system as planets
 // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
-import type { Fold, Level } from "./levels";
+import { topOf, type Fold, type Level } from "./levels";
+import { ledgerTop, type LedgerTop } from "./machineLedger";
 import { ledgerOf, type Ledger, type Tie } from "./ledger";
 import { countText, daily, HOUR, hosted, stateCount, type Move, type Moves, type Sky } from "./sky";
 import type { Dag, DagStep, LedgerRow, RawAgent, Transition, Writer } from "./types";
@@ -148,6 +149,8 @@ export interface MState extends Pt {
 }
 export interface MEdge extends Transition {
   flow: string;
+  /** How far the line bows from the chord, as a fraction of its length; the ledger bows a back edge more than a forward one. */
+  bend?: number;
   a?: MState;
   b?: MState;
 }
@@ -342,6 +345,13 @@ export interface Scene {
   moonLH?: number;
   hangar?: Hangar;
   fold?: FoldView;
+  /** A state level that opens a primary machine: that machine drawn across the top in screen pixels, over `mStates`, `mEdges` and `machineTasks`. */
+  top?: MachineTop;
+}
+/** The machine across a level's top: where each state and name sits, how tall it is, and the states some other machine is entered from. */
+export interface MachineTop extends LedgerTop {
+  flow: string;
+  entered: string[];
 }
 export interface Ctx {
   S: Sky;
@@ -363,15 +373,19 @@ export interface Ctx {
   routes?: Map<string, Pt>;
   /** The page's text size, as a percentage: a Ledger's captions are type, so its columns widen with it. */
   scale?: number;
+  /** A string's width on the canvas at a font size and weight, in the type the names are drawn in; the layout estimates it when absent. */
+  measure?: (s: string, px: number, weight?: number) => number;
+  /** The boxes the page draws over the canvas (its crumb and clock), and how far down the crumb ends: a state level's top keeps its names and header clear of them. */
+  chrome?: { avoid: { x0: number; y0: number; x1: number; y1: number }[]; inset: number };
 }
 
 export const bez = (p0: Pt, c: Pt, p1: Pt, t: number): Pt => {
   const u = 1 - t;
   return { x: u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, y: u * u * p0.y + 2 * u * t * c.y + t * t * p1.y };
 };
-export const curveOf = (a: Pt, b: Pt): Curve => {
+export const curveOf = (a: Pt, b: Pt, bend = 0.15): Curve => {
   const dx = b.x - a.x, dy = b.y - a.y;
-  return { p0: a, p1: b, c: { x: (a.x + b.x) / 2 - dy * 0.15, y: (a.y + b.y) / 2 + dx * 0.15 } };
+  return { p0: a, p1: b, c: { x: (a.x + b.x) / 2 - dy * bend, y: (a.y + b.y) / 2 + dx * bend } };
 };
 export const sample = (e: Curve, n = 26) => Array.from({ length: n + 1 }, (_, i) => bez(e.p0, e.c, e.p1, i / n));
 /** The distance from a point to a curve, measured to 40 straight pieces of it. Hover runs it on every path each frame, so it allocates nothing. */
@@ -1459,6 +1473,24 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     ]);
   }
 
+  // The machine across the top of a state level that opens a primary machine (machineLedger.ts): its states, flow lines and tasks in screen
+  // pixels, so the hover and panels the machine level has work on it unchanged.
+  function buildTop(name: string) {
+    const flow = S.flows[name];
+    if (!flow) return;
+    const tasks: Record<string, number> = {};
+    for (const a of flow.agents) tasks[a.state] = (tasks[a.state] ?? 0) + 1;
+    const entered = [...new Set([...Object.keys(S.child[name] ?? {}), ...Object.values(S.flows).flatMap((f) => (f.ties?.[0]?.machine === name && f.ties[0].state ? [f.ties[0].state] : []))])];
+    const top = ledgerTop({ states: flow.machine.states, transitions: flow.machine.transitions, tasks, entered }, { W, H, scale: ctx.scale ?? 100, measure: ctx.measure ?? ((t, px) => t.length * (px * 0.56 + 0.6)), ...ctx.chrome });
+    scene.top = { ...top, flow: name, entered };
+    for (const n of top.nodes) scene.mStates[n.id] = { id: n.id, name: n.name, final: n.final, initial: n.initial, flow: name, n: n.n, x: n.x, y: n.y, loops: loopsOf(flow, n.id), color: RAMP[Math.round(n.u * (RAMP.length - 1))] };
+    scene.mEdges = flow.machine.transitions.map((t) => {
+      const a = scene.mStates[t.source], b = scene.mStates[t.target];
+      return { ...t, flow: name, a, b, bend: a && b && b.x < a.x - 1 ? 0.28 : 0.08 };
+    });
+    flow.agents.forEach((a) => scene.machineTasks.push({ ...a, flow: name }));
+  }
+
   // Fold level. A fold over a Board path is that path's Ledger (ledger.ts): the DAGs tied to the event as templates in one row, the DAG that
   // writes it first, under the path with the event marked on it, a junction every rail leaves from and a bus the cues hang from. Type is a
   // fixed size on screen, so what its captions need is laid out in world units through F, a screen pixel's world size at fit. A fold with no
@@ -1526,8 +1558,11 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   }
 
   if (l.kind === "board") buildBoard();
-  else if (l.kind === "state") buildState(l.id);
-  else if (l.kind === "dags") buildDags();
+  else if (l.kind === "state") {
+    buildState(l.id);
+    const top = topOf(SUBS, l);
+    if (top) buildTop(top);
+  } else if (l.kind === "dags") buildDags();
   else if (l.kind === "fold") buildFold(l);
   else buildMachine(l.flow);
   return scene;

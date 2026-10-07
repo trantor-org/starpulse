@@ -82,6 +82,12 @@ export function pathTo(t: Tree, flow: string, host?: string): Path | null {
   return null;
 }
 
+/**
+ * The machine drawn across the top of a level: drilling the Board state that opens a primary machine puts that machine on top, as the head
+ * of its machine ledger. Null on every other level.
+ */
+export const topOf = (subs: Record<string, string[]>, l: Level): string | null => (l.kind === "state" ? (subs[l.id]?.[0] ?? null) : null);
+
 const same = (a: Path | null, b: Path) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Whether every level of a path still exists; a cached path can outlive a machine or a Board state. */

@@ -33,6 +33,7 @@ import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "./fan";
 import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "./adminPrefs";
 import { clockHm, clockHms, stamp } from "./clock";
+import { sizes as ledgerSizes, slot as ledgerSlot } from "./machineLedger";
 import { canvasSpace, retired, viewOf, viewSearch } from "./nav";
 import { fitBox, fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
@@ -203,15 +204,34 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // rail, `I` from the canvas's left edge; a panel floats over it
   const inFitBox = (v: View): View => ({ ...v, x: v.x + I });
   const fitScene = (): View => inFitBox(fitLevel(scene!, FW, H));
+  /** A name's width in the type the ledger draws it in, so the layout places names by the width they take. */
+  const nameWidth = (s: string, size: number, weight = 300) => {
+    cx.font = `${weight} ${size}px Inter, system-ui, sans-serif`;
+    cx.letterSpacing = "0.6px";
+    const w = cx.measureText(s).width;
+    cx.letterSpacing = "0px";
+    return w;
+  };
+  /** The page's crumb and clock float over the canvas: the boxes they cover, in the ledger's own pixels, and where the crumb ends. */
+  const chromeBoxes = () => {
+    const box = (el: Element | null) => {
+      const b = el?.getBoundingClientRect();
+      return b?.width ? [{ x0: b.left - L - I - 6, y0: b.top - 4, x1: b.right - L - I + 6, y1: b.bottom + 4 }] : [];
+    };
+    const crumb = box(document.getElementById("crumb"));
+    return { avoid: [...crumb, ...box(els.clock)], inset: crumb[0] ? crumb[0].y1 + 2 : 0 };
+  };
   /** Lay the level out for the canvas's shape, so a wider screen spreads it instead of framing it with empty sky. */
   function layout(keepView: boolean) {
     if (!S || !W) return;
     const was = fit;
     laidScale = prefs().scale;
-    scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale }, level());
-    fit = fitScene();
+    scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes() }, level());
+    // the machine across a level's top is laid out in screen pixels: it is drawn at 1:1 from the fit box's left edge and never zooms or pans
+    fit = scene.top ? { k: 1, x: I, y: 0 } : fitScene();
     if (scene.hub) edgePaths(scene, { k: fit.k, x: fit.x - I }, FW, stateName);
-    if (keepView) view = refitView(view, was, fit); // a view at the old fit follows the new one, so the sky zooms out smoothly as a state grows
+    if (scene.top) view = fit;
+    else if (keepView) view = refitView(view, was, fit); // a view at the old fit follows the new one, so the sky zooms out smoothly as a state grows
     else {
       const kept = recall<View>(viewKey());
       view = kept && kept.k > fit.k * 1.02 ? kept : fit; // a remembered zoom-in survives a reload; anything at or below the fit re-centres
@@ -287,7 +307,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
-    if (trans || !scene) return;
+    if (trans || !scene || scene.top) return;
     anim = null;
     view = zoomAbout(view, fit, { x: e.offsetX, y: e.offsetY }, wheelFactor(e.deltaY, e.deltaMode, H)) ?? fit;
     save();
@@ -552,8 +572,17 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // ---- hit testing (world units). Points keep a floor in screen px; lines get a 14 px band, wider than they draw ----
   const px = (n: number) => n / view.k;
+  /** What the machine across a level's top is under (x, y): a task, a state or a flow line, each sized to grow with the text. */
+  function hitTop(sc: Scene, x: number, y: number): Hover | null {
+    const { gs } = ledgerSizes(prefs().scale);
+    for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < 8 * gs) return { kind: "mtask", o: s };
+    for (const n of sc.top!.nodes) if (Math.hypot(n.x - x, n.y - y) < n.r + 4 * gs) return { kind: "state", o: sc.mStates[n.id] };
+    const lines = sc.mEdges.filter((e) => e.a && e.b && e.a !== e.b).map((e) => ({ h: { kind: "medge", o: e } as Hover, d: curveDist(curveOf(e.a!, e.b!, e.bend), x, y) }));
+    return nearestWithin(lines, (l) => l.d, 14)?.h ?? null;
+  }
   function hit(x: number, y: number): Hover | null {
     const sc = scene!, near = (o: Pt, r: number) => Math.hypot(o.x - x, o.y - y) < r;
+    if (sc.top) return hitTop(sc, x, y);
     for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < Math.max(4, px(7))) return { kind: "mtask", o: s };
     for (const t of sc.tasks) if (!t.gone && near(t, Math.max(t.big ? 7 : 5, px(7)))) return { kind: "task", o: t };
     // a wide DAG's circle overlaps its docked neighbours, so the nearest DAG in range wins, not the first
@@ -1596,11 +1625,96 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     text(`mapped from ${src} · ${src} moves it, StarPulse observes`, (Math.min(...xs) + Math.max(...xs)) / 2, top - 70 / K, labPx(11), rgba(EXT, 0.8), "center", 300);
     cx.letterSpacing = "0px";
   }
+  // ---- the machine across a state level's top, in screen pixels (machineLedger.ts places it; the type and dots grow with the square root of the text size) ----
+  const INK = "#cfd9ea", SUB = "#94a3b8";
+  function drawTop() {
+    const sc = scene!, top = sc.top!, scale = prefs().scale, { fs, gs, dot: dr } = ledgerSizes(scale), nodes = new Map(top.nodes.map((n) => [n.id, n]));
+    const flow = S!.flows[top.flow], kids = Object.values(S!.flows).filter((f) => f.parent === top.flow), stuck = kids.filter((f) => f.stuck).length;
+    const name = 12 * fs, sub = 10 * fs, mx = top.metaX, mw = top.metaW;
+    // the template's own name and what it holds, then the machines entered from it, over the spine under the header
+    cx.letterSpacing = "0.6px";
+    text(fitText(top.flow, mw, name * 1.08), mx, top.metaT + 4 + name * 0.6, name * 1.08, rgba(INK, 0.9), "left", 400);
+    text(fitText(`template · ${top.nodes.length} states · ${flow?.agents.length ?? 0} tasks`, mw, sub), mx, top.metaT + 6 + name * 1.3 + sub * 0.6, sub, rgba(SUB, 0.7), "left", 300);
+    text(fitText(`${kids.length} machine${kids.length === 1 ? "" : "s"}${stuck ? ` · ${stuck} stuck` : " · newest first"}`, mw, sub), mx, top.hdrB - sub, sub, rgba(SUB, 0.6), "left", 300);
+    cx.letterSpacing = "0px";
+    cx.fillStyle = rgba(SUB, 0.16);
+    cx.fillRect(mx - 10, top.hdrB, top.x1 + 22 - mx, 1);
+    for (const id of top.entered) {
+      const n = nodes.get(id);
+      if (n) dot(n.x, top.hdrB + 0.5, 2.2 * gs, rgba(sc.mStates[id].color, 0.9)); // a state some machine is entered from marks the hairline
+    }
+    cx.save();
+    cx.beginPath();
+    cx.rect(0, 0, FW, top.hdrB);
+    cx.clip();
+    for (const e of sc.mEdges) {
+      const a = e.a && nodes.get(e.a.id), b = e.b && nodes.get(e.b.id);
+      if (!e.a || !e.b || !a || !b || e.a === e.b) continue;
+      const hot = hover?.kind === "state" && (hover.o === e.a || hover.o === e.b), heat = hotEdge.has(`${e.flow}:${e.source}>${e.target}`) ? 1 : 0, c = curveOf(e.a, e.b, e.bend);
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1, t0 = Math.min(0.4, (a.r + 1) / len), t1 = 1 - Math.min(0.4, (b.r + 2) / len);
+      flowLine(e.a, e.b, Math.min(1, (hot || isHot("medge", e) ? 0.95 : 0.4) + heat * 0.5), heat + (hot ? 0.8 : 0));
+      cx.beginPath();
+      for (let i = 0; i <= 16; i++) {
+        const q = bez(c.p0, c.c, c.p1, t0 + ((t1 - t0) * i) / 16);
+        if (i) cx.lineTo(q.x, q.y);
+        else cx.moveTo(q.x, q.y);
+      }
+      cx.stroke();
+      cx.setLineDash([]);
+    }
+    // a state: a coloured rim and centre over a faint wash of its own colour; a final state has a second ring
+    for (const n of top.nodes) {
+      const col = sc.mStates[n.id].color, hot = isHot("state", sc.mStates[n.id]);
+      dot(n.x, n.y, n.r, rgba(col, hot ? 0.3 : 0.12));
+      circle(n.x, n.y, n.r, rgba(col, hot ? 1 : 0.85), hot ? 2 : 1.6);
+      if (n.final) circle(n.x, n.y, n.r + 2.5, rgba(col, 0.45), 1);
+      dot(n.x, n.y, Math.min((n.initial ? 5.5 : 4) * gs, n.r * 0.4), rgba(col, 0.9));
+    }
+    // each task orbits the state its latest move left it on; a move the page has just seen rides the flow line as a comet
+    const seat: Record<string, number> = {};
+    for (const s of sc.machineTasks) {
+      s._x = undefined;
+      const ev = EVENTS().findLast((m) => m.task === s.id && m.flow === s.flow && m.at <= T), state = ev ? ev.to : s.state, cur = nodes.get(state), curS = sc.mStates[state];
+      if (!cur) continue;
+      s._state = state;
+      const prev = ev?.from ? sc.mStates[ev.from] : null, u = ev ? (T - ev.at) / TRAVEL : 9;
+      if (prev && prev !== curS && u < 1) {
+        const c = curveOf(prev, curS, sc.mEdges.find((e) => e.a === prev && e.b === curS)?.bend ?? 0.28), q = bez(c.p0, c.c, c.p1, easeO(u));
+        comet(c.p0, c.c, c.p1, easeO(u), dr * 1.5, tierColor(s.model));
+        s._x = q.x;
+        s._y = q.y;
+        continue;
+      }
+      const pa = ev ? (T - ev.at - TRAVEL) / PULSE : 9;
+      if (prev && prev !== curS && pa >= 0 && pa < 1) pulse(cur.x, cur.y, 3, pa, ACT, 18 * gs); // the task landed: one ring where it sits
+      const sl = ledgerSlot(cur.r, (seat[state] = (seat[state] ?? 0) + 1) - 1, scale), th = sl.a + clock * 0.06;
+      s._x = cur.x + sl.R * Math.cos(th);
+      s._y = cur.y + sl.R * Math.sin(th);
+      dot(s._x, s._y, isHot("mtask", s) ? dr * 1.5 : dr, rgba(tierColor(s.model), 0.9));
+    }
+    // names: beside or against a state, or on a hairline from it when crowded
+    cx.letterSpacing = "0.6px";
+    for (const l of top.labels) {
+      const hot = isHot("state", sc.mStates[l.id]), cy = l.y + l.h / 2;
+      if (l.lead) {
+        cx.strokeStyle = rgba(INK, 0.22);
+        cx.lineWidth = 1;
+        cx.beginPath();
+        cx.moveTo(l.lead.x, l.lead.y);
+        cx.lineTo(l.lead.x, l.lead.y > cy ? l.y + l.h : l.y);
+        cx.stroke();
+      }
+      text(l.text, l.x, cy, l.px, rgba(INK, hot ? 0.95 : 0.7), "left", top.entered.includes(l.id) ? 400 : 300);
+    }
+    cx.letterSpacing = "0px";
+    cx.restore();
+  }
   function drawScene(k: number, x: number, y: number) {
     const dpr = devicePixelRatio || 1;
     cx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
     K = scene!.unit ? Math.max(k, 1 / scene!.unit) : k; // a zoomed-out Board draws its names at the size it laid them out at
     ZS = Math.max(1, k / fit.k);
+    if (scene!.top) return drawTop();
     drawFold();
     drawGalaxies();
     drawMoons();
@@ -1630,7 +1744,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     clock += last ? Math.min(now - last, 100) / 1000 : 0;
     last = now;
     T = Date.now() / 1000;
-    if (scene && (grown.growing() || (scene.fold && laidScale !== prefs().scale))) layout(true); // a state easing to a new size moves its neighbours, paths and the fit with it, frame by frame
+    if (scene && (grown.growing() || ((scene.fold || scene.top) && laidScale !== prefs().scale))) layout(true); // a state easing to a new size moves its neighbours, paths and the fit with it, frame by frame
     if (anim) anim(now);
     if (scene) update(clock);
     if (mouse && scene) setHover(hit((mouse.ox - view.x) / view.k, (mouse.oy - view.y) / view.k), mouse.cx, mouse.cy);
