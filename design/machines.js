@@ -286,30 +286,37 @@
     const FOOT = () => 34 * FS;
     // a column of three or more states names them beside their nodes, so the gap after it is widened to hold its longest name;
     // the other gaps share what is left evenly
-    function colXs(m, x0, x1, px, orb) { const g = G[m], n = g.ncols, cols = []; for (const st of M[m].states) (cols[g.depth[st.id]] ||= []).push(st.id);
+    // a state is drawn bigger the more tasks sit on it; dots grow with the square root of the text size, so 150% stays on the canvas
+    const GS = () => Math.sqrt(FS), rOf = (c, row) => (row ? (8 + 1.2 * Math.sqrt(c)) * Math.min(2, row.k) ** 0.6 : 11 + 2.2 * Math.sqrt(c)) * GS();
+    const orbAt = (m, s, row) => { const c = tasksAt(m, s).length, r = rOf(c, row); return c ? slot({ r }, c - 1).R + dotR() : r; };
+    function colXs(m, x0, x1, px, orb, row) { const g = G[m], n = g.ncols, cols = []; for (const st of M[m].states) (cols[g.depth[st.id]] ||= []).push(st.id);
+      const oc = cols.map((c) => (c ? Math.max(...c.map((id) => orbAt(m, id, row))) : 0)), low = oc.slice(0, n - 1).map((o, i) => o + oc[i + 1] + 10);
       const wide = (c) => Math.max(...c.map((id) => textW(stName(m, id), px)));
-  // a fan column's names go beside it, and the column before a fan keeps room for half its name above or below
-  const need = cols.map((c, i) => (!c ? 0 : c.length >= 3 ? wide(c) + orb + 26 : cols[i + 1]?.length >= 3 ? wide(c) / 2 + orb / 2 + 14 : 0)).slice(0, n - 1);
-      const fan = need.filter(Boolean), u = fan.length < n - 1 ? Math.max(0, x1 - x0 - fan.reduce((a, b) => a + b, 0)) / (n - 1 - fan.length) : 0;
-      const gap = need.map((v) => Math.max(u, v)), k = (x1 - x0) / Math.max(1, gap.reduce((a, b) => a + b, 0)), xs = [x0];
+      // a fan column's names go beside it, and the column before a fan keeps room for half its name above or below
+      const need = cols.map((c, i) => (!c ? 0 : c.length >= 3 ? wide(c) + oc[i] + oc[i + 1] + orb : cols[i + 1]?.length >= 3 ? wide(c) / 2 + oc[i + 1] + orb / 2 : 0)).slice(0, n - 1);
+      // plain columns share what the named ones leave, each no closer than its orbits allow; only then does everything shrink to fit
+      const nf = need.map((v, i) => i).filter((i) => !need[i]), named = need.reduce((a, v, i) => a + (v ? Math.max(v, low[i]) : 0), 0);
+      let u = (x1 - x0 - named) / Math.max(1, nf.length);
+      for (let it = 0; it < 4; it++) { const big = nf.filter((i) => low[i] > u); u = (x1 - x0 - named - big.reduce((a, i) => a + low[i], 0)) / Math.max(1, nf.length - big.length); }
+      const gap = need.map((v, i) => Math.max(v ? 0 : u, v, low[i])), k = (x1 - x0) / Math.max(1, gap.reduce((a, b) => a + b, 0)), xs = [x0];
       gap.forEach((v) => xs.push(xs.at(-1) + v * k)); return xs; }
     function layout() {
       L = { nodes: new Map(), rows: new Map(), stars: [], pin: [], list: [], ticks: [] };
-      const g = G[topM], metaX = NX + 22, metaW = Math.round(clamp(186 * FS, 170, 290)), x0 = metaX + metaW + 34 * FS, x1 = NX + CW - 34, hx = colXs(topM, x0, x1, PX.main(), 64 * FS);
+      const g = G[topM], metaX = NX + 22, metaW = Math.round(clamp(186 * FS, 170, 290)), x0 = metaX + metaW + 34 * FS, x1 = NX + CW - 34, hx = colXs(topM, x0, x1, PX.main(), 40 * FS, null);
       Object.assign(L, { metaX, metaW, x0, x1 });
       const hn = M[topM].states.map((st) => Object.assign(addNode(topM, st.id, hx[g.depth[st.id]], null), { col: RAMP[Math.round((g.depth[st.id] / (g.ncols - 1)) * (RAMP.length - 1))] }));
       radii();
       // the template: branch states far enough off the main line that their orbits of tasks never touch, two tiers of names above and below
-      const oMax = Math.max(...hn.map(orbitOf)), lab = PX.main() * 1.3, room = 3.3 * lab + 6,
-        rowGap = Math.min(Math.max(2 * oMax + 10, 40 * FS), Math.max(26 * FS, (H * 0.4 - 2 * room - 2 * oMax) / Math.max(1, g.rmax - g.rmin)));
+      const oMax = Math.max(...hn.map(orbitOf)), oBr = Math.max(...hn.filter((n) => g.colN[n.s] > 1).map(orbitOf), 0), lab = PX.main() * 1.3, room = 3.3 * lab + 6,
+        rowGap = Math.max(2 * oBr + 6, Math.min(Math.max(2 * oMax + 10, 40 * FS), Math.max(26 * FS, (H * 0.4 - 2 * room - 2 * oMax) / Math.max(1, g.rmax - g.rmin))));
       L.yMain = 10 + room + oMax - g.rmin * rowGap; for (const n of hn) n.y = L.yMain + g.row[n.s] * rowGap;
       L.hdrB = L.yMain + g.rmax * rowGap + oMax + room; L.laneTop = L.hdrB + 6;
       // each row is as tall as its meta or its machine (branches, names above and below), whichever is taller
-      const rg = 22 * FS, pad = 20 + PX.row() * 1.3, metaH = PX.name() * 1.4 + 2 * PX.sub() * 1.5 + 34 * FS;
+      const rg = 32 * FS, pad = 26 * FS + PX.row() * 1.3, metaH = PX.name() * 1.4 + 2 * PX.sub() * 1.5 + 34 * FS;
       // a machine opened deep down may have only a few rows: they stretch, up to 3.2 times, so the lane is filled rather than left empty
       L.stripT = H - 50 * FS; const hOf = (g2) => Math.max(metaH, 2 * pad + (g2.rmax - g2.rmin) * rg), tot = KIDS[topM].reduce((a, m) => a + hOf(G[m]), 0);
       const k = KIDS[topM].length <= PAGE ? clamp(((L.stripT - L.laneTop) * 0.97) / Math.max(1, tot), 1, 3.2) : 1;
-      KIDS[topM].forEach((m) => { const g2 = G[m], rx = colXs(m, x0, x1, PX.row(), 10), r = { m, cy: null, k };
+      KIDS[topM].forEach((m) => { const g2 = G[m], rx = colXs(m, x0, x1, PX.row(), 24 * FS, { k }), r = { m, cy: null, k };
         r.nodes = g2.order.map((s, j) => Object.assign(addNode(m, s, rx[g2.depth[s]], r), { oy: g2.row[s] * rg * k, col: RAMP[Math.round((j / Math.max(1, g2.order.length - 1)) * (RAMP.length - 1))] }));
         r.h = hOf(g2) * k; r.c = r.h / 2 - ((g2.rmax + g2.rmin) / 2) * rg * k; L.rows.set(m, r);
         const ds = dagTies(m); ds.forEach((t, k) => L.stars.push({ t, dag: t.dag, child: m, row: r, x: x0 - 18 * FS, dy: (k - (ds.length - 1) / 2) * 12 * FS })); });
@@ -317,7 +324,7 @@
       const rv = revEl.getBoundingClientRect(); L.sx0 = Math.max(x0, rv.right + 24); L.sx1 = x1;
       order = rankRows(); place(performance.now());
     }
-    function radii() { for (const n of L.nodes.values()) { const c = tasksAt(n.m, n.s).length; n.r = n.row ? (4.6 + 0.9 * Math.sqrt(c)) * Math.min(2, n.row.k) ** 0.6 : 8 + 2.2 * Math.sqrt(c); } }
+    function radii() { for (const n of L.nodes.values()) n.r = rOf(tasksAt(n.m, n.s).length, n.row); }
     const regionOf = (r) => (r.pinned ? [L.laneTop, L.pinB] : [L.pinB, L.stripT]);
     const shown = (r) => { if (!r.pinned && !r.on) return false; const [a, b] = regionOf(r); return r.cy < b && r.cy + r.h > a; };
     const reg = (n) => (!n.row ? [0, L.hdrB] : regionOf(n.row));
@@ -397,7 +404,7 @@
         cx.fillStyle = rgba(n.col, hot ? 0.3 : 0.12); cx.beginPath(); cx.arc(n.x, n.y, n.r, 0, TAU); cx.fill();
         cx.strokeStyle = rgba(n.col, hot ? 1 : 0.85); cx.lineWidth = hot ? 2 : n.row ? 1.2 : 1.6; cx.stroke();
         if (n.final) { cx.strokeStyle = rgba(n.col, 0.45); cx.lineWidth = 1; cx.beginPath(); cx.arc(n.x, n.y, n.r + 2.5, 0, TAU); cx.stroke(); }
-        cx.fillStyle = rgba(n.col, 0.9); cx.beginPath(); cx.arc(n.x, n.y, Math.min(n.initial && !n.row ? 3.2 : 1.8, n.r * 0.4), 0, TAU); cx.fill(); }
+        cx.fillStyle = rgba(n.col, 0.9); cx.beginPath(); cx.arc(n.x, n.y, Math.min(n.initial && !n.row ? 4.5 : 3, n.r * 0.4), 0, TAU); cx.fill(); }
     }
     function drawStar(s) { const r = 5.5, hot = hover?.kind === "star" && hover.o === s;
       cx.fillStyle = rgba(DAGC, 0.12); cx.beginPath(); cx.arc(s.x, s.y, r * 2, 0, TAU); cx.fill(); cx.fillStyle = rgba(DAGC, hot ? 1 : 0.9); cx.beginPath();
@@ -406,9 +413,9 @@
       flow({ x: s.x, y: s.y, col: DAGC }, tgt, 0.4 + fl * 0.55, fl, [1, 4]); const [t0, t1] = trim({ p0: s, p1: tgt }, 7, tgt.r + 2);
       cx.beginPath(); cx.moveTo(lerp(s.x, tgt.x, t0), lerp(s.y, tgt.y, t0)); cx.lineTo(lerp(s.x, tgt.x, t1), lerp(s.y, tgt.y, t1)); cx.stroke(); cx.setLineDash([]); }
     // tasks orbit the state they sit on; a moving task rides its flow line to the next state as a comet
-    const dotR = () => 2.3;
-    function slot(n, i) { const sp = 5.8, base = n.r + 4; let rem = i, R = base;
-      for (;;) { const cap = Math.max(6, Math.floor((TAU * R) / sp)); if (rem < cap) return { R, a: (rem / cap) * TAU }; rem -= cap; R += 5; } }
+    const dotR = () => 3.2 * GS();
+    function slot(n, i) { const sp = 8.5 * GS(), base = n.r + 5 * GS(); let rem = i, R = base;
+      for (;;) { const cap = Math.max(6, Math.floor((TAU * R) / sp)); if (rem < cap) return { R, a: (rem / cap) * TAU }; rem -= cap; R += 7 * GS(); } }
     const taskPos = new Map();
     function pulse(x, y, u) { cx.strokeStyle = rgba(ACT, 0.7 * (1 - u)); cx.lineWidth = 1.2; cx.beginPath(); cx.arc(x, y, 3 + 18 * u, 0, TAU); cx.stroke(); }
     function drawTasksOf(m, y0, y1, now) {
@@ -641,10 +648,10 @@
       if (sy >= L.stripT) { if (sx < L.sx0 - 4 || sx > L.sx1 + 4) return null; let best = null;
         for (const t of L.ticks) { const d = Math.abs(t.x - sx); if (d < 4 && (!best || d < best.d)) best = { d, t }; } return best ? { kind: "tick", o: best.t } : null; }
       if (L.thumb && Math.abs(sx - L.thumb.x) < 8 && sy > L.thumb.y0 && sy < L.thumb.y1) return { kind: "thumb" };
-      for (const [ag, p] of taskPos) if (Math.hypot(p.x - sx, p.y - sy) < 9) return { kind: "task", o: ag };
+      for (const [ag, p] of taskPos) if (Math.hypot(p.x - sx, p.y - sy) < 11) return { kind: "task", o: ag };
       const inReg = (n) => { const [a, b] = reg(n); return sy >= a && sy <= b && (!n.row || shown(n.row)); };
-      for (const s of L.stars) if (inReg(s) && Math.hypot(s.x - sx, s.y - sy) < 13) return { kind: "star", o: s };
-      for (const n of L.nodes.values()) if (inReg(n) && Math.hypot(n.x - sx, n.y - sy) < Math.max(n.r + 9, 15)) return { kind: "node", o: n };
+      for (const s of L.stars) if (inReg(s) && Math.hypot(s.x - sx, s.y - sy) < 15) return { kind: "star", o: s };
+      for (const n of L.nodes.values()) if (inReg(n) && Math.hypot(n.x - sx, n.y - sy) < Math.max(n.r + 10, 20)) return { kind: "node", o: n };
       for (const l of labels) if (sx >= l.x && sx <= l.x + l.w && Math.abs(sy - l.y) < l.h / 2) return l.star ? { kind: "star", o: l.star } : { kind: "node", o: l.node };
       if (sy > L.laneTop && sx > L.metaX - 12 && sx < L.x1 + 8) { for (const r of [...L.pin, ...L.list]) { if (!shown(r)) continue; const [a, b] = regionOf(r); if (sy >= Math.max(a, r.cy) && sy < Math.min(b, r.cy + r.h)) return { kind: "row", o: r }; }
         if (L.more && sy >= Math.max(L.pinB, L.footY) && sy < L.footY + FOOT()) return { kind: "foot" }; }
