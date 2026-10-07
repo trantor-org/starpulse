@@ -26,7 +26,7 @@ export const TRACKERS: Tracker[] = [
   },
   {
     name: "Jira", badge: "read-only",
-    about: "Imports a Jira project's workflow as the Board machine and re-reads its issues. Moves are made in Jira.",
+    about: "Imports a Jira project's workflow as the Board machine and reads its issues. Moves are made in Jira.",
     steps: [
       { text: "Create an API token in your Atlassian account settings, then export it:", cmd: "export JIRA_TOKEN=<your API token>" },
       {
