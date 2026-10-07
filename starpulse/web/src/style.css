@@ -16,7 +16,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 /* Folding fades the text away while the panel narrows; the padding never changes, so the Views glyphs do not move. */
 #nav > section { width: calc(var(--nav) - 36px); transition: opacity .2s; }
 #nav .views h3, #nav .views .t, #nav .views .n { transition: opacity .2s; }
-#nav.folded > section.away, #nav.folded > section.head, #nav.folded .views h3, #nav.folded .views .t, #nav.folded .views .n { opacity: 0; pointer-events: none; visibility: hidden; transition: opacity .2s, visibility 0s .2s; }
+#nav.folded > section.away:not(.search), #nav.folded .search > :not(#nv-mag), #nav.folded > section.head, #nav.folded .views h3, #nav.folded .views .t, #nav.folded .views .n { opacity: 0; pointer-events: none; visibility: hidden; transition: opacity .2s, visibility 0s .2s; }
 #nav .views { margin: 0 -18px; width: auto; }
 #nav .views h3 { padding-left: 18px; }
 #nav .views .node { padding-left: 15px; }
@@ -27,22 +27,30 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
   transition: left .3s cubic-bezier(.4,0,.2,1), transform .3s cubic-bezier(.4,0,.2,1); }
 #fold:hover, #fold:focus-visible { color: var(--ink); border-color: #a78bfa; }
 #nav.folded #fold { left: 13px; transform: rotate(180deg); }
-@media (prefers-reduced-motion: reduce) { #nav, #nav > section, #fold, #nav .views h3, #nav .views .t, #nav .views .n { transition: none; } }
+@media (prefers-reduced-motion: reduce) { #nav, #nav > section, #fold, #nav .search > *, #nv-mag, #nav .views h3, #nav .views .t, #nav .views .n { transition: none; } }
+/* The search section stays in the folded strip for its magnifier, which sits at the search's height in the icon column; the input beside it hides with the panel. */
+#nav .search > * { transition: opacity .2s; }
+#nv-mag { all: unset; box-sizing: border-box; position: absolute; z-index: 1; left: -5px; top: 0; width: 26px; height: 26px; display: grid; place-items: center; cursor: pointer; border-radius: 6px;
+  color: #94a3b8; opacity: 0; visibility: hidden; transition: opacity .2s, visibility 0s .2s; }
+#nav.folded #nv-mag { opacity: 1; visibility: visible; transition: opacity .2s .1s, visibility 0s; }
+#nv-mag:hover, #nv-mag:focus-visible { color: var(--ink); background: rgba(148,163,184,.08); }
+/* lit while the active view's search holds a query */
+#nv-mag.set { color: #c4b5fd; }
+#nv-mag.set::after { content: ""; position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 8px #a78bfa; }
 #nav h1 { margin: 0; font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; color: var(--ink); opacity: .85; }
 #nav .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 6px; font-size: calc(11px * var(--fs)); line-height: 1.6; }
 #nav .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; margin-right: 7px; vertical-align: 1px; box-shadow: 0 0 8px currentColor; }
 #nav .dot.on { background: #34d399; box-shadow: 0 0 8px #34d399; } #nav .dot.off { background: #fb7185; }
 #clock { color: #fbbf24; font: calc(10.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
-#q { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid rgba(148,163,184,.2); background: rgba(148,163,184,.06);
+#q, #kbq { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid rgba(148,163,184,.2); background: rgba(148,163,184,.06);
   font-size: calc(12px * var(--fs)); color: var(--ink); }
-#q:focus { border-color: #a78bfa; }
+#q:focus, #kbq:focus { border-color: #a78bfa; }
 /* The Star Map entry's orbit icon draws in place of the ring every other node keeps. */
 .node .g.orbit { border: 0; border-radius: 0; width: 14px; height: 14px; display: grid; place-items: center; }
 .node .g.orbit svg { display: block; }
 /* One ✕ per search at the input's right end, scaled with the text; the browser's own cancel button would draw a second. */
 .has-x { position: relative; }
-#q { padding-right: calc(24px * var(--fs)); }
-#kb .filters #kbq { padding-right: calc(24px * var(--fs)); }
+#q, #kbq { padding-right: calc(24px * var(--fs)); }
 #q::-webkit-search-cancel-button, #kbq::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
 .sx { all: unset; box-sizing: border-box; position: absolute; z-index: 1; top: 50%; right: 5px; transform: translateY(-50%); cursor: pointer; display: grid; place-items: center;
   width: calc(18px * var(--fs)); height: calc(18px * var(--fs)); border-radius: 4px; color: var(--muted); font-size: calc(11px * var(--fs)); line-height: 1; }
@@ -147,24 +155,19 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .fchip b { font-weight: 400; color: var(--ink); }
 #kb .fchip.set { border-color: rgba(167,139,250,.6); background: rgba(167,139,250,.10); }
 #kb .shown { margin-left: auto; flex: none; white-space: nowrap; font-size: calc(11px * var(--fs)); color: var(--muted); }
-#kb .filters input { box-sizing: border-box; width: 260px; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid rgba(148,163,184,.18); background: rgba(8,13,26,.7); color: var(--ink); font: inherit; font-size: calc(11.5px * var(--fs)); outline: none; }
-#kb .filters input::placeholder { color: var(--muted); }
-#kb .filters input:focus { border-color: rgba(167,139,250,.7); }
-#kb .menu.sug { width: 100%; min-width: 0; }
+:is(#kb, #nav) .menu.sug { width: 100%; min-width: 0; }
 #kb .clear { all: unset; cursor: pointer; padding: 5px 4px; font-size: calc(11.5px * var(--fs)); color: #c4b5fd; }
 #kb .clear:hover, #kb .clear:focus-visible { color: var(--ink); text-decoration: underline; }
 #kb .scrim { position: fixed; inset: 0; z-index: 29; }
 #kb .fw { position: relative; }
-#kb .filters > .fw:first-child { flex: 0 1 260px; min-width: 120px; }
-#kb .filters > .fw:first-child input { width: 100%; }
-#kb .menu { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 240px; max-height: 360px; overflow: auto; padding: 4px; border-radius: 8px; box-sizing: border-box;
+:is(#kb, #nav) .menu { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 240px; max-height: 360px; overflow: auto; padding: 4px; border-radius: 8px; box-sizing: border-box;
   background: rgba(12,19,34,.98); border: 1px solid rgba(148,163,184,.25); box-shadow: 0 12px 30px rgba(0,0,0,.5); }
-#kb .menu .hd { padding: 5px 8px; font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
-#kb .menu button { all: unset; box-sizing: border-box; display: flex; gap: 10px; width: 100%; padding: 5px 8px; border-radius: 5px; cursor: pointer; color: #b8c4d8; font-size: calc(12px * var(--fs)); }
-#kb .menu button:hover, #kb .menu button:focus-visible, #kb .menu button.on { background: rgba(167,139,250,.15); color: var(--ink); }
-#kb .menu button span { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-#kb .menu em.tt { font-style: normal; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
-#kb .menu button.all { border-top: 1px solid rgba(148,163,184,.12); margin-top: 4px; padding-top: 7px; border-radius: 0 0 5px 5px; color: #c4b5fd; }
+:is(#kb, #nav) .menu .hd { padding: 5px 8px; font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+:is(#kb, #nav) .menu button { all: unset; box-sizing: border-box; display: flex; gap: 10px; width: 100%; padding: 5px 8px; border-radius: 5px; cursor: pointer; color: #b8c4d8; font-size: calc(12px * var(--fs)); }
+:is(#kb, #nav) .menu button:hover, :is(#kb, #nav) .menu button:focus-visible, :is(#kb, #nav) .menu button.on { background: rgba(167,139,250,.15); color: var(--ink); }
+:is(#kb, #nav) .menu button span { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+:is(#kb, #nav) .menu em.tt { font-style: normal; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+:is(#kb, #nav) .menu button.all { border-top: 1px solid rgba(148,163,184,.12); margin-top: 4px; padding-top: 7px; border-radius: 0 0 5px 5px; color: #c4b5fd; }
 
 #kb #cols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); gap: 10px; padding-bottom: 16px; }
 #kb .col { min-height: 0; display: flex; flex-direction: column; border-radius: 10px; background: rgba(148,163,184,.035); border: 1px solid rgba(148,163,184,.08); }
