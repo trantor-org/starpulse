@@ -1,9 +1,12 @@
-// Design mockup layer (DAG constellations), never part of the page. The page above is a scrubbed capture of the real
-// StarPulse page built from a source copy whose only changes are the DAGs: how a DAG is drawn (?glyph=quiet|radiant|live), where a
-// DAG with no Board tie sits (?free=sky|marks|live) and the navigator without its DAGS list. This layer adds the review bar, the
-// text size (?fs=100|125|150, the Admin font size) and synthetic DAGs for scale (?n=150|400). It runs before the page's module.
+// Design mockup layer (the DAGs view), never part of the page. The page above is a scrubbed capture of the real StarPulse page,
+// built from a source copy that adds a DAGs view beside the Kanban (four layouts: ?layout=domains|status|atlas|catalog) and takes
+// the DAGs off the Star Map (?map=bare; ?map=today keeps them). This layer adds the review bar, a demo set of run-safe DAGs so Run
+// now can be tried (?safe=live shows today's flags, where none is run-safe), the text size (?fs=100|125|150) and synthetic DAGs for
+// scale (?n=150|400). It runs before the page's module.
 (() => {
   const q = new URLSearchParams(location.search), F = window.__FLOW_FIXTURE__;
+  // the mockup opens on the DAGs view; the Views buttons move between it and the Star Map as on the page
+  if (!q.has("view")) { q.set("view", "dags"); history.replaceState(null, "", `?${q}`); }
   try {
     const k = "fv.admin.prefs", p = JSON.parse(localStorage.getItem(k) || "{}");
     p.scale = Number(q.get("fs") || 100);
@@ -38,21 +41,45 @@
     }
   }
 
+  window.__DAG_LAYOUT__ = q.get("layout") || "domains";
+  if ((q.get("safe") || "demo") === "demo") {
+    window.__DAG_RUNSAFE__ = ["dagu/board-lint", "dagu/cleanup-workspace", "dagu/postgres-restore-verify", "dagu/mutation-sweep", "dagu/memory-reindex",
+      "dagu/task-duplicate-retrain", "dagu/graph-refresh", "dagu/healthcheck"];
+    window.__DAG_REFUSE__ = { "dagu/healthcheck": "Dagu refused the run: the DAG is suspended." };
+  }
+  // The DAGs view keeps every DAG; the Star Map, on ?map=bare, draws none of them: no DAG bodies, no writer lines, no cues.
+  if (F) {
+    window.__DAGS__ = JSON.parse(JSON.stringify({ dags: F.dags, domains: F.domains, pools: F.pools, cues: F.cues || [], flows: F.flows, now: F.now }));
+    if ((q.get("map") || "bare") === "bare") {
+      // a level saved inside the DAGs no longer exists on the Star Map: open the Board instead
+      try { if ((localStorage.getItem("fv.path") || "").includes('"dags"')) localStorage.removeItem("fv.path"); } catch { /* storage off */ }
+      F.dags = [];
+      F.domains = [];
+      F.cues = [];
+      for (const f of F.flows) {
+        const m = f.machine;
+        if (m.writers) for (const ev of Object.keys(m.writers)) m.writers[ev] = m.writers[ev].filter((w) => !w.actor.startsWith("dagu/"));
+        if (m.dagActors) m.dagActors = [];
+      }
+    }
+  }
+
   // The review bar: every variant, the scale and the text size, each a link to its own address.
   const bar = document.createElement("div");
   bar.id = "mockbar";
   bar.innerHTML = `<style>
     #mockbar { position: fixed; z-index: 50; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; justify-content: center;
-      max-width: calc(100vw - 560px); padding: 6px 10px; border-radius: 9px; border: 1px dashed rgba(251,191,36,.45); background: rgba(10,12,20,.9); font: 11px Inter, system-ui, sans-serif; color: #6b7a93; }
+      max-width: calc(100vw - 540px); padding: 6px 10px; border-radius: 9px; border: 1px dashed rgba(251,191,36,.45); background: rgba(10,12,20,.9); font: 11px Inter, system-ui, sans-serif; color: #6b7a93; }
     #mockbar b { color: #fbbf24; font-weight: 500; letter-spacing: .2em; font-size: 9.5px; }
     #mockbar span { display: inline-flex; gap: 3px; align-items: center; }
     #mockbar a { padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(148,163,184,.18); color: #b6c0d3; text-decoration: none; }
     #mockbar a.on { border-color: #fbbf24; color: #fde68a; background: rgba(251,191,36,.10); }
   </style><b>MOCKUP</b>`;
-  const cur = { glyph: q.get("glyph") || "quiet", free: q.get("free") || "sky", n: q.get("n") || "", fs: q.get("fs") || "100" };
+  const cur = { layout: q.get("layout") || "domains", map: q.get("map") || "bare", safe: q.get("safe") || "demo", n: q.get("n") || "", fs: q.get("fs") || "100" };
   const groups = [
-    ["Glyph", "glyph", [["quiet", "Quiet"], ["radiant", "Radiant"], ["live", "Today"]]],
-    ["Free DAGs", "free", [["sky", "Sky"], ["marks", "Marks"], ["live", "Today's hangar"]]],
+    ["Layout", "layout", [["domains", "Domain columns"], ["status", "Status columns"], ["atlas", "Atlas"], ["catalog", "Catalog"]]],
+    ["Star Map", "map", [["bare", "Without DAGs"], ["today", "Today"]]],
+    ["Run-safe", "safe", [["demo", "Demo set"], ["live", "Live flags"]]],
     ["DAGs", "n", [["", "Live"], ["150", "150"], ["400", "400"]]],
     ["Text", "fs", [["100", "100%"], ["125", "125%"], ["150", "150%"]]],
   ];
@@ -63,6 +90,9 @@
       const a = document.createElement("a"), u = new URLSearchParams(location.search);
       if (v) u.set(key, v);
       else u.delete(key);
+      // a Layout link opens the DAGs view; the Star Map links open the Star Map
+      if (key === "layout") u.set("view", "dags");
+      if (key === "map") u.set("view", "constellation");
       a.href = `?${u}`;
       a.textContent = l;
       if (cur[key] === v) a.className = "on";

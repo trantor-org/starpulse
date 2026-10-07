@@ -1,0 +1,739 @@
+diff --git a/starpulse/web/src/App.tsx b/starpulse/web/src/App.tsx
+index b319701..1222ccb 100644
+--- a/starpulse/web/src/App.tsx
++++ b/starpulse/web/src/App.tsx
+@@ -10,6 +10,7 @@ import { HistoryWindowStore } from "./historyWindow";
+ import { HudStore, useHud, type HudState } from "./hud";
+ import { BOARD, pathKey, type Path } from "./levels";
+ import { FeedLines, Queues } from "./Fanout";
++import { Dags, DagLegend, dagCount } from "./Dags";
+ import { Kanban } from "./Kanban";
+ import { MoveStore, postMove } from "./move";
+ import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./nav";
+@@ -59,6 +60,7 @@ export function App() {
+   // declared after the renderer's effect, so the first run already reaches it
+   useEffect(() => {
+     document.body.classList.toggle("kanban", view === "kanban");
++    document.body.classList.toggle("dags", view === "dags");
+     document.body.classList.toggle("admin", view === "admin");
+     renderer.current?.show(view === "constellation");
+     // the canvas was sized while hidden or behind the Kanban; refit it once it is the page again
+@@ -87,6 +89,7 @@ export function App() {
+       {view === "kanban" && (
+         <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }} />
+       )}
++      {view === "dags" && <Dags />}
+       <Rail hud={hud} view={view} />
+       <div ref={tip} id="tip" />
+       <div ref={panel} id="panel" />
+@@ -224,10 +227,16 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
+           <span className="t">Kanban</span>
+           <span className="n">{hud.cards.length || ""}</span>
+         </button>
++        <button className={`node${view === "dags" ? " on here" : ""}`} title="DAGs" onClick={() => choose("dags")}>
++          <svg className="g dg-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>
++          <span className="t">DAGs</span>
++          <span className="n">{dagCount() || ""}</span>
++        </button>
+       </section>
+-      {view === "kanban" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
++      {(view === "kanban" || view === "dags") && <section className="away note">Layers belong to the Star Map view; they return when it is open.</section>}
++      {view === "dags" && <Queues pools={hud.pools} />}
+       {view === "constellation" && <><section className="away">
+-        <input id="q" type="search" placeholder="search tasks, states, DAGs…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
++        <input id="q" type="search" placeholder={hud.groups.length ? "search tasks, states, DAGs…" : "search tasks and states…"} title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
+           onChange={(e) => { setQuery(e.target.value); spot(null); }}
+           onKeyDown={(e) => {
+             if (e.key === "Escape") { setQuery(""); spot(null); }
+@@ -242,15 +251,15 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
+           {body}
+         </div>
+       </section>
+-      <section className="away">
++      {hud.groups.length > 0 && <section className="away">
+         <h3>DAGs</h3>
+         <div id="cons">
+           {hud.groups.map((g) => (
+             <button key={g.name} onClick={() => fly(g.name)}><i /><span>{g.name} · {g.n}</span></button>
+           ))}
+         </div>
+-      </section>
+-      <Queues pools={hud.pools} /></>}
++      </section>}
++      {hud.groups.length > 0 && <Queues pools={hud.pools} />}</>}
+       <section className="views admin-sec">
+         <button className={`node${view === "admin" ? " on here" : ""}`} title="Admin" onClick={() => choose("admin")}>
+           <svg className="g admin-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>
+@@ -273,7 +282,7 @@ function Rail({ hud, view }: { hud: HudState; view: ViewName }) {
+       </section>
+       <section id="legend">
+         <h3>Legend</h3>
+-        {view === "kanban" ? (
++        {view === "dags" ? <DagLegend /> : view === "kanban" ? (
+           <>
+             <span><i style={{ background: "#34d399" }} />checks pass</span><span><i style={{ background: "#fb7185" }} />failing</span><span><i style={{ background: "#fbbf24" }} />pending</span><br />
+             <span><i style={{ background: "#a78bfa" }} />merged</span><span><span style={{ color: "#fbbf24" }}>⌁ n</span> review threads</span><br />
+@@ -284,8 +293,8 @@ function Rail({ hud, view }: { hud: HudState; view: ViewName }) {
+         ) : (
+           <>
+             <span><i style={{ background: "#c4b5fd" }} />deep</span><span><i style={{ background: "#67e8f9" }} />standard</span><span><i style={{ background: "#fde68a" }} />other</span><br />
+-            <span><i style={{ background: "#34d399" }} />ok</span><span><i style={{ background: "#fb7185" }} />failed</span>
+-            <span><i style={{ border: "1px solid #dbe4f3", background: "none", boxSizing: "border-box" }} />runnable</span><br />
++            {hud.groups.length > 0 && <><span><i style={{ background: "#34d399" }} />ok</span><span><i style={{ background: "#fb7185" }} />failed</span>
++            <span><i style={{ border: "1px solid #dbe4f3", background: "none", boxSizing: "border-box" }} />runnable</span><br /></>}
+             <span><i style={{ background: "#c084fc" }} />lifecycle machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />activity now</span>
+           </>
+         )}
+diff --git a/starpulse/web/src/Dags.tsx b/starpulse/web/src/Dags.tsx
+new file mode 100644
+index 0000000..45658b2
+--- /dev/null
++++ b/starpulse/web/src/Dags.tsx
+@@ -0,0 +1,472 @@
++// DESIGN MOCKUP ONLY (DAGs view). A view of its own for the DAGs, beside the Kanban: every DAG as a card or a tile in its
++// domain, drawn in the Star Map's language (a running DAG is a sun, a failed run collapses to a black hole, a DAG never run is a
++// dim body) with its steps as a small constellation. The layout is a review choice (`?layout=domains|status|atlas|catalog`).
++// It reads the page's embedded capture directly and simulates Run now in the page; the slice that builds it plumbs both through the HUD.
++import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
++import { BOARD_COLOR } from "./scene";
++import type { Cue, Dag, DagStep, Domain, Machine, Pool } from "./types";
++
++interface Src { dags: Dag[]; domains: Domain[]; pools: Pool[]; cues: Cue[]; flows: { name: string; machine: Machine }[]; now: number }
++type G = typeof globalThis & { __DAGS__?: Src; __FLOW_FIXTURE__?: Src; __DAG_LAYOUT__?: string; __DAG_RUNSAFE__?: string[]; __DAG_REFUSE__?: Record<string, string> };
++const g = globalThis as G;
++const src = (): Src | null => g.__DAGS__ ?? g.__FLOW_FIXTURE__ ?? null;
++const LOADED = Date.now() / 1000;
++/** The capture's clock, moving from the moment the page loaded, so a demo opened days later reads as it did. */
++const nowS = () => (src()?.now ?? LOADED) + Date.now() / 1000 - LOADED;
++export const dagCount = () => src()?.dags.length ?? 0;
++
++type Phase = "running" | "queued" | "failed" | "idle" | "ok";
++const PHASES: [Phase, string][] = [["running", "Running"], ["failed", "Failing"], ["idle", "Not run"], ["ok", "Healthy"]];
++const STEP_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185", aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155" };
++const short = (n: string) => n.replace(/^[^/]+\//, "");
++
++interface Sim { phase: "running" | "queued" | "done"; startedAt: number; step: number; runId: string; finishedAt?: number }
++interface Row { d: Dag; domain: string; runSafe: boolean; phase: Phase; steps: Record<string, string>; startedAt: number; finishedAt: number; step: string }
++
++const iso = (s: string) => (s ? Date.parse(s) / 1000 : 0);
++function ago(t: number) {
++  const s = Math.max(0, nowS() - t);
++  if (s < 45) return "just now";
++  if (s < 3600) return `${Math.round(s / 60)}m ago`;
++  if (s < 86400 * 2) return `${Math.round(s / 3600)}h ago`;
++  return `${Math.round(s / 86400)}d ago`;
++}
++function took(a: number, b: number) {
++  const s = Math.max(0, Math.round(b - a));
++  if (s < 60) return `${s}s`;
++  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
++  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
++}
++
++function rows(s: Src, sims: Record<string, Sim>): Row[] {
++  const dom: Record<string, { domain: string; runSafe: boolean }> = {};
++  const safe = new Set(g.__DAG_RUNSAFE__ ?? []);
++  for (const d of s.domains) for (const x of d.dags) dom[x.name] = { domain: d.name, runSafe: x.runSafe || safe.has(x.name) };
++  return s.dags.map((d) => {
++    const sim = sims[d.name], run = d.active?.[0];
++    let phase: Phase = run || d.status === "running" ? "running" : d.status === "queued" ? "queued" : d.status === "failed" || d.status === "aborted" ? "failed" : d.status === "not_started" ? "idle" : "ok";
++    let steps = Object.fromEntries(d.steps.map((x) => [x.name, run?.steps[x.name] ?? x.status]));
++    let startedAt = iso(run?.startedAt ?? d.startedAt), finishedAt = iso(d.finishedAt), step = run?.step ?? "";
++    if (sim) {
++      startedAt = sim.startedAt;
++      if (sim.phase === "done") { phase = "ok"; finishedAt = sim.finishedAt!; steps = Object.fromEntries(d.steps.map((x) => [x.name, "succeeded"])); }
++      else {
++        phase = sim.phase;
++        finishedAt = 0;
++        step = sim.phase === "running" ? d.steps[sim.step]?.name ?? "" : "";
++        steps = Object.fromEntries(d.steps.map((x, i) => [x.name, sim.phase === "queued" ? "queued" : i < sim.step ? "succeeded" : i === sim.step ? "running" : "not_started"]));
++      }
++    }
++    return { d, domain: dom[d.name]?.domain ?? "Other", runSafe: dom[d.name]?.runSafe ?? false, phase, steps, startedAt, finishedAt, step };
++  });
++}
++const group = (p: Phase): Phase => (p === "queued" ? "running" : p);
++const RANK: Record<Phase, number> = { running: 0, queued: 1, failed: 2, idle: 3, ok: 4 };
++const order = (a: Row, b: Row) => RANK[a.phase] - RANK[b.phase] || b.finishedAt - a.finishedAt || a.d.name.localeCompare(b.d.name);
++
++/** Where a DAG touches the Board: the event it is cued by, the transitions it writes, the skill it launches. */
++interface Tie { kind: "cue" | "writes" | "launches" | "acts"; text: string; note: string; color: string }
++function ties(s: Src, name: string): Tie[] {
++  const out: Tie[] = [];
++  const board = s.flows.find((f) => f.name === "board")?.machine;
++  const sn = (m: Machine, id: string) => m.states.find((x) => x.id === id)?.name ?? id;
++  for (const c of s.cues ?? []) if (c.dag === name) out.push({ kind: "cue", text: `on ${c.event}`, note: `${c.on}; the task lands in ${board ? sn(board, c.state) : c.state}`, color: BOARD_COLOR[c.state] ?? "#94a3b8" });
++  for (const f of s.flows) {
++    const m = f.machine;
++    for (const [ev, ws] of Object.entries(m.writers ?? {})) if (ws.some((w) => w.actor === name)) {
++      const t = m.transitions.find((x) => x.event === ev);
++      out.push({ kind: "writes", text: t ? sn(m, t.target) : ev, note: t ? `${ev}: ${sn(m, t.source)} → ${sn(m, t.target)}${f.name === "board" ? "" : ` (${f.name})`}` : ev, color: (t && BOARD_COLOR[t.target]) ?? "#c084fc" });
++    }
++    const l = m.launches?.[name];
++    if (l) out.push({ kind: "launches", text: l.skill, note: l.flow ? `launches ${l.skill}, which runs the ${l.flow} machine` : `launches ${l.skill}`, color: "#c084fc" });
++  }
++  if (board?.dagActors?.includes(name) && !out.some((t) => t.kind === "writes")) out.push({ kind: "acts", text: "Board", note: "acts on Board tasks", color: "#c084fc" });
++  const seen = new Set<string>();
++  return out.filter((t) => !seen.has(t.kind + t.text) && seen.add(t.kind + t.text));
++}
++
++/** Steps placed by depth (longest path from a root): one column per depth, a wide fan folded into a small cluster of
++ *  `rows`-high sub-columns `sub` apart, the columns spread `gap` apart at most so the whole fits `w`. With `px` (a label's width
++ *  per character) each gap first makes room for its two columns' names: in full beside a stacked column, and in half between two
++ *  single steps, whose names then alternate above and below. */
++function place(steps: DagStep[], w: number, h: number, pad: number, rows: number, sub: number, gap: number, gy: number, px = 0) {
++  const by = Object.fromEntries(steps.map((x) => [x.name, x]));
++  const depth: Record<string, number> = {};
++  const dep = (n: string, seen = new Set<string>()): number => {
++    if (n in depth) return depth[n];
++    if (seen.has(n)) return 0;
++    seen.add(n);
++    return (depth[n] = Math.max(0, ...(by[n]?.depends ?? []).filter((p) => by[p]).map((p) => dep(p, seen) + 1)));
++  };
++  steps.forEach((x) => dep(x.name));
++  const cols: string[][] = [];
++  for (const x of steps) (cols[depth[x.name]] ??= []).push(x.name);
++  const span = cols.map((c) => (Math.ceil(c.length / rows) - 1) * sub);
++  const lw = cols.map((c) => px * Math.max(...c.map((n) => n.length)));
++  const lone = (d: number) => cols[d].length === 1;
++  const floor = cols.slice(1).map((_, i) => !px ? sub : lone(i) && lone(i + 1) ? Math.max(9.5 * px, (lw[i] + lw[i + 1]) / 4 + 8) : (lw[i] + lw[i + 1]) / 2 + 14);
++  const extra = Math.max(0, w - 2 * pad - span.reduce((a, b) => a + b, 0) - floor.reduce((a, b) => a + b, 0)) / Math.max(1, floor.length);
++  const gx = floor.map((f) => f + Math.min(extra, Math.max(0, gap - f)));
++  const alt = !!px && gx.some((g, i) => lone(i) && lone(i + 1) && g < (lw[i] + lw[i + 1]) / 2 + 8);
++  const at: Record<string, { x: number; y: number }> = {};
++  let x0 = pad;
++  cols.forEach((c, d) => {
++    const n = Math.min(rows, c.length);
++    c.forEach((name, i) => (at[name] = { x: x0 + Math.floor(i / rows) * sub, y: h / 2 + ((i % rows) - (Math.min(n, c.length - Math.floor(i / rows) * rows) - 1) / 2) * gy }));
++    x0 += span[d] + (gx[d] ?? 0);
++  });
++  const up = (name: string) => alt && lone(depth[name]) && depth[name] % 2 === 1;
++  return { at, up, cols: cols.length, wide: Math.max(1, ...cols.map((c) => Math.min(rows, c.length))), span: x0 + pad };
++}
++
++/** The modal's chart: names sized by the page's text scale, a folded fan's sub-columns a longest name apart. */
++const LABEL_PX = () => 6.1 * (Number(getComputedStyle(document.documentElement).getPropertyValue("--fs")) || 1);
++const bigPlace = (steps: DagStep[], w: number, h: number) => {
++  const px = LABEL_PX(), lw = px * Math.max(0, ...steps.map((x) => x.name.length));
++  return place(steps, w, h, Math.max(44, lw / 2 + 6), 5, Math.max(92, lw + 16), 120, 40, px);
++};
++
++/** A DAG's steps as a constellation: one star per step in its status colour, joined by its dependencies; the running step burns. */
++function Strip({ r, w = 240, h = 24, big = false, center = false }: { r: Row; w?: number; h?: number; big?: boolean; center?: boolean }) {
++  const st = r.d.steps;
++  const p = big ? bigPlace(st, w, h - 12) : place(st, w, h, 7, 3, 5.5, 34, Math.min(7, (h - 6) / 2));
++  const dx = center ? (w - p.span) / 2 : 0;
++  const x = (n: string) => p.at[n].x + dx, y = (n: string) => p.at[n].y;
++  const rr = big ? 6 : (st.length > 9 ? 2.1 : 2.8) * (center ? 1.25 : 1);
++  return (
++    <svg className={`strip${big ? " big" : ""}`} width={big ? w : "100%"} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMinYMid meet" aria-hidden={!big}>
++      {st.flatMap((s) => s.depends.filter((d) => p.at[d]).map((d) => (
++        <line key={d + ">" + s.name} x1={x(d)} y1={y(d)} x2={x(s.name)} y2={y(s.name)} className={r.steps[s.name] === "running" ? "e hot" : "e"} />
++      )))}
++      {st.map((s) => {
++        const v = r.steps[s.name] ?? "not_started", c = STEP_COLOR[v] ?? "#334155";
++        return (
++          <g key={s.name} className={`sd s-${v}`}>
++            {v === "running" && <circle cx={x(s.name)} cy={y(s.name)} r={rr * 2.6} fill={c} className="halo" />}
++            <circle cx={x(s.name)} cy={y(s.name)} r={v === "running" ? rr * 1.2 : rr} fill={v === "not_started" ? "#0b1220" : c} stroke={v === "not_started" ? "#475569" : "none"} strokeWidth={big ? 1.2 : 0.8} />
++            {s.kind === "agent" && <circle cx={x(s.name)} cy={y(s.name)} r={rr + (big ? 4 : 2)} fill="none" stroke="#c4b5fd" strokeWidth={big ? 1 : 0.7} />}
++            {big && <text x={x(s.name)} y={y(s.name) + (p.up(s.name) ? -14 : 22)} className={v === "running" ? "hot" : undefined}>{s.name}</text>}
++            {big && <title>{`${s.name}: ${v.replace("_", " ")}${s.kind ? ` (${s.kind} step)` : ""}`}</title>}
++          </g>
++        );
++      })}
++      {!big && !center && st.length === 1 && <text x={7 + 9} y={h / 2 + 3.5} className="one">{st[0].name}</text>}
++    </svg>
++  );
++}
++
++/** A DAG's state as a body from the Star Map: a sun while it runs, a black hole when its last run failed, a dim body before its first run. */
++const Body = ({ phase, big }: { phase: Phase; big?: boolean }) => <i className={`body b-${phase}${big ? " big" : ""}`} aria-hidden="true" />;
++
++function lastLine(r: Row) {
++  if (r.phase === "running") return <><b className="hot">{r.step || "starting"}</b> · {took(r.startedAt, nowS())}</>;
++  if (r.phase === "queued") return <b className="q">queued</b>;
++  if (r.phase === "idle") return "never run";
++  if (r.phase === "failed") {
++    const at = Object.entries(r.steps).find(([, v]) => v === "failed" || v === "aborted")?.[0];
++    return <><span className="bad">{r.d.status === "aborted" ? "aborted" : "failed"}{at ? ` at ${at}` : ""}</span> · {ago(r.finishedAt)}</>;
++  }
++  return <>{ago(r.finishedAt)} · {took(r.startedAt, r.finishedAt)}</>;
++}
++
++interface Ctx { s: Src; pools: Record<string, Pool>; run: (r: Row) => void; open: (r: Row) => void; why: (r: Row) => string | null }
++const poolText = (c: Ctx, r: Row) => {
++  const p = c.pools[r.d.pool ?? ""];
++  return p ? `${short(p.name)} ${p.running}/${p.cap}${p.queued ? ` +${p.queued}` : ""}` : "";
++};
++
++function RunBtn({ c, r, label }: { c: Ctx; r: Row; label?: boolean }) {
++  const why = c.why(r);
++  return (
++    <button className={`run${label ? " lbl" : ""}`} disabled={!!why} title={why ?? `Run ${short(r.d.name)} now`} aria-label={`Run ${short(r.d.name)} now`}
++      onClick={(e) => { e.stopPropagation(); c.run(r); }}>▶{label && " Run now"}</button>
++  );
++}
++
++function Card({ c, r, dense }: { c: Ctx; r: Row; dense?: boolean }) {
++  const t = ties(c.s, r.d.name)[0], pool = poolText(c, r);
++  return (
++    <div className={`dcard p-${r.phase}${dense ? " dense" : ""}`} tabIndex={0} onClick={() => c.open(r)} onKeyDown={(e) => e.key === "Enter" && c.open(r)}>
++      <div className="top"><Body phase={r.phase} /><span className="nm" title={r.d.name}>{short(r.d.name)}</span><span className="last">{lastLine(r)}</span></div>
++      <Strip r={r} />
++      <div className="foot">
++        {pool && <span className="pool" title={`pool ${r.d.pool}: running/cap +queued`}>{pool}</span>}
++        {t && <span className="tie" title={t.note} style={{ "--tc": t.color } as CSSProperties}>⇢ {t.text}</span>}
++        <RunBtn c={c} r={r} />
++      </div>
++    </div>
++  );
++}
++
++function Fold({ k, title, n, folded, toggle, glyph, children, className }: { k: string; title: ReactNode; n: number; folded: Set<string>; toggle: (k: string) => void; glyph?: ReactNode; children: ReactNode; className?: string }) {
++  const f = folded.has(k);
++  return (
++    <div className={`bucket${f ? " folded" : ""}${className ? ` ${className}` : ""}`}>
++      <div className="bh" onClick={() => toggle(k)} role="button" aria-expanded={!f}><span className="tw">▾</span>{glyph}<span className="bn">{title}</span><span className="c">{n}</span></div>
++      {!f && children}
++    </div>
++  );
++}
++
++const Census = ({ rs }: { rs: Row[] }) => (
++  <span className="census">
++    {PHASES.filter(([p]) => p !== "ok").map(([p, l]) => {
++      const n = rs.filter((r) => group(r.phase) === p).length;
++      return n ? <span key={p} title={`${n} ${l.toLowerCase()}`}><Body phase={p} />{n}</span> : null;
++    })}
++  </span>
++);
++
++function Domains({ c, rs, folded, toggle }: { c: Ctx; rs: Row[]; folded: Set<string>; toggle: (k: string) => void }) {
++  const doms = [...new Set([...c.s.domains.map((d) => d.name), ...rs.map((r) => r.domain)])].filter((d) => rs.some((r) => r.domain === d));
++  return (
++    <div id="dcols" className="scrollx" style={{ "--cols": doms.length } as CSSProperties}>
++      {doms.map((d) => {
++        const list = rs.filter((r) => r.domain === d).sort(order), hot = list.filter((r) => r.phase !== "ok"), ok = list.filter((r) => r.phase === "ok");
++        return (
++          <section className="col" key={d}>
++            <h2><i className="cg" /><span className="nm" title={d}>{d}</span><span className="c">{list.length}</span><Census rs={list} /></h2>
++            <div className="cbody">
++              {hot.map((r) => <Card key={r.d.name} c={c} r={r} />)}
++              {ok.length > 0 && <Fold k={`ok`} title="Healthy" n={ok.length} folded={folded} toggle={toggle} glyph={<Body phase="ok" />}>{ok.map((r) => <Card key={r.d.name} c={c} r={r} />)}</Fold>}
++            </div>
++          </section>
++        );
++      })}
++    </div>
++  );
++}
++
++function Status({ c, rs, folded, toggle }: { c: Ctx; rs: Row[]; folded: Set<string>; toggle: (k: string) => void }) {
++  return (
++    <div id="dcols" className="status">
++      {PHASES.map(([p, l]) => {
++        const list = rs.filter((r) => group(r.phase) === p).sort(order);
++        const doms = [...new Set(list.map((r) => r.domain))];
++        return (
++          <section className={`col c-${p}`} key={p}>
++            <h2><Body phase={p} big /><span className="nm">{l}</span><span className="c">{list.length}</span></h2>
++            <div className="cbody">
++              {!list.length && <div className="empty">{p === "failed" ? "No failing DAGs" : p === "running" ? "Nothing running" : "None"}</div>}
++              {doms.map((d) => (
++                <Fold key={d} k={`${p}|${d}`} title={d} n={list.filter((r) => r.domain === d).length} folded={folded} toggle={toggle} className={p === "ok" ? "grid2" : undefined}>
++                  <div className="cards">{list.filter((r) => r.domain === d).map((r) => <Card key={r.d.name} c={c} r={r} dense={p === "ok"} />)}</div>
++                </Fold>
++              ))}
++            </div>
++          </section>
++        );
++      })}
++    </div>
++  );
++}
++
++function Atlas({ c, rs, folded, toggle }: { c: Ctx; rs: Row[]; folded: Set<string>; toggle: (k: string) => void }) {
++  const doms = [...new Set([...c.s.domains.map((d) => d.name), ...rs.map((r) => r.domain)])].filter((d) => rs.some((r) => r.domain === d));
++  return (
++    <div id="atlas">
++      {doms.map((d) => {
++        const list = rs.filter((r) => r.domain === d).sort(order);
++        return (
++          <Fold key={d} k={`atlas|${d}`} title={<>{d} <Census rs={list} /></>} n={list.length} folded={folded} toggle={toggle} className="band" glyph={<i className="cg" />}>
++            <div className="tiles">
++              {list.map((r) => {
++                const t = ties(c.s, r.d.name)[0];
++                return (
++                  <div key={r.d.name} className={`tile p-${r.phase}`} tabIndex={0} onClick={() => c.open(r)} onKeyDown={(e) => e.key === "Enter" && c.open(r)}>
++                    <Strip r={r} w={150} h={44} center />
++                    <div className="nm" title={r.d.name}><Body phase={r.phase} />{short(r.d.name)}</div>
++                    <div className="last">{lastLine(r)}</div>
++                    {t && <span className="tie dot" title={`Board: ${t.note}`} style={{ "--tc": t.color } as CSSProperties}>⇢</span>}
++                    <RunBtn c={c} r={r} />
++                  </div>
++                );
++              })}
++            </div>
++          </Fold>
++        );
++      })}
++    </div>
++  );
++}
++
++function Catalog({ c, rs, folded, toggle }: { c: Ctx; rs: Row[]; folded: Set<string>; toggle: (k: string) => void }) {
++  const doms = [...new Set([...c.s.domains.map((d) => d.name), ...rs.map((r) => r.domain)])].filter((d) => rs.some((r) => r.domain === d));
++  return (
++    <div id="catalog">
++      <div className="thead"><span /><span>DAG</span><span>Steps</span><span>Last run</span><span>Pool</span><span>Board</span><span /></div>
++      {doms.map((d) => {
++        const list = rs.filter((r) => r.domain === d).sort(order);
++        return (
++          <Fold key={d} k={`cat|${d}`} title={<>{d} <Census rs={list} /></>} n={list.length} folded={folded} toggle={toggle}>
++            {list.map((r) => {
++              const t = ties(c.s, r.d.name)[0];
++              return (
++                <div key={r.d.name} className={`trow p-${r.phase}`} tabIndex={0} onClick={() => c.open(r)} onKeyDown={(e) => e.key === "Enter" && c.open(r)}>
++                  <Body phase={r.phase} /><span className="nm" title={r.d.name}>{short(r.d.name)}</span><Strip r={r} w={220} h={20} />
++                  <span className="last">{lastLine(r)}</span><span className="pool">{poolText(c, r) || "—"}</span>
++                  <span>{t ? <span className="tie" title={t.note} style={{ "--tc": t.color } as CSSProperties}>⇢ {t.text}</span> : <span className="none">—</span>}</span>
++                  <RunBtn c={c} r={r} />
++                </div>
++              );
++            })}
++          </Fold>
++        );
++      })}
++    </div>
++  );
++}
++
++function Modal({ c, r, close, refusal }: { c: Ctx; r: Row; close: () => void; refusal: string | null }) {
++  useEffect(() => {
++    const k = (e: KeyboardEvent) => e.key === "Escape" && close();
++    addEventListener("keydown", k);
++    return () => removeEventListener("keydown", k);
++  }, [close]);
++  const ts = ties(c.s, r.d.name), p = c.pools[r.d.pool ?? ""], why = c.why(r), fit = bigPlace(r.d.steps, 0, 100);
++  const w = Math.max(924, fit.span), h = Math.max(110, 74 + (fit.wide - 1) * 40);
++  return (
++    <div id="kbm" onClick={(e) => e.target === e.currentTarget && close()}>
++      <div className="modal tv dgm" role="dialog" aria-label={r.d.name}>
++        <button className="x" onClick={close} aria-label="Close">✕</button>
++        <div className="tvhead">
++          <div className="ttl">
++            <h2><Body phase={r.phase} big />{short(r.d.name)}</h2>
++            <div className="k">{r.d.name} · {r.domain}{r.d.pool ? ` · pool ${short(r.d.pool)}` : ""}</div>
++          </div>
++          <div className="acts"><span className={`ph p-${r.phase}`}>{r.phase === "ok" ? "healthy" : r.phase === "idle" ? "not run" : r.phase === "failed" ? r.d.status : r.phase}</span></div>
++        </div>
++        <div className="tvbody">
++          {refusal && <div className="editrefusal"><b>Run refused.</b> {refusal}</div>}
++          <section className="sec"><div className="sh"><span className="t">Steps</span><span className="n">{r.d.steps.length}</span></div>
++            <div className="chart"><Strip r={r} w={w} h={h} big /></div>
++          </section>
++          <table><tbody>
++            <tr><td>{r.phase === "running" || r.phase === "queued" ? "this run" : "last run"}</td><td>{lastLine(r)}</td></tr>
++            <tr><td>started</td><td>{r.startedAt ? `${new Date(r.startedAt * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} (${ago(r.startedAt)})` : "—"}</td></tr>
++            <tr><td>run</td><td className="mono">{r.d.runId || "—"}{(r.d.active?.length ?? 0) > 1 ? ` + ${r.d.active!.length - 1} more` : ""}</td></tr>
++            <tr><td>queue</td><td>{p ? <span className="slots">{Array.from({ length: Math.min(p.cap, 12) }, (_, i) => <i key={i} className={i < p.running ? "on" : ""} />)}{p.cap > 12 && <em>…</em>}<span>{short(p.name)}: {p.running} of {p.cap} running{p.queued ? `, ${p.queued} queued` : ""}</span></span> : "no pool"}</td></tr>
++            <tr><td>run now</td><td>{why ? <span className="k">{why}</span> : "run-safe: StarPulse may start it"}</td></tr>
++          </tbody></table>
++          <section className="sec"><div className="sh"><span className="t">Board</span></div>
++            {ts.length ? ts.map((t) => <div className="tierow" key={t.kind + t.text}><span className="tie" style={{ "--tc": t.color } as CSSProperties}>⇢ {t.kind === "cue" ? t.text : t.kind === "writes" ? `writes ${t.text}` : t.kind === "launches" ? t.text : "acts"}</span><span className="k">{t.note}</span></div>)
++              : <div className="k">No Board tie: this DAG neither moves a task nor is cued by one.</div>}
++          </section>
++        </div>
++        <div className="tvfoot">
++          <RunBtn c={c} r={r} label />
++        </div>
++      </div>
++    </div>
++  );
++}
++
++export function Dags() {
++  const s = src();
++  const [sims, setSims] = useState<Record<string, Sim>>({});
++  const [, tick] = useState(0);
++  const [q, setQ] = useState("");
++  const [only, setOnly] = useState<Set<Phase>>(new Set());
++  const [folded, setFolded] = useState<Set<string>>(new Set());
++  const [opened, setOpened] = useState<string | null>(null);
++  const [toast, setToast] = useState<{ text: string; at: number } | null>(null);
++  const [refusal, setRefusal] = useState<string | null>(null);
++  const layout = g.__DAG_LAYOUT__ ?? "domains";
++
++  // the clock and the simulated runs: a step every 1.6 s (a run lasts 6 s at least), a queued run starting when its pool frees a slot
++  useEffect(() => {
++    const id = setInterval(() => {
++      tick((n) => n + 1);
++      setSims((all) => {
++        if (!Object.values(all).some((x) => x.phase !== "done")) return all;
++        const next = { ...all };
++        for (const [n, x] of Object.entries(next)) {
++          if (x.phase !== "running") continue;
++          const d = s!.dags.find((o) => o.name === n)!;
++          const step = Math.floor((nowS() - x.startedAt) / Math.max(1.6, 6 / d.steps.length));
++          next[n] = step >= d.steps.length ? { ...x, phase: "done", finishedAt: nowS() } : { ...x, step };
++        }
++        for (const [n, x] of Object.entries(next)) {
++          if (x.phase !== "queued") continue;
++          const d = s!.dags.find((o) => o.name === n)!, p = s!.pools.find((o) => o.name === d.pool);
++          const busy = (p?.running ?? 0) + Object.entries(next).filter(([m, y]) => y.phase === "running" && s!.dags.find((o) => o.name === m)?.pool === d.pool).length;
++          if (!p || busy < p.cap) next[n] = { ...x, phase: "running", startedAt: nowS(), step: 0 };
++        }
++        return next;
++      });
++    }, 400);
++    return () => clearInterval(id);
++  }, [s]);
++
++  const all = useMemo(() => (s ? rows(s, sims) : []), [s, sims]);
++  const pools = useMemo(() => {
++    const out: Record<string, Pool> = {};
++    for (const p of s?.pools ?? []) {
++      const mine = all.filter((r) => r.d.pool === p.name && sims[r.d.name]);
++      out[p.name] = { ...p, running: p.running + mine.filter((r) => r.phase === "running").length, queued: p.queued + mine.filter((r) => r.phase === "queued").length };
++    }
++    return out;
++  }, [s, all, sims]);
++  if (!s) return <div id="dg"><header><span className="title">DAGs</span><span className="count">no DAGs read</span></header></div>;
++
++  const why = (r: Row) => {
++    if (r.phase === "running") return "Already running";
++    if (r.phase === "queued") return "Already queued";
++    if (!r.runSafe) return "Not run-safe: this DAG changes live state, so StarPulse will not start it. Run it from Dagu.";
++    return null;
++  };
++  const run = (r: Row) => {
++    const refused = g.__DAG_REFUSE__?.[r.d.name];
++    if (refused) { setToast({ text: `${short(r.d.name)}: ${refused}`, at: Date.now() }); setRefusal(refused); return; }
++    const p = pools[r.d.pool ?? ""], full = p && p.running >= p.cap;
++    setSims((x) => ({ ...x, [r.d.name]: { phase: full ? "queued" : "running", startedAt: nowS(), step: 0, runId: `run-${Date.now() % 100000}` } }));
++    setToast({ text: full ? `${short(r.d.name)} queued: pool ${short(p.name)} is full (${p.running}/${p.cap})` : `${short(r.d.name)} started`, at: Date.now() });
++  };
++  const c: Ctx = { s, pools, run, open: (r) => { setRefusal(null); setOpened(r.d.name); }, why };
++  const needle = q.trim().toLowerCase();
++  const rs = all.filter((r) => (!only.size || only.has(group(r.phase))) &&
++    (!needle || r.d.name.toLowerCase().includes(needle) || r.domain.toLowerCase().includes(needle) || r.d.steps.some((x) => x.name.toLowerCase().includes(needle))));
++  const toggle = (k: string) => setFolded((f) => { const n = new Set(f); n.has(k) ? n.delete(k) : n.add(k); return n; });
++  const open = opened ? all.find((r) => r.d.name === opened) : null;
++  const L = layout === "status" ? Status : layout === "atlas" ? Atlas : layout === "catalog" ? Catalog : Domains;
++  const doms = new Set(all.map((r) => r.domain)).size;
++
++  return (
++    <div id="dg" className={`l-${layout}`}>
++      <header>
++        <span className="title">DAGs</span>
++        <span className="count">{all.length} DAGs · {doms} domains</span>
++        <span className="sky"><Census rs={all} /></span>
++      </header>
++      <div className="filters">
++        <input type="search" placeholder="filter DAGs, steps, domains…" aria-label="Filter DAGs" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQ("")} />
++        {PHASES.map(([p, l]) => {
++          const n = all.filter((r) => group(r.phase) === p).length;
++          return (
++            <span key={p} className={`fchip${only.has(p) ? " set" : ""}`} role="button" tabIndex={0} aria-pressed={only.has(p)}
++              onClick={() => setOnly((o) => { const x = new Set(o); x.has(p) ? x.delete(p) : x.add(p); return x; })}>
++              <Body phase={p} />{l} <b>{n}</b>
++            </span>
++          );
++        })}
++        {(only.size > 0 || q) && <button className="clear" onClick={() => { setOnly(new Set()); setQ(""); }}>Clear</button>}
++        <span className="shown">{rs.length === all.length ? `${all.length} shown` : `${rs.length} of ${all.length} shown`}</span>
++      </div>
++      {rs.length ? <L c={c} rs={rs} folded={folded} toggle={toggle} /> : <div className="none">No DAG matches “{q}”.</div>}
++      {open && <Modal c={c} r={open} close={() => setOpened(null)} refusal={refusal} />}
++      {toast && Date.now() - toast.at < 4000 && <div className="dtoast" key={toast.at}>{toast.text}</div>}
++    </div>
++  );
++}
++
++export function DagLegend() {
++  return (
++    <>
++      <span><Body phase="running" />running</span><span><Body phase="ok" />healthy</span><br />
++      <span><Body phase="failed" />last run failed</span><span><Body phase="idle" />never run</span><br />
++      <span><svg width="26" height="8" aria-hidden="true"><line x1="3" y1="4" x2="23" y2="4" stroke="rgba(148,163,184,.35)" /><circle cx="3" cy="4" r="2.4" fill="#34d399" /><circle cx="13" cy="4" r="2.8" fill="#fbbf24" /><circle cx="23" cy="4" r="2.4" fill="#0b1220" stroke="#475569" /></svg> steps</span>
++      <span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="2.4" fill="#34d399" /><circle cx="5" cy="5" r="4.3" fill="none" stroke="#c4b5fd" strokeWidth=".8" /></svg> agent step</span><br />
++      <span><span style={{ color: "#c084fc" }}>⇢</span> Board tie</span><span><span style={{ color: "#a7f3d0" }}>▶</span> run-safe</span>
++    </>
++  );
++}
+diff --git a/starpulse/web/src/nav.ts b/starpulse/web/src/nav.ts
+index 2fe63bb..e9e3434 100644
+--- a/starpulse/web/src/nav.ts
++++ b/starpulse/web/src/nav.ts
+@@ -58,7 +58,7 @@ export const canvasSpace = (viewport: number, nav: { open: number; fold: number
+   fitWidth: viewport - nav.open - rail,
+ });
+ 
+-export type ViewName = "constellation" | "kanban" | "admin";
++export type ViewName = "constellation" | "kanban" | "dags" | "admin";
+ 
+ /** Whether the address is a retired per-graph one (`/board`, `/flow/<name>`, `/#sec-<name>`): those open the Star Map whatever "Opens on" says. */
+ export const retired = (pathname: string, hash: string) => pathname !== "/" || hash !== "";
+@@ -67,7 +67,7 @@ export const retired = (pathname: string, hash: string) => pathname !== "/" || h
+ export function viewOf(search: string, fallback: ViewName = "constellation"): ViewName {
+   const v = new URLSearchParams(search).get("view");
+   if (v === null) return fallback;
+-  return v === "kanban" || v === "admin" ? v : "constellation";
++  return v === "kanban" || v === "dags" || v === "admin" ? v : "constellation";
+ }
+ 
+ /** The query string that opens `view`, keeping every other parameter; the view a bare address opens (`fallback`) needs no parameter. */
+diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
+index 7bcaec6..8d13db2 100644
+--- a/starpulse/web/src/style.css
++++ b/starpulse/web/src/style.css
+@@ -548,3 +548,148 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
+ #kb .trackers h4 { margin: 10px 0 2px; font-size: calc(12px * var(--fs)); }
+ #kb .trackers pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: rgba(2,6,23,.7); white-space: pre-wrap; font-size: calc(11px * var(--fs)); }
+ #kb .trackers .found { margin: 8px 0; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(167,139,250,.5); background: rgba(167,139,250,.10); line-height: 1.5; }
++
++/* DESIGN MOCKUP ONLY: the DAGs view. The Kanban's frame (header, filters, columns, folds) with the Star Map's bodies:
++   a running DAG is a sun, a failed one a black hole, one never run a dim body; its steps are a small constellation. */
++body.dags { background: radial-gradient(ellipse at 40% 30%, #0b1224 0%, var(--bg0) 70%); }
++body.dags canvas, body.dags #tip, body.dags #panel { visibility: hidden; }
++#nav .dg-glyph { border: 0; border-radius: 0; fill: currentColor; stroke: currentColor; stroke-width: .7; }
++#nav .dg-glyph path { fill: none; opacity: .55; }
++#dg { position: fixed; z-index: 3; top: 0; bottom: 0; left: calc(var(--nav) + 20px); right: calc(var(--rail) + 20px); display: flex; flex-direction: column;
++  font-size: calc(12px * var(--fs)); transition: left .3s cubic-bezier(.4,0,.2,1); }
++#nav.folded ~ #dg { left: calc(var(--nav-fold) + 20px); }
++#dg header { display: flex; align-items: center; gap: 14px; height: 64px; flex: none; }
++#dg header .title { font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
++#dg header .count { font-size: calc(11px * var(--fs)); color: var(--muted); }
++#dg header .sky { margin-left: 6px; }
++#dg .filters { display: flex; gap: 8px; align-items: center; min-height: 34px; flex: none; margin-bottom: 12px; flex-wrap: wrap; }
++#dg .filters input { box-sizing: border-box; width: 260px; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid rgba(148,163,184,.18); background: rgba(8,13,26,.7); color: var(--ink); font: inherit; font-size: calc(11.5px * var(--fs)); outline: none; }
++#dg .filters input::placeholder { color: var(--muted); }
++#dg .filters input:focus { border-color: rgba(167,139,250,.7); }
++#dg .fchip { cursor: pointer; user-select: none; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(148,163,184,.18); font-size: calc(11.5px * var(--fs)); color: #94a3b8; display: flex; gap: 7px; align-items: center; white-space: nowrap; }
++#dg .fchip:hover { border-color: rgba(148,163,184,.4); }
++#dg .fchip b { font-weight: 400; color: var(--ink); font-variant-numeric: tabular-nums; }
++#dg .fchip.set { border-color: rgba(167,139,250,.6); background: rgba(167,139,250,.10); }
++#dg .clear { all: unset; cursor: pointer; padding: 5px 4px; font-size: calc(11.5px * var(--fs)); color: #c4b5fd; }
++#dg .shown { margin-left: auto; white-space: nowrap; font-size: calc(11px * var(--fs)); color: var(--muted); }
++#dg > .none { margin: 60px auto; color: var(--muted); }
++
++/* The bodies. Sized in em so they follow the Admin text size. */
++.body { flex: none; display: inline-block; width: .78em; height: .78em; border-radius: 50%; vertical-align: -.08em; }
++.body.big { width: 1.2em; height: 1.2em; }
++.body.b-running { background: radial-gradient(circle, #fffbeb 0 16%, #fcd34d 38%, #f59e0b 62%, rgba(251,191,36,0) 72%); box-shadow: 0 0 .7em .12em rgba(251,191,36,.45); animation: dg-burn 2.4s ease-in-out infinite; }
++.body.b-queued { background: radial-gradient(circle, #eff6ff 0 16%, #93c5fd 48%, rgba(147,197,253,0) 72%); box-shadow: 0 0 .5em rgba(147,197,253,.35); }
++.body.b-ok { background: radial-gradient(circle, #ecfdf5 0 14%, #34d399 46%, rgba(52,211,153,.12) 64%, rgba(52,211,153,0) 72%); box-shadow: 0 0 .45em rgba(52,211,153,.22); }
++.body.b-failed { background: radial-gradient(circle, #010205 0 46%, #fb7185 50% 57%, rgba(251,113,133,.28) 62%, rgba(251,113,133,0) 74%); box-shadow: 0 0 .55em rgba(251,113,133,.3); }
++.body.b-idle { background: radial-gradient(circle, rgba(148,163,184,.42) 0 34%, rgba(148,163,184,.12) 52%, rgba(148,163,184,0) 70%); box-shadow: inset 0 0 0 1px rgba(148,163,184,.18); }
++@keyframes dg-burn { 0%, 100% { box-shadow: 0 0 .55em .08em rgba(251,191,36,.4); } 50% { box-shadow: 0 0 1em .22em rgba(251,191,36,.6); } }
++@media (prefers-reduced-motion: reduce) { .body.b-running { animation: none; } }
++.census { display: inline-flex; gap: 10px; align-items: center; font-size: calc(10.5px * var(--fs)); color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
++.census > span { display: inline-flex; gap: 4px; align-items: center; }
++
++/* The constellation strip. */
++svg.strip { display: block; overflow: visible; }
++svg.strip .e { stroke: rgba(148,163,184,.32); stroke-width: .8; }
++svg.strip .e.hot { stroke: rgba(251,191,36,.55); }
++svg.strip .halo { opacity: .22; animation: dg-halo 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
++@keyframes dg-halo { 0%, 100% { opacity: .12; transform: scale(.75); } 50% { opacity: .32; transform: scale(1.1); } }
++@media (prefers-reduced-motion: reduce) { svg.strip .halo { animation: none; } }
++svg.strip text { font: calc(9.5px * var(--fs)) Inter, system-ui, sans-serif; fill: #6b7a93; }
++svg.strip.big .e { stroke-width: 1.2; }
++svg.strip.big text { font-size: calc(10.5px * var(--fs)); text-anchor: middle; fill: #94a3b8; }
++svg.strip.big text.hot { fill: #fde68a; }
++
++/* Columns (domains or states), as the Kanban's. */
++#dg #dcols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(250px, 1fr)); gap: 10px; padding-bottom: 16px; }
++#dg #dcols.scrollx { overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.25) transparent; }
++#dg #dcols.status { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.7fr); }
++#dg .col { min-height: 0; display: flex; flex-direction: column; border-radius: 10px; background: rgba(148,163,184,.035); border: 1px solid rgba(148,163,184,.08); }
++#dg .col h2 { margin: 0; flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px; font-size: calc(11px * var(--fs)); font-weight: 500; letter-spacing: .2em;
++  text-transform: uppercase; color: #94a3b8; border-bottom: 1px solid rgba(148,163,184,.08); white-space: nowrap; letter-spacing: .14em; }
++#dg .col h2 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
++#dg .col h2 .c { letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
++#dg .col h2 .census { margin-left: auto; }
++#dg .cg { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #c4b5fd; box-shadow: 0 0 6px rgba(196,181,253,.6), 9px -3px 0 -1.5px #c4b5fd, 4px 6px 0 -2px #94a3b8; margin-right: 6px; }
++#dg .cbody { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 7px; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.25) transparent; }
++#dg .col .empty { margin: 18px auto; font-size: calc(11px * var(--fs)); color: #3f4c66; }
++#dg .bucket { display: flex; flex-direction: column; gap: 7px; }
++#dg .bucket .cards { display: flex; flex-direction: column; gap: 7px; }
++#dg .bucket.grid2 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 7px; }
++#dg .bh { position: sticky; top: -8px; z-index: 2; display: flex; align-items: center; gap: 7px; margin: 0 -8px; padding: 6px 10px 5px; cursor: pointer; user-select: none;
++  font-size: calc(10.5px * var(--fs)); color: #8b9bb8; background: rgba(9,14,26,.96); border-bottom: 1px solid rgba(148,163,184,.08); }
++#dg .bh:hover { color: #cbd5e1; }
++#dg .bh .bn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; gap: 10px; align-items: center; }
++#dg .bh .c { color: var(--muted); font-variant-numeric: tabular-nums; }
++#dg .bh .tw { font-size: calc(9px * var(--fs)); transition: transform .15s; }
++#dg .bucket.folded .tw { transform: rotate(-90deg); }
++
++/* A card. */
++#dg .dcard { position: relative; flex: none; box-sizing: border-box; padding: 8px 9px 7px 10px; border-radius: 7px; background: rgba(12,19,34,.92); border: 1px solid rgba(148,163,184,.13);
++  line-height: 1.4; cursor: pointer; outline: none; display: flex; flex-direction: column; gap: 5px; }
++#dg .dcard:hover, #dg .dcard:focus-visible { border-color: rgba(148,163,184,.3); }
++#dg .dcard:focus-visible { box-shadow: 0 0 0 1px #a78bfa; }
++#dg .dcard.p-running { border-color: rgba(251,191,36,.28); box-shadow: 0 0 18px -6px rgba(251,191,36,.35); }
++#dg .dcard.p-failed { border-color: rgba(251,113,133,.25); }
++#dg .dcard .top { display: flex; align-items: center; gap: 7px; min-width: 0; }
++#dg .nm { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++#dg .dcard .nm { flex: 1; }
++#dg .last { flex: none; font-size: calc(10.5px * var(--fs)); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
++#dg .last .hot, .dgm .hot { color: #fcd34d; font-weight: 400; } #dg .last .q { color: #93c5fd; font-weight: 400; } #dg .last .bad, .dgm .bad { color: #fda4af; }
++#dg .dcard .foot { display: flex; align-items: center; gap: 6px; font-size: calc(10px * var(--fs)); color: var(--muted); min-height: 18px; }
++#dg .pool { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10px * var(--fs)); color: #7c8aa3; white-space: nowrap; }
++.tie { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 3px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
++  color: var(--tc, #c084fc); background: color-mix(in srgb, var(--tc, #c084fc) 12%, transparent); font-size: calc(10px * var(--fs)); }
++#dg .run, .dgm .run { all: unset; box-sizing: border-box; margin-left: auto; flex: none; cursor: pointer; display: grid; place-items: center; width: 22px; height: 18px; border-radius: 5px;
++  border: 1px solid rgba(52,211,153,.45); background: rgba(52,211,153,.08); color: #a7f3d0; font-size: calc(8.5px * var(--fs)); }
++#dg .run:hover:not(:disabled), #dg .run:focus-visible { background: rgba(52,211,153,.22); }
++#dg .run:disabled, .dgm .run:disabled { cursor: default; border-color: rgba(148,163,184,.14); background: none; color: #3f4c66; }
++#dg .dcard.dense { padding: 6px 8px 5px 9px; gap: 3px; }
++
++/* Atlas: a band per domain, a tile per DAG. */
++#dg #atlas { flex: 1; min-height: 0; overflow-y: auto; padding: 0 4px 24px; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.25) transparent; }
++#dg .band { margin-bottom: 18px; gap: 10px; }
++#dg .band > .bh { top: 0; margin: 0; padding: 8px 4px 7px; font-size: calc(11px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: #94a3b8; background: rgba(6,10,20,.94); }
++#dg .band > .bh .census { margin-left: 8px; }
++#dg .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(168px * var(--fs)), 1fr)); gap: 8px; }
++#dg .tile { position: relative; padding: 10px 10px 8px; border-radius: 8px; cursor: pointer; outline: none; border: 1px solid transparent; background: rgba(148,163,184,.025);
++  display: flex; flex-direction: column; gap: 5px; transition: background .15s, border-color .15s; }
++#dg .tile:hover, #dg .tile:focus-visible { background: rgba(148,163,184,.06); border-color: rgba(148,163,184,.18); }
++#dg .tile.p-running { background: radial-gradient(ellipse at 50% 30%, rgba(251,191,36,.10), transparent 70%); border-color: rgba(251,191,36,.2); }
++#dg .tile.p-failed { background: radial-gradient(ellipse at 50% 30%, rgba(251,113,133,.08), transparent 70%); }
++#dg .tile .nm { display: flex; gap: 6px; align-items: center; font-size: calc(11.5px * var(--fs)); }
++#dg .tile .last { font-size: calc(10px * var(--fs)); }
++#dg .tile .tie.dot { position: absolute; top: 6px; right: 8px; padding: 0 4px; }
++#dg .tile .run { position: absolute; bottom: 7px; right: 8px; opacity: 0; transition: opacity .15s; }
++#dg .tile:hover .run, #dg .tile:focus-within .run, #dg .tile .run:focus-visible { opacity: 1; }
++
++/* Catalog: a dense row per DAG. */
++#dg #catalog { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.25) transparent; --grid: 18px minmax(160px, 1.2fr) minmax(140px, 220px) minmax(150px, 1fr) 120px minmax(110px, .8fr) 26px; }
++#dg #catalog .thead { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: var(--grid); gap: 12px; padding: 6px 10px; font-size: calc(10px * var(--fs)); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); background: rgba(6,10,20,.96); border-bottom: 1px solid rgba(148,163,184,.1); }
++#dg #catalog .bucket { gap: 0; }
++#dg #catalog .bh { top: 26px; margin: 0; padding: 8px 10px 6px; }
++#dg .trow { display: grid; grid-template-columns: var(--grid); gap: 12px; align-items: center; padding: 2px 10px; min-height: 26px; line-height: 1.3; border-bottom: 1px solid rgba(148,163,184,.05); cursor: pointer; outline: none; }
++#dg .trow:hover, #dg .trow:focus-visible { background: rgba(148,163,184,.05); }
++#dg .trow .run { margin: 0; }
++#dg .trow .none { color: #3f4c66; }
++#dg .trow .last { overflow: hidden; text-overflow: ellipsis; }
++
++/* The DAG modal: the task modal's frame. */
++#kbm .dgm { width: min(980px, calc(100vw - 40px)); }
++#kbm .dgm h2 { display: flex; align-items: center; gap: 10px; margin: 0; }
++#kbm .dgm .ph { padding: 2px 9px; border-radius: 10px; font-size: calc(11px * var(--fs)); border: 1px solid rgba(148,163,184,.2); color: #94a3b8; }
++#kbm .dgm .ph.p-running { color: #fde68a; border-color: rgba(251,191,36,.45); } #kbm .dgm .ph.p-failed { color: #fda4af; border-color: rgba(251,113,133,.45); }
++#kbm .dgm .ph.p-ok { color: #a7f3d0; border-color: rgba(52,211,153,.35); } #kbm .dgm .ph.p-queued { color: #bfdbfe; border-color: rgba(147,197,253,.4); }
++#kbm .dgm .chart { overflow-x: auto; padding: 6px 0 2px; border-radius: 8px; background: radial-gradient(ellipse at 50% 50%, rgba(30,41,72,.35), transparent 75%); scrollbar-width: thin; }
++#kbm .dgm .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11px * var(--fs)); }
++#kbm .dgm .slots { display: inline-flex; align-items: center; gap: 4px; }
++#kbm .dgm .slots i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(148,163,184,.35); }
++#kbm .dgm .slots i.on { background: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,.6); }
++#kbm .dgm .slots span { margin-left: 6px; }
++#kbm .dgm .tierow { display: flex; gap: 10px; align-items: baseline; }
++#kbm .dgm .run.lbl { width: auto; height: auto; padding: 4px 12px; font-size: calc(11.5px * var(--fs)); border-radius: 6px; border: 1px solid rgba(52,211,153,.55); background: rgba(52,211,153,.12); color: #a7f3d0; }
++#kbm .dgm .run.lbl:hover:not(:disabled) { background: rgba(52,211,153,.22); }
++#kbm .dgm .editrefusal { padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(251,113,133,.4); background: rgba(251,113,133,.08); color: #fecdd3; }
++#dg .dtoast { position: fixed; z-index: 45; bottom: 64px; left: 50%; transform: translateX(-50%); padding: 7px 14px; border-radius: 8px; background: rgba(12,19,34,.97); border: 1px solid rgba(148,163,184,.25);
++  color: var(--ink); font-size: calc(11.5px * var(--fs)); box-shadow: 0 10px 30px rgba(0,0,0,.5); animation: kb-modal .15s ease-out; }
++#legend .body { width: 9px; height: 9px; margin-right: 5px; }
++#kbm .dgm .run.lbl:disabled { border-color: rgba(148,163,184,.18); background: none; color: #5b6984; cursor: default; }
