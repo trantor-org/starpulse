@@ -507,7 +507,7 @@
       const age = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}` : `${Math.max(1, Math.round(s / 60))}m`);
       const ns = st.length ? [] : desc(r.m).flatMap((d) => stuckOf(d).map((a) => ({ a, d }))).sort((p, q) => p.a.active - q.a.active);
       const l3 = st.length ? `stuck ${age(simT - Math.min(...st.map((a) => a.active)))} in ${stName(r.m, st[0].state)}` : ns.length ? `nested stuck ${age(simT - ns[0].a.active)} in ${ns[0].d}`
-        : !ag.length ? (nk ? `${desc(r.m).reduce((n, d) => n + M[d].agents.length, 0)} tasks nested · last ${hhmm(lastIn(r.m))}` : "no sessions this hour")
+        : !ag.length ? (desc(r.m).some((d) => M[d].agents.length) ? `${desc(r.m).reduce((n, d) => n + M[d].agents.length, 0)} tasks nested · last ${hhmm(lastIn(r.m))}` : "no sessions this hour")
         : `${ag.length} task${ag.length === 1 ? "" : "s"} · ${idle ? `idle ${age(simT - lastIn(r.m))}` : `last ${hhmm(lastIn(r.m))}`}`;
       text(fit(l3 + (seeded.has(r.m) ? " · seeded" : ""), sp, L.metaW), mx, ty + px * 1.4 + sp * 2.25, sp, st.length || ns.length ? rgba(OFF, 0.9) : rgba(SUB, idle ? 0.5 : 0.7));
       for (const s of L.stars) if (s.row === r) { drawStarLine(s, now); drawStar(s); }
