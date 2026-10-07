@@ -42,6 +42,35 @@ describe("the navigator's Star Map entry", () => {
   });
 });
 
+describe("the Star Map navigator", () => {
+  const remount = async (view: string) => {
+    act(() => root.unmount());
+    history.replaceState(null, "", `/?view=${view}`);
+    root = createRoot(host);
+    await act(async () => root.render(<App />));
+  };
+
+  it("no longer draws the Layers section or its tree", () => {
+    expect(host.querySelector("#nav section.layers")).toBeNull();
+    expect(host.querySelector("#layers")).toBeNull();
+    expect([...host.querySelectorAll("#nav h3")].map((h) => h.textContent)).not.toContain("Layers");
+  });
+
+  it("leaves the way back out to the canvas breadcrumb, after the navigator so it follows the fold", () => {
+    const crumb = host.querySelector("#crumb")!;
+
+    expect(crumb.textContent).toBe("Board");
+    expect(host.querySelector("#nav")!.nextElementSibling?.tagName).toBe("NAV");
+    expect(host.querySelector("#nav ~ #crumb")).toBe(crumb);
+  });
+
+  it("draws no breadcrumb on the Kanban", async () => {
+    await remount("kanban");
+
+    expect(host.querySelector("#crumb")).toBeNull();
+  });
+});
+
 describe("the navigator search's clear button", () => {
   it("draws one ✕ only while the search holds text, and a click empties it and keeps the focus", () => {
     const input = host.querySelector<HTMLInputElement>("#q")!;
