@@ -180,6 +180,7 @@ from starpulse.board import (
 from starpulse.board import load as load_board
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.ci import attach
+from starpulse.ci_trail import CiTrail
 from starpulse.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse.contracts import Move, StartFailedError
 from starpulse.event_log import EventLog, prune_forever
@@ -329,7 +330,9 @@ def rerun_dag(
     if name not in run_safe:
         return 404, {"error": f"{name} is not declared run-safe"}
     if (keys := feed.commit_keys(instance)) is None or not keys.force:
-        return 409, {"error": f"{instance} declares no force parameter in [runs.commit]: a forced rerun is not possible"}
+        return 409, {
+            "error": f"{instance} declares no force parameter in [runs.commit]: a forced rerun is not possible"
+        }
     if (failure := feed.open_failure(name)) is None:
         return 409, {"error": f"{name} has no unresolved failure"}
     carried = {key: failure["params"][key] for key in (keys.after, keys.before, keys.task) if key in failure["params"]}
@@ -755,7 +758,11 @@ class _ApiHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
-        if path.startswith(_RUN) or _is_rerun(path) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS}:
+        if (
+            path.startswith(_RUN)
+            or _is_rerun(path)
+            or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS}
+        ):
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
             self.end_headers()
@@ -1190,7 +1197,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     if shutil.which("gh"):  # without the GitHub CLI there is no source, and a task simply carries no PR state
-        pull_requests = PullRequests(feed, repos=config.repos)
+        pull_requests = PullRequests(feed, repos=config.repos, trail=CiTrail(log) if config.ci else None)
         threading.Thread(target=pull_requests.run_forever, name="pull-requests", daemon=True).start()
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)

@@ -27,9 +27,12 @@ def publish(
     task: str | None = None,
     run: str | None = None,
     now: float | None = None,
+    event_id: str | None = None,
     log: EventLog,
 ) -> int | None:
     """Append one entry to `log`, fail-open; returns its cursor, or None when the log refused it.
+
+    With an `event_id`, an entry of that id the log already holds is not appended again and its cursor is returned.
 
     Refuses an entry keyed by neither or both of `task` and `run`: a consumer keeps one latest state per key, so an
     unkeyed or doubly keyed move would land nowhere or twice.
@@ -42,5 +45,6 @@ def publish(
         **({"task": task} if task is not None else {"run": run}),
         "actor": actor,
         "time": time.time() if now is None else now,
+        **({"event_id": event_id} if event_id else {}),
     }
     return log.append(STREAM, fields)

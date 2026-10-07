@@ -13,10 +13,13 @@ import logging
 import re
 import subprocess
 import time
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from itertools import groupby
+from types import MappingProxyType
+from typing import Protocol
 
 from starpulse.board_feed import BoardFeed
+from starpulse.ci_trail import PullHistory, parse
 from starpulse.config import Repo
 from starpulse.pins import GitHub, Pins, link
 
@@ -34,7 +37,10 @@ fragment Pull on PullRequest {
   merged
   mergedAt
   mergeCommit { oid }
-  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  createdAt
+  mergeable
+  commits(last: 100) { nodes { commit { oid statusCheckRollup { state } checkSuites(first: 20) { nodes { status conclusion createdAt updatedAt workflowRun { runAttempt } } } } } }
+  timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT]) { nodes { ... on HeadRefForcePushedEvent { createdAt afterCommit { oid } } } }
   reviewThreads(first: 100) { nodes { isResolved } }
 }
 """
@@ -67,14 +73,15 @@ def read_repository(repo: str, numbers: list[int]) -> dict:
 
 def _read_pulls(
     repo: str, wanted: list[tuple[str, int, str]], read: Callable[[str, list[int]], dict]
-) -> dict[str, dict]:
-    """One repository's records by URL; a PR GitHub does not return is left out."""
+) -> tuple[dict[str, dict], dict[str, PullHistory]]:
+    """One repository's records and CI histories by URL; a PR GitHub does not return is left out."""
     nodes = read(repo, [number for _, number, _ in wanted])
     out: dict[str, dict] = {}
+    history: dict[str, PullHistory] = {}
     try:
         for _, number, url in wanted:
             if node := nodes.get(f"p{number}"):
-                rollup = node["commits"]["nodes"][0]["commit"]["statusCheckRollup"]
+                rollup = node["commits"]["nodes"][-1]["commit"]["statusCheckRollup"]
                 out[url] = {
                     "number": node["number"],
                     "url": url,
@@ -85,15 +92,18 @@ def _read_pulls(
                     "threads": sum(not thread["isResolved"] for thread in node["reviewThreads"]["nodes"]),
                     "stale": False,
                 }
-    except (KeyError, IndexError, TypeError) as exc:
+                history[url] = parse(url, node)
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise GhUnavailableError(f"unexpected GraphQL answer for {repo}: {exc!r}") from exc
-    return out
+    return out, history
 
 
 class Pulls(dict[str, dict]):
-    """A `fetch` answer: the records read, and `unread`, the URLs of repositories GitHub could not be asked about."""
+    """A `fetch` answer: the records read, `unread`, the URLs of repositories GitHub could not be asked about, and
+    `history`, what GitHub dates of each record's CI."""
 
     unread: frozenset[str] = frozenset()
+    history: Mapping[str, PullHistory] = MappingProxyType({})
 
 
 def fetch(urls: Collection[str], read: Callable[[str, list[int]], dict] = read_repository) -> Pulls:
@@ -106,12 +116,15 @@ def fetch(urls: Collection[str], read: Callable[[str, list[int]], dict] = read_r
     """
     pulls = sorted((m[1], int(m[2]), url) for url in urls if (m := _PULL.fullmatch(url)))
     out = Pulls()
+    history: dict[str, PullHistory] = {}
     unread: set[str] = set()
     failures: list[GhUnavailableError] = []
     groups = [(repo, list(group)) for repo, group in groupby(pulls, key=lambda pull: pull[0])]
     for repo, wanted in groups:
         try:
-            out |= _read_pulls(repo, wanted, read)
+            records, dated = _read_pulls(repo, wanted, read)
+            out |= records
+            history |= dated
         except GhUnavailableError as exc:
             logger.warning("pull requests: %s", exc)
             failures.append(exc)
@@ -119,11 +132,19 @@ def fetch(urls: Collection[str], read: Callable[[str, list[int]], dict] = read_r
     if groups and len(failures) == len(groups):
         raise failures[0]
     out.unread = frozenset(unread)
+    out.history = history
     return out
 
 
+class CiRecorder(Protocol):
+    """Takes each task's pull request histories after a read, to record as the task's CI trail."""
+
+    def record(self, pulls: Mapping[str, Sequence[PullHistory]]) -> None: ...
+
+
 class PullRequests:
-    """Keeps `feed`'s per-task pull request state current from `fetch`, the last good answer held between reads."""
+    """Keeps `feed`'s per-task pull request state current from `fetch`, the last good answer held between reads, and
+    hands each read's histories to `trail` when there is one."""
 
     def __init__(
         self,
@@ -131,11 +152,13 @@ class PullRequests:
         fetch: Callable[[Collection[str]], Pulls] = fetch,
         repos: Sequence[Repo] = (),
         pins: Pins | None = None,
+        trail: CiRecorder | None = None,
     ) -> None:
         self._feed = feed
         self._fetch = fetch
         self._repos = repos
         self._pins = pins or GitHub()
+        self._trail = trail
         self._last: dict[str, dict] = {}
 
     def refresh(self) -> None:
@@ -146,6 +169,10 @@ class PullRequests:
             fresh = self._fetch(urls) if urls else Pulls()
             kept = {url: {**self._last[url], "stale": True} for url in fresh.unread if url in self._last}
             self._last = {**fresh, **kept}
+            if self._trail:
+                self._trail.record(
+                    {task: [fresh.history[url] for url in prs if url in fresh.history] for task, prs in wanted.items()}
+                )
         except GhUnavailableError as exc:
             logger.warning("pull requests: %s", exc)
             self._last = {url: {**pull, "stale": True} for url, pull in self._last.items()}
