@@ -24,7 +24,7 @@ import re
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from urllib.parse import urlsplit
 
@@ -36,6 +36,7 @@ _KEYS = {
     "tracker_url",
     "mode",
     "runs",
+    "repos",
     "harnesses_file",
     "board",
     "database_url",
@@ -60,6 +61,7 @@ _OIDC_KEYS = {
 }
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env", "commit"}
 _COMMIT_KEYS = {"after", "before", "force", "task"}
+_REPO_KEYS = {"name", "path", "applied_by"}
 _FORWARD_KEYS = {"url", "token_env", "batch"}
 _SOURCE_KEYS = {"name", "token_env"}
 
@@ -111,6 +113,18 @@ class RunsInstance:
     """The environment variable holding this instance's ingest token; none: the instance takes no pushed events."""
     commit: CommitKeys | None = None
     """The `[runs.commit]` table; none: a run pairs with a merge only by the time it started."""
+
+
+@dataclass(frozen=True)
+class Repo:
+    """A repository whose merges reach live state through the parent's pin bump (`[[repos]]`)."""
+
+    name: str
+    """The repository's name as its pull request links spell it (`trantor-org/<name>`)."""
+    path: str
+    """Where the parent repository holds it as a submodule."""
+    applied_by: str
+    """How its merges are applied; only `pin-bump`."""
 
 
 @dataclass(frozen=True)
@@ -261,6 +275,34 @@ def _commit(raw: object, instance: str) -> CommitKeys:
     return CommitKeys(**raw)
 
 
+def _repo(raw: object) -> Repo:
+    """One `[[repos]]` table as a repository; each refusal names the key to fix."""
+    if not isinstance(raw, dict):
+        raise ConfigError("repos must be a list of [[repos]] tables")
+    for key in ("name", "path", "applied_by"):
+        if key not in raw:
+            raise ConfigError(f"a repos entry needs {key}")
+    name, path, applied_by = raw["name"], raw["path"], raw["applied_by"]
+    if not isinstance(name, str) or not name or "/" in name:
+        raise ConfigError("repos names must be non-empty text without a /")
+    _unknown(raw, _REPO_KEYS, f"repos entry {name}")
+    if not isinstance(path, str) or not path or PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
+        raise ConfigError(f"repos entry {name}: path must be a relative path inside the parent repository")
+    if applied_by != "pin-bump":
+        raise ConfigError(f"repos entry {name}: applied_by must be pin-bump")
+    return Repo(name, path, applied_by)
+
+
+def _repos(raw: object) -> tuple[Repo, ...]:
+    if not isinstance(raw, list):
+        raise ConfigError("repos must be a list of [[repos]] tables")
+    repos = tuple(_repo(table) for table in raw)
+    for at, repo in enumerate(repos):
+        if any(repo.name == earlier.name for earlier in repos[:at]):
+            raise ConfigError(f"repos entry {repo.name} is configured twice")
+    return repos
+
+
 def _token_env(raw: object, who: str) -> str:
     if not (isinstance(raw, str) and _ENV_NAME.fullmatch(raw)):
         raise ConfigError(f"{who} token_env must be the name of an environment variable")
@@ -354,6 +396,8 @@ class Config:
     """A hub that takes aggregates only refuses an instance's opt-in to be named."""
     event_log_retention_days: int = 7
     """`serve` prunes the event log's rows older than this many days, hourly, so the table and every reader's boot replay stay bounded; a reader that was behind the oldest retained row records a gap."""
+    repos: tuple[Repo, ...] = ()
+    """The repositories whose merges apply through the parent's pin bump (`[[repos]]`)."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -450,4 +494,5 @@ def load(path: Path | None) -> Config:
         _sources(raw.get("sources", [])),
         _aggregates_only(raw.get("aggregates_only", False)),
         event_log_retention_days=log_retention,
+        repos=_repos(raw.get("repos", [])),
     )

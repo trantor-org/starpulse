@@ -310,6 +310,13 @@ after = "AFTER"                          # the merge commit the run applies: pai
 before = "BEFORE"                        # the commit before it
 force = "FORCE"                          # the parameter that marks a forced run
 task = "TASK"                            # the task a run is for: pairs a run with a task's entry into a lane (any Board event but MERGED)
+
+# Optional: a repository whose merges apply through the parent's pin bump rather than a run of their own. `name` is the
+# repository as its pull request links spell it, `path` where the parent holds it as a submodule.
+[[repos]]
+name = "skills"
+path = "skills"
+applied_by = "pin-bump"
 ```
 
 #### The Ledger
@@ -344,8 +351,10 @@ step, and the step it is in.
   failure; 404 for a workflow outside `run_safe`; 403 off the LAN. A GET answers 405.
 - A pin lasts as long as StarPulse can still read the failed run: the last day of Dagu runs (`recent`) and the window of
   merged pull requests and lane entries. An older failure drops out of the Ledger and cannot be rerun here.
-- Pull requests come from the one repository StarPulse reads, so a merge in another repository can pair by time with a
-  run that was not for it until the config can name each repository.
+- A `[[repos]]` entry names a repository whose merges apply through the parent's pin bump. Its `MERGED` rows take no run
+  and carry `appliedBy`: the `key` of the first later merge in another repository whose submodule pointer at `path`
+  contains the merge's commit (read through `gh`), or `null` while no such merge exists. That merge's row lists what it
+  applies in `applies`. A pin bump appears only when a task cites its pull request.
 
 ### Connect a tracker
 

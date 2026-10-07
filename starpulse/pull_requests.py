@@ -13,10 +13,12 @@ import logging
 import re
 import subprocess
 import time
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from itertools import groupby
 
 from starpulse.board_feed import BoardFeed
+from starpulse.config import Repo
+from starpulse.pins import GitHub, Pins, link
 
 logger = logging.getLogger(__name__)
 
@@ -123,9 +125,17 @@ def fetch(urls: Collection[str], read: Callable[[str, list[int]], dict] = read_r
 class PullRequests:
     """Keeps `feed`'s per-task pull request state current from `fetch`, the last good answer held between reads."""
 
-    def __init__(self, feed: BoardFeed, fetch: Callable[[Collection[str]], Pulls] = fetch) -> None:
+    def __init__(
+        self,
+        feed: BoardFeed,
+        fetch: Callable[[Collection[str]], Pulls] = fetch,
+        repos: Sequence[Repo] = (),
+        pins: Pins | None = None,
+    ) -> None:
         self._feed = feed
         self._fetch = fetch
+        self._repos = repos
+        self._pins = pins or GitHub()
         self._last: dict[str, dict] = {}
 
     def refresh(self) -> None:
@@ -139,6 +149,8 @@ class PullRequests:
         except GhUnavailableError as exc:
             logger.warning("pull requests: %s", exc)
             self._last = {url: {**pull, "stale": True} for url, pull in self._last.items()}
+        if self._repos:
+            self._last = link(self._last, self._repos, self._pins.pointer, self._pins.reaches)
         held = {task: [self._last[url] for url in prs if url in self._last] for task, prs in wanted.items()}
         self._feed.set_pulls({task: pulls for task, pulls in held.items() if pulls})
 

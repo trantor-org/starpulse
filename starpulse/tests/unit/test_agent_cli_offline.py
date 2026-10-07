@@ -118,6 +118,7 @@ class TestConfigCheck:
             "tracker_url": "http://tracker.example",
             "mode": "ic",
             "runs": [],
+            "repos": [],
             "harnesses": None,
             "board_type": "native",
             "board": {},
