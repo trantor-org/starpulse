@@ -64,10 +64,16 @@ export function rows(data: DagData): Row[] {
 const RANK: Record<Phase, number> = { running: 0, queued: 1, failed: 2, idle: 3, ok: 4 };
 export const order = (a: Row, b: Row) => RANK[a.phase] - RANK[b.phase] || b.finishedAt - a.finishedAt || a.d.name.localeCompare(b.d.name);
 
-/** The rows a search, a Status choice and a Domain choice leave; the search reads a DAG's name, its steps and its domain. */
-export function filterRows(all: Row[], f: { q?: string; only?: Exclude<Phase, "queued"> | null; dom?: string | null }): Row[] {
+/** The Last run menu's windows, each with its length in seconds; no choice shows every DAG. */
+export const RECENCY: [string, number][] = [["Past hour", 3600], ["Past day", 86400], ["Past week", 7 * 86400], ["Past month", 30 * 86400], ["Past year", 365 * 86400]];
+
+/** Whether a row's DAG is active now or last ran at or after `since` (epoch seconds); a never-run DAG is not recent. */
+export const recent = (r: Row, since: number) => group(r.phase) === "running" || (r.phase !== "idle" && Math.max(r.startedAt, r.finishedAt) >= since);
+
+/** The rows a search, a Status choice, a Domain choice and a Last run window (`since`, epoch seconds; 0 for all) leave; the search reads a DAG's name, its steps and its domain. */
+export function filterRows(all: Row[], f: { q?: string; only?: Exclude<Phase, "queued"> | null; dom?: string | null; since?: number }): Row[] {
   const needle = (f.q ?? "").trim().toLowerCase();
-  return all.filter((r) => (!f.only || group(r.phase) === f.only) && (!f.dom || r.domain === f.dom) &&
+  return all.filter((r) => (!f.only || group(r.phase) === f.only) && (!f.dom || r.domain === f.dom) && (!f.since || recent(r, f.since)) &&
     (!needle || r.d.name.toLowerCase().includes(needle) || r.domain.toLowerCase().includes(needle) || r.d.steps.some((x) => x.name.toLowerCase().includes(needle))));
 }
 

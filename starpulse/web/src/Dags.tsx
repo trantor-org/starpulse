@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { DagModal } from "./DagModal";
 import { lastLine, Orb, poolText, Strip, TieChip, type LedgerGo } from "./DagParts";
-import { filterRows, group, order, PHASES, refusal, rows, short, ties, type DagData, type Phase, type Row } from "./dags";
+import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rows, short, ties, type DagData, type Phase, type Row } from "./dags";
 import { ChoiceMenu } from "./Kanban";
 import { BOARD, ledgerLevel, type Path } from "./levels";
 import { refused, startRun } from "./panels";
@@ -81,7 +81,8 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
   const [q, setQ] = useState("");
   const [only, setOnly] = useState<Exclude<Phase, "queued"> | null>(null);
   const [dom, setDom] = useState<string | null>(null);
-  const [menu, setMenu] = useState<"status" | "domain" | null>(null);
+  const [win, setWin] = useState<string | null>(null);
+  const [menu, setMenu] = useState<"status" | "domain" | "recency" | null>(null);
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ text: string; n: number } | null>(null);
   const [starting, setStarting] = useState<Set<string>>(new Set());
@@ -125,10 +126,11 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
     const level = openPath && ev ? ledgerLevel(data, ev) : null;
     return level ? () => openPath!([...BOARD, level]) : null;
   };
-  const rs = filterRows(all, { q, only, dom });
+  const cutoff = (label: string) => now - RECENCY.find(([l]) => l === label)![1];
+  const rs = filterRows(all, { q, only, dom, since: win ? cutoff(win) : 0 });
   const shown = opened ? all.find((r) => r.d.name === opened) : undefined;
   // the Kanban's filter chip: a label, the chosen value, ▾; a press opens its menu
-  const chip = (name: "status" | "domain", label: string, text: string | null) => (
+  const chip = (name: "status" | "domain" | "recency", label: string, text: string | null) => (
     <span className={`fchip${text !== null ? " set" : ""}`} role="button" tabIndex={0} aria-haspopup="menu" aria-expanded={menu === name}
       onClick={() => setMenu((m) => (m === name ? null : name))} onKeyDown={(e) => e.key === "Enter" && setMenu((m) => (m === name ? null : name))}>
       {label}{text !== null && <>: <b>{text}</b></>} ▾
@@ -162,7 +164,14 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
               name={(v) => v} set={setDom} close={() => setMenu(null)} />
           )}
         </div>
-        {(only || dom || q) && <button className="clear" onClick={() => { setOnly(null); setDom(null); setQ(""); }}>clear</button>}
+        <div className="fw">
+          {chip("recency", "Last run", win)}
+          {menu === "recency" && (
+            <ChoiceMenu title="Last run" options={RECENCY.map(([l]) => ({ value: l, count: all.filter((r) => recent(r, cutoff(l))).length }))} value={win}
+              name={(v) => v} set={setWin} close={() => setMenu(null)} />
+          )}
+        </div>
+        {(only || dom || win || q) && <button className="clear" onClick={() => { setOnly(null); setDom(null); setWin(null); setQ(""); }}>clear</button>}
         <span className="shown">{rs.length === all.length ? `${all.length} shown` : `${rs.length} of ${all.length} shown`}</span>
       </div>
       {rs.length ? <Catalog data={data} rs={rs} now={now} spot={spot} why={why} run={run} ledger={ledger} open={(r) => { setRefusedRun(null); setOpened(r.d.name); }} folded={folded} toggle={toggle} /> : <div className="none">No DAG matches the filters.</div>}
