@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FeedLines, Queues } from "./Fanout";
@@ -60,5 +61,36 @@ describe("the Recent feed's lines", () => {
     const html = renderToStaticMarkup(<FeedLines lines={[line({ key: "a", fresh: true }), line({ key: "b" })]} />);
 
     expect(html.match(/class="new"/g)).toHaveLength(1);
+  });
+});
+
+describe("a Recent line that points at a task or DAG", () => {
+  const a = line({ key: "a", who: "TASK-1", task: "TASK-1" }), b = line({ key: "b", who: "dagu/nightly", dag: "dagu/nightly" });
+  const rows = (props: Parameters<typeof FeedLines>[0]) => (FeedLines(props) as ReactElement<{ children: ReactElement<Record<string, () => void>>[] }>).props.children;
+
+  it("reports hover, leave and click for a line the view can light, and leaves the others inert", () => {
+    const seen: string[] = [];
+    const [ra, rb] = rows({ lines: [a, b], can: (l) => !!l.task, spot: (l) => seen.push(`spot ${l?.key ?? "none"}`), pick: (l) => seen.push(`pick ${l.key}`) });
+
+    ra.props.onPointerEnter();
+    ra.props.onPointerLeave();
+    ra.props.onClick();
+
+    expect(seen).toEqual(["spot a", "spot none", "pick a"]);
+    expect(rb.props.onPointerEnter).toBeUndefined();
+    expect(rb.props.onClick).toBeUndefined();
+  });
+
+  it("marks only the lines the view can light as ones to point at", () => {
+    const html = renderToStaticMarkup(<FeedLines lines={[a, b]} can={(l) => !!l.task} spot={() => {}} pick={() => {}} />);
+
+    expect(html.match(/class="go"/g)).toHaveLength(1);
+  });
+
+  it("says on the hovered line why its card is not shown", () => {
+    const html = renderToStaticMarkup(<FeedLines lines={[a, b]} can={() => true} spot={() => {}} pick={() => {}} note={{ key: "a", text: "hidden by the filter" }} />);
+
+    expect(html).toContain('<span class="why">hidden by the filter</span>');
+    expect(html.match(/class="why"/g)).toHaveLength(1);
   });
 });

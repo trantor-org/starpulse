@@ -57,12 +57,16 @@ export interface RunLine {
   /** Born after the page's first read, so the feed flashes it once. */
   fresh: true;
   runId: string;
+  /** The task the run id embeds, which hovering the line lights; none when it embeds none. */
+  task?: string;
+  /** The DAG that ran it, which the line lights when it names no task. */
+  dag: string;
 }
 
 /** The task a run id embeds (`deliver-agent-task-2787-…` is TASK-2787, a demo run's `…-demo-4` is DEMO-4), else the run id itself. */
-const taskOf = (runId: string) => {
+const taskIn = (runId: string) => {
   const m = /(?:^|-)(task|demo)-(\d+)/i.exec(runId);
-  return m ? `${m[1].toUpperCase()}-${m[2]}` : runId;
+  return m ? `${m[1].toUpperCase()}-${m[2]}` : undefined;
 };
 
 /** How a run that left `active` ended: the DAG's own verdict when the run is its latest, else the steps the run was last seen in. */
@@ -98,8 +102,10 @@ export class RunEvents {
     this.prev = now;
     if (!prev) return;
     const add: RunLine[] = [];
-    const line = (dag: Dag, runId: string, what: string, tone?: "ok" | "failed") =>
-      add.push({ key: `r${this.seq++}`, at, who: names.get(dag.name) ?? dag.name, what: "", where: `${what} · ${taskOf(runId)}`, tone, fresh: true, runId });
+    const line = (dag: Dag, runId: string, what: string, tone?: "ok" | "failed") => {
+      const task = taskIn(runId);
+      add.push({ key: `r${this.seq++}`, at, who: names.get(dag.name) ?? dag.name, what: "", where: `${what} · ${task ?? runId}`, tone, fresh: true, runId, task, dag: dag.name });
+    };
     for (const d of dags) {
       for (const r of d.active ?? []) {
         const was = prev.get(`${d.name}|${r.runId}`);

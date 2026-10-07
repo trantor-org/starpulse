@@ -6,7 +6,7 @@ import { ArchiveDialog } from "./ArchiveConfirm";
 import { ConnectTracker } from "./ConnectTracker";
 import type { HudState } from "./hud";
 import {
-  applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold,
+  applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, whyHidden,
   type KanbanTask, type Option, type Prefs,
 } from "./kanban";
 import { linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
@@ -321,7 +321,14 @@ interface Press {
 /** Pixels a press travels before it lifts the card instead of opening it. */
 const LIFT_PX = 5;
 
-export function Kanban({ hud, moves, starts, compact, constellation }: { hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void }) {
+/**
+ * The Kanban view. `spot` is the task a Recent line is hovered for: its card lights as a hovered card does and its column scrolls to it,
+ * and `note` hears why it has no card in view. A new `opening` opens that task's modal.
+ */
+export function Kanban({ hud, moves, starts, compact, constellation, spot = null, note, opening = null }: {
+  hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void;
+  spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
+}) {
   const [storage] = useState(browserStorage);
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(storage, location.search));
   const [open, setOpen] = useState<string | null>(() => linkedTask(location.search));
@@ -396,12 +403,25 @@ export function Kanban({ hud, moves, starts, compact, constellation }: { hud: Hu
   const view = useMemo(() => layout(cards, hud.names, prefs), [cards, hud.names, prefs]);
   const holds = useMemo(() => holdCounts(cards), [cards]);
   const blockers = useMemo(() => holders(cards, holds), [cards, holds]);
-  const [hovered, setHovered] = useState<string | null>(null);
+  const [pointed, setHovered] = useState<string | null>(null);
+  // a card the Recent rail points at draws as the hovered one, ringed even when it holds and waits on nothing, since no pointer is on it
+  const hovered = pointed ?? spot;
   const chain = useMemo(() => {
     const c = hovered && !lift ? chainOf(cards, hovered) : null;
-    if (!c || (!c.holds.size && !c.waitsOn.size)) return null;
+    if (!c || (!c.holds.size && !c.waitsOn.size && hovered !== spot)) return null;
     return (id: string): Chain | undefined => (id === hovered ? "self" : c.holds.has(id) ? "holds" : c.waitsOn.has(id) ? "waits" : undefined);
-  }, [cards, hovered, lift]);
+  }, [cards, hovered, lift, spot]);
+  useEffect(() => {
+    if (!spot) return void note?.(null);
+    note?.(whyHidden(cards, hud.names, prefs, spot));
+    document.querySelector<HTMLElement>(`#cols .card[data-id="${spot}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [spot, cards, hud.names, prefs, note]);
+  // each click is a new object, so the same line clicked twice opens it twice; a task with no card opens no modal
+  const [opened, setOpened] = useState(opening);
+  if (opening !== opened) {
+    setOpened(opening);
+    if (opening) setOpen(opening.id);
+  }
   const task = open ? cards.find((t) => t.id === open) : undefined;
   const archiveTask = archiving ? cards.find((t) => t.id === archiving) : undefined;
   useEffect(() => {

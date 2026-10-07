@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, type KanbanTask } from "./kanban";
+import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, show, showAll, toggleFold, whyHidden, type KanbanTask } from "./kanban";
 import { merge } from "./sky";
 import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "./types";
@@ -338,5 +338,27 @@ describe("what holds the Waiting lane", () => {
 
     expect(holdCounts(cycle).get("A")).toBe(1);
     expect(holders(cycle)).toEqual([]);
+  });
+});
+
+describe("why a task the Recent rail points at has no card in view", () => {
+  const tasks = [task("PROJ-1", "ready", "m-12"), task("PROJ-2", "ready", "m-9"), task("PROJ-3", "archived")];
+  const why = (id: string, prefs: Partial<typeof NO_PREFS> = {}) => whyHidden(tasks, NAMES, { ...NO_PREFS, ...prefs }, id);
+
+  it("is nothing for a card the board draws", () => {
+    expect(why("PROJ-1")).toBeNull();
+  });
+
+  it("names a hidden task, a hidden milestone, the filters and a folded milestone, in that order", () => {
+    expect(why("PROJ-1", { hiddenTasks: new Set(["PROJ-1"]), hiddenMilestones: new Set(["m-12"]) })).toBe("hidden");
+    expect(why("PROJ-1", { hiddenMilestones: new Set(["m-12"]), query: "nothing" })).toBe("its milestone is hidden");
+    expect(why("PROJ-1", { query: "nothing", folded: new Set(["m-12"]) })).toBe("filtered out");
+    expect(why("PROJ-1", { assignee: "@bob" })).toBe("filtered out");
+    expect(why("PROJ-1", { folded: new Set(["m-12"]) })).toBe("in a folded milestone");
+  });
+
+  it("says a task off every column, or off the board, has no card", () => {
+    expect(why("PROJ-3")).toBe("not on the board");
+    expect(why("PROJ-404")).toBe("not on the board");
   });
 });

@@ -147,13 +147,15 @@ export interface Layout {
 /** The number in a key like `m-76`; a task with no milestone sorts below every one. */
 const milestoneNumber = (milestone: string) => (milestone ? Number(/^m-(\d+)/.exec(milestone)?.[1] ?? 0) : -1);
 
+/** Whether a task passes the search bar and the profile and milestone filters. */
+const filtered = (t: KanbanTask, prefs: Prefs) =>
+  matches(t, prefs.query) && (prefs.assignee === null || t.assignee === prefs.assignee) && (prefs.milestone === null || t.milestone === prefs.milestone);
+
 export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs): Layout {
   const lanes = columnsOf(names);
   const drawn = tasks.filter((t) => lanes.includes(t.lane));
   const visible = drawn.filter(
-    (t) => !prefs.hiddenTasks.has(t.id) && !prefs.hiddenMilestones.has(t.milestone) && matches(t, prefs.query)
-      && (prefs.assignee === null || t.assignee === prefs.assignee) && (prefs.milestone === null || t.milestone === prefs.milestone),
-  );
+(t) => !prefs.hiddenTasks.has(t.id) && !prefs.hiddenMilestones.has(t.milestone) && filtered(t, prefs));
   const columns = lanes.map((id): Column => {
     const here = visible.filter((t) => t.lane === id).sort((a, b) => b.entered - a.entered || b.id.localeCompare(a.id, undefined, { numeric: true }));
     const keys = [...new Set(here.map((t) => t.milestone))].sort((a, b) => milestoneNumber(b) - milestoneNumber(a));
@@ -165,6 +167,16 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs
     columns, open: visible.length - done, done, shown: visible.length, total: drawn.length,
     hidden: prefs.hiddenMilestones.size + prefs.hiddenTasks.size,
   };
+}
+
+/** Why task `id` has no card in view: hidden, its milestone hidden, filtered out or folded away; null when its card is drawn. */
+export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, id: string): string | null {
+  const t = tasks.find((x) => x.id === id);
+  if (!t || !columnsOf(names).includes(t.lane)) return "not on the board";
+  if (prefs.hiddenTasks.has(id)) return "hidden";
+  if (prefs.hiddenMilestones.has(t.milestone)) return "its milestone is hidden";
+  if (!filtered(t, prefs)) return "filtered out";
+  return prefs.folded.has(t.milestone) ? "in a folded milestone" : null;
 }
 
 /** The Board's tasks as cards: its own fields, the pull requests the server read for it and the machine that last placed it. */

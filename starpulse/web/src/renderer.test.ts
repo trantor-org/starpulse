@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { arrivalRings, dagRings, tierColor } from "./renderer";
+import { arrivalRings, dagRings, feedOf, tierColor } from "./renderer";
 import { PULSE } from "./sky";
+import type { Dag } from "./types";
 
 const FIN = 100;
 const sweep = (fins: number[], from = FIN - 1, to = FIN + 12, step = 0.05) =>
@@ -52,5 +53,41 @@ describe("an agent's colour", () => {
   it("is the other colour for fast, a person or no assignee", () => {
     expect(["@agent-fast", "adin", ""].map(tierColor)).toEqual(["#fde68a", "#fde68a", "#fde68a"]);
     expect(tierColor()).toBe("#fde68a");
+  });
+});
+
+describe("the Recent feed's lines", () => {
+  const dag: Dag = { name: "dagu/deliver", status: "succeeded", runId: "r1", startedAt: "", finishedAt: "2026-10-05T16:00:00Z", steps: [] };
+  const fin = Date.parse(dag.finishedAt) / 1000;
+
+  it("points a move's line at the task it moved", () => {
+    const [line] = feedOf([{ flow: "delivery", task: "TASK-7", at: 10, event: "PR_OPENED", to: "pr_opened", from: "claimed" }], [], [], 20);
+
+    expect(line).toMatchObject({ who: "TASK-7", what: "pr_opened", where: "delivery", task: "TASK-7" });
+  });
+
+  it("points a DAG's own finished line at the DAG, with no task", () => {
+    const [line] = feedOf([], [dag], [], fin + 1);
+
+    expect(line).toMatchObject({ who: "dagu/deliver", where: "succeeded", dag: "dagu/deliver" });
+    expect(line.task).toBeUndefined();
+  });
+
+  it("keeps a move line's key when an older move ages out, so the line under the pointer is not remounted", () => {
+    const old = { flow: "delivery", task: "TASK-6", at: 5, event: "CLAIMED", to: "claimed", from: "ready" };
+    const kept = { flow: "delivery", task: "TASK-7", at: 10, event: "PR_OPENED", to: "pr_opened", from: "claimed" };
+
+    const before = feedOf([old, kept], [], [], 20).find((l) => l.task === "TASK-7");
+    const after = feedOf([kept], [], [], 20).find((l) => l.task === "TASK-7");
+
+    expect(after?.key).toBe(before?.key);
+  });
+
+  it("keys a task's repeated move apart from its earlier one, so a note lands on the hovered line alone", () => {
+    const red = (at: number) => ({ flow: "delivery", task: "TASK-7", at, event: "CI_RED", to: "ci_red", from: "ci_red" });
+
+    const [late, early] = feedOf([red(5), red(10)], [], [], 20);
+
+    expect(late.key).not.toBe(early.key);
   });
 });

@@ -146,6 +146,25 @@ describe("the Recent feed's run lines", () => {
     expect(events.lines[0].where).toBe("started · nightly-20261005");
   });
 
+  it("points a line at the task its run id embeds, and at the DAG that ran it", () => {
+    const events = new RunEvents();
+    events.observe([dag([])], 100);
+
+    events.observe([dag([run(A, "running", "refuse")])], 101);
+
+    expect(events.lines[0]).toMatchObject({ task: "TASK-2787", dag: "dagu/deliver" });
+  });
+
+  it("points a line whose run id embeds no task at its DAG alone", () => {
+    const events = new RunEvents();
+    events.observe([dag([])], 100);
+
+    events.observe([dag([run("nightly-20261005", "running", "a")])], 101);
+
+    expect(events.lines[0].task).toBeUndefined();
+    expect(events.lines[0].dag).toBe("dagu/deliver");
+  });
+
   it("keeps the newest dozen lines, newest first", () => {
     const events = new RunEvents();
     events.observe([dag([])], 0);
