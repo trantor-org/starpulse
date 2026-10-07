@@ -1,9 +1,10 @@
 // Mockup layer: CI history in StarPulse, injected over a capture of the live page. The history is synthetic; the server
 // that would record it does not exist yet.
 // The operator's model (2026-10-07): CI is a lifecycle machine with a fixed model, mapped by config onto the Board states
-// that need it (here In Progress and Review), and drawn like any other sub-machine. The page has no CI-specific code; it marks a
-// mapped machine (machine.source, a third party moves it) apart from a local one wherever it names it: renderer.patch,
-// with ?mark=tag|glyph|ring choosing the mark. The rest is stock:
+// that need it (here In Progress and Review), and drawn like any other sub-machine. The page has no CI-specific code; it draws a
+// mapped machine (machine.source, a third party moves it) unlike a local one wherever it appears (renderer.patch): a slate
+// square with its source in a badge, never a purple disc, and on its own level its states sit inside the source's dashed
+// boundary. The rest is stock:
 //   glance  - the ci machine is a moon on each mapped state; a task whose latest event is a CI one orbits it
 //   hover   - on the ci machine a task's tooltip and back trace are its CI trail: pushes, results, re-runs, conflicts
 //   click   - a task's panel names its CI state and lists the trail
@@ -31,8 +32,6 @@
   const qs = new URLSearchParams(location.search);
   const preset = STATES[qs.get("s")] || null;
   // how a mapped machine (one a third party moves) is told from a local one: tag names its source, glyph adds ⇄, ring dashes its ring
-  const MARKS = ["tag", "glyph", "ring"], mark = MARKS.includes(qs.get("mark")) ? qs.get("mark") : "tag";
-  document.documentElement.dataset.mark = mark;
   const H = 3600;
 
   // ---- the fixed CI machine ----
@@ -131,12 +130,11 @@
   function control() {
     if (document.getElementById("cimock")) return;
     const bar = document.createElement("div"), s = qs.get("s") || "";
-    const go = (s2, m2) => { const q = new URLSearchParams(); if (s2) q.set("s", s2); if (m2 !== "tag") q.set("mark", m2); location.search = q.toString() ? `?${q}` : ""; };
+    const go = (s2) => { location.search = s2 ? `?s=${s2}` : ""; };
     bar.id = "cimock";
-    bar.innerHTML = `<span>mockup</span><select aria-label="Mockup state"><option value="">state…</option>${Object.keys(STATES).map((k) => `<option value="${k}"${k === s ? " selected" : ""}>${esc(k)}</option>`).join("")}</select><span>mark</span><select aria-label="Mapped machine mark">${MARKS.map((k) => `<option value="${k}"${k === mark ? " selected" : ""}>${k}</option>`).join("")}</select>`;
-    const [st, mk] = bar.querySelectorAll("select");
-    st.addEventListener("change", () => go(st.value, mk.value));
-    mk.addEventListener("change", () => go(st.value, mk.value));
+    bar.innerHTML = `<span>mockup</span><select aria-label="Mockup state"><option value="">state…</option>${Object.keys(STATES).map((k) => `<option value="${k}"${k === s ? " selected" : ""}>${esc(k)}</option>`).join("")}</select>`;
+    const st = bar.querySelector("select");
+    st.addEventListener("change", () => go(st.value));
     document.body.appendChild(bar);
   }
   const css = `#cimock{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:60;display:flex;gap:8px;align-items:center;
