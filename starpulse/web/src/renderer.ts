@@ -12,6 +12,8 @@ import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, drill, pathKey, pathLedger, startPath, type Level, type Path } from "./levels";
+import { freshKeys, optionalSteps } from "./ledger";
+import { drawRows, CROSS, type Ink } from "./ledgerRows";
 import { spotIn, type Target } from "./search";
 import {
   BOARD_COLOR, GALAXY_MIN, OWNED, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, tethersDrawn, textW, turnPage,
@@ -1307,6 +1309,29 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.stroke();
     cx.setLineDash([]);
   }
+  // A Ledger's arrivals: the rows it held at the last look (null until a look, so a page opened or a level entered shows its rows still), each new row's
+  // clock, and the rings and comets its merge sets off along the path. A level not drawn for a while forgets what it held.
+  let ledgerSeen: Set<string> | null = null, ledgerAt = 0;
+  const arrived = new Map<string, number>(), ledgerFx: { x: number; y: number; r: number; t0: number; col: string; grow: number }[] = [], ledgerComets: number[] = [];
+  const rowInk: Ink = { text, fit: fitText, stroke, circle: (x, y, r, col, w) => circle(x, y, r, col, w), dot, pulse: (x, y, r, age, col, grow) => pulse(x, y, r, age, col, grow) };
+  /** A merge arrived: ring the junction, send a comet down the path and ring the event's mark and the second state as it passes. */
+  function arrive(led: NonNullable<NonNullable<Scene["fold"]>["ledger"]>, f: NonNullable<Scene["fold"]>) {
+    const at = { x: led.J.x, y: led.J.y };
+    ledgerFx.push({ ...at, r: 6, t0: clock, col: ACT, grow: 30 }, { x: led.mark.x, y: led.mark.y, r: 6, t0: clock + 0.7, col: ACT, grow: 30 }, { x: f.b!.x, y: f.b!.y, r: f.b!.r, t0: clock + 1.6, col: f.b!.color, grow: 30 });
+    ledgerComets.push(clock);
+  }
+  function drawFx(f: NonNullable<Scene["fold"]>) {
+    for (let i = ledgerFx.length - 1; i >= 0; i--) {
+      const p = ledgerFx[i], age = (clock - p.t0) / RING;
+      if (age > 1.3) ledgerFx.splice(i, 1);
+      else if (age > 0) pulse(p.x, p.y, p.r, age, p.col, p.grow);
+    }
+    for (let i = ledgerComets.length - 1; i >= 0; i--) {
+      const u = (clock - ledgerComets[i]) / 1.6;
+      if (u >= 1) ledgerComets.splice(i, 1);
+      else comet(f.p0!, { x: (f.p0!.x + f.p1!.x) / 2, y: f.p0!.y }, f.p1!, easeO(u), 3.4, ACT);
+    }
+  }
   // a fold's level: the Board path an event takes, with the Ledger hung from it. Under the path's first state the PR (or task) that moves it meets
   // the junction every rail leaves from; the DAG that writes the event is fed straight from it and ties up to the event's mark on the path, and
   // each cue hangs off a bus below the templates. Each template keeps its own column, its caption stating the contract it declares.
@@ -1314,15 +1339,25 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const f = scene!.fold, led = f?.ledger;
     if (!f?.a || !f.b || !f.p0 || !f.p1 || !led) return;
     const { a, b, p0, p1 } = f, sc = scene!, named = hover?.kind === "dag" ? hover.o.name : hover?.kind === "caption" ? hover.o.dag : null, lit = !!named;
-    const heat = (n: string) => dagHeat(n), top = led.J.y - Math.min(...Object.values(sc.stars).map((s) => s.glyph.h)) / 2 - 50 / K, bottom = led.bus + 30 / K;
+    const heat = (n: string) => dagHeat(n), top = led.J.y - Math.min(...Object.values(sc.stars).map((s) => s.glyph.h)) / 2 - 50 / K, grid = led.grid;
+    const bottom = grid?.rows.length ? grid.rows[grid.rows.length - 1].y + grid.rh / 2 : led.bus + 30 / K;
+    // a merge that landed since the last look arrives: its row lowers in and rings, and its comet runs the path
+    const held = S?.ledgers[led.event] ?? [];
+    if (clock - ledgerAt > 1.5) ledgerSeen = null;
+    ledgerAt = clock;
+    for (const k of freshKeys(ledgerSeen, held)) {
+      arrived.set(k, clock);
+      arrive(led, f);
+    }
+    ledgerSeen = new Set(held.map((r) => r.key));
     const hairs = rgba("#94a3b8", 0.1), writer = led.cols.find((c) => c.role === "writer");
     // the grid: a column down from each template, and the spine the junction hangs from
     for (const c of led.cols) stroke([{ x: c.x0, y: top }, { x: c.x0, y: bottom }], hairs);
     stroke([{ x: led.J.x, y: led.J.y + 8 / K }, { x: led.J.x, y: bottom }], rgba(ACT, 0.35), 1.4);
     if (led.rows === "merge") {
-      const lane = led.J.x + 22 / K;
-      stroke([{ x: lane, y: led.bus + 4 / K }, { x: lane, y: bottom }], rgba("#c084fc", 0.35), 1, [2, 4]);
-      text("other repos", lane + 4 / K, led.bus + 14 / K, labPx(9.5), rgba("#c084fc", 0.6), "left");
+      const lane = grid?.lane ?? led.J.x + 22 / K;
+      stroke([{ x: lane, y: led.bus + 4 / K }, { x: lane, y: bottom }], rgba(CROSS, 0.35), 1, [2, 4]);
+      text("other repos", lane + 4 / K, led.bus + 14 / K, labPx(9.5), rgba(CROSS, 0.6), "left");
     }
     // the path, with an arrow into the second state
     flowLine({ ...p0, color: a.color }, { ...p1, color: b.color }, (lit ? 0.75 : 0.4) + Math.max(0, ...led.cols.map((c) => heat(c.dag))) * 0.4, Math.max(hotEdge.has(`board:${a.id}>${b.id}`) ? 1 : 0, ...led.cols.map((c) => heat(c.dag))) + (lit ? 0.5 : 0));
@@ -1377,6 +1412,20 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       const lines = [c.role === "writer" ? `on ${c.on}` : `cue · on ${c.on}`, ...(c.resolves ? [`clears on ${c.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
       lines.forEach((t, i) => text(fitText(t, max, size), s.x, y + (15 + 15 * i) / K, size, rgba("#94a3b8", hot ? 0.9 : 0.6), "center"));
     }
+    // the merge rows, each template's cell beside its run's mini step graph; a row still arriving counts its own seconds
+    if (grid) {
+      const byKey = new Map(held.map((r) => [r.key, r])), age = (key: string) => {
+        const t0 = arrived.get(key);
+        if (t0 === undefined) return undefined;
+        if (clock - t0 > 2) return void arrived.delete(key);
+        return clock - t0;
+      };
+      drawRows(rowInk, {
+        led, glyphs: Object.fromEntries(led.cols.map((c) => [c.dag, sc.stars[c.dag].glyph])), ctx: { event: led.event, now: T, hm: hhmm, by: (k) => byKey.get(k) },
+        optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(held, c.dag)])), px: labPx, palette: { ...DAG_COLOR, waiting: CROSS }, clock, age,
+      });
+    }
+    drawFx(f);
   }
   const TRACE = "#fbbf24", OFF = "#fb7185";
   function arrow(from: Pt, to: Pt, col: string, size: number) {

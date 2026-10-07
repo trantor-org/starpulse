@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { bez, BOARD_GROW, build, GALAXY_MAX, GALAXY_MIN, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, taskSlot, tethersDrawn, terminal, textW, turnPage, type BEdge, type Curve, type MState, type Pt, type Scene } from "./scene";
 import { drill, ledgerLevel, type Level } from "./levels";
 import { merge, Moves } from "./sky";
-import type { Cue, Dag, Machine, Snapshot } from "./types";
+import type { Cue, Dag, LedgerRow, Machine, Snapshot } from "./types";
 
 const dag = (name: string, steps: [string, string[]][] = []): Dag => ({
   name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "",
@@ -108,7 +108,7 @@ describe("machine paging", () => {
  * A Board with its axis (New to Done), three events and a self-transition, and one DAG per case. `writes` names the events each DAG writes,
  * `cues` the DAGs that run beside an event, `launches` DAGs that launch a machine inside In Progress and `free` the DAGs of other domains.
  */
-const boardSky = ({ writes = {}, cues = [], launches = [], free = {} }: { writes?: Record<string, string[]>; cues?: Cue[]; launches?: string[]; free?: Record<string, string[]> } = {}) => {
+const boardSky = ({ writes = {}, cues = [], launches = [], free = {}, ledgers }: { writes?: Record<string, string[]>; cues?: Cue[]; launches?: string[]; free?: Record<string, string[]>; ledgers?: Record<string, LedgerRow[]> } = {}) => {
   const writers: Record<string, { actor: string; trigger: string }[]> = {};
   for (const [name, events] of Object.entries(writes)) for (const e of events) (writers[e] ||= []).push({ actor: name, trigger: "dagu" });
   const tied = [...new Set([...Object.keys(writes), ...cues.map((c) => c.dag), ...launches])], loose = Object.values(free).flat();
@@ -128,7 +128,7 @@ const boardSky = ({ writes = {}, cues = [], launches = [], free = {} }: { writes
     ],
     dags: [...tied, ...loose].map((n) => dag(n, [["run", []]])),
     domains: [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }, ...Object.entries(free).map(([name, dags]) => ({ name, dags: dags.map((d) => ({ name: d, runSafe: false })) }))],
-    cues, settled: {}, error: null, now: 1000,
+    cues, ledgers, settled: {}, error: null, now: 1000,
   };
   const S = merge(snap), moves = new Moves();
   moves.observe(S, 1000);
@@ -1168,6 +1168,56 @@ describe("a fold's level", () => {
     expect("push" in d && d.push).toMatchObject({ kind: "fold", path: ["review", "done"], dags: ["alpha", "beta", "delta"] });
     const scene = build(sk, "push" in d ? d.push : { kind: "board" }), l = scene.fold!.ledger!;
     expect([scene.fold!.a!.id, scene.fold!.b!.id, l.event, l.rows, l.cols.map((c) => [c.dag, c.role, c.resolves])]).toEqual(["review", "done", "MERGED", "merge", [["alpha", "writer", null], ["beta", "cue", "forced"], ["delta", "cue", "next"]]]);
+  });
+
+  describe("a merge Ledger's rows", () => {
+    const row = (key: string, at: number, over: Partial<LedgerRow> = {}): LedgerRow => ({ key, at, tasks: [`TASK-${at}`], sha: key.repeat(7), runs: {}, fails: {}, pinned: false, ...over });
+    const rows = [row("c", 300), row("b", 200, { appliedBy: "c" }), row("a", 100, { appliedBy: "gone" }), row("z", 50, { appliedBy: null })];
+    const merged = (list: LedgerRow[] = rows, scale?: number) => {
+      const sk = boardSky({ writes: { alpha: ["MERGED"] }, cues: cues.filter((c) => c.event === "MERGED"), ledgers: { MERGED: list } });
+      return build({ ...sk, scale }, fold(["review", "done"], "MERGED"));
+    };
+
+    it("hang newest first under the cue bus, one cell in each template's column", () => {
+      const scene = merged(), l = scene.fold!.ledger!, g = l.grid!;
+
+      expect(g.rows.map((r) => r.row.key)).toEqual(["c", "b", "a", "z"]);
+      expect(g.rows[0].y).toBeGreaterThan(l.bus);
+      g.rows.forEach((r, i) => i && expect(r.y - g.rows[i - 1].y).toBeCloseTo(g.rh));
+      expect(g.rows[0].cells.map((c) => c.dag)).toEqual(l.cols.map((c) => c.dag));
+      g.rows[0].cells.forEach((c, i) => expect([c.gx > l.cols[i].x0, c.tx < l.cols[i].x1, c.room > 0]).toEqual([true, true, true]));
+    });
+
+    it("keep the left gutter wide enough for a row's time, task and title before the spine", () => {
+      const g = merged().fold!.ledger!.grid!, bare = merged([]).fold!.ledger!;
+
+      expect(g.label.w).toBeGreaterThan(150);
+      expect(g.label.x + g.label.w).toBeLessThan(merged().fold!.ledger!.J.x);
+      expect(bare.grid).toBeUndefined();
+    });
+
+    it("put another repository's merge on the cross lane, linked to the pin-bump row that applies it when that row is shown", () => {
+      const g = merged().fold!.ledger!.grid!, by = Object.fromEntries(g.rows.map((r) => [r.row.key, r]));
+
+      expect(g.rows.map((r) => r.cross)).toEqual([false, true, true, true]);
+      expect(g.lane).toBeGreaterThan(merged().fold!.ledger!.J.x);
+      expect([by.b.bump, by.a.bump, by.z.bump, by.c.bump]).toEqual(["c", null, null, null]);
+    });
+
+    it("shows only the rows that fit the level and grows the fit box to hold them", () => {
+      const many = Array.from({ length: 80 }, (_, i) => row(`m${i}`, 1000 - i)), scene = merged(many), g = scene.fold!.ledger!.grid!;
+
+      expect(g.rows.length).toBeLessThan(80);
+      expect(g.rows.length).toBeGreaterThanOrEqual(1);
+      expect(g.rows.at(-1)!.y + g.rh / 2).toBeLessThanOrEqual(scene.box![3]);
+      expect(scene.box![3]).toBeLessThanOrEqual(scene.h);
+    });
+
+    it("draws a task event's Ledger with no rows even when merges are loaded", () => {
+      const sk = boardSky({ writes: { alpha: ["CLAIM"] }, cues, ledgers: { MERGED: rows } });
+
+      expect(build(sk, fold(["ready", "in_progress"], "CLAIM")).fold!.ledger!.grid).toBeUndefined();
+    });
   });
 
   it("gives a merge's Ledger rows of merges and any other event's rows of tasks", () => {

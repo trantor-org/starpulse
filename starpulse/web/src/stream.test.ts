@@ -209,6 +209,16 @@ describe("openStream", () => {
     expect(ids(seen.at(-1)!)).toEqual(["PROJ-1:to_do"]);
   });
 
+  it("folds the Ledger rows a merge's runs changed into the snapshot", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+    last().send("ledgers", { ledgers: { MERGED: [{ key: "k", at: 1, tasks: [], runs: {}, fails: {}, pinned: false }] } });
+
+    expect(seen.at(-1)!.ledgers?.MERGED.map((r) => r.key)).toEqual(["k"]);
+    expect(ids(seen.at(-1)!)).toEqual(["PROJ-1:to_do"]);
+  });
+
   it("folds a refused claim the writer published into the snapshot", () => {
     openStream(handlers, open);
     last().send("snapshot", board([agent("TASK-D1", "waiting")]));

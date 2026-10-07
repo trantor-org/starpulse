@@ -43,6 +43,42 @@ function fixture(): DemoFixture {
 const body = async (r: Promise<Response>) => (await r).json();
 const lane = (s: DemoServer, id: string) => s.snapshot.flows[0].agents.find((a) => a.id === id)?.state;
 
+/** The fixture with a DAG that writes MERGED and one cued by it, so its Board has a Ledger. */
+function tied(): DemoFixture {
+  const f = fixture(), steps = (names: string[]) => names.map((n, i) => ({ name: n, depends: i ? [names[i - 1]] : [], status: "succeeded" as RunStatus }));
+  f.flows[0].machine = { ...BOARD, writers: { MERGED: [{ actor: "main-follow", trigger: "push" }] }, dagActors: ["main-follow"] };
+  f.cues = [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge", resolves: "forced" }];
+  f.dags = ["main-follow", "apply-on-merge"].map((name) => ({ name, status: "succeeded" as RunStatus, runId: "r", startedAt: "", finishedAt: "", steps: steps(["a", "b"]) }));
+  return f;
+}
+
+describe("the demo server's Ledger", () => {
+  it("holds merge rows only when a DAG is tied to the merge", () => {
+    expect(new DemoServer(fixture()).snapshot.ledgers).toBeUndefined();
+    expect(new DemoServer(tied(), () => 1000).snapshot.ledgers?.MERGED.length).toBeGreaterThan(5);
+  });
+
+  it("lands a new merge on top and tells its listeners, the runs in flight finishing", () => {
+    const s = new DemoServer(tied(), () => 1000), seen: number[] = [], before = s.snapshot.ledgers!.MERGED.length;
+    s.subscribe((snap) => seen.push(snap.ledgers!.MERGED.length));
+
+    s.land();
+
+    expect(seen).toEqual([before + 1]);
+    expect(s.snapshot.ledgers!.MERGED[0].runs["main-follow"].status).toBe("running");
+    expect(s.snapshot.ledgers!.MERGED[1].runs["apply-on-merge"].status).toBe("succeeded");
+  });
+
+  it("has no merge to land without a Ledger", () => {
+    const s = new DemoServer(fixture()), seen: Snapshot[] = [];
+    s.subscribe((snap) => seen.push(snap));
+
+    s.land();
+
+    expect(seen).toEqual([]);
+  });
+});
+
 describe("the demo server", () => {
   it("serves and edits a synthetic full task record so the public preview exercises edit mode", async () => {
     const s = new DemoServer(fixture());
