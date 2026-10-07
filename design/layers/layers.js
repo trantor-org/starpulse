@@ -1,5 +1,5 @@
 // Layers discovery mockup layer (D5): the navigator's Layers tree goes; a breadcrumb on the canvas takes over the way
-// back out. The Star Map shows a leaderboard of tasks longest in their status, by status (round 5) or one of three attention variants; the Kanban gets a milestone outline.
+// back out. The Star Map shows a leaderboard of tasks longest in their status, by status, workable tasks only (round 6) or one of three attention variants; the Kanban gets a milestone outline.
 // Injected over a scrubbed capture of the live page; it only adds elements and styles, so React keeps owning the page.
 // Seeded, synthetic data (the snapshot has no such fields yet): park reasons and one failing pull request.
 (() => {
@@ -48,17 +48,29 @@
     ...board.filter((a) => a.state === "in_progress" && quiet(a.id) > STALE_H * 3600).sort((x, y) => quiet(y.id) - quiet(x.id))
       .map((a) => ({ a, word: `quiet ${hrs(quiet(a.id))}`, why: `no session activity for ${hrs(quiet(a.id))}` })),
   ].filter((r) => !seen.has(r.a.id) && seen.add(r.a.id));
-  // leaderboard: open tasks ranked by time in their current status. By default the three longest in each open status;
-  // ?lb=stuck ranks In Progress, Needs attention and Review together; ?lb=all adds Ready and Waiting, which fill the top with ties.
+  // leaderboard: open tasks that can be worked, ranked by how long they have been workable. A task with an unfinished
+  // dependency, or a Waiting task whose Start Criteria are unmet, can't be worked yet and stays off the board.
+  // Its clock starts at the later of entering its status, its last dependency finishing and (Waiting) its criteria being met.
+  // By default the three longest in each open status; ?lb=stuck ranks In Progress, Needs attention and Review together; ?lb=all ranks every open status.
   const WORD = { in_progress: "working", needs_attention: "needs you", review: "review", ready: "ready", waiting: "waiting" };
   const LB_STATES = LB_ALL ? Object.keys(WORD) : ["in_progress", "needs_attention", "review"];
   const age = (s) => (s < 3600 ? `${Math.max(1, Math.floor(s / 60))}m` : hrs(s));
-  const LB = board.filter((a) => LB_STATES.includes(a.state) && a.entered).map((a) => ({ a, t: now - a.entered }))
+  const byId = Object.fromEntries(board.map((a) => [a.id, a]));
+  const depsDone = (a) => (a.dependencies || []).every((d) => byId[d]?.state === "done");
+  // seeded: the snapshot has no Start Criteria state yet; every fifth criteria-gated Waiting task has met its criteria
+  // some hours ago and is waiting on the sweep to release it
+  const critMet = {};
+  board.filter((a) => a.state === "waiting" && !(a.dependencies || []).length).forEach((a, i) => { if (i % 5 === 0) critMet[a.id] = Math.max(a.entered, now - (i / 5 + 1) * 5 * 3600); });
+  const workable = (a) => depsDone(a) && (a.state !== "waiting" || a.id in critMet || (a.dependencies || []).length > 0);
+  const since = (a) => Math.max(a.entered, critMet[a.id] || 0, ...(a.dependencies || []).map((d) => byId[d].entered));
+  const OPEN = board.filter((a) => a.state in WORD && a.entered);
+  const ELIG = OPEN.filter(workable).map((a) => ({ a, t: now - since(a) }))
     .sort((x, y) => y.t - x.t || x.a.id.localeCompare(y.a.id, undefined, { numeric: true }));
-  const LB_TOP = LB.slice(0, 10);
-  const GROUPS = ["needs_attention", "in_progress", "review", "waiting", "ready"].map((st) => ({ st, all: board.filter((a) => a.state === st && a.entered).length,
-    rows: board.filter((a) => a.state === st && a.entered).map((a) => ({ a, t: now - a.entered })).sort((x, y) => y.t - x.t || x.a.id.localeCompare(y.a.id, undefined, { numeric: true })).slice(0, 3) }))
-    .filter((g) => g.rows.length);
+  const LB_TOP = ELIG.filter((r) => LB_STATES.includes(r.a.state)).slice(0, 10);
+  const GROUPS = ["needs_attention", "in_progress", "review", "waiting", "ready"].map((st) => {
+    const rows = ELIG.filter((r) => r.a.state === st);
+    return { st, all: rows.length, held: OPEN.filter((a) => a.state === st).length - rows.length, rows: rows.slice(0, 3) };
+  }).filter((g) => g.rows.length);
   const LB_MAX = Math.max(1, ...GROUPS.flatMap((g) => g.rows.map((r) => r.t)));
   const LABEL = { needs_attention: "Needs you", in_progress: "Working", review: "Review", waiting: "Waiting", ready: "Ready" };
   const MS = Object.entries(board.reduce((m, a) => { if (a.milestone && a.state !== "archived") { (m[a.milestone] ||= { done: 0, total: 0 }).total++; if (a.state === "done") m[a.milestone].done++; } return m; }, {}))
@@ -152,7 +164,7 @@
         el("span", { class: "ly-bar" }, el("i", { style: `width:${Math.max(2, Math.round((r.t / max) * 100))}%` })));
       const head = el("h3", { class: "ly-h3" }, esc("Leaderboard"), el("span", { class: "ly-sub" }, esc(LB_MODE === "status" ? "by status" : LB_MODE === "all" ? "all open" : "stuck")));
       // by status: one muted label per status and its three longest; every bar measures against the longest on the board
-      if (LB_MODE === "status") return GROUPS.length ? [head, GROUPS.map((g) => [el("div", { class: "ly-grp" }, el("span", {}, esc(LABEL[g.st])), el("span", { class: "n" }, esc(g.all))),
+      if (LB_MODE === "status") return GROUPS.length ? [head, GROUPS.map((g) => [el("div", { class: "ly-grp", title: g.held ? `${g.held} more can't be worked yet` : null }, el("span", {}, esc(LABEL[g.st])), el("span", { class: "n" }, esc(g.all))),
         g.rows.map((r) => row(r, LB_MAX, false))])] : [];
       return LB_TOP.length ? [head, LB_TOP.map((r) => row(r, LB_TOP[0].t, true))] : [];
     },
@@ -227,7 +239,7 @@
   // ---- the switcher: every choice is a link, so each state can be sent ----
   const go = (patch) => { const n = new URLSearchParams(location.search); for (const [a, v] of Object.entries(patch)) v == null ? n.delete(a) : n.set(a, v); location.search = n.toString(); };
   const btn = (text, on, patch) => el("button", { class: on ? "on" : null, onclick: () => go(patch) }, esc(text));
-  const sw = el("div", { id: "ly-sw" }, el("b", { title: "Minimise", onclick: () => sw.classList.toggle("min") }, esc("D5 MOCKUP · round 5")),
+  const sw = el("div", { id: "ly-sw" }, el("b", { title: "Minimise", onclick: () => sw.classList.toggle("min") }, esc("D5 MOCKUP · round 6")),
     el("span", { class: "grp" }, btn("Star Map", !kanban, { view: null }), btn("Kanban", kanban, { view: "kanban" })),
     kanban ? null : el("span", { class: "grp" }, esc("panel"), MAP.map((x) => btn(x === "lb" ? "leaderboard" : x, x === p, { p: x })), p === "lb" ? [btn("by status", LB_MODE === "status", { lb: null }), btn("stuck", LB_MODE === "stuck", { lb: "stuck" }), btn("all open", LB_ALL, { lb: "all" })] : null, esc(" drill"), DRILL.map((x) => btn(x === "state" ? "In Progress" : x === "machine" ? "authoring-skills" : "Board", x === d, { d: x }))),
     el("span", { class: "grp" }, esc("DAGs"), btn("in panel", qs.get("dags") !== "0", { dags: null }), btn("moved out", qs.get("dags") === "0", { dags: "0" })),
