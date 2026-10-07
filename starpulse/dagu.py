@@ -152,6 +152,12 @@ def _steps(base_url: str, name: str) -> tuple[str, list[dict]]:
     ]
 
 
+def declared_params(base_url: str, name: str) -> list[str]:
+    """The names of the parameters DAG `name` declares; Dagu reports each as `NAME=default`."""
+    detail = _get(f"{base_url}/api/v1/dags/{urllib.parse.quote(name)}")
+    return [word.partition("=")[0] for word in detail["dag"].get("params", []) if "=" in word]
+
+
 def _kind(step: dict) -> str | None:
     """The phase kind a rendered step declares as its description (`kind: agent`), else None."""
     description = step.get("description", "")  # pragma: no mutate: a default lacking the prefix is equivalent

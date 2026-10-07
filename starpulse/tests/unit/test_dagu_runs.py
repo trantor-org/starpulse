@@ -16,7 +16,20 @@ from starpulse import run_events
 from starpulse.adapter_kit import RunsAdapterKit
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import StartFailedError, TaskKeys
-from starpulse.dagu import _STATUS, DaguRuns, Transport, connect, dags, pools, rerun, rerunner, start, starter, status_of
+from starpulse.dagu import (
+    _STATUS,
+    DaguRuns,
+    Transport,
+    connect,
+    dags,
+    declared_params,
+    pools,
+    rerun,
+    rerunner,
+    start,
+    starter,
+    status_of,
+)
 from starpulse.dagu import follow as follow_instance
 from starpulse.event_log import EventLog
 from starpulse.tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
@@ -1000,6 +1013,16 @@ def test_the_pools_are_the_queues_dagu_reports() -> None:
             {"name": "deliver", "cap": 32, "running": 2, "queued": 1},
             {"name": "default", "cap": 2, "running": 0, "queued": 0},
         ]
+
+
+def test_the_declared_params_are_the_names_of_the_words_dagu_reports() -> None:
+    with dagu(DELIVER, params={"deliver": ["WORKTREE=", "AFTER=abc"]}) as (base_url, _):
+        assert declared_params(base_url, "deliver") == ["WORKTREE", "AFTER"]
+
+
+def test_a_dag_that_declares_no_params_has_none() -> None:
+    with dagu(DELIVER) as (base_url, _):
+        assert declared_params(base_url, "deliver") == []
 
 
 def test_a_dagu_that_reports_no_queues_has_no_pools() -> None:

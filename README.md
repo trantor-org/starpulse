@@ -167,7 +167,7 @@ lists exactly the verbs there are.
 | `analytics gates` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `gates` and `runs`, below; `--task` keeps one run and exits 4 when it ended nowhere in the window; refusals as `analytics level` |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
-| `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass` or `fail`; exit 1 when any fails |
+| `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
 | `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |
 | `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |
 | `help --agent` | | `exit_codes` and `verbs` |
@@ -245,6 +245,13 @@ loads), `server` (it answers `/api/snapshot`), `adapter:board` and one `adapter:
 producing: the Board is read, the instance lists workflows and reports no error), and `gh` (installed and logged in,
 which the pull request reader needs).
 
+Two contract checks read the config against the machines' cues. `cue:<instance>/<workflow>` runs once per cued
+workflow: it fails when no instance lists the workflow or when a `[runs.commit]` key (`after`, `before`, `force`,
+`task`) names a parameter the workflow does not declare (read from Dagu's `dag.params`), and it warns, without failing
+the run, when the instance has no `after` key, so its runs pair with a merge only by the time they started.
+`repo:<name>` runs once per `[[repos]]` entry and fails when its `path` is not a submodule of the repository `doctor`
+runs in. Neither runs while the config or the server cannot be read.
+
 `skills` reads no server. The package bundles four skills: `operating-starpulse-board` (what to work next, why a task
 cannot move, moving it), `authoring-starpulse-machines` (machine YAML, writers, guards, subflows, `machine validate`
 and `machine import mermaid`), `writing-starpulse-adapters` (the board, machine-events and runs contracts, the adapter
@@ -308,7 +315,7 @@ type = "native"
 # states = ["in_progress", "review"]
 
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
-# (it offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)`); its workflows are drawn as `<name>/<workflow>`.
+# (it offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads); its workflows are drawn as `<name>/<workflow>`.
 [[runs]]
 name = "dagu"
 type = "dagu"
