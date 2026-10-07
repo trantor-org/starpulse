@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from starpulse.config import CommitKeys
 from starpulse.ledger import Occurrence, build, pair, pull_occurrences
 
@@ -201,3 +203,155 @@ def test_the_ledger_pairs_each_tied_workflow_of_each_event_newest_occurrence_fir
     assert merged[0]["runs"]["dagu/refresh"]["inferred"] is True
     assert ledgers["TESTED"][0]["runs"]["dagu/apply"]["runId"] == "t"
     assert "sha" not in ledgers["TESTED"][0]
+
+
+def failed(run_id: str, start: float, params: Mapping[str, str] | None = None) -> dict:
+    return run(run_id, start, params, status="failed", steps={"validate": "succeeded", "apply": "failed"})
+
+
+def ledger_of(runs: list[dict], rule: str, *merges: Occurrence) -> dict[str, dict]:
+    """The MERGED ledger of one cued workflow, `merges` newest first, by merge key."""
+    rows = build({"MERGED": list(merges)}, {"MERGED": ["dagu/apply"]}, {"dagu/apply": runs}, lambda dag: KEYS, lambda e, d: rule)
+    return {row["key"]: row for row in rows["MERGED"]}
+
+
+def test_a_failed_run_is_an_open_failure_that_pins_its_merge_until_its_cue_resolves() -> None:
+    rows = ledger_of([failed("f", 15, {"AFTER": SHA_A})], "next", merge(SHA_A, 10), merge(SHA_B, 100))
+
+    fail = rows[SHA_A]["fails"]["dagu/apply"]
+    assert (fail["runId"], fail["step"], fail["resolves"], fail["resolved"]) == ("f", "apply", "next", None)
+    assert (rows[SHA_A]["pinned"], rows[SHA_B]["pinned"]) == (True, False)
+
+
+def test_a_run_that_did_not_fail_carries_no_resolution() -> None:
+    rows = ledger_of([run("g", 15, {"AFTER": SHA_A})], "next", merge(SHA_A, 10))
+
+    assert rows[SHA_A]["fails"] == {}
+    assert rows[SHA_A]["pinned"] is False
+
+
+def test_a_resolves_next_failure_clears_on_the_next_successful_run_of_that_workflow() -> None:
+    runs = [failed("f", 15, {"AFTER": SHA_A}), run("g", 105, {"AFTER": SHA_B})]
+
+    rows = ledger_of(runs, "next", merge(SHA_A, 10), merge(SHA_B, 100))
+
+    assert rows[SHA_A]["fails"]["dagu/apply"]["resolved"] == {"runId": "g", "at": runs[1]["finishedAt"]}
+    assert rows[SHA_A]["pinned"] is False
+
+
+def test_a_resolves_next_failure_is_not_cleared_by_a_run_that_is_not_green_or_that_started_before_it() -> None:
+    runs = [
+        run("earlier", 5, {"AFTER": SHA_A}),
+        failed("f", 15, {"AFTER": SHA_A}),
+        run("busy", 105, {"AFTER": SHA_B}, status="running"),
+        failed("again", 205, {"AFTER": SHA_B}),
+    ]
+
+    rows = ledger_of(runs, "next", merge(SHA_A, 10), merge(SHA_B, 100))
+
+    assert rows[SHA_A]["fails"]["dagu/apply"]["resolved"] is None
+    assert rows[SHA_A]["pinned"] is True
+
+
+def test_a_resolves_forced_failure_is_not_cleared_by_a_successful_run_that_was_not_forced() -> None:
+    runs = [failed("f", 15, {"AFTER": SHA_A}), run("g", 105, {"AFTER": SHA_B})]
+
+    rows = ledger_of(runs, "forced", merge(SHA_A, 10), merge(SHA_B, 100))
+
+    assert rows[SHA_A]["fails"]["dagu/apply"]["resolved"] is None
+    assert rows[SHA_A]["pinned"] is True
+
+
+def test_a_resolves_forced_failure_clears_on_a_successful_forced_run_that_covers_its_merge() -> None:
+    forced = run("force", 105, {"AFTER": SHA_B, "FORCE": "1"})
+
+    rows = ledger_of([failed("f", 15, {"AFTER": SHA_A}), forced], "forced", merge(SHA_A, 10), merge(SHA_B, 100))
+
+    assert rows[SHA_A]["fails"]["dagu/apply"]["resolved"] == {"runId": "force", "at": forced["finishedAt"]}
+    assert rows[SHA_A]["pinned"] is False
+
+
+def test_a_forced_run_that_carries_no_commit_covers_every_failure_before_it() -> None:
+    runs = [failed("f", 15, {"AFTER": SHA_A}), run("force", 105, {"FORCE": "1"})]
+
+    assert ledger_of(runs, "forced", merge(SHA_A, 10))[SHA_A]["pinned"] is False
+
+
+@pytest.mark.parametrize(
+    "forced",
+    [
+        pytest.param({"status": "failed"}, id="failed"),
+        pytest.param({"status": "running"}, id="still-running"),
+        pytest.param({"params": {"AFTER": SHA_A, "FORCE": "0"}}, id="force-switched-off"),
+        pytest.param({"params": {"AFTER": SHA_A, "FORCE": ""}}, id="force-empty"),
+        pytest.param({"params": {"AFTER": SHA_A, "FORCE": "1"}, "startedAt": "2026-10-06T00:00:00Z"}, id="before-the-failure"),
+    ],
+)
+def test_a_forced_run_that_did_not_succeed_or_was_not_forced_or_came_first_leaves_the_failure_open(forced: dict) -> None:
+    attempt = {**run("force", 105, {"AFTER": SHA_A, "FORCE": "1"}), **forced}
+
+    rows = ledger_of([failed("f", 15, {"AFTER": SHA_A}), attempt], "forced", merge(SHA_A, 10))
+
+    assert rows[SHA_A]["pinned"] is True
+
+
+def test_a_forced_run_of_an_older_commit_does_not_cover_a_newer_failure() -> None:
+    runs = [failed("f", 105, {"AFTER": SHA_B}), run("force", 205, {"AFTER": SHA_A, "FORCE": "1"})]
+
+    rows = ledger_of(runs, "forced", merge(SHA_A, 10), merge(SHA_B, 100))
+
+    assert rows[SHA_B]["pinned"] is True
+
+
+def test_a_forced_run_of_a_commit_the_ledger_does_not_hold_covers_nothing() -> None:
+    runs = [failed("f", 15, {"AFTER": SHA_A}), run("force", 105, {"AFTER": SHA_C, "FORCE": "1"})]
+
+    assert ledger_of(runs, "forced", merge(SHA_A, 10))[SHA_A]["pinned"] is True
+
+
+def test_a_forced_failure_stays_open_when_the_instance_declares_no_force_parameter() -> None:
+    runs = [failed("f", 15, {"AFTER": SHA_A}), run("force", 105, {"AFTER": SHA_A, "FORCE": "1"})]
+    keys = CommitKeys(after="AFTER")
+
+    rows = build({"MERGED": [merge(SHA_A, 10)]}, {"MERGED": ["dagu/apply"]}, {"dagu/apply": runs}, lambda dag: keys, lambda e, d: "forced")
+
+    assert rows["MERGED"][0]["pinned"] is True
+
+
+def test_each_workflow_resolves_by_its_own_cue_and_an_unrulled_workflow_resolves_on_its_next_success() -> None:
+    runs = {
+        "dagu/apply": [failed("f", 15, {"AFTER": SHA_A}), run("g", 105, {"AFTER": SHA_B})],
+        "dagu/refresh": [failed("rf", 15, {"AFTER": SHA_A}), run("rg", 105, {"AFTER": SHA_B})],
+    }
+    rules = {("MERGED", "dagu/apply"): "forced"}
+
+    (newer, older) = build(
+        {"MERGED": [merge(SHA_A, 10), merge(SHA_B, 100)]},
+        {"MERGED": ["dagu/apply", "dagu/refresh"]},
+        runs,
+        lambda dag: KEYS,
+        lambda event, dag: rules.get((event, dag), "next"),
+    )["MERGED"]
+
+    assert older["fails"]["dagu/apply"]["resolved"] is None
+    assert older["fails"]["dagu/refresh"]["resolved"]["runId"] == "rg"
+    assert older["pinned"] is True
+    assert newer["pinned"] is False
+
+
+def test_a_green_retry_of_the_same_commit_shows_in_the_row_but_leaves_a_forced_failure_open() -> None:
+    runs = [failed("f", 15, {"AFTER": SHA_A}), run("retry", 105, {"AFTER": SHA_A})]
+
+    (row,) = ledger_of(runs, "forced", merge(SHA_A, 10)).values()
+
+    assert row["runs"]["dagu/apply"]["runId"] == "retry"
+    assert (row["fails"]["dagu/apply"]["runId"], row["pinned"]) == ("f", True)
+
+
+def test_a_merge_that_failed_several_times_holds_its_latest_failure() -> None:
+    runs = [failed("f1", 15, {"AFTER": SHA_A}), failed("f2", 105, {"AFTER": SHA_A}), run("g", 55, {"AFTER": SHA_B})]
+
+    rows = ledger_of(runs, "next", merge(SHA_A, 10), merge(SHA_B, 50))
+
+    assert rows[SHA_A]["fails"]["dagu/apply"]["runId"] == "f2"
+    assert rows[SHA_A]["pinned"] is True

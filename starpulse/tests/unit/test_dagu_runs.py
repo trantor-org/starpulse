@@ -16,7 +16,7 @@ from starpulse import run_events
 from starpulse.adapter_kit import RunsAdapterKit
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts import StartFailedError, TaskKeys
-from starpulse.dagu import _STATUS, DaguRuns, Transport, connect, dags, pools, start, starter, status_of
+from starpulse.dagu import _STATUS, DaguRuns, Transport, connect, dags, pools, rerun, rerunner, start, starter, status_of
 from starpulse.dagu import follow as follow_instance
 from starpulse.event_log import EventLog
 from starpulse.tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
@@ -1397,3 +1397,54 @@ def test_a_followed_instance_reads_the_recent_runs_of_the_workflows_its_sink_say
 
     assert [d["name"] for d in sink.dags if "recent" in d] == ["apply"]
     assert sink.recent()["r1"]["params"]["AFTER"] == "a" * 40
+
+
+def test_the_rerunner_starts_the_dag_with_its_parameters_as_dagu_reads_them_and_returns_the_run_id() -> None:
+    sent: list[tuple[str, str, dict | None]] = []
+
+    def transport(method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        sent.append((method, path, body))
+        return 200, {"dagRunId": "run-2"}
+
+    assert rerunner(transport)("apply-on-merge", {"FORCE": "1", "AFTER": "a" * 40}) == "run-2"
+    assert sent == [("POST", "/dags/apply-on-merge/start", {"params": f"FORCE=1 AFTER={'a' * 40}"})]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        pytest.param({"AFTER": "x`reboot`"}, id="command-substitution"),
+        pytest.param({"AFTER": "a b"}, id="space"),
+        pytest.param({"AFTER": 'a"b'}, id="quote"),
+        pytest.param({"AFTER": "a\nb"}, id="newline"),
+        pytest.param({"A B": "1"}, id="spaced-name"),
+        pytest.param({"A=B": "1"}, id="equals-in-name"),
+    ],
+)
+def test_the_rerunner_refuses_parameters_dagu_could_read_as_more_than_a_value_without_asking_dagu(params: dict) -> None:
+    sent: list[str] = []
+
+    def transport(method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        sent.append(path)
+        return 200, {"dagRunId": "run-2"}
+
+    with pytest.raises(StartFailedError, match="parameter"):
+        rerunner(transport)("apply-on-merge", params)
+    assert sent == []
+
+
+def test_a_rerun_dagu_refuses_raises_with_its_reason() -> None:
+    with pytest.raises(StartFailedError, match=re.escape("Dagu refused the start (HTTP 409)")):
+        rerunner(lambda *_: (409, {}))("apply-on-merge", {"FORCE": "1"})
+
+
+def test_the_adapters_rerun_capability_is_the_rerunner_over_the_instances_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: list[tuple[str, str, dict | None]] = []
+
+    def connect(url: str) -> Transport:
+        return lambda method, path, body: sent.append((url, path, body)) or (200, {"dagRunId": "run-9"})
+
+    monkeypatch.setattr("starpulse.dagu.connect", connect)
+
+    assert rerun("http://dagu.test:8085")("healthcheck", {"FORCE": "1"}) == "run-9"
+    assert sent == [("http://dagu.test:8085", "/dags/healthcheck/start", {"params": "FORCE=1"})]

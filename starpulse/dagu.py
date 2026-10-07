@@ -12,13 +12,14 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import shlex
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, get_args
@@ -97,16 +98,38 @@ def connect(base_url: str, timeout: float = 30.0) -> Transport:  # pragma: no mu
     return send
 
 
+def _launch(transport: Transport, dag: str, body: dict) -> str:
+    """Ask Dagu to start `dag` with the request `body` and return the run's id."""
+    status, answer = transport("POST", f"/dags/{dag}/start", body)
+    if status != 200 or not answer.get("dagRunId"):
+        raise StartFailedError(f"Dagu refused the start (HTTP {status})")
+    return answer["dagRunId"]
+
+
 def starter(transport: Transport) -> Callable[[str], str]:
     """The adapter's start capability: asks Dagu to start a DAG and returns the run's id."""
+    return lambda dag: _launch(transport, dag, {})
 
-    def start(dag: str) -> str:
-        status, body = transport("POST", f"/dags/{dag}/start", {})
-        if status != 200 or not body.get("dagRunId"):
-            raise StartFailedError(f"Dagu refused the start (HTTP {status})")
-        return body["dagRunId"]
 
-    return start
+#: What Dagu reads as one `NAME=value` word, with no quoting, substitution or splitting to get wrong.
+_PARAM_NAME = re.compile(r"[A-Za-z_]\w*")
+_PARAM_VALUE = re.compile(r"[\w.@:/+,-]*")
+
+
+def rerunner(transport: Transport) -> Callable[[str, Mapping[str, str]], str]:
+    """The adapter's rerun capability: asks Dagu to start a DAG with `params` and returns the run's id.
+
+    A name or value that is not a plain word is refused before Dagu is asked, as Dagu would read a space as a second
+    parameter and a backtick as a command to run.
+    """
+
+    def rerun(dag: str, params: Mapping[str, str]) -> str:
+        for name, value in params.items():
+            if not (_PARAM_NAME.fullmatch(name) and _PARAM_VALUE.fullmatch(value)):
+                raise StartFailedError(f"parameter {name} is not a plain NAME=value word Dagu can be given")
+        return _launch(transport, dag, {"params": " ".join(f"{name}={value}" for name, value in params.items())})
+
+    return rerun
 
 
 def _get(url: str) -> dict:
@@ -498,6 +521,11 @@ class DaguRuns:
 def start(url: str) -> Callable[[str], str]:
     """The start capability of the Dagu instance at `url`."""
     return starter(connect(url))
+
+
+def rerun(url: str) -> Callable[[str, Mapping[str, str]], str]:
+    """The rerun capability of the Dagu instance at `url`: start a workflow with parameters."""
+    return rerunner(connect(url))
 
 
 def _reconcile_forever(runs: DaguRuns) -> None:

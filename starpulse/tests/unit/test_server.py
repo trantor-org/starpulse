@@ -12,10 +12,10 @@ import pytest
 from starpulse.adapter_kit import serve, task, url
 from starpulse.board import MoveWriter, Written
 from starpulse.board_feed import BoardFeed
-from starpulse.config import Config, RunsInstance, load
+from starpulse.config import CommitKeys, Config, RunsInstance, load
 from starpulse.contracts import Move, StartFailedError
 from starpulse.harnesses import load_harnesses
-from starpulse.server import _adapter, _config, _no_writer, move_task, run_dag, start_task
+from starpulse.server import _adapter, _config, _no_writer, move_task, rerun_dag, run_dag, start_task
 from starpulse.tests.machines import MACHINES
 
 #: The workflows the config declares run-safe in these tests, and the domains it groups them in.
@@ -542,3 +542,109 @@ def test_an_adapter_with_only_one_of_start_and_follow_is_not_a_runs_adapter(
 
     with pytest.raises(SystemExit):
         _adapter(argparse.ArgumentParser(), RunsInstance("ci", "half", "http://ci.test"))
+
+
+KEYS = CommitKeys(after="AFTER", before="BEFORE", force="FORCE", task="TASK")
+AFTER, BEFORE = "a" * 40, "0" * 40
+
+
+class _Rerun:
+    """A stubbed adapter rerun capability that records each workflow and parameters it is asked to start."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.sent: list[tuple[str, dict[str, str]]] = []
+
+    def __call__(self, workflow: str, params: dict[str, str]) -> str:
+        self.sent.append((workflow, params))
+        if self.error is not None:
+            raise self.error
+        return "run-2"
+
+
+class _Failing:
+    """The slice of the feed a rerun reads: the instances' commit keys and the open failures of their workflows."""
+
+    def __init__(self, keys: CommitKeys | None = KEYS, failure: dict | None = None) -> None:
+        self.keys = keys
+        self.failure = {"runId": "r-bad", "params": {"AFTER": AFTER, "BEFORE": BEFORE, "OTHER": "x"}} if failure is None else failure
+
+    def commit_keys(self, instance: str) -> CommitKeys | None:
+        return self.keys if instance == "dagu" else None
+
+    def open_failure(self, dag: str) -> dict | None:
+        return self.failure or None
+
+
+def _rerun(rerun: _Rerun, feed: _Failing | None = None, *, source: str = "127.0.0.1", name: str = "dagu/healthcheck") -> tuple[int, dict]:
+    return rerun_dag(source, name, feed or _Failing(), {"dagu": rerun}, RUN_SAFE)
+
+
+def test_a_rerun_starts_the_workflow_with_force_set_and_the_commit_the_failed_run_applied() -> None:
+    rerun = _Rerun()
+
+    assert _rerun(rerun) == (200, {"runId": "run-2"})
+    assert rerun.sent == [("healthcheck", {"FORCE": "1", "AFTER": AFTER, "BEFORE": BEFORE})]
+
+
+def test_a_rerun_carries_only_the_parameters_the_instance_names_as_commit_keys() -> None:
+    rerun = _Rerun()
+    failure = {"runId": "r-bad", "params": {"AFTER": AFTER, "TASK": "TASK-4", "FORCE": "1", "OTHER": "x"}}
+
+    _rerun(rerun, _Failing(CommitKeys(after="AFTER", force="FORCE"), failure))
+
+    assert rerun.sent == [("healthcheck", {"FORCE": "1", "AFTER": AFTER})]
+
+
+def test_a_rerun_of_a_workflow_outside_the_run_safe_set_is_refused_before_the_adapter_is_asked() -> None:
+    rerun = _Rerun()
+
+    status, body = _rerun(rerun, name="dagu/board-autopilot")
+
+    assert (status, rerun.sent) == (404, [])
+    assert body == {"error": "dagu/board-autopilot is not declared run-safe"}
+
+
+def test_a_rerun_on_an_instance_with_no_rerun_capability_answers_404() -> None:
+    assert rerun_dag("127.0.0.1", "dagu/healthcheck", _Failing(), {}, RUN_SAFE) == (
+        404,
+        {"error": "no adapter can start dagu/healthcheck"},
+    )
+
+
+@pytest.mark.parametrize("source", ["8.8.8.8", "2001:db8::1"])
+def test_a_rerun_from_outside_the_lan_is_refused(source: str) -> None:
+    rerun = _Rerun()
+
+    status, _ = _rerun(rerun, source=source)
+
+    assert (status, rerun.sent) == (403, [])
+
+
+@pytest.mark.parametrize("keys", [None, CommitKeys(after="AFTER")])
+def test_a_rerun_needs_the_instance_to_declare_its_force_parameter(keys: CommitKeys | None) -> None:
+    rerun = _Rerun()
+
+    status, body = _rerun(rerun, _Failing(keys))
+
+    assert (status, rerun.sent) == (409, [])
+    assert "force" in body["error"]
+
+
+def test_a_rerun_of_a_workflow_with_no_unresolved_failure_is_refused() -> None:
+    rerun = _Rerun()
+
+    class Clean(_Failing):
+        def open_failure(self, dag: str) -> None:
+            return None
+
+    status, body = _rerun(rerun, Clean())
+
+    assert (status, rerun.sent) == (409, [])
+    assert body == {"error": "dagu/healthcheck has no unresolved failure"}
+
+
+def test_a_rerun_the_adapter_fails_answers_with_its_reason() -> None:
+    failed = _Rerun(StartFailedError("Dagu unreachable: refused"))
+
+    assert _rerun(failed) == (502, {"error": "Dagu unreachable: refused"})

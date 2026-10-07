@@ -75,6 +75,12 @@ POST /api/run/<instance>/<workflow>
                    with 403 for a source outside loopback and RFC 1918, 404 when the instance has no adapter
                    that can start a run or the workflow is not in its `run_safe`, 502 when the adapter's start
                    fails. A GET answers 405
+POST /api/runs/<instance>/<workflow>/rerun
+                   start a run-safe workflow again, forced, with the commit its newest unresolved failure
+                   applied, through its instance's optional `rerun`: {runId}, or {error} with 403 for a source
+                   outside loopback and RFC 1918, 404 when the instance has no adapter that can rerun or the
+                   workflow is not in its `run_safe`, 409 when the instance declares no force parameter or the
+                   workflow has no unresolved failure, 502 when the adapter's rerun fails. A GET answers 405
 POST /api/move     {task, to[, actor]}: set a Board task's status through the board adapter's writer, as `actor`
                    (`operator`, the page's identity, when absent). An actor outside the event's declared writers
                    is refused 409 before the writer is asked; a board with no writer answers 501
@@ -209,6 +215,8 @@ _LAN = (
     ),
 )
 _RUN = "/api/run/"
+_RERUN = "/api/runs/"
+_RERUN_TAIL = "/rerun"
 _MOVE = "/api/move"
 #: Who a move is made by when the request names no actor: the page, which acts for the operator.
 OPERATOR = "operator"
@@ -259,6 +267,11 @@ def write_refusal(origin: str | None, host: str | None, content_type: str | None
     return None
 
 
+def _is_rerun(path: str) -> bool:
+    """Whether `path` is `/api/runs/<instance>/<workflow>/rerun`; the ingest route `/api/runs/events` is not."""
+    return path.startswith(_RERUN) and path.endswith(_RERUN_TAIL) and path.count("/") == 5
+
+
 def run_dag(
     source: str, name: str, starts: Mapping[str, Callable[[str], str]], run_safe: Collection[str]
 ) -> tuple[int, dict[str, str]]:
@@ -273,6 +286,37 @@ def run_dag(
         return 404, {"error": f"{name} is not declared run-safe"}
     try:
         return 200, {"runId": start(workflow)}
+    except StartFailedError as exc:
+        return 502, {"error": str(exc)}
+
+
+def rerun_dag(
+    source: str,
+    name: str,
+    feed: BoardFeed,
+    reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]],
+    run_safe: Collection[str],
+) -> tuple[int, dict[str, str]]:
+    """Start the run-safe workflow `name` again with its force parameter set and the commit its newest unresolved
+    failure applied, through its instance's `reruns` entry, for a browser at `source`: the HTTP status and JSON body.
+
+    A forced failure clears only on a green forced run that covers it, so the rerun carries the failed run's own
+    commit parameters (`after`, `before`, `task`) and nothing else it was given.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Rerun answers only loopback and private network (RFC 1918) browsers"}
+    instance, _, workflow = name.partition("/")
+    if (rerun := reruns.get(instance)) is None:
+        return 404, {"error": f"no adapter can start {name}"}
+    if name not in run_safe:
+        return 404, {"error": f"{name} is not declared run-safe"}
+    if (keys := feed.commit_keys(instance)) is None or not keys.force:
+        return 409, {"error": f"{instance} declares no force parameter in [runs.commit]: a forced rerun is not possible"}
+    if (failure := feed.open_failure(name)) is None:
+        return 409, {"error": f"{name} has no unresolved failure"}
+    carried = {key: failure["params"][key] for key in (keys.after, keys.before, keys.task) if key in failure["params"]}
+    try:
+        return 200, {"runId": rerun(workflow, {keys.force: "1", **carried})}
     except StartFailedError as exc:
         return 502, {"error": str(exc)}
 
@@ -638,6 +682,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".js": "text/javascript", ".mjs": "text/javascript"}
 
     starts: Mapping[str, Callable[[str], str]]
+    reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]]
     run_safe: Collection[str]
     feed: BoardFeed
     window: HistoryWindow
@@ -660,7 +705,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
-        if path.startswith(_RUN) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS}:
+        if path.startswith(_RUN) or _is_rerun(path) or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS}:
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
             self.end_headers()
@@ -677,7 +722,9 @@ class _ApiHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        if (path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS} or path.startswith(_RUN)) and self._refused_write():
+        if (
+            path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS} or path.startswith(_RUN) or _is_rerun(path)
+        ) and self._refused_write():
             return
         if path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
@@ -698,6 +745,9 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             status, body = self._pushed(self.forward, MAX_FORWARD_BODY)
         elif path == _INSIGHTS and self.insights is not None:
             status, body = self._pushed(self.insights, MAX_BODY)
+        elif _is_rerun(path):
+            name = unquote(path.removeprefix(_RERUN).removesuffix(_RERUN_TAIL))
+            status, body = rerun_dag(self.client_address[0], name, self.feed, self.reruns, self.run_safe)
         elif path.startswith(_RUN):
             status, body = run_dag(self.client_address[0], unquote(path.removeprefix(_RUN)), self.starts, self.run_safe)
         else:
@@ -783,6 +833,7 @@ def _handler(
     level: Level | None = None,
     insights: Insights | None = None,
     forwarding: Forwarder | None = None,
+    reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
     flows = feed.machines.keys()
@@ -790,6 +841,7 @@ def _handler(
     class Handler(_ApiHandler):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self.starts = starts  # set first: the base __init__ handles the request
+            self.reruns = reruns or {}
             self.run_safe = run_safe
             self.feed = feed
             self.window = window
@@ -1013,6 +1065,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     adapters = [(instance, _adapter(parser, instance)) for instance in config.runs]
     starts = {instance.name: start for instance, adapter in adapters if (start := adapter.start(instance.url))}
     # Run now is drawn only for an instance whose adapter can start a run, and only on its run-safe workflows.
+    reruns = {
+        instance.name: rerun
+        for instance, adapter in adapters
+        if (factory := getattr(adapter, "rerun", None)) and (rerun := factory(instance.url))
+    }
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
     try:
         board, feed = assemble(config, base, args.hours * 3600, run_safe)
@@ -1104,6 +1161,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         level=config.level if args.hub else None,
         insights=insights,
         forwarding=forwarder,
+        reruns=reruns,
     )
     serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 
