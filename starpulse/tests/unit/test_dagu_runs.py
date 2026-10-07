@@ -954,6 +954,12 @@ def test_a_queued_run_follows_the_running_ones_and_starts_when_it_was_queued() -
     ]
 
 
+def test_a_run_that_began_before_dagus_listing_day_is_still_active() -> None:
+    listed = deliver(in_flight=(LINTING, QUEUED), listed_since="2026-10-06T00:00:00Z")
+
+    assert [a["runId"] for a in listed.get("active", [])] == ["r1", "r3"]
+
+
 def test_a_run_between_steps_has_no_current_step() -> None:
     between = InFlight(
         "deliver",

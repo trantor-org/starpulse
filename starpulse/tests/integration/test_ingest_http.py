@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import threading
 import time
@@ -104,7 +105,16 @@ def test_the_same_workflow_name_pushed_by_two_instances_stays_two_workflows(stac
 
 
 def test_a_body_larger_than_the_limit_answers_413_and_writes_nothing(stack: Stack) -> None:
-    status, _ = stack.post(b"x" * (MAX_BODY + 1), "cron-secret")
+    # The server answers on the declared length and closes unread, so sending the body would race that close.
+    connection = http.client.HTTPConnection("127.0.0.1", stack.server.server_port, timeout=5)
+    try:
+        connection.putrequest("POST", "/api/runs/events")
+        connection.putheader("Authorization", "Bearer cron-secret")
+        connection.putheader("Content-Length", str(MAX_BODY + 1))
+        connection.endheaders()
+        status = connection.getresponse().status
+    finally:
+        connection.close()
 
     assert status == 413
     assert stack.entries() == []
