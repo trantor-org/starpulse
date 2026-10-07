@@ -1,5 +1,5 @@
 // Layers discovery mockup layer (D5): the navigator's Layers tree goes; a breadcrumb on the canvas takes over the way
-// back out. The Star Map shows a leaderboard of tasks longest in their status (round 4) or one of three attention variants; the Kanban gets a milestone outline.
+// back out. The Star Map shows a leaderboard of tasks longest in their status, by status (round 5) or one of three attention variants; the Kanban gets a milestone outline.
 // Injected over a scrubbed capture of the live page; it only adds elements and styles, so React keeps owning the page.
 // Seeded, synthetic data (the snapshot has no such fields yet): park reasons and one failing pull request.
 (() => {
@@ -10,7 +10,9 @@
   const p = MAP.includes(qs.get("p")) ? qs.get("p") : "lb";
   const d = DRILL.includes(qs.get("d")) ? qs.get("d") : "board";
   const fs = SIZES.includes(+qs.get("fs")) ? +qs.get("fs") : null;
-  const LB_ALL = qs.get("lb") === "all";
+  const LB_MODES = ["status", "stuck", "all"];
+  const LB_MODE = LB_MODES.includes(qs.get("lb")) ? qs.get("lb") : "status";
+  const LB_ALL = LB_MODE === "all";
   const STALE_H = +qs.get("stale") || 4;
   const store = (key, v) => { try { localStorage.setItem(key, v); } catch {} };
   const read = (key) => { try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; } };
@@ -46,13 +48,19 @@
     ...board.filter((a) => a.state === "in_progress" && quiet(a.id) > STALE_H * 3600).sort((x, y) => quiet(y.id) - quiet(x.id))
       .map((a) => ({ a, word: `quiet ${hrs(quiet(a.id))}`, why: `no session activity for ${hrs(quiet(a.id))}` })),
   ].filter((r) => !seen.has(r.a.id) && seen.add(r.a.id));
-  // leaderboard: open tasks ranked by time in their current status. By default only the statuses where time means stuck;
-  // ?lb=all adds Ready and Waiting, which are queues and fill the top with ties.
+  // leaderboard: open tasks ranked by time in their current status. By default the three longest in each open status;
+  // ?lb=stuck ranks In Progress, Needs attention and Review together; ?lb=all adds Ready and Waiting, which fill the top with ties.
   const WORD = { in_progress: "working", needs_attention: "needs you", review: "review", ready: "ready", waiting: "waiting" };
   const LB_STATES = LB_ALL ? Object.keys(WORD) : ["in_progress", "needs_attention", "review"];
   const age = (s) => (s < 3600 ? `${Math.max(1, Math.floor(s / 60))}m` : hrs(s));
   const LB = board.filter((a) => LB_STATES.includes(a.state) && a.entered).map((a) => ({ a, t: now - a.entered }))
-    .sort((x, y) => y.t - x.t || x.a.id.localeCompare(y.a.id, undefined, { numeric: true })).slice(0, 10);
+    .sort((x, y) => y.t - x.t || x.a.id.localeCompare(y.a.id, undefined, { numeric: true }));
+  const LB_TOP = LB.slice(0, 10);
+  const GROUPS = ["needs_attention", "in_progress", "review", "waiting", "ready"].map((st) => ({ st, all: board.filter((a) => a.state === st && a.entered).length,
+    rows: board.filter((a) => a.state === st && a.entered).map((a) => ({ a, t: now - a.entered })).sort((x, y) => y.t - x.t || x.a.id.localeCompare(y.a.id, undefined, { numeric: true })).slice(0, 3) }))
+    .filter((g) => g.rows.length);
+  const LB_MAX = Math.max(1, ...GROUPS.flatMap((g) => g.rows.map((r) => r.t)));
+  const LABEL = { needs_attention: "Needs you", in_progress: "Working", review: "Review", waiting: "Waiting", ready: "Ready" };
   const MS = Object.entries(board.reduce((m, a) => { if (a.milestone && a.state !== "archived") { (m[a.milestone] ||= { done: 0, total: 0 }).total++; if (a.state === "done") m[a.milestone].done++; } return m; }, {}))
     .filter(([, v]) => v.done < v.total).sort((x, y) => y[1].total - x[1].total);
 
@@ -67,6 +75,8 @@
   #nav section.ly-panel:empty { display: none; }
   .ly-tog { all: unset; cursor: pointer; display: flex; width: 100%; align-items: baseline; }
   .ly-h3 { display: flex; align-items: baseline; white-space: nowrap; }
+  .ly-grp { display: flex; align-items: baseline; margin: 8px 0 1px; font-size: calc(10.5px * var(--fs)); color: var(--muted); white-space: nowrap; }
+  .ly-grp .n { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
   .ly-sub { margin-left: auto; letter-spacing: .04em; text-transform: none; }
   .ly-tog .n { margin-left: auto; letter-spacing: 0; font-variant-numeric: tabular-nums; }
   .ly-tog:hover, .ly-tog:focus-visible { color: var(--ink); }
@@ -136,10 +146,16 @@
     line: () => (ATTN.length ? [el("h3", {}, el("button", { class: "ly-tog", "aria-expanded": String(open), onclick: toggle },
       esc(`${open ? "▾" : "▸"} Attention`), el("span", { class: "n" }, esc(ATTN.length)))), open ? attnRows() : null] : []),
     crumb: () => [],
-    lb: () => (LB.length ? [el("h3", { class: "ly-h3" }, esc("Leaderboard"), el("span", { class: "ly-sub" }, esc(LB_ALL ? "all open" : "stuck"))),
-      LB.map((r) => el("button", { class: "ly-row", title: `${r.a.title}\n${WORD[r.a.state]} for ${age(r.t)}`, onclick: () => pinTask(r.a.id) },
-        el("span", { class: "id" }, esc(r.a.id)), el("span", { class: "w" }, esc(`${WORD[r.a.state]} ${age(r.t)}`)),
-        el("span", { class: "ly-bar" }, el("i", { style: `width:${Math.max(2, Math.round((r.t / LB[0].t) * 100))}%` }))))] : []),
+    lb: () => {
+      const row = (r, max, word) => el("button", { class: "ly-row", title: `${r.a.title}\n${WORD[r.a.state]} for ${age(r.t)}`, onclick: () => pinTask(r.a.id) },
+        el("span", { class: "id" }, esc(r.a.id)), el("span", { class: "w" }, esc(word ? `${WORD[r.a.state]} ${age(r.t)}` : age(r.t))),
+        el("span", { class: "ly-bar" }, el("i", { style: `width:${Math.max(2, Math.round((r.t / max) * 100))}%` })));
+      const head = el("h3", { class: "ly-h3" }, esc("Leaderboard"), el("span", { class: "ly-sub" }, esc(LB_MODE === "status" ? "by status" : LB_MODE === "all" ? "all open" : "stuck")));
+      // by status: one muted label per status and its three longest; every bar measures against the longest on the board
+      if (LB_MODE === "status") return GROUPS.length ? [head, GROUPS.map((g) => [el("div", { class: "ly-grp" }, el("span", {}, esc(LABEL[g.st])), el("span", { class: "n" }, esc(g.all))),
+        g.rows.map((r) => row(r, LB_MAX, false))])] : [];
+      return LB_TOP.length ? [head, LB_TOP.map((r) => row(r, LB_TOP[0].t, true))] : [];
+    },
   };
 
   // ---- Kanban: the milestone outline filters the board to one milestone ----
@@ -211,9 +227,9 @@
   // ---- the switcher: every choice is a link, so each state can be sent ----
   const go = (patch) => { const n = new URLSearchParams(location.search); for (const [a, v] of Object.entries(patch)) v == null ? n.delete(a) : n.set(a, v); location.search = n.toString(); };
   const btn = (text, on, patch) => el("button", { class: on ? "on" : null, onclick: () => go(patch) }, esc(text));
-  const sw = el("div", { id: "ly-sw" }, el("b", { title: "Minimise", onclick: () => sw.classList.toggle("min") }, esc("D5 MOCKUP · round 4")),
+  const sw = el("div", { id: "ly-sw" }, el("b", { title: "Minimise", onclick: () => sw.classList.toggle("min") }, esc("D5 MOCKUP · round 5")),
     el("span", { class: "grp" }, btn("Star Map", !kanban, { view: null }), btn("Kanban", kanban, { view: "kanban" })),
-    kanban ? null : el("span", { class: "grp" }, esc("panel"), MAP.map((x) => btn(x === "lb" ? "leaderboard" : x, x === p, { p: x })), p === "lb" ? [btn("stuck", !LB_ALL, { lb: null }), btn("all open", LB_ALL, { lb: "all" })] : null, esc(" drill"), DRILL.map((x) => btn(x === "state" ? "In Progress" : x === "machine" ? "authoring-skills" : "Board", x === d, { d: x }))),
+    kanban ? null : el("span", { class: "grp" }, esc("panel"), MAP.map((x) => btn(x === "lb" ? "leaderboard" : x, x === p, { p: x })), p === "lb" ? [btn("by status", LB_MODE === "status", { lb: null }), btn("stuck", LB_MODE === "stuck", { lb: "stuck" }), btn("all open", LB_ALL, { lb: "all" })] : null, esc(" drill"), DRILL.map((x) => btn(x === "state" ? "In Progress" : x === "machine" ? "authoring-skills" : "Board", x === d, { d: x }))),
     el("span", { class: "grp" }, esc("DAGs"), btn("in panel", qs.get("dags") !== "0", { dags: null }), btn("moved out", qs.get("dags") === "0", { dags: "0" })),
     el("span", { class: "grp" }, esc("text"), SIZES.map((x) => btn(`${x}%`, (fs || 100) === x, { fs: x }))));
 
