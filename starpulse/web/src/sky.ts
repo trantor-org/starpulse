@@ -3,7 +3,7 @@
 // plays each move once, when the stream first delivers it.
 import { stepRings, type StepRing } from "./fanout";
 import { tree, type Tree } from "./levels";
-import type { Capabilities, Cue, Dag, FlowSnapshot, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
+import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -60,6 +60,8 @@ export interface Sky {
   settled: Record<string, Settled>;
   /** Each Board state's share of the lane moves in the week before the last local midnight, which sizes its sun; empty when the server sent none. */
   suns: Record<string, number>;
+  /** Each Ledger event's rows, newest first; empty when the server sent none. */
+  ledgers: Record<string, LedgerRow[]>;
   /** The day's arrivals on each starting and terminal Board state: tasks created, or settled there, since local midnight. */
   today: Record<string, RawAgent[]>;
   error: string | null;
@@ -130,6 +132,7 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     claims: snap.claims ?? {},
     settled: snap.settled,
     suns: snap.suns ?? {},
+    ledgers: snap.ledgers ?? {},
     today: arrivals(board, snap.settled, since),
     error: snap.error,
     reading: !!snap.reading,

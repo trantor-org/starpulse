@@ -5,7 +5,7 @@
 import type { Fold, Level } from "./levels";
 import { ledgerOf, type Ledger, type Tie } from "./ledger";
 import { countText, daily, HOUR, stateCount, type Move, type Moves, type Sky } from "./sky";
-import type { Dag, DagStep, RawAgent, Transition, Writer } from "./types";
+import type { Dag, DagStep, LedgerRow, RawAgent, Transition, Writer } from "./types";
 
 export const TAU = Math.PI * 2;
 export const BOARD_COLOR: Record<string, string> = { new: "#94a3b8", ready: "#60a5fa", waiting: "#fbbf24", blocked: "#fb7185", in_progress: "#a78bfa",
@@ -261,6 +261,33 @@ export interface FoldEnd extends Pt {
   color: string;
   r: number;
 }
+/** One DAG's cell in a merge row: its mini step graph centred at `gx` at scale `ms`, and the status line from `tx` in `room` world units. */
+export interface GridCell {
+  dag: string;
+  gx: number;
+  ms: number;
+  tx: number;
+  room: number;
+}
+/** A merge row: where it sits, whether it is another repository's merge (on the cross lane), and the shown row that pin-bumps it, if any. */
+export interface GridRow {
+  row: LedgerRow;
+  y: number;
+  cross: boolean;
+  bump: string | null;
+  cells: GridCell[];
+}
+/** The merge rows under a Ledger's cue bus: newest first, each `rh` tall, the label gutter before the spine and the cross lane just past it. */
+export interface LedgerGrid {
+  rh: number;
+  /** The lane another repository's merges sit on. */
+  lane: number;
+  /** Where a row's time, task and title are written, and how wide that may run. */
+  label: { x: number; w: number };
+  /** A mini step's radius. */
+  nr: number;
+  rows: GridRow[];
+}
 /** A Ledger's frame: the junction every rail leaves from, the bus the cues hang from, and a caption cell for each DAG's template. */
 export interface LedgerView extends Pick<Ledger, "event" | "rows"> {
   /** The event's mark on the path: over the DAG that writes it, else mid-path. */
@@ -270,6 +297,8 @@ export interface LedgerView extends Pick<Ledger, "event" | "rows"> {
   bus: number;
   cap: number;
   cols: (Tie & { x0: number; x1: number; y0: number; y1: number })[];
+  /** A merge Ledger's rows, when the server sent any. */
+  grid?: LedgerGrid;
 }
 /** A fold's level: the DAGs one Board fold stands for. Over a Board path they are the Ledger of the event they are tied to, between the path's two states. */
 export interface FoldView {
@@ -364,6 +393,8 @@ export const nearestWithin = <T>(items: Iterable<T>, dist: (t: T) => number, ban
   }
   return best;
 };
+/** Screen pixels a merge row's label needs before the spine: its time and task, the pull request and commit, and the title. */
+const ROW_LABEL = 250;
 export const textW = (s: string, size: number) => s.length * size * 0.56 + 6;
 /** A moon's name as printed on a crowded Board (`Scene.clipped`): past NAME_MAX characters it ends in an ellipsis, so a name reaches only so far toward the next state. */
 export const NAME_MAX = 10;
@@ -1443,7 +1474,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     }
     const gl = led.ties.map((t) => glyph(dagBy[t.dag] || stub(t.dag))), sc = (ctx.scale ?? 100) / 100, gh = Math.max(...gl.map((g) => g.h));
     const lines = (t: Tie) => [t.role === "writer" ? `on ${t.on}` : `cue · on ${t.on}`, ...(t.resolves ? [`clears on ${t.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
-    const lead = (F: number) => F * (textW("merge to main", 12.5) + 64), base = (F: number) => gl.map((g) => g.w + 36 * F);
+    const merges = led.rows === "merge" ? S.ledgers[led.event] ?? [] : [], gutter = merges.length ? ROW_LABEL : 0;
+    const lead = (F: number) => F * Math.max(textW("merge to main", 12.5) + 64, gutter), base = (F: number) => gl.map((g) => g.w + 36 * F);
     // wide enough for the templates and the gutter the junction's label needs, which grow with F as the scene does
     let F = (w / W) * sc;
     for (let i = 0; i < 4 && lead(F) + 46 * F + base(F).reduce((p, q) => p + q, 0) + 2 * R + 100 * F > w; i++) F = ((w = Math.ceil(lead(F) + 46 * F + base(F).reduce((p, q) => p + q, 0) + 2 * R + 100 * F)) / W) * sc;
@@ -1472,7 +1504,23 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const writer = stars.find((_, i) => cols[i].role === "writer");
     f.ledger = { event: led.event, rows: led.rows, mark: { x: writer ? writer.x : (f.p0.x + f.p1.x) / 2, y: yP }, J: { x: sx, y: yH }, bus, cap, cols };
     scene.groups.push({ name: "", head: false, lx: 0, ly: 0, stars });
-    Object.assign(scene, { w, h, fold: f, box: [0, 0, w, bus + 40 * F] });
+    let bottom = bus + 40 * F;
+    if (merges.length) {
+      // a row is one merge: its label in the gutter, then each template's cell, its mini step graph beside the run's status line. Only the newest rows that
+      // fit are laid out, so the fit box never outgrows the level; scrolling older ones in is the Ledger's scroll
+      const rh = 34 * F, nr = 3 * F, top = bus + 26 * F, fit = Math.max(1, Math.floor((h - top - 24 * F) / rh)), shown = merges.slice(0, fit);
+      const ms = cols.map((c, i) => Math.min(0.6, (0.38 * (c.x1 - c.x0)) / Math.max(1, gl[i].w), (0.72 * rh) / Math.max(1, gl[i].h + 2 * nr)));
+      const rows = shown.map((row, r): GridRow => ({
+        row, y: top + rh / 2 + r * rh, cross: row.appliedBy !== undefined, bump: row.appliedBy && shown.some((n) => n.key === row.appliedBy) ? row.appliedBy : null,
+        cells: cols.map((c, i) => {
+          const gx = c.x0 + 14 * F + (gl[i].w * ms[i]) / 2, tx = Math.max(gx + (gl[i].w * ms[i]) / 2 + nr + 12 * F, c.x0 + 30 * F);
+          return { dag: c.dag, gx, ms: ms[i], tx, room: c.x1 - tx - 10 * F };
+        }),
+      }));
+      f.ledger.grid = { rh, lane: sx + 22 * F, label: { x: 16 * F, w: sx - 16 * F - 30 * F }, nr, rows };
+      bottom = top + shown.length * rh + 20 * F;
+    }
+    Object.assign(scene, { w, h, fold: f, box: [0, 0, w, bottom] });
   }
 
   if (l.kind === "board") buildBoard();

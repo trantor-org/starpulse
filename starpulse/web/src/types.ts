@@ -193,7 +193,48 @@ export type Delta =
   | { kind: "dags"; dags: Dag[]; pools?: Pool[]; error: string | null }
   | { kind: "pulls"; pulls: Record<string, Pull[]> }
   | { kind: "claim"; task: string; reason: string; at: number }
-  | { kind: "suns"; suns: Record<string, number> };
+  | { kind: "suns"; suns: Record<string, number> }
+  | { kind: "ledgers"; ledgers: Record<string, LedgerRow[]> };
+
+/** One DAG run a merge row carries: `inferred` when time, not the commit, paired it, and `ambiguous` how many other merges landed in its window. */
+export interface LedgerRun {
+  runId: string;
+  status: RunStatus;
+  raw?: string;
+  startedAt: string;
+  finishedAt: string;
+  steps: Record<string, RunStatus>;
+  /** The step running now, or "". */
+  step: string;
+  inferred: boolean;
+  ambiguous: number;
+}
+
+/** A failed run of a cue the merge row holds open: the step it stopped at, and how the failure clears. */
+export interface LedgerFail {
+  runId: string;
+  step: string;
+  startedAt: string;
+  finishedAt: string;
+  resolves: "forced" | "next" | null;
+  resolved: string | null;
+}
+
+/** One merge occurrence: its pull request and commit, the runs paired with it by DAG, and, for another repository's merge, the parent merge that pinned it. */
+export interface LedgerRow {
+  key: string;
+  /** Epoch seconds the merge landed. */
+  at: number;
+  tasks: string[];
+  sha?: string;
+  pr?: { repo: string; number: number; url: string };
+  /** The parent merge's key whose pin bump applied this one; null until one has; absent on a merge of the main repository. */
+  appliedBy?: string | null;
+  applies?: string[];
+  runs: Record<string, LedgerRun>;
+  fails: Record<string, LedgerFail>;
+  pinned: boolean;
+}
 
 /** What the board writes beyond moves: the page draws Edit, Archive… and New task only for what its board does. */
 export interface Capabilities {
@@ -223,6 +264,8 @@ export interface Snapshot {
   claims?: Record<string, { reason: string; at: number }>;
   /** Each Board state's share of the lane moves in the week before the last local midnight, which sizes its sun. */
   suns?: Record<string, number>;
+  /** Each Ledger event's rows, newest first. */
+  ledgers?: Record<string, LedgerRow[]>;
   /** What the board writes: the task modal draws Edit and Archive only when its board does. */
   capabilities?: Capabilities;
   settled: Record<string, Settled>;

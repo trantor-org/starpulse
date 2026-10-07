@@ -1,12 +1,16 @@
 // The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
 // demo page (`starpulse.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
 import { demoLevel } from "./demoLevel";
+import { arriveMerge, demoLedger, scenarioOf } from "./demoLedger";
+import { MERGE_EVENT } from "./ledger";
 import { columnsOf } from "./kanban";
 import type { LaneStep } from "./trace";
 import type { Machine, RawAgent, Snapshot } from "./types";
 import type { TaskRecord } from "./taskView";
 
 let demoN = 0;
+/** Seconds between two merges landing on a demo page's Ledger. */
+const MERGE_EVERY_S = 25;
 
 export function demoStep(prev: Snapshot, random = Math.random): Snapshot {
   const snap = structuredClone(prev);
@@ -162,6 +166,7 @@ export class DemoServer {
   private optIn = false;
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private merges: ReturnType<typeof setInterval> | undefined;
 
   constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private forward?: ForwardDemo) {
     const { history, ...snap } = structuredClone(fixture);
@@ -171,7 +176,8 @@ export class DemoServer {
     for (const e of Object.values(snap.settled)) [e.at, e.created] = [e.at == null ? null : e.at + age, e.created == null ? null : e.created + age];
     this.lanes = history ?? {};
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
-    this.snapshot = this.verdicts({ ...snap, capabilities: { edit: true, archive: true, create: true } });
+    const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
+    this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? { ledgers: { [MERGE_EVENT]: ledger } } : {}), capabilities: { edit: true, archive: true, create: true } });
   }
 
   subscribe(fn: (s: Snapshot) => void): () => void {
@@ -179,17 +185,28 @@ export class DemoServer {
     return () => this.listeners.delete(fn);
   }
 
-  /** Play the walk until `stop`, one step every 0.6 to 1.8 seconds. */
+  /** Play the walk until `stop`, one step every 0.6 to 1.8 seconds, and a merge landing on the Ledger every 25. */
   start() {
     const tick = () => {
       this.step();
       this.timer = setTimeout(tick, 600 + Math.random() * 1200);
     };
     this.timer ??= setTimeout(tick, 1200);
+    this.merges ??= setInterval(() => this.land(), MERGE_EVERY_S * 1000);
   }
   stop() {
     clearTimeout(this.timer);
-    this.timer = undefined;
+    clearInterval(this.merges);
+    this.timer = this.merges = undefined;
+  }
+
+  /** A merge lands on the Ledger: the runs in flight finish and the new merge's writer starts. A demo with no merge Ledger has none to land. */
+  land() {
+    const rows = this.snapshot.ledgers?.[MERGE_EVENT];
+    if (!rows) return;
+    const next = structuredClone(this.snapshot);
+    next.ledgers = { ...next.ledgers, [MERGE_EVENT]: arriveMerge(next, rows, this.clock()) };
+    this.publish(next);
   }
 
   /** One step of the walk, its Board lane changes recorded; a card it settles stays settled and new work created now takes its place, so the Board never drains.
