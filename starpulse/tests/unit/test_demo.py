@@ -85,11 +85,9 @@ def test_scrub_seeds_pools_and_runs_that_follow_the_contract() -> None:
 
 
 def _with_catalog(live: dict) -> dict:
-    names = ("deliver", "apply-on-merge", "whole-repo-gate", "backlog-sweep", "board-autopilot")
-    live["domains"] = [
-        {"name": "Delivery", "dags": [{"name": f"dagu/{n}", "runSafe": False} for n in names[:3]]},
-        {"name": "Board", "dags": [{"name": f"dagu/{n}", "runSafe": False} for n in names[3:]]},
-    ]
+    """One domain: `deliver`, the three DAGs `_finished` gives a finished run, then the four the catalog cycles."""
+    names = ("deliver", "f1", "f2", "f3", "apply-on-merge", "whole-repo-gate", "backlog-sweep", "board-autopilot")
+    live["domains"] = [{"name": "Delivery", "dags": [{"name": f"dagu/{n}", "runSafe": False} for n in names]}]
     live["dags"] = []
     return live
 
@@ -100,6 +98,9 @@ def test_scrub_seeds_every_other_declared_dag_in_a_state_of_its_own_and_marks_so
     by = {d["name"]: d for d in demo["dags"]}
     assert {n.removeprefix("dagu/"): d["status"] for n, d in by.items()} == {
         "deliver": "running",
+        "f1": "succeeded",
+        "f2": "succeeded",
+        "f3": "succeeded",
         "apply-on-merge": "failed",
         "whole-repo-gate": "succeeded",
         "backlog-sweep": "not_started",
