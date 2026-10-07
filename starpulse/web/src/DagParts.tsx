@@ -65,5 +65,23 @@ export const poolText = (pools: Pool[], r: Row) => {
   return p ? `${short(p.name)} ${p.running}/${p.cap}${p.queued ? ` +${p.queued}` : ""}` : "";
 };
 
-/** A Board tie as the Kanban's label chip in the state's Board colour; `label` replaces its text where the modal names the kind. */
-export const TieChip = ({ t, label }: { t: Tie; label?: string }) => <span className="tie" title={t.note} style={{ "--tc": t.color } as CSSProperties}>{`⇢ ${label ?? t.text}`}</span>;
+/** Opens a tie's Ledger on the Star Map, or null when the tie names no transition that has one. */
+export type LedgerGo = (ev: string | undefined) => (() => void) | null;
+
+/** A link that runs `go` instead of following its address; the click stops here, so a row's own click (its modal) never hears it. */
+const LedgerLink = ({ go, className, title, style, children }: { go: () => void; className: string; title?: string; style?: CSSProperties; children: ReactNode }) => (
+  <a className={className} href="#" title={title} style={style} onClick={(e) => { e.preventDefault(); e.stopPropagation(); go(); }}>{children}</a>
+);
+
+/** A Board tie as the Kanban's label chip in the state's Board colour; `label` replaces its text where the modal names the kind. A tie whose
+ *  transition has a Ledger (`go`) is a link to it. */
+export function TieChip({ t, label, ledger }: { t: Tie; label?: string; ledger?: LedgerGo }) {
+  const go = ledger?.(t.ev), text = `⇢ ${label ?? t.text}`, style = { "--tc": t.color } as CSSProperties;
+  return go ? <LedgerLink go={go} className="tie" title={t.note} style={style}>{text}</LedgerLink> : <span className="tie" title={t.note} style={style}>{text}</span>;
+}
+
+/** The modal's "open the <EVENT> Ledger ↗" link under a tie, in the modal's violet; nothing for a tie with no Ledger. */
+export const LedgerNote = ({ t, ledger }: { t: Tie; ledger?: LedgerGo }) => {
+  const go = ledger?.(t.ev);
+  return go ? <LedgerLink go={go} className="lgnote">open the {t.ev} Ledger ↗</LedgerLink> : null;
+};

@@ -117,7 +117,7 @@ export function App() {
         <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} onQuery={setKanbanQuery} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
           spot={spotted} note={setWhy} opening={opening} />
       )}
-      {view === "dags" && <Dags data={hud.dagData} />}
+      {view === "dags" && <Dags data={hud.dagData} openPath={open} />}
       <Rail hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "constellation" && !!(l.task || l.dag))}
         spot={(l) => {

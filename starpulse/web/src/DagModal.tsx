@@ -1,13 +1,13 @@
 // A DAG's modal, opened from a row of the DAGs view in the Kanban task modal's frame: the title with its state dot, the full step
 // chart, this or the last run, the pool's queue slots, every Board tie with its note, and Run now in the footer.
 import { useEffect } from "react";
-import { chartBox, lastLine, Orb, Strip, TieChip } from "./DagParts";
+import { chartBox, LedgerNote, lastLine, Orb, Strip, TieChip, type LedgerGo } from "./DagParts";
 import { ago, refusal, short, ties, type DagData, type Row } from "./dags";
 
 const STATE = (r: Row) => (r.phase === "ok" ? "healthy" : r.phase === "idle" ? "never run" : r.phase === "failed" ? r.d.status : r.phase);
 
-export function DagModal({ data, r, now, starting, refused, run, close }: {
-  data: DagData; r: Row; now: number; starting: boolean; refused: string | null; run: () => void; close: () => void;
+export function DagModal({ data, r, now, starting, refused, run, close, ledger }: {
+  data: DagData; r: Row; now: number; starting: boolean; refused: string | null; run: () => void; close: () => void; ledger?: LedgerGo;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && close();
@@ -37,7 +37,7 @@ export function DagModal({ data, r, now, starting, refused, run, close }: {
           </tbody></table>
           <section className="sec"><div className="sh"><span className="t">Board</span></div>
             {board.map((t) => (
-              <div className="tierow" key={t.kind + t.text + (t.ev ?? "")}><TieChip t={t} label={t.kind === "writes" ? `writes ${t.text}` : t.kind === "acts" ? "acts" : t.text} /><span className="k">{t.note}</span></div>
+              <div className="tierow" key={t.kind + t.text + (t.ev ?? "")}><TieChip t={t} label={t.kind === "writes" ? `writes ${t.text}` : t.kind === "acts" ? "acts" : t.text} ledger={ledger} /><span className="k">{t.note}</span><LedgerNote t={t} ledger={ledger} /></div>
             ))}
             {!board.length && <div className="k">No Board tie: this DAG neither moves a task nor is cued by one.</div>}
           </section>

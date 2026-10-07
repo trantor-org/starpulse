@@ -3,7 +3,7 @@
 // and a fold level over the Board path that several DAGs write. Pure: which
 // machines open where, the path to any of them, what a click on a DAG opens,
 // and where an old URL lands.
-import { pathOf, tiesOf } from "./ledger";
+import { pathOf, tiesOf, type Source } from "./ledger";
 import type { Snapshot } from "./types";
 
 /** The DAGs a Board fold stands for, the criteria that tie them to the Board and the two Board states of the path they write (null beside one state). */
@@ -116,7 +116,7 @@ export const levelKey = (l: Level) => (l.kind === "board" ? "board" : l.kind ===
 export const pathKey = (p: Path) => p.map(levelKey).join("/");
 
 /** The fold level that is a Board transition's Ledger: the DAGs that write its event or are cued by it, over the path it takes; null when no DAG is tied to it or it leaves its state where it was. */
-export function ledgerLevel(snap: Pick<Snapshot, "flows" | "cues">, event: string): ({ kind: "fold" } & Fold) | null {
+export function ledgerLevel(snap: Source, event: string): ({ kind: "fold" } & Fold) | null {
   const path = pathOf(snap, event), ties = tiesOf(snap, event);
   if (!path || !ties.length) return null;
   const name = (id: string) => snap.flows.find((f) => f.name === "board")?.machine.states.find((s) => s.id === id)?.name || id, via = `(${name(path[0])} → ${name(path[1])})`;
@@ -124,4 +124,4 @@ export function ledgerLevel(snap: Pick<Snapshot, "flows" | "cues">, event: strin
 }
 
 /** The Ledger a Board path opens: that of the first of its events a DAG is tied to. */
-export const pathLedger = (snap: Pick<Snapshot, "flows" | "cues">, events: string[]) => events.map((e) => ledgerLevel(snap, e)).find((l) => l) ?? null;
+export const pathLedger = (snap: Source, events: string[]) => events.map((e) => ledgerLevel(snap, e)).find((l) => l) ?? null;
