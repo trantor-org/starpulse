@@ -239,12 +239,12 @@ class JiraProject:
         return thread
 
 
-def board(settings: Mapping[str, Any], base: Path) -> Board:
-    """The Board of the Jira project `settings["project"]` on the site `settings["url"]`, polled every `interval` seconds.
+def open_project(settings: Mapping[str, Any]) -> tuple[JiraProject, str]:
+    """The project `settings` names and the site's address, its workflow imported, so the site is read once.
 
-    `workflow` names the Jira workflow imported as the Board machine, so building the board reads the site once. The token
-    is the environment variable `token_env` (default `JIRA_TOKEN`): a Bearer token, or with `user` the password of Basic
-    authentication, as Jira Cloud takes an API token.
+    The token is the environment variable `token_env` (default `JIRA_TOKEN`): a Bearer token, or with `user` the password
+    of Basic authentication, as Jira Cloud takes an API token. A setting that cannot work, or a site that does not answer,
+    is a `ValueError` saying why.
     """
     if unknown := sorted(settings.keys() - _SETTINGS):
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
@@ -255,11 +255,21 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         raise ValueError(f"board: ${env} holds no Jira token")
     user = settings.get("user")
     authorization = "Basic " + base64.b64encode(f"{user}:{token}".encode()).decode() if user else f"Bearer {token}"
-    url, interval = str(settings["url"]), float(settings.get("interval", 30.0))
+    url = str(settings["url"])
     try:
-        jira = JiraProject(http_fetch(url, authorization), str(settings["project"]), str(settings["workflow"]))
+        return JiraProject(http_fetch(url, authorization), str(settings["project"]), str(settings["workflow"])), url
     except OSError as error:
         raise ValueError(f"board: jira site {url}: {error}") from error
+
+
+def board(settings: Mapping[str, Any], base: Path) -> Board:
+    """The Board of the Jira project `settings["project"]` on the site `settings["url"]`, polled every `interval` seconds.
+
+    `workflow` names the Jira workflow imported as the Board machine, so building the board reads the site once; see
+    `open_project` for the token.
+    """
+    jira, url = open_project(settings)
+    interval = float(settings.get("interval", 30.0))
 
     def machines(qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
         return {"board": jira.machine}

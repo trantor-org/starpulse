@@ -292,6 +292,23 @@ token_env = "DAGU_INGEST_TOKEN"          # the environment variable holding the 
                                          # this instance; the token never goes in this file; omit the key and the instance takes no pushed events
 ```
 
+### Connect a tracker
+
+`starpulse connect` checks that a tracker answers, then writes the `[board]` table of `starpulse.toml` for you, keeping
+every other table and comment. It prints one line saying what it read. A tracker that does not answer writes nothing,
+says why on stderr and exits 1; `--config` names another file, and `starpulse connect <tracker> --help` lists each
+tracker's flags.
+
+```sh
+starpulse connect native --path .starpulse/board --machine board.yaml   # StarPulse's own board; --path and --machine are optional
+starpulse connect backlog --path backlog                                # a Backlog.md project; --command names its CLI
+# ✓ Read 36 tasks in 5 lanes from backlog/ · wrote [board] to starpulse.toml
+
+export JIRA_TOKEN=<your API token>   # read from the environment, never an argument and never written to the file
+starpulse connect jira --url https://acme.atlassian.net --project PAY --workflow "Payments Software Workflow" --user ada@example.com
+# ✓ Imported Payments Software Workflow (7 states) · read 42 issues from PAY · wrote [board] to starpulse.toml
+```
+
 ### GitHub Actions
 
 `type = "github_actions"` reads one repository's workflows: each active workflow file is a workflow named for the file
