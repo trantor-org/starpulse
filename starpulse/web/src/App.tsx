@@ -11,6 +11,7 @@ import { HudStore, useHud, type FeedLine, type HudState } from "./hud";
 import { LevelStore } from "./levelData";
 import { BOARD, pathKey, type Path } from "./levels";
 import { Crumb } from "./Crumb";
+import { Dags, DagLegend } from "./Dags";
 import { FeedLines, Queues } from "./Fanout";
 import { SearchClear } from "./SearchClear";
 import { Kanban } from "./Kanban";
@@ -78,6 +79,7 @@ export function App() {
   // declared after the renderer's effect, so the first run already reaches it
   useEffect(() => {
     document.body.classList.toggle("kanban", view === "kanban");
+    document.body.classList.toggle("dags", view === "dags");
     document.body.classList.toggle("admin", view === "admin");
     document.body.classList.toggle("graph", view === "graph");
     renderer.current?.show(view === "constellation");
@@ -115,6 +117,7 @@ export function App() {
         <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} onQuery={setKanbanQuery} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
           spot={spotted} note={setWhy} opening={opening} />
       )}
+      {view === "dags" && <Dags data={hud.dagData} />}
       <Rail hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "constellation" && !!(l.task || l.dag))}
         spot={(l) => {
@@ -220,6 +223,11 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
           <span className="t">Kanban</span>
           <span className="n">{hud.cards.length || ""}</span>
         </button>
+        <button className={`node${view === "dags" ? " on here" : ""}`} title="DAGs" onClick={() => choose("dags")}>
+          <svg className="g dg-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>
+          <span className="t">DAGs</span>
+          <span className="n">{hud.dags.length || ""}</span>
+        </button>
         {hasLevel && (
           <button className={`node${view === "graph" ? " on here" : ""}`} title="Flow graph: the level above the Board" onClick={() => choose("graph")}>
             <svg className="g og-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><ellipse cx="6" cy="6" rx="5" ry="2.4" /><circle cx="6" cy="6" r="1.2" /></svg>
@@ -228,7 +236,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
           </button>
         )}
       </section>
-      {view !== "admin" && view !== "graph" && (
+      {view !== "admin" && view !== "graph" && view !== "dags" && (
         <section className="away has-x search" ref={searchHost}>
           {view === "kanban" ? <div ref={slot} /> : <>
             <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
@@ -245,6 +253,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
       )}
       {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
       {view === "graph" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
+      {view === "dags" && <><section className="away note">Layers belong to the Star Map view; they return when it is open.</section><Queues pools={hud.pools} /></>}
       {view === "constellation" && <>
       {body && <section className="away matches">{body}</section>}
       <section className="away">
@@ -281,7 +290,7 @@ export function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } &
       </section>
       <section id="legend">
         <h3>Legend</h3>
-        {view === "graph" ? (
+        {view === "dags" ? <DagLegend /> : view === "graph" ? (
           <>
             <span><i style={{ background: "#a78bfa" }} />source: a planet on its own orbit</span><br />
             <span><i style={{ border: "1px dashed #94a3b8", background: "none", boxSizing: "border-box" }} />unattributed: no Board of its own</span><br />

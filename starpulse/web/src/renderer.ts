@@ -24,6 +24,7 @@ import { embedded, openStream } from "./stream";
 import { createHistory } from "./history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
+import { dagData } from "./dags";
 import type { Dag, Machine, Snapshot, Writer } from "./types";
 import { fanBadge, fanTip, stepStatus } from "./fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
@@ -33,7 +34,7 @@ import { clockHm, clockHms, stamp } from "./clock";
 import { canvasSpace, retired, viewOf, viewSearch } from "./nav";
 import { fitBox, fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
-const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
+export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
   aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155" };
 /** Declared step kind rings on a DAG's level. */
 /** Activity: everything that moves on any level uses this one colour. */
@@ -389,6 +390,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       states: board.machine.states.map((s) => ({ id: s.id, name: s.name, count: stateCount(sky, s.id) })),
       counts: Object.fromEntries(Object.values(sky.flows).map((f) => [f.name, f.agents.length])),
       dags: sky.dags.map((d) => d.name),
+      dagData: dagData(sky),
       pools: sky.pools,
       groups: sky.groups.map((g) => ({ name: g.name, n: g.dags.length })),
       cards: kanbanTasks(sky),

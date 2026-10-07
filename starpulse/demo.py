@@ -193,6 +193,54 @@ def _seed_fanout(domains: list[dict], dags: list[dict], now: float) -> tuple[lis
     return [dag, *finished], pools + domain_pools
 
 
+#: The steps every other seeded DAG has, and the status each takes in turn: a failed, a healthy, a never-run and a queued one.
+CATALOG_STEPS = ("prepare", "run", "report")
+CATALOG_STATUSES = ("failed", "succeeded", "not_started", "queued")
+#: The statuses whose DAG a demo marks run-safe, so the page draws ▶ on some rows and not on others.
+CATALOG_RUN_SAFE = {"succeeded", "not_started"}
+
+
+def _seed_catalog(domains: list[dict], dags: list[dict], now: float) -> tuple[list[dict], set[str]]:
+    """A DAG in a state of its own for each declared DAG the capture does not read, and the names a demo marks run-safe.
+
+    The runs adapter CI uses has no DAGs, so the DAGs view would draw one row. The statuses cycle in `CATALOG_STATUSES`
+    order, so a catalog of five has a failed, a healthy, a never-run and a queued DAG beside the running one.
+    """
+    have = {d["name"] for d in dags}
+    declared = [x["name"] for g in domains for x in g["dags"] if x["name"] not in have]
+    seeded, safe = [], set()
+    for n, name in enumerate(declared):
+        status = CATALOG_STATUSES[n % len(CATALOG_STATUSES)]
+        ran = status in ("failed", "succeeded")
+        steps = [
+            {
+                "name": step,
+                "depends": [CATALOG_STEPS[i - 1]] if i else [],
+                "status": "succeeded"
+                if status == "succeeded" or (status == "failed" and i == 0)
+                else "failed"
+                if status == "failed" and i == 1
+                else "not_started",
+                "kind": None,
+            }
+            for i, step in enumerate(CATALOG_STEPS)
+        ]
+        seeded.append(
+            {
+                "name": name,
+                "status": status,
+                "runId": f"catalog-demo-{n}",
+                "startedAt": _iso(now - 3600 * (n + 1)) if ran else "",
+                "finishedAt": _iso(now - 3600 * (n + 1) + 90) if ran else "",
+                "steps": steps,
+                "pool": f"{name.rpartition('/')[0]}/default" if "/" in name else "default",
+            }
+        )
+        if status in CATALOG_RUN_SAFE:
+            safe.add(name)
+    return seeded, safe
+
+
 def capture(server: str) -> dict:
     """The snapshot the server's event stream opens with."""
     with urllib.request.urlopen(f"{server}/api/events", timeout=30) as stream:
@@ -391,13 +439,19 @@ def scrub(live: dict) -> dict:
     seeded_dags, seeded_pools = (
         ([], []) if live.get("pools") else _seed_fanout(live["domains"], live["dags"], live["now"])
     )
+    catalog, run_safe = (
+        ([], set()) if live.get("pools") else _seed_catalog(live["domains"], live["dags"] + seeded_dags, live["now"])
+    )
     history, captured = _history(flows, live["now"]), live.get("suns", {})  # a fresh server's shares are all zero
     return {
         **live,
         "boardUrl": None,
         "hint": None,
-        "domains": [{**d, "dags": [{"name": x["name"], "runSafe": False} for x in d["dags"]]} for d in live["domains"]],
-        "dags": [_demo_dag(i, d) for i, d in enumerate(live["dags"])] + seeded_dags,
+        "domains": [
+            {**d, "dags": [{"name": x["name"], "runSafe": x["name"] in run_safe} for x in d["dags"]]}
+            for d in live["domains"]
+        ],
+        "dags": [_demo_dag(i, d) for i, d in enumerate(live["dags"])] + seeded_dags + catalog,
         **({"pools": seeded_pools} if seeded_pools else {}),
         "flows": flows,
         "pulls": {

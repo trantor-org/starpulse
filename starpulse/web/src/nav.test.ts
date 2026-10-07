@@ -79,6 +79,7 @@ describe("the view in the address", () => {
   it("opens the Admin view for ?view=admin, beside the other parameters", () => {
     expect(viewOf("?view=admin")).toBe("admin");
     expect(viewOf("?view=graph")).toBe("graph");
+    expect(viewOf("?view=dags")).toBe("dags");
     expect(viewSearch("?demo&suns=working", "graph")).toBe("?demo&suns=working&view=graph");
     expect(viewOf("?demo&view=admin")).toBe("admin");
     expect(viewSearch("?demo", "admin")).toBe("?demo&view=admin");

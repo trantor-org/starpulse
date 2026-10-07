@@ -376,7 +376,7 @@ function HiddenMenu({ prefs, tasks, set, close }: { prefs: Prefs; tasks: KanbanT
 type MenuName = "assignee" | "milestone" | "hidden";
 
 /** One of the Assignee or Milestone menus: each value with its count; the chosen one is picked again to clear it. */
-function ChoiceMenu({ title, options, value, name, set, close }: {
+export function ChoiceMenu({ title, options, value, name, set, close }: {
   title: string; options: Option[]; value: string | null; name: (v: string) => string; set: (v: string | null) => void; close: () => void;
 }) {
   return (

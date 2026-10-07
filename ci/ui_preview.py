@@ -46,7 +46,12 @@ PREVIEW_CONFIG = "ci/preview.toml"
 DESIGN = "design"
 #: Each surface's screenshots: a name and the query string the demo file opens with.
 PAGES = {
-    FLOW_VIEW: {"flow-view-star-map": "", "flow-view-kanban": "?view=kanban", "flow-view-orbit": "?view=graph"},
+    FLOW_VIEW: {
+        "flow-view-star-map": "",
+        "flow-view-kanban": "?view=kanban",
+        "flow-view-orbit": "?view=graph",
+        "flow-view-dags": "?view=dags",
+    },
     MOCKUP: {"design-mockup": ""},
     ELEMENTS: {"element-sheet": ""},
 }

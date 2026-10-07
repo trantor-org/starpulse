@@ -58,7 +58,7 @@ export const canvasSpace = (viewport: number, nav: { open: number; fold: number 
   fitWidth: viewport - nav.open - rail,
 });
 
-export type ViewName = "constellation" | "kanban" | "admin" | "graph";
+export type ViewName = "constellation" | "kanban" | "dags" | "admin" | "graph";
 
 /** Whether the address is a retired per-graph one (`/board`, `/flow/<name>`, `/#sec-<name>`): those open the Star Map whatever "Opens on" says. */
 export const retired = (pathname: string, hash: string) => pathname !== "/" || hash !== "";
@@ -67,7 +67,7 @@ export const retired = (pathname: string, hash: string) => pathname !== "/" || h
 export function viewOf(search: string, fallback: ViewName = "constellation"): ViewName {
   const v = new URLSearchParams(search).get("view");
   if (v === null) return fallback;
-  return v === "kanban" || v === "admin" || v === "graph" ? v : "constellation";
+  return v === "kanban" || v === "dags" || v === "admin" || v === "graph" ? v : "constellation";
 }
 
 /** The query string that opens `view`, keeping every other parameter; the view a bare address opens (`fallback`) needs no parameter. */
