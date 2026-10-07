@@ -37,6 +37,12 @@
         "minItems": 1,
         "items": {"$ref": "#/$defs/writer"}
       }
+    },
+    "cues": {
+      "description": "The workflows a machine event cues, each with how its failure resolves.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/cue"}
     }
   },
   "$defs": {
@@ -84,6 +90,24 @@
           "pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_./-]+)?$"
         },
         "trigger": {"type": "string", "minLength": 1}
+      }
+    },
+    "cue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "dag", "on", "resolves"],
+      "properties": {
+        "event": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+        "dag": {
+          "description": "The cued workflow as <instance>/<workflow>.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+/[A-Za-z0-9_./-]+$"
+        },
+        "on": {"description": "What the page says cues it, such as a push to main.", "type": "string", "minLength": 1},
+        "resolves": {
+          "description": "forced: a failed run stays pinned until a forced rerun. next: it clears on the next run of the DAG.",
+          "enum": ["forced", "next"]
+        }
       }
     },
     "registered": {
