@@ -7,7 +7,7 @@ usage: git apply design/dag-ties/dag-ties-src.patch
 
 The patch draws the DAGs tied to a Board or machine state back onto the Star Map (`dagTies.ts`): every writer of a
 transition, every DAG a Board event cues, every launch into In Progress and every writer of a sub-machine's events, in
-the placement, label and motion variant the query names. mock.js simulates their runs. `--fixture` reuses a saved
+the placement, launcher, label and motion variant the query names. mock.js simulates their runs. `--fixture` reuses a saved
 capture, else the server is captured and the capture saved there.
 """
 
@@ -50,7 +50,7 @@ html = demo.page(demo.STATIC, snap)
 head = (
     "<!--\n  Design mockup of the DAGs tied to a state, back on the Star Map; under operator review, not served by starpulse.\n"
     "  The real page, built from a source copy that draws them (dag-ties-src.patch), over a scrubbed capture, with mock.js\n"
-    "  simulating their runs. Variants: ?place=edge|sat|rim  ?names=0|1  ?motion=breath|spark|land|still  ?fs=100|125|150\n-->\n"
+    "  simulating their runs. Variants: ?place=dock|shelf  ?launch=chip|row  ?names=1|0  ?motion=sweep|glow  ?sim=live|rest|fail  ?fs=100|125|150\n-->\n"
 )
 html = html.replace("<head>", "<head>\n" + head, 1).replace("</body>", '<script src="mock.js"></script>\n</body>', 1)
 (HERE / "index.html").write_text(html)

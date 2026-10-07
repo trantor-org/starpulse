@@ -2,8 +2,10 @@
 // real StarPulse page, built from a source copy that draws each DAG tied to a Board state beside the transition it writes, the event that
 // cues it or the machine it launches (dag-ties-src.patch). This layer adds the review bar, the text size (?fs=100|125|150) and their runs,
 // simulated on a loop shaped like the live day: autopilot claims, reconciliation releases, a merge cues apply-on-merge and graph-refresh,
-// the sweep, a skill eval. ?sim=live (the loop), rest (nothing running) or fail (apply-on-merge failed and unresolved until its forced rerun);
-// ?at=<seconds> opens the loop at that moment.
+// the sweep, a skill eval. ?sim=live (the loop, where a forced rerun clears apply-on-merge's failure), rest (nothing running) or fail
+// (apply-on-merge failed and left unresolved: the loop skips the rerun);
+// ?at=<seconds> opens the loop at that moment. ?motion=sweep|glow picks how a run shows; ?names=0 hides names until hover (the bar no longer
+// offers it: names are always shown).
 // It runs before the page's module.
 (() => {
   const q = new URLSearchParams(location.search);
@@ -15,35 +17,35 @@
     localStorage.removeItem("fv.path");
   } catch { /* storage off: the page keeps 100% and opens on the Board */ }
 
-  // The loop, in seconds from page load: [dag, start, duration, outcome, event it writes]
-  const sim = q.get("sim") || "live", P = 80;
+  // The loop, in seconds from page load: [dag, start, duration, outcome, whether it writes its docked transition when it ends]
+  const sim = q.get("sim") || "live", P = 40;
   const plan = [
-    ["dagu/board-autopilot", 4, 6, "ok", "CLAIM"],
-    ["dagu/main-follow", 14, 3, "ok", "MERGED"],
-    ["dagu/apply-on-merge", 17.5, 7, "fail"],
-    ["dagu/graph-refresh", 17.5, 4, "ok"],
-    ["dagu/board-dependency-reconciliation", 30, 4, "ok", "DEP_RESOLVED"],
-    ["dagu/skill-eval", 38, 12, "ok"],
-    ["dagu/board-autopilot", 44, 6, "ok", "DEFER"],
-    ["dagu/apply-on-merge", 56, 7, "ok"], // the forced rerun that clears the failure
-    ["dagu/backlog-sweep", 66, 3, "ok", "SWEEP"],
+    ["dagu/board-autopilot", 1, 5, "ok", true],
+    ["dagu/main-follow", 8, 3, "ok", true],
+    ["dagu/apply-on-merge", 11.5, 6, "fail"],
+    ["dagu/graph-refresh", 11.5, 4, "ok"],
+    ["dagu/board-dependency-reconciliation", 20, 4, "ok", true],
+    ["dagu/skill-eval", 24, 8, "ok"],
+    ["dagu/apply-on-merge", 28, 6, "ok"], // the forced rerun that clears the failure
+    ["dagu/backlog-sweep", 35, 3, "ok", true],
   ];
-  // ?at=<seconds> opens the loop that far in (a merge lands at 17, the skill eval launches at 38); a failure opens just after apply-on-merge fails
-  const t00 = Date.now() / 1000 - Number(q.get("at") || (sim === "fail" ? 26 : 0));
+  // ?at=<seconds> opens the loop that far in (a merge lands at 11, the skill eval launches at 24); a failure opens just after apply-on-merge fails
+  const t00 = Date.now() / 1000 - Number(q.get("at") || (sim === "fail" ? 18 : 0));
   window.__ties = {};
   if (sim === "rest") return bar();
   const tick = () => {
     const now = Date.now() / 1000, loop = Math.floor((now - t00) / P), out = {};
     // the latest run of each DAG that has started in this loop (or the last one), and a failure stays until the run that clears it
     for (let k = loop - 1; k <= loop; k++)
-      for (const [dag, s, d, how, event] of plan) {
+      for (const [dag, s, d, how, writes] of plan) {
+        if (sim === "fail" && dag === "dagu/apply-on-merge" && how === "ok") continue;
         const t0 = t00 + k * P + s, fin = t0 + d;
         if (t0 > now || k < 0) continue;
         const prev = out[dag];
         if (prev && prev.t0 > t0) continue;
         out[dag] = now < fin ? { status: "running", t0, dur: d }
           : how === "fail" ? { status: "failed", t0, dur: d, fin, unresolved: true }
-          : { status: "succeeded", t0, dur: d, fin, ...(event ? { wrote: fin, event } : {}) };
+          : { status: "succeeded", t0, dur: d, fin, ...(writes ? { wrote: fin } : {}) };
       }
     window.__ties = out;
   };
@@ -64,11 +66,11 @@
         #mockbar a { padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(148,163,184,.18); color: #b6c0d3; text-decoration: none; }
         #mockbar a.on { border-color: #fbbf24; color: #fde68a; background: rgba(251,191,36,.10); }
       </style><b>MOCKUP</b>`;
-      const cur = { place: q.get("place") || "edge", names: q.get("names") || "0", motion: q.get("motion") || "breath", sim, fs: q.get("fs") || "100" };
+      const cur = { place: q.get("place") || "dock", launch: q.get("launch") || "chip", names: q.get("names") || "1", motion: q.get("motion") || "sweep", sim, fs: q.get("fs") || "100" };
       const groups = [
-        ["Placement", "place", [["edge", "On the edge"], ["sat", "Satellite"], ["rim", "Rim band"]]],
-        ["Names", "names", [["0", "On hover"], ["1", "Always"]]],
-        ["Motion", "motion", [["breath", "Breath"], ["spark", "Spark"], ["still", "Still"]]],
+        ["Placement", "place", [["dock", "Docked"], ["shelf", "Shelf"]]],
+        ["Launchers", "launch", [["chip", "One chip"], ["row", "A row"]]],
+        ["Motion", "motion", [["sweep", "Sweep"], ["glow", "Glow only"]]],
         ["Runs", "sim", [["live", "Live loop"], ["rest", "At rest"], ["fail", "Failure"]]],
         ["Text", "fs", [["100", "100%"], ["125", "125%"], ["150", "150%"]]],
       ];
