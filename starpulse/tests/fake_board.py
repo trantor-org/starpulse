@@ -10,6 +10,8 @@ from starpulse.contracts import BoardTask, TaskKeys
 
 #: Each `(settings, base)` the view built this board from.
 BUILT: list[tuple[dict, Path]] = []
+#: The history a board built with `keeps_history` reads instead of StarPulse's own, set by the test that asks for it.
+KEPT: list = []
 #: The workflows each draw of its machines was given.
 DRAWN: list[list[str]] = []
 
@@ -39,6 +41,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "edit": lambda task, changes, comment: Written(True, ""),
             "archive": lambda task, reason: Written(True, ""),
         }
+    if settings.get("keeps_history"):
+        writers["history"] = lambda drawn: KEPT[0]
     return Board(
         machines=machines,
         start=start,

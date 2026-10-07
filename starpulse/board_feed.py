@@ -90,6 +90,12 @@ def stream_id(entry_id: str) -> tuple[int, int]:
     return int(millis), int(sequence or 0)
 
 
+class LaneRecorder(Protocol):
+    """Where a feed keeps each lane change it applies, idempotent on the event id (`HistoryStore`)."""
+
+    def record_lane(self, event_id: str, task: str, status: str, at: float) -> None: ...
+
+
 class BoardStore(Protocol):
     """Where a feed keeps the Board it saved: the event log, or any store that holds one state per stream."""
 
@@ -131,6 +137,8 @@ class BoardFeed:
         self._clock = clock
         #: A task's lane changes as the history keeps them (`History.lane_path`), read while the feed replays.
         self._lane_path: Callable[[str], list[dict]] = lambda _task: []
+        #: Where a lane change the feed applies is kept (`HistoryStore`); None records nothing.
+        self._lanes: LaneRecorder | None = None
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
@@ -290,6 +298,14 @@ class BoardFeed:
         """Date a lane the feed replays by the history's last change into it (`History.lane_path`), not by the replay."""
         self._lane_path = lane_path
 
+    def record_lanes(self, lanes: LaneRecorder) -> None:
+        """Keep each lane change the feed applies in `lanes` (`HistoryStore.record_lane`).
+
+        The event id names the task, the lane and when it entered it, so a replay of a change the history holds
+        repeats nothing. A history that cannot be written is logged: the task is still placed.
+        """
+        self._lanes = lanes
+
     def size_suns(self, lane_rows: Callable[[], list[LaneRow]]) -> None:
         """Size each Board state's sun from its share of the lane moves in the week before local midnight, read through
         `lane_rows` (`LaneHistory.lane_rows`). The shares are worked out once a day, the first time a snapshot is
@@ -328,6 +344,15 @@ class BoardFeed:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
         if self._keys is not None and not self._keys.matches(task.id):
             return
+        entered = self._place(task)
+        if entered is not None and self._lanes is not None:
+            try:
+                self._lanes.record_lane(f"{task.id}@{task.lane}@{entered}", task.id, task.lane, entered)
+            except Exception as exc:  # the history is down; the task is placed and the next change is recorded
+                logger.warning("StarPulse: cannot record the lane change of %s: %s", task.id, exc)
+
+    def _place(self, task: BoardTask) -> float | None:
+        """Place `task`; when it entered its lane if that is a change of lane, else None."""
         with self._lock:
             self._assignees[task.id] = task.assignee
             agent, settled = (None, settled_entry(task)) if task.settled else (task_agent(task), None)
@@ -340,7 +365,7 @@ class BoardFeed:
             if agent:
                 agent["entered"] = self._entered(task, before)
             if before == agent and self._settled.get(task.id) == settled:
-                return  # an hourly reconcile republishes every task; only a change reaches the page
+                return None  # an hourly reconcile republishes every task; only a change reaches the page
             if agent is None:
                 self._open.pop(task.id, None)
                 if settled:
@@ -349,6 +374,7 @@ class BoardFeed:
                 self._open[task.id] = agent
                 self._settled.pop(task.id, None)
             self._publish("task", {"id": task.id, "agent": agent, "settled": settled})
+            return agent["entered"] if agent and (before is None or before["state"] != agent["state"]) else None
 
     def retract(self, task_id: str) -> None:
         """Remove a task the adapter's source no longer holds, open or settled; a task not placed is a no-op."""

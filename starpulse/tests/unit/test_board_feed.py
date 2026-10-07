@@ -7,10 +7,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy import text
 
 from starpulse.board_feed import BoardFeed
 from starpulse.config import CommitKeys
 from starpulse.contracts import BoardTask, TaskKeys
+from starpulse.history import HistoryStore
 from starpulse.tests.machines import FLOWS, MACHINES
 
 PR = "https://github.com/acme/widgets/pull/1750"
@@ -883,3 +885,38 @@ def test_a_pinned_merge_older_than_the_loaded_page_still_rides_the_snapshot_and_
     assert [row["tasks"] for row in snapshot["mergePins"]] == [["TASK-2"]]
     assert all(row["tasks"] != ["TASK-2"] for row in snapshot["ledgers"]["MERGED"])
     assert [row["tasks"] for row in sent["ledgers"]["mergePins"]] == [["TASK-2"]]
+
+
+def test_a_lane_change_is_recorded_once_and_a_replay_of_its_event_id_adds_no_row(tmp_path) -> None:
+    store = HistoryStore(f"sqlite:///{tmp_path / 'history.db'}", {})
+    times = iter([100.0, 200.0, 300.0])
+    feed = BoardFeed(clock=lambda: next(times))
+    feed.record_lanes(store)
+
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))  # an hourly reconcile is no change
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="in_progress"))
+    replay = BoardFeed(clock=iter([100.0, 200.0]).__next__)  # a restart replays the same changes with the same dates
+    replay.record_lanes(store)
+    replay.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
+    replay.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="in_progress"))
+
+    assert store.lane_path("PROJ-1") == [
+        {"at": 100.0, "from": None, "to": "ready"},
+        {"at": 200.0, "from": "ready", "to": "in_progress"},
+    ]
+    with store.engine.connect() as db:
+        assert db.execute(text("SELECT count(*) FROM starpulse_lane_changes")).scalar() == 2
+
+
+def test_a_history_that_cannot_record_a_lane_change_still_places_the_task() -> None:
+    class Down:
+        def record_lane(self, *_args: object) -> None:
+            raise OSError("history down")
+
+    feed = BoardFeed(clock=lambda: 5.0)
+    feed.record_lanes(Down())
+
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
+
+    assert [a["id"] for a in _agents(feed)] == ["PROJ-1"]

@@ -727,7 +727,9 @@ directory. The `Board` says:
   archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `create(title, details)` that
   makes a task in the board's starting lane with the details the page filled (description, priority, labels,
   milestone, assignee, dependencies, acceptance criteria) and answers with its id (`POST /api/tasks`;
-  `capabilities.create`), and its own `history`.
+  `capabilities.create`), and its own `history`: the page reads it in place of StarPulse's store, while `serve` still
+  records every machine event (task- and run-keyed) and each Board lane change it places into StarPulse's own store
+  (`starpulse_machine_events`, `starpulse_lane_changes`).
 
 `starpulse.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance

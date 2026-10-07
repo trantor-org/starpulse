@@ -1048,13 +1048,17 @@ def announce(port: int, hint: str | None) -> None:
         print(hint, flush=True)
 
 
-def history_store(config: Config, base: Path, board: Board, machines: Mapping[str, dict]) -> History:
-    """The board's own history when it keeps one, else StarPulse's store at `database_url` or beside the config.
+def history_store(
+    config: Config, base: Path, board: Board, machines: Mapping[str, dict]
+) -> tuple[HistoryStore, History]:
+    """StarPulse's store at `database_url` or beside the config, and the history the page reads.
 
-    The store is opened either way, so every StarPulse table, the event log's included, is on that database.
+    The store is opened either way, so every StarPulse table, the event log's included, is on that database, and
+    `serve` records into it whatever the board keeps. The history read is the board's own when it keeps one, else
+    the store.
     """
     store = HistoryStore(database_url(config.database_url, base), machines)
-    return kept if (kept := board.history(machines)) is not None else store
+    return store, kept if (kept := board.history(machines)) is not None else store
 
 
 def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
@@ -1144,8 +1148,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     ).start()
     window = HistoryWindow(feed, args.hours, base / SETTINGS_FILE)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
-    history = history_store(config, base, board, feed.machines)
+    store, history = history_store(config, base, board, feed.machines)
     feed.date_lanes(history.lane_path)
+    feed.record_lanes(store)
     if isinstance(history, LaneHistory):
         feed.size_suns(history.lane_rows)
         threading.Thread(target=feed.keep_suns, args=(threading.Event(),), name="board-suns", daemon=True).start()
@@ -1170,12 +1175,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         threading.Thread(target=pull_requests.run_forever, name="pull-requests", daemon=True).start()
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)
-    if isinstance(history, HistoryStore):
-        threading.Thread(
-            target=record_machine_events, args=(history, log, threading.Event()), name="machine-history", daemon=True
-        ).start()
+    threading.Thread(
+        target=record_machine_events, args=(store, log, threading.Event()), name="machine-history", daemon=True
+    ).start()
     # The learned step graphs persist only in StarPulse's own store.
-    pushed = PushRuns(feed.runs(PUSHED_INSTANCE), history if isinstance(history, HistoryStore) else None)
+    pushed = PushRuns(feed.runs(PUSHED_INSTANCE), store)
     follow(pushed, log, run_events.STREAM, pushed.handle_entry)
     forwarding = threading.Event()  # never set: the forwarder lives as long as the process
     try:
@@ -1183,7 +1187,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
             config,
             base,
             log,
-            history if isinstance(history, HistoryStore) else HistoryStore(url, feed.machines),
+            store,
             os.environ,
             hub=args.hub,
         )

@@ -90,8 +90,9 @@ def test_a_board_type_no_module_provides_is_refused_by_name(tmp_path: Path) -> N
 def test_without_database_url_history_is_a_sqlite_file_beside_the_config(tmp_path: Path) -> None:
     board, feed = assemble(load(_config(tmp_path)), tmp_path, None, ())
 
-    store = history_store(load(_config(tmp_path)), tmp_path, board, feed.machines)
+    store, reads = history_store(load(_config(tmp_path)), tmp_path, board, feed.machines)
 
+    assert reads is store
     assert isinstance(store, HistoryStore)
     assert store.engine.url.database == str(tmp_path / DEFAULT_FILE)
     assert store.machine_path("task-1", "board") == ([], 0), "the store places steps on the drawn machines"
@@ -102,14 +103,14 @@ def test_database_url_names_the_database_history_is_kept_in(tmp_path: Path) -> N
     config = load(_config(tmp_path, f'database_url = "{url}"\n'))
     board, feed = assemble(config, tmp_path, None, ())
 
-    store = history_store(config, tmp_path, board, feed.machines)
+    store, _ = history_store(config, tmp_path, board, feed.machines)
 
     assert isinstance(store, HistoryStore)
     assert str(store.engine.url) == url
     assert (tmp_path / "elsewhere.db").is_file()
 
 
-def test_a_board_that_keeps_its_own_history_is_read_instead(tmp_path: Path) -> None:
+def test_a_board_that_keeps_its_own_history_is_read_while_the_store_stays_open(tmp_path: Path) -> None:
     drawn = {"board": {}}
     kept = HistoryStore(f"sqlite:///{tmp_path / 'kept.db'}", drawn)
     board = Board(
@@ -118,7 +119,10 @@ def test_a_board_that_keeps_its_own_history_is_read_instead(tmp_path: Path) -> N
         history=lambda machines: kept if machines is drawn else None,
     )
 
-    assert history_store(load(None), tmp_path, board, drawn) is kept
+    store, reads = history_store(load(None), tmp_path, board, drawn)
+
+    assert reads is kept
+    assert store is not kept and isinstance(store, HistoryStore)
 
 
 def test_a_feed_draws_the_tracker_and_the_window_its_config_and_caller_give(tmp_path: Path) -> None:
