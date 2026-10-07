@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from starpulse import contracts
 from starpulse.board_feed import BoardFeed
-from starpulse.contracts import CONTRACTS, SCHEMAS, ActiveRun, BoardTask, Dag, MachineEvent, Pool, Step, TaskKeys
+from starpulse.contracts import CONTRACTS, SCHEMAS, ActiveRun, BoardTask, Dag, MachineEvent, Pool, RecentRun, Step, TaskKeys
 from starpulse.machine_tasks import MachineTasks
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_machine_tasks import _agents, _entry
@@ -53,7 +53,7 @@ def test_a_task_outside_the_declared_scheme_is_not_placed() -> None:
     assert _agents(feed, "in-progress") == []
 
 
-@pytest.mark.parametrize("model", [BoardTask, MachineEvent, Dag, Step, ActiveRun, Pool])
+@pytest.mark.parametrize("model", [BoardTask, MachineEvent, Dag, Step, ActiveRun, RecentRun, Pool])
 def test_every_field_of_a_contract_says_what_it_holds(model: type[BaseModel]) -> None:
     assert model.model_fields
     assert [name for name, field in model.model_fields.items() if not field.description] == []
@@ -130,6 +130,33 @@ def test_a_dag_carries_one_record_per_active_run_and_the_pool_it_runs_on() -> No
     assert dag.active[0].steps == {"lint": "running", "push": "not_started"}
     assert dumped["pool"] == "deliver"
     assert jsonschema.Draft202012Validator(SCHEMAS["runs"]).is_valid(dumped)
+
+
+RECENT = {
+    "runId": "r1",
+    "status": "failed",
+    "startedAt": "2026-10-02T10:00:00Z",
+    "finishedAt": "2026-10-02T10:01:00Z",
+    "params": {"AFTER": "a" * 40},
+    "steps": {"lint": "succeeded", "push": "failed"},
+}
+
+
+def test_a_dag_has_no_recent_runs_unless_its_adapter_reports_them() -> None:
+    assert Dag.model_validate(DAG).recent == ()
+
+
+def test_a_dag_carries_its_recent_runs_with_their_parameters_and_per_step_status() -> None:
+    dag = Dag.model_validate({**DAG, "recent": [RECENT]})
+    dumped = dag.model_dump(by_alias=True, mode="json")
+
+    assert (dag.recent[0].run_id, dag.recent[0].params, dag.recent[0].steps["push"]) == ("r1", {"AFTER": "a" * 40}, "failed")
+    assert jsonschema.Draft202012Validator(SCHEMAS["runs"]).is_valid(dumped)
+
+
+def test_a_recent_run_outside_the_status_set_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        RecentRun.model_validate({**RECENT, "steps": {"lint": "paused"}})
 
 
 def test_an_active_run_outside_the_status_set_is_refused() -> None:

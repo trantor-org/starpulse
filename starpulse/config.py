@@ -58,13 +58,14 @@ _OIDC_KEYS = {
     "scopes",
     "engine_token_env",
 }
-_INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env"}
+_INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env", "commit"}
+_COMMIT_KEYS = {"after", "before", "force", "task"}
 _FORWARD_KEYS = {"url", "token_env", "batch"}
 _SOURCE_KEYS = {"name", "token_env"}
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-__all__ = ["Config", "ConfigError", "Forward", "RunsInstance", "Source", "load", "runs_adapter"]
+__all__ = ["CommitKeys", "Config", "ConfigError", "Forward", "RunsInstance", "Source", "load", "runs_adapter"]
 
 
 class ConfigError(ValueError):
@@ -77,6 +78,21 @@ class ConfigError(ValueError):
 
 def _names(value: object) -> bool:
     return isinstance(value, list) and all(isinstance(name, str) for name in value)
+
+
+@dataclass(frozen=True)
+class CommitKeys:
+    """The run parameters of one runs instance that carry a commit or a task: a key left out is a parameter the
+    instance's workflows do not take."""
+
+    after: str | None = None
+    """The parameter naming the commit a run applies (the merge's SHA)."""
+    before: str | None = None
+    """The parameter naming the commit the run starts from."""
+    force: str | None = None
+    """The parameter that marks a forced rerun."""
+    task: str | None = None
+    """The parameter naming the task a run was started for, which pairs a run with a non-merge Board transition."""
 
 
 @dataclass(frozen=True)
@@ -93,6 +109,8 @@ class RunsInstance:
     """The page's groups of this instance's workflows, in the order it lays them out."""
     token_env: str | None = None
     """The environment variable holding this instance's ingest token; none: the instance takes no pushed events."""
+    commit: CommitKeys | None = None
+    """The `[runs.commit]` table; none: a run pairs with a merge only by the time it started."""
 
 
 @dataclass(frozen=True)
@@ -220,8 +238,27 @@ def _instance(raw: object) -> RunsInstance:
     if token_env is not None and not (isinstance(token_env, str) and _ENV_NAME.fullmatch(token_env)):
         raise ConfigError(f"runs instance {name}: token_env must be the name of an environment variable")
     return RunsInstance(
-        name, kind, url, tuple(run_safe), {domain: tuple(ws) for domain, ws in domains.items()}, token_env
+        name,
+        kind,
+        url,
+        tuple(run_safe),
+        {domain: tuple(ws) for domain, ws in domains.items()},
+        token_env,
+        _commit(raw["commit"], name) if "commit" in raw else None,
     )
+
+
+def _commit(raw: object, instance: str) -> CommitKeys:
+    """The `[runs.commit]` table as keys; each refusal names the key to fix."""
+    who = f"runs instance {instance}"
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{who}: commit must be a [runs.commit] table")
+    if unknown := sorted(raw.keys() - _COMMIT_KEYS):
+        raise ConfigError(f"{who}: commit: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_COMMIT_KEYS))}")
+    for key, name in raw.items():
+        if not (isinstance(name, str) and _ENV_NAME.fullmatch(name)):
+            raise ConfigError(f"{who}: commit.{key} must be the name of a run parameter")
+    return CommitKeys(**raw)
 
 
 def _token_env(raw: object, who: str) -> str:

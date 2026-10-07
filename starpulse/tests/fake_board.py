@@ -43,6 +43,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         machines=machines,
         start=start,
         keys=TaskKeys(key=re.compile(r"FAKE-\d+"), branch=re.compile(r"(FAKE-\d+)")),
-        cues=lambda qualify: [{"dag": "q/nightly"}],
+        cues=lambda qualify: [{"event": "SHUT", "dag": "q/nightly", "state": lanes[-1]}],
         **writers,
     )

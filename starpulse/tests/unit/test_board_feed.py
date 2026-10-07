@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from starpulse.board_feed import BoardFeed
+from starpulse.config import CommitKeys
 from starpulse.contracts import BoardTask, TaskKeys
 from starpulse.tests.machines import FLOWS, MACHINES
 
@@ -280,6 +281,7 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "graphs",
         "hint",
         "insights",
+        "ledgers",
         "now",
         "pools",
         "pulls",
@@ -583,3 +585,122 @@ def test_the_suns_keeper_resizes_on_its_interval_until_stopped() -> None:
         keeper.join(5)
 
     assert (kind, keeper.is_alive()) == ("suns", False)
+
+
+SHA = "a" * 40
+LEDGER_MACHINE = {
+    "states": [
+        {"id": "to_do", "name": "To Do", "initial": True, "final": False},
+        {"id": "in_progress", "name": "In Progress", "initial": False, "final": False},
+        {"id": "done", "name": "Done", "initial": False, "final": True},
+    ],
+    "transitions": [
+        {"source": "to_do", "target": "in_progress", "event": "STARTED"},
+        {"source": "in_progress", "target": "done", "event": "MERGED"},
+    ],
+    "writers": {"STARTED": [{"actor": "ci/start", "trigger": "task started"}]},
+}
+CUE = {"event": "MERGED", "dag": "ci/apply", "on": "merge", "resolves": "retry", "state": "done"}
+MERGED_PR = {
+    "url": "https://github.com/o/trantor/pull/7",
+    "merged": True,
+    "merge_sha": SHA,
+    "merged_at": "2026-10-07T00:01:00Z",
+}
+APPLIED = {
+    "runId": "r1",
+    "status": "succeeded",
+    "startedAt": "2026-10-07T00:02:00Z",
+    "finishedAt": "2026-10-07T00:03:00Z",
+    "params": {"AFTER": SHA},
+    "steps": {"validate": "succeeded", "deploy": "succeeded"},
+}
+
+
+def _dag(name: str, *recent: dict) -> dict:
+    return {"name": name, "recent": list(recent)}
+
+
+def ledger_feed() -> BoardFeed:
+    return BoardFeed(
+        clock=lambda: datetime(2026, 10, 7, 1, tzinfo=ZoneInfo("UTC")).timestamp(),
+        machines={"board": LEDGER_MACHINE},
+        domains={"ci": ["ci/apply", "ci/start"]},
+        cues=[CUE],
+        commit={"ci": CommitKeys(after="AFTER", task="TASK")},
+    )
+
+
+def test_the_snapshot_carries_each_merge_with_its_tasks_pr_cued_run_and_per_step_status() -> None:
+    feed = ledger_feed()
+    feed.set_pulls({"TASK-1": [MERGED_PR]})
+
+    feed.set_dags("ci", [_dag("apply", APPLIED)], None)
+
+    (row,) = feed.snapshot()["ledgers"]["MERGED"]
+    assert (row["sha"], row["tasks"]) == (SHA, ["TASK-1"])
+    assert row["pr"] == {"repo": "trantor", "number": 7, "url": MERGED_PR["url"]}
+    run = row["runs"]["ci/apply"]
+    assert (run["runId"], run["status"], run["inferred"], run["ambiguous"]) == ("r1", "succeeded", False, 0)
+    assert run["steps"] == {"validate": "succeeded", "deploy": "succeeded"}
+
+
+def test_a_merge_no_run_has_reached_is_a_row_with_no_runs() -> None:
+    feed = ledger_feed()
+    feed.set_pulls({"TASK-1": [MERGED_PR]})
+    feed.set_dags("ci", [_dag("apply")], None)
+
+    assert feed.snapshot()["ledgers"]["MERGED"][0]["runs"] == {}
+
+
+def test_the_workflow_listing_the_page_draws_leaves_the_recent_runs_to_the_ledgers() -> None:
+    feed = ledger_feed()
+    feed.set_dags("ci", [_dag("apply", APPLIED)], None)
+
+    assert feed.snapshot()["dags"] == [{"name": "ci/apply"}]
+
+
+def test_a_feed_that_ties_no_workflow_to_an_event_has_no_ledgers() -> None:
+    feed = BoardFeed()
+    feed.set_pulls({"TASK-1": [MERGED_PR]})
+
+    assert feed.snapshot()["ledgers"] == {}
+    assert feed.tied("ci") == frozenset()
+
+
+def test_the_workflows_tied_to_an_instance_are_those_a_cue_or_a_writer_names() -> None:
+    feed = ledger_feed()
+
+    assert feed.tied("ci") == {"apply", "start"}
+    assert feed.tied("other") == frozenset()
+    assert feed.runs("ci").tied == {"apply", "start"}
+
+
+def test_a_ledgers_event_is_sent_when_a_run_or_a_pull_changes_a_ledger_and_not_when_neither_does() -> None:
+    feed = ledger_feed()
+    _, deltas = feed.subscribe()
+
+    feed.set_pulls({"TASK-1": [MERGED_PR]})
+    feed.set_dags("ci", [_dag("apply", APPLIED)], None)
+    feed.set_dags("ci", [_dag("apply", APPLIED)], "down")  # the same ledgers, a new error
+
+    kinds = []
+    while not deltas.empty():
+        kinds.append(deltas.get_nowait()[0])
+    assert kinds == ["pulls", "ledgers", "dags", "ledgers", "dags"]
+
+
+def test_a_task_entering_the_lane_a_workflows_event_reaches_pairs_with_its_run_by_the_task_parameter() -> None:
+    feed = ledger_feed()
+    entered = datetime(2026, 10, 7, 0, 5, tzinfo=ZoneInfo("UTC")).timestamp()
+    feed.size_suns(lambda: [("TASK-1", entered, "To Do", "In Progress"), ("TASK-2", entered + 1, "To Do", "In Progress")])
+    started = {**APPLIED, "runId": "s1", "startedAt": "2026-10-07T00:06:00Z", "params": {"TASK": "TASK-1"}}
+
+    feed.set_dags("ci", [_dag("start", started)], None)
+
+    rows = feed.snapshot()["ledgers"]["STARTED"]
+    assert [r["tasks"] for r in rows] == [["TASK-2"], ["TASK-1"]]
+    assert "sha" not in rows[0]
+    assert rows[1]["runs"]["ci/start"]["runId"] == "s1"
+    assert rows[1]["runs"]["ci/start"]["inferred"] is False
+    assert rows[0]["runs"] == {}

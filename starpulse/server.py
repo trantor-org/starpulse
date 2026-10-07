@@ -915,6 +915,7 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
             "create": board.create is not None,
         },
         hint=found_backlog(config, base),
+        commit={instance.name: instance.commit for instance in config.runs if instance.commit},
     )
     return board, feed
 

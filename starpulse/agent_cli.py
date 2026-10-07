@@ -67,6 +67,7 @@ _SNAPSHOT_KEYS = (
     "dags",
     "pools",
     "pulls",
+    "ledgers",
     "claims",
     "insights",
     "settled",

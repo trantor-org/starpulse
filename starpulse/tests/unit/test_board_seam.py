@@ -58,7 +58,7 @@ def test_a_board_type_names_the_module_whose_board_the_view_draws(tmp_path: Path
 
     snapshot = feed.snapshot()
     assert [s["id"] for s in snapshot["flows"][0]["machine"]["states"]] == ["open", "shut"]
-    assert snapshot["cues"] == [{"dag": "q/nightly"}]
+    assert snapshot["cues"] == [{"event": "SHUT", "dag": "q/nightly", "state": "shut"}]
     task = feed.task("FAKE-1")
     assert task is not None and task["state"] == "open"
     assert feed.task("other-1") is None, "a task outside the adapter's keys is not placed"
