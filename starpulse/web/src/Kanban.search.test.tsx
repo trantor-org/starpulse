@@ -27,7 +27,7 @@ const shown = () => ["TASK-1", "TASK-2", "TASK-3"].filter((id) => host.textConte
 /** The Kanban over the navigator's search slot, which App draws beside it. */
 const mount = () => {
   const moves = new MoveStore(async () => ({ ok: true }) as never);
-  act(() => root.render(<Kanban hud={hud} moves={moves} starts={new StartStore((async () => ({})) as never, moves)} compact={false} constellation={() => {}} searchSlot={slot} onQuery={(q) => queries.push(q)} />));
+  act(() => root.render(<Kanban hud={hud} moves={moves} starts={new StartStore((async () => ({})) as never, moves)} compact={false} constellation={() => {}} searchSlot={slot} outlineSlot={null} onQuery={(q) => queries.push(q)} />));
 };
 
 beforeEach(() => {

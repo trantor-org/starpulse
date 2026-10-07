@@ -50,6 +50,8 @@ export function App() {
   const folded = useSyncExternalStore(fold.subscribe, fold.get);
   // the Kanban's text search draws in the navigator's search slot and reports what it holds, for the folded strip's magnifier
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
+  // and its milestone outline draws in the outline slot below it, where Layers draw on the Star Map
+  const [outlineSlot, setOutlineSlot] = useState<HTMLElement | null>(null);
   const [kanbanQuery, setKanbanQuery] = useState("");
   const prefs = useSyncExternalStore(admin.subscribe, admin.get);
   // a bare address opens the view the Admin chose; one that names a view opens that
@@ -92,7 +94,7 @@ export function App() {
   return (
     <>
       <canvas ref={canvas} id="c" />
-      <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} kanbanQuery={kanbanQuery} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} toggle={() => fold.toggle()} open={(p) => {
+      <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} kanbanQuery={kanbanQuery} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} toggle={() => fold.toggle()} open={(p) => {
           choose("constellation");
           if (pathKey(p) === pathKey(hud.path)) renderer.current?.fitView();
           else renderer.current?.go(p);
@@ -105,7 +107,7 @@ export function App() {
         <OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} />
       )}
       {view === "kanban" && (
-        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} onQuery={setKanbanQuery} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
+        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} onQuery={setKanbanQuery} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
           spot={spotted} note={setWhy} opening={opening} />
       )}
       <Rail hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
@@ -165,8 +167,8 @@ function Node({ hud, path, label, count, size, flow, chev, open, onChev }: {
   );
 }
 
-function Navigator({ hud, folded, view, slot, kanbanQuery, choose, hasLevel, toggle, open, fly, openDag, spot, selectTask }: {
-  hud: HudState; folded: boolean; view: ViewName; slot: (el: HTMLElement | null) => void; kanbanQuery: string; choose: (v: ViewName) => void; hasLevel: boolean; toggle: () => void; open: (p: Path) => void; fly: (group: string) => void; openDag: (dag: string) => void;
+function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, hasLevel, toggle, open, fly, openDag, spot, selectTask }: {
+  hud: HudState; folded: boolean; view: ViewName; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; kanbanQuery: string; choose: (v: ViewName) => void; hasLevel: boolean; toggle: () => void; open: (p: Path) => void; fly: (group: string) => void; openDag: (dag: string) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -308,7 +310,8 @@ function Navigator({ hud, folded, view, slot, kanbanQuery, choose, hasLevel, tog
           <SearchMagnifier view={view} query={view === "kanban" ? kanbanQuery : query} open={() => { if (folded) { focusSearch.current = true; toggle(); } else searchHost.current?.querySelector("input")?.focus(); }} />
         </section>
       )}
-      {(view === "kanban" || view === "graph") && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
+      {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
+      {view === "graph" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
       {view === "constellation" && <>
       <section className="away layers">
         <h3>Layers</h3>
