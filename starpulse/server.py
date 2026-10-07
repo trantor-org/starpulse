@@ -54,7 +54,10 @@ GET /api/level[?hours=N]
                    the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
                    last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
                    `terminals` and `working` totals, plus per source (the forwarder an event id names) its
-                   `ended` runs with `terminal_share` and its `dwell` with `time_share`, each set summing to 1.
+                   `ended` runs with `terminal_share` and its `dwell` with `time_share`, each set summing to 1, and
+                   whether it is `shared` (a forwarder named it). `level` echoes the config the orbit card draws
+                   (title, subject, runs, gates, terminals with roles, orbit, facets, activity) and `arrivals` lists
+                   each entry into a terminal inside the window, `{source, state, at}` oldest first, for the comets.
                    A `hours` that is no positive number is 400, as is one longer than the history, with
                    `history_s` its length; a server with no `[level]` table or not serving `--hub` is 404, and a
                    history that does not keep runs is 501

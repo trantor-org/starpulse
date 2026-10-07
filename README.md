@@ -21,6 +21,9 @@ tasks, running in your browser with no server.
 - **Pull requests and Copilot.** A repository's pull requests move through opened, checks passing or failing, and
   merged or closed, and GitHub Copilot's coding agent and code reviews move a pull request through their own machine.
 - **History.** Every move is kept, so hovering a task traces the path it took.
+- **The level above the Board.** On a hub with a `[level]` table, a Flow graph view draws each source as a planet on its own
+  orbit round the level's terminal (or working) states, with comets for real arrivals; see
+  [Read the level on the page](#read-the-level-on-the-page).
 
 ## Quickstart
 
@@ -180,7 +183,11 @@ to the window, and `aging` each working run's age since it first entered a worki
 85th-percentile cycle time of the trailing 12 weeks (null with no completion to measure). `orbit` totals the ended runs
 per terminal and the working time per working state, and each of `sources` carries its `ended` runs with
 `terminal_share`, its `dwell` per working state with `time_share`; a set of shares sums to 1, and is empty, not zero,
-for a source with nothing ended or worked. History begins at the first event the hub holds: a window longer than it is
+for a source with nothing ended or worked. `level` echoes the config the page draws from (`title`, `subject`, `runs`,
+`gates`, `terminals` with their roles, `orbit.suns` and `orbit.working`, `facets`, `activity.measure` and
+`activity.pace`), each source's `shared` is whether it has a Board of its own (false for `unattributed`), and
+`arrivals` lists each run's entry into a terminal inside the window as `{source, state, at}` (epoch seconds, oldest
+first), the comets the page replays. History begins at the first event the hub holds: a window longer than it is
 refused (exit 1, the error naming the history's hours, `history_s` in the HTTP body), never padded with zero days. A
 server with no level is 404 (exit 3).
 
@@ -452,8 +459,8 @@ curl -X DELETE https://hub.example.com/api/insights/slow-review -H "Authorizatio
   without `engine_token_env`, and an instance without `--hub`, has no insights routes and answers 404.
 - **History and stream.** Findings are kept in `starpulse_insights`, a retracted one with its `retracted_at`. The
   stream sends an `insight` event `{id, finding}` for each post and re-post and `{id, finding: null}` for a retraction,
-  and the snapshot's `insights` lists the findings neither retracted nor past their `expires_at`, so a page that
-  connects later draws them, as does a hub that restarts.
+  and the snapshot's `insights` lists the findings neither retracted nor past their `expires_at`, so a client that
+  connects later reads them, as does a hub that restarts. The page draws none of them.
 
 An engine author tests against the real routes with `InsightsEngineKit` from `starpulse.adapter_kit`: override
 `produce()` to return the engine's findings as plain dicts, and the kit checks each against the contract and schema,
@@ -513,6 +520,48 @@ its machine lacks, or a machine the board does not draw, is refused, naming it, 
 A viewer's facet filter keeps a run only when the run has a value for each selected facet and that value is selected.
 A run without a value for a selected facet is excluded, never counted as zero or as an empty value; selecting nothing
 keeps every run.
+
+### Read the level on the page
+
+A hub with a `[level]` table adds a **Flow graph** view to the page (`?view=graph`), the level above the Board, drawn from
+`GET /api/level` alone: it reads only the `level` echo above, never a name from the page's own build. Each source is a
+planet on a closed orbit; the orbit has one petal per sun, and the planet spends a share of each period in a petal
+that grows with the source's share of that sun (never zero, so the planet's speed at the centre crossing differs
+between petals by under four times). A sun is a terminal state sized by the runs that ended there, or with
+`orbit.suns = "working"` a working state sized by the task-days spent there, the terminals standing in a column to its
+right. At rest the view names each body and moves only the planets, each with a short tail, and the comets: a comet falls
+into a terminal for each batch of arrivals (`activity.measure`: `share` and `flux` batch by a tenth of the source's WIP,
+`count` by five), replayed at `activity.pace`: `live` follows real time with no loop, `min` replays a day a minute and
+`fast` a day in ten seconds, both looping the window. The numbers are on demand: hovering a source rings it with where
+its runs end and traces it to each sun, hovering a sun traces each source to it, and either opens a tip with the shares,
+counts and the source's bottleneck state. A click focuses a body and Tab steps through them, the sources and then the
+suns, leaving the card past the last: a steady ring follows the focused body while the replay keeps it moving, its
+traces stay lit, and a details panel docks at the card's right edge (`src/orbitDetails.ts`). For a source it gives the
+open and ended runs, each terminal's count and share, and the drift, then the time in each state (share, stays, mean
+stay), the open runs oldest first with those past `aging.threshold_s` flagged, and the latest arrivals. For a terminal
+sun it gives the runs that ended there, their share of every end and the last day's count, then each source's count and
+the latest arrivals; for a working sun, the open runs, task-days and stays, then each source's time there and the open
+runs in that state. A list shows five rows and counts the rest. The panel's close button, Esc or a click on empty space
+clears the focus. A second click or Enter on the focused body is held for drilling into it, which waits until a user
+can be selected, so it changes nothing yet (`src/orbitFocus.ts`).
+
+The view always shows one of these states:
+
+| State | When | What it draws |
+|---|---|---|
+| Orbit | `/api/level` answers 200 | The orbit, and under its title a *Source drift* badge when a source reports states the config lacks or omits (the optional `drift: {added, removed}` of a source) |
+| Loading | the first answer is pending | A note |
+| No level | the server answers 404 or 501 | A note: this server has no level |
+| Sign-in | 401, or 403 from the OIDC gate | A card linking `/auth/login` (*Your session ended*, or *This account can't read the level* with *Sign in as someone else*) |
+| Error | any other failure, such as a window past the history | The message and **Retry** |
+
+The page asks again every minute. A self-contained demo page (`starpulse demo`) answers `/api/level` itself, with
+synthetic sources, and its address picks the state: `?view=graph`, `&suns=working`, `&gate=expired` or
+`&gate=refused`, `&pace=fast|live`, `&measure=count`. Motion off in the page's preferences draws one still frame.
+
+The right rail keeps one order in every view: the recent moves at the top and the legend at the bottom, each line
+wrapped whole rather than cut to an ellipsis. Nothing on the page scrolls sideways, and every box that scrolls does so vertically with the Kanban columns' thin scrollbar, from one
+shared rule at the end of `starpulse/web/src/style.css` that `src/scroll.test.ts` holds to.
 
 ### Forward an instance's events to a hub
 

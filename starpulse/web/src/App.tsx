@@ -1,5 +1,5 @@
 // The page's DOM around the canvas: the left navigator, always shown and foldable to an icon strip,
-// the right rail (actors, recent moves, legend), the clock, and the
+// the right rail (recent moves on top, the legend at the bottom), the clock, and the
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -8,11 +8,13 @@ import { AdminStore } from "./adminPrefs";
 import { ForwardingStore } from "./forwarding";
 import { HistoryWindowStore } from "./historyWindow";
 import { HudStore, useHud, type FeedLine, type HudState } from "./hud";
+import { LevelStore } from "./levelData";
 import { BOARD, pathKey, type Path } from "./levels";
 import { FeedLines, Queues } from "./Fanout";
 import { SearchClear } from "./SearchClear";
 import { Kanban } from "./Kanban";
 import { MoveStore, postMove } from "./move";
+import { OrbitCard } from "./OrbitCard";
 import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./nav";
 import { renderer as makeRenderer, type Renderer } from "./renderer";
 import { search, type Target } from "./search";
@@ -30,6 +32,13 @@ export function App() {
   const [admin] = useState(() => new AdminStore());
   const [historyWindow] = useState(() => new HistoryWindowStore());
   const [forwarding] = useState(() => new ForwardingStore());
+  // the level above the Board: asked for once and then every minute, and its navigator entry shown only when the server has one
+  const [levels] = useState(() => new LevelStore());
+  useEffect(() => {
+    void levels.refresh();
+    return () => levels.dispose();
+  }, [levels]);
+  const level = useSyncExternalStore(levels.subscribe, levels.get);
   // a move outlives the view that made it: the card stays where it landed while the writer answers
   const [moves] = useState(() => new MoveStore(postMove));
   // so does a started session: the card waits in In progress for its agent's claim whichever view is showing
@@ -67,6 +76,7 @@ export function App() {
   useEffect(() => {
     document.body.classList.toggle("kanban", view === "kanban");
     document.body.classList.toggle("admin", view === "admin");
+    document.body.classList.toggle("graph", view === "graph");
     renderer.current?.show(view === "constellation");
     // the canvas was sized while hidden or behind the Kanban; refit it once it is the page again
     if (view === "constellation") renderer.current?.resize();
@@ -82,7 +92,7 @@ export function App() {
   return (
     <>
       <canvas ref={canvas} id="c" />
-      <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} kanbanQuery={kanbanQuery} choose={choose} toggle={() => fold.toggle()} open={(p) => {
+      <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} kanbanQuery={kanbanQuery} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} toggle={() => fold.toggle()} open={(p) => {
           choose("constellation");
           if (pathKey(p) === pathKey(hud.path)) renderer.current?.fitView();
           else renderer.current?.go(p);
@@ -91,6 +101,9 @@ export function App() {
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
       {view === "admin" && <Admin store={admin} window={historyWindow} forwarding={forwarding} />}
+      {view === "graph" && (
+        <OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} />
+      )}
       {view === "kanban" && (
         <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} onQuery={setKanbanQuery} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
           spot={spotted} note={setWhy} opening={opening} />
@@ -152,8 +165,8 @@ function Node({ hud, path, label, count, size, flow, chev, open, onChev }: {
   );
 }
 
-function Navigator({ hud, folded, view, slot, kanbanQuery, choose, toggle, open, fly, openDag, spot, selectTask }: {
-  hud: HudState; folded: boolean; view: ViewName; slot: (el: HTMLElement | null) => void; kanbanQuery: string; choose: (v: ViewName) => void; toggle: () => void; open: (p: Path) => void; fly: (group: string) => void; openDag: (dag: string) => void;
+function Navigator({ hud, folded, view, slot, kanbanQuery, choose, hasLevel, toggle, open, fly, openDag, spot, selectTask }: {
+  hud: HudState; folded: boolean; view: ViewName; slot: (el: HTMLElement | null) => void; kanbanQuery: string; choose: (v: ViewName) => void; hasLevel: boolean; toggle: () => void; open: (p: Path) => void; fly: (group: string) => void; openDag: (dag: string) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -272,8 +285,15 @@ function Navigator({ hud, folded, view, slot, kanbanQuery, choose, toggle, open,
           <span className="t">Kanban</span>
           <span className="n">{hud.cards.length || ""}</span>
         </button>
+        {hasLevel && (
+          <button className={`node${view === "graph" ? " on here" : ""}`} title="Flow graph: the level above the Board" onClick={() => choose("graph")}>
+            <svg className="g og-glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><ellipse cx="6" cy="6" rx="5" ry="2.4" /><circle cx="6" cy="6" r="1.2" /></svg>
+            <span className="t">Flow graph</span>
+            <span className="n" />
+          </button>
+        )}
       </section>
-      {view !== "admin" && (
+      {view !== "admin" && view !== "graph" && (
         <section className="away has-x search" ref={searchHost}>
           {view === "kanban" ? <div ref={slot} /> : <>
             <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
@@ -288,7 +308,7 @@ function Navigator({ hud, folded, view, slot, kanbanQuery, choose, toggle, open,
           <SearchMagnifier view={view} query={view === "kanban" ? kanbanQuery : query} open={() => { if (folded) { focusSearch.current = true; toggle(); } else searchHost.current?.querySelector("input")?.focus(); }} />
         </section>
       )}
-      {view === "kanban" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
+      {(view === "kanban" || view === "graph") && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
       {view === "constellation" && <>
       <section className="away layers">
         <h3>Layers</h3>
@@ -317,7 +337,8 @@ function Navigator({ hud, folded, view, slot, kanbanQuery, choose, toggle, open,
   );
 }
 
-function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
+/** The right rail, the same order in every view: the recent events at the top, the legend at the bottom. */
+export function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
   // the lines hold still under the pointer, so a run starting mid-aim doesn't push the next line under the click
   const [held, setHeld] = useState<FeedLine[] | null>(null);
   return (
@@ -330,7 +351,14 @@ function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<P
       </section>
       <section id="legend">
         <h3>Legend</h3>
-        {view === "kanban" ? (
+        {view === "graph" ? (
+          <>
+            <span><i style={{ background: "#a78bfa" }} />source: a planet on its own orbit</span><br />
+            <span><i style={{ border: "1px dashed #94a3b8", background: "none", boxSizing: "border-box" }} />unattributed: no Board of its own</span><br />
+            <span><i style={{ background: "#fb7185", boxShadow: "0 0 6px #fb7185" }} />comet: a replayed arrival</span><br />
+            <span><i style={{ background: "#34d399" }} />hover a body for its numbers, click or Tab for its details</span>
+          </>
+        ) : view === "kanban" ? (
           <>
             <span><i style={{ background: "#34d399" }} />checks pass</span><span><i style={{ background: "#fb7185" }} />failing</span><span><i style={{ background: "#fbbf24" }} />pending</span><br />
             <span><i style={{ background: "#a78bfa" }} />merged</span><span><span style={{ color: "#fbbf24" }}>⌁ n</span> review threads</span><br />

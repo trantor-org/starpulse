@@ -156,3 +156,50 @@ def test_a_history_with_no_runs_refuses_every_window() -> None:
         _metrics([])
 
     assert refused.value.history_s == 0
+
+
+def test_arrivals_list_each_entry_into_a_terminal_inside_the_window_oldest_first() -> None:
+    arrivals = _metrics()["arrivals"]
+
+    assert arrivals == [
+        {"source": "a", "state": "dropped", "at": 55 * H},
+        {"source": "a", "state": "done", "at": 80 * H},
+        {"source": "b", "state": "done", "at": 90 * H},
+    ]
+
+
+def test_an_arrival_before_the_window_or_a_first_sighting_in_a_terminal_is_not_listed() -> None:
+    runs = [_run("a", "old", (10, "work"), (20, "done")), _run("a", "seen", (95, "done"))]
+
+    assert _metrics(runs)["arrivals"] == []
+
+
+def test_the_answer_carries_the_levels_config_for_the_page_to_draw() -> None:
+    config = Level(
+        "board",
+        "done",
+        (Terminal("done", "goal"), Terminal("dropped", "abandoned")),
+        gates=("review",),
+        title="Flow",
+        subject="story",
+        runs="sessions",
+    )
+
+    answer = level_metrics(config, MACHINE, RUNS, now=NOW, window_s=WINDOW)
+
+    assert answer["level"] == {
+        "title": "Flow",
+        "subject": "story",
+        "runs": "sessions",
+        "gates": ["review"],
+        "terminals": [{"id": "done", "role": "goal"}, {"id": "dropped", "role": "abandoned"}],
+        "orbit": {"suns": "terminal", "working": []},
+        "facets": [],
+        "activity": {"measure": "share", "pace": "min"},
+    }
+
+
+def test_a_source_is_shared_unless_no_forwarder_named_it() -> None:
+    metrics = _metrics()
+
+    assert [(s["id"], s["shared"]) for s in metrics["sources"]] == [("a", True), ("b", True), (UNATTRIBUTED, False)]

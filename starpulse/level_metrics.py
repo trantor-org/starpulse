@@ -73,6 +73,7 @@ def level_metrics(level: Level, machine: dict, runs: Iterable[Run], *, now: floa
     ended = {id: dict.fromkeys(terminals, 0) for id in {run.source for run, _ in held}}
     time: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     working_runs: list[dict[str, Any]] = []
+    arrivals: list[dict[str, Any]] = []
     cycles: list[float] = []
     completed = 0
     for run, steps in held:
@@ -82,6 +83,7 @@ def level_metrics(level: Level, machine: dict, runs: Iterable[Run], *, now: floa
         for at, state in steps[1:]:
             if state in terminals and start <= at <= now:
                 ended[run.source][state] += 1
+                arrivals.append({"source": run.source, "state": state, "at": at})
             if state == level.goal and start <= at <= now:
                 completed += 1
         if steps and steps[-1][1] in working:
@@ -103,6 +105,7 @@ def level_metrics(level: Level, machine: dict, runs: Iterable[Run], *, now: floa
         "history_s": now - first,
         "machine": level.machine,
         "goal": level.goal,
+        "level": _config(level),
         "wip": {"count": sum(wip.values()), "states": dict(wip)},
         "throughput": {"count": completed, "per_day": completed / (window_s / _DAY_S)},
         "time_in_state": [_stays(state, totals[state]) for state in waiting],
@@ -119,10 +122,25 @@ def level_metrics(level: Level, machine: dict, runs: Iterable[Run], *, now: floa
             "terminals": {id: {"ended": sum(by[id] for by in ended.values())} for id in terminals},
             "working": {state: {"task_s": sum(totals[state])} for state in working},
         },
+        "arrivals": sorted(arrivals, key=lambda arrival: arrival["at"]),
         "sources": [
             _source(id, ended[id], time[id], working, sum(1 for e in working_runs if e["source"] == id))
             for id in sorted(ended)
         ],
+    }
+
+
+def _config(level: Level) -> dict[str, Any]:
+    """What the page needs of the level's config to draw it: names, terminals with roles, gates, orbit, facets, pace."""
+    return {
+        "title": level.title,
+        "subject": level.subject,
+        "runs": level.runs,
+        "gates": list(level.gates),
+        "terminals": [{"id": t.id, "role": t.role} for t in level.terminals],
+        "orbit": {"suns": level.orbit.suns, "working": list(level.orbit.working)},
+        "facets": [{"id": f.id, "label": f.label} for f in level.facets],
+        "activity": {"measure": level.activity.measure, "pace": level.activity.pace},
     }
 
 
@@ -170,6 +188,7 @@ def _source(
     runs_ended = sum(ended.values())
     return {
         "id": id,
+        "shared": id != UNATTRIBUTED,
         "wip": wip,
         "ended": ended,
         "terminal_share": {t: n / runs_ended for t, n in ended.items()} if runs_ended else {},

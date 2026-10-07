@@ -14,7 +14,7 @@
   --run: #fbbf24; --run-text: #fcd34d;                                                  /* pending, running, in progress, a guard */
   --fail: #fb7185; --fail-text: #fda4af; --fail-hi: #fecdd3; --fail-bg: #3c0e1c;        /* failing, needs attention, a refusal */
   --danger: #f87171; --danger-text: #fca5a5; --danger-hi: #fecaca;                      /* a destructive action: archive */
-  --agent: #a78bfa; --agent-text: #c4b5fd; --agent-hi: #ede9fe; --agent-deep: #7c3aed;  /* merged, agent, review, links, focus */
+  --agent: #a78bfa; --agent-text: #c4b5fd; --agent-hi: #ede9fe; --agent-deep: #7c3aed; --agent-soft: #ddd6fe;  /* merged, agent, review, links, focus */
   --hold: #fb923c; --hold-text: #fdba74; --hold-hi: #fed7aa;                            /* holds and the tasks they block */
   --waits: #67e8f9; --waits-text: #a5f3fc;                                              /* a task's waits-on chain, a size label */
   --ready: #60a5fa; --released: #5eead4;                                                /* the Ready lane, a released session */
@@ -35,7 +35,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 /* The navigator is always shown, styled as the right rail. Folded, it is an icon strip: the Views glyphs keep their x, so nothing moves under the cursor. */
 #nav { left: 0; width: var(--nav); border-right: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); transition: width .3s cubic-bezier(.4,0,.2,1); }
 #nav.folded { width: var(--nav-fold); }
-#nav .layers { flex: 1; min-height: 0; overflow: auto; }
+#nav .layers { flex: 1; min-height: 0; }
 /* Folding fades the text away while the panel narrows; the padding never changes, so the Views glyphs do not move. */
 #nav > section { width: calc(var(--nav) - 36px); transition: opacity .2s; }
 #nav .views h3, #nav .views .t, #nav .views .n { transition: opacity .2s; }
@@ -106,8 +106,9 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #cons button i { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 #rail button.off { opacity: .35; text-decoration: line-through; }
 #rail .recent { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-#feed { font: calc(10.5px * var(--fs)) / 1.75 "JetBrains Mono", ui-monospace, monospace; flex: 1; min-height: 0; overflow: hidden; }
-#feed div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a recent move wraps to as many lines as it needs, and the feed scrolls once they outgrow it: no line is cut short */
+#feed { font: calc(10.5px * var(--fs)) / 1.75 "JetBrains Mono", ui-monospace, monospace; flex: 1; min-height: 0; }
+#feed div { overflow-wrap: anywhere; }
 #feed b { font-weight: 400; color: var(--ink); } #feed em { font-style: normal; opacity: .6; }
 /* a line that points at a task or DAG lights it on the view while hovered; the note says why the Kanban shows no card for it */
 #feed div.go { cursor: pointer; border-radius: 3px; } #feed div.go:hover { background: color-mix(in srgb, var(--slate) 10%, transparent); } #feed div.go:hover b { color: var(--white); }
@@ -115,7 +116,7 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #feed .why { display: block; padding-left: 6ch; color: var(--run); }
 #legend { line-height: 1.9; }
 #legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 5px 0 0; vertical-align: 0; box-sizing: border-box; }
-#legend span { display: inline-block; margin-right: 10px; white-space: nowrap; }
+#legend span { display: inline-block; max-width: 100%; margin-right: 10px; }
 #legend span span { margin-right: 0; }
 
 .hud { position: fixed; z-index: 2; left: calc(var(--nav) + 24px); pointer-events: none; font-size: calc(12px * var(--fs)); color: var(--muted); }
@@ -124,11 +125,9 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #tip .k { color: var(--muted); font-size: calc(11px * var(--fs)); } #tip .n { font-weight: 500; }
 #tip .stats { display: flex; gap: 12px; margin: 6px 0 2px; } #tip .stats b { color: var(--run); font-weight: 600; }
 #tip .fc { margin-top: 4px; color: var(--slate-3); font-size: calc(11px * var(--fs)); border-top: 1px dashed color-mix(in srgb, var(--slate) 25%, transparent); padding-top: 4px; }
-#panel { position: fixed; z-index: 3; top: 20px; right: calc(var(--rail) + 20px); width: 380px; max-height: calc(100% - 40px); overflow: auto; box-sizing: border-box;
+#panel { position: fixed; z-index: 3; top: 20px; right: calc(var(--rail) + 20px); width: 380px; max-height: calc(100% - 40px); box-sizing: border-box;
   padding: 16px 18px; border-radius: 10px; font-size: calc(12px * var(--fs)); line-height: 1.6; background: color-mix(in srgb, var(--surface) 95%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); display: none; }
 #panel.open { display: block; }
-/* Every scrolling box over the page wears the Kanban columns' thin, quiet scrollbar. */
-#panel, #kb .col .body, #kbm .modal { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
 #panel h2 { margin: 0 0 4px; font-size: calc(14px * var(--fs)); font-weight: 500; }
 #panel .k { color: var(--muted); font-size: calc(11px * var(--fs)); }
 #panel .x { position: absolute; top: 10px; right: 14px; cursor: pointer; color: var(--muted); }
@@ -172,7 +171,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb header { display: flex; align-items: center; gap: 14px; height: 64px; flex: none; }
 #kb header .title { font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
 #kb header .count { font-size: calc(11px * var(--fs)); color: var(--muted); }
-#kb .filters { position: relative; display: flex; gap: 8px; align-items: center; height: 34px; flex: none; margin-bottom: 12px; }
+#kb .filters { position: relative; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-height: 34px; flex: none; margin-bottom: 12px; }
 #kb .fchip { cursor: pointer; user-select: none; padding: 5px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--slate); display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 #kb .fchip:hover { border-color: color-mix(in srgb, var(--slate) 40%, transparent); }
 #kb .fchip b { font-weight: 400; color: var(--ink); }
@@ -183,7 +182,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .clear:hover, #kb .clear:focus-visible { color: var(--ink); text-decoration: underline; }
 #kb .scrim { position: fixed; inset: 0; z-index: 29; }
 #kb .fw { position: relative; }
-:is(#kb, #nav) .menu { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 240px; max-height: 360px; overflow: auto; padding: 4px; border-radius: 8px; box-sizing: border-box;
+:is(#kb, #nav) .menu { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 240px; max-height: 360px; padding: 4px; border-radius: 8px; box-sizing: border-box;
   background: color-mix(in srgb, var(--surface) 98%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); box-shadow: 0 12px 30px color-mix(in srgb, var(--shadow) 50%, transparent); }
 :is(#kb, #nav) .menu .hd { padding: 5px 8px; font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
 :is(#kb, #nav) .menu button { all: unset; box-sizing: border-box; display: flex; gap: 10px; width: 100%; padding: 5px 8px; border-radius: 5px; cursor: pointer; color: var(--ink-3); font-size: calc(12px * var(--fs)); }
@@ -202,7 +201,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .col h2 { white-space: nowrap; }
 #kb .col h2 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #kb .col h2 .c, #kb .col h2 .hint { flex: none; }
-#kb .col .body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 7px; }
+#kb .col .body { flex: 1; min-height: 0; padding: 8px; display: flex; flex-direction: column; gap: 7px; }
 #kb .col .empty { margin: 18px auto; font-size: calc(11px * var(--fs)); color: var(--ghost); }
 
 /* A milestone bucket: a sticky header per milestone, folded in every column at once. */
@@ -227,7 +226,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .card .top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
 #kb .card .id { margin-right: auto; white-space: nowrap; font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--slate); }
 #kb .card .t { margin: 4px 0 6px; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-#kb .pr { display: flex; align-items: center; gap: 4px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10px * var(--fs)); padding: 1px 5px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); color: var(--slate); }
+#kb .pr { display: flex; flex-wrap: wrap; max-width: 100%; box-sizing: border-box; align-items: center; gap: 0 4px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(10px * var(--fs)); padding: 1px 5px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); color: var(--slate); }
 #kb .pr i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
 #kb .pr.pass i { background: var(--ok); } #kb .pr.fail i { background: var(--fail); } #kb .pr.pending i { background: var(--run); } #kb .pr.merged i { background: var(--agent); }
 #kb .pr .th { color: var(--run); }
@@ -282,7 +281,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 
 /* The task modal: centred over a dimmed board. */
 #kbm { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: color-mix(in srgb, var(--scrim) 62%, transparent); backdrop-filter: blur(2px); animation: kb-scrim .15s ease-out; }
-#kbm .modal { position: relative; box-sizing: border-box; width: min(760px, calc(100vw - 40px)); max-height: 80vh; overflow: auto; padding: 22px 26px; border-radius: 12px;
+#kbm .modal { position: relative; box-sizing: border-box; width: min(760px, calc(100vw - 40px)); max-height: 80vh; padding: 22px 26px; border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 98%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); box-shadow: 0 30px 80px color-mix(in srgb, var(--shadow) 60%, transparent); font-size: calc(12.5px * var(--fs)); line-height: 1.6; animation: kb-modal .15s ease-out; }
 #kbm h2 { margin: 0 0 4px; padding-right: 30px; font-size: calc(16px * var(--fs)); font-weight: 500; }
 #kbm .k { color: var(--muted); font-size: calc(11px * var(--fs)); }
@@ -316,7 +315,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv .acts .tvx:hover, #kbm .tv .acts .tvx:focus-visible { color: var(--ink); }
 /* Body: two columns that scroll apart; the rail is the right one. */
 #kbm .tvbody { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 31%, 440px); }
-#kbm .tvcol { min-width: 0; overflow-y: auto; padding: 18px 26px 26px; display: flex; flex-direction: column; gap: 20px; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
+#kbm .tvcol { min-width: 0; padding: 18px 26px 26px; display: flex; flex-direction: column; gap: 20px; }
 #kbm .tvrail { padding: 16px 20px 24px; gap: 16px; background: color-mix(in srgb, var(--slate) 3%, transparent); border-left: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); }
 #kbm .tv table { margin-top: 0; }
 /* The rail is 320-440 px, too narrow for a label column beside a value at larger text, so each label sits above its value. */
@@ -345,7 +344,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tvrail select.fv { min-width: 0; width: calc(100% + 9px); }
 #kbm .tv select option { background: var(--surface); }
 /* Plan and notes are fixed 150 px boxes that scroll inside rather than growing the view. */
-#kbm .tv textarea.fv.long { height: 150px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
+#kbm .tv textarea.fv.long { height: 150px; }
 #kbm .tv .fv.chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 30px; }
 #kbm .tv .chipinput { box-sizing: border-box; width: 100%; border: 0; outline: 0; padding: 0; background: transparent; color: var(--ink); font: inherit; }
 #kbm .tv .chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 10px; background: color-mix(in srgb, var(--slate) 12%, transparent); color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
@@ -418,8 +417,8 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 /* Narrow windows: one column, the rail first so the task's live state stays on top. */
 @media (max-width: 1100px) {
   #kbm .modal.tv { width: calc(100vw - 24px); height: calc(100vh - 24px); }
-  #kbm .tvbody { display: flex; flex-direction: column; overflow-y: auto; }
-  #kbm .tvcol { overflow: visible; flex: none; }
+  #kbm .tvbody { display: flex; flex-direction: column; }
+  #kbm .tvbody .tvcol { overflow: visible; flex: none; }
   #kbm .tvrail { order: -1; border-left: 0; border-bottom: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); }
 }
 
@@ -509,13 +508,16 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 body.admin { background: radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(--bg0) 70%); }
 body.admin #c, body.admin #tip, body.admin #panel, body.admin .hud { visibility: hidden; }
 #admin { position: fixed; z-index: 3; top: 0; bottom: 0; left: calc(var(--nav) + 20px); right: calc(var(--rail) + 20px); display: flex; flex-direction: column;
-  font-size: calc(12px * var(--fs)); color: var(--ink); transition: left .3s cubic-bezier(.4,0,.2,1); overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
+  font-size: calc(12px * var(--fs)); color: var(--ink); transition: left .3s cubic-bezier(.4,0,.2,1); }
 #nav.folded ~ #admin { left: calc(var(--nav-fold) + 20px); }
 @media (prefers-reduced-motion: reduce) { #admin { transition: none; } }
 #admin header { display: flex; align-items: center; gap: 14px; height: 64px; flex: none; }
 #admin header .title { font-size: calc(13px * var(--fs)); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
 #admin header .count { font-size: calc(11px * var(--fs)); color: var(--muted); }
 #admin .grid { display: grid; grid-template-columns: minmax(420px, 640px) minmax(280px, 1fr); gap: 20px; align-items: start; padding-bottom: 24px; }
+/* Narrower than its two columns need, the view stacks them rather than scrolling sideways. */
+#admin { container-type: inline-size; }
+@container (max-width: 719px) { #admin .grid { grid-template-columns: minmax(0, 1fr); } }
 #admin .card { border-radius: 10px; background: color-mix(in srgb, var(--surface) 85%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
 #admin .card + .card { margin-top: 16px; }
 #admin .card h2 { margin: 0; display: flex; align-items: baseline; gap: 10px; padding: 12px 16px 10px; font-size: calc(11px * var(--fs)); font-weight: 500; letter-spacing: .2em;
@@ -648,3 +650,59 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
 #kb .trackers h4 { margin: 10px 0 2px; font-size: calc(12px * var(--fs)); }
 #kb .trackers pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--code) 70%, transparent); white-space: pre-wrap; font-size: calc(11px * var(--fs)); }
 #kb .trackers .found { margin: 8px 0; padding: 8px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--agent) 50%, transparent); background: color-mix(in srgb, var(--agent) 10%, transparent); line-height: 1.5; }
+
+/* The orbit card: the level above the Board, in its own canvas between the navigator and the rail. */
+#nav .og-glyph { border: 0; border-radius: 0; fill: none; stroke: currentColor; stroke-width: 1.2; }
+body.graph { background: radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(--bg0) 70%); }
+body.graph #c, body.graph #tip, body.graph #panel, body.graph .hud { visibility: hidden; }
+#og { position: fixed; z-index: 1; top: 0; bottom: 0; left: var(--nav); right: var(--rail); transition: left .3s cubic-bezier(.4,0,.2,1); font-size: calc(12px * var(--fs)); }
+#nav.folded ~ #og { left: var(--nav-fold); }
+@media (prefers-reduced-motion: reduce) { #og { transition: none; } }
+#og .og-box { position: absolute; inset: 0; }
+#og canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#og .og-head { position: absolute; top: 18px; left: 22px; pointer-events: none; }
+#og .og-head h2 { margin: 0 0 4px; font-size: calc(15px * var(--fs)); font-weight: 500; letter-spacing: .04em; color: var(--ink); }
+#og .og-head > span { display: block; font-size: calc(11px * var(--fs)); color: var(--muted); }
+/* the badge sits in the header's flow, under the subtitle, so a larger text size moves it down rather than under the text */
+#og .og-drift { margin-top: 10px; width: fit-content; max-width: 360px; pointer-events: auto; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--run) 45%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--glass) 82%, transparent);
+  color: var(--run-text); font-size: calc(11px * var(--fs)); display: flex; flex-direction: column; gap: 3px; }
+#og .og-drift b { font-weight: 500; letter-spacing: .14em; text-transform: uppercase; font-size: calc(10px * var(--fs)); }
+#og .og-drift i { font-style: normal; margin-left: 4px; }
+#og .og-drift i.add { color: var(--ok); }
+#og .og-drift i.del { color: var(--fail); }
+#og .og-tip { position: absolute; z-index: 2; pointer-events: none; max-width: 270px; padding: 8px 11px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--glass) 92%, transparent);
+  color: var(--ink); font-size: calc(11px * var(--fs)); line-height: 1.55; }
+#og .og-tip .k { color: var(--muted); letter-spacing: .14em; text-transform: uppercase; font-size: calc(9.5px * var(--fs)); }
+#og .og-tip .n { font-size: calc(13px * var(--fs)); margin-bottom: 2px; }
+#og .og-tip .chip-line { display: inline-block; margin-right: 8px; }
+/* the focused body's details, docked at the card's top right; the header wraps narrower while it is open, so neither
+   draws over the other */
+#og .og-panel { position: absolute; z-index: 2; top: 18px; right: 18px; bottom: auto; width: min(300px, 44%); max-height: calc(100% - 36px); box-sizing: border-box;
+  padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--glass) 92%, transparent); color: var(--ink);
+  font-size: calc(11.5px * var(--fs)); line-height: 1.55; }
+#og .og-box.picked .og-head { max-width: calc(100% - min(300px, 44%) - 60px); }
+#og .og-panel .k { color: var(--muted); letter-spacing: .14em; text-transform: uppercase; font-size: calc(9.5px * var(--fs)); }
+#og .og-panel h3 { margin: 2px 24px 6px 0; font-size: calc(14px * var(--fs)); font-weight: 500; letter-spacing: .02em; text-transform: none; color: var(--ink); overflow-wrap: anywhere; }
+#og .og-panel .x { all: unset; position: absolute; top: 8px; right: 10px; padding: 2px 4px; cursor: pointer; color: var(--muted); }
+#og .og-panel .x:hover, #og .og-panel .x:focus-visible { color: var(--ink); outline: 1px solid var(--agent); outline-offset: 1px; }
+#og .og-panel table { border-collapse: collapse; width: 100%; }
+#og .og-panel td { padding: 1px 8px 1px 0; vertical-align: top; overflow-wrap: anywhere; } #og .og-panel td:first-child { color: var(--muted); }
+#og .og-panel h4 { margin: 10px 0 4px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); color: var(--muted); font-weight: 500;
+  letter-spacing: .12em; text-transform: uppercase; font-size: calc(9.5px * var(--fs)); }
+#og .og-panel .row { display: flex; flex-wrap: wrap; column-gap: 10px; }
+#og .og-panel .row span { flex: none; max-width: 100%; overflow-wrap: anywhere; } #og .og-panel .row span:last-child { margin-left: auto; text-align: right; color: var(--muted); }
+#og .og-panel .row.warn span:last-child { color: var(--run); }
+#og .og-panel .row i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+#og .og-panel .more { color: var(--muted); }
+#og .og-gate { position: absolute; inset: 0; margin: auto; width: 360px; height: fit-content; padding: 26px 28px; border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--glass) 86%, transparent); text-align: center; }
+#og .og-gate h2 { margin: 0 0 8px; font-size: calc(16px * var(--fs)); font-weight: 500; }
+#og .og-gate p { margin: 0 0 18px; color: var(--muted); line-height: 1.6; }
+#og .og-btn { all: unset; cursor: pointer; display: inline-block; padding: 7px 16px; border: 1px solid var(--agent); border-radius: 8px; color: var(--agent-soft); font-size: calc(12px * var(--fs)); }
+#og .og-btn:hover, #og .og-btn:focus-visible { background: color-mix(in srgb, var(--agent) 16%, transparent); }
+#og .og-none { color: var(--muted); }
+#og .og-none.centre { position: absolute; inset: 0; margin: auto; height: fit-content; text-align: center; }
+
+/* Every scrolling box on the page, in one place: it scrolls only vertically, never sideways, and wears the Kanban
+   columns' thin, quiet scrollbar. A box that needs to scroll joins this list rather than setting its own overflow. */
+#nav .layers, #panel, :is(#kb, #nav) .menu, #kb .col .body, #kbm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tv textarea.fv.long, #admin, #feed, #og .og-panel {
+  overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
