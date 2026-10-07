@@ -39,6 +39,9 @@ export function App() {
   const [line, setLine] = useState<string | null>(null), [spotted, setSpotted] = useState<string | null>(null);
   const [why, setWhy] = useState<string | null>(null), [opening, setOpening] = useState<{ id: string } | null>(null);
   const folded = useSyncExternalStore(fold.subscribe, fold.get);
+  // the Kanban's text search draws in the navigator's search slot and reports what it holds, for the folded strip's magnifier
+  const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
+  const [kanbanQuery, setKanbanQuery] = useState("");
   const prefs = useSyncExternalStore(admin.subscribe, admin.get);
   // a bare address opens the view the Admin chose; one that names a view opens that
   const [view, setView] = useState<ViewName>(() => viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view));
@@ -79,7 +82,7 @@ export function App() {
   return (
     <>
       <canvas ref={canvas} id="c" />
-      <Navigator hud={hud} folded={folded} view={view} choose={choose} toggle={() => fold.toggle()} open={(p) => {
+      <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} kanbanQuery={kanbanQuery} choose={choose} toggle={() => fold.toggle()} open={(p) => {
           choose("constellation");
           if (pathKey(p) === pathKey(hud.path)) renderer.current?.fitView();
           else renderer.current?.go(p);
@@ -89,7 +92,7 @@ export function App() {
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
       {view === "admin" && <Admin store={admin} window={historyWindow} forwarding={forwarding} />}
       {view === "kanban" && (
-        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
+        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} onQuery={setKanbanQuery} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
           spot={spotted} note={setWhy} opening={opening} />
       )}
       <Rail hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
@@ -112,6 +115,19 @@ export function App() {
 }
 
 const CAP = 5;
+
+/** The folded strip's search button, at the search's height: lit with a dot while the active view's search holds a query. It sits in the search's section, so only the folded strip shows it. */
+function SearchMagnifier({ view, query, open }: { view: ViewName; query: string; open: () => void }) {
+  const name = view === "kanban" ? "Kanban" : "Star Map";
+  return (
+    <button type="button" id="nv-mag" className={query ? "set" : undefined} aria-label="Search" title={`Search the ${name}${query ? ` (filtering: ${query})` : ""}`} onClick={open}>
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+        <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M15.4 15.4 L21 21" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
+}
 
 /** One level in the navigator: a glyph sized by depth, its name, and its live count. */
 function Node({ hud, path, label, count, size, flow, chev, open, onChev }: {
@@ -136,12 +152,20 @@ function Node({ hud, path, label, count, size, flow, chev, open, onChev }: {
   );
 }
 
-function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot, selectTask }: {
-  hud: HudState; folded: boolean; view: ViewName; choose: (v: ViewName) => void; toggle: () => void; open: (p: Path) => void; fly: (group: string) => void; openDag: (dag: string) => void;
+function Navigator({ hud, folded, view, slot, kanbanQuery, choose, toggle, open, fly, openDag, spot, selectTask }: {
+  hud: HudState; folded: boolean; view: ViewName; slot: (el: HTMLElement | null) => void; kanbanQuery: string; choose: (v: ViewName) => void; toggle: () => void; open: (p: Path) => void; fly: (group: string) => void; openDag: (dag: string) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const searchBox = useRef<HTMLInputElement>(null);
+  // the folded strip's magnifier unfolds the panel, then the active view's search takes the focus once it is shown
+  const searchHost = useRef<HTMLElement>(null);
+  const focusSearch = useRef(false);
+  useEffect(() => {
+    if (!focusSearch.current || folded) return;
+    focusSearch.current = false;
+    searchHost.current?.querySelector("input")?.focus();
+  }, [folded]);
   const statePath = (id: string): Path => [...BOARD, { kind: "state", id }];
   // a click drills into a sun or a machine, opens a DAG's panel, or pins a task on the Board
   const pick = (target: Target) => {
@@ -249,17 +273,23 @@ function Navigator({ hud, folded, view, choose, toggle, open, fly, openDag, spot
           <span className="n">{hud.cards.length || ""}</span>
         </button>
       </section>
+      {view !== "admin" && (
+        <section className="away has-x search" ref={searchHost}>
+          {view === "kanban" ? <div ref={slot} /> : <>
+            <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
+              onChange={(e) => { setQuery(e.target.value); spot(null); }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { setQuery(""); spot(null); }
+                // Enter takes the first match, as a click on it would
+                if (e.key === "Enter" && hits[0]) pick(hits[0].target);
+              }} />
+            <SearchClear input={searchBox} value={query} clear={() => { setQuery(""); spot(null); }} />
+          </>}
+          <SearchMagnifier view={view} query={view === "kanban" ? kanbanQuery : query} open={() => { if (folded) { focusSearch.current = true; toggle(); } else searchHost.current?.querySelector("input")?.focus(); }} />
+        </section>
+      )}
       {view === "kanban" && <section className="away note">Layers and DAGs belong to the Star Map view; they return when it is open.</section>}
-      {view === "constellation" && <><section className="away has-x">
-        <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States, lifecycle machines and DAGs" aria-label="Search tasks, States, lifecycle machines and DAGs" autoComplete="off" value={query}
-          onChange={(e) => { setQuery(e.target.value); spot(null); }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") { setQuery(""); spot(null); }
-            // Enter takes the first match, as a click on it would
-            if (e.key === "Enter" && hits[0]) pick(hits[0].target);
-          }} />
-        <SearchClear input={searchBox} value={query} clear={() => { setQuery(""); spot(null); }} />
-      </section>
+      {view === "constellation" && <>
       <section className="away layers">
         <h3>Layers</h3>
         <div id="layers">

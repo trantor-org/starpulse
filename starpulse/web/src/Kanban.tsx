@@ -1,6 +1,7 @@
 // The Kanban view: the Board's open tasks as six columns of milestone buckets, with drag and modal moves and sessions started from a card.
 // The model is kanban.ts, move.ts and start.ts; this draws them.
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { archiveDialogKey, withoutArchived } from "./archive";
 import { ArchiveDialog } from "./ArchiveConfirm";
 import { ConnectTracker } from "./ConnectTracker";
@@ -397,9 +398,10 @@ const LIFT_PX = 5;
 /**
  * The Kanban view. `spot` is the task a Recent line is hovered for: its card lights as a hovered card does and its column scrolls to it,
  * and `note` hears why it has no card in view. A new `opening` opens that task's modal.
+ * `searchSlot` is the navigator's search slot, where the text search draws; `onQuery` tells the navigator what it holds.
  */
-export function Kanban({ hud, moves, starts, compact, constellation, spot = null, note, opening = null }: {
-  hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void;
+export function Kanban({ hud, moves, starts, compact, constellation, searchSlot, onQuery, spot = null, note, opening = null }: {
+  hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; onQuery: (query: string) => void;
   spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
 }) {
   const [storage] = useState(browserStorage);
@@ -618,6 +620,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, spot = null
     addEventListener("pointercancel", cancel);
     addEventListener("keydown", onKey);
   };
+  useEffect(() => { onQuery(prefs.query); }, [onQuery, prefs.query]);
   const lifted = lift ? cards.find((t) => t.id === lift.id) : undefined;
   const heldTask = held ? cards.find((t) => t.id === held.id) : undefined;
   const openCard = (id: string) => () => !clickEnds.current && setOpen(id);
@@ -632,7 +635,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, spot = null
   return (
     <main id="kb" className={compact ? "compact" : undefined}>
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
-      <div className="filters">
+      {searchSlot && createPortal(
         <div className="fw">
           <input id="kbq" ref={searchBox} type="text" value={prefs.query} placeholder="filter by id, title or label…" aria-label="Filter tasks by id, title or label" autoComplete="off" spellCheck={false}
             onChange={(e) => { setPrefs((p) => ({ ...p, query: e.target.value })); setPick(0); }}
@@ -647,7 +650,10 @@ export function Kanban({ hud, moves, starts, compact, constellation, spot = null
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        searchSlot,
+      )}
+      <div className="filters">
         <div className="fw">
           {chip("assignee", "Assignee", prefs.assignee, prefs.assignee ? shortProfile(prefs.assignee) : "unassigned")}
           {menu === "assignee" && (
