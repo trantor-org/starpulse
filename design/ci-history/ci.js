@@ -2,9 +2,9 @@
 // that would record it does not exist yet.
 // The operator's model (2026-10-07): CI is a lifecycle machine with a fixed model, mapped by config onto the Board states
 // that need it (here In Progress and Review), and drawn like any other sub-machine. The page has no CI-specific code; it draws a
-// mapped machine (machine.source, a third party moves it) unlike a local one wherever it appears (renderer.patch): a slate
-// square with its source in a badge, never a purple disc, and on its own level its states sit inside the source's dashed
-// boundary. The rest is stock:
+// mapped machine (machine.source, a third party moves it) in the same shapes as a local one, set apart by colour alone
+// (renderer.patch): blue where a local machine is purple, its source named beside it in blue, and on its own level one blue
+// caption naming who moves it. The rest is stock:
 //   glance  - the ci machine is a moon on each mapped state; a task whose latest event is a CI one orbits it
 //   hover   - on the ci machine a task's tooltip and back trace are its CI trail: pushes, results, re-runs, conflicts
 //   click   - a task's panel names its CI state and lists the trail

@@ -1,5 +1,5 @@
 diff --git a/starpulse/web/src/App.tsx b/starpulse/web/src/App.tsx
-index b319701..e538f40 100644
+index b319701..0222efa 100644
 --- a/starpulse/web/src/App.tsx
 +++ b/starpulse/web/src/App.tsx
 @@ -102,13 +102,13 @@ function Node({ hud, path, label, count, size, flow, chev, open, onChev }: {
@@ -24,7 +24,7 @@ index b319701..e538f40 100644
              <span><i style={{ background: "#34d399" }} />checks pass</span><span><i style={{ background: "#fb7185" }} />failing</span><span><i style={{ background: "#fbbf24" }} />pending</span><br />
              <span><i style={{ background: "#a78bfa" }} />merged</span><span><span style={{ color: "#fbbf24" }}>⌁ n</span> review threads</span><br />
 -            <span><i style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }} />on a machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />moved now</span><br />
-+            <span><i style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }} />on a machine</span><span><i style={{ background: "#e2e8f0", borderRadius: 1, boxShadow: "0 0 6px rgba(226,232,240,.8)" }} />on a mapped machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />moved now</span><br />
++            <span><i style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }} />on a machine</span><span><i style={{ background: "#60a5fa", boxShadow: "0 0 6px #60a5fa" }} />on a mapped machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />moved now</span><br />
              <span><span style={{ color: "#fbbf24" }}>⧗ n</span> open dependencies</span><span><span style={{ color: "#fb923c" }}>⛓ n</span> Waiting tasks it holds</span><br />
              <span>hover a card:</span><span><i style={{ border: "1px solid #fb923c", background: "none", boxSizing: "border-box" }} />holds</span><span><i style={{ border: "1px solid #67e8f9", background: "none", boxSizing: "border-box" }} />waits on</span>
            </>
@@ -96,7 +96,7 @@ index a65ae39..a78ce74 100644
    for (const link of board?.subflows ?? []) {
      (t.subs[link.state] ??= []).push(link.flow);
 diff --git a/starpulse/web/src/renderer.ts b/starpulse/web/src/renderer.ts
-index 9b27536..afb917f 100644
+index 9b27536..ed22e20 100644
 --- a/starpulse/web/src/renderer.ts
 +++ b/starpulse/web/src/renderer.ts
 @@ -634,7 +634,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
@@ -135,52 +135,32 @@ index 9b27536..afb917f 100644
          <table>${(o.trail ?? []).slice(-12).map((t) => `<tr><td>${hhmm(t.at)}</td><td>${esc(t.event)} → ${esc(t.state)}</td></tr>`).join("")}</table>`;
      } else return;
      // the hop table sits under the facts, above the board link
-@@ -865,10 +865,43 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -865,9 +865,21 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      for (const R of host.rings || []) circle(host.x, host.y, R, rgba(col, 0.11));
    };
    // a lifecycle machine is a flat disc with a thin ring outside it, the one mark that tells it from a state
 -  function machine(x: number, y: number, r: number, hot: boolean, alpha: number) {
+-    disc(x, y, r, "#c084fc", hot, alpha);
+-    circle(x, y, r + 3, rgba("#c084fc", hot ? 0.9 : 0.5), 1);
 +  function machine(x: number, y: number, r: number, hot: boolean, alpha: number, mapped = false) {
-+    if (mapped) return foreign(x, y, r, hot, alpha);
-     disc(x, y, r, "#c084fc", hot, alpha);
-     circle(x, y, r + 3, rgba("#c084fc", hot ? 0.9 : 0.5), 1);
-   }
-+  /** A mapped machine (machine.source: a third party moves it) is a square in the foreign colour, never a disc, wherever it is drawn. */
-+  const EXT = "#e2e8f0";
++    const col = mapped ? EXT : "#c084fc";
++    disc(x, y, r, col, hot, alpha);
++    circle(x, y, r + 3, rgba(col, hot ? 0.9 : 0.5), 1);
++  }
++  /** A mapped machine (machine.source: a third party moves it) is drawn like a local one, in a colour of its own: blue, never purple. */
++  const EXT = "#60a5fa";
 +  const sourceOf = (flow: string | null | undefined) => (flow ? S?.flows[flow]?.machine.source : undefined);
-+  function square(x: number, y: number, h: number, stroke: string, w: number, fill?: string, dash?: number[]) {
-+    cx.beginPath();
-+    cx.roundRect(x - h, y - h, 2 * h, 2 * h, h * 0.28);
-+    if (fill) { cx.fillStyle = fill; cx.fill(); }
-+    cx.strokeStyle = stroke;
-+    cx.lineWidth = w;
-+    cx.setLineDash(dash || []);
-+    cx.stroke();
-+    cx.setLineDash([]);
-+  }
-+  function foreign(x: number, y: number, r: number, hot: boolean, alpha: number) {
-+    square(x, y, r * 0.9, rgba(EXT, hot ? 1 : 0.8), hot ? 2 : 1.4, rgba(EXT, alpha * 0.55));
-+    square(x, y, r * 0.9 + 3.5, rgba(EXT, hot ? 0.8 : 0.4), 1);
-+  }
-+  /** A machine's name; a mapped machine's is followed by its source in an outlined badge, and the pair keeps the alignment the name had. */
++  /** A machine's name; a mapped machine's name and source are in its colour, and the pair keeps the alignment the name had. */
 +  function machineName(s: string, x: number, y: number, size: number, col: string, align: CanvasTextAlign, src?: string) {
 +    if (!src) return text(s, x, y, size, col, align, 300);
 +    cx.font = `300 ${size}px Inter, system-ui, sans-serif`;
-+    const wm = cx.measureText(s).width, ss = size * 0.82, gap = size * 0.55, pad = ss * 0.45;
-+    cx.font = `500 ${ss}px Inter, system-ui, sans-serif`;
-+    const ws = cx.measureText(src).width + 2 * pad, x0 = align === "left" ? x : align === "right" ? x - wm - gap - ws : x - (wm + gap + ws) / 2;
-+    text(s, x0, y, size, col, "left", 300);
-+    cx.beginPath();
-+    cx.roundRect(x0 + wm + gap, y - ss * 0.8, ws, ss * 1.6, ss * 0.3);
-+    cx.strokeStyle = rgba(EXT, 0.6);
-+    cx.lineWidth = 1 / K;
-+    cx.stroke();
-+    text(src, x0 + wm + gap + pad, y, ss, rgba(EXT, 0.9), "left", 500);
-+  }
++    const wm = cx.measureText(s).width, gap = size * 0.45, ws = cx.measureText(src).width, x0 = align === "left" ? x : align === "right" ? x - wm - gap - ws : x - (wm + gap + ws) / 2;
++    text(s, x0, y, size, rgba(EXT, 0.95), "left", 300);
++    text(src, x0 + wm + gap, y, size, rgba(EXT, 0.6), "left", 300);
+   }
  
    function drawGalaxies() {
-     for (const g of Object.values(scene!.galaxies)) {
-@@ -886,13 +919,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -886,13 +898,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      for (const m of sc.moons) {
        const hot = isHot("moon", m), flows = m.pager?.hidden ?? [m.name], mv = flows.flatMap(moving).length, busy = flows.some((name) => !!S!.flows[name]?.agents.length);
        drawTrackRings(m, "#c084fc");
@@ -197,21 +177,7 @@ index 9b27536..afb917f 100644
        cx.letterSpacing = "0px";
      }
      for (const b of sc.subStates) {
-@@ -1010,6 +1044,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
-   }
-   function drawStates(states: Record<string, MState>, labels: boolean) {
-     for (const s of Object.values(states)) {
-+      if (sourceOf(s.flow) && !terminal(s)) {
-+        const R = sized(`state|${s.flow}:${s.id}`, stateR(s)), hot = isHot("state", s);
-+        square(s.x, s.y, R * 0.9, rgba(s.color, hot ? 1 : s.n ? 0.85 : 0.45), hot ? 2.2 : s.mini ? 1 : 1.6, "rgba(6,10,20,0.9)");
-+        square(s.x, s.y, s.mini ? 1.3 : s.initial ? 3.5 : 2.2, rgba(s.color, 0.9), 1, rgba(s.color, 0.9));
-+        if (labels) label(s.name, s.lab ? s.lab.x : s.x, s.lab ? s.lab.y : s.y + R + 16, hot);
-+        continue;
-+      }
-       const R = sized(`state|${s.flow}:${s.id}`, stateR(s)), hot = isHot("state", s);
-       if (terminal(s)) {
-         hole(s.x, s.y, R, s.color, hot);
-@@ -1117,15 +1158,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1117,14 +1130,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
        // the DAGs that orbit it; hover adds its states and sessions
        if (p.moon) {
          const sd = p.x < sc.hub!.x ? -1 : 1;
@@ -226,25 +192,20 @@ index 9b27536..afb917f 100644
          cx.letterSpacing = "0px";
          continue;
        }
--      dot(p.x, p.y, p.R + 14, "rgba(10,14,26,0.85)");
 +      const psrc = sourceOf(p.name);
-+      if (psrc) square(p.x, p.y, (p.R + 14) * 0.9, "rgba(0,0,0,0)", 0, "rgba(10,14,26,0.85)");
-+      else dot(p.x, p.y, p.R + 14, "rgba(10,14,26,0.85)");
+       dot(p.x, p.y, p.R + 14, "rgba(10,14,26,0.85)");
        if (mv.length) {
          const g = cx.createRadialGradient(p.x, p.y, p.R + 14, p.x, p.y, p.R + 30);
-         g.addColorStop(0, rgba(ACT, 0.2));
-@@ -1136,7 +1180,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1136,7 +1151,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
          cx.arc(p.x, p.y, p.R + 14, 0, TAU, true);
          cx.fill();
        }
 -      circle(p.x, p.y, p.R + 14, mv.length ? rgba(ACT, 0.6) : rgba("#c084fc", hot ? 0.9 : p.n ? 0.45 : 0.22), hot ? 2 : 1.2);
-+      const rimCol = mv.length ? rgba(ACT, 0.6) : rgba(psrc ? EXT : "#c084fc", hot ? 0.9 : psrc ? 0.6 : p.n ? 0.45 : 0.22);
-+      if (psrc) square(p.x, p.y, (p.R + 14) * 0.9, rimCol, hot ? 2 : 1.4, undefined, [6, 4]); // a mapped machine's body is the source's dashed square
-+      else circle(p.x, p.y, p.R + 14, rimCol, hot ? 2 : 1.2);
++      circle(p.x, p.y, p.R + 14, mv.length ? rgba(ACT, 0.6) : rgba(psrc ? EXT : "#c084fc", hot ? 0.9 : psrc ? 0.6 : p.n ? 0.45 : 0.22), hot ? 2 : 1.2);
        drawMachineEdges(p.edges, true);
        drawStates(p.states, false);
        for (const e of mv) {
-@@ -1147,7 +1193,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1147,7 +1162,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
        }
        // a skill machine's name sits on its side facing away from the primary, so it never crosses the paths between them; the primary's goes below
        const nt = sc.tasks.filter((k) => k.host === p && !k.gone).length, size = p.primary ? 14 : 12;
@@ -253,63 +214,23 @@ index 9b27536..afb917f 100644
        let ux = 0, uy = 1;
        const hub = sc.hub;
        if (hub && p !== hub) {
-@@ -1422,14 +1468,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
-         arrow(bez(p0, c, p1, r.t1 - 0.02), bez(p0, c, p1, r.t1), rgba(r.off ? OFF : r.to.color, 0.95), 9);
-       }
-       // each visited state's rim and name firm up, with the time it held the task beside it
-+      const lv = level(), sq = lv.kind === "machine" && !!sourceOf(lv.flow); // a mapped machine's states stay square under the trace
-+      const rim = (o: { x: number; y: number; r: number; color: string }, a: number, w: number) => (sq ? square(o.x, o.y, o.r * 0.9, rgba(o.color, a), w) : circle(o.x, o.y, o.r, rgba(o.color, a), w));
-       for (const p of pills) {
--        circle(p.place.x, p.place.y, p.place.r, rgba(p.place.color, 1), 2.2 / Math.max(1, ZS));
-+        rim(p.place, 1, 2.2 / Math.max(1, ZS));
-         if (mode !== "state") label(p.place.name, p.place.lab.x, p.place.lab.y, true, null, board ? 13 : 12.5); // a state level's bodies keep their own names
-         pill(p.text, p.x, p.y, p.place.color);
-       }
-       for (const r of routes) badge(r.badge, r.nums, r.off ? OFF : TRACE);
-       if (first) {
--        circle(first.x, first.y, first.r, rgba(first.color, 0.9), 1.6 / Math.max(1, ZS));
-+        rim(first, 0.9, 1.6 / Math.max(1, ZS));
-         if (board) label(first.name, first.lab.x, first.lab.y, true, null, 13);
-       }
-       // on the Board, the lifecycle machines the task has sessions in: the moon is ringed with the count, and a sub-state it holds too
-@@ -1445,6 +1493,36 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1445,6 +1460,15 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      circle(body.x, body.y, 9 / K, rgba(TRACE, 0.9), 1.6 / K);
      dot(body.x, body.y, 4.5 / K, rgba(tierColor(body.model), 1));
    }
-+  /** A mapped machine's level draws its states inside the third party's boundary, named at its top left. */
++  /** A mapped machine's level names, above its states and in its colour, whose events move it. */
 +  function drawSource() {
 +    const lv = level(), src = lv.kind === "machine" ? sourceOf(lv.flow) : undefined, st = Object.values(scene!.mStates);
 +    if (!src || !st.length) return;
-+    // the frame clears every state's label at the current text size, so it never cuts one at 150%
-+    const ls = labelPx(12.5, K, prefs().scale), pad = 40 / K;
-+    cx.font = `300 ${ls}px Inter, system-ui, sans-serif`;
-+    const ext = st.map((s) => {
-+      const R = sized(`state|${s.flow}:${s.id}`, stateR(s)), lx = s.lab ? s.lab.x : s.x, ly = s.lab ? s.lab.y : s.y + R + 16, hw = cx.measureText(s.name).width / 2;
-+      return { l: Math.min(s.x - R, lx - hw), r: Math.max(s.x + R, lx + hw), t: s.y - R, b: Math.max(s.y + R, ly + ls) };
-+    });
-+    // ...and stays inside the fit box, so the navigator and the rail never cover its badge when the text is large
-+    const m = cx.getTransform(), dpr = devicePixelRatio || 1, wx = (sx: number) => (sx * dpr - m.e) / m.a, wy = (sy: number) => (sy * dpr - m.f) / m.d;
-+    const x0 = Math.max(wx(I + 10), Math.min(...ext.map((e) => e.l)) - pad), x1 = Math.min(wx(I + FW - 10), Math.max(...ext.map((e) => e.r)) + pad);
-+    const y0 = Math.max(wy(10), Math.min(...ext.map((e) => e.t)) - pad - 2.4 * labPx(11.5)), y1 = Math.min(wy(H - 10), Math.max(...ext.map((e) => e.b)) + pad);
-+    cx.beginPath();
-+    cx.roundRect(x0, y0, x1 - x0, y1 - y0, 14);
-+    cx.fillStyle = rgba(EXT, 0.025);
-+    cx.fill();
-+    cx.strokeStyle = rgba(EXT, 0.38);
-+    cx.lineWidth = 1.2 / K;
-+    cx.setLineDash([7 / K, 5 / K]);
-+    cx.stroke();
-+    cx.setLineDash([]);
-+    const sz = labPx(11.5);
-+    machineName("", x0 + 14 / K - sz * 0.55, y0 + 20 / K, sz, rgba(EXT, 0.9), "left", src);
-+    cx.font = `500 ${sz * 0.82}px Inter, system-ui, sans-serif`;
-+    const bw = cx.measureText(src).width + sz * 0.82 * 0.9;
-+    text(`mapped machine · ${src} moves it, StarPulse observes`, x0 + 14 / K + bw + 8 / K, y0 + 20 / K, labPx(10.5), rgba("#94a3b8", 0.8), "left", 300);
++    const top = Math.min(...st.map((s) => s.y)), xs = st.map((s) => s.x);
++    cx.letterSpacing = `${0.6 / K}px`;
++    text(`mapped from ${src} · ${src} moves it, StarPulse observes`, (Math.min(...xs) + Math.max(...xs)) / 2, top - 70 / K, labPx(11), rgba(EXT, 0.8), "center", 300);
++    cx.letterSpacing = "0px";
 +  }
    function drawScene(k: number, x: number, y: number) {
      const dpr = devicePixelRatio || 1;
      cx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
-@@ -1461,6 +1539,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1461,6 +1485,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      drawTasks();
      drawMachineEdges(scene!.mEdges);
      drawStates(scene!.mStates, true);
@@ -318,18 +239,18 @@ index 9b27536..afb917f 100644
      drawHangar();
      drawStars();
 diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
-index 7bcaec6..a0b1736 100644
+index 7bcaec6..510804a 100644
 --- a/starpulse/web/src/style.css
 +++ b/starpulse/web/src/style.css
 @@ -548,3 +548,8 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
  #kb .trackers h4 { margin: 10px 0 2px; font-size: calc(12px * var(--fs)); }
  #kb .trackers pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: rgba(2,6,23,.7); white-space: pre-wrap; font-size: calc(11px * var(--fs)); }
  #kb .trackers .found { margin: 8px 0; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(167,139,250,.5); background: rgba(167,139,250,.10); line-height: 1.5; }
-+/* a machine a third party moves (machine.source) is a square in the foreign colour, its source in an outlined badge */
-+.src::after { content: attr(data-src); margin-left: .5em; padding: 0 4px; border: 1px solid rgba(226,232,240,.55); border-radius: 3px; color: #e2e8f0; font-size: .78em; font-weight: 500; }
-+.node .g.mapped { border-radius: 2px; border-color: #e2e8f0; color: #e2e8f0; }
-+#legend .mapleg i { border-radius: 1.5px; border: 1.5px solid #e2e8f0; background: none; }
-+#kb .mach .p.mapped { border-radius: 1px; background: #e2e8f0; box-shadow: 0 0 6px rgba(226,232,240,.8); }
++/* a machine a third party moves (machine.source) is drawn like a local one, in blue instead of purple */
++.src::after { content: attr(data-src); margin-left: .45em; color: rgba(96,165,250,.7); }
++.node .g.mapped { border-color: #60a5fa; color: #60a5fa; }
++#legend .mapleg i { background: #60a5fa; }
++#kb .mach .p.mapped { background: #60a5fa; box-shadow: 0 0 6px #60a5fa; }
 diff --git a/starpulse/web/src/types.ts b/starpulse/web/src/types.ts
 index 5836594..aa855f7 100644
 --- a/starpulse/web/src/types.ts
