@@ -708,6 +708,34 @@ const inProgressSky = () => {
   return { S, moves, W: 1920, H: 1080, T: 1000 };
 };
 
+describe("the In Progress state level's machine ledger top", () => {
+  const at = (W: number, H: number, scale = 100) => build({ ...inProgressSky(), W, H, scale }, { kind: "state", id: "in_progress" });
+
+  it("draws the in-progress machine across the top, its states, flow lines and tasks placed in the canvas", () => {
+    const { top, mStates, mEdges, machineTasks } = at(1350, 900);
+    expect([top?.flow, Object.keys(mStates)]).toEqual(["in-progress", ["worktree_ready", "pr_opened"]]);
+    expect(machineTasks.map((t) => [t.id, t.flow])).toEqual([["PROJ-1", "in-progress"]]);
+    expect(mEdges).toEqual([]);
+    for (const s of Object.values(mStates)) expect([s.x > 0 && s.x < 1350, s.y > 0 && s.y < top!.hdrB]).toEqual([true, true]);
+  });
+
+  it("is half again its natural height, under 60% of the view", () => {
+    const { top } = at(1350, 900);
+    expect(top!.hdrB).toBeCloseTo(top!.natural * 1.5);
+    expect(top!.hdrB).toBeLessThan(0.6 * 900);
+  });
+
+  it("stops at 60% of a short view", () => {
+    const { top } = at(1350, Math.round(at(1350, 900).top!.natural / 0.48));
+    expect(top!.hdrB).toBeLessThan(top!.natural * 1.5);
+    expect(top!.hdrB).toBeGreaterThan(top!.natural);
+  });
+
+  it("is on no other level", () => {
+    expect([build(inProgressSky(), { kind: "board" }).top, build(inProgressSky(), { kind: "machine", flow: "in-progress" }).top]).toEqual([undefined, undefined]);
+  });
+});
+
 describe("the In Progress state level", () => {
   const sky = inProgressSky(), scene = build(sky, { kind: "state", id: "in_progress" });
 
