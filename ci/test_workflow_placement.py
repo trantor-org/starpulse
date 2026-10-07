@@ -56,3 +56,15 @@ def test_trantor_tier_policy_gates_the_green_dispatch():
     run = next(step["run"] for step in job("ci.yml", "tier-policy")["steps"] if "run" in step)
     assert "ci/trantor_tier_policy.py" in run
     assert "tier-policy" in job("ci.yml", "dispatch")["needs"]
+
+
+def test_trantor_tests_of_this_package_gate_the_green_dispatch():
+    """A commit failing trantor's tests of this package fails every bump that pins it, so it must not dispatch as green."""
+    contract = job("ci.yml", "trantor-contract")
+    checkouts = [step["with"] for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")]
+    runs = "\n".join(step["run"] for step in contract["steps"] if "run" in step)
+    assert contract["runs-on"] == VALIDATE_LANE
+    assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[0].items()
+    assert checkouts[1]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
+    assert "make test-changed FILES=starpulse CI=1" in runs
+    assert "trantor-contract" in job("ci.yml", "dispatch")["needs"]
