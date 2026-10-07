@@ -17,7 +17,7 @@ functions of those runs: a fixture gives answers that can be worked out by hand.
 from __future__ import annotations
 
 from collections import Counter, defaultdict, deque
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import Any
 
 from starpulse.domain.level import Level
@@ -29,14 +29,25 @@ _DAY_S = 86400.0
 
 
 def trajectory_analytics(
-    level: Level, machine: Mapping[str, Any], runs: Iterable[Run], *, now: float, window_s: float
+    level: Level,
+    machine: Mapping[str, Any],
+    runs: Iterable[Run],
+    *,
+    now: float,
+    window_s: float,
+    history_start: float | None = None,
+    sources: Collection[str] = (),
 ) -> dict[str, Any]:
     """The analytics over the runs of `machine` that ended in a terminal in the last `window_s` seconds up to `now`.
 
-    Raises `WindowPastHistory` when the window is longer than the history, as the level's flow numbers do.
+    Raises `WindowPastHistory` when the window is longer than the history, as the level's flow numbers do. `runs` need
+    only be the ones that ended in the window if the history says where it begins (`history_start`); `sources` is
+    taken so the two views answer the same call.
     """
     held = [(run, collapse(run.steps)) for run in runs]
-    first = min((steps[0][0] for _, steps in held if steps), default=now)
+    first = (
+        history_start if history_start is not None else min((steps[0][0] for _, steps in held if steps), default=now)
+    )
     if window_s > now - first:
         raise WindowPastHistory(window_s, now - first)
     start = now - window_s

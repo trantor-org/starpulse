@@ -773,11 +773,19 @@ directory. The `Board` says:
   (`starpulse_machine_events`, `starpulse_lane_changes`). In the same transaction the store folds each of them into
   summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
   seconds in the from-state, per UTC day, machine, from-state and to-state), `starpulse_cases` (each task's or run's
-  current state, when it entered it and its last event) and `starpulse_lane_intervals` (each stay in a lane). A store
-  whose summaries are empty builds them from its rows when it opens (`HistoryStore.build_summaries`);
-  `rebuild_summaries` replaces them and `summary_differences` lists where they differ from the rows. A hub gets the
-  tables from its migrations (revision `0005`). The summaries follow the order events were recorded, and cover only the
-  machines the page draws when the store opens.
+  current state, when it entered it and its last event), `starpulse_lane_intervals` (each stay in a lane) and
+  `starpulse_lanes` (per source and lane, the tasks in it now and when one first entered it). A store whose summaries
+  are empty builds them from its rows when it opens (`HistoryStore.build_summaries`), and one that predates the lane
+  counts counts them from its intervals; `rebuild_summaries` replaces them and `summary_differences` lists where they
+  differ from the rows. A hub gets the tables from its migrations (revisions `0005` and `0006`). The summaries follow
+  the order events were recorded, and cover only the machines the page draws when the store opens.
+  `/api/analytics/health` and `/api/level` (with `/api/level/trajectories`) read these summaries and never scan the two
+  raw tables: health reads the stays that ended in its window or are still going and takes the tasks in each lane from
+  the lane counts; the Board's level reads the trajectories of the tasks that changed lane in its window or the trailing
+  12 weeks (which set the aging threshold) and of the tasks still waiting or working, and takes where the history begins
+  and which sources reported from the lane counts. Their cost follows that activity, not the history's length (see
+  [Scaling notes](#flow-read-scaling)). A history that supplies only `lane_rows` and `level_runs`, as the Board adapter
+  hook does, is read whole, and a level on a machine other than the Board reads that machine's events whole.
 
 `starpulse.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
@@ -858,7 +866,7 @@ push to `main`.
 `uv run lint-imports` checks the package layers: `store` imports from `settings`, `domain` and `contracts`; `settings` from
 `domain`; none import upward.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
-[`bench/`](bench/README.md) holds the hub-ingest and instance event-log benchmarks.
+[`bench/`](bench/README.md) holds the hub-ingest, instance event-log and flow-read benchmarks.
 
 [`design/`](design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`) and, behind
 `?view=kanban`, a saved Board (`board.js`) drawn by `kanban.js`; view it with
@@ -874,6 +882,18 @@ the lifecycle machines in [`ci/workspace/`](ci/workspace), beside five DAG domai
 synthetic tasks, sessions, runs and pools. Each changed sub-mockup, a `design/<dir>/index.html` layered over a scrubbed page
 capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request. A push to `main`
 that touches the same paths republishes both demos under `main/`, the live demo linked above.
+
+### Flow read scaling
+
+Flow health and the level read the summaries the history store keeps on write, so a read costs the activity of its
+window, of the trailing 12 weeks (the level's aging threshold) and of the tasks still in flight, not the length of the
+history. [`bench/flow_reads.py`](bench/flow_reads.py) records 10 thousand, 1 million and 10 million Board lane changes at
+a fixed rate into a SQLite store and reads the default week of each: the CPU p95 of health, the level and its trajectories
+at 1 million and at 10 million stayed within 1.6x of the p95 at 10 thousand in every run (one run: health 6.5, 6.3 and
+8.0 ms; level 171, 142 and 180 ms; trajectories 164, 135 and 155 ms), and no read touches the two raw tables. The full table and how to
+rerun it are in [`bench/README.md`](bench/README.md#flow-reads). What still grows with the history: opening a store
+whose summaries are empty folds every row once (about 6 minutes for 10 million lane changes), and a history that
+supplies only `lane_rows` and `level_runs`, or a level on a machine other than the Board, is read whole.
 
 ## Contributing
 

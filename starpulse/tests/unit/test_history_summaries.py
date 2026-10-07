@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES
@@ -37,6 +37,10 @@ def _cases(store: HistoryStore) -> list[tuple]:
 
 def _intervals(store: HistoryStore) -> list[tuple]:
     return _rows(store, "starpulse_lane_intervals", "task, lane, entered_at, left_at, event_id")
+
+
+def _lanes(store: HistoryStore) -> list[tuple]:
+    return _rows(store, "starpulse_lanes", "source, lane, open_tasks, first_at")
 
 
 def _event(store: HistoryStore, event_id: str, event: str, at: float, **fields) -> None:
@@ -140,6 +144,29 @@ def test_a_lane_change_is_a_step_of_the_board_machine_and_moves_the_tasks_case(s
     assert [row[1] for row in _intervals(store)] == ["In Progress", "Moon", "Ready"], "health still counts every lane"
 
 
+def test_each_lane_counts_the_tasks_in_it_now_and_keeps_a_lane_every_task_has_left(store: HistoryStore) -> None:
+    store.record_lane("T-1@Ready@10", "T-1", "Ready", 10.0)
+    store.record_lane("T-2@Ready@11", "T-2", "Ready", 11.0)
+    store.record_lane("T-1@In Progress@25", "T-1", "In Progress", 25.0)
+    store.record_lane("T-1@In Progress@30", "T-1", "In Progress", 30.0)  # a reconcile: no change
+    store.record_lane("T-2@Moon@40", "T-2", "Moon", 40.0)  # a lane the Board machine lacks
+    store.record_lane("T-2@Moon@40", "T-2", "Moon", 40.0)  # the same change replayed
+
+    assert _lanes(store) == [
+        ("unattributed", "In Progress", 1, 25.0),
+        ("unattributed", "Moon", 1, 40.0),
+        ("unattributed", "Ready", 0, 10.0),
+    ]
+
+
+def test_each_source_counts_its_own_tasks_in_a_lane_and_when_it_first_entered_it(store: HistoryStore) -> None:
+    store.record_lane("a/1", "T-1", "Ready", 20.0)
+    store.record_lane("b/1", "T-1", "In Progress", 10.0)  # the same task id from another source: it leaves a's stay
+    store.record_lane("a/2", "T-2", "Ready", 5.0)  # earlier than a's first, recorded later
+
+    assert _lanes(store) == [("a", "Ready", 1, 5.0), ("b", "In Progress", 1, 10.0)]
+
+
 def _fill(store: HistoryStore) -> None:
     _event(store, "e1", "WORKTREE_READY", MIDNIGHT - 10)
     _event(store, "e2", "RED_PROVEN", MIDNIGHT + 30)
@@ -153,12 +180,12 @@ def _fill(store: HistoryStore) -> None:
 
 
 def _snapshot(store: HistoryStore) -> tuple:
-    return _steps(store), _cases(store), _intervals(store)
+    return _steps(store), _cases(store), _intervals(store), _lanes(store)
 
 
 def _wipe(store: HistoryStore) -> None:
     with store.engine.begin() as db:
-        for table in ("starpulse_step_summaries", "starpulse_cases", "starpulse_lane_intervals"):
+        for table in ("starpulse_step_summaries", "starpulse_cases", "starpulse_lane_intervals", "starpulse_lanes"):
             db.execute(text(f"DELETE FROM {table}"))
 
 
@@ -169,7 +196,7 @@ def test_the_start_up_pass_builds_what_recording_would_have_and_a_second_run_cha
     recorded = _snapshot(store)
     assert store.summary_differences() == []
     _wipe(store)
-    assert _snapshot(store) == ([], [], [])
+    assert _snapshot(store) == ([], [], [], [])
     assert store.summary_differences() != [], "empty summaries over raw rows are a difference"
 
     store.build_summaries()
@@ -190,6 +217,30 @@ def test_opening_a_store_whose_summaries_are_empty_builds_them(tmp_path: Path) -
     assert _snapshot(HistoryStore(url, MACHINES)) == recorded
 
 
+def test_opening_a_store_whose_summaries_predate_the_lane_counts_counts_its_lanes(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _fill(first)
+    recorded = _snapshot(first)
+    with first.engine.begin() as db:
+        db.execute(text("DELETE FROM starpulse_lanes"))
+
+    assert _snapshot(HistoryStore(url, MACHINES)) == recorded
+
+
+def test_opening_a_store_whose_lane_intervals_lack_the_lane_index_adds_it(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    with first.engine.begin() as db:
+        db.execute(text("DROP INDEX ix_starpulse_lane_intervals_lane"))
+
+    reopened = HistoryStore(url, MACHINES)
+
+    assert "ix_starpulse_lane_intervals_lane" in {
+        i["name"] for i in inspect(reopened.engine).get_indexes("starpulse_lane_intervals")
+    }
+
+
 def test_the_start_up_pass_leaves_summaries_that_already_exist_alone(store: HistoryStore) -> None:
     _fill(store)
     with store.engine.begin() as db:
@@ -207,14 +258,16 @@ def test_the_consistency_check_names_each_summary_that_differs_from_the_raw_rows
         db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5 WHERE to_state = 'red_proven'"))
         db.execute(text("UPDATE starpulse_cases SET state = 'start' WHERE case_id = 'PROJ-7'"))
         db.execute(text("DELETE FROM starpulse_lane_intervals WHERE lane = 'Ready'"))
+        db.execute(text("UPDATE starpulse_lanes SET open_tasks = 7 WHERE lane = 'In Progress'"))
 
     differences = store.summary_differences()
 
-    assert len(differences) == 3
+    assert len(differences) == 4
     assert [d.split(":")[0] for d in differences] == [
         "starpulse_step_summaries",
         "starpulse_cases",
         "starpulse_lane_intervals",
+        "starpulse_lanes",
     ]
     store.rebuild_summaries()
     assert store.summary_differences() == []

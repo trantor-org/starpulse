@@ -8,6 +8,9 @@ Three summaries follow the raw rows, updated in the transaction that writes one:
   case is one source's one task or run on one machine; the Board is the machine `board`, its steps its lane changes.
 - `starpulse_lane_intervals`: each stay of a task in a lane, `left_at` null while it is still there. The lane is the
   Board's status as recorded, so a lane the Board machine lacks is kept for health to name.
+- `starpulse_lanes`: each lane one source has recorded, how many of its tasks are in it now and when it first entered
+  it, the count kept at zero once the last leaves. A read of how many tasks have finished, of where the history begins
+  or of who reported does not count their stays.
 
 Rows are folded in the order the store recorded them, not by their time, so a late event counts as a step of zero
 length and leaves its case where the latest recorded event put it. An event the store cannot attribute is not
@@ -73,6 +76,7 @@ cases = Table(
     Column("last_event_id", String, nullable=False),
     Column("last_at", Float, nullable=False),
     PrimaryKeyConstraint("machine", "source", "kind", "case_id"),
+    Index("ix_starpulse_cases_state", "machine", "state"),
 )
 lane_intervals = Table(
     "starpulse_lane_intervals",
@@ -86,8 +90,18 @@ lane_intervals = Table(
     Index("ix_starpulse_lane_intervals_task", "task", "left_at"),
     Index("ix_starpulse_lane_intervals_entered", "entered_at"),
     Index("ix_starpulse_lane_intervals_left", "left_at"),
+    Index("ix_starpulse_lane_intervals_lane", "lane", "left_at"),
 )
-SUMMARY_TABLES = (step_summaries, cases, lane_intervals)
+lanes = Table(
+    "starpulse_lanes",
+    metadata,
+    Column("source", String, nullable=False),
+    Column("lane", String, nullable=False),
+    Column("open_tasks", Integer, nullable=False),
+    Column("first_at", Float, nullable=False),
+    PrimaryKeyConstraint("source", "lane"),
+)
+SUMMARY_TABLES = (step_summaries, cases, lane_intervals, lanes)
 
 #: A case: the machine, the source that reported it, `task` or `run`, and its id.
 Key = tuple[str, str, str, str]
@@ -205,15 +219,51 @@ def write_step(db: Connection, upsert: Callable[[Table], Any], key: Key, step: S
     )
 
 
-def write_lane(db: Connection, event_id: str, task: str, lane: str, at: float) -> None:
-    """End the task's open stay at `at` and begin its stay in `lane`."""
+def write_lane(db: Connection, upsert: Callable[[Table], Any], event_id: str, task: str, lane: str, at: float) -> None:
+    """End the task's open stay at `at` and begin its stay in `lane`, moving the task between the lanes' counts."""
     i = lane_intervals.c
-    db.execute(
+    left = db.execute(
         update(lane_intervals)
         .where(i.task == task, i.left_at.is_(None))
         .values(left_at=case((i.entered_at > at, i.entered_at), else_=at))
-    )
+        .returning(i.lane, i.event_id)
+    ).all()
+    for before, opened in left:
+        db.execute(
+            update(lanes)
+            .where(lanes.c.source == source(opened), lanes.c.lane == before)
+            .values(open_tasks=lanes.c.open_tasks - 1)
+        )
     db.execute(insert(lane_intervals).values(task=task, lane=lane, entered_at=at, event_id=event_id))
+    enter = upsert(lanes).values(source=source(event_id), lane=lane, open_tasks=1, first_at=at)
+    db.execute(
+        enter.on_conflict_do_update(
+            index_elements=["source", "lane"],
+            set_={
+                "open_tasks": lanes.c.open_tasks + 1,
+                "first_at": case((lanes.c.first_at < at, lanes.c.first_at), else_=at),
+            },
+        )
+    )
+
+
+def count_lanes(db: Connection) -> None:
+    """Fill the empty lane counts from the lane intervals: per source and lane, the tasks still in it (zero when every
+    one has left) and the first time one entered."""
+    i = lane_intervals.c
+    counted: dict[tuple[str, str], list] = {}
+    for event_id, lane, entered, left in db.execute(
+        select(i.event_id, i.lane, i.entered_at, i.left_at).execution_options(yield_per=5000)
+    ):
+        count = counted.setdefault((source(event_id), lane), [0, entered])
+        count[0] += left is None
+        count[1] = min(count[1], entered)
+    rows = [
+        {"source": src, "lane": lane, "open_tasks": open_tasks, "first_at": first}
+        for (src, lane), (open_tasks, first) in counted.items()
+    ]
+    for start in range(0, len(rows), _CHUNK):
+        db.execute(insert(lanes), rows[start : start + _CHUNK])
 
 
 @dataclass
@@ -225,6 +275,8 @@ class Summaries:
     cases: dict[Key, Case] = field(default_factory=dict)
     #: lane-change event id -> (task, lane, entered, left)
     intervals: dict[str, tuple] = field(default_factory=dict)
+    #: (source, lane) -> (tasks in it now, when one first entered it)
+    lanes: dict[tuple[str, str], tuple[int, float]] = field(default_factory=dict)
     _open: dict[str, str] = field(default_factory=dict)
 
     def event(
@@ -240,7 +292,11 @@ class Summaries:
         if (open_id := self._open.get(task)) is not None:
             prior = self.intervals[open_id]
             self.intervals[open_id] = (*prior[:3], max(at, prior[2]))
+            held, first = self.lanes[source(open_id), prior[1]]
+            self.lanes[source(open_id), prior[1]] = (held - 1, first)
         self.intervals[event_id] = (task, lane, at, None)
+        held, first = self.lanes.get((source(event_id), lane), (0, at))
+        self.lanes[source(event_id), lane] = (held + 1, min(first, at))
         self._open[task] = event_id
 
     def _step(self, key: Key, step: Step) -> None:
@@ -264,6 +320,10 @@ class Summaries:
                 {"task": t, "lane": lane, "entered_at": a, "left_at": b, "event_id": e}
                 for e, (t, lane, a, b) in self.intervals.items()
             ],
+            lanes: [
+                {"source": src, "lane": lane, "open_tasks": n, "first_at": first}
+                for (src, lane), (n, first) in self.lanes.items()
+            ],
         }
         for table, values in rows.items():
             for start in range(0, len(values), _CHUNK):
@@ -285,6 +345,12 @@ class Summaries:
             select(i.task, i.lane, i.entered_at, i.left_at, i.event_id)
         ):
             found.intervals[event_id] = (task, lane, entered, left)
+        found.lanes = {
+            (src, lane): (n, first)
+            for src, lane, n, first in db.execute(
+                select(lanes.c.source, lanes.c.lane, lanes.c.open_tasks, lanes.c.first_at)
+            )
+        }
         return found
 
     def differences(self, found: Summaries) -> list[str]:
@@ -297,6 +363,7 @@ class Summaries:
             ),
             *_compare("starpulse_cases", self.cases, found.cases),
             *_compare("starpulse_lane_intervals", self.intervals, found.intervals),
+            *_compare("starpulse_lanes", self.lanes, found.lanes),
         ]
 
 
