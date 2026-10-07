@@ -50,8 +50,8 @@ function Queue({ status, clock }: { status: ForwardStatus; clock: ClockMode }) {
 export function ForwardingBody({ view, clock, onToggle }: { view: ForwardingView; clock: ClockMode; onToggle: (on: boolean) => void }) {
   const { current, phase, unavailable } = view;
   if (!current)
-    return unavailable ? <div className="row"><div className="refusal"><div className="k">the forwarding status cannot be read</div>{unavailable}</div></div> : null;
-  if (!current.configured) return <div className="row"><div className="hint">This instance forwards nothing: its config has no [forward] block.</div></div>;
+    return unavailable ? <div className="row fw-wide"><div className="refusal"><div className="k">the forwarding status cannot be read</div>{unavailable}</div></div> : null;
+  if (!current.configured) return <div className="row fw-wide"><div className="hint">This instance forwards nothing: its config has no [forward] block.</div></div>;
   const saving = phase.kind === "saving";
   return (
     <>
@@ -66,12 +66,12 @@ export function ForwardingBody({ view, clock, onToggle }: { view: ForwardingView
         <div><div className="lb">Send names</div><div className="hint">{current.names ? "Names go with each batch" : "Names stay on this instance"}</div></div>
         <div>
           <button type="button" className="sw" role="switch" aria-checked={current.optIn} aria-label="Send names to the hub" disabled={saving} onClick={() => onToggle(!current.optIn)} />
-          {phase.kind === "saved" && <div className="ok">Saved: the next batch {current.names ? "carries" : "withholds"} names · <span className="when">{clockHm(phase.at, clock)}</span></div>}
+          {phase.kind === "saved" && <div className="ok">Saved: applies from the next batch · <span className="when">{clockHm(phase.at, clock)}</span></div>}
           {phase.kind === "refused" && <div className="refusal"><div className="k">the server refused the change</div>{phase.reason}</div>}
         </div>
       </div>
       {(current.refused || current.problem) && (
-        <div className="row"><div className="refusal">
+        <div className="row fw-wide"><div className="refusal">
           <div className="k">{current.refused ? "the hub refused names" : "the hub did not take the last batch"}</div>
           {current.problem}
           {current.refused && " Names stay on this instance until the hub accepts them."}

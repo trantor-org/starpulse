@@ -16,7 +16,8 @@ const STATUS: ForwardStatus = {
   },
 };
 const view = (over: Partial<ForwardingView> = {}): ForwardingView => ({ current: STATUS, phase: { kind: "idle" }, unavailable: "", ...over });
-const draw = (v: ForwardingView, toggle: (on: boolean) => void = () => {}) => renderToStaticMarkup(<ForwardingBody view={v} clock="24" onToggle={toggle} />);
+const draw = (v: ForwardingView, toggle: (on: boolean) => void = () => {}, phase?: ForwardingView["phase"]) =>
+  renderToStaticMarkup(<ForwardingBody view={phase ? { ...v, phase } : v} clock="24" onToggle={toggle} />);
 const withStatus = (over: Partial<ForwardStatus>) => view({ current: { ...STATUS, ...over } });
 
 describe("the Forwarding card", () => {
@@ -90,6 +91,13 @@ describe("the Forwarding card", () => {
     expect(draw(view({ phase: { kind: "refused", reason: "forwarding takes a boolean" } }))).toContain("the server refused the change");
     expect(draw(view({ phase: { kind: "saving" } }))).toContain("disabled");
     expect(draw(view({ phase: { kind: "saved", at: 1_700_000_000 } }))).toContain("Saved");
+  });
+
+  it("does not restate what the next batch carries in a saved notice, which the hub can change afterwards", () => {
+    const saved = { kind: "saved", at: 1_700_000_000 } as const;
+
+    expect(draw(view({ phase: saved }))).not.toMatch(/carries|withholds/);
+    expect(draw(withStatus({ optIn: true, names: false, refused: true, problem: "hub answered 403" }), undefined, saved)).not.toMatch(/carries|withholds/);
   });
 
   it("an empty queue says nothing is waiting", () => {

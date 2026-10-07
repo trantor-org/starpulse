@@ -470,6 +470,8 @@ body.admin #c, body.admin #tip, body.admin #panel, body.admin .hud { visibility:
 #admin .fw-url { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11px * var(--fs)); color: #94a3b8; overflow-wrap: anywhere; }
 #admin .sw[disabled] { opacity: .45; cursor: default; }
 #admin .row.fw-block { align-items: start; }
+#admin .row.fw-wide { grid-template-columns: 1fr; }
+#admin .row.fw-wide .refusal { margin-top: 0; }
 #admin .fw-contract { border-collapse: collapse; width: 100%; font-size: calc(11px * var(--fs)); }
 #admin .fw-contract th { text-align: left; padding: 6px 0 2px; font-weight: 400; font-size: calc(10px * var(--fs)); letter-spacing: .12em; color: var(--muted); }
 #admin .fw-contract .stream:first-child th { padding-top: 0; }
