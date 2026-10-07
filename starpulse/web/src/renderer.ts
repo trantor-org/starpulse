@@ -12,8 +12,10 @@ import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, hostOf, pathKey, pathLedger, startPath, taskKicker, type Level, type Path } from "./levels";
-import { freshKeys, optionalSteps } from "./ledger";
-import { drawRows, CROSS, type Ink } from "./ledgerRows";
+import { freshKeys, optionalSteps, statusLine } from "./ledger";
+import { bannerOf, doctorTip, focusRow, junctionTip, ledgerHit, mergePanel, mergeTip, stepStates, stepTip, type DoctorBox, type PanelCtx } from "./ledgerPanel";
+import { createContract } from "./contract";
+import { AMBER, drawRows, CROSS, type Ink } from "./ledgerRows";
 import { spotIn, type Target } from "./search";
 import {
   BOARD_COLOR, GALAXY_MIN, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, textW, turnPage,
@@ -27,7 +29,7 @@ import { createHistory } from "./history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
 import { dagData } from "./dags";
-import type { Dag, Machine, Snapshot, Writer } from "./types";
+import type { ContractReport, Dag, LedgerRow, Machine, Snapshot, Writer } from "./types";
 import { fanBadge, fanTip, stepStatus } from "./fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "./fan";
@@ -95,7 +97,11 @@ type Hover =
   | { kind: "medge"; o: MEdge }
   | { kind: "bedge"; o: BEdge }
   | { kind: "link"; o: Hop }
-  | { kind: "caption"; o: LedgerView["cols"][number] };
+  | { kind: "caption"; o: LedgerView["cols"][number] }
+  | { kind: "lrow"; o: LedgerRow }
+  | { kind: "lstep"; o: GNode }
+  | { kind: "ljunction"; o: LedgerView }
+  | { kind: "ldoctor"; o: ContractReport };
 
 /** What the Playwright probe reads: the level, where its box sits on screen, and what a click there opens. */
 export interface Probe {
@@ -162,6 +168,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let path: Path = BOARD, W = 0, H = 0, view: View = { k: 1, x: 0, y: 0 }, fit: View = view;
   // the task whose path a click pinned, kept by id so each frame finds it again in the rebuilt scene
   let pin: Subject | null = null;
+  // the Ledger merge whose panel is open, by key, so each frame and snapshot finds its row again
+  let mergeSel: string | null = null;
   const pages: Record<string, number> = {};
   // what a navigator search result under the pointer stands for, lit while the pointer is off the canvas
   let spotted: Target | null = null, spotNear = false;
@@ -281,6 +289,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     path = next;
     keep("fv.path", path);
     pin = null;
+    mergeSel = null;
     panel.classList.remove("open");
     setHover(null);
     anim = null;
@@ -391,6 +400,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     layout(!first);
     publish();
     paintFan();
+    paintMerge();
     if (away) heartbeat(); // the canvas draws no frame behind another view, but the Recent feed beside it stays current
     else loop.wake();
   }
@@ -575,6 +585,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function hit(x: number, y: number): Hover | null {
     const sc = scene!, near = (o: Pt, r: number) => Math.hypot(o.x - x, o.y - y) < r;
     if (sc.top) return hitTop(sc, x, y);
+    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px) : null;
+    if (mine) return mine;
     for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < Math.max(4, px(7))) return { kind: "mtask", o: s };
     for (const t of sc.tasks) if (!t.gone && near(t, Math.max(t.big ? 7 : 5, px(7)))) return { kind: "task", o: t };
     // a wide DAG's circle overlaps its docked neighbours, so the nearest DAG in range wins, not the first
@@ -649,6 +661,42 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       loop.wake();
     },
   });
+  // ---- the Ledger: its rows' tips and panel, the doctor's banner, and the merge in focus ----
+  const contract = createContract({ onChange: () => loop.wake() });
+  /** Where the banner was drawn this frame, and the report it states; none off a merge Ledger or before a report. */
+  let doctor: DoctorBox | null = null;
+  const heldRows = () => {
+    const led = scene?.fold?.ledger;
+    return led ? S?.ledgers[led.event] ?? [] : [];
+  };
+  function panelCtx(): PanelCtx {
+    const sc = scene!, fold = sc.fold!, led = fold.ledger!, rows = heldRows(), byKey = new Map(rows.map((r) => [r.key, r])), dags = led.cols.map((c) => c.dag);
+    return {
+      event: led.event, from: fold.a!.name, to: fold.b!.name, ties: led.cols,
+      steps: Object.fromEntries(dags.map((d) => [d, sc.stars[d].glyph.nodes.map((n) => n.name)])),
+      optional: Object.fromEntries(dags.map((d) => [d, optionalSteps(rows, d)])),
+      palette: { ...DAG_COLOR, waiting: CROSS }, now: T, hm: hhmm, by: (k) => byKey.get(k), task: (id) => taskLink(id, id, S!),
+    };
+  }
+  /** The row whose panel is open, if one is. */
+  const openRow = () => (mergeSel && panel.classList.contains("open") ? heldRows().find((r) => r.key === mergeSel) ?? null : null);
+  /** The merge the Ledger's templates are coloured by: the hovered row, else the open one, else the newest. */
+  const focused = () => focusRow(hover?.kind === "lrow" ? hover.o : null, openRow(), heldRows());
+  const starOfStep = (n: GNode) => Object.values(scene!.stars).find((s) => s.glyph.nodes.includes(n));
+  function openMerge(row: LedgerRow) {
+    panel.innerHTML = mergePanel(row, panelCtx());
+    openPanel();
+    mergeSel = row.key;
+  }
+  /** Repaint the open merge's panel from its row as the snapshot now has it. */
+  function paintMerge() {
+    const row = openRow();
+    if (!row || !scene?.fold?.ledger) return;
+    const top = panel.scrollTop;
+    panel.innerHTML = mergePanel(row, panelCtx());
+    panel.querySelector<HTMLElement>(".x")!.onclick = () => closePanel();
+    panel.scrollTop = top;
+  }
   const SLOT = '<div id="trace-slot"></div>';
   /** The pinned panel's hop table, once the history has it. */
   function paintTable() {
@@ -699,6 +747,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         const yaml = o.role === "writer" ? [`writes: ${scene!.fold!.ledger!.event}`, `trigger: ${o.on}`] : [`cue:`, `  event: ${scene!.fold!.ledger!.event}`, `  state: ${ev?.target ?? ""}`, `  on: ${o.on}`, ...(o.resolves ? [`  resolves: ${o.resolves}`] : [])];
         return `<div class="k">declared contract · click for the DAG</div><div class="n">${esc(o.dag)}: ${o.role === "writer" ? "writes" : "cued by"} ${esc(scene!.fold!.ledger!.event)}</div><pre>${yaml.map(esc).join("\n")}</pre>${o.resolves ? `<div class="k">a failed run clears ${o.resolves === "forced" ? "only on a green forced rerun" : "on the DAG's next green run"}</div>` : ""}`;
       }
+      case "lrow":
+        return mergeTip(h.o, panelCtx());
+      case "lstep": {
+        const star = starOfStep(h.o);
+        return star ? stepTip(star.name, h.o.name, star.steps.find((st) => st.name === h.o.name)?.depends ?? [], focused(), panelCtx()) : "";
+      }
+      case "ljunction":
+        return junctionTip(heldRows(), panelCtx());
+      case "ldoctor":
+        return doctorTip(h.o);
       case "link":
         return `<div class="k">machine path · ${esc(h.o.from)} → ${esc(h.o.to)}</div><div class="n">${h.o.back ? "the task returns from the skill" : "a task opens this skill"}</div>`;
       case "medge":
@@ -711,12 +769,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // ---- click: drill into states, machines and DAGs, open panels for tasks ----
   // the panel floats over the level, so opening or closing it never moves or zooms the view
   const openPanel = () => {
+    mergeSel = null;
     panel.classList.add("open");
     panel.querySelector<HTMLElement>(".x")!.onclick = () => closePanel();
   };
   /** Close the panel if one is open; whether one was. */
   function closePanel() {
     pin = null;
+    mergeSel = null;
     if (!panel.classList.contains("open")) return false;
     panel.classList.remove("open");
     return true;
@@ -775,6 +835,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     // a moon opens its machine, and so does one of its sub-states (the machine the sub-state belongs to; its child opens from there)
     if (h.kind === "moon" || h.kind === "sat") return go([...path, { kind: "state", id: h.o.parent.id }, { kind: "machine", flow: h.kind === "moon" ? h.o.name : h.o.machine }], fx, fy);
     if (h.kind === "caption") return openDagPanel(scene!.stars[h.o.dag]);
+    if (h.kind === "lrow") return openMerge(h.o);
+    if (h.kind === "lstep") return starOfStep(h.o) ? openDagPanel(starOfStep(h.o)!) : undefined;
+    if (h.kind === "ljunction" || h.kind === "ldoctor") return;
     // a Board path opens its Ledger when a DAG writes one of its events or is cued by it
     const ledger = h.kind === "bedge" ? ledgerOfEdge(h.o) : null;
     if (ledger) return push(ledger, fx, fy);
@@ -1219,7 +1282,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         label(s.label, s.x, s.y + g.h / 2 + 16 / K, hot, null, 11);
         // the DAG's own step graph in miniature: rounded links streaming toward the step that waits, ringed steps
         const nr = (g.nodes.length === 1 ? 5.5 : 4) * (hot ? 1.15 : 1);
-        const ss = (n: GNode) => stepStatus(s, n.name, n.status); // a step's status: from the runs in flight when there are any
+        // a step's status: on a Ledger, the merge in focus's run; else from the runs in flight when there are any
+        const folded = scene!.fold?.ledger && heldRows().length ? stepStates(focused(), s.name, g.nodes.map((n) => n.name)) ?? {} : null;
+        const ss = (n: GNode) => (folded ? folded[n.name] ?? "not_started" : stepStatus(s, n.name, n.status));
         for (const [p, q] of g.links) {
           const a = { x: s.x + p.x, y: s.y + p.y, color: DAG_COLOR[ss(p)] || "#94a3b8" }, b = { x: s.x + q.x, y: s.y + q.y, color: DAG_COLOR[ss(q)] || "#94a3b8" };
           const running = ss(p) === "running" || ss(q) === "running", dx = (b.x - a.x) / 2;
@@ -1312,7 +1377,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // a fold's level: the Board path an event takes, with the Ledger hung from it. Under the path's first state the PR (or task) that moves it meets
   // the junction every rail leaves from; the DAG that writes the event is fed straight from it and ties up to the event's mark on the path, and
   // each cue hangs off a bus below the templates. Each template keeps its own column, its caption stating the contract it declares.
+  /** `starpulse doctor`'s verdict on the contract, right-aligned at (x, y); hover for what it checked, or the key to add. */
+  function drawDoctor(x: number, y: number) {
+    const report = contract.report(), banner = bannerOf(report);
+    if (!report || !banner) return;
+    const col = banner.tone === "ok" ? DAG_COLOR.succeeded : banner.tone === "warn" ? AMBER : DAG_COLOR.failed, hot = hover?.kind === "ldoctor", head = labPx(10.5), sub = labPx(10);
+    text(banner.head, x, y, head, rgba(col, hot ? 1 : 0.85), "right", 500);
+    text(banner.sub, x, y + 14 / K, sub, rgba("#94a3b8", hot ? 0.8 : 0.55), "right");
+    const w = Math.max(textW(banner.head, head), textW(banner.sub, sub));
+    doctor = { x0: x - w, y0: y - 9 / K, x1: x, y1: y + 22 / K, report };
+  }
   function drawFold() {
+    doctor = null;
     const f = scene!.fold, led = f?.ledger;
     if (!f?.a || !f.b || !f.p0 || !f.p1 || !led) return;
     const { a, b, p0, p1 } = f, sc = scene!, named = hover?.kind === "dag" ? hover.o.name : hover?.kind === "caption" ? hover.o.dag : null, lit = !!named;
@@ -1383,15 +1459,20 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       rail([{ x: led.J.x, y: led.bus }, { x: root.x - 40 / K, y: led.bus }, { x: root.x - nrOf(s) - 2 / K, y: root.y, c: { x: root.x - 14 / K, y: led.bus } }], ACT, ACT, heat(c.dag), c.role === "cue");
     }
     if (feeds.length) text(mergeRow ? "cue · each merge to main" : `cue · each ${led.event}`, led.J.x + 10 / K, led.bus - 8 / K, labPx(10), rgba("#94a3b8", 0.55), "left");
-    // each template's caption: the contract it declares, cut to its column
+    if (mergeRow) drawDoctor(led.J.x - 16 / K, led.bus - 12 / K);
+    // each template's caption: the contract it declares, cut to its column, and under it the merge in focus
+    const byKey = new Map(held.map((r) => [r.key, r])), fm = focused(), newest = held.find((r) => r.appliedBy === undefined);
     for (const c of led.cols) {
       const s = sc.stars[c.dag], hot = named === c.dag, size = labPx(10.5), y = s.y + s.glyph.h / 2 + 16 / K, max = c.x1 - c.x0 - 8 / K;
       const lines = [c.role === "writer" ? `on ${c.on}` : `cue · on ${c.on}`, ...(c.resolves ? [`clears on ${c.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
       lines.forEach((t, i) => text(fitText(t, max, size), s.x, y + (15 + 15 * i) / K, size, rgba("#94a3b8", hot ? 0.9 : 0.6), "center"));
+      if (!fm) continue;
+      const ln = statusLine(fm, c, fm.runs[c.dag], { event: led.event, now: T, hm: hhmm, optional: optionalSteps(held, c.dag), by: (k) => byKey.get(k) });
+      text(fitText(`${fm === newest ? "newest" : hhmm(fm.at)} ${(fm.sha ?? fm.key).slice(0, 7)} · ${ln.main}`, max, size), s.x, y + (15 + 15 * lines.length) / K, size, rgba(ln.state ? DAG_COLOR[ln.state] ?? CROSS : "#94a3b8", 0.85), "center");
     }
     // the merge rows, each template's cell beside its run's mini step graph; a row still arriving counts its own seconds
     if (grid) {
-      const byKey = new Map(held.map((r) => [r.key, r])), age = (key: string) => {
+      const age = (key: string) => {
         const t0 = arrived.get(key);
         if (t0 === undefined) return undefined;
         if (clock - t0 > 2) return void arrived.delete(key);
@@ -1400,6 +1481,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       drawRows(rowInk, {
         led, glyphs: Object.fromEntries(led.cols.map((c) => [c.dag, sc.stars[c.dag].glyph])), ctx: { event: led.event, now: T, hm: hhmm, by: (k) => byKey.get(k) },
         optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(held, c.dag)])), px: labPx, palette: { ...DAG_COLOR, waiting: CROSS }, clock, age,
+        lit: hover?.kind === "lrow" ? hover.o.key : openRow()?.key,
       });
     }
     drawFx(f);

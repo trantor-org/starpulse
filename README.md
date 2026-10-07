@@ -252,6 +252,10 @@ the run, when the instance has no `after` key, so its runs pair with a merge onl
 `repo:<name>` runs once per `[[repos]]` entry and fails when its `path` is not a submodule of the repository `doctor`
 runs in. Neither runs while the config or the server cannot be read.
 
+`GET /api/doctor` serves those two kinds of check as `{ok, checks: [{check, status, reason}]}`, read from the server's
+own snapshot and config and held for a minute; the page draws it as the Ledger's doctor banner. A server with no
+contract to read answers `{ok: true, checks: []}`.
+
 `skills` reads no server. The package bundles four skills: `operating-starpulse-board` (what to work next, why a task
 cannot move, moving it), `authoring-starpulse-machines` (machine YAML, writers, guards, subflows, `machine validate`
 and `machine import mermaid`), `writing-starpulse-adapters` (the board, machine-events and runs contracts, the adapter

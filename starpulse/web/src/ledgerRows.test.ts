@@ -112,6 +112,18 @@ describe("drawRows", () => {
     expect(r.texts.some((t) => t.s === "pin bump")).toBe(false);
   });
 
+  it("outlines the row that is lit (hovered or open) and no other", () => {
+    const r = recorder(), rows = [row("aaa", 990), row("bbb", 980)], outlines = () => r.strokes.filter((s) => s.pts.length === 5 && s.col.includes("251,191,36"));
+
+    drawRows(r.ink, frame(rows));
+    expect(outlines()).toHaveLength(0);
+
+    drawRows(r.ink, frame(rows, { lit: "bbb" }));
+    const [box] = outlines(), g = frame(rows).led.grid!;
+    expect(outlines()).toHaveLength(1);
+    expect([box.pts[0].y, box.pts[2].y]).toEqual([g.rows[1].y - g.rh / 2, g.rows[1].y + g.rh / 2]);
+  });
+
   it("rings a row that just arrived, fades it in and lowers it from a row above until it settles", () => {
     const fresh = recorder(), settled = recorder(), rows = [row("aaa", 990, { runs: { "main-follow": run() } })];
     const alpha = (c: string) => Number(c.match(/,([\d.]+)\)$/)![1]);

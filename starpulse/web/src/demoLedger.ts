@@ -3,13 +3,26 @@
 // `?ms=` picks what the rows show: `live` (the default) keys every run by commit with the newest still running, `fail` pins one failed apply,
 // `cross` adds another repository's merges and the pin bump that applies one, and `infer` is an install that declares no commit key, so time pairs every run.
 import { MERGE_EVENT, tiesOf, type Tie } from "./ledger";
-import type { LedgerRow, LedgerRun, RunStatus, Snapshot } from "./types";
+import type { ContractCheck, ContractReport, LedgerRow, LedgerRun, RunStatus, Snapshot } from "./types";
 
 export type Scenario = "live" | "fail" | "cross" | "infer";
 const SCENARIOS: Scenario[] = ["live", "fail", "cross", "infer"];
 
 /** The scenario a page's address names, else `live`. */
 export const scenarioOf = (search: string): Scenario => SCENARIOS.find((s) => s === new URLSearchParams(search).get("ms")) ?? "live";
+
+/**
+ * The contract report a demo page answers `/api/doctor` with, in the shape the server serves: a check for each cue, and for the `cross` scenario the
+ * other repository. Every scenario but `infer` declares the commit keys; `infer` is the install that does not, which `starpulse doctor` warns of.
+ */
+export function demoContract(snap: Snapshot, scenario: Scenario): ContractReport {
+  const cues = [...new Set((snap.cues ?? []).map((c) => c.dag))];
+  const checks: ContractCheck[] = cues.map((dag) => scenario === "infer"
+    ? { check: `cue:${dag}`, status: "warn", reason: `${dag} has no [runs.commit] after key, so its runs are time-inferred against merges` }
+    : { check: `cue:${dag}`, status: "pass", reason: `${dag} declares AFTER, BEFORE, FORCE` });
+  if (scenario === "cross") checks.push({ check: "repo:skills", status: "pass", reason: "skills is a submodule" });
+  return { ok: checks.every((c) => c.status !== "fail"), checks };
+}
 
 /** Seconds before now each demo merge landed. */
 const AGO = [20, 420, 1140, 2460, 4200, 7200, 12000, 18000];
@@ -61,7 +74,7 @@ export function arriveMerge(snap: Snapshot, rows: LedgerRow[], now: number): Led
   const ties = tiesOf(snap, MERGE_EVENT), next = structuredClone(rows);
   for (const row of next)
     for (const run of Object.values(row.runs))
-      if (run.status === "running" || run.status === "queued") Object.assign(run, { status: "succeeded", step: "", finishedAt: iso(now), steps: Object.fromEntries(Object.keys(run.steps).map((n) => [n, "succeeded"])) });
+      if (run.status === "running" || run.status === "queued") Object.assign(run, { status: "succeeded", step: "", startedAt: run.startedAt || iso(row.at), finishedAt: iso(now), steps: Object.fromEntries(Object.keys(run.steps).map((n) => [n, "succeeded"])) });
   const n = rows.length + 100, writer: Record<string, LedgerRun> = {};
   for (const t of ties) {
     const names = stepsOf(snap, t.dag), live = t.role === "writer";

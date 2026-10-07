@@ -142,6 +142,15 @@ def _contract(snapshot: dict[str, Any] | str, config: Config | str, probes: Prob
     ]
 
 
+def _report(checks: list[dict[str, str]]) -> dict[str, Any]:
+    return {"ok": all(c["status"] != "fail" for c in checks), "checks": checks}
+
+
+def contract(snapshot: dict[str, Any], config: Config, probes: Probes) -> dict[str, Any]:
+    """The cue and repository checks alone, as `run_checks` reports them: what the Ledger's banner reads."""
+    return _report(_contract(snapshot, config, probes))
+
+
 def run_checks(snapshot: dict[str, Any] | str, config: Config | str, probes: Probes, server: str) -> dict[str, Any]:
     """Every check as `{ok, checks: [{check, status, reason}]}`.
 
@@ -156,4 +165,5 @@ def run_checks(snapshot: dict[str, Any] | str, config: Config | str, probes: Pro
         _gh(probes),
         *_contract(snapshot, config, probes),
     ]
-    return {"ok": all(c["status"] != "fail" for c in checks), "checks": checks}
+    return _report(checks)
+

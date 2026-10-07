@@ -1,7 +1,7 @@
 // The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
 // demo page (`starpulse.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
 import { demoLevel } from "./demoLevel";
-import { arriveMerge, demoLedger, scenarioOf } from "./demoLedger";
+import { arriveMerge, demoContract, demoLedger, scenarioOf } from "./demoLedger";
 import { MERGE_EVENT } from "./ledger";
 import { columnsOf } from "./kanban";
 import type { LaneStep } from "./trace";
@@ -116,6 +116,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
   "/api/forwarding": (server, _path, _query, init) => server.forwarding(init?.method ?? "GET", String(init?.body ?? "")),
+  "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
   "/api/level": (server, _path, query) => {
     const { status, body } = demoLevel(server.snapshot.now, Number(query.get("hours") ?? 168), new URLSearchParams(globalThis.location?.search ?? ""));
     return json(body, status);

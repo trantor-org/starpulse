@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DemoServer, ROUTES, stepRuns, type DemoFixture } from "./demo";
 import { NO_HARNESSES, fetchHarnesses, postStart } from "./start";
 import type { Machine, RawAgent, RunStatus, Snapshot } from "./types";
@@ -51,6 +51,28 @@ function tied(): DemoFixture {
   f.dags = ["main-follow", "apply-on-merge"].map((name) => ({ name, status: "succeeded" as RunStatus, runId: "r", startedAt: "", finishedAt: "", steps: steps(["a", "b"]) }));
   return f;
 }
+
+describe("the demo server's contract report", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const report = async (ms: string) => {
+    vi.stubGlobal("location", { search: `?ms=${ms}` });
+    return body(new DemoServer(tied(), () => 1000).fetch("/api/doctor"));
+  };
+
+  it("answers the shape GET /api/doctor serves: a check for each cued DAG, all passing where runs are keyed by commit", async () => {
+    const live = await report("live");
+
+    expect(live).toEqual({ ok: true, checks: [{ check: "cue:apply-on-merge", status: "pass", reason: expect.stringContaining("apply-on-merge") }] });
+    expect((await report("fail")).checks.map((c: { status: string }) => c.status)).toEqual(["pass"]);
+  });
+
+  it("warns, without failing, that the infer scenario declares no commit key", async () => {
+    const infer = await report("infer");
+
+    expect(infer.ok).toBe(true);
+    expect(infer.checks).toEqual([{ check: "cue:apply-on-merge", status: "warn", reason: expect.stringContaining("[runs.commit] after key") }]);
+  });
+});
 
 describe("the demo server's Ledger", () => {
   it("holds merge rows only when a DAG is tied to the merge", () => {

@@ -1162,7 +1162,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     // each caption cell is its template plus the widest of its lines, shrunk to share what the row has when they do not all fit, else spread across it
     const want = led.ties.map((t, i) => Math.max(0, F * Math.max(textW(labelOf(t.dag), 12), ...lines(t).map((x) => textW(x, 10.5))) - gl[i].w)), basis = base(F);
     const free = avail - basis.reduce((p, q) => p + q, 0), wantSum = want.reduce((p, q) => p + q, 0), g = wantSum > free ? Math.max(0, free) / wantSum : 1, slack = Math.max(0, free - wantSum * g) / led.ties.length;
-    const yP = R + 40 * F, yH = yP + R + 46 * F + gh / 2, cap = yH + gh / 2 + 14 * F, bus = yH + gh / 2 + 56 * F;
+    const yP = R + 40 * F, yH = yP + R + 46 * F + gh / 2, cap = yH + gh / 2 + 14 * F, bus = yH + gh / 2 + 78 * F;
     let x = c0;
     const cols = led.ties.map((t, i) => {
       const x0 = x, x1 = (x += basis[i] + want[i] * g + slack);

@@ -259,7 +259,7 @@ export interface LedgerFail {
   startedAt: string;
   finishedAt: string;
   resolves: "forced" | "next" | null;
-  resolved: string | null;
+  resolved: { runId: string; at: string } | null;
 }
 
 /** One merge occurrence: its pull request and commit, the runs paired with it by DAG, and, for another repository's merge, the parent merge that pinned it. */
@@ -315,4 +315,17 @@ export interface Snapshot {
   /** True while a just-started server is still reading its board: its Board is partial until a snapshot without it follows. */
   reading?: boolean;
   now: number;
+}
+
+/** One check of the contract between the config and the machines' DAG cues, as `GET /api/doctor` reports it. */
+export interface ContractCheck {
+  /** `cue:<dag>` or `repo:<name>`. */
+  check: string;
+  status: "pass" | "warn" | "fail";
+  reason: string;
+}
+/** The contract checks `starpulse doctor` runs; `ok` is false when any fails. */
+export interface ContractReport {
+  ok: boolean;
+  checks: ContractCheck[];
 }
