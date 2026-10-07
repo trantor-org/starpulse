@@ -1,0 +1,266 @@
+diff --git a/starpulse/web/src/App.tsx b/starpulse/web/src/App.tsx
+index b319701..0222efa 100644
+--- a/starpulse/web/src/App.tsx
++++ b/starpulse/web/src/App.tsx
+@@ -102,13 +102,13 @@ function Node({ hud, path, label, count, size, flow, chev, open, onChev }: {
+   chev?: boolean; onChev?: () => void; open: (p: Path) => void;
+ }) {
+   const key = pathKey(path), now = pathKey(hud.path);
+-  const on = now === key || now.startsWith(key + "/");
++  const on = now === key || now.startsWith(key + "/"), source = flow ? hud.tree?.sources?.[flow] : undefined;
+   // a lifecycle node glows while its machine is moving
+   const cls = ["node", on && "on", now === key && "here", flow && hud.moving.includes(flow) && "live"].filter(Boolean).join(" ");
+   return (
+     <button className={cls} onClick={() => open(path)}>
+-      <i className="g" style={{ width: size, height: size }} />
+-      <span className="t">{label}</span>
++      <i className={source ? "g mapped" : "g"} style={{ width: size, height: size }} />
++      <span className="t">{label}{source && <span className="src" data-src={source} title={`mapped from ${source}`} />}</span>
+       <span className="n">
+         {onChev && (
+           <span className="chev" onClick={(e) => { e.stopPropagation(); onChev(); }}>{chev ? "▾" : "▸"}</span>
+@@ -277,7 +277,7 @@ function Rail({ hud, view }: { hud: HudState; view: ViewName }) {
+           <>
+             <span><i style={{ background: "#34d399" }} />checks pass</span><span><i style={{ background: "#fb7185" }} />failing</span><span><i style={{ background: "#fbbf24" }} />pending</span><br />
+             <span><i style={{ background: "#a78bfa" }} />merged</span><span><span style={{ color: "#fbbf24" }}>⌁ n</span> review threads</span><br />
+-            <span><i style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }} />on a machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />moved now</span><br />
++            <span><i style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }} />on a machine</span><span><i style={{ background: "#60a5fa", boxShadow: "0 0 6px #60a5fa" }} />on a mapped machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />moved now</span><br />
+             <span><span style={{ color: "#fbbf24" }}>⧗ n</span> open dependencies</span><span><span style={{ color: "#fb923c" }}>⛓ n</span> Waiting tasks it holds</span><br />
+             <span>hover a card:</span><span><i style={{ border: "1px solid #fb923c", background: "none", boxSizing: "border-box" }} />holds</span><span><i style={{ border: "1px solid #67e8f9", background: "none", boxSizing: "border-box" }} />waits on</span>
+           </>
+@@ -286,7 +286,7 @@ function Rail({ hud, view }: { hud: HudState; view: ViewName }) {
+             <span><i style={{ background: "#c4b5fd" }} />deep</span><span><i style={{ background: "#67e8f9" }} />standard</span><span><i style={{ background: "#fde68a" }} />other</span><br />
+             <span><i style={{ background: "#34d399" }} />ok</span><span><i style={{ background: "#fb7185" }} />failed</span>
+             <span><i style={{ border: "1px solid #dbe4f3", background: "none", boxSizing: "border-box" }} />runnable</span><br />
+-            <span><i style={{ background: "#c084fc" }} />lifecycle machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />activity now</span>
++            <span><i style={{ background: "#c084fc" }} />lifecycle machine</span><span className="mapleg"><i />mapped machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />activity now</span>
+           </>
+         )}
+       </section>
+diff --git a/starpulse/web/src/Kanban.tsx b/starpulse/web/src/Kanban.tsx
+index f450c39..c9d011c 100644
+--- a/starpulse/web/src/Kanban.tsx
++++ b/starpulse/web/src/Kanban.tsx
+@@ -126,7 +126,7 @@ export function Card({ task, holds = 0, chain, now, marks, names, compact = fals
+         </div>
+       ) : live && (
+         <div className={`mach${now - live.at < HOT_S ? " hot" : ""}`}>
+-          <span className="p" /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
++          <span className={live.source ? "p mapped" : "p"} title={live.source && `mapped from ${live.source}`} /><b>{live.machine}</b><span className="s">· {live.state.replace(/_/g, " ")}</span><span className="ago">{ago(now - live.at)}</span>
+         </div>
+       )}
+       {!compact && (
+diff --git a/starpulse/web/src/kanban.ts b/starpulse/web/src/kanban.ts
+index 11d4ec8..17a7fa0 100644
+--- a/starpulse/web/src/kanban.ts
++++ b/starpulse/web/src/kanban.ts
+@@ -24,7 +24,7 @@ export interface KanbanTask {
+   prs: Pull[];
+   description: string;
+   /** The lifecycle machine that last placed the task, the state it left it in and when (epoch seconds). */
+-  live: { machine: string; state: string; at: number } | null;
++  live: { machine: string; state: string; at: number; source?: string } | null;
+   /** Ready again after waiting: its last Board move was out of Waiting, so a machine state from before it no longer describes the card. */
+   released: boolean;
+   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
+@@ -175,7 +175,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
+     return {
+       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
+       openDeps: dependencies.filter((d) => open.has(d)).length, prs: sky.pulls[a.id] ?? [], description: a.description ?? "",
+-      live: latest ? { machine: latest.flow, state: latest.state, at: latest.at } : null,
++      live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
+       released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0,
+     };
+   });
+diff --git a/starpulse/web/src/levels.ts b/starpulse/web/src/levels.ts
+index a65ae39..a78ce74 100644
+--- a/starpulse/web/src/levels.ts
++++ b/starpulse/web/src/levels.ts
+@@ -26,6 +26,8 @@ export interface Tree {
+   subs: Record<string, string[]>;
+   /** The machines that open under a machine's states. */
+   children: Record<string, Child[]>;
++  /** Each mapped machine's third-party source, by flow name. */
++  sources?: Record<string, string>;
+ }
+ export const BOARD: Path = [{ kind: "board" }];
+ 
+@@ -36,7 +38,8 @@ export const BOARD: Path = [{ kind: "board" }];
+  */
+ export function tree(snap: Pick<Snapshot, "graphs" | "flows">): Tree {
+   const board = snap.flows.find((f) => f.name === "board")?.machine;
+-  const t: Tree = { states: board?.states.map((s) => s.id) ?? [], subs: {}, children: {} };
++  const t: Tree = { states: board?.states.map((s) => s.id) ?? [], subs: {}, children: {}, sources: {} };
++  for (const f of snap.flows) if (f.machine.source) t.sources![f.name] = f.machine.source;
+   const inner = new Set<string>();
+   for (const link of board?.subflows ?? []) {
+     (t.subs[link.state] ??= []).push(link.flow);
+diff --git a/starpulse/web/src/renderer.ts b/starpulse/web/src/renderer.ts
+index 9b27536..ed22e20 100644
+--- a/starpulse/web/src/renderer.ts
++++ b/starpulse/web/src/renderer.ts
+@@ -634,7 +634,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+         return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at), prefs().clock);
+       }
+       case "mtask": {
+-        const o = h.o, at = subjectOf(h)!, kind = `task · ${o.flow} · ${o._state || o.state} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
++        const o = h.o, at = subjectOf(h)!, kind = `task · ${o.flow}${sourceOf(o.flow) ? ` · mapped from ${sourceOf(o.flow)}` : ""} · ${o._state || o.state} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
+         return traceCard({ kind, id: o.id, title: "", goal: goalOf(sky.flows[o.flow]?.machine) }, runFor(at), prefs().clock);
+       }
+       case "dag": {
+@@ -652,7 +652,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+       case "moon": {
+         const o = h.o, mv = moving(o.name).length, f = sky.flows[o.name];
+         if (o.pager) return pagerTip(o.pager);
+-        return `<div class="k">lifecycle machine inside ${esc(o.parent.name)} · click to open it</div><div class="n">${esc(o.name)}</div>${o.nStates} states · ${f?.agents.length ?? 0} session${f?.agents.length === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
++        return `<div class="k">${sourceOf(o.name) ? `machine mapped from ${esc(sourceOf(o.name)!)}` : "lifecycle machine"} inside ${esc(o.parent.name)} · click to open it</div><div class="n">${esc(o.name)}</div>${o.nStates} states · ${f?.agents.length ?? 0} session${f?.agents.length === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
+       }
+       case "sat":
+         return `<div class="k">state of the ${esc(h.o.machine)} machine · opens ${esc(h.o.flow)} ${esc(h.o.when)} · click to open ${esc(h.o.machine)}</div><div class="n">${esc(h.o.name)}</div>${h.o.n} task${h.o.n === 1 ? "" : "s"} orbiting`;
+@@ -664,7 +664,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+         const o = h.o, mv = moving(o.name).length;
+         if (o.pager) return pagerTip(o.pager);
+         if (o.subState) return `<div class="k">state of the ${esc(o.machine!)} machine · opens ${esc(o.flow!)} ${esc(o.when ?? "")} · click to open it</div><div class="n">${esc(o.title!)}</div>${o.n} task${o.n === 1 ? "" : "s"} here now`;
+-        return `<div class="k">lifecycle machine · click to open${o.when ? ` · ${esc(o.when)}` : ""}</div><div class="n">${esc(o.name)}</div>${Object.keys(o.states).length} states · ${o.n} task${o.n === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
++        return `<div class="k">${sourceOf(o.name) ? `machine mapped from ${esc(sourceOf(o.name)!)}` : "lifecycle machine"} · click to open${o.when ? ` · ${esc(o.when)}` : ""}</div><div class="n">${esc(o.name)}</div>${Object.keys(o.states).length} states · ${o.n} task${o.n === 1 ? "" : "s"}${mv ? ` · ${mv} moving now` : ""}`;
+       }
+       case "link":
+         return `<div class="k">machine path · ${esc(h.o.from)} → ${esc(h.o.to)}</div><div class="n">${h.o.back ? "the task returns from the skill" : "a task opens this skill"}</div>`;
+@@ -751,7 +751,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     if (h.kind === "task") panel.innerHTML = taskPanel(h.o, sky, stateName);
+     else if (h.kind === "mtask") {
+       const o = h.o;
+-      panel.innerHTML = `<span class="x">✕</span><div class="k">task · ${esc(o.flow)} · ${esc(o._state || o.state)}</div><h2>${esc(o.id)} — ${esc(o.title)}</h2>
++      panel.innerHTML = `<span class="x">✕</span><div class="k">task · ${esc(o.flow)}${sourceOf(o.flow) ? ` · mapped from ${esc(sourceOf(o.flow)!)}` : ""} · ${esc(o._state || o.state)}</div><h2>${esc(o.id)} — ${esc(o.title)}</h2>
+         <table>${(o.trail ?? []).slice(-12).map((t) => `<tr><td>${hhmm(t.at)}</td><td>${esc(t.event)} → ${esc(t.state)}</td></tr>`).join("")}</table>`;
+     } else return;
+     // the hop table sits under the facts, above the board link
+@@ -865,9 +865,21 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     for (const R of host.rings || []) circle(host.x, host.y, R, rgba(col, 0.11));
+   };
+   // a lifecycle machine is a flat disc with a thin ring outside it, the one mark that tells it from a state
+-  function machine(x: number, y: number, r: number, hot: boolean, alpha: number) {
+-    disc(x, y, r, "#c084fc", hot, alpha);
+-    circle(x, y, r + 3, rgba("#c084fc", hot ? 0.9 : 0.5), 1);
++  function machine(x: number, y: number, r: number, hot: boolean, alpha: number, mapped = false) {
++    const col = mapped ? EXT : "#c084fc";
++    disc(x, y, r, col, hot, alpha);
++    circle(x, y, r + 3, rgba(col, hot ? 0.9 : 0.5), 1);
++  }
++  /** A mapped machine (machine.source: a third party moves it) is drawn like a local one, in a colour of its own: blue, never purple. */
++  const EXT = "#60a5fa";
++  const sourceOf = (flow: string | null | undefined) => (flow ? S?.flows[flow]?.machine.source : undefined);
++  /** A machine's name; a mapped machine's name and source are in its colour, and the pair keeps the alignment the name had. */
++  function machineName(s: string, x: number, y: number, size: number, col: string, align: CanvasTextAlign, src?: string) {
++    if (!src) return text(s, x, y, size, col, align, 300);
++    cx.font = `300 ${size}px Inter, system-ui, sans-serif`;
++    const wm = cx.measureText(s).width, gap = size * 0.45, ws = cx.measureText(src).width, x0 = align === "left" ? x : align === "right" ? x - wm - gap - ws : x - (wm + gap + ws) / 2;
++    text(s, x0, y, size, rgba(EXT, 0.95), "left", 300);
++    text(src, x0 + wm + gap, y, size, rgba(EXT, 0.6), "left", 300);
+   }
+ 
+   function drawGalaxies() {
+@@ -886,13 +898,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     for (const m of sc.moons) {
+       const hot = isHot("moon", m), flows = m.pager?.hidden ?? [m.name], mv = flows.flatMap(moving).length, busy = flows.some((name) => !!S!.flows[name]?.agents.length);
+       drawTrackRings(m, "#c084fc");
+-      machine(m.x, m.y, m.r!, hot, busy ? 0.32 : 0.14);
++      const src = m.pager ? undefined : sourceOf(m.name);
++      machine(m.x, m.y, m.r!, hot, busy ? 0.32 : 0.14, !!src);
+       if (mv) circle(m.x, m.y, m.r! + 4, rgba(ACT, 0.85), 1.5);
+       // named beside the moon on the side away from its state, past its chain of sub-states
+       const left = m.x < m.parent.x - 1;
+       cx.letterSpacing = `${0.5 / K}px`;
+       const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
+-      text(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, labPx(10.5), col, left ? "right" : "left", 300);
++      machineName(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, labPx(10.5), col, left ? "right" : "left", src);
+       cx.letterSpacing = "0px";
+     }
+     for (const b of sc.subStates) {
+@@ -1117,14 +1130,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+       // the DAGs that orbit it; hover adds its states and sessions
+       if (p.moon) {
+         const sd = p.x < sc.hub!.x ? -1 : 1;
+-        machine(p.x, p.y, p.R, hot, p.n ? 0.32 : 0.14);
++        const src = p.pager ? undefined : sourceOf(p.name);
++        machine(p.x, p.y, p.R, hot, p.n ? 0.32 : 0.14, !!src);
+         if (mv.length) circle(p.x, p.y, p.R + 4, rgba(ACT, 0.85), 1.5);
+         cx.letterSpacing = `${0.5 / K}px`;
+         const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
+-        text(p.label || p.name, p.x + sd * (past(p) + (p.owned ?? 0) * OWNED), p.y, labPx(11.5), col, sd < 0 ? "right" : "left", 300);
++        machineName(p.label || p.name, p.x + sd * (past(p) + (p.owned ?? 0) * OWNED), p.y, labPx(11.5), col, sd < 0 ? "right" : "left", src);
+         cx.letterSpacing = "0px";
+         continue;
+       }
++      const psrc = sourceOf(p.name);
+       dot(p.x, p.y, p.R + 14, "rgba(10,14,26,0.85)");
+       if (mv.length) {
+         const g = cx.createRadialGradient(p.x, p.y, p.R + 14, p.x, p.y, p.R + 30);
+@@ -1136,7 +1151,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+         cx.arc(p.x, p.y, p.R + 14, 0, TAU, true);
+         cx.fill();
+       }
+-      circle(p.x, p.y, p.R + 14, mv.length ? rgba(ACT, 0.6) : rgba("#c084fc", hot ? 0.9 : p.n ? 0.45 : 0.22), hot ? 2 : 1.2);
++      circle(p.x, p.y, p.R + 14, mv.length ? rgba(ACT, 0.6) : rgba(psrc ? EXT : "#c084fc", hot ? 0.9 : psrc ? 0.6 : p.n ? 0.45 : 0.22), hot ? 2 : 1.2);
+       drawMachineEdges(p.edges, true);
+       drawStates(p.states, false);
+       for (const e of mv) {
+@@ -1147,7 +1162,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+       }
+       // a skill machine's name sits on its side facing away from the primary, so it never crosses the paths between them; the primary's goes below
+       const nt = sc.tasks.filter((k) => k.host === p && !k.gone).length, size = p.primary ? 14 : 12;
+-      const sub = `${Object.keys(p.states).length} states${nt ? ` · ${nt} task${nt === 1 ? "" : "s"} orbiting` : ""} · ${p.n} task${p.n === 1 ? "" : "s"}${mv.length ? ` · ${mv.length} moving` : ""}`;
++      const sub = `${psrc ? `mapped from ${psrc} · ` : ""}${Object.keys(p.states).length} states${nt ? ` · ${nt} task${nt === 1 ? "" : "s"} orbiting` : ""} · ${p.n} task${p.n === 1 ? "" : "s"}${mv.length ? ` · ${mv.length} moving` : ""}`;
+       let ux = 0, uy = 1;
+       const hub = sc.hub;
+       if (hub && p !== hub) {
+@@ -1445,6 +1460,15 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     circle(body.x, body.y, 9 / K, rgba(TRACE, 0.9), 1.6 / K);
+     dot(body.x, body.y, 4.5 / K, rgba(tierColor(body.model), 1));
+   }
++  /** A mapped machine's level names, above its states and in its colour, whose events move it. */
++  function drawSource() {
++    const lv = level(), src = lv.kind === "machine" ? sourceOf(lv.flow) : undefined, st = Object.values(scene!.mStates);
++    if (!src || !st.length) return;
++    const top = Math.min(...st.map((s) => s.y)), xs = st.map((s) => s.x);
++    cx.letterSpacing = `${0.6 / K}px`;
++    text(`mapped from ${src} · ${src} moves it, StarPulse observes`, (Math.min(...xs) + Math.max(...xs)) / 2, top - 70 / K, labPx(11), rgba(EXT, 0.8), "center", 300);
++    cx.letterSpacing = "0px";
++  }
+   function drawScene(k: number, x: number, y: number) {
+     const dpr = devicePixelRatio || 1;
+     cx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
+@@ -1461,6 +1485,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     drawTasks();
+     drawMachineEdges(scene!.mEdges);
+     drawStates(scene!.mStates, true);
++    drawSource();
+     drawMachineTasks();
+     drawHangar();
+     drawStars();
+diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
+index 7bcaec6..510804a 100644
+--- a/starpulse/web/src/style.css
++++ b/starpulse/web/src/style.css
+@@ -548,3 +548,8 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
+ #kb .trackers h4 { margin: 10px 0 2px; font-size: calc(12px * var(--fs)); }
+ #kb .trackers pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: rgba(2,6,23,.7); white-space: pre-wrap; font-size: calc(11px * var(--fs)); }
+ #kb .trackers .found { margin: 8px 0; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(167,139,250,.5); background: rgba(167,139,250,.10); line-height: 1.5; }
++/* a machine a third party moves (machine.source) is drawn like a local one, in blue instead of purple */
++.src::after { content: attr(data-src); margin-left: .45em; color: rgba(96,165,250,.7); }
++.node .g.mapped { border-color: #60a5fa; color: #60a5fa; }
++#legend .mapleg i { background: #60a5fa; }
++#kb .mach .p.mapped { background: #60a5fa; box-shadow: 0 0 6px #60a5fa; }
+diff --git a/starpulse/web/src/types.ts b/starpulse/web/src/types.ts
+index 5836594..aa855f7 100644
+--- a/starpulse/web/src/types.ts
++++ b/starpulse/web/src/types.ts
+@@ -37,6 +37,8 @@ export interface Launch {
+ }
+ 
+ export interface Machine {
++  /** The third party whose events move this machine ("GitHub"); absent for a machine StarPulse's own actors move. */
++  source?: string;
+   states: MachineState[];
+   transitions: Transition[];
+   /** The flows that open under this machine's states; the board's first is its In Progress delivery machine. */
