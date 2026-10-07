@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import type { KanbanTask } from "./kanban";
 import { BOARD, type Path, type Tree } from "./levels";
+import type { DagData } from "./dags";
 import type { Capabilities, Pool } from "./types";
 
 /** One line of the activity feed: a move, a DAG run ending, or a run starting, queueing, changing step or ending. */
@@ -41,6 +42,8 @@ export interface HudState {
   dags: string[];
   /** The machines with a move in flight, so their navigator node glows. */
   moving: string[];
+  /** The snapshot's DAGs with their domains, pools, cues and machines, which the DAGs view draws; null before the first read. */
+  dagData: DagData | null;
   /** The DAG domains the navigator's DAGs section flies to. */
   groups: { name: string; n: number }[];
   /** The concurrency pools the navigator's Queues section lists; empty when the adapter reports none. */
@@ -61,7 +64,7 @@ export interface HudState {
 
 export class HudStore {
   private state: HudState = {
-    stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, dags: [],
+    stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, dags: [], dagData: null,
     moving: [], groups: [], pools: [], feed: [], cards: [], names: {}, claims: {}, boardUrl: null,
   };
   private listeners = new Set<() => void>();
