@@ -503,7 +503,8 @@
       if (NESTV === "badge") return;
       const sp = PX.sub(), by = new Map();
       for (const c of KIDS[r.m]) { const s = primary[c]?.ps; if (s) (by.get(s) || by.set(s, []).get(s)).push(c); }
-      for (const [s, ks] of by) { const n = node(r.m, s); if (!n) continue;
+      const xs = [...by.keys()].map((s) => node(r.m, s)?.x ?? 0).sort((a, b) => a - b);
+      for (const [s, ks] of by) { const n = node(r.m, s); if (!n) continue; const edge = (xs.find((x) => x > n.x + 1) ?? L.x1 + 8) - 10;
         const deeper = ks.reduce((a, c) => a + desc(c).length, 0), o = orbitOf(n), al = hot ? 0.95 : 0.72, col = n.col;
         const names = ks.length > 2 ? `${ks.length} machines` : ks.join(", "), more = deeper ? ` +${deeper} deeper` : "", mw = textW(more, sp);
         if (NESTV === "ring") { // a dashed halo round the state and a chip with how many machines sit under it
@@ -516,14 +517,14 @@
         if (NESTV === "stub") { // a dashed drop from the state to the template's notch, the machines named beside it
           cx.strokeStyle = rgba(col, al * 0.8); cx.lineWidth = 1.2; cx.setLineDash([2, 3]); cx.beginPath(); cx.moveTo(n.x, y0); cx.lineTo(n.x, yb - 6); cx.stroke(); cx.setLineDash([]);
           cx.fillStyle = rgba(col, al); cx.beginPath(); cx.moveTo(n.x - 4.5, yb - 7); cx.lineTo(n.x + 4.5, yb - 7); cx.lineTo(n.x, yb - 1); cx.closePath(); cx.fill();
-          const lab = fit(names, sp, Math.max(30, L.x1 - n.x - 14 - mw)), lw = textW(lab, sp); text(lab, n.x + 9, yb - 4, sp, rgba(PLANET, al)); if (more) text(more, n.x + 9 + lw, yb - 4, sp, rgba(SUB, 0.7));
+          const lab = fit(names, sp, Math.max(30, edge - n.x - 9 - mw)), lw = textW(lab, sp); text(lab, n.x + 9, yb - 4, sp, rgba(PLANET, al)); if (more) text(more, n.x + 9 + lw, yb - 4, sp, rgba(SUB, 0.7));
           r.nestBoxes.push({ x0: n.x - 6, x1: n.x + 6, y0, y1: yb }, { x0: n.x + 6, x1: n.x + 12 + lw + mw, y0: yb - 4 - sp, y1: yb + 2 }); continue; }
         // mini: each machine as a small line of its own states, hung from the state it is entered from
         const dx = 7 * GS(); ks.slice(0, 2).forEach((c, i) => { const yy = yb - 4 - i * sp * 1.7, x0 = n.x + 12, st = G[c].order, d = desc(c).length;
           cx.strokeStyle = rgba(col, al * 0.7); cx.lineWidth = 1.1; cx.setLineDash([2, 3]); cx.beginPath(); cx.moveTo(n.x, y0); cx.quadraticCurveTo(n.x, yy, x0 - 3, yy); cx.stroke(); cx.setLineDash([]);
           cx.strokeStyle = rgba(SUB, 0.35); cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x0, yy); cx.lineTo(x0 + (st.length - 1) * dx, yy); cx.stroke();
           st.forEach((_, j) => { cx.fillStyle = rgba(RAMP[Math.round((j / Math.max(1, st.length - 1)) * (RAMP.length - 1))], al); cx.beginPath(); cx.arc(x0 + j * dx, yy, 1.9 * GS(), 0, TAU); cx.fill(); });
-          const lx = x0 + (st.length - 1) * dx + 7, lab = fit(c, sp, Math.max(30, L.x1 - lx - 40)), lw = textW(lab, sp); text(lab, lx, yy, sp, rgba(PLANET, al));
+          const lx = x0 + (st.length - 1) * dx + 7, lab = fit(c, sp, Math.max(24, edge - lx - (d ? textW(` +${d} deeper`, sp) : 0))), lw = textW(lab, sp); text(lab, lx, yy, sp, rgba(PLANET, al));
           if (d) text(` +${d} deeper`, lx + lw, yy, sp, rgba(SUB, 0.7));
           r.nestBoxes.push({ x0: n.x - 6, x1: lx + lw + (d ? 60 : 0), y0: Math.min(y0, yy - sp), y1: yy + sp * 0.8 }); });
         if (ks.length > 2) text(`+${ks.length - 2} more`, n.x + 12, yb - 4 - 2 * sp * 1.7, sp, rgba(SUB, 0.7)); }
