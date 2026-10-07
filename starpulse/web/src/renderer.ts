@@ -15,7 +15,9 @@ import { BOARD, hostOf, pathKey, pathLedger, startPath, taskKicker, type Level, 
 import { freshKeys, optionalSteps, statusLine } from "./ledger";
 import { bannerOf, doctorTip, focusRow, junctionTip, ledgerHit, mergePanel, mergeTip, stepStates, stepTip, type DoctorBox, type PanelCtx } from "./ledgerPanel";
 import { createContract } from "./contract";
-import { AMBER, drawRows, CROSS, type Ink } from "./ledgerRows";
+import { fetchMerges } from "./ledgerPage";
+import { AMBER, drawRows, CROSS, type Hits, type Ink } from "./ledgerRows";
+import { begin, dragMove, dragStart, ease as easeScroll, fail, keyScroll, newScroll, place, receive, take, wantsPage, wheelScroll, type Scroll } from "./ledgerScroll";
 import { spotIn, type Target } from "./search";
 import {
   BOARD_COLOR, GALAXY_MIN, RAMP, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, textW, turnPage,
@@ -319,9 +321,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (path.length > 1) go(path.slice(0, -1), fx, fy);
   };
 
+  const worldAt = (ox: number, oy: number) => ({ x: (ox - view.x) / view.k, y: (oy - view.y) / view.k });
+  const inBox = (b: Hits["thumb"], p: Pt) => !!b && p.x >= b.x0 && p.x <= b.x1 && p.y >= b.y0 && p.y <= b.y1;
+  // a merge Ledger's rows scroll under the templates by wheel, key or thumb, and nothing zooms there
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
-    if (trans || !scene || scene.top) return;
+    if (trans || !scene) return;
+    const grid = ledgerGrid();
+    if (grid) {
+      scroll = wheelScroll(scroll, grid, e, view.k);
+      return;
+    }
+    if (scene.top) return;
     anim = null;
     view = zoomAbout(view, fit, { x: e.offsetX, y: e.offsetY }, wheelFactor(e.deltaY, e.deltaMode, H)) ?? fit;
     save();
@@ -333,13 +344,27 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   const onDown = (e: MouseEvent) => {
     if (e.button !== 0) return;
+    if (ledgerGrid() && inBox(scrollHits.thumb, worldAt(e.offsetX, e.offsetY))) {
+      scroll = dragStart(scroll, e.clientY);
+      return;
+    }
     drag = { fixed: zoomedOut(), x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
   };
   const onUp = (e: MouseEvent) => {
-    if (drag && !drag.moved && e.target === cv) click(e.offsetX, e.offsetY);
+    if (scroll.drag) scroll = { ...scroll, drag: null };
+    else if (drag && !drag.moved && e.target === cv) {
+      const grid = ledgerGrid();
+      if (grid && inBox(scrollHits.chip, worldAt(e.offsetX, e.offsetY))) scroll = keyScroll(scroll, grid, "Home") ?? scroll;
+      else click(e.offsetX, e.offsetY);
+    }
     drag = null;
   };
   const onMove = (e: MouseEvent) => {
+    if (scroll.drag) {
+      const grid = ledgerGrid();
+      if (grid) scroll = dragMove(scroll, grid, e.clientY, view.k, labPx(24));
+      return;
+    }
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
@@ -359,6 +384,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") closePanel();
     if (e.target instanceof HTMLInputElement) return;
+    const grid = ledgerGrid(), next = grid && !e.ctrlKey && !e.metaKey && !e.altKey ? keyScroll(scroll, grid, e.key) : null;
+    if (next) {
+      e.preventDefault();
+      scroll = next;
+      return;
+    }
     if (e.key === "Backspace") pop();
     if (e.key === "0" && scene) flyTo(fit);
   };
@@ -603,7 +634,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function hit(x: number, y: number): Hover | null {
     const sc = scene!, near = (o: Pt, r: number) => Math.hypot(o.x - x, o.y - y) < r;
     if (sc.top) return hitTop(sc, x, y);
-    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px) : null;
+    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px, ledgerGrid() ? place(scroll, ledgerGrid()!) : []) : null;
     if (mine) return mine;
     for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < Math.max(4, px(7))) return { kind: "mtask", o: s };
     for (const t of sc.tasks) if (!t.gone && near(t, Math.max(t.big ? 7 : 5, px(7)))) return { kind: "task", o: t };
@@ -684,8 +715,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** Where the banner was drawn this frame, and the report it states; none off a merge Ledger or before a report. */
   let doctor: DoctorBox | null = null;
   const heldRows = () => {
-    const led = scene?.fold?.ledger;
-    return led ? S?.ledgers[led.event] ?? [] : [];
+    const led = scene?.fold?.ledger, held = led ? S?.ledgers[led.event] ?? [] : [];
+    return held.length && held === scrollHeld ? scroll.rows : held;
   };
   function panelCtx(): PanelCtx {
     const sc = scene!, fold = sc.fold!, led = fold.ledger!, rows = heldRows(), byKey = new Map(rows.map((r) => [r.key, r])), dags = led.cols.map((c) => c.dag);
@@ -1411,7 +1442,54 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // clock, and the rings and comets its merge sets off along the path. A level not drawn for a while forgets what it held.
   let ledgerSeen: Set<string> | null = null, ledgerAt = 0;
   const arrived = new Map<string, number>(), ledgerFx: { x: number; y: number; r: number; t0: number; col: string; grow: number }[] = [], ledgerComets: number[] = [];
-  const rowInk: Ink = { text, fit: fitText, stroke, circle: (x, y, r, col, w) => circle(x, y, r, col, w), dot, pulse: (x, y, r, age, col, grow) => pulse(x, y, r, age, col, grow) };
+  const rowInk: Ink = {
+    text, fit: fitText, stroke, circle: (x, y, r, col, w) => circle(x, y, r, col, w), dot, pulse: (x, y, r, age, col, grow) => pulse(x, y, r, age, col, grow),
+    width: (s, size, weight = 400) => {
+      cx.font = `${weight} ${size}px Inter, system-ui, sans-serif`;
+      return cx.measureText(s).width;
+    },
+    arc: (x, y, r, from, to, col, w) => {
+      cx.strokeStyle = col;
+      cx.lineWidth = w;
+      cx.beginPath();
+      cx.arc(x, y, r, from, to);
+      cx.stroke();
+    },
+    rect: (b, fill, line, w = 1) => {
+      cx.fillStyle = fill;
+      cx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+      if (!line) return;
+      cx.strokeStyle = line;
+      cx.lineWidth = w / K;
+      cx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+    },
+    clip: (b, draw) => {
+      cx.save();
+      cx.beginPath();
+      cx.rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+      cx.clip();
+      draw();
+      cx.restore();
+    },
+  };
+  // A merge Ledger's scroll (ledgerScroll): every merge loaded and where the viewport sits on them, forgotten with the arrivals when the level has not been
+  // drawn for a while, and where the pointer can take it (thumb, chip) as last drawn. `scrollGen` drops a page asked for before a forgetting.
+  let scroll: Scroll = newScroll(), scrollAt = 0, scrollHeld: readonly LedgerRow[] | null = null, scrollView = "", scrollGen = 0, scrollHits: Hits = { thumb: null, chip: null };
+  /** The merge Ledger's viewport while one is on screen; null on any other level, and while a level is changing. */
+  const ledgerGrid = () => (!trans && level().kind === "fold" ? scene?.fold?.ledger?.grid ?? null : null);
+  /** The Ledger scrolling or loading is something to animate: the offset easing, a page on its way, or a failed one waiting to be asked again. */
+  const scrolling = () => !!ledgerGrid() && (scroll.y !== scroll.ty || scroll.fetching || (scroll.more && scroll.retryAt > clock));
+  /** The footer row came into view: ask for the merges older than the oldest held. */
+  function askPage() {
+    const gen = scrollGen, before = scroll.rows.at(-1)?.at;
+    if (before === undefined) return;
+    scroll = begin(scroll);
+    void fetchMerges(before).then((page) => {
+      if (gen !== scrollGen) return;
+      scroll = page ? receive(scroll, page.merges, page.more) : fail(scroll, clock);
+      loop.wake();
+    });
+  }
   /** A merge arrived: ring the junction, send a comet down the path and ring the event's mark and the second state as it passes. */
   function arrive(led: NonNullable<NonNullable<Scene["fold"]>["ledger"]>, f: NonNullable<Scene["fold"]>) {
     const at = { x: led.J.x, y: led.J.y };
@@ -1449,7 +1527,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (!f?.a || !f.b || !f.p0 || !f.p1 || !led) return;
     const { a, b, p0, p1 } = f, sc = scene!, named = hover?.kind === "dag" ? hover.o.name : hover?.kind === "caption" ? hover.o.dag : null, lit = !!named;
     const heat = (n: string) => dagHeat(n), top = led.J.y - Math.min(...Object.values(sc.stars).map((s) => s.glyph.h)) / 2 - 50 / K, grid = led.grid;
-    const bottom = grid?.rows.length ? grid.rows[grid.rows.length - 1].y + grid.rh / 2 : led.bus + 30 / K;
+    const bottom = grid ? grid.top + grid.view : led.bus + 30 / K;
     // a merge that landed since the last look arrives: its row lowers in and rings, and its comet runs the path
     const held = S?.ledgers[led.event] ?? [];
     if (clock - ledgerAt > 1.5) ledgerSeen = null;
@@ -1459,6 +1537,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       arrive(led, f);
     }
     ledgerSeen = new Set(held.map((r) => r.key));
+    // the rows scroll under the templates: the head the server sent joins the merges loaded, the offset eases, and the footer coming into view asks for a page
+    if (grid) {
+      if (clock - scrollAt > 1.5) [scroll, scrollHeld, scrollGen] = [newScroll(), null, scrollGen + 1];
+      const dt = Math.min(0.1, clock - scrollAt), shape = `${grid.view}/${grid.rh}`;
+      if (held !== scrollHeld || shape !== scrollView) [scroll, scrollHeld, scrollView] = [take(scroll, held, grid), held, shape];
+      [scroll, scrollAt] = [easeScroll(scroll, dt), clock];
+      if (wantsPage(scroll, grid, clock)) askPage();
+    }
     const hairs = rgba("#94a3b8", 0.1), writer = led.cols.find((c) => c.role === "writer");
     // the grid: a column down from each template, and the spine the junction hangs from
     for (const c of led.cols) stroke([{ x: c.x0, y: top }, { x: c.x0, y: bottom }], hairs);
@@ -1517,14 +1603,15 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (feeds.length) text(mergeRow ? "cue · each merge to main" : `cue · each ${led.event}`, led.J.x + 10 / K, led.bus - 8 / K, labPx(10), rgba("#94a3b8", 0.55), "left");
     if (mergeRow) drawDoctor(led.J.x - 16 / K, led.bus - 12 / K);
     // each template's caption: the contract it declares, cut to its column, and under it the merge in focus
-    const byKey = new Map(held.map((r) => [r.key, r])), fm = focused(), newest = held.find((r) => r.appliedBy === undefined);
+    const byKey = new Map(heldRows().map((r) => [r.key, r])), fm = focused(), newest = held.find((r) => r.appliedBy === undefined);
     for (const c of led.cols) {
       const s = sc.stars[c.dag], hot = named === c.dag, size = labPx(10.5), y = s.y + s.glyph.h / 2 + 16 / K, max = c.x1 - c.x0 - 8 / K;
       const lines = [c.role === "writer" ? `on ${c.on}` : `cue · on ${c.on}`, ...(c.resolves ? [`clears on ${c.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
-      lines.forEach((t, i) => text(fitText(t, max, size), s.x, y + (15 + 15 * i) / K, size, rgba("#94a3b8", hot ? 0.9 : 0.6), "center"));
+      // under the name, a line apart at the text size, so the lines never meet at 150%
+      lines.forEach((t, i) => text(fitText(t, max, size), s.x, y + labPx(15 + 15 * i), size, rgba("#94a3b8", hot ? 0.9 : 0.6), "center"));
       if (!fm) continue;
       const ln = statusLine(fm, c, fm.runs[c.dag], { event: led.event, now: T, hm: hhmm, optional: optionalSteps(held, c.dag), by: (k) => byKey.get(k) });
-      text(fitText(`${fm === newest ? "newest" : hhmm(fm.at)} ${(fm.sha ?? fm.key).slice(0, 7)} · ${ln.main}`, max, size), s.x, y + (15 + 15 * lines.length) / K, size, rgba(ln.state ? DAG_COLOR[ln.state] ?? CROSS : "#94a3b8", 0.85), "center");
+      text(fitText(`${fm === newest ? "newest" : hhmm(fm.at)} ${(fm.sha ?? fm.key).slice(0, 7)} · ${ln.main}`, max, size), s.x, y + labPx(15 + 15 * lines.length), size, rgba(ln.state ? DAG_COLOR[ln.state] ?? CROSS : "#94a3b8", 0.85), "center");
     }
     // the merge rows, each template's cell beside its run's mini step graph; a row still arriving counts its own seconds
     if (grid) {
@@ -1534,10 +1621,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         if (clock - t0 > 2) return void arrived.delete(key);
         return clock - t0;
       };
-      drawRows(rowInk, {
+      scrollHits = drawRows(rowInk, {
         led, glyphs: Object.fromEntries(led.cols.map((c) => [c.dag, sc.stars[c.dag].glyph])), ctx: { event: led.event, now: T, hm: hhmm, by: (k) => byKey.get(k) },
-        optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(held, c.dag)])), px: labPx, palette: { ...DAG_COLOR, waiting: CROSS }, clock, age,
+        optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(scroll.rows, c.dag)])), px: labPx, palette: { ...DAG_COLOR, waiting: CROSS }, clock, age, scroll,
         lit: hover?.kind === "lrow" ? hover.o.key : openRow()?.key,
+        title: (id) => S?.settled[id]?.title ?? S?.board.agents.find((a) => a.id === id)?.title,
       });
     }
     drawFx(f);
@@ -2169,7 +2257,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
   };
   /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
-  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || sliding);
+  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || sliding || scrolling());
   /** The loop settled: the feed and moving list get their last write, and the next wake starts the ambient clock afresh. */
   const settle = () => {
     last = 0;

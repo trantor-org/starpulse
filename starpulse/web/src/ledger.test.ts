@@ -117,6 +117,10 @@ describe("a merge row's status line", () => {
     expect(statusLine(merge(), cue, run({ status: "queued", finishedAt: "" }), ctx()).main).toBe("queued");
   });
 
+  it("gives a queued run that has not started no start time", () => {
+    expect(statusLine(merge(), cue, run({ status: "queued", startedAt: "", finishedAt: "" }), ctx()).sub).toBe("");
+  });
+
   it("lists, for a cue, the optional steps the run applied, and its start time when it applied none", () => {
     const steps = { classify: "succeeded", apply_deploy: "succeeded", apply_skills_a: "skipped", verify: "succeeded" } as const;
 

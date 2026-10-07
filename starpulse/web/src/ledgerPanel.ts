@@ -153,7 +153,7 @@ export type LedgerHit = { kind: "lstep"; o: GNode } | { kind: "ljunction"; o: Le
 export interface DoctorBox { x0: number; y0: number; x1: number; y1: number; report: ContractReport }
 
 /** What the Ledger draws at a world point: a template's step, then the junction, the doctor's banner and a merge row; null off the Ledger. `px` is a screen size in world units. */
-export function ledgerHit(scene: Pick<Scene, "stars" | "fold">, doctor: DoctorBox | null, x: number, y: number, px: (n: number) => number): LedgerHit | null {
+export function ledgerHit(scene: Pick<Scene, "stars" | "fold">, doctor: DoctorBox | null, x: number, y: number, px: (n: number) => number, shown: readonly { row: LedgerRow; y: number }[]): LedgerHit | null {
   const led = scene.fold?.ledger;
   if (!led) return null;
   for (const s of Object.values(scene.stars)) for (const n of s.glyph.nodes) if (Math.hypot(s.x + n.x - x, s.y + n.y - y) < Math.max(6, px(8))) return { kind: "lstep", o: n };
@@ -162,6 +162,7 @@ export function ledgerHit(scene: Pick<Scene, "stars" | "fold">, doctor: DoctorBo
   const g = led.grid;
   if (!g) return null;
   const left = Math.min(g.label.x, led.J.x) - px(6), right = led.cols[led.cols.length - 1].x1;
-  for (const r of g.rows) if (x >= left && x <= right && Math.abs(y - r.y) <= g.rh / 2) return { kind: "lrow", o: r.row };
+  if (y < g.top || y > g.top + g.view) return null;
+  for (const r of shown) if (x >= left && x <= right && Math.abs(y - r.y) <= g.rh / 2) return { kind: "lrow", o: r.row };
   return null;
 }

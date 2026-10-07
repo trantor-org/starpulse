@@ -7,8 +7,9 @@ import { ledgerTop, sizes as ledgerSizes, type LedgerTop } from "./machineLedger
 import { laneRows, type LaneNode, type LaneRow } from "./machineLanes";
 import { rankRows } from "./machineRows";
 import { ledgerOf, type Ledger, type Tie } from "./ledger";
+import type { Viewport } from "./ledgerScroll";
 import { countText, daily, HOUR, hosted, stateCount, type Move, type Moves, type Sky } from "./sky";
-import type { Dag, DagStep, LedgerRow, RawAgent, Transition, Writer } from "./types";
+import type { Dag, DagStep, RawAgent, Transition, Writer } from "./types";
 
 export const TAU = Math.PI * 2;
 export const BOARD_COLOR: Record<string, string> = { new: "#94a3b8", ready: "#60a5fa", waiting: "#fbbf24", blocked: "#fb7185", in_progress: "#a78bfa",
@@ -256,24 +257,16 @@ export interface GridCell {
   tx: number;
   room: number;
 }
-/** A merge row: where it sits, whether it is another repository's merge (on the cross lane), and the shown row that pin-bumps it, if any. */
-export interface GridRow {
-  row: LedgerRow;
-  y: number;
-  cross: boolean;
-  bump: string | null;
-  cells: GridCell[];
-}
-/** The merge rows under a Ledger's cue bus: newest first, each `rh` tall, the label gutter before the spine and the cross lane just past it. */
-export interface LedgerGrid {
-  rh: number;
+/** The merge rows under a Ledger's cue bus: a viewport `view` tall from `top`, `rh` a row, the label gutter before the spine and the cross lane just past it. The rows scroll through it, drawn from one cell template. */
+export interface LedgerGrid extends Viewport {
   /** The lane another repository's merges sit on. */
   lane: number;
   /** Where a row's time, task and title are written, and how wide that may run. */
   label: { x: number; w: number };
   /** A mini step's radius. */
   nr: number;
-  rows: GridRow[];
+  /** Each template's cell, the same in every row. */
+  cells: GridCell[];
 }
 /** A Ledger's frame: the junction every rail leaves from, the bus the cues hang from, and a caption cell for each DAG's template. */
 export interface LedgerView extends Pick<Ledger, "event" | "rows"> {
@@ -404,8 +397,6 @@ export const nearestWithin = <T>(items: Iterable<T>, dist: (t: T) => number, ban
   }
   return best;
 };
-/** Screen pixels a merge row's label needs before the spine: its time and task, the pull request and commit, and the title. */
-const ROW_LABEL = 250;
 export const textW = (s: string, size: number) => s.length * size * 0.56 + 6;
 /** A moon's name as printed on a crowded Board (`Scene.clipped`): past NAME_MAX characters it ends in an ellipsis, so a name reaches only so far toward the next state. */
 export const NAME_MAX = 10;
@@ -597,6 +588,12 @@ export function glyph(d: Pick<Dag, "name" | "status" | "steps">): Glyph {
   const links = steps.flatMap((s) => s.depends.filter((x) => pos[x]).map((x): [GNode, GNode] => [pos[x], pos[s.name]]));
   const w = (L - 1) * SX, h = (Math.max(1, ...Object.values(cols).map((c) => c.length)) - 1) * SY;
   return { nodes: nodes.length ? nodes : [{ name: d.name, status: d.status, x: 0, y: 0 }], links, w, h, br: Math.hypot(w, h) / 2 + 8 };
+}
+
+/** A step graph drawn `k` times its size: the same steps and links, further apart. */
+function scaled(g: Glyph, k: number): Glyph {
+  const nodes = g.nodes.map((n) => ({ ...n, x: n.x * k, y: n.y * k })), at = new Map(g.nodes.map((n, i) => [n, nodes[i]]));
+  return { nodes, links: g.links.map(([p, q]) => [at.get(p)!, at.get(q)!]), w: g.w * k, h: g.h * k, br: Math.hypot(g.w * k, g.h * k) / 2 + 8 };
 }
 
 /** Orbit rings round a host: ring 0 at r0, each further ring ringGap out, bodies about `gap` apart; a ring is added when the last one fills. */
@@ -1165,7 +1162,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   // fixed size on screen, so what its captions need is laid out in world units through F, a screen pixel's world size at fit. A fold with no
   // path, or none an event is tied to, is its DAGs in a row.
   function buildFold(l: Fold) {
-    const led = ledgerOf({ flows: [board], cues: S.cues }, l), R = 34, f: FoldView = {};
+    const led = ledgerOf({ flows: [board], cues: S.cues }, l), f: FoldView = {};
     let w = 1800, h = Math.round(w / (W / H));
     const crit = (n: string) => l.crit.filter((t) => t.startsWith(`${n}: `)).map((t) => t.slice(n.length + 2));
     if (!led) {
@@ -1175,19 +1172,30 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       Object.assign(scene, { w, h, fold: f, box: [Math.min(...stars.map((q) => q.x)) - 140, h / 2 - 160, Math.max(...stars.map((q) => q.x)) + 140, h / 2 + 160] });
       return;
     }
-    const gl = led.ties.map((t) => glyph(dagBy[t.dag] || stub(t.dag))), sc = (ctx.scale ?? 100) / 100, gh = Math.max(...gl.map((g) => g.h));
+    // laid out as the approved mockup (starpulse#95, view C) lays it out in screen pixels: u world units a pixel at fit, F a pixel of text at the
+    // reader's size. A template is drawn at up to 1.1 times its step graph, a wide fan cut to the mockup's apply-on-merge (141 x 104); a row's mini
+    // graph at up to 0.55 of it (0.8 for one step), a fan cut to 59 x 43
+    const raw = led.ties.map((t) => glyph(dagBy[t.dag] || stub(t.dag))), sc = (ctx.scale ?? 100) / 100, one = (g: Glyph) => g.nodes.length === 1;
+    const tsc = raw.map((g) => (one(g) ? 1 : Math.min(1.1, 104 / Math.max(1, g.h), 141 / Math.max(1, g.w))));
+    const msc = raw.map((g) => (one(g) ? 0.8 : Math.min(0.55, 43 / Math.max(1, g.h), 59 / Math.max(1, g.w))));
     const lines = (t: Tie) => [t.role === "writer" ? `on ${t.on}` : `cue · on ${t.on}`, ...(t.resolves ? [`clears on ${t.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
-    const merges = led.rows === "merge" ? S.ledgers[led.event] ?? [] : [], gutter = merges.length ? ROW_LABEL : 0;
-    const lead = (F: number) => F * Math.max(textW("merge to main", 12.5) + 64, gutter), base = (F: number) => gl.map((g) => g.w + 36 * F);
-    // wide enough for the templates and the gutter the junction's label needs, which grow with F as the scene does
-    let F = (w / W) * sc;
-    for (let i = 0; i < 4 && lead(F) + 46 * F + base(F).reduce((p, q) => p + q, 0) + 2 * R + 100 * F > w; i++) F = ((w = Math.ceil(lead(F) + 46 * F + base(F).reduce((p, q) => p + q, 0) + 2 * R + 100 * F)) / W) * sc;
+    const merges = led.rows === "merge" ? S.ledgers[led.event] ?? [] : [];
+    // the gutter: the row labels' 340 px (at most a quarter of the level) when there are rows, else what the junction's label needs
+    const lead = (u: number, F: number) => Math.max(F * (textW("merge to main", 12.5) + 88), merges.length ? 64 * u + Math.min(340 * F, 0.26 * w) : 0);
+    const tw = (u: number) => raw.map((g, i) => g.w * tsc[i] * u + 2 * (one(g) ? 5 : 4) * u), base = (u: number, F: number) => tw(u).map((x) => x + 36 * F);
+    const need = (u: number, F: number) => lead(u, F) + 46 * F + base(u, F).reduce((p, q) => p + q, 0) + 70 * u;
+    // the level is the canvas's width, so a pixel is about a world unit; wider, and everything with it, when the templates and the gutter need more
+    w = W;
+    let u = 1, F = sc;
+    for (let i = 0; i < 4 && need(u, F) > w; i++) [w, u, F] = [Math.ceil(need(u, F)), Math.ceil(need(u, F)) / W, (Math.ceil(need(u, F)) / W) * sc];
     h = Math.round(w / (W / H));
-    const sx = lead(F) + 24 * F, c0 = sx + 46 * F, dnx = w - R - 60 * F, avail = dnx - R - 30 * F - c0;
-    // each caption cell is its template plus the widest of its lines, shrunk to share what the row has when they do not all fit, else spread across it
-    const want = led.ties.map((t, i) => Math.max(0, F * Math.max(textW(labelOf(t.dag), 12), ...lines(t).map((x) => textW(x, 10.5))) - gl[i].w)), basis = base(F);
+    const R = 22 * u, sx = lead(u, F), c0 = sx + 46 * F, dnx = w - 40 * u - 60 * F, avail = w - 70 * u - c0, widths = tw(u);
+    const gl = raw.map((g, i) => scaled(g, tsc[i] * u)), gh = Math.max(...gl.map((g) => g.h)), th = Math.max(...gl.map((g) => g.h + 2 * (one(g) ? 5 : 4) * u)), cw = led.ties.map((t) => F * Math.max(textW(labelOf(t.dag), 12), ...lines(t).map((x) => textW(x, 10.5))));
+    // each caption cell is its template plus what its caption needs past it, shrunk to share what the row has when they do not all fit, else spread across it
+    const want = cw.map((c, i) => Math.max(0, c - widths[i])), basis = base(u, F);
     const free = avail - basis.reduce((p, q) => p + q, 0), wantSum = want.reduce((p, q) => p + q, 0), g = wantSum > free ? Math.max(0, free) / wantSum : 1, slack = Math.max(0, free - wantSum * g) / led.ties.length;
-    const yP = R + 40 * F, yH = yP + R + 46 * F + gh / 2, cap = yH + gh / 2 + 14 * F, bus = yH + gh / 2 + 78 * F;
+    // the bus sits under a template's name, two caption lines and the focused merge's status, with its own label clear of them
+    const yP = 62 * F, yH = yP + 64 * F + th / 2, cap = yH + gh / 2 + 14 * F, bus = yH + gh / 2 + 88 * F;
     let x = c0;
     const cols = led.ties.map((t, i) => {
       const x0 = x, x1 = (x += basis[i] + want[i] * g + slack);
@@ -1196,10 +1204,13 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const end = (id: string, x: number): FoldEnd => ({ id, name: stateName(id), final: !!board.machine.states.find((s) => s.id === id)?.final, color: BOARD_COLOR[id] || "#94a3b8", x, y: yP, r: R });
     f.a = end(led.from, sx);
     f.b = end(led.to, dnx);
-    f.p0 = { x: sx + R + 8, y: yP };
-    f.p1 = { x: dnx - R - 8, y: yP };
-    const stars = cols.map((c) => {
-      const st = star(c.dag, (c.x0 + c.x1) / 2, yH), via = `(${stateName(led.from)} → ${stateName(led.to)})`;
+    f.p0 = { x: sx + R + 8 * u, y: yP };
+    f.p1 = { x: dnx - R - 8 * u, y: yP };
+    // a template sits at its column's left, as in the mockup, moved right only as far as keeps its centred caption inside the column
+    const tx = cols.map((c, i) => Math.max(c.x0 + 14 * u + widths[i] / 2, c.x0 + Math.min(cw[i], c.x1 - c.x0 - 8 * F) / 2 + 4 * F));
+    const stars = cols.map((c, i) => {
+      const st = star(c.dag, tx[i], yH), via = `(${stateName(led.from)} → ${stateName(led.to)})`;
+      st.glyph = gl[i];
       scene.stars[c.dag] = st;
       st.tether = { x: st.x, y: st.y, cue: c.role === "cue", crit: [c.role === "writer" ? `writes ${led.event} ${via}` : `runs on ${c.on}, beside ${led.event} ${via}`] };
       return st;
@@ -1209,19 +1220,17 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     scene.groups.push({ name: "", head: false, lx: 0, ly: 0, stars });
     let bottom = bus + 40 * F;
     if (merges.length) {
-      // a row is one merge: its label in the gutter, then each template's cell, its mini step graph beside the run's status line. Only the newest rows that
-      // fit are laid out, so the fit box never outgrows the level; scrolling older ones in is the Ledger's scroll
-      const rh = 34 * F, nr = 3 * F, top = bus + 26 * F, fit = Math.max(1, Math.floor((h - top - 24 * F) / rh)), shown = merges.slice(0, fit);
-      const ms = cols.map((c, i) => Math.min(0.6, (0.38 * (c.x1 - c.x0)) / Math.max(1, gl[i].w), (0.72 * rh) / Math.max(1, gl[i].h + 2 * nr)));
-      const rows = shown.map((row, r): GridRow => ({
-        row, y: top + rh / 2 + r * rh, cross: row.appliedBy !== undefined, bump: row.appliedBy && shown.some((n) => n.key === row.appliedBy) ? row.appliedBy : null,
-        cells: cols.map((c, i) => {
-          const gx = c.x0 + 14 * F + (gl[i].w * ms[i]) / 2, tx = Math.max(gx + (gl[i].w * ms[i]) / 2 + nr + 12 * F, c.x0 + 30 * F);
-          return { dag: c.dag, gx, ms: ms[i], tx, room: c.x1 - tx - 10 * F };
-        }),
-      }));
-      f.ledger.grid = { rh, lane: sx + 22 * F, label: { x: 16 * F, w: sx - 16 * F - 30 * F }, nr, rows };
-      bottom = top + shown.length * rh + 20 * F;
+      // a row is one merge: its label in the gutter, then under each template its mini step graph beside the run's status line, at least the mockup's
+      // 60 px tall and taller when a mini needs it. The viewport holds the rows that fit the level (and a footer row), so the fit box never outgrows it;
+      // the rows beyond scroll through it (ledgerScroll)
+      const nr = 3 * F, ms = msc.map((m, i) => m / tsc[i]), rh = Math.max(60 * u, 34 * F, ...gl.map((q, i) => q.h * ms[i] + 2 * nr + 12 * u));
+      const top = bus + 26 * F, tail = Math.max(20 * F, rh / 2), fit = Math.max(1, Math.floor((h - top - tail - 4 * F) / rh)), view = Math.min(fit, merges.length + 1) * rh;
+      const cells = cols.map((c, i): GridCell => {
+        const gx = tx[i], at = Math.max(gx + (gl[i].w * ms[i]) / 2 + nr + 12 * F, c.x0 + 30 * F);
+        return { dag: c.dag, gx, ms: ms[i], tx: at, room: c.x1 - at - 10 * F };
+      });
+      f.ledger.grid = { rh, top, view, lane: sx + 22 * F, label: { x: 64 * u, w: sx - 74 * u }, nr, cells };
+      bottom = top + view + tail;
     }
     Object.assign(scene, { w, h, fold: f, box: [0, 0, w, bottom] });
   }

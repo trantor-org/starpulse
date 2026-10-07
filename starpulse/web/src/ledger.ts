@@ -127,7 +127,7 @@ export function statusLine(row: LedgerRow, tie: Tie, run: LedgerRun | undefined,
     : run.status === "failed" ? `✕ ${[row.fails[tie.dag]?.step, dur(took)].filter(Boolean).join(" · ")}`
     : run.status === "succeeded" ? `✓ ${dur(took)}`
     : run.status.replace("_", " ");
-  let sub = tie.role === "writer" ? `${ctx.event} ${ctx.hm(row.at)}` : shortApplied(run, ctx.optional) || ctx.hm(start);
+  let sub = tie.role === "writer" ? `${ctx.event} ${ctx.hm(row.at)}` : shortApplied(run, ctx.optional) || (start ? ctx.hm(start) : "");
   const mark = markOf(run);
   if (mark !== "keyed") sub = `≈ ${mark === "ambiguous" ? `${run.ambiguous + 1} in window · ` : ""}${sub}`;
   return { main, sub, state: run.status, mark };

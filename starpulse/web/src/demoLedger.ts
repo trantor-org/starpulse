@@ -24,8 +24,8 @@ export function demoContract(snap: Snapshot, scenario: Scenario): ContractReport
   return { ok: checks.every((c) => c.status !== "fail"), checks };
 }
 
-/** Seconds before now each demo merge landed. */
-const AGO = [20, 420, 1140, 2460, 4200, 7200, 12000, 18000];
+/** Seconds before now each demo merge landed: eight in the first five hours, then one every 18 minutes to the edge of the day, so there are pages to load. */
+const AGO = [20, 420, 1140, 2460, 4200, 7200, 12000, 18000, ...Array.from({ length: 60 }, (_, k) => 19_100 + k * 1100)];
 const iso = (sec: number) => (sec ? new Date(sec * 1000).toISOString().replace(/\.\d+Z$/, "Z") : "");
 const sha = (n: number) => (0xa1b2c3d4e5 + n * 0x3f1d27).toString(16).padStart(10, "0").slice(-10);
 const stepsOf = (snap: Snapshot, dag: string) => snap.dags.find((d) => d.name === dag)?.steps.map((s) => s.name) ?? [];
@@ -62,20 +62,20 @@ export function demoLedger(snap: Snapshot, now: number, scenario: Scenario): Led
   if (scenario !== "cross") return rows;
   // another repository's merge is applied only when a later merge of this one bumps its pin; the newest is still waiting for one
   const bumpAt = now - 150, bump: LedgerRow = {
-    key: sha(40), at: bumpAt, tasks: [], sha: sha(40), pr: { repo: "trantor", number: 331, url: "#" }, applies: [sha(41)], fails: {}, pinned: false,
+    key: sha(5040), at: bumpAt, tasks: [], sha: sha(5040), pr: { repo: "trantor", number: 331, url: "#" }, applies: [sha(5041)], fails: {}, pinned: false,
     runs: Object.fromEntries(ties.map((t) => [t.dag, runOf(snap, t, bumpAt, 40, scenario, "done")])),
   };
   const kid = (n: number, ago: number, appliedBy: string | null): LedgerRow => ({ key: sha(n), at: now - ago, tasks: [`DEMO-${n}`], sha: sha(n), pr: { repo: "skills", number: n, url: "#" }, appliedBy, runs: {}, fails: {}, pinned: false });
-  return [...rows, bump, kid(41, 540, bump.key), kid(42, 30, null)].sort((a, b) => b.at - a.at);
+  return [...rows, bump, kid(5041, 540, bump.key), kid(5042, 30, null)].sort((a, b) => b.at - a.at);
 }
 
-/** `rows` after a merge lands at `now`: the runs in flight finish, and the new merge's writer runs while its cues queue. Returns new rows; `rows` is left as it was. */
+/** `rows` after a merge lands at `now`: the runs in flight finish (a queued one as if it started 6 s after its merge), and the new merge's writer runs while its cues queue. Returns new rows; `rows` is left as it was. */
 export function arriveMerge(snap: Snapshot, rows: LedgerRow[], now: number): LedgerRow[] {
   const ties = tiesOf(snap, MERGE_EVENT), next = structuredClone(rows);
   for (const row of next)
     for (const run of Object.values(row.runs))
-      if (run.status === "running" || run.status === "queued") Object.assign(run, { status: "succeeded", step: "", startedAt: run.startedAt || iso(row.at), finishedAt: iso(now), steps: Object.fromEntries(Object.keys(run.steps).map((n) => [n, "succeeded"])) });
-  const n = rows.length + 100, writer: Record<string, LedgerRun> = {};
+      if (run.status === "running" || run.status === "queued") Object.assign(run, { status: "succeeded", step: "", startedAt: run.startedAt || iso(row.at + 6), finishedAt: iso(now), steps: Object.fromEntries(Object.keys(run.steps).map((n) => [n, "succeeded"])) });
+  const n = rows.length + 6000, writer: Record<string, LedgerRun> = {};
   for (const t of ties) {
     const names = stepsOf(snap, t.dag), live = t.role === "writer";
     writer[t.dag] = {
