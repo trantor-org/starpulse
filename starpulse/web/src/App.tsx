@@ -107,7 +107,7 @@ export function App() {
       <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} kanbanQuery={kanbanQuery} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} toggle={() => fold.toggle()} open={open}
         fly={(g) => renderer.current?.flyToGroup(g)} openDag={(d) => renderer.current?.openDag(d)}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
-      {view === "constellation" && <Crumb path={hud.path} states={hud.states} open={open} />}
+      {view === "constellation" && <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} />}
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
       {view === "admin" && <Admin store={admin} window={historyWindow} forwarding={forwarding} />}
       {view === "graph" && (
@@ -301,7 +301,7 @@ export function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } &
           <>
             <span><i style={{ background: "#34d399" }} />checks pass</span><span><i style={{ background: "#fb7185" }} />failing</span><span><i style={{ background: "#fbbf24" }} />pending</span><br />
             <span><i style={{ background: "#a78bfa" }} />merged</span><span><span style={{ color: "#fbbf24" }}>⌁ n</span> review threads</span><br />
-            <span><i style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }} />on a machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />moved now</span><br />
+            <span><i style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }} />on a machine</span><span><i style={{ background: "#60a5fa", boxShadow: "0 0 6px #60a5fa" }} />on a mapped machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />moved now</span><br />
             <span><span style={{ color: "#fbbf24" }}>⧗ n</span> open dependencies</span><span><span style={{ color: "#fb923c" }}>⛓ n</span> Waiting tasks it holds</span><br />
             <span>hover a card:</span><span><i style={{ border: "1px solid #fb923c", background: "none", boxSizing: "border-box" }} />holds</span><span><i style={{ border: "1px solid #67e8f9", background: "none", boxSizing: "border-box" }} />waits on</span>
           </>
@@ -310,7 +310,7 @@ export function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } &
             <span><i style={{ background: "#c4b5fd" }} />deep</span><span><i style={{ background: "#67e8f9" }} />standard</span><span><i style={{ background: "#fde68a" }} />other</span><br />
             <span><i style={{ background: "#34d399" }} />ok</span><span><i style={{ background: "#fb7185" }} />failed</span>
             <span><i style={{ border: "1px solid #dbe4f3", background: "none", boxSizing: "border-box" }} />runnable</span><br />
-            <span><i style={{ background: "#c084fc" }} />lifecycle machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />activity now</span>
+            <span><i style={{ background: "#c084fc" }} />lifecycle machine</span><span className="mapleg"><i />mapped machine</span><span><i style={{ background: "#fbbf24", boxShadow: "0 0 6px #fbbf24" }} />activity now</span>
           </>
         )}
       </section>

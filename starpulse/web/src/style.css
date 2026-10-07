@@ -18,6 +18,7 @@
   --hold: #fb923c; --hold-text: #fdba74; --hold-hi: #fed7aa;                            /* holds and the tasks they block */
   --waits: #67e8f9; --waits-text: #a5f3fc;                                              /* a task's waits-on chain, a size label */
   --ready: #60a5fa; --released: #5eead4;                                                /* the Ready lane, a released session */
+  --mapped: #60a5fa;                                                                    /* a machine a third party moves (machine.source) */
   /* The checked box's tick: a data URI cannot read a custom property, so its stroke (--ok-hi) is spelled out here. */
   --ok-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5' fill='none' stroke='%236ee7b7' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
@@ -809,3 +810,7 @@ body.graph #c, body.graph #tip, body.graph #panel, body.graph .hud { visibility:
    columns' thin, quiet scrollbar. A box that needs to scroll joins this list rather than setting its own overflow. */
 #nav .matches, #nav .outline, #panel, :is(#kb, #nav, #dg) .menu, #kb .col .body, #kbm .modal, #kbm .tvbody, #kbm .tvcol, #kbm .tv textarea.fv.long, #dg #catalog, #admin, #feed, #og .og-panel {
   overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--slate) 25%, transparent) transparent; }
+/* a machine a third party moves (machine.source) is drawn like a local one, in blue instead of purple */
+.src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
+#legend .mapleg i { background: var(--mapped); }
+#kb .mach .p.mapped { background: var(--mapped); box-shadow: 0 0 6px var(--mapped); }

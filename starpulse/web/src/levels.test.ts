@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { BOARD, drill, hostOf, pathKey, pathTo, startPath, tree, type Level, type Path } from "./levels";
+import { BOARD, drill, hostOf, pathKey, pathTo, startPath, taskKicker, tree, type Level, type Path } from "./levels";
 import type { Machine, Snapshot } from "./types";
 
-const machine = (ids: string[], subflows: Machine["subflows"] = []): Machine => ({
+const machine = (ids: string[], subflows: Machine["subflows"] = [], source?: string): Machine => ({
+  ...(source ? { source } : {}),
   states: ids.map((id, i) => ({ id, name: id.replace(/_/g, " "), initial: i === 0, final: false })),
   transitions: [],
   subflows,
@@ -35,6 +36,24 @@ describe("the level tree", () => {
     expect(pathTo(T, "in-progress")).toEqual(DELIVERY);
     expect(pathTo(T, "auditing-docs")).toEqual([...IN_PROGRESS, { kind: "machine", flow: "auditing-docs" }]);
     expect(pathTo(T, "triaging-cr-reviews")).toEqual([...DELIVERY, { kind: "machine", flow: "triaging-cr-reviews" }]);
+  });
+});
+
+describe("a mapped machine", () => {
+  const mapped: Snapshot = {
+    ...SNAP,
+    graphs: [...SNAP.graphs, "ci"],
+    flows: [...SNAP.flows, { name: "ci", agents: [], machine: machine(["opened", "running"], [], "GitHub") }],
+  };
+
+  it("is found in the level tree by flow name, and only a machine that names a source is", () => {
+    expect(tree(mapped).sources).toEqual({ ci: "GitHub" });
+    expect(tree(SNAP).sources).toEqual({});
+  });
+
+  it("puts its source in a task's kicker, and a local machine's kicker names none", () => {
+    expect(taskKicker("ci", "running", tree(mapped).sources!.ci)).toBe("task · ci · mapped from GitHub · running");
+    expect(taskKicker("in-progress", "pr_opened")).toBe("task · in-progress · pr_opened");
   });
 });
 

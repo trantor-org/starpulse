@@ -53,6 +53,7 @@ const ROLES = [
     "--agent-hi": "type on an agent tint",
     "--agent-deep": "the deep agent tier",
     "--agent-soft": "type on the orbit card's sign-in button",
+    "--mapped": "a machine a third party moves (machine.source): its drawing, source name, legend entry and Kanban dot",
     "--hold": "holds, the tasks they block and a Waiting stack's spine",
     "--hold-text": "type on a hold tint: a waits-on line",
     "--hold-hi": "a stack count's type",

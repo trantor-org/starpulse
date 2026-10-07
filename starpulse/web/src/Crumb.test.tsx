@@ -30,7 +30,7 @@ describe("a machine several Board states open", () => {
 describe("the canvas breadcrumb", () => {
   let host: HTMLDivElement, root: Root;
   const open = vi.fn();
-  const draw = (path: Path) => act(() => root.render(<Crumb path={path} states={states} open={open} />));
+  const draw = (path: Path, sources?: Record<string, string>) => act(() => root.render(<Crumb path={path} states={states} sources={sources} open={open} />));
 
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -71,5 +71,14 @@ describe("the canvas breadcrumb", () => {
 
     expect(host.querySelectorAll("#crumb button")).toHaveLength(0);
     expect(host.querySelector("#crumb [aria-current=location]")?.textContent).toBe("Board");
+  });
+
+  it("names a mapped machine's source beside it, and a local machine alone", () => {
+    draw(machine, { "authoring-skills": "GitHub" });
+    const here = host.querySelector("#crumb .here")!;
+    expect(here.querySelector(".src")?.getAttribute("data-src")).toBe("GitHub");
+    expect(here.querySelector(".src")?.getAttribute("title")).toBe("mapped from GitHub");
+    draw(machine, {});
+    expect(host.querySelector("#crumb .src")).toBeNull();
   });
 });

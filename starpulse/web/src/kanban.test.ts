@@ -147,6 +147,15 @@ describe("the cards drawn from a snapshot", () => {
     });
   });
 
+  it("carry the source of a mapped machine on the live line, and none for a local machine", () => {
+    const snap = snapshot();
+    snap.flows.push({ name: "ci", machine: { states: [], transitions: [], source: "GitHub" } as never, agents: [agent("PROJ-1", "running", { task: "PROJ-1", active: 550 })] });
+    const live = (s: Snapshot) => kanbanTasks(merge(s)).find((t) => t.id === "PROJ-1")!.live;
+
+    expect(live(snap)).toMatchObject({ machine: "ci", state: "running", source: "GitHub" });
+    expect(live(snapshot())!.source).toBeUndefined();
+  });
+
   it("carry the verdict on each column the task may move to, and none for a task the snapshot gives none", () => {
     const moves = { review: { allowed: false, reason: "no render approval", skill: "designing-ui" }, ready: { allowed: true, reason: "", skill: "" } };
     const snap = snapshot();
