@@ -178,11 +178,16 @@ class BoardFeed:
 
         None means the reader replays what the stream retains: nothing was saved, `retained(cursor)` says the stream
         no longer holds every entry after the saved cursor, or the saved state is not one this feed can read. The
-        feed saves to `store` under `stream` from now on (`save`, `keep_saved`).
+        feed saves to `store` under `stream` from now on (`save`, `keep_saved`). One line says which start it was:
+        `resuming after <cursor>` or `replaying: <reason>`, at WARNING because nothing configures a lower level.
         """
         self._store = (store, stream)
         saved = store.load_board_state(stream)
-        if saved is None or not retained(saved[0]):
+        if saved is None:
+            logger.warning("StarPulse: replaying: no saved Board")
+            return None
+        if not retained(saved[0]):
+            logger.warning("StarPulse: replaying: cursor %s is no longer retained", saved[0])
             return None
         cursor, state = saved
         try:
@@ -195,10 +200,11 @@ class BoardFeed:
             if not all(isinstance(entry, dict) for entry in settled.values()):
                 raise TypeError("a settled task saved before settled entries carried their time")
         except KeyError, TypeError, ValueError:
-            logger.warning("StarPulse: the Board saved for %s cannot be read, replaying instead", stream)
+            logger.warning("StarPulse: replaying: the saved Board cannot be read")
             return None
         with self._lock:
             self._open, self._settled, self._assignees, self._seen, self._saved = open_, settled, assignees, seen, seen
+        logger.warning("StarPulse: resuming after %s", cursor)
         return cursor
 
     def save(self) -> None:

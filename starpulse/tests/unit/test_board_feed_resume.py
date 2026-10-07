@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import threading
@@ -62,6 +63,40 @@ def test_a_saved_board_restores_its_tasks_assignees_and_cursor_and_is_ready_at_t
     assert feed.snapshot()["flows"][0]["agents"] == first.snapshot()["flows"][0]["agents"]
     assert feed.snapshot()["settled"] == first.snapshot()["settled"]
     assert feed.ready.is_set()
+
+
+def _start_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "starpulse.board_feed"]
+
+
+def test_a_start_with_saved_state_logs_the_cursor_it_resumes_after(caplog: pytest.LogCaptureFixture) -> None:
+    store = _Store()
+    first = _feed_with_tasks()
+    first.resume(store, STREAM, lambda cursor: False)
+    first.save()
+    caplog.clear()
+
+    with caplog.at_level(logging.INFO, logger="starpulse.board_feed"):
+        _resumed(store)
+
+    assert _start_lines(caplog) == ["StarPulse: resuming after 7-0"]
+
+
+@pytest.mark.parametrize(
+    ("store", "retained", "reason"),
+    [
+        (_Store(), True, "no saved Board"),
+        (_Store({STREAM: ("7-0", {"open": {}, "settled": {}, "assignees": {}})}), False, "cursor 7-0 is no longer retained"),
+        (_Store({STREAM: ("7-0", {})}), True, "the saved Board cannot be read"),
+    ],
+)
+def test_a_start_without_usable_state_logs_why_it_replays(
+    caplog: pytest.LogCaptureFixture, store: _Store, retained: bool, reason: str
+) -> None:
+    with caplog.at_level(logging.INFO, logger="starpulse.board_feed"):
+        _resumed(store, retained)
+
+    assert _start_lines(caplog) == [f"StarPulse: replaying: {reason}"]
 
 
 def test_a_saved_board_is_not_ready_until_the_entries_after_its_cursor_are_read() -> None:
