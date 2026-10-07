@@ -267,5 +267,54 @@ describe("a Done chain", () => {
 
     expect(draw("done")).toMatch(/<td>done chain<\/td><td class="stacklist"><div>▣ <button[^>]*>T-3<\/button><\/div><div>↳ <b>T-2<\/b>/);
     expect(draw("waiting")).toContain("<td>waiting stack</td>");
+describe("a Waiting card linked to a blocker in another milestone", () => {
+  type El = ReactElement<{ children?: ReactNode; className?: string; title?: string; onClick?: (e: unknown) => void; onPointerDown?: (e: unknown) => void; onKeyDown?: (e: unknown) => void }>;
+  const blocker: KanbanTask = { ...task, id: "T-1", milestone: "m-1", lane: "waiting" };
+  const waiting: KanbanTask = { ...task, id: "T-2", milestone: "m-2", lane: "waiting", dependencies: ["T-1"], openDeps: 1 };
+  const card = (onOpen = () => {}, onCross = () => {}, cross: KanbanTask[] = [blocker]) =>
+    Card({ task: waiting, now: 160, marks: {}, names: {}, onOpen, dismiss: () => {}, cross, onCross }) as El;
+  const walk = (el: El): El[] => [el, ...[el.props.children].flat(Infinity).filter(isValidElement).flatMap((k) => walk(k as El))];
+  const badge = (el: El) => walk(el).find((k) => /\bxm\b/.test(k.props.className ?? ""));
+  const ev = () => ({ stopPropagation: vi.fn(), key: "Enter", preventDefault: vi.fn() });
+
+  it("draws a badge in the footer naming the blocker's milestone and id, and none on a card with no blocker elsewhere", () => {
+    const html = renderToStaticMarkup(card());
+
+    expect(html).toMatch(/<button[^>]*class="xm"[^>]*>↗ <span class="nw">m-1<\/span> · <span class="nw">T-1<\/span><\/button>/);
+    expect(html).toContain("Waits on T-1 in m-1");
+    expect(badge(card(() => {}, () => {}, []))).toBeUndefined();
+    expect(renderToStaticMarkup(<Card task={waiting} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />)).not.toContain("↗");
+  });
+
+  it("opens the blocker's task on a click of the badge, without opening the card or starting a drag", () => {
+    const onOpen = vi.fn(), onCross = vi.fn(), click = ev(), press = ev();
+
+    const xm = badge(card(onOpen, onCross))!;
+    xm.props.onPointerDown!(press);
+    xm.props.onClick!(click);
+
+    expect(onCross).toHaveBeenCalledExactlyOnceWith("T-1");
+    expect(click.stopPropagation).toHaveBeenCalled();
+    expect(press.stopPropagation).toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("keeps Enter and Space on the badge from opening the card", () => {
+    const key = ev();
+
+    badge(card())!.props.onKeyDown!(key);
+
+    expect(key.stopPropagation).toHaveBeenCalled();
+  });
+
+  it("draws a badge per blocker, and names a blocker with no milestone", () => {
+    const html = renderToStaticMarkup(card(() => {}, () => {}, [blocker, { ...blocker, id: "T-9", milestone: "" }]));
+
+    expect(html.match(/class="xm"/g)).toHaveLength(2);
+    expect(html).toContain("no milestone");
+  });
+
+  it("is left off a compact card, which drops the footer", () => {
+    expect(renderToStaticMarkup(<Card task={waiting} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} cross={[blocker]} compact />)).not.toContain("↗");
   });
 });

@@ -97,10 +97,12 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
 export type Chain = "self" | "holds" | "waits";
 
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
-export function Card({ task, holds = 0, chain, stacked = 0, under = false, links, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
+export function Card({ task, holds = 0, chain, stacked = 0, under = false, links, cross, onCross, now, marks, names, compact = false, onOpen, onPress, onPlay, onHover, dismiss, dismissStart, style }: {
   task: KanbanTask; holds?: number; chain?: Chain;
   /** The tasks stacked under this one, on a stack's top card; whether this card sits under one, and while that stack is unstacked the open tasks it waits on, or the Done tasks it unblocked. */
-  stacked?: number; under?: boolean; links?: string[]; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  stacked?: number; under?: boolean; links?: string[];
+  /** The Waiting blockers in other milestones, each drawn as a link badge in the footer that opens that task through `onCross`. */
+  cross?: KanbanTask[]; onCross?: (id: string) => void; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
   const labels = task.labels.filter((l) => !/^kind-|^agent-resolvable$/.test(l)).slice(0, 3);
@@ -139,6 +141,14 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
             <span key={l} title={l} className={`lab${l === "needs-human" ? " nh" : /^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
           ))}
           {badge}
+          {cross?.map((d) => (
+            // a button of its own on the card: it opens the blocker, so the click, press and keys that would open or lift the card stop here
+            <button key={d.id} className="xm" title={`Waits on ${d.id} in ${d.milestone || "No milestone"} (Waiting): open it`}
+              onClick={(e) => { e.stopPropagation(); onCross?.(d.id); }} onPointerDown={stop}
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()}>
+              ↗ <span className="nw">{d.milestone || "no milestone"}</span> · <span className="nw">{d.id}</span>
+            </button>
+          ))}
           {holds > 0 && <span className="holds" title={`holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>⛓{holds}</span>}
           {task.openDeps > 0 && <span className="dep" title="open dependencies">⧗{task.openDeps}</span>}
           {task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
@@ -628,7 +638,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
   const heldTask = held ? cards.find((t) => t.id === held.id) : undefined;
   const openCard = (id: string) => () => !clickEnds.current && setOpen(id);
   const drawCard: DrawCard = (t, extra) => (
-    <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} {...extra} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
+    <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} cross={view.cross.get(t.id)} onCross={setOpen} {...extra} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
       style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
       onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
       onHover={(on) => setHovered((h) => (on ? t.id : h === t.id ? null : h))}

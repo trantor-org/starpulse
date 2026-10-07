@@ -165,6 +165,8 @@ export interface Column {
 }
 export interface Layout {
   columns: Column[];
+  /** The Waiting blockers in other milestones of each Waiting task that has any, by task id. */
+  cross: ReadonlyMap<string, KanbanTask[]>;
   /** Visible tasks outside the Done column, and in it. */
   open: number;
   done: number;
@@ -224,6 +226,17 @@ export function stacksOf(tasks: KanbanTask[], lane = "waiting"): Stack[] {
   }));
 }
 
+/** Each Waiting task's Waiting dependencies in other milestones, among `visible` cards: they cannot stack, so the card links to each instead. */
+export function crossOf(visible: KanbanTask[]): Map<string, KanbanTask[]> {
+  const waiting = new Map(visible.filter((t) => t.lane === "waiting").map((t) => [t.id, t]));
+  const cross = new Map<string, KanbanTask[]>();
+  for (const t of waiting.values()) {
+    const held = t.dependencies.map((d) => waiting.get(d)).filter((d): d is KanbanTask => d !== undefined && d.milestone !== t.milestone);
+    if (held.length) cross.set(t.id, held);
+  }
+  return cross;
+}
+
 /** What holds a stack unstacked: the pointer over it or focus inside it. Escape drops both, so it folds under a pointer that has not left. */
 export interface StackOpen { hover: boolean; focus: boolean }
 export type StackEvent = "enter" | "leave" | "focus" | "blur" | "escape";
@@ -252,7 +265,7 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs
   });
   const done = columns.find((c) => c.id === "done")?.count ?? 0;
   return {
-    columns, open: visible.length - done, done, shown: visible.length, total: drawn.length,
+    columns, cross: crossOf(visible), open: visible.length - done, done, shown: visible.length, total: drawn.length,
     hidden: prefs.hiddenMilestones.size + prefs.hiddenTasks.size,
   };
 }

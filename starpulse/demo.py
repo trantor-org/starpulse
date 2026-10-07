@@ -149,6 +149,8 @@ SEED = [
     # A Done chain on index 12, so the Kanban's Done column folds them into a stack: 17 depends on 12 and 18 on 17.
     ("done", "m-1", ["size-2"], 12, "@agent-standard-high", ("pass", True, 0)),
     ("done", "m-1", ["size-1", "kind-feature"], 17, "@agent-deep-high", ("pass", True, 0)),
+    # A Waiting task in m-1 blocked by the Waiting head in m-2: it cannot stack, so the Kanban links it to that blocker.
+    ("waiting", "m-1", ["size-2", "kind-feature"], 3, "@agent-fast-low", None),
 ]
 
 

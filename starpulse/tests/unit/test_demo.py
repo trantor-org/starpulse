@@ -324,6 +324,17 @@ def test_the_seeded_board_has_a_done_chain_for_the_kanban_stack() -> None:
     chain = board[12], *board[17:19]
     assert [a["dependencies"] for a in board[17:19]] == [["DEMO-13"], ["DEMO-18"]]
     assert all(a["state"] == "done" and a["milestone"] == chain[0]["milestone"] for a in chain)
+def test_the_seeded_board_has_a_waiting_task_blocked_from_another_milestone_for_the_kanban_link() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+
+    board = {a["id"]: a for a in scrub(live)["flows"][0]["agents"]}
+
+    linked = [
+        a for a in board.values()
+        if a["state"] == "waiting" and any(board[d]["state"] == "waiting" and board[d]["milestone"] != a["milestone"] for d in a["dependencies"])
+    ]
+    assert len(linked) == 1  # the Kanban draws its link badge, and it is not a self-dependency
 
 
 def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
