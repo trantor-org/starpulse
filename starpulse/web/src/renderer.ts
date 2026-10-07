@@ -575,8 +575,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** What the machine across a level's top is under (x, y): a task, a state or a flow line, each sized to grow with the text. */
   function hitTop(sc: Scene, x: number, y: number): Hover | null {
     const { gs } = ledgerSizes(prefs().scale);
-    for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < 7 * gs) return { kind: "mtask", o: s };
-    for (const n of sc.top!.nodes) if (Math.hypot(n.x - x, n.y - y) < Math.max(n.r, 9 * gs)) return { kind: "state", o: sc.mStates[n.id] };
+    for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < 8 * gs) return { kind: "mtask", o: s };
+    for (const n of sc.top!.nodes) if (Math.hypot(n.x - x, n.y - y) < n.r + 4 * gs) return { kind: "state", o: sc.mStates[n.id] };
     const lines = sc.mEdges.filter((e) => e.a && e.b && e.a !== e.b).map((e) => ({ h: { kind: "medge", o: e } as Hover, d: curveDist(curveOf(e.a!, e.b!, e.bend), x, y) }));
     return nearestWithin(lines, (l) => l.d, 14)?.h ?? null;
   }
@@ -1668,7 +1668,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       dot(n.x, n.y, n.r, rgba(col, hot ? 0.3 : 0.12));
       circle(n.x, n.y, n.r, rgba(col, hot ? 1 : 0.85), hot ? 2 : 1.6);
       if (n.final) circle(n.x, n.y, n.r + 2.5, rgba(col, 0.45), 1);
-      dot(n.x, n.y, Math.min(n.initial ? 4.5 : 3, n.r * 0.4), rgba(col, 0.9));
+      dot(n.x, n.y, Math.min((n.initial ? 5.5 : 4) * gs, n.r * 0.4), rgba(col, 0.9));
     }
     // each task orbits the state its latest move left it on; a move the page has just seen rides the flow line as a comet
     const seat: Record<string, number> = {};

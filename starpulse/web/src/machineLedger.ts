@@ -70,25 +70,25 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** The sizes a ledger draws at: screen pixels times the page's text size, and dots times its square root so 150% stays on the canvas. */
 export const sizes = (scale: number) => {
   const fs = scale / 100, gs = Math.sqrt(fs);
-  return { fs, gs, dot: 3.2 * gs, main: 12.5 * fs };
+  return { fs, gs, dot: 4 * gs, main: 12.5 * fs };
 };
 
 /** Where task `i` of a state of radius `r` orbits: rings of tasks outward from the state, each as full as its circumference holds. */
 export function slot(r: number, i: number, scale: number): { R: number; a: number } {
-  const { gs } = sizes(scale), sp = 8.5 * gs;
-  let rem = i, R = r + 5 * gs;
+  const { gs } = sizes(scale), sp = 10 * gs;
+  let rem = i, R = r + 5.5 * gs;
   for (;;) {
     const cap = Math.max(6, Math.floor((TAU * R) / sp));
     if (rem < cap) return { R, a: (rem / cap) * TAU };
     rem -= cap;
-    R += 7 * gs;
+    R += 7.5 * gs;
   }
 }
 /** A state's radius: one size for every state, so a task arriving or leaving never moves the machine; its orbit shows the load. */
-export const stateRadius = (scale: number) => 11 * sizes(scale).gs;
-/** The room kept round every state for its orbiting tasks, whatever sits on it: two full rings (`slot` puts the first 5 past the state, the next 7
- * past that). A state holding more spills a ring past it rather than shift the machine. */
-export const orbitRoom = (scale: number) => stateRadius(scale) + 12 * sizes(scale).gs + sizes(scale).dot;
+export const stateRadius = (scale: number) => 15 * sizes(scale).gs;
+/** The room kept round every state for its orbiting tasks, whatever sits on it: two full rings (`slot` puts the first 12 just past the state, the
+ * next 17 past that). A state holding more spills a ring past it rather than shift the machine. */
+export const orbitRoom = (scale: number) => stateRadius(scale) + 13 * sizes(scale).gs + sizes(scale).dot;
 
 interface Layers {
   depth: Record<string, number>;

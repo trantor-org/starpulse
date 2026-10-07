@@ -59,6 +59,12 @@ describe("the machine ledger's top", () => {
     }
   });
 
+  it.each([100, 125, 150])("draws every state large enough to click at %i% text, with less sky between neighbours than a state is wide twice over", (scale) => {
+    const f = frame(scale, 1100), top = ledgerTop(machine(2), f), gs = Math.sqrt(scale / 100), spine = top.nodes.filter((n) => n.y === top.nodes[0].y).sort((a, b) => a.x - b.x);
+    for (const n of top.nodes) expect(n.r).toBeGreaterThanOrEqual(15 * gs);
+    for (let i = 1; i < spine.length; i++) expect(spine[i].x - spine[i - 1].x - spine[i].r - spine[i - 1].r).toBeLessThan(4 * spine[i].r);
+  });
+
   it("is never shorter than its natural height, even where that passes 60% of the view", () => {
     const top = ledgerTop(machine(6), frame(150, 1350, 640));
     expect(top.natural).toBeGreaterThan(640 * 0.6);
