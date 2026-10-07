@@ -101,3 +101,22 @@ def test_events_a_hub_already_holds_survive_the_move_into_partitions(empty_datab
             )
         ).scalar_one()
     assert new == 3
+
+
+def test_the_summaries_revision_adds_its_tables_and_a_downgrade_drops_them(empty_database: Engine) -> None:
+    summaries = {"starpulse_step_summaries", "starpulse_cases", "starpulse_lane_intervals"}
+    config = Config()
+    config.set_main_option("script_location", str(Path(hub.__file__).parent / "migrations"))
+    with empty_database.begin() as db:
+        config.attributes["connection"] = db
+        command.upgrade(config, "0004")
+        assert not summaries & set(inspect(db).get_table_names())
+        command.upgrade(config, "0005")
+        assert summaries <= set(inspect(db).get_table_names())
+        assert {i["name"] for i in inspect(db).get_indexes("starpulse_lane_intervals")} >= {
+            "ix_starpulse_lane_intervals_task",
+            "ix_starpulse_lane_intervals_entered",
+            "ix_starpulse_lane_intervals_left",
+        }
+        command.downgrade(config, "0004")
+        assert not summaries & set(inspect(db).get_table_names())

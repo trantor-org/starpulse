@@ -389,3 +389,19 @@ def test_level_runs_of_another_machine_place_each_tasks_events_and_skip_runs_wit
         Run("a", "PROJ-7", ((100.0, "worktree_ready"), (102.0, "red_proven"))),
         Run(UNATTRIBUTED, "PROJ-8", ((101.0, "worktree_ready"),)),
     ]
+
+
+def test_the_summaries_a_store_keeps_on_write_match_the_ones_folded_from_its_rows(store: HistoryStore) -> None:
+    store.record_machine("1-0", _CLAIM)
+    store.record_machine("2-0", _CLAIM)  # redelivered: counted once
+    store.record_machine("3-0", _CLAIM | {"event_id": "e-2", "event": "RED_PROVEN", "time": "130"})
+    store.record_machine("4-0", _RUN)
+    store.record_lane("L-1", "PROJ-7", "Ready", 90.0)
+    store.record_lane("L-2", "PROJ-7", "In Progress", 95.0)
+
+    assert store.summary_differences() == []
+    with store.engine.connect() as db:
+        steps = db.execute(text("SELECT sum(steps) FROM starpulse_step_summaries")).scalar()
+        open_stays = db.execute(text("SELECT lane FROM starpulse_lane_intervals WHERE left_at IS NULL")).scalars().all()
+    assert steps == 5
+    assert open_stays == ["In Progress"]

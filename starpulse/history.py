@@ -32,6 +32,7 @@ from sqlalchemy import (
     Text,
     bindparam,
     create_engine,
+    delete,
     select,
 )
 from sqlalchemy.dialects import postgresql, sqlite
@@ -40,8 +41,9 @@ from sqlalchemy.exc import OperationalError
 from starpulse import events as machine_events
 from starpulse.config import discover, load
 from starpulse.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables
-from starpulse.level_metrics import UNATTRIBUTED, Run
+from starpulse.level_metrics import Run
 from starpulse.machine_tasks import Table as Transitions
+from starpulse.summaries import SUMMARY_TABLES, Summaries, Summariser, read_case, source, write_lane, write_step
 from starpulse.tables import gaps as _gaps
 from starpulse.tables import metadata
 
@@ -133,12 +135,6 @@ class LevelHistory(History, Protocol):
     def level_runs(self, flow: str) -> list[Run]: ...
 
 
-def _source(event_id: str) -> str:
-    """The source an event id names (`<source>/<id>`), `UNATTRIBUTED` when it carries none."""
-    source, slash, _ = event_id.partition("/")
-    return source if slash and source else UNATTRIBUTED
-
-
 def database_url(configured: str | None, directory: Path) -> str:
     """The configured URL, else a SQLite file `DEFAULT_FILE` in `directory`."""
     return configured or f"sqlite:///{(directory / DEFAULT_FILE).resolve()}"
@@ -184,10 +180,12 @@ class HistoryStore:
     def __init__(self, url: str, machines: Mapping[str, dict], engine: Engine | None = None) -> None:
         self.engine = engine or create_engine(url)
         self._machines = machines
+        self._summariser = Summariser(machines)
         # pragma: no mutate start — SQLite compiles the postgresql insert's ON CONFLICT alike
         self._dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
         # pragma: no mutate end
         create_tables(self.engine)  # a reader thread of the log may be creating its own at the same time
+        self.build_summaries()
 
     def _insert(self, table: Table):
         return self._dialect.insert(table)
@@ -198,10 +196,10 @@ class HistoryStore:
             return db.execute(select(_cursors.c.after_id).where(_cursors.c.stream == stream)).scalar()
 
     def record_machine(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
-        """Write one machine event; one the store already holds is a no-op.
+        """Write one machine event and fold it into the summaries; one the store already holds is a no-op.
 
         `cursor`, the event's id in the log, is saved in the same transaction, so the store never holds an event
-        its cursor has not passed or a cursor past an event it lacks.
+        its cursor has not passed or a cursor past an event it lacks, or an event its summaries lack.
         """
         row = {
             "event_id": fields.get("event_id") or entry_id,
@@ -213,9 +211,17 @@ class HistoryStore:
             "occurred_at": float(fields["time"]),
         }
         with self.engine.begin() as db:
-            db.execute(self._insert(_machine_events).values(row).on_conflict_do_nothing())
+            insert = self._insert(_machine_events).values(row).on_conflict_do_nothing()
+            if db.execute(insert.returning(_machine_events.c.id)).first() is not None:
+                self._summarise_event(db, row)
             if cursor is not None:
                 self._save_cursor(db, machine_events.STREAM, cursor)
+
+    def _summarise_event(self, db: Connection, row: dict) -> None:
+        who = self._summariser
+        if (key := who.event_key(row["machine"], row["task"], row["run"], row["event_id"])) is not None:
+            step = who.event_step(key, read_case(db, key), row["event"], row["occurred_at"], row["event_id"])
+            write_step(db, self._insert, key, step)
 
     def save_cursor(self, stream: str, after_id: int) -> None:
         """Keep `after_id` as the log id `stream`'s reader has passed, in place of the last one."""
@@ -227,15 +233,59 @@ class HistoryStore:
         db.execute(save.on_conflict_do_update(index_elements=["stream"], set_={"after_id": save.excluded.after_id}))
 
     def record_lane(self, event_id: str, task: str, status: str, at: float) -> None:
-        """Write a task's lane change; a status that repeats the task's last one (a reconcile) is no change."""
+        """Write a task's lane change and fold it into the summaries; a status that repeats the task's last one (a
+        reconcile) is no change, and neither is an event id the store already holds."""
         with self.engine.begin() as db:
             last = db.execute(_LAST_LANE, {"task": task}).scalar()
-            if last != status:
-                db.execute(
-                    self._insert(_lane_changes)
-                    .values(event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at)
-                    .on_conflict_do_nothing()
-                )
+            if last == status:
+                return
+            change = self._insert(_lane_changes).values(
+                event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at
+            )
+            if db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is not None:
+                who = self._summariser
+                key = who.lane_key(task, event_id)
+                if (step := who.lane_step(read_case(db, key), status, at, event_id)) is not None:
+                    write_step(db, self._insert, key, step)
+                write_lane(db, event_id, task, status, at)
+
+    def build_summaries(self) -> None:
+        """Build the summaries from the raw rows when they are empty: the start-up pass for a store that predates them.
+
+        Summaries that hold any row are left as they are, so a second call changes nothing; `rebuild_summaries`
+        replaces them and `summary_differences` says whether they match the raw rows.
+        """
+        with self.engine.connect() as db:
+            empty = not any(db.execute(select(table).limit(1)).first() for table in SUMMARY_TABLES)
+        if empty:
+            self.rebuild_summaries()
+
+    def rebuild_summaries(self) -> None:
+        """Replace the summaries with ones folded from the raw rows, in one transaction.
+
+        Nothing may record while it runs: a row written meanwhile is missing from them.
+        """
+        with self.engine.begin() as db:
+            for table in SUMMARY_TABLES:
+                db.execute(delete(table))
+            self._folded(db).write(db)
+
+    def summary_differences(self) -> list[str]:
+        """Each way the summaries differ from the ones folded from the raw rows, one line each; none when they match."""
+        with self.engine.connect() as db:
+            return self._folded(db).differences(Summaries.read(db))
+
+    def _folded(self, db: Connection) -> Summaries:
+        """The summaries the raw rows give, in the order they were recorded."""
+        folded = Summaries()
+        e, c = _machine_events.c, _lane_changes.c
+        events = select(e.event_id, e.task, e.run, e.machine, e.event, e.occurred_at).order_by(e.id)
+        for event_id, task, run, machine, event, at in db.execute(events.execution_options(yield_per=5000)):
+            folded.event(self._summariser, event_id, task, run, machine, event, at)
+        lanes = select(c.event_id, c.task, c.new_status, c.observed_at).order_by(c.id)
+        for event_id, task, lane, at in db.execute(lanes.execution_options(yield_per=5000)):
+            folded.lane(self._summariser, event_id, task, lane, at)
+        return folded
 
     def record_gap(self, stream: str, after_id: str, before_id: str, lost: int) -> None:
         """Note that `lost` entries of `stream` between `after_id` and `before_id` were trimmed unread."""
@@ -314,13 +364,13 @@ class HistoryStore:
             )
             rows = []
             for event_id, task, at, event in self._read(query):
-                key = (_source(event_id), task)
+                key = (source(event_id), task)
                 current[key] = table.target(current.get(key), event) or current.get(key, table.initial)
                 rows.append((event_id, task, at, current[key]))
         steps: dict[tuple[str, str], list[tuple[float, str]]] = {}
         for event_id, task, at, state in rows:
             if state is not None:
-                steps.setdefault((_source(event_id), task), []).append((at, state))
+                steps.setdefault((source(event_id), task), []).append((at, state))
         return [Run(source, task, tuple(path)) for (source, task), path in steps.items()]
 
     def _read(self, query):

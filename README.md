@@ -762,7 +762,14 @@ directory. The `Board` says:
   milestone, assignee, dependencies, acceptance criteria) and answers with its id (`POST /api/tasks`;
   `capabilities.create`), and its own `history`: the page reads it in place of StarPulse's store, while `serve` still
   records every machine event (task- and run-keyed) and each Board lane change it places into StarPulse's own store
-  (`starpulse_machine_events`, `starpulse_lane_changes`).
+  (`starpulse_machine_events`, `starpulse_lane_changes`). In the same transaction the store folds each of them into
+  summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
+  seconds in the from-state, per UTC day, machine, from-state and to-state), `starpulse_cases` (each task's or run's
+  current state, when it entered it and its last event) and `starpulse_lane_intervals` (each stay in a lane). A store
+  whose summaries are empty builds them from its rows when it opens (`HistoryStore.build_summaries`);
+  `rebuild_summaries` replaces them and `summary_differences` lists where they differ from the rows. A hub gets the
+  tables from its migrations (revision `0005`). The summaries follow the order events were recorded, and cover only the
+  machines the page draws when the store opens.
 
 `starpulse.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
