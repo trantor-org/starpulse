@@ -32,7 +32,8 @@ from starpulse.ledger import (
     reruns,
     strip,
 )
-from starpulse.machine_ties import derive
+from starpulse.machine_ties import derive, entries
+from starpulse.machine_ties import page as machine_page
 from starpulse.snapshot import declared, qualifier
 from starpulse.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 
@@ -600,6 +601,46 @@ class BoardFeed:
             )
             return {"merges": found, "more": more}
 
+    def _flows(self, now: float) -> tuple[list[dict], dict[str, dict]]:
+        """Every flow with its tasks as the page draws them, and each machine's derivation (`machine_ties.derive`)."""
+        since = now - self._window_s if self._window_s is not None else None
+        flows = [
+            {"name": "board", "machine": self._drawn["board"], "agents": list(self._open.values())},
+            *(
+                {
+                    "name": name,
+                    "machine": self._drawn[name],
+                    "agents": [self._modelled(a) for a in agents.values() if since is None or a["active"] >= since],
+                }
+                for name, agents in self._machines.items()
+            ),
+        ]
+        return flows, derive(flows, now)
+
+    def machine_rows(self, open_: str | None, before: float | None, limit: int) -> dict | None:
+        """`GET /api/machines`: the next `limit` machines entered from `open_` (None: the In Progress machine) with
+        activity older than `before` (None: the newest), `{open, machines, more}`, each machine whole with its
+        derivation; None when `open_` is not a machine here."""
+        with self._lock:
+            flows, derived = self._flows(time.time())
+            if open_ is None:
+                open_ = next((n for n, d in derived.items() if d["depth"] == 0), None)
+            elif open_ not in derived:
+                return None
+            names, more = machine_page(derived, open_, before=before, limit=limit)
+            by_name = {f["name"]: f for f in flows}
+            return {"open": open_, "machines": [{**by_name[n], **derived[n]} for n in names], "more": more}
+
+    def _machine_fields(self, flows: list[dict], derived: dict[str, dict], now: float) -> dict:
+        """The snapshot's `machinePage` (names of the In Progress machine's first page of rows; their bodies are in
+        `flows`) and `machineStrip` (the last 24 hours before `now` of machine entries, counted over every machine)."""
+        top = next((n for n, d in derived.items() if d["depth"] == 0), None)
+        names, more = machine_page(derived, top, before=None, limit=PAGE)
+        return {
+            "machinePage": {"open": top, "machines": names, "more": more},
+            "machineStrip": {"entries": entries(flows, derived, now, LEDGER_WINDOW)},
+        }
+
     def _refresh_ledgers(self) -> None:
         """Send the Ledger when it or its strip differs from the one last sent; the caller holds the lock."""
         view = self._ledger_view(self._ledger())
@@ -641,22 +682,11 @@ class BoardFeed:
         """What the page draws: every machine with its tasks, the workflow declarations, the workflows and their pools."""
         with self._lock:
             now = time.time()
-            since = now - self._window_s if self._window_s is not None else None
-            flows = [
-                {"name": "board", "machine": self._drawn["board"], "agents": list(self._open.values())},
-                *(
-                    {
-                        "name": name,
-                        "machine": self._drawn[name],
-                        "agents": [self._modelled(a) for a in agents.values() if since is None or a["active"] >= since],
-                    }
-                    for name, agents in self._machines.items()
-                ),
-            ]
-            derived = derive(flows, now)
+            flows, derived = self._flows(now)
             return {
                 "graphs": [*self._drawn, "runs"],
                 "flows": [{**f, **derived.get(f["name"], {})} for f in flows],
+                **self._machine_fields(flows, derived, now),
                 "dags": self._workflows(),
                 "pools": self._drawn_pools(),
                 "pulls": self._pulls,

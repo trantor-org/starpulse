@@ -148,7 +148,7 @@ lists exactly the verbs there are.
 
 | Verb | Arguments | Document |
 |---|---|---|
-| `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `insights`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it |
+| `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `insights`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it; `machinePage` and `machineStrip` page and count the machines entered from the In Progress one (Machine rows) |
 | `board` | `--state`, `--milestone`, `--label`, `--assignee` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, milestone, labels, dependencies, waiting_on, prs, moves}` |
 | `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
@@ -386,6 +386,22 @@ step, and the step it is in.
   and carry `appliedBy`: the `key` of the first later merge in another repository whose submodule pointer at `path`
   contains the merge's commit (read through `gh`), or `null` while no such merge exists. That merge's row lists what it
   applies in `applies`. A pin bump appears only when a task cites its pull request.
+
+#### Machine rows
+
+The machines entered from an open machine (the In Progress one at the top) are its rows, newest activity first: a row is
+as recent as the newest task of the machine and every machine nested below it, ties break by name, and a machine with no
+task comes last. The snapshot's `flows` carries every machine; `machinePage` (`{open, machines, more}`) names the In
+Progress machine's first 20 rows. `GET /api/machines?open=<machine>&before=<last>&limit=20` returns the next page of any
+level as `{open, machines, more}`, each machine whole as a `flows` entry with its derivation. `open` defaults to the In
+Progress machine, `before` is the `last` of the last row held (0 for a machine with no task), and `limit` runs 1 to 100.
+Rows sharing the boundary activity come together, so a page can run past `limit` and walking it neither repeats nor skips
+a machine. An unknown `open` is 404; a `before` that is not a finite number or a `limit` out of range is 400.
+
+`machineStrip` (`{entries}`) lists every machine entry of the 24 hours before the snapshot's `now`, without the rows, oldest first, as
+`{at, machine, row, from, dag}`: `row` is the machine on the In Progress level the entry lands on, so an entry into a
+nested machine counts on the row above it; `from` is the `{machine, state}` the task's session was entered from (null
+when no earlier session is known); `dag` is the workflow that launched a session with no task.
 
 ### Connect a tracker
 

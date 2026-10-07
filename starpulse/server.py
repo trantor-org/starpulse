@@ -40,6 +40,13 @@ GET /api/merges[?before=T][&limit=N]
                    `ledgers.MERGED` row. None is older than 24 hours, `more` says whether older ones remain, and
                    rows sharing the boundary second all come in one page, so walking `before` neither repeats nor
                    skips a merge. A `before` that is not a finite number, or a `limit` outside 1-100, is 400
+GET /api/machines[?open=NAME][&before=T][&limit=N]
+                   {open, machines, more}: the next `limit` machines (default 20, at most 100) entered from the machine
+                   `open` (default the In Progress machine), newest activity first, each whole as a snapshot `flows`
+                   entry with its derivation. `before` is the `last` of the last machine held (epoch seconds; none:
+                   the newest; a machine with no task counts as 0), machines sharing the boundary activity all come in
+                   one page, so walking `before` neither repeats nor skips one. An `open` that is not a machine here is
+                   404, a `before` that is not a finite number or a `limit` outside 1-100 is 400
 GET /api/history?task=TASK-N[&flow=NAME]
                    {task, path}: the task's Board lane changes as [{at, from, to}], oldest first (`at`
                    epoch seconds). With `flow`, {task, flow, path, steps}: its events on that lifecycle
@@ -239,8 +246,8 @@ _TASKS = "/api/tasks"
 _INGEST = "/api/runs/events"
 _FORWARD = "/api/forward"
 _INSIGHTS = "/api/insights"
-#: `/api/merges`' page size when `limit` is left out, and the most it serves at once.
-_MERGES_LIMIT = 100
+#: The most rows `/api/merges` and `/api/machines` serve at once.
+_PAGE_LIMIT = 100
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
 #: The details a create takes besides its title, as one text value or a list of them.
@@ -597,16 +604,36 @@ def _error(message: str) -> bytes:
     return json.dumps({"error": message}).encode()
 
 
-def merges_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes, int]:
-    """The body and status for `/api/merges`: the merge ledger's next page, older than `before`, at most `limit` long."""
+def _page_query(query: dict[str, list[str]], noun: str) -> tuple[float | None, int] | bytes:
+    """The `before` and `limit` of a paged route, or the 400 body for one that is malformed."""
     try:
         before = float(query["before"][0]) if "before" in query else None
         limit = int(query["limit"][0]) if "limit" in query else PAGE
     except ValueError:
-        return _error("merges takes a numeric ?before= and an integer ?limit="), 400
-    if before is not None and not math.isfinite(before) or not 0 < limit <= _MERGES_LIMIT:
-        return _error(f"merges takes a finite ?before= and a ?limit= from 1 to {_MERGES_LIMIT}"), 400
-    return json.dumps(feed.merges(before, limit)).encode(), 200
+        return _error(f"{noun} takes a numeric ?before= and an integer ?limit=")
+    if before is not None and not math.isfinite(before) or not 0 < limit <= _PAGE_LIMIT:
+        return _error(f"{noun} takes a finite ?before= and a ?limit= from 1 to {_PAGE_LIMIT}")
+    return before, limit
+
+
+def merges_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes, int]:
+    """The body and status for `/api/merges`: the merge ledger's next page, older than `before`, at most `limit` long."""
+    asked = _page_query(query, "merges")
+    if isinstance(asked, bytes):
+        return asked, 400
+    return json.dumps(feed.merges(*asked)).encode(), 200
+
+
+def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes, int]:
+    """The body and status for `/api/machines`: the next page of machines entered from `open`, older than `before`."""
+    asked = _page_query(query, "machines")
+    if isinstance(asked, bytes):
+        return asked, 400
+    open_ = query["open"][0] if "open" in query else None
+    found = feed.machine_rows(open_, *asked)
+    if found is None:
+        return _error(f"{open_} is not a machine here"), 404
+    return json.dumps(found).encode(), 200
 
 
 def history_response(history: History, query: dict[str, list[str]], flows: Collection[str]) -> tuple[bytes, int]:
@@ -890,6 +917,8 @@ def _handler(
                 self._send(json.dumps(feed.snapshot()).encode())
             elif url.path == "/api/merges":
                 self._send(*merges_response(feed, parse_qs(url.query)))
+            elif url.path == "/api/machines":
+                self._send(*machines_response(feed, parse_qs(url.query)))
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows))
             elif url.path == "/api/analytics/health":
