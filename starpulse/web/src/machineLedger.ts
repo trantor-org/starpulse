@@ -85,10 +85,10 @@ export function slot(r: number, i: number, scale: number): { R: number; a: numbe
   }
 }
 /** A state's radius: one size for every state, so a task arriving or leaving never moves the machine; its orbit shows the load. */
-export const stateRadius = (scale: number) => 15 * sizes(scale).gs;
+const stateRadius = (scale: number) => 15 * sizes(scale).gs;
 /** The room kept round every state for its orbiting tasks, whatever sits on it: two full rings (`slot` puts the first 12 just past the state, the
  * next 17 past that). A state holding more spills a ring past it rather than shift the machine. */
-export const orbitRoom = (scale: number) => stateRadius(scale) + 13 * sizes(scale).gs + sizes(scale).dot;
+const orbitRoom = (scale: number) => stateRadius(scale) + 13 * sizes(scale).gs + sizes(scale).dot;
 
 interface Layers {
   depth: Record<string, number>;
