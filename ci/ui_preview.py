@@ -2,7 +2,8 @@
 
 `.github/workflows/ui-preview.yml` runs this on every pull request that touches the page (`starpulse/web/**`), the
 design mockup (`design/**`) or this preview. It builds each changed surface's scrubbed one-file demo with
-`starpulse.demo`, screenshots the demos, publishes them to the public `starpulse-demo` Pages repository while the
+`starpulse.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
+inlined, screenshots the demos, publishes them to the public `starpulse-demo` Pages repository while the
 pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
 touches the same paths runs it with `--main`, which republishes both demos as `main/`, the live demo the README
 links. The flow view is rendered against `ci/preview.toml`, a demo config naming no real board or runs adapter.
@@ -59,6 +60,32 @@ def demo_name(surface: str) -> str:
     return f"{surface}.html"
 
 
+def sub_mockups(changed: Iterable[str]) -> list[str]:
+    """The design sub-mockups a change touches: each `design/<dir>/` holding a changed path, sorted."""
+    return sorted({p.parts[1] for p in map(PurePosixPath, changed) if len(p.parts) > 2 and p.parts[0] == DESIGN})
+
+
+def sub_mockup_name(directory: str) -> str:
+    """The demo `design/<directory>/` publishes as, prefixed so no directory takes the main mockup's name."""
+    return f"mockup-{directory}.html"
+
+
+_LOCAL_SCRIPT = re.compile(r'<script src="([\w.-]+\.js)"></script>')
+
+
+def sub_mockup(directory: Path) -> str:
+    """A sub-mockup's `index.html` with each local script inlined, so the one file is the whole demo.
+
+    A sub-mockup is a scrubbed capture of the page (`starpulse.demo --server`) with its own layer over it, so it is
+    published as it is; the leak scan still reads every byte before anything goes out.
+    """
+
+    def body(m: re.Match[str]) -> str:
+        return "<script>" + (directory / m[1]).read_text().replace("</script", "<\\/script") + "</script>"
+
+    return _LOCAL_SCRIPT.sub(body, (directory / "index.html").read_text())
+
+
 MARKER = "<!-- starpulse:ui-preview -->"
 
 _CAVEATS = {
@@ -68,6 +95,10 @@ _CAVEATS = {
     ),
     MOCKUP: "Rendered from the scrubbed demo `starpulse.demo --mockup design` builds from the saved mockup data.",
 }
+
+
+def _sub_caveat(name: str) -> str:
+    return f"Rendered from the sub-mockup `{DESIGN}/{name.removeprefix('mockup-')}/` with its scripts inlined."
 
 
 def comment_body(shots: Mapping[str, Sequence[Path]], run_url: str, sha: str, demo: str = "") -> str:
@@ -82,7 +113,7 @@ def comment_body(shots: Mapping[str, Sequence[Path]], run_url: str, sha: str, de
         f"[Run]({run_url}). This render is review context, not an approval.",
     ]
     for surface, paths in shots.items():
-        lines += ["", f"### {surface}", _CAVEATS[surface], ""]
+        lines += ["", f"### {surface}", _CAVEATS.get(surface) or _sub_caveat(surface), ""]
         lines += [f"![{p.stem}](./{p.as_posix()})" for p in paths]
     if demo:
         lines += ["", "### Demo", demo]
@@ -303,6 +334,16 @@ def _build_demos(names: Sequence[str], out: Path) -> list[Path]:  # pragma: no c
     return built
 
 
+def _build_sub_mockups(directories: Sequence[str], out: Path) -> list[Path]:  # pragma: no cover — file boundary
+    built = []
+    for d in directories:
+        if (Path(DESIGN) / d / "index.html").is_file():  # a deleted sub-mockup builds nothing
+            target = out / sub_mockup_name(d)
+            target.write_text(sub_mockup(Path(DESIGN) / d))
+            built.append(target)
+    return built
+
+
 @contextmanager
 def _serve(directory: Path) -> Iterator[int]:  # pragma: no cover — process boundary
     """Serve `directory` over HTTP: a demo opened as `file://` fails its module script."""
@@ -379,6 +420,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
     demo_dir = args.out / "demo"  # the workflow uploads this directory as the `ui-demo` artifact
     names = [demo_name(s) for s in todo]
     built = _build_demos(names, demo_dir)
+    subs = _build_sub_mockups(sub_mockups(changed), demo_dir)
     shots: dict[str, list[Path]] = {}
     with _serve(demo_dir) as port:
         for surface in todo:
@@ -386,8 +428,10 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
                 _shoot(f"http://127.0.0.1:{port}/{demo_name(surface)}{query}", args.out / f"{name}.png")
                 for name, query in PAGES[surface].items()
             ]
-    print(*publish_demos(_demo_gh, folder, built, args.out / "requests"), sep="\n")
-    note = demo_note(args.pr, names)
+        for sub in subs:
+            shots[sub.stem] = [_shoot(f"http://127.0.0.1:{port}/{sub.name}", args.out / f"{sub.stem}.png")]
+    print(*publish_demos(_demo_gh, folder, built + subs, args.out / "requests"), sep="\n")
+    note = demo_note(args.pr, names + [sub.name for sub in subs])
     _set_demo_section(args.repo, args.pr, note, args.out)
     body = args.out / "body.md"
     body.write_text(comment_body(shots, args.run_url, args.sha, note))

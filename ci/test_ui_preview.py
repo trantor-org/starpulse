@@ -25,6 +25,9 @@ from ui_preview import (
     publish,
     publish_demos,
     scan_demos,
+    sub_mockup,
+    sub_mockup_name,
+    sub_mockups,
     surfaces,
     unpublish_demos,
 )
@@ -62,6 +65,35 @@ def test_the_shipped_mockup_builds_a_demo_that_leaks_nothing() -> None:
     assert leaks(demo.mockup(ROOT / "design")) == []
 
 
+@pytest.mark.parametrize(
+    ("changed", "expected"),
+    [
+        (["design/task-modal/task-modal.js"], ["task-modal"]),
+        (["design/hub/index.html", "design/edit/edit.js", "design/hub/hub.js", "starpulse/server.py"], ["edit", "hub"]),
+        (["design/index.html", "design/data.js"], []),
+        (["starpulse/web/src/Kanban.tsx"], []),
+    ],
+)
+def test_sub_mockups_follow_the_changed_paths(changed: list[str], expected: list[str]) -> None:
+    assert sub_mockups(changed) == expected
+
+
+def test_a_sub_mockup_is_published_under_a_name_the_main_mockup_cannot_take() -> None:
+    assert sub_mockup_name("task-modal") == "mockup-task-modal.html"
+    assert sub_mockup_name("mockup") != f"{MOCKUP}.html"
+
+
+def test_a_sub_mockup_inlines_each_local_script_into_its_one_page(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text('<head><script src="layer.js"></script></head><body>page</body>')
+    (tmp_path / "layer.js").write_text('el.innerHTML = "</script>";')
+    page = sub_mockup(tmp_path)
+    assert page == '<head><script>el.innerHTML = "<\\/script>";</script></head><body>page</body>'
+
+
+def test_the_shipped_layers_mockup_builds_a_demo_that_leaks_nothing() -> None:
+    assert leaks(sub_mockup(ROOT / "design" / "layers")) == []
+
+
 SHOTS = {
     FLOW_VIEW: [Path("shots/flow-view-star-map.png"), Path("shots/flow-view-kanban.png")],
     MOCKUP: [Path("shots/design-mockup.png")],
@@ -86,6 +118,12 @@ def test_comment_names_the_commit_and_run_and_what_each_render_is() -> None:
     assert "https://x/run/1" in body
     assert "ci/preview.toml" in body
     assert "--mockup design" in body
+
+
+def test_comment_says_how_a_sub_mockup_was_rendered() -> None:
+    body = comment_body({"mockup-task-modal": [Path("shots/mockup-task-modal.png")]}, "u", "abcdef1")
+    assert "`design/task-modal/`" in body
+    assert "![mockup-task-modal](./shots/mockup-task-modal.png)" in body
 
 
 def test_comment_carries_the_demo_note_under_its_own_heading_only_when_there_is_one() -> None:
