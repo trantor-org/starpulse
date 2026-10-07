@@ -10,6 +10,7 @@ import pytest
 import yaml
 from ui_preview import (
     DEMO_REPO,
+    ELEMENTS,
     FLOW_VIEW,
     MAIN_FOLDER,
     MARKER,
@@ -44,6 +45,8 @@ ROOT = Path(__file__).resolve().parents[1]
         (["ci/preview.toml"], [FLOW_VIEW]),
         ([".github/workflows/ui-preview.yml"], [FLOW_VIEW]),
         (["design/hub/index.html"], [MOCKUP]),
+        (["design/elements/index.html"], [MOCKUP, ELEMENTS]),
+        (["starpulse/web/src/style.css"], [FLOW_VIEW, ELEMENTS]),
         (["design/data.js", "starpulse/web/src/Kanban.tsx"], [FLOW_VIEW, MOCKUP]),
         (["starpulse/server.py", "README.md", "starpulse/tests/unit/test_demo.py", ".github/workflows/ci.yml"], []),
     ],
@@ -71,6 +74,7 @@ def test_the_shipped_mockup_builds_a_demo_that_leaks_nothing() -> None:
         (["design/task-modal/task-modal.js"], ["task-modal"]),
         (["design/hub/index.html", "design/edit/edit.js", "design/hub/hub.js", "starpulse/server.py"], ["edit", "hub"]),
         (["design/index.html", "design/data.js"], []),
+        (["design/elements/index.html", "design/elements/elements.js"], []),
         (["starpulse/web/src/Kanban.tsx"], []),
     ],
 )
@@ -96,6 +100,10 @@ def test_the_shipped_layers_mockup_builds_a_demo_that_leaks_nothing() -> None:
 
 def test_the_shipped_task_modal_mockup_builds_a_demo_that_leaks_nothing() -> None:
     assert leaks(sub_mockup(ROOT / "design" / "task-modal")) == []
+
+
+def test_the_shipped_element_sheet_builds_a_demo_that_leaks_nothing() -> None:
+    assert leaks(demo.elements(ROOT / "design/elements")) == []
 
 
 SHOTS = {

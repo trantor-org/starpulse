@@ -13,6 +13,8 @@ on:
       - ci/**
       - .github/workflows/ui-preview.yml
       - design/**
+      - design/elements/**
+      - starpulse/web/src/style.css
   push:
     branches: [main]
     paths:
@@ -20,6 +22,8 @@ on:
       - ci/**
       - .github/workflows/ui-preview.yml
       - design/**
+      - design/elements/**
+      - starpulse/web/src/style.css
   workflow_dispatch:
 
 permissions:
