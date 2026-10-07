@@ -11,7 +11,7 @@
     "folded-kanban": { view: "kanban", kq: "backup", folded: true },
     "folded-map": { view: "constellation", folded: true },
   };
-  const ICONS = ["constellation", "compass", "orbit", "chart", "sextant", "current"];
+  const ICONS = ["orbit", "constellation", "compass", "chart", "sextant", "current"];
   const SIZES = [100, 125, 150];
   // a switcher choice survives the reload in sessionStorage too, for a frame that drops the query string
   let next = null;
@@ -21,7 +21,7 @@
   if (!qs.get("s") && location.hash.slice(1) in STATES) qs.set("s", location.hash.slice(1));
   const sKey = qs.get("s") in STATES ? qs.get("s") : null;
   const preset = sKey ? STATES[sKey] : null;
-  let icon = ICONS.includes(qs.get("icon")) ? qs.get("icon") : "constellation";
+  let icon = ICONS.includes(qs.get("icon")) ? qs.get("icon") : "orbit";
   const fs = SIZES.includes(+qs.get("fs")) ? +qs.get("fs") : null;
 
   // ---- a linked state seeds the page's own stores before the app reads them ----
