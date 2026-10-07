@@ -700,8 +700,9 @@ body.dags canvas, body.dags #tip, body.dags #panel { visibility: hidden; }
 #dg #catalog { flex: 1; min-height: 0; padding-bottom: 16px; --grid: 18px minmax(calc(110px * var(--fs)), 1fr) minmax(150px, 1.5fr) minmax(calc(120px * var(--fs)), 1fr) minmax(calc(90px * var(--fs)), .7fr) minmax(calc(100px * var(--fs)), .8fr) 0; }
 #dg .thead, #dg .trow { display: grid; grid-template-columns: var(--grid); align-items: center; column-gap: 12px; }
 #dg .thead { position: sticky; top: 0; z-index: 3; padding: 0 12px 6px; font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); background: var(--bg0); }
-#dg .trow { position: relative; box-sizing: border-box; min-height: 40px; margin-top: 7px; padding: 0 12px; border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
+#dg .trow { position: relative; box-sizing: border-box; min-height: 40px; margin-top: 7px; padding: 0 12px; border-radius: 7px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); cursor: pointer; }
 #dg .trow:hover { border-color: color-mix(in srgb, var(--slate) 30%, transparent); }
+#dg .trow:focus-visible { outline: 0; border-color: var(--agent); }
 #dg .trow.startable { padding-right: calc(max(30px, 30px * var(--fs)) + 12px); }
 #dg .trow > span, #dg .trow > svg { min-width: 0; }
 #dg .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
@@ -711,7 +712,7 @@ body.dags canvas, body.dags #tip, body.dags #panel { visibility: hidden; }
 #dg .last b.q { color: var(--run); }
 #dg .last .bad { color: var(--fail-text); }
 #dg .pool { color: var(--muted); font-size: calc(11px * var(--fs)); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#dg .tie { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: 3px; line-height: 15px; font-size: calc(10.5px * var(--fs));
+#dg .tie, #kbm .dgm .tie { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: 3px; line-height: 15px; font-size: calc(10.5px * var(--fs));
   color: var(--tc); background: color-mix(in srgb, var(--tc) 12%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 35%, transparent); }
 #dg .none { color: var(--ghost); }
 div#dg > .none { margin: 18px auto; font-size: calc(11px * var(--fs)); }
@@ -720,8 +721,34 @@ svg.dstrip .e { stroke: var(--faint); stroke-width: .8; }
 svg.dstrip .e.hot { stroke: var(--run); }
 svg.dstrip .halo { opacity: .22; }
 svg.dstrip text.one { fill: var(--slate); font-size: calc(9px * var(--fs)); }
+svg.dstrip.big { overflow: visible; }
+svg.dstrip.big .e { stroke-width: 1.2; }
+svg.dstrip.big text { fill: var(--slate); font-size: calc(10.5px * var(--fs)); text-anchor: middle; }
+svg.dstrip.big text.hot { fill: var(--run-text); }
+.orb.big { width: calc(11px * var(--fs)); height: calc(11px * var(--fs)); }
 .dtoast { position: absolute; z-index: 5; right: 0; bottom: 18px; max-width: 60%; padding: 7px 12px; border-radius: 8px; background: var(--pop); border: 1px solid color-mix(in srgb, var(--slate) 30%, transparent);
   box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow) 50%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--ink); }
+/* The DAG modal: the task modal's frame, links, refusal box and Start button. Its own are one column with Run now in a footer, the chart,
+   the queue slots and the tie rows. */
+#kbm .modal.tv.dgm { width: min(980px, calc(100vw - 40px)); height: auto; max-height: min(86vh, 860px); }
+#kbm .dgm .tvhead { padding: 18px 54px 14px 26px; }
+#kbm .dgm h2 { display: flex; align-items: center; gap: 10px; margin: 0; padding-right: 0; }
+#kbm .dgm .tvbody { display: flex; flex-direction: column; gap: 20px; padding: 18px 26px 26px; }
+/* the page never scrolls sideways: a chart wider than the modal scales down to fit it */
+#kbm .dgm .chart { padding: 6px 0 2px; }
+#kbm .dgm .chart svg { display: block; max-width: 100%; height: auto; }
+#kbm .dgm .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11px * var(--fs)); }
+#kbm .dgm b.hot { color: var(--run-text); font-weight: 400; } #kbm .dgm b.q { color: var(--run); font-weight: 400; } #kbm .dgm .bad { color: var(--fail-text); }
+#kbm .dgm .slots { display: inline-flex; align-items: center; gap: 4px; }
+#kbm .dgm .slots i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+#kbm .dgm .slots i.on { background: var(--run); box-shadow: 0 0 6px var(--run); }
+#kbm .dgm .slots span { margin-left: 6px; }
+#kbm .dgm .tierow { display: flex; gap: 10px; align-items: baseline; }
+#kbm .dgm .tierow .tie { flex: none; max-width: 45%; }
+#kbm .dgm .tvfoot { flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 26px; border-top: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
+#kbm .dgm .tvfoot .startbtn { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-text); font-size: calc(11.5px * var(--fs)); white-space: nowrap; }
+#kbm .dgm .tvfoot .startbtn:hover, #kbm .dgm .tvfoot .startbtn:focus-visible { background: color-mix(in srgb, var(--ok) 22%, transparent); }
+#kbm .dgm .tvfoot .startbtn:disabled { opacity: .4; cursor: default; background: color-mix(in srgb, var(--ok) 12%, transparent); }
 #legend svg .e { stroke: var(--faint); stroke-width: .8; }
 #legend svg .hollow { fill: var(--pop); stroke: var(--faint); stroke-width: .8; }
 #legend svg .ring { fill: none; stroke: var(--agent); stroke-width: .7; }

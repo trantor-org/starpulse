@@ -110,8 +110,10 @@ export function took(a: number, b: number) {
 }
 
 /** Steps placed by depth (longest path from a root): one column per depth, a wide fan folded into a small cluster of `rows`-high
- *  sub-columns `sub` apart, the columns spread `gap` apart at most so the whole fits `w`. */
-export function place(steps: DagStep[], w: number, h: number, pad: number, rows: number, sub: number, gap: number, gy: number) {
+ *  sub-columns `sub` apart, the columns spread `gap` apart at most so the whole fits `w`. With `px` (a label's width per character)
+ *  each gap first makes room for its two columns' names: in full beside a stacked column, and in half between two single steps,
+ *  whose names then alternate above and below (`up`). */
+export function place(steps: DagStep[], w: number, h: number, pad: number, rows: number, sub: number, gap: number, gy: number, px = 0) {
   const by = Object.fromEntries(steps.map((x) => [x.name, x]));
   const depth: Record<string, number> = {};
   const dep = (n: string, seen = new Set<string>()): number => {
@@ -124,13 +126,32 @@ export function place(steps: DagStep[], w: number, h: number, pad: number, rows:
   const cols: string[][] = [];
   for (const x of steps) (cols[depth[x.name]] ??= []).push(x.name);
   const span = cols.map((c) => (Math.ceil(c.length / rows) - 1) * sub);
-  const extra = Math.max(0, w - 2 * pad - span.reduce((a, b) => a + b, 0) - sub * (cols.length - 1)) / Math.max(1, cols.length - 1);
-  const gx = Math.min(sub + extra, Math.max(sub, gap));
+  const lw = cols.map((c) => px * Math.max(...c.map((n) => n.length)));
+  const lone = (d: number) => cols[d].length === 1;
+  const floor = cols.slice(1).map((_, i) => !px ? sub : lone(i) && lone(i + 1) ? Math.max(9.5 * px, (lw[i] + lw[i + 1]) / 4 + 8) : (lw[i] + lw[i + 1]) / 2 + 14);
+  const extra = Math.max(0, w - 2 * pad - span.reduce((a, b) => a + b, 0) - floor.reduce((a, b) => a + b, 0)) / Math.max(1, floor.length);
+  const gx = floor.map((f) => f + Math.min(extra, Math.max(0, gap - f)));
+  const alt = !!px && gx.some((g, i) => lone(i) && lone(i + 1) && g < (lw[i] + lw[i + 1]) / 2 + 8);
   const at: Record<string, { x: number; y: number }> = {};
   let x0 = pad;
   cols.forEach((c, d) => {
     c.forEach((name, i) => (at[name] = { x: x0 + Math.floor(i / rows) * sub, y: h / 2 + ((i % rows) - (Math.min(rows, c.length - Math.floor(i / rows) * rows) - 1) / 2) * gy }));
-    x0 += span[d] + gx;
+    x0 += span[d] + (gx[d] ?? 0);
   });
-  return { at, cols: cols.length, span: x0 - gx + pad };
+  const up = (name: string) => alt && lone(depth[name]) && depth[name] % 2 === 1;
+  return { at, up, cols: cols.length, wide: Math.max(1, ...cols.map((c) => Math.min(rows, c.length))), span: x0 + pad };
 }
+
+/** The modal's chart: a name `px` wide a character, a folded fan's sub-columns a longest name apart, at most five steps high. */
+export function bigPlace(steps: DagStep[], w: number, h: number, px: number) {
+  const lw = px * Math.max(0, ...steps.map((x) => x.name.length));
+  return place(steps, w, h, Math.max(44, lw / 2 + 6), 5, Math.max(92, lw + 16), 120, 40, px);
+}
+
+/** The modal chart's height: the five-high fan of a folded cluster, or room for one row of steps and their names. */
+export const chartHeight = (wide: number) => Math.max(110, 74 + (wide - 1) * 40);
+
+/** Why Run now is refused for a DAG, or null when it may start. Only a run-safe DAG has the button; the modal shows it disabled with this reason. */
+export const refusal = (r: Row, starting = false): string | null =>
+  r.phase === "running" ? "Already running" : r.phase === "queued" ? "Already queued" : !r.runSafe ? "Not run-safe: this DAG changes live state, so StarPulse will not start it. Run it from Dagu."
+    : starting ? "Starting…" : null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dagData, filterRows, order, place, rows, ties, type DagData } from "./dags";
+import { bigPlace, chartHeight, dagData, filterRows, order, place, refusal, rows, ties, type DagData } from "./dags";
 import type { Dag, DagStep, Machine, RunStatus } from "./types";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status });
@@ -131,6 +131,63 @@ describe("a DAG's steps as a constellation", () => {
     expect(p.at.c.x).toBeLessThan(p.at.d.x);
     expect(p.at.b.y).not.toBe(p.at.c.y);
     expect(p.span).toBeLessThanOrEqual(220);
+  });
+});
+
+describe("the modal's step chart", () => {
+  const PX150 = 6.1 * 1.5;
+  /** Every pair of names that sit on one line of the chart: a name's width is `PX150` a character, centred on its step. */
+  const overprints = (steps: DagStep[], p: ReturnType<typeof place>) => {
+    const h = chartHeight(p.wide);
+    const line = (n: string) => Math.round(p.at[n].y + (p.up(n) ? -14 : 22));
+    const half = (n: string) => (PX150 * n.length) / 2;
+    const names = steps.map((s) => s.name);
+    return names.flatMap((a, i) => names.slice(i + 1).filter((b) => line(a) === line(b) && Math.abs(p.at[a].x - p.at[b].x) < half(a) + half(b)).map((b) => `${a} / ${b}`))
+      .concat(names.filter((n) => line(n) < 0 || line(n) > h));
+  };
+
+  it("folds a fan wider than five into sub-columns of five, so a wide fan stays five steps high", () => {
+    const fan = Array.from({ length: 12 }, (_, i) => step(`child-${i}`, ["root"]));
+    const steps = [step("root"), ...fan];
+    const p = bigPlace(steps, 0, chartHeight(5) - 12, PX150);
+    const xs = new Set(fan.map((s) => p.at[s.name].x));
+
+    expect(p.wide).toBe(5);
+    expect(xs.size).toBe(3);
+    expect(p.cols).toBe(2);
+    expect(p.at.root.x).toBeLessThan(Math.min(...xs));
+    expect(overprints(steps, p)).toEqual([]);
+  });
+
+  it("spaces adjacent single-step columns so their names at 150% text never overprint, alternating them above and below when they must share a line", () => {
+    const chain = ["fetch", "scan", "classify-the-changes", "fix", "open-pull-request", "watch", "merge"];
+    const steps = chain.map((n, i) => step(n, i ? [chain[i - 1]] : []));
+    const tight = bigPlace(steps, 0, chartHeight(1) - 12, PX150), wide = bigPlace(steps, 1400, chartHeight(1) - 12, PX150);
+
+    expect(tight.wide).toBe(1);
+    expect(overprints(steps, tight)).toEqual([]);
+    expect(overprints(steps, wide)).toEqual([]);
+    expect(steps.some((s) => tight.up(s.name))).toBe(true);
+    expect(wide.span).toBeLessThanOrEqual(1400);
+    expect(tight.span).toBeLessThan(wide.span);
+  });
+
+  it("keeps names beside a stacked column clear of it", () => {
+    const steps = [step("a"), step("left-branch", ["a"]), step("right-branch", ["a"]), step("join-them-up", ["left-branch", "right-branch"]), step("ship", ["join-them-up"])];
+    const p = bigPlace(steps, 0, chartHeight(2) - 12, PX150);
+
+    expect(overprints(steps, p)).toEqual([]);
+  });
+});
+
+describe("why Run now is refused", () => {
+  const row = (name: string) => rows(data).find((r) => r.d.name === name)!;
+  it("names a running or queued DAG, a DAG that is not run-safe and a run being started, and is silent for a run-safe idle DAG", () => {
+    expect(refusal(row("runs/deploy"))).toBe("Already running");
+    expect(refusal(row("runs/backup"))).toBe("Already queued");
+    expect(refusal(row("runs/triage"))).toMatch(/^Not run-safe/);
+    expect(refusal(row("runs/pr-watch"), true)).toBe("Starting…");
+    expect(refusal(row("runs/pr-watch"))).toBeNull();
   });
 });
 
