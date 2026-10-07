@@ -328,7 +328,7 @@
   .cipanel .ev .sha { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 400; color: #cbd5e1; } .cipanel .ev .k { color: var(--muted); }
   #kb .col .cicol { position: relative; display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 0 12px 8px; font-size: calc(11.5px * var(--fs)); cursor: default; }
   #kb .col .cicol:focus-visible { outline: 1px solid #a78bfa; outline-offset: -2px; border-radius: 4px; }
-  #kb .col .cicol .pop { display: none; position: absolute; z-index: 20; top: 100%; left: 8px; right: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(10,16,30,.98); border: 1px solid rgba(148,163,184,.22); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+  #kb .col .cicol .pop { display: none; position: absolute; z-index: 20; top: 100%; left: 8px; width: min(340px, calc(100vw - 32px)); padding: 8px 10px; border-radius: 8px; background: rgba(10,16,30,.98); border: 1px solid rgba(148,163,184,.22); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
   #kb .col .cicol:hover .pop, #kb .col .cicol:focus-within .pop { display: block; }
   #kb .col .cicol .pop .cistate, #kb .col .cicol .pop { max-width: none; } #kb .col .cicol .pop .r { cursor: pointer; } #kb .col .cicol .pop .r:hover .tt { text-decoration: underline; }
   #cicap { position: fixed; z-index: 8; top: 64px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 5px 12px; border-radius: 8px; cursor: pointer;
