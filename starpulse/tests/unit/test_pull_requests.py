@@ -4,6 +4,7 @@ import subprocess
 import threading
 from collections.abc import Collection
 from datetime import UTC, datetime
+from functools import partial
 
 import pytest
 
@@ -32,13 +33,24 @@ def _node(
     merged_at: str | None = None,
     mergeable: str = "MERGEABLE",
     suites: tuple[dict, ...] = (),
+    files: tuple[str, ...] = (),
+    pinned: tuple[str | None, ...] = (),
 ) -> dict:
-    """A GraphQL `pullRequest` node: its head commit's check rollup, review threads' resolved flags and merge facts."""
+    """A GraphQL `pullRequest` node: head check rollup, review threads' resolved flags, merge facts and changed files.
+
+    `pinned` is the commit each asked-for path points at in the merge commit, as `pin<i>` aliases.
+    """
     return {
         "number": number,
         "merged": merged,
         "mergedAt": merged_at,
-        "mergeCommit": {"oid": merge_commit} if merge_commit else None,
+        "mergeCommit": {
+            "oid": merge_commit,
+            **{f"pin{i}": {"oid": oid} if oid else None for i, oid in enumerate(pinned)},
+        }
+        if merge_commit
+        else None,
+        "files": {"nodes": [{"path": path} for path in files]},
         "createdAt": OPENED_AT,
         "mergeable": mergeable,
         "commits": {
@@ -96,6 +108,7 @@ def _record(
     stale: bool = False,
     merge_sha: str | None = None,
     merged_at: str | None = None,
+    files: list[str] | None = None,
 ) -> dict:
     return {
         "number": number,
@@ -104,6 +117,7 @@ def _record(
         "merged": merged,
         "merge_sha": merge_sha,
         "merged_at": merged_at,
+        "files": files or [],
         "threads": threads,
         "stale": stale,
     }
@@ -255,7 +269,9 @@ class _Gh:
         self.nodes = nodes
         self.asked: list[tuple[str, list[int]]] = []
 
-    def __call__(self, repo: str, numbers: list[int]) -> dict:
+    def __call__(
+        self, repo: str, numbers: list[int], paths: tuple[str, ...] = (), pointers: tuple[str, ...] = ()
+    ) -> dict:
         self.asked.append((repo, numbers))
         return self.nodes
 
@@ -334,7 +350,7 @@ OTHER = "https://github.com/other-org/tools/pull/9"
 def _read_except(unreadable: set[str]):
     """A `read` that answers every repository but `unreadable`, which raise as an unreachable GitHub does."""
 
-    def read(repo: str, numbers: list[int]) -> dict:
+    def read(repo: str, numbers: list[int], paths: tuple[str, ...] = (), pointers: tuple[str, ...] = ()) -> dict:
         if repo in unreadable:
             raise GhUnavailableError(f"{repo} is not readable")
         return {f"p{number}": _node(number, rollup="SUCCESS") for number in numbers}
@@ -403,6 +419,7 @@ def test_one_gh_graphql_request_asks_for_every_number_in_the_repository(monkeypa
         "query=query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) "
         "{ p1: pullRequest(number: 1) { ...Pull } p2: pullRequest(number: 2) { ...Pull } } }"
         "\nfragment Pull on PullRequest {\n  number\n  merged\n  mergedAt\n  mergeCommit { oid }\n"
+        "  files(first: 100) { nodes { path } }\n"
         "  createdAt\n  mergeable\n"
         "  commits(last: 100) { nodes { commit { oid statusCheckRollup { state } "
         "checkSuites(first: 20) { nodes { status conclusion createdAt updatedAt workflowRun { runAttempt } } } } } }\n"
@@ -587,3 +604,159 @@ def test_a_refresh_github_cannot_answer_hands_the_ci_trail_nothing_new() -> None
     PullRequests(_feed(proj_7=[FIRST]), github, trail=trail).refresh()
 
     assert trail.recorded == []
+
+
+def test_a_prs_record_carries_the_paths_it_changed() -> None:
+    gh = _Gh({"p1750": _node(1750, rollup="SUCCESS", files=("lib/a.py", "docs/b.md"))})
+
+    assert fetch([FIRST], gh)[FIRST]["files"] == ["lib/a.py", "docs/b.md"]
+
+
+def test_a_merged_prs_record_carries_the_merge_commit_from_the_same_answer_as_its_files() -> None:
+    gh = _Gh({"p1750": _node(1750, rollup="SUCCESS", merged=True, merge_commit=SHA, merged_at=MERGED_AT, files=("a",))})
+
+    record = fetch([FIRST], gh)[FIRST]
+
+    assert (record["merge_sha"], record["files"]) == (SHA, ["a"])
+
+
+def test_a_pr_with_no_changed_files_carries_an_empty_list() -> None:
+    assert fetch([FIRST], _Gh({"p1750": _node(1750, rollup=None)}))[FIRST]["files"] == []
+
+
+def test_the_query_reads_the_pointer_each_merge_commit_pins_and_the_history_of_each_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands = _run(monkeypatch, stdout='{"data": {"repository": {}}}')
+
+    read_repository("acme/widgets", [1], paths=("skills", "domains/unraid"), pointers=("ab" * 20,))
+
+    query = commands[0][4]
+    assert 'mergeCommit { oid pin0: file(path: "skills") { oid } pin1: file(path: "domains/unraid") { oid } }' in query
+    assert (
+        f'h0: object(oid: "{"ab" * 20}") {{ ... on Commit {{ history(first: 100) '
+        "{ pageInfo { hasNextPage } nodes { oid committedDate } } } }"
+    ) in query
+
+
+def test_a_pointer_that_is_not_a_commit_id_is_never_put_in_the_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    commands = _run(monkeypatch, stdout='{"data": {"repository": {}}}')
+
+    read_repository("acme/widgets", [1], pointers=('x") { y } #',))
+
+    assert "object(oid" not in commands[0][4]
+
+
+POINTER, CHILD_SHA, CHILD_AT = "d0" * 20, "5" * 40, "2026-10-06T20:00:00Z"
+CHILD = "https://github.com/acme/skills/pull/7"
+PINNED = (Repo(name="skills", path="skills", applied_by="pin-bump"),)
+
+
+def _history(*commits: tuple[str, str], more: bool = False) -> dict:
+    """A GraphQL `Commit` node's `history` page, newest first."""
+    return {
+        "history": {
+            "pageInfo": {"hasNextPage": more},
+            "nodes": [{"oid": oid, "committedDate": date} for oid, date in commits],
+        }
+    }
+
+
+class _Graph:
+    """Stands in for `gh api graphql`: widgets merge `SHA` pins POINTER at skills; the skills merge is CHILD_SHA.
+
+    `history` is what POINTER's commit history page holds. With `batched=False` nothing but status comes back, as
+    before the query read pointers and history.
+    """
+
+    def __init__(self, history: dict | None, *, batched: bool = True) -> None:
+        self.history, self.batched = history, batched
+        self.asked: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = []
+
+    def __call__(
+        self, repo: str, numbers: list[int], paths: tuple[str, ...] = (), pointers: tuple[str, ...] = ()
+    ) -> dict:
+        self.asked.append((repo, paths, pointers))
+        if repo == "acme/widgets":
+            pinned = (POINTER,) if self.batched else ()
+            node = _node(1750, rollup="SUCCESS", merged=True, merge_commit=SHA, merged_at=MERGED_AT, pinned=pinned)
+            return {"p1750": node}
+        node = _node(7, rollup="SUCCESS", merged=True, merge_commit=CHILD_SHA, merged_at=CHILD_AT)
+        return {"p7": node, "h0": self.history} if self.batched else {"p7": node}
+
+
+def _refresh_pinned(graph: _Graph, monkeypatch: pytest.MonkeyPatch) -> tuple[dict, list[str]]:
+    """One refresh over a widgets PR and a skills PR; returns the skills record and the REST endpoints asked."""
+    rest: list[str] = []
+    monkeypatch.setattr(subprocess, "run", _gh_pins(rest))
+    feed = _feed(proj_7=[FIRST], proj_8=[CHILD])
+    PullRequests(feed, partial(fetch, read=graph, repos=PINNED), repos=PINNED, pins=GitHub()).refresh()
+    return _pulls(feed)["PROJ-8"][0], rest
+
+
+def test_one_refresh_makes_one_graphql_read_per_repository_and_no_rest_read_when_the_pointer_history_holds_the_merge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _Graph(
+        _history((POINTER, "2026-10-07T01:00:00Z"), (CHILD_SHA, CHILD_AT), ("e1" * 20, "2026-10-06T10:00:00Z"))
+    )
+
+    record, rest = _refresh_pinned(graph, monkeypatch)
+
+    assert [repo for repo, _, _ in graph.asked] == ["acme/widgets", "acme/skills"]
+    assert rest == []
+    assert record["applied_by"] == SHA
+
+
+def test_the_parent_is_asked_for_the_pinned_paths_and_the_child_for_the_pointers_it_returned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _Graph(_history((CHILD_SHA, CHILD_AT)))
+
+    _refresh_pinned(graph, monkeypatch)
+
+    assert graph.asked == [("acme/widgets", ("skills",), ()), ("acme/skills", (), (POINTER,))]
+
+
+def test_the_batched_answers_pick_the_parent_merge_the_rest_reads_pick(monkeypatch: pytest.MonkeyPatch) -> None:
+    batched, _ = _refresh_pinned(_Graph(_history((CHILD_SHA, CHILD_AT))), monkeypatch)
+    rest_only, asked = _refresh_pinned(_Graph(None, batched=False), monkeypatch)
+
+    assert batched["applied_by"] == rest_only["applied_by"] == SHA
+    assert len(asked) == 2
+
+
+def test_a_child_merge_older_than_the_history_page_is_compared_by_rest_and_nothing_else_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _Graph(_history((POINTER, "2026-10-07T01:00:00Z"), ("e1" * 20, "2026-10-06T21:00:00Z"), more=True))
+
+    record, rest = _refresh_pinned(graph, monkeypatch)
+
+    assert rest == [f"repos/acme/skills/compare/{CHILD_SHA}...{POINTER}"]
+    assert record["applied_by"] == SHA
+
+
+def test_a_child_merge_newer_than_the_pointers_history_page_is_not_in_it_and_asks_rest_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _Graph(_history(("e1" * 20, "2026-10-06T19:30:00Z"), ("e2" * 20, "2026-10-06T19:00:00Z"), more=True))
+
+    record, rest = _refresh_pinned(graph, monkeypatch)
+
+    assert rest == []
+    assert record["applied_by"] is None
+
+
+def test_a_second_refresh_reads_the_same_answers_from_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    graph = _Graph(_history((CHILD_SHA, CHILD_AT)))
+    rest: list[str] = []
+    monkeypatch.setattr(subprocess, "run", _gh_pins(rest))
+    feed = _feed(proj_7=[FIRST], proj_8=[CHILD])
+    source = PullRequests(feed, partial(fetch, read=graph, repos=PINNED), repos=PINNED, pins=GitHub())
+
+    source.refresh()
+    source.refresh()
+
+    assert rest == []
+    assert _pulls(feed)["PROJ-8"][0]["applied_by"] == SHA

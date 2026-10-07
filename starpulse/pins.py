@@ -3,7 +3,8 @@
 A `[[repos]]` entry says a repository's merges reach live state through the parent's pin bump: the parent merge whose
 submodule pointer first contains the child's merge commit. `link` finds that merge; the pointer and containment
 reads are GitHub calls, so `GitHub` memoizes them (a commit's pointer and a pair of commits never change) and the
-caller runs `link` on the timer that reads pull requests, never under the feed's lock.
+caller runs `link` on the timer that reads pull requests, never under the feed's lock. The per-repository GraphQL read
+that answers each pull request's status also answers these (`learn`); REST is the fallback for what it could not.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from typing import Protocol
 
 from starpulse.config import Repo
 
-__all__ = ["GitHub", "Pins", "link"]
+__all__ = ["GitHub", "Pins", "contained", "link"]
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,25 @@ def link(
     return out
 
 
+def contained(sha: str, merged_at: str, history: Mapping | None) -> bool | None:
+    """Whether a pointer's commit contains `sha`, a merge made at `merged_at`, as its GraphQL `history` page answers it.
+
+    `history` is the pointer `Commit` node, `{history: {pageInfo: {hasNextPage}, nodes: [{oid, committedDate}]}}`,
+    newest first, or None when GitHub could not read the pointer. The merge is in the page or not; a page that
+    holds the whole history, or reaches back past the merge's time, rules it out. None means the merge is older than
+    a full page and only a `compare` can say.
+    """
+    page = (history or {}).get("history")
+    if not page or not page["nodes"]:
+        return None
+    nodes = page["nodes"]
+    if any(node["oid"] == sha for node in nodes):
+        return True
+    if not page["pageInfo"]["hasNextPage"] or merged_at > min(node["committedDate"] for node in nodes):
+        return False
+    return None
+
+
 class GitHub:
     """The pointer and containment reads `link` needs, through `gh`; an answer is kept, an unreadable one is not."""
 
@@ -94,6 +114,13 @@ class GitHub:
         if key not in self._reaches and (status := _api(f"repos/{repo}/compare/{sha}...{pointer}", ".status")):
             self._reaches[key] = status in _CONTAINS
         return self._reaches.get(key, False)
+
+    def learn(self, pointers: Mapping[tuple[str, str, str], str], reaches: Mapping[tuple[str, str, str], bool]) -> None:
+        """Keep the answers a batched GraphQL read already gave, so `pointer` and `reaches` need no REST call for them."""
+        for key, found in pointers.items():
+            self._pointers.setdefault(key, found)
+        for key, contains in reaches.items():
+            self._reaches.setdefault(key, contains)
 
     def answers(self) -> dict[str, list[list]]:
         """Every answer kept, as JSON a saved Board can hold; `restore` takes it back."""
