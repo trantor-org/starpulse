@@ -12,6 +12,7 @@ import queue
 import re
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
@@ -65,6 +66,8 @@ CRITERIA_INTERVAL = criteria.CACHE_SECONDS
 WAITING, DONE = "waiting", "done"
 #: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
 LEDGER_WINDOW = 86400.0
+#: How many published changes the feed keeps for a page connecting on a snapshot older than the feed.
+_SENT_LOG = 512
 
 
 def task_agent(task: BoardTask) -> dict:
@@ -192,6 +195,15 @@ class BoardFeed:
         self._strip: dict | None = None
         self._pins: list[dict] = []
         self._lock = threading.RLock()
+        #: Counts every publish, suppressed or not: a snapshot held at this number is out of date once it moves.
+        self._rev = 0
+        #: Counts the publishes put on subscribers' queues.
+        self._sent = 0
+        #: The last publishes put on subscribers' queues, each with its count, so a page handed an older snapshot is told
+        #: the changes that snapshot lacks.
+        self._sent_log: deque[tuple[int, str, dict]] = deque(maxlen=_SENT_LOG)
+        #: Set by every publish, for whoever rebuilds a held snapshot on change.
+        self.revised = threading.Event()
         #: Held for a whole Ledger build, which runs outside `_lock`, so builds never overlap; taken before `_lock`, never under it.
         self._building = threading.Lock()
         self._window_s = window_s
@@ -949,10 +961,15 @@ class BoardFeed:
         return "; ".join(f"{instance}: {error}" for instance, error in self._runs_errors.items()) or None
 
     def _publish(self, kind: str, data: dict) -> None:
-        if kind in ("task", "move") and self._replaying():
-            return  # a replayed step is history, not a move to draw: the snapshot once the stream is read carries its result
-        for subscriber in self._subscribers:
-            subscriber.put((kind, data))
+        with self._lock:
+            self._rev += 1
+            self.revised.set()
+            if kind in ("task", "move") and self._replaying():
+                return  # a replayed step is history, not a move to draw: the snapshot once the stream is read carries its result
+            self._sent += 1
+            self._sent_log.append((self._sent, kind, data))
+            for subscriber in self._subscribers:
+                subscriber.put((kind, data))
 
     def subscribe(self) -> tuple[dict[str, Any], queue.Queue]:
         """The snapshot now and the queue of every change after it."""
@@ -960,6 +977,28 @@ class BoardFeed:
             subscriber: queue.Queue = queue.Queue()
             self._subscribers.append(subscriber)
             return self.snapshot(), subscriber
+
+    @property
+    def rev(self) -> int:
+        """How many publishes the feed has made; a snapshot taken at another number is out of date."""
+        return self._rev
+
+    def snapshot_at(self) -> tuple[int, int, dict[str, Any]]:
+        """The snapshot with the `rev` and the publish count it was taken at, as one reading."""
+        with self._lock:
+            return self._rev, self._sent, self.snapshot()
+
+    def watch_from(self, sent: int) -> tuple[list[tuple[str, dict]], queue.Queue] | None:
+        """The changes published after the `sent`-th, and the queue of every change after those: what a page needs on a
+        snapshot taken at that count. None when the feed no longer holds them all.
+        """
+        with self._lock:
+            missed = [(kind, data) for count, kind, data in self._sent_log if count > sent]
+            if len(missed) != self._sent - sent:
+                return None
+            subscriber: queue.Queue = queue.Queue()
+            self._subscribers.append(subscriber)
+            return missed, subscriber
 
     def unsubscribe(self, subscriber: queue.Queue) -> None:
         with self._lock:
