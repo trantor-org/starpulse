@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BOARD, pathKey } from "../../render/levels";
 import { ledgerLevel, pathLedger } from "../../render/levels";
-import { freshKeys, ledgerOf, markOf, optionalSteps, shortApplied, statusLine, worst, type LineCtx, type Tie } from "./ledger";
+import { freshKeys, ledgerOf, markOf, optionalSteps, shortApplied, statusLine, tiesOf, worst, type LineCtx, type Tie } from "./ledger";
 import type { LedgerRow, LedgerRun, Snapshot } from "../../api";
 
 const states = ["ready", "in_progress", "review", "done"].map((id, i) => ({ id, name: id === "in_progress" ? "In Progress" : id[0].toUpperCase() + id.slice(1), initial: i === 0, final: false }));
@@ -24,6 +24,15 @@ const snap = (): Pick<Snapshot, "flows" | "cues"> => ({
     { dag: "dagu/graph-refresh", event: "MERGED", state: "done", on: "push to main", resolves: "next" },
     { dag: "dagu/notifier", event: "CLAIM", state: "in_progress", on: "each claim", resolves: "next" },
   ],
+});
+
+describe("the DAGs tied to an event", () => {
+  it("carry the grace a cue declares for its run to start, and none for a writer", () => {
+    const s = snap();
+    s.cues![0] = { ...s.cues![0], grace: 120 };
+
+    expect(tiesOf(s, "MERGED").map((t) => [t.dag, t.grace])).toEqual([["dagu/main-follow", null], ["dagu/apply-on-merge", 120], ["dagu/graph-refresh", null]]);
+  });
 });
 
 describe("a Board transition's Ledger level", () => {
@@ -66,9 +75,9 @@ describe("a Ledger's frame", () => {
 
     expect([l.event, l.from, l.to]).toEqual(["MERGED", "review", "done"]);
     expect(l.ties).toEqual([
-      { dag: "dagu/main-follow", role: "writer", on: "bin/board_reconcile_merged.py", resolves: null },
-      { dag: "dagu/apply-on-merge", role: "cue", on: "push to main", resolves: "forced" },
-      { dag: "dagu/graph-refresh", role: "cue", on: "push to main", resolves: "next" },
+      { dag: "dagu/main-follow", role: "writer", on: "bin/board_reconcile_merged.py", resolves: null, grace: null },
+      { dag: "dagu/apply-on-merge", role: "cue", on: "push to main", resolves: "forced", grace: null },
+      { dag: "dagu/graph-refresh", role: "cue", on: "push to main", resolves: "next", grace: null },
     ]);
   });
 
@@ -91,8 +100,8 @@ const iso = (sec: number) => new Date(sec * 1000).toISOString().replace(/\.\d+Z$
 const hm = (sec: number) => `t${sec % 1000}`;
 const run = (over: Partial<LedgerRun> = {}): LedgerRun => ({ runId: "r", status: "succeeded", startedAt: iso(1000), finishedAt: iso(1042), steps: {}, step: "", inferred: false, ambiguous: 0, ...over });
 const merge = (over: Partial<LedgerRow> = {}): LedgerRow => ({ key: "a1b2c3d4e5", at: 990, tasks: ["TASK-1"], sha: "a1b2c3d4e5", pr: { repo: "trantor", number: 7, url: "u" }, runs: {}, fails: {}, pinned: false, ...over });
-const writer: Tie = { dag: "dagu/main-follow", role: "writer", on: "push", resolves: null };
-const cue: Tie = { dag: "dagu/apply-on-merge", role: "cue", on: "push", resolves: "forced" };
+const writer: Tie = { dag: "dagu/main-follow", role: "writer", on: "push", resolves: null, grace: null };
+const cue: Tie = { dag: "dagu/apply-on-merge", role: "cue", on: "push", resolves: "forced", grace: null };
 const ctx = (over: Partial<LineCtx> = {}): LineCtx => ({ event: "MERGED", now: 1100, hm, optional: new Set(), by: () => undefined, ...over });
 
 describe("a run's mark", () => {
@@ -135,6 +144,20 @@ describe("a merge row's status line", () => {
 
   it("says a merge no run has paired with yet has no run", () => {
     expect(statusLine(merge(), cue, undefined, ctx())).toEqual({ main: "no run yet", sub: "", state: null, mark: "keyed" });
+  });
+
+  it("says a cue that has not started once its grace window since the merge has passed is overdue, not waiting", () => {
+    const timed: Tie = { ...cue, grace: 300 };
+
+    expect(statusLine(merge(), timed, undefined, ctx({ now: 990 + 300 }))).toMatchObject({ main: "no run yet", state: null });
+    expect(statusLine(merge(), timed, undefined, ctx({ now: 990 + 301 }))).toEqual({ main: "overdue", sub: "no run in 5:01", state: "overdue", mark: "keyed" });
+    // a writer has no grace, and a cue's own run, however late, is that run's state
+    expect(statusLine(merge(), writer, undefined, ctx({ now: 99999 })).state).toBeNull();
+    expect(statusLine(merge(), timed, run({ startedAt: iso(5000), finishedAt: iso(5042) }), ctx({ now: 99999 })).state).toBe("succeeded");
+  });
+
+  it("keeps another repository's unapplied merge waiting however old, since its cue starts at the pin bump", () => {
+    expect(statusLine(merge({ appliedBy: null }), { ...cue, grace: 300 }, undefined, ctx({ now: 99999 }))).toMatchObject({ main: "waits for its pin bump", state: "waiting" });
   });
 
   it("says another repository's merge is applied by its pin bump, once a parent merge includes it, and waits for one before", () => {

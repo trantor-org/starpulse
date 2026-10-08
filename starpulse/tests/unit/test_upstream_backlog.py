@@ -673,7 +673,7 @@ def test_a_machines_cues_are_the_boards_cues_beside_the_lane_their_event_reaches
     built = board({"command": "backlog", "machine": "board.yaml"}, tmp_path)
 
     assert built.cues(lambda name: name) == [
-        {"event": "to_done", "dag": "dagu/apply-on-merge", "on": "push to main", "resolves": "forced", "state": "done"}
+        {"event": "to_done", "dag": "dagu/apply-on-merge", "on": "push to main", "resolves": "forced", "grace": 300, "state": "done"}
     ]
 
 

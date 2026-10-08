@@ -5,9 +5,9 @@ import type { ContractCheck, ContractReport, LedgerFail, LedgerRow, LedgerRun } 
 
 const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
 const ties: Tie[] = [
-  { dag: "main-follow", role: "writer", on: "push", resolves: null },
-  { dag: "apply-on-merge", role: "cue", on: "each merge", resolves: "forced" },
-  { dag: "graph-refresh", role: "cue", on: "each merge", resolves: "next" },
+  { dag: "main-follow", role: "writer", on: "push", resolves: null, grace: null },
+  { dag: "apply-on-merge", role: "cue", on: "each merge", resolves: "forced", grace: null },
+  { dag: "graph-refresh", role: "cue", on: "each merge", resolves: "next", grace: null },
 ];
 const run = (over: Partial<LedgerRun> = {}): LedgerRun => ({ runId: "r", status: "succeeded", startedAt: iso(1000), finishedAt: iso(1042), steps: { build: "succeeded", apply: "succeeded" }, step: "", inferred: false, ambiguous: 0, ...over });
 const fail = (over: Partial<LedgerFail> = {}): LedgerFail => ({ runId: "r", step: "apply", startedAt: iso(1000), finishedAt: iso(1042), resolves: "forced", resolved: null, ...over });
@@ -15,7 +15,7 @@ const row = (over: Partial<LedgerRow> = {}): LedgerRow => ({ key: "abc", at: 990
 const ctx = (over: Partial<PanelCtx> = {}): PanelCtx => ({
   event: "MERGED", from: "Review", to: "Done", ties,
   steps: { "main-follow": ["only"], "apply-on-merge": ["build", "apply"], "graph-refresh": ["index"] },
-  optional: {}, palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" }, now: 2000, hm: (s) => `t${s % 1000}`, by: () => undefined, task: (id) => `<a>${id}</a>`, ...over,
+  optional: {}, runnable: new Set(["apply-on-merge", "graph-refresh"]), palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" }, now: 2000, hm: (s) => `t${s % 1000}`, by: () => undefined, task: (id) => `<a>${id}</a>`, ...over,
 });
 
 describe("failHtml", () => {
@@ -79,6 +79,14 @@ describe("mergePanel's rerun control", () => {
 
     expect(html).toContain('<button class="run" data-rerun="apply-on-merge">↻ Force rerun apply-on-merge</button>');
     expect(html).not.toContain('data-rerun="graph-refresh"');
+  });
+
+  it("offers no Force rerun for a DAG that is not run-safe, since the server would answer 404, and says to rerun it from its runner", () => {
+    const html = mergePanel(failing, ctx({ runnable: new Set(["graph-refresh"]) }));
+
+    expect(html).not.toContain("data-rerun");
+    expect(html).toContain("apply-on-merge ✕ apply: unresolved, clears on a forced rerun");
+    expect(html).toContain("apply-on-merge is not run-safe: rerun it from its workflow runner");
   });
 
   it("offers none on a merge no run failed on", () => {

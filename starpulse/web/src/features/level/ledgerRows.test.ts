@@ -8,7 +8,7 @@ import { optionalSteps } from "./ledger";
 import { ledgerLevel } from "../../render/levels";
 import type { Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "../../api";
 
-const PALETTE: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185", aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155", waiting: "#c084fc" };
+const PALETTE: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185", aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155", waiting: "#c084fc", overdue: "#fb7185" };
 const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
 const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null })) });
 const machine = (): Machine => ({
@@ -16,7 +16,7 @@ const machine = (): Machine => ({
   transitions: [{ source: "review", target: "done", event: "MERGED" }],
   writers: { MERGED: [{ actor: "main-follow", trigger: "push" }] }, dagActors: ["main-follow"], mainLine: ["review", "done"],
 } as Machine);
-const cues: Cue[] = [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge", resolves: "forced" }];
+const cues: Cue[] = [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge", resolves: "forced", grace: 300 }];
 const run = (over: Partial<LedgerRun> = {}): LedgerRun => ({ runId: "r", status: "succeeded", startedAt: iso(1000), finishedAt: iso(1042), steps: { build: "succeeded", apply: "succeeded" }, step: "", inferred: false, ambiguous: 0, ...over });
 const row = (key: string, at: number, over: Partial<LedgerRow> = {}): LedgerRow => ({ key, at, tasks: [`TASK-${at}`], sha: key.padEnd(10, "0"), pr: { repo: "trantor", number: at, url: "u" }, runs: {}, fails: {}, pinned: false, ...over });
 
@@ -81,6 +81,19 @@ describe("drawRows", () => {
     expect(by("trantor #990 · aaa0000")).toBeDefined();
     expect([by("✓ 42 s").col, by("✕ apply · 42 s").col]).toEqual([expect.stringContaining("52,211,153"), expect.stringContaining("251,113,133")]);
     expect(by("MERGED t990")).toBeDefined();
+  });
+
+  it("draws a cue that has not started within its grace window as overdue in the failed colour, apart from the waiting of another repository's merge", () => {
+    const r = recorder(), rows = [row("old", 500), row("new", 990), row("other", 400, { appliedBy: null })];
+
+    drawRows(r.ink, frame(rows));
+
+    const over = r.texts.filter((t) => t.s === "overdue");
+    expect(over).toHaveLength(1);
+    expect(over[0].col).toContain("251,113,133");
+    expect(r.texts.filter((t) => t.s === "no run in 10:00")).toHaveLength(1);
+    expect(r.texts.filter((t) => t.s === "no run yet")).toHaveLength(3);
+    expect(r.texts.find((t) => t.s === "waits for its pin bump")!.col).toContain("192,132,252");
   });
 
   it("labels a row as the mockup does: time and task with its PR and commit after them, the task's title under them", () => {

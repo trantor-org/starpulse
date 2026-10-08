@@ -13,12 +13,14 @@ export interface Source {
   cues?: Cue[] | null;
 }
 
-/** A DAG tied to the event: the one that writes it (`on` its trigger) or a cue (`on` the occasion it runs, `resolves` how its failure clears). */
+/** A DAG tied to the event: the one that writes it (`on` its trigger) or a cue (`on` the occasion it runs, `resolves` how its failure clears, `grace` the seconds its run may take to start). */
 export interface Tie {
   dag: string;
   role: "writer" | "cue";
   on: string;
   resolves: "forced" | "next" | null;
+  /** Seconds after a merge a cue's run may take to start before the merge is overdue; null for a writer. */
+  grace: number | null;
 }
 
 export interface Ledger {
@@ -41,8 +43,8 @@ export function pathOf(snap: Source, event: string): [string, string] | null {
 /** The DAGs tied to an event: the runs workflows that write it, then each DAG a cue names, in the order the machine declares them. */
 export function tiesOf(snap: Source, event: string): Tie[] {
   const m = boardOf(snap), dags = new Set(m?.dagActors ?? []);
-  const ties: Tie[] = (m?.writers?.[event] ?? []).filter((w) => dags.has(w.actor)).map((w) => ({ dag: w.actor, role: "writer", on: w.trigger, resolves: null }));
-  for (const c of snap.cues ?? []) if (c.event === event && !ties.some((t) => t.dag === c.dag)) ties.push({ dag: c.dag, role: "cue", on: c.on, resolves: c.resolves ?? null });
+  const ties: Tie[] = (m?.writers?.[event] ?? []).filter((w) => dags.has(w.actor)).map((w) => ({ dag: w.actor, role: "writer", on: w.trigger, resolves: null, grace: null }));
+  for (const c of snap.cues ?? []) if (c.event === event && !ties.some((t) => t.dag === c.dag)) ties.push({ dag: c.dag, role: "cue", on: c.on, resolves: c.resolves ?? null, grace: c.grace ?? null });
   return ties;
 }
 
@@ -67,8 +69,8 @@ export type Mark = "keyed" | "inferred" | "ambiguous";
 
 export const markOf = (run: LedgerRun | undefined): Mark => (!run || !run.inferred ? "keyed" : run.ambiguous > 0 ? "ambiguous" : "inferred");
 
-/** The state a cell or row shows: a run's status, or `waiting` for another repository's merge no pin bump has applied. */
-export type RowState = RunStatus | "waiting";
+/** The state a cell or row shows: a run's status, `waiting` for another repository's merge no pin bump has applied, or `overdue` for a cue whose run has not started within its grace. */
+export type RowState = RunStatus | "waiting" | "overdue";
 
 export interface Line {
   /** The cell's headline: how the run went. */
@@ -114,7 +116,10 @@ export function shortApplied(run: LedgerRun, optional: ReadonlySet<string>): str
 /** What one merge shows under one tied DAG. */
 export function statusLine(row: LedgerRow, tie: Tie, run: LedgerRun | undefined, ctx: LineCtx): Line {
   if (!run) {
-    if (row.appliedBy === undefined) return { main: "no run yet", sub: "", state: null, mark: "keyed" };
+    if (row.appliedBy === undefined) {
+      const late = ctx.now - row.at;
+      return tie.grace !== null && late > tie.grace ? { main: "overdue", sub: `no run in ${dur(late)}`, state: "overdue", mark: "keyed" } : { main: "no run yet", sub: "", state: null, mark: "keyed" };
+    }
     const bump = row.appliedBy ? ctx.by(row.appliedBy) : undefined;
     return bump
       ? { main: `applied by its pin bump ${(bump.sha ?? bump.key).slice(0, 7)}`, sub: ctx.hm(bump.at), state: "waiting", mark: "keyed" }

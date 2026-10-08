@@ -1306,6 +1306,10 @@ export interface Claim {
 export interface Cue {
   dag: string;
   event: string;
+  /**
+   * Seconds after the event a run of the DAG may take to start before the Ledger draws the merge overdue.
+   */
+  grace?: number;
   on: string;
   /**
    * How a failed run of the DAG clears: `forced` only on a green forced rerun, `next` on the DAG's next green run.

@@ -15,6 +15,8 @@ export interface PanelCtx {
   steps: Record<string, readonly string[]>;
   /** The steps each DAG applies only sometimes, by DAG. */
   optional: Record<string, ReadonlySet<string>>;
+  /** The DAGs the server will start: the run-safe ones. A forced rerun of any other answers 404. */
+  runnable: ReadonlySet<string>;
   /** Colours by run state, and `waiting`. */
   palette: Record<string, string>;
   /** Epoch seconds the page draws at. */
@@ -50,10 +52,11 @@ export function failHtml(row: LedgerRow, ctx: PanelCtx, cls: string): string {
   }).join("");
 }
 
-/** A Force rerun button for each DAG whose failure on `row` is unresolved, disabled while its request is out, with the server's refusal under it. */
+/** A Force rerun button for each run-safe DAG whose failure on `row` is unresolved, disabled while its request is out, with the server's refusal under it; any other DAG gets the way to rerun it instead. */
 export function rerunHtml(row: LedgerRow, ctx: PanelCtx): string {
   return ctx.ties.flatMap((tie) => {
     if (!row.fails[tie.dag] || row.fails[tie.dag].resolved) return [];
+    if (!ctx.runnable.has(tie.dag)) return [`<div class="note">${esc(tie.dag)} is not run-safe: rerun it from its workflow runner</div>`];
     const dag = esc(tie.dag), busy = ctx.rerun?.busy.has(tie.dag), refusal = ctx.rerun?.refused[tie.dag];
     const button = busy ? `<button class="run" data-rerun="${dag}" disabled>↻ Rerunning ${dag}…</button>` : `<button class="run" data-rerun="${dag}">↻ Force rerun ${dag}</button>`;
     return [button + (refusal ? `<div class="note" style="color:${ctx.palette.failed}">${esc(refusal)}</div>` : "")];

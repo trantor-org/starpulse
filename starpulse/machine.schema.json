@@ -112,6 +112,11 @@
         "resolves": {
           "description": "forced: a failed run stays pinned until a forced rerun. next: it clears on the next run of the DAG.",
           "enum": ["forced", "next"]
+        },
+        "grace": {
+          "description": "Seconds after the event a run of the DAG may take to start before the page draws it overdue. Default 300.",
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
