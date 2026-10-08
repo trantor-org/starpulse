@@ -77,6 +77,25 @@ describe("applyDelta", () => {
     expect([emptied.pools, kept.pools, replaced.pools]).toEqual([[], [lane], [{ ...lane, running: 2 }]]);
   });
 
+  it("keeps the identity of every DAG and ledger a delta leaves as it was, so only the entry it changes is new", () => {
+    const wire = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T; // each delta arrives as freshly parsed JSON
+    const dags = [{ name: "ci/a", status: "succeeded", steps: [] }, { name: "ci/b", status: "running", steps: [] }] as unknown as Dag[];
+    const row = (key: string) => ({ key, at: 1 }) as unknown as NonNullable<Snapshot["ledgers"]>[string][number];
+    const ledgers = { pr_opened: [row("a")], pr_merged: [row("b")] };
+    const s = board([], { dags, pools: [{ name: "ci/a", cap: 1, running: 0, queued: 0 }], ledgers, mergePins: [row("p")] });
+
+    const d = applyDelta(s, { kind: "dags", dags: wire(dags.map((x) => (x.name === "ci/b" ? { ...x, status: "failed" } : x))), pools: wire(s.pools!), error: null });
+    const l = applyDelta(s, { kind: "ledgers", ledgers: wire({ ...ledgers, pr_merged: [row("b"), row("c")] }), mergeStrip: null, mergePins: wire(s.mergePins!) });
+
+    expect(d.dags[0]).toBe(s.dags[0]);
+    expect(d.dags[1]).not.toBe(s.dags[1]);
+    expect(d.dags[1].status).toBe("failed");
+    expect(d.pools).toBe(s.pools);
+    expect(l.ledgers!.pr_opened).toBe(ledgers.pr_opened);
+    expect(l.ledgers!.pr_merged).toHaveLength(2);
+    expect(l.mergePins).toBe(s.mergePins);
+  });
+
   it("replaces the pull requests wholesale with the server's latest read", () => {
     const pull = { number: 7, url: "https://github.com/o/r/pull/7", checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 2, stale: false };
     const s = board([], { pulls: { "PROJ-1": [{ ...pull, number: 6 }], "PROJ-2": [pull] } });

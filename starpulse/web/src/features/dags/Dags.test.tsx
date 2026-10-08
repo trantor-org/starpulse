@@ -10,6 +10,14 @@ import { rows } from "./dags";
 import css from "../../style.css?raw";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 import { DAG_COLOR } from "../../render/renderer";
+import { applyDelta } from "../../api/stream";
+
+// every row draws one Strip, so the Strips drawn say which rows rendered
+const drawn = vi.hoisted(() => ({ names: [] as string[] }));
+vi.mock("./DagParts", async (orig) => {
+  const m = await orig<typeof import("./DagParts")>();
+  return { ...m, Strip: (p: Parameters<typeof m.Strip>[0]) => (drawn.names.push(p.r.d.name), m.Strip(p)) };
+});
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
@@ -247,5 +255,20 @@ describe("a row's step strip for a wide fan", () => {
       expect(rings).toHaveLength(steps.length);
       for (const [i, a] of rings.entries()) for (const b of rings.slice(i + 1)) expect(Math.hypot(a.x - b.x, a.y - b.y), `${width}-wide fan`).toBeGreaterThanOrEqual(a.r + b.r + 1);
     }
+  });
+});
+
+describe("a DAGs delta", () => {
+  it("re-renders only the rows of the DAGs it changed", async () => {
+    const wire = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T; // a delta arrives as freshly parsed JSON
+    const snap = { dags: data.dags, pools: data.pools } as unknown as Parameters<typeof applyDelta>[0];
+    const next = applyDelta(snap, { kind: "dags", dags: wire(data.dags.map((d) => (d.name === "runs/triage" ? { ...d, status: "running" as const } : d))), pools: wire(data.pools), error: null });
+    await draw();
+    drawn.names.length = 0;
+
+    await draw({ ...data, dags: next.dags, pools: next.pools ?? data.pools });
+
+    expect(drawn.names).toEqual(["runs/triage"]);
+    expect(q(".trow[data-dag='runs/triage']").className).toContain("p-running");
   });
 });

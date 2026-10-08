@@ -32,6 +32,7 @@ import {
 import { FLARE, Moves, PULSE, RING, TRAVEL, countText, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
 import { kanbanTasks } from "../features/kanban/kanban";
 import { embedded, openStream } from "../api/stream";
+import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "../features/level/trace";
@@ -560,9 +561,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       capabilities: sky.capabilities,
       hint: sky.hint,
     };
-    // a delta rarely changes what the HUD shows, so only changed fields reach React and an unchanged HUD does not re-render
+    // a delta rarely changes what the HUD shows, so only changed fields reach React and an unchanged HUD does not re-render; a field that
+    // changed keeps the reference of each part of it that did not, so the views draw what changed and not all they hold
     const now = hud.get() as unknown as Record<string, unknown>;
-    const changed = Object.fromEntries(Object.entries(next).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(now[k])));
+    const changed = Object.fromEntries(Object.entries(next).map(([k, v]): [string, unknown] => [k, reuse(now[k], v)]).filter(([k, v]) => v !== now[k]));
     if (Object.keys(changed).length) hud.set(changed);
   }
   /** Every quarter second: the feed and the navigator's moving machines, written only when they change. */

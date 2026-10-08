@@ -26,6 +26,10 @@ click that draws nothing new reads over budget. That weight counts only against 
 another slice, such as a Docker container, can still starve it: the run reads its scope's own ``cpu.pressure`` before
 and after, and a run whose scope waited for CPU over ``STARVED_SHARE`` of its time is marked STARVED and exits 2, a
 measure of the host and not of the page, neither a pass nor a failure.
+
+``--cpu-throttle N`` slows the page's CPU N times (Chrome's ``Emulation.setCPUThrottlingRate``) once the board has
+painted for the first time, so the interactions after it are timed on a slower machine than the bench's: a click that
+waits behind steady-state stream work reads N times longer, where a click that does its own work in 10 ms reads 10 N.
 """
 
 from __future__ import annotations
@@ -429,7 +433,14 @@ def local_file(assets: Path, url: str) -> Path:
     return assets / path.lstrip("/") if path.startswith("/assets/") else assets / "index.html"
 
 
-def time_page(base: str, samples: int, channel: str, requested: list[str], assets: Path | None = None) -> list[Row]:
+def time_page(
+    base: str,
+    samples: int,
+    channel: str,
+    requested: list[str],
+    assets: Path | None = None,
+    cpu_throttle: float = 1.0,
+) -> list[Row]:
     from playwright.sync_api import sync_playwright  # noqa: PLC0415 - the bench group only
 
     rows: list[Row] = []
@@ -455,6 +466,8 @@ def time_page(base: str, samples: int, channel: str, requested: list[str], asset
             page.wait_for_function("window.__sp && window.__sp.firstPaint !== null", timeout=60_000)
             load.samples.append(page.evaluate("window.__sp.firstPaint"))
         rows.append(load)
+        if cpu_throttle > 1:  # after first paint, so the load row stays the unthrottled one
+            page.context.new_cdp_session(page).send("Emulation.setCPUThrottlingRate", {"rate": cpu_throttle})
         page.wait_for_timeout(1000)
 
         for name, title in VIEWS.items():
@@ -591,6 +604,13 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="serve the page from this local build (`vite build --outDir`), its /api from the URL",
     )
+    parser.add_argument(
+        "--cpu-throttle",
+        type=float,
+        default=1.0,
+        metavar="N",
+        help="slow the page's CPU N times after its first paint (Chrome's CPU throttling rate); 1 leaves it as it is",
+    )
     parser.add_argument("--json", type=argparse.FileType("w"), help="also write the rows here")
     parser.add_argument(
         "--viewer",
@@ -609,7 +629,7 @@ def main(argv: list[str] | None = None) -> int:
         run = time_reads(Client(base), args.samples, args.what_if)
         run.append(time_stream(base, max(1, args.samples // 4)))
         if not args.no_page:
-            run.extend(time_page(base, args.samples, args.channel, requested, args.assets))
+            run.extend(time_page(base, args.samples, args.channel, requested, args.assets, args.cpu_throttle))
         runs.append(run)
     rows = median_run(runs)
     apply_ceilings(rows, args.ceiling)

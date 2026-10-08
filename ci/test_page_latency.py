@@ -198,3 +198,14 @@ def test_a_ceiling_still_fails_a_row_that_passes_it():
 def test_a_ceiling_naming_no_row_is_refused():
     with pytest.raises(ValueError, match="no row named first paintt"):
         pl.apply_ceilings([pl.Row("first paint", "interaction", 50.0, [1.0])], ["first paintt=120"])
+
+
+def test_the_cpu_throttle_reaches_the_page_timing(monkeypatch):
+    seen: list[float] = []
+    monkeypatch.setattr(pl, "Client", lambda base: None)
+    monkeypatch.setattr(pl, "time_reads", lambda client, samples, what_if=None: [])
+    monkeypatch.setattr(pl, "time_stream", lambda base, samples: pl.Row("/api/events", "stream", 50.0))
+    monkeypatch.setattr(pl, "time_page", lambda *args: seen.append(args[-1]) or [])
+    pl.main(["http://h"])
+    pl.main(["http://h", "--cpu-throttle", "4"])
+    assert seen == [1.0, 4.0]
