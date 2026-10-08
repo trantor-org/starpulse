@@ -2,6 +2,7 @@
 // that lets a person's name go with them. The body is pure over the store's view so every state draws without a server.
 import { useEffect, useSyncExternalStore } from "react";
 import { clockHm, type ClockMode } from "../../shared/clock";
+import { useViewActive } from "../../shared/Kept";
 import type { ForwardStatus, ForwardingStore, ForwardingView } from "./forwarding";
 
 /** How often the card re-reads what is queued; the forwarder moves on its own interval, so the listing drifts while the view is open. */
@@ -85,11 +86,14 @@ export function ForwardingBody({ view, clock, onToggle }: { view: ForwardingView
 
 export function ForwardingCard({ store, clock }: { store: ForwardingStore; clock: ClockMode }) {
   const view = useSyncExternalStore(store.subscribe, store.get);
+  // a view that is left stops asking; it reads the status again when it is shown
+  const active = useViewActive();
   useEffect(() => {
+    if (!active) return;
     void store.load();
     const refresh = setInterval(() => void store.load(), REFRESH_MS);
     return () => clearInterval(refresh);
-  }, [store]);
+  }, [store, active]);
   return (
     <section className="card">
       <h2>Forwarding <span className="c">what this instance sends the hub</span></h2>
