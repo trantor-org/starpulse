@@ -517,7 +517,7 @@ def _gh_pins(asked: list[str]):
 
     def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         asked.append(command[2])
-        answer = "pointer" if "/contents/" in command[2] else "ahead"
+        answer = POINTER if "/contents/" in command[2] else "ahead"
         return subprocess.CompletedProcess(command, 0, answer, "")
 
     return run
@@ -759,4 +759,42 @@ def test_a_second_refresh_reads_the_same_answers_from_memory(monkeypatch: pytest
     source.refresh()
 
     assert rest == []
+    assert _pulls(feed)["PROJ-8"][0]["applied_by"] == SHA
+
+
+class _GraphWithUnpinningRepo(_Graph):
+    """`_Graph` plus acme/other, a repository that does not pin skills, with a merge between the skills merge and SHA."""
+
+    def __call__(
+        self, repo: str, numbers: list[int], paths: tuple[str, ...] = (), pointers: tuple[str, ...] = ()
+    ) -> dict:
+        if repo != "acme/other":
+            return super().__call__(repo, numbers, paths, pointers)
+        self.asked.append((repo, paths, pointers))
+        return {
+            "p3": _node(3, rollup="SUCCESS", merged=True, merge_commit="a1" * 20, merged_at=OTHER_AT, pinned=(None,))
+        }
+
+
+OTHER_AT = "2026-10-06T21:00:00Z"
+
+
+def test_a_merge_in_a_repository_that_does_not_pin_the_child_costs_no_gh_call_on_any_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _GraphWithUnpinningRepo(_history((POINTER, "2026-10-07T01:00:00Z"), (CHILD_SHA, CHILD_AT)))
+    calls: list[list[str]] = []
+
+    def not_found(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, '{"message":"Not Found","status":"404"}', "gh: Not Found")
+
+    monkeypatch.setattr(subprocess, "run", not_found)
+    feed = _feed(proj_7=[FIRST], proj_8=[CHILD], proj_9=["https://github.com/acme/other/pull/3"])
+    source = PullRequests(feed, partial(fetch, read=graph, repos=PINNED), repos=PINNED, pins=GitHub())
+
+    source.refresh()
+    source.refresh()
+
+    assert calls == []
     assert _pulls(feed)["PROJ-8"][0]["applied_by"] == SHA

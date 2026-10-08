@@ -107,10 +107,10 @@ def _read_pulls(
     """
     child = repo.split("/")[1] in pinned
     paths = () if child else tuple(pinned.values())
-    pointers = tuple(sorted(set(out.pointers.values()))) if child else ()
+    pointers = tuple(sorted({oid for oid in out.pointers.values() if oid})) if child else ()
     nodes = read(repo, [number for _, number, _ in wanted], paths, pointers)
     records: dict[str, dict] = {}
-    pinned_at: dict[tuple[str, str, str], str] = {}
+    pinned_at: dict[tuple[str, str, str], str | None] = {}
     reached: dict[tuple[str, str, str], bool] = {}
     history: dict[str, PullHistory] = {}
     try:
@@ -130,9 +130,9 @@ def _read_pulls(
                     "stale": False,
                 }
                 history[url] = parse(url, node)
-                for i, path in enumerate(paths):
-                    if pin := commit.get(f"pin{i}"):
-                        pinned_at[(repo, record["merge_sha"], path)] = pin["oid"]
+                for i, path in enumerate(paths):  # a null `pin<i>` is a settled answer: nothing is pinned at the path
+                    if f"pin{i}" in commit:
+                        pinned_at[(repo, record["merge_sha"], path)] = (commit[f"pin{i}"] or {}).get("oid")
                 for i, pointer in enumerate(pointers if record["merge_sha"] else ()):
                     found = contained(record["merge_sha"], record["merged_at"], nodes.get(f"h{i}"))
                     if found is not None:
@@ -149,8 +149,9 @@ class Pulls(dict[str, dict]):
     """A `fetch` answer: the records read, `unread`, the URLs of repositories GitHub could not be asked about, and
     `history`, what GitHub dates of each record's CI.
 
-    `pointers` maps (parent repo, merge commit, path) to the commit the merge pins there, and `reaches` maps (child
-    repo, merge commit, pointer) to whether the pointer contains that merge; only what the batched read could settle.
+    `pointers` maps (parent repo, merge commit, path) to the commit the merge pins there, None when it has nothing at
+    that path, and `reaches` maps (child repo, merge commit, pointer) to whether the pointer contains that merge; only
+    what the batched read could settle.
     """
 
     unread: frozenset[str] = frozenset()
@@ -158,7 +159,7 @@ class Pulls(dict[str, dict]):
 
     def __init__(self, *records: dict[str, dict]) -> None:
         super().__init__(*records)
-        self.pointers: dict[tuple[str, str, str], str] = {}
+        self.pointers: dict[tuple[str, str, str], str | None] = {}
         self.reaches: dict[tuple[str, str, str], bool] = {}
 
 
