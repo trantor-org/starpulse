@@ -1,5 +1,5 @@
 // The task view: every section reads in place and edits in place, one at a time, each Save a guarded write of that section's diff.
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
 import { columnsOf, type KanbanTask } from "./kanban";
 import { startLane, startable } from "./start";
@@ -374,12 +374,13 @@ export function TaskView(p: TaskViewProps) {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   });
-  const { close } = p;
+  // the listener stays put while the modal is open: one swapped out mid-dispatch, as a host's redraw for an earlier listener would, never hears that key
+  const closeOnKey = useEffectEvent((event: KeyboardEvent) => !event.defaultPrevented && closesOnKey(event.key, editing !== null) && p.close());
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => !event.defaultPrevented && closesOnKey(event.key, editing !== null) && close();
+    const onKey = (event: KeyboardEvent) => closeOnKey(event);
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [close, editing]);
+  }, []);
 
   const pen = (section: Section) => canEdit && editing !== section && (
     <button className="pen" title={`Edit ${SECTION_NAMES[section]}`} aria-label={`Edit ${SECTION_NAMES[section]}`} onClick={() => edit(section)}>✎ Edit</button>

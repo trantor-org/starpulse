@@ -3,7 +3,8 @@
 import { readFileSync } from "node:fs";
 // @ts-expect-error Same Node-only import: jsdom swaps the global URL for one readFileSync refuses.
 import { URL as NodeURL } from "node:url";
-import { act } from "react";
+import { act, useState } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -233,6 +234,30 @@ describe("editing one section at a time", () => {
     expect(close).not.toHaveBeenCalled();
     await key("Escape");
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("closes on Escape when an earlier key listener redraws its host, handing it a new close, before it hears the key", async () => {
+    const close = vi.fn();
+    let redraw = () => {};
+    function Host() {
+      const [n, setN] = useState(0);
+      redraw = () => flushSync(() => setN(n + 1));
+      return <TaskView {...props({ close: () => close(n) })} />;
+    }
+    const redrawFirst = () => redraw();
+    addEventListener("keydown", redrawFirst);
+    try {
+      const host = document.body.appendChild(document.createElement("div"));
+      const root = createRoot(host);
+      act(() => root.render(<Host />));
+      mounted.push({ root, host });
+
+      await key("Escape");
+
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      removeEventListener("keydown", redrawFirst);
+    }
   });
 
   it("toggles a Definition of done checkbox straight to a write, with no editor", async () => {
