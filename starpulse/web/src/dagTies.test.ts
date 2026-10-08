@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { boardTies, nameLines, nameOf, obstacles, over, type Hub } from "./dagTies";
+import { boardTies, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, type Hub, type Orbiter } from "./dagTies";
+import { BOARD, startPath, tree } from "./levels";
+import { crumbs } from "./Crumb";
+import { backStep } from "./nav";
 import { build, type Scene } from "./scene";
 import { fitLevel } from "./zoom";
-import { merge, Moves } from "./sky";
+import { merge, Moves, PULSE, TRAVEL, type Move } from "./sky";
 import type { Cue, Dag, Machine, Snapshot } from "./api";
 
 // The live Board of 2026-10-07 (doc-111, D7b): ten states, the writers and cues of its tied DAGs, and DAGs that only launch or have no tie.
 const STATES = ["new", "ready", "blocked", "waiting", "in_progress", "review", "needs_attention", "done", "completed", "archived"];
 const TRANSITIONS: [string, string, string][] = [
   ["new", "in_progress", "CREATE_IN_PROGRESS"], ["ready", "in_progress", "CLAIM"], ["ready", "waiting", "WAIT_ON_DEPS"], ["in_progress", "waiting", "DEFER"],
-  ["waiting", "ready", "DEP_RESOLVED"], ["blocked", "ready", "DEPS_DONE"], ["in_progress", "review", "CRITERIA_MET"], ["review", "in_progress", "CRITERIA_UNMET"],
+  ["waiting", "waiting", "DEP_RESOLVED"], ["waiting", "ready", "DEPS_DONE"], ["in_progress", "review", "CRITERIA_MET"], ["review", "in_progress", "CRITERIA_UNMET"],
   ["review", "done", "MERGED"], ["done", "completed", "SWEEP"], ["needs_attention", "ready", "RETRY"], ["ready", "archived", "ARCHIVE"],
 ];
 const WRITES: Record<string, string[]> = {
@@ -33,11 +36,18 @@ const machine: Machine = {
   launches: Object.fromEntries(["dagu/board-autopilot", ...LAUNCH_ONLY].map((d) => [d, { skill: "delivering", flow: null }])),
   dagActors: Object.keys(WRITES),
 };
-const liveSky = (status: Record<string, Dag["status"]> = {}) => {
+/** A machine the Board's DAGs launch: `writer` writes its events itself, as dependency-update-investigation does. */
+const launched = (writer: string): Machine => ({
+  states: [{ id: "open", name: "open", initial: true, final: false }, { id: "closed", name: "closed", initial: false, final: true }],
+  transitions: [{ source: "open", target: "closed", event: "CLOSE" }],
+  mainLine: ["open", "closed"],
+  writers: { CLOSE: [{ actor: writer, trigger: "dagu" }] },
+});
+const liveSky = (status: Record<string, Dag["status"]> = {}, sub: Record<string, string> = {}) => {
   const names = [...Object.keys(WRITES), ...CUES.map((c) => c.dag), ...LAUNCH_ONLY, ...UNTIED];
   const snap: Snapshot = {
     graphs: ["board"],
-    flows: [{ name: "board", agents: [], machine }],
+    flows: [{ name: "board", agents: [], machine: { ...machine, launches: { ...machine.launches, ...Object.fromEntries(Object.keys(sub).map((d) => [d, { skill: "investigating", flow: sub[d] }])) } } }, ...new Set(Object.values(sub))].map((f) => (typeof f === "string" ? { name: f, agents: [], machine: launched(Object.keys(sub).find((d) => sub[d] === f)!) } : f)),
     dags: names.map((n) => dag(n, status[n])),
     domains: [], cues: CUES, settled: {}, error: null, now: 1000,
   };
@@ -123,5 +133,100 @@ describe("a hangar's name", () => {
     expect(nameLines(orbs("main-follow"))).toEqual(["main-follow"]);
     expect(nameLines(orbs("graphrefreshing"))).toEqual(["graphrefreshing"]);
     expect(nameLines(orbs("board-autopilot", "main-follow"))).toEqual(["2 DAGs"]);
+  });
+});
+
+describe("the comet a tied DAG's Board transition runs", () => {
+  const ctx = liveSky(), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
+  const merged: Move = { flow: "board", task: "TASK-1", at: 1000, event: "MERGED", from: "review", to: "done" };
+  const ran: (dag: string, at: number) => boolean = () => true;
+  const dags = (now: number, moves: Move[] = [merged], did: (d: string, at: number) => boolean = ran) => touches(ties, moves, did, now).map((t) => `${t.orbiter.dag}:${t.anchor.kind}`).sort();
+
+  it("draws nothing on a tied transition's line while no Board move plays", () => {
+    expect(dags(1001, [])).toEqual([]);
+    expect(dags(1001, [{ ...merged, event: "ARCHIVE" }])).toEqual([]);
+    expect(dags(1001, [{ ...merged, flow: "in-progress" }])).toEqual([]);
+  });
+
+  it("runs the comet for the DAG that wrote the move and the DAGs the event cues", () => {
+    expect(dags(1001)).toEqual(["dagu/apply-on-merge:cue", "dagu/graph-refresh:cue", "dagu/main-follow:write"]);
+  });
+
+  it("leaves a writer that did not run out, and still wakes the cued DAGs", () => {
+    expect(dags(1001, [merged], (d) => d !== "dagu/main-follow")).toEqual(["dagu/apply-on-merge:cue", "dagu/graph-refresh:cue"]);
+  });
+
+  it("starts at the move and ends once the comet has landed and its ring has faded", () => {
+    expect(dags(999.9)).toEqual([]);
+    expect(dags(1000 + TRAVEL + PULSE - 0.01)).toHaveLength(3);
+    expect(dags(1000 + TRAVEL + PULSE + 0.01)).toEqual([]);
+  });
+
+  it("runs along the edge of the transition into its state", () => {
+    const [t] = touches(ties, [merged], ran, 1001).filter((x) => x.orbiter.dag === "dagu/main-follow");
+    expect(t.anchor.edge).toMatchObject({ source: "review", target: "done" });
+    expect(t.u).toBeCloseTo(1 / TRAVEL, 6);
+  });
+});
+
+describe("the sub-machine a tied DAG writes", () => {
+  const ctx = liveSky({}, { "dagu/main-follow": "investigating" }), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
+  const orb = (dag: string) => ties.hubs.flatMap((h) => h.orbs).find((o) => o.dag === dag)!;
+
+  it("anchors a tied DAG that writes its launched machine's events at that machine", () => {
+    expect(orb("dagu/main-follow").subs.map((a) => a.flow)).toEqual(["investigating"]);
+    for (const a of orb("dagu/main-follow").subs) expect([a.x, a.y].every(Number.isFinite)).toBe(true);
+  });
+
+  it("leaves a launcher that does not write the machine's events, and a DAG with no launch, unanchored", () => {
+    expect(orb("dagu/board-autopilot").subs).toEqual([]);
+    expect(orb("dagu/backlog-sweep").subs).toEqual([]);
+  });
+
+  it("keeps the sub-machine writer's Board ties and hangar as they were", () => {
+    expect(orb("dagu/main-follow").primary?.event).toBe("MERGED");
+    expect(ties.hubs).toHaveLength(4);
+  });
+});
+
+describe("what a click on a hangar or an orbiter opens", () => {
+  const ctx = liveSky(), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
+  const src = { flows: [ctx.S.board], cues: ctx.S.cues };
+  const hub = (state: string) => ties.hubs.find((h) => h.state === state)!;
+  const orb = (dag: string) => ties.hubs.flatMap((h) => h.orbs).find((o) => o.dag === dag)!;
+  const fake = (dag: string, ...events: string[]) => ({ dag, anchors: events.map((event) => ({ kind: "write", event })), primary: { kind: "write", event: events[0] } }) as unknown as Orbiter;
+
+  it("opens a hangar into the Ledger of the transition its first DAG docks by", () => {
+    const l = hangarLevel(src, hub("review").orbs);
+    expect(l).toMatchObject({ kind: "fold", event: "MERGED", path: ["review", "done"] });
+    expect(l.dags).toContain("dagu/main-follow");
+  });
+
+  it("opens a hangar whose transitions have no Ledger into the fold of its DAGs", () => {
+    expect(hangarLevel(src, [fake("dagu/a", "NOPE"), fake("dagu/b", "NEVER")])).toMatchObject({
+      kind: "fold", path: null, dags: ["dagu/a", "dagu/b"], crit: ["dagu/a: writes NOPE", "dagu/b: writes NEVER"],
+    });
+  });
+
+  it("opens an orbiter into the Ledger of the transition it docks by", () => {
+    expect(tieLedger(src, orb("dagu/main-follow"))).toMatchObject({ ev: "MERGED", led: { kind: "fold", event: "MERGED" } });
+  });
+
+  it("falls back to the first of its other transitions that has a Ledger when its own is a self-loop", () => {
+    const o = orb("dagu/board-dependency-reconciliation");
+    expect(o.primary?.event).toBe("DEP_RESOLVED");
+    expect(tieLedger(src, o)?.ev).toBe("DEPS_DONE");
+  });
+
+  it("opens nothing for an orbiter none of whose transitions has a Ledger", () => {
+    expect(tieLedger(src, fake("dagu/a", "NOPE"))).toBeNull();
+  });
+
+  it("is a level a right-click steps out of, named Board › DAGs, that survives a reload", () => {
+    const fold = hangarLevel(src, hub("done").orbs), path = [...BOARD, fold];
+    expect(crumbs(path, []).map((c) => c.label)).toEqual(["Board", "DAGs"]);
+    expect(backStep({ panel: false, focus: null, scrolled: false, depth: path.length })).toBe("up");
+    expect(path.slice(0, -1)).toEqual(BOARD);
+    expect(startPath("/", "", path, tree({ graphs: ["board"], flows: [{ name: "board", agents: [], machine }] }))).toEqual(path);
   });
 });
