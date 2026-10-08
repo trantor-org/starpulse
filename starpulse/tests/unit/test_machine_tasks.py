@@ -12,6 +12,7 @@ import pytest
 from starpulse.contracts.adapters import BoardTask
 from starpulse.domain.transitions import Table
 from starpulse.projections.board_feed import BoardFeed, follow
+from starpulse.projections.ci import CI_MACHINES
 from starpulse.projections.machine_tasks import MachineTasks
 from starpulse.store import events as machine_events
 from starpulse.store.event_log import EventLog
@@ -106,6 +107,20 @@ def test_a_trail_keeps_only_the_latest_steps() -> None:
     (agent,) = _agents(feed, "in-progress")
 
     assert (agent["steps"], len(agent["trail"]), agent["trail"][-1]["at"]) == (30, 12, 129.0)
+
+
+def test_a_machine_a_third_party_moves_keeps_its_whole_history_for_the_task_views_totals() -> None:
+    feed = BoardFeed(machines={**MACHINES, **CI_MACHINES})
+    tasks = MachineTasks(feed)
+    for event in ["PR_OPENED", "PUSHED", *["CHECKS_FAILED", "RERUN"] * 20]:
+        tasks.handle_entry(*_entry("ci", event, at=100.0))
+        tasks.handle_entry(*_entry("in-progress", "AC_CHECKPOINTED", at=100.0))
+
+    (ci,) = _agents(feed, "ci")
+    (local,) = _agents(feed, "in-progress")
+
+    assert (ci["steps"], len(ci["trail"])) == (42, 42)
+    assert (local["steps"], len(local["trail"])) == (42, 12)
 
 
 @pytest.mark.parametrize(

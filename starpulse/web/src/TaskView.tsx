@@ -6,8 +6,8 @@ import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull } from "./api";
 import {
-  PRIORITIES, changedFields, closesOnKey, copyText, copyToClipboard, dependencyRows, discardMessage, editKey, markdown, menuKey, metCount, newlyChecked, onScrim, saveTask,
-  type DepRow, type Item, type MenuState, type TaskField, type TaskRecord,
+  PRIORITIES, changedFields, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, discardMessage, editKey, markdown, menuKey, metCount, newlyChecked, onScrim, saveTask,
+  type CiPull, type DepRow, type Item, type MenuState, type TaskField, type TaskRecord,
 } from "./taskView";
 
 export interface TaskViewProps {
@@ -110,6 +110,33 @@ function PullRows({ pulls }: { pulls: Pull[] }) {
       ))}
     </div>
   ) : <span className="none">None yet</span>;
+}
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+/** The four counts the D10 interview defined, in the order they happen to a pull request. */
+function CiCounts({ c }: { c: Pick<CiPull, "runs" | "reruns" | "rebases" | "conflicts"> }) {
+  return <>{[plural(c.runs, "run"), plural(c.reruns, "re-run"), plural(c.rebases, "rebase"), plural(c.conflicts, "conflict")]
+    .map((text, i) => <span key={i} className={text.startsWith("0 ") ? "c z" : "c"}>{text}</span>)}</>;
+}
+
+/** The task's CI: its totals, then each pull request's counts and the state its trail left it in, blue when a third party moves the machine. */
+function CiRows({ task }: { task: KanbanTask }) {
+  const history = ciHistory(task);
+  if (!history?.pulls.length) return <span className="none">{task.prs.length ? "No CI recorded yet" : "No pull request yet"}</span>;
+  const mapped = task.machines.find((m) => m.machine === "ci")?.source;
+  return (
+    <div className="ci">
+      {history.pulls.length > 1 && <div className="tot"><CiCounts c={history.total} /></div>}
+      {history.pulls.map((p, i) => (
+        <div key={i} className="cipull">
+          {p.url ? <a href={p.url} target="_blank" rel="noopener">#{p.number} ↗</a> : <span className="k">pull request</span>}
+          <span className={mapped ? "st mapped" : "st"} title={mapped ? `mapped from ${mapped}` : undefined}><i />{p.state.replace(/_/g, " ")}</span>
+          <span className="cnt"><CiCounts c={p} /></span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** A dependency or a held task: its id, title and lane, opening that task's modal; a task off the board is only named. */
@@ -410,6 +437,7 @@ export function TaskView(p: TaskViewProps) {
             </RailSection>
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
             <RailSection name="Pull requests" count={p.task.prs.length}><PullRows pulls={p.task.prs} /></RailSection>
+            <RailSection name="CI history" count={ciHistory(p.task)?.pulls.length}><CiRows task={p.task} /></RailSection>
             <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
               <div className="deps">
                 <div className="lb">Depends on</div>

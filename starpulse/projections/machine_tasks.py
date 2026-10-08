@@ -20,6 +20,9 @@ from starpulse.projections.board_feed import BoardFeed, stream_id
 
 #: How many of a task's latest steps travel with it, so a page that connected after several steps can still walk each one.
 TRAIL = 12
+#: A machine a third party moves (`source`) keeps more: its history is the data the task view totals, not a recent-steps strip,
+#: and a worst-case pull request alone runs past 12 steps.
+TRAIL_SOURCED = 120
 
 
 class MachineTasks:
@@ -36,7 +39,9 @@ class MachineTasks:
     ) -> None:
         self._feed = feed
         self._keys = keys
-        self._tables = tables(feed.machines if machines is None else machines)
+        drawn = feed.machines if machines is None else machines
+        self._tables = tables(drawn)
+        self._trail = {name: TRAIL_SOURCED if machine.get("source") else TRAIL for name, machine in drawn.items()}
         self._expected: tuple[int, int] | None = None
         self._seen = (0, 0)
         #: Set once the stream has been read up to the last entry it held when the server started.
@@ -74,7 +79,7 @@ class MachineTasks:
                 "task": task,
                 "state": state,
                 "steps": (before["steps"] if before else 0) + 1,
-                "trail": trail[-TRAIL:],
+                "trail": trail[-self._trail[flow] :],
                 "active": event.time,
             },
         )
