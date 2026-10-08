@@ -33,6 +33,7 @@ export function App() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const tip = useRef<HTMLDivElement>(null), panel = useRef<HTMLDivElement>(null), clock = useRef<HTMLDivElement>(null);
   const renderer = useRef<Renderer | null>(null);
+  const sized = useRef(false);
   const [store] = useState(() => new HudStore());
   const hud = useHud(store);
   useBoardDrawn(hud.tree !== null);
@@ -88,8 +89,10 @@ export function App() {
     document.body.classList.toggle("admin", view === "admin");
     document.body.classList.toggle("graph", view === "graph");
     renderer.current?.show(view === "constellation");
-    // the canvas was sized while hidden or behind the Kanban; refit it once it is the page again
-    if (view === "constellation") renderer.current?.resize();
+    // the canvas was sized while hidden or behind the Kanban; refit it once it is the page again. The first run is the
+    // renderer's own start, which has just sized, laid out and drawn it
+    if (view === "constellation" && sized.current) renderer.current?.resize();
+    sized.current = true;
   }, [view]);
 
   // a level from the navigator's search or the breadcrumb opens on the Star Map, refitted when it is already the one shown
