@@ -29,8 +29,8 @@ from pathlib import Path, PurePosixPath
 from types import ModuleType
 from urllib.parse import urlsplit
 
-from starpulse.domain.level import Level, LevelError, parse_level
 from starpulse.adapters import module_name
+from starpulse.domain.level import Level, LevelError, parse_level
 from starpulse.settings.harnesses import Harnesses, load_harnesses
 
 #: The board adapter type a config without a `[board]` table names.
