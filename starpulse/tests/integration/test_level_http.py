@@ -163,6 +163,51 @@ def test_trajectories_report_the_rework_loop_of_a_run_and_its_days(server: Threa
     assert body["loops"] == [{"from": "review", "to": "in_progress", "runs": 1, "trips": 1, "days": 16 * H / 86400}]
 
 
+def test_trajectories_forecast_each_run_still_going_with_its_rows_sample_size(server: ThreadingHTTPServer) -> None:
+    _, body = _trajectories(server, "?hours=48")
+
+    forecast = {f["task"]: f for f in body["forecast"]}
+    assert set(forecast) == {"C", "D", "E"}  # A and B ended; F ended before the window and is no run still going
+    # in progress after no loop left twice (A, B), too few to stand alone: in progress' own row, left three times
+    assert (forecast["C"]["state"], forecast["C"]["loops"], forecast["C"]["since"]) == ("in_progress", 0, 40 * H)
+    assert (forecast["C"]["n"], forecast["C"]["pooled"], forecast["C"]["p"]) == (3, True, {"done": pytest.approx(1.0)})
+    assert body["calibration"]["held_out"] == 0  # two ended runs hold none out
+
+
+def _what_if(server: ThreadingHTTPServer, query: str) -> tuple[int, dict]:
+    return _get(server, query, "/api/level/what-if")
+
+
+def test_a_what_if_returns_the_change_in_the_goal_and_the_days_from_the_usual_first_state(
+    server: ThreadingHTTPServer,
+) -> None:
+    status, body = _what_if(server, "?hours=48&from=review&to=in_progress&p=0")
+
+    assert status == 200
+    assert (body["from"], body["to"], body["was"], body["n"]) == ("review", "in_progress", 0.5, 2)
+    assert body["p_goal"]["change"] == pytest.approx(0.0)  # every ended run reached the goal either way
+    assert body["expected_days"]["change"] < 0  # no run goes back from review to in progress
+    # review now always goes on to done: its mean stay, A's 10h and B's 1h
+    assert body["chain"]["review"]["expected_days"] == pytest.approx(5.5 * H / 86400)
+
+
+@pytest.mark.parametrize(
+    ("query", "error"),
+    [
+        ("?hours=48&from=review&to=in_progress", "needs ?from"),
+        ("?hours=48&from=review&to=in_progress&p=half", "needs ?from"),
+        ("?hours=48&from=blocked&to=in_progress&p=0.1", "no run that ended in the window left blocked"),
+        ("?hours=48&from=review&to=in_progress&p=2", "probability"),
+        ("?hours=91&from=review&to=in_progress&p=0.1", "90 hours"),
+    ],
+)
+def test_a_what_if_the_chain_cannot_answer_is_refused(server: ThreadingHTTPServer, query: str, error: str) -> None:
+    status, body = _what_if(server, query)
+
+    assert status == 400
+    assert error in body["error"]
+
+
 def test_a_run_that_detoured_through_the_gate_leaves_it_bypassable_with_that_runs_own_path(
     server: ThreadingHTTPServer,
 ) -> None:

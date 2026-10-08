@@ -606,6 +606,8 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "analytics level",
         "analytics trajectories",
         "analytics gates",
+        "analytics forecast",
+        "analytics what-if",
         "config check",
         "demo",
         "doctor",
@@ -834,7 +836,46 @@ def test_analytics_gates_of_a_task_that_ended_nowhere_in_the_window_is_not_found
     assert (code, doc["code"], "F" in doc["error"]) == (4, "not_found", True)
 
 
-@pytest.mark.parametrize("verb", ["trajectories", "gates"])
+def test_analytics_forecast_for_one_task_gives_its_chances_with_the_rows_sample_size(
+    leveled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["analytics", "forecast", "--task", "C", "--hours", "48", "--server", leveled])
+
+    assert code == 0
+    [forecast] = doc["forecast"]
+    assert (forecast["task"], forecast["state"], forecast["n"], forecast["pooled"]) == ("C", "in_progress", 3, True)
+    assert forecast["p_goal"] == pytest.approx(1.0)
+    assert doc["calibration"]["held_out"] == 0
+    assert "runs" not in doc
+
+
+def test_analytics_forecast_of_a_task_with_no_run_still_going_is_not_found(
+    leveled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["analytics", "forecast", "--task", "A", "--hours", "48", "--server", leveled])
+
+    assert (code, doc["code"], "A" in doc["error"]) == (4, "not_found", True)
+
+
+def test_analytics_what_if_returns_the_change_in_the_goal_and_the_days(
+    leveled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["analytics", "what-if", "--from", "review", "--to", "in_progress", "--p", "0", "--hours", "48"]
+    code, doc = _run(capsys, [*argv, "--server", leveled])
+
+    assert code == 0
+    assert (doc["from"], doc["to"], doc["was"], doc["p"]) == ("review", "in_progress", 0.5, 0.0)
+    assert doc["expected_days"]["change"] < 0
+
+
+def test_analytics_what_if_on_a_state_no_run_left_is_refused(leveled: str, capsys: pytest.CaptureFixture[str]) -> None:
+    argv = ["analytics", "what-if", "--from", "blocked", "--to", "done", "--p", "0.5", "--hours", "48"]
+    code, doc = _run(capsys, [*argv, "--server", leveled])
+
+    assert (code, doc["code"], "blocked" in doc["error"]) == (1, "refused", True)
+
+
+@pytest.mark.parametrize("verb", ["trajectories", "gates", "forecast"])
 def test_the_trajectory_verbs_refuse_a_window_longer_than_the_history_naming_the_history(
     verb: str, leveled: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -843,7 +884,7 @@ def test_the_trajectory_verbs_refuse_a_window_longer_than_the_history_naming_the
     assert (code, doc["code"], "90 hours" in doc["error"]) == (1, "refused", True)
 
 
-@pytest.mark.parametrize("verb", ["trajectories", "gates"])
+@pytest.mark.parametrize("verb", ["trajectories", "gates", "forecast"])
 def test_the_trajectory_verbs_of_a_server_with_no_level_are_unavailable(
     verb: str, base: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1120,6 +1161,23 @@ CASES = {
     ("analytics gates", 2): ["analytics", "gates", "--hours", "soon"],
     ("analytics gates", 3): ["analytics", "gates", "--server", "{server}"],
     ("analytics gates", 4): ["analytics", "gates", "--task", "Z", "--hours", "48", "--server", "{leveled}"],
+    ("analytics forecast", 0): ["analytics", "forecast", "--hours", "48", "--server", "{leveled}"],
+    ("analytics forecast", 1): ["analytics", "forecast", "--hours", "91", "--server", "{leveled}"],
+    ("analytics forecast", 2): ["analytics", "forecast", "--hours", "soon"],
+    ("analytics forecast", 3): ["analytics", "forecast", "--server", "{server}"],
+    ("analytics forecast", 4): ["analytics", "forecast", "--task", "Z", "--hours", "48", "--server", "{leveled}"],
+    ("analytics what-if", 0): [
+        *("analytics", "what-if", "--from", "review", "--to", "in_progress", "--p", "0"),
+        *("--hours", "48", "--server", "{leveled}"),
+    ],
+    ("analytics what-if", 1): [
+        *("analytics", "what-if", "--from", "blocked", "--to", "done", "--p", "0.5"),
+        *("--hours", "48", "--server", "{leveled}"),
+    ],
+    ("analytics what-if", 2): ["analytics", "what-if", "--from", "review", "--to", "done", "--p", "half"],
+    ("analytics what-if", 3): [
+        *("analytics", "what-if", "--from", "review", "--to", "done", "--p", "0.5", "--server", "{server}"),
+    ],
     ("task show", 0): ["task", "show", "PROJ-1", "--server", "{server}"],
     ("task show", 2): ["task", "show"],
     ("task show", 3): ["task", "show", "PROJ-1", "--server", "{down}"],

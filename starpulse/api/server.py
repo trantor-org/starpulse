@@ -85,7 +85,16 @@ GET /api/level/trajectories[?hours=N]
                    trips and days), per configured gate whether it is `bypassable` with the bypassing run's
                    `witness` path, and per run its `back_edges`, `sccs`, `loops` and own `gates` with their
                    `dominators` and `post_dominators`, computed on that run's graph and never the union of all
-                   runs'. The window and its refusals are `/api/level`'s
+                   runs'; the `forecast` of each run still going (its chance of each terminal and of the goal and
+                   its expected days, from its state's row conditioned on its loops so far, with the row's sample
+                   size `n` and whether it is `pooled`), and the `calibration` of that forecast per decile on the
+                   latest fifth of the ended runs. The window and its refusals are `/api/level`'s
+GET /api/level/what-if?from=STATE&to=STATE&p=P[&hours=N]
+                   the chain of `/api/level/trajectories` with `from -> to` at probability `p`, `from`'s other exits
+                   keeping their shares of the rest (`trajectories.what_if`): `p_goal` and `expected_days` from the
+                   usual first state `start`, each `{before, after, change}`, and the changed `chain`. 400 for a
+                   missing or unparsed parameter, a state no ended run left, a `p` outside 0 to 1, no other exit,
+                   or a chain that never finishes; the window and its other refusals are `/api/level`'s
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
 POST /api/run/<instance>/<workflow>
                    start a run-safe workflow through its instance's optional `start`: {runId}, or {error}
@@ -149,6 +158,7 @@ PUT /api/forwarding {opt_in: bool}: let a person's name leave this instance, or 
 from __future__ import annotations
 
 import argparse
+import functools
 import ipaddress
 import json
 import logging
@@ -195,7 +205,7 @@ from starpulse.contracts.api import encode, event
 from starpulse.domain.level import Level
 from starpulse.domain.level_metrics import RunWindow, WindowPastHistory, level_metrics
 from starpulse.domain.snapshot import qualifier
-from starpulse.domain.trajectories import trajectory_analytics
+from starpulse.domain.trajectories import WhatIfRefused, trajectory_analytics, what_if
 from starpulse.projections import analytics, doctor
 from starpulse.projections.board_feed import BoardFeed, follow
 from starpulse.projections.ci import attach
@@ -734,6 +744,25 @@ def trajectories_response(
     return _level_view("trajectories", history, query, level, machines, now, trajectory_analytics)
 
 
+def what_if_response(
+    history: History, query: dict[str, list[str]], level: Level | None, machines: Mapping[str, dict], now: float
+) -> tuple[bytes, int]:
+    """The body and status for `/api/level/what-if`: the trajectories' chain with `from -> to` at probability `p`,
+    refused as `level_response` refuses a window and with 400 for a what-if the chain cannot answer."""
+    origin, to, p = (query.get(key, [""])[0] for key in ("from", "to", "p"))
+    try:
+        chance = float(p)
+    except ValueError:
+        chance = None
+    if not origin or not to or chance is None:
+        return _error("what-if needs ?from=STATE&to=STATE&p=P"), 400
+    view = functools.partial(what_if, origin=origin, to=to, p=chance)
+    try:
+        return _level_view("what_if", history, query, level, machines, now, view)
+    except WhatIfRefused as exc:
+        return _error(str(exc)), 400
+
+
 def _level_view(
     kind: str,
     history: History,
@@ -1008,6 +1037,8 @@ def request_handler(
                 self._send(*level_response(history, parse_qs(url.query), level, feed.machines, clock()))
             elif url.path == "/api/level/trajectories":
                 self._send(*trajectories_response(history, parse_qs(url.query), level, feed.machines, clock()))
+            elif url.path == "/api/level/what-if":
+                self._send(*what_if_response(history, parse_qs(url.query), level, feed.machines, clock()))
             elif url.path.startswith(_TASK):
                 status, body = task_record(feed, read, unquote(url.path.removeprefix(_TASK)))
                 self._send(encode("task", body), status)

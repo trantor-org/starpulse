@@ -13,6 +13,8 @@
     starpulse analytics level --hours 48
     starpulse analytics trajectories --hours 48
     starpulse analytics gates --task PROJ-45
+    starpulse analytics forecast --task PROJ-45
+    starpulse analytics what-if --from review --to in_progress --p 0.1
     starpulse doctor
     starpulse skills install --claude --codex
     starpulse help --agent
@@ -117,6 +119,24 @@ _TRAJECTORY_KEYS = (
     "runs",
 )
 _GATE_KEYS = ("now", "window_s", "history_s", "machine", "goal", "ended", "gates", "runs")
+_FORECAST_KEYS = ("now", "window_s", "history_s", "machine", "goal", "ended", "forecast", "calibration")
+_WHAT_IF_KEYS = (
+    "now",
+    "window_s",
+    "history_s",
+    "machine",
+    "goal",
+    "ended",
+    "from",
+    "to",
+    "p",
+    "was",
+    "n",
+    "start",
+    "p_goal",
+    "expected_days",
+    "chain",
+)
 _HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
 _TASK_KEYS = (
     "id",
@@ -502,15 +522,19 @@ def _health(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
 
 
 def _level_read(
-    args: argparse.Namespace, environ: Mapping[str, str], route: str, keys: Sequence[str]
+    args: argparse.Namespace,
+    environ: Mapping[str, str],
+    route: str,
+    keys: Sequence[str],
+    params: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """`keys` of what the level route `route` answers over `--hours`.
+    """`keys` of what the level route `route` answers over `--hours`, with `params` added to the query.
 
     A window the server refuses, including one longer than its history, is `refused`; a server with no level is
     `unavailable`.
     """
     base = server_url(args.server, environ)
-    query = urllib.parse.urlencode({} if args.hours is None else {"hours": args.hours})
+    query = urllib.parse.urlencode({**({} if args.hours is None else {"hours": args.hours}), **(params or {})})
     path = f"{route}?{query}"
     status, document = _get(base, path)
     if status in {400, 404, 501} and isinstance(document, dict) and "error" in document:
@@ -548,6 +572,26 @@ def _gates(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
             raise CliError("not_found", f"{args.task} has no run that ended inside the window")
         document["runs"] = runs
     return document
+
+
+def _forecast(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Each run still going with its chance of each terminal and its expected days, and the forecast's calibration.
+
+    `--task` keeps one task's forecast; a task with no run still going is `not_found`.
+    """
+    document = _level_read(args, environ, "/api/level/trajectories", _FORECAST_KEYS)
+    if args.task:
+        forecast = [run for run in document["forecast"] if run["task"] == args.task]
+        if not forecast:
+            raise CliError("not_found", f"{args.task} has no run still going")
+        document["forecast"] = forecast
+    return document
+
+
+def _what_if(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The change in the chance of the goal and the expected days when one transition has probability `--p`."""
+    params = {"from": args.origin, "to": args.to, "p": args.p}
+    return _level_read(args, environ, "/api/level/what-if", _WHAT_IF_KEYS, params)
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -908,6 +952,38 @@ def _parser() -> argparse.ArgumentParser:
         help="the window the runs ended in, in hours; past the history it is refused (default 168)",
     )
     gates.add_argument("--task", help="only this task's trajectory (`PROJ-45`); the level's gate summary is unchanged")
+    forecast = leaf(
+        analytics_verbs,
+        "forecast",
+        "each run still going with its chance of each terminal and its expected days to finish, from its state's row "
+        "conditioned on its loops so far with that row's sample size, and the forecast's per-decile calibration",
+        _forecast,
+        _FORECAST_KEYS,
+        (0, 1, 2, 3, 4),
+    )
+    forecast.add_argument(
+        "--hours",
+        type=float,
+        help="the window of ended runs the chain is fitted on, in hours; past the history it is refused (default 168)",
+    )
+    forecast.add_argument("--task", help="only this task's forecast (`PROJ-45`); the calibration is unchanged")
+    what_if = leaf(
+        analytics_verbs,
+        "what-if",
+        "the change in the chance of the goal and the expected days from the usual first state when one transition of "
+        "the chain has another probability, its state's other exits keeping their shares of the rest",
+        _what_if,
+        _WHAT_IF_KEYS,
+        (0, 1, 2, 3),
+    )
+    what_if.add_argument("--from", dest="origin", required=True, help="the state the transition leaves (`review`)")
+    what_if.add_argument("--to", required=True, help="the state the transition enters (`in_progress`)")
+    what_if.add_argument("--p", type=float, required=True, help="the transition's new probability, from 0 to 1")
+    what_if.add_argument(
+        "--hours",
+        type=float,
+        help="the window of ended runs the chain is fitted on, in hours; past the history it is refused (default 168)",
+    )
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(
