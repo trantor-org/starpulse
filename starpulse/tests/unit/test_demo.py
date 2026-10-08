@@ -11,6 +11,7 @@ import pytest
 
 from starpulse.cli.demo import TITLES, _send_back, capture, elements, mockup, page, scrub, scrub_board, scrub_mockup
 from starpulse.contracts.adapters import SCHEMAS, Dag, Pool
+from starpulse.contracts.api import Snapshot
 from starpulse.projections.ci import CI_MACHINES
 
 SECRET = "Rotate the router admin password"
@@ -956,3 +957,51 @@ def test_elements_inlines_the_local_stylesheet_and_script_and_leaves_a_remote_li
     assert "<style> :root { --ok: #34d399; }</style>" in html  # the comment is dropped
     assert '<link rel="stylesheet" href="https://x.test/f.css">' in html
     assert "<script>const s = '<\\/script>';</script>" in html
+
+
+def test_scrub_drops_the_board_writers_claims_so_no_real_task_id_survives() -> None:
+    live = _live()
+    live["claims"] = {"TASK-2620": {"reason": "no worktree for TASK-2620", "at": 1.0}}
+
+    demo = scrub(live)
+
+    assert "claims" not in demo
+    assert "TASK-2620" not in json.dumps(demo)
+
+
+def test_scrub_drops_the_merge_ledgers_that_name_real_tasks_and_pull_requests() -> None:
+    live = _live()
+    row = {"key": "k", "at": 1.0, "tasks": ["TASK-2620"], "pr": {"url": "https://github.com/o/r/pull/9"}}
+    live["ledgers"] = {"MERGED": [row]}
+    live["mergePins"] = [row | {"tasks": ["TASK-2621"]}]
+
+    demo = scrub(live)
+
+    assert "ledgers" not in demo
+    assert "mergePins" not in demo
+    assert not re.search(r"TASK-\d+|/pull/9", json.dumps(demo))
+
+
+#: The snapshot keys `scrub` hands on as captured because they hold no task, pull request, run id or address:
+#: structure, counts, flags and the clock. A new `Snapshot` field stays out until someone has checked it holds none.
+PASSED_THROUGH = {
+    "graphs",
+    "cues",
+    "machinePage",
+    "machineStrip",
+    "mergeStrip",
+    "insights",
+    "capabilities",
+    "reading",
+    "now",
+}
+
+
+def test_every_snapshot_key_is_rewritten_by_scrub_or_passed_through_on_purpose() -> None:
+    marker = {"leak": "TASK-1"}
+    live = _live() | {k: marker for k in Snapshot.model_fields if k not in _live() and k not in ("pulls", "pools")}
+
+    demo = scrub(live)
+
+    unscrubbed = {k for k in Snapshot.model_fields if k in demo and demo[k] == live.get(k)} - PASSED_THROUGH
+    assert not unscrubbed, f"scrub() passes {sorted(unscrubbed)} through as captured: rewrite, drop or allowlist them"

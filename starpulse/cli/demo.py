@@ -385,6 +385,11 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
     return agents, pulls, settled
 
 
+#: The snapshot keys keyed or filled by real task ids and pull requests (the board writer's refused claims, the merge
+#: ledgers and their pins); the demo page seeds its own ledgers, so these are dropped rather than renamed.
+UNSCRUBBABLE = frozenset({"claims", "ledgers", "mergePins"})
+
+
 def scrub(live: dict) -> dict:
     """`live` with its structure kept and every task, settled task, run id and address replaced.
 
@@ -476,7 +481,7 @@ def scrub(live: dict) -> dict:
     )
     history = _history(flows, live["now"])
     return {
-        **live,
+        **{k: v for k, v in live.items() if k not in UNSCRUBBABLE},
         "boardUrl": None,
         "hint": None,
         "domains": [
