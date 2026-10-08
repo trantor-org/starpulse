@@ -33,6 +33,7 @@ _TABLES = (
     "starpulse_step_summaries",
     "starpulse_cases",
     "starpulse_lane_intervals",
+    "starpulse_lanes",
 )
 
 if "db.testing" not in sys.modules:

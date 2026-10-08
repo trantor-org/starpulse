@@ -121,3 +121,37 @@ def test_the_summaries_revision_adds_its_tables_and_a_downgrade_drops_them(empty
         }
         command.downgrade(config, "0004")
         assert not summaries & set(inspect(db).get_table_names())
+
+
+def test_the_lane_counts_revision_counts_the_lanes_the_intervals_hold_and_a_downgrade_drops_it(
+    empty_database: Engine,
+) -> None:
+    config = Config()
+    config.set_main_option("script_location", str(Path(hub.__file__).parent / "store" / "migrations"))
+    with empty_database.begin() as db:
+        config.attributes["connection"] = db
+        command.upgrade(config, "0005")
+        db.execute(
+            text(
+                "INSERT INTO starpulse_lane_intervals (task, lane, entered_at, left_at, event_id) VALUES "
+                "('A', 'Ready', 1, 2, 'a/e1'), ('A', 'Done', 2, NULL, 'a/e2'), ('B', 'Done', 3, NULL, 'b/e3'), "
+                "('C', 'Ready', 4, NULL, 'e4')"
+            )
+        )
+        command.upgrade(config, "0007")
+        assert {
+            (source, lane): (open_tasks, first_at)
+            for source, lane, open_tasks, first_at in db.execute(
+                text("SELECT source, lane, open_tasks, first_at FROM starpulse_lanes")
+            )
+        } == {("a", "Ready"): (0, 1), ("a", "Done"): (1, 2), ("b", "Done"): (1, 3), ("unattributed", "Ready"): (1, 4)}
+        assert "ix_starpulse_lane_intervals_lane" in {
+            i["name"] for i in inspect(db).get_indexes("starpulse_lane_intervals")
+        }
+        assert "ix_starpulse_cases_state" in {i["name"] for i in inspect(db).get_indexes("starpulse_cases")}
+        command.downgrade(config, "0006")
+        assert "starpulse_lanes" not in inspect(db).get_table_names()
+        assert "ix_starpulse_lane_intervals_lane" not in {
+            i["name"] for i in inspect(db).get_indexes("starpulse_lane_intervals")
+        }
+        assert "ix_starpulse_cases_state" not in {i["name"] for i in inspect(db).get_indexes("starpulse_cases")}

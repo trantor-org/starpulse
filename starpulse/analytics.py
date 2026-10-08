@@ -9,9 +9,10 @@ task was before it is unknown, so that earlier stay is not counted.
 
 from __future__ import annotations
 
-from collections import defaultdict
-from collections.abc import Iterable
-from typing import Any
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, NamedTuple
 
 from starpulse.upstream_backlog import lane_id
 
@@ -20,21 +21,60 @@ LaneRow = tuple[str, float, str | None, str]
 _DAY_S = 86400.0
 
 
-def _stays(rows: Iterable[LaneRow]) -> Iterable[tuple[str, str, float, float | None]]:
-    """Each task's `(task, lane, start, end)` stays, oldest first; the stay it is still in has no end."""
+class Stay(NamedTuple):
+    """One task's stay in a lane from `began` to `ended`, which is None while it is still there."""
+
+    task: str
+    lane: str
+    began: float
+    ended: float | None
+
+
+@dataclass(frozen=True)
+class LaneStays:
+    """What `stay_health` reads of a lane history, enough to answer for a window without every stay ever kept.
+
+    `stays` hold every stay that ended in the window or is still going in a state that is not final, and every entry
+    into a final state in it; more are harmless. `open_by_lane` is how many tasks are in each lane now, and `lanes`
+    every lane the history has recorded.
+    """
+
+    stays: Sequence[Stay]
+    open_by_lane: Mapping[str, int]
+    lanes: Sequence[str]
+
+
+def _stays(rows: Iterable[LaneRow]) -> Iterable[Stay]:
+    """Each task's stays, oldest first; the stay it is still in has no end."""
     by_task: dict[str, list[tuple[float, str]]] = defaultdict(list)
     for task, at, _old, new in rows:
         by_task[task].append((at, new))
     for task, changes in by_task.items():
         changes.sort(key=lambda change: change[0])
         for (start, lane), later in zip(changes, [*changes[1:], None]):
-            yield task, lane, start, later[0] if later else None
+            yield Stay(task, lane, start, later[0] if later else None)
+
+
+def lane_stays(rows: Iterable[LaneRow]) -> LaneStays:
+    """Every stay `rows` hold, with the tasks now in each lane and the lanes in the order they first appear."""
+    stays = list(_stays(rows))
+    return LaneStays(
+        stays, Counter(stay.lane for stay in stays if stay.ended is None), list(dict.fromkeys(s.lane for s in stays))
+    )
 
 
 def board_health(
     machine: dict, rows: Iterable[LaneRow], gaps: list[dict], *, now: float, window_s: float, stuck_s: float
 ) -> dict[str, Any]:
-    """The Board `machine`'s health over the last `window_s` seconds up to `now`, from lane changes `rows`.
+    """The Board `machine`'s health over the last `window_s` seconds up to `now`, from lane changes `rows`; see
+    `stay_health`."""
+    return stay_health(machine, lane_stays(rows), gaps, now=now, window_s=window_s, stuck_s=stuck_s)
+
+
+def stay_health(
+    machine: dict, held: LaneStays, gaps: list[dict], *, now: float, window_s: float, stuck_s: float
+) -> dict[str, Any]:
+    """The Board `machine`'s health over the last `window_s` seconds up to `now`, from the lane stays `held`.
 
     `states` lists each state with `wip`, the tasks in it now, and for a state that is not final `visits`, `mean_s` and
     `max_s` of the stays that ended inside the window or are still going (`open` of them, counted to `now`).
@@ -45,30 +85,30 @@ def board_health(
     start = now - window_s
     states = {key: state for state in machine["states"] for key in (state["name"], state["id"])}
     wip: dict[str, int] = defaultdict(int)
+    for lane, tasks in held.open_by_lane.items():
+        if (state := states.get(lane)) is not None:
+            wip[state["id"]] += tasks
     dwell: dict[str, list[float]] = defaultdict(list)
     open_stays: dict[str, int] = defaultdict(int)
     stuck: list[dict[str, Any]] = []
     done = 0
-    unknown: dict[str, None] = {}
-    for task, lane, began, ended in _stays(rows):
+    for task, lane, began, ended in held.stays:
         if (state := states.get(lane)) is None:
-            unknown[lane] = None
             continue
         if state["final"]:
             done += start <= began <= now
-            wip[state["id"]] += ended is None
             continue
         if ended is not None and ended < start:
             continue
         length = (now if ended is None else ended) - began
         dwell[state["id"]].append(length)
         if ended is None:
-            wip[state["id"]] += 1
             open_stays[state["id"]] += 1
             if not state["initial"] and length >= stuck_s:
                 stuck.append(
                     {"task": task, "state": state["id"], "since": began, "dwell_s": length, "counted_to_now": True}
                 )
+    unknown = [lane for lane in held.lanes if lane not in states]
     return {
         "now": now,
         "window_s": window_s,

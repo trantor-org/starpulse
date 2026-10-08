@@ -184,7 +184,7 @@ from starpulse.ci import attach
 from starpulse.ci_trail import CiTrail
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.domain.level import Level
-from starpulse.domain.level_metrics import WindowPastHistory, level_metrics
+from starpulse.domain.level_metrics import RunWindow, WindowPastHistory, level_metrics
 from starpulse.domain.snapshot import qualifier
 from starpulse.domain.trajectories import trajectory_analytics
 from starpulse.forward import Forwarder
@@ -209,6 +209,8 @@ from starpulse.store.history import (
     HistoryStore,
     LaneHistory,
     LevelHistory,
+    SummarisedHealth,
+    SummarisedLevel,
     database_url,
     record_lane_events,
     record_machine_events,
@@ -685,8 +687,12 @@ def health_response(
         return _error("hours and stuck_hours must each be a positive number"), 400
     if not isinstance(history, HealthHistory):
         return _error("this history does not keep every task's lane changes, so it cannot report flow health"), 501
-    health = analytics.board_health(
-        machines["board"], history.lane_rows(), history.gaps(), now=now, window_s=window * 3600, stuck_s=stuck * 3600
+    if isinstance(history, SummarisedHealth):
+        held = history.health_stays(machines["board"], start=now - window * 3600, now=now)
+    else:
+        held = analytics.lane_stays(history.lane_rows())
+    health = analytics.stay_health(
+        machines["board"], held, history.gaps(), now=now, window_s=window * 3600, stuck_s=stuck * 3600
     )
     return json.dumps(health).encode(), 200
 
@@ -725,8 +731,19 @@ def _level_view(
     if not isinstance(history, LevelHistory):
         return _error("this history does not keep every task's trajectory, so it cannot report the level"), 501
     try:
-        runs = history.level_runs(level.machine)
-        answer = view(level, machines[level.machine], runs, now=now, window_s=window * 3600)
+        if isinstance(history, SummarisedLevel):
+            held = history.level_window(level, now=now, window_s=window * 3600)
+        else:
+            held = RunWindow(history.level_runs(level.machine))
+        answer = view(
+            level,
+            machines[level.machine],
+            held.runs,
+            now=now,
+            window_s=window * 3600,
+            history_start=held.first,
+            sources=held.sources,
+        )
     except WindowPastHistory as exc:
         return json.dumps({"error": str(exc), "history_s": exc.history_s}).encode(), 400
     return json.dumps(answer).encode(), 200

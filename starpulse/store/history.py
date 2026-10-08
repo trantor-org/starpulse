@@ -32,24 +32,43 @@ from sqlalchemy import (
     Text,
     create_engine,
     delete,
+    func,
     select,
 )
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import OperationalError
 
 from starpulse import lane_events
-from starpulse.domain.level_metrics import Run
+from starpulse.analytics import LaneStays, Stay
+from starpulse.domain.level import Level
+from starpulse.domain.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
 from starpulse.machine_tasks import Table as Transitions
 from starpulse.settings.config import discover, load
 from starpulse.store import events as machine_events
 from starpulse.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables
 from starpulse.store.tables import gaps as _gaps
 from starpulse.store.tables import metadata
-from starpulse.summaries import SUMMARY_TABLES, Summaries, Summariser, read_case, source, write_lane, write_step
+from starpulse.summaries import (
+    BOARD,
+    SUMMARY_TABLES,
+    Summaries,
+    Summariser,
+    cases,
+    count_lanes,
+    lane_intervals,
+    lanes,
+    read_case,
+    source,
+    write_lane,
+    write_step,
+)
 
 __all__ = ["History", "machine_steps"]
 
 logger = logging.getLogger(__name__)
+
+#: How many tasks one statement asks the lane intervals for, under every dialect's limit on bound parameters.
+_TASKS_PER_QUERY = 500
 
 #: The file a config without `database_url` keeps its history in, beside the config.
 DEFAULT_FILE = "starpulse-history.sqlite"
@@ -139,10 +158,24 @@ class HealthHistory(LaneHistory, Protocol):
 
 
 @runtime_checkable
+class SummarisedHealth(HealthHistory, Protocol):
+    """A history that keeps lane summaries, so flow health reads a window of them and not every lane change."""
+
+    def health_stays(self, machine: dict, *, start: float, now: float) -> LaneStays: ...
+
+
+@runtime_checkable
 class LevelHistory(History, Protocol):
     """A history that can also answer `/api/level`: each task's trajectory on a machine, by its reporting source."""
 
     def level_runs(self, flow: str) -> list[Run]: ...
+
+
+@runtime_checkable
+class SummarisedLevel(History, Protocol):
+    """A history that keeps lane summaries, so the level reads the runs a window touches and not every lane change."""
+
+    def level_window(self, level: Level, *, now: float, window_s: float) -> RunWindow: ...
 
 
 def database_url(configured: str | None, directory: Path) -> str:
@@ -195,6 +228,8 @@ class HistoryStore:
         self._dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
         # pragma: no mutate end
         create_tables(self.engine)  # a reader thread of the log may be creating its own at the same time
+        for index in (*cases.indexes, *lane_intervals.indexes):  # create_all leaves a table that predates an index
+            index.create(self.engine, checkfirst=True)
         self.build_summaries()
 
     def _insert(self, table: Table):
@@ -273,18 +308,21 @@ class HistoryStore:
         key = who.lane_key(task, event_id)
         if (step := who.lane_step(read_case(db, key), status, at, event_id)) is not None:
             write_step(db, self._insert, key, step)
-        write_lane(db, event_id, task, status, at)
+        write_lane(db, self._insert, event_id, task, status, at)
         return True
 
     def build_summaries(self) -> None:
         """Build the summaries from the raw rows when they are empty: the start-up pass for a store that predates them.
 
-        Summaries that hold any row are left as they are, so a second call changes nothing; `rebuild_summaries`
-        replaces them and `summary_differences` says whether they match the raw rows.
+        Summaries that hold any row are left as they are, so a second call changes nothing, except that lane counts a
+        store lacks (its intervals predate them) are counted from the intervals; `rebuild_summaries` replaces them
+        and `summary_differences` says whether they match the raw rows.
         """
-        with self.engine.connect() as db:
-            empty = not any(db.execute(select(table).limit(1)).first() for table in SUMMARY_TABLES)
-        if empty:
+        with self.engine.begin() as db:
+            held = {table: db.execute(select(table).limit(1)).first() is not None for table in SUMMARY_TABLES}
+            if held[lane_intervals] and not held[lanes]:
+                count_lanes(db)
+        if not any(held.values()):
             self.rebuild_summaries()
 
     def rebuild_summaries(self) -> None:
@@ -309,8 +347,8 @@ class HistoryStore:
         events = select(e.event_id, e.task, e.run, e.machine, e.event, e.occurred_at).order_by(e.id)
         for event_id, task, run, machine, event, at in db.execute(events.execution_options(yield_per=5000)):
             folded.event(self._summariser, event_id, task, run, machine, event, at)
-        lanes = select(c.event_id, c.task, c.new_status, c.observed_at).order_by(c.id)
-        for event_id, task, lane, at in db.execute(lanes.execution_options(yield_per=5000)):
+        changes = select(c.event_id, c.task, c.new_status, c.observed_at).order_by(c.id)
+        for event_id, task, lane, at in db.execute(changes.execution_options(yield_per=5000)):
             folded.lane(self._summariser, event_id, task, lane, at)
         return folded
 
@@ -372,6 +410,24 @@ class HistoryStore:
             # pragma: no mutate end
         return [{"stream": s, "after_id": a, "before_id": b, "lost": n} for s, a, b, n in rows]
 
+    def health_stays(self, machine: dict, *, start: float, now: float) -> LaneStays:
+        """The lane stays the Board `machine`'s health between `start` and `now` reads, from the lane summaries.
+
+        Those are the stays that ended at or after `start`, those that began in the window, and the ones still going
+        in a state that is not final, so the read grows with the window and the tasks in flight, not with every task
+        the Board has finished; the tasks in each lane now and every lane recorded come from the lane counts.
+        """
+        i = lane_intervals.c
+        live = [lane for state in machine["states"] if not state["final"] for lane in (state["name"], state["id"])]
+        wanted = (i.entered_at.between(start, now), i.left_at >= start, i.left_at.is_(None) & i.lane.in_(live))
+        columns = (i.id, i.task, i.lane, i.entered_at, i.left_at)
+        with self.engine.connect() as db:
+            rows = {row[0]: row for where in wanted for row in db.execute(select(*columns).where(where))}
+            held = select(lanes.c.lane, func.sum(lanes.c.open_tasks)).group_by(lanes.c.lane).order_by(lanes.c.lane)
+            counts = dict(db.execute(held).all())
+        stays = [Stay(*row[1:]) for _, row in sorted(rows.items())]
+        return LaneStays(stays, counts, list(counts))
+
     def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
         """`(task, at, from, to)` for every lane change of every task at or after epoch `since` (None: all), oldest
         first."""
@@ -424,6 +480,43 @@ class HistoryStore:
             if state is not None:
                 steps.setdefault((source(event_id), task), []).append((at, state))
         return [Run(source, task, tuple(path)) for (source, task), path in steps.items()]
+
+    def level_window(self, level: Level, *, now: float, window_s: float) -> RunWindow:
+        """The runs the level's numbers over the last `window_s` seconds up to `now` need, from the lane summaries.
+
+        The Board's are every task that changed lane in the window or the trailing 12 weeks (aging reads those) and
+        every task still waiting or working, each with its whole trajectory; the history's start and its sources come
+        from the lane counts. The read grows with that activity and the tasks in flight, not with the history. Another
+        machine's trajectories are its events, which are read whole (`level_runs`).
+        """
+        if level.machine != BOARD:
+            return RunWindow(self.level_runs(level.machine))
+        machine = self._machines[BOARD]
+        states = {key: state["id"] for state in machine["states"] for key in (state["name"], state["id"])}
+        _, working, waiting = state_roles(level, machine)
+        i, c, n = lane_intervals.c, cases.c, lanes.c
+        with self.engine.connect() as db:
+            # no DISTINCT: it would send SQLite down the whole task index instead of the range of recent entries
+            moved = db.execute(
+                select(i.task).where(i.entered_at >= min(now - window_s, now - AGING_WINDOW_S))
+            ).scalars()
+            live = db.execute(select(c.case_id).where(c.machine == BOARD, c.state.in_([*waiting, *working]))).scalars()
+            tasks = sorted({*moved, *live})
+            columns = (i.entered_at, i.id, i.event_id, i.task, i.lane)
+            rows = [
+                tuple(row)
+                for start in range(0, len(tasks), _TASKS_PER_QUERY)
+                for row in db.execute(select(*columns).where(i.task.in_(tasks[start : start + _TASKS_PER_QUERY]))).all()
+            ]
+            seen = db.execute(
+                select(n.source, func.min(n.first_at)).where(n.lane.in_(list(states))).group_by(n.source)
+            ).all()
+        steps: dict[tuple[str, str], list[tuple[float, str]]] = {}
+        for at, _, event_id, task, lane in sorted(rows):  # by time, then by the order they were recorded in
+            if (state := states.get(lane)) is not None:
+                steps.setdefault((source(event_id), task), []).append((at, state))
+        runs = [Run(who, task, tuple(path)) for (who, task), path in steps.items()]
+        return RunWindow(runs, min((first for _, first in seen), default=None), sorted(who for who, _ in seen))
 
     def _read(self, query):
         with self.engine.connect() as db:

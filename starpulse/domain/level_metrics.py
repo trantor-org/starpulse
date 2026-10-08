@@ -11,19 +11,28 @@ the first step any run holds: a window that reaches before it is refused, never 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from starpulse.domain.level import Level
 
-__all__ = ["UNATTRIBUTED", "Run", "WindowPastHistory", "collapse", "level_metrics"]
+__all__ = [
+    "AGING_WINDOW_S",
+    "UNATTRIBUTED",
+    "Run",
+    "RunWindow",
+    "WindowPastHistory",
+    "collapse",
+    "level_metrics",
+    "state_roles",
+]
 
 #: The source of a run that no forwarder named: it counts in the aggregate and no one's Board holds it.
 UNATTRIBUTED = "unattributed"
 _DAY_S = 86400.0
 #: Completions this far back set the aging threshold, whatever window the numbers are asked over.
-_AGING_WINDOW_S = 12 * 7 * _DAY_S
+AGING_WINDOW_S = 12 * 7 * _DAY_S
 _AGING_FRACTION = 0.85
 
 
@@ -47,7 +56,38 @@ class Run:
     steps: tuple[tuple[float, str], ...]
 
 
-def level_metrics(level: Level, machine: dict, runs: Iterable[Run], *, now: float, window_s: float) -> dict[str, Any]:
+@dataclass(frozen=True)
+class RunWindow:
+    """The runs a window of the level needs and what only the whole history knows: when it begins (None: leave it to
+    the runs) and every source that reported a run."""
+
+    runs: list[Run]
+    first: float | None = None
+    sources: Collection[str] = ()
+
+
+def state_roles(level: Level, machine: dict) -> tuple[list[str], list[str], list[str]]:
+    """The level's terminal states, its working states and the states a run waits in: every one neither final nor a
+    terminal."""
+    states = machine["states"]
+    terminals = [terminal.id for terminal in level.terminals]
+    working = list(level.orbit.working) or [
+        s["id"] for s in states if not (s["initial"] or s["final"] or s["id"] in terminals)
+    ]
+    waiting = [s["id"] for s in states if not (s["final"] or s["id"] in terminals)]
+    return terminals, working, waiting
+
+
+def level_metrics(
+    level: Level,
+    machine: dict,
+    runs: Iterable[Run],
+    *,
+    now: float,
+    window_s: float,
+    history_start: float | None = None,
+    sources: Collection[str] = (),
+) -> dict[str, Any]:
     """The level's numbers over the last `window_s` seconds up to `now`, for `runs` of `machine`.
 
     `wip` counts the runs now in a working state: the level's `orbit.working`, else each state that is neither the
@@ -56,21 +96,22 @@ def level_metrics(level: Level, machine: dict, runs: Iterable[Run], *, now: floa
     trailing 12 weeks. `sources` carry each source's ended runs with their terminal shares, its dwell per working state
     with its time shares: a source with nothing ended or no working time has no shares, not zero ones. Raises
     `WindowPastHistory` when the window is longer than the history.
+
+    `runs` need only be the ones the window touches: those with a step in the window or the trailing 12 weeks and those
+    still waiting or working. A history that kept more than that says where its history begins (`history_start`) and
+    which `sources` reported, which the runs it left out would have told.
     """
     held = [(run, collapse(run.steps)) for run in runs]
-    first = min((steps[0][0] for _, steps in held if steps), default=now)
+    first = (
+        history_start if history_start is not None else min((steps[0][0] for _, steps in held if steps), default=now)
+    )
     if window_s > now - first:
         raise WindowPastHistory(window_s, now - first)
     start = now - window_s
-    states = machine["states"]
-    terminals = [terminal.id for terminal in level.terminals]
-    working = list(level.orbit.working) or [
-        s["id"] for s in states if not (s["initial"] or s["final"] or s["id"] in terminals)
-    ]
-    waiting = [s["id"] for s in states if not (s["final"] or s["id"] in terminals)]
+    terminals, working, waiting = state_roles(level, machine)
 
     wip: dict[str, int] = defaultdict(int)
-    ended = {id: dict.fromkeys(terminals, 0) for id in {run.source for run, _ in held}}
+    ended = {id: dict.fromkeys(terminals, 0) for id in {*sources, *(run.source for run, _ in held)}}
     time: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     working_runs: list[dict[str, Any]] = []
     arrivals: list[dict[str, Any]] = []
@@ -170,7 +211,7 @@ def _cycles(steps: list[tuple[float, str]], working: list[str], goal: str, now: 
     if began is None:
         return
     for at, state in steps[1:]:
-        if state == goal and now - _AGING_WINDOW_S <= at <= now and began <= at:
+        if state == goal and now - AGING_WINDOW_S <= at <= now and began <= at:
             yield at - began
 
 
