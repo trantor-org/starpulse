@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import event
 
-from starpulse.history import HistoryStore
 from starpulse.server import health_response, level_response, trajectories_response
+from starpulse.store.history import HistoryStore
 from starpulse.tests.integration.test_level_http import LEVEL
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import NOW, ROWS, H

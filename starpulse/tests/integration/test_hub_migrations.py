@@ -127,7 +127,7 @@ def test_the_lane_counts_revision_counts_the_lanes_the_intervals_hold_and_a_down
     empty_database: Engine,
 ) -> None:
     config = Config()
-    config.set_main_option("script_location", str(Path(hub.__file__).parent / "migrations"))
+    config.set_main_option("script_location", str(Path(hub.__file__).parent / "store" / "migrations"))
     with empty_database.begin() as db:
         config.attributes["connection"] = db
         command.upgrade(config, "0005")
