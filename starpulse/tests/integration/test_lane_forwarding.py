@@ -236,7 +236,7 @@ def test_an_archived_task_whose_history_already_ends_archived_adds_no_row(tmp_pa
 
     site.feed.put(_archived("T-1", at=T0))
 
-    assert [new for _, _, _, new in site.ic_store.lane_rows()] == ["Archived"]
+    assert [new for _, _, _, new in site.ic_store.lane_rows()] == ["archived"]
     assert site.at(site.ic_log) == []
 
 

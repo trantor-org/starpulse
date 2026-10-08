@@ -46,7 +46,7 @@ def test_a_task_answers_its_lane_changes(server: ThreadingHTTPServer) -> None:
         200,
         {
             "task": "PROJ-7",
-            "path": [{"at": 200.0, "from": None, "to": "Waiting"}, {"at": 201.0, "from": "Waiting", "to": "Ready"}],
+            "path": [{"at": 200.0, "from": None, "to": "waiting"}, {"at": 201.0, "from": "waiting", "to": "ready"}],
         },
     )
 

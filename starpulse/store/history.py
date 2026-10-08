@@ -34,6 +34,7 @@ from sqlalchemy import (
     delete,
     func,
     select,
+    update,
 )
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import OperationalError
@@ -42,9 +43,10 @@ from starpulse.domain.level import Level
 from starpulse.domain.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
 from starpulse.domain.stays import Dwell, LaneStays, Stay
 from starpulse.domain.transitions import Table as Transitions
+from starpulse.domain.transitions import lane_id
 from starpulse.settings.config import discover, load
 from starpulse.store import events as machine_events
-from starpulse.store import lane_events
+from starpulse.store import lane_events, lane_repair
 from starpulse.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables
 from starpulse.store.summaries import (
     BOARD,
@@ -131,6 +133,15 @@ def _last_lane(db: Connection, task: str, source_name: str | None) -> str | None
     if source_name is not None:
         query = query.where(c.event_id.startswith(f"{source_name}/", autoescape=True))
     return db.execute(query).scalar()
+
+
+def _holds_move(db: Connection, task: str, source_name: str | None, status: str, at: float) -> bool:
+    """Whether the history holds the task's move into `status` at `at`: a second writer of the move adds nothing."""
+    c = _lane_changes.c
+    query = select(c.id).where(c.task == task, c.new_status == status, c.observed_at == at).limit(1)
+    if source_name is not None:
+        query = query.where(c.event_id.startswith(f"{source_name}/", autoescape=True))
+    return db.execute(query).first() is not None
 
 
 class History(Protocol):
@@ -230,7 +241,23 @@ class HistoryStore:
         create_tables(self.engine)  # a reader thread of the log may be creating its own at the same time
         for index in (*cases.indexes, *lane_intervals.indexes):  # create_all leaves a table that predates an index
             index.create(self.engine, checkfirst=True)
+        if self.repair_lanes():
+            self.rebuild_summaries()
         self.build_summaries()
+
+    def repair_lanes(self) -> int:
+        """Put the lane history right where two writers left it, as `lane_repair.plan` says: how many rows it dropped or
+        rewrote, 0 for a history that is right (the usual start). The summaries then need `rebuild_summaries`."""
+        c = _lane_changes.c
+        with self.engine.begin() as db:
+            held = select(c.id, c.event_id, c.task, c.old_status, c.new_status, c.observed_at)
+            rows = [tuple(r) for r in db.execute(held)]
+            rewrites, drops = lane_repair.plan(rows)
+            for id_, (old, new) in rewrites.items():
+                db.execute(update(_lane_changes).where(c.id == id_).values(old_status=old, new_status=new))
+            if drops:
+                db.execute(delete(_lane_changes).where(c.id.in_(drops)))
+        return len(rewrites) + len(drops)
 
     def _insert(self, table: Table):
         return self._dialect.insert(table)
@@ -278,8 +305,9 @@ class HistoryStore:
         db.execute(save.on_conflict_do_update(index_elements=["stream"], set_={"after_id": save.excluded.after_id}))
 
     def record_lane(self, event_id: str, task: str, status: str, at: float, *, cursor: int | None = None) -> bool:
-        """Write a task's lane change and fold it into the summaries; True when a row was written. A status that
-        repeats the task's last one (a reconcile) is no change, and neither is an event id the store already holds.
+        """Write a task's lane change and fold it into the summaries; True when a row was written. The status is kept as
+        its lane id (`In Progress` is `in_progress`). One that repeats the task's last (a reconcile) is no change, and
+        neither is an event id or a move (task, lane, time) the store already holds: a second writer adds no row.
 
         A forwarded change (`<source>/<id>`) repeats only the last status of the same source's task: two sources may
         key a task alike. `cursor`, the entry's id in the log, is saved in the same transaction.
@@ -295,9 +323,11 @@ class HistoryStore:
         return self.record_lane(fields.get("event_id") or entry_id, fields["task"], fields["lane"], float(fields["time"]), cursor=cursor)
 
     def _fold_lane(self, db: Connection, event_id: str, task: str, status: str, at: float) -> bool:
+        status = lane_id(status)
         name, slash, _ = event_id.partition("/")
-        last = _last_lane(db, task, name if slash and name else None)
-        if last == status:
+        source = name if slash and name else None
+        last = _last_lane(db, task, source)
+        if (last is not None and lane_id(last) == status) or _holds_move(db, task, source, status, at):
             return False
         change = self._insert(_lane_changes).values(
             event_id=event_id, task=task, old_status=last, new_status=status, observed_at=at

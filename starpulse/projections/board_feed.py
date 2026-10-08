@@ -505,7 +505,8 @@ class BoardFeed:
             self._reassess(self._dependents.get(task_id, ()))
 
     def _entered(self, task: BoardTask, before: dict | None) -> float:
-        """When `task` entered its lane: kept while it stays there, now for a move read live, else the history's date."""
+        """When `task` entered its lane: kept while it stays there, for a move read live the time the board gives (else
+        now), else the history's date."""
         if before and before["state"] == task.lane and "entered" in before:
             return before["entered"]
         if not self.ready.is_set():
@@ -517,7 +518,7 @@ class BoardFeed:
             dated = [c["at"] for c in path if lane_id(c["to"]) == task.lane]
             if dated:
                 return dated[-1]
-        return self._clock()
+        return self._clock() if task.observed_at is None else task.observed_at
 
     def _link(self, task_id: str, before: Collection[str], after: Collection[str]) -> None:
         """Keep each dependency's dependents current when `task_id` moves from depending on `before` to `after`."""

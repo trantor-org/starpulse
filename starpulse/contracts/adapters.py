@@ -125,6 +125,11 @@ class BoardTask(_Contract):
         default=None,
         description="When a settled task settled, in epoch seconds; None when the board does not say or it is not settled.",
     )
+    observed_at: float | None = Field(
+        default=None,
+        description="When the board saw the task in this state, in epoch seconds; None when it does not say. A move "
+        "read live is dated by it, not by when StarPulse read it.",
+    )
     assignee: str = Field(default="", description="Who or which agent model holds the task; empty when unassigned.")
     holder: str = Field(
         default="",

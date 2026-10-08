@@ -124,8 +124,8 @@ def test_a_lane_change_closes_the_open_interval_and_opens_the_next(store: Histor
     store.record_lane("T-1@In Progress@25", "T-1", "In Progress", 25.0)  # the same change replayed
 
     assert _intervals(store) == [
-        ("T-1", "In Progress", 25.0, None, "T-1@In Progress@25"),
-        ("T-1", "Ready", 10.0, 25.0, "T-1@Ready@10"),
+        ("T-1", "in_progress", 25.0, None, "T-1@In Progress@25"),
+        ("T-1", "ready", 10.0, 25.0, "T-1@Ready@10"),
     ]
 
 
@@ -141,7 +141,7 @@ def test_a_lane_change_is_a_step_of_the_board_machine_and_moves_the_tasks_case(s
     assert [(row[0], row[3], row[4], row[7]) for row in _cases(store)] == [
         ("board", "T-1", "in_progress", "T-1@In Progress@25")
     ]
-    assert [row[1] for row in _intervals(store)] == ["In Progress", "Moon", "Ready"], "health still counts every lane"
+    assert [row[1] for row in _intervals(store)] == ["in_progress", "moon", "ready"], "health still counts every lane"
 
 
 def test_each_lane_counts_the_tasks_in_it_now_and_keeps_a_lane_every_task_has_left(store: HistoryStore) -> None:
@@ -153,9 +153,9 @@ def test_each_lane_counts_the_tasks_in_it_now_and_keeps_a_lane_every_task_has_le
     store.record_lane("T-2@Moon@40", "T-2", "Moon", 40.0)  # the same change replayed
 
     assert _lanes(store) == [
-        ("unattributed", "In Progress", 1, 25.0),
-        ("unattributed", "Moon", 1, 40.0),
-        ("unattributed", "Ready", 0, 10.0),
+        ("unattributed", "in_progress", 1, 25.0),
+        ("unattributed", "moon", 1, 40.0),
+        ("unattributed", "ready", 0, 10.0),
     ]
 
 
@@ -164,7 +164,7 @@ def test_each_source_counts_its_own_tasks_in_a_lane_and_when_it_first_entered_it
     store.record_lane("b/1", "T-1", "In Progress", 10.0)  # the same task id from another source: it leaves a's stay
     store.record_lane("a/2", "T-2", "Ready", 5.0)  # earlier than a's first, recorded later
 
-    assert _lanes(store) == [("a", "Ready", 1, 5.0), ("b", "In Progress", 1, 10.0)]
+    assert _lanes(store) == [("a", "ready", 1, 5.0), ("b", "in_progress", 1, 10.0)]
 
 
 def _fill(store: HistoryStore) -> None:
@@ -257,8 +257,8 @@ def test_the_consistency_check_names_each_summary_that_differs_from_the_raw_rows
     with store.engine.begin() as db:
         db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5 WHERE to_state = 'red_proven'"))
         db.execute(text("UPDATE starpulse_cases SET state = 'start' WHERE case_id = 'PROJ-7'"))
-        db.execute(text("DELETE FROM starpulse_lane_intervals WHERE lane = 'Ready'"))
-        db.execute(text("UPDATE starpulse_lanes SET open_tasks = 7 WHERE lane = 'In Progress'"))
+        db.execute(text("DELETE FROM starpulse_lane_intervals WHERE lane = 'ready'"))
+        db.execute(text("UPDATE starpulse_lanes SET open_tasks = 7 WHERE lane = 'in_progress'"))
 
     differences = store.summary_differences()
 
