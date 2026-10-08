@@ -160,6 +160,40 @@ export async function fetchRecord(id: string, fetcher: typeof apiFetch = apiFetc
   }
 }
 
+/** Milliseconds a record read while the pointer rested on its card stays fresh enough for its modal to draw without reading again. */
+export const READ_AHEAD_MS = 10_000;
+
+/** A record read ahead: when it was asked for, the read, and its result once that has landed. */
+export interface HeldRecord { at: number; read: Promise<TaskRecord | null>; got?: TaskRecord | null }
+
+/**
+ * Records read while the pointer rests on a card, so the click draws the whole record at once instead of the snapshot's
+ * entry and a request later. A read is held for `READ_AHEAD_MS`, as fresh as a modal opened when the hover began.
+ */
+export class RecordCache {
+  private held = new Map<string, HeldRecord>();
+  constructor(private fetcher: typeof apiFetch = apiFetch, private clock: () => number = Date.now) {}
+
+  /** Read `id`'s record ahead, unless a fresh read of it is already held. */
+  readAhead(id: string): void {
+    if (this.fresh(id)) return;
+    const held: HeldRecord = { at: this.clock(), read: fetchRecord(id, this.fetcher) };
+    void held.read.then((record) => { held.got = record; });
+    this.held.set(id, held);
+  }
+
+  /** The fresh read held for `id`, if any. */
+  fresh(id: string): HeldRecord | undefined {
+    const held = this.held.get(id);
+    return held && this.clock() - held.at < READ_AHEAD_MS ? held : undefined;
+  }
+
+  /** Drop `id`'s read, once a save has made it stale. */
+  forget(id: string): void {
+    this.held.delete(id);
+  }
+}
+
 export interface MenuState { open: boolean; on: number }
 export interface MenuStep {
   state: MenuState;

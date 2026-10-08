@@ -25,7 +25,7 @@ import { MilestoneOutline } from "./MilestoneOutline";
 import { NewTaskAction } from "./NewTask";
 import { SearchClear } from "../../shared/SearchClear";
 import { TaskView } from "./TaskView";
-import { fetchRecord, type TaskRecord } from "./taskView";
+import { RecordCache, fetchRecord, type TaskRecord } from "./taskView";
 import type { Capabilities, Pull } from "../../api";
 
 /** A milestone's header: the key the snapshot carries, or the bucket for tasks with none. */
@@ -254,18 +254,21 @@ export function HeldBy({ holders: held, open, hover }: {
   );
 }
 
-function Modal({ task, tasks, stack, names, marks, now, profiles, milestones, capabilities, close, open, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
-  task: KanbanTask; tasks: KanbanTask[]; stack?: ReactNode; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
+function Modal({ task, tasks, records, stack, names, marks, now, profiles, milestones, capabilities, close, open, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
+  task: KanbanTask; tasks: KanbanTask[]; records: RecordCache; stack?: ReactNode; names: Record<string, string>; marks: Marks; now: number; profiles: string[]; milestones: string[];
   capabilities?: Capabilities; close: () => void; open: (id: string) => void; hide: () => void; archive: () => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
-  // the snapshot's entry lacks the plan, notes and checks: the full record is read when the task opens, and the entry draws meanwhile
-  const [record, setRecord] = useState<TaskRecord | null>(null);
+  // the snapshot's entry lacks the plan, notes and checks: a record read while the pointer rested on the card draws at once;
+  // otherwise it is read when the task opens, and the entry draws meanwhile
+  const [held] = useState(() => records.fresh(task.id));
+  const [record, setRecord] = useState<TaskRecord | null>(held?.got ?? null);
   useEffect(() => {
+    if (held?.got) return;
     let current = true;
-    void fetchRecord(task.id).then((r) => current && setRecord(r));
+    void (held && held.got === undefined ? held.read : fetchRecord(task.id)).then((r) => current && setRecord(r));
     return () => { current = false; };
-  }, [task.id]);
+  }, [held, task.id]);
   return (
       <TaskView task={task} tasks={tasks} record={record} stack={stack} lane={names[task.lane] ?? task.lane} names={names} now={now} open={open}
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
@@ -388,6 +391,29 @@ interface Press {
   w: number;
   lifted: boolean;
 }
+/** The task whose modal is open. The Kanban only writes it and the modal host alone reads it, so opening or closing a task leaves the board undrawn. */
+class OpenTask {
+  private fns = new Set<() => void>();
+  constructor(private id: string | null) {}
+  get = () => this.id;
+  set = (id: string | null) => {
+    if (id === this.id) return;
+    this.id = id;
+    this.fns.forEach((fn) => fn());
+  };
+  subscribe = (fn: () => void) => {
+    this.fns.add(fn);
+    return () => void this.fns.delete(fn);
+  };
+}
+
+/** The open task's modal, drawn by `draw`; a task with no card opens no modal. */
+function ModalHost({ store, cards, draw }: { store: OpenTask; cards: KanbanTask[]; draw: (task: KanbanTask) => ReactNode }) {
+  const id = useSyncExternalStore(store.subscribe, store.get);
+  const task = id ? cards.find((t) => t.id === id) : undefined;
+  return task ? draw(task) : null;
+}
+
 /** Pixels a press travels before it lifts the card instead of opening it. */
 const LIFT_PX = 5;
 
@@ -405,7 +431,9 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
   const active = useViewActive();
   const [storage] = useState(browserStorage);
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(storage, location.search));
-  const [open, setOpen] = useState<string | null>(() => linkedTask(location.search));
+  const [openTask] = useState(() => new OpenTask(linkedTask(location.search)));
+  const setOpen = openTask.set;
+  const [records] = useState(() => new RecordCache());
   const [menu, setMenu] = useState<MenuName | null>(null);
   const [typing, setTyping] = useState(false);
   const [pick, setPick] = useState(0);
@@ -495,12 +523,12 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
     document.querySelector<HTMLElement>(`#cols .card[data-id="${spot}"]`)?.scrollIntoView({ block: "nearest" });
   }, [spot, cards, hud.names, prefs, note]);
   // each click is a new object, so the same line clicked twice opens it twice; a task with no card opens no modal
-  const [opened, setOpened] = useState(opening);
-  if (opening !== opened) {
-    setOpened(opening);
-    if (opening) setOpen(opening.id);
-  }
-  const task = open ? cards.find((t) => t.id === open) : undefined;
+  const opened = useRef(opening);
+  useLayoutEffect(() => {
+    if (opening === opened.current) return;
+    opened.current = opening;
+    if (opening) openTask.set(opening.id);
+  }, [opening, openTask]);
   const archiveTask = archiving ? cards.find((t) => t.id === archiving) : undefined;
   useEffect(() => {
     if (!toast) return;
@@ -631,10 +659,9 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
     <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} cross={view.cross.get(t.id)} onCross={setOpen} {...extra} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
       style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
       onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
-      onHover={(on) => setHovered((h) => (on ? t.id : h === t.id ? null : h))}
+      onHover={(on) => { if (on) records.readAhead(t.id); setHovered((h) => (on ? t.id : h === t.id ? null : h)); }}
       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
   );
-  const taskStack = task && stackOf(view, task.id);
   const outline = useMemo(() => milestoneOutline(cards, hud.settled), [cards, hud.settled]);
   return (
     <main id="kb" className={compact ? "compact" : undefined}>
@@ -735,14 +762,17 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
         <StartQuestion asking={started.asking} harnesses={started.harnesses} names={hud.names} canStart={starts.canStart()} pick={(change) => starts.pick(change)}
           start={() => answer("1")} manual={() => answer("2")} cancel={() => answer("Escape")} />
       )}
-      {active && task && (
-        <Modal key={task.id} task={task} tasks={cards} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
+      {active && (
+        <ModalHost store={openTask} cards={cards} draw={(task) => {
+          const taskStack = stackOf(view, task.id);
+          return <Modal key={task.id} task={task} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
           profiles={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task.id)} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to)) return void moves.drop(task, to); starts.ask(task, "modal"); setOpen(null); }}
           start={() => { starts.ask(task, "modal"); setOpen(null); }}
           dismiss={() => moves.dismiss(task.id)} dismissStart={() => starts.dismiss(task.id)}
-          saved={(record) => setEdited((all) => ({ ...all, [task.id]: { record, source: hud.cards } }))} />
+          saved={(record) => { records.forget(task.id); setEdited((all) => ({ ...all, [task.id]: { record, source: hud.cards } })); }} />;
+        }} />
       )}
       {active && archiveTask && (
         <ArchiveDialog key={archiveDialogKey(archiveTask.id)} task={archiveTask} lane={hud.names[archiveTask.lane] ?? archiveTask.lane} close={() => setArchiving(null)}

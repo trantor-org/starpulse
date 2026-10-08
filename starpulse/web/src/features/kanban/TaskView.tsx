@@ -412,7 +412,7 @@ export function TaskView(p: TaskViewProps) {
 
   return (
     <div id="kbm" onClick={(event) => onScrim(event.target, event.currentTarget) && p.close()}>
-      <div className="modal tv" role="dialog" aria-label={`${p.task.id} ${base.title}`}>
+      <div className="modal tv" role="dialog" aria-label={`${p.task.id} ${base.title}`} aria-busy={!p.record}>
         <div className="tvhead">
           <div className="tvmeta">
             <span className="tid">{p.task.id}</span>
