@@ -334,7 +334,7 @@ export function StartQuestion({ asking, harnesses, names, canStart, pick, start,
               </div>
             </>
           )}
-          {!harness && <div className="row"><span className="lb" /><span className="none">No configured harness can open a session here.</span></div>}
+          {!harness && <span className="none wide">No configured harness can open a session here.</span>}
         </div>
         <p className="note">
           <b>Start session</b> opens a Remote Control session; its agent claims the task, and the card waits in In progress until it does.

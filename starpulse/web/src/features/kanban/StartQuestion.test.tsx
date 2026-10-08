@@ -36,7 +36,7 @@ describe("the start question", () => {
     const host = draw(false, { tiers: [], harnesses: [] });
     expect(host.querySelector<HTMLButtonElement>(".startbtn")!.disabled).toBe(true);
     expect(host.querySelector<HTMLButtonElement>(".manual")!.disabled).toBe(false);
-    expect(host.querySelector(".opt .none")!.textContent).toBe("No configured harness can open a session here.");
+    expect(host.querySelector(".opt > .none.wide")!.textContent).toBe("No configured harness can open a session here.");
   });
 });
 

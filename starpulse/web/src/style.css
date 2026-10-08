@@ -572,6 +572,7 @@ body.dragging, body.dragging * { user-select: none; }
 #kbm .ask .seg button:disabled { color: var(--faint); }
 #kbm .ask .none, #kbm .ask .was { color: var(--muted); font-size: calc(11px * var(--fs)); }
 #kbm .ask .was { margin-left: 10px; }
+#kbm .ask .wide { grid-column: 1 / -1; }
 #kbm .ask .runs { color: var(--ink-3); font-size: calc(11px * var(--fs)); }
 #kbm .ask code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: calc(11px * var(--fs)); color: var(--ink); }
 #kbm .ask kbd { display: inline-block; min-width: 9px; margin-left: 8px; padding: 0 4px; border-radius: 3px; border: 1px solid currentColor; font: calc(10px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; text-align: center; opacity: .7; }
