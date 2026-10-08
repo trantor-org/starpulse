@@ -1,9 +1,9 @@
 diff --git a/starpulse/web/src/dagTies.ts b/starpulse/web/src/dagTies.ts
 new file mode 100644
-index 0000000..8265b07
+index 0000000..03d8eef
 --- /dev/null
 +++ b/starpulse/web/src/dagTies.ts
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,364 @@
 +// Design mockup only (design/dag-ties): the DAGs tied to a Board state, drawn back onto the Star Map as a small DAGs hangar docked beside each
 +// state they act on. Which DAGs are tied, the transition each writes or is cued by, the state each belongs to, and where each hangar and its
 +// orbiters sit; the renderer draws them (drawTies) and mock.js simulates their runs.
@@ -55,16 +55,11 @@ index 0000000..8265b07
 +  align: CanvasTextAlign;
 +  hitR: number;
 +  box: [number, number, number, number];
-+}
-+/** The launch chip: one pill under In Progress for the DAGs that only launch work. */
-+export interface Chip extends Pt {
-+  label: string;
-+  dags: Orbiter[];
-+  anchors: Anchor[];
++  /** Orbiting its state: the stretches of the ring its arc draws, clear of every name it would cross. */
++  arcs?: [number, number][];
 +}
 +export interface Ties {
 +  hubs: Hub[];
-+  chip: Chip | null;
 +  /** World units a screen pixel at the Board's fit, and the page's text size as a factor. */
 +  u: number;
 +  ts: number;
@@ -74,9 +69,9 @@ index 0000000..8265b07
 +/** Screen pixels: a hangar's disc, its orbit, and the least angle between two orbiters. */
 +const DISC = 13, ORBIT = 28, SEP = (40 * Math.PI) / 180;
 +
-+/** The tied DAGs of the Board level: a hangar per state with its orbiters for the DAGs that write or are cued by a transition, and the chip for
-+ *  the DAGs that only launch work. */
-+export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1, mode: Place = "edge"): Ties {
++/** The tied DAGs of the Board level: a hangar per state with its orbiters for the DAGs that write or are cued by a transition. A DAG that only
++ *  launches work stays off the Star Map (the DAGs view lists it). */
++export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1, mode: Place = "orbit"): Ties {
 +  const board = sky.board.machine, byDag = new Map<string, Orbiter>();
 +  const tie = (dag: string): Orbiter | null => {
 +    if (!sky.dagBy[dag]) return null;
@@ -129,15 +124,12 @@ index 0000000..8265b07
 +    t.primary = a;
 +    t.ledger = a.event;
 +  }
-+  const orbs = all.filter((t) => t.primary), launchers = all.filter((t) => !t.primary);
-+  const chip = launchers.length && ip
-+    ? { label: `✦ ${launchers.length} DAGs launch work here`, dags: launchers, anchors: launchers.flatMap((t) => t.anchors), x: ip.x, y: ip.y + Math.max(ip.visR, ip.moonR) + 34 * u }
-+    : null;
++  const orbs = all.filter((t) => t.primary);
 +  const byState = new Map<string, Orbiter[]>();
 +  for (const t of orbs) byState.set(t.primary!.state!, [...(byState.get(t.primary!.state!) ?? []), t]);
 +  const hubs: Hub[] = [];
-+  for (const [state, os] of byState) hubs.push(place(sc, state, os, hubs, chip, u, ts, mode));
-+  return { hubs, chip, u, ts };
++  for (const [state, os] of byState) hubs.push(place(sc, state, os, hubs, u, ts, mode));
++  return { hubs, u, ts };
 +}
 +
 +/** Where a state's hangar sits (the review bar's `?place=`):
@@ -158,9 +150,9 @@ index 0000000..8265b07
 +const curve = (e: BEdge) => (e.p0 && e.c && e.p1 && !e.loop ? { p0: e.p0, c: e.c, p1: e.p1 } : null);
 +
 +/** What a hangar keeps clear of, each padded: every state's disc and its name and count, every moon and its full name (a zoomed-in map cuts
-+ *  none), every transition line along its curve, the launch chip and the hangars already placed. `skip` leaves out one state's disc (a hangar
++ *  none), every transition line along its curve, and the hangars already placed with their orbiters. `skip` leaves out one state's disc (a hangar
 + *  on its ring) or one line (a hangar on it). */
-+function obstacles(sc: Scene, chip: Chip | null, placed: Hub[], u: number, ts: number, skip?: { state?: string; edge?: BEdge; lines?: boolean; discs?: boolean; only?: BEdge }): Box[] {
++function obstacles(sc: Scene, placed: Hub[], u: number, ts: number, skip?: { state?: string; edge?: BEdge; lines?: boolean; discs?: boolean; only?: BEdge }): Box[] {
 +  const pad = 8 * u, out: Box[] = [];
 +  for (const s of Object.values(sc.galaxies)) {
 +    const R = Math.max(s.R, s.visR);
@@ -181,15 +173,17 @@ index 0000000..8265b07
 +      out.push([q.x - d, q.y - d, q.x + d, q.y + d, 6]);
 +    }
 +  }
-+  for (const h of placed) out.push([...h.box, 1]);
-+  if (chip) out.push([chip.x - 110 * u * ts, chip.y - 14 * u, chip.x + 110 * u * ts, chip.y + 14 * u, 1]);
++  for (const h of placed) {
++    out.push([...h.box, 1]);
++    if (h.c) for (const o of h.orbs) out.push([o.x - 10 * u, o.y - 10 * u, o.x + 10 * u, o.y + 10 * u, 1]);
++  }
 +  return out;
 +}
 +
 +/** A hangar docks per `mode` in the first open candidate spot, else the one that overlaps least; then each orbiter turns toward the transition
 + *  it docks by, spread so no two touch. */
-+function place(sc: Scene, state: string, orbs: Orbiter[], placed: Hub[], chip: Chip | null, u: number, ts: number, mode: Place): Hub {
-+  const g = sc.galaxies[state], gs = Object.values(sc.galaxies), R0 = Math.max(g.R, g.visR), name = widest(orbs);
++function place(sc: Scene, state: string, orbs: Orbiter[], placed: Hub[], u: number, ts: number, mode: Place): Hub {
++  const g = sc.galaxies[state], gs = Object.values(sc.galaxies), R0 = Math.max(g.R, g.visR), name = widest(orbs), tall = (nameLines(orbs).length - 1) * 13 * u * ts;
 +  // the state's busiest line: the edge most of its DAGs dock by
 +  const n = new Map<BEdge, number>();
 +  for (const t of orbs) if (t.primary?.edge && curve(t.primary.edge)) n.set(t.primary.edge, (n.get(t.primary.edge) ?? 0) + 1);
@@ -197,14 +191,14 @@ index 0000000..8265b07
 +  if (!C && (mode === "edge" || mode === "line")) mode = "side";
 +  const small = mode === "rim" ? 0.75 : mode === "line" ? 0.7 : mode === "label" ? 0.55 : 1, r = DISC * u * small, orbit = ORBIT * u * small;
 +  // off its line, it keeps clear of that line and may cross the others
-+  const keep = obstacles(sc, chip, placed, u, ts, mode === "line" ? { edge: E } : mode === "rim" ? { state } : mode === "edge" ? { only: E } : undefined);
++  const keep = obstacles(sc, placed, u, ts, mode === "line" ? { edge: E } : mode === "rim" ? { state } : mode === "edge" ? { only: E } : undefined);
 +  // a hangar on a line crosses the lines that meet near it; only names, discs and other hangars rule a spot on the line out
-+  const bare = mode === "orbit" ? obstacles(sc, chip, placed, u, ts, { lines: true }) : mode === "line" ? obstacles(sc, chip, placed, u, ts, { lines: true, discs: true }) : keep;
++  const bare = mode === "orbit" ? obstacles(sc, placed, u, ts, { lines: true }) : mode === "line" ? obstacles(sc, placed, u, ts, { lines: true, discs: true }) : keep;
 +  const x0 = Math.min(...gs.map((s) => s.x - Math.max(s.R, s.visR))) - 40 * u, x1 = Math.max(...gs.map((s) => s.x + Math.max(s.R, s.visR))) + 40 * u;
 +  const rim = (s: (typeof gs)[number], p: Pt) => Math.hypot(p.x - s.x, p.y - s.y) - Math.max(s.R, s.visR, s.moonR);
 +  const mine = (p: Pt) => gs.every((s) => s === g || rim(s, p) > rim(g, p) + 12 * u);
 +  const hub = (at: Pt, extra: Partial<Hub> = {}): Hub => ({ x: at.x, y: at.y, state, r, orbit, orbs, style: mode, small, hitR: orbit, box: [0, 0, 0, 0], dir: outward(at.x - g.x, at.y - g.y), lab: at, align: "center", ...extra });
-+  const boxed = (h: Hub): Hub => ({ ...h, box: boxOf(h, name, u, ts) });
++  const boxed = (h: Hub): Hub => ({ ...h, box: boxOf(h, name, u, ts, tall) });
 +  const onLine = new Set<Hub>();
 +  const score = (h: Hub, own: boolean) => {
 +    const b = h.box;
@@ -257,46 +251,92 @@ index 0000000..8265b07
 +  order.forEach((t) => (t.a = aim(t)));
 +  // neighbours closer than the least gap push apart, half each, until none are; the ring wraps
 +  const sep = Math.min(h.style === "orbit" ? (22 * u) / h.orbit : SEP, (Math.PI * 2) / order.length);
-+  for (let pass = 0; pass < 60; pass++)
-+    for (let i = 0; i < order.length; i++) {
-+      const p = order[i], q = order[(i + 1) % order.length];
-+      let d = q.a - p.a;
-+      if (i === order.length - 1) d += Math.PI * 2;
-+      if (order.length < 2 || d >= sep) continue;
-+      p.a -= (sep - d) / 2;
-+      q.a += (sep - d) / 2;
-+    }
-+  for (const t of orbs) Object.assign(t, { x: c.x + Math.cos(t.a) * h.orbit, y: c.y + Math.sin(t.a) * h.orbit });
-+  if (h.c) {
-+    // the count right beside its orbiters: past them on the far side from the state first, then any other side of them, then round the ring
-+    const xs = orbs.map((t) => t.x), ys = orbs.map((t) => t.y), g8 = 9 * u * Math.max(h.small, 0.7), cands: Hub[] = [];
-+    const bx0 = Math.min(...xs) - g8, bx1 = Math.max(...xs) + g8, by0 = Math.min(...ys) - g8, by1 = Math.max(...ys) + g8, my = (by0 + by1) / 2, mx = (bx0 + bx1) / 2;
-+    const at: Record<Dir, [Pt, CanvasTextAlign]> = { right: [{ x: bx1 + 4 * u, y: my + 3 * u }, "left"], left: [{ x: bx0 - 4 * u, y: my + 3 * u }, "right"], down: [{ x: mx, y: by1 + 10 * u }, "center"], up: [{ x: mx, y: by0 - 6 * u }, "center"] };
-+    const out = outward(mx - c.x, my - c.y);
-+    for (const dir of [out, "right", "left", "down", "up"].filter((d, i, a) => a.indexOf(d) === i) as Dir[]) {
-+      const [lab, align] = at[dir];
-+      cands.push(boxed({ ...h, x: lab.x, y: lab.y, lab, align, hitR: 12 * u }));
-+    }
-+    const m = Math.atan2(orbs.reduce((s, t) => s + Math.sin(t.a), 0), orbs.reduce((s, t) => s + Math.cos(t.a), 0));
-+    for (let k = 1; k <= 9; k++)
-+      for (const sg of [-1, 1]) {
-+        const a = m + (sg * k * 12 * Math.PI) / 180, cx = Math.cos(a), cy = Math.sin(a), d = h.orbit + 12 * u;
-+        const align: CanvasTextAlign = cx > 0.35 ? "left" : cx < -0.35 ? "right" : "center";
-+        const lab = { x: c.x + cx * d, y: c.y + cy * d + (align === "center" ? (cy > 0 ? 8 : -6) * u : 3 * u) };
-+        cands.push(boxed({ ...h, x: lab.x, y: lab.y, lab, align, hitR: 12 * u }));
++  const spread = () => {
++    for (let pass = 0; pass < 60; pass++)
++      for (let i = 0; i < order.length; i++) {
++        const p = order[i], q = order[(i + 1) % order.length];
++        let d = q.a - p.a;
++        if (i === order.length - 1) d += Math.PI * 2;
++        if (order.length < 2 || d >= sep) continue;
++        p.a -= (sep - d) / 2;
++        q.a += (sep - d) / 2;
 +      }
-+    cands.forEach((x) => onLine.add(x));
-+    return best(cands);
++  };
++  spread();
++  // orbiting its state, the ring crosses the state's own name and its neighbours: each orbiter takes the nearest stretch clear of them
++  const ring = h.c ? obstacles(sc, placed, u, ts, { lines: true, state }) : [], rr = 10 * u, step = Math.PI / 90;
++  const free = (a: number) => {
++    const x = c.x + Math.cos(a) * h.orbit, y = c.y + Math.sin(a) * h.orbit;
++    return !ring.some((k) => over([x - rr, y - rr, x + rr, y + rr, 1], k) > 0);
++  };
++  const snap = (a: number) => {
++    for (let k = 0; k <= 90; k++) for (const sg of k ? [-1, 1] : [1]) if (free(a + sg * k * step)) return a + sg * k * step;
++    return a;
++  };
++  if (h.c)
++    for (let pass = 0; pass < 6; pass++) {
++      order.forEach((t) => (t.a = snap(t.a)));
++      if (pass < 5) spread();
++    }
++  const posAt = (a: number) => ({ x: c.x + Math.cos(a) * h.orbit, y: c.y + Math.sin(a) * h.orbit });
++  if (!h.c) {
++    for (const t of orbs) Object.assign(t, posAt(t.a));
++    return h;
 +  }
-+  return h;
++  // the count right beside its orbiters, past them on the far side from the state first, then any other side of them; where no side
++  // has room, the group turns a little round the ring (6° at a time, up to 90°) until one does, so the name never drifts off its DAGs
++  const base = orbs.map((t) => t.a), g8 = 9 * u * Math.max(h.small, 0.7);
++  let pick: { s: number; as: number[]; h: Hub } | null = null;
++  for (let k = 0; k <= 15 && pick?.s !== 0; k++)
++    for (const sg of k ? [-1, 1] : [1]) {
++      const as = base.map((a) => a + (sg * k * 6 * Math.PI) / 180);
++      if (k && !as.every(free)) continue;
++      const ps = as.map(posAt), own = ps.map((q): Box => [q.x - 9 * u, q.y - 9 * u, q.x + 9 * u, q.y + 9 * u, 1]);
++      const xs = ps.map((q) => q.x), ys = ps.map((q) => q.y);
++      const bx0 = Math.min(...xs) - g8, bx1 = Math.max(...xs) + g8, by0 = Math.min(...ys) - g8, by1 = Math.max(...ys) + g8, my = (by0 + by1) / 2, mx = (bx0 + bx1) / 2;
++      const at: Record<Dir, [Pt, CanvasTextAlign]> = { right: [{ x: bx1 + 4 * u, y: my + 3.5 * u * ts - tall / 2 }, "left"], left: [{ x: bx0 - 4 * u, y: my + 3.5 * u * ts - tall / 2 }, "right"], down: [{ x: mx, y: by1 + (4 + 8 * ts) * u }, "center"], up: [{ x: mx, y: by0 - (4 + 10 * ts) * u - tall }, "center"] };
++      const out = outward(mx - c.x, my - c.y);
++      for (const dir of [out, "right", "left", "down", "up"].filter((d, i, l) => l.indexOf(d) === i) as Dir[]) {
++        const [lab, align] = at[dir], cand = boxed({ ...h, x: lab.x, y: lab.y, lab, align, hitR: 12 * u }), b = cand.box;
++        const sc0 = [...bare, ...own].reduce((n, o) => n + over([...b, 1], o), 0) + (b[0] < x0 || b[2] > x1 ? 1e9 : 0);
++        if (!pick || sc0 < pick.s) pick = { s: sc0, as, h: cand };
++        if (sc0 === 0) break;
++      }
++      if (pick?.s === 0) break;
++    }
++  orbs.forEach((t, i) => Object.assign(t, { a: pick!.as[i] }, posAt(pick!.as[i])));
++  // the arc: the clear stretches between its outermost orbiters, round their middle however the angles wrap, broken at its own name too
++  const lb = pick!.h.box, m0 = Math.atan2(orbs.reduce((n, t) => n + Math.sin(t.a), 0), orbs.reduce((n, t) => n + Math.cos(t.a), 0));
++  const as = orbs.map((t) => m0 + Math.atan2(Math.sin(t.a - m0), Math.cos(t.a - m0))), pad = (14 * u) / h.orbit, arcs: [number, number][] = [];
++  const clear = (a: number) => {
++    const q = posAt(a);
++    return free(a) && over([q.x - 2 * u, q.y - 2 * u, q.x + 2 * u, q.y + 2 * u, 1], [...lb, 1]) === 0;
++  };
++  let run: number | null = null;
++  for (let a = Math.min(...as) - pad; a <= Math.max(...as) + pad + 1e-9; a += step / 2) {
++    if (clear(a)) run ??= a;
++    else if (run !== null) {
++      arcs.push([run, a]);
++      run = null;
++    }
++  }
++  if (run !== null) arcs.push([run, Math.max(...as) + pad]);
++  return { ...pick!.h, arcs };
 +}
 +/** A hangar's name: its one DAG, or how many it holds. */
 +export const nameOf = (orbs: Orbiter[]) => (orbs.length === 1 ? orbs[0].label : `${orbs.length} DAGs`);
-+/** The widest line a hangar's name can show: its name, or one member's "<dag> running". */
-+const widest = (orbs: Orbiter[]) => (orbs.length === 1 ? orbs[0].label : orbs.reduce((w, o) => (o.label.length + 8 > w.length ? `${o.label} running` : w), nameOf(orbs)));
++/** A hangar's name as drawn: a lone DAG's long name breaks after the hyphen nearest its middle, so it stays whole in half the width. */
++export const nameLines = (orbs: Orbiter[]): string[] => {
++  const n = nameOf(orbs), cuts = [...n.matchAll(/-/g)].map((m) => m.index + 1);
++  if (orbs.length > 1 || n.length <= 12 || !cuts.length) return [n];
++  const at = cuts.reduce((a, b) => (Math.abs(b - n.length / 2) < Math.abs(a - n.length / 2) ? b : a));
++  return [n.slice(0, at), n.slice(at)];
++};
++/** The widest line a hangar's name can show: its name (its longer line, broken), or one member's "<dag> running". */
++const widest = (orbs: Orbiter[]) => (orbs.length === 1 ? nameLines(orbs).reduce((a, b) => (b.length > a.length ? b : a)) : orbs.reduce((w, o) => (o.label.length + 8 > w.length ? `${o.label} running` : w), nameOf(orbs)));
 +/** The room a hangar takes: its orbit (or, orbiting its state, the count alone) and its name, up to two lines, under it or beside it. */
-+const boxOf = (h: Hub, name: string, u: number, ts: number): [number, number, number, number] => {
-+  const tw = (name.length * 3.4 + 4) * u * ts, lines = (10 + 32 * ts) * u, o = h.orbit;
++const boxOf = (h: Hub, name: string, u: number, ts: number, tall = 0): [number, number, number, number] => {
++  const tw = (name.length * 3.4 + 4) * u * ts, lines = (10 + 32 * ts) * u + tall, o = h.orbit;
 +  if (h.c) {
 +    const x = h.align === "left" ? [h.lab.x, h.lab.x + 2 * tw] : h.align === "right" ? [h.lab.x - 2 * tw, h.lab.x] : [h.lab.x - tw, h.lab.x + tw];
 +    return [x[0], h.lab.y - 9 * u * ts, x[1], h.lab.y + lines];
@@ -329,60 +369,52 @@ index 0000000..8265b07
 +}
 +export const simOf = (dag: string): SimRun | undefined => (window as unknown as { __ties?: Record<string, SimRun> }).__ties?.[dag];
 diff --git a/starpulse/web/src/renderer.ts b/starpulse/web/src/renderer.ts
-index 0f35d40..8aa4240 100644
+index 0f35d40..f7bb347 100644
 --- a/starpulse/web/src/renderer.ts
 +++ b/starpulse/web/src/renderer.ts
-@@ -27,6 +27,9 @@ import { createHistory } from "./history";
+@@ -27,6 +27,12 @@ import { createHistory } from "./history";
  import { sizes } from "./grow";
  import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
  import { dagData } from "./dags";
-+import { boardTies, nameOf, PLACES, simOf, type Chip, type Hub, type Orbiter, type Place as Dock, type SimRun, type Ties } from "./dagTies";
++import { boardTies, nameLines, PLACES, simOf, type Hub, type Orbiter, type Place as Dock, type SimRun, type Ties } from "./dagTies";
 +// the review bar's `?place=`: where a state's DAGs hangar docks (design mockup only)
-+const PLACE: Dock = ((q) => ((PLACES as string[]).includes(q ?? "") ? (q as Dock) : "edge"))(new URLSearchParams(location.search).get("place"));
++const PLACE: Dock = ((q) => ((PLACES as string[]).includes(q ?? "") ? (q as Dock) : "orbit"))(new URLSearchParams(location.search).get("place"));
++/** Design mockup: how a running DAG's orbiter shows it runs (the review bar's `?glyph=`). */
++const GLYPHS = ["tail", "spin", "ripple", "breathe", "glow"] as const;
++const GLYPH: (typeof GLYPHS)[number] = ((q) => (GLYPHS as readonly string[]).includes(q ?? "") ? (q as (typeof GLYPHS)[number]) : "tail")(new URLSearchParams(location.search).get("glyph"));
  import type { Dag, Machine, Snapshot, Writer } from "./types";
  import { fanBadge, fanTip, stepStatus } from "./fanout";
  import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
-@@ -94,6 +97,9 @@ type Hover =
+@@ -94,6 +100,8 @@ type Hover =
    | { kind: "sat"; o: SubState }
    | { kind: "medge"; o: MEdge }
    | { kind: "bedge"; o: BEdge }
 +  | { kind: "tie"; o: Orbiter }
 +  | { kind: "hub"; o: Hub }
-+  | { kind: "chip"; o: Chip }
    | { kind: "link"; o: Hop }
    | { kind: "caption"; o: LedgerView["cols"][number] };
  
-@@ -584,6 +590,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -584,6 +592,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
        if (d < Math.max(s.br, px(10)) && d < sd) [star, sd] = [s, d];
      }
      if (star) return { kind: "dag", o: star };
 +    const tz = ties();
 +    for (const h of tz?.hubs ?? []) for (const o of h.orbs) if (near(o, px(9))) return { kind: "tie", o };
-+    for (const h of tz?.hubs ?? []) if (near(h, h.hitR)) return { kind: "hub", o: h };
-+    if (tz?.chip) {
-+      const c = tz.chip, w = textW(c.label, labPx(11.5) * K) / K / 2 + px(9);
-+      if (Math.abs(x - c.x) < w && Math.abs(y - c.y) < px(12)) return { kind: "chip", o: c };
-+    }
++    // orbiting its state, a hangar is its name: the whole name block takes the click
++    for (const h of tz?.hubs ?? []) if (h.c ? x > h.box[0] && x < h.box[2] && y > h.box[1] && y < h.box[3] : near(h, h.hitR)) return { kind: "hub", o: h };
      for (const c of sc.fold?.ledger?.cols ?? []) if (x > c.x0 && x < c.x1 && y > c.y0 && y < c.y1) return { kind: "caption", o: c };
      for (const s of Object.values(sc.mStates)) if (near(s, Math.max(stateR(s), px(9)))) return { kind: "state", o: s };
      for (const p of sc.planets) if (near(p, p.subState ? Math.max(p.R, px(8)) : p.moon ? Math.max(p.R + 4, px(10)) : p.R + 16)) return { kind: "planet", o: p };
-@@ -703,6 +716,31 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -703,6 +715,24 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
          return `<div class="k">machine path · ${esc(h.o.from)} → ${esc(h.o.to)}</div><div class="n">${h.o.back ? "the task returns from the skill" : "a task opens this skill"}</div>`;
        case "medge":
          return `<div class="k">${esc(h.o.flow)} transition · ${esc(h.o.source)} → ${esc(h.o.target)}</div><div class="n">${esc(h.o.event)}</div>`;
-+      case "chip": {
-+        const rows = h.o.dags.map((t) => {
-+          const a = t.anchors[0], r = simOf(t.dag);
-+          return `${esc(t.dag)} <span class="k">${a.kind === "sub" ? "writes the states of" : "launches"} ${esc(a.flow ?? a.event)}${r?.status === "running" ? " · running" : ""}</span>`;
-+        });
-+        return `<div class="k">DAGs that launch work into In Progress · click to open In Progress</div>${rows.join("<br>")}`;
-+      }
 +      case "hub": {
 +        const rows = h.o.orbs.map((o) => {
 +          const r = simOf(o.dag), st = r ? (r.status === "failed" && r.unresolved ? "failed · unresolved" : r.status) : sky.dagBy[o.dag]?.status ?? "";
 +          return `${esc(o.label)} <span class="k">${o.primary?.kind === "cue" ? "cued by" : "writes"} ${esc(o.primary?.event ?? "")} · ${esc(st)}</span>`;
 +        });
-+        return `<div class="k">DAGs that act on ${esc(stateName(h.o.state))} · click to open them · right-click comes back</div><div class="n">DAGs · ${esc(stateName(h.o.state))}</div>${rows.join("<br>")}`;
++        return `<div class="k">DAGs that act on ${esc(stateName(h.o.state))} · click opens their Ledger · right-click comes back</div><div class="n">DAGs · ${esc(stateName(h.o.state))}</div>${rows.join("<br>")}`;
 +      }
 +      case "tie": {
 +        const o = h.o, d = sky.dagBy[o.dag], run = simOf(o.dag), cue = (e: string) => sky.cues.find((c) => c.dag === o.dag && c.event === e);
@@ -393,12 +425,12 @@ index 0f35d40..8aa4240 100644
 +          if (a.kind === "cue") { const c = cue(a.event); return `cued by ${esc(a.event)} <span class="k">${c?.resolves ? `· a failed run clears ${c.resolves === "forced" ? "only on a green forced rerun" : "on its next green run"}` : ""}</span>`; }
 +          return `${a.kind === "sub" ? "writes the states of" : "launches"} ${esc(a.flow ?? a.event)}`;
 +        });
-+        return `<div class="k">DAG tied to the Board · ${esc(st)} · click for the ${esc(o.ledger ?? "")} Ledger</div><div class="n">${esc(o.dag)}</div>${rows.join("<br>")}${d?.finishedAt ? `<div class="k">last run ${hhmm(finished(d.finishedAt))} MST</div>` : ""}`;
++        return `<div class="k">DAG tied to the Board · ${esc(st)} · ${(() => { const t = tieLedger(o); return t ? `click for the ${esc(t.ev)} Ledger` : "no Ledger to open"; })()}</div><div class="n">${esc(o.dag)}</div>${rows.join("<br>")}${d?.finishedAt ? `<div class="k">last run ${hhmm(finished(d.finishedAt))} MST</div>` : ""}`;
 +      }
        case "bedge":
          return `<div class="k">Board transition${h.o.events.length > 1 ? `s (${h.o.events.length})` : ""} · ${esc(h.o.source)} → ${esc(h.o.target)}${ledgerOfEdge(h.o) ? " · click for its Ledger" : ""}</div><div class="n">${h.o.events.map(esc).join("<br>")}</div>${h.o.writers.length ? h.o.writers.map(writerLine).join("<br>") : '<span class="k">no writer declared</span>'}`;
      }
-@@ -763,6 +801,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -763,6 +793,20 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      };
      openPanel();
    }
@@ -408,24 +440,31 @@ index 0f35d40..8aa4240 100644
 +    const led = S && evs.length ? pathLedger({ flows: [S.board], cues: S.cues }, evs) : null;
 +    return led ?? { kind: "fold", dags: h.orbs.map((o) => o.dag), crit: h.orbs.map((o) => `${o.dag}: ${o.primary?.kind === "cue" ? "runs on" : "writes"} ${o.primary?.event ?? ""}`), path: null };
 +  };
++  /** The Ledger an orbiter opens: its docking event's, else the first of its other events that has one (a state's self-loop has none). */
++  const tieLedger = (o: Orbiter) => {
++    for (const ev of new Set([o.ledger, ...o.anchors.map((a) => a.event)])) {
++      const led = S && ev ? pathLedger({ flows: [S.board], cues: S.cues }, [ev]) : null;
++      if (led) return { ev: ev!, led };
++    }
++    return null;
++  };
    const ledgerOfEdge = (e: BEdge) => (S ? pathLedger({ flows: [S.board], cues: S.cues }, e.events) : null);
    function click(fx: number, fy: number) {
      const h = hover, sky = S;
-@@ -775,6 +819,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -775,6 +819,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      // a moon opens its machine, and so does one of its sub-states (the machine the sub-state belongs to; its child opens from there)
      if (h.kind === "moon" || h.kind === "sat") return go([...path, { kind: "state", id: h.o.parent.id }, { kind: "machine", flow: h.kind === "moon" ? h.o.name : h.o.machine }], fx, fy);
      if (h.kind === "caption") return openDagPanel(scene!.stars[h.o.dag]);
-+    if (h.kind === "chip") return push({ kind: "state", id: "in_progress" }, fx, fy);
 +    // a hangar drills into its DAGs, one level down like a state, so a right-click comes back; an orbiter opens the Ledger of the transition it docks by
 +    if (h.kind === "hub") return push(hangarLevel(h.o), fx, fy);
 +    if (h.kind === "tie") {
-+      const led = h.o.ledger ? pathLedger({ flows: [sky.board], cues: sky.cues }, [h.o.ledger]) : null;
-+      return led ? push(led, fx, fy) : undefined;
++      const t = tieLedger(h.o);
++      return t ? push(t.led, fx, fy) : undefined;
 +    }
      // a Board path opens its Ledger when a DAG writes one of its events or is cued by it
      const ledger = h.kind === "bedge" ? ledgerOfEdge(h.o) : null;
      if (ledger) return push(ledger, fx, fy);
-@@ -1001,7 +1052,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1001,7 +1051,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
    function drawBoardEdges() {
      const sc = scene!;
      for (const e of sc.bEdges) {
@@ -434,7 +473,7 @@ index 0f35d40..8aa4240 100644
        flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
        cx.beginPath();
        cx.moveTo(e.p0!.x, e.p0!.y);
-@@ -1256,6 +1307,150 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1256,6 +1306,165 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
        }
      }
    }
@@ -474,21 +513,38 @@ index 0f35d40..8aa4240 100644
 +    cx.arc(x, y, r, 0, TAU);
 +    cx.fill();
 +  }
-+  /** The launch chip: one pill under In Progress for the DAGs that only launch work; a running one names itself in it. */
-+  function drawChip(t: Chip, hot: boolean) {
-+    const AGENT = "#a78bfa", runs = t.dags.filter((c) => simOf(c.dag)?.status === "running"), size = labPx(11.5);
-+    const s = runs.length ? `✦ ${runs.map((c) => c.label).join(", ")} running` : t.label, w = textW(s, size * K) / K + 18 / K, h = size + 10 / K;
-+    if (runs.length) halo(t.x, t.y, w * 0.7, ACT, 0.14 + 0.06 * Math.sin(clock * 2.4));
-+    cx.fillStyle = "rgba(6,10,20,0.85)";
-+    cx.strokeStyle = rgba(runs.length ? ACT : AGENT, hot ? 0.95 : 0.55);
-+    cx.lineWidth = 1 / K;
-+    cx.beginPath();
-+    cx.roundRect(t.x - w / 2, t.y - h / 2, w, h, h / 2);
-+    cx.fill();
-+    cx.stroke();
-+    text(s, t.x, t.y + 0.5 / K, size, rgba(runs.length ? ACT : "#cfd9ea", hot || runs.length ? 0.95 : 0.7), "center", 400);
-+    // hovered, it rings the machines its DAGs launch
-+    if (hot) for (const a of t.anchors) if (!a.diamond) circle(a.x, a.y, 10 / K, rgba(AGENT, 0.9), 1.4 / K, [2 / K, 2 / K]);
++  /** A running DAG's orbiter, per the review bar's `?glyph=`: an amber core, and a tail along its orbit (the comet a transition's line draws),
++   *  a turning arc, a ripple, a breathing fill, or the soft glow of round four. */
++  function runGlyph(h: Hub, o: Orbiter, r: number) {
++    const ph = (clock % 2.4) / 2.4, c = h.c ?? h;
++    if (GLYPH === "glow") {
++      halo(o.x, o.y, (18 * h.small) / K, ACT, 0.3 + 0.1 * Math.sin(clock * 2.4));
++      return dot(o.x, o.y, r, rgba(ACT, 0.95));
++    }
++    if (GLYPH === "breathe") return dot(o.x, o.y, r, rgba(ACT, 0.6 + 0.35 * Math.sin(clock * 2.6)));
++    dot(o.x, o.y, r, "rgba(6,10,20,0.95)");
++    circle(o.x, o.y, r, rgba(ACT, 0.95), 1.3 / K);
++    dot(o.x, o.y, r * 0.45, rgba(ACT, 0.95));
++    if (GLYPH === "spin") {
++      cx.strokeStyle = rgba(ACT, 0.9);
++      cx.lineWidth = 1.4 / K;
++      cx.beginPath();
++      cx.arc(o.x, o.y, r + 3.5 / K, clock * 4, clock * 4 + Math.PI / 2);
++      cx.stroke();
++    } else if (GLYPH === "ripple") {
++      if (ph < 0.7) pulse(o.x, o.y, r, ph / 0.7, ACT, 14);
++    } else if (ph < 0.7) {
++      // the tail: a comet round the orbit that runs into the orbiter, then a beat of rest
++      // from whichever side of it the orbit runs clear of the hangar's name
++      const span = Math.min((44 / K) / h.orbit, Math.PI / 3), R = h.orbit / Math.cos(span / 2), b = h.box;
++      const hits = (sg: number) => [0.33, 0.66, 1].some((f) => {
++        const x = c.x + Math.cos(o.a + sg * span * f) * h.orbit, y = c.y + Math.sin(o.a + sg * span * f) * h.orbit;
++        return x > b[0] && x < b[2] && y > b[1] && y < b[3];
++      });
++      const sg = h.c && hits(-1) && !hits(1) ? 1 : -1, a0 = o.a + sg * span, am = o.a + (sg * span) / 2;
++      const p0 = { x: c.x + Math.cos(a0) * h.orbit, y: c.y + Math.sin(a0) * h.orbit }, ctl = { x: c.x + Math.cos(am) * R, y: c.y + Math.sin(am) * R };
++      comet(p0, ctl, { x: o.x, y: o.y }, easeO(ph / 0.7), 2.5, ACT);
++    }
 +  }
 +  /** The moment a run touches its transition, and which way: a write when it lands (orbiter to transition), a cue when it starts (transition to orbiter). */
 +  function touch(o: Orbiter, run: SimRun | undefined) {
@@ -506,7 +562,6 @@ index 0f35d40..8aa4240 100644
 +  function drawTies() {
 +    const tz = ties(), sc = scene!, lightEdge = hover?.kind === "bedge" ? hover.o : null;
 +    if (!tz) return;
-+    if (tz.chip) drawChip(tz.chip, isHot("chip", tz.chip));
 +    for (const h of tz.hubs) drawHub(h, sc, lightEdge);
 +  }
 +  function drawHub(h: Hub, sc: Scene, lightEdge: BEdge | null) {
@@ -527,14 +582,14 @@ index 0f35d40..8aa4240 100644
 +    // the hangar: the teal disc, warmer while a member runs, and its orbit; orbiting the state itself, a faint arc behind its DAGs instead
 +    const heat = 0.12 + (live.length ? 0.14 + 0.05 * Math.sin(clock * 2.4) : 0);
 +    if (h.c) {
-+      // the arc spans its orbiters round their middle, however the angles wrap
-+      const m = Math.atan2(h.orbs.reduce((s, o) => s + Math.sin(o.a), 0), h.orbs.reduce((s, o) => s + Math.cos(o.a), 0)), pad = 14 / K / h.orbit;
-+      const as = h.orbs.map((o) => m + Math.atan2(Math.sin(o.a - m), Math.cos(o.a - m)));
++      // the arc behind its orbiters, broken where it would cross a name
 +      cx.strokeStyle = rgba(TEAL, hubHot ? 0.4 : 0.22);
 +      cx.lineWidth = 1 / K;
-+      cx.beginPath();
-+      cx.arc(h.c.x, h.c.y, h.orbit, Math.min(...as) - pad, Math.max(...as) + pad);
-+      cx.stroke();
++      for (const [a0, a1] of h.arcs ?? []) {
++        cx.beginPath();
++        cx.arc(h.c.x, h.c.y, h.orbit, a0, a1);
++        cx.stroke();
++      }
 +    } else {
 +      disc(h.x, h.y, h.r, TEAL, hubHot, heat);
 +      circle(h.x, h.y, h.orbit, rgba(TEAL, 0.14), 1 / K);
@@ -542,10 +597,8 @@ index 0f35d40..8aa4240 100644
 +    for (const { o, run } of runs) {
 +      const hot = isHot("tie", o), st = run ? run.status : S!.dagBy[o.dag]?.status ?? "", col = !run && (st === "running" || st === "queued") ? SLATE : DAG_COLOR[st] || SLATE, r = ((hot ? 7 : 6) * Math.max(h.small, 0.7)) / K;
 +      const running = run?.status === "running", failed = run?.status === "failed" && !!run.unresolved;
-+      if (running) {
-+        halo(o.x, o.y, (18 * h.small) / K, ACT, 0.3 + 0.1 * Math.sin(clock * 2.4));
-+        dot(o.x, o.y, r, rgba(ACT, 0.95));
-+      } else {
++      if (running) runGlyph(h, o, r);
++      else {
 +        dot(o.x, o.y, r, "rgba(6,10,20,0.95)");
 +        circle(o.x, o.y, r, rgba(failed ? FAIL : col, hot || failed ? 1 : 0.6), (hot ? 1.5 : 1.2) / K);
 +        dot(o.x, o.y, r * 0.4, rgba(failed ? FAIL : col, failed ? 0.95 : 0.7));
@@ -571,21 +624,22 @@ index 0f35d40..8aa4240 100644
 +    if (bad.length) subs.push([`${who(bad)}failed`, rgba(FAIL, 0.95)]);
 +    if (live.length) subs.push([`${who(live)}running`, rgba(ACT, 0.95)]);
 +    // the name on the side away from what the hangar docks by: under or over it centred, or beside it, the status lines under the name
-+    const tall = subs.length * (ss + 3 / K), gap = 8 / K;
++    const names = nameLines(h.orbs), lh = ls + 2 / K, tall = (names.length - 1) * lh + subs.length * (ss + 3 / K), gap = 8 / K;
 +    const [lx, ny, al]: [number, number, CanvasTextAlign] = h.c ? [h.lab.x, h.lab.y, h.align]
 +      : h.dir === "down" ? [h.x, h.y + h.orbit + gap + ls / 2, "center"]
 +      : h.dir === "up" ? [h.x, h.y - h.orbit - gap - ls / 2 - tall, "center"]
 +      : h.dir === "right" ? [h.x + h.orbit + 6 / K, h.y - tall / 2, "left"]
 +      : [h.x - h.orbit - 6 / K, h.y - tall / 2, "right"];
 +    cx.letterSpacing = `${0.6 / K}px`;
-+    text(nameOf(h.orbs), lx, ny, ls, rgba("#cfd9ea", hubHot ? 0.95 : 0.58), al, 300);
++    names.forEach((n, i) => text(n, lx, ny + i * lh, ls, rgba("#cfd9ea", hubHot ? 0.95 : 0.58), al, 300));
 +    cx.letterSpacing = "0px";
-+    subs.forEach(([s, col], i) => text(s, lx, ny + ls / 2 + 3 / K + ss / 2 + i * (ss + 3 / K), ss, col, al, 400));
++    const sy = ny + (names.length - 1) * lh;
++    subs.forEach(([s, col], i) => text(s, lx, sy + ls / 2 + 3 / K + ss / 2 + i * (ss + 3 / K), ss, col, al, 400));
 +  }
    /** `s` cut to `max` px at `size`, ending in an ellipsis when it was cut. */
    function fitText(s: string, max: number, size: number) {
      cx.font = `400 ${size}px Inter, system-ui, sans-serif`;
-@@ -1651,6 +1846,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1651,6 +1860,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      drawGalaxies();
      drawMoons();
      drawBoardEdges();
@@ -593,7 +647,7 @@ index 0f35d40..8aa4240 100644
      drawStateLinks();
      drawSun();
      drawPlanets();
-@@ -1724,7 +1920,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1724,7 +1934,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      }
    };
    /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
