@@ -187,3 +187,23 @@ def test_a_replay_puts_the_stored_lane_changes_in_the_log_once_and_adds_no_row_a
     ]
     site.hub_store.record_lane_entry("ana/T-1@in_progress@1000100.0", {"task": "T-1", "lane": "in_progress", "time": T0 + 100})
     assert len(site.hub_store.lane_rows()) == 2
+
+
+def test_lane_forwarding_continues_after_a_restart_when_a_restored_task_drops_a_dependency(tmp_path: Path) -> None:
+    site = Site(tmp_path)
+    before = BoardFeed(machines=MACHINES, clock=site.clock)
+    before.put(BoardTask(id="T-1", team="demo", title="t", lane="in_progress", dependencies=("T-0",)))
+    before.seen("7-0")
+    before.resume(site.ic_log, "board:tasks", lambda cursor: False)
+    before.save()
+    site.feed = BoardFeed(machines=MACHINES, clock=site.clock)
+    assert site.feed.resume(site.ic_log, "board:tasks", lambda cursor: True) == "7-0"
+    site.feed.record_lanes(site.ic_store, site.ic_log)
+
+    site.move("T-1", "review", at=H)  # the move that dropped T-0 from T-1's dependencies
+    site.move("T-2", "in_progress", at=2 * H)
+    site.drain(site.forwarder())
+    site.fold()
+
+    held = {(task, status) for task, _, _, status in site.hub_store.lane_rows()}
+    assert held == {("T-1", "review"), ("T-2", "in_progress")}
