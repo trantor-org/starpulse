@@ -210,8 +210,10 @@ is an epoch the Ledger passes so it reads only its last 24 hours, and None asks 
 whose config has a `[level]` table. It counts the level's machine on the Backlog flow metric definitions, merged across
 the sources that forward to the hub, a source being the prefix of an event id (`<source>/<id>`; `unattributed` when
 none). `wip` is the runs now in a working state (`orbit.working`, else every state that is neither initial nor a
-terminal), `throughput` the entries into the goal in the window, `time_in_state` each non-final state's stays clipped
-to the window, and `aging` each working run's age since its current working interval began against `threshold_s`, the
+terminal), `throughput` the entries into the goal in the window (a run that settled from the goal, into a final state
+no terminal names, is still in it, so seeing it in the goal again is no second entry), `time_in_state` each non-final
+state's stays clipped to the window, and `aging` each working run's age since its first working step, where its cycle
+time starts, against `threshold_s`, the
 85th-percentile cycle time of the trailing 12 weeks (null with no completion to measure). `orbit` totals the ended runs
 per terminal and the working time per working state, and each of `sources` carries its `ended` runs with
 `terminal_share`, its `dwell` per working state with `time_share`; a set of shares sums to 1, and is empty, not zero,
