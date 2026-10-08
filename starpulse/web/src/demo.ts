@@ -197,7 +197,7 @@ export class DemoServer {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private merges: ReturnType<typeof setInterval> | undefined;
 
-  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private forward?: ForwardDemo) {
+  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private forward?: ForwardDemo, private failingEvaluator = false) {
     const { history, ...snap } = structuredClone(fixture);
     // the fixture's times are kept as ages, so what settled an hour before the capture settled an hour before the page opened
     const age = clock() - snap.now;
@@ -206,7 +206,7 @@ export class DemoServer {
     for (const f of snap.flows) if (f.last != null) f.last += age;
     for (const e of snap.machineStrip?.entries ?? []) e.at += age;
     this.lanes = history ?? {};
-    this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card, clock())]));
+    this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card, clock(), failingEvaluator)]));
     const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
     this.day = ledger;
     this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? this.ledgerFields() : {}), capabilities: { edit: true, archive: true, create: true } });
@@ -304,7 +304,7 @@ export class DemoServer {
       for (const card of prev.filter((a) => a.id in next.settled && !(a.id in this.snapshot.settled))) {
         next.settled[card.id].at = this.clock();
         const work = { ...card, id: `DEMO-${++n}`, state: lane, moves: undefined, created: this.clock() };
-        this.records[work.id] = demoRecord(work, this.clock());
+        this.records[work.id] = demoRecord(work, this.clock(), this.failingEvaluator);
         fresh.add(work.id);
         board.agents.push(work);
       }
@@ -389,7 +389,7 @@ export class DemoServer {
     board.agents.push(card);
     this.created.add(id);
     this.records[id] = {
-      ...demoRecord(card, this.clock()), priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
+      ...demoRecord(card, this.clock(), this.failingEvaluator), priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
       acceptanceCriteria: list("acceptanceCriteria").map((item, i) => ({ n: i + 1, text: item, checked: false })),
     };
     this.publish(next, new Set([id]));
@@ -461,8 +461,8 @@ const startingLane = (machine: Machine): string => {
   return lanes.includes(initial) ? initial : lanes[0];
 };
 
-const demoRecord = (card: RawAgent, now: number): TaskRecord => {
-  const criteria = card.state === "waiting" ? demoCriteria(card.id, now) : undefined;
+const demoRecord = (card: RawAgent, now: number, failing = false): TaskRecord => {
+  const criteria = card.state === "waiting" ? demoCriteria(now, failing) : undefined;
   return {
     title: card.title,
     profile: card.model,
@@ -493,7 +493,7 @@ export const demoServer = (): DemoServer | null => {
   const refuseEdits = query.get("edit") === "refuse";
   const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
   const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
-  return fixture ? (server ??= new DemoServer(many ? padMachines(fixture, many) : fixture, undefined, refuseEdits, forward)) : null;
+  return fixture ? (server ??= new DemoServer(many ? padMachines(fixture, many) : fixture, undefined, refuseEdits, forward, query.get("evaluator") === "error")) : null;
 };
 
 /** A write says it is JSON, body or none: starpulse.api.server refuses any other, which a web page on another site cannot send without asking first. */

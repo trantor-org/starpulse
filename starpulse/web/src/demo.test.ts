@@ -214,16 +214,20 @@ describe("the demo server", () => {
     expect(s.snapshot.flows[0].agents[0].title).toBe("Edited in the demo");
   });
 
-  it("gives a Waiting task Start Criteria in its description and on its record, one demo task with an evaluator error", async () => {
-    const s = new DemoServer({ ...fixture(), flows: [{ name: "board", machine: BOARD, agents: [card("DEMO-4", "waiting"), card("DEMO-6", "waiting"), card("DEMO-2", "ready")] }] }, () => 1000);
-    const [four, six, ready] = await Promise.all(["DEMO-4", "DEMO-6", "DEMO-2"].map(async (id) => (await body(s.fetch(`/api/task/${id}`))).record as TaskRecord));
+  it("gives a Waiting task Start Criteria, and with a failing evaluator one it could not read", async () => {
+    const waiting = { ...fixture(), flows: [{ name: "board", machine: BOARD, agents: [card("DEMO-4", "waiting"), card("DEMO-2", "ready")] }] };
+    const read = async (s: DemoServer, id: string) => (await body(s.fetch(`/api/task/${id}`))).record as TaskRecord;
+    const ok = new DemoServer(waiting, () => 1000);
+    const four = await read(ok, "DEMO-4");
 
     expect(four.start_criteria?.map((c) => c.status)).toEqual(["met", "unmet", "unmet"]);
     expect(four.start_criteria?.find((c) => c.expr === "time()")).toMatchObject({ cmp: "at_least", want: 1000 + 3600 * 5 });
     expect(four.description).toContain("start_criteria:");
-    expect(six.start_criteria?.map((c) => c.status)).toEqual(["met", "error"]);
-    expect(six.start_criteria?.[1].error).toContain("prometheus");
-    expect(ready.start_criteria).toBeUndefined();
+    expect((await read(ok, "DEMO-2")).start_criteria).toBeUndefined();
+
+    const failing = await read(new DemoServer(waiting, () => 1000, false, undefined, true), "DEMO-4");
+    expect(failing.start_criteria?.map((c) => c.status)).toEqual(["met", "error"]);
+    expect(failing.start_criteria?.[1].error).toContain("prometheus");
   });
 
   it("can render the writer-refusal state in a public review fixture", async () => {
