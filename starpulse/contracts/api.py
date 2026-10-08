@@ -256,6 +256,10 @@ class Pull(_Api):
     merge_sha: str | None = Field(description="The merge commit's SHA; null until the PR merges.")
     merged_at: str | None = Field(description="When the PR merged, ISO 8601 UTC; null until it does.")
     threads: int = Field(description="Unresolved review threads.")
+    behind_main: int | None = Field(
+        default=None,
+        description="Commits `main` holds that the PR's head lacks; null once the head branch is gone."
+    )
     stale: bool = Field(description="True when the last read failed and this is the read before it.")
 
 

@@ -3039,6 +3039,18 @@
       "additionalProperties": false,
       "description": "One pull request a task cites, as GitHub last answered the server.",
       "properties": {
+        "behind_main": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Commits `main` holds that the PR's head lacks; null once the head branch is gone."
+        },
         "checks": {
           "description": "The head commit's check rollup.",
           "enum": [

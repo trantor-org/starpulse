@@ -54,6 +54,7 @@ fragment Pull on PullRequest {{
   files(first: 100) {{ nodes {{ path }} }}
   createdAt
   mergeable
+  headRef {{ compare(headRef: "main") {{ aheadBy }} }}
   commits(last: 100) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} checkSuites(first: 20) {{ nodes {{ status conclusion createdAt updatedAt workflowRun {{ runAttempt }} }} }} }} }} }}
   timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT]) {{ nodes {{ ... on HeadRefForcePushedEvent {{ createdAt afterCommit {{ oid }} }} }} }}
   reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
@@ -159,6 +160,7 @@ def _read_pulls(
                     "merged_at": node["mergedAt"],
                     "files": [file["path"] for file in node["files"]["nodes"]],
                     "threads": sum(not thread["isResolved"] for thread in node["reviewThreads"]["nodes"]),
+                    "behind_main": ((node["headRef"] or {}).get("compare") or {}).get("aheadBy"),
                     "stale": False,
                 }
                 history[url] = parse(url, node)
@@ -203,9 +205,10 @@ def fetch(
     repos: Sequence[Repo] = (),
     final: Mapping[str, dict] = MappingProxyType({}),
 ) -> Pulls:
-    """Each URL's `{number, url, checks, merged, merge_sha, merged_at, files, threads, stale}`; a URL GitHub does not return is left out.
+    """Each URL's `{number, url, checks, merged, merge_sha, merged_at, files, threads, behind_main, stale}`; a URL GitHub does not return is left out.
 
-    `checks` is `pass`, `failing`, `pending` or `none`; `threads` counts the unresolved review threads; `files` lists
+    `checks` is `pass`, `failing`, `pending` or `none`; `threads` counts the unresolved review threads; `behind_main` is how many commits `main` holds that the PR's head
+    lacks, `None` once its head branch is gone; `files` lists
     the paths the PR changes; `merge_sha` and `merged_at` (ISO 8601 UTC) are the merge commit and merge time of a
     merged PR and `None` for an open one. Each repository is read once, repositories `repos` pins last, and the
     answer's `pointers` and `reaches` hold the pin bump facts those reads settled. A repository GitHub cannot read is

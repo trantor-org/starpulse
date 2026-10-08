@@ -38,6 +38,7 @@ def _node(
     suites: tuple[dict, ...] = (),
     files: tuple[str, ...] = (),
     pinned: tuple[str | None, ...] = (),
+    behind: int | None = None,
 ) -> dict:
     """A GraphQL `pullRequest` node: head check rollup, review threads' resolved flags, merge facts and changed files.
 
@@ -70,6 +71,7 @@ def _node(
         },
         "timelineItems": {"nodes": []},
         "reviewThreads": {"nodes": [{"isResolved": resolved} for resolved in threads]},
+        "headRef": None if behind is None else {"compare": {"aheadBy": behind}},
     }
 
 
@@ -113,6 +115,7 @@ def _record(
     merge_sha: str | None = None,
     merged_at: str | None = None,
     files: list[str] | None = None,
+    behind_main: int | None = None,
 ) -> dict:
     return {
         "number": number,
@@ -123,6 +126,7 @@ def _record(
         "merged_at": merged_at,
         "files": files or [],
         "threads": threads,
+        "behind_main": behind_main,
         "stale": stale,
     }
 
@@ -316,6 +320,14 @@ def test_the_thread_count_is_the_unresolved_threads_only() -> None:
     assert fetch([FIRST], gh)[FIRST]["threads"] == 3
 
 
+def test_behind_main_is_the_commits_main_has_that_the_pr_head_lacks_or_none_without_a_head_branch() -> None:
+    gh = _Gh({"p1750": _node(1750, rollup="SUCCESS", behind=4), "p1751": _node(1751, rollup="SUCCESS")})
+
+    pulls = fetch([FIRST, SECOND], gh)
+
+    assert (pulls[FIRST]["behind_main"], pulls[SECOND]["behind_main"]) == (4, None)
+
+
 def test_the_record_carries_the_number_url_and_merged_state() -> None:
     gh = _Gh({"p1750": _node(1750, rollup="SUCCESS", merged=True)})
 
@@ -440,6 +452,7 @@ def test_one_gh_graphql_request_asks_for_every_number_in_the_repository(monkeypa
         "\nfragment Pull on PullRequest {\n  number\n  merged\n  closed\n  mergedAt\n  mergeCommit { oid }\n"
         "  files(first: 100) { nodes { path } }\n"
         "  createdAt\n  mergeable\n"
+        '  headRef { compare(headRef: "main") { aheadBy } }\n'
         "  commits(last: 100) { nodes { commit { oid statusCheckRollup { state } "
         "checkSuites(first: 20) { nodes { status conclusion createdAt updatedAt workflowRun { runAttempt } } } } } }\n"
         "  timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT]) "
