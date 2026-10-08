@@ -164,6 +164,11 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
   };
 }
 
+/** `sky` with the Ledger fields `snap` now carries; a Ledger delta changes nothing else, so every other part is the object `sky` held. */
+export function withLedgers(sky: Sky, snap: Snapshot): Sky {
+  return { ...sky, ledgers: snap.ledgers ?? {}, mergeStrip: snap.mergeStrip ?? null, mergePins: snap.mergePins ?? [] };
+}
+
 /** A Board state's count: a starting state's is the day's arrivals alone, as it is a concept no task stays in; any other's is the tasks in it,
  * and on a terminal state the day's arrivals there not already in it. */
 export function stateCount(sky: Sky, sid: string): number {

@@ -148,13 +148,15 @@ const last = () => FakeSource.made[FakeSource.made.length - 1];
 
 describe("openStream", () => {
   const seen: Snapshot[] = [];
+  const kinds: (string | undefined)[] = [];
   const lives: boolean[] = [];
-  const handlers = { snapshot: (s: Snapshot) => void seen.push(s), live: (on: boolean) => void lives.push(on) };
+  const handlers = { snapshot: (s: Snapshot, kind?: string) => void (seen.push(s), kinds.push(kind)), live: (on: boolean) => void lives.push(on) };
 
   beforeEach(() => {
     vi.useFakeTimers();
     FakeSource.made = [];
     seen.length = 0;
+    kinds.length = 0;
     lives.length = 0;
   });
   afterEach(() => vi.useRealTimers());
@@ -217,6 +219,15 @@ describe("openStream", () => {
 
     expect(seen.at(-1)!.ledgers?.MERGED.map((r) => r.key)).toEqual(["k"]);
     expect(ids(seen.at(-1)!)).toEqual(["PROJ-1:to_do"]);
+  });
+
+  it("names the delta each hand-over folded, and none for a connect's snapshot", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+    last().send("ledgers", { ledgers: { MERGED: [] } });
+    last().send("dags", { dags: [], error: null });
+
+    expect(kinds).toEqual([undefined, "ledgers", "dags"]);
   });
 
   it("folds the 24-hour strip and the pins the head left out with the Ledger rows", () => {

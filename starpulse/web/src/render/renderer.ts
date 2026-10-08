@@ -29,7 +29,7 @@ import {
   type BEdge, type Body, type Curve, type Galaxy, type GNode, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
   type LedgerView, type MachineTask, type Moon, type Pager, type RowView, type Star, type SubState, type Sun,
 } from "./scene";
-import { FLARE, Moves, PULSE, RING, TRAVEL, countText, hosted, merge, stateCount, type Move, type Sky } from "./sky";
+import { FLARE, Moves, PULSE, RING, TRAVEL, countText, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
 import { kanbanTasks } from "../features/kanban/kanban";
 import { embedded, openStream } from "../api/stream";
 import { createHistory } from "../api/history";
@@ -38,7 +38,7 @@ import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRing
 import { dagData } from "../features/dags/dags";
 import { boardTies, hangarLevel, nameLines, tieLedger, touches, type Hub, type Orbiter, type Ties } from "./dagTies";
 import { hubTip, tieTip } from "./dagTieTips";
-import type { ContractReport, Dag, LedgerRow, Machine, MachineEntry, RawAgent, Snapshot, Writer } from "../api";
+import type { ContractReport, Dag, Delta, LedgerRow, Machine, MachineEntry, RawAgent, Snapshot, Writer } from "../api";
 import { fanBadge, fanTip, stepStatus } from "../features/fanout/fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
@@ -476,12 +476,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // ---- data: every machine's tasks and the runs instances' workflows, pushed by the stream ----
   /** Each connect's snapshot and every delta after it, drawn at once. */
-  function onSnapshot(next: Snapshot) {
+  function onSnapshot(next: Snapshot, kind?: Delta["kind"]) {
     const first = !S;
     if (demo && snap) {
       snap = demoLive(snap, next);
       return;
     }
+    if (kind === "ledgers" && S) return void applyLedgers(next);
     apply(next);
     if (first && demo && !stopped) timer = window.setTimeout(demoTick, 1200);
   }
@@ -522,6 +523,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     paintFan();
     paintMerge();
     if (away) heartbeat(); // the canvas draws no frame behind another view, but the Recent feed beside it stays current
+    else loop.wake();
+  }
+  /** A Ledger delta changes the merge rows and strip alone, so the sky, the HUD, the moves and the fans stay as they were and only the layout and the merge panel redraw. */
+  function applyLedgers(next: Snapshot) {
+    snap = next;
+    T = Date.now() / 1000;
+    S = withLedgers(S!, next);
+    layout(true);
+    paintMerge();
+    if (away) heartbeat();
     else loop.wake();
   }
   /** What the HUD shows, written once per snapshot. */
