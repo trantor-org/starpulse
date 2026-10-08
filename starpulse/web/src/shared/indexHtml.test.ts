@@ -7,7 +7,7 @@ const page = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 /** Every `<link>` tag in the page's head, as its attributes. */
 function links(): Record<string, string>[] {
   return [...page.matchAll(/<link\b([^>]*)>/g)].map(([, attrs]) =>
-    Object.fromEntries([...attrs.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, k, v]) => [k, v])),
+    Object.fromEntries([...attrs.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([, k, v]) => [k, v ?? ""])),
   );
 }
 
@@ -17,10 +17,23 @@ describe("index.html's first paint", () => {
     expect(blocking).toEqual([]);
   });
 
-  it("still asks for the fonts, and applies them when they arrive", () => {
-    const fonts = links().find((l) => /fonts\.googleapis\.com\/css2/.test(l.href ?? ""));
-    expect(fonts?.media).toBe("print");
-    expect(fonts?.onload).toContain("media");
+  it("links no font host: the page serves its own fonts, so no load paints in a fallback face or waits on another origin", () => {
+    expect(page).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+  });
+
+  it("preloads, from its own origin, each face the first frame draws", () => {
+    const preloaded = links().filter((l) => l.rel === "preload" && l.as === "font");
+    for (const l of preloaded) {
+      expect(l.type).toBe("font/woff2");
+      expect(l).toHaveProperty("crossorigin"); // a font fetch is anonymous-CORS, so a preload without it is fetched twice
+      expect(l.href).not.toMatch(/^(https?:)?\/\//);
+    }
+    expect(preloaded.map((l) => l.href?.split("/").pop()?.replace(/\.woff2$/, "")).sort()).toEqual([
+      "inter-latin-300-normal",
+      "inter-latin-400-normal",
+      "inter-latin-500-normal",
+      "jetbrains-mono-latin-400-normal",
+    ]);
   });
 });
 

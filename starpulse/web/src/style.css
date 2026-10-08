@@ -1,3 +1,8 @@
+/* The page's own fonts (latin subset, OFL): index.html preloads these same files, and the canvas waits on them (src/render/fonts.ts). */
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 300; font-display: block; src: url("@fontsource/inter/files/inter-latin-300-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: block; src: url("@fontsource/inter/files/inter-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: block; src: url("@fontsource/inter/files/inter-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: block; src: url("@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
 /* The palette. Every color the page draws comes from a token here, and a Vitest test (styleTokens.test.ts) fails on a color literal anywhere else.
    A translucent tint is a token mixed with transparent: color-mix(in srgb, var(--ok) 18%, transparent). A mockup reuses these names and the
    element sheet (design/elements/); it never adds a hue. design/elements/ draws every token and each element below once. */
