@@ -23,7 +23,7 @@ def _offers_an_adapter(module) -> bool:
 
 
 def test_the_readme_documents_bare_types() -> None:
-    assert {"native", "upstream_backlog", "jira", "dagu", "github_actions"} <= _documented_bare_types()
+    assert {"native", "upstream_backlog", "jira", "dagu", "github_actions", "systemd"} <= _documented_bare_types()
 
 
 @pytest.mark.parametrize("kind", sorted(_documented_bare_types()))

@@ -14,8 +14,8 @@ tasks, running in your browser with no server.
   away; a Kanban view shows the same tasks as columns, and moves made there are written back to the board when its
   adapter has a writer.
 - **Workflow runs.** Each workflow is drawn as its step graph with its latest run. [Dagu](https://github.com/dagu-org/dagu) and
-  [GitHub Actions](https://docs.github.com/actions) are read directly; any other scheduler reports its runs with
-  `starpulse emit`.
+  [GitHub Actions](https://docs.github.com/actions) are read directly, as are a host's systemd timers; any other
+  scheduler reports its runs with `starpulse emit`.
 - **Agents at work.** A Claude Code session's OpenTelemetry log export moves the session through its own
   machine, so you see which agent is prompting, running a tool or waiting.
 - **Pull requests and Copilot.** A repository's pull requests move through opened, checks passing or failing, and
@@ -560,6 +560,29 @@ run_safe = ["ui-preview.yml"]
 - **Events.** The repository is listed every 60 s. A `workflow_run` webhook, mapped with
   `starpulse.adapters.runs.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
   at once.
+
+### systemd timers
+
+`type = "systemd"` reads a declared allowlist of a host's timers, not every timer on it. Each timer is a workflow named
+for its stem (`apt-daily`) with one step, the service it activates (`apt-daily.service`), and that service's latest run.
+
+```toml
+[[runs]]
+name = "timers"
+type = "systemd"
+url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
+```
+
+- **`url` is the allowlist:** comma-separated timer units. A bare name reads the system manager and a `user/` prefix
+  reads `systemctl --user`; a name without `.timer` means `<name>.timer`. Two timers with one stem are refused.
+- **Status** comes from the service's `systemctl show`: an `ActiveState` of `activating`, `active`, `reloading` or
+  `deactivating` is `running`; otherwise a `Result` other than `success` is `failed`, and `success` is `succeeded`, or
+  `not_started` when the service has never started. The engine's own state stays in `raw` as `<ActiveState>/<Result>`.
+  The run starts at `ExecMainStartTimestamp` and ends at `ExecMainExitTimestamp`.
+- **Errors.** An allowlisted unit that does not exist, or a `systemctl` that fails or answers a timestamp not in UTC,
+  shows as the instance's error and keeps the last reading; no timer is dropped silently.
+- **Events.** The allowlist is read every 30 s; the adapter reads no event-log entries. There is no Run now: starting a
+  root unit needs a polkit grant, so the adapter offers no start. `systemctl` must run on the host that serves StarPulse.
 
 ### Show pull requests and Copilot work
 
