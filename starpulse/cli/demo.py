@@ -307,7 +307,7 @@ FILL_SETTLED = {"completed": 9, "archived": 2}
 PROFILES = ("@agent-standard-high", "@agent-fast-low", "@agent-deep-high", "")
 SIZES = ("size-1", "size-2", "size-3", "size-5", "size-8")
 KINDS = ("kind-feature", "kind-bug", "kind-execute")
-#: The pull request each filled lane's tasks carry: (checks, merged) by lane, threads cycling 0..2.
+#: The pull request each filled lane's tasks carry: (checks, merged) by lane, threads cycling 0..2 and an open one behind main by three commits a thread.
 FILL_PULLS = {
     "in_progress": ("pending", False),
     "review": ("pass", False),
@@ -365,7 +365,7 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
         )
         if pull:
             pulls[ids[i]] = [
-                {"checks": checks, "merged": merged, "threads": threads}
+                {"checks": checks, "merged": merged, "threads": threads, "behind_main": 0 if merged else threads * 3}
                 for checks, merged, threads in (pull if isinstance(pull[0], tuple) else (pull,))
             ]
     settled = {
@@ -392,7 +392,7 @@ def scrub(live: dict) -> dict:
 
     A task keeps one demo name wherever it is drawn, so a machine's task still sits on the Board. A Board task keeps
     its lane, when it entered it and since when it has been workable, its milestone (renamed `m-N`), its kind and size labels, the dependencies that
-    are on the Board and a synthetic description; its pull requests keep their checks and threads but lose their
+    are on the Board and a synthetic description; its pull requests keep their checks, threads and distance behind main but lose their
     number and address.
     """
     names: dict[str, str] = {}
@@ -682,7 +682,7 @@ def scrub_board(board: dict, renames: dict[str, str]) -> dict:
             "assignee": t["assignee"] if PROFILE.match(t.get("assignee") or "") else "",
             "dependencies": [names[d] for d in t.get("dependencies", []) if d in names],
             "prs": [
-                {"number": next(prs), **{k: p[k] for k in ("checks", "merged", "threads") if k in p}}
+                {"number": next(prs), **{k: p[k] for k in ("checks", "merged", "threads", "behind_main") if k in p}}
                 for p in t.get("prs", [])
             ],
             "live": t.get("live"),

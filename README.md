@@ -273,7 +273,7 @@ refused (exit 1) until you pass `--force`, while one the package has since updat
 which of the four each copy is.
 
 `waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
-merged state and open review threads the server last read when it has them.
+merged state, open review threads and commits behind `main` the server last read when it has them.
 
 ## Configure
 

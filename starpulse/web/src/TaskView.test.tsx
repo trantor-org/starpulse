@@ -15,7 +15,7 @@ const styles = readFileSync(new NodeURL("./style.css", import.meta.url), "utf8")
 
 const task: KanbanTask = {
   id: "TASK-9", title: "Redraw the view", lane: "ready", milestone: "m-89", labels: ["needs-human"], assignee: "@agent-standard-high",
-  dependencies: ["TASK-1"], openDeps: 0, prs: [{ number: 12, url: "http://pr/12", checks: "pass", merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false }],
+  dependencies: ["TASK-1"], openDeps: 0, prs: [{ number: 12, url: "http://pr/12", checks: "pass", merged: false, merge_sha: null, merged_at: null, threads: 0, behind_main: null, stale: false }],
   description: "from the snapshot", live: null, released: false, entered: 700, created: 100, workableSince: null,
   machines: [{ machine: "in-progress", state: "pr_opened", at: 900, trail: [] }],
   moves: { in_progress: { allowed: true, reason: "", skill: "" }, review: { allowed: false, reason: "no review yet", skill: "completing-tasks" } },
@@ -240,6 +240,15 @@ describe("the task view's right rail", () => {
     expect(html).toMatch(/<a href="http:\/\/pr\/13"[^>]*>#13 ↗<\/a><span class="chk merged"><i><\/i>merged<\/span>/);
     expect(html).toContain("no open threads");
     expect(rows(draw({ task: { ...task, prs: [] } }), "Pull requests")).toContain("None yet");
+  });
+
+  it("draws how far an open pull request is behind main, and nothing when it is level or has no head branch", () => {
+    const prs = [{ ...task.prs[0], behind_main: 4 }, { ...task.prs[0], number: 13, url: "http://pr/13", behind_main: 1 }, { ...task.prs[0], number: 14, url: "http://pr/14", behind_main: 0 }, { ...task.prs[0], number: 15, url: "http://pr/15" }];
+    const html = rows(draw({ task: { ...task, prs } }), "Pull requests");
+
+    expect(html).toContain("4 commits behind main");
+    expect(html).toContain("1 commit behind main");
+    expect(html.match(/behind main/g)).toHaveLength(2);
   });
 
   it("lists what the task depends on and what it holds, each row its id, title and lane", () => {

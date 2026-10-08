@@ -366,6 +366,10 @@ export interface PullsDelta {
  */
 export interface Pull {
   /**
+   * Commits `main` holds that the PR's head lacks; null once the head branch is gone.
+   */
+  behind_main?: number | null;
+  /**
    * The head commit's check rollup.
    */
   checks: "pass" | "failing" | "pending" | "none";
