@@ -7,7 +7,7 @@
 // Click drills in, right-click steps out (after clearing any zoom), the wheel
 // zooms about the cursor between the level's fit and eight times it, and a drag
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
-import { demoStep } from "./demo";
+import { demoLive, demoStep } from "./demo";
 import { RunEvents, type RunLine } from "./fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { animating, frameLoop, framePace } from "./idle";
@@ -18,6 +18,10 @@ import { createContract } from "./contract";
 import { fetchMerges } from "./ledgerPage";
 import { AMBER, drawRows, CROSS, type Hits, type Ink } from "./ledgerRows";
 import { begin, dragMove, dragStart, ease as easeScroll, fail, keyScroll, newScroll, place, receive, take, wantsPage, wheelScroll, type Scroll } from "./ledgerScroll";
+import { pinsOf, portOf, withPins, type Pins } from "./ledgerPins";
+import { drawStrip } from "./ledgerStripDraw";
+import { inView } from "./ledgerStrip";
+import { RerunStore, rerunLine } from "./rerun";
 import { spotIn, type Target } from "./search";
 import {
   BOARD_COLOR, GALAXY_MIN, RAMP, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, textW, turnPage,
@@ -358,7 +362,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     if (trans || !scene) return;
-    const grid = ledgerGrid();
+    const grid = ledgerPort();
     if (grid) {
       scroll = wheelScroll(scroll, grid, e, view.k);
       return;
@@ -384,7 +388,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onUp = (e: MouseEvent) => {
     if (scroll.drag) scroll = { ...scroll, drag: null };
     else if (drag && !drag.moved && e.target === cv) {
-      const grid = ledgerGrid();
+      const grid = ledgerPort();
       if (grid && inBox(scrollHits.chip, worldAt(e.offsetX, e.offsetY))) scroll = keyScroll(scroll, grid, "Home") ?? scroll;
       else click(e.offsetX, e.offsetY);
     }
@@ -392,7 +396,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   const onMove = (e: MouseEvent) => {
     if (scroll.drag) {
-      const grid = ledgerGrid();
+      const grid = ledgerPort();
       if (grid) scroll = dragMove(scroll, grid, e.clientY, view.k, labPx(24));
       return;
     }
@@ -415,7 +419,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onKey = (e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement) return void (e.key === "Escape" && closePanel());
     if (away) return;
-    const grid = ledgerGrid(), next = grid && !e.ctrlKey && !e.metaKey && !e.altKey ? keyScroll(scroll, grid, e.key) : null;
+    const grid = ledgerPort(), next = grid && !e.ctrlKey && !e.metaKey && !e.altKey ? keyScroll(scroll, grid, e.key) : null;
     if (next) {
       e.preventDefault();
       scroll = next;
@@ -439,7 +443,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function onSnapshot(next: Snapshot) {
     const first = !S;
     if (demo && snap) {
-      snap = { ...snap, dags: next.dags }; // the demo plays the machines itself and keeps only the runs instances' workflows live
+      snap = demoLive(snap, next);
       return;
     }
     apply(next);
@@ -671,7 +675,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function hit(x: number, y: number): Hover | null {
     const sc = scene!, near = (o: Pt, r: number) => Math.hypot(o.x - x, o.y - y) < r;
     if (sc.top) return hitTop(sc, x, y);
-    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px, ledgerGrid() ? place(scroll, ledgerGrid()!) : []) : null;
+    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px, ledgerShown()) : null;
     if (mine) return mine;
     for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < Math.max(4, px(7))) return { kind: "mtask", o: s };
     for (const t of sc.tasks) if (!t.gone && near(t, Math.max(t.big ? 7 : 5, px(7)))) return { kind: "task", o: t };
@@ -749,11 +753,15 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   });
   // ---- the Ledger: its rows' tips and panel, the doctor's banner, and the merge in focus ----
   const contract = createContract({ onChange: () => loop.wake() });
+  const rerunStore = new RerunStore(undefined, () => [paintMerge(), loop.wake()]);
   /** Where the banner was drawn this frame, and the report it states; none off a merge Ledger or before a report. */
   let doctor: DoctorBox | null = null;
   const heldRows = () => {
     const led = scene?.fold?.ledger, held = led ? S?.ledgers[led.event] ?? [] : [];
-    return held.length && held === scrollHeld ? scroll.rows : held;
+    const rows = held.length && held === scrollHeld ? scroll.rows : held, extra = S?.mergePins ?? [];
+    if (!extra.length) return rows;
+    const have = new Set(rows.map((r) => r.key)), more = extra.filter((r) => !have.has(r.key));
+    return more.length ? [...rows, ...more] : rows;
   };
   function panelCtx(): PanelCtx {
     const sc = scene!, fold = sc.fold!, led = fold.ledger!, rows = heldRows(), byKey = new Map(rows.map((r) => [r.key, r])), dags = led.cols.map((c) => c.dag);
@@ -761,7 +769,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       event: led.event, from: fold.a!.name, to: fold.b!.name, ties: led.cols,
       steps: Object.fromEntries(dags.map((d) => [d, sc.stars[d].glyph.nodes.map((n) => n.name)])),
       optional: Object.fromEntries(dags.map((d) => [d, optionalSteps(rows, d)])),
-      palette: { ...DAG_COLOR, waiting: CROSS }, now: T, hm: hhmm, by: (k) => byKey.get(k), task: (id) => taskLink(id, id, S!),
+      palette: { ...DAG_COLOR, waiting: CROSS }, now: T, hm: hhmm, by: (k) => byKey.get(k), task: (id) => taskLink(id, id, S!), rerun: rerunStore.state,
     };
   }
   /** The row whose panel is open, if one is. */
@@ -769,8 +777,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** The merge the Ledger's templates are coloured by: the hovered row, else the open one, else the newest. */
   const focused = () => focusRow(hover?.kind === "lrow" ? hover.o : null, openRow(), heldRows());
   const starOfStep = (n: GNode) => Object.values(scene!.stars).find((s) => s.glyph.nodes.includes(n));
+  /** The merge panel's force-rerun buttons post to the rerun route; the store repaints the panel with the run's refusal. */
+  const wireRerun = () => panel.querySelectorAll<HTMLElement>("[data-rerun]").forEach((b) => void (b.onclick = () => void rerunStore.run(b.dataset.rerun!, T)));
   function openMerge(row: LedgerRow) {
     panel.innerHTML = mergePanel(row, panelCtx());
+    wireRerun();
     openPanel();
     mergeSel = row.key;
   }
@@ -781,6 +792,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const top = panel.scrollTop;
     panel.innerHTML = mergePanel(row, panelCtx());
     panel.querySelector<HTMLElement>(".x")!.onclick = () => closePanel();
+    wireRerun();
     panel.scrollTop = top;
   }
   const SLOT = '<div id="trace-slot"></div>';
@@ -1487,6 +1499,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let ledgerSeen: Set<string> | null = null, ledgerAt = 0;
   const arrived = new Map<string, number>(), ledgerFx: { x: number; y: number; r: number; t0: number; col: string; grow: number }[] = [], ledgerComets: number[] = [];
   const rowInk: Ink = {
+    star4: (x, y, r, col) => {
+      cx.fillStyle = col;
+      cx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4 - Math.PI / 2, d = i % 2 ? r * 0.4 : r;
+        cx[i ? "lineTo" : "moveTo"](x + d * Math.cos(a), y + d * Math.sin(a));
+      }
+      cx.closePath();
+      cx.fill();
+    },
     text, fit: fitText, stroke, circle: (x, y, r, col, w) => circle(x, y, r, col, w), dot, pulse: (x, y, r, age, col, grow) => pulse(x, y, r, age, col, grow),
     width: (s, size, weight = 400) => {
       cx.font = `${weight} ${size}px Inter, system-ui, sans-serif`;
@@ -1521,6 +1543,20 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let scroll: Scroll = newScroll(), scrollAt = 0, scrollHeld: readonly LedgerRow[] | null = null, scrollView = "", scrollGen = 0, scrollHits: Hits = { thumb: null, chip: null };
   /** The merge Ledger's viewport while one is on screen; null on any other level, and while a level is changing. */
   const ledgerGrid = () => (!trans && level().kind === "fold" ? scene?.fold?.ledger?.grid ?? null : null);
+  /** The unresolved band as last drawn: the merges pinned above the rows, which scroll in the viewport left under it. */
+  let pins: Pins = { shown: [], all: [], below: 0, failed: 0 };
+  /** Where the rows scroll: the Ledger's viewport under the band. */
+  const ledgerPort = () => {
+    const grid = ledgerGrid();
+    return grid ? portOf(grid, pins.shown.length) : null;
+  };
+  /** The rows the pointer can hit: the band's, then those scrolling in the viewport under it. */
+  function ledgerShown() {
+    const grid = ledgerGrid(), port = ledgerPort();
+    if (!grid || !port) return [];
+    const band = pins.shown.map((row, i) => ({ row, y: grid.top + grid.rh / 2 + i * grid.rh }));
+    return [...band, ...place(scroll, port).filter((p) => p.y > port.top - port.rh / 2 && p.y < port.top + port.view + port.rh / 2)];
+  }
   /** The Ledger scrolling or loading is something to animate: the offset easing, a page on its way, or a failed one waiting to be asked again. */
   const scrolling = () => !!ledgerGrid() && (scroll.y !== scroll.ty || scroll.fetching || (scroll.more && scroll.retryAt > clock));
   /** The footer row came into view: ask for the merges older than the oldest held. */
@@ -1584,10 +1620,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     // the rows scroll under the templates: the head the server sent joins the merges loaded, the offset eases, and the footer coming into view asks for a page
     if (grid) {
       if (clock - scrollAt > 1.5) [scroll, scrollHeld, scrollGen] = [newScroll(), null, scrollGen + 1];
-      const dt = Math.min(0.1, clock - scrollAt), shape = `${grid.view}/${grid.rh}`;
-      if (held !== scrollHeld || shape !== scrollView) [scroll, scrollHeld, scrollView] = [take(scroll, held, grid), held, shape];
+      // an unresolved failure pins above the rows, and the rows scroll past it in what the band leaves
+      pins = pinsOf([...held, ...scroll.rows], S?.mergePins ?? [], grid.cap);
+      scroll = withPins(scroll, pins);
+      const port = portOf(grid, pins.shown.length), dt = Math.min(0.1, clock - scrollAt), shape = `${port.view}/${port.rh}`;
+      if (held !== scrollHeld || shape !== scrollView) [scroll, scrollHeld, scrollView] = [take(scroll, held, port), held, shape];
       [scroll, scrollAt] = [easeScroll(scroll, dt), clock];
-      if (wantsPage(scroll, grid, clock)) askPage();
+      if (wantsPage(scroll, port, clock)) askPage();
     }
     const hairs = rgba("#94a3b8", 0.1), writer = led.cols.find((c) => c.role === "writer");
     // the grid: a column down from each template, and the spine the junction hangs from
@@ -1668,9 +1707,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       scrollHits = drawRows(rowInk, {
         led, glyphs: Object.fromEntries(led.cols.map((c) => [c.dag, sc.stars[c.dag].glyph])), ctx: { event: led.event, now: T, hm: hhmm, by: (k) => byKey.get(k) },
         optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(scroll.rows, c.dag)])), px: labPx, palette: { ...DAG_COLOR, waiting: CROSS }, clock, age, scroll,
-        lit: hover?.kind === "lrow" ? hover.o.key : openRow()?.key,
+        lit: hover?.kind === "lrow" ? hover.o.key : openRow()?.key, pins, rerunning: rerunLine(rerunStore.state.started, S?.dags ?? [], T),
         title: (id) => S?.settled[id]?.title ?? S?.board.agents.find((a) => a.id === id)?.title,
       });
+      if (S?.mergeStrip) {
+        const day = heldRows().filter((r) => r.at > T - 86400).length;
+        drawStrip(rowInk, { led, data: S.mergeStrip, pins: pins.all, inView: inView(scroll, portOf(grid, pins.shown.length)), loaded: day, now: T, mode: prefs().clock, px: labPx, palette: { ...DAG_COLOR } });
+      }
     }
     drawFx(f);
   }

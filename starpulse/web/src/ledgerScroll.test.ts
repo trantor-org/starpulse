@@ -183,3 +183,30 @@ describe("scrolling to a merge", () => {
     expect(scrollToKey(s, vp, "nope")).toEqual(s);
   });
 });
+
+describe("rows drawn elsewhere", () => {
+  const pinned = (sc: Scroll, ...keys: string[]): Scroll => ({ ...sc, skip: new Set(keys) });
+
+  it("leave the list: the rows below them move up, the extent shrinks and the footer follows the last row left", () => {
+    const sc = pinned(opened(rows(0, 6)), "m1", "m2");
+
+    expect(place(sc, vp).map((p) => p.row.key)).toEqual(["m0", "m3", "m4", "m5"]);
+    expect(place(sc, vp)[1].y).toBe(vp.top + vp.rh / 2 + vp.rh);
+    expect(footer(sc, vp)!.y).toBe(vp.top + 4 * vp.rh + vp.rh / 2);
+    expect(footer(sc, vp)!.rows).toBe(4);
+  });
+
+  it("do not count toward the length the thumb and the keys run through", () => {
+    const plain = opened(rows(0, PAGE)), skipped = pinned(plain, "m0", "m1", "m2");
+
+    expect(keyScroll(skipped, vp, "End")!.ty).toBe((PAGE - 3 + 1) * vp.rh - vp.view);
+    expect(keyScroll(plain, vp, "End")!.ty).toBe((PAGE + 1) * vp.rh - vp.view);
+  });
+
+  it("do not make the footer ask for a page before the last row left is in view", () => {
+    const sc = { ...pinned(opened(rows(0, PAGE)), "m0"), more: true };
+
+    expect(wantsPage(at(sc, (PAGE - 1) * vp.rh - vp.view), vp, 0)).toBe(false);
+    expect(wantsPage(at(sc, (PAGE - 1) * vp.rh - vp.view + vp.rh), vp, 0)).toBe(true);
+  });
+});

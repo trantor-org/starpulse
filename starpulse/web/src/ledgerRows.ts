@@ -2,9 +2,11 @@
 // in every template's column, the run's mini step graph beside its status line. A run paired by time rather than by commit sits in a dashed box,
 // amber when another merge landed in its window; another repository's merge sits on the cross lane, linked to the pin-bump row that applies it.
 // The rows scroll under the fixed templates (ledgerScroll): only those in the viewport are drawn, clipped to it, with a footer row under the last one
-// loaded, a thumb beside them and, once scrolled, a chip back to the newest merge.
+// loaded, a thumb beside them and, once scrolled, a chip back to the newest merge. A merge with an open failure pins above them in the unresolved band,
+// which the rows scroll beneath.
 // Pure: it draws through the `Ink` the renderer hands it, in the units its scene laid out, and keeps no state.
 import { statusLine, type LineCtx } from "./ledger";
+import { portOf, type Pins } from "./ledgerPins";
 import { PAGE, chip, footer, place, thumbOf, type Scroll } from "./ledgerScroll";
 import type { Glyph, LedgerView } from "./scene";
 import type { LedgerRow } from "./types";
@@ -44,14 +46,20 @@ export interface Ink {
   /** `draw` with everything it paints cut to `b`. */
   clip(b: Box, draw: () => void): void;
   dot(x: number, y: number, r: number, fill: string): void;
+  /** A four-pointed star, the mark of a pinned merge. */
+  star4(x: number, y: number, r: number, col: string): void;
   /** One expanding ring, `age` from 0 to 1, grown by `grow` screen pixels. */
   pulse(x: number, y: number, r: number, age: number, col: string, grow: number): void;
 }
 
 export interface RowsFrame {
   led: LedgerView;
-  /** The merges loaded and where the viewport is on them. */
+  /** The merges loaded and where the viewport is on them; it scrolls past the merges `pins` shows. */
   scroll: Scroll;
+  /** The merges pinned above the rows by an open failure. */
+  pins: Pins;
+  /** The words for a forced rerun under way, drawn at the band's right; absent with none. */
+  rerunning?: string;
   /** Each template's step graph, by DAG. */
   glyphs: Record<string, Glyph>;
   ctx: Omit<LineCtx, "optional">;
@@ -82,12 +90,13 @@ const SETTLE = 0.5, RING = 1.2;
 export function drawRows(ink: Ink, f: RowsFrame): Hits {
   const { led, px, scroll: sc } = f, g = led.grid, hits: Hits = { thumb: null, chip: null };
   if (!g) return hits;
-  const right = led.cols[led.cols.length - 1].x1, J = led.J, ys = new Map<string, number>(), placed = place(sc, g);
+  const right = led.cols[led.cols.length - 1].x1, J = led.J, ys = new Map<string, number>(), vp = portOf(g, f.pins.shown.length), placed = place(sc, vp);
   const at = (key: string, y: number) => {
     const age = f.age(key);
     return age === undefined ? { y, a: 1, age } : { y: y - (1 - ease(Math.min(1, age / SETTLE))) * g.rh, a: Math.min(1, age / SETTLE), age };
   };
-  ink.clip({ x0: 0, y0: g.top, x1: right + px(30), y1: g.top + g.view }, () => {
+  drawBand(ink, f, at, ys);
+  ink.clip({ x0: 0, y0: vp.top, x1: right + px(30), y1: vp.top + vp.view }, () => {
     for (const p of placed) drawRow(ink, f, p.row, at(p.row.key, p.y), ys);
     // another repository's merge, dashed back to the pin-bump merge on the spine that applies it
     for (const p of placed) {
@@ -96,7 +105,7 @@ export function drawRows(ink: Ink, f: RowsFrame): Hits {
       ink.stroke([{ x: g.lane, y }, { x: J.x + px(4), y: to }], rgba(CROSS, 0.6), 1, [2, 3]);
       ink.text("pin bump", (g.lane + J.x) / 2 + px(6), (y + to) / 2, px(9.5), rgba(CROSS, 0.7), "left");
     }
-    const foot = footer(sc, g);
+    const foot = footer(sc, vp);
     if (foot && !foot.end) {
       const a0 = f.clock * 5;
       ink.arc(J.x, foot.y, px(5), a0, a0 + 4.2, rgba(ACT, 0.8), px(1.4));
@@ -106,21 +115,33 @@ export function drawRows(ink: Ink, f: RowsFrame): Hits {
       ink.text(`oldest merge in the last 24 h · ${foot.rows} rows`, g.label.x, foot.y, px(11), rgba(MUTED, 0.55), "left");
     }
   });
-  const th = thumbOf(sc, g, px(24)), x = right + px(14);
+  const th = thumbOf(sc, vp, px(24)), x = right + px(14);
   if (th) {
     const hot = sc.drag !== null;
-    ink.stroke([{ x, y: g.top }, { x, y: g.top + g.view }], rgba(MUTED, 0.12), 3);
-    ink.stroke([{ x, y: g.top + th.y + px(2) }, { x, y: g.top + th.y + th.h - px(2) }], rgba(MUTED, hot ? 0.75 : 0.4), 4);
-    hits.thumb = { x0: x - px(8), y0: g.top + th.y, x1: x + px(8), y1: g.top + th.y + th.h };
+    ink.stroke([{ x, y: vp.top }, { x, y: vp.top + vp.view }], rgba(MUTED, 0.12), 3);
+    ink.stroke([{ x, y: vp.top + th.y + px(2) }, { x, y: vp.top + th.y + th.h - px(2) }], rgba(MUTED, hot ? 0.75 : 0.4), 4);
+    hits.thumb = { x0: x - px(8), y0: vp.top + th.y, x1: x + px(8), y1: vp.top + th.y + th.h };
   }
-  const tip = chip(sc, g);
+  const tip = chip(sc, vp);
   if (tip) {
-    const cx = (J.x + right) / 2, cy = Math.min(g.top + px(14), g.top + g.view / 2), w = ink.width(tip, px(11), 500) + px(22), box = { x0: cx - w / 2, y0: cy - px(10), x1: cx + w / 2, y1: cy + px(10) };
+    const cx = (J.x + right) / 2, cy = Math.min(vp.top + px(14), vp.top + vp.view / 2), w = ink.width(tip, px(11), 500) + px(22), box = { x0: cx - w / 2, y0: cy - px(10), x1: cx + w / 2, y1: cy + px(10) };
     ink.rect(box, "rgba(6,10,20,0.92)", rgba(sc.fresh ? ACT : MUTED, 0.6), 1);
     ink.text(tip, cx, cy, px(11), sc.fresh ? ACT : rgba(INK, 0.85), "center", 500);
     hits.chip = box;
   }
   return hits;
+}
+
+/** The unresolved band: a tint and a red edge down the spine behind the pinned rows, drawn above the rows' viewport, its count over them and, at its right, a rerun under way. */
+function drawBand(ink: Ink, f: RowsFrame, at: (key: string, y: number) => { y: number; a: number; age: number | undefined }, ys: Map<string, number>) {
+  const { led, px, pins } = f, g = led.grid!, red = f.palette.failed ?? "#fb7185", right = led.cols[led.cols.length - 1].x1;
+  if (!pins.shown.length) return;
+  const y0 = g.top, y1 = g.top + pins.shown.length * g.rh, label = `UNRESOLVED · ${pins.failed} failed run${pins.failed > 1 ? "s" : ""}${pins.below ? ` (+${pins.below} below)` : ""}`;
+  ink.rect({ x0: g.label.x, y0, x1: right, y1 }, rgba(red, 0.05));
+  ink.stroke([{ x: led.J.x, y: y0 }, { x: led.J.x, y: y1 }], rgba(red, 0.7), 2);
+  ink.text(label, g.label.x, y0 - px(9), px(10), rgba(red, 0.9), "left", 500);
+  if (f.rerunning) ink.text(f.rerunning, right, y0 - px(9), px(10), ACT, "right", 500);
+  pins.shown.forEach((row, i) => drawRow(ink, f, row, at(row.key, y0 + g.rh / 2 + i * g.rh), ys));
 }
 
 /** One merge's row at `where`: its hairline, its dot on the spine or the cross lane, its label and every template's cell. */
@@ -136,7 +157,8 @@ function drawRow(ink: Ink, f: RowsFrame, row: LedgerRow, where: { y: number; a: 
     ink.dot(g.lane, y, px(3.6), "rgba(6,10,20,1)");
     ink.circle(g.lane, y, px(3.6), rgba(CROSS, 0.9 * a), px(1.3));
     ink.stroke([{ x: J.x, y }, { x: g.lane - px(4), y }], rgba(CROSS, 0.25 * a), 1);
-  } else ink.dot(J.x, y, px(3.4), rgba(ACT, 0.85 * a));
+  } else if (row.pinned) ink.star4(J.x, y, px(6.5), f.palette.failed ?? "#fb7185");
+  else ink.dot(J.x, y, px(3.4), rgba(ACT, 0.85 * a));
   if (age !== undefined && age < RING * 1.3) ink.pulse(cross ? g.lane : J.x, y, px(3.4), age / RING, ACT, 22);
   // the label: the time and task, the PR and commit after them while there is room, and the task's title under them
   const who = row.tasks[0] ?? (row.applies?.length ? "pin bump" : "—"), sha = (row.sha ?? row.key).slice(0, 7), head = ink.fit(`${f.ctx.hm(row.at)}  ${who}`, g.label.w, px(12.5));

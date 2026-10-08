@@ -71,6 +71,34 @@ describe("mergePanel", () => {
   });
 });
 
+describe("mergePanel's rerun control", () => {
+  const failing = row({ fails: { "apply-on-merge": fail(), "graph-refresh": fail({ step: "index", resolves: "next", resolved: { runId: "n", at: iso(1500) } }) } });
+
+  it("offers a Force rerun for each DAG whose failure is unresolved, and none for a resolved one", () => {
+    const html = mergePanel(failing, ctx());
+
+    expect(html).toContain('<button class="run" data-rerun="apply-on-merge">↻ Force rerun apply-on-merge</button>');
+    expect(html).not.toContain('data-rerun="graph-refresh"');
+  });
+
+  it("offers none on a merge no run failed on", () => {
+    expect(mergePanel(row(), ctx())).not.toContain("data-rerun");
+  });
+
+  it("shows a rerun being asked for as busy and disabled", () => {
+    const html = mergePanel(failing, ctx({ rerun: { busy: new Set(["apply-on-merge"]), refused: {} } }));
+
+    expect(html).toContain('<button class="run" data-rerun="apply-on-merge" disabled>↻ Rerunning apply-on-merge…</button>');
+  });
+
+  it("shows the server's refusal under the button, escaped", () => {
+    const html = mergePanel(failing, ctx({ rerun: { busy: new Set(), refused: { "apply-on-merge": "apply-on-merge has no <unresolved> failure" } } }));
+
+    expect(html).toContain('data-rerun="apply-on-merge">↻ Force rerun');
+    expect(html).toContain('<div class="note" style="color:#fb7185">apply-on-merge has no &lt;unresolved&gt; failure</div>');
+  });
+});
+
 const report = (...checks: ContractCheck[]): ContractReport => ({ ok: checks.every((c) => c.status !== "fail"), checks });
 const check = (name: string, status: ContractCheck["status"], reason = `${name} ${status}`): ContractCheck => ({ check: name, status, reason });
 

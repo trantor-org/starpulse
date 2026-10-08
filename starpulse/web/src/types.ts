@@ -238,7 +238,7 @@ export type Delta =
   | { kind: "pulls"; pulls: Record<string, Pull[]> }
   | { kind: "claim"; task: string; reason: string; at: number }
   | { kind: "suns"; suns: Record<string, number> }
-  | { kind: "ledgers"; ledgers: Record<string, LedgerRow[]> };
+  | { kind: "ledgers"; ledgers: Record<string, LedgerRow[]>; mergeStrip?: MergeStrip | null; mergePins?: LedgerRow[] };
 
 /** One DAG run a merge row carries: `inferred` when time, not the commit, paired it, and `ambiguous` how many other merges landed in its window. */
 export interface LedgerRun {
@@ -280,6 +280,13 @@ export interface LedgerRow {
   pinned: boolean;
 }
 
+/** The merge Ledger's 24-hour strip, counted over every merge rather than the page loaded: per `bucket` seconds from `since`, the merges, those that failed and the forced reruns. */
+export interface MergeStrip {
+  since: number;
+  bucket: number;
+  buckets: { merges: number; failed: number; reruns: number }[];
+}
+
 /** What the board writes beyond moves: the page draws Edit, Archive… and New task only for what its board does. */
 export interface Capabilities {
   edit: boolean;
@@ -310,6 +317,10 @@ export interface Snapshot {
   suns?: Record<string, number>;
   /** Each Ledger event's rows, newest first. */
   ledgers?: Record<string, LedgerRow[]>;
+  /** The merge Ledger's 24-hour strip; null when no workflow is tied to the merge event. */
+  mergeStrip?: MergeStrip | null;
+  /** The pinned merges of the last day that `ledgers` leaves out, so a failure waiting on its cue is never paged out of sight. */
+  mergePins?: LedgerRow[];
   /** What the board writes: the task modal draws Edit and Archive only when its board does. */
   capabilities?: Capabilities;
   settled: Record<string, Settled>;

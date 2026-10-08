@@ -10,6 +10,7 @@ import { rankRows } from "./machineRows";
 import { ledgerOf, type Ledger, type Tie } from "./ledger";
 import type { Viewport } from "./ledgerScroll";
 import { countText, daily, HOUR, hosted, stateCount, type Move, type Moves, type Sky } from "./sky";
+import { pinsOf } from "./ledgerPins";
 import type { Dag, DagStep, RawAgent, Transition, Writer } from "./types";
 
 export const TAU = Math.PI * 2;
@@ -268,6 +269,12 @@ export interface LedgerGrid extends Viewport {
   nr: number;
   /** Each template's cell, the same in every row. */
   cells: GridCell[];
+  /** The unresolved band: the gap under its pins, the most pins it shows, and how many it shows now; they sit at the viewport's top and the rows scroll beneath. */
+  gap: number;
+  cap: number;
+  pins: number;
+  /** The 24-hour strip under the viewport: the spine to the right margin, `h` tall about `y`. */
+  strip: { x0: number; x1: number; y: number; h: number };
 }
 /** A Ledger's frame: the junction every rail leaves from, the bus the cues hang from, and a caption cell for each DAG's template. */
 export interface LedgerView extends Pick<Ledger, "event" | "rows"> {
@@ -1175,13 +1182,19 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       // 60 px tall and taller when a mini needs it. The viewport holds the rows that fit the level (and a footer row), so the fit box never outgrows it;
       // the rows beyond scroll through it (ledgerScroll)
       const nr = 3 * F, ms = msc.map((m, i) => m / tsc[i]), rh = Math.max(60 * u, 34 * F, ...gl.map((q, i) => q.h * ms[i] + 2 * nr + 12 * u));
-      const top = bus + 26 * F, tail = Math.max(20 * F, rh / 2), fit = Math.max(1, Math.floor((h - top - tail - 4 * F) / rh)), view = Math.min(fit, merges.length + 1) * rh;
+      // the unresolved band takes the newest `cap` pins (at most half the rows that fit) and a gap off the viewport's top, and the 24-hour strip
+      // sits 44 px under the viewport's last row, the mockup's, with its hour labels 30 px past that
+      const top = bus + 26 * F, gap = 18 * F, under = 74 * F, room = h - top - 4 * F - under, held = new Set(merges.map((r) => r.key));
+      const extra = (S.mergePins ?? []).filter((r) => !held.has(r.key)), fit0 = Math.max(1, Math.floor(room / rh)), fit1 = Math.max(1, Math.floor((room - gap) / rh));
+      const cap = Math.max(1, Math.floor(fit1 / 2)), pins = pinsOf(merges, extra, cap).shown.length, fit = pins ? fit1 : fit0;
+      const view = Math.min(fit, merges.length + extra.length + 1) * rh + (pins ? gap : 0);
       const cells = cols.map((c, i): GridCell => {
         const gx = tx[i], at = Math.max(gx + (gl[i].w * ms[i]) / 2 + nr + 12 * F, c.x0 + 30 * F);
         return { dag: c.dag, gx, ms: ms[i], tx: at, room: c.x1 - at - 10 * F };
       });
-      f.ledger.grid = { rh, top, view, lane: sx + 22 * F, label: { x: 64 * u, w: sx - 74 * u }, nr, cells };
-      bottom = top + view + tail;
+      const strip = { x0: sx, x1: w - 70 * u, y: top + view + 44 * F, h: 18 * F };
+      f.ledger.grid = { rh, top, view, lane: sx + 22 * F, label: { x: 64 * u, w: sx - 74 * u }, nr, cells, gap, cap, pins, strip };
+      bottom = strip.y + 30 * F;
     }
     Object.assign(scene, { w, h, fold: f, box: [0, 0, w, bottom] });
   }

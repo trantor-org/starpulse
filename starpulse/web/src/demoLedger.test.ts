@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { arriveMerge, demoLedger, scenarioOf } from "./demoLedger";
+import { PAGE } from "./ledgerScroll";
 import { markOf } from "./ledger";
 import type { Cue, Dag, Machine, Snapshot } from "./types";
 
@@ -53,12 +54,15 @@ describe("demoLedger", () => {
     expect(new Set(marks)).toEqual(new Set(["inferred", "ambiguous"]));
   });
 
-  it("fails and pins one apply in the fail scenario", () => {
+  it("fails and pins two applies in the fail scenario, the second older than the head page", () => {
     const rows = demoLedger(snap(), NOW, "fail"), failed = rows.filter((r) => r.pinned);
 
-    expect(failed).toHaveLength(1);
-    expect(failed[0].fails["apply-on-merge"]).toMatchObject({ resolves: "forced", resolved: null });
-    expect(failed[0].runs["apply-on-merge"].status).toBe("failed");
+    expect(failed).toHaveLength(2);
+    expect(rows.indexOf(failed[1])).toBeGreaterThan(PAGE);
+    for (const r of failed) {
+      expect(r.fails["apply-on-merge"]).toMatchObject({ resolves: "forced", resolved: null });
+      expect(r.runs["apply-on-merge"].status).toBe("failed");
+    }
   });
 
   it("adds another repository's merges in the cross scenario: one a pin bump applied, one still waiting for its bump", () => {

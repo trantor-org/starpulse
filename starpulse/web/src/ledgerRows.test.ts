@@ -3,6 +3,7 @@ import { build } from "./scene";
 import { merge, Moves } from "./sky";
 import { AMBER, CROSS, drawRows, type Box, type Ink, type RowsFrame } from "./ledgerRows";
 import { newScroll, place, take, type Scroll } from "./ledgerScroll";
+import { pinsOf, portOf, withPins } from "./ledgerPins";
 import { optionalSteps } from "./ledger";
 import { ledgerLevel } from "./levels";
 import type { Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "./types";
@@ -22,7 +23,7 @@ const row = (key: string, at: number, over: Partial<LedgerRow> = {}): LedgerRow 
 /** What the recorder saw: every text with its colour and whether it was drawn under the clip, every stroke with its colour and dash, and the circles and pulses. */
 function recorder() {
   const texts: { s: string; x: number; y: number; col: string; clipped: boolean }[] = [], strokes: { pts: { x: number; y: number }[]; col: string; dash?: number[] }[] = [];
-  const circles: { x: number; y: number; col: string }[] = [], pulses: { x: number; y: number; age: number }[] = [], clips: Box[] = [], rects: Box[] = [];
+  const stars: { x: number; y: number; col: string }[] = [], circles: { x: number; y: number; col: string }[] = [], pulses: { x: number; y: number; age: number }[] = [], clips: Box[] = [], rects: Box[] = [];
   let clipped = false;
   const ink: Ink = {
     text: (s, x, y, _size, col) => void texts.push({ s, x, y, col, clipped }),
@@ -31,6 +32,7 @@ function recorder() {
     stroke: (pts, col, _w, dash) => void strokes.push({ pts, col, dash }),
     circle: (x, y, _r, col) => void circles.push({ x, y, col }),
     dot: () => {},
+    star4: (x, y, _r, col) => void stars.push({ x, y, col }),
     arc: () => {},
     rect: (b) => void rects.push(b),
     pulse: (x, y, _r, age) => void pulses.push({ x, y, age }),
@@ -41,7 +43,7 @@ function recorder() {
       clipped = false;
     },
   };
-  return { ink, texts, strokes, circles, pulses, clips, rects };
+  return { ink, texts, strokes, circles, pulses, clips, rects, stars };
 }
 
 /** `rows` loaded into a scroll under the level's viewport, `y` rows' worth down it. */
@@ -64,7 +66,7 @@ function frame(rows: LedgerRow[], over: Partial<RowsFrame> = {}): RowsFrame {
     led, scroll: scrolled(led, rows), glyphs: Object.fromEntries(Object.entries(scene.stars).map(([n, s]) => [n, s.glyph])),
     ctx: { event: "MERGED", now: 1100, hm: (s) => `t${s % 1000}`, by: (k) => rows.find((r) => r.key === k) },
     optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(rows, c.dag)])),
-    px: (n) => n, palette: PALETTE, clock: 5, age: () => undefined, ...over,
+    pins: { shown: [], all: [], below: 0, failed: 0 }, px: (n) => n, palette: PALETTE, clock: 5, age: () => undefined, ...over,
   };
 }
 
@@ -232,5 +234,52 @@ describe("drawRows", () => {
       expect(hits.chip!.x1 - hits.chip!.x0).toBeGreaterThan(0);
       expect(up.texts.some((t) => t.s.startsWith("↑"))).toBe(false);
     });
+  });
+});
+
+describe("the unresolved band", () => {
+  const open = { runId: "r", step: "apply", startedAt: iso(1000), finishedAt: iso(1042), resolves: "forced" as const, resolved: null };
+  const pin = (key: string, at: number) => row(key, at, { pinned: true, runs: { "apply-on-merge": run({ status: "failed" }) }, fails: { "apply-on-merge": open } });
+  const day = (extra: LedgerRow[]) => [...Array.from({ length: 30 }, (_, i) => row(`r${i}`, 900 - i * 10)), ...extra].sort((a, b) => b.at - a.at);
+  /** The Ledger of `rows` as the renderer holds it: the band's pins out of the scrolling list, which sits `y` down. */
+  function banded(rows: LedgerRow[], y = 0) {
+    const g = frame(rows).led.grid!, pins = pinsOf(rows, [], g.cap), sc = take(withPins(newScroll(), pins), rows, portOf(g, pins.shown.length));
+    return frame(rows, { pins, scroll: { ...sc, y, ty: y } });
+  }
+  const head = (r: ReturnType<typeof recorder>, at: number) => r.texts.find((t) => t.s === `t${at % 1000}  TASK-${at}`);
+
+  it("pins an open failure above the rows under an UNRESOLVED label, and it stays put while the rows scroll beneath", () => {
+    const rows = day([pin("bad", 955)]), top = banded(rows), g = top.led.grid!, a = recorder(), b = recorder();
+
+    drawRows(a.ink, top);
+    drawRows(b.ink, banded(rows, 6 * g.rh));
+
+    expect(a.texts.find((t) => t.s === "UNRESOLVED · 1 failed run")).toMatchObject({ x: g.label.x, y: g.top - 9, clipped: false });
+    expect(head(a, 955)).toMatchObject({ y: g.top + g.rh / 2 - 8, clipped: false });
+    expect(a.stars.map((s) => [s.x, s.y])).toEqual([[top.led.J.x, g.top + g.rh / 2]]);
+    expect(head(a, 900)!.y).toBeGreaterThan(g.top + g.rh);
+    expect(head(b, 955)!.y).toBe(head(a, 955)!.y);
+    expect(head(b, 900)).toBeUndefined();
+    expect(head(b, 840)!.y).toBeLessThan(head(a, 840)?.y ?? Infinity);
+  });
+
+  it("is gone once the snapshot resolves the failure, the merge back among the rows", () => {
+    const fixed = row("bad", 955, { runs: { "apply-on-merge": run({ status: "failed" }) }, fails: { "apply-on-merge": { ...open, resolved: { runId: "r2", at: iso(1500) } } } });
+    const r = recorder(), f = banded(day([fixed]));
+
+    drawRows(r.ink, f);
+
+    expect(r.texts.some((t) => t.s.startsWith("UNRESOLVED"))).toBe(false);
+    expect(head(r, 955)).toMatchObject({ clipped: true, y: f.led.grid!.top + f.led.grid!.rh / 2 - 8 });
+  });
+
+  it("counts the pins past its cap as waiting below, and words a forced rerun in progress", () => {
+    const g = frame(day([])).led.grid!, rows = day(Array.from({ length: g.cap + 2 }, (_, i) => pin(`p${i}`, 960 + i)));
+    const r = recorder(), f = { ...banded(rows), rerunning: "↻ forced rerun running · 12 s" };
+
+    drawRows(r.ink, f);
+
+    expect(r.texts.find((t) => t.s.startsWith("UNRESOLVED"))!.s).toBe(`UNRESOLVED · ${g.cap + 2} failed runs (+2 below)`);
+    expect(r.texts.find((t) => t.s === "↻ forced rerun running · 12 s")).toMatchObject({ y: g.top - 9, clipped: false });
   });
 });

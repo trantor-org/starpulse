@@ -109,7 +109,7 @@ describe("machine paging", () => {
  * A Board with its axis (New to Done), three events and a self-transition, and one DAG per case. `writes` names the events each DAG writes,
  * `cues` the DAGs that run beside an event, `launches` DAGs that launch a machine inside In Progress and `free` the DAGs of other domains.
  */
-const boardSky = ({ writes = {}, cues = [], launches = [], free = {}, ledgers }: { writes?: Record<string, string[]>; cues?: Cue[]; launches?: string[]; free?: Record<string, string[]>; ledgers?: Record<string, LedgerRow[]> } = {}) => {
+const boardSky = ({ writes = {}, cues = [], launches = [], free = {}, ledgers, mergePins }: { writes?: Record<string, string[]>; cues?: Cue[]; launches?: string[]; free?: Record<string, string[]>; ledgers?: Record<string, LedgerRow[]>; mergePins?: LedgerRow[] } = {}) => {
   const writers: Record<string, { actor: string; trigger: string }[]> = {};
   for (const [name, events] of Object.entries(writes)) for (const e of events) (writers[e] ||= []).push({ actor: name, trigger: "dagu" });
   const tied = [...new Set([...Object.keys(writes), ...cues.map((c) => c.dag), ...launches])], loose = Object.values(free).flat();
@@ -129,7 +129,7 @@ const boardSky = ({ writes = {}, cues = [], launches = [], free = {}, ledgers }:
     ],
     dags: [...tied, ...loose].map((n) => dag(n, [["run", []]])),
     domains: [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }, ...Object.entries(free).map(([name, dags]) => ({ name, dags: dags.map((d) => ({ name: d, runSafe: false })) }))],
-    cues, ledgers, settled: {}, error: null, now: 1000,
+    cues, ledgers, mergePins, settled: {}, error: null, now: 1000,
   };
   const S = merge(snap), moves = new Moves();
   moves.observe(S, 1000);
@@ -970,8 +970,8 @@ describe("a fold's level", () => {
   describe("a merge Ledger's rows", () => {
     const row = (key: string, at: number, over: Partial<LedgerRow> = {}): LedgerRow => ({ key, at, tasks: [`TASK-${at}`], sha: key.repeat(7), runs: {}, fails: {}, pinned: false, ...over });
     const rows = [row("c", 300), row("b", 200, { appliedBy: "c" }), row("a", 100, { appliedBy: "gone" }), row("z", 50, { appliedBy: null })];
-    const merged = (list: LedgerRow[] = rows, scale?: number) => {
-      const sk = boardSky({ writes: { alpha: ["MERGED"] }, cues: cues.filter((c) => c.event === "MERGED"), ledgers: { MERGED: list } });
+    const merged = (list: LedgerRow[] = rows, scale?: number, mergePins?: LedgerRow[]) => {
+      const sk = boardSky({ writes: { alpha: ["MERGED"] }, cues: cues.filter((c) => c.event === "MERGED"), ledgers: { MERGED: list }, mergePins });
       return build({ ...sk, scale }, fold(["review", "done"], "MERGED"));
     };
 
@@ -1003,6 +1003,37 @@ describe("a fold's level", () => {
       expect(g.view / g.rh).toBeGreaterThanOrEqual(1);
       expect(g.top + g.view + g.rh / 2).toBeLessThanOrEqual(scene.box![3]);
       expect(scene.box![3]).toBeLessThanOrEqual(scene.h);
+    });
+
+    it("reserve the 24-hour strip under the viewport, spine to the right margin, inside the fit box", () => {
+      const scene = merged(), g = scene.fold!.ledger!.grid!, { u, F } = px(scene);
+
+      expect([g.strip.x0, g.strip.x1]).toEqual([scene.fold!.ledger!.J.x, scene.w - 70 * u]);
+      expect(g.strip.y).toBeCloseTo(g.top + g.view + 44 * F);
+      expect(g.strip.y + g.strip.h / 2).toBeLessThanOrEqual(scene.box![3]);
+    });
+
+    describe("with merges pinned by an open failure", () => {
+      const open = { runId: "r", step: "apply", startedAt: "", finishedAt: "", resolves: "forced" as const, resolved: null };
+      const pin = (key: string, at: number) => row(key, at, { pinned: true, fails: { alpha: open } });
+
+      it("add the band's pins and a gap to the viewport, which still holds every row and the footer", () => {
+        const none = merged().fold!.ledger!.grid!, g = merged([row("c", 300), pin("b", 200), pin("a", 100), row("z", 50)]).fold!.ledger!.grid!;
+
+        expect([none.pins, g.pins]).toEqual([0, 2]);
+        expect(g.view).toBeCloseTo(none.view + g.gap);
+        expect(g.gap).toBeGreaterThan(0);
+      });
+
+      it("count a pin the head left out, and show no more than half the viewport's rows", () => {
+        const out = merged(rows, undefined, [pin("old", 10)]).fold!.ledger!.grid!;
+        const many = Array.from({ length: 80 }, (_, i) => pin(`m${i}`, 1000 - i)), full = merged(many).fold!.ledger!.grid!;
+
+        expect(out.pins).toBe(1);
+        expect(out.view).toBeCloseTo(merged().fold!.ledger!.grid!.view + out.rh + out.gap);
+        expect(full.pins).toBe(full.cap);
+        expect(full.cap).toBeLessThanOrEqual(Math.max(1, Math.floor(full.view / full.rh / 2)));
+      });
     });
 
     // the approved mockup (starpulse#95, view C) lays the Ledger out in screen pixels: u world units a pixel, F one at the reader's text size

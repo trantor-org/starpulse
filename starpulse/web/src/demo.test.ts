@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DemoServer, ROUTES, stepRuns, type DemoFixture } from "./demo";
+import { DemoServer, ROUTES, demoLive, stepRuns, type DemoFixture } from "./demo";
 import { PAGE } from "./ledgerScroll";
 import { NO_HARNESSES, fetchHarnesses, postStart } from "./start";
 import type { LedgerRow, Machine, RawAgent, RunStatus, Snapshot } from "./types";
@@ -72,6 +72,72 @@ describe("the demo server's contract report", () => {
 
     expect(infer.ok).toBe(true);
     expect(infer.checks).toEqual([{ check: "cue:apply-on-merge", status: "warn", reason: expect.stringContaining("[runs.commit] after key") }]);
+  });
+});
+
+describe("the demo server's 24-hour strip and forced reruns", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+  const failing = () => {
+    vi.stubGlobal("location", { search: "?ms=fail" });
+    return new DemoServer(tied(), () => 1000);
+  };
+  const post = (s: DemoServer, dag: string) => s.fetch(`/api/runs/${dag}/rerun`, { method: "POST" });
+
+  it("sends the day's merges bucketed by quarter-hour with the snapshot, and the pins the newest page leaves out", () => {
+    const s = failing(), snap = s.snapshot;
+
+    expect(snap.mergeStrip!.buckets).toHaveLength(96);
+    expect(snap.mergeStrip!.buckets.reduce((n, b) => n + b.merges, 0)).toBeGreaterThan(60);
+    expect(snap.mergeStrip!.buckets.reduce((n, b) => n + b.failed, 0)).toBe(2);
+    const head = new Set(snap.ledgers!.MERGED.map((r) => r.key));
+    expect(snap.mergePins!.length).toBe(1);
+    expect(snap.mergePins!.every((r) => r.pinned && !head.has(r.key))).toBe(true);
+  });
+
+  it("starts a forced run for a DAG with an unresolved failure, then clears the failures it was a rerun of", async () => {
+    vi.useFakeTimers();
+    const s = failing(), seen: Snapshot[] = [];
+    s.subscribe((snap) => seen.push(snap));
+
+    const reply = await post(s, "apply-on-merge"), { runId } = await reply.json();
+
+    expect(reply.status).toBe(200);
+    expect(s.snapshot.dags.find((d) => d.name === "apply-on-merge")!.active!.map((r) => r.runId)).toEqual([runId]);
+    vi.advanceTimersByTime(5000);
+    expect(s.snapshot.dags.find((d) => d.name === "apply-on-merge")!.active ?? []).toEqual([]);
+    expect(s.snapshot.ledgers!.MERGED.flatMap((r) => Object.values(r.fails)).every((f) => f.resolved?.runId === runId)).toBe(true);
+    expect(s.snapshot.mergePins).toEqual([]);
+  });
+
+  it("refuses a rerun with no unresolved failure, or while one is already running, saying why", async () => {
+    vi.useFakeTimers();
+    const s = failing();
+
+    const none = await post(s, "main-follow");
+    await post(s, "apply-on-merge");
+    const busy = await post(s, "apply-on-merge");
+
+    expect([none.status, (await none.json()).error]).toEqual([409, "main-follow has no unresolved failure to rerun."]);
+    expect([busy.status, (await busy.json()).error]).toEqual([409, "apply-on-merge already has a forced rerun running."]);
+  });
+});
+
+describe("the page's snapshot in a demo", () => {
+  it("keeps its own machines and takes the server's workflows and Ledger, so a forced rerun's resolution reaches the page", () => {
+    const own = new DemoServer(tied(), () => 1000).snapshot, served = structuredClone(own);
+    served.dags = [];
+    served.ledgers = { MERGED: [] };
+    served.mergeStrip = { since: 1, bucket: 900, buckets: [] };
+    served.mergePins = [];
+    served.flows = [];
+
+    const live = demoLive(own, served);
+
+    expect([live.dags, live.ledgers, live.mergeStrip, live.mergePins]).toEqual([[], { MERGED: [] }, served.mergeStrip, []]);
+    expect(live.flows).toBe(own.flows);
   });
 });
 
