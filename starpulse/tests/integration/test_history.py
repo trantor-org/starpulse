@@ -73,9 +73,9 @@ def test_a_status_that_repeats_the_tasks_last_adds_no_lane_change(store: History
     store.record_lane("a", "PROJ-7", "Done", 9.0)  # a redelivered event id is no change
 
     assert store.lane_path("PROJ-7") == [
-        {"at": 0.0, "from": None, "to": "Ready"},
-        {"at": 2.0, "from": "Ready", "to": "Doing"},
-        {"at": 3.0, "from": "Doing", "to": "Ready"},
+        {"at": 0.0, "from": None, "to": "ready"},
+        {"at": 2.0, "from": "ready", "to": "doing"},
+        {"at": 3.0, "from": "doing", "to": "ready"},
     ]
     assert store.lane_path("PROJ-404") == []
 
@@ -88,9 +88,9 @@ def test_a_late_arriving_lane_change_is_placed_by_its_time_and_the_next_compares
     store.record_lane("c", "PROJ-7", "Doing", 9.0)  # the newest lane is "a"'s Ready, so this is a change
 
     assert store.lane_path("PROJ-7") == [
-        {"at": 3.0, "from": "Ready", "to": "Doing"},
-        {"at": 5.0, "from": None, "to": "Ready"},
-        {"at": 9.0, "from": "Ready", "to": "Doing"},
+        {"at": 3.0, "from": "ready", "to": "doing"},
+        {"at": 5.0, "from": None, "to": "ready"},
+        {"at": 9.0, "from": "ready", "to": "doing"},
     ]
 
 
@@ -115,9 +115,9 @@ def test_lane_rows_are_every_tasks_lane_changes_in_time_order(store: HistoryStor
     store.record_lane("d", "PROJ-7", "Done", 9.0)
 
     assert store.lane_rows() == [
-        ("PROJ-8", 1.0, None, "To Do"),
-        ("PROJ-7", 5.0, None, "Ready"),
-        ("PROJ-7", 9.0, "Ready", "Done"),
+        ("PROJ-8", 1.0, None, "to_do"),
+        ("PROJ-7", 5.0, None, "ready"),
+        ("PROJ-7", 9.0, "ready", "done"),
     ]
 
 
@@ -404,4 +404,4 @@ def test_the_summaries_a_store_keeps_on_write_match_the_ones_folded_from_its_row
         steps = db.execute(text("SELECT sum(steps) FROM starpulse_step_summaries")).scalar()
         open_stays = db.execute(text("SELECT lane FROM starpulse_lane_intervals WHERE left_at IS NULL")).scalars().all()
     assert steps == 5
-    assert open_stays == ["In Progress"]
+    assert open_stays == ["in_progress"]

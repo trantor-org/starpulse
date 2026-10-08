@@ -123,6 +123,19 @@
       "description": "When a settled task settled, in epoch seconds; None when the board does not say or it is not settled.",
       "title": "Settled At"
     },
+    "observed_at": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "When the board saw the task in this state, in epoch seconds; None when it does not say. A move read live is dated by it, not by when StarPulse read it.",
+      "title": "Observed At"
+    },
     "assignee": {
       "default": "",
       "description": "Who or which agent model holds the task; empty when unassigned.",
