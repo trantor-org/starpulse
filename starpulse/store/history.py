@@ -155,7 +155,7 @@ class History(Protocol):
 
 @runtime_checkable
 class LaneHistory(History, Protocol):
-    """A history that can list every task's lane changes: what sizes a Board state's sun."""
+    """A history that can list every task's lane changes: what the Ledger reads."""
 
     def lane_rows(self, since: float | None = None) -> list[tuple[str, float, str | None, str]]:
         """`(task, at, from, to)` for every task's lane changes at or after epoch `since` (None: all), oldest first."""

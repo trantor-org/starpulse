@@ -294,7 +294,6 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         "pulls",
         "reading",
         "settled",
-        "suns",
     ]
     assert body["graphs"] == [*FLOWS, "runs"]
     assert (body["flows"][0]["name"], body["flows"][0]["machine"]) == ("board", MACHINES["board"])
@@ -515,88 +514,6 @@ def test_a_workflow_the_adapter_reports_startable_but_config_does_not_declare_ru
     assert _run_flags(feed) == {"gh/ci.yml": False, "gh/ui.yml": True}
 
 
-def test_suns_are_sized_from_the_trailing_week_at_local_midnight_and_stay_until_the_next(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("TZ", "America/Phoenix")
-    time.tzset()
-    phoenix = ZoneInfo("America/Phoenix")
-
-    def at(day: int, hour: int, minute: int = 0) -> float:
-        return datetime(2026, 10, day, hour, minute, tzinfo=phoenix).timestamp()
-
-    rows = [
-        ("A", datetime(2026, 9, 29, 12, tzinfo=phoenix).timestamp(), None, "To Do"),  # before either week opens
-        ("A", at(2, 12), "To Do", "In Progress"),
-        ("A", at(6, 12), "In Progress", "Done"),
-    ]
-    now = [at(7, 9)]
-    feed = BoardFeed(clock=lambda: now[0])
-    feed.size_suns(lambda: rows)
-
-    sized = feed.snapshot()["suns"]
-    rows.append(("B", at(7, 10), "To Do", "In Progress"))  # live activity after the midnight that sized them
-    now[0] = at(7, 23, 59)
-    held = feed.snapshot()["suns"]
-    now[0] = at(8, 0, 1)
-    resized = feed.snapshot()["suns"]
-
-    assert sized == {"to_do": 1 / 4, "in_progress": 2 / 4, "done": 1 / 4}
-    assert held == sized
-    assert resized == {"to_do": 2 / 6, "in_progress": 3 / 6, "done": 1 / 6}
-
-
-def test_an_open_page_gets_the_resized_suns_once_when_local_midnight_passes_and_never_for_live_moves(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("TZ", "America/Phoenix")
-    time.tzset()
-    phoenix = ZoneInfo("America/Phoenix")
-
-    def at(day: int, hour: int, minute: int = 0) -> float:
-        return datetime(2026, 10, day, hour, minute, tzinfo=phoenix).timestamp()
-
-    rows = [("A", at(6, 12), "To Do", "In Progress")]
-    now = [at(7, 9)]
-    feed = BoardFeed(clock=lambda: now[0])
-    feed.size_suns(lambda: rows)
-    _, deltas = feed.subscribe()
-
-    rows.append(("B", at(7, 10), "In Progress", "Done"))  # a live move
-    now[0] = at(7, 23, 59)
-    feed.resize_suns()
-    assert deltas.empty()
-
-    now[0] = at(8, 0, 1)
-    feed.resize_suns()
-    feed.resize_suns()
-
-    kind, body = deltas.get_nowait()
-    assert deltas.empty()
-    assert (kind, body) == ("suns", {"suns": {"to_do": 1 / 4, "in_progress": 2 / 4, "done": 1 / 4}})
-
-
-def test_the_suns_keeper_resizes_on_its_interval_until_stopped() -> None:
-    day = 86400.0
-    now = [10 * day]
-    rows = [("A", 8 * day, "To Do", "Done")]
-    feed = BoardFeed(clock=lambda: now[0])
-    feed.size_suns(lambda: rows)
-    _, deltas = feed.subscribe()
-    stop = threading.Event()
-    keeper = threading.Thread(target=feed.keep_suns, args=(stop, 0.01), daemon=True)
-    keeper.start()
-    try:
-        rows.append(("B", 9 * day, "In Progress", "Done"))
-        now[0] = 12 * day  # the next local day, whatever zone the test runs in
-        kind, _ = deltas.get(timeout=5)
-    finally:
-        stop.set()
-        keeper.join(5)
-
-    assert (kind, keeper.is_alive()) == ("suns", False)
-
-
 SHA = "a" * 40
 LEDGER_MACHINE = {
     "states": [
@@ -713,7 +630,7 @@ def test_a_ledgers_event_is_sent_when_a_run_or_a_pull_changes_a_ledger_and_not_w
 def test_a_task_entering_the_lane_a_workflows_event_reaches_pairs_with_its_run_by_the_task_parameter() -> None:
     feed = ledger_feed()
     entered = datetime(2026, 10, 7, 0, 5, tzinfo=ZoneInfo("UTC")).timestamp()
-    feed.size_suns(lambda since=None: [("TASK-1", entered, "To Do", "In Progress"), ("TASK-2", entered + 1, "To Do", "In Progress")])
+    feed.read_lanes(lambda since=None: [("TASK-1", entered, "To Do", "In Progress"), ("TASK-2", entered + 1, "To Do", "In Progress")])
     started = {**APPLIED, "runId": "s1", "startedAt": "2026-10-07T00:06:00Z", "params": {"TASK": "TASK-1"}}
 
     feed.set_dags("ci", [_dag("start", started)], None)
@@ -734,7 +651,7 @@ def test_the_ledger_reads_only_the_lane_changes_of_its_window_from_the_history()
         asked.append(since)
         return []
 
-    feed.size_suns(lane_rows)
+    feed.read_lanes(lane_rows)
     feed.set_dags("ci", [_dag("apply", APPLIED)], None)
 
     assert asked == [datetime(2026, 10, 6, 1, tzinfo=ZoneInfo("UTC")).timestamp()]
@@ -748,10 +665,9 @@ def test_a_page_request_reads_the_ledger_last_built_and_queries_no_lane_history(
         asked.append(since)
         return []
 
-    feed.size_suns(lane_rows)
+    feed.read_lanes(lane_rows)
     feed.set_pulls({"TASK-1": [MERGED_PR]})
     feed.set_dags("ci", [_dag("apply", FAILED)], None)
-    feed.snapshot()  # sizes the suns, a once-a-day read of the whole history
     built = len(asked)
 
     assert feed.snapshot()["ledgers"]["MERGED"][0]["sha"] == SHA
@@ -766,12 +682,12 @@ def test_the_ledger_is_built_while_page_requests_still_take_the_board() -> None:
     building, release = threading.Event(), threading.Event()
 
     def lane_rows(since: float | None = None) -> list:
-        if since is not None:  # the Ledger's window, not the suns' once-a-day read
+        if since is not None:  # the Ledger's window
             building.set()
             release.wait(5)
         return []
 
-    feed.size_suns(lane_rows)
+    feed.read_lanes(lane_rows)
     feed.snapshot()
     worker = threading.Thread(target=feed.set_dags, args=("ci", [_dag("apply", APPLIED)], None))
     worker.start()
@@ -810,7 +726,7 @@ def _recorded_lanes(feed: BoardFeed) -> list[tuple]:
             return True
 
     feed.record_lanes(Lanes())
-    feed.size_suns(lambda since=None: list(rows))
+    feed.read_lanes(lambda since=None: list(rows))
     return rows
 
 

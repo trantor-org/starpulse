@@ -14,7 +14,6 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
-from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
 from starpulse.contracts.adapters import BoardTask, TaskKeys
@@ -25,7 +24,6 @@ from starpulse.domain.snapshot import declared, qualifier
 from starpulse.domain.stays import LaneRow
 from starpulse.domain.transitions import DEFAULT_STATUSES, board_machine, lane_id
 from starpulse.projections import criteria
-from starpulse.projections.analytics import move_shares
 from starpulse.projections.ledger import (
     MERGE_EVENT,
     NEXT,
@@ -56,10 +54,6 @@ SAVE_INTERVAL = 60.0
 ARCHIVED = "archived"
 #: The lane a swept task enters where the Board has it: its file keeps the done status in the folder it was swept to.
 COMPLETED = "completed"
-#: The days of lane moves, before local midnight, a Board state's sun is sized from.
-SUN_DAYS = 7
-#: Seconds between looks for a local midnight that has passed.
-SUN_INTERVAL = 60.0
 #: Seconds between passes that evaluate the Start Criteria of the Waiting tasks, as long as the evaluator caches a result.
 CRITERIA_INTERVAL = criteria.CACHE_SECONDS
 #: The lanes a task's workability reads: it can wait on Start Criteria in one, and a dependency is done in the other.
@@ -239,8 +233,6 @@ class BoardFeed:
         self._saved = (0, 0)
         self._store: tuple[BoardStore, str] | None = None
         self._lane_rows: Callable[..., list[LaneRow]] | None = None
-        #: The local midnight the suns were last sized at, and the shares it gave them.
-        self._sized: tuple[datetime | None, dict[str, float]] = (None, {})
         #: Set once the stream has been read up to the last entry it held when the feed started.
         self.ready = threading.Event()
         #: The whole Ledger as last built, which every page request reads (`_refresh_ledgers`); with no pull, run or
@@ -393,39 +385,9 @@ class BoardFeed:
         self._lanes = lanes
         self._lane_log = log
 
-    def size_suns(self, lane_rows: Callable[..., list[LaneRow]]) -> None:
-        """Size each Board state's sun from its share of the lane moves in the week before local midnight, read through
-        `lane_rows` (`LaneHistory.lane_rows`). The shares are worked out once a day, the first time a snapshot is
-        taken after midnight, so a move made since then changes none until the next one."""
+    def read_lanes(self, lane_rows: Callable[..., list[LaneRow]]) -> None:
+        """Read the Ledger's lane moves through `lane_rows` (`LaneHistory.lane_rows`)."""
         self._lane_rows = lane_rows
-
-    def resize_suns(self) -> None:
-        """Publish the suns a local midnight has resized since the last snapshot or delta; a day that changes no share
-        publishes nothing."""
-        with self._lock:
-            before = self._sized[1]
-            if self._suns() != before:
-                self._publish("suns", {"suns": self._sized[1]})
-
-    def keep_suns(self, stop: threading.Event, interval: float = SUN_INTERVAL) -> None:
-        """Resize the suns every `interval` seconds until `stop` is set, so a page open across midnight is told."""
-        while not stop.wait(interval):
-            self.resize_suns()
-
-    def _suns(self) -> dict[str, float]:
-        """The shares the last local midnight set (empty until `size_suns`); the caller holds the lock."""
-        if self._lane_rows is None:
-            return {}
-        today = datetime.fromtimestamp(self._clock()).replace(hour=0, minute=0, second=0, microsecond=0)
-        if self._sized[0] != today:
-            week = move_shares(
-                self._drawn["board"],
-                self._lane_rows(),
-                start=(today - timedelta(days=SUN_DAYS)).timestamp(),
-                end=today.timestamp(),
-            )
-            self._sized = (today, week)
-        return self._sized[1]
 
     def put(self, task: BoardTask) -> None:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
@@ -797,7 +759,7 @@ class BoardFeed:
         among the `recent` runs (`starpulse.projections.ledger`).
 
         The merge event's occurrences are the merged `pulls`; any other event's are the tasks that entered the lane it
-        reaches, read from the lane history `size_suns` was given. Only the window's changes are read: this runs on
+        reaches, read from the lane history `read_lanes` was given. Only the window's changes are read: this runs on
         every run, pull and live lane update, and the whole history is far larger than a day.
         """
         events: dict[str, list[Occurrence]] = {}
@@ -1030,7 +992,6 @@ class BoardFeed:
                 **declared(self._domains, self._runnable(), self._cues),
                 "boardUrl": self._board_url,
                 "hint": self._hint,
-                "suns": self._suns(),
                 "now": now,
             }
 

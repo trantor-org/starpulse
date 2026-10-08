@@ -58,8 +58,6 @@ export interface Sky {
   /** Each task's latest In Progress claim the board writer refused an agent, and when. */
   claims: Record<string, { reason: string; at: number }>;
   settled: Record<string, Settled>;
-  /** Each Board state's share of the lane moves in the week before the last local midnight, which sizes its sun; empty when the server sent none. */
-  suns: Record<string, number>;
   /** Each Ledger event's rows, newest first; empty when the server sent none. */
   ledgers: Record<string, LedgerRow[]>;
   /** The merge Ledger's 24-hour strip; null when the server sent none. */
@@ -152,7 +150,6 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     pulls: snap.pulls ?? {},
     claims: snap.claims ?? {},
     settled: snap.settled,
-    suns: snap.suns ?? {},
     ledgers: snap.ledgers ?? {},
     mergeStrip: snap.mergeStrip ?? null,
     mergePins: snap.mergePins ?? [],

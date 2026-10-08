@@ -18,13 +18,6 @@ const ids = (s: Snapshot) => s.flows[0].agents.map((a) => `${a.id}:${a.state}`);
 const settled = (state: string) => ({ state, at: null, created: null, title: "t", model: "" });
 
 describe("applyDelta", () => {
-  it("replaces the suns with the ones a delta carries", () => {
-    const s = board([], { suns: { to_do: 1 } });
-
-    expect(applyDelta(s, { kind: "suns", suns: { done: 1 } }).suns).toEqual({ done: 1 });
-    expect(s.suns).toEqual({ to_do: 1 });
-  });
-
   it("replaces a task already on the Board and adds one that is not", () => {
     const s = board([agent("PROJ-1", "to_do")]);
 
@@ -243,16 +236,6 @@ describe("openStream", () => {
 
     expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"], ["PROJ-1:in_progress"]]);
     expect(seen[2].error).toBe("ci: down");
-  });
-
-  it("folds the suns a local midnight resized into the snapshot, leaving the Board as it was", () => {
-    openStream(handlers, open);
-    last().send("snapshot", board([agent("PROJ-1", "to_do")], { suns: { to_do: 1 } }));
-
-    last().send("suns", { suns: { to_do: 0.5, done: 0.5 } });
-
-    expect(seen.at(-1)!.suns).toEqual({ to_do: 0.5, done: 0.5 });
-    expect(ids(seen.at(-1)!)).toEqual(["PROJ-1:to_do"]);
   });
 
   it("folds the Ledger rows a merge's runs changed into the snapshot", () => {

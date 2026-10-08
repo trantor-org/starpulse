@@ -14,7 +14,6 @@ const CLOSED = 2;
 export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   if (delta.kind === "dags") return { ...snap, dags: delta.dags, pools: delta.pools ?? snap.pools, error: delta.error };
   if (delta.kind === "pulls") return { ...snap, pulls: delta.pulls };
-  if (delta.kind === "suns") return { ...snap, suns: delta.suns };
   if (delta.kind === "ledgers") return { ...snap, ledgers: delta.ledgers, mergeStrip: delta.mergeStrip, mergePins: delta.mergePins };
   if (delta.kind === "claim") return { ...snap, claims: { ...snap.claims, [delta.task]: { reason: delta.reason, at: delta.at } } };
   if (delta.kind === "move") {
@@ -125,9 +124,6 @@ export function openStream(
     );
     src.addEventListener("pulls", (e) =>
       fold({ kind: "pulls", ...JSON.parse((e as MessageEvent<string>).data) }),
-    );
-    src.addEventListener("suns", (e) =>
-      fold({ kind: "suns", ...JSON.parse((e as MessageEvent<string>).data) }),
     );
     src.addEventListener("ledgers", (e) =>
       fold({ kind: "ledgers", ...JSON.parse((e as MessageEvent<string>).data) }),

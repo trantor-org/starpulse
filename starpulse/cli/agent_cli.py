@@ -103,7 +103,6 @@ _SNAPSHOT_KEYS = (
     "capabilities",
     "reading",
     "now",
-    "suns",
 )
 _LEVEL_KEYS = (
     "now",
