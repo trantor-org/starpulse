@@ -10,7 +10,8 @@ GET /auth/login, /auth/callback
                    a hub's sign-in (`serve --hub`; an IC instance has no sign-in): login sends the browser to the OpenID
                    Connect issuer, the callback finishes the sign-in with a session cookie and sends it to /, or
                    answers 403 naming why an account outside `allowed_groups` was refused. Every other route of a hub,
-                   this one included, answers 401 until then; a bearer token is no session (see POST /api/runs/events)
+                   this one included, answers 401 until then; a bearer token is no session (see POST /api/runs/events),
+                   except that a GET or HEAD carrying the hub's reader token (`reader_token_env`) is served
 GET /              the page, built by `pnpm --filter flow-view build` into static/: one view
                    that drills Board → Board state → machine, or Board → workflow. It holds one
                    /api/events connection and nothing else

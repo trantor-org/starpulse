@@ -393,6 +393,20 @@ def test_an_oidc_table_may_set_the_groups_claim_the_scopes_and_the_engine_token_
     assert (oidc.groups_claim, oidc.scopes, oidc.engine_token_env) == ("roles", ("openid", "roles"), "HUB_ENGINE_TOKEN")
 
 
+def test_an_oidc_table_may_name_the_reader_token_variable(tmp_path: Path) -> None:
+    oidc = load(_write(tmp_path, _OIDC + 'reader_token_env = "STARPULSE_TOKEN"\n')).oidc
+
+    assert oidc is not None
+    assert oidc.reader_token_env == "STARPULSE_TOKEN"
+    assert load(_write(tmp_path, _OIDC)).oidc.reader_token_env is None  # type: ignore[union-attr]
+
+
+def test_a_reader_token_variable_that_is_no_variable_name_is_refused(tmp_path: Path) -> None:
+    refused = _refusal(tmp_path, _OIDC + 'reader_token_env = "has space"\n')
+
+    assert refused == "oidc: reader_token_env must be the name of an environment variable"
+
+
 def test_a_config_without_an_oidc_table_has_none() -> None:
     assert load(None).oidc is None
 

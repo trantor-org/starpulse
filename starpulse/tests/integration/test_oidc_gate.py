@@ -1,6 +1,7 @@
 """The hub's sign-in gate on a running server: every route answers 401 before sign-in, an allowed account signs in
 through a mock OpenID Connect issuer container, an account outside the allowed groups is refused with the reason, and
-instance and engine tokens never pass for a viewer's session or the other way round."""
+instance and engine tokens never pass for a viewer's session or the other way round, and the reader token reads what a
+viewer reads but writes nothing."""
 
 from __future__ import annotations
 
@@ -24,17 +25,26 @@ from starpulse.adapters.runs.ingest import ForwardIngest, Ingest
 from starpulse.api import server
 from starpulse.api.adapter_kit import serve, url
 from starpulse.api.oidc import ENGINE, INSTANCE, PUBLIC, ROUTE_PREFIXES, ROUTES, SESSION_S, Gate
+from starpulse.cli import agent_cli
+from starpulse.domain.level import Level, Orbit, Terminal
 from starpulse.projections.board_feed import BoardFeed
 from starpulse.projections.insights import Insights, InsightStore
 from starpulse.settings.config import OidcSettings
 from starpulse.store.event_log import EventLog
+from starpulse.store.history import HistoryStore
 from starpulse.tests import mock_issuer
+from starpulse.tests.machines import MACHINES
 from starpulse.tests.mock_issuer import Answer, call, session_of
+from starpulse.tests.unit.test_analytics import NOW, ROWS
 
 ALLOWED = ("ops", "admins")
 INSTANCE_TOKEN = "cron-secret"
 FORWARD_TOKEN = "laptop-secret"
 ENGINE_TOKEN = "engine-secret"
+READER_TOKEN = "reader-secret"
+LEVEL = Level(
+    "board", "done", (Terminal("done", "goal"),), gates=("review",), orbit=Orbit("working", ("in_progress", "review"))
+)
 #: What a sign-in refuses to answer before the viewer has signed in: the sign-in's own two endpoints.
 SIGN_IN = {"/auth/login", "/auth/callback"}
 #: A route only the engine may call that no handler serves, to see a request pass the gate and reach a 404.
@@ -98,14 +108,21 @@ def hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
         settings,
         client_secret="hub-secret",
         engine_token=ENGINE_TOKEN,
+        reader_token=READER_TOKEN,
         routes={PROBE: ENGINE},
         clock=lambda: now[0],
     )
-    feed = BoardFeed()
+    feed = BoardFeed(machines=MACHINES)
     insights = Insights(InsightStore(f"sqlite:///{tmp_path / 'history.sqlite'}"), feed)
+    store = HistoryStore(f"sqlite:///{tmp_path / 'level.sqlite'}", MACHINES)
+    for i, (task_id, at, _old, new) in enumerate(ROWS):
+        store.record_lane(f"a/{i}", task_id, new, at)
     with serve(
         tmp_path,
         feed,
+        history=store,
+        clock=lambda: NOW,
+        level=LEVEL,
         gate=gate,
         ingest=Ingest({"cron": INSTANCE_TOKEN}, log),
         forward=ForwardIngest({"laptop": FORWARD_TOKEN}, log),
@@ -270,3 +287,51 @@ def test_a_started_sign_in_cannot_be_finished_twice(hub: Hub) -> None:
 
     assert hub.call(target, headers={"Cookie": cookie})[0] == 302
     assert hub.call(target, headers={"Cookie": cookie})[0] == 400
+
+
+READER = {"Authorization": f"Bearer {READER_TOKEN}"}
+
+
+def test_the_reader_token_reads_the_level_analytics_a_viewer_reads(hub: Hub) -> None:
+    for path in ("/api/level?hours=48", "/api/level/trajectories?hours=48", "/api/snapshot", "/"):
+        assert hub.call(path)[0] == 401, path
+        assert hub.call(path, headers=READER)[0] == 200, path
+    assert hub.call("/api/snapshot", "HEAD", READER)[0] != 401
+
+
+def test_a_wrong_reader_token_is_refused(hub: Hub) -> None:
+    assert hub.call("/api/level", headers={"Authorization": "Bearer not-the-reader-token"})[0] == 401
+
+
+def test_the_reader_token_writes_nothing(hub: Hub) -> None:
+    post = {**READER, "Content-Type": "application/json"}
+    writes = [
+        ("POST", "/api/move"),
+        ("PUT", "/api/history-window"),
+        ("DELETE", "/api/history-window"),
+        ("POST", "/api/runs/events"),
+        ("POST", "/api/forward"),
+        ("POST", "/api/insights"),
+        ("DELETE", "/api/insights/slow-review"),
+    ]
+
+    for method, path in writes:
+        assert hub.call(path, method, post, b"{}")[0] == 401, (method, path)
+    assert hub.call(PROBE, headers=READER)[0] == 401  # an engine route refuses it on a read too
+
+
+def test_no_other_token_reads_as_the_reader(hub: Hub) -> None:
+    for token in (INSTANCE_TOKEN, FORWARD_TOKEN, ENGINE_TOKEN):
+        assert hub.call("/api/level", headers={"Authorization": f"Bearer {token}"})[0] == 401, token
+
+
+def test_the_agent_cli_reads_the_hubs_level_analytics_with_starpulse_token(
+    hub: Hub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["analytics", "trajectories", "--hours", "48", "--server", url(hub.server, "")]
+
+    refused = agent_cli.main(argv, {})
+    assert refused == 3 and "401" in capsys.readouterr().out
+
+    assert agent_cli.main(argv, {"STARPULSE_TOKEN": READER_TOKEN}) == 0
+    assert "runs" in json.loads(capsys.readouterr().out)

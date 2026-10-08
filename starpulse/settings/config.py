@@ -65,6 +65,7 @@ _OIDC_KEYS = {
     "groups_claim",
     "scopes",
     "engine_token_env",
+    "reader_token_env",
 }
 _INSTANCE_KEYS = {"name", "type", "url", "run_safe", "domains", "token_env", "commit"}
 _COMMIT_KEYS = {"after", "before", "force", "task"}
@@ -147,6 +148,7 @@ class OidcSettings:
     groups_claim: str = "groups"
     scopes: tuple[str, ...] = ("openid", "profile", "email")
     engine_token_env: str | None = None
+    reader_token_env: str | None = None
 
 
 def _oidc(raw: object) -> OidcSettings:
@@ -174,8 +176,9 @@ def _oidc(raw: object) -> OidcSettings:
         raise ConfigError("oidc: groups_claim must be text")
     if not (_names(scopes) and scopes and "openid" in scopes):
         raise ConfigError("oidc: scopes must be a list of text that includes openid")
-    engine = raw.get("engine_token_env")
-    for key, name in (("client_secret_env", text["client_secret_env"]), ("engine_token_env", engine)):
+    engine, reader = raw.get("engine_token_env"), raw.get("reader_token_env")
+    names = {"client_secret_env": text["client_secret_env"], "engine_token_env": engine, "reader_token_env": reader}
+    for key, name in names.items():
         if name is not None and not (isinstance(name, str) and _ENV_NAME.fullmatch(name)):
             raise ConfigError(f"oidc: {key} must be the name of an environment variable")
     return OidcSettings(
@@ -187,6 +190,7 @@ def _oidc(raw: object) -> OidcSettings:
         claim,
         tuple(scopes),
         engine,
+        reader,
     )
 
 
