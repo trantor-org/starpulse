@@ -1,12 +1,32 @@
 // What the DAGs catalog and a DAG's modal both draw: the state dot, the step constellation (small in a row, large in the modal),
-// the last-run line, the pool text and a Board tie's chip. Colours come from DAG_COLOR and the palette tokens.
+// the last-run line, the pool text and a Board tie's chip. Colours come from the Star Map's orbiterLook and the palette tokens.
 import type { CSSProperties, ReactNode } from "react";
 import { ago, bigPlace, chartHeight, place, short, took, type Phase, type Row, type Tie } from "./dags";
-import { DAG_COLOR } from "../../render/renderer";
+import { orbiterLook } from "../../render/renderer";
 import type { Pool } from "../../api";
 
-/** A DAG's state as a dot in the Star Map's DAG colors: amber and pulsing while it runs, a black hole when its last run failed, hollow before its first run. */
-export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true" />;
+/** A run status as the Star Map's DAG orbiter (renderer.ts draws it on the canvas): a dark disc in a ring of the status colour
+ *  around a core dot; a running DAG trails a turning arc and a failed one a dashed outer ring. `r` is the ring's radius. */
+export function Orbiter({ x, y, r, status }: { x: number; y: number; r: number; status: string }) {
+  const look = orbiterLook(status), k = r / 6, a = r + 3.5 * k;
+  return (
+    <g className="orbiter">
+      <circle cx={x} cy={y} r={r} fill="var(--bg0)" stroke={look.color} strokeOpacity={look.spin || look.dashed ? 0.95 : 0.6} strokeWidth={1.3 * k} className="ring" />
+      <circle cx={x} cy={y} r={r * (look.spin ? 0.45 : 0.4)} fill={look.color} fillOpacity={look.spin || look.dashed ? 0.95 : 0.7} className="core" />
+      {look.spin && <path d={`M${x + a} ${y}A${a} ${a} 0 0 1 ${x} ${y + a}`} fill="none" stroke={look.color} strokeOpacity={0.9} strokeWidth={1.4 * k} className="spin" style={{ transformOrigin: `${x}px ${y}px` }} />}
+      {look.dashed && <circle cx={x} cy={y} r={r + 4 * k} fill="none" stroke={look.color} strokeOpacity={0.7} strokeWidth={k} strokeDasharray={`${2 * k} ${2 * k}`} className="dash" />}
+    </g>
+  );
+}
+
+const PHASE_STATUS: Record<Phase, string> = { running: "running", queued: "queued", ok: "succeeded", failed: "failed", idle: "" };
+
+/** A DAG's state as the Star Map draws it: its orbiter in the status colour. */
+export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => (
+  <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true">
+    <svg viewBox="-12 -12 24 24"><Orbiter x={0} y={0} r={6} status={PHASE_STATUS[phase]} /></svg>
+  </i>
+);
 
 /** A name cut to `n` characters with an ellipsis: the strip draws outside its box, so its text must fit. */
 const fit = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, Math.max(1, Math.floor(n) - 1))}…`);
@@ -24,19 +44,18 @@ export function chartBox(r: Row, min = 924) {
 export function Strip({ r, w = 220, h = 20, big = false }: { r: Row; w?: number; h?: number; big?: boolean }) {
   const st = r.d.steps;
   const p = big ? bigPlace(st, w, h - 12, labelPx()) : place(st, w, h, 7, 3, 5.5, 34, Math.min(7, (h - 6) / 2));
-  const rr = big ? 6 : st.length > 9 ? 2.1 : 2.8;
+  const rr = big ? 6 : st.length > 9 ? 2.6 : 3.4;
   return (
     <svg className={`dstrip${big ? " big" : ""}`} width={big ? w : "100%"} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMinYMid meet" aria-hidden={!big}>
       {st.flatMap((s) => s.depends.filter((d) => p.at[d]).map((d) => (
         <line key={d + ">" + s.name} x1={p.at[d].x} y1={p.at[d].y} x2={p.at[s.name].x} y2={p.at[s.name].y} className={r.steps[s.name] === "running" ? "e hot" : "e"} />
       )))}
       {st.map((s) => {
-        const v = r.steps[s.name] ?? "not_started", c = DAG_COLOR[v] ?? "var(--track)", { x, y } = p.at[s.name];
+        const v = r.steps[s.name] ?? "not_started", { x, y } = p.at[s.name];
         return (
           <g key={s.name} className={`sd s-${v}`}>
-            {v === "running" && <circle cx={x} cy={y} r={rr * 2.6} fill={c} className="halo" />}
-            <circle cx={x} cy={y} r={v === "running" ? rr * 1.2 : rr} fill={v === "not_started" ? "var(--pop)" : c} stroke={v === "not_started" ? "var(--faint)" : "none"} strokeWidth={big ? 1.2 : 0.8} />
-            {s.kind === "agent" && <circle cx={x} cy={y} r={rr + (big ? 4 : 2)} fill="none" stroke="var(--agent)" strokeWidth={big ? 1 : 0.7} />}
+            <Orbiter x={x} y={y} r={rr} status={v} />
+            {s.kind === "agent" && <circle cx={x} cy={y} r={rr + (big ? 9 : 4)} fill="none" stroke="var(--agent)" strokeWidth={big ? 1 : 0.7} />}
             {big && <text x={x} y={y + (p.up(s.name) ? -14 : 22)} className={v === "running" ? "hot" : undefined}>{s.name}</text>}
             {big && <title>{`${s.name}: ${v.replace("_", " ")}${s.kind ? ` (${s.kind} step)` : ""}`}</title>}
           </g>

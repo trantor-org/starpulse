@@ -9,6 +9,7 @@ import { DagLegend, Dags } from "./Dags";
 import { rows } from "./dags";
 import css from "../../style.css?raw";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
+import { orbiterLook } from "../../render/renderer";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
@@ -66,7 +67,9 @@ describe("the DAGs view's catalog", () => {
     expect(names()).toEqual(["triage", "pr-watch", "deploy", "never"]);
     const row = all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === "pr-watch")!;
     expect(row.querySelector("i.orb.o-ok")).not.toBeNull();
-    expect(row.querySelectorAll("svg.dstrip circle")).toHaveLength(2);
+    expect(row.querySelectorAll("svg.dstrip g.orbiter")).toHaveLength(2);
+    expect(row.querySelectorAll("svg.dstrip g.orbiter circle.ring")).toHaveLength(2);
+    expect(row.querySelector("i.orb.o-ok g.orbiter circle.ring")!.getAttribute("stroke")).toBe(orbiterLook("succeeded").color);
     expect(row.querySelector(".last")!.textContent).toBe("50m ago · 1m 0s");
     expect(row.querySelector(".pool")!.textContent).toBe("main 1/2");
     expect(row.querySelector(".tie")!.textContent).toBe("⇢ Review");
