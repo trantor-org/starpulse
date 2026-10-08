@@ -7,8 +7,12 @@
   the template state it is entered from (a notch under that state's column, in its colour: filled when the state's flow:
   declares it, hollow when only the trails show it). A DAG is a star at the head of the row it launches.
 
-  Nesting: a row is only a machine entered from the one at the top. A machine with machines entered from it says how
-  many on its name line; clicking anywhere on its row zooms through, that machine takes the top and its machines
+  Nesting: a row is only a machine entered from the one at the top. A machine with machines entered from it draws them in
+  a band under its line: a block per machine, side by side under the column of states it is entered from, each state
+  running a solid stem in its colour out of its left, down and along to its blocks, the top state's outermost and lowest
+  so no two cross; a block is that machine's states as a line of dots, each deeper machine on its own line hung from the
+  state it is entered from (four lines at most, then `+N deeper`), and its name, names alternating between two baselines
+  when they would not fit. Clicking anywhere on its row zooms through, that machine takes the top and its machines
   become the rows, with a breadcrumb back up. Escape steps back out one machine at a time. A row stands for everything
   nested under it: stuck work anywhere below marks it and names where, and its entries land on its ticks in the strip.
 
@@ -19,7 +23,8 @@
   hovering a task retraces its path in order, across every machine it has a session in, along those same lines; clicking
   it pins the trace and opens the panel. &level=in_progress opens on the ledger, &fs=125 or &fs=150 sets the browser text
   size, &open=<machine> opens drilled into that machine, &focus=<machine> opens scrolled to that row (opening its parent first), &pick=busy pins the task on the most machines at once, &many=N seeds
-  N more machines (24 by default, 0 for the snapshot alone), and &fan=N (3 to 8) widens the branch at Checkpointed and Red
+  N more machines (24 by default, 0 for the snapshot alone), &cr=1 seeds triaging-cr-reviews with its three-way fork from
+  start, each branch with machines entered from it, to show a band whose column fans out, and &fan=N (3 to 8) widens the branch at Checkpointed and Red
   proven to N states on one level, in the template and in the triaging-alerts row, to show a wide machine: a column of
   three or more states names them beside it and takes the width its names need. running-skill-evals had no session in the saved snapshot, so
   two are seeded from the live shape (a task drafting a skill asks for a run); seeded rows say so.
@@ -202,11 +207,26 @@
         a.state = b; a.steps = 2; a.active = a.trail[1].at; });
     }
 
+    // review case (&cr=1): triaging-cr-reviews's own three-way fork from start, each branch with machines entered from it, two and three deep
+    const CR = P.get("cr") ? { "replying-threads": ["triaging-cr-reviews", "audit_active", ["drafted", "replied", "closed"]], "resolving-threads": ["replying-threads", "replied", ["queued", "resolved", "closed"]],
+      "checking-bots": ["resolving-threads", "resolved", ["asked", "answered", "closed"]], "querying-reviews": ["triaging-cr-reviews", "audit_active", ["queried", "read", "done"]],
+      "verifying-fixes": ["triaging-cr-reviews", "fix_verified", ["started", "proved", "done"]], "rerunning-ci": ["verifying-fixes", "proved", ["queued", "running", "green"]],
+      "closing-reviews": ["triaging-cr-reviews", "completed", ["closing", "closed"]] } : {};
+    if (P.get("cr") && ipTasks.length) { const cap = (x) => x.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+      const ids = ["start", "audit_active", "dismissal_replied", "audit_recorded", "approval_requested", "fix_verified", "fix_replied", "completed"], fin = ["approval_requested", "completed"];
+      const ev = [["start", "audit_active"], ["audit_active", "dismissal_replied"], ["dismissal_replied", "audit_active"], ["audit_active", "audit_recorded"], ["audit_recorded", "approval_requested"], ["start", "fix_verified"], ["fix_verified", "fix_replied"], ["fix_replied", "start"], ["start", "completed"]];
+      const mk = (n, ids, trans, fins) => { M[n] = { name: n, states: ids.map((id, k) => ({ id, name: cap(id), initial: !k, final: fins.includes(id) })), all: trans, trans, agents: [] }; SUBS.push(n); seeded.add(n); };
+      mk("triaging-cr-reviews", ids, ev.map(([a, b]) => ({ source: a, target: b, event: b.toUpperCase() })), fin);
+      ["audit_active", "fix_verified", "completed"].forEach((st, j) => { const p = ipTasks[(j * 5 + 3) % ipTasks.length], t0 = S.now - 600 - j * 240, tr = [{ state: "start", event: "ENTERED", at: t0 }, { state: st, event: st.toUpperCase(), at: t0 + 150 }];
+        M["triaging-cr-reviews"].agents.push({ id: `seed-cr-${j}`, title: p.title, model: p.model, kind: "interactive", badges: [], task: p.task, m: "triaging-cr-reviews", state: st, steps: 2, trail: tr, active: tr[1].at }); });
+      for (const [n, [, , sh]] of Object.entries(CR)) mk(n, sh, sh.slice(1).map((id, k) => ({ source: sh[k], target: id, event: id.toUpperCase() })), [sh.at(-1)]); }
+
     // ---- ties: declared (a state's flow:), observed (the state a task held when its session entered), DAG launches
     const TIES = [];
     const tieOf = (child, pm, ps, kind, dag) => TIES.find((t) => t.child === child && t.pm === pm && t.ps === ps && t.kind === kind && t.dag === dag);
     const addTie = (child, pm, ps, kind, dag, when) => tieOf(child, pm, ps, kind, dag) || TIES[TIES.push({ child, pm, ps, kind, dag, when, count: 0, flash: -1e9 }) - 1];
     for (const n of Object.keys(M)) for (const sf of F[n]?.machine.subflows || []) if (M[sf.flow]) addTie(sf.flow, n, sf.state, "declared", null, sf.when);
+    for (const [n, [pm, ps]] of Object.entries(CR)) if (M[n]) addTie(n, pm, ps, "declared", null);
     const byTask = {};
     const indexTasks = () => { for (const k in byTask) delete byTask[k]; for (const m of Object.values(M)) for (const a of m.agents) if (a.task) (byTask[a.task] ||= []).push(a); };
     indexTasks();
@@ -322,11 +342,11 @@
       // each row is as tall as its meta or its machine (branches, names above and below), whichever is taller
       const rg = 32 * FS, pad = 26 * FS + PX.row() * 1.3, metaH = PX.name() * 1.4 + 2 * PX.sub() * 1.5 + 34 * FS;
       // a machine opened deep down may have only a few rows: they stretch, up to 3.2 times, so the lane is filled rather than left empty
-      L.stripT = H - 50 * FS; const hOf = (g2) => Math.max(metaH, 2 * pad + (g2.rmax - g2.rmin) * rg), tot = KIDS[topM].reduce((a, m) => a + hOf(G[m]), 0);
+      L.stripT = H - 50 * FS; const hOf = (g2) => Math.max(metaH, 2 * pad + (g2.rmax - g2.rmin) * rg), tot = KIDS[topM].reduce((a, m) => a + hOf(G[m]) + nestBand(m), 0);
       const k = KIDS[topM].length <= PAGE ? clamp(((L.stripT - L.laneTop) * 0.97) / Math.max(1, tot), 1, 3.2) : 1;
       KIDS[topM].forEach((m) => { const g2 = G[m], rx = colXs(m, x0, x1, PX.row(), 24 * FS, { k }), r = { m, cy: null, k };
         r.nodes = g2.order.map((s, j) => Object.assign(addNode(m, s, rx[g2.depth[s]], r), { oy: g2.row[s] * rg * k, col: RAMP[Math.round((j / Math.max(1, g2.order.length - 1)) * (RAMP.length - 1))] }));
-        r.h = hOf(g2) * k; r.c = r.h / 2 - ((g2.rmax + g2.rmin) / 2) * rg * k; L.rows.set(m, r);
+        r.h = hOf(g2) * k; r.c = r.h / 2 - ((g2.rmax + g2.rmin) / 2) * rg * k; r.band = nestBand(m); r.h += r.band; L.rows.set(m, r);
         const ds = dagTies(m); ds.forEach((t, k) => L.stars.push({ t, dag: t.dag, child: m, row: r, x: x0 - 18 * FS, dy: (k - (ds.length - 1) / 2) * 12 * FS })); });
       const s0 = node(topM, initOf(topM)); dagTies(topM).forEach((t, k) => L.stars.push({ t, dag: t.dag, child: topM, x: s0.x - orbitOf(s0) - 14, y: s0.y + k * 14 }));
       const rv = revEl.getBoundingClientRect(); L.sx0 = Math.max(x0, rv.right + 24); L.sx1 = x1;
@@ -479,7 +499,7 @@
       r.nameAt = { x: mx, y: ty + px * 0.7 };
       // every row opens: a click anywhere on it zooms through to that machine; one with machines entered from it says how many
       const nk = KIDS[r.m].length; let cw = 0;
-      { const ct = nk ? `${nk} nested ›` : "›"; cw = textW(ct, sp) + 8; text(ct, mx + L.metaW, ty + px * 0.7, sp, rgba(PLANET, hot ? 1 : 0.7), "right"); }
+      { const ct = "›"; cw = textW(ct, sp) + 8; text(ct, mx + L.metaW, ty + px * 0.7, sp, rgba(PLANET, hot ? 1 : 0.7), "right"); }
       text(fit(r.m, px, L.metaW - cw, 400), mx, ty + px * 0.7, px, rgba(INK, hot ? 0.97 : idle ? 0.55 : 0.85), "left", 400);
       let l2 = "no tie this hour", c2 = rgba(SUB, 0.5), dot = null;
       if (t) { dot = src?.col; l2 = `${t.pm === topM ? "from" : "on"} ${t.pm === topM ? stName(t.pm, t.ps) : `${t.pm} › ${stName(t.pm, t.ps)}`} · ${t.kind === "declared" ? "declared" : `×${t.count}`}`; c2 = rgba(INK, 0.62); }
@@ -489,14 +509,58 @@
       const age = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}` : `${Math.max(1, Math.round(s / 60))}m`);
       const ns = st.length ? [] : desc(r.m).flatMap((d) => stuckOf(d).map((a) => ({ a, d }))).sort((p, q) => p.a.active - q.a.active);
       const l3 = st.length ? `stuck ${age(simT - Math.min(...st.map((a) => a.active)))} in ${stName(r.m, st[0].state)}` : ns.length ? `nested stuck ${age(simT - ns[0].a.active)} in ${ns[0].d}`
-        : !ag.length ? (nk ? `${desc(r.m).reduce((n, d) => n + M[d].agents.length, 0)} tasks nested · last ${hhmm(lastIn(r.m))}` : "no sessions this hour")
+        : !ag.length ? (desc(r.m).some((d) => M[d].agents.length) ? `${desc(r.m).reduce((n, d) => n + M[d].agents.length, 0)} tasks nested · last ${hhmm(lastIn(r.m))}` : "no sessions this hour")
         : `${ag.length} task${ag.length === 1 ? "" : "s"} · ${idle ? `idle ${age(simT - lastIn(r.m))}` : `last ${hhmm(lastIn(r.m))}`}`;
       text(fit(l3 + (seeded.has(r.m) ? " · seeded" : ""), sp, L.metaW), mx, ty + px * 1.4 + sp * 2.25, sp, st.length || ns.length ? rgba(OFF, 0.9) : rgba(SUB, idle ? 0.5 : 0.7));
       for (const s of L.stars) if (s.row === r) { drawStarLine(s, now); drawStar(s); }
-      cx.globalAlpha = ga * (idle && !hot ? 0.75 : 1); drawEdgesOf(r.m, now); drawNodesOf(r.m); cx.globalAlpha = ga; drawTasksOf(r.m, y0, y1, now); rowLabels(r, hot); cx.globalAlpha = 1;
+      cx.globalAlpha = ga * (idle && !hot ? 0.75 : 1); drawEdgesOf(r.m, now); drawNodesOf(r.m); cx.globalAlpha = ga; drawTasksOf(r.m, y0, y1, now); drawNest(r, hot); rowLabels(r, hot); cx.globalAlpha = 1;
+    }
+    // a row with machines entered from it gains a band under its line to draw them in: its deepest block, a stem's turn per state of a column, a second name line when names stagger
+    function nestBand(m) {
+      if (!KIDS[m].length) return 0;
+      const cols = chainCols(m);
+      return Math.max(...[...cols].map(([dc, es]) => new Set(es.map((e) => e.s)).size * 5 + Math.max(...es.map((e) => chainH(e.c))) + (chainRoom(m, cols, dc).two ? PX.sub() * 1.3 : 0))) + 8;
+    }
+    // the machines entered from a row's states, by the column of the state, top state first; and the height of one machine's block
+    const chainCols = (m) => { const cols = new Map(); for (const c of KIDS[m]) { const ps = primary[c]?.ps; if (ps == null || !(ps in G[m].depth)) continue; const d = G[m].depth[ps]; (cols.get(d) || cols.set(d, []).get(d)).push({ s: ps, c }); }
+      for (const es of cols.values()) es.sort((a, b) => G[m].row[a.s] - G[m].row[b.s] || (a.c < b.c ? -1 : 1)); return cols; };
+    const chainH = (c) => Math.min(4, 1 + desc(c).length) * 8 * GS() + PX.sub() * 1.4 + 6;
+    // a column's room, from its first state to the next column's, the width of each block, and whether its names alternate between two baselines to fit
+    const chainRoom = (m, cols, dc) => { const es = cols.get(dc), nx = [...cols.keys()].sort((a, b) => a - b).find((x) => x > dc), n0 = node(m, es[0].s);
+      if (!n0) return { lim: L.x1 + 22, bw: Infinity, two: false };
+      const lim = (nx === undefined ? L.x1 + 22 : node(m, cols.get(nx)[0].s).x) - 14, bw = (lim - n0.x + 4) / es.length;
+      return { lim, bw, two: es.length > 1 && es.some((e) => textW(e.c, PX.sub()) > bw - 12) }; };
+    // the band under a row: a block per machine entered from it, its line, each deeper machine on its own line hung from the state it is entered from, then its name
+    function drawNest(r, hot) {
+      r.nestBoxes = [];
+      const sp = PX.sub(), g = GS(), al = hot ? 0.95 : 0.72, step = 8 * g, rr = 2.4 * g, cols = chainCols(r.m), ds = [...cols.keys()].sort((a, b) => a - b);
+      const dotCol = (m, q) => { const o = G[m].order; return RAMP[Math.round((o.indexOf(q) / Math.max(1, o.length - 1)) * (RAMP.length - 1))]; };
+      const line = (m, x, y, dx, rr, a) => { const o = G[m].order; cx.strokeStyle = rgba(SUB, 0.35 * a); cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x + (o.length - 1) * dx, y); cx.stroke();
+        o.forEach((q, j) => { cx.fillStyle = rgba(dotCol(m, q), a); cx.beginPath(); cx.arc(x + j * dx, y, rr, 0, TAU); cx.fill(); }); };
+      const ext = (m, f) => Math.max(G[m].order.length - 1, ...KIDS[m].map((k) => G[m].order.indexOf(primary[k].ps) + f * ext(k, f)));
+      for (const dc of ds) {
+        // a column's blocks sit side by side, top state's first; each state runs its own stem out of its left, the top state's outermost and lowest, so no two stems cross
+        const es = cols.get(dc), sts = [...new Set(es.map((e) => e.s))], K = sts.length, n0 = node(r.m, sts[0]), { lim, bw, two } = chainRoom(r.m, cols, dc);
+        const oM = Math.max(...sts.map((q) => orbitOf(node(r.m, q)))), bt = r.cy + r.h - r.band + 4 + K * 5, Lm = Math.max(...es.map((e) => Math.min(4, 1 + desc(e.c).length))), xb = (i) => n0.x - 2 + i * bw, xv = (k) => n0.x - oM - 6 - (K - 1 - k) * 7;
+        cx.save(); cx.beginPath(); cx.rect(xv(0) - 4, r.cy, lim - xv(0) + 4, r.h); cx.clip();
+        sts.forEach((q, k) => { const n = node(r.m, q), o = orbitOf(n), hy = bt - 2 - k * 5, mine = es.map((e, i) => (e.s === q ? i : -1)).filter((i) => i >= 0);
+          r.nestBoxes.push({ x0: xv(k) - 1, x1: xv(k) + 1, y0: n.y, y1: hy }); // a state's name keeps off its stem
+          cx.strokeStyle = rgba(n.col, al * 0.7); cx.lineWidth = 1; cx.beginPath(); cx.moveTo(n.x - o - 1, n.y); cx.lineTo(xv(k), n.y); cx.lineTo(xv(k), hy);
+          cx.lineTo(xb(mine.at(-1)) + 2, hy); for (const i of mine) { cx.moveTo(xb(i) + 2, hy); cx.lineTo(xb(i) + 2, bt + step - rr - 1); } cx.stroke(); });
+        es.forEach((e, i) => { const c = e.c, x0 = xb(i) + 2, w = bw - 12, d = desc(c).length, Lv = Math.min(4, 1 + d), y = bt;
+          const dx0 = Math.min(12 * g, (w - 4) / Math.max(1, ext(c, 0.85)));
+          let at = 0; const rec = (m, x, dx, q, a) => { const yy = y + ++at * step; line(m, x, yy, dx, q, a);
+            for (const kk of KIDS[m]) { if (at >= Lv) return; const xi = x + G[m].order.indexOf(primary[kk].ps) * dx, yq = y + (at + 1) * step;
+              cx.strokeStyle = rgba(PLANET, a * 0.6); cx.lineWidth = 1; cx.setLineDash([1.5, 2]); cx.beginPath(); cx.moveTo(xi, yy + q); cx.lineTo(xi, yq - q * 0.85); cx.stroke(); cx.setLineDash([]);
+              rec(kk, xi, dx * 0.85, q * 0.85, a * 0.8); } };
+          rec(c, x0, dx0, rr, al);
+          // names that would not fit their block alternate between two baselines, each running on under its neighbour's
+          const ny = y + Lm * step + sp * (two && i % 2 ? 2.25 : 0.95), nw = two ? Math.min(2 * bw, lim - x0) - 12 : w, tail = d > Lv - 1 ? ` +${d - Lv + 1} deeper` : "", lab = fit(c, sp, Math.max(12, nw - textW(tail, sp))), lw = textW(lab, sp);
+          text(lab, x0 - 2, ny, sp, rgba(PLANET, al)); if (tail) text(tail, x0 - 2 + lw, ny, sp, rgba(SUB, 0.75)); });
+        cx.restore(); r.nestBoxes.push({ x0: xv(0) - 2, x1: lim, y0: bt - K * 5 - 2, y1: r.cy + r.h }); }
     }
     // a row's state names alternate below and above its line; a name that would touch another, or leave the row, waits for the tooltip
-    function rowLabels(r, hot) { const placed = [...r.nodes.map((n) => ({ x: n.x, y: n.y, r: orbitOf(n) + 1 })), ...L.stars.filter((s) => s.row === r).map((s) => ({ x: s.x, y: s.y, r: 11 }))], px = PX.row(), h = px * 1.3, g2 = G[r.m];
+    function rowLabels(r, hot) { const placed = [...(r.nestBoxes || []), ...r.nodes.map((n) => ({ x: n.x, y: n.y, r: orbitOf(n) + 1 })), ...L.stars.filter((s) => s.row === r).map((s) => ({ x: s.x, y: s.y, r: 11 }))], px = PX.row(), h = px * 1.3, g2 = G[r.m];
       for (const n of r.nodes) { n.lab = null; const w = textW(n.label, px), o = orbitOf(n) + 1, up = n.oy < 0 || (n.oy === 0 && g2.depth[n.s] % 2 === 1), xx = clamp(n.x - w / 2, L.x0 - 26 * FS, L.x1 - w);
         // in a fan of three or more, the states above and below hold those places, so the name goes beside the state
         const side = [{ x: n.x + o + 8, y: n.y - h / 2 }, { x: n.x - o - 8 - w, y: n.y - h / 2 }], vert = (up ? [true, false] : [false, true]).map((u) => ({ x: xx, y: u ? n.y - o - 1.5 - h : n.y + o + 1.5 }));
@@ -521,13 +585,17 @@
       const inV = L.list.filter((r) => shown(r)).map((r) => lastIn(r.m)).filter((t) => t > t0);
       if (inV.length) { const a = X(Math.min(...inV)), b = X(Math.max(...inV)); cx.fillStyle = rgba(PLANET, 0.12); cx.fillRect(a - 3, by - 14 * FS, b - a + 6, 14 * FS); cx.fillStyle = rgba(PLANET, 0.5); cx.fillRect(a - 3, by, b - a + 6, 1); }
       cx.fillStyle = rgba(SUB, 0.22); cx.fillRect(sx0, by, sx1 - sx0, 1);
-      for (let h = Math.ceil(t0 / 10800) * 10800; h <= t1; h += 10800) { const x = X(h); cx.fillStyle = rgba(SUB, 0.3); cx.fillRect(x, by, 1, 4); if (x - sx0 > 18 && sx1 - x > 18) text(hhmm(h), x, by + 11 * FS, sp * 0.95, rgba(SUB, 0.5), "center"); }
+      // an hour label every tick that leaves room for it; a narrow strip or large text labels every second or third
+      const every = Math.ceil((textW("00:00", sp * 0.95) + 10) / ((10800 / 86400) * (sx1 - sx0)));
+      for (let h = Math.ceil(t0 / 10800) * 10800; h <= t1; h += 10800) { const x = X(h); cx.fillStyle = rgba(SUB, 0.3); cx.fillRect(x, by, 1, 4); if (Math.round(h / 10800) % every === 0 && x - sx0 > 18 && sx1 - x > 18) text(hhmm(h), x, by + 11 * FS, sp * 0.95, rgba(SUB, 0.5), "center"); }
       L.ticks = [];
       for (const d of desc(topM)) { const m = rowAt(d); for (const a of M[d].agents) { const t = start(a); if (t < t0) continue; const x = X(t), hot = hotM() === m || (hover?.kind === "tick" && hover.o.a === a), col = a.task ? srcOf(d)?.col || srcOf(m)?.col || PLANET : DAGC;
         L.ticks.push({ x, m, a }); cx.fillStyle = rgba(col, hot ? 1 : 0.62); cx.fillRect(x - 0.75, by - (hot ? 13 : 8) * FS, 1.5, (hot ? 13 : 8) * FS); } }
       const nL = L.list.filter((r) => r.on).length;
-      text("24 h · machine entries", sx0, stripT + 8 * FS, sp, rgba(SUB, 0.6));
-      text(`${inV.length ? `${hhmm(Math.min(...inV))}–${hhmm(Math.max(...inV))} in view · ` : ""}${nL} of ${L.rows.size} loaded`, sx1, stripT + 8 * FS, sp, rgba(SUB, 0.7), "right");
+      // the count on the right keeps its room; the strip's name gives way to it on a narrow strip
+      const cnt = `${inV.length ? `${hhmm(Math.min(...inV))}–${hhmm(Math.max(...inV))} in view · ` : ""}${nL} of ${L.rows.size} loaded`, room = sx1 - sx0 - textW(cnt, sp) - 14;
+      if (room > 40) text(fit("24 h · machine entries", sp, room), sx0, stripT + 8 * FS, sp, rgba(SUB, 0.6));
+      text(cnt, sx1, stripT + 8 * FS, sp, rgba(SUB, 0.7), "right");
     }
 
     // ---- the trace: a task's path, in time order, across every machine it has a session in. Each hop is retraced along the

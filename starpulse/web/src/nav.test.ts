@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { canvasSpace, FoldStore, retired, viewOf, viewSearch, type FoldStorage } from "./nav";
+import { backStep, canvasSpace, FoldStore, levelParams, levelSearch, retired, viewOf, viewSearch, type Back, type FoldStorage } from "./nav";
 import { fitLevel, toScreen } from "./zoom";
 
 const memory = (): FoldStorage & { data: Map<string, string> } => {
@@ -121,5 +121,38 @@ describe("a retired per-graph address", () => {
     expect(retired("/board", "")).toBe(true);
     expect(retired("/flow/backlog", "")).toBe(true);
     expect(retired("/", "#sec-board")).toBe(true);
+  });
+});
+
+describe("stepping out with Escape, Backspace or a right-click", () => {
+  it("closes the panel, drops the focused row, scrolls back to newest, steps up one machine at a time, then returns to the Board", () => {
+    const seen: Back[] = [];
+    let at = { panel: true, focus: "audit" as string | null, scrolled: true, depth: 4 };
+    for (let step = backStep(at); step; step = backStep(at)) {
+      seen.push(step);
+      at = { panel: step === "panel" ? false : at.panel, focus: step === "focus" ? null : at.focus, scrolled: step === "scroll" ? false : at.scrolled, depth: step === "up" ? at.depth - 1 : at.depth };
+    }
+    expect(seen).toEqual(["panel", "focus", "scroll", "up", "up", "up"]);
+  });
+
+  it("does nothing on the Board, where there is nothing to step out of", () => {
+    expect(backStep({ panel: false, focus: null, scrolled: false, depth: 1 })).toBeNull();
+  });
+
+  it("steps up at once when nothing is open, focused or scrolled", () => {
+    expect(backStep({ panel: false, focus: null, scrolled: false, depth: 3 })).toBe("up");
+  });
+});
+
+describe("the address that reproduces a machine level", () => {
+  it("reads `open=` and `focus=`, each absent as null", () => {
+    expect(levelParams("?view=dags&open=scan&focus=lint")).toEqual({ open: "scan", focus: "lint" });
+    expect(levelParams("")).toEqual({ open: null, focus: null });
+  });
+
+  it("writes them beside the other parameters and drops each that has no value", () => {
+    expect(levelSearch("?view=dags", { open: "scan", focus: "lint" })).toBe("?view=dags&open=scan&focus=lint");
+    expect(levelSearch("?open=scan&focus=lint&view=dags", { open: "scan", focus: null })).toBe("?view=dags&open=scan");
+    expect(levelSearch("?open=scan&focus=lint", { open: null, focus: null })).toBe("");
   });
 });

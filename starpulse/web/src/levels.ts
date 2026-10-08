@@ -30,6 +30,10 @@ export interface Tree {
   children: Record<string, Child[]>;
   /** Each mapped machine's third-party source, by flow name. */
   sources?: Record<string, string>;
+  /** The machines above each machine entered from the top one, outermost first, the top machine left out; empty without the server's ties. */
+  chains?: Record<string, string[]>;
+  /** The Board state whose first machine is the one the server derives the rest from (the In Progress machine), if the snapshot names one. */
+  ipState?: string;
 }
 export const BOARD: Path = [{ kind: "board" }];
 
@@ -53,7 +57,11 @@ export function tree(snap: Pick<Snapshot, "graphs" | "flows">): Tree {
         (t.children[f.name] ??= []).push({ state: link.state, flow: link.flow, when: link.when });
         inner.add(link.flow);
       }
-  const primary = board?.subflows?.[0]?.state;
+  const primary = board?.subflows?.[0]?.state, ip = snap.flows.find((f) => f.parent === null)?.name;
+  if (primary && ip && t.subs[primary]?.[0] === ip) {
+    t.ipState = primary;
+    t.chains = Object.fromEntries(snap.flows.flatMap((f) => (f.parent && f.chain ? [[f.name, f.chain]] : [])));
+  }
   if (primary)
     for (const g of snap.graphs) if (g !== "board" && g !== "runs" && !inner.has(g)) t.subs[primary].push(g);
   return t;
@@ -71,6 +79,12 @@ export const hostOf = (path: Path): string | undefined => path.find((l): l is Ex
  */
 export function pathTo(t: Tree, flow: string, host?: string): Path | null {
   if (flow === "board" || flow === "runs") return BOARD;
+  // the machine on top of its state is the state's own level; a machine entered from it opens one level per machine above it
+  const at = t.ipState, chain = t.chains?.[flow];
+  if (at && (host === undefined || host === at)) {
+    if (t.subs[at][0] === flow) return [...BOARD, { kind: "state", id: at }];
+    if (chain) return [...BOARD, { kind: "state", id: at }, ...[...chain, flow].map((f): Level => ({ kind: "machine", flow: f }))];
+  }
   for (const [state, subs] of Object.entries(t.subs))
     if ((host === undefined || state === host) && subs.includes(flow)) return [...BOARD, { kind: "state", id: state }, { kind: "machine", flow }];
   for (const [parent, kids] of Object.entries(t.children))
@@ -87,6 +101,12 @@ export function pathTo(t: Tree, flow: string, host?: string): Path | null {
  */
 export const topOf = (subs: Record<string, string[]>, l: Level): string | null => (l.kind === "state" ? (subs[l.id]?.[0] ?? null) : null);
 
+/** The machine on top at a path: the one the last machine level opens, else the first machine of the Board state the path ends on; null on the Board. */
+export const topFlow = (subs: Record<string, string[]>, path: Path): string | null => {
+  const last = path[path.length - 1];
+  return last?.kind === "machine" ? last.flow : last ? topOf(subs, last) : null;
+};
+
 const same = (a: Path | null, b: Path) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Whether every level of a path still exists; a cached path can outlive a machine or a Board state. */
@@ -102,11 +122,15 @@ function valid(t: Tree, path: Path): boolean {
 /**
  * Where the page opens. A retired per-graph URL (`/board`, `/runs`,
  * `/flow/<name>`, `/#sec-<name>`) opens the level that draws its graph; the
- * root reopens the path this browser last showed, else the Board.
+ * root opens the machine the address's `open=` names, else the one a `focus=`
+ * row is entered from, else reopens the path this browser last showed, else the Board.
  */
-export function startPath(pathname: string, hash: string, cached: Path | null, t: Tree): Path {
-  const name = /^\/flow\/([^/]+)$/.exec(pathname)?.[1] ?? (pathname === "/" ? /^#sec-(.+)$/.exec(hash)?.[1] : pathname.slice(1));
+export function startPath(pathname: string, hash: string, cached: Path | null, t: Tree, at: { open?: string | null; focus?: string | null } = {}): Path {
+  // a demo page's address is a file under a folder (`/pr-9/flow-view.html`), never a retired per-graph one
+  const name = /^\/flow\/([^/]+)$/.exec(pathname)?.[1] ?? (pathname === "/" || pathname.endsWith(".html") ? /^#sec-(.+)$/.exec(hash)?.[1] : pathname.slice(1));
   if (name) return pathTo(t, decodeURIComponent(name)) ?? BOARD;
+  const named = at.open ? pathTo(t, at.open) : at.focus ? pathTo(t, at.focus)?.slice(0, -1) : null;
+  if (named && named.length > 1) return named;
   return cached && valid(t, cached) ? cached : BOARD;
 }
 

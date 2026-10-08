@@ -1,5 +1,7 @@
 // The machine ledger's lane: where each row sits under the top and where its states sit in it. Pure layout; the renderer draws it. A row is as
-// tall as its meta column or its machine, whichever is taller, and a lane with few rows stretches them to fill it.
+// tall as its meta column or its machine, whichever is taller, plus the band that shows its nesting (machineChain.ts), and a lane with few rows
+// stretches them to fill it.
+import { chainBand, chainOf, type Chain, type Nest } from "./machineChain";
 import { hits, layers, slot, sizes, type Block } from "./machineLedger";
 import type { MachineState, Transition } from "./types";
 
@@ -9,6 +11,8 @@ export interface LaneMachine {
   transitions: Transition[];
   /** Tasks on each state. */
   tasks: Record<string, number>;
+  /** The machines entered from it, with the state each is entered from. */
+  nested?: { state: string; nest: Nest }[];
 }
 export interface LaneNode {
   id: string;
@@ -37,6 +41,9 @@ export interface LaneRow {
   /** Down from the row's top to its main line. */
   c: number;
   nodes: LaneNode[];
+  /** The band at the row's foot that shows where its nesting is, and its drawing; 0 and null with none entered from it. */
+  band: number;
+  chain: Chain | null;
 }
 
 /** Rows to a page: a lane holding more does not stretch them. */
@@ -44,23 +51,27 @@ export const PAGE = 20;
 /** How far a lane of few rows stretches them. */
 export const STRETCH = 3.2;
 
-export function laneRows(machines: LaneMachine[], span: { x0: number; x1: number }, f: { scale: number; laneH: number }): { rows: LaneRow[]; k: number } {
+export function laneRows(machines: LaneMachine[], span: { x0: number; x1: number }, f: { scale: number; laneH: number; measure?: (s: string, px: number) => number }): { rows: LaneRow[]; k: number } {
   const { fs, gs, dot } = sizes(f.scale), rg = 32 * fs, pad = 26 * fs + 10.5 * fs * 1.3, metaH = 12 * fs * 1.4 + 2 * 10 * fs * 1.5 + 34 * fs;
   const gl = machines.map((m) => layers(m.states, m.transitions.filter((t) => t.source !== t.target)));
   const hOf = (g: (typeof gl)[number]) => Math.max(metaH, 2 * pad + (g.rmax - g.rmin) * rg);
-  const total = gl.reduce((a, g) => a + hOf(g), 0), k = machines.length <= PAGE ? Math.max(1, Math.min(STRETCH, (f.laneH * 0.97) / Math.max(1, total))) : 1;
+  const cf = { scale: f.scale, measure: f.measure ?? ((t: string, px: number) => t.length * px * 0.55), x1: span.x1 };
+  const xOf = (g: (typeof gl)[number]) => (s: string) => (g.cols.length > 1 ? span.x0 + (g.depth[s] / (g.cols.length - 1)) * (span.x1 - span.x0) : span.x0);
+  const bands = machines.map((m, i) => chainBand(m.nested ?? [], gl[i], xOf(gl[i]), cf));
+  const total = gl.reduce((a, g, i) => a + hOf(g) + bands[i], 0), k = machines.length <= PAGE ? Math.max(1, Math.min(STRETCH, (f.laneH * 0.97) / Math.max(1, total))) : 1;
   let y = 0;
   const rows = machines.map((m, i): LaneRow => {
-    const g = gl[i], h = hOf(g) * k, n = g.cols.length, r = (8 + 1.2 * Math.sqrt(Math.max(0, ...Object.values(m.tasks)))) * Math.min(2, k) ** 0.6 * gs;
+    const g = gl[i], hl = hOf(g) * k, h = hl + bands[i], r = (8 + 1.2 * Math.sqrt(Math.max(0, ...Object.values(m.tasks)))) * Math.min(2, k) ** 0.6 * gs;
     const nodes = m.states.map((s, j): LaneNode => {
       const c = m.tasks[s.id] ?? 0;
       return {
-        id: s.id, name: s.name, x: n > 1 ? span.x0 + (g.depth[s.id] / (n - 1)) * (span.x1 - span.x0) : span.x0, oy: g.row[s.id] * rg * k, r,
+        id: s.id, name: s.name, x: xOf(g)(s.id), oy: g.row[s.id] * rg * k, r,
         orbit: c ? slot(r, c - 1, f.scale).R + dot : r, u: m.states.length > 1 ? j / (m.states.length - 1) : 0, initial: s.initial, final: s.final, n: c,
         up: g.row[s.id] < 0 || (g.row[s.id] === 0 && g.depth[s.id] % 2 === 1), beside: g.colN[s.id] >= 3,
       };
     });
-    const row = { name: m.name, y, h, c: h / 2 - ((g.rmax + g.rmin) / 2) * rg * k, nodes };
+    const c = hl / 2 - ((g.rmax + g.rmin) / 2) * rg * k, at = new Map(nodes.map((q) => [q.id, { x: q.x, y: c + q.oy, orbit: q.orbit }]));
+    const row = { name: m.name, y, h, c, nodes, band: bands[i], chain: chainOf(m.nested ?? [], g, (q) => at.get(q)!, hl, h, cf) };
     y += h;
     return row;
   });
@@ -79,11 +90,11 @@ export interface RowLabel {
 }
 /**
  * Names a row's states: above or below the line, alternating, or beside a state in a column of three or more. A name that would touch another, a
- * state's tasks or anything in `keepClear` (a DAG star), or leave its row, is left for the tooltip.
+ * state's tasks, the stems and band showing its nesting, or anything in `keepClear` (a DAG star), or leave its row, is left for the tooltip.
  */
 export function rowLabels(row: LaneRow, f: { scale: number; measure: (s: string, px: number) => number; x0: number; x1: number }, keepClear: { x: number; y: number; r: number }[]): RowLabel[] {
   const { fs } = sizes(f.scale), px = 10.5 * fs, h = px * 1.3, out: RowLabel[] = [];
-  const placed: (Block | { x: number; y: number; r: number })[] = [...row.nodes.map((n) => ({ x: n.x, y: row.c + n.oy, r: n.orbit + 1 })), ...keepClear];
+  const placed: (Block | { x: number; y: number; r: number })[] = [...row.nodes.map((n) => ({ x: n.x, y: row.c + n.oy, r: n.orbit + 1 })), ...(row.chain?.keep ?? []), ...keepClear];
   for (const n of row.nodes) {
     const w = f.measure(n.name, px), o = n.orbit + 1, ny = row.c + n.oy, xx = Math.max(f.x0 - 24 * fs, Math.min(f.x1 - w, n.x - w / 2));
     const side = [{ x: n.x + o + 8, y: ny - h / 2 }, { x: n.x - o - 8 - w, y: ny - h / 2 }];

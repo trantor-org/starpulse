@@ -147,3 +147,21 @@ describe("the machine ledger under the page's own chrome", () => {
     expect(top.metaT).toBe(56);
   });
 });
+
+describe("a machine opened from a row", () => {
+  const small = (): LedgerMachine => ({ states: ["a", "b"].map((id, i) => ({ id, name: id, initial: !i, final: !!i })), transitions: [{ source: "a", target: "b", event: "B" }], tasks: {}, entered: [] });
+
+  it.each([100, 125, 150])("takes the height it is told to match at %i% text, however short its own flow is, its states kept inside", (scale) => {
+    const f = frame(scale), tall = ledgerTop(machine(), f).hdrB, own = ledgerTop(small(), f);
+    const top = ledgerTop(small(), { ...f, height: tall });
+
+    expect(own.hdrB).toBeLessThan(tall);
+    expect(top.hdrB).toBe(tall);
+    for (const n of top.nodes) expect([n.y > 0, n.y < tall]).toEqual([true, true]);
+  });
+
+  it("keeps its own height when its flow is taller than the one it matches", () => {
+    const f = frame(100), own = ledgerTop(machine(6), f).hdrB;
+    expect(ledgerTop(machine(6), { ...f, height: own - 40 }).hdrB).toBe(own);
+  });
+});

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_GROW, build, GALAXY_MAX, GALAXY_MIN, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, taskSlot, terminal, textW, turnPage, type Curve, type MState, type Pt, type Scene } from "./scene";
+import { BOARD_GROW, build, GALAXY_MAX, GALAXY_MIN, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type MState, type Pt, type Scene } from "./scene";
 import { ledgerLevel, type Level } from "./levels";
 import { merge, Moves } from "./sky";
+import { emptyNote } from "./machineRows";
 import type { Cue, Dag, LedgerRow, Machine, Snapshot } from "./types";
 
 const dag = (name: string, steps: [string, string[]][] = []): Dag => ({
@@ -541,8 +542,8 @@ describe("the In Progress state level's machine ledger top", () => {
     expect(top!.hdrB).toBeGreaterThan(top!.natural);
   });
 
-  it("is on no other level", () => {
-    expect([build(inProgressSky(), { kind: "board" }).top, build(inProgressSky(), { kind: "machine", flow: "in-progress" }).top]).toEqual([undefined, undefined]);
+  it("is not on the Board", () => {
+    expect(build(inProgressSky(), { kind: "board" }).top).toBeUndefined();
   });
 });
 
@@ -572,23 +573,53 @@ describe("the In Progress state level", () => {
   });
 });
 
-describe("a machine", () => {
-  it("hangs the machine that opens under a state below that state", () => {
-    const scene = build(sky(), { kind: "machine", flow: "in-progress" });
-    const [p] = scene.planets;
+// In Progress has a branch (so it is the taller top); audit is entered from it, scan from audit, lint from scan, and `lonely` from nothing but In Progress.
+const nestedSky = () => {
+  const derived = (name: string, parent: string | null, chain: string[], m: Machine, agents: Snapshot["flows"][number]["agents"] = []): Snapshot["flows"][number] => ({
+    name, agents, machine: m, parent, chain, depth: parent === null ? 0 : chain.length + 1, nested: [], ties: [], last: null, stuck: null,
+  });
+  const chain = (ids: string[]) => machine(ids, { transitions: ids.slice(1).map((t, i) => ({ source: ids[i], target: t, event: t.toUpperCase() })) });
+  const branched = machine(["a", "b", "c", "d"], { transitions: [["a", "b"], ["a", "c"], ["b", "d"], ["c", "d"]].map(([source, target]) => ({ source, target, event: target.toUpperCase() })) });
+  const snap: Snapshot = {
+    graphs: ["board", "in-progress", "audit", "scan", "lint", "lonely", "runs"],
+    flows: [
+      { name: "board", agents: [], machine: machine(["ready", "in_progress"], { subflows: [{ state: "in_progress", flow: "in-progress", exits: {}, parent: "board", when: "" }] }) },
+      derived("in-progress", null, [], branched),
+      derived("audit", "in-progress", [], chain(["x", "y"])),
+      derived("scan", "audit", ["audit"], chain(["x", "y"])),
+      derived("lint", "scan", ["audit", "scan"], chain(["x", "y"])),
+      derived("lonely", "in-progress", [], chain(["x", "y"])),
+    ],
+    dags: [], domains: [], settled: {}, error: null, now: 1000,
+  };
+  const S = merge(snap), moves = new Moves();
+  moves.observe(S, 1000);
+  return { S, moves, W: 1350, H: 900, T: 1000, host: "in_progress" };
+};
 
-    expect([p.name, p.anchor, p.when]).toEqual(["triaging-cr-reviews", scene.mStates.pr_opened, "while a PR is open"]);
-    expect(p.y).toBeGreaterThan(scene.mStates.pr_opened.y);
+describe("a machine opened from a row", () => {
+  const at = (flow: string) => build(nestedSky(), { kind: "machine", flow });
+
+  it("takes the top, drawn at the height of the In Progress machine whatever its own flow", () => {
+    const ip = build(nestedSky(), { kind: "state", id: "in_progress" }).top!, audit = at("audit").top!;
+
+    expect([audit.flow, audit.nodes.map((n) => n.id)]).toEqual(["audit", ["x", "y"]]);
+    expect(audit.hdrB).toBe(ip.hdrB);
+    expect(at("lint").top!.hdrB).toBe(ip.hdrB);
   });
 
-  it("sets a crowded state's name outside its outermost ring of tasks", () => {
-    const S = sky(), agents = S.S.flows["in-progress"].agents;
-    for (let i = 0; i < 160; i++) agents.push({ id: `T-${i}`, title: "t", state: "pr_opened", model: "", task: `T-${i}` });
-    const s = build(S, { kind: "machine", flow: "in-progress" }).mStates.pr_opened, w = textW(s.name, 12.5) / 2;
-    const gap = Math.hypot(Math.max(0, Math.abs(s.lab!.x - s.x) - w), Math.max(0, Math.abs(s.lab!.y - s.y) - 9));
+  it("makes the machines entered from it the rows, and a machine with none has no rows", () => {
+    expect([at("audit"), at("scan"), at("lint"), at("lonely")].map((sc) => sc.top!.rows.map((r) => r.name))).toEqual([["scan"], ["lint"], [], []]);
+  });
 
-    expect(s.n).toBe(160);
-    expect(gap).toBeGreaterThan(taskSlot(stateR(s) + 7, s.n - 1).rr + 2.8);
+  it("states what an empty lane means, naming the machine", () => {
+    expect(emptyNote("lint")).toBe("nothing is entered from lint · Esc steps back out");
+  });
+
+  it("puts the machine's own states, flow lines and tasks on the level for the hover and panels", () => {
+    const sc = at("audit");
+    expect(Object.keys(sc.mStates)).toEqual(["x", "y"]);
+    expect(sc.mEdges.map((e) => [e.source, e.target])).toEqual([["x", "y"]]);
   });
 });
 

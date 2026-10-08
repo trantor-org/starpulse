@@ -15,7 +15,7 @@ export function rankRows(flows: Record<string, FlowSnapshot>, top: string, held?
 }
 
 export interface RowMeta {
-  /** The name line's end: how many machines are entered from this one and a chevron, or a bare chevron. */
+  /** The name line's end: a chevron; the band under the row shows the machines entered from it (machineChain.ts). */
   end: string;
   /** Where the machine is entered from: the line's text, the state it is entered from (the dot's colour), and how the page learned of it. */
   tie: { text: string; machine: string | null; state: string | null; kind: "declared" | "observed" | "dag" | "none" };
@@ -56,16 +56,19 @@ const stateName = (flows: Record<string, FlowSnapshot>, machine: string, state: 
 /** What a row's meta column says about `name`, a machine entered from `top`. */
 export function rowMeta(flows: Record<string, FlowSnapshot>, name: string, top: string, now: number): RowMeta {
   const f = flows[name], lead = f.ties?.[0], dags = (f.ties ?? []).filter((t) => t.kind === "dag").map((t) => t.dag);
-  const kids = Object.values(flows).filter((k) => k.parent === name && k.name !== name).length, n = f.agents.length;
+  const n = f.agents.length;
   let tie: RowMeta["tie"] = { text: "no tie this hour", machine: null, state: null, kind: "none" };
   if (lead && lead.kind !== "dag" && lead.machine && lead.state) {
     const from = lead.machine === top ? `from ${stateName(flows, lead.machine, lead.state)}` : `on ${lead.machine} › ${stateName(flows, lead.machine, lead.state)}`;
     tie = { text: `${from} · ${lead.kind === "declared" ? "declared" : `×${lead.count}`}`, machine: lead.machine, state: lead.state, kind: lead.kind };
   } else if (dags.length) tie = { text: `✦ ${dags.join(", ")}`, machine: null, state: null, kind: "dag" };
   return {
-    end: kids ? `${kids} nested ›` : "›",
+    end: "›",
     tie,
     status: statusOf(flows, name, now),
     sub: `${f.machine.states.length} states · ${n} task${n === 1 ? "" : "s"}`,
   };
 }
+
+/** What an empty lane says: the machine on top has none entered from it, and Escape is the way back. */
+export const emptyNote = (machine: string): string => `nothing is entered from ${machine} · Esc steps back out`;

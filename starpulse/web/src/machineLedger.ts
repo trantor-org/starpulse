@@ -22,6 +22,8 @@ export interface LedgerFrame {
   avoid?: { x0: number; y0: number; x1: number; y1: number }[];
   /** How far down the header's own text starts, to clear the page's crumb. */
   inset?: number;
+  /** A height the top is at least, so a machine opened from a row stands as tall as the one it was opened from. */
+  height?: number;
 }
 export interface LedgerNode {
   id: string;
@@ -190,7 +192,7 @@ export function ledgerTop(m: LedgerMachine, f: LedgerFrame): LedgerTop {
   const rowGap = Math.max(2 * o + 6, Math.min(Math.max(2 * o + 10, 40 * fs), Math.max(26 * fs, H * 0.4 - 2 * room - 2 * o)));
   const minGap = Math.max(2 * r + 6, lab + 4), one = base + ref * rowGap, packed = base + span * minGap, natural = Math.max(one, packed);
   // half again that height, short of 60% of the view: the branch rows spread apart and the rest pads it above and below
-  const hdrB = Math.max(packed, one + clamp(Math.min(0.5 * one, H * 0.6 - one), 0, 0.5 * one));
+  const hdrB = Math.max(packed, one + clamp(Math.min(0.5 * one, H * 0.6 - one), 0, 0.5 * one), f.height ?? 0);
   const spread = span ? Math.max(minGap, Math.min(2 * rowGap, rowGap + ((hdrB - base - span * rowGap) * 0.6) / span, (hdrB - base) / span)) : rowGap;
   const padT = (hdrB - base - span * spread) / 2, yMain = 10 + padT + room + o - g.rmin * spread;
   // a column of three or more names its states beside it, so it needs no room above or below for names: it spreads over the top's whole
