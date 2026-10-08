@@ -207,7 +207,6 @@ from starpulse.store.history import (
     HealthHistory,
     History,
     HistoryStore,
-    LaneHistory,
     LevelHistory,
     SummarisedHealth,
     SummarisedLevel,
@@ -1101,17 +1100,12 @@ def announce(port: int, hint: str | None) -> None:
         print(hint, flush=True)
 
 
-def history_store(
-    config: Config, base: Path, board: Board, machines: Mapping[str, dict]
-) -> tuple[HistoryStore, History]:
-    """StarPulse's store at `database_url` or beside the config, and the history the page reads.
+def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> HistoryStore:
+    """StarPulse's store at `database_url` or beside the config: the one history `serve` records into and the page reads.
 
-    The store is opened either way, so every StarPulse table, the event log's included, is on that database, and
-    `serve` records into it whatever the board keeps. The history read is the board's own when it keeps one, else
-    the store.
+    Opening it puts every StarPulse table, the event log's included, on that database.
     """
-    store = HistoryStore(database_url(config.database_url, base), machines)
-    return store, kept if (kept := board.history(machines)) is not None else store
+    return HistoryStore(database_url(config.database_url, base), machines)
 
 
 def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
@@ -1220,17 +1214,16 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     keep_event_log(log, config, base, hub=args.hub, stop=threading.Event())
     window = HistoryWindow(feed, args.hours, base / SETTINGS_FILE)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
-    store, history = history_store(config, base, board, feed.machines)
-    feed.date_lanes(history.lane_path)
+    store = history_store(config, base, feed.machines)
+    feed.date_lanes(store.lane_path)
     if config.forward is not None:
         # before the adapter starts, so the history precedes the live changes in the log
         lane_events.replay(store, log)
     feed.record_lanes(store, log if config.forward is not None else None)
     feed.track_criteria(board.evaluate, store)
     threading.Thread(target=feed.keep_criteria, args=(threading.Event(),), name="board-criteria", daemon=True).start()
-    if isinstance(history, LaneHistory):
-        feed.size_suns(history.lane_rows)
-        threading.Thread(target=feed.keep_suns, args=(threading.Event(),), name="board-suns", daemon=True).start()
+    feed.size_suns(store.lane_rows)
+    threading.Thread(target=feed.keep_suns, args=(threading.Event(),), name="board-suns", daemon=True).start()
     if args.hub:
         # The first pass runs before serving, so the hub never takes an event without today's partition.
         keeping = {"retention_days": config.hub_retention_days, "machines": machine_tables(feed.machines)}
@@ -1287,7 +1280,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         _STATIC,
         starts,
         run_safe,
-        history,
+        store,
         window,
         board.writer or _no_writer,
         config.harnesses,

@@ -22,7 +22,6 @@ from starpulse.settings.config import DEFAULT_TYPE, module_name
 if TYPE_CHECKING:
     from starpulse.board_feed import BoardFeed
     from starpulse.store.event_log import EventLog
-    from starpulse.store.history import History
 
 __all__ = [
     "DEFAULT_TYPE",
@@ -118,8 +117,6 @@ class Board:
     """Sets a task's status when the page moves it; None refuses every move."""
     assign: AssigneeWriter | None = None
     """Sets the assignee the page picked when starting a task's session; None refuses a changed assignee."""
-    history: Callable[[Mapping[str, dict]], History | None] = lambda machines: None
-    """A history the adapter keeps itself, given the drawn machines; None uses StarPulse's own store."""
     source: str = "the board"
     """What the page says the Board is read from until the adapter is ready."""
     read: TaskReader | None = None
