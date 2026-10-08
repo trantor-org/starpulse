@@ -12,6 +12,9 @@ export interface ApiContract {
     | MilestoneCreated
     | MilestoneEdited
     | MilestoneArchived
+    | DocCreated
+    | DocEdited
+    | DocArchived
     | Started
     | RunStarted
     | Accepted
@@ -24,6 +27,8 @@ export interface ApiContract {
     | WindowTooLong
   )[];
   contractReport: ContractReport;
+  docShown: DocShown;
+  docs: Docs;
   events: (TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | SunsDelta | LedgersDelta | InsightDelta)[];
   forwardingStatus: ForwardingStatus;
   forwardingUnconfigured: ForwardingUnconfigured;
@@ -46,6 +51,9 @@ export interface ApiContract {
     | MilestoneCreateRequest
     | MilestoneEditRequest
     | MilestoneArchiveRequest
+    | DocCreateRequest
+    | DocEditRequest
+    | DocArchiveRequest
     | WindowRequest
     | ForwardingRequest
     | RunEventRequest
@@ -81,6 +89,16 @@ export interface MilestoneEdited {
 }
 export interface MilestoneArchived {
   milestone: string;
+}
+export interface DocCreated {
+  doc: string;
+}
+export interface DocEdited {
+  changed: string[];
+  doc: string;
+}
+export interface DocArchived {
+  doc: string;
 }
 export interface Started {
   at: number;
@@ -152,6 +170,41 @@ export interface ContractCheck {
   check: string;
   reason: string;
   status: "pass" | "warn" | "fail";
+}
+/**
+ * `GET /api/docs/<id>`: one open doc.
+ */
+export interface DocShown {
+  doc: DocRecord;
+}
+/**
+ * A doc as the board's reader gives it: the summary and the text after its front matter.
+ */
+export interface DocRecord {
+  body: string;
+  created_date: string;
+  id: string;
+  path: string;
+  title: string;
+  type: string;
+  updated_date: string;
+}
+/**
+ * `GET /api/docs`: every open doc, by ascending number.
+ */
+export interface Docs {
+  docs: DocSummary[];
+}
+/**
+ * A doc as the board's lister gives it: its front matter and where it is filed, without its body.
+ */
+export interface DocSummary {
+  created_date: string;
+  id: string;
+  path: string;
+  title: string;
+  type: string;
+  updated_date: string;
 }
 /**
  * A Board task that moved (`agent` null once it left the lanes).
@@ -1103,6 +1156,30 @@ export interface MilestoneEditRequest {
  */
 export interface MilestoneArchiveRequest {
   milestone: string;
+}
+/**
+ * `POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme` or `other`.
+ */
+export interface DocCreateRequest {
+  body?: string | null;
+  folder?: string | null;
+  title: string;
+  type?: string | null;
+}
+/**
+ * `POST /api/docs/edit`: replace the `title`, `type` or `body` `changes` names.
+ */
+export interface DocEditRequest {
+  changes: {
+    [k: string]: unknown;
+  };
+  doc: string;
+}
+/**
+ * `POST /api/docs/archive`: archive `doc`.
+ */
+export interface DocArchiveRequest {
+  doc: string;
 }
 /**
  * `PUT /api/history-window`: set the shared history window.

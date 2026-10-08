@@ -138,6 +138,14 @@ POST /api/milestones, /api/milestones/edit, /api/milestones/archive
                    `edit_milestone` and `archive_milestone`; 400 for a malformed body or detail, 403 outside loopback and
                    RFC 1918, 404 for a board without the writer or a milestone that is not open, 409 for the writer's
                    refusal. A GET answers 405
+GET /api/docs, /api/docs/<id>
+                   {docs} or {doc}: the board's open docs, each {id, title, type, created_date, updated_date, path} and, for one
+                   doc, its `body`; 404 for a board that keeps none or for a doc that is not open
+POST /api/docs, /api/docs/edit, /api/docs/archive
+                   {title[, type, folder, body]} (201 {doc}, the new id), {doc, changes} (200 {doc, changed}) and {doc}
+                   (200 {doc}), through the board's `create_doc`, `edit_doc` and `archive_doc`; 400 for a malformed body or
+                   detail, 403 outside loopback and RFC 1918, 404 for a board without the writer or a doc that is not open,
+                   409 for the writer's refusal. A GET answers 405. These routes read the same Board as the milestone routes
 POST /api/runs/events
                    push one run event from a producer that cannot reach the event log, with `Authorization: Bearer
                    <token>`: {phase, workflow: "<instance>/<workflow>", run_id, status[, time, step, depends]}, the
@@ -289,11 +297,16 @@ _TASKS = "/api/tasks"
 _MILESTONES = "/api/milestones"
 _MILESTONE_EDIT = "/api/milestones/edit"
 _MILESTONE_ARCHIVE = "/api/milestones/archive"
+_DOCS = "/api/docs"
+_DOC_EDIT = "/api/docs/edit"
+_DOC_ARCHIVE = "/api/docs/archive"
 _INGEST = "/api/runs/events"
 _FORWARD = "/api/forward"
 _INSIGHTS = "/api/insights"
 #: The write routes of milestone records; `/api/milestones/<id>` reads one, so a GET of these answers 405.
 _MILESTONE_WRITES = frozenset({_MILESTONES, _MILESTONE_EDIT, _MILESTONE_ARCHIVE})
+#: The write routes of doc records; `/api/docs/<id>` reads one, so a GET of these answers 405.
+_DOC_WRITES = frozenset({_DOCS, _DOC_EDIT, _DOC_ARCHIVE})
 #: The body each write route answers, by `contracts.api.BODIES`; a run and a rerun answer `run`.
 _WRITES = {
     _MOVE: "move",
@@ -304,6 +317,9 @@ _WRITES = {
     _MILESTONES: "milestone_create",
     _MILESTONE_EDIT: "milestone_edit",
     _MILESTONE_ARCHIVE: "milestone_archive",
+    _DOCS: "doc_create",
+    _DOC_EDIT: "doc_edit",
+    _DOC_ARCHIVE: "doc_archive",
     _INGEST: "ingest",
     _FORWARD: "forward",
     _INSIGHTS: "insight",
@@ -596,28 +612,28 @@ def milestone_record(board: Board | None, milestone: str) -> tuple[int, dict[str
     return 200, {"milestone": record}
 
 
-def _milestone_request(
-    source: str, raw: bytes, action: str
+def _record_request(
+    source: str, raw: bytes, action: str, noun: str
 ) -> tuple[dict[str, Any] | None, tuple[int, dict[str, Any]]]:
-    """The JSON object `raw` holds for a milestone write at `source`, or None with the refusal to answer."""
+    """The JSON object `raw` holds for a milestone or doc write at `source`, or None with the refusal to answer."""
     if not _on_lan(source):
         return None, (
             403,
-            {"error": f"{action} a milestone answers only loopback and private network (RFC 1918) browsers"},
+            {"error": f"{action} a {noun} answers only loopback and private network (RFC 1918) browsers"},
         )
     try:
         body = json.loads(raw)
     except ValueError:
         body = None
     if not isinstance(body, dict):
-        return None, (400, {"error": "a milestone write takes a JSON object"})
+        return None, (400, {"error": f"a {noun} write takes a JSON object"})
     return body, (200, {})
 
 
 def create_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
     """Open the milestone `raw` names through the board's `create_milestone`, for a browser at `source`: the HTTP status
     and JSON body, which holds the new milestone's id. Only the title is required."""
-    body, refusal = _milestone_request(source, raw, "Adding")
+    body, refusal = _record_request(source, raw, "Adding", "milestone")
     if body is None:
         return refusal
     title = body.get("title")
@@ -635,7 +651,7 @@ def edit_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, d
     """Apply the `changes` `raw` names to a milestone through the board's `edit_milestone`, for a browser at `source`: the
     HTTP status and JSON body. `changed` names the fields whose value the edit changed; an edit that changes none writes
     nothing."""
-    body, refusal = _milestone_request(source, raw, "Editing")
+    body, refusal = _record_request(source, raw, "Editing", "milestone")
     if body is None:
         return refusal
     milestone, changes = body.get("milestone"), body.get("changes")
@@ -656,7 +672,7 @@ def edit_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, d
 def archive_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
     """Archive the milestone `raw` names through the board's `archive_milestone`, for a browser at `source`: the HTTP status
     and JSON body."""
-    body, refusal = _milestone_request(source, raw, "Archiving")
+    body, refusal = _record_request(source, raw, "Archiving", "milestone")
     if body is None:
         return refusal
     if not isinstance(milestone := body.get("milestone"), str):
@@ -669,6 +685,78 @@ def archive_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"milestone": milestone}
+
+
+def docs_list(board: Board | None) -> tuple[int, dict[str, Any]]:
+    """The open docs the board keeps, bodies left out: the HTTP status and JSON body. Reading is not LAN-limited."""
+    if board is None or board.docs is None:
+        return 404, {"error": "this board keeps no docs"}
+    return 200, {"docs": board.docs()}
+
+
+def doc_record(board: Board | None, doc: str) -> tuple[int, dict[str, Any]]:
+    """The record, body included, of one open doc: the HTTP status and JSON body."""
+    if board is None or board.read_doc is None:
+        return 404, {"error": "this board keeps no docs"}
+    if (record := board.read_doc(doc)) is None:
+        return 404, {"error": f"{doc} is not an open doc"}
+    return 200, {"doc": record}
+
+
+def create_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """File the doc `raw` names through the board's `create_doc`, for a browser at `source`: the HTTP status and JSON
+    body, which holds the new doc's id. Only the title is required."""
+    body, refusal = _record_request(source, raw, "Adding", "doc")
+    if body is None:
+        return refusal
+    title = body.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return 400, {"error": 'a create needs {"title": "<text>"}'}
+    if board is None or board.create_doc is None:
+        return 404, {"error": "this board does not create docs"}
+    written = board.create_doc(title, {field: value for field, value in body.items() if field != "title"})
+    if not written.ok:  # the writer refuses a detail it cannot store, or a title it cannot file
+        return 400, {"error": written.output, "skill": written.skill}
+    return 201, {"doc": written.output}
+
+
+def edit_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Apply the `changes` `raw` names to a doc through the board's `edit_doc`, for a browser at `source`: the HTTP status
+    and JSON body. `changed` names the fields whose value the edit changed; an edit that changes none writes nothing."""
+    body, refusal = _record_request(source, raw, "Editing", "doc")
+    if body is None:
+        return refusal
+    doc, changes = body.get("doc"), body.get("changes")
+    if not isinstance(doc, str) or not isinstance(changes, dict) or not changes:
+        return 400, {"error": 'an update needs {"doc": "doc-N", "changes": {...}}'}
+    if board is None or board.read_doc is None or board.edit_doc is None:
+        return 404, {"error": "this board does not edit docs"}
+    if (current := board.read_doc(doc)) is None:
+        return 404, {"error": f"{doc} is not an open doc"}
+    if not (todo := {field: value for field, value in changes.items() if value != current.get(field)}):
+        return 200, {"doc": doc, "changed": []}
+    written = board.edit_doc(doc, todo)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"doc": doc, "changed": list(todo)}
+
+
+def archive_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Archive the doc `raw` names through the board's `archive_doc`, for a browser at `source`: the HTTP status and
+    JSON body."""
+    body, refusal = _record_request(source, raw, "Archiving", "doc")
+    if body is None:
+        return refusal
+    if not isinstance(doc := body.get("doc"), str):
+        return 400, {"error": 'an archive needs {"doc": "doc-N"}'}
+    if board is None or board.read_doc is None or board.archive_doc is None:
+        return 404, {"error": "this board does not archive docs"}
+    if board.read_doc(doc) is None:
+        return 404, {"error": f"{doc} is not an open doc"}
+    written = board.archive_doc(doc)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"doc": doc}
 
 
 def start_task(
@@ -987,7 +1075,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         if (
             path.startswith(_RUN)
             or _is_rerun(path)
-            or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS, *_MILESTONE_WRITES}
+            or path
+            in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS, *_MILESTONE_WRITES, *_DOC_WRITES}
         ):
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
@@ -1006,13 +1095,13 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
         if (
-            path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, *_MILESTONE_WRITES}
+            path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}
             or path.startswith(_RUN)
             or _is_rerun(path)
         ) and self._refused_write():
             return
         kind = _WRITES.get(path, "run")
-        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, *_MILESTONE_WRITES}:
+        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
             if path == _MOVE:
@@ -1029,6 +1118,12 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = edit_milestone(self.client_address[0], raw, self.milestones)
             elif path == _MILESTONE_ARCHIVE:
                 status, body = archive_milestone(self.client_address[0], raw, self.milestones)
+            elif path == _DOCS:
+                status, body = create_doc(self.client_address[0], raw, self.milestones)
+            elif path == _DOC_EDIT:
+                status, body = edit_doc(self.client_address[0], raw, self.milestones)
+            elif path == _DOC_ARCHIVE:
+                status, body = archive_doc(self.client_address[0], raw, self.milestones)
             else:
                 status, body = start_task(self.client_address[0], raw, self.feed, self.assign, self.start_session)
         elif path == _INGEST and self.ingest is not None:
@@ -1209,6 +1304,12 @@ def request_handler(
             elif url.path.startswith(f"{_MILESTONES}/") and url.path not in _MILESTONE_WRITES:
                 status, body = milestone_record(self.milestones, unquote(url.path.removeprefix(f"{_MILESTONES}/")))
                 self._send(encode("milestone", body), status)
+            elif url.path == _DOCS:
+                status, body = docs_list(self.milestones)
+                self._send(encode("docs", body), status)
+            elif url.path.startswith(f"{_DOCS}/") and url.path not in _DOC_WRITES:
+                status, body = doc_record(self.milestones, unquote(url.path.removeprefix(f"{_DOCS}/")))
+                self._send(encode("doc", body), status)
             elif url.path == "/api/harnesses":
                 self._send(harnesses_body)
             elif url.path == _WINDOW:

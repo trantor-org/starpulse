@@ -11,6 +11,11 @@
     starpulse milestone add "Launch" --outcome "Shipped" --spec "doc-1 - spec" --adr docs/adr/a.md
     starpulse milestone edit m-106 --outcome "Shipped and measured"
     starpulse milestone archive m-106
+    starpulse doc list
+    starpulse doc show doc-116
+    starpulse doc create "Plan" --type specification --folder specs --body "# Plan"
+    starpulse doc update doc-116 --body "# Plan, revised"
+    starpulse doc archive doc-116
     starpulse runs list
     starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
@@ -39,6 +44,8 @@ it is interrupted (exit 0) or the server ends the stream (an error line, exit 3)
 now path, so its LAN and `run_safe` guards apply to the agent as they do to the page.
 `milestone` reads and writes the board's milestone records (title, outcome, specs, ADRs, retro) through the server;
 a board that keeps none answers exit 3. A `--spec` or `--adr` on `milestone edit` replaces that whole list.
+`doc` reads and writes the board's doc records (title, type, dates, folder, body) the same way: `doc list` leaves the
+bodies out, `doc show` returns one with its `body`, and a board that keeps no docs answers exit 3.
 `skills` reads no server: it copies the bundled skills into the project or, with `--user`, the home directory.
 """
 
@@ -160,6 +167,7 @@ _TASK_KEYS = (
 )
 _MOVE_KEYS = ("ok", "task", "to", "reason", "skill", "advice")
 _MILESTONE_KEYS = ("id", "title", "outcome", "specs", "adrs", "retro", "description")
+_DOC_KEYS = ("id", "title", "type", "created_date", "updated_date", "path", "body")
 #: Seconds `watch` waits for the next byte: the server pings every 15, so a longer silence is a server that is gone.
 _STREAM_TIMEOUT_S = 45.0
 
@@ -378,15 +386,17 @@ def _json_or_empty(resp: Any) -> dict[str, Any]:
     return document if isinstance(document, dict) else {}
 
 
-def _milestone_call(base: str, path: str, status: int, reply: Any, *, ok: tuple[int, ...] = (200,)) -> dict[str, Any]:
-    """The JSON object a milestone route answered with, or the `CliError` its status maps to."""
+def _milestone_call(
+    base: str, path: str, status: int, reply: Any, *, ok: tuple[int, ...] = (200,), noun: str = "milestone"
+) -> dict[str, Any]:
+    """The JSON object a milestone or doc route answered with, or the `CliError` its status maps to."""
     document = reply if isinstance(reply, dict) else {}
     if status in ok and document:
         return document
     message = document.get("error") or f"{base} answered {status} for {path}: is it a StarPulse server?"
     if status == 404 and "error" in document:
-        # The server gives both 404s as text only: a board that keeps no milestones, else a milestone that is not open.
-        raise CliError("not_found" if "is not an open milestone" in message else "unavailable", message)
+        # The server gives both 404s as text only: a board that keeps no such records, else one that is not open.
+        raise CliError("not_found" if f"is not an open {noun}" in message else "unavailable", message)
     if status in (400, 403, 409):
         raise CliError("refused", message)
     raise CliError("unavailable", f"{base}: {message}")
@@ -426,6 +436,46 @@ def _milestone_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> 
     base, path = server_url(args.server, environ), "/api/milestones/archive"
     status, reply = _post(base, path, {"milestone": args.milestone})
     return {"milestone": _milestone_call(base, path, status, reply)["milestone"]}
+
+
+def _doc_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/docs"
+    status, reply = _get(base, path)
+    return {"docs": _milestone_call(base, path, status, reply, noun="doc")["docs"]}
+
+
+def _doc_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), f"/api/docs/{urllib.parse.quote(args.doc, safe='')}"
+    status, reply = _get(base, path)
+    return _milestone_call(base, path, status, reply, noun="doc")["doc"]
+
+
+def _doc_fields(args: argparse.Namespace) -> dict[str, Any]:
+    """The detail fields (type, body) the caller gave."""
+    return {field: value for field, value in {"type": args.type, "body": args.body}.items() if value is not None}
+
+
+def _doc_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/docs"
+    body = {"title": args.title, **_doc_fields(args), **({"folder": args.folder} if args.folder is not None else {})}
+    status, reply = _post(base, path, body)
+    return {"doc": _milestone_call(base, path, status, reply, ok=(201,), noun="doc")["doc"]}
+
+
+def _doc_update(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/docs/edit"
+    changes = {**({"title": args.title} if args.title is not None else {}), **_doc_fields(args)}
+    if not changes:
+        raise CliError("usage", "name what to change: --title, --type or --body")
+    status, reply = _post(base, path, {"doc": args.doc, "changes": changes})
+    document = _milestone_call(base, path, status, reply, noun="doc")
+    return {"doc": document["doc"], "changed": document["changed"]}
+
+
+def _doc_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/docs/archive"
+    status, reply = _post(base, path, {"doc": args.doc})
+    return {"doc": _milestone_call(base, path, status, reply, noun="doc")["doc"]}
 
 
 def _milestone_fields(args: argparse.Namespace) -> dict[str, Any]:
@@ -989,6 +1039,47 @@ def _parser() -> argparse.ArgumentParser:
         (0, 1, 2, 3, 4),
     )
     milestone_archive.add_argument("milestone", help="the milestone's id (`m-106`)")
+    doc = verbs.add_parser("doc", description="the Board's docs", help="the Board's docs")
+    doc_verbs = doc.add_subparsers(dest="verb", required=True, metavar="verb")
+    doc_list = leaf(
+        doc_verbs, "list", "every open doc with its title, type, dates and path", _doc_list, ("docs",), (0, 2, 3)
+    )
+    doc_list.add_argument("--json", action="store_true", help="accepted for clarity: every verb prints JSON")
+    doc_show = leaf(
+        doc_verbs,
+        "show",
+        "one open doc: its title, type, dates, path and whole body",
+        _doc_show,
+        _DOC_KEYS,
+        (0, 2, 3, 4),
+    )
+    doc_show.add_argument("doc", help="the doc's id (`doc-116`), as `doc list` shows it")
+    doc_show.add_argument("--json", action="store_true", help="accepted for clarity: every verb prints JSON")
+    doc_create = leaf(doc_verbs, "create", "file a doc and return its new id", _doc_create, ("doc",), (0, 1, 2, 3))
+    doc_create.add_argument("title", help="the doc's title")
+    doc_create.add_argument("--folder", help="a folder under the board's docs (`specs`); default: docs itself")
+    doc_update = leaf(
+        doc_verbs,
+        "update",
+        "replace the fields given on an open doc and return those that changed",
+        _doc_update,
+        ("doc", "changed"),
+        (0, 1, 2, 3, 4),
+    )
+    doc_update.add_argument("doc", help="the doc's id (`doc-116`)")
+    doc_update.add_argument("--title", help="the new title; the file is renamed to match")
+    for command in (doc_create, doc_update):
+        command.add_argument("--type", help="specification, guide, readme or other (the default on create)")
+        command.add_argument("--body", help="the doc's whole text after its front matter")
+    doc_archive = leaf(
+        doc_verbs,
+        "archive",
+        "move an open doc to the board's archive",
+        _doc_archive,
+        ("doc",),
+        (0, 1, 2, 3, 4),
+    )
+    doc_archive.add_argument("doc", help="the doc's id (`doc-116`)")
     runs = verbs.add_parser("runs", description="the workflows of the runs adapters", help="its workflows")
     runs_verbs = runs.add_subparsers(dest="verb", required=True, metavar="verb")
     leaf(

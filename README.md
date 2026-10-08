@@ -120,6 +120,8 @@ starpulse task trace PROJ-45 --flow in-progress  # where the task has been: Boar
 starpulse machine show in-progress               # a machine's states, transitions and the tasks now in each
 starpulse milestone list                         # every open milestone: title, outcome, specs and ADRs
 starpulse milestone add "Launch" --outcome "Shipped" --spec "doc-1 - plan" --adr docs/adr/a.md
+starpulse doc list                               # every open doc: title, type, dates and path, without bodies
+starpulse doc create "Plan" --type specification --folder specs --body "# Plan"
 starpulse runs list                              # each workflow as <instance>/<workflow> with its latest status
 starpulse runs start prod/nightly                # start a run-safe workflow through Run now; its run id
 starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
@@ -168,6 +170,11 @@ lists exactly the verbs there are.
 | `milestone add` | `TITLE`, `--outcome`, `--spec`, `--adr`, `--retro` | `milestone`: the new id (the next number past every open and archived milestone); `--spec` and `--adr` repeat; a blank title exits 1 |
 | `milestone edit` | `MILESTONE`, `--title`, `--outcome`, `--spec`, `--adr`, `--retro` | `milestone` and `changed`, the fields whose value differs; `--spec` or `--adr` given at all replaces that whole list, and a change that changes nothing writes nothing; naming no field exits 2, a refused change exits 1, an unknown milestone exits 4 |
 | `milestone archive` | `MILESTONE` | `milestone`: moves the file to `archive/milestones/`; refusals as `milestone edit` |
+| `doc list` | `--json` | `docs`: each open doc as `{id, title, type, created_date, updated_date, path}` with `path` relative to the board's `docs/`, by ascending number and without its body; `--json` is accepted and changes nothing, since every verb prints JSON; a board that keeps no docs exits 3 |
+| `doc show` | `DOC`, `--json` | one doc's record as above plus its `body`, the text after its front matter; one that is not open exits 4 |
+| `doc create` | `TITLE`, `--type`, `--folder`, `--body` | `doc`: the new id (the next number past every open and archived doc); `--type` is `specification`, `guide`, `readme` or `other` (the default), `--folder` a folder of plain names under `docs/` such as `specs`; a blank title, an unknown type or a folder that leaves `docs/` exits 1 |
+| `doc update` | `DOC`, `--title`, `--type`, `--body` | `doc` and `changed`, the fields whose value differs; a change that changes nothing writes nothing, naming no field exits 2, a refused change exits 1, an unknown doc exits 4 |
+| `doc archive` | `DOC` | `doc`: moves the file to `archive/docs/`; refusals as `doc update` |
 | `runs list` | | `runs`: each workflow as `{workflow, status, raw, run_id, started_at, finished_at}` with `workflow` `<instance>/<workflow>`, and `error`, the runs adapters' error or null |
 | `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network, as JSON with no foreign `Origin` (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
@@ -834,7 +841,9 @@ directory. The `Board` says:
   `create_milestone(title, details)` (answering with the new id), `edit_milestone(id, changes)` and
   `archive_milestone(id)` (`GET /api/milestones`, `GET /api/milestones/<id>`, `POST /api/milestones`,
   `POST /api/milestones/edit` and `POST /api/milestones/archive`; the writes answer only the loopback and private
-  network, and a board that sets none answers 404). `serve` records every machine event (task- and run-keyed) and each Board lane change it
+  network, and a board that sets none answers 404), and doc records the same way: `docs()` (without bodies),
+  `read_doc(id)`, `create_doc(title, details)`, `edit_doc(id, changes)` and `archive_doc(id)` (`/api/docs`,
+  `/api/docs/<id>`, `/api/docs/edit` and `/api/docs/archive`). `serve` records every machine event (task- and run-keyed) and each Board lane change it
   places into StarPulse's own store (`starpulse_machine_events`, `starpulse_lane_changes`), and the page reads that
   store: a `Board` has no history of its own. In the same transaction the store folds each of them into
   summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
@@ -879,6 +888,13 @@ and cut to 50 characters. A new milestone takes the next number past every file 
 `archive/milestones/`; an edit rewrites only the sections it names (keeping unknown sections and the text before the
 first heading byte for byte) and renames the file when the title changes, and an archive moves the file to
 `archive/milestones/`.
+It keeps docs in Backlog.md's format too: `docs/<folder>/doc-N - slug.md`, with the front matter `id`, `title`, `type`
+(`specification`, `guide`, `readme` or `other`), `created_date` and `updated_date` and the doc's text after it. A
+subfolder of `docs/` such as `specs/` is part of the doc's path and stays through every edit. The slug is the title
+with `<>:"/\|?*` read as a space, `'(),` dropped and runs of space made `-`, its case kept. A new doc takes the next
+number past every file in `docs/` and `archive/docs/`; an update rewrites only the front matter lines it changes (and
+`updated_date`) and the body it is given, renames the file when the title changes, and writes nothing when it
+changes nothing; an archive moves the file to `archive/docs/`.
 `starpulse.adapters.boards.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
@@ -911,7 +927,7 @@ internal and can change in any release.
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
 
-- `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer, task and milestone protocols).
+- `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer, task, milestone and doc protocols).
 - `starpulse.board_feed`: the feed a board adapter places tasks on (`BoardFeed`) and what following a stream needs of it.
 - `starpulse.contracts`: the board, machine-event, runs (`Dag`, `RecentRun`) and insights (`Finding`) records, their JSON Schemas, and `RunsSink`.
 - `starpulse.adapter_kit`: the test kit an adapter or insights engine author runs against their work, and the helpers that serve it.
