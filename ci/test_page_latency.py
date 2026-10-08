@@ -90,3 +90,24 @@ def test_a_local_build_answers_every_page_url_but_its_assets_with_its_index(tmp_
     assert pl.local_file(tmp_path, "http://h/assets/index-1.js?v=2") == tmp_path / "assets" / "index-1.js"
     assert pl.local_file(tmp_path, "http://h/") == tmp_path / "index.html"
     assert pl.local_file(tmp_path, "http://h/flow/in-progress") == tmp_path / "index.html"
+
+
+def test_the_viewer_runs_the_whole_bench_in_a_scope_weighted_over_the_host_load():
+    command = pl.viewer_command(["bench/page_latency.py", "http://h", "--viewer"], "/usr/bin/python3")
+    assert command == [
+        "systemd-run", "--user", "--scope", "--quiet", "-p", f"CPUWeight={pl.VIEWER_CPU_WEIGHT}",
+        "--", "/usr/bin/python3", "bench/page_latency.py", "http://h", "--viewer",
+    ]  # fmt: skip
+
+
+def test_the_viewer_enters_its_scope_once(monkeypatch):
+    execs: list[list[str]] = []
+    monkeypatch.delenv(pl.VIEWER_ENV, raising=False)
+    monkeypatch.setattr(pl.os, "execvp", lambda file, args: execs.append([file, *args]))
+    pl.enter_viewer(["bench/page_latency.py", "http://h", "--viewer"])
+    assert execs and execs[0][0] == "systemd-run"
+    assert pl.os.environ[pl.VIEWER_ENV] == "1"
+
+    execs.clear()
+    pl.enter_viewer(["bench/page_latency.py", "http://h", "--viewer"])
+    assert execs == []

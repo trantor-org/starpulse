@@ -86,6 +86,18 @@ pnpm --dir starpulse/web exec vite build --outDir "$PWD/.tmp/page-build" --empty
 uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --assets .tmp/page-build
 ```
 
+`--viewer` times the page as a viewer's own machine would draw it while the server keeps its host's load. The bench,
+Chrome included, re-runs in a user systemd scope (`systemd-run --user --scope -p CPUWeight=10000`) that outweighs the
+host's other work, because a viewer's browser does not share the server's CPU. Without it, a loaded host starves the
+measuring browser as well, and even a view switch that draws nothing new reads over budget:
+
+```sh
+uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --assets .tmp/page-build --viewer
+```
+
+A task modal's sample hovers its card for 150 ms before the click, as a hand slows onto a target, and ends at the
+second frame after the dialog clears `aria-busy`, which it does once it holds the full record.
+
 It only reads: it opens task modals and closes them, and switches views, but never writes. It drives the system
 Chrome (`--channel chrome`), so Playwright's own browser download is not needed. It prints one row per surface with
 its sample count, p50, p95 and budget, marks a row over budget `OVER`, and lists every `/api` request the page made
