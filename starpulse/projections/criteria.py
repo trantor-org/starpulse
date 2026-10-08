@@ -17,6 +17,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
@@ -106,26 +107,59 @@ def _run(command: list[str], cwd: Path, criteria: list[dict[str, Any]]) -> list[
 
 
 class Evaluator:
-    """Evaluates a task's criteria with `command`, run in `cwd`, reusing a task's result for `CACHE_SECONDS`."""
+    """Evaluates a task's criteria with `command`, run in `cwd`, reusing a task's result for `CACHE_SECONDS`.
+
+    Calling it waits for a result no older than that, as the feed's pass does; `latest` never waits, for a task read.
+    Each task's command runs on its own thread, one at a time per task, so no task waits on another's."""
 
     def __init__(self, command: str, cwd: Path) -> None:
         self._command = shlex.split(command)
         self._cwd = cwd
         self._cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
+        self._running: dict[tuple[str, str], Future[list[dict[str, Any]]]] = {}
         self._lock = threading.Lock()
 
     def __call__(self, task: str, description: str) -> list[dict[str, Any]]:
-        criteria = authored(description)
-        if not criteria:
+        if not (criteria := authored(description)):
             return []
         key = (task, json.dumps(criteria, sort_keys=True, default=str))
         with self._lock:
             if (cached := self._cache.get(key)) and _clock() - cached[0] < CACHE_SECONDS:
                 return cached[1]
+            running = self._refresh(key, task, criteria)
+        return running.result()
+
+    def latest(self, task: str, description: str) -> list[dict[str, Any]]:
+        """The task's last results however old, each `not evaluated` before its first, refreshed behind the read once
+        older than `CACHE_SECONDS`."""
+        if not (criteria := authored(description)):
+            return []
+        key = (task, json.dumps(criteria, sort_keys=True, default=str))
+        with self._lock:
+            if not (cached := self._cache.get(key)) or _clock() - cached[0] >= CACHE_SECONDS:
+                self._refresh(key, task, criteria)
+        return cached[1] if cached else [{**criterion, **_outcome(NOT_EVALUATED)} for criterion in criteria]
+
+    def _refresh(self, key: tuple[str, str], task: str, criteria: list[dict[str, Any]]) -> Future[list[dict[str, Any]]]:
+        """The run evaluating `key`, started unless one is already running; the caller holds the lock."""
+        if (running := self._running.get(key)) is None:
+            running = self._running[key] = Future()
             command = [part.replace("{id}", task) for part in self._command]
+            threading.Thread(target=self._evaluate, args=(key, command, criteria, running), daemon=True).start()
+        return running
+
+    def _evaluate(self, key: tuple[str, str], command: list[str], criteria: list[dict[str, Any]], running: Future) -> None:
+        try:
             evaluated = _run(command, self._cwd, criteria)
+        except BaseException as error:  # handed to every waiter instead of lost with the thread
+            with self._lock:
+                del self._running[key]
+            running.set_exception(error)
+            return
+        with self._lock:
             self._cache[key] = (_clock(), evaluated)
-            return evaluated
+            del self._running[key]
+        running.set_result(evaluated)
 
 
 def unevaluated(task: str, description: str) -> list[dict[str, Any]]:

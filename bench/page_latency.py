@@ -18,6 +18,11 @@ budget, and exits 1 when any row is over budget or untimed.
 Run it from the repository root with ``uv run --group bench python bench/page_latency.py <url> [--json FILE]``. It
 drives the system Chrome (``--channel``), so Playwright's own browser download is not needed. ``--assets DIR`` draws the
 page from a local build instead of the server's, so a branch's page change is timed against live data before it ships.
+
+``--viewer`` times the page as a viewer's own machine would draw it while the server stays under its host's load: the
+bench, its Chrome included, re-runs in a user systemd scope weighted far over the host's other work, since a viewer's
+browser does not share the server's CPU. Without it, a loaded host starves the measuring browser too, and even a
+click that draws nothing new reads over budget.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ import argparse
 import http.client
 import json
 import math
+import os
 import re
 import sys
 import time
@@ -42,6 +48,12 @@ FRAME_BUDGET_MS = 1000 / 60
 DROPPED_MS = 1.5 * FRAME_BUDGET_MS
 #: A main-thread task this long delays any input that lands during it past the budget.
 LONG_TASK_MS = 50.0
+#: The pointer's rest on a card before it clicks: a viewer's hand slows onto a target before pressing it.
+HOVER_MS = 150
+#: The `--viewer` scope's CPU weight, against the default 100 of every other unit on the host.
+VIEWER_CPU_WEIGHT = 10_000
+#: Set inside the `--viewer` scope, so the bench enters it once.
+VIEWER_ENV = "STARPULSE_BENCH_VIEWER"
 
 #: The read routes and how to build each one's path from what the snapshot holds; `{task}`, `{milestone}` and `{doc}`
 #: are filled from the server's own records.
@@ -296,17 +308,26 @@ _CLICK = """async (sel) => {
   return (await window.__sp.twoFrames()) - s;
 }"""
 
-#: Open a task's card and resolve with the ms from the click to the second frame after its record's body arrived.
+#: Open a task's card and resolve with the ms from the click to the second frame after its modal drew the full record:
+#: the dialog clears `aria-busy` once it holds the record, whether a hover read it ahead or the click did. A build from
+#: before that marker ends where it always did, at the record's response.
 _OPEN = """async (id) => {
   const el = document.querySelector(`#cols .card[data-id="${id}"]`);
   if (!el) return null;
   const got = window.__sp.fetched(`/api/task/${encodeURIComponent(id)}`);
+  const drawn = () => document.querySelector("[role=dialog][aria-busy=false]");
   const s = performance.now();
   el.click();
-  await Promise.race([got, new Promise((r) => setTimeout(r, 30000))]);
+  await new Promise((resolve) => {
+    const seen = new MutationObserver(() => drawn() && done());
+    const cap = setTimeout(() => done(), 30000);
+    const done = () => { seen.disconnect(); clearTimeout(cap); resolve(); };
+    got.then(() => { const d = document.querySelector("[role=dialog]"); if (d && !d.hasAttribute("aria-busy")) done(); });
+    if (drawn()) return done();
+    seen.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-busy"] });
+  });
   return (await window.__sp.twoFrames()) - s;
 }"""
-
 #: The ms between frames for `ms` after clicking `sel`: what an animation it starts looks like.
 _INTERVALS = """async ([sel, ms]) => {
   const el = document.querySelector(sel);
@@ -373,10 +394,17 @@ def time_page(base: str, samples: int, channel: str, requested: list[str], asset
             row.note = "" if row.samples else "button not found"
             rows.append(row)
 
-        modal = Row("open a task's modal", "interaction", BUDGET_MS, note="click to the frame after its record")
+        modal = Row(
+            "open a task's modal",
+            "interaction",
+            BUDGET_MS,
+            note=f"click, after a {HOVER_MS} ms hover, to the frame after its full record",
+        )
         page.evaluate(_CLICK, _nav("Kanban"))
         page.wait_for_selector("#cols .card[data-id]", timeout=30_000)
         for task in page.eval_on_selector_all("#cols .card[data-id]", "els => els.map(e => e.dataset.id)")[:samples]:
+            page.hover(f'#cols .card[data-id="{task}"]')
+            page.wait_for_timeout(HOVER_MS)
             ms = page.evaluate(_OPEN, task)
             if ms is not None:
                 modal.samples.append(ms)
@@ -420,6 +448,20 @@ def time_page(base: str, samples: int, channel: str, requested: list[str], asset
     return rows
 
 
+def viewer_command(argv: Sequence[str], python: str) -> list[str]:
+    """This bench's own command line, run in a user scope that outweighs the host's other work."""
+    return ["systemd-run", "--user", "--scope", "--quiet", "-p", f"CPUWeight={VIEWER_CPU_WEIGHT}", "--", python, *argv]
+
+
+def enter_viewer(argv: Sequence[str]) -> None:
+    """Re-run this bench inside its `--viewer` scope, unless it already runs there."""
+    if os.environ.get(VIEWER_ENV):
+        return
+    os.environ[VIEWER_ENV] = "1"
+    command = viewer_command(argv, sys.executable)
+    os.execvp(command[0], command)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("url", help="the StarPulse page, such as http://127.0.0.1:8766")
@@ -432,7 +474,14 @@ def main(argv: list[str] | None = None) -> int:
         help="serve the page from this local build (`vite build --outDir`), its /api from the URL",
     )
     parser.add_argument("--json", type=argparse.FileType("w"), help="also write the rows here")
+    parser.add_argument(
+        "--viewer",
+        action="store_true",
+        help="time the page as a viewer's own machine draws it: run in a scope weighted over the host's load",
+    )
     args = parser.parse_args(argv)
+    if args.viewer:
+        enter_viewer(sys.argv)
     base = args.url.rstrip("/")
 
     rows = time_reads(Client(base), args.samples)
