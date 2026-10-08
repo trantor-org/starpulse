@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { age, rankRows, rowMeta, stuckCount } from "./machineRows";
+import { age, firstOpened, rankRows, rowMeta, stuckCount } from "./machineRows";
 import type { FlowSnapshot, Stuck, Tie } from "./types";
 
 const NOW = 1_800_000_000;
@@ -132,5 +132,18 @@ describe("a row's status line", () => {
   });
   it("writes an age as hours and minutes, or minutes", () => {
     expect([age(59), age(60), age(17 * 60), age(3600), age(4 * 3600 + 180)]).toEqual(["1m", "1m", "17m", "1h00", "4h03"]);
+  });
+
+  it("name the first row a top state opens, in the order the rows run, and none for a state no machine is entered from", () => {
+    const flows = world(
+      flow("late", { last: NOW - 900, ties: [tie("observed", "in-progress", "pr_opened", 3)] }),
+      flow("soon", { last: NOW - 10, ties: [tie("declared", "in-progress", "pr_opened", null)] }),
+      flow("other", { last: NOW, ties: [tie("observed", "in-progress", "working", 1)] }),
+      flow("launched", { last: NOW - 5, ties: [tie("dag", null, null, null, "nightly")] }),
+    );
+    const rows = rankRows(flows, "in-progress");
+    expect(firstOpened(flows, rows, "in-progress", "pr_opened")).toBe("soon");
+    expect(firstOpened(flows, rows, "in-progress", "working")).toBe("other");
+    expect(firstOpened(flows, rows, "in-progress", "review")).toBeNull();
   });
 });

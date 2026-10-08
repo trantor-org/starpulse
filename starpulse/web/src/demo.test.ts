@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DemoServer, ROUTES, demoLive, stepRuns, type DemoFixture } from "./demo";
 import { PAGE } from "./ledgerScroll";
 import { NO_HARNESSES, fetchHarnesses, postStart } from "./start";
-import type { LedgerRow, Machine, RawAgent, RunStatus, Snapshot } from "./types";
+import type { FlowSnapshot, LedgerRow, Machine, RawAgent, RunStatus, Snapshot } from "./types";
 import type { TaskRecord } from "./taskView";
 
 const machine = (initial: string, edges: [string, string, string][], final = ""): Machine => {
@@ -563,5 +563,64 @@ describe("the demo's fan-out", () => {
     s.step(script(0.1, 0, 0, 0, 0, 0, 0, 0, 0));
 
     expect(s.snapshot.dags[0].active!.map((r) => r.step)).toEqual(["wait_ci", "wait_ci"]);
+  });
+});
+
+describe("the demo server's /api/machines", () => {
+  /** The fixture with 45 machines entered from the In Progress one, each a minute older than the one before and the last three sharing a time. */
+  function crowded(): DemoFixture {
+    const f = fixture();
+    f.flows[1] = { ...f.flows[1], parent: null, depth: 0, last: 100 };
+    f.flows.push(...Array.from({ length: 45 }, (_, i) => ({ name: `kid${i}`, machine: DELIVERY, agents: [], parent: "in-progress", depth: 1, last: i >= 42 ? 10 : 100 - i * 2 })));
+    return f;
+  }
+  const page = (s: DemoServer, q: string) => body(s.fetch(`/api/machines?${q}`)) as Promise<{ open: string; machines: { name: string; last: number }[]; more: boolean }>;
+
+  it("serves the machines older than `before`, newest first, 20 at a time, ties travelling together, with no row twice", async () => {
+    const s = new DemoServer(crowded(), () => 100);
+    const seen: string[] = [];
+    let before = "", more = true, calls = 0;
+    while (more && calls++ < 10) {
+      const p = await page(s, `open=in-progress&limit=20${before}`);
+      seen.push(...p.machines.map((m) => m.name));
+      more = p.more;
+      before = `&before=${Math.min(...p.machines.map((m) => m.last))}`;
+    }
+    expect(seen).toEqual(Array.from({ length: 45 }, (_, i) => `kid${i}`));
+    expect(calls).toBe(3);
+    expect(more).toBe(false);
+  });
+
+  it("names the machine it opened, and refuses one the demo does not have", async () => {
+    const s = new DemoServer(crowded(), () => 100);
+    expect((await page(s, "limit=5")).open).toBe("in-progress");
+    expect((await s.fetch("/api/machines?open=nope")).status).toBe(404);
+  });
+
+  it("keeps the machines' activity and the strip's entries as ages, so a fixture captured an hour before the page opened is an hour old", () => {
+    const f = crowded();
+    f.machineStrip = { entries: [{ at: 90, machine: "kid0", row: "kid0", from: null, dag: null }] };
+    const s = new DemoServer(f, () => 200); // the fixture was captured at 100
+    expect(s.snapshot.flows.find((x) => x.name === "kid0")?.last).toBe(200);
+    expect(s.snapshot.machineStrip?.entries[0].at).toBe(190);
+  });
+});
+
+describe("a demo page asked for many machines", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("serves the machines padded to the count, a page at a time", async () => {
+    const base = fixture(), kid: FlowSnapshot = { name: "docs", machine: DELIVERY, agents: [], parent: "in-progress", depth: 1, chain: [], nested: [], ties: [], last: base.now - 60, stuck: null };
+    const fx = { ...base, flows: [...base.flows, kid], machinePage: { open: "in-progress", machines: ["docs"], more: false } };
+    vi.stubGlobal("location", { search: "?demo&many=45" });
+    vi.stubGlobal("__FLOW_FIXTURE__", fx);
+    vi.resetModules();
+    const { demoServer } = await import("./demo");
+    const first = (await (await demoServer()!.fetch("/api/machines?open=in-progress&limit=20")).json()) as { machines: unknown[]; more: boolean };
+    expect(first.machines).toHaveLength(20);
+    expect(first.more).toBe(true);
   });
 });

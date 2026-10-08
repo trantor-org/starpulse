@@ -4,6 +4,8 @@ import { demoLevel } from "./demoLevel";
 import { arriveMerge, demoContract, demoLedger, demoPins, demoStrip, scenarioOf } from "./demoLedger";
 import { PAGE } from "./ledgerScroll";
 import { MERGE_EVENT } from "./ledger";
+import { padMachines } from "./demoMachines";
+import { rankRows } from "./machineRows";
 import { columnsOf } from "./kanban";
 import type { LaneStep } from "./trace";
 import type { LedgerRow, Machine, RawAgent, Snapshot } from "./types";
@@ -128,6 +130,15 @@ const HANDLERS: Record<string, Handler> = {
     const dag = path.match(/^\/api\/runs\/(.+)\/rerun$/)?.[1];
     return dag && init?.method === "POST" ? server.rerun(decodeURIComponent(dag)) : json({ error: `This demo does not serve ${path}.` }, 404);
   },
+  "/api/machines": (server, _path, query) => {
+    const { flows } = server.snapshot, open = query.get("open") ?? flows.find((f) => f.depth === 0)?.name ?? "", before = query.get("before"), limit = Number(query.get("limit") ?? 20);
+    if (!flows.some((f) => f.name === open)) return json({ error: `${open} is not a machine here` }, 404);
+    const last = (n: string) => flows.find((f) => f.name === n)?.last ?? 0;
+    const live = rankRows(Object.fromEntries(flows.map((f) => [f.name, f])), open).filter((n) => before == null || last(n) < Number(before));
+    let end = limit;
+    while (0 < end && end < live.length && last(live[end]) === last(live[end - 1])) end++;
+    return json({ open, machines: live.slice(0, end).map((n) => flows.find((f) => f.name === n)), more: end < live.length });
+  },
   "/api/level": (server, _path, query) => {
     const { status, body } = demoLevel(server.snapshot.now, Number(query.get("hours") ?? 168), new URLSearchParams(globalThis.location?.search ?? ""));
     return json(body, status);
@@ -191,6 +202,8 @@ export class DemoServer {
     const age = clock() - snap.now;
     for (const card of snap.flows.find((f) => f.name === "board")?.agents ?? []) if (card.created != null) card.created += age;
     for (const e of Object.values(snap.settled)) [e.at, e.created] = [e.at == null ? null : e.at + age, e.created == null ? null : e.created + age];
+    for (const f of snap.flows) if (f.last != null) f.last += age;
+    for (const e of snap.machineStrip?.entries ?? []) e.at += age;
     this.lanes = history ?? {};
     this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
     const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
@@ -474,7 +487,8 @@ export const demoServer = (): DemoServer | null => {
   const query = new URLSearchParams(globalThis.location?.search ?? "");
   const refuseEdits = query.get("edit") === "refuse";
   const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
-  return fixture ? (server ??= new DemoServer(fixture, undefined, refuseEdits, forward)) : null;
+  const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
+  return fixture ? (server ??= new DemoServer(many ? padMachines(fixture, many) : fixture, undefined, refuseEdits, forward)) : null;
 };
 
 /** A write says it is JSON, body or none: starpulse.server refuses any other, which a web page on another site cannot send without asking first. */

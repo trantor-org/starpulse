@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sessionsOf, traceSteps } from "./machineTrace";
+import { heldBy, sessionsOf, traceSteps } from "./machineTrace";
 import type { FlowSnapshot, RawAgent } from "./types";
 
 /** A machine whose states run in a line, `a → b → c`, with no line back. */
@@ -76,5 +76,11 @@ describe("a task's path across the machine ledger", () => {
     const agent = solo.drafting.agents[0];
     expect(sessionsOf(solo, "drafting", agent)).toEqual([{ machine: "drafting", agent }]);
     expect(traceSteps(solo, sessionsOf(solo, "drafting", agent), "in-progress", everywhere).map((s) => s.kind)).toEqual(["hop"]);
+  });
+
+  it("holds a pinned task's machines from the pin, after a session there has ended, and adds one it enters later", () => {
+    const later = world(flows["in-progress"], flow("drafting", ["draft", "tested"]), flows.reviewing);
+    expect(heldBy(later, "T-1", ["in-progress", "drafting"])).toEqual(["in-progress", "drafting", "reviewing"]);
+    expect(heldBy(later, null, ["drafting"])).toEqual(["drafting"]);
   });
 });

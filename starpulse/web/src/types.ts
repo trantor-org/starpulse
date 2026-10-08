@@ -148,6 +148,25 @@ export interface FlowSnapshot extends Partial<MachineTies> {
   agents: RawAgent[];
 }
 
+/** The machines the In Progress machine's ledger loads first, by name (their bodies are in `flows`), and whether older ones remain. */
+export interface MachinePage {
+  open: string | null;
+  machines: string[];
+  more: boolean;
+}
+
+/** One session starting in a machine other than the In Progress one, in the last 24 hours. */
+export interface MachineEntry {
+  at: number;
+  machine: string;
+  /** The machine on the In Progress level it lands on: an entry into a nested machine counts on the row above it. */
+  row: string;
+  /** The state the task held when it entered, null when no earlier session of it is known. */
+  from: { machine: string; state: string } | null;
+  /** The DAG that launched a session with no task. */
+  dag: string | null;
+}
+
 /** The closed set of statuses a run or a step reports; the runs contract's `RunStatus`. */
 export type RunStatus = "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
 
@@ -309,6 +328,9 @@ export interface Snapshot {
   /** The concurrency pools the DAGs run on. */
   pools?: Pool[];
   flows: FlowSnapshot[];
+  machinePage?: MachinePage;
+  /** The last 24 hours of machine entries, oldest first, counted over every machine. */
+  machineStrip?: { entries: MachineEntry[] };
   /** Each open task's pull requests, by task id. */
   pulls?: Record<string, Pull[]>;
   /** Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds). */

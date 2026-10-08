@@ -38,6 +38,12 @@ export function sessionsOf(flows: Record<string, FlowSnapshot>, machine: string,
   return Object.values(flows).flatMap((f) => f.agents.filter((a) => a.task === agent.task).map((a) => ({ machine: f.name, agent: a })));
 }
 
+/** The machines a pinned task holds: those it had a session in when pinned, which the open card lists, and any it has entered since. */
+export function heldBy(flows: Record<string, FlowSnapshot>, task: string | null, pinned: readonly string[]): string[] {
+  const now = task ? Object.values(flows).filter((f) => f.agents.some((a) => a.task === task)).map((f) => f.name) : [];
+  return [...new Set([...pinned, ...now])];
+}
+
 /** The state a session was entered from: the newest of the task's other sessions still open then, outside the template, else its template session. */
 function parentOf(sessions: Session[], s: Session, template: string): Spot | null {
   const t0 = start(s.agent), sib = sessions.filter((b) => b !== s && b.machine !== s.machine);
