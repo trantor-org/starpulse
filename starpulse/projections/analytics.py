@@ -24,7 +24,7 @@ def board_health(
 ) -> dict[str, Any]:
     """The Board `machine`'s health over the last `window_s` seconds up to `now`, from lane changes `rows`; see
     `stay_health`."""
-    held = lane_stays(rows, start=now - window_s, now=now)
+    held = lane_stays(rows, start=now - window_s, now=now, stuck_s=stuck_s)
     return stay_health(machine, held, gaps, now=now, window_s=window_s, stuck_s=stuck_s)
 
 
@@ -57,13 +57,16 @@ def stay_health(
     for lane, found in held.ended.items():
         if (state := states.get(lane)) is not None and not state["final"]:
             visited(state["id"], found)
-    for task, lane, began, _ended in held.going:
-        if (state := states.get(lane)) is None or state["final"]:
+    for lane, found in held.going.items():
+        if (state := states.get(lane)) is not None and not state["final"]:
+            visited(state["id"], found)
+            open_stays[state["id"]] += found.visits
+    for task, lane, began, _ended in held.stuck:
+        state = states.get(lane)
+        if state is None or state["final"] or state["initial"]:
             continue
         length = now - began
-        visited(state["id"], Dwell(1, length, length))
-        open_stays[state["id"]] += 1
-        if not state["initial"] and length >= stuck_s:
+        if length >= stuck_s:
             stuck.append(
                 {"task": task, "state": state["id"], "since": began, "dwell_s": length, "counted_to_now": True}
             )

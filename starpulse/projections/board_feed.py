@@ -53,6 +53,8 @@ PUSHED_INSTANCE = "pushed"
 SAVE_INTERVAL = 60.0
 #: The lane an archived task enters: its file keeps its status, so only the folder it sits in says it was archived.
 ARCHIVED = "archived"
+#: The lane a swept task enters where the Board has it: its file keeps the done status in the folder it was swept to.
+COMPLETED = "completed"
 #: The days of lane moves, before local midnight, a Board state's sun is sized from.
 SUN_DAYS = 7
 #: Seconds between looks for a local midnight that has passed.
@@ -173,6 +175,9 @@ class BoardFeed:
         self._cues = cues
         self._source = source
         self._drawn = machines if machines is not None else {"board": board_machine(DEFAULT_STATUSES)}
+        #: The settled states a task's settling is recorded as a move into: archived always, completed where the Board
+        #: has that state (a board whose last status is its final one settles there already).
+        self._settle_lanes = {ARCHIVED} | ({COMPLETED} & {state["id"] for state in self._drawn["board"]["states"]})
         self._board_url = board_url
         self._commit = commit or {}
         self._ties = self._tied_to_events(cues)
@@ -420,7 +425,7 @@ class BoardFeed:
             lane, entered = change
             try:
                 event_id = f"{task.id}@{lane}@{entered}"
-                if lane == ARCHIVED and self._history_ends_in(task.id, lane):
+                if task.settled and self._history_ends_in(task.id, lane):
                     return
                 if self._lanes.record_lane(event_id, task.id, lane, entered) and self._lane_log is not None:
                     lane_events.publish(self._lane_log, event_id, task.model_copy(update={"lane": lane}), entered)
@@ -449,9 +454,9 @@ class BoardFeed:
         with self._lock:
             held = [(task_id, agent["state"], agent["entered"]) for task_id, agent in self._open.items()]
             held += [
-                (task_id, ARCHIVED, settled["at"] or self._clock())
+                (task_id, settled["state"], settled["at"] or self._clock())
                 for task_id, settled in self._settled.items()
-                if settled["state"] == ARCHIVED
+                if settled["state"] in self._settle_lanes
             ]
         recorded = 0
         for task_id, lane, entered in held:
@@ -471,8 +476,8 @@ class BoardFeed:
     def _place(self, task: BoardTask) -> tuple[str, float] | None:
         """Place `task`; the lane it entered and when, if that is a change of lane, else None.
 
-        A task that left the lanes by archive enters `ARCHIVED`: its file keeps the status it had, and the Board draws
-        the folder it sits in as the lane.
+        A task that left the lanes by archive enters `ARCHIVED`, and one swept on enters `COMPLETED` where the Board has
+        it: its file keeps the status it had, and the Board draws the folder it sits in as the lane.
         """
         with self._lock:
             filed = self._settled.get(task.id)
@@ -492,7 +497,11 @@ class BoardFeed:
                 self._gated.add(task.id)
             if before == agent and self._settled.get(task.id) == settled:
                 return None  # an hourly reconcile republishes every task; only a change reaches the page
-            archived = settled is not None and settled["state"] == ARCHIVED and (filed or {}).get("state") != ARCHIVED
+            settling = (
+                settled is not None
+                and settled["state"] in self._settle_lanes
+                and (filed or {}).get("state") != settled["state"]
+            )
             if agent is None:
                 self._open.pop(task.id, None)
                 if settled:
@@ -503,8 +512,8 @@ class BoardFeed:
             self._link(task.id, before["dependencies"] if before else (), agent["dependencies"] if agent else ())
             self._publish("task", {"id": task.id, "agent": agent, "settled": settled})
             self._reassess(self._dependents.get(task.id, ()))
-            if archived:
-                return ARCHIVED, settled["at"] or self._clock()
+            if settling:
+                return settled["state"], settled["at"] or self._clock()
             if agent and (before is None or before["state"] != agent["state"]):
                 return task.lane, agent["entered"]
             return None

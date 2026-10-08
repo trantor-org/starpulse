@@ -101,6 +101,28 @@ def test_flow_health_fetches_no_more_rows_as_the_week_holds_more_lane_intervals(
     assert (_health_rows(store), store.summary_differences()) == (few, [])
 
 
+def test_flow_health_fetches_no_row_for_a_task_in_flight_that_is_not_stuck(store: HistoryStore) -> None:
+    few = _health_rows(store)
+    for task in range(200):
+        store.record_lane(f"a/flight-{task}", f"flight-{task}", "In Progress", NOW - H / 2)
+
+    assert (_health_rows(store), store.summary_differences()) == (few, [])
+
+
+def test_flow_health_counts_the_tasks_in_flight_and_lists_the_stuck_ones(store: HistoryStore) -> None:
+    for task in range(5):
+        store.record_lane(f"a/flight-{task}", f"flight-{task}", "In Progress", NOW - H / 2)
+        store.record_lane(f"a/stuck-{task}", f"stuck-{task}", "In Progress", NOW - (30 + task) * H)
+
+    body, status = health_response(store, {"hours": ["48"]}, MACHINES, NOW)
+    health = json.loads(body)
+    working = next(s for s in health["states"] if s["id"] == "in_progress")
+    stuck = [entry["task"] for entry in health["stuck"] if entry["task"].startswith(("flight", "stuck"))]
+
+    assert (status, stuck) == (200, [f"stuck-{task}" for task in (4, 3, 2, 1, 0)])
+    assert working["open"] >= 10
+
+
 def _add_long_history(store: HistoryStore) -> None:
     """What a level answers with besides `ROWS`: work long finished or stalled before the window, and odd paths."""
     store.record_lane("a/z1", "Z", "In Progress", -3000 * H)

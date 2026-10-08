@@ -155,3 +155,18 @@ def test_the_lane_counts_revision_counts_the_lanes_the_intervals_hold_and_a_down
             i["name"] for i in inspect(db).get_indexes("starpulse_lane_intervals")
         }
         assert "ix_starpulse_cases_state" not in {i["name"] for i in inspect(db).get_indexes("starpulse_cases")}
+
+
+def test_the_stay_index_revision_replaces_the_lane_index_and_a_downgrade_restores_it(empty_database: Engine) -> None:
+    config = Config()
+    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "store" / "migrations"))
+    with empty_database.begin() as db:
+        config.attributes["connection"] = db
+        command.upgrade(config, "0009")
+        indexes = {i["name"]: i["column_names"] for i in inspect(db).get_indexes("starpulse_lane_intervals")}
+        assert indexes["ix_starpulse_lane_intervals_stay"] == ["lane", "left_at", "entered_at"]
+        assert "ix_starpulse_lane_intervals_lane" not in indexes
+        command.downgrade(config, "0008")
+        indexes = {i["name"]: i["column_names"] for i in inspect(db).get_indexes("starpulse_lane_intervals")}
+        assert indexes["ix_starpulse_lane_intervals_lane"] == ["lane", "left_at"]
+        assert "ix_starpulse_lane_intervals_stay" not in indexes

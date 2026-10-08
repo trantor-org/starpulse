@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.json_schema import GenerateJsonSchema
@@ -590,7 +590,11 @@ class HealthThroughput(_Api):
     per_day: float
 
 
-class HealthStuck(_Api):
+# A typed dict, not a model: a window lists thousands of stuck tasks and a model instance each costs more than the
+# rest of the read. Its schema is the model's (a comment, not a docstring, so the generated types do not change).
+class HealthStuck(TypedDict):
+    __pydantic_config__ = ConfigDict(extra="forbid")  # type: ignore[misc]
+
     task: str
     state: str
     since: float
@@ -1367,7 +1371,8 @@ def encode(kind: str, data: Any) -> bytes:
     """The JSON bytes of `data` as the route `kind` may send it, raising `ValidationError` for a body no model of
     `BODIES[kind]` accepts; the page reads only fields a model names."""
     annotation = BODIES[kind]
-    adapter = _ADAPTERS.setdefault(id(annotation), TypeAdapter(annotation))
+    if (adapter := _ADAPTERS.get(id(annotation))) is None:  # built once: building one costs more than a small body
+        adapter = _ADAPTERS[id(annotation)] = TypeAdapter(annotation)
     return adapter.dump_json(adapter.validate_python(data), by_alias=True, exclude_unset=True)
 
 
