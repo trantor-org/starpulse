@@ -56,6 +56,11 @@ export function levelParams(search: string): { open: string | null; focus: strin
   return { open: params.get("open"), focus: params.get("focus") };
 }
 
+/** Rewrites the address's query in place, unless it already reads `search`: a history replace is a synchronous round trip to the browser process, tens of milliseconds on a loaded host. */
+export function replaceSearch(at: { pathname: string; search: string; hash: string }, search: string, replace: (url: string) => void): void {
+  if (search !== at.search) replace(at.pathname + search + at.hash);
+}
+
 /** The query string that reproduces a machine level and its focused row, keeping every other parameter. */
 export function levelSearch(search: string, at: { open: string | null; focus: string | null }): string {
   const params = new URLSearchParams(search);

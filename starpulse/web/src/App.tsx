@@ -17,6 +17,7 @@ import { Dags, DagLegend } from "./features/dags/Dags";
 import { FeedLines, linesThatFit, Queues } from "./features/fanout/Fanout";
 import { Kept } from "./shared/Kept";
 import { SearchClear } from "./shared/SearchClear";
+import { useBoardDrawn } from "./shared/boardDrawn";
 import { Kanban } from "./features/kanban/Kanban";
 import { Leaderboard } from "./features/kanban/Leaderboard";
 import { MoveStore, postMove } from "./features/kanban/move";
@@ -34,6 +35,7 @@ export function App() {
   const renderer = useRef<Renderer | null>(null);
   const [store] = useState(() => new HudStore());
   const hud = useHud(store);
+  useBoardDrawn(hud.tree !== null);
   const [admin] = useState(() => new AdminStore());
   const [historyWindow] = useState(() => new HistoryWindowStore());
   const [forwarding] = useState(() => new ForwardingStore());

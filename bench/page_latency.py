@@ -245,11 +245,13 @@ def time_stream(base: str, samples: int) -> Row:
     return row
 
 
-#: Installed before the page's own scripts. It records on `window.__sp`: each stream event's arrival to the next
-#: frame, the page's own animation-frame work, every long task, and a way to await a fetch's body.
+#: Installed before the page's own scripts. It records on `window.__sp`: the first frame that shows the Board, each
+#: later stream event's arrival to the next frame, the page's own animation-frame work, every long task, and a way to await a fetch's body.
 _PROBE = """
 (() => {
-  const sp = (window.__sp = { deliveries: [], frames: [], longTasks: [], firstPaint: null, waits: [] });
+  const sp = (window.__sp = { deliveries: [], frames: [], longTasks: [], waits: [] });
+  // the page marks the first frame that shows the Board (src/shared/boardDrawn.ts): ms from navigation, null until then
+  Object.defineProperty(sp, "firstPaint", { get: () => performance.getEntriesByName("starpulse:board-drawn")[0]?.startTime ?? null });
   const raf = window.requestAnimationFrame.bind(window);
   window.requestAnimationFrame = (cb) => raf((t) => { const s = performance.now(); try { cb(t); } finally { sp.frames.push(performance.now() - s); } });
   sp.twoFrames = () => new Promise((r) => raf(() => raf(() => r(performance.now()))));
@@ -261,8 +263,7 @@ _PROBE = """
       const at = performance.now();
       fn(e);
       raf(() => {
-        if (type === "snapshot") { if (sp.firstPaint === null) sp.firstPaint = performance.now(); }
-        else sp.deliveries.push([type, performance.now() - at]);
+        if (type !== "snapshot") sp.deliveries.push([type, performance.now() - at]);
       });
     }, opts);
     return src;
@@ -352,7 +353,7 @@ def time_page(base: str, samples: int, channel: str, requested: list[str], asset
             "first paint of the board",
             "interaction",
             BUDGET_MS,
-            note="navigation to the frame after the first snapshot",
+            note="navigation to the frame that draws the board (starpulse:board-drawn)",
         )
         for _ in range(max(1, samples // 4)):
             page.goto(base, wait_until="domcontentloaded")

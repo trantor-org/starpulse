@@ -792,8 +792,9 @@ def elements(sheet: Path) -> str:
 
 
 def page(static: Path, fixture: dict) -> str:
-    """`static/index.html` with its bundle inlined and `fixture` embedded ahead of it."""
-    html = (static / "index.html").read_text()
+    """`static/index.html` with its bundle inlined and `fixture` embedded ahead of it, minus the early stream a demo
+    has no server for."""
+    html = re.sub(r"<script>\n// Ask for the snapshot now.*?</script>\n", "", (static / "index.html").read_text(), flags=re.S)
     data = json.dumps(fixture).replace("</", "<\\/")
 
     def script(m: re.Match) -> str:

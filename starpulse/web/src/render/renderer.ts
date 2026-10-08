@@ -51,7 +51,7 @@ import { asked, arrived as pageArrived, failed, nextQuery, paging, reveal, RETRY
 import { dragTo, inputGoal, revealGoal, thumbOf, windowOf, type ScrollInput, type Thumb } from "../features/level/machineScroll";
 import { stripLabel, stripScale, tickAt, ticks, viewSpan, type Tick } from "../features/level/machineStrip";
 import { heldBy, sessionsOf, traceSteps, type Spot } from "../features/level/machineTrace";
-import { backStep, canvasSpace, levelParams, levelSearch, retired, viewOf, viewSearch } from "../shared/nav";
+import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, retired, viewOf, viewSearch } from "../shared/nav";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
 export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
@@ -354,7 +354,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function syncUrl() {
     if (fixture || !S) return;
     const open = path[path.length - 1].kind === "machine" ? topFlow(S.tree.subs, path) : null;
-    history.replaceState(null, "", location.pathname + levelSearch(location.search, { open, focus: pickedRow }) + location.hash);
+    replaceSearch(location, levelSearch(location.search, { open, focus: pickedRow }), (url) => history.replaceState(null, "", url));
   }
   const setFocus = (name: string | null) => {
     pickedRow = name;
