@@ -57,8 +57,9 @@ at 10 thousand, and the CPU time judges):
 | 10 million | 15.0 / 8.0 ms (x1.24) | 280 / 180 ms (x1.05) | 173 / 155 ms (x0.95) | 2.9 GB |
 
 The ratios are the CPU p95 against the 10 thousand row, all under 2x. Run to run on this shared host they moved
-by up to 1.5x on the 6 to 15 ms health read and by 1.2x on the level, in both directions, with no trend in the size. Each read sends 5 or 7 statements at every size
-and none touches `starpulse_machine_events` or `starpulse_lane_changes`. Before the summaries the same reads folded
+by up to 1.5x on the 6 to 15 ms health read and by 1.2x on the level, in both directions, with no trend in the size. Each read sends 5 or 7 statements at every size,
+health fetches under 100 rows (72 at 10 thousand, 98 at 1 million: a row per lane and per task in flight, not per lane
+interval) and none touches `starpulse_machine_events` or `starpulse_lane_changes`. Before the summaries the same reads folded
 every lane change: at 1 million, health took 9.2 s and the level 11.6 s (p95 of 3 reads, wall). At 10 thousand the
 level reads the whole history, because the trailing 12 weeks that set the aging threshold reach back past its start;
 that is the most it ever reads, and why the level's cost stays where it is as the history grows. Loading 10 million
