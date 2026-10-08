@@ -1,6 +1,6 @@
 diff --git a/starpulse/web/src/dagTies.ts b/starpulse/web/src/dagTies.ts
 new file mode 100644
-index 0000000..2e0877f
+index 0000000..7f45fd7
 --- /dev/null
 +++ b/starpulse/web/src/dagTies.ts
 @@ -0,0 +1,364 @@
@@ -332,11 +332,11 @@ index 0000000..2e0877f
 +  const at = cuts.reduce((a, b) => (Math.abs(b - n.length / 2) < Math.abs(a - n.length / 2) ? b : a));
 +  return [n.slice(0, at), n.slice(at)];
 +};
-+/** The widest line a hangar's name can show: its name (its longer line, broken), or one member's "<dag> running". */
-+const widest = (orbs: Orbiter[]) => (orbs.length === 1 ? nameLines(orbs).reduce((a, b) => (b.length > a.length ? b : a)) : orbs.reduce((w, o) => (o.label.length + 8 > w.length ? `${o.label} running` : w), nameOf(orbs)));
-+/** The room a hangar takes: its orbit (or, orbiting its state, the count alone) and its name, up to two lines, under it or beside it. */
++/** The widest line a hangar's name shows: its longer line, when it breaks. */
++const widest = (orbs: Orbiter[]) => nameLines(orbs).reduce((a, b) => (b.length > a.length ? b : a));
++/** The room a hangar takes: its orbit (or, orbiting its state, the name alone) and its name, one line or two when it breaks, under it or beside it. */
 +const boxOf = (h: Hub, name: string, u: number, ts: number, tall = 0): [number, number, number, number] => {
-+  const tw = (name.length * 3.4 + 4) * u * ts, lines = (10 + 32 * ts) * u + tall, o = h.orbit;
++  const tw = (name.length * 3.4 + 4) * u * ts, lines = (6 + 16 * ts) * u + tall, o = h.orbit;
 +  if (h.c) {
 +    const x = h.align === "left" ? [h.lab.x, h.lab.x + 2 * tw] : h.align === "right" ? [h.lab.x - 2 * tw, h.lab.x] : [h.lab.x - tw, h.lab.x + tw];
 +    return [x[0], h.lab.y - 9 * u * ts, x[1], h.lab.y + lines];
@@ -369,7 +369,7 @@ index 0000000..2e0877f
 +}
 +export const simOf = (dag: string): SimRun | undefined => (window as unknown as { __ties?: Record<string, SimRun> }).__ties?.[dag];
 diff --git a/starpulse/web/src/renderer.ts b/starpulse/web/src/renderer.ts
-index 0f35d40..9d7a394 100644
+index 0f35d40..ce9e8df 100644
 --- a/starpulse/web/src/renderer.ts
 +++ b/starpulse/web/src/renderer.ts
 @@ -27,6 +27,12 @@ import { createHistory } from "./history";
@@ -473,7 +473,7 @@ index 0f35d40..9d7a394 100644
        flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
        cx.beginPath();
        cx.moveTo(e.p0!.x, e.p0!.y);
-@@ -1256,6 +1306,144 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1256,6 +1306,138 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
        }
      }
    }
@@ -555,7 +555,7 @@ index 0f35d40..9d7a394 100644
 +  function drawHub(h: Hub, sc: Scene) {
 +    const SLATE = "#94a3b8", TEAL = "#5eead4", FAIL = DAG_COLOR.failed, OK = DAG_COLOR.succeeded;
 +    const hubHot = isHot("hub", h), runs = h.orbs.map((o) => ({ o, run: simOf(o.dag) }));
-+    const live = runs.filter((r) => r.run?.status === "running"), bad = runs.filter((r) => r.run?.status === "failed" && r.run.unresolved);
++    const live = runs.filter((r) => r.run?.status === "running");
 +    // no mark on the transition lines: the orbiter, aimed at its transition, already says which; a hovered orbiter rings what it launches
 +    for (const { o } of runs) if (isHot("tie", o)) for (const a of o.anchors) if (!a.onBoard) circle(a.x, a.y, 10 / K, rgba("#a78bfa", 0.9), 1.4 / K, [2 / K, 2 / K]);
 +    // the hangar: the teal disc, warmer while a member runs, and its orbit; orbiting the state itself, a faint arc behind its DAGs instead
@@ -596,14 +596,10 @@ index 0f35d40..9d7a394 100644
 +      // a cue's comet lands in the state, then rings the orbiter it wakes
 +      if (!tc.out && pa >= 0 && pa < 1) pulse(o.x, o.y, 5 / K, pa, ACT, 16);
 +    }
-+    // the hangar's name: its one DAG, or how many it holds; under it the one running or failed now
-+    const ls = labPx(11.5), ss = labPx(10.5), subs: [string, string][] = [];
-+    // a lone DAG is named by the hangar already; one of several names itself; more than one is counted (hover names them)
-+    const who = (rs: typeof runs) => (h.orbs.length === 1 ? "" : rs.length === 1 ? `${rs[0].o.label} ` : `${rs.length} `);
-+    if (bad.length) subs.push([`${who(bad)}failed`, rgba(FAIL, 0.95)]);
-+    if (live.length) subs.push([`${who(live)}running`, rgba(ACT, 0.95)]);
-+    // the name on the side away from what the hangar docks by: under or over it centred, or beside it, the status lines under the name
-+    const names = nameLines(h.orbs), lh = ls + 2 / K, tall = (names.length - 1) * lh + subs.length * (ss + 3 / K), gap = 8 / K;
++    // the hangar's name alone: its one DAG, or how many it holds; whether one runs or failed is the orbiter's to show, and the hover's
++    // and the drill-in's to say
++    const ls = labPx(11.5), names = nameLines(h.orbs), lh = ls + 2 / K, tall = (names.length - 1) * lh, gap = 8 / K;
++    // the name on the side away from what the hangar docks by: under or over it centred, or beside it
 +    const [lx, ny, al]: [number, number, CanvasTextAlign] = h.c ? [h.lab.x, h.lab.y, h.align]
 +      : h.dir === "down" ? [h.x, h.y + h.orbit + gap + ls / 2, "center"]
 +      : h.dir === "up" ? [h.x, h.y - h.orbit - gap - ls / 2 - tall, "center"]
@@ -612,13 +608,11 @@ index 0f35d40..9d7a394 100644
 +    cx.letterSpacing = `${0.6 / K}px`;
 +    names.forEach((n, i) => text(n, lx, ny + i * lh, ls, rgba("#cfd9ea", hubHot ? 0.95 : 0.58), al, 300));
 +    cx.letterSpacing = "0px";
-+    const sy = ny + (names.length - 1) * lh;
-+    subs.forEach(([s, col], i) => text(s, lx, sy + ls / 2 + 3 / K + ss / 2 + i * (ss + 3 / K), ss, col, al, 400));
 +  }
    /** `s` cut to `max` px at `size`, ending in an ellipsis when it was cut. */
    function fitText(s: string, max: number, size: number) {
      cx.font = `400 ${size}px Inter, system-ui, sans-serif`;
-@@ -1651,6 +1839,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1651,6 +1833,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      drawGalaxies();
      drawMoons();
      drawBoardEdges();
@@ -626,7 +620,7 @@ index 0f35d40..9d7a394 100644
      drawStateLinks();
      drawSun();
      drawPlanets();
-@@ -1724,7 +1913,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1724,7 +1907,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      }
    };
    /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
