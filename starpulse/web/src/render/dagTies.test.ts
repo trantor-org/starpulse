@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { boardTies, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, touches, type Hub, type Orbiter } from "./dagTies";
 import { BOARD, startPath, tree } from "./levels";
-import { crumbs } from "./Crumb";
-import { backStep } from "./nav";
+import { crumbs } from "../features/level/Crumb";
+import { backStep } from "../shared/nav";
 import { build, type Scene } from "./scene";
 import { fitLevel } from "./zoom";
 import { merge, Moves, PULSE, TRAVEL, type Move } from "./sky";

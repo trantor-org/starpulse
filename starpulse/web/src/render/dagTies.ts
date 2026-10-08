@@ -4,7 +4,7 @@
 //   write — the DAG writes a Board transition (the board machine's `writers`)
 //   cue   — a Board event cues the DAG (the snapshot's `cues`)
 import { pathLedger, type Fold } from "./levels";
-import type { Source } from "./ledger";
+import type { Source } from "../features/level/ledger";
 import { bez, type BEdge, type Pt, type Scene } from "./scene";
 import { PULSE, TRAVEL, type Move, type Sky } from "./sky";
 
