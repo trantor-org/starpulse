@@ -10,6 +10,7 @@ BUILT_IN = {
     "jira": "starpulse.adapters.boards.jira",
     "dagu": "starpulse.adapters.runs.dagu",
     "github_actions": "starpulse.adapters.runs.github_actions",
+    "systemd": "starpulse.adapters.runs.systemd",
 }
 
 
