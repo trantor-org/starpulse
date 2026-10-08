@@ -7,8 +7,12 @@
   the template state it is entered from (a notch under that state's column, in its colour: filled when the state's flow:
   declares it, hollow when only the trails show it). A DAG is a star at the head of the row it launches.
 
-  Nesting: a row is only a machine entered from the one at the top. A machine with machines entered from it says how
-  many on its name line; clicking anywhere on its row zooms through, that machine takes the top and its machines
+  Nesting: a row is only a machine entered from the one at the top. A machine with machines entered from it draws them in
+  a band under its line: a block per machine, side by side under the column of states it is entered from, each state
+  running a solid stem in its colour out of its left, down and along to its blocks, the top state's outermost and lowest
+  so no two cross; a block is that machine's states as a line of dots, each deeper machine on its own line hung from the
+  state it is entered from (four lines at most, then `+N deeper`), and its name, names alternating between two baselines
+  when they would not fit. Clicking anywhere on its row zooms through, that machine takes the top and its machines
   become the rows, with a breadcrumb back up. Escape steps back out one machine at a time. A row stands for everything
   nested under it: stuck work anywhere below marks it and names where, and its entries land on its ticks in the strip.
 
@@ -19,7 +23,8 @@
   hovering a task retraces its path in order, across every machine it has a session in, along those same lines; clicking
   it pins the trace and opens the panel. &level=in_progress opens on the ledger, &fs=125 or &fs=150 sets the browser text
   size, &open=<machine> opens drilled into that machine, &focus=<machine> opens scrolled to that row (opening its parent first), &pick=busy pins the task on the most machines at once, &many=N seeds
-  N more machines (24 by default, 0 for the snapshot alone), and &fan=N (3 to 8) widens the branch at Checkpointed and Red
+  N more machines (24 by default, 0 for the snapshot alone), &cr=1 seeds triaging-cr-reviews with its three-way fork from
+  start, each branch with machines entered from it, to show a band whose column fans out, and &fan=N (3 to 8) widens the branch at Checkpointed and Red
   proven to N states on one level, in the template and in the triaging-alerts row, to show a wide machine: a column of
   three or more states names them beside it and takes the width its names need. running-skill-evals had no session in the saved snapshot, so
   two are seeded from the live shape (a task drafting a skill asks for a run); seeded rows say so.
@@ -44,9 +49,6 @@
     const easeO = (u) => 1 - Math.pow(1 - u, 3), ease = (u) => (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, u) => a + (b - a) * u, smooth = (u) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
     let FS = 1;
-    // review option: how a row shows where its nesting is (&nest=mini|chain|tray|ghost), each in place of the badge; badge is the approved `N nested ›` alone
-    const NESTS = ["badge", "mini", "chain", "tray", "ghost"];
-    let NESTV = NESTS.includes(P.get("nest")) ? P.get("nest") : "badge";
     const readFS = () => (FS = parseFloat(getComputedStyle(document.documentElement).fontSize) / 16 || 1);
     const NAVW = () => parseInt(getComputedStyle(document.documentElement).getPropertyValue("--nav")) || 52, RAILW = () => document.getElementById("rail").offsetWidth;
 
@@ -497,7 +499,7 @@
       r.nameAt = { x: mx, y: ty + px * 0.7 };
       // every row opens: a click anywhere on it zooms through to that machine; one with machines entered from it says how many
       const nk = KIDS[r.m].length; let cw = 0;
-      { const ct = nk && NESTV === "badge" ? `${nk} nested ›` : "›"; cw = textW(ct, sp) + 8; text(ct, mx + L.metaW, ty + px * 0.7, sp, rgba(PLANET, hot ? 1 : 0.7), "right"); }
+      { const ct = "›"; cw = textW(ct, sp) + 8; text(ct, mx + L.metaW, ty + px * 0.7, sp, rgba(PLANET, hot ? 1 : 0.7), "right"); }
       text(fit(r.m, px, L.metaW - cw, 400), mx, ty + px * 0.7, px, rgba(INK, hot ? 0.97 : idle ? 0.55 : 0.85), "left", 400);
       let l2 = "no tie this hour", c2 = rgba(SUB, 0.5), dot = null;
       if (t) { dot = src?.col; l2 = `${t.pm === topM ? "from" : "on"} ${t.pm === topM ? stName(t.pm, t.ps) : `${t.pm} › ${stName(t.pm, t.ps)}`} · ${t.kind === "declared" ? "declared" : `×${t.count}`}`; c2 = rgba(INK, 0.62); }
@@ -513,16 +515,13 @@
       for (const s of L.stars) if (s.row === r) { drawStarLine(s, now); drawStar(s); }
       cx.globalAlpha = ga * (idle && !hot ? 0.75 : 1); drawEdgesOf(r.m, now); drawNodesOf(r.m); cx.globalAlpha = ga; drawTasksOf(r.m, y0, y1, now); drawNest(r, hot); rowLabels(r, hot); cx.globalAlpha = 1;
     }
-    // a row with machines entered from it gains a band under its line to draw them in (none for the badge)
+    // a row with machines entered from it gains a band under its line to draw them in: its deepest block, a stem's turn per state of a column, a second name line when names stagger
     function nestBand(m) {
-      if (NESTV === "badge" || !KIDS[m].length) return 0;
-      const sp = PX.sub(), g = GS();
-      if (NESTV === "mini") return sp * 1.4 + 14 * g;
-      if (NESTV === "tray") return sp * 1.6 + 22 * g;
-      if (NESTV === "chain") { const cols = chainCols(m); return Math.max(...[...cols].map(([dc, es]) => new Set(es.map((e) => e.s)).size * 5 + Math.max(...es.map((e) => chainH(e.c))) + (chainRoom(m, cols, dc).two ? sp * 1.3 : 0))) + 8; }
-      return sp * 1.4 + Math.max(...KIDS[m].map((c) => G[c].rmax - G[c].rmin + 1)) * 5 * g + 10;
+      if (!KIDS[m].length) return 0;
+      const cols = chainCols(m);
+      return Math.max(...[...cols].map(([dc, es]) => new Set(es.map((e) => e.s)).size * 5 + Math.max(...es.map((e) => chainH(e.c))) + (chainRoom(m, cols, dc).two ? PX.sub() * 1.3 : 0))) + 8;
     }
-    // chain: the machines entered from a row's states, by the column of the state, top state first; and the height of one machine's block
+    // the machines entered from a row's states, by the column of the state, top state first; and the height of one machine's block
     const chainCols = (m) => { const cols = new Map(); for (const c of KIDS[m]) { const ps = primary[c]?.ps; if (ps == null || !(ps in G[m].depth)) continue; const d = G[m].depth[ps]; (cols.get(d) || cols.set(d, []).get(d)).push({ s: ps, c }); }
       for (const es of cols.values()) es.sort((a, b) => G[m].row[a.s] - G[m].row[b.s] || (a.c < b.c ? -1 : 1)); return cols; };
     const chainH = (c) => Math.min(4, 1 + desc(c).length) * 8 * GS() + PX.sub() * 1.4 + 6;
@@ -531,73 +530,34 @@
       if (!n0) return { lim: L.x1 + 22, bw: Infinity, two: false };
       const lim = (nx === undefined ? L.x1 + 22 : node(m, cols.get(nx)[0].s).x) - 14, bw = (lim - n0.x + 4) / es.length;
       return { lim, bw, two: es.length > 1 && es.some((e) => textW(e.c, PX.sub()) > bw - 12) }; };
-    // review options (&nest=): under each state of a row that machines are entered from, those machines drawn small, each kept to the room before the next such state
+    // the band under a row: a block per machine entered from it, its line, each deeper machine on its own line hung from the state it is entered from, then its name
     function drawNest(r, hot) {
       r.nestBoxes = [];
-      if (NESTV === "badge") return;
-      const sp = PX.sub(), g = GS(), al = hot ? 0.95 : 0.72, by = new Map(), bot = r.cy + r.h - 4 * FS, nameY = bot - sp * 0.6;
-      for (const c of KIDS[r.m]) { const s = primary[c]?.ps; if (s && node(r.m, s)) (by.get(s) || by.set(s, []).get(s)).push(c); }
-      const xs = [...by.keys()].map((s) => node(r.m, s).x).sort((a, b) => a - b);
+      const sp = PX.sub(), g = GS(), al = hot ? 0.95 : 0.72, step = 8 * g, rr = 2.4 * g, cols = chainCols(r.m), ds = [...cols.keys()].sort((a, b) => a - b);
       const dotCol = (m, q) => { const o = G[m].order; return RAMP[Math.round((o.indexOf(q) / Math.max(1, o.length - 1)) * (RAMP.length - 1))]; };
-      const kidsAt = (m, q) => KIDS[m].filter((k) => primary[k]?.ps === q);
       const line = (m, x, y, dx, rr, a) => { const o = G[m].order; cx.strokeStyle = rgba(SUB, 0.35 * a); cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x + (o.length - 1) * dx, y); cx.stroke();
         o.forEach((q, j) => { cx.fillStyle = rgba(dotCol(m, q), a); cx.beginPath(); cx.arc(x + j * dx, y, rr, 0, TAU); cx.fill(); }); };
-      // a state a further machine is entered from: a dashed ring, so the nesting shows where it goes on
-      const halo = (x, y, rr) => { cx.strokeStyle = rgba(PLANET, al); cx.lineWidth = 1; cx.setLineDash([1.5, 2]); cx.beginPath(); cx.arc(x, y, rr + 2.4 * g, 0, TAU); cx.stroke(); cx.setLineDash([]); };
-      if (NESTV === "chain") { // a block per machine in the band under the row: its line, each deeper machine on its own line hung from the state it is entered from, then its name
-        const cols = chainCols(r.m), ds = [...cols.keys()].sort((a, b) => a - b), step = 8 * g, rr = 2.4 * g;
-        const ext = (m, f) => Math.max(G[m].order.length - 1, ...KIDS[m].map((k) => G[m].order.indexOf(primary[k].ps) + f * ext(k, f)));
-        for (const dc of ds) {
-          // a column's blocks sit side by side, top state's first; with several states in the column each runs its own stem out of its left, the top state's outermost and lowest, so no two stems cross
-          const es = cols.get(dc), sts = [...new Set(es.map((e) => e.s))], K = sts.length, n0 = node(r.m, sts[0]), { lim, bw, two } = chainRoom(r.m, cols, dc);
-          const oM = Math.max(...sts.map((q) => orbitOf(node(r.m, q)))), bt = r.cy + r.h - r.band + 4 + K * 5, Lm = Math.max(...es.map((e) => Math.min(4, 1 + desc(e.c).length))), xb = (i) => n0.x - 2 + i * bw, xv = (k) => n0.x - oM - 6 - (K - 1 - k) * 7;
-          cx.save(); cx.beginPath(); cx.rect(xv(0) - 4, r.cy, lim - xv(0) + 4, r.h); cx.clip();
-          sts.forEach((q, k) => { const n = node(r.m, q), o = orbitOf(n), hy = bt - 2 - k * 5, mine = es.map((e, i) => (e.s === q ? i : -1)).filter((i) => i >= 0);
-            cx.strokeStyle = rgba(n.col, al * 0.7); cx.lineWidth = 1; cx.setLineDash(K === 1 ? [2, 3] : []); cx.beginPath();
-            if (K === 1) { cx.moveTo(n.x, n.y + o + 1); cx.lineTo(n.x, hy); } else { cx.moveTo(n.x - o - 1, n.y); cx.lineTo(xv(k), n.y); cx.lineTo(xv(k), hy); }
-            cx.lineTo(xb(mine.at(-1)) + 2, hy); for (const i of mine) { cx.moveTo(xb(i) + 2, hy); cx.lineTo(xb(i) + 2, bt + step - rr - 1); } cx.stroke(); cx.setLineDash([]); });
-          es.forEach((e, i) => { const n = node(r.m, e.s), c = e.c, x0 = xb(i) + 2, w = bw - 12, d = desc(c).length, Lv = Math.min(4, 1 + d), y = bt;
-            const dx0 = Math.min(12 * g, (w - 4) / Math.max(1, ext(c, 0.85)));
-            let at = 0; const rec = (m, x, dx, q, a) => { const yy = y + ++at * step; line(m, x, yy, dx, q, a);
-              for (const kk of KIDS[m]) { if (at >= Lv) return; const xi = x + G[m].order.indexOf(primary[kk].ps) * dx, yq = y + (at + 1) * step;
-                cx.strokeStyle = rgba(PLANET, a * 0.6); cx.lineWidth = 1; cx.setLineDash([1.5, 2]); cx.beginPath(); cx.moveTo(xi, yy + q); cx.lineTo(xi, yq - q * 0.85); cx.stroke(); cx.setLineDash([]);
-                rec(kk, xi, dx * 0.85, q * 0.85, a * 0.8); } };
-            rec(c, x0, dx0, rr, al);
-            // names that would not fit their block alternate between two baselines, each running on under its neighbour's
-            const ny = y + Lm * step + sp * (two && i % 2 ? 2.25 : 0.95), nw = two ? Math.min(2 * bw, lim - x0) - 12 : w, tail = d > Lv - 1 ? ` +${d - Lv + 1} deeper` : "", lab = fit(c, sp, Math.max(12, nw - textW(tail, sp))), lw = textW(lab, sp);
-            text(lab, x0 - 2, ny, sp, rgba(PLANET, al)); if (tail) text(tail, x0 - 2 + lw, ny, sp, rgba(SUB, 0.75)); });
-          cx.restore(); r.nestBoxes.push({ x0: xv(0) - 2, x1: lim, y0: bt - K * 5 - 2, y1: r.cy + r.h }); }
-        return; }
-      for (const [s, ks] of by) {
-        const n = node(r.m, s), lim = Math.min(xs.find((x) => x > n.x + 1) ?? Infinity, L.x1 + 22) - 14, top = n.y + orbitOf(n) + 2;
-        const two = ks.slice(0, 2), more = ks.length - two.length, mw = more ? textW(`+${more}`, sp) + 8 : 0, slot = Math.min(170 * FS, (lim - n.x - mw) / two.length);
-        two.forEach((c, i) => { const x0 = n.x + i * slot; cx.save(); cx.beginPath(); cx.rect(x0 - 8, r.cy, slot, r.h); cx.clip(); kid(c, n, x0, slot - 10, top); cx.restore();
-          r.nestBoxes.push({ x0: x0 - 6, x1: x0 + slot - 8, y0: top, y1: bot }); });
-        if (more) text(`+${more}`, n.x + two.length * slot, nameY, sp, rgba(SUB, 0.7));
-      }
-      // one machine entered from state n, kept inside `w` from x0
-      function kid(c, n, x0, w, top) {
-        const o = G[c].order, N = o.length, d = desc(c).length;
-        const stem = (x, y) => { cx.strokeStyle = rgba(n.col, al * 0.7); cx.lineWidth = 1.1; cx.setLineDash([2, 3]); cx.beginPath(); cx.moveTo(n.x, top); x === n.x ? cx.lineTo(x, y) : cx.quadraticCurveTo(n.x, y, x, y); cx.stroke(); cx.setLineDash([]); };
-        const label = (x, y, room) => { const tail = d ? (textW(`${c} +${d} deeper`, sp) <= room ? ` +${d} deeper` : ` +${d}`) : "", lab = fit(c, sp, Math.max(12, room - textW(tail, sp))), lw = textW(lab, sp);
-          text(lab, x, y, sp, rgba(PLANET, al)); if (tail) text(tail, x + lw, y, sp, rgba(SUB, 0.75)); };
-        if (NESTV === "mini") { // a line of its own states, the first under the state it is entered from, its name below
-          const y = nameY - sp * 1.25, dx = Math.min(9 * g, (w - 4) / Math.max(1, N - 1)), rr = 2.2 * g;
-          stem(x0, y - rr - 1); line(c, x0, y, dx, rr, al); o.forEach((q, j) => kidsAt(c, q).length && halo(x0 + j * dx, y, rr)); label(x0 - 2, nameY, w); return; }
-        if (NESTV === "tray") { // a small card under the state it is entered from, its states and name inside; a sheet behind it for each level further down
-          const dx = Math.min(9 * g, (w - 20) / Math.max(1, N - 1)), cw = Math.min(w - 6, Math.max((N - 1) * dx, textW(c, sp) + (d ? textW(` +${d}`, sp) : 0)) + 12), y0 = top + 3, ch = bot - y0, sheets = Math.min(2, d ? 1 + (d > 1) : 0);
-          for (let k = sheets; k >= 1; k--) { cx.fillStyle = "rgba(10,16,30,.96)"; cx.strokeStyle = rgba(PLANET, 0.22 * al); cx.lineWidth = 1; cx.beginPath(); cx.roundRect(x0 - 6 + 3 * k, y0 - 2 * k, cw, ch, 4); cx.fill(); cx.stroke(); }
-          cx.fillStyle = "rgba(14,21,38,.98)"; cx.strokeStyle = rgba(PLANET, 0.45 * al); cx.beginPath(); cx.roundRect(x0 - 6, y0, cw, ch, 4); cx.fill(); cx.stroke();
-          stem(x0, y0); const y = y0 + ch * 0.3; line(c, x0, y, dx, 2 * g, al); o.forEach((q, j) => kidsAt(c, q).length && halo(x0 + j * dx, y, 2 * g));
-          const ny = y0 + ch * 0.72, tail = d ? ` +${d}` : "", lab = fit(c, sp * 0.95, cw - 10 - textW(tail, sp * 0.95)); text(lab, x0 - 1, ny, sp * 0.95, rgba(PLANET, al)); if (tail) text(tail, x0 - 1 + textW(lab, sp * 0.95), ny, sp * 0.95, rgba(SUB, 0.75)); return; }
-        // ghost: its own shape, small: states placed by their depth and row as the page lays a machine out, its transitions faint, its name below
-        const gg = G[c], dx = Math.min(10 * g, (w - 4) / Math.max(1, gg.ncols - 1)), span = Math.max(1, gg.rmax - gg.rmin), dy = Math.min(5 * g, (nameY - sp * 0.8 - top - 4) / (span + 1)), rr = 2 * g;
-        const mid = (top + 3 + nameY - sp * 0.8) / 2, P2 = (q) => ({ x: x0 + gg.depth[q] * dx, y: mid + (gg.row[q] - (gg.rmax + gg.rmin) / 2) * dy });
-        cx.strokeStyle = rgba(SUB, 0.3 * al); cx.lineWidth = 0.9; for (const t of M[c].trans) { const a = P2(t.source), b = P2(t.target); cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke(); }
-        const p0 = P2(gg.init); stem(p0.x, p0.y - rr - 1);
-        for (const q of o) { const p = P2(q); cx.fillStyle = rgba(dotCol(c, q), al); cx.beginPath(); cx.arc(p.x, p.y, rr, 0, TAU); cx.fill(); if (kidsAt(c, q).length) halo(p.x, p.y, rr); }
-        label(x0 - 2, nameY, w);
-      }
+      const ext = (m, f) => Math.max(G[m].order.length - 1, ...KIDS[m].map((k) => G[m].order.indexOf(primary[k].ps) + f * ext(k, f)));
+      for (const dc of ds) {
+        // a column's blocks sit side by side, top state's first; each state runs its own stem out of its left, the top state's outermost and lowest, so no two stems cross
+        const es = cols.get(dc), sts = [...new Set(es.map((e) => e.s))], K = sts.length, n0 = node(r.m, sts[0]), { lim, bw, two } = chainRoom(r.m, cols, dc);
+        const oM = Math.max(...sts.map((q) => orbitOf(node(r.m, q)))), bt = r.cy + r.h - r.band + 4 + K * 5, Lm = Math.max(...es.map((e) => Math.min(4, 1 + desc(e.c).length))), xb = (i) => n0.x - 2 + i * bw, xv = (k) => n0.x - oM - 6 - (K - 1 - k) * 7;
+        cx.save(); cx.beginPath(); cx.rect(xv(0) - 4, r.cy, lim - xv(0) + 4, r.h); cx.clip();
+        sts.forEach((q, k) => { const n = node(r.m, q), o = orbitOf(n), hy = bt - 2 - k * 5, mine = es.map((e, i) => (e.s === q ? i : -1)).filter((i) => i >= 0);
+          r.nestBoxes.push({ x0: xv(k) - 1, x1: xv(k) + 1, y0: n.y, y1: hy }); // a state's name keeps off its stem
+          cx.strokeStyle = rgba(n.col, al * 0.7); cx.lineWidth = 1; cx.beginPath(); cx.moveTo(n.x - o - 1, n.y); cx.lineTo(xv(k), n.y); cx.lineTo(xv(k), hy);
+          cx.lineTo(xb(mine.at(-1)) + 2, hy); for (const i of mine) { cx.moveTo(xb(i) + 2, hy); cx.lineTo(xb(i) + 2, bt + step - rr - 1); } cx.stroke(); });
+        es.forEach((e, i) => { const c = e.c, x0 = xb(i) + 2, w = bw - 12, d = desc(c).length, Lv = Math.min(4, 1 + d), y = bt;
+          const dx0 = Math.min(12 * g, (w - 4) / Math.max(1, ext(c, 0.85)));
+          let at = 0; const rec = (m, x, dx, q, a) => { const yy = y + ++at * step; line(m, x, yy, dx, q, a);
+            for (const kk of KIDS[m]) { if (at >= Lv) return; const xi = x + G[m].order.indexOf(primary[kk].ps) * dx, yq = y + (at + 1) * step;
+              cx.strokeStyle = rgba(PLANET, a * 0.6); cx.lineWidth = 1; cx.setLineDash([1.5, 2]); cx.beginPath(); cx.moveTo(xi, yy + q); cx.lineTo(xi, yq - q * 0.85); cx.stroke(); cx.setLineDash([]);
+              rec(kk, xi, dx * 0.85, q * 0.85, a * 0.8); } };
+          rec(c, x0, dx0, rr, al);
+          // names that would not fit their block alternate between two baselines, each running on under its neighbour's
+          const ny = y + Lm * step + sp * (two && i % 2 ? 2.25 : 0.95), nw = two ? Math.min(2 * bw, lim - x0) - 12 : w, tail = d > Lv - 1 ? ` +${d - Lv + 1} deeper` : "", lab = fit(c, sp, Math.max(12, nw - textW(tail, sp))), lw = textW(lab, sp);
+          text(lab, x0 - 2, ny, sp, rgba(PLANET, al)); if (tail) text(tail, x0 - 2 + lw, ny, sp, rgba(SUB, 0.75)); });
+        cx.restore(); r.nestBoxes.push({ x0: xv(0) - 2, x1: lim, y0: bt - K * 5 - 2, y1: r.cy + r.h }); }
     }
     // a row's state names alternate below and above its line; a name that would touch another, or leave the row, waits for the tooltip
     function rowLabels(r, hot) { const placed = [...(r.nestBoxes || []), ...r.nodes.map((n) => ({ x: n.x, y: n.y, r: orbitOf(n) + 1 })), ...L.stars.filter((s) => s.row === r).map((s) => ({ x: s.x, y: s.y, r: 11 }))], px = PX.row(), h = px * 1.3, g2 = G[r.m];
@@ -836,9 +796,7 @@
     // ---- the address that reproduces the view, and the review-only text size switch
     function syncUrl() { const q = new URLSearchParams(location.search); selRow ? q.set("focus", selRow.m) : q.delete("focus"); topM !== IP ? q.set("open", topM) : q.delete("open"); q.delete("pick"); history.replaceState(null, "", `?${q}`); }
     function setFS(p) { document.documentElement.style.fontSize = p === 100 ? "" : `${p}%`; const q = new URLSearchParams(location.search); p === 100 ? q.delete("fs") : q.set("fs", p); history.replaceState(null, "", `?${q}`); dispatchEvent(new Event("resize")); }
-    function renderRev() { const fs = Math.round(FS * 100); revEl.innerHTML = `review · text ` + [100, 125, 150].map((p) => `<button data-fs="${p}" class="${p === fs ? "on" : ""}">${p}%</button>`).join("") +
-        ` · nesting ` + NESTS.map((v) => `<button data-nest="${v}" class="${v === NESTV ? "on" : ""}">${v}</button>`).join("");
-      revEl.querySelectorAll("[data-nest]").forEach((b) => (b.onclick = () => { NESTV = b.dataset.nest; const q = new URLSearchParams(location.search); NESTV === "badge" ? q.delete("nest") : q.set("nest", NESTV); history.replaceState(null, "", `?${q}`); renderRev(); dispatchEvent(new Event("resize")); }));
+    function renderRev() { const fs = Math.round(FS * 100); revEl.innerHTML = `review · text ` + [100, 125, 150].map((p) => `<button data-fs="${p}" class="${p === fs ? "on" : ""}">${p}%</button>`).join("");
       revEl.querySelectorAll("[data-fs]").forEach((b) => (b.onclick = () => setFS(+b.dataset.fs))); }
     function resize() { DPR = devicePixelRatio || 1; NX = NAVW(); W = innerWidth - RAILW(); H = innerHeight; CW = W - NX; CH = H;
       for (const c of [cv, buf]) { c.width = W * DPR; c.height = H * DPR; } cv.style.width = `${W}px`; cv.style.height = `${H}px`;
