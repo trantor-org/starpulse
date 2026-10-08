@@ -825,6 +825,45 @@ class LevelLoop(_Api):
     days: float
 
 
+class Forecast(_Api):
+    """One run still going: where it is, its loops so far, and from its state's row the chance of each terminal and
+    of the goal and its expected days to finish, with `n`, the times that row was seen leave. Null with no row."""
+
+    source: str
+    task: str
+    state: str
+    loops: int
+    since: float
+    p: dict[str, float] | None
+    p_goal: float | None
+    expected_days: float | None
+    n: int
+    pooled: bool
+
+
+class Decile(_Api):
+    """One decile of forecast chance of the goal on the held-out runs: its forecasts' mean against the share of
+    their runs that reached the goal, null when it holds none."""
+
+    low: float
+    high: float
+    n: int
+    runs: int
+    predicted: float | None
+    observed: float | None
+
+
+class Calibration(_Api):
+    """The forecast scored on the latest fifth of the ended runs against a chain fitted on the others."""
+
+    fit: int
+    held_out: int
+    predictions: int
+    unscored: int
+    deciles: list[Decile]
+    calibrated: bool | None
+
+
 class Trajectories(_Api):
     """`GET /api/level/trajectories`: the paths of the runs that ended in a terminal over a window."""
 
@@ -843,6 +882,35 @@ class Trajectories(_Api):
     gates: list[GateSummary]
     loops: list[LevelLoop]
     runs: list[TrajectoryRun]
+    forecast: list[Forecast]
+    calibration: Calibration
+
+
+class Change(_Api):
+    before: float
+    after: float
+    change: float
+
+
+class WhatIf(_Api):
+    """`GET /api/level/what-if`: the chain with one transition's probability changed, from the usual first state."""
+
+    now: float
+    window_s: float
+    history_s: float
+    machine: str
+    goal: str
+    ended: int
+    # `from` is a Python keyword.
+    origin: str = Field(alias="from")
+    to: str
+    p: float
+    was: float
+    n: int
+    start: str
+    p_goal: Change
+    expected_days: Change
+    chain: dict[str, ChainState]
 
 
 class HarnessTier(_Api):
@@ -1156,6 +1224,7 @@ RESPONSES: dict[str, Any] = {
     "/api/analytics/health": Health,
     "/api/level": Level,
     "/api/level/trajectories": Trajectories,
+    "/api/level/what-if": WhatIf,
     "/api/harnesses": Harnesses,
     "/api/history-window": WindowState,
     "/api/doctor": ContractReport,
@@ -1195,6 +1264,7 @@ BODIES: dict[str, Any] = {
     "health": Health | ApiError,
     "level": Level | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
+    "what_if": WhatIf | ApiError | WindowTooLong,
     "harnesses": Harnesses,
     "window": WindowState | ApiError,
     "forwarding": ForwardingStatus | ForwardingUnconfigured | ApiError,
@@ -1248,6 +1318,7 @@ class ApiContract(_Api):
     health: Health
     level: Level
     trajectories: Trajectories
+    whatIf: WhatIf
     harnesses: Harnesses
     windowState: WindowState
     forwardingStatus: ForwardingStatus

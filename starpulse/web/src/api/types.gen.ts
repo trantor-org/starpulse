@@ -54,6 +54,7 @@ export interface ApiContract {
   snapshot: Snapshot;
   taskRecord: TaskRecord;
   trajectories: Trajectories;
+  whatIf: WhatIf;
   windowState: WindowState;
 }
 export interface Moved {
@@ -1307,10 +1308,12 @@ export interface Trajectories {
     [k: string]: number;
   };
   bottleneck: Bottleneck | null;
+  calibration: Calibration;
   chain: {
     [k: string]: ChainState;
   };
   ended: number;
+  forecast: Forecast[];
   gates: GateSummary[];
   goal: string;
   history_s: number;
@@ -1327,9 +1330,50 @@ export interface Bottleneck {
   path_days: number;
   state: string;
 }
+/**
+ * The forecast scored on the latest fifth of the ended runs against a chain fitted on the others.
+ */
+export interface Calibration {
+  calibrated: boolean | null;
+  deciles: Decile[];
+  fit: number;
+  held_out: number;
+  predictions: number;
+  unscored: number;
+}
+/**
+ * One decile of forecast chance of the goal on the held-out runs: its forecasts' mean against the share of
+ * their runs that reached the goal, null when it holds none.
+ */
+export interface Decile {
+  high: number;
+  low: number;
+  n: number;
+  observed: number | null;
+  predicted: number | null;
+  runs: number;
+}
 export interface ChainState {
   expected_days: number;
   p_goal: number;
+}
+/**
+ * One run still going: where it is, its loops so far, and from its state's row the chance of each terminal and
+ * of the goal and its expected days to finish, with `n`, the times that row was seen leave. Null with no row.
+ */
+export interface Forecast {
+  expected_days: number | null;
+  loops: number;
+  n: number;
+  p: {
+    [k: string]: number;
+  } | null;
+  p_goal: number | null;
+  pooled: boolean;
+  since: number;
+  source: string;
+  state: string;
+  task: string;
 }
 export interface GateSummary {
   bypassable: boolean;
@@ -1395,6 +1439,33 @@ export interface Variant {
   count: number;
   path: string[];
   share: number;
+}
+/**
+ * `GET /api/level/what-if`: the chain with one transition's probability changed, from the usual first state.
+ */
+export interface WhatIf {
+  chain: {
+    [k: string]: ChainState;
+  };
+  ended: number;
+  expected_days: Change;
+  from: string;
+  goal: string;
+  history_s: number;
+  machine: string;
+  n: number;
+  now: number;
+  p: number;
+  p_goal: Change;
+  start: string;
+  to: string;
+  was: number;
+  window_s: number;
+}
+export interface Change {
+  after: number;
+  before: number;
+  change: number;
 }
 /**
  * `/api/history-window`: the effective window, the declared default, and whether Admin's override is in effect.

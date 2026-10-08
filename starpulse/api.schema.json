@@ -205,6 +205,50 @@
       "title": "Bottleneck",
       "type": "object"
     },
+    "Calibration": {
+      "additionalProperties": false,
+      "description": "The forecast scored on the latest fifth of the ended runs against a chain fitted on the others.",
+      "properties": {
+        "calibrated": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deciles": {
+          "items": {
+            "$ref": "#/$defs/Decile"
+          },
+          "type": "array"
+        },
+        "fit": {
+          "type": "integer"
+        },
+        "held_out": {
+          "type": "integer"
+        },
+        "predictions": {
+          "type": "integer"
+        },
+        "unscored": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fit",
+        "held_out",
+        "predictions",
+        "unscored",
+        "deciles",
+        "calibrated"
+      ],
+      "title": "Calibration",
+      "type": "object"
+    },
     "Capabilities": {
       "additionalProperties": false,
       "description": "What the board writes beyond moves: the page draws Edit, Archive\u2026 and New task only for what its board does.",
@@ -249,6 +293,27 @@
         "p_goal"
       ],
       "title": "ChainState",
+      "type": "object"
+    },
+    "Change": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "type": "number"
+        },
+        "before": {
+          "type": "number"
+        },
+        "change": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "before",
+        "after",
+        "change"
+      ],
+      "title": "Change",
       "type": "object"
     },
     "Claim": {
@@ -618,6 +683,54 @@
         "error"
       ],
       "title": "DagsDelta",
+      "type": "object"
+    },
+    "Decile": {
+      "additionalProperties": false,
+      "description": "One decile of forecast chance of the goal on the held-out runs: its forecasts' mean against the share of\ntheir runs that reached the goal, null when it holds none.",
+      "properties": {
+        "high": {
+          "type": "number"
+        },
+        "low": {
+          "type": "number"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "predicted": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runs": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "low",
+        "high",
+        "n",
+        "runs",
+        "predicted",
+        "observed"
+      ],
+      "title": "Decile",
       "type": "object"
     },
     "Domain": {
@@ -1006,6 +1119,80 @@
         "agents"
       ],
       "title": "FlowSnapshot",
+      "type": "object"
+    },
+    "Forecast": {
+      "additionalProperties": false,
+      "description": "One run still going: where it is, its loops so far, and from its state's row the chance of each terminal and\nof the goal and its expected days to finish, with `n`, the times that row was seen leave. Null with no row.",
+      "properties": {
+        "expected_days": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loops": {
+          "type": "integer"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "p": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "p_goal": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pooled": {
+          "type": "boolean"
+        },
+        "since": {
+          "type": "number"
+        },
+        "source": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "task",
+        "state",
+        "loops",
+        "since",
+        "p",
+        "p_goal",
+        "expected_days",
+        "n",
+        "pooled"
+      ],
+      "title": "Forecast",
       "type": "object"
     },
     "ForwardAccepted": {
@@ -4613,6 +4800,9 @@
             }
           ]
         },
+        "calibration": {
+          "$ref": "#/$defs/Calibration"
+        },
         "chain": {
           "additionalProperties": {
             "$ref": "#/$defs/ChainState"
@@ -4621,6 +4811,12 @@
         },
         "ended": {
           "type": "integer"
+        },
+        "forecast": {
+          "items": {
+            "$ref": "#/$defs/Forecast"
+          },
+          "type": "array"
         },
         "gates": {
           "items": {
@@ -4693,7 +4889,9 @@
         "bottleneck",
         "gates",
         "loops",
-        "runs"
+        "runs",
+        "forecast",
+        "calibration"
       ],
       "title": "Trajectories",
       "type": "object"
@@ -4814,6 +5012,79 @@
         "share"
       ],
       "title": "Variant",
+      "type": "object"
+    },
+    "WhatIf": {
+      "additionalProperties": false,
+      "description": "`GET /api/level/what-if`: the chain with one transition's probability changed, from the usual first state.",
+      "properties": {
+        "chain": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ChainState"
+          },
+          "type": "object"
+        },
+        "ended": {
+          "type": "integer"
+        },
+        "expected_days": {
+          "$ref": "#/$defs/Change"
+        },
+        "from": {
+          "type": "string"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "history_s": {
+          "type": "number"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "now": {
+          "type": "number"
+        },
+        "p": {
+          "type": "number"
+        },
+        "p_goal": {
+          "$ref": "#/$defs/Change"
+        },
+        "start": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "was": {
+          "type": "number"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "history_s",
+        "machine",
+        "goal",
+        "ended",
+        "from",
+        "to",
+        "p",
+        "was",
+        "n",
+        "start",
+        "p_goal",
+        "expected_days",
+        "chain"
+      ],
+      "title": "WhatIf",
       "type": "object"
     },
     "WindowRequest": {
@@ -5072,6 +5343,9 @@
     "trajectories": {
       "$ref": "#/$defs/Trajectories"
     },
+    "whatIf": {
+      "$ref": "#/$defs/WhatIf"
+    },
     "windowState": {
       "$ref": "#/$defs/WindowState"
     }
@@ -5087,6 +5361,7 @@
     "health",
     "level",
     "trajectories",
+    "whatIf",
     "harnesses",
     "windowState",
     "forwardingStatus",

@@ -127,6 +127,8 @@ starpulse analytics health --hours 72            # dwell and WIP per state, thro
 starpulse analytics level --hours 48             # the level's WIP, throughput, aging and per-source orbit shares
 starpulse analytics trajectories --hours 48      # variants, outliers, expected days and chance of the goal, betweenness
 starpulse analytics gates --task PROJ-45         # which gates a run can bypass, with the path that skips each
+starpulse analytics forecast --task PROJ-45      # where a run still going is likely to end, and in how many days
+starpulse analytics what-if --from review --to in_progress --p 0.1  # the change in the goal and days
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
@@ -173,6 +175,8 @@ lists exactly the verbs there are.
 | `analytics level` | `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `wip`, `throughput`, `time_in_state`, `aging`, `orbit` and `sources`, below; a window longer than the history exits 1 and a server with no level exits 3 |
 | `analytics trajectories` | `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `variants`, `norm`, `outliers`, `chain`, `betweenness`, `bottleneck`, `loops` and `runs` (each `{source, task, path, back_edges, sccs, loops}`), below; refusals as `analytics level` |
 | `analytics gates` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `gates` and `runs`, below; `--task` keeps one run and exits 4 when it ended nowhere in the window; refusals as `analytics level` |
+| `analytics forecast` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `forecast` and `calibration`, below; `--task` keeps one run and exits 4 when it has no run still going; refusals as `analytics level` |
+| `analytics what-if` | `--from`, `--to`, `--p`, `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `from`, `to`, `p`, `was`, `n`, `start`, `p_goal`, `expected_days` and `chain`, below; a what-if the chain cannot answer exits 1; refusals as `analytics level` |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
@@ -231,6 +235,26 @@ path from the run's first state to the gate crosses), `post_dominators` (every p
 `witness`), never on the union of every run's graph, which holds paths no run took. A gate a run visited only on a
 detour is bypassable. A trajectory joined with its agent sessions is not computed here: the history keeps task steps,
 not sessions.
+
+`analytics forecast` reads the same route's `forecast` and `calibration`. `forecast` is each run still going (its last
+state neither a terminal nor final), by task: `{source, task, state, loops, since, p, p_goal, expected_days, n,
+pooled}`. `loops` is the rework loops it has gone round so far, the trips of the back-edges of its steps up to now, and
+the chain the forecast reads is fitted on the ended runs with each state split by that count, two and more sharing a row,
+so a third review round is not read as the first. `p` is the chance of ending in each terminal and `expected_days` the
+days to finish, from the row's N = (I - Q)^-1; `n` is how many times the ended runs left that row. A row left fewer than
+5 times is `pooled`: the state's own row, whatever the loop count, answers; a state no ended run left has null chances
+and `n` 0. It is a probability with its sample size, never a status. `calibration` scores the forecast: the latest fifth
+of the ended runs by when they ended are held out (`held_out`, the rest being `fit`), each of their steps before the end
+is forecast from a chain fitted on the others, and `deciles` bins those `predictions` by forecast chance of the goal,
+each `{low, high, n, runs, predicted, observed}` with `predicted` the mean forecast and `observed` the share of the
+goal reached; `calibrated` is whether every decile holding a forecast is within 10 points, null with none.
+
+`analytics what-if` reads `GET /api/level/what-if?from=&to=&p=[&hours=N]`: the chain of the runs that ended in the
+window with `from -> to` at probability `p` (`was` the observed one over `n` exits), `from`'s other exits keeping their
+shares of the rest. `p_goal` and `expected_days` are `{before, after, change}` from `start`, the state most ended runs
+began in, and `chain` is the changed chain per state. A state no ended run left (a terminal `to` needs none), `to` the
+same as `from`, a `p` outside 0 to 1, a transition that is its state's only exit, or a chain that would never finish is
+400 (exit 1).
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}` with `actor` `operator` when
