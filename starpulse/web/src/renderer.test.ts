@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { arrivalRings, dagRings, feedOf, tierColor } from "./renderer";
+import { arrivalRings, DAG_COLOR, dagRings, feedOf, orbiterLook, tierColor } from "./renderer";
+import { nameLines } from "./dagTies";
 import { PULSE } from "./sky";
 import type { Dag } from "./api";
 
@@ -89,5 +90,35 @@ describe("the Recent feed's lines", () => {
     const [late, early] = feedOf([red(5), red(10)], [], [], 20);
 
     expect(late.key).not.toBe(early.key);
+  });
+});
+
+describe("a tied DAG's orbiter", () => {
+  it("draws the Spinner while its DAG runs", () => {
+    expect(orbiterLook("running")).toEqual({ spin: true, color: DAG_COLOR.running, dashed: false });
+  });
+
+  it("shows its last run's colour at rest, with a plain ring", () => {
+    expect(orbiterLook("succeeded")).toEqual({ spin: false, color: DAG_COLOR.succeeded, dashed: false });
+    expect(orbiterLook("aborted")).toEqual({ spin: false, color: DAG_COLOR.aborted, dashed: false });
+  });
+
+  it("draws red with a dashed ring after a failed run", () => {
+    expect(orbiterLook("failed")).toEqual({ spin: false, color: DAG_COLOR.failed, dashed: true });
+  });
+
+  it("is slate for a DAG that has not reported, and for one that is only queued", () => {
+    expect(orbiterLook("")).toMatchObject({ spin: false, color: "#94a3b8", dashed: false });
+    expect(orbiterLook("queued")).toMatchObject({ spin: false, color: "#94a3b8", dashed: false });
+  });
+});
+
+describe("a tied-DAG hangar's label", () => {
+  const orbs = (...labels: string[]) => labels.map((label) => ({ label }));
+
+  it("is the name alone, whichever of its DAGs run or failed", () => {
+    expect(nameLines(orbs("main-follow"))).toEqual(["main-follow"]);
+    expect(nameLines(orbs("board-autopilot"))).toEqual(["board-", "autopilot"]);
+    expect(nameLines(orbs("graph-refresh", "apply-on-merge"))).toEqual(["2 DAGs"]);
   });
 });
