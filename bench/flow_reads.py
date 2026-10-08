@@ -3,10 +3,10 @@
 The Board's lane changes are recorded at a fixed rate (about 125 a day, 22 tasks arriving a day), so a bigger store is
 a longer history, not a busier week. The store summarises them as `HistoryStore.rebuild_summaries` does at start-up,
 then `health_response`, `level_response` and `trajectories_response` are each asked for the default week 60 times and
-their p95 is printed in wall and in CPU time. A read that scanned every lane change would grow with the store; one that
-reads the summaries costs what the week, the trailing 12 weeks and the tasks in flight cost, whatever the history. The
-run ends by checking that the CPU p95 at every size after the first is within 2x of the first (CPU time, because a
-shared host stretches the wall time).
+their p95 is printed in wall and in CPU time, with the statements and the rows one read pulls from the database. A read
+that scanned every lane change would grow with the store; one that reads the summaries costs what the week, the
+trailing 12 weeks and the tasks in flight cost, whatever the history. The run ends by checking that the CPU p95 at
+every size after the first is within 2x of the first (CPU time, because a shared host stretches the wall time).
 
 Run this file from the repository root with ``uv run python bench/flow_reads.py <dir> [sizes...]``. The stores are
 SQLite files in ``<dir>`` (about 300 MB per million events), replaced on each run, or read as they are with
@@ -29,6 +29,7 @@ from starpulse.api.server import health_response, level_response, trajectories_r
 from starpulse.domain.level import Level, Orbit, Terminal
 from starpulse.domain.transitions import board_machine
 from starpulse.store.history import HistoryStore
+from starpulse.tests.rows import rows_fetched
 
 LANES = ("To Do", "Ready", "In Progress", "Review", "Done")
 MACHINES = {"board": board_machine(LANES)}
@@ -153,6 +154,13 @@ def statements(store: HistoryStore, read: Callable[[], object]) -> int:
     return count[0]
 
 
+def rows(store: HistoryStore, read: Callable[[], object]) -> int:
+    """How many rows one read pulls out of the database."""
+    with rows_fetched(store.engine) as fetched:
+        read()
+    return fetched[0]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("directory", type=Path)
@@ -187,7 +195,7 @@ def main() -> int:
         print(
             f"events={events:>10}  load={loaded:6.1f}s summarise={summarised:6.1f}s  db={path.stat().st_size / 1e6:6.0f}MB  "
             + "  ".join(
-                f"{name} p95={t.wall:7.1f}ms wall {t.cpu:7.1f}ms cpu ({statements(store, reads(store, now)[name])} statements)"
+                f"{name} p95={t.wall:7.1f}ms wall {t.cpu:7.1f}ms cpu ({statements(store, reads(store, now)[name])} statements, {rows(store, reads(store, now)[name])} rows)"
                 for name, t in timed.items()
             ),
             flush=True,

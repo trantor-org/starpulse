@@ -11,6 +11,7 @@ from starpulse.api.server import health_response, level_response, trajectories_r
 from starpulse.store.history import HistoryStore
 from starpulse.tests.integration.test_level_http import LEVEL
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.rows import rows_fetched
 from starpulse.tests.unit.test_analytics import NOW, ROWS, H
 
 #: The two raw tables a read must never touch: they hold every event and lane change ever kept.
@@ -75,6 +76,29 @@ def test_flow_health_from_the_summaries_is_the_bytes_the_row_scan_gives(store: H
     store.record_gap("lane", "1-0", "9-0", 4)
 
     assert health_response(store, query, MACHINES, NOW) == health_response(RowScan(store), query, MACHINES, NOW)
+
+
+def _churn(store: HistoryStore, tasks: int) -> None:
+    """`tasks` more tasks that each pass through every lane inside the default week, ending in Done."""
+    for task in range(tasks):
+        for step, lane in enumerate(("To Do", "Ready", "In Progress", "Review", "Done")):
+            store.record_lane(f"a/churn-{task}-{step}", f"churn-{task}", lane, (50 + step + task % 40 / 10) * H)
+
+
+def _health_rows(store: HistoryStore) -> int:
+    """The rows one health read fetches, after a read that lets the engine open its connection."""
+    health_response(store, {}, MACHINES, NOW)
+    with rows_fetched(store.engine) as fetched:
+        body, status = health_response(store, {}, MACHINES, NOW)
+    assert status == 200, body
+    return fetched[0]
+
+
+def test_flow_health_fetches_no_more_rows_as_the_week_holds_more_lane_intervals(store: HistoryStore) -> None:
+    few = _health_rows(store)
+    _churn(store, 200)
+
+    assert (_health_rows(store), store.summary_differences()) == (few, [])
 
 
 def _add_long_history(store: HistoryStore) -> None:

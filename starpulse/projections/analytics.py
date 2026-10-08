@@ -13,7 +13,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
 
-from starpulse.domain.stays import LaneRow, LaneStays, lane_stays
+from starpulse.domain.stays import Dwell, LaneRow, LaneStays, lane_stays
 from starpulse.domain.transitions import lane_id
 
 _DAY_S = 86400.0
@@ -24,7 +24,8 @@ def board_health(
 ) -> dict[str, Any]:
     """The Board `machine`'s health over the last `window_s` seconds up to `now`, from lane changes `rows`; see
     `stay_health`."""
-    return stay_health(machine, lane_stays(rows), gaps, now=now, window_s=window_s, stuck_s=stuck_s)
+    held = lane_stays(rows, start=now - window_s, now=now)
+    return stay_health(machine, held, gaps, now=now, window_s=window_s, stuck_s=stuck_s)
 
 
 def stay_health(
@@ -38,32 +39,35 @@ def stay_health(
     state that is neither the initial nor a final one has lasted `stuck_s` or longer, longest first. `warnings` carry
     the history's recorded gaps, which mean any number here may miss entries, and each lane that is no Board state.
     """
-    start = now - window_s
     states = {key: state for state in machine["states"] for key in (state["name"], state["id"])}
     wip: dict[str, int] = defaultdict(int)
     for lane, tasks in held.open_by_lane.items():
         if (state := states.get(lane)) is not None:
             wip[state["id"]] += tasks
-    dwell: dict[str, list[float]] = defaultdict(list)
+    dwell: dict[str, Dwell] = {}
     open_stays: dict[str, int] = defaultdict(int)
     stuck: list[dict[str, Any]] = []
-    done = 0
-    for task, lane, began, ended in held.stays:
-        if (state := states.get(lane)) is None:
+
+    def visited(state_id: str, found: Dwell) -> None:
+        before = dwell.get(state_id, Dwell(0, 0.0, found.longest))
+        dwell[state_id] = Dwell(
+            before.visits + found.visits, before.total + found.total, max(before.longest, found.longest)
+        )
+
+    for lane, found in held.ended.items():
+        if (state := states.get(lane)) is not None and not state["final"]:
+            visited(state["id"], found)
+    for task, lane, began, _ended in held.going:
+        if (state := states.get(lane)) is None or state["final"]:
             continue
-        if state["final"]:
-            done += start <= began <= now
-            continue
-        if ended is not None and ended < start:
-            continue
-        length = (now if ended is None else ended) - began
-        dwell[state["id"]].append(length)
-        if ended is None:
-            open_stays[state["id"]] += 1
-            if not state["initial"] and length >= stuck_s:
-                stuck.append(
-                    {"task": task, "state": state["id"], "since": began, "dwell_s": length, "counted_to_now": True}
-                )
+        length = now - began
+        visited(state["id"], Dwell(1, length, length))
+        open_stays[state["id"]] += 1
+        if not state["initial"] and length >= stuck_s:
+            stuck.append(
+                {"task": task, "state": state["id"], "since": began, "dwell_s": length, "counted_to_now": True}
+            )
+    done = sum(n for lane, n in held.entered.items() if (state := states.get(lane)) is not None and state["final"])
     unknown = [lane for lane in held.lanes if lane not in states]
     return {
         "now": now,
@@ -79,15 +83,15 @@ def stay_health(
     }
 
 
-def _state(state: dict, wip: dict[str, int], dwell: dict[str, list[float]], open_stays: dict[str, int]) -> dict:
+def _state(state: dict, wip: dict[str, int], dwell: dict[str, Dwell], open_stays: dict[str, int]) -> dict:
     entry = {"id": state["id"], "name": state["name"], "final": state["final"], "wip": wip[state["id"]]}
     if state["final"]:
         return entry
-    lengths = dwell[state["id"]]
+    found = dwell.get(state["id"])
     return entry | {
-        "visits": len(lengths),
-        "mean_s": sum(lengths) / len(lengths) if lengths else None,
-        "max_s": max(lengths, default=None),
+        "visits": found.visits if found else 0,
+        "mean_s": found.total / found.visits if found else None,
+        "max_s": found.longest if found else None,
         "open": open_stays[state["id"]],
     }
 
