@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanban";
 import { TaskView } from "./TaskView";
-import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type TaskRecord } from "./taskView";
+import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type StartCriterion, type TaskRecord } from "./taskView";
 
 const styles = readFileSync(new NodeURL("./style.css", import.meta.url), "utf8");
 
@@ -307,5 +307,85 @@ describe("the task view's right rail", () => {
     expect(rows(html, "Details")).toMatch(/data-field="profile"[\s\S]*data-field="priority"[\s\S]*data-field="labels"[\s\S]*data-field="milestone"/);
     expect(rows(html, "Dependencies")).toContain('data-field="dependencies"');
     expect(rows(html, "Dependencies")).not.toContain('<span class="id">TASK-1</span>');
+  });
+});
+
+const at = (sec: number) => new Date(sec * 1000).toISOString();
+const criterion = (over: Partial<StartCriterion>): StartCriterion => ({
+  id: "rows", kind: "sql", expr: "select count(*) from runs", cmp: "equals", want: 3, status: "unmet", observed: 2, error: null, checked: at(700), ...over,
+});
+const criteria: StartCriterion[] = [
+  criterion({ id: "soak-24h", kind: "prom", expr: "time()", cmp: "at_least", want: 1791400000, status: "unmet", observed: 1791336841 }),
+  criterion({ id: "rows", status: "met", observed: 3 }),
+  criterion({ id: "pin-moved", kind: "file_changed_since", expr: "starpulse", cmp: "since", want: "2026-10-05", status: "unmet", observed: 0 }),
+  criterion({ id: "queue", kind: "prom", expr: "up", cmp: "at_least", want: 1, status: "not evaluated", observed: null, checked: null }),
+  criterion({ id: "gate", kind: "sql", expr: "select 1", status: "error", observed: null, error: "criteria: exit 2: prometheus is down", checked: null }),
+];
+const sectionOf = (html: string, name: string) => {
+  const rail = railOf(html);
+  const from = rail.indexOf(`>${name}</span>`);
+  return from < 0 ? "" : rail.slice(from, rail.indexOf("</section>", from));
+};
+const withCriteria = (list: StartCriterion[] | undefined) => draw({ record: { ...record, start_criteria: list } });
+
+describe("the Start Criteria section", () => {
+  it("draws each criterion's mark, kind, id, threshold and last value, with how long ago it was checked", () => {
+    const html = sectionOf(withCriteria(criteria), "Start Criteria");
+
+    expect(html).toContain("1/5 met");
+    expect(html).toContain("○ unmet");
+    expect(html).toContain("✓ met");
+    for (const text of ["soak-24h", "prom", "rows", "sql", "select count(*) from runs", "equals 3 · last 3 · checked 5m ago", "since 2026-10-05 · last 0 · checked 5m ago"]) expect(html, text).toContain(text);
+  });
+
+  it("reads a time() criterion as when it opens, in Arizona time", () => {
+    const html = sectionOf(withCriteria(criteria), "Start Criteria");
+
+    expect(html).toContain("opens Oct 7, 12:06 MST · checked 5m ago");
+    expect(html).not.toContain("at least 1791400000");
+  });
+
+  it("draws a criterion that was not evaluated with no mark and a muted note", () => {
+    const card = sectionOf(withCriteria([criteria[3]]), "Start Criteria");
+
+    expect(card).toContain("not evaluated");
+    expect(card).not.toMatch(/[✓○]/);
+    expect(card).toContain('class="c pending"');
+    expect(card).toContain("at least 1");
+  });
+
+  it("draws an evaluator error as its message, with no mark", () => {
+    const card = sectionOf(withCriteria([criteria[4]]), "Start Criteria");
+
+    expect(card).toContain('class="c error"');
+    expect(card).toContain("criteria: exit 2: prometheus is down");
+    expect(card).not.toMatch(/[✓○]/);
+    expect(card).not.toContain("last ");
+  });
+
+  it("sits in the right rail after Status and is absent when the task has no criteria", () => {
+    expect(headings(withCriteria(criteria)).slice(0, 3)).toEqual(["Status", "Start Criteria", "Pull requests"]);
+    expect(headings(withCriteria([]))).not.toContain("Start Criteria");
+    expect(headings(withCriteria(undefined))).not.toContain("Start Criteria");
+    expect(html(withCriteria(criteria)).left).not.toContain("Start Criteria</span>");
+  });
+});
+
+const html = (markup: string) => ({ left: markup.slice(markup.indexOf('class="tvcol tvleft"'), markup.indexOf('class="tvcol tvrail"')) });
+const yaml = "```yaml\nstart_criteria:\n- id: rows\n  kind: sql\n```";
+
+describe("the description's start_criteria block", () => {
+  it("gives way to a pointer to the section when the record carries the criteria", () => {
+    const { left } = html(draw({ record: { ...record, description: `Wait.\n\n## Start Criteria\n\n${yaml}`, start_criteria: criteria } }));
+
+    expect(left).toContain("<h4>Start Criteria</h4>");
+    expect(left).toContain("Start Criteria are drawn in the side panel, each with its result");
+    expect(left).not.toContain("start_criteria:");
+  });
+
+  it("keeps the raw block when there are no criteria to draw in its place", () => {
+    const { left } = html(draw({ record: { ...record, description: `Wait.\n\n${yaml}` } }));
+
+    expect(left).toContain("<pre>start_criteria:\n- id: rows\n  kind: sql</pre>");
   });
 });

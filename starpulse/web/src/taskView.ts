@@ -1,8 +1,22 @@
 // The task view's model: the full record GET /api/task/<id> returns, and the Move to menu's keyboard.
+import { ago, fmtAt } from "./clock";
 import { apiFetch } from "./demo";
 import type { KanbanTask } from "./kanban";
 
 export interface Item { n: number; text: string; checked: boolean }
+
+/** One Start Criterion of a task as the board reader evaluates it: `status` is `met`, `unmet`, `error` or `not evaluated`, and `checked` an ISO time. */
+export interface StartCriterion {
+  id: string;
+  kind: string;
+  expr: string;
+  cmp: string | null;
+  want: unknown;
+  status: string;
+  observed: unknown;
+  error: string | null;
+  checked: string | null;
+}
 
 /** Every field of a task the view draws that the snapshot's small entry does not carry. */
 export interface TaskRecord {
@@ -17,6 +31,8 @@ export interface TaskRecord {
   notes: string;
   acceptanceCriteria: Item[];
   definitionOfDone: Item[];
+  /** The description's Start Criteria with their results; absent from a record the board cannot evaluate. */
+  start_criteria?: StartCriterion[];
 }
 
 export type TaskField = keyof TaskRecord;
@@ -171,10 +187,13 @@ export const onScrim = (target: unknown, scrim: unknown): boolean => target === 
 /** Escape closes the modal, except in the edit form, whose own shortcuts own it. */
 export const closesOnKey = (key: string, editing: boolean): boolean => key === "Escape" && !editing;
 
-export interface Block { kind: "p" | "h" | "pre"; text: string }
+export interface Block { kind: "p" | "h" | "pre" | "moved"; text: string }
 
-/** A task description's Markdown as the blocks the read view draws: paragraphs, `##` headings and fenced code. */
-export function markdown(text: string): Block[] {
+/** What the description's `start_criteria` block gives way to once the rail draws the criteria. */
+export const CRITERIA_POINTER = "Start Criteria are drawn in the side panel, each with its result →";
+
+/** A task description's Markdown as the blocks the read view draws: paragraphs, `##` headings and fenced code; with `drawn`, the `start_criteria` block is a pointer to the rail. */
+export function markdown(text: string, drawn = false): Block[] {
   const blocks: Block[] = [];
   let lines: string[] = [];
   let fence = false;
@@ -185,6 +204,7 @@ export function markdown(text: string): Block[] {
   for (const line of text.split("\n")) {
     if (line.startsWith("```")) {
       flush(fence ? "pre" : "p");
+      if (drawn && fence && /^start_criteria:/m.test(blocks[blocks.length - 1].text)) blocks[blocks.length - 1] = { kind: "moved", text: CRITERIA_POINTER };
       fence = !fence;
     } else if (fence) lines.push(line);
     else if (line.startsWith("## ")) {
@@ -209,4 +229,18 @@ export function dependencyRows(tasks: KanbanTask[], task: KanbanTask): { depends
   const row = (id: string): DepRow => ({ id, title: byId.get(id)?.title ?? null, lane: byId.get(id)?.lane ?? null });
   const held = tasks.filter((t) => t.dependencies.includes(task.id));
   return { dependsOn: task.dependencies.map(row), holds: held.slice(0, HOLDS_SHOWN).map((t) => row(t.id)), more: Math.max(0, held.length - HOLDS_SHOWN) };
+}
+
+/** How many criteria are met. */
+export const metCount = (criteria: StartCriterion[]): number => criteria.filter((c) => c.status === "met").length;
+
+/** A `time()` criterion waits for a moment, not a measurement. */
+const waitsForTime = (c: StartCriterion): boolean => c.expr.replace(/\s/g, "") === "time()" && c.cmp === "at_least" && typeof c.want === "number";
+
+/** `threshold · last value · checked <age>` for a criterion, or `opens <date MST>` for a `time()` one; parts it lacks are left out. */
+export function criterionDetail(c: StartCriterion, now: number): string {
+  const checked = c.checked ? Date.parse(c.checked) / 1000 : NaN;
+  const threshold = waitsForTime(c) ? `opens ${fmtAt(c.want as number)} MST` : c.cmp ? `${c.cmp.replace("_", " ")} ${String(c.want)}` : "";
+  const last = c.status === "error" || waitsForTime(c) || c.observed == null ? "" : `last ${String(c.observed)}`;
+  return [threshold, last, Number.isNaN(checked) ? "" : `checked ${ago(now - checked)} ago`].filter(Boolean).join(" · ");
 }

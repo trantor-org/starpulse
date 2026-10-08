@@ -372,6 +372,20 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .chk i { width: 7px; height: 7px; border-radius: 50%; background: var(--slate); }
 #kbm .chk.pass i { background: var(--ok); } #kbm .chk.fail i { background: var(--fail); } #kbm .chk.pending i { background: var(--run); } #kbm .chk.merged i { background: var(--agent); }
 #kbm .thr { font-size: calc(11px * var(--fs)); color: var(--run); }
+/* Start Criteria (approved mockup): a card per criterion, tinted by its result; an error is not in the mockup and is a ledger deviation. */
+#kbm .tvrail .crit { display: flex; flex-direction: column; gap: 8px; }
+#kbm .tvrail .crit .c { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid color-mix(in srgb, var(--slate) 14%, transparent); }
+#kbm .tvrail .crit .c.met { border-color: color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--ok) 5%, transparent); }
+#kbm .tvrail .crit .c.unmet { border-color: color-mix(in srgb, var(--run) 30%, transparent); background: color-mix(in srgb, var(--run) 4%, transparent); }
+#kbm .tvrail .crit .c.error { border-color: color-mix(in srgb, var(--fail) 35%, transparent); background: color-mix(in srgb, var(--fail) 5%, transparent); }
+#kbm .tvrail .crit .top { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-width: 0; }
+#kbm .tvrail .crit .st { font-size: calc(11px * var(--fs)); font-weight: 500; }
+#kbm .tvrail .crit .met .st { color: var(--ok); } #kbm .tvrail .crit .unmet .st { color: var(--run); } #kbm .tvrail .crit .error .st { color: var(--fail); }
+#kbm .tvrail .crit .kind { font: calc(10px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, var(--slate) 12%, transparent); color: var(--ink-3); }
+#kbm .tvrail .crit .cid { font-size: calc(10.5px * var(--fs)); color: var(--slate); overflow-wrap: anywhere; }
+#kbm .tvrail .crit .expr { font-size: calc(10.5px * var(--fs)); color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#kbm .tvrail .crit .err { font-size: calc(11px * var(--fs)); color: var(--fail-text); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+#kbm .tv .md p.moved { color: var(--muted); font-style: italic; }
 #kbm .tvrail .deps { display: flex; flex-direction: column; gap: 3px; }
 #kbm .tvrail .deps .lb { font-size: calc(10.5px * var(--fs)); color: var(--muted); margin-top: 4px; }
 #kbm .tvrail .dep { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 2px 6px; margin: 0 -6px; border-radius: 5px; }
