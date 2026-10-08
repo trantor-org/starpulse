@@ -106,6 +106,24 @@ def test_the_viewer_runs_the_whole_bench_in_a_scope_weighted_over_the_host_load(
     ]  # fmt: skip
 
 
+def test_the_scope_waited_the_share_of_the_run_its_cpu_pressure_grew():
+    before = pl.pressure_total("some avg10=0.00 avg60=0.00 avg300=0.00 total=3834\nfull avg10=0.00 total=3744\n")
+    after = pl.pressure_total("some avg10=40.00 avg60=9.00 avg300=2.00 total=503834\nfull avg10=0.00 total=9744\n")
+    assert (before, after) == (3834, 503834)
+    assert pl.waited(before, after, seconds=2.0) == 0.25
+
+
+def test_a_starved_run_is_marked_and_not_counted_as_a_pass_or_a_failure():
+    fast, slow = pl.Row("a", "request", 50.0, [1.0]), pl.Row("b", "request", 50.0, [99.0])
+    starved = pl.STARVED_SHARE + 0.01
+    assert pl.verdict([fast], [], waited=pl.STARVED_SHARE) == 0
+    assert pl.verdict([fast], [], waited=starved) == pl.STARVED
+    assert pl.verdict([fast, slow], ["/api/y"], waited=starved) == pl.STARVED
+    assert pl.verdict([slow], [], waited=None) == 1
+    assert pl.table([fast], [], waited=starved).splitlines()[-1].startswith("STARVED")
+    assert "STARVED" not in pl.table([fast], [], waited=pl.STARVED_SHARE)
+
+
 def test_the_viewer_enters_its_scope_once(monkeypatch):
     execs: list[list[str]] = []
     monkeypatch.delenv(pl.VIEWER_ENV, raising=False)

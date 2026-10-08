@@ -303,6 +303,12 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .card.chain-waits { box-shadow: 0 0 0 1px var(--waits), 0 0 12px color-mix(in srgb, var(--waits) 25%, transparent); }
 
 /* The task modal: centred over a dimmed board. */
+/* a modal drawn ahead of its click waits laid out, painted and rastered but transparent, its entrance held until the
+   click shows it: the click changes one element's opacity, which neither restyles the modal's subtree nor rasters it */
+.mh { display: contents; }
+.mh #kbm { will-change: opacity; }
+.mh[inert] #kbm { opacity: 0; pointer-events: none; }
+.mh[inert] #kbm, .mh[inert] #kbm .modal { animation: none; }
 #kbm { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: color-mix(in srgb, var(--scrim) 62%, transparent); animation: kb-scrim .15s ease-out; }
 #kbm .modal { position: relative; box-sizing: border-box; width: min(760px, calc(100vw - 40px)); max-height: 80vh; padding: 22px 26px; border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 98%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 22%, transparent); box-shadow: 0 30px 80px color-mix(in srgb, var(--shadow) 60%, transparent); font-size: calc(12.5px * var(--fs)); line-height: 1.6; animation: kb-modal .15s ease-out; }

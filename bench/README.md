@@ -87,16 +87,22 @@ uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --assets
 ```
 
 `--viewer` times the page as a viewer's own machine would draw it while the server keeps its host's load. The bench,
-Chrome included, re-runs in a user systemd scope (`systemd-run --user --scope -p CPUWeight=10000`) that outweighs the
-host's other work, because a viewer's browser does not share the server's CPU. Without it, a loaded host starves the
-measuring browser as well, and even a view switch that draws nothing new reads over budget:
+Chrome included, re-runs in a user systemd scope (`systemd-run --user --scope -p CPUWeight=10000`), because a viewer's
+browser does not share the server's CPU. Without it, a loaded host starves the measuring browser as well, and even a
+view switch that draws nothing new reads over budget:
 
 ```sh
 uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --assets .tmp/page-build --viewer
 ```
 
+That weight outweighs only the scope's siblings in the user manager's `app.slice`; work in `system.slice` still
+competes with the browser. So the run reads its scope's `cpu.pressure` before and after, and when the scope waited for
+CPU over `STARVED_SHARE` (5%) of the run, it ends the table with a `STARVED` line, sets `starved` in the JSON and exits
+2, neither a pass nor a failure: its rows measure the host's load, not the page.
+
 A task modal's sample hovers its card for 150 ms before the click, as a hand slows onto a target, and ends at the
-second frame after the dialog clears `aria-busy`, which it does once it holds the full record.
+second frame after a dialog outside any `[inert]` ancestor clears `aria-busy`, which it does once it holds the full
+record. A modal the page drew ahead of the click waits inert, and the row's note counts the opens that found one.
 
 It only reads: it opens task modals and closes them, and switches views, but never writes. It drives the system
 Chrome (`--channel chrome`), so Playwright's own browser download is not needed. It prints one row per surface with

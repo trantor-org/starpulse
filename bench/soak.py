@@ -308,11 +308,11 @@ class Page:
         self.page.wait_for_selector("#cols .card[data-id]", timeout=30_000)
         ids = self.page.eval_on_selector_all("#cols .card[data-id]", "els => els.map(e => e.dataset.id)")
         for task in ids[:PROBE_SAMPLES]:
-            ms = self.page.evaluate(pl._OPEN, task)  # noqa: SLF001
-            if ms is not None:
-                modal.samples.append(ms)
+            opened = self.page.evaluate(pl._OPEN, task)  # noqa: SLF001
+            if opened is not None:
+                modal.samples.append(opened["ms"])
             self.page.keyboard.press("Escape")
-            self.page.wait_for_selector("[role=dialog]", state="detached", timeout=10_000)
+            self.page.wait_for_function(pl._SHOWN_GONE, timeout=10_000)  # noqa: SLF001
         rows.append(modal)
         if self.home:
             self.page.evaluate(pl._CLICK, pl._nav(self.home))  # noqa: SLF001

@@ -163,6 +163,9 @@ export async function fetchRecord(id: string, fetcher: typeof apiFetch = apiFetc
 /** Milliseconds a record read while the pointer rested on its card stays fresh enough for its modal to draw without reading again. */
 export const READ_AHEAD_MS = 10_000;
 
+/** Milliseconds the pointer rests on a card before its modal is drawn hidden, so a pointer passing over cards draws none. */
+export const PRE_DRAW_REST_MS = 80;
+
 /** A record read ahead: when it was asked for, the read, and its result once that has landed. */
 export interface HeldRecord { at: number; read: Promise<TaskRecord | null>; got?: TaskRecord | null }
 
