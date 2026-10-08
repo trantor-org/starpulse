@@ -834,7 +834,8 @@ directory. The `Board` says:
   keys it recognizes),
 - and optionally a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may
   list the `writers` the machine declares per event), an `assign` for assignee changes, a `read`, `edit` and `archive` for the full task record and guarded edits and
-  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `create(title, details)` that
+  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `complete(task)` that
+  moves a Done task out of the lanes (the native board's to `completed/`, where `read` and `edit` still find it), a `create(title, details)` that
   makes a task in the board's starting lane with the details the page filled (description, priority, labels,
   milestone, assignee, dependencies, acceptance criteria) and answers with its id (`POST /api/tasks`;
   `capabilities.create`), and optionally milestone records: `milestones()`, `read_milestone(id)`,
@@ -895,6 +896,13 @@ with `<>:"/\|?*` read as a space, `'(),` dropped and runs of space made `-`, its
 number past every file in `docs/` and `archive/docs/`; an update rewrites only the front matter lines it changes (and
 `updated_date`) and the body it is given, renames the file when the title changes, and writes nothing when it
 changes nothing; an archive moves the file to `archive/docs/`.
+The native board's task `edit` writes every field of Backlog.md's task file and only the one it is given: the front
+matter's `title`, `type`, `status` (spelled as the board's lane), `priority`, `milestone`, assignee (`profile`),
+`labels`, `dependencies`, `references`, `documentation` and `modifiedFiles` (an empty one of the last three leaves its
+key out), and the body's description, plan, notes, final summary, acceptance criteria and definition of done (an item
+with its `n` keeps it, one without takes the next). `appendNotes` adds a line to the end of the notes, a non-blank
+`comment` adds a comment, and `read` returns the comments as `{created, text}`, which an edit cannot set. `complete(task)`
+refuses a task that is not Done and moves one that is to `completed/`.
 `starpulse.adapters.boards.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes

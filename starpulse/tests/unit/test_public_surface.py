@@ -35,6 +35,7 @@ PUBLIC: dict[str, set[str]] = {
         "MilestoneReader",
         "MoveWriter",
         "TaskArchiver",
+        "TaskCompleter",
         "TaskCreator",
         "TaskEditor",
         "TaskReader",
