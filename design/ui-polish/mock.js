@@ -1,4 +1,4 @@
-// Design mockup layer (TASK-3259's UI polish), never part of the page. The page above is the branch's real page over the PR demo's
+// Design mockup layer (the Kanban, DAGs and start-question UI polish), never part of the page. The page above is the branch's real page over the PR demo's
 // capture. This layer adds the review bar, the harnesses the start question offers (?harness=two|one|none; a demo page has none),
 // a start that the session-start service accepts, a stack held open (?s=stack) or the start question asked (?s=start) on load,
 // and the text size (?fs=100|125|150). It runs before the page's module.

@@ -30,7 +30,7 @@ else:
         a.fixture.write_text(json.dumps(snap))
 html = demo.page(demo.STATIC, snap)
 head = (
-    "<!--\n  Design mockup of the TASK-3259 UI polish, under operator review; not served by starpulse.\n"
+    "<!--\n  Design mockup of the Kanban, DAGs and start-question UI polish, under operator review; not served by starpulse.\n"
     "  The real page, built from the branch with ui-polish-src.patch, over the demo capture, with mock.js layered on.\n"
     "  Variants: ?view=kanban|dags|constellation  ?s=stack|start  ?harness=two|one|none  ?fs=100|125|150\n-->\n"
 )
