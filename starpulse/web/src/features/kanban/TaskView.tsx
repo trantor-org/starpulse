@@ -1,5 +1,5 @@
 // The task view: every section reads in place and edits in place, one at a time, each Save a guarded write of that section's diff.
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
 import { columnsOf, type KanbanTask } from "./kanban";
 import { startLane, startable } from "./start";
@@ -48,12 +48,6 @@ function Txt({ value, label, className = "", long, focus, onChange, ...f }: Fiel
   value: string; label: string; className?: string; long?: boolean; focus?: boolean; onChange: (value: string) => void;
 }) {
   const el = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    const t = el.current;
-    if (!t || long) return;
-    t.style.height = "auto";
-    t.style.height = `${t.scrollHeight + 2}px`;
-  }, [value, long]);
   useEffect(() => {
     const t = el.current;
     if (!focus || !f.editing || !t) return;
