@@ -35,6 +35,7 @@ import { createHistory } from "./history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
 import { dagData } from "./dags";
+import { boardTies, nameLines, type Hub, type Ties } from "./dagTies";
 import type { ContractReport, Dag, LedgerRow, Machine, MachineEntry, RawAgent, Snapshot, Writer } from "./api";
 import { fanBadge, fanTip, stepStatus } from "./fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
@@ -53,6 +54,8 @@ import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type V
 
 export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
   aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155" };
+/** How a tied DAG's orbiter looks: the Spinner while its DAG runs, else its last run's colour, with a dashed ring after a failed run. */
+export const orbiterLook = (status: string) => ({ spin: status === "running", color: status === "queued" ? "#94a3b8" : DAG_COLOR[status] || "#94a3b8", dashed: status === "failed" });
 /** Declared step kind rings on a DAG's level. */
 /** Activity: everything that moves on any level uses this one colour. */
 const ACT = "#fbbf24";
@@ -1199,6 +1202,52 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       disc(b.x, b.y, b.r!, col, hot, 0.22);
       drawTrackRings(b, col);
     }
+  }
+  // The DAGs tied to a Board state (D7b): a hangar per state, its DAGs orbiting the state's ring, each turned toward the transition it acts on.
+  const tieCache = new WeakMap<Scene, Ties>();
+  function ties(): Ties | null {
+    const sc = scene;
+    if (!sc || !S || level().kind !== "board") return null;
+    const u = 1 / Math.max(fit.k, sc.unit ? 1 / sc.unit : 0), ts = prefs().scale / 100;
+    let t = tieCache.get(sc);
+    if (!t || t.u !== u || t.ts !== ts) tieCache.set(sc, (t = boardTies(sc, S, u, ts)));
+    return t;
+  }
+  function drawTies() {
+    for (const h of ties()?.hubs ?? []) drawHub(h);
+  }
+  /** A hangar: a faint arc behind its orbiters, broken where it would cross a name, one orbiter per DAG and the hangar's name alone. Whether a
+   *  DAG runs or failed is its orbiter's to show: the Spinner, or red with a dashed ring. */
+  function drawHub(h: Hub) {
+    const TEAL = "#5eead4";
+    cx.strokeStyle = rgba(TEAL, 0.22);
+    cx.lineWidth = 1 / K;
+    for (const [a0, a1] of h.arcs) {
+      cx.beginPath();
+      cx.arc(h.c.x, h.c.y, h.orbit, a0, a1);
+      cx.stroke();
+    }
+    for (const o of h.orbs) {
+      const look = orbiterLook(S!.dagBy[o.dag]?.status ?? ""), r = 6 / K;
+      dot(o.x, o.y, r, "rgba(6,10,20,0.95)");
+      if (look.spin) {
+        circle(o.x, o.y, r, rgba(look.color, 0.95), 1.3 / K);
+        dot(o.x, o.y, r * 0.45, rgba(look.color, 0.95));
+        cx.strokeStyle = rgba(look.color, 0.9);
+        cx.lineWidth = 1.4 / K;
+        cx.beginPath();
+        cx.arc(o.x, o.y, r + 3.5 / K, clock * 4, clock * 4 + Math.PI / 2);
+        cx.stroke();
+        continue;
+      }
+      circle(o.x, o.y, r, rgba(look.color, look.dashed ? 1 : 0.6), 1.2 / K);
+      dot(o.x, o.y, r * 0.4, rgba(look.color, look.dashed ? 0.95 : 0.7));
+      if (look.dashed) circle(o.x, o.y, r + 4 / K, rgba(look.color, 0.7), 1 / K, [2 / K, 2 / K]);
+    }
+    const ls = labPx(11.5);
+    cx.letterSpacing = `${0.6 / K}px`;
+    nameLines(h.orbs).forEach((n, i) => text(n, h.lab.x, h.lab.y + i * (ls + 2 / K), ls, rgba("#cfd9ea", 0.58), h.align, 300));
+    cx.letterSpacing = "0px";
   }
   function drawSun() {
     const s = scene!.sun;
@@ -2519,6 +2568,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     drawGalaxies();
     drawMoons();
     drawBoardEdges();
+    drawTies();
     drawStateLinks();
     drawSun();
     drawPlanets();
