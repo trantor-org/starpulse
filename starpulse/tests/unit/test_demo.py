@@ -444,7 +444,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
     }
     assert board[3]["dependencies"] == ["DEMO-1"] and board[3]["labels"] == ["size-5", "needs-human"]
     assert demo["pulls"]["DEMO-9"] == [
-        {"number": 108, "url": "#", "checks": "pass", "merged": False, "threads": 2, "stale": False}
+        {"number": 108, "url": "#", "checks": "pass", "merged": False, "threads": 2, "behind_main": 6, "stale": False}
     ]
     assert demo["pulls"]["DEMO-12"][0]["merged"] is True
     assert set(demo["pulls"]) <= {a["id"] for a in board}
@@ -686,7 +686,7 @@ def _board() -> dict:
         "assignee": "@agent-deep-high",
         "dependencies": ["PROJ-3000"],
         "prs": [
-            {"number": 2404, "checks": "pass", "merged": False, "threads": 1, "url": "https://example.test/pr/2404"}
+            {"number": 2404, "checks": "pass", "merged": False, "threads": 1, "behind_main": 4, "url": "https://example.test/pr/2404"}
         ],
         "live": {"machine": "delivering", "state": "ci", "at": 5.0},
         "moves": {"ready": {"allowed": True, "skill": ""}, "review": {"allowed": False, "skill": "completing-tasks"}},
@@ -704,7 +704,7 @@ def test_scrub_board_renames_like_the_mockup_board_and_numbers_the_rest_on() -> 
     assert (task["id"], blocker["id"], task["dependencies"]) == ("DEMO-2", "DEMO-3", ["DEMO-3"])
     assert task["title"] in TITLES and blocker["title"] in TITLES
     assert task["labels"] == ["kind-execute", "needs-human"]
-    assert task["prs"] == [{"number": 1, "checks": "pass", "merged": False, "threads": 1}]
+    assert task["prs"] == [{"number": 1, "checks": "pass", "merged": False, "threads": 1, "behind_main": 4}]
     assert (task["assignee"], blocker["assignee"]) == ("@agent-deep-high", "")
     assert {k: task[k] for k in ("lane", "milestone", "live", "moves", "entered")} == {
         k: _board()["tasks"][0][k] for k in ("lane", "milestone", "live", "moves", "entered")
