@@ -1,10 +1,10 @@
 // The DAGs view: a view of its own beside the Kanban, in the Kanban's frame. A catalog with a fold per domain and a row per DAG:
 // its state dot, its steps as a small constellation, its last run, its pool and its first Board tie, and on a run-safe row the
-// Kanban's ▶ edge strip. It reuses the Kanban's filter chips, menus and folds, and the Star Map's DAG orbiters (Orbiter).
+// Kanban's ▶ edge strip. It reuses the Kanban's filter chips, menus and folds, and draws each DAG's steps as the Star Map's DAG bodies do (StepStar).
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
 import { DagModal } from "./DagModal";
-import { lastLine, Orb, Orbiter, poolText, Strip, TieChip, type LedgerGo } from "./DagParts";
+import { lastLine, Orb, poolText, StepStar, Strip, TieChip, type LedgerGo } from "./DagParts";
 import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rows, short, ties, type DagData, type Phase, type Row } from "./dags";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
@@ -189,8 +189,8 @@ export function DagLegend() {
     <>
       <span><Orb phase="running" />running</span><span><Orb phase="ok" />healthy</span><br />
       <span><Orb phase="failed" />last run failed</span><span><Orb phase="idle" />never run</span><br />
-      <span><svg width="34" height="12" aria-hidden="true"><line x1="5" y1="6" x2="29" y2="6" className="e" /><Orbiter x={5} y={6} r={3.4} status="succeeded" /><Orbiter x={17} y={6} r={3.4} status="running" /><Orbiter x={29} y={6} r={3.4} status="not_started" /></svg> steps</span>
-      <span><svg width="14" height="14" aria-hidden="true"><Orbiter x={7} y={7} r={3.4} status="succeeded" /><circle cx="7" cy="7" r="6.4" className="ring" /></svg> agent step</span><br />
+      <span><svg width="34" height="12" aria-hidden="true"><path d="M9 6H13M21 6H25" className="e" /><StepStar x={5} y={6} r={4} status="succeeded" /><StepStar x={17} y={6} r={4} status="running" /><StepStar x={29} y={6} r={4} status="not_started" /></svg> steps</span>
+      <span><svg width="14" height="14" aria-hidden="true"><StepStar x={7} y={7} r={4} status="succeeded" /><circle cx="7" cy="7" r="6.5" className="ring" /></svg> agent step</span><br />
       <span><span style={key("var(--agent)")}>⇢</span> Board tie</span><span><span style={key("var(--ok)")}>▶</span> run-safe</span>
     </>
   );

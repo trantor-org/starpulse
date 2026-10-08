@@ -9,7 +9,7 @@ import { DagLegend, Dags } from "./Dags";
 import { rows } from "./dags";
 import css from "../../style.css?raw";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
-import { orbiterLook } from "../../render/renderer";
+import { DAG_COLOR } from "../../render/renderer";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
@@ -67,9 +67,20 @@ describe("the DAGs view's catalog", () => {
     expect(names()).toEqual(["triage", "pr-watch", "deploy", "never"]);
     const row = all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === "pr-watch")!;
     expect(row.querySelector("i.orb.o-ok")).not.toBeNull();
-    expect(row.querySelectorAll("svg.dstrip g.orbiter")).toHaveLength(2);
-    expect(row.querySelectorAll("svg.dstrip g.orbiter circle.ring")).toHaveLength(2);
-    expect(row.querySelector("i.orb.o-ok g.orbiter circle.ring")!.getAttribute("stroke")).toBe(orbiterLook("succeeded").color);
+    // each step as the Star Map's DAG bodies draw it (renderer drawStars): a dark disc ringed in its status colour round a core dot
+    const steps = [...row.querySelectorAll("svg.dstrip g.step")];
+    expect(steps).toHaveLength(2);
+    for (const g of steps) {
+      const ring = g.querySelector("circle.ring")!, core = g.querySelector("circle.core")!;
+      expect(Number(core.getAttribute("r"))).toBeCloseTo(Number(ring.getAttribute("r")) * 0.34);
+      expect(["0.85", "0.45"]).toContain(ring.getAttribute("stroke-opacity"));
+    }
+    // and joined, as there, by a dashed curve shaded from one step's colour to the next
+    const link = row.querySelector("svg.dstrip path.link")!;
+    expect(link.getAttribute("d")).toMatch(/^M[\d.]+ [\d.]+C/);
+    expect(link.getAttribute("stroke-dasharray")).toBe("1.8 4.2");
+    expect(link.getAttribute("stroke")).toMatch(/^url\(#/);
+    expect(row.querySelector("i.orb.o-ok circle.ring")!.getAttribute("stroke")).toBe(DAG_COLOR.succeeded);
     expect(row.querySelector(".last")!.textContent).toBe("50m ago · 1m 0s");
     expect(row.querySelector(".pool")!.textContent).toBe("main 1/2");
     expect(row.querySelector(".tie")!.textContent).toBe("⇢ Review");

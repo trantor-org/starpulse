@@ -308,6 +308,7 @@ export function StartQuestion({ asking, harnesses, names, canStart, pick, start,
       <div className="modal ask" role="dialog" aria-label={`Start ${task.id}`}>
         <div className="k">{task.id} · {names[task.lane] ?? task.lane} → {names.in_progress ?? "In progress"}</div>
         <h2>{task.title}</h2>
+        <div className="sh">Session</div>
         <div className={`opt${canStart ? "" : " off"}`}>
           {harnesses.harnesses.length > 1 && (
             <Segments label="Harness" value={p.harness} set={(harness) => pick({ harness })}

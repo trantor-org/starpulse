@@ -88,7 +88,7 @@ describe("opening a DAG's modal", () => {
 
     expect([...chart.querySelectorAll("text")].map((t) => t.textContent)).toEqual(["scan", "fix"]);
     expect(chart.querySelector("text.hot")!.textContent).toBe("fix");
-    expect(chart.querySelectorAll("g.orbiter path.spin")).toHaveLength(1);
+    expect(chart.querySelectorAll("path.link.hot")).toHaveLength(1);
     await key(document, "Escape");
     await click(row("pr-watch"));
     expect(q("svg.dstrip.big").querySelectorAll('circle[stroke="var(--agent)"]')).toHaveLength(1);

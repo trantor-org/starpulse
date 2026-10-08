@@ -98,7 +98,7 @@ body:has(#panel.open) #clock { opacity: 0; }
 #feed div.go { border-radius: 3px; } #feed div.go:hover { background: color-mix(in srgb, var(--slate) 10%, transparent); } #feed div.go:hover b { color: var(--white); }
 /* its own row under the line; the feed holds still while hovered, so the rows it pushes down don't move the pointer's line */
 #feed .why { display: block; padding-left: 6ch; overflow: hidden; text-overflow: ellipsis; color: var(--run); }
-#legend { line-height: 1.9; }
+#legend { margin-top: auto; line-height: 1.9; }
 #legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 5px 0 0; vertical-align: 0; box-sizing: border-box; }
 #legend span { display: inline-block; max-width: 100%; margin-right: 10px; }
 #legend span span { margin-right: 0; }
@@ -269,7 +269,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .nw { white-space: nowrap; }
 #kb .stack { position: relative; flex: none; isolation: isolate; padding-bottom: var(--peek); transition: padding-bottom .26s cubic-bezier(.3,.7,.2,1); }
 #kb .stack.open { padding-bottom: 0; }
-#kb .stack > .edge { position: absolute; z-index: -1; height: 10px; left: calc((var(--i) + 1) * 5px); right: calc((var(--i) + 1) * 5px); bottom: calc(var(--peek) - 4px - var(--i) * 5px);
+#kb .stack > .edge { position: absolute; z-index: calc(-1 - var(--i)); height: 10px; left: calc((var(--i) + 1) * 6px); right: calc((var(--i) + 1) * 6px); bottom: calc(var(--peek) - (var(--i) + 1) * 5px);
   border-radius: 0 0 7px 7px; background: var(--stack); border: 1px solid color-mix(in srgb, var(--slate) 30%, transparent); border-top: 0; box-sizing: border-box; transition: opacity .18s; }
 #kb .stack.open > .edge { opacity: 0; }
 #kb .stack > .spine { position: absolute; left: 4px; top: 22px; bottom: 8px; width: 2px; border-radius: 1px; opacity: 0; transition: opacity .2s .08s;
@@ -401,7 +401,7 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv td:first-child { width: 104px; }
 #kbm .tv tr.ro td:last-child { color: var(--ink-3); }
 #kbm .tv .sec { display: flex; flex-direction: column; gap: 6px; }
-#kbm .tv .sh { display: flex; align-items: center; gap: 8px; font-size: calc(10px * var(--fs)); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+#kbm .ask .sh, #kbm .tv .sh { display: flex; align-items: center; gap: 8px; font-size: calc(10px * var(--fs)); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 #kbm .tv .sh .n { letter-spacing: 0; text-transform: none; color: var(--slate-4); }
 /* Per-section editing (approved mockup, starpulse#90): a faint ✎ beside each heading, and the open section outlined with its bar. */
 #kbm .tv .pen { all: unset; margin-left: auto; padding: 1px 8px; border-radius: 5px; color: var(--dim); font-size: calc(11px * var(--fs)); letter-spacing: 0; text-transform: none; opacity: .55; }
@@ -473,9 +473,9 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv .archbtn { all: unset; padding: 4px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .archbtn:hover, #kbm .tv .archbtn:focus-visible { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 #kbm .tv .changed { color: var(--agent); font-size: calc(10.5px * var(--fs)); }
-#kbm .tv .cancelbtn, #kbm .tv .savebtn { all: unset; padding: 4px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 28%, transparent); color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
+#kbm .tv .cancelbtn, #kbm .tv .savebtn, #kbm .ask .afoot .manual, #kbm .ask .afoot .cancel { all: unset; padding: 4px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 28%, transparent); color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .savebtn { border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok-text); }
-#kbm .tv .cancelbtn:hover, #kbm .tv .savebtn:hover { background: color-mix(in srgb, var(--slate) 12%, transparent); }
+#kbm .tv .cancelbtn:hover, #kbm .tv .savebtn:hover, #kbm .ask .afoot .manual:hover, #kbm .ask .afoot .cancel:hover, #kbm .ask .afoot .manual:focus-visible, #kbm .ask .afoot .cancel:focus-visible { background: color-mix(in srgb, var(--slate) 12%, transparent); }
 #kbm .tv .savebtn:disabled { opacity: .4; }
 #kbm .tv kbd { margin-left: 4px; color: var(--dim); font: calc(9px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
 #kbm .tv .editrefusal { padding: 8px 10px; border-radius: 7px; font-size: calc(11px * var(--fs)); }
@@ -484,8 +484,8 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv .refusal { margin: 0; }
 /* Move to opens downward, right-aligned under its button in the header. */
 #kbm .tvhead .mv { position: relative; }
-#kbm .tvhead .startbtn { all: unset; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-text); font-size: calc(11.5px * var(--fs)); white-space: nowrap; }
-#kbm .tvhead .startbtn:hover, #kbm .tvhead .startbtn:focus-visible { background: color-mix(in srgb, var(--ok) 22%, transparent); }
+#kbm .tvhead .startbtn, #kbm .ask .startbtn { all: unset; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-text); font-size: calc(11.5px * var(--fs)); white-space: nowrap; }
+#kbm .tvhead .startbtn:hover, #kbm .tvhead .startbtn:focus-visible, #kbm .ask .startbtn:hover:not(:disabled), #kbm .ask .startbtn:focus-visible { background: color-mix(in srgb, var(--ok) 22%, transparent); }
 #kbm .tvhead .startbtn:disabled { opacity: .4; background: color-mix(in srgb, var(--ok) 12%, transparent); }
 #kbm .tvhead .mvbtn { all: unset; display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 30%, transparent); color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
 #kbm .tvhead .mvbtn::after { content: ""; width: 5px; height: 5px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: translateY(1px) rotate(225deg); }
@@ -561,7 +561,7 @@ body.dragging, body.dragging * { user-select: none; }
 #kbm .modal.ask { width: min(560px, calc(100vw - 40px)); padding: 20px 22px; }
 #kbm .ask h2 { margin: 2px 0 14px; padding: 0; font-size: calc(15px * var(--fs)); line-height: 1.4; }
 /* the picks: one label column and one value column, so every control and note starts on the same edge */
-#kbm .ask .opt { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 16px; row-gap: 8px; align-items: center; padding: 12px 14px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); background: color-mix(in srgb, var(--slate) 3%, transparent); }
+#kbm .ask .opt { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 16px; row-gap: 8px; align-items: center; margin-top: 8px; }
 #kbm .ask .row { display: contents; }
 #kbm .ask .lb { color: var(--ink-3); font-size: calc(11.5px * var(--fs)); }
 #kbm .ask .seg { justify-self: start; display: inline-flex; border-radius: 5px; border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); overflow: hidden; }
@@ -582,13 +582,8 @@ body.dragging, body.dragging * { user-select: none; }
 /* the three answers on one row, as the confirmation box's: the quiet way out on the left, the default on the right */
 #kbm .ask .afoot { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
 #kbm .ask .afoot .sp { margin-left: auto; }
-#kbm .ask .afoot button { all: unset; display: inline-flex; align-items: center; padding: 5px 12px; border-radius: 6px; font-size: calc(12px * var(--fs)); border: 1px solid color-mix(in srgb, var(--slate) 25%, transparent); color: var(--slate); }
-#kbm .ask .afoot button:hover, #kbm .ask .afoot button:focus-visible { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 50%, transparent); }
-#kbm .ask .afoot .cancel { border-color: transparent; padding-inline: 4px; color: var(--ink-3); }
-#kbm .ask .afoot .startbtn { border-color: transparent; background: var(--ok-hi); color: var(--ok-ink); font-weight: 500; }
-#kbm .ask .afoot .startbtn:hover, #kbm .ask .afoot .startbtn:focus-visible { background: var(--ok-text); color: var(--ok-ink); }
-#kbm .ask .afoot .startbtn:disabled { background: color-mix(in srgb, var(--slate) 20%, transparent); color: var(--muted); }
-#kbm .ask .cancel:hover, #kbm .ask .cancel:focus-visible { color: var(--ink); }
+#kbm .ask .afoot :is(.cancel, .manual, .startbtn) { display: inline-flex; align-items: center; }
+#kbm .ask .startbtn:disabled { opacity: .4; }
 @media (prefers-reduced-motion: reduce) { #kb .card.claiming::after { animation: none; } }
 
 /* The Admin view, from the approved mockup (the design mockup): this browser's settings in a main-area view, with its entry at the
@@ -762,11 +757,12 @@ body.dags { background: radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(-
 body.dags canvas, body.dags #tip, body.dags #panel { visibility: hidden; }
 #nav .dg-glyph { border: 0; border-radius: 0; fill: none; stroke: currentColor; stroke-width: 1.2; }
 #nav .dg-glyph circle { fill: currentColor; stroke: none; }
-.orb { display: inline-block; flex: none; width: 12px; height: 12px; vertical-align: middle; }
+.orb { display: inline-block; flex: none; width: calc(11px * var(--fs)); height: calc(11px * var(--fs)); vertical-align: middle; }
 .orb svg { display: block; width: 100%; height: 100%; overflow: visible; }
-g.orbiter .spin { animation: orbit-spin 1.6s linear infinite; }
-@keyframes orbit-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { g.orbiter .spin { animation: none; } }
+/* a dependency streams toward the step that waits, as the Star Map's DAG links do */
+svg.dstrip path.link { animation: dag-stream .42s linear infinite; }
+@keyframes dag-stream { to { stroke-dashoffset: -6; } }
+@media (prefers-reduced-motion: reduce) { svg.dstrip path.link { animation: none; } }
 #dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
 .census { display: inline-flex; align-items: center; gap: 10px; margin-left: 8px; font-size: calc(11px * var(--fs)); font-weight: 400; letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
 .census > span { display: inline-flex; align-items: center; gap: 5px; }
@@ -794,11 +790,9 @@ g.orbiter .spin { animation: orbit-spin 1.6s linear infinite; }
 #dg .none { color: var(--ghost); }
 div#dg > .none { margin: 18px auto; font-size: calc(11px * var(--fs)); }
 svg.dstrip { display: block; }
-svg.dstrip .e { stroke: var(--faint); stroke-width: .8; }
-svg.dstrip .e.hot { stroke: var(--run); }
+svg.dstrip:not(.big) { height: calc(20px * var(--fs)); }
 svg.dstrip text.one { fill: var(--slate); font-size: calc(9px * var(--fs)); }
 svg.dstrip.big { overflow: visible; }
-svg.dstrip.big .e { stroke-width: 1.2; }
 svg.dstrip.big text { fill: var(--slate); font-size: calc(10.5px * var(--fs)); text-anchor: middle; }
 svg.dstrip.big text.hot { fill: var(--run-text); }
 .orb.big { width: calc(15px * var(--fs)); height: calc(15px * var(--fs)); }

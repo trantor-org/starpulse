@@ -1,0 +1,13 @@
+diff --git a/starpulse/web/src/demo/demo.ts b/starpulse/web/src/demo/demo.ts
+index a02c68e..4f6666d 100644
+--- a/starpulse/web/src/demo/demo.ts
++++ b/starpulse/web/src/demo/demo.ts
+@@ -430,6 +430,8 @@ export class DemoServer {
+     const [path, search = ""] = input.split("?", 2); // no URL(): a base address would be a host in the public file
+     const route = Object.keys(ROUTES).find((r) => path === r || path.startsWith(`${r}/`));
+     const handler = route ? HANDLERS[route] : undefined;
++    const mock = (globalThis as { __MOCK_API__?: Record<string, (init?: RequestInit) => [unknown, number]> }).__MOCK_API__?.[path];
++    if (mock) return Promise.resolve(json(...mock(init)));
+     if (handler) return Promise.resolve(handler(this, path, new URLSearchParams(search), init));
+     return Promise.resolve(json({ error: (route && ROUTES[route]) || `This demo does not serve ${path}.` }, 404));
+   }
