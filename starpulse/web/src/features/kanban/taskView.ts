@@ -33,9 +33,11 @@ export interface TaskRecord {
   definitionOfDone: Item[];
   /** The description's Start Criteria with their results; absent from a record the board cannot evaluate. */
   start_criteria?: StartCriterion[];
+  /** The link of the claiming session's latest Session Link line, empty when the board records none. Read-only: an edit never carries it. */
+  session?: string;
 }
 
-export type TaskField = keyof TaskRecord;
+export type TaskField = Exclude<keyof TaskRecord, "session">;
 export interface TaskDiff {
   fields: TaskField[];
   base: Partial<TaskRecord>;
@@ -46,7 +48,7 @@ const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b
 
 /** The fields whose draft value differs, with exactly the matching values from the record that was opened. */
 export function changedFields(base: TaskRecord, draft: TaskRecord): TaskDiff {
-  const fields = (Object.keys(base) as TaskField[]).filter((field) => !equal(base[field], draft[field]));
+  const fields = (Object.keys(base) as (keyof TaskRecord)[]).filter((field): field is TaskField => field !== "session" && !equal(base[field], draft[field]));
   return {
     fields,
     base: Object.fromEntries(fields.map((field) => [field, base[field]])),
@@ -306,4 +308,20 @@ export function ciHistory(task: KanbanTask): CiHistory | null {
   });
   const sum = (key: keyof CiHistory["total"]) => pulls.reduce((n, p) => n + p[key], 0);
   return { pulls, total: { runs: sum("runs"), reruns: sum("reruns"), rebases: sum("rebases"), conflicts: sum("conflicts") } };
+}
+
+/** What the Session section draws for a task: the claiming session's link and the line the in-progress machine gives it. */
+export interface SessionView { url: string; line: string }
+
+/**
+ * The session that holds `task`, or null when none does. A startable task is held by no one, so the link an earlier
+ * session left on it is ignored; the line (model, state, age, steps) is whatever the in-progress machine reports.
+ */
+export function sessionOf(task: KanbanTask, record: TaskRecord | null, now: number, startLane: boolean): SessionView | null {
+  const url = startLane ? "" : record?.session ?? "";
+  if (!url) return null;
+  const machine = task.machines.find((m) => m.machine === "in-progress" && m.at > 0);
+  const steps = machine?.steps ?? 0;
+  const line = machine ? [machine.model, machine.state.replace(/_/g, " "), `${ago(now - machine.at)} ago`, `${steps} step${steps === 1 ? "" : "s"}`].filter(Boolean).join(" · ") : "";
+  return { url, line };
 }

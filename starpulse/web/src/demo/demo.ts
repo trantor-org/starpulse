@@ -324,10 +324,12 @@ export class DemoServer {
     return json({ task, to });
   }
 
-  /** The synthetic full record behind a public demo card. */
+  /** The synthetic full record behind a public demo card; an In Progress card's names a synthetic claiming session, a fragment so the public demo carries no real host. */
   task(id: string): Response {
     const record = this.records[id];
-    return record ? json({ task: id, record }) : json({ error: `${id} has no record to read` }, 404);
+    if (!record) return json({ error: `${id} has no record to read` }, 404);
+    const working = this.snapshot.flows.find((f) => f.name === "board")?.agents.find((a) => a.id === id)?.state === "in_progress";
+    return json({ task: id, record: { ...record, session: working ? `#demo-session-${id.replace(/\D/g, "").padStart(4, "0")}` : "" } });
   }
 
   /** Apply the same optimistic-lock payload as the served writer, then publish card-sized fields. */

@@ -210,16 +210,17 @@ describe("the cards drawn from a snapshot", () => {
     expect([tasks.find((t) => t.id === "PROJ-1")!.created, tasks.find((t) => t.id === "PROJ-2")!.created]).toEqual([120, null]);
   });
 
-  it("carry every machine the task is in with its state, source, when it last moved and its trail, and none for a task in no machine", () => {
+  it("carry every machine the task is in with its state, source, model, steps, when it last moved and its trail, and none for a task in no machine", () => {
     const snap = snapshot();
     const trail = [{ state: "branch_pushed", event: "push", at: 400 }, { state: "pr_opened", event: "pr", at: 500 }];
     snap.flows[1].agents[0].trail = trail;
+    snap.flows[1].agents[0].steps = 4;
     snap.flows.push({ name: "ci", machine: { states: [], transitions: [], source: "GitHub" } as never, agents: [agent("PROJ-1", "running", { task: "PROJ-1", active: 550 })] });
     const tasks = kanbanTasks(merge(snap));
 
     expect(tasks.find((t) => t.id === "PROJ-1")!.machines).toEqual([
-      { machine: "in-progress", state: "pr_opened", at: 500, trail },
-      { machine: "ci", state: "running", at: 550, source: "GitHub", trail: [] },
+      { machine: "in-progress", state: "pr_opened", at: 500, model: "@alice", steps: 4, trail },
+      { machine: "ci", state: "running", at: 550, source: "GitHub", model: "@alice", steps: 0, trail: [] },
     ]);
     expect(tasks.find((t) => t.id === "PROJ-2")!.machines).toEqual([]);
   });

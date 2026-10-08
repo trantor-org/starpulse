@@ -37,7 +37,7 @@ export interface KanbanTask {
   /** Since when the task has been workable, epoch seconds; null when a dependency or its Start Criteria hold it. */
   workableSince: number | null;
   /** Every lifecycle machine the task is in: its state there, when it last moved, the machine's third-party source and its trail. */
-  machines: { machine: string; state: string; at: number; source?: string | null; trail: TrailStep[] }[];
+  machines: { machine: string; state: string; at: number; source?: string | null; model?: string; steps?: number; trail: TrailStep[] }[];
 }
 
 /** Refresh the snapshot-sized card with the fields a successful full-record edit can change. */
@@ -299,7 +299,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
       released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: Object.values(sky.flows).filter((f) => f.name !== "board").flatMap((f) => f.agents.filter((m) => m.task === a.id)
-        .map((m) => ({ machine: f.name, state: m.state, at: m.active ?? 0, source: f.machine.source, trail: m.trail ?? [] }))),
+        .map((m) => ({ machine: f.name, state: m.state, at: m.active ?? 0, source: f.machine.source, model: m.model, steps: m.steps ?? 0, trail: m.trail ?? [] }))),
     };
   });
 }
