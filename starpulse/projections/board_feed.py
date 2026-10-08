@@ -12,7 +12,7 @@ import queue
 import re
 import threading
 import time
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
@@ -51,6 +51,8 @@ _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 PUSHED_INSTANCE = "pushed"
 #: How often a running reader saves the Board, in seconds; a restart reads again what arrived since.
 SAVE_INTERVAL = 60.0
+#: The lane an archived task enters: its file keeps its status, so only the folder it sits in says it was archived.
+ARCHIVED = "archived"
 #: The days of lane moves, before local midnight, a Board state's sun is sized from.
 SUN_DAYS = 7
 #: Seconds between looks for a local midnight that has passed.
@@ -398,18 +400,65 @@ class BoardFeed:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
         if self._keys is not None and not self._keys.matches(task.id):
             return
-        entered = self._place(task)
-        if entered is not None and self._lanes is not None:
+        change = self._place(task)
+        if change is not None and self._lanes is not None:
+            lane, entered = change
             try:
-                event_id = f"{task.id}@{task.lane}@{entered}"
-                if self._lanes.record_lane(event_id, task.id, task.lane, entered) and self._lane_log is not None:
-                    lane_events.publish(self._lane_log, event_id, task, entered)
+                event_id = f"{task.id}@{lane}@{entered}"
+                if lane == ARCHIVED and self._history_ends_in(task.id, lane):
+                    return
+                if self._lanes.record_lane(event_id, task.id, lane, entered) and self._lane_log is not None:
+                    lane_events.publish(self._lane_log, event_id, task.model_copy(update={"lane": lane}), entered)
             except Exception as exc:  # the history is down; the task is placed and the next change is recorded
                 logger.warning("StarPulse: cannot record the lane change of %s: %s", task.id, exc)
 
-    def _place(self, task: BoardTask) -> float | None:
-        """Place `task`; when it entered its lane if that is a change of lane, else None."""
+    def _history_ends_in(self, task_id: str, lane: str) -> bool:
+        """Whether the history's last lane for the task is `lane` (a status spelled in any case counts)."""
+        path = self._lane_path(task_id)
+        return bool(path) and lane_id(path[-1]["to"]) == lane
+
+    def reconcile_lanes(self, current: Iterable[tuple[str, str, str, float]]) -> int:
+        """Record, and with a log publish, the lane a held task is in where the history's last lane for it differs.
+
+        `current` is `(event_id, task, lane, at)` for each task's latest lane change (`HistoryStore.current_lanes`).
+        It repairs a move the feed applied but never recorded (a restart or a failure between the two), so the history
+        and the hub agree with the Board again. A task the history has never held is left alone, as is one whose last
+        lane agrees; a repair is dated when the task entered the lane, no earlier than the history's last change.
+        Returns how many it recorded; running it again records none.
+        """
+        if self._lanes is None:
+            return 0
+        last = {task: (lane, at) for _, task, lane, at in current}
         with self._lock:
+            held = [(task_id, agent["state"], agent["entered"]) for task_id, agent in self._open.items()]
+            held += [
+                (task_id, ARCHIVED, settled["at"] or self._clock())
+                for task_id, settled in self._settled.items()
+                if settled["state"] == ARCHIVED
+            ]
+        recorded = 0
+        for task_id, lane, entered in held:
+            if (before := last.get(task_id)) is None or lane_id(before[0]) == lane:
+                continue
+            at = max(entered, before[1])
+            event_id = f"{task_id}@{lane}@{at}"
+            try:
+                if self._lanes.record_lane(event_id, task_id, lane, at):
+                    recorded += 1
+                    if self._lane_log is not None:
+                        lane_events.append(self._lane_log, event_id, task_id, lane, at)
+            except Exception as exc:  # the history is down; the next start goes again
+                logger.warning("StarPulse: cannot reconcile the lane of %s: %s", task_id, exc)
+        return recorded
+
+    def _place(self, task: BoardTask) -> tuple[str, float] | None:
+        """Place `task`; the lane it entered and when, if that is a change of lane, else None.
+
+        A task that left the lanes by archive enters `ARCHIVED`: its file keeps the status it had, and the Board draws
+        the folder it sits in as the lane.
+        """
+        with self._lock:
+            filed = self._settled.get(task.id)
             self._assignees[task.id] = task.assignee
             agent, settled = (None, settled_entry(task)) if task.settled else (task_agent(task), None)
             before = self._open.get(task.id)
@@ -426,6 +475,7 @@ class BoardFeed:
                 self._gated.add(task.id)
             if before == agent and self._settled.get(task.id) == settled:
                 return None  # an hourly reconcile republishes every task; only a change reaches the page
+            archived = settled is not None and settled["state"] == ARCHIVED and (filed or {}).get("state") != ARCHIVED
             if agent is None:
                 self._open.pop(task.id, None)
                 if settled:
@@ -436,7 +486,11 @@ class BoardFeed:
             self._link(task.id, before["dependencies"] if before else (), agent["dependencies"] if agent else ())
             self._publish("task", {"id": task.id, "agent": agent, "settled": settled})
             self._reassess(self._dependents.get(task.id, ()))
-            return agent["entered"] if agent and (before is None or before["state"] != agent["state"]) else None
+            if archived:
+                return ARCHIVED, settled["at"] or self._clock()
+            if agent and (before is None or before["state"] != agent["state"]):
+                return task.lane, agent["entered"]
+            return None
 
     def retract(self, task_id: str) -> None:
         """Remove a task the adapter's source no longer holds, open or settled; a task not placed is a no-op."""
