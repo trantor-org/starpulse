@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts.adapters import BoardTask, TaskKeys
+from starpulse.contracts.api import event
 from starpulse.settings.config import CommitKeys
 from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import FLOWS, MACHINES
@@ -955,3 +956,24 @@ def test_a_history_that_cannot_record_a_lane_change_still_places_the_task() -> N
     feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="ready"))
 
     assert [a["id"] for a in _agents(feed)] == ["PROJ-1"]
+
+
+def test_the_snapshot_and_the_pulls_event_carry_only_the_fields_the_api_contract_declares_for_a_pull() -> None:
+    record = {
+        **MERGED_PR,
+        "number": 7,
+        "checks": "pass",
+        "threads": 0,
+        "stale": False,
+        "files": ["README.md"],
+        "applied_by": SHA,
+    }
+    feed = ledger_feed()
+    _, events = feed.subscribe()
+    feed.set_pulls({"TASK-1": [record]})
+
+    kind, delta = events.get_nowait()
+    assert kind == "pulls"
+    event("pulls", delta)
+    event("snapshot", feed.snapshot())
+    assert feed.snapshot()["ledgers"]["MERGED"][0]["sha"] == SHA

@@ -20,6 +20,7 @@ from starpulse import criteria, lane_events
 from starpulse.adapters.boards.upstream_backlog import DEFAULT_STATUSES, board_machine, lane_id
 from starpulse.analytics import LaneRow, move_shares
 from starpulse.contracts.adapters import BoardTask, TaskKeys
+from starpulse.contracts.api import Pull
 from starpulse.domain.machine_ties import derive, entries
 from starpulse.domain.machine_ties import page as machine_page
 from starpulse.domain.snapshot import declared, qualifier
@@ -582,7 +583,7 @@ class BoardFeed:
                 return
             self._pulls_unsaved = True
             self._pulls = pulls
-            self._publish("pulls", {"pulls": pulls})
+            self._publish("pulls", {"pulls": _drawn_pulls(pulls)})
             self._refresh_ledgers()
 
     def refuse_claim(self, task: str, reason: str, at: float) -> None:
@@ -873,7 +874,7 @@ class BoardFeed:
                 **self._machine_fields(flows, derived, now),
                 "dags": self._workflows(),
                 "pools": self._drawn_pools(),
-                "pulls": self._pulls,
+                "pulls": _drawn_pulls(self._pulls),
                 **self._ledger_fields(),
                 "claims": dict(self._claims),
                 "insights": [
@@ -984,3 +985,12 @@ def follow(
     thread = threading.Thread(target=run, name="board-feed", daemon=True)
     thread.start()
     return thread
+
+
+def _drawn_pulls(pulls: Mapping[str, Sequence[Mapping]]) -> dict[str, list[dict]]:
+    """Each task's pull requests with only the fields the API's `Pull` declares: a record also keeps what the feed reads
+    itself, such as `files` and `applied_by`, which the page is not sent."""
+    return {
+        task: [{k: v for k, v in pull.items() if k in Pull.model_fields} for pull in found]
+        for task, found in pulls.items()
+    }
