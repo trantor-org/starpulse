@@ -41,6 +41,11 @@ def publish(log: EventLog, event_id: str, task: BoardTask, at: float) -> int | N
     return log.append(STREAM, entry(task, at), event_id=event_id)
 
 
+def append(log: EventLog, event_id: str, task: str, lane: str, at: float) -> int | None:
+    """Append a lane entry of only the task, the lane and the time to `log` under `event_id`, fail-open."""
+    return log.append(STREAM, {"task": task, "lane": lane, "time": at}, event_id=event_id)
+
+
 def replay(store: HistoryStore, log: EventLog) -> int:
     """Append every lane change `store` holds to `log`, once: how many it appended, 0 when an earlier call finished.
 
@@ -52,7 +57,7 @@ def replay(store: HistoryStore, log: EventLog) -> int:
         return 0
     changes = store.lane_changes()
     for event_id, task, lane, at in changes:
-        if log.append(STREAM, {"task": task, "lane": lane, "time": at}, event_id=event_id) is None:
+        if append(log, event_id, task, lane, at) is None:
             return 0
     store.save_cursor(REPLAYED, 1)
     return len(changes)

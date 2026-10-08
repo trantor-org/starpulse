@@ -207,3 +207,55 @@ def test_lane_forwarding_continues_after_a_restart_when_a_restored_task_drops_a_
 
     held = {(task, status) for task, _, _, status in site.hub_store.lane_rows()}
     assert held == {("T-1", "review"), ("T-2", "in_progress")}
+
+
+def _archived(task: str, *, at: float, lane: str = "in_progress") -> BoardTask:
+    """An archived task: its file keeps the status it had, and the folder it sits in says it left the lanes."""
+    return BoardTask(id=task, team="demo", title="t", lane=lane, settled="archived", settled_at=at)
+
+
+def test_an_archived_task_reaches_the_hub_as_a_move_into_the_archived_lane(tmp_path: Path) -> None:
+    site = Site(tmp_path)
+    site.move("T-1", "in_progress", at=0)
+    site.clock.now = T0 + H
+    site.feed.put(_archived("T-1", at=T0 + H))
+    site.feed.put(_archived("T-1", at=T0 + H))  # the hourly reconcile republishes it
+
+    site.drain(site.forwarder())
+    site.fold()
+
+    expected = [("T-1", None, "in_progress"), ("T-1", "in_progress", "archived")]
+    assert [(task, old, new) for task, _, old, new in site.ic_store.lane_rows()] == expected
+    assert [(task, old, new) for task, _, old, new in site.hub_store.lane_rows()] == expected
+
+
+def test_an_archived_task_whose_history_already_ends_archived_adds_no_row(tmp_path: Path) -> None:
+    site = Site(tmp_path)
+    site.ic_store.record_lane("T-1@Archived@1000000.0", "T-1", "Archived", T0)  # recorded from the Backlog's own events
+    site.feed.date_lanes(site.ic_store.lane_path)
+
+    site.feed.put(_archived("T-1", at=T0))
+
+    assert [new for _, _, _, new in site.ic_store.lane_rows()] == ["Archived"]
+    assert site.at(site.ic_log) == []
+
+
+def test_a_reconcile_puts_the_lane_a_held_task_is_in_where_the_history_missed_it(tmp_path: Path) -> None:
+    site = Site(tmp_path)
+    for task in ("T-1", "T-3", "T-4"):
+        site.ic_store.record_lane(f"{task}@in_progress@1000000.0", task, "in_progress", T0)
+    held = BoardFeed(machines=MACHINES, clock=site.clock)  # the feed that missed the moves had no recorder
+    held.put(BoardTask(id="T-1", team="demo", title="t", lane="review"))
+    held.put(BoardTask(id="T-2", team="demo", title="t", lane="review"))  # no history at all: left alone
+    held.put(_archived("T-3", at=T0 + 2 * H))
+    held.put(BoardTask(id="T-4", team="demo", title="t", lane="in_progress"))  # history agrees: left alone
+    held.record_lanes(site.ic_store, site.ic_log)
+
+    assert held.reconcile_lanes(site.ic_store.current_lanes()) == 2
+    assert held.reconcile_lanes(site.ic_store.current_lanes()) == 0  # once the history agrees there is nothing to do
+
+    changes = [(task, old, new) for task, _, old, new in site.ic_store.lane_rows() if old is not None]
+    assert sorted(changes) == [("T-1", "in_progress", "review"), ("T-3", "in_progress", "archived")]
+    site.drain(site.forwarder())
+    site.fold()
+    assert {(task, new) for task, _, _, new in site.hub_store.lane_rows()} >= {("T-1", "review"), ("T-3", "archived")}

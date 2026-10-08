@@ -602,6 +602,16 @@ def history_window(source: str, method: str, raw: bytes, window: HistoryWindow) 
     return 200, window.state()
 
 
+def reconcile_lanes(feed: BoardFeed, store: HistoryStore) -> None:
+    """Once `feed` has read what the stream retained, record the lanes its tasks are in that the history lacks."""
+    feed.ready.wait()
+    try:
+        if recorded := feed.reconcile_lanes(store.current_lanes()):
+            logger.warning("StarPulse: reconciled the lane of %d tasks the history had missed", recorded)
+    except Exception:  # the history is down; the next start goes again
+        logger.exception("StarPulse: cannot reconcile the lanes")
+
+
 def forwarding(source: str, method: str, raw: bytes, forwarder: Forwarder | None) -> tuple[int, dict[str, Any]]:
     """Read (`GET`) what `forwarder` would send next, or set (`PUT {"opt_in": bool}`) whether a person's name may leave,
     for a browser at `source`: the HTTP status and JSON body, the forwarder's status or the refusal.
@@ -1274,6 +1284,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
             daemon=True,
         ).start()
     board.start(feed, f"flow-view-{args.port}", log)
+    # a move the feed applied but never recorded (a restart between the two) is put in the history once the replay is read
+    threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     if shutil.which("gh"):  # without the GitHub CLI there is no source, and a task simply carries no PR state
