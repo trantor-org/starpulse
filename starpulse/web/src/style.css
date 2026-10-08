@@ -445,6 +445,9 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .newtaskform .item .n { color: var(--dim); font-size: calc(11px * var(--fs)); }
 #kbm .tv select.fv { appearance: none; width: auto; min-width: 240px; padding-right: 26px; -webkit-text-fill-color: var(--ink); }
 #kbm .tvrail select.fv { min-width: 0; width: calc(100% + 9px); }
+/* Open, Details stacks each label above its field so a long profile name fits at 150% text. */
+#kbm .tvrail .sec.on .props, #kbm .tvrail .sec.on .props tbody, #kbm .tvrail .sec.on .props tr, #kbm .tvrail .sec.on .props td { display: block; width: 100%; }
+#kbm .tvrail .sec.on .props tr { margin-bottom: 6px; } #kbm .tvrail .sec.on .props td:first-child { padding: 0 0 2px; font-size: calc(10.5px * var(--fs)); }
 #kbm .tv select option { background: var(--surface); }
 /* Plan and notes are fixed 150 px boxes that scroll inside rather than growing the view. */
 #kbm .tv textarea.fv.long { height: 150px; }
