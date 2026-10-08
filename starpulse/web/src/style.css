@@ -428,6 +428,9 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv .titlerow .edbar { flex: 1 0 100%; }
 #kbm .tv .titlerow .fv.title:not(.live) { background: transparent; border-color: transparent; }
 #kbm .tv .edbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; } #kbm .tv .edbar .k { margin-right: auto; }
+#kbm .tv .sec.on textarea.fv.long { height: 220px; resize: vertical; font: calc(12px * var(--fs)) / 1.55 "JetBrains Mono", ui-monospace, monospace; color: var(--ink-2); }
+#kbm .tv .edbar .savebtn { border-color: color-mix(in srgb, var(--agent) 60%, transparent); background: color-mix(in srgb, var(--agent) 16%, transparent); color: var(--agent-hi); }
+#kbm .tv .edbar .savebtn:hover { background: color-mix(in srgb, var(--agent) 28%, transparent); }
 #kbm .tv .tabs { display: flex; gap: 2px; align-items: center; }
 #kbm .tv .tabs button { all: unset; cursor: pointer; padding: 2px 10px; border-radius: 5px; color: var(--slate-4); font-size: calc(11px * var(--fs)); }
 #kbm .tv .tabs button.on { background: color-mix(in srgb, var(--agent) 18%, transparent); color: var(--ink); } #kbm .tv .tabs .k { margin-left: auto; }
