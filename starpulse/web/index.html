@@ -5,8 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>StarPulse</title>
 <link rel="icon" href="data:,">
+<script>
+// Ask for the snapshot now: the server answers while the bundle loads. src/api/stream.ts takes this connection over and replays what it held.
+(function () {
+  var early = (window.__earlyStream = { src: new EventSource("/api/events"), events: [] });
+  ["snapshot", "task", "move", "dags", "pulls", "suns", "ledgers", "claim"].forEach(function (type) {
+    early.src.addEventListener(type, function (e) {
+      if (!early.adopted) early.events.push({ type: type, data: e.data });
+    });
+  });
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 </head>
 <body>
 <div id="root"></div>

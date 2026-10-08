@@ -7,6 +7,7 @@ export { embedded } from "../demo/demo";
 
 /** How long after the browser gives a connection up before the page opens a fresh one. */
 export const RETRY_MS = 3000;
+const OPEN = 1;
 const CLOSED = 2;
 
 /** `snap` with one delta folded in; `snap` itself is left as it was. */
@@ -39,6 +40,25 @@ export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
   return { ...snap, flows, settled };
 }
 
+/**
+ * The connection index.html opens before the bundle loads, so the server's snapshot is already on its way (or here) while the bundle
+ * is fetched and run. It holds the events that arrived before the page listened, as `{ type, data }`, in order.
+ */
+export interface EarlyStream {
+  src: EventSource;
+  events: { type: string; data: string }[];
+  /** Set once the page listens itself, so index.html stops holding events. */
+  adopted?: boolean;
+}
+
+/** The page's one early connection, handed over once: a reconnect opens its own. */
+function takeEarly(): EarlyStream | null {
+  const w = globalThis as { __earlyStream?: EarlyStream };
+  const early = w.__earlyStream ?? null;
+  delete w.__earlyStream;
+  return early;
+}
+
 export interface StreamHandlers {
   /** The sky as it stands: each connect's snapshot, then that snapshot folded with every delta after it, `kind` naming that delta. */
   snapshot(sky: Snapshot, kind?: Delta["kind"]): void;
@@ -55,6 +75,7 @@ export function openStream(
   handlers: StreamHandlers,
   open: (url: string) => EventSource = (url) => new EventSource(url),
   demo: DemoServer | null = demoServer(),
+  early: EarlyStream | null = takeEarly(),
 ): { close(): void } {
   if (demo) {
     handlers.live(true);
@@ -86,8 +107,8 @@ export function openStream(
     hand(delta.kind);
   };
 
-  const connect = () => {
-    const src = open("/api/events");
+  const connect = (adopt: EarlyStream | null = null) => {
+    const src = adopt?.src ?? open("/api/events");
     source = src;
     src.addEventListener("snapshot", (e) => {
       state = JSON.parse((e as MessageEvent<string>).data) as Snapshot;
@@ -117,11 +138,18 @@ export function openStream(
     src.onopen = () => handlers.live(true);
     src.onerror = () => {
       handlers.live(false);
-      if (src.readyState === CLOSED && !stopped) timer = setTimeout(connect, RETRY_MS);
+      if (src.readyState === CLOSED && !stopped) timer = setTimeout(() => connect(), RETRY_MS);
     };
+    if (!adopt) return;
+    // what the connection did before the page listened: the events in order through the listeners just added, then its open or its end
+    adopt.adopted = true;
+    for (const { type, data } of adopt.events) src.dispatchEvent(new MessageEvent(type, { data }));
+    adopt.events.length = 0;
+    if (src.readyState === OPEN) handlers.live(true);
+    else if (src.readyState === CLOSED) src.onerror?.(new Event("error"));
   };
 
-  connect();
+  connect(demo ? null : early);
   return {
     close() {
       stopped = true;

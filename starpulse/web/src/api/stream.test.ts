@@ -139,6 +139,10 @@ class FakeSource {
   send(type: string, data: unknown) {
     for (const fn of this.listeners.get(type) ?? []) fn({ data: JSON.stringify(data) });
   }
+  dispatchEvent(e: { type: string; data: string }) {
+    for (const fn of this.listeners.get(e.type) ?? []) fn(e);
+    return true;
+  }
   close() {
     this.readyState = 2;
   }
@@ -168,6 +172,46 @@ describe("openStream", () => {
 
     expect(FakeSource.made.map((f) => f.url)).toEqual(["/api/events"]);
     expect(seen.map(ids)).toEqual([["PROJ-1:to_do"]]);
+  });
+
+  describe("a connection index.html opened before the bundle ran", () => {
+    const early = (readyState: number, events: { type: string; data: string }[]) => {
+      const src = new FakeSource("/api/events");
+      src.readyState = readyState;
+      FakeSource.made = [];
+      return { src: src as unknown as EventSource, events };
+    };
+    const raw = (type: string, data: unknown) => ({ type, data: JSON.stringify(data) });
+
+    it("is the connection: no second one opens, and what it received before the page listened reaches the page in order", () => {
+      const pending = early(1, [raw("snapshot", board([agent("PROJ-1", "to_do")])), raw("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null })]);
+
+      openStream(handlers, open, null, pending);
+
+      expect(FakeSource.made).toEqual([]);
+      expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"]]);
+      expect(lives).toEqual([true]);
+    });
+
+    it("goes on handing over the events it receives after the page took it over", () => {
+      const pending = early(0, []);
+      openStream(handlers, open, null, pending);
+
+      (pending.src as unknown as FakeSource).send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+      expect(seen.map(ids)).toEqual([["PROJ-1:to_do"]]);
+      expect(lives).toEqual([]);
+    });
+
+    it("opens a fresh connection once the browser gave it up, as it would its own", () => {
+      const pending = early(2, []);
+      openStream(handlers, open, null, pending);
+      expect(FakeSource.made).toEqual([]);
+
+      vi.advanceTimersByTime(RETRY_MS);
+
+      expect(FakeSource.made.map((f) => f.url)).toEqual(["/api/events"]);
+    });
   });
 
   it("follows an embedded page's demo server without opening a connection: its moves and its walk reach the page until closed", () => {

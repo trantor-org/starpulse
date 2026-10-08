@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { backStep, canvasSpace, levelParams, levelSearch, retired, viewOf, viewSearch, type Back } from "./nav";
+import { describe, expect, it, vi } from "vitest";
+import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, retired, viewOf, viewSearch, type Back } from "./nav";
 import { fitLevel, toScreen } from "../render/zoom";
 
 describe("the canvas beside the panel", () => {
@@ -102,5 +102,21 @@ describe("the address that reproduces a machine level", () => {
     expect(levelSearch("?view=dags", { open: "scan", focus: "lint" })).toBe("?view=dags&open=scan&focus=lint");
     expect(levelSearch("?open=scan&focus=lint&view=dags", { open: "scan", focus: null })).toBe("?view=dags&open=scan");
     expect(levelSearch("?open=scan&focus=lint", { open: null, focus: null })).toBe("");
+  });
+});
+
+describe("rewriting the address's query", () => {
+  const here = { pathname: "/", search: "?view=kanban", hash: "#x" };
+
+  it("replaces the entry with the new query, keeping the path and hash", () => {
+    const replace = vi.fn();
+    replaceSearch(here, "?view=kanban&open=a", replace);
+    expect(replace).toHaveBeenCalledExactlyOnceWith("/?view=kanban&open=a#x");
+  });
+
+  it("leaves the history alone when the query is already the address's: each replace is a synchronous round trip to the browser", () => {
+    const replace = vi.fn();
+    replaceSearch(here, "?view=kanban", replace);
+    expect(replace).not.toHaveBeenCalled();
   });
 });

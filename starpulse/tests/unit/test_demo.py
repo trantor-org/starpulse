@@ -544,6 +544,20 @@ def test_page_inlines_the_bundle_and_embeds_the_fixture(tmp_path: Path) -> None:
     )
 
 
+def test_page_drops_the_early_stream_script_a_demo_has_no_server_for(tmp_path: Path) -> None:
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "index-a.js").write_text("x()")
+    (tmp_path / "index.html").write_text(
+        '<head>\n<script>\n// Ask for the snapshot now.\n(function () { new EventSource("/api/events"); })();\n</script>\n'
+        '  <script type="module" crossorigin src="/assets/index-a.js"></script>\n</head>'
+    )
+
+    html = page(tmp_path, {})
+
+    assert "/api/events" not in html
+    assert html == '<head>\n  <script>window.__FLOW_FIXTURE__ = {}</script>\n  <script type="module">x()</script>\n</head>'
+
+
 def _snap() -> dict:
     live = _live()
     board, sessions = live["flows"][0], live["flows"][1]
