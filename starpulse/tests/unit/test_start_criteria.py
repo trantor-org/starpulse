@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from starpulse.adapters.boards import native
-from starpulse.adapters.boards.seam import TaskReader
+from starpulse.adapters.boards.seam import Board, TaskReader
 from starpulse.projections import criteria
 
 TASK = """---
@@ -61,13 +61,26 @@ EVALUATED = [
 ]
 
 
-def _reader(tmp_path: Path, command: str | None, **settings: object) -> TaskReader:
-    """The native board's reader over one task file, with `command` as the `[board] criteria` evaluator."""
-    tasks = tmp_path / ".starpulse" / "board" / "tasks"
+def _board(tmp_path: Path, command: str | None, **settings: object) -> Board:
+    """The native board over one task file, with `command` as the `[board] criteria` evaluator."""
     built = native.board({"criteria": command, **settings} if command else {}, tmp_path)
-    (tasks / "task-7 - Wait.md").write_text(TASK)
-    assert built.read is not None
-    return built.read
+    (tmp_path / ".starpulse" / "board" / "tasks" / "task-7 - Wait.md").write_text(TASK)
+    return built
+
+
+def _reader(tmp_path: Path, command: str | None, **settings: object) -> TaskReader:
+    """The native board's reader over one task file, each read made once the task's criteria are evaluated, as the
+    feed's pass evaluates a Waiting task's."""
+    built = _board(tmp_path, command, **settings)
+    assert built.read is not None and built.evaluate is not None
+    read, evaluate = built.read, built.evaluate
+
+    def evaluated(task: str, /) -> dict | None:
+        if (record := read(task)) is not None:
+            evaluate(task, record["description"])
+        return read(task)
+
+    return evaluated
 
 
 def _script(tmp_path: Path, body: str) -> str:
@@ -203,6 +216,57 @@ def test_a_read_after_the_cache_window_runs_the_evaluator_again(tmp_path: Path, 
     now[0] += criteria.CACHE_SECONDS + 1
     read("task-7")
 
+    assert runs.read_text() == "xx"
+
+
+def test_a_read_before_the_first_evaluation_does_not_wait_for_it_and_says_each_criterion_is_not_evaluated(
+    tmp_path: Path,
+) -> None:
+    command = _script(tmp_path, f"import json, time\ntime.sleep(2)\nprint(json.dumps({EVALUATED!r}))\n")
+    built = _board(tmp_path, command)
+    assert built.read is not None and built.evaluate is not None
+
+    started = time.monotonic()
+    record = built.read("task-7")
+
+    assert time.monotonic() - started < 0.5
+    assert record is not None
+    assert [c["status"] for c in record["start_criteria"]] == ["not evaluated", "not evaluated"]
+    built.evaluate("task-7", record["description"])  # joins the evaluation the read started
+    after = built.read("task-7")
+    assert after is not None
+    assert [c["status"] for c in after["start_criteria"]] == ["met", "unmet"]
+
+
+def test_a_read_after_the_cache_window_gives_the_last_results_at_once_and_refreshes_them_behind_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runs, slow = tmp_path / "runs.txt", tmp_path / "slow"
+    command = _script(
+        tmp_path,
+        f"import json, os, time\nopen({str(runs)!r}, 'a').write('x')\n"
+        f"os.path.exists({str(slow)!r}) and time.sleep(2)\nprint(json.dumps({EVALUATED!r}))\n",
+    )
+    now = [100.0]
+    monkeypatch.setattr(criteria, "_clock", lambda: now[0])
+    built = _board(tmp_path, command)
+    assert built.read is not None and built.evaluate is not None
+    cold = built.read("task-7")
+    assert cold is not None
+    built.evaluate("task-7", cold["description"])
+    first = built.read("task-7")
+    assert first is not None
+    slow.touch()
+    now[0] += criteria.CACHE_SECONDS + 1
+
+    started = time.monotonic()
+    stale = built.read("task-7")
+
+    assert time.monotonic() - started < 0.5
+    assert stale is not None
+    assert stale["start_criteria"] == first["start_criteria"]
+    assert [c["status"] for c in stale["start_criteria"]] == ["met", "unmet"]
+    built.evaluate("task-7", stale["description"])  # joins the refresh the read started rather than running another
     assert runs.read_text() == "xx"
 
 

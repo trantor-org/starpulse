@@ -466,7 +466,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "writer": _writer(root, config.statuses),
             "assign": assign,
             "create": _creator(root, config),
-            "read": _reader(root, evaluate),
+            "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
             "edit": _editor(root, config.statuses),
             "archive": _archiver(root),
