@@ -15,11 +15,11 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 
-from starpulse.adapter_kit import next_event, serve, url
 from starpulse.adapters.runs.ingest import MAX_BODY
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import next_event, serve, url
 from starpulse.contracts.adapters import Finding
-from starpulse.insights import Insights, InsightStore, restore
+from starpulse.projections.board_feed import BoardFeed
+from starpulse.projections.insights import Insights, InsightStore, restore
 from starpulse.store.tables import insights as insight_table
 
 NOW = 1_700_000_100.0

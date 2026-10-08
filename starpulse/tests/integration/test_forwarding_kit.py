@@ -15,13 +15,14 @@ from typing import Any
 
 import pytest
 
-from starpulse import forward, lane_events
-from starpulse.adapter_kit import serve, url
 from starpulse.adapters.runs.ingest import ForwardIngest
-from starpulse.board_feed import BoardFeed
+from starpulse.api import forward
+from starpulse.api.adapter_kit import serve, url
+from starpulse.api.forward import OPT_IN_FILE, Forwarder, OptIn, post
 from starpulse.contracts import BoardTask
-from starpulse.forward import OPT_IN_FILE, Forwarder, OptIn, post
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import Forward
+from starpulse.store import lane_events
 from starpulse.store.event_log import EventLog, Tail
 from starpulse.store.history import HistoryStore
 

@@ -21,7 +21,7 @@ from starpulse.domain.snapshot import Qualify
 from starpulse.settings.config import DEFAULT_TYPE
 
 if TYPE_CHECKING:
-    from starpulse.board_feed import BoardFeed
+    from starpulse.projections.board_feed import BoardFeed
     from starpulse.store.event_log import EventLog
 
 __all__ = [

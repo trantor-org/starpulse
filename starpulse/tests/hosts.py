@@ -5,7 +5,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from starpulse import doctor
+from starpulse.projections import doctor
 from starpulse.settings.config import RunsInstance
 
 

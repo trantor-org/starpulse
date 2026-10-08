@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
 import demo_workspace
-from starpulse.demo import scrub
+import tomllib
+
+from starpulse.cli.demo import scrub
 
 PREVIEW = Path(__file__).with_name("preview.toml")
 NOW = 1_790_000_000.0

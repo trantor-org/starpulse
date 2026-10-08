@@ -1,8 +1,8 @@
-"""Alembic's environment for the hub's history schema: online only, on the connection `starpulse.hub` passes in."""
+"""Alembic's environment for the hub's history schema: online only, on the connection `starpulse.api.hub` passes in."""
 
 from alembic import context
 
-from starpulse.hub import VERSION_TABLE
+from starpulse.api.hub import VERSION_TABLE
 from starpulse.store import history  # noqa: F401 - declares the history tables on the shared metadata
 from starpulse.store.tables import metadata
 

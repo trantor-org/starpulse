@@ -2,7 +2,7 @@
 
 import pytest
 
-from starpulse.ci import CI, CI_MACHINES
+from starpulse.projections.ci import CI, CI_MACHINES
 
 #: Every row of the approved transition table (starpulse PR 96), one per source state: (from, event, to).
 TABLE = [

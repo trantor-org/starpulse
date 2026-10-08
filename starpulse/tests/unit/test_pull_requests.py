@@ -8,10 +8,10 @@ from functools import partial
 
 import pytest
 
-from starpulse.adapter_kit import task
 from starpulse.adapters.runs.pull_requests import GhUnavailableError, PullRequests, Pulls, fetch, read_repository
-from starpulse.board_feed import BoardFeed
-from starpulse.ci_trail import PullHistory, parse
+from starpulse.api.adapter_kit import task
+from starpulse.projections.board_feed import BoardFeed
+from starpulse.projections.ci_trail import PullHistory, parse
 from starpulse.settings.config import Repo
 from starpulse.settings.pins import GitHub
 

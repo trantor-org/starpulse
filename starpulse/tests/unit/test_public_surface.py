@@ -103,3 +103,16 @@ def test_each_public_module_exports_exactly_its_pinned_names(module: str) -> Non
     assert sorted(imported.__all__) == sorted(set(imported.__all__)), "a name is listed twice"
     assert set(imported.__all__) == PUBLIC[module]
     assert [name for name in PUBLIC[module] if not hasattr(imported, name)] == []
+
+
+def test_the_top_level_holds_only_public_facades() -> None:
+    """Each layer package holds the code; a module beside `__init__` is a public path kept importable (D2 of doc-115)."""
+    package = Path(importlib.import_module("starpulse").__file__ or "").parent
+    top_level = {path.stem for path in package.glob("*.py")}
+
+    facades = {module.removeprefix("starpulse.") for module in PUBLIC} - {"contracts"}  # a package, not a module
+    assert top_level == facades | {"__init__", "__main__", "claude_code"}
+
+
+def test_the_board_feed_logs_under_its_public_path() -> None:
+    assert importlib.import_module("starpulse.projections.board_feed").logger.name == "starpulse.board_feed"

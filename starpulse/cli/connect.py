@@ -19,10 +19,11 @@ import json
 import os
 import re
 import sys
-import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+
+import tomllib
 
 from starpulse.adapters.boards import jira, native, upstream_backlog
 from starpulse.contracts.adapters import BoardTask

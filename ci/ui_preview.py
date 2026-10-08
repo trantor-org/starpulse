@@ -2,7 +2,7 @@
 
 `.github/workflows/ui-preview.yml` runs this on every pull request that touches the page (`starpulse/web/**`), the
 design mockup and element sheet (`design/**`) or this preview. It builds each changed surface's scrubbed one-file demo with
-`starpulse.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
+`starpulse.cli.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
 inlined, screenshots the demos, publishes them to the public `starpulse-demo` Pages repository while the
 pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
 touches the same paths runs it with `--main`, which republishes every demo as `main/`, the live demo the README
@@ -37,7 +37,7 @@ ELEMENTS_DIR = "elements"
 #: The paths whose change renders each surface; the workflow's `paths` filter is their union.
 SURFACE_GLOBS = {
     # the demo's scrub decides what the flow view's demo can draw
-    FLOW_VIEW: ("starpulse/web/**", "starpulse/demo.py", "ci/**", ".github/workflows/ui-preview.yml"),
+    FLOW_VIEW: ("starpulse/web/**", "starpulse/cli/demo.py", "ci/**", ".github/workflows/ui-preview.yml"),
     MOCKUP: ("design/**",),
     # the sheet draws the real stylesheet, so a palette change re-renders it too
     ELEMENTS: ("design/elements/**", "starpulse/web/src/style.css"),
@@ -89,7 +89,7 @@ _LOCAL_SCRIPT = re.compile(r'<script src="([\w.-]+\.js)"></script>')
 def sub_mockup(directory: Path) -> str:
     """A sub-mockup's `index.html` with each local script inlined, so the one file is the whole demo.
 
-    A sub-mockup is a scrubbed capture of the page (`starpulse.demo --server`) with its own layer over it, so it is
+    A sub-mockup is a scrubbed capture of the page (`starpulse.cli.demo --server`) with its own layer over it, so it is
     published as it is; the leak scan still reads every byte before anything goes out.
     """
 
@@ -103,12 +103,12 @@ MARKER = "<!-- starpulse:ui-preview -->"
 
 _CAVEATS = {
     FLOW_VIEW: (
-        "Rendered from the scrubbed demo `starpulse.demo` builds off a server running `ci/preview.toml`: "
+        "Rendered from the scrubbed demo `starpulse.cli.demo` builds off a server running `ci/preview.toml`: "
         "the synthetic workspace in `ci/workspace` (a nine-lane board, its lifecycle machines and five DAG domains) "
         "filled with synthetic tasks, sessions and runs, and no real board or runs adapter behind it."
     ),
-    MOCKUP: "Rendered from the scrubbed demo `starpulse.demo --mockup design` builds from the saved mockup data.",
-    ELEMENTS: "Rendered from `starpulse.demo --elements design/elements`: the palette tokens and each element, drawn by the real stylesheet.",
+    MOCKUP: "Rendered from the scrubbed demo `starpulse.cli.demo --mockup design` builds from the saved mockup data.",
+    ELEMENTS: "Rendered from `starpulse.cli.demo --elements design/elements`: the palette tokens and each element, drawn by the real stylesheet.",
 }
 
 
@@ -170,7 +170,7 @@ MAIN_FOLDER = "main"
 #: The hosts a public demo may link to: XML namespaces, the mockup's web font and React's error decoder.
 DEMO_URL_HOSTS = frozenset({"www.w3.org", "fonts.googleapis.com", "fonts.gstatic.com", "react.dev"})
 #: Identifiers the scrub must have removed, by the name a refusal gives them. The scrub's own synthetic UUIDs
-#: (`starpulse.demo`) are `<n>-0000-4000-8000-000000000000`, so only those pass.
+#: (`starpulse.cli.demo`) are `<n>-0000-4000-8000-000000000000`, so only those pass.
 LEAK_PATTERNS = {
     "task id": re.compile(r"\bTASK-\d+"),
     "private address": re.compile(r"\b(?:(?:10|127)\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b"),
@@ -324,7 +324,7 @@ def _flow_view() -> Iterator[int]:  # pragma: no cover — process boundary
     port = _free_port()
     env = {k: v for k, v in os.environ.items() if k != "DATABASE_URI"}
     server = subprocess.Popen(
-        [sys.executable, "-m", "starpulse.server", "--port", str(port), "--config", PREVIEW_CONFIG], env=env
+        [sys.executable, "-m", "starpulse.api.server", "--port", str(port), "--config", PREVIEW_CONFIG], env=env
     )
     try:
         _wait_ready(f"http://127.0.0.1:{port}/api/snapshot", 180)
@@ -340,15 +340,15 @@ def _build_demos(names: Sequence[str], out: Path) -> list[Path]:  # pragma: no c
     if demo_name(FLOW_VIEW) in names:
         with _flow_view() as port:
             target = out / demo_name(FLOW_VIEW)
-            _run(sys.executable, "-m", "starpulse.demo", "--server", f"http://127.0.0.1:{port}", "--out", str(target))
+            _run(sys.executable, "-m", "starpulse.cli.demo", "--server", f"http://127.0.0.1:{port}", "--out", str(target))
             built.append(target)
     if demo_name(MOCKUP) in names:
         target = out / demo_name(MOCKUP)
-        _run(sys.executable, "-m", "starpulse.demo", "--mockup", DESIGN, "--out", str(target))
+        _run(sys.executable, "-m", "starpulse.cli.demo", "--mockup", DESIGN, "--out", str(target))
         built.append(target)
     if demo_name(ELEMENTS) in names:
         target = out / demo_name(ELEMENTS)
-        _run(sys.executable, "-m", "starpulse.demo", "--elements", f"{DESIGN}/{ELEMENTS_DIR}", "--out", str(target))
+        _run(sys.executable, "-m", "starpulse.cli.demo", "--elements", f"{DESIGN}/{ELEMENTS_DIR}", "--out", str(target))
         built.append(target)
     return built
 

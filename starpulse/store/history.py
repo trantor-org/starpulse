@@ -38,17 +38,15 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import OperationalError
 
-from starpulse import lane_events
-from starpulse.analytics import LaneStays, Stay
 from starpulse.domain.level import Level
 from starpulse.domain.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
+from starpulse.domain.stays import LaneStays, Stay
 from starpulse.domain.transitions import Table as Transitions
 from starpulse.settings.config import discover, load
 from starpulse.store import events as machine_events
+from starpulse.store import lane_events
 from starpulse.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables
-from starpulse.store.tables import gaps as _gaps
-from starpulse.store.tables import metadata
-from starpulse.summaries import (
+from starpulse.store.summaries import (
     BOARD,
     SUMMARY_TABLES,
     Summaries,
@@ -62,6 +60,8 @@ from starpulse.summaries import (
     write_lane,
     write_step,
 )
+from starpulse.store.tables import gaps as _gaps
+from starpulse.store.tables import metadata
 
 __all__ = ["History", "machine_steps"]
 

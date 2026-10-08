@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.server import assemble
+from starpulse.api.server import assemble
 from starpulse.settings.config import ConfigError, load
 
 

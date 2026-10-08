@@ -4,9 +4,9 @@ import re
 import subprocess
 from pathlib import Path
 
-from starpulse.adapter_kit import MachineEventsAdapterKit
 from starpulse.adapters.harnesses.codex import CodexAdapter, git_branch
 from starpulse.adapters.harnesses.harness import HARNESS_MACHINES
+from starpulse.api.adapter_kit import MachineEventsAdapterKit
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 

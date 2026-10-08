@@ -14,7 +14,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse.adapter_kit import RunsAdapterKit, serve, url
 from starpulse.adapters.runs import run_events
 from starpulse.adapters.runs.github_actions import (
     _CONCLUSION,
@@ -28,8 +27,9 @@ from starpulse.adapters.runs.github_actions import (
     workflow_run_entry,
 )
 from starpulse.adapters.runs.github_actions import follow as follow_repository
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import RunsAdapterKit, serve, url
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import runs_adapter
 from starpulse.store.event_log import EventLog
 from starpulse.tests.github_stub import REPO, Recorded

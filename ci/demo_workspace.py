@@ -2,7 +2,7 @@
 
 It draws what a working team's StarPulse draws, from the machine files in `ci/workspace`: a nine-lane Board whose In
 Progress opens a delivery machine (and, under that machine's open pull request, a review triage), and the lifecycle
-machines of the other skills an agent session runs. It places no task: `starpulse.demo` seeds the tasks, sessions and
+machines of the other skills an agent session runs. It places no task: `starpulse.cli.demo` seeds the tasks, sessions and
 runs at a real workspace's scale onto this structure, so nothing a real tracker holds is behind the public demo.
 """
 

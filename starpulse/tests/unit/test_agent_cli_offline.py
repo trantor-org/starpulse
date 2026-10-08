@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from starpulse import agent_cli as cli
+from starpulse.cli import agent_cli as cli
 
 VALID = Path(__file__).parent.parent.parent / "machines" / "harness.yaml"
 

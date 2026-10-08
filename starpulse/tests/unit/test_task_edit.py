@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
-from starpulse.adapter_kit import task
 from starpulse.adapters.boards.seam import Board, Written
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import task
+from starpulse.api.server import archive_task, assemble, edit_task, task_record
 from starpulse.contracts.adapters import Move
-from starpulse.server import archive_task, assemble, edit_task, task_record
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import load
 from starpulse.tests import fake_board
 from starpulse.tests.machines import MACHINES

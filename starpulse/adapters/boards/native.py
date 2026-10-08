@@ -18,7 +18,6 @@ from typing import Any
 
 import yaml
 
-from starpulse import criteria
 from starpulse.adapters.boards.seam import Board, MoveWriter, TaskArchiver, TaskCreator, TaskEditor, TaskReader, Written
 from starpulse.adapters.boards.upstream_backlog import (
     _FOLDERS,
@@ -33,6 +32,7 @@ from starpulse.adapters.boards.upstream_backlog import (
     lane_id,
     project_board,
 )
+from starpulse.projections import criteria
 
 #: Where the board lives, relative to the config's directory (or the working directory without a config).
 DEFAULT_PATH = ".starpulse/board"

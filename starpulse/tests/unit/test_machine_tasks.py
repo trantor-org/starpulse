@@ -9,10 +9,10 @@ from typing import Literal
 
 import pytest
 
-from starpulse.board_feed import BoardFeed, follow
 from starpulse.contracts.adapters import BoardTask
 from starpulse.domain.transitions import Table
-from starpulse.machine_tasks import MachineTasks
+from starpulse.projections.board_feed import BoardFeed, follow
+from starpulse.projections.machine_tasks import MachineTasks
 from starpulse.store import events as machine_events
 from starpulse.store.event_log import EventLog
 from starpulse.tests.machines import FLOWS, MACHINES
@@ -237,7 +237,7 @@ def test_a_task_is_placed_with_the_whole_agent_the_page_overlays_the_board_field
 
 
 def test_a_task_active_exactly_at_the_window_edge_is_kept(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse.board_feed.time.time", lambda: 1000.0)
+    monkeypatch.setattr("starpulse.projections.board_feed.time.time", lambda: 1000.0)
     feed, tasks = _feed(window_s=100)
     tasks.handle_entry(*_entry("in-progress", "WORKTREE_READY", at=900.0))
 

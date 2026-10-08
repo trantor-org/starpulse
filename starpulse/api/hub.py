@@ -40,7 +40,7 @@ __all__ = [
 
 #: Where the database records the revision it is at, named so it never meets a host project's own Alembic table.
 VERSION_TABLE = "starpulse_alembic_version"
-_MIGRATIONS = Path(__file__).parent / "store" / "migrations"
+_MIGRATIONS = Path(__file__).parents[1] / "store" / "migrations"
 
 
 class HubError(ValueError):

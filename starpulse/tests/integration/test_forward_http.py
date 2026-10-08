@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from starpulse.adapter_kit import serve, url
 from starpulse.adapters.runs.ingest import MAX_FORWARD_BODY, ForwardIngest
+from starpulse.api.adapter_kit import serve, url
 from starpulse.store import events
 from starpulse.store.event_log import EventLog, Tail
 

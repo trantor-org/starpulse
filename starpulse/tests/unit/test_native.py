@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse.adapter_kit import BoardAdapterKit
 from starpulse.adapters.boards.native import board
 from starpulse.adapters.boards.seam import Board
 from starpulse.adapters.boards.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import BoardAdapterKit
+from starpulse.api.server import announce, assemble, move_task
 from starpulse.contracts.adapters import BoardTask
 from starpulse.domain.machine_definition import Writer
-from starpulse.server import announce, assemble, move_task
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import load
 from starpulse.store.event_log import EventLog
 

@@ -27,16 +27,14 @@ from starpulse.adapters.boards.seam import Board, MoveWriter, Written
 from starpulse.contracts.adapters import BoardTask, Move, TaskKeys
 from starpulse.domain.machine_definition import Writer, load_machine
 from starpulse.domain.snapshot import Qualify, describe
-from starpulse.domain.transitions import lane_id
+from starpulse.domain.transitions import DEFAULT_STATUSES, board_machine, lane_id
 
 if TYPE_CHECKING:
-    from starpulse.board_feed import BoardFeed
+    from starpulse.projections.board_feed import BoardFeed
     from starpulse.store.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
-#: Upstream's own defaults, used for a project with no `config.yml`.
-DEFAULT_STATUSES = ("To Do", "In Progress", "Done")
 DEFAULT_PREFIX = "task"
 #: Where a task file sits decides whether it is in a lane or has left them; subtasks are ids like `task-1.1`.
 _FOLDERS: tuple[tuple[str, Literal["completed", "archived"] | None], ...] = (
@@ -94,27 +92,6 @@ def upstream_keys(prefix: str = DEFAULT_PREFIX) -> TaskKeys:
         key=re.compile(key, re.I),
         branch=re.compile(rf"(?:refs/heads/)?(?:[^/]+/)*?({key})(?=$|[-_/])", re.I),
     )
-
-
-def board_machine(statuses: tuple[str, ...]) -> dict:
-    """The Board machine a project's statuses make: a state each, and a transition between any two.
-
-    Backlog.md lets a task move to any status, so the machine does too; `to_<state>` names the event.
-    """
-    ids = [lane_id(status) for status in statuses]
-    return {
-        "states": [
-            {"id": lane_id(s), "name": s, "initial": i == 0, "final": i == len(statuses) - 1}
-            for i, s in enumerate(statuses)
-        ],
-        "transitions": [
-            {"source": source, "target": target, "event": f"to_{target}"}
-            for source in ids
-            for target in ids
-            if source != target
-        ],
-        "mainLine": ids,
-    }
 
 
 def board_moves(machine: dict, writers: Mapping[str, tuple[Writer, ...]] = {}) -> dict[str, dict[str, Move]]:

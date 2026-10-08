@@ -11,14 +11,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from starpulse import lane_events
 from starpulse.adapters.runs.ingest import ForwardIngest
-from starpulse.board_feed import BoardFeed
+from starpulse.api.forward import OPT_IN_FILE, Forwarder, OptIn
 from starpulse.contracts import BoardTask
 from starpulse.domain.level import Level, Orbit, Terminal
 from starpulse.domain.level_metrics import level_metrics
-from starpulse.forward import OPT_IN_FILE, Forwarder, OptIn
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import Forward
+from starpulse.store import lane_events
 from starpulse.store.event_log import EventLog, Tail
 from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES

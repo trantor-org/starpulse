@@ -9,8 +9,8 @@ from pathlib import Path
 import jsonschema
 import pytest
 
+from starpulse.cli.demo import TITLES, _send_back, capture, elements, mockup, page, scrub, scrub_board, scrub_mockup
 from starpulse.contracts.adapters import SCHEMAS, Dag, Pool
-from starpulse.demo import TITLES, _send_back, capture, elements, mockup, page, scrub, scrub_board, scrub_mockup
 
 SECRET = "Rotate the router admin password"
 

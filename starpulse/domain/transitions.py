@@ -3,12 +3,37 @@
 from collections import defaultdict
 from collections.abc import Mapping
 
-__all__ = ["Table", "lane_id", "tables"]
+__all__ = ["DEFAULT_STATUSES", "Table", "board_machine", "lane_id", "tables"]
+
+
+#: Upstream's own defaults, used for a project with no `config.yml`.
+DEFAULT_STATUSES = ("To Do", "In Progress", "Done")
 
 
 def lane_id(status: str) -> str:
     """A status as the Board machine's state id: lower-cased, spaces as `_`."""
     return status.lower().replace(" ", "_")
+
+
+def board_machine(statuses: tuple[str, ...]) -> dict:
+    """The Board machine a project's statuses make: a state each, and a transition between any two.
+
+    Backlog.md lets a task move to any status, so the machine does too; `to_<state>` names the event.
+    """
+    ids = [lane_id(status) for status in statuses]
+    return {
+        "states": [
+            {"id": lane_id(s), "name": s, "initial": i == 0, "final": i == len(statuses) - 1}
+            for i, s in enumerate(statuses)
+        ],
+        "transitions": [
+            {"source": source, "target": target, "event": f"to_{target}"}
+            for source in ids
+            for target in ids
+            if source != target
+        ],
+        "mainLine": ids,
+    }
 
 
 class Table:

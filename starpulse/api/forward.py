@@ -19,9 +19,8 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from starpulse import lane_events
-from starpulse.adapters.runs import run_events
-from starpulse.store import events
+from starpulse.adapters.runs.forwarded import FIELDS, PERSON, project
+from starpulse.store import lane_events
 from starpulse.store.event_log import EventLog, Tail
 
 if TYPE_CHECKING:
@@ -30,22 +29,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: The fields each forwarded stream may carry, and the ones among them that name a person.
-FIELDS: dict[str, tuple[str, ...]] = {
-    events.STREAM: ("machine", "event", "task", "run", "actor", "assignee", "time"),
-    run_events.STREAM: ("time", "phase", "workflow", "run_id", "status", "step", "depends"),
-    lane_events.STREAM: lane_events.FIELDS,
-}
-PERSON = ("actor", "assignee")
 #: How many of the next entries the status lists; the rest are only counted as "more".
 PREVIEW = 10
 
 __all__ = ["FIELDS", "OPT_IN_FILE", "PERSON", "PREVIEW", "Forwarder", "OptIn", "build", "main", "post", "project", "start"]
-
-
-def project(stream: str, fields: dict[str, Any], *, opt_in: bool) -> dict[str, Any]:
-    """The part of one `stream` entry's `fields` that may leave the IC; a person's name stays unless `opt_in`."""
-    return {k: fields[k] for k in FIELDS[stream] if k in fields and (opt_in or k not in PERSON)}
 
 
 #: Where the opt-in lives, in the directory of the `--config` file (the working directory without one).

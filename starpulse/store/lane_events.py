@@ -5,7 +5,7 @@ the same `<task>@<lane>@<entered>` event id, so the log, the history and a hub t
 An entry carries `task`, `lane` (the Board machine state id) and `time` (epoch seconds when the task entered the lane),
 the task's facets `team`, `milestone` and `labels` (absent when empty), and `assignee` when the task has one. It never
 carries a title, a description, a holder or any session detail. `assignee` names a person, so it leaves the instance
-only while it is opted in to naming (`forward.PERSON`).
+only while it is opted in to naming (`adapters.runs.forwarded.PERSON`).
 """
 
 from __future__ import annotations

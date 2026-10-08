@@ -5,7 +5,7 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
-from starpulse.adapter_kit import InsightsEngineKit
+from starpulse.api.adapter_kit import InsightsEngineKit
 
 FINDING = {
     "id": "slow-review",

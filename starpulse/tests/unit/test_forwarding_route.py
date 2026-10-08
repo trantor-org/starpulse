@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.adapter_kit import serve, url
-from starpulse.server import forwarding
+from starpulse.api.adapter_kit import serve, url
+from starpulse.api.server import forwarding
 from starpulse.tests.unit.test_forwarder import Rig
 
 

@@ -26,13 +26,14 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from starpulse.adapters.boards.seam import Board
-from starpulse.adapters.boards.upstream_backlog import board_moves, lane_id
+from starpulse.adapters.boards.upstream_backlog import board_moves
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.domain.machine_definition import MachineDefinitionError, compile_document, validate
 from starpulse.domain.snapshot import Qualify, describe
+from starpulse.domain.transitions import lane_id
 
 if TYPE_CHECKING:
-    from starpulse.board_feed import BoardFeed
+    from starpulse.projections.board_feed import BoardFeed
     from starpulse.store.event_log import EventLog
 
 logger = logging.getLogger(__name__)

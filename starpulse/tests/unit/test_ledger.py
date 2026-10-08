@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from starpulse.ledger import Occurrence, build, page, pair, pull_occurrences, reruns, strip
+from starpulse.projections.ledger import Occurrence, build, page, pair, pull_occurrences, reruns, strip
 from starpulse.settings.config import CommitKeys
 
 KEYS = CommitKeys(after="AFTER", before="BEFORE", force="FORCE", task="TASK")
