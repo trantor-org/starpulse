@@ -116,6 +116,54 @@ def test_an_unreadable_pointer_is_asked_again_rather_than_remembered(monkeypatch
     assert len(gh.asked) == 2
 
 
+def test_a_gh_that_fails_with_an_error_body_answers_nothing_rather_than_the_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def not_found(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 1, '{"message":"Not Found","status":"404"}', "gh: Not Found")
+
+    monkeypatch.setattr(subprocess, "run", not_found)
+    github = GitHub()
+
+    assert github.pointer("trantor-org/trantor", "p1", "skills") is None
+    assert github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is False
+    assert github.answers() == {"pointers": [], "reaches": []}
+
+
+def test_a_saved_pointer_that_is_not_a_commit_is_dropped_on_restore_so_the_next_read_settles_it() -> None:
+    body = '{"message":"Not Found","status":"404"}'
+    github = GitHub()
+
+    github.restore(
+        {
+            "pointers": [
+                ["trantor-org/unraid", "p1", "skills", body],
+                ["trantor-org/trantor", "p2", "skills", NEW_POINTER],
+            ],
+            "reaches": [["trantor-org/skills", CHILD_SHA, body, False]],
+        }
+    )
+
+    assert github.answers() == {"pointers": [["trantor-org/trantor", "p2", "skills", NEW_POINTER]], "reaches": []}
+
+
+def test_a_path_a_merge_does_not_pin_is_a_remembered_answer_that_is_never_asked_of_gh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gh = Gh({})
+    monkeypatch.setattr(subprocess, "run", gh)
+    github = GitHub()
+
+    github.learn({("trantor-org/unraid", "p1", "skills"): None}, {})
+
+    assert github.pointer("trantor-org/unraid", "p1", "skills") is None
+    assert github.answers()["pointers"] == [["trantor-org/unraid", "p1", "skills", None]]
+    restored = GitHub()
+    restored.restore(github.answers())
+    assert restored.pointer("trantor-org/unraid", "p1", "skills") is None
+    assert gh.asked == []
+
+
 @pytest.mark.parametrize(
     ("status", "contained"), [("ahead", True), ("identical", True), ("behind", False), ("diverged", False)]
 )

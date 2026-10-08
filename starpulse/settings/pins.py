@@ -25,6 +25,7 @@ _PULL = re.compile(r"https://github\.com/([^/\s]+)/([^/\s]+)/pull/\d+/?")
 _GH_TIMEOUT_S = 30
 #: `compare` statuses meaning the pointer's commit is, or descends from, the compared merge.
 _CONTAINS = {"ahead", "identical"}
+_COMMIT_ID = re.compile(r"[0-9a-f]{40}")
 
 
 class Pins(Protocol):
@@ -100,7 +101,7 @@ class GitHub:
     """The pointer and containment reads `link` needs, through `gh`; an answer is kept, an unreadable one is not."""
 
     def __init__(self) -> None:
-        self._pointers: dict[tuple[str, str, str], str] = {}
+        self._pointers: dict[tuple[str, str, str], str | None] = {}
         self._reaches: dict[tuple[str, str, str], bool] = {}
 
     def pointer(self, repo: str, sha: str, path: str) -> str | None:
@@ -115,8 +116,13 @@ class GitHub:
             self._reaches[key] = status in _CONTAINS
         return self._reaches.get(key, False)
 
-    def learn(self, pointers: Mapping[tuple[str, str, str], str], reaches: Mapping[tuple[str, str, str], bool]) -> None:
-        """Keep the answers a batched GraphQL read already gave, so `pointer` and `reaches` need no REST call for them."""
+    def learn(
+        self, pointers: Mapping[tuple[str, str, str], str | None], reaches: Mapping[tuple[str, str, str], bool]
+    ) -> None:
+        """Keep the answers a batched GraphQL read already gave, so `pointer` and `reaches` need no REST call for them.
+
+        A pointer of None says the merge has nothing at that path, which is as settled as a commit.
+        """
         for key, found in pointers.items():
             self._pointers.setdefault(key, found)
         for key, contains in reaches.items():
@@ -130,15 +136,18 @@ class GitHub:
         }
 
     def restore(self, answers: Mapping[str, list[list]]) -> None:
-        """Keep the answers `answers` saved, so those reads are never asked again; an unreadable entry is skipped."""
+        """Keep the answers `answers` saved, so those reads are never asked again; an unreadable entry, or a pointer
+        that is not a commit id (an error body an older reader kept), is skipped."""
         for repo, sha, path, found in (row for row in answers.get("pointers", []) if len(row) == 4):
-            self._pointers.setdefault((repo, sha, path), found)
+            if found is None or _COMMIT_ID.fullmatch(found):
+                self._pointers.setdefault((repo, sha, path), found)
         for repo, sha, pointer, contained in (row for row in answers.get("reaches", []) if len(row) == 4):
-            self._reaches.setdefault((repo, sha, pointer), bool(contained))
+            if _COMMIT_ID.fullmatch(pointer):
+                self._reaches.setdefault((repo, sha, pointer), bool(contained))
 
 
 def _api(endpoint: str, jq: str) -> str | None:
-    """`jq` of the endpoint's answer, None when `gh` fails or prints nothing."""
+    """`jq` of the endpoint's answer, None when `gh` fails (it prints the error body to stdout) or prints nothing."""
     try:
         result = subprocess.run(
             ["gh", "api", endpoint, "--jq", jq], capture_output=True, text=True, timeout=_GH_TIMEOUT_S
@@ -146,4 +155,4 @@ def _api(endpoint: str, jq: str) -> str | None:
     except (OSError, subprocess.SubprocessError) as exc:
         logger.warning("pin bumps: %s", exc)
         return None
-    return result.stdout.strip() or None
+    return (result.stdout.strip() or None) if result.returncode == 0 else None
