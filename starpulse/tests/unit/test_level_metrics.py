@@ -70,7 +70,27 @@ def test_an_entry_before_the_window_opened_is_no_throughput() -> None:
     assert _metrics(runs, window_s=40 * H)["throughput"] == {"count": 0, "per_day": 0.0}
 
 
-def test_aging_is_the_hours_since_a_run_entered_its_current_working_interval_against_the_cycle_time_p85() -> None:
+def test_a_goal_run_that_settles_and_is_seen_in_the_goal_again_completes_once() -> None:
+    settled = MACHINE["states"] + [{"id": "completed", "initial": False, "final": True}]
+    run = _run("a", "R", (60, "work"), (70, "done"), (71, "completed"), (80, "done"), (81, "completed"))
+
+    metrics = level_metrics(LEVEL, {"states": settled}, [run], now=NOW, window_s=40 * H)
+
+    assert metrics["throughput"]["count"] == 1
+    assert metrics["arrivals"] == [{"source": "a", "state": "done", "at": 70 * H}]
+
+
+def test_a_run_that_settles_without_reaching_the_goal_stays_settled() -> None:
+    settled = MACHINE["states"] + [{"id": "completed", "initial": False, "final": True}]
+    run = _run("a", "R", (60, "to_do"), (70, "completed"))
+
+    metrics = level_metrics(LEVEL, {"states": settled}, [run], now=NOW, window_s=40 * H)
+
+    assert metrics["throughput"]["count"] == 0
+    assert next(s for s in metrics["time_in_state"] if s["id"] == "to_do")["task_s"] == 10 * H
+
+
+def test_aging_is_the_hours_since_a_run_first_entered_a_working_state_against_the_cycle_time_p85() -> None:
     aging = _metrics()["aging"]
 
     assert aging["threshold_s"] == 30 * H  # cycle times A1 20h, B1 30h; nearest rank 0.85 * 2 is the second
@@ -80,12 +100,12 @@ def test_aging_is_the_hours_since_a_run_entered_its_current_working_interval_aga
     ]
 
 
-def test_aging_counts_from_the_current_working_interval_after_a_bounce_through_a_waiting_state() -> None:
+def test_aging_counts_from_the_first_working_entry_after_a_bounce_through_a_waiting_state() -> None:
     bounced = _run("a", "A", (10, "work"), (20, "to_do"), (90, "work"))
 
     runs = _metrics([bounced])["aging"]["runs"]
 
-    assert [run["age_s"] for run in runs] == [10 * H]
+    assert [run["age_s"] for run in runs] == [90 * H]  # cycle time's start: the first transition into a working state
 
 
 def test_aging_keeps_the_first_entry_when_a_run_moves_between_working_states() -> None:
