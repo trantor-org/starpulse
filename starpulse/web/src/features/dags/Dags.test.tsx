@@ -7,6 +7,7 @@ import type { DagData } from "./dags";
 import { lastLine } from "./DagParts";
 import { DagLegend, Dags } from "./Dags";
 import { rows } from "./dags";
+import css from "../../style.css?raw";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });
@@ -212,5 +213,12 @@ describe("a row's last run cell for a run with no recorded time", () => {
   it("leaves out the age and duration of a healthy DAG that has no finish or start time", () => {
     expect(cell(dag("runs/a", "succeeded", { startedAt: "", finishedAt: "" }))).toBe("ran");
     expect(cell(dag("runs/a", "succeeded", { startedAt: "", finishedAt: "1970-01-01T00:55:00Z" }))).toBe("5m ago");
+  });
+});
+
+describe("the DAGs catalog's columns", () => {
+  it("reserve the run-safe strip on every row and the header, not only a startable row", () => {
+    expect(css).not.toMatch(/#dg \.trow\.startable \{[^}]*padding-right/);
+    expect(css).toMatch(/#dg \.thead, #dg \.trow \{ padding-right: calc\(max\(30px, 30px \* var\(--fs\)\) \+ 12px\); \}/);
   });
 });
