@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { padMachines } from "./demoMachines";
 import { PAGE } from "./machineLanes";
-import type { FlowSnapshot, Machine, Snapshot } from "./types";
+import type { FlowSnapshot, Machine, Snapshot } from "./api";
 
 const DAY = 86400;
 const machine: Machine = {

@@ -150,6 +150,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import logging
 import math
 import os
 import queue
@@ -165,6 +166,7 @@ from types import ModuleType
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse import analytics, doctor, forward, lane_events
@@ -190,6 +192,7 @@ from starpulse.board_feed import BoardFeed, follow
 from starpulse.ci import attach
 from starpulse.ci_trail import CiTrail
 from starpulse.contracts.adapters import Move, StartFailedError
+from starpulse.contracts.api import encode, event
 from starpulse.domain.level import Level
 from starpulse.domain.level_metrics import RunWindow, WindowPastHistory, level_metrics
 from starpulse.domain.snapshot import qualifier
@@ -216,6 +219,7 @@ from starpulse.store.history import (
     record_machine_events,
 )
 
+logger = logging.getLogger(__name__)
 _HERE = Path(__file__).parent
 #: The Vite build of web/; it holds nothing but the page, so all of it is served.
 _STATIC = _HERE / "static"
@@ -253,6 +257,17 @@ _TASKS = "/api/tasks"
 _INGEST = "/api/runs/events"
 _FORWARD = "/api/forward"
 _INSIGHTS = "/api/insights"
+#: The body each write route answers, by `contracts.api.BODIES`; a run and a rerun answer `run`.
+_WRITES = {
+    _MOVE: "move",
+    _START: "start",
+    _EDIT: "edit",
+    _ARCHIVE: "archive",
+    _TASKS: "create",
+    _INGEST: "ingest",
+    _FORWARD: "forward",
+    _INSIGHTS: "insight",
+}
 #: The most rows `/api/merges` and `/api/machines` serve at once.
 _PAGE_LIMIT = 100
 #: The longest title a create accepts; a title is one line on a card, not a description.
@@ -610,7 +625,7 @@ def forwarding(source: str, method: str, raw: bytes, forwarder: Forwarder | None
 
 
 def _error(message: str) -> bytes:
-    return json.dumps({"error": message}).encode()
+    return encode("error", {"error": message})
 
 
 def _page_query(query: dict[str, list[str]], noun: str) -> tuple[float | None, int] | bytes:
@@ -630,7 +645,7 @@ def merges_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes
     asked = _page_query(query, "merges")
     if isinstance(asked, bytes):
         return asked, 400
-    return json.dumps(feed.merges(*asked)).encode(), 200
+    return encode("merges", feed.merges(*asked)), 200
 
 
 def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[bytes, int]:
@@ -642,7 +657,7 @@ def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[byt
     found = feed.machine_rows(open_, *asked)
     if found is None:
         return _error(f"{open_} is not a machine here"), 404
-    return json.dumps(found).encode(), 200
+    return encode("machines", found), 200
 
 
 def history_response(history: History, query: dict[str, list[str]], flows: Collection[str]) -> tuple[bytes, int]:
@@ -660,7 +675,7 @@ def history_response(history: History, query: dict[str, list[str]], flows: Colle
         body["path"], body["steps"] = history.machine_path(task, flow)
     else:
         body["path"] = history.lane_path(task)
-    return json.dumps(body).encode(), 200
+    return encode("history", body), 200
 
 
 #: `/api/analytics/health`'s defaults: the window it counts over, and how long a stay in one state makes a task stuck.
@@ -694,7 +709,7 @@ def health_response(
     health = analytics.stay_health(
         machines["board"], held, history.gaps(), now=now, window_s=window * 3600, stuck_s=stuck * 3600
     )
-    return json.dumps(health).encode(), 200
+    return encode("health", health), 200
 
 
 def level_response(
@@ -704,7 +719,7 @@ def level_response(
 
     A window longer than the history is 400 with the history's length (`history_s`), never answered with its missing
     days as zero; a server with no level is 404."""
-    return _level_view(history, query, level, machines, now, level_metrics)
+    return _level_view("level", history, query, level, machines, now, level_metrics)
 
 
 def trajectories_response(
@@ -712,10 +727,11 @@ def trajectories_response(
 ) -> tuple[bytes, int]:
     """The body and status for `/api/level/trajectories`: the trajectory analytics of the runs that ended in the last
     `hours` as of `now`, refused as `level_response` refuses a window."""
-    return _level_view(history, query, level, machines, now, trajectory_analytics)
+    return _level_view("trajectories", history, query, level, machines, now, trajectory_analytics)
 
 
 def _level_view(
+    kind: str,
     history: History,
     query: dict[str, list[str]],
     level: Level | None,
@@ -745,8 +761,8 @@ def _level_view(
             sources=held.sources,
         )
     except WindowPastHistory as exc:
-        return json.dumps({"error": str(exc), "history_s": exc.history_s}).encode(), 400
-    return json.dumps(answer).encode(), 200
+        return encode(kind, {"error": str(exc), "history_s": exc.history_s}), 400
+    return encode(kind, answer), 200
 
 
 class _ApiHandler(SimpleHTTPRequestHandler):
@@ -773,6 +789,14 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     forward: ForwardIngest | None
     forwarding: Forwarder | None
 
+    def handle_one_request(self) -> None:
+        """Answer the request; a body its model refuses is a logged 500, since the page reads only what a model names."""
+        try:
+            super().handle_one_request()
+        except ValidationError:
+            logger.exception("StarPulse: %s %s built a body its model refuses", self.command, self.path)
+            self._send(encode("error", {"error": "the server built a body its contract refuses"}), 500)
+
     def parse_request(self) -> bool:
         """Parse the request, then let the gate (a hub's sign-in) answer or admit it before any route sees it."""
         return super().parse_request() and (self.gate is None or self.gate(self))
@@ -795,7 +819,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         headers = self.headers
         if (refusal := write_refusal(headers.get("Origin"), headers.get("Host"), headers.get("Content-Type"))) is None:
             return False
-        self._send(json.dumps(refusal[1]).encode(), refusal[0])
+        self._send(encode("error", refusal[1]), refusal[0])
         return True
 
     def do_POST(self) -> None:
@@ -804,6 +828,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS} or path.startswith(_RUN) or _is_rerun(path)
         ) and self._refused_write():
             return
+        kind = _WRITES.get(path, "run")
         if path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
@@ -831,7 +856,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         else:
             self.send_error(404)
             return
-        self._send(json.dumps(body).encode(), status)
+        self._send(encode(kind, body), status)
 
     def _pushed(self, ingest: Callable[[str | None, bytes], tuple[int, dict]], limit: int) -> tuple[int, dict]:
         """Answer one token-guarded push; a body over `limit` is refused unread and the connection closed."""
@@ -851,7 +876,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path.startswith(f"{_INSIGHTS}/") and self.insights is not None:
             status, body = self.insights.retract(unquote(path.removeprefix(f"{_INSIGHTS}/")))
-            self._send(json.dumps(body).encode(), status)
+            self._send(encode("insight", body), status)
         else:
             self._window("DELETE")
 
@@ -871,11 +896,11 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             return
         declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
         status, body = history_window(self.client_address[0], method, self.rfile.read(int(declared or 0)), self.window)
-        self._send(json.dumps(body).encode(), status)
+        self._send(encode("window", body), status)
 
     def _forwarding(self, method: str, raw: bytes) -> tuple[bytes, int]:
         status, body = forwarding(self.client_address[0], method, raw, self.forwarding)
-        return json.dumps(body).encode(), status
+        return encode("forwarding", body), status
 
     def _send(self, body: bytes, status: int = 200) -> None:
         self.send_response(status)
@@ -935,7 +960,7 @@ def request_handler(
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
     contract: Callable[[], dict[str, Any]] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
-    harnesses_body = json.dumps((harnesses or Harnesses((), {})).as_json()).encode()
+    harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
     flows = feed.machines.keys()
 
     class Handler(_ApiHandler):
@@ -964,11 +989,11 @@ def request_handler(
             if url.path == "/api/events":
                 self._stream_events()
             elif url.path == "/api/snapshot":
-                self._send(json.dumps(feed.snapshot()).encode())
+                self._send(encode("snapshot", feed.snapshot()))
             elif url.path == "/api/merges":
                 self._send(*merges_response(feed, parse_qs(url.query)))
             elif url.path == "/api/doctor":
-                self._send(json.dumps(contract() if contract else {"ok": True, "checks": []}).encode())
+                self._send(encode("doctor", contract() if contract else {"ok": True, "checks": []}))
             elif url.path == "/api/machines":
                 self._send(*machines_response(feed, parse_qs(url.query)))
             elif url.path == "/api/history":
@@ -981,7 +1006,7 @@ def request_handler(
                 self._send(*trajectories_response(history, parse_qs(url.query), level, feed.machines, clock()))
             elif url.path.startswith(_TASK):
                 status, body = task_record(feed, read, unquote(url.path.removeprefix(_TASK)))
-                self._send(json.dumps(body).encode(), status)
+                self._send(encode("task", body), status)
             elif url.path == "/api/harnesses":
                 self._send(harnesses_body)
             elif url.path == _WINDOW:
@@ -1014,11 +1039,13 @@ def request_handler(
                         self.wfile.flush()
             except OSError:
                 pass
+            except ValidationError:
+                logger.exception("StarPulse: /api/events sent a body its model refuses; the stream ends")
             finally:
                 feed.unsubscribe(changes)
 
         def _event(self, name: str, data: dict) -> None:
-            self.wfile.write(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode())
+            self.wfile.write(f"event: {name}\ndata: {event(name, data)}\n\n".encode())
             self.wfile.flush()
 
         def log_message(self, format: str, *args: Any) -> None:

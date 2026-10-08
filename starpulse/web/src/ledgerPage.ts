@@ -1,7 +1,7 @@
 // Asks the server for the next page of older merges when a merge Ledger's footer row comes into view.
 import { apiFetch } from "./demo";
 import { PAGE } from "./ledgerScroll";
-import type { LedgerRow } from "./types";
+import type { LedgerRow } from "./api";
 
 export interface MergePage {
   merges: LedgerRow[];

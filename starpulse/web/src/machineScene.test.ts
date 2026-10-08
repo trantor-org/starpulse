@@ -4,7 +4,7 @@ import { merge, Moves } from "./sky";
 import { paging, reveal } from "./machinePaging";
 import { revealGoal, windowOf } from "./machineScroll";
 import { stripScale, tickAt, ticks } from "./machineStrip";
-import type { FlowSnapshot, Machine, Snapshot } from "./types";
+import type { FlowSnapshot, Machine, Snapshot } from "./api";
 
 const NOW = 1_800_000_000;
 const machine = (...ids: string[]): Machine => ({ states: ids.map((id, i) => ({ id, name: id, initial: !i, final: i === ids.length - 1 })), transitions: ids.slice(1).map((t, i) => ({ source: ids[i], target: t, event: t })) });

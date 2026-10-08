@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { FanRow, QueueRow } from "./fan";
 import { fanList, queueCell, startRun, taskPanel } from "./panels";
 import { merge } from "./sky";
-import type { RawAgent, Snapshot } from "./types";
+import type { RawAgent, Snapshot } from "./api";
 
 const task = (extra: Partial<RawAgent> = {}): RawAgent => ({
   id: "PROJ-7", title: "Draw <flows>", state: "in_progress", model: "@agent-standard-high", labels: ["size-3"], description: "Draw the flow.", ...extra,

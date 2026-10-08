@@ -1,7 +1,7 @@
 // The Ledger's unresolved band from the approved mockup (starpulse#95, view C): a merge whose cued run failed stays pinned above the rows, which scroll
 // beneath it, until its cue's `resolves` rule clears the failure. Pure: it says which merges pin, and what is left of the rows' viewport under them.
 import type { Scroll, Viewport } from "./ledgerScroll";
-import type { LedgerRow } from "./types";
+import type { LedgerRow } from "./api";
 
 /** What the band holds: the pins it shows, how many more wait among the rows, and how many failed runs every pin carries. */
 export interface Pins {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BOARD, hostOf, pathKey, pathTo, startPath, taskKicker, topFlow, topOf, tree, type Level, type Path } from "./levels";
-import type { Machine, Snapshot } from "./types";
+import type { Machine, Snapshot } from "./api";
 
 const machine = (ids: string[], subflows: Machine["subflows"] = [], source?: string): Machine => ({
   ...(source ? { source } : {}),

@@ -6,11 +6,11 @@ import { newScroll, place, take, type Scroll } from "./ledgerScroll";
 import { pinsOf, portOf, withPins } from "./ledgerPins";
 import { optionalSteps } from "./ledger";
 import { ledgerLevel } from "./levels";
-import type { Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "./types";
+import type { Cue, Dag, LedgerRow, LedgerRun, Machine, Snapshot } from "./api";
 
 const PALETTE: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185", aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155", waiting: "#c084fc" };
 const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
-const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded" })) });
+const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null })) });
 const machine = (): Machine => ({
   states: ["review", "done"].map((id, i) => ({ id, name: id, initial: !i, final: !!i })),
   transitions: [{ source: "review", target: "done", event: "MERGED" }],

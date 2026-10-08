@@ -1,7 +1,7 @@
 // The two places the navigator and the right rail show a DAG's fan-out: every concurrency pool's load, and the Recent feed's lines.
 import { poolRows } from "./fanout";
 import type { FeedLine } from "./hud";
-import type { Pool } from "./types";
+import type { Pool } from "./api";
 
 /** The navigator's Queues section: each pool's running runs against its cap with any waiting, and a meter that turns red when it is full. Nothing when the adapter reports no pools. */
 export function Queues({ pools }: { pools: Pool[] | undefined }) {

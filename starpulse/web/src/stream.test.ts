@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoServer } from "./demo";
 import { RETRY_MS, applyDelta, openStream } from "./stream";
-import type { ActiveRun, Dag, Pool, RawAgent, Snapshot } from "./types";
+import type { ActiveRun, Dag, Pool, RawAgent, Snapshot } from "./api";
 
 const agent = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "" });
 const board = (agents: RawAgent[], extra: Partial<Snapshot> = {}): Snapshot => ({

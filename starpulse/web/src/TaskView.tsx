@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { ago, fmtAt } from "./clock";
 import { columnsOf, type KanbanTask } from "./kanban";
 import { startLane, startable } from "./start";
-import type { Capabilities, Pull } from "./types";
+import type { Capabilities, Pull } from "./api";
 import {
   PRIORITIES, changedFields, closesOnKey, copyText, copyToClipboard, dependencyRows, discardMessage, editKey, markdown, menuKey, newlyChecked, onScrim, saveTask,
   type DepRow, type Item, type MenuState, type TaskField, type TaskRecord,
@@ -125,7 +125,7 @@ function MachineRows({ machines, now }: { machines: KanbanTask["machines"]; now:
     <div className="machs">
       {machines.map((m) => (
         <details key={m.machine} className="m">
-          <summary><span className={m.source ? "p mapped" : "p"} title={m.source && `mapped from ${m.source}`} /><b>{m.machine}</b><span className="s">{m.state.replace(/_/g, " ")}</span>
+          <summary><span className={m.source ? "p mapped" : "p"} title={m.source ? `mapped from ${m.source}` : undefined} /><b>{m.machine}</b><span className="s">{m.state.replace(/_/g, " ")}</span>
             <span className="k">{m.at ? `${ago(now - m.at)} ago` : ""}</span></summary>
           {m.trail.length > 0 && <ol>{m.trail.slice(-5).map((t, i) => <li key={i}><code>{t.event}</code> → {t.state.replace(/_/g, " ")}<span className="k"> {fmtAt(t.at)}</span></li>)}</ol>}
         </details>
@@ -331,7 +331,7 @@ export function TaskView(p: TaskViewProps) {
 
   const deps = dependencyRows(p.tasks, p.task);
   const offered = columnsOf(names).filter((c) => c in p.task.moves).map((c) => ({
-    to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason,
+    to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason ?? "",
   }));
   const startVisible = startLane(p.task) && !p.claiming;
   const unavailable = editing || p.saving || writing;

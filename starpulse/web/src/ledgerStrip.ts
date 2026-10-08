@@ -2,7 +2,7 @@
 // Pure: it takes the scroll, the server's buckets and the strip's width, and draws nothing.
 import { clockHm, type ClockMode } from "./clock";
 import { place, type Scroll, type Viewport } from "./ledgerScroll";
-import type { LedgerRow, MergeStrip } from "./types";
+import type { LedgerRow, MergeStrip } from "./api";
 
 const DAY = 86400;
 

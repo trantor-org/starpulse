@@ -4,11 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DagData } from "./dags";
 import { Dags } from "./Dags";
-import type { Dag, Machine } from "./types";
+import type { Dag, Machine } from "./api";
 
 const dag = (name: string): Dag => ({
   name, status: "succeeded", runId: "", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", pool: "runs/main",
-  steps: [{ name: "scan", depends: [], status: "succeeded" }],
+  steps: [{ name: "scan", depends: [], status: "succeeded", kind: null }],
 });
 const state = (id: string, name: string) => ({ id, name, initial: false, final: false });
 const board: Machine = {

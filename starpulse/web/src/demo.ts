@@ -8,7 +8,7 @@ import { padMachines } from "./demoMachines";
 import { rankRows } from "./machineRows";
 import { columnsOf } from "./kanban";
 import type { LaneStep } from "./trace";
-import type { LedgerRow, Machine, RawAgent, Snapshot } from "./types";
+import type { LedgerRow, Machine, RawAgent, Snapshot } from "./api";
 import type { TaskRecord } from "./taskView";
 
 let demoN = 0;

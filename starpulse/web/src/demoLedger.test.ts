@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { arriveMerge, demoLedger, scenarioOf } from "./demoLedger";
 import { PAGE } from "./ledgerScroll";
 import { markOf } from "./ledger";
-import type { Cue, Dag, Machine, Snapshot } from "./types";
+import type { Cue, Dag, Machine, Snapshot } from "./api";
 
-const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded" })) });
+const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null })) });
 const machine = (): Machine => ({
   states: ["review", "done"].map((id, i) => ({ id, name: id, initial: !i, final: !!i })),
   transitions: [{ source: "review", target: "done", event: "MERGED" }],

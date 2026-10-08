@@ -3,7 +3,7 @@
 import { dur, markOf, shortApplied, statusLine, type Tie } from "./ledger";
 import { esc } from "./panels";
 import type { GNode, LedgerView, Scene } from "./scene";
-import type { ContractReport, LedgerRow, LedgerRun, RunStatus } from "./types";
+import type { ContractReport, LedgerRow, LedgerRun, RunStatus } from "./api";
 
 export interface PanelCtx {
   event: string;

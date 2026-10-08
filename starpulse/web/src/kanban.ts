@@ -1,7 +1,7 @@
 // The Kanban view's model: the Board's open tasks laid out as columns of milestone buckets. Pure, so the view only draws it.
 import type { Sky } from "./sky";
 import type { TaskRecord } from "./taskView";
-import type { Pull, TrailStep } from "./types";
+import type { Move, Pull, TrailStep } from "./api";
 
 /** The Board states drawn as columns, in order. New is the creation pseudo-state and Completed and Archived have left the lanes. */
 export const COLUMNS = ["ready", "waiting", "in_progress", "review", "needs_attention", "done"];
@@ -24,11 +24,11 @@ export interface KanbanTask {
   prs: Pull[];
   description: string;
   /** The lifecycle machine that last placed the task, the state it left it in and when (epoch seconds). */
-  live: { machine: string; state: string; at: number; source?: string } | null;
+  live: { machine: string; state: string; at: number; source?: string | null } | null;
   /** Ready again after waiting: its last Board move was out of Waiting, so a machine state from before it no longer describes the card. */
   released: boolean;
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
-  moves: Record<string, { allowed: boolean; reason: string; skill: string }>;
+  moves: Record<string, Move>;
   /** When the task entered its column, epoch seconds; 0 when the server gave no time. */
   entered: number;
   /** When the task was created, epoch seconds; null when the board does not say. */
@@ -36,7 +36,7 @@ export interface KanbanTask {
   /** Since when the task has been workable, epoch seconds; null when a dependency or its Start Criteria hold it. */
   workableSince: number | null;
   /** Every lifecycle machine the task is in: its state there, when it last moved, the machine's third-party source and its trail. */
-  machines: { machine: string; state: string; at: number; source?: string; trail: TrailStep[] }[];
+  machines: { machine: string; state: string; at: number; source?: string | null; trail: TrailStep[] }[];
 }
 
 /** Refresh the snapshot-sized card with the fields a successful full-record edit can change. */

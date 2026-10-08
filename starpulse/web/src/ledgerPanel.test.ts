@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bannerOf, doctorTip, failHtml, focusRow, junctionTip, mergePanel, mergeTip, stepStates, stepTip, type PanelCtx } from "./ledgerPanel";
 import type { Tie } from "./ledger";
-import type { ContractCheck, ContractReport, LedgerFail, LedgerRow, LedgerRun } from "./types";
+import type { ContractCheck, ContractReport, LedgerFail, LedgerRow, LedgerRun } from "./api";
 
 const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
 const ties: Tie[] = [

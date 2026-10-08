@@ -3,7 +3,7 @@
 // plays each move once, when the stream first delivers it.
 import { stepRings, type StepRing } from "./fanout";
 import { tree, type Tree } from "./levels";
-import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./types";
+import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MachinePage, MergeStrip, Pool, Pull, RawAgent, Settled, Snapshot, Writer } from "./api";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -143,7 +143,7 @@ export function merge(snap: Snapshot, since = midnight()): Sky {
     dagGroup: Object.fromEntries(groups.flatMap((g) => g.dags.map((d) => [d, g.name]))),
     runnable: new Set((snap.domains ?? []).flatMap((d) => d.dags.filter((x) => x.runSafe).map((x) => x.name))),
     boardUrl: snap.boardUrl ?? null,
-    capabilities: snap.capabilities,
+    capabilities: snap.capabilities ?? undefined,
     hint: snap.hint ?? null,
     tree: t,
     subs: t.subs,

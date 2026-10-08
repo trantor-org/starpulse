@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BOARD, pathKey } from "./levels";
 import { ledgerLevel, pathLedger } from "./levels";
 import { freshKeys, ledgerOf, markOf, optionalSteps, shortApplied, statusLine, worst, type LineCtx, type Tie } from "./ledger";
-import type { LedgerRow, LedgerRun, Snapshot } from "./types";
+import type { LedgerRow, LedgerRun, Snapshot } from "./api";
 
 const states = ["ready", "in_progress", "review", "done"].map((id, i) => ({ id, name: id === "in_progress" ? "In Progress" : id[0].toUpperCase() + id.slice(1), initial: i === 0, final: false }));
 /** A Board whose CLAIM is written by one DAG, REVIEW by none and MERGED by main-follow with two cues. */

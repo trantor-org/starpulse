@@ -68,7 +68,7 @@ export interface Motion {
   /** Epoch seconds. */
   now: number;
   moves: readonly { at: number }[];
-  dags: readonly { status: string; finishedAt: string; active?: readonly { status: string }[] }[];
+  dags: readonly { status: string; finishedAt: string; active?: readonly { status: string }[] | null }[];
   /** A fly-to is easing the view. */
   flying: boolean;
   /** A level transition is running. */

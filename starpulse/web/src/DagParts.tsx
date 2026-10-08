@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { ago, bigPlace, chartHeight, place, short, took, type Phase, type Row, type Tie } from "./dags";
 import { DAG_COLOR } from "./renderer";
-import type { Pool } from "./types";
+import type { Pool } from "./api";
 
 /** A DAG's state as a dot in the Star Map's DAG colors: amber and pulsing while it runs, a black hole when its last run failed, hollow before its first run. */
 export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true" />;

@@ -65,6 +65,27 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
 
+  # The page's API types are generated from the pydantic models in starpulse/contracts/api.py. Regenerate both outputs
+  # and fail when either differs from what is committed: a model change ships with its schema and types.
+  api-types:
+    runs-on: [self-hosted, validate]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.6.0
+          dest: ${{ runner.temp }}/setup-pnpm
+      - run: uv sync --locked
+      - run: pnpm --dir starpulse/web install --frozen-lockfile
+      - run: uv run --no-sync python -m starpulse.contracts.api
+      - run: pnpm --dir starpulse/web run gen:types
+      - name: Fail when a generated file is stale
+        run: git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts
+
   # trantor's check-config test-tier policy over this tree (ci/trantor_tier_policy.py). A commit that fails it would
   # fail every trantor bump pinning it, so it must not go green here. Runs on the ai-vm-1 fleet beside dispatch.
   tier-policy:
@@ -135,7 +156,7 @@ jobs:
   # unchanged, and it sends nothing for a pull request or a red run.
   dispatch:
     name: dispatch
-    needs: [python, web, tier-policy, trantor-contract]
+    needs: [python, web, api-types, tier-policy, trantor-contract]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5

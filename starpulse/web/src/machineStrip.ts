@@ -1,6 +1,6 @@
 // The machine ledger's 24 h strip: a tick per machine entry across the last day, and the stretch of it the rows in view cover. Pure: the renderer
 // draws the ticks in the colour of the state each was entered from (amber for a DAG launch).
-import type { MachineEntry } from "./types";
+import type { MachineEntry } from "./api";
 
 /** The span the strip covers, in seconds. */
 export const WINDOW = 86400;

@@ -13,7 +13,7 @@ import { ledgerOf, type Ledger, type Tie } from "./ledger";
 import type { Viewport } from "./ledgerScroll";
 import { countText, daily, HOUR, hosted, stateCount, type Move, type Moves, type Sky } from "./sky";
 import { pinsOf } from "./ledgerPins";
-import type { Dag, DagStep, RawAgent, Transition, Writer } from "./types";
+import type { Dag, DagStep, RawAgent, Transition, Writer } from "./api";
 
 export const TAU = Math.PI * 2;
 export const BOARD_COLOR: Record<string, string> = { new: "#94a3b8", ready: "#60a5fa", waiting: "#fbbf24", blocked: "#fb7185", in_progress: "#a78bfa",
@@ -706,7 +706,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
   function buildBoard() {
     // The Board's places come from its machine and its declared main line, scaled to the sky.
     const states = board.machine.states, transitions = board.machine.transitions;
-    const BP = boardPlaces(states, transitions, board.machine.mainLine);
+    const BP = boardPlaces(states, transitions, board.machine.mainLine ?? undefined);
     const bx = Object.values(BP).map((q) => q[0]), by = Object.values(BP).map((q) => q[1]);
     const mx = (Math.min(...bx) + Math.max(...bx)) / 2, my = (Math.min(...by) + Math.max(...by)) / 2;
     const spanX = Math.max(...bx) - Math.min(...bx) || 1, spanY = Math.max(...by) - Math.min(...by) || 1;

@@ -7,9 +7,9 @@ import type { DagData } from "./dags";
 import { lastLine } from "./DagParts";
 import { DagLegend, Dags } from "./Dags";
 import { rows } from "./dags";
-import type { Dag, DagStep, Machine, RunStatus } from "./types";
+import type { Dag, DagStep, Machine, RunStatus } from "./api";
 
-const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status });
+const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
   name, status, runId: "", startedAt: "1970-01-01T00:09:00Z", finishedAt: "1970-01-01T00:10:00Z", steps: [step("scan"), step("fix", ["scan"])], pool: "runs/main", ...over,
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { arrivalRings, dagRings, feedOf, tierColor } from "./renderer";
 import { PULSE } from "./sky";
-import type { Dag } from "./types";
+import type { Dag } from "./api";
 
 const FIN = 100;
 const sweep = (fins: number[], from = FIN - 1, to = FIN + 12, step = 0.05) =>

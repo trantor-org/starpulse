@@ -1,6 +1,6 @@
 // The contract report behind the Ledger's doctor banner: one /api/doctor read, held and re-read once a minute while the page asks for it.
 import { apiFetch } from "./demo";
-import type { ContractReport } from "./types";
+import type { ContractReport } from "./api";
 
 export interface Contract {
   /** The last report the server gave, null until one has; asking starts a read when none is held or the one held is stale. */

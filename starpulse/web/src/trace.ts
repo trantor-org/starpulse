@@ -2,7 +2,7 @@
 import { bez, textW, type Curve, type Pt } from "./scene";
 import { esc } from "./panels";
 import { fmtAt, type ClockMode } from "./clock";
-import type { FlowSnapshot, Machine } from "./types";
+import type { FlowSnapshot, Machine } from "./api";
 
 /** One lane change of a task, as `/api/history?task=` answers it: `from` is null for the task's first lane. */
 export interface LaneStep {

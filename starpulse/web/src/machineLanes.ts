@@ -3,7 +3,7 @@
 // stretches them to fill it.
 import { chainBand, chainOf, type Chain, type Nest } from "./machineChain";
 import { hits, layers, slot, sizes, type Block } from "./machineLedger";
-import type { MachineState, Transition } from "./types";
+import type { MachineState, Transition } from "./api";
 
 export interface LaneMachine {
   name: string;

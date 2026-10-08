@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fmtAt } from "./clock";
 import { fmtDur, hostRun, laneRun, draws, layout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type LaneStep, type MachineStep, type Place, type Subject } from "./trace";
 import type { Curve } from "./scene";
-import type { FlowSnapshot, Machine } from "./types";
+import type { FlowSnapshot, Machine } from "./api";
 
 const T0 = 1_000_000;
 const board: Machine = {
