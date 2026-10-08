@@ -629,3 +629,28 @@ describe("the task view's CI history", () => {
     expect(section(draw({ task: { ...task, machines: [] } }))).toContain("No CI recorded yet");
   });
 });
+
+describe("opening the task view stays off the layout engine", () => {
+  it("sizes its textareas in CSS, so a mount reads no scrollHeight and sets no height", () => {
+    const read = vi.spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get").mockReturnValue(0);
+    const host = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(host);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    act(() => root.render(<TaskView {...props()} />));
+    const title = host.querySelector<HTMLTextAreaElement>('textarea[data-field="title"]')!;
+
+    expect(read).not.toHaveBeenCalled();
+    expect(title.style.height).toBe("");
+    expect(styles).toMatch(/#kbm \.tv textarea\.fv:not\(\.long\)\s*\{[^}]*field-sizing:\s*content/);
+    act(() => root.unmount());
+    host.remove();
+    read.mockRestore();
+  });
+
+  it("dims the board with a flat scrim: a backdrop blur makes every frame under it repaint the whole board", () => {
+    const scrim = styles.match(/^#kbm \{[^}]*\}/m)![0];
+
+    expect(scrim).toContain("background:");
+    expect(scrim).not.toContain("backdrop-filter");
+  });
+});
