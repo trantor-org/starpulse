@@ -86,6 +86,54 @@ jobs:
       - name: Fail when a generated file is stale
         run: git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts
 
+  # The latency budget (trantor ADR "StarPulse Holds a Latency Budget on Every Request and Frame"): every request,
+  # interaction and stream delivery within 50 ms at p95, every frame within 16.7 ms. The harness times the built page and
+  # the API of ci/seeded_server.py three times and judges each surface on the median run's p95, because the validate lane
+  # is shared and noisy. A pull request that puts a surface over budget, or makes a request no row times, fails here. The
+  # nightly soak (bench/soak.py) covers what a seeded board smaller than the live one cannot.
+  latency:
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, validate]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.6.0
+          dest: ${{ runner.temp }}/setup-pnpm
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --locked --group bench
+      - name: Build the page
+        run: pnpm --dir starpulse/web install --frozen-lockfile && pnpm --dir starpulse/web run build
+      # A free port: the validate runners of one host run jobs side by side.
+      - name: Start the seeded server
+        run: |
+          port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+          echo "GATE_PORT=$port" >> "$GITHUB_ENV"
+          uv run --no-sync python -m ci.seeded_server --port "$port" --dir "$RUNNER_TEMP/gate" > "$RUNNER_TEMP/gate.log" 2>&1 &
+          echo "GATE_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 150); do
+            curl -sf -o /dev/null "http://127.0.0.1:$port/api/snapshot" && exit 0
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/gate.log"
+          exit 1
+      # The first paint of the board reads 79 ms p95 on a quiet slot until TASK-3334, TASK-3335, TASK-3336 and TASK-3337
+      # cut its main-thread work; the ceiling holds it there so it cannot get worse. Drop it when the last of them lands.
+      - name: Time every surface against the budget
+        run: |
+          status=0
+          uv run --no-sync python bench/page_latency.py "http://127.0.0.1:$GATE_PORT" --repeat 3 --what-if in_progress review --ceiling "first paint of the board=120" > "$RUNNER_TEMP/latency.txt" || status=$?
+          cat "$RUNNER_TEMP/latency.txt"
+          { echo '```'; cat "$RUNNER_TEMP/latency.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Stop the seeded server
+        if: ${{ always() }}
+        run: kill "$GATE_PID" || true
+
   # trantor's check-config test-tier policy over this tree (ci/trantor_tier_policy.py). A commit that fails it would
   # fail every trantor bump pinning it, so it must not go green here. Runs on the ai-vm-1 fleet beside dispatch.
   tier-policy:
