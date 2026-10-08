@@ -29,6 +29,9 @@ starpulse = "starpulse.__main__:main"
 
 # Postgres-backed integration cases use a throwaway container when a container runtime is available.
 [dependency-groups]
+bench = [
+    "playwright>=1.63.0",
+]
 dev = [
     "import-linter>=2.15",
     "pytest>=9",

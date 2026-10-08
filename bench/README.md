@@ -1,15 +1,17 @@
 # Benchmarks
 
-Three scripts measure the event log at the two ends of a deployment and the reads of the store beside it. They are
-not part of the installed package and the test suite does not run them.
+Three scripts measure the event log at the two ends of a deployment and the reads of the store beside it, and a
+fourth times a running page against its latency budget. They are not part of the installed package and the test
+suite does not run them; `ci/test_page_latency.py` holds the page harness's rules.
 
 | Script | Measures | Needs |
 | --- | --- | --- |
 | `hub_ingest.py` | N forwarder processes writing event batches into one Postgres event log; the insert is idempotent on `event_id`, as a hub's ingest is | a throwaway Postgres 17 |
 | `ic_event_log.py` | concurrent fail-open appends to an instance's SQLite WAL log while a reader polls by cursor, at 10 thousand and 1 million rows | a scratch file path |
 | `flow_reads.py` | the p95 of flow health, the level and its trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
+| `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint, each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
 
-Run them from the repository root after `uv sync`.
+Run them from the repository root after `uv sync`; `page_latency.py` also needs `uv sync --group bench`.
 
 ## Hub ingest
 
@@ -66,3 +68,26 @@ that is the most it ever reads, and why the level's cost stays where it is as th
 lane changes took about a minute and `rebuild_summaries` about 6 minutes.
 
 Rates depend on the host, so compare runs on the same machine.
+
+## Page latency
+
+```sh
+uv run --group bench python bench/page_latency.py http://127.0.0.1:8766
+uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --no-page --json .tmp/latency.json
+```
+
+`--assets DIR` draws the page from a local build while its `/api` requests still go to the URL, so a branch's page
+change is timed against a live server's data before it ships:
+
+```sh
+pnpm --dir starpulse/web exec vite build --outDir "$PWD/.tmp/page-build" --emptyOutDir
+uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --assets .tmp/page-build
+```
+
+It only reads: it opens task modals and closes them, and switches views, but never writes. It drives the system
+Chrome (`--channel chrome`), so Playwright's own browser download is not needed. It prints one row per surface with
+its sample count, p50, p95 and budget, marks a row over budget `OVER`, and lists every `/api` request the page made
+that no row times. It exits 1 on either, so a new page request is measured before it can pass. A route that needs a
+record (`/api/task/<id>`) reads the first one the server's snapshot or listing holds; a route the server does not
+serve reports its status in the row's note. Wall-clock times on a busy host carry its load: run it more than once
+before reading one slow row as a regression.
