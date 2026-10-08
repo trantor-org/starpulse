@@ -35,7 +35,8 @@ import { createHistory } from "./history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "./trace";
 import { dagData } from "./dags";
-import { boardTies, nameLines, type Hub, type Ties } from "./dagTies";
+import { boardTies, hangarLevel, nameLines, tieLedger, touches, type Hub, type Orbiter, type Ties } from "./dagTies";
+import { hubTip, tieTip } from "./dagTieTips";
 import type { ContractReport, Dag, LedgerRow, Machine, MachineEntry, RawAgent, Snapshot, Writer } from "./api";
 import { fanBadge, fanTip, stepStatus } from "./fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
@@ -116,6 +117,8 @@ type Hover =
   | { kind: "row"; o: RowView }
   | { kind: "rstate"; o: RowView["nodes"][number] }
   | { kind: "bedge"; o: BEdge }
+  | { kind: "tie"; o: Orbiter }
+  | { kind: "hub"; o: Hub }
   | { kind: "link"; o: Hop }
   | { kind: "caption"; o: LedgerView["cols"][number] }
   | { kind: "lrow"; o: LedgerRow }
@@ -722,6 +725,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       if (d < Math.max(s.br, px(10)) && d < sd) [star, sd] = [s, d];
     }
     if (star) return { kind: "dag", o: star };
+    // a tied DAG's orbiter, then its hangar's name block: the name is the hangar, which has no disc of its own
+    const tz = ties();
+    for (const h of tz?.hubs ?? []) for (const o of h.orbs) if (near(o, px(9))) return { kind: "tie", o };
+    for (const h of tz?.hubs ?? []) if (x > h.box[0] && x < h.box[2] && y > h.box[1] && y < h.box[3]) return { kind: "hub", o: h };
     for (const c of sc.fold?.ledger?.cols ?? []) if (x > c.x0 && x < c.x1 && y > c.y0 && y < c.y1) return { kind: "caption", o: c };
     for (const s of Object.values(sc.mStates)) if (near(s, Math.max(stateR(s), px(9)))) return { kind: "state", o: s };
     for (const p of sc.planets) if (near(p, p.subState ? Math.max(p.R, px(8)) : p.moon ? Math.max(p.R + 4, px(10)) : p.R + 16)) return { kind: "planet", o: p };
@@ -908,6 +915,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       }
       case "medge":
         return `<div class="k">${esc(h.o.flow)} transition · ${esc(h.o.source)} → ${esc(h.o.target)}</div><div class="n">${esc(h.o.event)}</div>`;
+      case "hub":
+        return hubTip(h.o, { sky, stateName });
+      case "tie":
+        return tieTip(h.o, { sky, stateName, ev: tieLedger(boardSource(), h.o)?.ev ?? null, last: (d) => `last run ${hhmm(finished(d.finishedAt))} MST` });
       case "bedge":
         return `<div class="k">Board transition${h.o.events.length > 1 ? `s (${h.o.events.length})` : ""} · ${esc(h.o.source)} → ${esc(h.o.target)}${ledgerOfEdge(h.o) ? " · click for its Ledger" : ""}</div><div class="n">${h.o.events.map(esc).join("<br>")}</div>${h.o.writers.length ? h.o.writers.map(writerLine).join("<br>") : '<span class="k">no writer declared</span>'}`;
     }
@@ -979,7 +990,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     };
     openPanel();
   }
-  const ledgerOfEdge = (e: BEdge) => (S ? pathLedger({ flows: [S.board], cues: S.cues }, e.events) : null);
+  const boardSource = () => ({ flows: [S!.board], cues: S!.cues });
+  const ledgerOfEdge = (e: BEdge) => (S ? pathLedger(boardSource(), e.events) : null);
   /** A state's name in one machine of the ledger. */
   const stName = (m: string, s: string) => S?.flows[m]?.machine.states.find((x) => x.id === s)?.name ?? s;
   const boardTitle = (a: RawAgent) => S?.board.agents.find((b) => b.id === a.task)?.title ?? "";
@@ -1019,6 +1031,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (h.kind === "ltask") return openLedgerTask(h.o);
     pinLedger(null);
     if (h.kind === "galaxy") return push({ kind: "state", id: h.o.id }, fx, fy);
+    // a hangar drills into the Ledger of its DAGs, one level down like a state, so a right-click comes back; an orbiter opens the Ledger of its tie
+    if (h.kind === "hub") return push(hangarLevel(boardSource(), h.o.orbs), fx, fy);
+    if (h.kind === "tie") {
+      const t = tieLedger(boardSource(), h.o);
+      return t ? push(t.led, fx, fy) : undefined;
+    }
     if (h.kind === "moon" && h.o.pager) return changePage(h.o.pager);
     if (h.kind === "planet" && h.o.pager) return changePage(h.o.pager);
     if (h.kind === "planet") return push({ kind: "machine", flow: h.o.subState ? h.o.flow! : h.o.name }, fx, fy);
@@ -1213,14 +1231,29 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (!t || t.u !== u || t.ts !== ts) tieCache.set(sc, (t = boardTies(sc, S, u, ts)));
     return t;
   }
+  /** Whether a tied writer ran at a Board move: it runs now, or its latest run ended about then (a move carries no actor). */
+  const ran = (dag: string, at: number) => S?.dagBy[dag]?.status === "running" || Math.abs((moves.flare[dag] ?? Infinity) - at) < FLARE;
+  /** The hangars, then the moment a tied DAG writes or is cued: the ticket's own comet runs that transition's edge into its state, once per edge,
+   *  and a cue rings the orbiter it wakes. Nothing marks the line at rest. The moving task rings the state it lands in, so a write adds no ring. */
   function drawTies() {
-    for (const h of ties()?.hubs ?? []) drawHub(h);
+    const tz = ties();
+    if (!tz) return;
+    for (const h of tz.hubs) drawHub(h);
+    const run = new Set<BEdge>();
+    for (const t of touches(tz, EVENTS(), ran, T)) {
+      const e = t.anchor.edge, age = (T - t.at - TRAVEL) / PULSE;
+      if (e?.p0 && e.c && e.p1 && !e.loop && t.u < 1 && !run.has(e)) {
+        run.add(e);
+        comet(e.p0, e.c, e.p1, easeO(t.u), 3, ACT);
+      }
+      if (t.anchor.kind === "cue" && age >= 0 && age < 1) pulse(t.orbiter.x, t.orbiter.y, 5 / K, age, ACT, 16);
+    }
   }
   /** A hangar: a faint arc behind its orbiters, broken where it would cross a name, one orbiter per DAG and the hangar's name alone. Whether a
    *  DAG runs or failed is its orbiter's to show: the Spinner, or red with a dashed ring. */
   function drawHub(h: Hub) {
-    const TEAL = "#5eead4";
-    cx.strokeStyle = rgba(TEAL, 0.22);
+    const TEAL = "#5eead4", hubHot = isHot("hub", h);
+    cx.strokeStyle = rgba(TEAL, hubHot ? 0.4 : 0.22);
     cx.lineWidth = 1 / K;
     for (const [a0, a1] of h.arcs) {
       cx.beginPath();
@@ -1228,7 +1261,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       cx.stroke();
     }
     for (const o of h.orbs) {
-      const look = orbiterLook(S!.dagBy[o.dag]?.status ?? ""), r = 6 / K;
+      const hot = isHot("tie", o), look = orbiterLook(S!.dagBy[o.dag]?.status ?? ""), r = (hot ? 7 : 6) / K;
+      // a hovered orbiter rings the states of the machine it writes
+      if (hot) for (const a of o.subs) circle(a.x, a.y, 10 / K, rgba("#a78bfa", 0.9), 1.4 / K, [2 / K, 2 / K]);
       dot(o.x, o.y, r, "rgba(6,10,20,0.95)");
       if (look.spin) {
         circle(o.x, o.y, r, rgba(look.color, 0.95), 1.3 / K);
@@ -1240,13 +1275,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         cx.stroke();
         continue;
       }
-      circle(o.x, o.y, r, rgba(look.color, look.dashed ? 1 : 0.6), 1.2 / K);
+      circle(o.x, o.y, r, rgba(look.color, look.dashed || hot ? 1 : 0.6), (hot ? 1.5 : 1.2) / K);
       dot(o.x, o.y, r * 0.4, rgba(look.color, look.dashed ? 0.95 : 0.7));
       if (look.dashed) circle(o.x, o.y, r + 4 / K, rgba(look.color, 0.7), 1 / K, [2 / K, 2 / K]);
     }
     const ls = labPx(11.5);
     cx.letterSpacing = `${0.6 / K}px`;
-    nameLines(h.orbs).forEach((n, i) => text(n, h.lab.x, h.lab.y + i * (ls + 2 / K), ls, rgba("#cfd9ea", 0.58), h.align, 300));
+    nameLines(h.orbs).forEach((n, i) => text(n, h.lab.x, h.lab.y + i * (ls + 2 / K), ls, rgba("#cfd9ea", hubHot ? 0.95 : 0.58), h.align, 300));
     cx.letterSpacing = "0px";
   }
   function drawSun() {
@@ -1300,7 +1335,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function drawBoardEdges() {
     const sc = scene!;
     for (const e of sc.bEdges) {
-      const lit = isHot("bedge", e), col = sc.galaxies[e.source].color, heat = hotEdge.has(`board:${e.source}>${e.target}`) ? 1 : 0;
+      const lit = isHot("bedge", e) || (hover?.kind === "tie" && hover.o.anchors.some((a) => a.edge === e)), col = sc.galaxies[e.source].color, heat = hotEdge.has(`board:${e.source}>${e.target}`) ? 1 : 0;
       flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
       cx.beginPath();
       cx.moveTo(e.p0!.x, e.p0!.y);

@@ -3,8 +3,10 @@
 // and name sits; the renderer draws them (drawHub). A DAG that only launches work, or has no tie, stays off the map (the DAGs view lists it).
 //   write — the DAG writes a Board transition (the board machine's `writers`)
 //   cue   — a Board event cues the DAG (the snapshot's `cues`)
+import { pathLedger, type Fold } from "./levels";
+import type { Source } from "./ledger";
 import { bez, type BEdge, type Pt, type Scene } from "./scene";
-import type { Sky } from "./sky";
+import { PULSE, TRAVEL, type Move, type Sky } from "./sky";
 
 export type TieKind = "write" | "cue";
 export interface Anchor extends Pt {
@@ -21,6 +23,8 @@ export interface Orbiter extends Pt {
   anchors: Anchor[];
   /** The transition the DAG docks by: its orbiter aims at it. */
   primary?: Anchor;
+  /** Where it writes the states of a machine it launches, drawn as a dashed ring while it is hovered. */
+  subs: (Pt & { flow: string })[];
   /** Its angle round the state. */
   a: number;
 }
@@ -45,6 +49,30 @@ export interface Ties {
   ts: number;
 }
 
+/** A Board move a tied DAG took part in: the DAG wrote it, or its event cued the DAG. `u` is how far the comet has run, 0 to 1 over TRAVEL, then 1 while its ring fades. */
+export interface Touch {
+  orbiter: Orbiter;
+  anchor: Anchor;
+  at: number;
+  u: number;
+}
+
+/**
+ * The Board moves playing at `now` that a tied DAG caused, one per DAG and anchor. A move carries no actor, so a writer is credited only when
+ * `ran` says it ran at the move; a cue needs nothing but the event. A tied transition's line shows nothing at rest, so no move playing is no touch.
+ */
+export function touches({ hubs }: Ties, moves: readonly Move[], ran: (dag: string, at: number) => boolean, now: number): Touch[] {
+  const out: Touch[] = [];
+  for (const m of moves) {
+    if (m.flow !== "board" || m.at > now || now - m.at >= TRAVEL + PULSE) continue;
+    for (const h of hubs)
+      for (const orbiter of h.orbs)
+        for (const anchor of orbiter.anchors)
+          if (anchor.event === m.event && (anchor.kind === "cue" || ran(orbiter.dag, m.at))) out.push({ orbiter, anchor, at: m.at, u: Math.min(1, (now - m.at) / TRAVEL) });
+  }
+  return out;
+}
+
 const short = (d: string) => d.replace(/^[^/]+\//, "");
 
 /** The tied DAGs of the Board level: a hangar per state with an orbiter for each DAG that writes or is cued by one of its transitions. */
@@ -53,7 +81,7 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   const tie = (dag: string): Orbiter | null => {
     if (!sky.dagBy[dag]) return null;
     let t = byDag.get(dag);
-    if (!t) byDag.set(dag, (t = { dag, label: short(dag), anchors: [], x: 0, y: 0, a: 0 }));
+    if (!t) byDag.set(dag, (t = { dag, label: short(dag), anchors: [], subs: [], x: 0, y: 0, a: 0 }));
     return t;
   };
   const edgeOf = (event: string) => [...sc.bEdges, ...sc.entries, ...sc.exits].find((e) => e.events.includes(event));
@@ -72,6 +100,13 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   for (const c of sky.cues) {
     const t = tie(c.dag), e = edgeOf(c.event), m = e ? mid(e) : null;
     if (t && m) t.anchors.push({ ...m, kind: "cue", event: c.event, edge: e, state: c.state || e!.target });
+  }
+  // a tied DAG that also writes the events of the machine it launches is that machine's writer too, anchored at the machine's moon
+  for (const l of sky.launches) {
+    const t = byDag.get(l.dag), flow = t && launchedFlow(sky, l.dag, l.flow);
+    if (!t || !flow || !Object.values(sky.flows[flow].machine.writers ?? {}).some((ws) => ws.some((w) => w.actor === l.dag))) continue;
+    const moon = sc.moons.find((m) => m.name === flow), host = sc.galaxies[sky.tree.ipState ?? "in_progress"];
+    if (moon || host) t.subs.push({ flow, ...(moon ?? { x: host.x, y: host.y - host.R }) });
   }
   const all = [...byDag.values()];
   // each DAG belongs to the state most of its ties act on (the first, on a tie), and docks by one of that state's transitions
@@ -93,6 +128,27 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   const hubs: Hub[] = [];
   for (const [state, os] of byState) hubs.push(place(sc, state, os, hubs, u, ts));
   return { hubs, u, ts };
+}
+
+/** The Ledger a hangar opens: that of the first transition its DAGs dock by that has one, else the fold of its DAGs. */
+export function hangarLevel(src: Source, orbs: Pick<Orbiter, "dag" | "primary">[]): { kind: "fold" } & Fold {
+  const led = pathLedger(src, orbs.flatMap((o) => (o.primary ? [o.primary.event] : [])));
+  return led ?? { kind: "fold", dags: orbs.map((o) => o.dag), crit: orbs.map((o) => `${o.dag}: ${o.primary?.kind === "cue" ? "runs on" : "writes"} ${o.primary?.event ?? ""}`), path: null };
+}
+
+/** The Ledger an orbiter opens: its docking transition's, else the first of its other transitions that has one (a state's self-loop has none). */
+export function tieLedger(src: Source, o: Pick<Orbiter, "primary" | "anchors">) {
+  for (const ev of new Set([o.primary?.event, ...o.anchors.map((a) => a.event)])) {
+    const led = ev ? pathLedger(src, [ev]) : null;
+    if (led) return { ev: ev!, led };
+  }
+  return null;
+}
+
+/** The machine a DAG launches: the one the server tied it to, else the flow its launch names when the page holds it. */
+function launchedFlow(sky: Sky, dag: string, flow: string | null): string | null {
+  for (const [name, f] of Object.entries(sky.flows)) if (f.ties?.some((x) => x.kind === "dag" && x.dag === dag)) return name;
+  return flow && sky.flows[flow] ? flow : null;
 }
 
 type Dir = "down" | "up" | "left" | "right";
