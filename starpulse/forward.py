@@ -19,7 +19,8 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from starpulse import lane_events, run_events
+from starpulse import lane_events
+from starpulse.adapters.runs import run_events
 from starpulse.store import events
 from starpulse.store.event_log import EventLog, Tail
 

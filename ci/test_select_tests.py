@@ -18,19 +18,20 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/__init__.py": "",
         "starpulse/leaf.py": "X = 1\n",
         "starpulse/lone.py": "Y = 2\n",
-        "starpulse/board.py": "import importlib\n",
-        "starpulse/dagu.py": "def start(): ...\ndef follow(): ...\n",
+        "starpulse/adapters/boards/seam.py": "import importlib\nfrom starpulse.adapters import module_name\n",
+        "starpulse/adapters/runs/dagu.py": "def start(): ...\ndef follow(): ...\n",
+        "starpulse/adapters/__init__.py": 'BUILT_IN = {"dagu": "starpulse.adapters.runs.dagu", "jira": "x"}\n',
         "starpulse/server.py": "",
         "starpulse/hub.py": "from starpulse import leaf\n",
         "starpulse/store/migrations/versions/0001_initial.py": "",
-        "starpulse/jira.py": "def board(settings, base):\n    return None\n",
+        "starpulse/adapters/boards/jira.py": "def board(settings, base):\n    return None\n",
         "starpulse/tests/__init__.py": "",
         "starpulse/tests/conftest.py": "",
         "starpulse/tests/helpers.py": "from starpulse import lone\n",
         "starpulse/tests/unit/test_leaf.py": "from starpulse.leaf import X\n",
         "starpulse/tests/unit/test_hub.py": "from starpulse import hub\n",
         "starpulse/tests/unit/test_lone.py": "from starpulse.tests.helpers import lone\n",
-        "starpulse/tests/unit/test_board.py": 'from starpulse import board\n\nKIND = "jira"\n',
+        "starpulse/tests/unit/test_board.py": 'from starpulse.adapters.boards import seam\n\nKIND = "jira"\n',
         "starpulse/tests/unit/test_public_surface.py": "",
         "starpulse/tests/unit/test_neutrality.py": "",
         "ci/sizer.py": "",
@@ -63,7 +64,7 @@ def test_a_ci_script_selects_the_ci_test_that_imports_it_by_its_bare_name(repo):
 
 
 def test_an_adapter_selects_the_tests_of_the_loader_that_imports_it_by_name(repo):
-    assert "starpulse/tests/unit/test_board.py" in select(repo, ["starpulse/jira.py"]).tests
+    assert "starpulse/tests/unit/test_board.py" in select(repo, ["starpulse/adapters/boards/jira.py"]).tests
 
 
 def test_a_package_init_selects_every_test_under_the_package(repo):
@@ -130,7 +131,7 @@ def test_a_non_python_file_whose_mapped_reader_is_gone_runs_the_full_suite(repo)
 
 def test_the_real_repository_selects_a_subset_for_one_adapter():
     root = Path(__file__).resolve().parents[1]
-    selected = select(root, ["starpulse/jira.py"]).tests
+    selected = select(root, ["starpulse/adapters/boards/jira.py"]).tests
     assert "starpulse/tests/integration/test_jira.py" in selected
     assert "ci/test_workflow_placement.py" not in selected
 
@@ -149,8 +150,8 @@ def test_a_pull_request_runs_the_selection_and_a_push_runs_everything(name):
     assert steps.index(select_step) < steps.index(pytest_step)
 
 
-def test_an_adapter_no_test_names_is_not_selected_through_the_loader(repo):
-    assert select(repo, ["starpulse/dagu.py"]) == Selection([])
+def test_an_adapter_no_test_names_is_not_selected_through_the_loader_even_though_the_type_table_lists_it(repo):
+    assert select(repo, ["starpulse/adapters/runs/dagu.py"]) == Selection([])
 
 
 def test_a_module_a_conftest_fixture_uses_selects_the_tests_that_request_the_fixture(repo):

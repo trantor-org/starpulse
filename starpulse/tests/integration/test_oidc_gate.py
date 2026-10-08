@@ -22,8 +22,8 @@ pytest.importorskip("jwt", reason="the hub extras are not installed")
 
 from starpulse import server
 from starpulse.adapter_kit import serve, url
+from starpulse.adapters.runs.ingest import ForwardIngest, Ingest
 from starpulse.board_feed import BoardFeed
-from starpulse.ingest import ForwardIngest, Ingest
 from starpulse.insights import Insights, InsightStore
 from starpulse.oidc import ENGINE, INSTANCE, PUBLIC, ROUTE_PREFIXES, ROUTES, SESSION_S, Gate
 from starpulse.settings.config import OidcSettings

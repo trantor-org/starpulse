@@ -25,11 +25,11 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-from starpulse.board import Board
+from starpulse.adapters.boards.seam import Board
+from starpulse.adapters.boards.upstream_backlog import board_moves, lane_id
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.domain.machine_definition import MachineDefinitionError, compile_document, validate
 from starpulse.domain.snapshot import Qualify, describe
-from starpulse.upstream_backlog import board_moves, lane_id
 
 if TYPE_CHECKING:
     from starpulse.board_feed import BoardFeed

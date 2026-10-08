@@ -10,6 +10,8 @@ from pathlib import Path
 from starpulse.domain.machine_definition import load_machine
 from starpulse.domain.snapshot import describe
 
-HARNESS = load_machine(Path(__file__).with_name("machines") / "harness.yaml")
+#: The machine files beside the package: `adapters/harnesses/` is two levels below them.
+MACHINES = Path(__file__).parents[2] / "machines"
+HARNESS = load_machine(MACHINES / "harness.yaml")
 #: The machine as the page draws it, keyed by name like a board adapter's machines.
 HARNESS_MACHINES = {HARNESS.name: describe(HARNESS.machine)}

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, get_args
 
-from starpulse import run_events
+from starpulse.adapters.runs import run_events
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
 from starpulse.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 

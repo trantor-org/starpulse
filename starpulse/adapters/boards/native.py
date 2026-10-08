@@ -1,6 +1,6 @@
 """StarPulse's own board: one Markdown file per task under `.starpulse/board/`, written in Python.
 
-The files use the front matter Backlog.md's tasks use, so `starpulse.upstream_backlog` reads them: the lanes are the
+The files use the front matter Backlog.md's tasks use, so `starpulse.adapters.boards.upstream_backlog` reads them: the lanes are the
 `statuses` of `config.yml` and a task is a file under `tasks/`. This adapter adds what that one lacks, a writer that
 edits the files with no `backlog` CLI, and creates the board, empty, when its directory is absent. It is the default
 `[board]` adapter.
@@ -19,8 +19,8 @@ from typing import Any
 import yaml
 
 from starpulse import criteria
-from starpulse.board import Board, MoveWriter, TaskArchiver, TaskCreator, TaskEditor, TaskReader, Written
-from starpulse.upstream_backlog import (
+from starpulse.adapters.boards.seam import Board, MoveWriter, TaskArchiver, TaskCreator, TaskEditor, TaskReader, Written
+from starpulse.adapters.boards.upstream_backlog import (
     _FOLDERS,
     _HEADED_DESCRIPTION,
     _NOTES,

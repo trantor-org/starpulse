@@ -37,7 +37,7 @@ from typing import Any, ClassVar
 import jsonschema
 from pydantic import BaseModel
 
-from starpulse.board import (
+from starpulse.adapters.boards.seam import (
     AssigneeWriter,
     Board,
     MoveWriter,
@@ -47,6 +47,7 @@ from starpulse.board import (
     TaskReader,
     Written,
 )
+from starpulse.adapters.runs.ingest import ForwardIngest, Ingest
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts.adapters import (
     FINDING_TEXT_MAX,
@@ -60,7 +61,6 @@ from starpulse.contracts.adapters import (
 )
 from starpulse.domain.level import Level
 from starpulse.forward import Forwarder
-from starpulse.ingest import ForwardIngest, Ingest
 from starpulse.insights import Insights, InsightStore
 from starpulse.machine_tasks import MachineTasks
 from starpulse.server import assemble as _assemble
@@ -122,7 +122,7 @@ class BoardAdapterKit(_AdapterKit):
 
     _name = "board"
     _model = BoardTask
-    #: The machines the page draws, the Board's as `board`, as the adapter's `starpulse.board.Board` draws them.
+    #: The machines the page draws, the Board's as `board`, as the adapter's `starpulse.adapters.boards.seam.Board` draws them.
     machines: ClassVar[Mapping[str, dict]]
     #: The team key the adapter derives for each task `produce` returns, by task key: the Backlog.md project, Jira
     #: project or board, or GitHub repository its tracker places the task in. The kit holds each record to it.

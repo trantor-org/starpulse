@@ -167,8 +167,8 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse import analytics, doctor, forward, lane_events, run_events
-from starpulse.board import (
+from starpulse import analytics, doctor, forward, lane_events
+from starpulse.adapters.boards.seam import (
     AssigneeWriter,
     Board,
     MoveWriter,
@@ -178,7 +178,14 @@ from starpulse.board import (
     TaskReader,
     Written,
 )
-from starpulse.board import load as load_board
+from starpulse.adapters.boards.seam import load as load_board
+from starpulse.adapters.harnesses.harness import HARNESS_MACHINES
+from starpulse.adapters.harnesses.session_start import starter
+from starpulse.adapters.runs import run_events
+from starpulse.adapters.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
+from starpulse.adapters.runs.ingest import tokens as ingest_tokens
+from starpulse.adapters.runs.pull_requests import PullRequests
+from starpulse.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.ci import attach
 from starpulse.ci_trail import CiTrail
@@ -188,16 +195,10 @@ from starpulse.domain.level_metrics import RunWindow, WindowPastHistory, level_m
 from starpulse.domain.snapshot import qualifier
 from starpulse.domain.trajectories import trajectory_analytics
 from starpulse.forward import Forwarder
-from starpulse.harness import HARNESS_MACHINES
-from starpulse.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
-from starpulse.ingest import tokens as ingest_tokens
 from starpulse.insights import Insights, InsightStore, restore
 from starpulse.ledger import PAGE
 from starpulse.machine_tasks import MachineTasks
 from starpulse.machine_tasks import tables as machine_tables
-from starpulse.pull_requests import PullRequests
-from starpulse.push_runs import PUSHED_INSTANCE, PushRuns
-from starpulse.session_start import starter
 from starpulse.settings.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse.settings.harnesses import Harnesses
 from starpulse.settings.history_window import SETTINGS_FILE, HistoryWindow

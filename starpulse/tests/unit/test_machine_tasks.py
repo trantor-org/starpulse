@@ -11,7 +11,8 @@ import pytest
 
 from starpulse.board_feed import BoardFeed, follow
 from starpulse.contracts.adapters import BoardTask
-from starpulse.machine_tasks import MachineTasks, Table
+from starpulse.domain.transitions import Table
+from starpulse.machine_tasks import MachineTasks
 from starpulse.store import events as machine_events
 from starpulse.store.event_log import EventLog
 from starpulse.tests.machines import FLOWS, MACHINES

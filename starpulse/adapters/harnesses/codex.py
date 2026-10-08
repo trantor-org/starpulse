@@ -21,8 +21,8 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from starpulse.adapters.harnesses.harness import HARNESS
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.harness import HARNESS
 
 ACTOR = "codex"
 _SKILL = re.compile(r"skills/[\w.-]+/SKILL\.md")

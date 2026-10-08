@@ -22,9 +22,9 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
+from starpulse.adapters.boards.upstream_backlog import board_machine
 from starpulse.analytics import move_shares
 from starpulse.board_feed import SUN_DAYS
-from starpulse.upstream_backlog import board_machine
 
 STATIC = Path(__file__).parent / "static"
 #: Board labels that say what kind of work a task is and nothing about it.

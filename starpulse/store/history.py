@@ -42,7 +42,7 @@ from starpulse import lane_events
 from starpulse.analytics import LaneStays, Stay
 from starpulse.domain.level import Level
 from starpulse.domain.level_metrics import AGING_WINDOW_S, Run, RunWindow, state_roles
-from starpulse.machine_tasks import Table as Transitions
+from starpulse.domain.transitions import Table as Transitions
 from starpulse.settings.config import discover, load
 from starpulse.store import events as machine_events
 from starpulse.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail, create_tables
@@ -201,7 +201,7 @@ def lane_changes(rows: list[tuple[float, str | None, str]]) -> list[dict]:
 def machine_steps(machine: dict, rows: list[tuple[float, str]]) -> tuple[list[dict], int]:
     """A task's `(at, event)` rows on `machine`, oldest first, as `{at, event, state}` and their count.
 
-    Each event is placed by the rule the machine level uses (`machine_tasks.Table.target`), so a trace that starts
+    Each event is placed by the rule the machine level uses (`domain.transitions.Table.target`), so a trace that starts
     mid-life or lacks the judged events still reaches where the task is. A row is never dropped: one the machine
     cannot place leaves the task where it was, so the count is the row count.
     """

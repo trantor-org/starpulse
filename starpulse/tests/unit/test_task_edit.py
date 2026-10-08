@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from starpulse.adapter_kit import task
-from starpulse.board import Board, Written
+from starpulse.adapters.boards.seam import Board, Written
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts.adapters import Move
 from starpulse.server import archive_task, assemble, edit_task, task_record

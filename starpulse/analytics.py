@@ -14,7 +14,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
-from starpulse.upstream_backlog import lane_id
+from starpulse.domain.transitions import lane_id
 
 #: A lane change as the history keeps it: `(task, at, from, to)`, `at` in epoch seconds.
 LaneRow = tuple[str, float, str | None, str]

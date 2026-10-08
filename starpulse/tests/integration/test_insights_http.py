@@ -16,9 +16,9 @@ import pytest
 from sqlalchemy import select
 
 from starpulse.adapter_kit import next_event, serve, url
+from starpulse.adapters.runs.ingest import MAX_BODY
 from starpulse.board_feed import BoardFeed
 from starpulse.contracts.adapters import Finding
-from starpulse.ingest import MAX_BODY
 from starpulse.insights import Insights, InsightStore, restore
 from starpulse.store.tables import insights as insight_table
 
