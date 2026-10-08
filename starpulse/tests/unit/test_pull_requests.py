@@ -1,5 +1,7 @@
 """Each task's pull requests as the snapshot carries them: read from GitHub, cached, kept when GitHub fails."""
 
+import json
+import logging
 import subprocess
 import threading
 from collections.abc import Collection
@@ -28,6 +30,7 @@ def _node(
     *,
     rollup: str | None,
     merged: bool = False,
+    closed: bool = False,
     threads: tuple[bool, ...] = (),
     merge_commit: str | None = None,
     merged_at: str | None = None,
@@ -43,6 +46,7 @@ def _node(
     return {
         "number": number,
         "merged": merged,
+        "closed": closed or merged,
         "mergedAt": merged_at,
         "mergeCommit": {
             "oid": merge_commit,
@@ -136,9 +140,7 @@ def _pulls(feed: BoardFeed) -> dict:
 
 def _drawn(pulls: dict[str, list[dict]]) -> dict[str, list[dict]]:
     """`pulls` as the page is sent them: without the `files` a record keeps for the feed's own reads."""
-    return {
-        task: [{k: v for k, v in pull.items() if k != "files"} for pull in found] for task, found in pulls.items()
-    }
+    return {task: [{k: v for k, v in pull.items() if k != "files"} for pull in found] for task, found in pulls.items()}
 
 
 def _records(feed: BoardFeed) -> dict[str, dict]:
@@ -432,9 +434,10 @@ def test_one_gh_graphql_request_asks_for_every_number_in_the_repository(monkeypa
         "api",
         "graphql",
         "-f",
-        "query=query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) "
+        "query=query($owner: String!, $name: String!) { rateLimit { cost remaining resetAt } "
+        "repository(owner: $owner, name: $name) "
         "{ p1: pullRequest(number: 1) { ...Pull } p2: pullRequest(number: 2) { ...Pull } } }"
-        "\nfragment Pull on PullRequest {\n  number\n  merged\n  mergedAt\n  mergeCommit { oid }\n"
+        "\nfragment Pull on PullRequest {\n  number\n  merged\n  closed\n  mergedAt\n  mergeCommit { oid }\n"
         "  files(first: 100) { nodes { path } }\n"
         "  createdAt\n  mergeable\n"
         "  commits(last: 100) { nodes { commit { oid statusCheckRollup { state } "
@@ -814,3 +817,127 @@ def test_a_merge_in_a_repository_that_does_not_pin_the_child_costs_no_gh_call_on
 
     assert calls == []
     assert _records(feed)[CHILD]["applied_by"] == SHA
+
+
+SUITE = {
+    "status": "COMPLETED",
+    "conclusion": "SUCCESS",
+    "createdAt": "2026-10-06T20:01:00Z",
+    "updatedAt": "2026-10-06T20:05:00Z",
+    "workflowRun": {"runAttempt": 1},
+}
+
+
+def test_a_merged_or_closed_pr_with_a_saved_record_sends_no_alias_and_keeps_its_record() -> None:
+    gh = _Gh({})
+    merged = _record(1750, "pass", merged=True, merge_sha=SHA, merged_at=MERGED_AT)
+    closed = _record(1751, "failing", stale=True)
+
+    pulls = fetch([FIRST, SECOND], gh, final={FIRST: merged, SECOND: closed})
+
+    assert gh.asked == []
+    assert pulls == {FIRST: merged, SECOND: {**closed, "stale": False}}
+
+
+def test_the_query_asks_only_for_prs_not_yet_merged_or_closed_and_an_open_prs_ci_trail_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stdout = json.dumps({"data": {"repository": {"p1751": _node(1751, rollup="SUCCESS", suites=(SUITE,))}}})
+    commands = _run(monkeypatch, stdout=stdout)
+    merged = _record(1750, "pass", merged=True, merge_sha=SHA, merged_at=MERGED_AT)
+
+    pulls = fetch([FIRST, SECOND], final={FIRST: merged})
+
+    query = commands[0][4]
+    assert "p1751: pullRequest(number: 1751) { ...Pull }" in query
+    assert "1750" not in query
+    assert "checkSuites(first: 20)" in query
+    (head,) = pulls.history[SECOND].heads
+    assert (head.oid, head.suites[0].conclusion) == ("abc123", "SUCCESS")
+
+
+def test_a_query_with_no_pull_request_aliases_defines_no_fragment(monkeypatch: pytest.MonkeyPatch) -> None:
+    commands = _run(monkeypatch, stdout='{"data": {"repository": {}}}')
+
+    read_repository("acme/widgets", [], pointers=("ab" * 20,))
+
+    assert "fragment" not in commands[0][4]
+
+
+def test_a_refresh_stops_asking_for_a_pr_once_it_is_seen_merged_or_closed_and_a_restart_keeps_that(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = {
+        "p1750": _node(1750, rollup="SUCCESS", merged=True, merge_commit=SHA, merged_at=MERGED_AT),
+        "p1751": _node(1751, rollup=None, closed=True),
+    }
+    commands = _run(monkeypatch, stdout=json.dumps({"data": {"repository": repository}}))
+    feed = _feed(proj_7=[FIRST, SECOND])
+    source = PullRequests(feed)
+
+    source.refresh()
+    source.refresh()
+    restarted = PullRequests(feed)
+    restarted.restore()
+    restarted.refresh()
+
+    assert len(commands) == 1
+    assert [(pull["number"], pull["stale"]) for pull in _pulls(feed)["PROJ-7"]] == [(1750, False), (1751, False)]
+
+
+def test_a_failed_refresh_leaves_a_merged_prs_record_as_final_and_not_stale(monkeypatch: pytest.MonkeyPatch) -> None:
+    node = _node(1750, rollup="SUCCESS", merged=True, merge_commit=SHA, merged_at=MERGED_AT)
+    commands = _run(monkeypatch, stdout=json.dumps({"data": {"repository": {"p1750": node}}}))
+    feed = _feed(proj_7=[FIRST])
+    source = PullRequests(feed)
+    source.refresh()
+    _run(monkeypatch, stdout="", stderr="gh: network unreachable", code=1)
+
+    source.refresh()
+
+    assert len(commands) == 1
+    assert _pulls(feed)["PROJ-7"][0]["stale"] is False
+
+
+def test_each_query_logs_the_rate_limit_cost_github_returned_for_its_repository(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    rate = {"cost": 3, "remaining": 4210, "resetAt": "2026-10-07T21:00:00Z"}
+    _run(monkeypatch, stdout=json.dumps({"data": {"rateLimit": rate, "repository": {}}}))
+
+    with caplog.at_level(logging.INFO, logger="starpulse.adapters.runs.pull_requests"):
+        fetch([FIRST, CHILD])
+
+    costs = [record.getMessage() for record in caplog.records if "cost" in record.getMessage()]
+    assert len(costs) == 2
+    assert {repo for repo in ("acme/widgets", "acme/skills") if any(repo in message for message in costs)} == {
+        "acme/widgets",
+        "acme/skills",
+    }
+    assert all("cost 3" in message and "remaining 4210" in message for message in costs)
+
+
+def test_a_merged_child_pr_not_yet_applied_is_checked_against_a_new_parent_merges_pointer_without_being_asked_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _Graph(_history((POINTER, "2026-10-07T01:00:00Z"), (CHILD_SHA, CHILD_AT)))
+    asked: list[tuple[str, list[int]]] = []
+
+    def read(repo: str, numbers: list[int], paths: tuple[str, ...] = (), pointers: tuple[str, ...] = ()) -> dict:
+        asked.append((repo, numbers))
+        return graph(repo, numbers, paths, pointers)
+
+    rest: list[str] = []
+    monkeypatch.setattr(subprocess, "run", _gh_pins(rest))
+    feed = _feed(proj_8=[CHILD])
+    source = PullRequests(feed, repos=PINNED, pins=GitHub(), read=read)
+    source.refresh()
+    assert _records(feed)[CHILD]["applied_by"] is None
+    feed.put(task("PROJ-7", "In Progress", references=[FIRST]))
+    asked.clear()
+
+    source.refresh()
+
+    assert asked == [("acme/widgets", [1750]), ("acme/skills", [])]
+    assert _records(feed)[CHILD]["applied_by"] == SHA
+    assert rest == []
