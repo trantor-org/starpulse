@@ -2082,6 +2082,58 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const overRows = () => !!(mouse && scene?.top && mouse.oy > scene.top.laneTop && mouse.oy < scene.top.laneBottom);
   /** The row the pointer is on, over its name or one of its states. */
   const hotRow = () => (hover?.kind === "row" ? hover.o.name : hover?.kind === "rstate" ? (scene!.top!.rows.find((r) => r.nodes.includes((hover as { o: RowView["nodes"][number] }).o))?.name ?? null) : null);
+  /** The band at a row's foot that shows where its nesting is (machineChain.ts): each state's stem in its colour, then a block per machine entered from it. */
+  function drawChain(row: RowView, y: number, on: boolean) {
+    const sp = 10 * ledgerSizes(prefs().scale).fs, al = on ? 0.95 : 0.72, col = new Map(row.nodes.map((n) => [n.id, n.color])), ramp = (j: number, n: number) => RAMP[Math.round((j / Math.max(1, n - 1)) * (RAMP.length - 1))];
+    const fit = (t: string, w: number) => {
+      if (nameWidth(t, sp) <= w) return t;
+      let s = t;
+      while (s.length > 1 && nameWidth(`${s}…`, sp) > w) s = s.slice(0, -1);
+      return `${s}…`;
+    };
+    cx.lineWidth = 1;
+    for (const c of row.chain!.cols) {
+      cx.save();
+      cx.beginPath();
+      cx.rect(c.clip.x0, y, c.clip.x1 - c.clip.x0, row.h);
+      cx.clip();
+      for (const st of c.stems) {
+        cx.strokeStyle = rgba(col.get(st.state) ?? PLANET, al * 0.7);
+        cx.beginPath();
+        st.pts.forEach((p, i) => (i ? cx.lineTo(p.x, y + p.y) : cx.moveTo(p.x, y + p.y)));
+        for (const d of st.drops) {
+          cx.moveTo(d.x, y + d.y0);
+          cx.lineTo(d.x, y + d.y1);
+        }
+        cx.stroke();
+      }
+      for (const b of c.blocks) {
+        for (const l of b.lines) {
+          cx.strokeStyle = rgba(SUB, 0.35 * al * l.a);
+          cx.beginPath();
+          cx.moveTo(l.x, y + l.y);
+          cx.lineTo(l.x + (l.states.length - 1) * l.dx, y + l.y);
+          cx.stroke();
+          l.states.forEach((_, j) => dot(l.x + j * l.dx, y + l.y, l.r, rgba(ramp(j, l.states.length), al * l.a)));
+        }
+        cx.setLineDash([1.5, 2]);
+        for (const h of b.hangs) {
+          cx.strokeStyle = rgba(PLANET, al * h.a);
+          cx.beginPath();
+          cx.moveTo(h.x, y + h.y0);
+          cx.lineTo(h.x, y + h.y1);
+          cx.stroke();
+        }
+        cx.setLineDash([]);
+        const lab = fit(b.name, Math.max(12, b.label.w - (b.tail ? nameWidth(b.tail, sp) : 0)));
+        cx.letterSpacing = "0.6px";
+        text(lab, b.label.x, y + b.label.y, sp, rgba(PLANET, al), "left", 300);
+        if (b.tail) text(b.tail, b.label.x + nameWidth(lab, sp), y + b.label.y, sp, rgba(SUB, 0.75), "left", 300);
+        cx.letterSpacing = "0px";
+      }
+      cx.restore();
+    }
+  }
   /** The machine ledger's rows under the top: each machine entered from it, newest activity first, with its tie, its stuck mark and its DAG launches. */
   function drawLane() {
     const sc = scene!, top = sc.top!, scale = prefs().scale, { fs, gs } = ledgerSizes(scale), mx = top.metaX, mw = top.metaW, nameP = 12 * fs, subP = 10 * fs, top0 = new Map(top.nodes.map((n) => [n.id, n]));
@@ -2178,6 +2230,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         if (n.final) circle(p.x, p.y, n.r + 2.5, rgba(n.color, 0.45), 1);
         dot(p.x, p.y, Math.min(3 * gs, n.r * 0.4), rgba(n.color, 0.9));
       }
+      if (row.chain) drawChain(row, y, on);
       cx.globalAlpha = fade;
       orbitTasks(row.name, f.agents, (st) => ns.get(st), (from, to) => (ns.get(to)!.x < ns.get(from)!.x - 1 ? 0.28 : 0.04), (id, at) => {
         const a = at && at.y > top.laneTop && at.y < top.laneBottom && f.agents.find((q) => q.id === id);

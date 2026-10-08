@@ -81,8 +81,8 @@ describe("a row's meta column", () => {
   it("says so when nothing ties a machine in", () => {
     expect(meta("lonely").tie).toMatchObject({ text: "no tie this hour", kind: "none" });
   });
-  it("ends the name line with how many machines are entered from it", () => {
-    expect(meta("authoring-skills").end).toBe("1 nested ›");
+  it("ends the name line with a bare chevron, the band under the row showing its nesting", () => {
+    expect(meta("authoring-skills").end).toBe("›");
     expect(meta("lonely").end).toBe("›");
   });
   it("counts states and tasks", () => {

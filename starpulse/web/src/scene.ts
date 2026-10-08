@@ -4,6 +4,7 @@
 // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
 import { topOf, type Fold, type Level } from "./levels";
 import { ledgerTop, sizes as ledgerSizes, type LedgerTop } from "./machineLedger";
+import { nestsOf } from "./machineChain";
 import { laneRows, type LaneNode, type LaneRow } from "./machineLanes";
 import { rankRows } from "./machineRows";
 import { ledgerOf, type Ledger, type Tie } from "./ledger";
@@ -1092,8 +1093,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const entered = [...new Set([...Object.keys(S.child[name] ?? {}), ...Object.values(S.flows).flatMap((f) => (f.ties?.[0]?.machine === name && f.ties[0].state ? [f.ties[0].state] : []))])];
     const top = ledgerTop({ states: flow.machine.states, transitions: flow.machine.transitions, tasks, entered }, { ...frame, height });
     const { fs } = ledgerSizes(ctx.scale ?? 100), laneTop = top.hdrB + 6, laneBottom = H - 50 * fs;
-    const order = rankRows(S.flows, name, ctx.held), machines = order.map((m) => ({ name: m, states: S.flows[m].machine.states, transitions: S.flows[m].machine.transitions, tasks: tasksOf(S.flows[m]) }));
-    const lane = laneRows(machines, { x0: top.x0, x1: top.x1 }, { scale: ctx.scale ?? 100, laneH: laneBottom - laneTop });
+    const order = rankRows(S.flows, name, ctx.held), machines = order.map((m) => ({ name: m, states: S.flows[m].machine.states, transitions: S.flows[m].machine.transitions, tasks: tasksOf(S.flows[m]), nested: nestsOf(S.flows, m) }));
+    const lane = laneRows(machines, { x0: top.x0, x1: top.x1 }, { scale: ctx.scale ?? 100, laneH: laneBottom - laneTop, measure: frame.measure });
     const rows = lane.rows.map((r): RowView => {
       const st = S.flows[r.name].machine.states;
       return { ...r, init: (st.find((x) => x.initial) ?? st[0]).id, nodes: r.nodes.map((n) => ({ ...n, color: RAMP[Math.round(n.u * (RAMP.length - 1))] })) };
