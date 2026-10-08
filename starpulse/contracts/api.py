@@ -1019,6 +1019,35 @@ class MilestoneShown(_Api):
     milestone: MilestoneRecord
 
 
+class DocSummary(_Api):
+    """A doc as the board's lister gives it: its front matter and where it is filed, without its body."""
+
+    id: str
+    title: str
+    type: str
+    created_date: str
+    updated_date: str
+    path: str
+
+
+class DocRecord(DocSummary):
+    """A doc as the board's reader gives it: the summary and the text after its front matter."""
+
+    body: str
+
+
+class Docs(_Api):
+    """`GET /api/docs`: every open doc, by ascending number."""
+
+    docs: list[DocSummary]
+
+
+class DocShown(_Api):
+    """`GET /api/docs/<id>`: one open doc."""
+
+    doc: DocRecord
+
+
 # --- writes -----------------------------------------------------------------------------------------------------
 
 
@@ -1088,6 +1117,28 @@ class MilestoneArchiveRequest(_Api):
     """`POST /api/milestones/archive`: archive `milestone`."""
 
     milestone: str
+
+
+class DocCreateRequest(_Api):
+    """`POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme` or `other`."""
+
+    title: str
+    type: str | None = None
+    folder: str | None = None
+    body: str | None = None
+
+
+class DocEditRequest(_Api):
+    """`POST /api/docs/edit`: replace the `title`, `type` or `body` `changes` names."""
+
+    doc: str
+    changes: dict[str, Any]
+
+
+class DocArchiveRequest(_Api):
+    """`POST /api/docs/archive`: archive `doc`."""
+
+    doc: str
 
 
 class WindowRequest(_Api):
@@ -1187,6 +1238,19 @@ class MilestoneArchived(_Api):
     milestone: str
 
 
+class DocCreated(_Api):
+    doc: str
+
+
+class DocEdited(_Api):
+    doc: str
+    changed: list[str]
+
+
+class DocArchived(_Api):
+    doc: str
+
+
 class Started(_Api):
     task: str
     url: str
@@ -1231,6 +1295,8 @@ RESPONSES: dict[str, Any] = {
     "/api/task/": TaskRecord,
     "/api/milestones": Milestones,
     "/api/milestones/": MilestoneShown,
+    "/api/docs": Docs,
+    "/api/docs/": DocShown,
     "/api/history": LaneHistory | MachineHistory,
     "/api/pulls": Pulls,
     "/api/forwarding": ForwardingStatus | ForwardingUnconfigured,
@@ -1246,6 +1312,9 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/milestones": MilestoneCreateRequest,
     "/api/milestones/edit": MilestoneEditRequest,
     "/api/milestones/archive": MilestoneArchiveRequest,
+    "/api/docs": DocCreateRequest,
+    "/api/docs/edit": DocEditRequest,
+    "/api/docs/archive": DocArchiveRequest,
     "/api/history-window": WindowRequest,
     "/api/forwarding": ForwardingRequest,
     "/api/runs/events": RunEventRequest,
@@ -1280,6 +1349,11 @@ BODIES: dict[str, Any] = {
     "milestone_create": MilestoneCreated | SkillRefusal | ApiError,
     "milestone_edit": MilestoneEdited | SkillRefusal | ApiError,
     "milestone_archive": MilestoneArchived | SkillRefusal | ApiError,
+    "docs": Docs | ApiError,
+    "doc": DocShown | ApiError,
+    "doc_create": DocCreated | SkillRefusal | ApiError,
+    "doc_edit": DocEdited | SkillRefusal | ApiError,
+    "doc_archive": DocArchived | SkillRefusal | ApiError,
     "run": RunStarted | ApiError,
     "ingest": Accepted | ApiError,
     "forward": ForwardAccepted | ApiError,
@@ -1327,6 +1401,8 @@ class ApiContract(_Api):
     taskRecord: TaskRecord
     milestones: Milestones
     milestoneShown: MilestoneShown
+    docs: Docs
+    docShown: DocShown
     requests: list[
         MoveRequest
         | StartRequest
@@ -1336,6 +1412,9 @@ class ApiContract(_Api):
         | MilestoneCreateRequest
         | MilestoneEditRequest
         | MilestoneArchiveRequest
+        | DocCreateRequest
+        | DocEditRequest
+        | DocArchiveRequest
         | WindowRequest
         | ForwardingRequest
         | RunEventRequest
@@ -1349,6 +1428,9 @@ class ApiContract(_Api):
         | MilestoneCreated
         | MilestoneEdited
         | MilestoneArchived
+        | DocCreated
+        | DocEdited
+        | DocArchived
         | Started
         | RunStarted
         | Accepted

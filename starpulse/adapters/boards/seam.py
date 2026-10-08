@@ -28,6 +28,11 @@ __all__ = [
     "DEFAULT_TYPE",
     "AssigneeWriter",
     "Board",
+    "DocArchiver",
+    "DocCreator",
+    "DocEditor",
+    "DocLister",
+    "DocReader",
     "MilestoneArchiver",
     "MilestoneCreator",
     "MilestoneEditor",
@@ -133,6 +138,39 @@ class MilestoneArchiver(Protocol):
     def __call__(self, milestone: str, /) -> Written: ...
 
 
+class DocLister(Protocol):
+    """A board reader: every open doc as `{id, title, type, created_date, updated_date, path}` without its body, oldest id first."""
+
+    def __call__(self) -> list[Mapping[str, Any]]: ...
+
+
+class DocReader(Protocol):
+    """A board reader: one doc's record with its `body`, or None when the board has no open doc with that id."""
+
+    def __call__(self, doc: str, /) -> Mapping[str, Any] | None: ...
+
+
+class DocCreator(Protocol):
+    """A board writer: file a doc with this title and details, and say what it did.
+
+    `details` holds `type` (`specification`, `guide`, `readme` or `other`, the default), `folder` (a subfolder of the
+    board's `docs/`, such as `specs`) and `body` as text, each optional. A successful `Written.output` is the new doc's id."""
+
+    def __call__(self, title: str, details: Mapping[str, Any], /) -> Written: ...
+
+
+class DocEditor(Protocol):
+    """A board writer: replace the `title`, `type` or `body` a doc is given, keeping the rest."""
+
+    def __call__(self, doc: str, changes: Mapping[str, Any], /) -> Written: ...
+
+
+class DocArchiver(Protocol):
+    """A board writer: archive a doc, and say what it did."""
+
+    def __call__(self, doc: str, /) -> Written: ...
+
+
 def _no_cues(qualify: Qualify) -> list[dict]:
     return []
 
@@ -176,6 +214,16 @@ class Board:
     """Saves a milestone's changes in one write; None refuses every one."""
     archive_milestone: MilestoneArchiver | None = None
     """Archives a milestone; None refuses every one."""
+    docs: DocLister | None = None
+    """Lists the open docs; None leaves the board with no doc records."""
+    read_doc: DocReader | None = None
+    """Reads one doc's record; None when the board keeps none."""
+    create_doc: DocCreator | None = None
+    """Files a doc; None refuses every one."""
+    edit_doc: DocEditor | None = None
+    """Saves a doc's changes in one write; None refuses every one."""
+    archive_doc: DocArchiver | None = None
+    """Archives a doc; None refuses every one."""
     evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None
     """Evaluates a task's Start Criteria, given its id and description; None leaves each `not evaluated`, so a Waiting task
     that declares any is never workable."""

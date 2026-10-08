@@ -210,10 +210,12 @@ def bare(tmp_path: Path) -> Iterator[str]:
 
 @pytest.fixture
 def milestoned(tmp_path: Path) -> Iterator[str]:
-    """A server whose native board keeps one open milestone, `m-106`, copied from a real Backlog.md file."""
+    """A server whose native board keeps one open milestone, `m-106`, and one open doc, `doc-84`, copied from real
+    Backlog.md files."""
     board = native.board({}, tmp_path)
-    source = Path(__file__).parent.parent / "fixtures" / "native_board" / "milestones"
-    shutil.copytree(source, tmp_path / ".starpulse" / "board" / "milestones")
+    source = Path(__file__).parent.parent / "fixtures" / "native_board"
+    for records in ("milestones", "docs"):
+        shutil.copytree(source / records, tmp_path / ".starpulse" / "board" / records)
     with _serve(tmp_path, BoardFeed(machines=MACHINES), milestones=board) as server:
         yield _url(server, "")
 
@@ -616,6 +618,11 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "milestone add",
         "milestone edit",
         "milestone archive",
+        "doc list",
+        "doc show",
+        "doc create",
+        "doc update",
+        "doc archive",
         "runs list",
         "runs start",
         "watch",
@@ -1240,6 +1247,27 @@ CASES = {
     ("milestone archive", 2): ["milestone", "archive"],
     ("milestone archive", 3): ["milestone", "archive", "m-106", "--server", "{down}"],
     ("milestone archive", 4): ["milestone", "archive", "m-99", "--server", "{milestoned}"],
+    ("doc list", 0): ["doc", "list", "--server", "{milestoned}"],
+    ("doc list", 2): ["doc", "list", "--nope"],
+    ("doc list", 3): ["doc", "list", "--server", "{server}"],  # a board that keeps no docs
+    ("doc show", 0): ["doc", "show", "doc-84", "--server", "{milestoned}"],
+    ("doc show", 2): ["doc", "show"],
+    ("doc show", 3): ["doc", "show", "doc-84", "--server", "{down}"],
+    ("doc show", 4): ["doc", "show", "doc-99", "--server", "{milestoned}"],
+    ("doc create", 0): ["doc", "create", "Plan", "--type", "guide", "--body", "Hi", "--server", "{milestoned}"],
+    ("doc create", 1): ["doc", "create", " ", "--server", "{milestoned}"],
+    ("doc create", 2): ["doc", "create"],
+    ("doc create", 3): ["doc", "create", "Plan", "--server", "{down}"],
+    ("doc update", 0): ["doc", "update", "doc-84", "--body", "Report", "--server", "{milestoned}"],
+    ("doc update", 1): ["doc", "update", "doc-84", "--title", " ", "--server", "{milestoned}"],
+    ("doc update", 2): ["doc", "update", "doc-84", "--server", "{milestoned}"],
+    ("doc update", 3): ["doc", "update", "doc-84", "--body", "Report", "--server", "{down}"],
+    ("doc update", 4): ["doc", "update", "doc-99", "--body", "Report", "--server", "{milestoned}"],
+    ("doc archive", 0): ["doc", "archive", "doc-84", "--server", "{milestoned}"],
+    ("doc archive", 1): ["doc", "archive", "doc-84", "--server", "{forbidden}"],
+    ("doc archive", 2): ["doc", "archive"],
+    ("doc archive", 3): ["doc", "archive", "doc-84", "--server", "{down}"],
+    ("doc archive", 4): ["doc", "archive", "doc-99", "--server", "{milestoned}"],
     ("runs list", 0): ["runs", "list", "--server", "{server}"],
     ("runs list", 2): ["runs", "list", "--nope"],
     ("runs list", 3): ["runs", "list", "--server", "{down}"],

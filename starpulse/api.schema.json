@@ -733,6 +733,235 @@
       "title": "Decile",
       "type": "object"
     },
+    "DocArchiveRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/docs/archive`: archive `doc`.",
+      "properties": {
+        "doc": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "title": "DocArchiveRequest",
+      "type": "object"
+    },
+    "DocArchived": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "title": "DocArchived",
+      "type": "object"
+    },
+    "DocCreateRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme` or `other`.",
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "folder": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "title": "DocCreateRequest",
+      "type": "object"
+    },
+    "DocCreated": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "title": "DocCreated",
+      "type": "object"
+    },
+    "DocEditRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/docs/edit`: replace the `title`, `type` or `body` `changes` names.",
+      "properties": {
+        "changes": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "doc": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc",
+        "changes"
+      ],
+      "title": "DocEditRequest",
+      "type": "object"
+    },
+    "DocEdited": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "doc": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc",
+        "changed"
+      ],
+      "title": "DocEdited",
+      "type": "object"
+    },
+    "DocRecord": {
+      "additionalProperties": false,
+      "description": "A doc as the board's reader gives it: the summary and the text after its front matter.",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "created_date": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "updated_date": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "type",
+        "created_date",
+        "updated_date",
+        "path",
+        "body"
+      ],
+      "title": "DocRecord",
+      "type": "object"
+    },
+    "DocShown": {
+      "additionalProperties": false,
+      "description": "`GET /api/docs/<id>`: one open doc.",
+      "properties": {
+        "doc": {
+          "$ref": "#/$defs/DocRecord"
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "title": "DocShown",
+      "type": "object"
+    },
+    "DocSummary": {
+      "additionalProperties": false,
+      "description": "A doc as the board's lister gives it: its front matter and where it is filed, without its body.",
+      "properties": {
+        "created_date": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "updated_date": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "type",
+        "created_date",
+        "updated_date",
+        "path"
+      ],
+      "title": "DocSummary",
+      "type": "object"
+    },
+    "Docs": {
+      "additionalProperties": false,
+      "description": "`GET /api/docs`: every open doc, by ascending number.",
+      "properties": {
+        "docs": {
+          "items": {
+            "$ref": "#/$defs/DocSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "docs"
+      ],
+      "title": "Docs",
+      "type": "object"
+    },
     "Domain": {
       "additionalProperties": false,
       "description": "A domain's DAGs, and whether each is declared safe to run from the page.",
@@ -5188,6 +5417,15 @@
             "$ref": "#/$defs/MilestoneArchived"
           },
           {
+            "$ref": "#/$defs/DocCreated"
+          },
+          {
+            "$ref": "#/$defs/DocEdited"
+          },
+          {
+            "$ref": "#/$defs/DocArchived"
+          },
+          {
             "$ref": "#/$defs/Started"
           },
           {
@@ -5223,6 +5461,12 @@
     },
     "contractReport": {
       "$ref": "#/$defs/ContractReport"
+    },
+    "docShown": {
+      "$ref": "#/$defs/DocShown"
+    },
+    "docs": {
+      "$ref": "#/$defs/Docs"
     },
     "events": {
       "items": {
@@ -5319,6 +5563,15 @@
             "$ref": "#/$defs/MilestoneArchiveRequest"
           },
           {
+            "$ref": "#/$defs/DocCreateRequest"
+          },
+          {
+            "$ref": "#/$defs/DocEditRequest"
+          },
+          {
+            "$ref": "#/$defs/DocArchiveRequest"
+          },
+          {
             "$ref": "#/$defs/WindowRequest"
           },
           {
@@ -5370,6 +5623,8 @@
     "taskRecord",
     "milestones",
     "milestoneShown",
+    "docs",
+    "docShown",
     "requests",
     "answers"
   ],
