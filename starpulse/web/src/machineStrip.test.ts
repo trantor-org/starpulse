@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { stripLabel, stripScale, tickAt, ticks, viewSpan } from "./machineStrip";
 import { windowOf } from "./machineScroll";
-import type { MachineEntry } from "./types";
+import type { MachineEntry } from "./api";
 
 const NOW = 100000, scale = stripScale(300, 1100, NOW);
 const entry = (at: number, row = "m", over: Partial<MachineEntry> = {}): MachineEntry => ({ at, machine: row, row, from: { machine: "ip", state: "pr_opened" }, dag: null, ...over });

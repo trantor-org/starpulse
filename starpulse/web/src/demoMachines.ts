@@ -1,6 +1,6 @@
 // A demo page's machines grown to a count (`?demo&many=N`), so the In Progress ledger has more than a page to scroll and a 24 h strip to draw.
 import { PAGE } from "./machineLanes";
-import type { FlowSnapshot, MachineEntry, Snapshot } from "./types";
+import type { FlowSnapshot, MachineEntry, Snapshot } from "./api";
 
 const DAY = 86400;
 /** The seconds from now to a machine's last move, spread over the day: close together near now, wide apart far back. */
