@@ -3,9 +3,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { ago, fmtAt } from "./clock";
 import { columnsOf, type KanbanTask } from "./kanban";
 import { startLane, startable } from "./start";
+import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull } from "./api";
 import {
-  PRIORITIES, changedFields, closesOnKey, copyText, copyToClipboard, dependencyRows, discardMessage, editKey, markdown, menuKey, newlyChecked, onScrim, saveTask,
+  PRIORITIES, changedFields, closesOnKey, copyText, copyToClipboard, dependencyRows, discardMessage, editKey, markdown, menuKey, metCount, newlyChecked, onScrim, saveTask,
   type DepRow, type Item, type MenuState, type TaskField, type TaskRecord,
 } from "./taskView";
 
@@ -89,7 +90,7 @@ const LanePill = ({ lane, name, small = false }: { lane: string; name: string; s
   <span className={`tvlane${small ? " sm" : ""}`} data-lane={lane}><i />{name}</span>;
 
 /** One section of the right rail: a small-caps heading with its count, the live state first. */
-function RailSection({ name, count, children }: { name: string; count?: number; children: ReactNode }) {
+function RailSection({ name, count, children }: { name: string; count?: number | string; children: ReactNode }) {
   return <section className="sec rs"><div className="sh"><span className="t">{name}</span>{count ? <span className="n">{count}</span> : null}</div>{children}</section>;
 }
 
@@ -329,6 +330,7 @@ export function TaskView(p: TaskViewProps) {
     return () => removeEventListener("keydown", onKey, true);
   }, [cancelEdit, diff.fields.length, editing, save]);
 
+  const criteria = base.start_criteria ?? [];
   const deps = dependencyRows(p.tasks, p.task);
   const offered = columnsOf(names).filter((c) => c in p.task.moves).map((c) => ({
     to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason ?? "",
@@ -386,7 +388,7 @@ export function TaskView(p: TaskViewProps) {
             {writeRefusal && <div className="editrefusal"><b>Save refused.</b> {writeRefusal.reason}{writeRefusal.skill && <div>Required skill: <code>{writeRefusal.skill}</code></div>}</div>}
             <section className="sec"><div className="sh"><span className="t">Description</span></div>
               {editing ? <Txt {...fp("description")} value={draft.description} label="Description" onChange={(value) => change("description", value)} />
-                : <div className="md">{markdown(draft.description).map((b, i) => b.kind === "h" ? <h4 key={i}>{b.text}</h4> : b.kind === "pre" ? <pre key={i}>{b.text}</pre> : <p key={i}>{b.text}</p>)}</div>}
+                : <div className="md">{markdown(draft.description, criteria.length > 0).map((b, i) => b.kind === "h" ? <h4 key={i}>{b.text}</h4> : b.kind === "pre" ? <pre key={i}>{b.text}</pre> : <p key={i} className={b.kind === "moved" ? "moved" : undefined}>{b.text}</p>)}</div>}
             </section>
             {p.record && <Checks name="Acceptance criteria" field="acceptanceCriteria" items={draft.acceptanceCriteria} base={base.acceptanceCriteria}
               editing={editing} dirty={dirty.has("acceptanceCriteria")} bad={invalid.has("acceptanceCriteria")} evidence={evidence} tried={tried}
@@ -405,6 +407,7 @@ export function TaskView(p: TaskViewProps) {
               <div className="row"><LanePill lane={p.task.lane} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
               {p.stack && <table className="props"><tbody><tr className="ro"><td>{p.task.lane === "done" ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
             </RailSection>
+            {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
             <RailSection name="Pull requests" count={p.task.prs.length}><PullRows pulls={p.task.prs} /></RailSection>
             <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
               <div className="deps">

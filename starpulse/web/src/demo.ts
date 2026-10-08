@@ -9,6 +9,7 @@ import { rankRows } from "./machineRows";
 import { columnsOf } from "./kanban";
 import type { LaneStep } from "./trace";
 import type { LedgerRow, Machine, RawAgent, Snapshot } from "./api";
+import { criteriaBlock, demoCriteria } from "./demoCriteria";
 import type { TaskRecord } from "./taskView";
 
 let demoN = 0;
@@ -205,7 +206,7 @@ export class DemoServer {
     for (const f of snap.flows) if (f.last != null) f.last += age;
     for (const e of snap.machineStrip?.entries ?? []) e.at += age;
     this.lanes = history ?? {};
-    this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card)]));
+    this.records = Object.fromEntries((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((card) => [card.id, demoRecord(card, clock())]));
     const ledger = demoLedger(snap, clock(), scenarioOf(globalThis.location?.search ?? ""));
     this.day = ledger;
     this.snapshot = this.verdicts({ ...snap, ...(ledger.length ? this.ledgerFields() : {}), capabilities: { edit: true, archive: true, create: true } });
@@ -303,7 +304,7 @@ export class DemoServer {
       for (const card of prev.filter((a) => a.id in next.settled && !(a.id in this.snapshot.settled))) {
         next.settled[card.id].at = this.clock();
         const work = { ...card, id: `DEMO-${++n}`, state: lane, moves: undefined, created: this.clock() };
-        this.records[work.id] = demoRecord(work);
+        this.records[work.id] = demoRecord(work, this.clock());
         fresh.add(work.id);
         board.agents.push(work);
       }
@@ -388,7 +389,7 @@ export class DemoServer {
     board.agents.push(card);
     this.created.add(id);
     this.records[id] = {
-      ...demoRecord(card), priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
+      ...demoRecord(card, this.clock()), priority: text("priority"), plan: "", notes: "", definitionOfDone: [],
       acceptanceCriteria: list("acceptanceCriteria").map((item, i) => ({ n: i + 1, text: item, checked: false })),
     };
     this.publish(next, new Set([id]));
@@ -460,22 +461,26 @@ const startingLane = (machine: Machine): string => {
   return lanes.includes(initial) ? initial : lanes[0];
 };
 
-const demoRecord = (card: RawAgent): TaskRecord => ({
-  title: card.title,
-  profile: card.model,
-  priority: "Medium",
-  labels: card.labels ?? ["demo"],
-  milestone: card.milestone ?? "",
-  dependencies: card.dependencies ?? [],
-  description: card.description ?? "A synthetic task used by the public StarPulse preview.",
-  plan: "1. Inspect the task\n2. Make the smallest safe change\n3. Verify the result",
-  notes: "This record contains no real board data.",
-  acceptanceCriteria: [
-    { n: 1, text: "The public preview can edit every field", checked: false },
-    { n: 2, text: "The saved card refreshes immediately", checked: false },
-  ],
-  definitionOfDone: [{ n: 1, text: "The change is verified", checked: false }],
-});
+const demoRecord = (card: RawAgent, now: number): TaskRecord => {
+  const criteria = card.state === "waiting" ? demoCriteria(card.id, now) : undefined;
+  return {
+    title: card.title,
+    profile: card.model,
+    priority: "Medium",
+    labels: card.labels ?? ["demo"],
+    milestone: card.milestone ?? "",
+    dependencies: card.dependencies ?? [],
+    description: [card.description ?? "A synthetic task used by the public StarPulse preview.", criteria && criteriaBlock(criteria)].filter(Boolean).join("\n\n"),
+    ...(criteria && { start_criteria: criteria }),
+    plan: "1. Inspect the task\n2. Make the smallest safe change\n3. Verify the result",
+    notes: "This record contains no real board data.",
+    acceptanceCriteria: [
+      { n: 1, text: "The public preview can edit every field", checked: false },
+      { n: 2, text: "The saved card refreshes immediately", checked: false },
+    ],
+    definitionOfDone: [{ n: 1, text: "The change is verified", checked: false }],
+  };
+};
 
 /** The snapshot a self-contained demo page embeds as `window.__FLOW_FIXTURE__`, null on a served page. */
 export const embedded = (): DemoFixture | null => (globalThis as { __FLOW_FIXTURE__?: DemoFixture }).__FLOW_FIXTURE__ ?? null;
