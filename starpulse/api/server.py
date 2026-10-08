@@ -1198,6 +1198,7 @@ def keep_event_log(
 
 
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
+    logging.basicConfig(level=logging.INFO)  # the GraphQL cost of each pull request read is an INFO line
     parser = serve_parser()
     args = parser.parse_args(argv)
     config = _config(parser, args.config)

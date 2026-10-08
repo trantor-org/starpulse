@@ -5,7 +5,9 @@ whether it merged or how many review threads are open. `fetch` asks GitHub for t
 per repository, however many PRs it holds), and `PullRequests` keeps the answer in the feed so a snapshot is served
 from memory and never waits on GitHub. That one request also carries each PR's changed files and, for the pin bumps of
 `[[repos]]`, the submodule pointer each parent merge pins and the history of each pointer in the child repository, so
-`pins.link` needs no REST call unless a child merge is older than a history page. When GitHub cannot be reached for any
+`pins.link` needs no REST call unless a child merge is older than a history page. A PR seen merged or closed cannot
+change, so its saved record is carried and later reads leave it out of the query: the check-suite trail is read only for
+PRs not yet merged or closed. Each query's `rateLimit` cost is logged. When GitHub cannot be reached for any
 repository the last answer stays, marked `stale`.
 """
 
@@ -46,6 +48,7 @@ def _fragment(paths: Sequence[str]) -> str:
 fragment Pull on PullRequest {{
   number
   merged
+  closed
   mergedAt
   mergeCommit {{ oid{pins} }}
   files(first: 100) {{ nodes {{ path }} }}
@@ -76,8 +79,8 @@ def read_repository(repo: str, numbers: list[int], paths: Sequence[str] = (), po
         if _COMMIT_ID.fullmatch(oid)
     ]
     query = (
-        "query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) "
-        f"{{ {' '.join(selections)} }} }}{_fragment(paths)}"
+        "query($owner: String!, $name: String!) { rateLimit { cost remaining resetAt } "
+        f"repository(owner: $owner, name: $name) {{ {' '.join(selections)} }} }}{_fragment(paths) if numbers else ''}"
     )
     command = ["gh", "api", "graphql", "-f", f"query={query}", "-f", f"owner={owner}", "-f", f"name={name}"]
     try:
@@ -85,17 +88,37 @@ def read_repository(repo: str, numbers: list[int], paths: Sequence[str] = (), po
     except (OSError, subprocess.SubprocessError) as exc:
         raise GhUnavailableError(str(exc)) from exc
     try:  # gh exits non-zero for a PR GraphQL cannot find but still prints the others, so read before judging the exit
-        repository = json.loads(result.stdout)["data"]["repository"]
+        data = json.loads(result.stdout)["data"]
+        repository = data["repository"]
     except (ValueError, KeyError, TypeError) as exc:
         raise GhUnavailableError(result.stderr.strip() or f"gh exited {result.returncode}") from exc
+    if rate := data.get("rateLimit"):
+        logger.info(
+            "pull requests: %s query cost %s, remaining %s, resets %s",
+            repo,
+            rate.get("cost"),
+            rate.get("remaining"),
+            rate.get("resetAt"),
+        )
     if repository is None:
         raise GhUnavailableError(f"{repo} is not readable")
     return repository
 
 
+def _reached(repo: str, record: dict, pointers: Sequence[str], nodes: dict) -> dict[tuple[str, str, str], bool]:
+    """Which `pointers` hold `record`'s merge commit, as far as the pointers' history pages (`h<i>` in `nodes`) say."""
+    reached = {}
+    for i, pointer in enumerate(pointers if record["merge_sha"] else ()):
+        found = contained(record["merge_sha"], record["merged_at"], nodes.get(f"h{i}"))
+        if found is not None:
+            reached[(repo, record["merge_sha"], pointer)] = found
+    return reached
+
+
 def _read_pulls(
     repo: str,
     wanted: list[tuple[str, int, str]],
+    carried: list[dict],
     read: Callable[..., dict],
     out: Pulls,
     pinned: dict[str, str],
@@ -104,16 +127,25 @@ def _read_pulls(
 
     A parent repository's merges also add the pointer each pins at every `pinned` path; a pinned repository is read
     after the parents and asks for the history of every pointer they returned, adding which pointers hold its merges.
+    `carried` are records already in `out` that are not asked for; those of a pinned repository's merges that no parent
+    merge applies yet are still checked against the pointers returned, so a repository holding nothing else to read
+    is queried only for that.
     """
     child = repo.split("/")[1] in pinned
     paths = () if child else tuple(pinned.values())
     pointers = tuple(sorted({oid for oid in out.pointers.values() if oid})) if child else ()
+    waiting = [record for record in carried if child and record["merged"] and not record.get("applied_by")]
+    if not wanted and not (pointers and waiting):
+        return {}
     nodes = read(repo, [number for _, number, _ in wanted], paths, pointers)
     records: dict[str, dict] = {}
     pinned_at: dict[tuple[str, str, str], str | None] = {}
     reached: dict[tuple[str, str, str], bool] = {}
     history: dict[str, PullHistory] = {}
+    closed: set[str] = set()
     try:
+        for record in waiting:
+            reached |= _reached(repo, record, pointers, nodes)
         for _, number, url in wanted:
             if node := nodes.get(f"p{number}"):
                 rollup = node["commits"]["nodes"][-1]["commit"]["statusCheckRollup"]
@@ -133,13 +165,13 @@ def _read_pulls(
                 for i, path in enumerate(paths):  # a null `pin<i>` is a settled answer: nothing is pinned at the path
                     if f"pin{i}" in commit:
                         pinned_at[(repo, record["merge_sha"], path)] = (commit[f"pin{i}"] or {}).get("oid")
-                for i, pointer in enumerate(pointers if record["merge_sha"] else ()):
-                    found = contained(record["merge_sha"], record["merged_at"], nodes.get(f"h{i}"))
-                    if found is not None:
-                        reached[(repo, record["merge_sha"], pointer)] = found
+                reached |= _reached(repo, record, pointers, nodes)
+                if node["closed"] and not node["merged"]:
+                    closed.add(url)
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise GhUnavailableError(f"unexpected GraphQL answer for {repo}: {exc!r}") from exc
     out |= records
+    out.closed |= closed
     out.pointers |= pinned_at
     out.reaches |= reached
     return history
@@ -147,7 +179,7 @@ def _read_pulls(
 
 class Pulls(dict[str, dict]):
     """A `fetch` answer: the records read, `unread`, the URLs of repositories GitHub could not be asked about, and
-    `history`, what GitHub dates of each record's CI.
+    `closed`, the URLs read as closed without merging, and `history`, what GitHub dates of each record's CI.
 
     `pointers` maps (parent repo, merge commit, path) to the commit the merge pins there, None when it has nothing at
     that path, and `reaches` maps (child repo, merge commit, pointer) to whether the pointer contains that merge; only
@@ -155,15 +187,22 @@ class Pulls(dict[str, dict]):
     """
 
     unread: frozenset[str] = frozenset()
+    closed: set[str]
     history: Mapping[str, PullHistory] = MappingProxyType({})
 
     def __init__(self, *records: dict[str, dict]) -> None:
         super().__init__(*records)
+        self.closed = set()
         self.pointers: dict[tuple[str, str, str], str | None] = {}
         self.reaches: dict[tuple[str, str, str], bool] = {}
 
 
-def fetch(urls: Collection[str], read: Callable[..., dict] = read_repository, repos: Sequence[Repo] = ()) -> Pulls:
+def fetch(
+    urls: Collection[str],
+    read: Callable[..., dict] = read_repository,
+    repos: Sequence[Repo] = (),
+    final: Mapping[str, dict] = MappingProxyType({}),
+) -> Pulls:
     """Each URL's `{number, url, checks, merged, merge_sha, merged_at, files, threads, stale}`; a URL GitHub does not return is left out.
 
     `checks` is `pass`, `failing`, `pending` or `none`; `threads` counts the unresolved review threads; `files` lists
@@ -171,20 +210,22 @@ def fetch(urls: Collection[str], read: Callable[..., dict] = read_repository, re
     merged PR and `None` for an open one. Each repository is read once, repositories `repos` pins last, and the
     answer's `pointers` and `reaches` hold the pin bump facts those reads settled. A repository GitHub cannot read is
     logged, left out and named in `unread` so the others still answer; only when every repository fails does the read
-    raise `GhUnavailableError`, for `PullRequests.refresh` to keep its last answer.
+    raise `GhUnavailableError`, for `PullRequests.refresh` to keep its last answer. A URL with a record in `final`, a
+    PR that merged or closed, is not asked for: its record comes back as saved, never `stale`.
     """
     pinned = {repo.name: repo.path for repo in repos}
     pulls = sorted((m[1], int(m[2]), url) for url in urls if (m := _PULL.fullmatch(url)))
-    out = Pulls()
+    out = Pulls({url: {**final[url], "stale": False} for _, _, url in pulls if url in final})
     history: dict[str, PullHistory] = {}
     unread: set[str] = set()
     failures: list[GhUnavailableError] = []
     groups = [(repo, list(group)) for repo, group in groupby(pulls, key=lambda pull: pull[0])]
     # Parents first: the pointers their merges pin go in the query of the repository pinned.
     groups.sort(key=lambda group: group[0].split("/")[1] in pinned)
-    for repo, wanted in groups:
+    for repo, group in groups:
+        wanted = [pull for pull in group if pull[2] not in final]
         try:
-            history |= _read_pulls(repo, wanted, read, out, pinned)
+            history |= _read_pulls(repo, wanted, [out[url] for _, _, url in group if url in final], read, out, pinned)
         except GhUnavailableError as exc:
             logger.warning("pull requests: %s", exc)
             failures.append(exc)
@@ -213,24 +254,37 @@ class PullRequests:
         repos: Sequence[Repo] = (),
         pins: Pins | None = None,
         trail: CiRecorder | None = None,
+        read: Callable[..., dict] = read_repository,
     ) -> None:
         self._feed = feed
         self._fetch = fetch
         self._repos = repos
         self._pins = pins or GitHub()
         self._trail = trail
+        self._read = read
         self._last: dict[str, dict] = {}
+        #: URLs read as closed without merging; a merged PR is final by its record, a closed one by being named here.
+        self._closed: set[str] = set()
+
+    def _final(self) -> dict[str, dict]:
+        """The saved records of PRs that cannot change, which the next read leaves out of the query."""
+        return {url: pull for url, pull in self._last.items() if pull["merged"] or url in self._closed}
 
     def refresh(self) -> None:
         """Read every open task's PRs once; a PR GitHub could not be asked about keeps its last record, marked `stale`."""
         wanted = self._feed.pull_requests()
         urls = list(dict.fromkeys(url for prs in wanted.values() for url in prs))
         try:
-            fresh = (self._fetch or partial(fetch, repos=self._repos))(urls) if urls else Pulls()
+            fresh = (
+                (self._fetch or partial(fetch, read=self._read, repos=self._repos, final=self._final()))(urls)
+                if urls
+                else Pulls()
+            )
             if isinstance(self._pins, GitHub):
                 self._pins.learn(fresh.pointers, fresh.reaches)
             kept = {url: {**self._last[url], "stale": True} for url in fresh.unread if url in self._last}
             self._last = {**fresh, **kept}
+            self._closed = {url for url in self._closed | fresh.closed if url in self._last}
             if self._trail:
                 self._trail.record(
                     {task: [fresh.history[url] for url in prs if url in fresh.history] for task, prs in wanted.items()}
@@ -246,12 +300,13 @@ class PullRequests:
     def answers(self) -> dict:
         """The records and pin answers read so far, for the feed to save with the Board."""
         pins = self._pins.answers() if isinstance(self._pins, GitHub) else {}
-        return {"records": self._last, "pins": pins}
+        return {"records": self._last, "pins": pins, "closed": sorted(self._closed)}
 
     def restore(self) -> None:
         """Start from the answers the feed resumed with (`BoardFeed.pull_answers`), so a restart reads GitHub warm."""
         saved = self._feed.pull_answers()
         self._last = {**saved.get("records", {}), **self._last}
+        self._closed |= set(saved.get("closed", []))
         if isinstance(self._pins, GitHub):
             self._pins.restore(saved.get("pins", {}))
 
