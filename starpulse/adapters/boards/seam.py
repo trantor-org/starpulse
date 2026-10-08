@@ -40,6 +40,7 @@ __all__ = [
     "MilestoneReader",
     "MoveWriter",
     "TaskArchiver",
+    "TaskCompleter",
     "TaskCreator",
     "TaskEditor",
     "TaskReader",
@@ -93,6 +94,14 @@ class TaskArchiver(Protocol):
     """A board writer: archive a task, recording the reason when there is one, and say what it did."""
 
     def __call__(self, task: str, reason: str, /) -> Written: ...
+
+
+class TaskCompleter(Protocol):
+    """A board writer: move a Done task out of the lanes into the board's completed tasks, and say what it did.
+
+    A task that is not Done, is already completed or has no file is refused. A completed task is still read and edited."""
+
+    def __call__(self, task: str, /) -> Written: ...
 
 
 class TaskCreator(Protocol):
@@ -202,6 +211,8 @@ class Board:
     """Saves the page's edits to a task in one write; None refuses every edit. Needs `read`, which it is checked against."""
     archive: TaskArchiver | None = None
     """Archives a task from any column; None refuses every archive."""
+    complete: TaskCompleter | None = None
+    """Completes a Done task; None refuses every complete."""
     create: TaskCreator | None = None
     """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
     milestones: MilestoneLister | None = None

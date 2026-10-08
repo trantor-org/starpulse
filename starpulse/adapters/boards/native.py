@@ -19,7 +19,16 @@ from typing import Any
 import yaml
 
 from starpulse.adapters.boards import native_docs, native_milestones
-from starpulse.adapters.boards.seam import Board, MoveWriter, TaskArchiver, TaskCreator, TaskEditor, TaskReader, Written
+from starpulse.adapters.boards.seam import (
+    Board,
+    MoveWriter,
+    TaskArchiver,
+    TaskCompleter,
+    TaskCreator,
+    TaskEditor,
+    TaskReader,
+    Written,
+)
 from starpulse.adapters.boards.upstream_backlog import (
     _FOLDERS,
     _HEADED_DESCRIPTION,
@@ -44,6 +53,9 @@ _NOTES_END = re.compile(r"\s*<!-- SECTION:NOTES:END -->")
 _PLAN = re.compile(r"<!-- SECTION:PLAN:BEGIN -->(.*?)<!-- SECTION:PLAN:END -->", re.S)
 _CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
 _DONE = re.compile(r"<!-- DOD:BEGIN -->(.*?)<!-- DOD:END -->", re.S)
+_FINAL_SUMMARY = re.compile(r"<!-- SECTION:FINAL_SUMMARY:BEGIN -->(.*?)<!-- SECTION:FINAL_SUMMARY:END -->", re.S)
+_COMMENTS_SECTION = re.compile(r"<!-- COMMENTS:BEGIN -->(.*?)<!-- COMMENTS:END -->", re.S)
+_COMMENT_HEAD = re.compile(r"^created: (\S+ \S+)\n---\n", re.M)
 _ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
 _NOTES_SECTION = "\n## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{}\n<!-- SECTION:NOTES:END -->\n"
 
@@ -61,14 +73,15 @@ def _create(root: Path, project: str) -> None:
 
 
 def _find(root: Path, task: str) -> Path | None:
-    """The file under `tasks/` whose front matter holds `id: <task>`."""
-    for path in sorted((root / "tasks").glob("*.md")):
-        try:
-            frontmatter, _ = _split(path.read_text())
-        except OSError:
-            continue  # moved or removed while looking
-        if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip() == task:
-            return path
+    """The file under `tasks/`, or `completed/` once it is completed, whose front matter holds `id: <task>`."""
+    for folder in ("tasks", "completed"):
+        for path in sorted((root / folder).glob("*.md")):
+            try:
+                frontmatter, _ = _split(path.read_text())
+            except OSError:
+                continue  # moved or removed while looking
+            if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip() == task:
+                return path
     return None
 
 
@@ -102,6 +115,18 @@ def _items(pattern: re.Pattern[str], body: str) -> list[dict[str, Any]]:
     ]
 
 
+def _comments(body: str) -> list[dict[str, str]]:
+    """The task's comments as `{created, text}`, oldest first, as `_comment` and the Backlog this workspace runs write them."""
+    found = _COMMENTS_SECTION.search(body)
+    region = found.group(1) if found else ""
+    heads = list(_COMMENT_HEAD.finditer(region))
+    ends = [*(head.start() for head in heads[1:]), len(region)]
+    return [
+        {"created": head[1], "text": region[head.end() : end].rstrip().removesuffix("---").strip()}
+        for head, end in zip(heads, ends, strict=False)
+    ]
+
+
 def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) -> TaskReader:
     """A board reader: the record of the task's file, keyed by the fields the task view draws and edits.
 
@@ -117,15 +142,22 @@ def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) ->
         description = _description(body)
         return {
             "title": str(frontmatter.get("title") or ""),
+            "type": str(frontmatter.get("type") or ""),
+            "status": str(frontmatter.get("status") or ""),
             "profile": next(iter(_strings(frontmatter.get("assignee"))), ""),
             "priority": str(frontmatter.get("priority") or ""),
             "labels": list(_strings(frontmatter.get("labels"))),
             "milestone": str(frontmatter.get("milestone") or ""),
             "dependencies": list(_strings(frontmatter.get("dependencies"))),
+            "references": list(_strings(frontmatter.get("references"))),
+            "documentation": list(_strings(frontmatter.get("documentation"))),
+            "modifiedFiles": list(_strings(frontmatter.get("modified_files"))),
             "description": description,
             "start_criteria": evaluate(task, description),
             "plan": _section(_PLAN, body),
             "notes": _section(_NOTES, body),
+            "finalSummary": _section(_FINAL_SUMMARY, body),
+            "comments": _comments(body),
             "acceptanceCriteria": _items(_CRITERIA, body),
             "definitionOfDone": _items(_DONE, body),
         }
@@ -138,14 +170,23 @@ _TEXT_SECTIONS = {
     "description": ("DESCRIPTION", "Description"),
     "plan": ("PLAN", "Implementation Plan"),
     "notes": ("NOTES", "Implementation Notes"),
+    "finalSummary": ("FINAL_SUMMARY", "Final Summary"),
 }
 #: The checklists an edit rewrites: the field's name, the markers' name, the heading a new section gets and its pattern.
 _CHECKLISTS = {
     "acceptanceCriteria": ("AC", "Acceptance Criteria", _CRITERIA),
     "definitionOfDone": ("DOD", "Definition of Done", _DONE),
 }
-_SCALARS = {"title": "title", "priority": "priority", "milestone": "milestone"}
-_LISTS = {"labels": "labels", "dependencies": "dependencies"}
+_SCALARS = {"title": "title", "type": "type", "priority": "priority", "milestone": "milestone"}
+_LISTS = {
+    "labels": "labels",
+    "dependencies": "dependencies",
+    "references": "references",
+    "documentation": "documentation",
+    "modifiedFiles": "modified_files",
+}
+#: The lists whose key a task file leaves out while it holds nothing.
+_OPTIONAL_LISTS = {"references", "documentation", "modified_files"}
 _COMMENTS = re.compile(r"[ \t]*<!-- COMMENTS:END -->")
 
 
@@ -204,37 +245,70 @@ def _comment(body: str, text: str) -> str:
     return body.rstrip("\n") + f"\n\n## Comments\n\n<!-- COMMENTS:BEGIN -->\n{entry}<!-- COMMENTS:END -->\n"
 
 
-def _editor(root: Path) -> TaskEditor:
+def _append_notes(body: str, text: str) -> str:
+    """`body` with `text` on a new line at the end of its notes, which a body without notes gets as its first."""
+    if _NOTES_END.search(body):
+        return _NOTES_END.sub(lambda end: f"\n{text}{end.group()}", body, count=1)
+    return body.rstrip("\n") + "\n" + _NOTES_SECTION.format(text)
+
+
+def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, str]) -> bool:
+    """Set `field` in `frontmatter` and say so, or say it is no front matter field, leaving `frontmatter` as it was."""
+    if field in _SCALARS:
+        text = _text(field, value)
+        if not text and field == "title":
+            raise ValueError("title cannot be empty")
+        frontmatter[field] = text
+        if not text:
+            del frontmatter[field]
+    elif field == "profile":
+        frontmatter["assignee"] = [_text(field, value)]
+        if not frontmatter["assignee"][0]:
+            del frontmatter["assignee"]
+    elif field == "status":
+        if lane_id(_text(field, value)) not in spelled:
+            raise ValueError(f"{value!r} is not a status of this board: {', '.join(spelled.values())}")
+        frontmatter["status"] = spelled[lane_id(value)]
+    elif field in _LISTS:
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError(f"{field} must be a list of text")
+        key = _LISTS[field]
+        frontmatter[key] = [item.strip() for item in value if item.strip()]
+        if not frontmatter[key] and key in _OPTIONAL_LISTS:
+            del frontmatter[key]
+    else:
+        return False
+    return True
+
+
+def _set_body(task: str, body: str, field: str, value: Any) -> str:
+    """`body` with the section or checklist `field` set to `value`; `appendNotes` adds to the notes instead."""
+    if field == "appendNotes":
+        if not _text(field, value):
+            raise ValueError("appendNotes cannot be empty")
+        return _append_notes(body, value.strip())
+    if field in _TEXT_SECTIONS:
+        return _set_text(body, field, value)
+    if field in _CHECKLISTS:
+        return _set_items(task, body, field, value)
+    raise ValueError(f"{field} is not an editable field")
+
+
+def _editor(root: Path, statuses: tuple[str, ...]) -> TaskEditor:
     """A board writer that applies every change to a task's file in one write, or refuses the whole edit.
 
-    `changes` holds the new value of each field `read` names. An empty priority, milestone or assignee removes its key,
-    a checklist item without a number is new, and a non-blank `comment` is appended to the task's comments.
+    `changes` holds the new value of each field `read` names except `comments`, which a non-blank `comment` appends to;
+    `appendNotes` is one more, text added to the end of the notes. An empty priority, milestone, assignee or type and an
+    empty references, documentation or modified-files list removes its key, a status is spelled as its lane is, and a
+    checklist item without a number is new.
     """
+    spelled = {lane_id(status): status for status in statuses}
 
     def edit(task: str, changes: Mapping[str, Any], comment: str, /) -> Written:
         def apply(frontmatter: dict, body: str) -> str:
             for field, value in changes.items():
-                if field in _SCALARS:
-                    text = _text(field, value)
-                    if not text and field == "title":
-                        raise ValueError("title cannot be empty")
-                    frontmatter[field] = text
-                    if not text:
-                        del frontmatter[field]
-                elif field == "profile":
-                    frontmatter["assignee"] = [_text(field, value)]
-                    if not frontmatter["assignee"][0]:
-                        del frontmatter["assignee"]
-                elif field in _LISTS:
-                    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-                        raise ValueError(f"{field} must be a list of text")
-                    frontmatter[field] = [item.strip() for item in value if item.strip()]
-                elif field in _TEXT_SECTIONS:
-                    body = _set_text(body, field, value)
-                elif field in _CHECKLISTS:
-                    body = _set_items(task, body, field, value)
-                else:
-                    raise ValueError(f"{field} is not an editable field")
+                if not _set_front(frontmatter, field, value, spelled):
+                    body = _set_body(task, body, field, value)
             return _comment(body, comment) if comment.strip() else body
 
         try:
@@ -269,10 +343,7 @@ def _archiver(root: Path) -> TaskArchiver:
 
 def _holder(body: str, session: str) -> str:
     """`body` with `**Holder:** <session>` appended to its notes, which the board reads the holder from."""
-    line = f"**Holder:** {session}"
-    if _NOTES_END.search(body):
-        return _NOTES_END.sub(lambda end: f"\n{line}{end.group()}", body, count=1)
-    return body.rstrip("\n") + "\n" + _NOTES_SECTION.format(line)
+    return _append_notes(body, f"**Holder:** {session}")
 
 
 def _writer(root: Path, statuses: tuple[str, ...]) -> MoveWriter:
@@ -292,6 +363,28 @@ def _writer(root: Path, statuses: tuple[str, ...]) -> MoveWriter:
         return _update(root, task, edit)
 
     return write
+
+
+def _completer(root: Path) -> TaskCompleter:
+    """A board writer that moves a Done task's file to `completed/`, where the reader and the projection still find it."""
+
+    def complete(task: str, /) -> Written:
+        if (path := _find(root, task)) is None:
+            return Written(False, f"{task} has no task file in {root / 'tasks'}")
+        if path.parent.name == "completed":
+            return Written(False, f"{task} is already completed")
+        status = str(_split(path.read_text())[0].get("status") or "")
+        if lane_id(status) != "done":
+            return Written(False, f"{task} is {status or 'without a status'}, not Done")
+        target = root / "completed" / path.name
+        try:
+            target.parent.mkdir(exist_ok=True)
+            os.replace(path, target)
+        except OSError as error:
+            return Written(False, f"{path}: {error}")
+        return Written(True, f"Completed task {task}")
+
+    return complete
 
 
 def _next_id(root: Path, prefix: str) -> str:
@@ -375,8 +468,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "create": _creator(root, config),
             "read": _reader(root, evaluate),
             "evaluate": evaluate,
-            "edit": _editor(root),
+            "edit": _editor(root, config.statuses),
             "archive": _archiver(root),
+            "complete": _completer(root),
             "docs": native_docs.lister(root),
             "read_doc": native_docs.reader(root),
             "create_doc": native_docs.creator(root),
