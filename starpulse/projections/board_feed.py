@@ -186,6 +186,8 @@ class BoardFeed:
         self._strip: dict | None = None
         self._pins: list[dict] = []
         self._lock = threading.RLock()
+        #: Held for a whole Ledger build, which runs outside `_lock`, so builds never overlap; taken before `_lock`, never under it.
+        self._building = threading.Lock()
         self._window_s = window_s
         self._open: dict[str, dict] = {}
         self._machines: dict[str, dict[str, dict]] = {name: {} for name in self._drawn if name != "board"}
@@ -223,6 +225,9 @@ class BoardFeed:
         self._sized: tuple[datetime | None, dict[str, float]] = (None, {})
         #: Set once the stream has been read up to the last entry it held when the feed started.
         self.ready = threading.Event()
+        #: The whole Ledger as last built, which every page request reads (`_refresh_ledgers`); with no pull, run or
+        #: lane history yet it holds only the empty events, so its window does not matter.
+        self._ledger_full = self._ledger({}, {}, 0.0)
 
     def _tied_to_events(self, cues: Sequence[dict]) -> dict[str, list[str]]:
         """Each Board event with the workflows (`<instance>/<workflow>`) it cues or that write it."""
@@ -256,10 +261,18 @@ class BoardFeed:
         with self._lock:
             self._awaiting = True
             self._expected = stream_id(last_id)
-            self._check_ready()
+        self._check_ready()
 
     def _check_ready(self) -> None:
-        if self._expected is not None and self._seen >= self._expected and not self.ready.is_set():
+        """Once the stream is read to the entry expected, build the Ledger the replay's moves left and mark the feed
+        ready; the caller does not hold the lock."""
+        with self._lock:
+            if self._expected is None or self._seen < self._expected or self.ready.is_set():
+                return
+        self._refresh_ledgers()
+        with self._lock:
+            if self.ready.is_set():
+                return
             self.ready.set()
             # the replay published no step, so a page connected through it is handed the Board it built in one piece
             self._publish("snapshot", self.snapshot())
@@ -271,7 +284,7 @@ class BoardFeed:
         """Note that a board adapter reading a stream has read up to the entry `entry_id`."""
         with self._lock:
             self._seen = max(self._seen, stream_id(entry_id))
-            self._check_ready()
+        self._check_ready()
 
     def resume(self, store: BoardStore, stream: str, retained: Callable[[str], bool]) -> str | None:
         """Restore the Board `store` saved for `stream` and return the cursor to read the stream after, else None.
@@ -401,7 +414,9 @@ class BoardFeed:
         if self._keys is not None and not self._keys.matches(task.id):
             return
         change = self._place(task)
-        if change is not None and self._lanes is not None:
+        if change is None:
+            return
+        if self._lanes is not None:
             lane, entered = change
             try:
                 event_id = f"{task.id}@{lane}@{entered}"
@@ -411,6 +426,8 @@ class BoardFeed:
                     lane_events.publish(self._lane_log, event_id, task.model_copy(update={"lane": lane}), entered)
             except Exception as exc:  # the history is down; the task is placed and the next change is recorded
                 logger.warning("StarPulse: cannot record the lane change of %s: %s", task.id, exc)
+        if not self._replaying():
+            self._refresh_ledgers()  # the Ledger reads the move from the history; the replay's moves are built once, at its end
 
     def _history_ends_in(self, task_id: str, lane: str) -> bool:
         """Whether the history's last lane for the task is `lane` (a status spelled in any case counts)."""
@@ -644,7 +661,7 @@ class BoardFeed:
             self._pulls_unsaved = True
             self._pulls = pulls
             self._publish("pulls", {"pulls": _drawn_pulls(pulls)})
-            self._refresh_ledgers()
+        self._refresh_ledgers()
 
     def refuse_claim(self, task: str, reason: str, at: float) -> None:
         """Keep the board writer's latest refusal of an agent's claim on `task` and publish it."""
@@ -653,9 +670,12 @@ class BoardFeed:
             self._publish("claim", {"task": task, "reason": reason, "at": at})
 
     def task(self, task_id: str) -> dict | None:
-        """The open Board task as the page draws it, or None when the Board holds no open task by that id."""
-        with self._lock:
-            return self._open.get(task_id)
+        """The open Board task as the page draws it, or None when the Board holds no open task by that id.
+
+        It takes no lock, so opening a task never waits on the feed: one dict read is atomic, and a placed task's
+        entry is replaced, never changed in place.
+        """
+        return self._open.get(task_id)
 
     def machine_task(self, flow: str, task_id: str) -> dict | None:
         """The task as `flow`'s machine last placed it, or None when it has not been placed there."""
@@ -723,9 +743,10 @@ class BoardFeed:
                 self._runs_errors[instance] = error
             if moved:
                 self._publish("dags", {"dags": self._workflows(), "pools": self._drawn_pools(), "error": self._error()})
-                self._refresh_ledgers()
             if changed:
                 self._publish("snapshot", self.snapshot())
+        if moved:
+            self._refresh_ledgers()
 
     def _runnable(self) -> list[str]:
         """The `run_safe` workflows Run now is declared on: those their instance's adapter can start."""
@@ -748,18 +769,17 @@ class BoardFeed:
             if instance != PUSHED_INSTANCE or dag["name"] not in listed
         ]
 
-    def _ledger(self) -> dict[str, list[dict]]:
-        """Every tied Board event's occurrences of the last `LEDGER_WINDOW`, newest first, with the run of every
-        workflow tied to it (`starpulse.projections.ledger`).
+    def _ledger(self, pulls: dict[str, list[dict]], recent: dict[str, list], since: float) -> dict[str, list[dict]]:
+        """Every tied Board event's occurrences since `since`, newest first, with the run of every workflow tied to it
+        among the `recent` runs (`starpulse.projections.ledger`).
 
-        The merge event's occurrences are the merged pull requests; any other event's are the tasks that entered the
-        lane it reaches, read from the lane history `size_suns` was given. Only the window's changes are read: this runs
-        under the lock on every run and pull update, and the whole history is far larger than a day.
+        The merge event's occurrences are the merged `pulls`; any other event's are the tasks that entered the lane it
+        reaches, read from the lane history `size_suns` was given. Only the window's changes are read: this runs on
+        every run, pull and live lane update, and the whole history is far larger than a day.
         """
         events: dict[str, list[Occurrence]] = {}
-        since = self._clock() - LEDGER_WINDOW
         if MERGE_EVENT in self._ties:
-            events[MERGE_EVENT] = [o for o in pull_occurrences(self._pulls) if o.at >= since]
+            events[MERGE_EVENT] = [o for o in pull_occurrences(pulls) if o.at >= since]
         reached = {
             event: {t["target"] for t in self._drawn["board"].get("transitions", []) if t["event"] == event}
             for event in self._ties.keys() - {MERGE_EVENT}
@@ -772,7 +792,7 @@ class BoardFeed:
         return build(
             events,
             self._ties,
-            self._recent_runs(),
+            recent,
             lambda dag: self._commit.get(dag.partition("/")[0]),
             lambda event, dag: self._resolves.get((event, dag), NEXT),
         )
@@ -794,7 +814,7 @@ class BoardFeed:
         with self._lock:
             open_ = [
                 fail
-                for rows in self._ledger().values()
+                for rows in self._ledger_full.values()
                 for row in rows
                 if (fail := row["fails"].get(dag)) and fail["resolved"] is None
             ]
@@ -834,15 +854,12 @@ class BoardFeed:
         head = self._head(full)
         return {"ledgers": head, "mergeStrip": self._merge_strip(full), "mergePins": self._merge_pins(full, head)}
 
-    def _ledger_fields(self) -> dict:
-        return self._ledger_view(self._ledger())
-
     def merges(self, before: float | None, limit: int) -> dict:
         """`GET /api/merges`: the next `limit` merges older than `before` (None: the newest), `{merges, more}`, none
         from beyond `LEDGER_WINDOW`."""
         with self._lock:
             found, more = page(
-                self._ledger().get(MERGE_EVENT, ()), before=before, limit=limit, since=self._clock() - LEDGER_WINDOW
+                self._ledger_full.get(MERGE_EVENT, ()), before=before, limit=limit, since=self._clock() - LEDGER_WINDOW
             )
             return {"merges": found, "more": more}
 
@@ -887,13 +904,27 @@ class BoardFeed:
         }
 
     def _refresh_ledgers(self) -> None:
-        """Send the Ledger when it or its strip differs from the one last sent; the caller holds the lock."""
-        view = self._ledger_view(self._ledger())
-        strip_ = view["mergeStrip"]
-        seen = (view["ledgers"], strip_ and strip_["buckets"], view["mergePins"])
-        if seen != (self._ledgers, self._strip and self._strip["buckets"], self._pins):
-            self._ledgers, self._strip, self._pins = view["ledgers"], strip_, view["mergePins"]
-            self._publish("ledgers", view)
+        """Rebuild the Ledger page requests read, and send it when it or its strip differs from the one last sent; the
+        caller does not hold the lock.
+
+        The build (a lane history read and the pairing) runs outside the lock, from the pulls and runs the lock hands
+        it, so no page request waits on it. Builds run one at a time, each from what it reads as it starts, so the
+        last to finish reflects the latest update. A feed that ties no workflow to an event has no Ledger to build.
+        """
+        if not self._ties:
+            return
+        with self._building:
+            with self._lock:
+                pulls, recent, since = self._pulls, self._recent_runs(), self._clock() - LEDGER_WINDOW
+            full = self._ledger(pulls, recent, since)
+            with self._lock:
+                self._ledger_full = full
+                view = self._ledger_view(full)
+                strip_ = view["mergeStrip"]
+                seen = (view["ledgers"], strip_ and strip_["buckets"], view["mergePins"])
+                if seen != (self._ledgers, self._strip and self._strip["buckets"], self._pins):
+                    self._ledgers, self._strip, self._pins = view["ledgers"], strip_, view["mergePins"]
+                    self._publish("ledgers", view)
 
     def _drawn_pools(self) -> list[dict]:
         """Every instance's concurrency pools, each named `<instance>/<pool>` like the `pool` a workflow names."""
@@ -935,7 +966,7 @@ class BoardFeed:
                 "dags": self._workflows(),
                 "pools": self._drawn_pools(),
                 "pulls": _drawn_pulls(self._pulls),
-                **self._ledger_fields(),
+                **self._ledger_view(self._ledger_full),
                 "claims": dict(self._claims),
                 "insights": [
                     finding
