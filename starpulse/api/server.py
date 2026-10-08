@@ -40,6 +40,14 @@ GET /api/merges[?before=T][&limit=N]
                    `ledgers.MERGED` row. None is older than 24 hours, `more` says whether older ones remain, and
                    rows sharing the boundary second all come in one page, so walking `before` neither repeats nor
                    skips a merge. A `before` that is not a finite number, or a `limit` outside 1-100, is 400
+GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_contains=TEXT]
+                   {pulls}: the pull requests the PR store read from GitHub (one query per repository a minute, the
+                   open ones every time, a merged or closed one until it is final), those matching every filter
+                   given, by repository then number, each {repo, number, state (OPEN, MERGED, CLOSED), isDraft,
+                   mergeable, baseRefName, headRefOid, body, checks (pass, failing, pending, none: the required
+                   checks at the head commit), requiredChecks [{name, result}], threads (unresolved), updatedAt, and
+                   fetchedAt (epoch seconds this record was read)}. A `number` that is not an integer, or a `state`
+                   that is none of those, is 400
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
@@ -196,6 +204,7 @@ from starpulse.adapters.runs import run_events
 from starpulse.adapters.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse.adapters.runs.ingest import tokens as ingest_tokens
 from starpulse.adapters.runs.pull_requests import PullRequests
+from starpulse.adapters.runs.pull_store import PullSync
 from starpulse.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.api import forward
 from starpulse.api.forward import Forwarder
@@ -230,6 +239,7 @@ from starpulse.store.history import (
     record_lane_events,
     record_machine_events,
 )
+from starpulse.store.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 _HERE = Path(__file__).parents[1]
@@ -799,6 +809,25 @@ def history_response(history: History, query: dict[str, list[str]], flows: Colle
     return encode("history", body), 200
 
 
+def pulls_response(pulls: PullStore | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
+    """The body and status for `/api/pulls`: the stored pull requests matching every filter given.
+
+    A `number` that is not an integer, or a `state` that is not open, merged or closed, is 400."""
+    state = query.get("state", [""])[0].upper() or None
+    try:
+        number = int(query["number"][0]) if "number" in query else None
+    except ValueError:
+        return _error("pulls takes an integer ?number="), 400
+    if state not in (None, "OPEN", "MERGED", "CLOSED"):
+        return _error("pulls takes ?state= open, merged or closed"), 400
+    found = (
+        pulls.find(query.get("repo", [""])[0] or None, number, state, query.get("body_contains", [""])[0] or None)
+        if pulls
+        else []
+    )
+    return encode("pulls", {"pulls": found}), 200
+
+
 #: `/api/analytics/health`'s defaults: the window it counts over, and how long a stay in one state makes a task stuck.
 _HEALTH_HOURS = 168.0
 _STUCK_HOURS = 24.0
@@ -1091,6 +1120,7 @@ def request_handler(
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
     contract: Callable[[], dict[str, Any]] | None = None,
     milestones: Board | None = None,
+    pulls: PullStore | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
     flows = feed.machines.keys()
@@ -1131,6 +1161,8 @@ def request_handler(
                 self._send(*machines_response(feed, parse_qs(url.query)))
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows))
+            elif url.path == "/api/pulls":
+                self._send(*pulls_response(pulls, parse_qs(url.query)))
             elif url.path == "/api/analytics/health":
                 self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
             elif url.path == "/api/level":
@@ -1413,9 +1445,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
+    pulls = PullStore(log.engine)
     if shutil.which("gh"):  # without the GitHub CLI there is no source, and a task simply carries no PR state
         pull_requests = PullRequests(feed, repos=config.repos, trail=CiTrail(log) if config.ci else None)
         threading.Thread(target=pull_requests.run_forever, name="pull-requests", daemon=True).start()
+        threading.Thread(target=PullSync(pulls, feed, config.repos).run_forever, name="pull-store", daemon=True).start()
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)
     threading.Thread(
@@ -1472,6 +1506,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         reruns=reruns,
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),
         milestones=board,
+        pulls=pulls,
     )
     serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 

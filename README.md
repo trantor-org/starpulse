@@ -279,6 +279,23 @@ to `~/.claude/skills` or `~/.agents/skills`. An install records what it wrote, s
 refused (exit 1) until you pass `--force`, while one the package has since updated is replaced; `skills list` reports
 which of the four each copy is.
 
+#### The pull-request store
+
+With `gh` available, `serve` keeps a store of pull requests (table `starpulse_pull_requests`) and refreshes it every
+minute, one GraphQL query per repository: every open pull request, plus any other pull request updated since the newest
+`updatedAt` the store holds for that repository. A merged or closed record is final and is never read again. An open
+pull request is re-read on every refresh even when its `updatedAt` is unchanged, because a check finishing does not
+bump it. A pull request the store has not seen yet costs one follow-up query, so a cold store costs two. The
+repositories are those of open tasks' pull request links, the `[[repos]]` entries under a linked owner, and those
+already stored. Each query's `rateLimit` cost is logged (`pull requests: <repo> query cost N, remaining N, resets T`).
+A repository with more than 100 open pull requests is read for the first 100, with a warning.
+
+`GET /api/pulls[?repo=owner/name][&number=N][&state=OPEN|MERGED|CLOSED][&body_contains=text]` serves the store,
+`{pulls: [...]}`, ordered by repository then number. Each record holds `repo`, `number`, `state`, `isDraft`,
+`mergeable`, `baseRefName`, `headRefOid`, `body`, `checks` (`pass`, `failing`, `pending` or `none`), `requiredChecks`
+(`{name, result}`), `threads` (open review threads), `updatedAt` and `fetchedAt` (epoch seconds of the read). A `number` that is not an
+integer or an unknown `state` answers 400.
+
 `waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
 merged state, open review threads and commits behind `main` the server last read when it has them.
 

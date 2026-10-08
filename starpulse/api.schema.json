@@ -3362,6 +3362,99 @@
       "title": "Pull",
       "type": "object"
     },
+    "PullRecord": {
+      "additionalProperties": false,
+      "description": "One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).",
+      "properties": {
+        "baseRefName": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "checks": {
+          "enum": [
+            "pass",
+            "failing",
+            "pending",
+            "none"
+          ],
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "number"
+        },
+        "headRefOid": {
+          "type": "string"
+        },
+        "isDraft": {
+          "type": "boolean"
+        },
+        "mergeable": {
+          "type": "string"
+        },
+        "number": {
+          "type": "integer"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "requiredChecks": {
+          "items": {
+            "$ref": "#/$defs/RequiredCheck"
+          },
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "OPEN",
+            "MERGED",
+            "CLOSED"
+          ],
+          "type": "string"
+        },
+        "threads": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "state",
+        "isDraft",
+        "mergeable",
+        "baseRefName",
+        "headRefOid",
+        "body",
+        "checks",
+        "requiredChecks",
+        "threads",
+        "updatedAt",
+        "fetchedAt"
+      ],
+      "title": "PullRecord",
+      "type": "object"
+    },
+    "Pulls": {
+      "additionalProperties": false,
+      "description": "`GET /api/pulls`: the stored pull requests matching every filter given, by repository then number.",
+      "properties": {
+        "pulls": {
+          "items": {
+            "$ref": "#/$defs/PullRecord"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "pulls"
+      ],
+      "title": "Pulls",
+      "type": "object"
+    },
     "PullsDelta": {
       "additionalProperties": false,
       "properties": {
@@ -3596,6 +3689,28 @@
         "model"
       ],
       "title": "RawAgent",
+      "type": "object"
+    },
+    "RequiredCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "failing",
+            "pending"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "result"
+      ],
+      "title": "RequiredCheck",
       "type": "object"
     },
     "RunEventRequest": {
@@ -4902,6 +5017,9 @@
     "milestones": {
       "$ref": "#/$defs/Milestones"
     },
+    "pulls": {
+      "$ref": "#/$defs/Pulls"
+    },
     "requests": {
       "items": {
         "anyOf": [
@@ -4965,6 +5083,7 @@
     "machines",
     "laneHistory",
     "machineHistory",
+    "pulls",
     "health",
     "level",
     "trajectories",

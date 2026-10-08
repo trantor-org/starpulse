@@ -26,6 +26,7 @@ ROUTES = (
     "/api/machines",
     "/api/history?task=T-1",
     "/api/history?task=T-1&flow=in-progress",
+    "/api/pulls",
     "/api/analytics/health",
     "/api/harnesses",
     "/api/history-window",

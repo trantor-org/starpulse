@@ -536,6 +536,35 @@ class LaneHistory(_Api):
     path: list[LaneStep]
 
 
+class RequiredCheck(_Api):
+    name: str
+    result: Literal["pass", "failing", "pending"]
+
+
+class PullRecord(_Api):
+    """One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds)."""
+
+    repo: str
+    number: int
+    state: Literal["OPEN", "MERGED", "CLOSED"]
+    isDraft: bool
+    mergeable: str
+    baseRefName: str
+    headRefOid: str
+    body: str
+    checks: Literal["pass", "failing", "pending", "none"]
+    requiredChecks: list[RequiredCheck]
+    threads: int
+    updatedAt: str
+    fetchedAt: float
+
+
+class Pulls(_Api):
+    """`GET /api/pulls`: the stored pull requests matching every filter given, by repository then number."""
+
+    pulls: list[PullRecord]
+
+
 class MachineHistory(_Api):
     """`GET /api/history?task=&flow=`: a task's path on one machine, and how many steps it has taken."""
 
@@ -1134,6 +1163,7 @@ RESPONSES: dict[str, Any] = {
     "/api/milestones": Milestones,
     "/api/milestones/": MilestoneShown,
     "/api/history": LaneHistory | MachineHistory,
+    "/api/pulls": Pulls,
     "/api/forwarding": ForwardingStatus | ForwardingUnconfigured,
 }
 
@@ -1161,6 +1191,7 @@ BODIES: dict[str, Any] = {
     "merges": Merges | ApiError,
     "machines": Machines | ApiError,
     "history": LaneHistory | MachineHistory | ApiError,
+    "pulls": Pulls | ApiError,
     "health": Health | ApiError,
     "level": Level | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
@@ -1213,6 +1244,7 @@ class ApiContract(_Api):
     machines: Machines
     laneHistory: LaneHistory
     machineHistory: MachineHistory
+    pulls: Pulls
     health: Health
     level: Level
     trajectories: Trajectories

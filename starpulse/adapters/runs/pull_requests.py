@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 #: Seconds between reads of GitHub.
 REFRESH_S = 60.0
 _GH_TIMEOUT_S = 30
-_PULL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
+PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 #: GitHub's `StatusState` for a head commit's check rollup, as the page names it; no rollup at all is `none`.
 _CHECKS = {"SUCCESS": "pass", "FAILURE": "failing", "ERROR": "failing", "PENDING": "pending", "EXPECTED": "pending"}
 _COMMIT_ID = re.compile(r"[0-9a-f]{40}")
@@ -66,23 +66,12 @@ class GhUnavailableError(Exception):
     """GitHub could not be read: `gh` is missing, refused, timed out or answered something unreadable."""
 
 
-def read_repository(repo: str, numbers: list[int], paths: Sequence[str] = (), pointers: Sequence[str] = ()) -> dict:
-    """The GraphQL `repository` node holding each of `numbers` as `p<number>`, through `gh`.
+def query_github(repo: str, query: str) -> dict:
+    """The `repository` node `query` (one `gh api graphql` request about `repo`, which names `$owner` and `$name`) returns.
 
-    `paths` are submodule paths each merge commit reports as `mergeCommit.pin<i>`; `pointers` are commits whose history
-    page comes back as `h<i>`. A pointer that is not a full commit id is left out.
+    The request's `rateLimit` cost is logged. Raises `GhUnavailableError` when `gh` fails or answers nothing readable.
     """
     owner, name = repo.split("/")
-    selections = [f"p{number}: pullRequest(number: {number}) {{ ...Pull }}" for number in numbers]
-    selections += [
-        f'h{i}: object(oid: "{oid}") {{ ... on Commit {{ {_HISTORY} }} }}'
-        for i, oid in enumerate(pointers)
-        if _COMMIT_ID.fullmatch(oid)
-    ]
-    query = (
-        "query($owner: String!, $name: String!) { rateLimit { cost remaining resetAt } "
-        f"repository(owner: $owner, name: $name) {{ {' '.join(selections)} }} }}{_fragment(paths) if numbers else ''}"
-    )
     command = ["gh", "api", "graphql", "-f", f"query={query}", "-f", f"owner={owner}", "-f", f"name={name}"]
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=_GH_TIMEOUT_S)
@@ -104,6 +93,25 @@ def read_repository(repo: str, numbers: list[int], paths: Sequence[str] = (), po
     if repository is None:
         raise GhUnavailableError(f"{repo} is not readable")
     return repository
+
+
+def read_repository(repo: str, numbers: list[int], paths: Sequence[str] = (), pointers: Sequence[str] = ()) -> dict:
+    """The GraphQL `repository` node holding each of `numbers` as `p<number>`, through `gh`.
+
+    `paths` are submodule paths each merge commit reports as `mergeCommit.pin<i>`; `pointers` are commits whose history
+    page comes back as `h<i>`. A pointer that is not a full commit id is left out.
+    """
+    selections = [f"p{number}: pullRequest(number: {number}) {{ ...Pull }}" for number in numbers]
+    selections += [
+        f'h{i}: object(oid: "{oid}") {{ ... on Commit {{ {_HISTORY} }} }}'
+        for i, oid in enumerate(pointers)
+        if _COMMIT_ID.fullmatch(oid)
+    ]
+    return query_github(
+        repo,
+        "query($owner: String!, $name: String!) { rateLimit { cost remaining resetAt } "
+        f"repository(owner: $owner, name: $name) {{ {' '.join(selections)} }} }}{_fragment(paths) if numbers else ''}",
+    )
 
 
 def _reached(repo: str, record: dict, pointers: Sequence[str], nodes: dict) -> dict[tuple[str, str, str], bool]:
@@ -217,7 +225,7 @@ def fetch(
     PR that merged or closed, is not asked for: its record comes back as saved, never `stale`.
     """
     pinned = {repo.name: repo.path for repo in repos}
-    pulls = sorted((m[1], int(m[2]), url) for url in urls if (m := _PULL.fullmatch(url)))
+    pulls = sorted((m[1], int(m[2]), url) for url in urls if (m := PULL_URL.fullmatch(url)))
     out = Pulls({url: {**final[url], "stale": False} for _, _, url in pulls if url in final})
     history: dict[str, PullHistory] = {}
     unread: set[str] = set()
