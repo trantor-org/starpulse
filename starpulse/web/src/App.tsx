@@ -3,25 +3,26 @@
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Admin } from "./Admin";
-import { AdminStore } from "./adminPrefs";
-import { ForwardingStore } from "./forwarding";
-import { HistoryWindowStore } from "./historyWindow";
-import { HudStore, useHud, type FeedLine, type HudState } from "./hud";
-import { LevelStore } from "./levelData";
-import { BOARD, pathKey, type Path } from "./levels";
-import { Crumb } from "./Crumb";
-import { Dags, DagLegend } from "./Dags";
-import { FeedLines, Queues } from "./Fanout";
-import { SearchClear } from "./SearchClear";
-import { Kanban } from "./Kanban";
-import { Leaderboard } from "./Leaderboard";
-import { MoveStore, postMove } from "./move";
-import { OrbitCard } from "./OrbitCard";
-import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./nav";
-import { renderer as makeRenderer, type Renderer } from "./renderer";
-import { search, type Target } from "./search";
-import { StartStore, fetchHarnesses, postStart } from "./start";
+import { Admin } from "./features/admin/Admin";
+import { AdminStore } from "./features/admin/adminPrefs";
+import { ForwardingCard } from "./features/forwarding/ForwardingCard";
+import { ForwardingStore } from "./features/forwarding/forwarding";
+import { HistoryWindowStore } from "./features/admin/historyWindow";
+import { HudStore, useHud, type FeedLine, type HudState } from "./render/hud";
+import { LevelStore } from "./features/orbit/levelData";
+import { BOARD, pathKey, type Path } from "./render/levels";
+import { Crumb } from "./features/level/Crumb";
+import { Dags, DagLegend } from "./features/dags/Dags";
+import { FeedLines, Queues } from "./features/fanout/Fanout";
+import { SearchClear } from "./shared/SearchClear";
+import { Kanban } from "./features/kanban/Kanban";
+import { Leaderboard } from "./features/kanban/Leaderboard";
+import { MoveStore, postMove } from "./features/kanban/move";
+import { OrbitCard } from "./features/orbit/OrbitCard";
+import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./shared/nav";
+import { renderer as makeRenderer, type Renderer } from "./render/renderer";
+import { search, type Target } from "./features/level/search";
+import { StartStore, fetchHarnesses, postStart } from "./features/kanban/start";
 
 /** The actors the rail can hide, in the order it lists them. */
 
@@ -111,7 +112,7 @@ export function App() {
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       {view === "constellation" && <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} />}
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
-      {view === "admin" && <Admin store={admin} window={historyWindow} forwarding={forwarding} />}
+      {view === "admin" && <Admin store={admin} window={historyWindow} forwarding={(clock) => <ForwardingCard store={forwarding} clock={clock} />} />}
       {view === "graph" && (
         <OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} />
       )}

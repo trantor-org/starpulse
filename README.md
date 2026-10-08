@@ -699,14 +699,14 @@ into a terminal for each batch of arrivals (`activity.measure`: `share` and `flu
 its runs end and traces it to each sun, hovering a sun traces each source to it, and either opens a tip with the shares,
 counts and the source's bottleneck state. A click focuses a body and Tab steps through them, the sources and then the
 suns, leaving the card past the last: a steady ring follows the focused body while the replay keeps it moving, its
-traces stay lit, and a details panel docks at the card's right edge (`src/orbitDetails.ts`). For a source it gives the
+traces stay lit, and a details panel docks at the card's right edge (`src/features/orbit/orbitDetails.ts`). For a source it gives the
 open and ended runs, each terminal's count and share, and the drift, then the time in each state (share, stays, mean
 stay), the open runs oldest first with those past `aging.threshold_s` flagged, and the latest arrivals. For a terminal
 sun it gives the runs that ended there, their share of every end and the last day's count, then each source's count and
 the latest arrivals; for a working sun, the open runs, task-days and stays, then each source's time there and the open
 runs in that state. A list shows five rows and counts the rest. The panel's close button, Esc or a click on empty space
 clears the focus. A second click or Enter on the focused body is held for drilling into it, which waits until a user
-can be selected, so it changes nothing yet (`src/orbitFocus.ts`).
+can be selected, so it changes nothing yet (`src/features/orbit/orbitFocus.ts`).
 
 The view always shows one of these states:
 
@@ -724,7 +724,7 @@ synthetic sources, and its address picks the state: `?view=graph`, `&suns=workin
 
 The right rail keeps one order in every view: the recent moves at the top and the legend at the bottom, each line
 wrapped whole rather than cut to an ellipsis. Nothing on the page scrolls sideways, and every box that scrolls does so vertically with the Kanban columns' thin scrollbar, from one
-shared rule at the end of `starpulse/web/src/style.css` that `src/scroll.test.ts` holds to.
+shared rule at the end of `starpulse/web/src/style.css` that `src/shared/scroll.test.ts` holds to.
 
 ### Forward an instance's events to a hub
 
@@ -908,6 +908,9 @@ event log), `settings`, then `domain` and `contracts`. A layer imports its own o
 `api` and `cli` never import each other. The top level holds only the public modules listed above, each a facade over
 its layer.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
+The page's `web/src` is organized by feature: `api/` (types, `apiFetch`, the event stream), `features/<name>/` (a view with its
+pure model and colocated tests), `render/` (the canvas), `shared/` and `demo/`. ESLint's `no-restricted-imports` holds a feature
+to `api/`, `render/`, `shared/` and its own folder, so a feature never reaches into another's.
 Every `/api` body is a pydantic model in `starpulse/contracts/api.py`, and the server builds each response through it.
 The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts.api`
 (writes `starpulse/api.schema.json`) and `pnpm --dir starpulse/web run gen:types` (writes `starpulse/web/src/api/types.gen.ts`),
