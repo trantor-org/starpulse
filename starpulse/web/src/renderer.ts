@@ -47,7 +47,7 @@ import { emptyNote, firstOpened, rowMeta, stuckCount } from "./machineRows";
 import { asked, arrived as pageArrived, failed, nextQuery, paging, reveal, RETRY, wantNext, type Paging } from "./machinePaging";
 import { dragTo, inputGoal, revealGoal, thumbOf, windowOf, type ScrollInput, type Thumb } from "./machineScroll";
 import { stripLabel, stripScale, tickAt, ticks, viewSpan, type Tick } from "./machineStrip";
-import { sessionsOf, traceSteps, type Spot } from "./machineTrace";
+import { heldBy, sessionsOf, traceSteps, type Spot } from "./machineTrace";
 import { backStep, canvasSpace, levelParams, levelSearch, retired, viewOf, viewSearch } from "./nav";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
@@ -188,7 +188,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // the Ledger merge whose panel is open, by key, so each frame and snapshot finds its row again
   let mergeSel: string | null = null;
   // the machine ledger's pinned task, by machine and session id, found again each frame in the newest snapshot
-  let lpin: { flow: string; id: string } | null = null;
+  /** The pinned ledger task: where it was clicked, its task and name, and the machines it had a session in then, which the card lists. */
+  let lpin: { flow: string; id: string; task: string | null; label: string; machines: string[] } | null = null;
   /** The ledger row picked out on the top machine's level (its tie stays drawn), and the row that glows after stepping back out onto it. */
   let pickedRow: string | null = null, glow: { name: string; t0: number } | null = null;
   const pages: Record<string, number> = {};
@@ -255,8 +256,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (mp?.open && pg?.top !== mp.open) pg = paging(mp, (n) => S!.flows[n]?.last ?? 0); // the snapshot names the first page; the pages loaded after it are kept across snapshots
     const held = scene?.top && (overRows() || lpin || pickedRow) ? scene.top.rows.map((r) => r.name) : undefined; // the pointer over the rows, a pinned path or a focused row holds their order
     // a pinned task narrows the rows to the machines it has a session in
-    const pinned = lpin && S.flows[lpin.flow]?.agents.find((a) => a.id === lpin!.id);
-    const only = pinned ? { task: pinned.task || pinned.title || pinned.id, machines: sessionsOf(S.flows, lpin!.flow, pinned).map((b) => b.machine) } : undefined;
+    const only = lpin ? { task: lpin.label, machines: heldBy(S.flows, lpin.task, lpin.machines) } : undefined;
     scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held, paging: pg, only }, level());
     if (scene.top) {
       scrollGoal = Math.min(scrollGoal, scene.top.max);
@@ -987,8 +987,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   /** A click on a ledger task pins its path and lists its sessions and its steps in the panel. */
   function openLedgerTask(o: LTask) {
-    pinLedger({ flow: o.flow, id: o.agent.id });
-    const sky = S!, top = scene!.top!, all = sessionsOf(sky.flows, o.flow, o.agent), steps = traceSteps(sky.flows, all, top.flow, ledgerHas);
+    const sky = S!, all = sessionsOf(sky.flows, o.flow, o.agent);
+    pinLedger({ flow: o.flow, id: o.agent.id, task: o.agent.task ?? null, label: o.agent.task || o.agent.title || o.agent.id, machines: all.map((b) => b.machine) });
+    const top = scene!.top!, steps = traceSteps(sky.flows, all, top.flow, ledgerHas);
     const colOf = (m: string) => {
       const init = sky.flows[m]?.machine.states.find((s) => s.initial)?.id ?? sky.flows[m]?.machine.states[0]?.id;
       return (m === top.flow ? scene!.mStates[init ?? ""]?.color : top.rows.find((r) => r.name === m)?.nodes.find((n) => n.id === init)?.color) ?? RAMP[2];
