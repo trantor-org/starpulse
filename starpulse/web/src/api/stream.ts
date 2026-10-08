@@ -40,8 +40,8 @@ export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
 }
 
 export interface StreamHandlers {
-  /** The sky as it stands: each connect's snapshot, then that snapshot folded with every delta after it. */
-  snapshot(sky: Snapshot): void;
+  /** The sky as it stands: each connect's snapshot, then that snapshot folded with every delta after it, `kind` naming that delta. */
+  snapshot(sky: Snapshot, kind?: Delta["kind"]): void;
   /** Whether the connection is up. */
   live(on: boolean): void;
 }
@@ -74,16 +74,16 @@ export function openStream(
   let state: Snapshot | null = null;
   /** A restarted server's partial Board is not handed over once the page has drawn one: the page keeps its own until the server has read its board. */
   let shown = false;
-  const hand = () => {
+  const hand = (kind?: Delta["kind"]) => {
     if (shown && state!.reading) return;
     shown = true;
-    handlers.snapshot(state!);
+    handlers.snapshot(state!, kind);
   };
 
   const fold = (delta: Delta) => {
     if (!state) return; // a delta means nothing before the snapshot it extends
     state = applyDelta(state, delta);
-    hand();
+    hand(delta.kind);
   };
 
   const connect = () => {

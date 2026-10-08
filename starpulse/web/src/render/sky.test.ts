@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countText, merge, Moves, RING, stateCount, TRAVEL } from "./sky";
+import { countText, merge, Moves, RING, stateCount, TRAVEL, withLedgers } from "./sky";
 import type { ActiveRun, Dag, Machine, RawAgent, Snapshot } from "../api";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
@@ -280,5 +280,30 @@ describe("the suns a snapshot carries", () => {
   it("are each Board state's share of the week's moves, and none when the server sent none", () => {
     expect(merge({ ...snap(1000, [], []), suns: { ready: 0.25, review: 0.75 } }, 1000).suns).toEqual({ ready: 0.25, review: 0.75 });
     expect(merge(snap(1000, [], []), 1000).suns).toEqual({});
+  });
+});
+
+describe("a Ledger delta's sky", () => {
+  const row = (key: string) => ({ key, at: 1, tasks: [], runs: {}, fails: {}, pinned: false });
+  const strip = { since: 0, bucket: 900, buckets: [{ merges: 1, failed: 0, reruns: 0 }] };
+
+  it("is the last sky with the Ledger fields swapped, every other part the very objects it held", () => {
+    const before = merge(snap(1000, [task("T-1", "ready")], []), 1000);
+    const next: Snapshot = { ...snap(1000, [task("T-1", "ready")], []), ledgers: { MERGED: [row("k")] }, mergeStrip: strip, mergePins: [row("p")] };
+
+    const after = withLedgers(before, next);
+
+    expect(after).toEqual(merge(next, 1000));
+    expect(after.board).toBe(before.board);
+    expect([after.tree, after.dags, after.flows]).toEqual([before.tree, before.dags, before.flows]);
+    expect(after.flows).toBe(before.flows);
+  });
+
+  it("falls back to the empty Ledger when the delta carries none", () => {
+    const before = withLedgers(merge(snap(1000, [], []), 1000), { ...snap(1000, [], []), ledgers: { MERGED: [row("k")] }, mergeStrip: strip });
+
+    const after = withLedgers(before, snap(1000, [], []));
+
+    expect([after.ledgers, after.mergeStrip, after.mergePins]).toEqual([{}, null, []]);
   });
 });
