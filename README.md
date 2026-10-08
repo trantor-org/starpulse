@@ -232,7 +232,8 @@ graph and `bottleneck` the state holding the most path time, `{state, path_days}
 (`from`, `to`) some run took, with the `runs` that took it and the `trips` and `days` summed over them, the longest first. A
 run's own `back_edges` and `sccs` count the back-edges of a depth-first search from its first state and the strongly
 connected components of two states or more in the graph of its own steps; its `loops` list each back-edge with its
-`trips` and the `days` they took, from the target's previous visit to each return. They come from each run's own graph and
+`trips` and the `days` they took, from the target's previous visit to each return; the step that first enters a state is no
+trip, so a back-edge no run went round again is not listed. They come from each run's own graph and
 never the union of every run's, so a cycle only two runs together close is not reported. `gates` has one entry per
 configured gate over the runs that reached the goal: how many `crossed` it, how many had to cross it (`mandatory`),
 `bypassed`, `bypassable`, and a `witness` `{task, path}`, the shortest path a bypassing run could have taken to the
