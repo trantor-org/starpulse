@@ -2,7 +2,7 @@
 // every CSS font size multiplies through `--fs` and the renderer applies to its canvas labels; Motion, Opens on, Kanban cards and Clock
 // follow it under the same key.
 import type { ClockMode } from "../../shared/clock";
-import { browserStorage, type FoldStorage, type ViewName } from "../../shared/nav";
+import { browserStorage, type PrefStorage, type ViewName } from "../../shared/nav";
 
 export const ADMIN_KEY = "fv.admin.prefs";
 /** The font size range in percent; the slider steps by `step` and the tick buttons jump to `ticks`. */
@@ -36,7 +36,7 @@ export function clampScale(v: unknown): number {
 }
 
 /** What the last visit kept; absent, unreadable or unknown values give the defaults. */
-export function loadAdmin(storage: FoldStorage | null): AdminPrefs {
+export function loadAdmin(storage: PrefStorage | null): AdminPrefs {
   try {
     const raw: unknown = JSON.parse(storage?.getItem(ADMIN_KEY) ?? "null");
     const r = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
@@ -52,7 +52,7 @@ export function loadAdmin(storage: FoldStorage | null): AdminPrefs {
   }
 }
 
-export function saveAdmin(storage: FoldStorage | null, p: AdminPrefs): void {
+export function saveAdmin(storage: PrefStorage | null, p: AdminPrefs): void {
   try {
     storage?.setItem(ADMIN_KEY, JSON.stringify(p));
   } catch {
@@ -73,7 +73,7 @@ export class AdminStore {
   private prefs: AdminPrefs;
   private listeners = new Set<() => void>();
 
-  constructor(private storage: FoldStorage | null = browserStorage(), private root: StyleRoot = document.documentElement) {
+  constructor(private storage: PrefStorage | null = browserStorage(), private root: StyleRoot = document.documentElement) {
     this.prefs = loadAdmin(storage);
     applyScale(this.prefs.scale, root);
     applyMotion(this.prefs.motion, root);

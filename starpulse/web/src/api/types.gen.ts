@@ -300,11 +300,15 @@ export interface TrailStep {
   state: string;
 }
 /**
- * A task that left the Board's lanes for good: where it settled, when, and the title and assignee it settled with.
+ * A task that left the Board's lanes for good: where it settled, when, and the title, assignee and milestone it settled with.
  */
 export interface Settled {
   at: number | null;
   created: number | null;
+  /**
+   * The milestone it settled in; empty when it had none.
+   */
+  milestone?: string;
   model: string;
   state: string;
   title: string;

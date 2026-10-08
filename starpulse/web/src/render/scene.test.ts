@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_GROW, build, GALAXY_MAX, GALAXY_MIN, Drawn, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type MState, type Pt, type Scene } from "./scene";
+import { BOARD_GROW, build, Drawn, SUN_R, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type MState, type Pt, type Scene } from "./scene";
 import { ledgerLevel, type Level } from "./levels";
 import { merge, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
@@ -159,13 +159,11 @@ describe("a starting or terminal Board state", () => {
     expect([scene.galaxies.new.today, scene.galaxies.done.today, scene.galaxies.review.today]).toEqual([2, 3, undefined]);
     expect(on("done")).toEqual(["PROJ-3", "PROJ-4", "PROJ-5"]);
   });
-  it("orbits no arrival on a starting state, since each is drawn where it is now, yet sizes the state by them", () => {
+  it("orbits no arrival on a starting state, since each is drawn where it is now, yet counts them", () => {
     const sky = today(), scene = build(sky, { kind: "board" }), sun = build(sky, { kind: "state", id: "new" });
-    const none = boardSky(), empty = build(none, { kind: "board" });
 
     expect([scene.tasks.filter((k) => k.host === scene.galaxies.new).length, sun.tasks.length]).toEqual([0, 0]);
     expect([sun.sun!.n, sun.sun!.today]).toEqual([2, 2]);
-    expect(scene.galaxies.new.r).toBeGreaterThan(empty.galaxies.new.r);
   });
   it("draws no task on a starting state, not even one in its lane, and counts only the day's arrivals; a terminal state keeps its tasks and adds the day's", () => {
     const sky = today();
@@ -195,37 +193,15 @@ describe("a Board state's sun", () => {
     expect(build(sky, { kind: "state", id: "done" }).sun!.final).toBe(true);
     expect(build(sky, { kind: "state", id: "review" }).sun!.final).toBe(false);
   });
-  it("grows with the state's tasks, as the state does on the Board", () => {
-    const sky = withTasks(boardSky(), { done: 400, review: 10 }), board = build(sky, { kind: "board" });
-    const done = build(sky, { kind: "state", id: "done" }).sun!, review = build(sky, { kind: "state", id: "review" }).sun!;
-
-    expect(done.r).toBeGreaterThan(review.r);
-    expect([done.r, review.r]).toEqual([board.galaxies.done.r, board.galaxies.review.r]);
-  });
-});
-
-describe("a Board state's size", () => {
-  it("grows with its tasks from a fixed minimum, and to hold them in one ring, up to a fixed maximum", () => {
-    const sizes = (counts: Record<string, number>) => build(withTasks(boardSky(), counts), { kind: "board" }).galaxies;
-    const g = sizes({ new: 20, ready: 60, review: 80, done: 3000 });
-
-    expect(g.in_progress.r / 1.25).toBe(sizes({}).new.r);
-    expect(g.new.r).toBeLessThan(g.ready.r);
-    expect(g.ready.r).toBeLessThan(g.review.r);
-    expect(g.review.r).toBeLessThan(g.done.r);
-    expect([g.done.r, sizes({ done: 6000 }).done.r, sizes({ in_progress: 3000 }).in_progress.r]).toEqual([140, 140, 175]);
-  });
 });
 
 describe("a Board laid out at the values it shows", () => {
-  it("carries each state's radius and place, and the sky's width, as the renderer eases them", () => {
+  it("carries each state's place, and the sky's width, as the renderer eases them", () => {
     const sky = withTasks(boardSky(), { ready: 150, done: 400 }), full = build(sky, { kind: "board" });
     const shown = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".r") ? v / 2 : key === "done.x" ? v + 100 : key === "sky.w" ? v + 50 : v) }, { kind: "board" });
 
-    for (const id of Object.keys(full.galaxies)) expect(shown.galaxies[id].r).toBeCloseTo(full.galaxies[id].r / 2);
     expect(shown.galaxies.done.x).toBeCloseTo(full.galaxies.done.x + 100);
     expect(shown.w).toBeCloseTo(full.w + 50);
-    expect(build({ ...sky, ease: (_key: string, v: number) => v / 2 }, { kind: "state", id: "done" }).sun!.r).toBeCloseTo(full.galaxies.done.r / 2);
   });
   it("eases a state's ring of machines and each machine's place on it, so a machine row growing moves them instead of snapping", () => {
     const sky = withTasks(boardSky(), { in_progress: 40 }), full = build(sky, { kind: "board" });
@@ -1259,28 +1235,6 @@ describe("a sun's size", () => {
     return s;
   };
 
-  it("keeps the fixed minimum while its tasks fit one ring", () => {
-    expect(build(withTasks({ ready: 1 }), { kind: "board" }).galaxies.ready.r).toBe(39);
-  });
-
-  it.each([60, 80])("grows on the Board so %i tasks circle it in one ring", (n) => {
-    const g = build(withTasks({ ready: n }), { kind: "board" }).galaxies.ready;
-
-    expect(g.rings).toHaveLength(1);
-  });
-
-  it.each([140, 300])("stops at the fixed maximum on the Board and circles %i tasks in more rings", (n) => {
-    const g = build(withTasks({ ready: n }), { kind: "board" }).galaxies.ready;
-
-    expect([g.r, g.rings!.length > 1]).toEqual([140, true]);
-  });
-
-  it("grows on a state level with no machines so every task circles it in one ring, up to the fixed maximum", () => {
-    const sun = build(withTasks({ ready: 40 }), { kind: "state", id: "ready" }).sun!, full = build(withTasks({ ready: 200 }), { kind: "state", id: "ready" }).sun!;
-
-    expect([sun.r > 34, sun.rings?.length, full.r]).toEqual([true, 1, 140]);
-  });
-
   it("grows the primary on a state level with machines so every task circles it in one ring", () => {
     const hub = build(withTasks({ in_progress: 200 }), { kind: "state", id: "in_progress" }).hub!;
 
@@ -1296,42 +1250,23 @@ describe("a task's trail on a state level", () => {
   });
 });
 
-describe("a Board state's sun sized from its share of the week's moves", () => {
+describe("a Board state's sun", () => {
   const sized = (suns: Record<string, number>, counts: Record<string, number> = {}) => {
     const sky = withTasks(boardSky(), counts);
     sky.S.suns = suns;
     return build(sky, { kind: "board" }).galaxies;
   };
-  const shares = { new: 0.1, ready: 0.1, in_progress: 0.2, review: 0.2, done: 0.4 };
 
-  it("has an area proportional to its share, the busiest state's reaching the maximum", () => {
-    const g = sized(shares);
+  it("is one fixed size on every state, whatever its share of the week's moves or its live tasks", () => {
+    const quiet = sized({ new: 0, ready: 0, in_progress: 0, review: 0, done: 0 });
+    const busy = sized({ new: 0.1, ready: 0.1, in_progress: 0.2, review: 0.2, done: 0.4 }, { new: 5, ready: 80, review: 120, done: 3000 });
 
-    expect(g.done.r).toBe(GALAXY_MAX);
-    expect((g.review.r / g.done.r) ** 2).toBeCloseTo(0.5);
-    expect((g.ready.r / g.done.r) ** 2).toBeCloseTo(0.25);
+    for (const g of [quiet, busy]) for (const id of Object.keys(g)) expect(g[id].r).toBe(SUN_R);
   });
-  it("never falls below the minimum, however quiet the state, so it stays visible", () => {
-    const g = sized({ ...shares, new: 0.001, ready: 0 });
+  it("is the same size on the state's own level as on the Board", () => {
+    const sky = withTasks(boardSky(), { done: 400 });
 
-    expect([g.new.r, g.ready.r]).toEqual([GALAXY_MIN, GALAXY_MIN]);
-  });
-  it("is the minimum on every state when the week held no move", () => {
-    const g = sized({ new: 0, ready: 0, in_progress: 0, review: 0, done: 0 });
-
-    expect([g.new.r, g.ready.r, g.review.r, g.done.r]).toEqual([GALAXY_MIN, GALAXY_MIN, GALAXY_MIN, GALAXY_MIN]);
-  });
-  it("does not follow the state's live tasks, so activity never resizes it", () => {
-    const quiet = sized(shares), busy = sized(shares, { new: 5, ready: 80, review: 120, done: 3000 });
-
-    for (const id of Object.keys(quiet)) expect(busy[id].r).toBe(quiet[id].r);
-  });
-  it("sizes the state's own level's sun the same as the Board's state", () => {
-    const sky = boardSky();
-    sky.S.suns = shares;
-
-    expect(build(sky, { kind: "state", id: "done" }).sun!.r).toBe(GALAXY_MAX);
-    expect(build(sky, { kind: "state", id: "review" }).sun!.r).toBe(build(sky, { kind: "board" }).galaxies.review.r);
+    expect(build(sky, { kind: "state", id: "done" }).sun!.r).toBe(SUN_R);
   });
 });
 

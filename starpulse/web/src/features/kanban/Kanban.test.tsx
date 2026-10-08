@@ -159,12 +159,13 @@ describe("a Waiting stack", () => {
     return { root, html: () => renderToStaticMarkup(root()) };
   };
 
-  it("folds to its top card whole, with a count badge beside the ⛓ and one or two card edges peeking below", () => {
+  it("folds to its top card whole, with only its ⛓ badge and one or two card edges peeking below", () => {
     const html = drive().html();
 
     expect(html).toContain('class="stack"');
     expect(html).toMatch(/data-id="T-1"/);
-    expect(html).toMatch(/class="sk"[^>]*>.*?2<\/span><span class="holds"[^>]*>⛓2/);
+    expect(html).toMatch(/class="holds"[^>]*>⛓2/);
+    expect(html).not.toContain('class="sk');
     expect(html.match(/class="edge"/g)).toHaveLength(2);
     expect(renderToStaticMarkup(<StackView stack={stacksOf(chain.slice(0, 2))[0]} state={CLOSED} card={card} onEvent={() => {}} />).match(/class="edge"/g)).toHaveLength(1);
     expect(html).not.toContain("waits on");
@@ -254,11 +255,10 @@ describe("a Done chain", () => {
     expect(html).not.toContain("unblocked");
   });
 
-  it("draws the Waiting badge without the green on a Waiting stack's top", () => {
+  it("draws no count badge on a Waiting stack's top: its ⛓ already says what it holds", () => {
     const html = renderToStaticMarkup(<Card task={{ ...task, lane: "waiting" }} stacked={2} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
 
-    expect(html).toContain('class="sk"');
-    expect(html).not.toContain("sk dn");
+    expect(html).not.toContain('class="sk');
   });
 
   it("unstacks on hover, each card below the top saying which task it unblocked, and folds when the pointer leaves", () => {

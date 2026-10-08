@@ -50,6 +50,13 @@ describe("the Star Map navigator", () => {
     await act(async () => root.render(<App />));
   };
 
+  it("opens on the search it last had, after a reload", async () => {
+    type(host.querySelector<HTMLInputElement>("#q")!, "lint");
+    await remount("constellation");
+
+    expect(host.querySelector<HTMLInputElement>("#q")!.value).toBe("lint");
+  });
+
   it("no longer draws the Layers section or its tree", () => {
     expect(host.querySelector("#nav section.layers")).toBeNull();
     expect(host.querySelector("#layers")).toBeNull();
@@ -91,51 +98,28 @@ describe("the navigator search's clear button", () => {
 });
 
 describe("the navigator's search slot", () => {
-  const remount = async (view: string, folded: boolean) => {
+  const remount = async (view: string) => {
     act(() => root.unmount());
-    localStorage.setItem("fv.nav.folded", folded ? "1" : "0");
     history.replaceState(null, "", `/?view=${view}`);
     root = createRoot(host);
     await act(async () => root.render(<App />));
   };
-  const mag = () => host.querySelector<HTMLButtonElement>("#nv-mag");
 
   it("holds the Kanban search while the Kanban is open, under the Views and out of the toolbar", async () => {
-    await remount("kanban", false);
+    await remount("kanban");
 
     expect(host.querySelector("#nav #kbq")).not.toBeNull();
     expect(host.querySelector("#kb .filters #kbq")).toBeNull();
     expect(host.querySelector("#nav #q")).toBeNull();
   });
 
-  it.each([
-    ["constellation", "#q", "Star Map"],
-    ["kanban", "#kbq", "Kanban"],
-  ])("unfolds the navigator and focuses the %s search from the folded strip's magnifier", async (view, input, name) => {
-    await remount(view, true);
-    expect(host.querySelector("#nav")!.classList.contains("folded")).toBe(true);
-    expect(mag()!.title).toBe(`Search the ${name}`);
+  it.each(["constellation", "kanban"])("is always open on the %s view: no fold button, no folded strip, and `[` changes nothing", async (view) => {
+    await remount(view);
 
-    act(() => mag()!.click());
+    act(() => void dispatchEvent(new KeyboardEvent("keydown", { key: "[" })));
 
+    expect(host.querySelector("#fold")).toBeNull();
+    expect(host.querySelector("#nv-mag")).toBeNull();
     expect(host.querySelector("#nav")!.classList.contains("folded")).toBe(false);
-    expect(document.activeElement).toBe(host.querySelector(input));
-  });
-
-  it.each([
-    ["constellation", "#q", "Star Map"],
-    ["kanban", "#kbq", "Kanban"],
-  ])("lights the %s magnifier, with a dot and the query in its title, only while that search holds one", async (view, input, name) => {
-    await remount(view, true);
-    const search = host.querySelector<HTMLInputElement>(input)!;
-    expect(mag()!.classList.contains("set")).toBe(false);
-
-    type(search, "needle");
-    expect(mag()!.classList.contains("set")).toBe(true);
-    expect(mag()!.title).toBe(`Search the ${name} (filtering: needle)`);
-
-    type(search, "");
-    expect(mag()!.classList.contains("set")).toBe(false);
-    expect(mag()!.title).toBe(`Search the ${name}`);
   });
 });

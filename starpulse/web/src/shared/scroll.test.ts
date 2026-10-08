@@ -14,7 +14,8 @@ describe("the page's scrolling boxes", () => {
     expect(rule.body).toMatch(/overflow-y:\s*auto/);
     expect(rule.body).toMatch(/scrollbar-width:\s*thin/);
     expect(rule.body).toMatch(/scrollbar-color:\s*color-mix\(in srgb, var\(--slate\) 25%, transparent\) transparent/);
-    for (const box of ["#kb .col .body", "#nav .matches", "#panel", "#admin", "#feed", "#dg #catalog"]) expect(rule.sel).toContain(box);
+    for (const box of ["#kb .col .body", "#nav .matches", "#panel", "#admin", "#dg #catalog"]) expect(rule.sel).toContain(box);
+    expect(rule.sel).not.toContain("#feed");
   });
 
   it("wrap a Kanban card's head and its pull request chip in a narrow lane rather than clip them", () => {
@@ -31,9 +32,14 @@ describe("the page's scrolling boxes", () => {
     expect(bar).not.toMatch(/(^|;)\s*height:/);
   });
 
-  it("leave the right rail's text whole: its recent moves and legend wrap, and none is cut to an ellipsis", () => {
-    const rail = rules.filter((r) => /#feed|#legend/.test(r.sel));
-    expect(rail.length).toBeGreaterThan(0);
-    for (const r of rail) expect(r.body, r.sel).not.toMatch(/text-overflow|white-space:\s*nowrap|overflow:\s*hidden/);
+  it("keep the right rail's Recent lines to one line each, cut with an ellipsis in a box that never scrolls, and leave the legend whole", () => {
+    const body = (sel: string) => rules.find((r) => r.sel === sel)!.body;
+    expect(body("#rail .recent")).toMatch(/height:\s*50%/);
+    expect(body("#feed")).toMatch(/overflow:\s*hidden/);
+    expect(body("#feed div")).toMatch(/white-space:\s*nowrap/);
+    expect(body("#feed div")).toMatch(/text-overflow:\s*ellipsis/);
+    const legend = rules.filter((r) => /#legend/.test(r.sel));
+    expect(legend.length).toBeGreaterThan(0);
+    for (const r of legend) expect(r.body, r.sel).not.toMatch(/text-overflow|white-space:\s*nowrap|overflow:\s*hidden/);
   });
 });

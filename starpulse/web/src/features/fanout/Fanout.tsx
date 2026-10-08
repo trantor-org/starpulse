@@ -25,8 +25,11 @@ export function Queues({ pools }: { pools: Pool[] | undefined }) {
   );
 }
 
+/** How many lines of `lineHeight` a box `height` tall shows whole: the Recent feed keeps only those. */
+export const linesThatFit = (height: number, lineHeight: number) => (lineHeight > 0 ? Math.max(0, Math.floor(height / lineHeight)) : 0);
+
 /**
- * The Recent feed: a move or a run's line each, a run's outcome coloured, and a line born after the page's first read flashing once as it mounts.
+ * The Recent feed: a move or a run's line each, only its time and the task or DAG it is about, a run's name coloured by its outcome, and a line born after the page's first read flashing once as it mounts.
  * A line the view `can` light reports its hover to `spot` and its click to `pick`; `note` says on the hovered line why the view does not show it.
  */
 export function FeedLines({ lines, can, spot, pick, note }: {
@@ -40,7 +43,7 @@ export function FeedLines({ lines, can, spot, pick, note }: {
         return (
           <div key={f.key + f.at} className={cls || undefined}
             onPointerEnter={go ? () => spot!(f) : undefined} onPointerLeave={go ? () => spot!(null) : undefined} onClick={go ? () => pick!(f) : undefined}>
-            <em>{f.time}</em> <b>{f.who}</b>{f.what && ` ${f.what}`} <em className={f.tone}>{f.where}</em>
+            <em>{f.time}</em> <b className={f.tone}>{f.who}</b>
             {go && note?.key === f.key && <span className="why">{note.text}</span>}
           </div>
         );

@@ -85,7 +85,7 @@ def task_agent(task: BoardTask) -> dict:
 
 
 def settled_entry(task: BoardTask) -> dict | None:
-    """Where a settled task settled, when, and the title and assignee it settled with; None for an open task."""
+    """Where a settled task settled, when, and the title, assignee and milestone it settled with; None for an open task."""
     if not task.settled:
         return None
     return {
@@ -94,6 +94,7 @@ def settled_entry(task: BoardTask) -> dict | None:
         "created": task.created_at,
         "title": task.title,
         "model": task.assignee,
+        "milestone": task.milestone,
     }
 
 

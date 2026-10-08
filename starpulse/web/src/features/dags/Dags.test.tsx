@@ -7,7 +7,9 @@ import type { DagData } from "./dags";
 import { lastLine } from "./DagParts";
 import { DagLegend, Dags } from "./Dags";
 import { rows } from "./dags";
+import css from "../../style.css?raw";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
+import { DAG_COLOR } from "../../render/renderer";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });
 const dag = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => ({
@@ -47,6 +49,7 @@ const chip = (label: string) => all(".fchip").find((c) => c.textContent!.startsW
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   post.mockReset();
+  localStorage.clear();
   host = document.body.appendChild(document.createElement("div"));
   root = createRoot(host);
 });
@@ -64,7 +67,20 @@ describe("the DAGs view's catalog", () => {
     expect(names()).toEqual(["triage", "pr-watch", "deploy", "never"]);
     const row = all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === "pr-watch")!;
     expect(row.querySelector("i.orb.o-ok")).not.toBeNull();
-    expect(row.querySelectorAll("svg.dstrip circle")).toHaveLength(2);
+    // each step as the Star Map's DAG bodies draw it (renderer drawStars): a dark disc ringed in its status colour round a core dot
+    const steps = [...row.querySelectorAll("svg.dstrip g.step")];
+    expect(steps).toHaveLength(2);
+    for (const g of steps) {
+      const ring = g.querySelector("circle.ring")!, core = g.querySelector("circle.core")!;
+      expect(Number(core.getAttribute("r"))).toBeCloseTo(Number(ring.getAttribute("r")) * 0.34);
+      expect(["0.85", "0.45"]).toContain(ring.getAttribute("stroke-opacity"));
+    }
+    // and joined, as there, by a dashed curve shaded from one step's colour to the next
+    const link = row.querySelector("svg.dstrip path.link")!;
+    expect(link.getAttribute("d")).toMatch(/^M[\d.]+ [\d.]+C/);
+    expect(link.getAttribute("stroke-dasharray")).toBe("1.8 4.2");
+    expect(link.getAttribute("stroke")).toMatch(/^url\(#/);
+    expect(row.querySelector("i.orb.o-ok circle.ring")!.getAttribute("stroke")).toBe(DAG_COLOR.succeeded);
     expect(row.querySelector(".last")!.textContent).toBe("50m ago · 1m 0s");
     expect(row.querySelector(".pool")!.textContent).toBe("main 1/2");
     expect(row.querySelector(".tie")!.textContent).toBe("⇢ Review");
@@ -129,6 +145,21 @@ describe("the DAGs view's filters", () => {
     expect(names()).toEqual(["deploy"]);
     type("ops");
     expect(names()).toEqual(["deploy", "never"]);
+  });
+
+  it("opens on the filters it last had, after a reload", async () => {
+    await draw();
+    const box = q<HTMLInputElement>('.filters input');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(box, "deploy");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => root.unmount());
+    root = createRoot(host);
+    await draw();
+
+    expect(q<HTMLInputElement>('.filters input').value).toBe("deploy");
+    expect(names()).toEqual(["deploy"]);
   });
 
   it("hides a DAG last run before the Last run window, keeps one running, and counts each window", async () => {
@@ -196,5 +227,25 @@ describe("a row's last run cell for a run with no recorded time", () => {
   it("leaves out the age and duration of a healthy DAG that has no finish or start time", () => {
     expect(cell(dag("runs/a", "succeeded", { startedAt: "", finishedAt: "" }))).toBe("ran");
     expect(cell(dag("runs/a", "succeeded", { startedAt: "", finishedAt: "1970-01-01T00:55:00Z" }))).toBe("5m ago");
+  });
+});
+
+describe("the DAGs catalog's columns", () => {
+  it("reserve the run-safe strip on every row and the header, not only a startable row", () => {
+    expect(css).not.toMatch(/#dg \.trow\.startable \{[^}]*padding-right/);
+    expect(css).toMatch(/#dg \.thead, #dg \.trow \{ padding-right: calc\(max\(30px, 30px \* var\(--fs\)\) \+ 12px\); \}/);
+  });
+});
+
+describe("a row's step strip for a wide fan", () => {
+  it("draws a ten-way fan, as apply-on-merge's, with no two step stars overlapping, and a three-step fan likewise", async () => {
+    const fan = (n: number) => Array.from({ length: n }, (_, i) => step(`apply_${i}`, ["classify"]));
+    for (const width of [10, 3]) {
+      const steps = [step("validate"), step("classify", ["validate"]), ...fan(width), step("verify", fan(width).map((s) => s.name))];
+      await draw({ ...data, dags: [dag("runs/apply", "succeeded", { steps })], domains: [{ name: "Ops", dags: [{ name: "runs/apply", runSafe: false }] }] });
+      const rings = all("svg.dstrip g.step circle.ring").map((c) => ({ x: +c.getAttribute("cx")!, y: +c.getAttribute("cy")!, r: +c.getAttribute("r")! }));
+      expect(rings).toHaveLength(steps.length);
+      for (const [i, a] of rings.entries()) for (const b of rings.slice(i + 1)) expect(Math.hypot(a.x - b.x, a.y - b.y), `${width}-wide fan`).toBeGreaterThanOrEqual(a.r + b.r + 1);
+    }
   });
 });

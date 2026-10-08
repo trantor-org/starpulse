@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { ADMIN_DEFAULTS, ADMIN_KEY, AdminStore, applyScale, clampScale, labelPx, loadAdmin, saveAdmin } from "./adminPrefs";
-import type { FoldStorage } from "../../shared/nav";
+import type { PrefStorage } from "../../shared/nav";
 
-const memory = (): FoldStorage & { data: Map<string, string> } => {
+const memory = (): PrefStorage & { data: Map<string, string> } => {
   const data = new Map<string, string>();
   return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
 };
-const off: FoldStorage = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
+const off: PrefStorage = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
 const root = () => {
   const vars = new Map<string, string>(), classes = new Set<string>();
   return {

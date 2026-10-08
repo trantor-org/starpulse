@@ -1,12 +1,45 @@
 // What the DAGs catalog and a DAG's modal both draw: the state dot, the step constellation (small in a row, large in the modal),
-// the last-run line, the pool text and a Board tie's chip. Colours come from DAG_COLOR and the palette tokens.
+// the last-run line, the pool text and a Board tie's chip. Steps and links are drawn as the Star Map draws a DAG body's (renderer drawStars), in DAG_COLOR.
 import type { CSSProperties, ReactNode } from "react";
 import { ago, bigPlace, chartHeight, place, short, took, type Phase, type Row, type Tie } from "./dags";
 import { DAG_COLOR } from "../../render/renderer";
+import { useId } from "react";
 import type { Pool } from "../../api";
 
-/** A DAG's state as a dot in the Star Map's DAG colors: amber and pulsing while it runs, a black hole when its last run failed, hollow before its first run. */
-export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true" />;
+/** A step as the Star Map draws a DAG body's steps (renderer drawStars): a dark disc ringed in its status colour round a core dot, dimmer before it runs. */
+export function StepStar({ x, y, r, status }: { x: number; y: number; r: number; status: string }) {
+  const c = DAG_COLOR[status] ?? DAG_COLOR.aborted, idle = status === "not_started";
+  return (
+    <g className={`step s-${status}`}>
+      <circle cx={x} cy={y} r={r} fill="var(--bg0)" stroke={c} strokeOpacity={idle ? 0.45 : 0.85} strokeWidth={1} className="ring" />
+      <circle cx={x} cy={y} r={r * 0.34} fill={c} fillOpacity={idle ? 0.45 : 0.9} className="core" />
+    </g>
+  );
+}
+
+/** A dependency as the Star Map draws one inside a DAG body: a dashed curve shaded from one step's colour to the next, streaming toward the step that waits;
+ *  brighter and heavier while either end runs. */
+function Link({ id, a, b, r, from, to }: { id: string; a: { x: number; y: number }; b: { x: number; y: number }; r: number; from: string; to: string }) {
+  const hot = from === "running" || to === "running", dx = (b.x - a.x) / 2, [x0, x1] = [a.x + r, b.x - r];
+  return (
+    <>
+      <linearGradient id={id} gradientUnits="userSpaceOnUse" x1={x0} y1={a.y} x2={x1} y2={b.y}>
+        <stop offset="0" stopColor={DAG_COLOR[from] ?? DAG_COLOR.aborted} /><stop offset="1" stopColor={DAG_COLOR[to] ?? DAG_COLOR.aborted} />
+      </linearGradient>
+      <path d={`M${x0} ${a.y}C${a.x + dx} ${a.y} ${b.x - dx} ${b.y} ${x1} ${b.y}`} fill="none" stroke={`url(#${id})`} strokeOpacity={hot ? 0.8 : 0.42}
+        strokeWidth={hot ? 1.9 : 1} strokeDasharray="1.8 4.2" className={hot ? "link hot" : "link"} />
+    </>
+  );
+}
+
+const PHASE_STATUS: Record<Phase, string> = { running: "running", queued: "queued", ok: "succeeded", failed: "failed", idle: "not_started" };
+
+/** A DAG's state as one of its steps would be drawn in that state. */
+export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => (
+  <i className={`orb o-${phase}${big ? " big" : ""}`} aria-hidden="true">
+    <svg viewBox="-6 -6 12 12"><StepStar x={0} y={0} r={5} status={PHASE_STATUS[phase]} /></svg>
+  </i>
+);
 
 /** A name cut to `n` characters with an ellipsis: the strip draws outside its box, so its text must fit. */
 const fit = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, Math.max(1, Math.floor(n) - 1))}…`);
@@ -23,20 +56,21 @@ export function chartBox(r: Row, min = 924) {
  *  and an agent step is ringed. `big` is the modal's chart: larger stars, each named, a fan folded into sub-columns. */
 export function Strip({ r, w = 220, h = 20, big = false }: { r: Row; w?: number; h?: number; big?: boolean }) {
   const st = r.d.steps;
-  const p = big ? bigPlace(st, w, h - 12, labelPx()) : place(st, w, h, 7, 3, 5.5, 34, Math.min(7, (h - 6) / 2));
-  const rr = big ? 6 : st.length > 9 ? 2.1 : 2.8;
+  // a folded fan's sub-columns sit a small star's width and a gap apart, and a strip whose column stacks draws small stars
+  const p = big ? bigPlace(st, w, h - 12, labelPx()) : place(st, w, h, 7, 3, 8, 34, Math.min(7, (h - 6) / 2));
+  const rr = big ? 6 : st.length > 9 || p.wide > 1 ? 3 : 4, uid = useId().replace(/:/g, "");
+  const at = (n: string) => r.steps[n] ?? "not_started";
   return (
     <svg className={`dstrip${big ? " big" : ""}`} width={big ? w : "100%"} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMinYMid meet" aria-hidden={!big}>
       {st.flatMap((s) => s.depends.filter((d) => p.at[d]).map((d) => (
-        <line key={d + ">" + s.name} x1={p.at[d].x} y1={p.at[d].y} x2={p.at[s.name].x} y2={p.at[s.name].y} className={r.steps[s.name] === "running" ? "e hot" : "e"} />
+        <Link key={d + ">" + s.name} id={`${uid}-${d}-${s.name}`.replace(/[^\w-]/g, "_")} a={p.at[d]} b={p.at[s.name]} r={rr} from={at(d)} to={at(s.name)} />
       )))}
       {st.map((s) => {
-        const v = r.steps[s.name] ?? "not_started", c = DAG_COLOR[v] ?? "var(--track)", { x, y } = p.at[s.name];
+        const v = at(s.name), { x, y } = p.at[s.name];
         return (
           <g key={s.name} className={`sd s-${v}`}>
-            {v === "running" && <circle cx={x} cy={y} r={rr * 2.6} fill={c} className="halo" />}
-            <circle cx={x} cy={y} r={v === "running" ? rr * 1.2 : rr} fill={v === "not_started" ? "var(--pop)" : c} stroke={v === "not_started" ? "var(--faint)" : "none"} strokeWidth={big ? 1.2 : 0.8} />
-            {s.kind === "agent" && <circle cx={x} cy={y} r={rr + (big ? 4 : 2)} fill="none" stroke="var(--agent)" strokeWidth={big ? 1 : 0.7} />}
+            <StepStar x={x} y={y} r={rr} status={v} />
+            {s.kind === "agent" && <circle cx={x} cy={y} r={rr + (big ? 4 : 2.5)} fill="none" stroke="var(--agent)" strokeWidth={big ? 1 : 0.7} />}
             {big && <text x={x} y={y + (p.up(s.name) ? -14 : 22)} className={v === "running" ? "hot" : undefined}>{s.name}</text>}
             {big && <title>{`${s.name}: ${v.replace("_", " ")}${s.kind ? ` (${s.kind} step)` : ""}`}</title>}
           </g>

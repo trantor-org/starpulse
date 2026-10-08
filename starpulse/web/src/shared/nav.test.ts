@@ -1,70 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
-import { backStep, canvasSpace, FoldStore, levelParams, levelSearch, retired, viewOf, viewSearch, type Back, type FoldStorage } from "./nav";
+import { describe, expect, it } from "vitest";
+import { backStep, canvasSpace, levelParams, levelSearch, retired, viewOf, viewSearch, type Back } from "./nav";
 import { fitLevel, toScreen } from "../render/zoom";
-
-const memory = (): FoldStorage & { data: Map<string, string> } => {
-  const data = new Map<string, string>();
-  return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
-};
-const body = { tagName: "BODY" };
-
-describe("the navigator's fold", () => {
-  it("starts open and flips with the toggle, telling its listeners", () => {
-    const store = new FoldStore(memory()), seen = vi.fn();
-    store.subscribe(seen);
-
-    store.toggle();
-    expect(store.get()).toBe(true);
-    store.toggle();
-    expect(store.get()).toBe(false);
-    expect(seen).toHaveBeenCalledTimes(2);
-  });
-
-  it("flips on `[` pressed anywhere but in a text field", () => {
-    const store = new FoldStore(memory());
-
-    store.onKey({ key: "x", target: body });
-    expect(store.get()).toBe(false);
-    store.onKey({ key: "[", target: { tagName: "INPUT" } });
-    expect(store.get()).toBe(false);
-    store.onKey({ key: "[", target: body });
-    expect(store.get()).toBe(true);
-    store.onKey({ key: "[", target: body });
-    expect(store.get()).toBe(false);
-  });
-
-  it("survives a reload: a new store on the same storage reads the last state", () => {
-    const storage = memory();
-    new FoldStore(storage).toggle();
-
-    const reloaded = new FoldStore(storage);
-    expect(reloaded.get()).toBe(true);
-    reloaded.toggle();
-    expect(new FoldStore(storage).get()).toBe(false);
-  });
-
-  it("still folds for the session when storage is off", () => {
-    const off: FoldStorage = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
-    const store = new FoldStore(off);
-
-    store.toggle();
-    expect(store.get()).toBe(true);
-  });
-});
 
 describe("the canvas beside the panel", () => {
   const level = { w: 2400, h: 400, box: [0, 0, 2400, 400] as [number, number, number, number] };
-  const space = canvasSpace(1920, { open: 250, fold: 52 }, 250);
+  const space = canvasSpace(1920, 250, 250);
 
-  it("spans the page the folded panel leaves, so a fold only uncovers or covers sky", () => {
-    expect(space).toEqual({ left: 52, width: 1618, inset: 198, fitWidth: 1420 });
+  it("spans the page between the panel and the rail", () => {
+    expect(space).toEqual({ left: 250, width: 1420 });
   });
 
-  it("fits the level between the open panel and the rail, wherever the panel is", () => {
-    const fit = fitLevel(level, space.fitWidth, 1000);
-    const middle = space.left + space.inset + toScreen(fit, { x: 1200, y: 200 }).x;
-
-    expect(middle).toBe(250 + 1420 / 2);
+  it("fits the level in the middle of that span", () => {
+    const fit = fitLevel(level, space.width, 1000);
+    expect(space.left + toScreen(fit, { x: 1200, y: 200 }).x).toBe(250 + 1420 / 2);
   });
 });
 

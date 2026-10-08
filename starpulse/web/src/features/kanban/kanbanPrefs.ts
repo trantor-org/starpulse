@@ -1,6 +1,6 @@
 // The Kanban view's choices kept in the browser: filters, hidden items and folds survive a reload, and an address that names filters starts from them instead.
 import { NO_PREFS, type Prefs } from "./kanban";
-import { queryString, type FoldStorage } from "../../shared/nav";
+import { queryString, type PrefStorage } from "../../shared/nav";
 
 export const PREFS_KEY = "fv.kanban.prefs";
 /** The address parameters a deep link filters by; a bare `assignee` or `milestone` means the unassigned or No milestone. */
@@ -9,7 +9,7 @@ const LINK = ["q", "assignee", "milestone"] as const;
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 const textOrNull = (v: unknown) => (typeof v === "string" ? v : null);
 
-function stored(storage: FoldStorage | null): Prefs {
+function stored(storage: PrefStorage | null): Prefs {
   try {
     const raw: unknown = JSON.parse(storage?.getItem(PREFS_KEY) ?? "null");
     if (typeof raw !== "object" || raw === null) return NO_PREFS;
@@ -24,13 +24,13 @@ function stored(storage: FoldStorage | null): Prefs {
 }
 
 /** The view's starting state: the address's own filters when it names any (nothing hidden or folded), else what the last visit kept. */
-export function loadPrefs(storage: FoldStorage | null, search: string): Prefs {
+export function loadPrefs(storage: PrefStorage | null, search: string): Prefs {
   const params = new URLSearchParams(search);
   if (!LINK.some((k) => params.has(k))) return stored(storage);
   return { ...NO_PREFS, query: params.get("q") ?? "", assignee: params.get("assignee"), milestone: params.get("milestone") };
 }
 
-export function savePrefs(storage: FoldStorage | null, p: Prefs): void {
+export function savePrefs(storage: PrefStorage | null, p: Prefs): void {
   const { query, assignee, milestone } = p;
   try {
     storage?.setItem(PREFS_KEY, JSON.stringify({ query, assignee, milestone, folded: [...p.folded], hiddenMilestones: [...p.hiddenMilestones], hiddenTasks: [...p.hiddenTasks] }));

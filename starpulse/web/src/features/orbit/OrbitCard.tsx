@@ -167,7 +167,6 @@ function Orbit({ level, motion, names }: { level: LevelResponse; motion: boolean
       }
       const h = hitAt(p);
       hover.current = h;
-      cv.style.cursor = drag?.moved ? "grabbing" : h ? "pointer" : "default";
       if (h) placeTip(p.x, p.y, cv.clientWidth, cv.clientHeight);
       setTip(h);
       if (!live.current.motion) paint.current();

@@ -1,8 +1,9 @@
-// The page's DOM around the canvas: the left navigator, always shown and foldable to an icon strip,
+// The page's DOM around the canvas: the left navigator, always open,
 // the right rail (recent moves on top, the legend at the bottom), the clock, and the
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/viewPrefs";
 import { Admin } from "./features/admin/Admin";
 import { AdminStore } from "./features/admin/adminPrefs";
 import { ForwardingCard } from "./features/forwarding/ForwardingCard";
@@ -13,13 +14,13 @@ import { LevelStore } from "./features/orbit/levelData";
 import { BOARD, pathKey, type Path } from "./render/levels";
 import { Crumb } from "./features/level/Crumb";
 import { Dags, DagLegend } from "./features/dags/Dags";
-import { FeedLines, Queues } from "./features/fanout/Fanout";
+import { FeedLines, linesThatFit, Queues } from "./features/fanout/Fanout";
 import { SearchClear } from "./shared/SearchClear";
 import { Kanban } from "./features/kanban/Kanban";
 import { Leaderboard } from "./features/kanban/Leaderboard";
 import { MoveStore, postMove } from "./features/kanban/move";
 import { OrbitCard } from "./features/orbit/OrbitCard";
-import { FoldStore, retired, viewOf, viewSearch, type ViewName } from "./shared/nav";
+import { retired, viewOf, viewSearch, type ViewName } from "./shared/nav";
 import { renderer as makeRenderer, type Renderer } from "./render/renderer";
 import { search, type Target } from "./features/level/search";
 import { StartStore, fetchHarnesses, postStart } from "./features/kanban/start";
@@ -32,7 +33,6 @@ export function App() {
   const renderer = useRef<Renderer | null>(null);
   const [store] = useState(() => new HudStore());
   const hud = useHud(store);
-  const [fold] = useState(() => new FoldStore());
   const [admin] = useState(() => new AdminStore());
   const [historyWindow] = useState(() => new HistoryWindowStore());
   const [forwarding] = useState(() => new ForwardingStore());
@@ -53,12 +53,10 @@ export function App() {
   const [why, setWhy] = useState<string | null>(null), [opening, setOpening] = useState<{ id: string } | null>(null);
   // and a DAG-finished line lights its row in the DAGs view and opens its modal
   const [spottedDag, setSpottedDag] = useState<string | null>(null), [openingDag, setOpeningDag] = useState<{ name: string } | null>(null);
-  const folded = useSyncExternalStore(fold.subscribe, fold.get);
-  // the Kanban's text search draws in the navigator's search slot and reports what it holds, for the folded strip's magnifier
+  // the Kanban's text search draws in the navigator's search slot
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
   // and its milestone outline draws in the outline slot below it, where Layers draw on the Star Map
   const [outlineSlot, setOutlineSlot] = useState<HTMLElement | null>(null);
-  const [kanbanQuery, setKanbanQuery] = useState("");
   const prefs = useSyncExternalStore(admin.subscribe, admin.get);
   // a bare address opens the view the Admin chose; one that names a view opens that
   const [view, setView] = useState<ViewName>(() => viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view));
@@ -91,13 +89,6 @@ export function App() {
     if (view === "constellation") renderer.current?.resize();
   }, [view]);
 
-  // `[` folds the navigator from any view; the canvas already spans the page the fold frees, so nothing refits
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => fold.onKey(e);
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, [fold]);
-
   // a level from the navigator's search or the breadcrumb opens on the Star Map, refitted when it is already the one shown
   const open = (p: Path) => {
     choose("constellation");
@@ -108,7 +99,7 @@ export function App() {
   return (
     <>
       <canvas ref={canvas} id="c" />
-      <Navigator hud={hud} folded={folded} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} kanbanQuery={kanbanQuery} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} toggle={() => fold.toggle()} open={open}
+      <Navigator hud={hud} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       {view === "constellation" && <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} />}
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
@@ -117,7 +108,7 @@ export function App() {
         <OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} />
       )}
       {view === "kanban" && (
-        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} onQuery={setKanbanQuery} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
+        <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
           spot={spotted} note={setWhy} opening={opening} />
       )}
       {view === "dags" && <Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} />}
@@ -141,24 +132,11 @@ export function App() {
   );
 }
 
-/** The folded strip's search button, at the search's height: lit with a dot while the active view's search holds a query. It sits in the search's section, so only the folded strip shows it. */
-function SearchMagnifier({ view, query, open }: { view: ViewName; query: string; open: () => void }) {
-  const name = view === "kanban" ? "Kanban" : "Star Map";
-  return (
-    <button type="button" id="nv-mag" className={query ? "set" : undefined} aria-label="Search" title={`Search the ${name}${query ? ` (filtering: ${query})` : ""}`} onClick={open}>
-      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-        <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
-        <path d="M15.4 15.4 L21 21" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      </svg>
-    </button>
-  );
-}
-
-function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, hasLevel, toggle, open, spot, selectTask }: {
-  hud: HudState; folded: boolean; view: ViewName; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; kanbanQuery: string; choose: (v: ViewName) => void; hasLevel: boolean; toggle: () => void; open: (p: Path) => void;
+function Navigator({ hud, view, slot, outlineSlot, choose, hasLevel, open, spot, selectTask }: {
+  hud: HudState; view: ViewName; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; hasLevel: boolean; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
-  const [query, setQuery] = useState("");
+  const [{ query }, keep] = useFilters(STARMAP_PREFS_KEY, NO_STARMAP_FILTERS), setQuery = (v: string) => keep({ query: v });
   // the Leaderboard's ages move by the minute
   const [now, setNow] = useState(() => Date.now() / 1000);
   useEffect(() => {
@@ -166,14 +144,6 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
     return () => clearInterval(tick);
   }, []);
   const searchBox = useRef<HTMLInputElement>(null);
-  // the folded strip's magnifier unfolds the panel, then the active view's search takes the focus once it is shown
-  const searchHost = useRef<HTMLElement>(null);
-  const focusSearch = useRef(false);
-  useEffect(() => {
-    if (!focusSearch.current || folded) return;
-    focusSearch.current = false;
-    searchHost.current?.querySelector("input")?.focus();
-  }, [folded]);
   const statePath = (id: string): Path => [...BOARD, { kind: "state", id }];
   // a click drills into a sun or a machine, or pins a task on the Board
   const pick = (target: Target) => {
@@ -206,10 +176,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
     );
   }
   return (
-    <aside id="nav" className={folded ? "folded" : undefined}>
-      <button id="fold" onClick={toggle} title={`${folded ? "Open" : "Fold"} the navigator ([)`} aria-label={folded ? "Open the navigator" : "Fold the navigator"} aria-expanded={!folded}>
-        ‹
-      </button>
+    <aside id="nav">
       <section className="head">
         <h1>StarPulse</h1>
         <div className="sub"><span className={`dot ${hud.live}`} />{hud.stats}</div>
@@ -246,7 +213,7 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
         )}
       </section>
       {view !== "admin" && view !== "graph" && view !== "dags" && (
-        <section className="away has-x search" ref={searchHost}>
+        <section className="away has-x search">
           {view === "kanban" ? <div ref={slot} /> : <>
             <input id="q" ref={searchBox} type="search" placeholder="search…" title="Search tasks, States and lifecycle machines" aria-label="Search tasks, States and lifecycle machines" autoComplete="off" value={query}
               onChange={(e) => { setQuery(e.target.value); spot(null); }}
@@ -257,7 +224,6 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
               }} />
             <SearchClear input={searchBox} value={query} clear={() => { setQuery(""); spot(null); }} />
           </>}
-          <SearchMagnifier view={view} query={view === "kanban" ? kanbanQuery : query} open={() => { if (folded) { focusSearch.current = true; toggle(); } else searchHost.current?.querySelector("input")?.focus(); }} />
         </section>
       )}
       {view === "kanban" && <section className="away outline" ref={outlineSlot} />}
@@ -279,12 +245,23 @@ function Navigator({ hud, folded, view, slot, outlineSlot, kanbanQuery, choose, 
 export function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
   // the lines hold still under the pointer, so a run starting mid-aim doesn't push the next line under the click
   const [held, setHeld] = useState<FeedLine[] | null>(null);
+  // the feed is a fixed box: it keeps only the newest lines it shows whole, and grows no scrollbar
+  const box = useRef<HTMLDivElement>(null), [fit, setFit] = useState(Infinity);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => setFit(linesThatFit(el.clientHeight, parseFloat(getComputedStyle(el).lineHeight)));
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    measure();
+    return () => watch.disconnect();
+  }, []);
   return (
     <aside id="rail">
       <section className="recent">
         <h3>Recent</h3>
-        <div id="feed" onPointerEnter={() => setHeld(hud.feed)} onPointerLeave={() => setHeld(null)}>
-          <FeedLines lines={held ?? hud.feed} {...feed} />
+        <div id="feed" ref={box} onPointerEnter={() => setHeld(hud.feed)} onPointerLeave={() => setHeld(null)}>
+          <FeedLines lines={(held ?? hud.feed).slice(0, fit)} {...feed} />
         </div>
       </section>
       <section id="legend">

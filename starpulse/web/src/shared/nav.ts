@@ -1,11 +1,8 @@
-// The left navigator panel's fold and the canvas's share of the page beside it.
-// One fold setting serves every view, so it lives here rather than in a view.
-export const FOLD_KEY = "fv.nav.folded";
+// The browser storage every view keeps its settings in.
+export type PrefStorage = Pick<Storage, "getItem" | "setItem">;
 
-export type FoldStorage = Pick<Storage, "getItem" | "setItem">;
-
-// Browser storage can be absent (a private window); the fold then lasts the session.
-export const browserStorage = (): FoldStorage | null => {
+// Browser storage can be absent (a private window); settings then last the session.
+export const browserStorage = (): PrefStorage | null => {
   try {
     return localStorage;
   } catch {
@@ -13,50 +10,8 @@ export const browserStorage = (): FoldStorage | null => {
   }
 };
 
-export class FoldStore {
-  private folded: boolean;
-  private listeners = new Set<() => void>();
-
-  constructor(private storage: FoldStorage | null = browserStorage()) {
-    try {
-      this.folded = storage?.getItem(FOLD_KEY) === "1";
-    } catch {
-      this.folded = false;
-    }
-  }
-
-  get = () => this.folded;
-  subscribe = (fn: () => void) => {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
-  };
-  toggle() {
-    this.folded = !this.folded;
-    try {
-      this.storage?.setItem(FOLD_KEY, this.folded ? "1" : "0");
-    } catch {
-      // storage is off: the fold lasts the session
-    }
-    for (const fn of this.listeners) fn();
-  }
-  /** `[` folds or opens the panel, except while a field is taking text. */
-  onKey(e: { key: string; target: unknown }) {
-    const tag = (e.target as { tagName?: string } | null)?.tagName;
-    if (e.key === "[" && tag !== "INPUT" && tag !== "TEXTAREA") this.toggle();
-  }
-}
-
-/**
- * The canvas and the box its level is fitted in, from the panel's open and folded widths, never its current one:
- * the canvas spans the page the folded panel leaves, and the level fits between the open panel and the rail,
- * `inset` from the canvas's left edge. A fold only covers or uncovers sky; no body moves.
- */
-export const canvasSpace = (viewport: number, nav: { open: number; fold: number }, rail: number) => ({
-  left: nav.fold,
-  width: viewport - nav.fold - rail,
-  inset: nav.open - nav.fold,
-  fitWidth: viewport - nav.open - rail,
-});
+/** The canvas: the page between the navigator and the rail, where the level is fitted. */
+export const canvasSpace = (viewport: number, nav: number, rail: number) => ({ left: nav, width: viewport - nav - rail });
 
 export type ViewName = "constellation" | "kanban" | "dags" | "admin" | "graph";
 
