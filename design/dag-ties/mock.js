@@ -6,7 +6,7 @@
 // failure), rest (nothing running) or fail (apply-on-merge failed and left unresolved: the loop skips the rerun); ?at=<seconds> opens the loop
 // at that moment. ?place= picks where each hangar docks: edge (beside its busiest line, clear of it), line (on that line), side
 // (round its state), rim (on the state's ring), orbit (its DAGs orbit the state itself, the default) or label (small, in the state's
-// name). ?glyph= picks how a running DAG's orbiter shows it runs: tail (a comet along its orbit into it), spin, ripple, breathe or glow.
+// name). ?glyph= picks how a running DAG's orbiter shows it runs: spin (the default: a quarter arc turning round it), tail (a comet along its orbit into it), ripple, breathe or glow.
 // It runs before the page's module.
 (() => {
   const q = new URLSearchParams(location.search);
@@ -67,7 +67,7 @@
         #mockbar a { padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(148,163,184,.18); color: #b6c0d3; text-decoration: none; }
         #mockbar a.on { border-color: #fbbf24; color: #fde68a; background: rgba(251,191,36,.10); }
       </style><b>MOCKUP</b>`;
-      const cur = { place: q.get("place") || "orbit", glyph: q.get("glyph") || "tail", sim, fs: q.get("fs") || "100" };
+      const cur = { place: q.get("place") || "orbit", glyph: q.get("glyph") || "spin", sim, fs: q.get("fs") || "100" };
       const groups = [
         ["Place", "place", [["edge", "Off its line"], ["line", "On its line"], ["side", "Beside it"], ["rim", "On its ring"], ["orbit", "Round it"], ["label", "In its name"]]],
         ["Glyph", "glyph", [["tail", "Tail"], ["spin", "Spinner"], ["ripple", "Ripple"], ["breathe", "Breathe"], ["glow", "Glow"]]],

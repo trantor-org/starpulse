@@ -1,6 +1,6 @@
 diff --git a/starpulse/web/src/dagTies.ts b/starpulse/web/src/dagTies.ts
 new file mode 100644
-index 0000000..03d8eef
+index 0000000..2e0877f
 --- /dev/null
 +++ b/starpulse/web/src/dagTies.ts
 @@ -0,0 +1,364 @@
@@ -20,8 +20,8 @@ index 0000000..03d8eef
 +  /** The Board event (or sub-machine event) the tie is about; a launch names the flow it launches. */
 +  event: string;
 +  edge?: BEdge;
-+  /** A Board transition's tie, marked by a diamond at the edge's middle (or its state's rim, for a loop). */
-+  diamond: boolean;
++  /** A tie to a Board transition (a point at the edge's middle, or its state's rim for a loop), not a launch. */
++  onBoard: boolean;
 +  /** For a launch: the flow, when the page draws it. */
 +  flow?: string | null;
 +  /** The state the tie acts on: a write's source (the state the DAG moves work out of), a cue's state (where the event lands). */
@@ -31,7 +31,7 @@ index 0000000..03d8eef
 +  dag: string;
 +  label: string;
 +  anchors: Anchor[];
-+  /** The transition the DAG docks by: its diamond shows at rest, and a click opens its Ledger. */
++  /** The transition the DAG docks by: its orbiter aims at it, and a click opens its Ledger. */
 +  primary?: Anchor;
 +  ledger: string | null;
 +  /** Its angle round the hub. */
@@ -92,11 +92,11 @@ index 0000000..03d8eef
 +      if (!t || !tr) continue;
 +      const e = edgeOf(event), m = e && !e.loop ? mid(e) : null;
 +      const p = m ?? (sc.galaxies[tr.source] ? rimOf(tr.source, { x: sc.galaxies[tr.source].x, y: sc.galaxies[tr.source].y - 1 }) : null);
-+      if (p) t.anchors.push({ ...p, kind: "write", event, edge: e, diamond: true, state: tr.source });
++      if (p) t.anchors.push({ ...p, kind: "write", event, edge: e, onBoard: true, state: tr.source });
 +    }
 +  for (const c of sky.cues) {
 +    const t = tie(c.dag), e = edgeOf(c.event), m = e ? mid(e) : null;
-+    if (t && m) t.anchors.push({ ...m, kind: "cue", event: c.event, edge: e, diamond: true, state: c.state || e?.target });
++    if (t && m) t.anchors.push({ ...m, kind: "cue", event: c.event, edge: e, onBoard: true, state: c.state || e?.target });
 +  }
 +  const ip = sc.galaxies.in_progress;
 +  for (const l of sky.launches) {
@@ -106,16 +106,16 @@ index 0000000..03d8eef
 +    const at = moon ? { x: moon.x, y: moon.y } : rimOf("in_progress", { x: ip.x, y: ip.y + 1 });
 +    // a DAG that also writes the launched machine's own events is drawn as that machine's writer, not only its launcher
 +    const sub = !!flow && Object.values(sky.flows[flow]?.machine.writers ?? {}).some((ws) => ws.some((w) => w.actor === l.dag));
-+    t.anchors.push({ ...at, kind: sub ? "sub" : "launch", event: flow ?? l.skill, diamond: false, flow });
++    t.anchors.push({ ...at, kind: sub ? "sub" : "launch", event: flow ?? l.skill, onBoard: false, flow });
 +  }
 +  const all = [...byDag.values()];
 +  // each DAG belongs to the state most of its ties act on (the first, on a tie), and docks by one of that state's transitions
 +  const home = (t: Orbiter) => {
 +    const n = new Map<string, number>();
-+    for (const a of t.anchors) if (a.diamond && a.state && sc.galaxies[a.state]) n.set(a.state, (n.get(a.state) ?? 0) + 1);
++    for (const a of t.anchors) if (a.onBoard && a.state && sc.galaxies[a.state]) n.set(a.state, (n.get(a.state) ?? 0) + 1);
 +    return [...n].reduce<[string, number] | null>((b, x) => (!b || x[1] > b[1] ? x : b), null)?.[0];
 +  };
-+  const own = (t: Orbiter) => t.anchors.filter((a) => a.diamond && a.state === home(t));
++  const own = (t: Orbiter) => t.anchors.filter((a) => a.onBoard && a.state === home(t));
 +  // among them, the one whose edge holds the fewest DAGs so far, the DAGs with fewest ties choosing first
 +  const load = new Map<BEdge | undefined, number>();
 +  for (const t of all.filter((t) => own(t).length).sort((a, b) => own(a).length - own(b).length)) {
@@ -134,7 +134,7 @@ index 0000000..03d8eef
 +
 +/** Where a state's hangar sits (the review bar's `?place=`):
 + *   edge  — beside the state's busiest transition line, near the state's end of it, clear of the line
-+ *   line  — on that line, in place of its diamond
++ *   line  — on that line, at its middle
 + *   side  — beside the state, in the first open spot round it
 + *   rim   — a small hangar on the state's own ring, facing its busiest line
 + *   orbit — no hangar: the DAGs orbit the state itself, just outside its ring, each toward its transition
@@ -369,7 +369,7 @@ index 0000000..03d8eef
 +}
 +export const simOf = (dag: string): SimRun | undefined => (window as unknown as { __ties?: Record<string, SimRun> }).__ties?.[dag];
 diff --git a/starpulse/web/src/renderer.ts b/starpulse/web/src/renderer.ts
-index 0f35d40..f7bb347 100644
+index 0f35d40..9d7a394 100644
 --- a/starpulse/web/src/renderer.ts
 +++ b/starpulse/web/src/renderer.ts
 @@ -27,6 +27,12 @@ import { createHistory } from "./history";
@@ -381,7 +381,7 @@ index 0f35d40..f7bb347 100644
 +const PLACE: Dock = ((q) => ((PLACES as string[]).includes(q ?? "") ? (q as Dock) : "orbit"))(new URLSearchParams(location.search).get("place"));
 +/** Design mockup: how a running DAG's orbiter shows it runs (the review bar's `?glyph=`). */
 +const GLYPHS = ["tail", "spin", "ripple", "breathe", "glow"] as const;
-+const GLYPH: (typeof GLYPHS)[number] = ((q) => (GLYPHS as readonly string[]).includes(q ?? "") ? (q as (typeof GLYPHS)[number]) : "tail")(new URLSearchParams(location.search).get("glyph"));
++const GLYPH: (typeof GLYPHS)[number] = ((q) => (GLYPHS as readonly string[]).includes(q ?? "") ? (q as (typeof GLYPHS)[number]) : "spin")(new URLSearchParams(location.search).get("glyph"));
  import type { Dag, Machine, Snapshot, Writer } from "./types";
  import { fanBadge, fanTip, stepStatus } from "./fanout";
  import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
@@ -473,7 +473,7 @@ index 0f35d40..f7bb347 100644
        flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
        cx.beginPath();
        cx.moveTo(e.p0!.x, e.p0!.y);
-@@ -1256,6 +1306,165 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1256,6 +1306,144 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
        }
      }
    }
@@ -491,19 +491,7 @@ index 0f35d40..f7bb347 100644
 +    if (!all) return false;
 +    return Object.values(all).some((r) => r.status === "running" || T - r.t0 < TRAVEL + PULSE || (r.fin !== undefined && T - r.fin < TRAVEL + PULSE));
 +  }
-+  function diamond(x: number, y: number, r: number, col: string, fill: boolean) {
-+    cx.beginPath();
-+    cx.moveTo(x, y - r);
-+    cx.lineTo(x + r, y);
-+    cx.lineTo(x, y + r);
-+    cx.lineTo(x - r, y);
-+    cx.closePath();
-+    cx.fillStyle = fill ? col : "rgba(6,10,20,0.95)";
-+    cx.fill();
-+    cx.strokeStyle = col;
-+    cx.lineWidth = 1.2 / K;
-+    cx.stroke();
-+  }
++
 +  function halo(x: number, y: number, r: number, col: string, a: number) {
 +    const glow = cx.createRadialGradient(x, y, 0, x, y, r);
 +    glow.addColorStop(0, rgba(col, a));
@@ -555,30 +543,21 @@ index 0f35d40..f7bb347 100644
 +    return at === undefined ? null : { a, at, out: a.kind !== "cue" };
 +  }
 +  // A small DAGs hangar docked beside each state the tied DAGs act on, as the DAGs hangar was: a disc, and round it one orbiter per DAG, each
-+  // turned toward the transition it docks by. At rest each orbiter wears its last run's colour and each tied transition a small diamond;
-+  // nothing joins them. A running DAG's orbiter fills amber. The moment it writes its transition (or a cue fires it) one comet, the ticket's
++  // turned toward the transition it docks by. At rest each orbiter wears its last run's colour; nothing
++  // marks or joins the transition. A running DAG's orbiter fills amber. The moment it writes its transition (or a cue fires it) one comet, the ticket's
 +  // own, runs that transition's edge in a ticket's travel time and rings where it lands. Hovering an orbiter lights the edges it writes; a
 +  // hangar's name says which DAG is running or failed.
 +  function drawTies() {
-+    const tz = ties(), sc = scene!, lightEdge = hover?.kind === "bedge" ? hover.o : null;
++    const tz = ties(), sc = scene!;
 +    if (!tz) return;
-+    for (const h of tz.hubs) drawHub(h, sc, lightEdge);
++    for (const h of tz.hubs) drawHub(h, sc);
 +  }
-+  function drawHub(h: Hub, sc: Scene, lightEdge: BEdge | null) {
++  function drawHub(h: Hub, sc: Scene) {
 +    const SLATE = "#94a3b8", TEAL = "#5eead4", FAIL = DAG_COLOR.failed, OK = DAG_COLOR.succeeded;
 +    const hubHot = isHot("hub", h), runs = h.orbs.map((o) => ({ o, run: simOf(o.dag) }));
 +    const live = runs.filter((r) => r.run?.status === "running"), bad = runs.filter((r) => r.run?.status === "failed" && r.run.unresolved);
-+    // the transitions: a diamond each DAG docks by at rest; a hovered orbiter, or its hangar, brings up every tie
-+    for (const { o, run } of runs) {
-+      const hot = isHot("tie", o) || hubHot || (!!lightEdge && o.anchors.some((a) => a.edge === lightEdge)), tc = touch(o, run), failed = run?.status === "failed" && !!run.unresolved;
-+      for (const a of o.anchors) {
-+        // a hangar on the line covers its diamond
-+        if (!a.diamond || (a !== o.primary && !hot) || (h.style === "line" && Math.hypot(a.x - h.x, a.y - h.y) < h.r + 3 / K)) continue;
-+        const lit = !!tc && tc.a === a && T >= tc.at && T - tc.at < TRAVEL + PULSE;
-+        diamond(a.x, a.y, (hot || lit ? 5 : 4) / K, rgba(failed && a === o.primary ? FAIL : lit ? ACT : SLATE, hot || lit || failed ? 0.95 : 0.6), lit || (failed && a === o.primary));
-+      }
-+      if (hot && isHot("tie", o)) for (const a of o.anchors) if (!a.diamond) circle(a.x, a.y, 10 / K, rgba("#a78bfa", 0.9), 1.4 / K, [2 / K, 2 / K]);
-+    }
++    // no mark on the transition lines: the orbiter, aimed at its transition, already says which; a hovered orbiter rings what it launches
++    for (const { o } of runs) if (isHot("tie", o)) for (const a of o.anchors) if (!a.onBoard) circle(a.x, a.y, 10 / K, rgba("#a78bfa", 0.9), 1.4 / K, [2 / K, 2 / K]);
 +    // the hangar: the teal disc, warmer while a member runs, and its orbit; orbiting the state itself, a faint arc behind its DAGs instead
 +    const heat = 0.12 + (live.length ? 0.14 + 0.05 * Math.sin(clock * 2.4) : 0);
 +    if (h.c) {
@@ -639,7 +618,7 @@ index 0f35d40..f7bb347 100644
    /** `s` cut to `max` px at `size`, ending in an ellipsis when it was cut. */
    function fitText(s: string, max: number, size: number) {
      cx.font = `400 ${size}px Inter, system-ui, sans-serif`;
-@@ -1651,6 +1860,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1651,6 +1839,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      drawGalaxies();
      drawMoons();
      drawBoardEdges();
@@ -647,7 +626,7 @@ index 0f35d40..f7bb347 100644
      drawStateLinks();
      drawSun();
      drawPlanets();
-@@ -1724,7 +1934,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+@@ -1724,7 +1913,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
      }
    };
    /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
