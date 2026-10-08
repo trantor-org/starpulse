@@ -739,6 +739,112 @@ def test_the_ledger_reads_only_the_lane_changes_of_its_window_from_the_history()
     assert asked == [datetime(2026, 10, 6, 1, tzinfo=ZoneInfo("UTC")).timestamp()]
 
 
+def test_a_page_request_reads_the_ledger_last_built_and_queries_no_lane_history() -> None:
+    feed = ledger_feed()
+    asked: list[float | None] = []
+
+    def lane_rows(since: float | None = None) -> list:
+        asked.append(since)
+        return []
+
+    feed.size_suns(lane_rows)
+    feed.set_pulls({"TASK-1": [MERGED_PR]})
+    feed.set_dags("ci", [_dag("apply", FAILED)], None)
+    feed.snapshot()  # sizes the suns, a once-a-day read of the whole history
+    built = len(asked)
+
+    assert feed.snapshot()["ledgers"]["MERGED"][0]["sha"] == SHA
+    assert feed.merges(before=None, limit=5)["merges"][0]["sha"] == SHA
+    assert feed.open_failure("ci/apply") == {"runId": "r-bad", "params": FAILED["params"]}
+    assert len(asked) == built
+
+
+def test_the_ledger_is_built_while_page_requests_still_take_the_board() -> None:
+    feed = ledger_feed()
+    feed.put(BoardTask(id="TASK-9", team="demo", title="t", lane="to_do"))
+    building, release = threading.Event(), threading.Event()
+
+    def lane_rows(since: float | None = None) -> list:
+        if since is not None:  # the Ledger's window, not the suns' once-a-day read
+            building.set()
+            release.wait(5)
+        return []
+
+    feed.size_suns(lane_rows)
+    feed.snapshot()
+    worker = threading.Thread(target=feed.set_dags, args=("ci", [_dag("apply", APPLIED)], None))
+    worker.start()
+    assert building.wait(5)
+
+    answered = []
+    reader = threading.Thread(target=lambda: answered.extend([feed.task("TASK-9"), feed.snapshot()]))
+    reader.start()
+    reader.join(2)
+    answered_while_building = list(answered)
+    release.set()
+    worker.join(5)
+
+    assert answered_while_building and answered_while_building[0]["id"] == "TASK-9"
+
+
+def test_a_task_lookup_does_not_wait_for_the_board_lock() -> None:
+    feed = BoardFeed()
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="to_do"))
+    answered = []
+
+    with feed._lock:
+        reader = threading.Thread(target=lambda: answered.append(feed.task("PROJ-1")))
+        reader.start()
+        reader.join(2)
+
+    assert answered and answered[0]["id"] == "PROJ-1"
+
+
+def _recorded_lanes(feed: BoardFeed) -> list[tuple]:
+    rows: list[tuple] = []
+
+    class Lanes:
+        def record_lane(self, event_id: str, task: str, status: str, at: float) -> bool:
+            rows.append((task, at, "To Do", status))
+            return True
+
+    feed.record_lanes(Lanes())
+    feed.size_suns(lambda since=None: list(rows))
+    return rows
+
+
+def test_a_live_move_into_a_tied_lane_refreshes_the_ledger() -> None:
+    feed = ledger_feed()
+    _recorded_lanes(feed)
+    feed.set_dags("ci", [_dag("start")], None)
+    _, deltas = feed.subscribe()
+
+    feed.put(BoardTask(id="TASK-1", team="demo", title="t", lane="in_progress"))
+
+    sent = dict(deltas.get_nowait() for _ in range(deltas.qsize()))
+    assert [r["tasks"] for r in sent["ledgers"]["ledgers"]["STARTED"]] == [["TASK-1"]]
+    assert [r["tasks"] for r in feed.snapshot()["ledgers"]["STARTED"]] == [["TASK-1"]]
+
+
+def test_the_replay_builds_the_ledger_once_when_it_reaches_the_entry_it_expected() -> None:
+    feed = ledger_feed()
+    rows = _recorded_lanes(feed)
+    feed.set_dags("ci", [_dag("start")], None)
+    feed.expect("2-0")
+    _, deltas = feed.subscribe()
+
+    feed.put(BoardTask(id="TASK-1", team="demo", title="t", lane="in_progress"))
+    feed.seen("1-0")
+    feed.put(BoardTask(id="TASK-2", team="demo", title="t", lane="in_progress"))
+    assert len(rows) == 2
+    assert feed.snapshot()["ledgers"].get("STARTED", []) == []
+    feed.seen("2-0")
+
+    kinds = [deltas.get_nowait()[0] for _ in range(deltas.qsize())]
+    assert kinds.count("ledgers") == 1
+    assert sorted(r["tasks"][0] for r in feed.snapshot()["ledgers"]["STARTED"]) == ["TASK-1", "TASK-2"]
+
+
 BEFORE = "0" * 40
 FAILED = {
     **APPLIED,
