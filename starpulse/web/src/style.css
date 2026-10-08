@@ -402,6 +402,9 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tvrail .dep.off { cursor: default; } #kbm .tvrail .dep.off:hover { background: none; }
 #kbm .tvrail .dep .id { font: calc(11px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; color: var(--agent); }
 #kbm .tvrail .dep .tt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-3); }
+#kbm .tvrail .session { display: flex; flex-direction: column; gap: 3px; }
+#kbm .tvrail .session .big { display: inline-flex; align-items: center; gap: 8px; font-size: calc(12.5px * var(--fs)); }
+#kbm .tvrail .session .p { width: 7px; height: 7px; border-radius: 50%; background: var(--run); box-shadow: 0 0 8px var(--run); display: inline-block; flex: none; }
 #kbm .tvrail .machs { display: flex; flex-direction: column; gap: 2px; }
 #kbm .tvrail .machs summary { cursor: pointer; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; list-style: none; padding: 2px 0; }
 #kbm .tvrail .machs summary::-webkit-details-marker { display: none; }

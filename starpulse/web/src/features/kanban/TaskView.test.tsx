@@ -25,6 +25,7 @@ const record: TaskRecord = {
   description: "the full description", plan: "1. Write the test\n2. Make it pass", notes: "Checked against the live config",
   acceptanceCriteria: [{ n: 1, text: "A Vitest test failed first", checked: true }, { n: 2, text: "make lint-changed passes", checked: false }],
   definitionOfDone: [{ n: 1, text: "The completing-tasks skill was invoked", checked: false }],
+  session: "",
 };
 const card = (id: string, lane: string, over: Partial<KanbanTask> = {}): KanbanTask => ({ ...task, id, title: `title ${id}`, lane, dependencies: [], prs: [], machines: [], ...over });
 const board = [card("TASK-1", "done"), task];
@@ -364,7 +365,7 @@ describe("the task view's right rail", () => {
   it("draws Status, Pull requests, CI history, Dependencies, Machines and Details in that order, each heading with its count", () => {
     const html = draw({ tasks: many });
 
-    expect(headings(html)).toEqual(["Status", "Pull requests", "CI history", "Dependencies", "Machines", "Details"]);
+    expect(headings(html)).toEqual(["Status", "Session", "Pull requests", "CI history", "Dependencies", "Machines", "Details"]);
     expect(rows(html, "Pull requests")).toContain('<span class="n">1</span>');
     expect(rows(html, "Dependencies")).toContain('<span class="n">9</span>');
     expect(rows(html, "Machines")).toContain('<span class="n">1</span>');
@@ -377,6 +378,41 @@ describe("the task view's right rail", () => {
   it("draws the lane and the time in it under Status, and leaves the time out when the board gave none", () => {
     expect(rows(draw(), "Status")).toMatch(/class="tvlane sm" data-lane="ready"><i><\/i>Ready<\/span><span class="k">for 5m<\/span>/);
     expect(rows(draw({ task: { ...task, entered: 0 } }), "Status")).not.toContain("for ");
+  });
+
+  describe("Session", () => {
+    const link = "https://claude.ai/code/session_abc";
+    const working = { ...task, lane: "in_progress", machines: [{ machine: "in-progress", state: "pr_opened", at: 900, model: "opus", steps: 7, trail: [] }] };
+    const session = (over: Partial<Parameters<typeof TaskView>[0]> = {}) => rows(draw({ record: { ...record, session: link }, ...over }), "Session");
+
+    it("links the claiming session in a new tab, with the in-progress machine's model, state, age and steps under it", () => {
+      const html = session({ task: working, lane: "In progress" });
+
+      expect(html).toContain(`<a href="${link}" target="_blank" rel="noopener" class="big"><span class="p"></span>Open the claiming session ↗</a>`);
+      expect(html).toContain('<div class="k">opus · pr opened · 2m ago · 7 steps</div>');
+      expect(html).not.toContain("No session");
+    });
+
+    it("links the session alone when no machine is working the task", () => {
+      const html = session({ task: { ...working, machines: [] }, lane: "In progress" });
+
+      expect(html).toContain("Open the claiming session ↗");
+      expect(html).not.toContain('class="k"');
+    });
+
+    it("says no session holds the task, pointing a startable task to Start session and an In progress one to being worked by hand", () => {
+      const none = (over: Partial<KanbanTask>, lane: string) => rows(draw({ record: { ...record, session: "" }, ...lanes(lane, over) }), "Session");
+
+      expect(none({}, "ready")).toContain("No session holds this task. ▶ Start session, top right, opens one.");
+      expect(none({}, "review")).toContain("No session holds this task</");
+      expect(none({}, "in_progress")).toContain("No session has claimed it: worked by hand");
+      expect(none({}, "ready")).not.toContain("Open the claiming session");
+    });
+
+    it("ignores the link a startable task keeps from a session that no longer holds it, and a record that is not read yet", () => {
+      expect(session({ ...lanes("ready") })).toContain("No session holds this task. ▶ Start session");
+      expect(rows(draw({ record: null, task: working }), "Session")).toContain("worked by hand");
+    });
   });
 
   it("draws each pull request as a link with its checks, or merged, and its open review threads", () => {
@@ -522,8 +558,8 @@ describe("the Start Criteria section", () => {
     expect(card).not.toContain("last ");
   });
 
-  it("sits in the right rail after Status and is absent when the task has no criteria", () => {
-    expect(headings(withCriteria(criteria)).slice(0, 3)).toEqual(["Status", "Start Criteria", "Pull requests"]);
+  it("sits in the right rail after Status and Session and is absent when the task has no criteria", () => {
+    expect(headings(withCriteria(criteria)).slice(0, 3)).toEqual(["Status", "Session", "Start Criteria"]);
     expect(headings(withCriteria([]))).not.toContain("Start Criteria");
     expect(headings(withCriteria(undefined))).not.toContain("Start Criteria");
     expect(html(withCriteria(criteria)).left).not.toContain("Start Criteria</span>");

@@ -6,7 +6,7 @@ import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull } from "../../api";
 import {
-  PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, saveSection, toggleItem,
+  PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, saveSection, sessionOf, toggleItem,
   type CiPull, type DepRow, type Item, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskView";
 
@@ -88,6 +88,19 @@ const LanePill = ({ lane, name, small = false }: { lane: string; name: string; s
 /** One section of the right rail: a small-caps heading with its count, the live state first. */
 function RailSection({ name, count, children }: { name: string; count?: number | string; children: ReactNode }) {
   return <section className="sec rs"><div className="sh"><span className="t">{name}</span>{count ? <span className="n">{count}</span> : null}</div>{children}</section>;
+}
+
+/** The session that holds the task as a link that opens it in a new tab, or why none does. */
+function SessionRows({ session, lane, startLane }: { session: ReturnType<typeof sessionOf>; lane: string; startLane: boolean }) {
+  if (session) {
+    return (
+      <div className="session">
+        <a href={session.url} target="_blank" rel="noopener" className="big"><span className="p" />Open the claiming session ↗</a>
+        {session.line && <div className="k">{session.line}</div>}
+      </div>
+    );
+  }
+  return <div className="none">{lane === "in_progress" ? "No session has claimed it: worked by hand" : startLane ? "No session holds this task. ▶ Start session, top right, opens one." : "No session holds this task"}</div>;
 }
 
 const checkClass = (p: Pull) => (p.merged ? "merged" : p.checks === "failing" ? "fail" : p.checks);
@@ -450,6 +463,7 @@ export function TaskView(p: TaskViewProps) {
               <div className="row"><LanePill lane={p.task.lane} name={p.lane} small />{p.task.entered > 0 && <span className="k">{`for ${ago(p.now - p.task.entered)}`}</span>}</div>
               {p.stack && <table className="props"><tbody><tr className="ro"><td>{p.task.lane === "done" ? "done chain" : "waiting stack"}</td><td className="stacklist">{p.stack}</td></tr></tbody></table>}
             </RailSection>
+            <RailSection name="Session"><SessionRows session={sessionOf(p.task, p.record, p.now, startLane(p.task))} lane={p.task.lane} startLane={startLane(p.task)} /></RailSection>
             {criteria.length > 0 && <RailSection name="Start Criteria" count={`${metCount(criteria)}/${criteria.length} met`}><StartCriteria criteria={criteria} now={p.now} /></RailSection>}
             <RailSection name="Pull requests" count={p.task.prs.length}><PullRows pulls={p.task.prs} /></RailSection>
             <RailSection name="CI history" count={ciHistory(p.task)?.pulls.length}><CiRows task={p.task} /></RailSection>

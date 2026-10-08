@@ -200,6 +200,15 @@ describe("the demo server's Ledger", () => {
 });
 
 describe("the demo server", () => {
+  it("gives a synthetic session link to the record of each In Progress card only", async () => {
+    const s = new DemoServer(fixture());
+    const cards = s.snapshot.flows.find((f) => f.name === "board")!.agents;
+    const sessions = await Promise.all(cards.map(async (a) => [a.state, ((await body(s.fetch(`/api/task/${a.id}`))).record as TaskRecord).session] as const));
+
+    expect(sessions.some(([state]) => state === "in_progress")).toBe(true);
+    for (const [state, session] of sessions) expect(session).toEqual(state === "in_progress" ? expect.stringMatching(/^#demo-session-\d+$/) : "");
+  });
+
   it("serves and edits a synthetic full task record so the public preview exercises edit mode", async () => {
     const s = new DemoServer(fixture());
     const opened = await body(s.fetch("/api/task/DEMO-1")) as { record: TaskRecord };
