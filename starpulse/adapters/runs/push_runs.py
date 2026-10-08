@@ -15,7 +15,7 @@ from typing import Any, Protocol, get_args
 
 from starpulse.adapters.runs import run_events
 from starpulse.contracts.adapters import RunStatus
-from starpulse.projections.board_feed import PUSHED_INSTANCE, InstanceRuns
+from starpulse.projections.board_feed import PUSHED_INSTANCE, InstanceRuns, stream_id
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
 
@@ -95,20 +95,35 @@ class PushRuns:
         self._runs = runs
         self._store = store
         self._dags = {name: _dag(name, steps) for name, steps in (store.learned_graphs() if store else {}).items()}
+        self._replay_end: tuple[int, int] | None = None
         self._publish()
 
     def _publish(self) -> None:
         self._runs.set_dags(list(self._dags.values()), None)
 
     def handle_entry(self, entry_id: str, fields: dict) -> None:
-        """Move one workflow by an entry; a malformed one, or one for a run that is not the one drawn, is dropped."""
+        """Move one workflow by an entry; a malformed one, or one for a run that is not the one drawn, is dropped.
+
+        During the startup replay the workflows are published once, at the replay's last entry: each publish rebuilds
+        the feed's Ledger under its lock, which every page request waits on.
+        """
+        moved = self._move(fields)
+        if self._replay_end is None:
+            if moved:
+                self._publish()
+        elif stream_id(entry_id) >= self._replay_end:
+            self._replay_end = None
+            self._publish()
+
+    def _move(self, fields: dict) -> bool:
+        """Apply an entry to the workflow it names; whether it moved one."""
         entry = _decode(fields)
         if entry is None:
-            return
+            return False
         dag = self._dags.get(entry.key)
         if entry.step is not None:
             if dag is None or dag["runId"] != entry.run_id:
-                return
+                return False
             self._report_step(dag, entry.step, entry.depends, entry.status)
         elif entry.phase == "start":
             steps = [{**step, "status": "not_started"} for step in dag["steps"]] if dag else []
@@ -122,8 +137,8 @@ class PushRuns:
         elif dag is not None and dag["runId"] == entry.run_id:
             self._dags[entry.key] = dag | {"status": entry.status, "finishedAt": _iso(entry.at)}
         else:
-            return  # the end of a run that is no longer the one drawn
-        self._publish()
+            return False  # the end of a run that is no longer the one drawn
+        return True
 
     def _report_step(self, dag: dict, name: str, depends: list[str] | None, status: str) -> None:
         """Set a step's status and, when the entry names them, its dependencies; a step not yet known joins the graph."""
@@ -144,4 +159,6 @@ class PushRuns:
         """Nothing to say: pushed workflows are not part of the page's ready state (`follow` calls this)."""
 
     def expect(self, last_id: str) -> None:
-        """Nothing to wait for: the replay fills the workflows in as it reads (`follow` calls this)."""
+        """Hold publishing until the replay reaches `last_id`, the stream's last entry at start (`follow` calls this)."""
+        if stream_id(last_id) > (0, 0):
+            self._replay_end = stream_id(last_id)
