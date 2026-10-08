@@ -12,6 +12,8 @@ so an IC instance runs without them. `Gate` is the callable the server's handler
 - An instance route (`/api/runs/events`) is open to the gate and checks its own per-instance bearer token. An engine
   route (`/api/insights`, `/api/insights/<id>`) needs the engine token. Neither token is ever a viewer's session, and a session is never either token: each
   credential is accepted only on its own routes.
+- The reader token (`reader_token_env`) is an agent's read-only stand-in for a session: a GET or HEAD of a viewer route
+  carrying it as a bearer token is served, and every other method, and every instance or engine route, refuses it.
 
 Sessions live in this process's memory: a restart signs every viewer out.
 """
@@ -98,12 +100,14 @@ class Gate:
         settings: OidcSettings,
         client_secret: str,
         engine_token: str | None = None,
+        reader_token: str | None = None,
         routes: Mapping[str, str] | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._settings = settings
         self._secret = client_secret
         self._engine_token = engine_token
+        self._reader_token = reader_token
         self._routes = {**ROUTES, **(routes or {})}
         self._clock = clock
         self._secure = settings.redirect_uri.startswith("https://")
@@ -130,7 +134,7 @@ class Gate:
                 return True
             self._refuse(handler, "an engine token is required")
             return False
-        if self._signed_in(handler):
+        if self._signed_in(handler) or self._reads(handler):
             return True
         self._refuse(handler, "sign in required")
         return False
@@ -153,6 +157,16 @@ class Gate:
                 del self._sessions[morsel.value]  # type: ignore[union-attr]
                 return False
             return expires is not None
+
+    def _reads(self, handler: BaseHTTPRequestHandler) -> bool:
+        """A GET or HEAD carrying the reader token: the one way to read without a session, and never a write."""
+        token = _bearer(handler.headers.get("Authorization"))
+        return bool(
+            handler.command in {"GET", "HEAD"}
+            and self._reader_token
+            and token
+            and hmac.compare_digest(token, self._reader_token)
+        )
 
     def _open_session(self) -> str:
         now = self._clock()
@@ -355,17 +369,22 @@ class Gate:
 
 
 def build(settings: OidcSettings, environ: Mapping[str, str], instance_tokens: Mapping[str, str]) -> Gate:
-    """The gate `settings` describe, with the client secret and engine token read from the variables they name.
+    """The gate `settings` describe, with the client secret and the engine and reader tokens read from the variables
+    they name.
 
-    Raises `ValueError` naming a variable that is unset, and the instance whose token equals the engine's, since a
-    token must say whose it is."""
+    Raises `ValueError` naming a variable that is unset, and the holder whose token equals another's (an instance, the
+    engine or the reader), since a token must say whose it is."""
     secret = environ.get(settings.client_secret_env)
     if not secret:
         raise ValueError(f"oidc: {settings.client_secret_env} is not set")
-    engine = None
-    if settings.engine_token_env:
-        if not (engine := environ.get(settings.engine_token_env)):
-            raise ValueError(f"oidc: {settings.engine_token_env} is not set")
-        if twin := next((name for name, token in instance_tokens.items() if hmac.compare_digest(token, engine)), None):
-            raise ValueError(f"oidc: the engine token and instance {twin} hold the same token; each needs its own")
-    return Gate(settings, secret, engine)
+    held = {f"instance {name}": token for name, token in instance_tokens.items()}
+    tokens: dict[str, str | None] = {"engine": None, "reader": None}
+    for role, env in (("engine", settings.engine_token_env), ("reader", settings.reader_token_env)):
+        if not env:
+            continue
+        if not (token := environ.get(env)):
+            raise ValueError(f"oidc: {env} is not set")
+        if twin := next((name for name, other in held.items() if hmac.compare_digest(other, token)), None):
+            raise ValueError(f"oidc: the {role} token and {twin} hold the same token; each needs its own")
+        held[f"the {role}"] = tokens[role] = token
+    return Gate(settings, secret, tokens["engine"], tokens["reader"])

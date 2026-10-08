@@ -34,4 +34,5 @@ doctor --config starpulse.toml` after an edit.
 
 Done when the session appears on the page.
 
-Verbs read the server at `--server`, else `STARPULSE_URL`, else `http://localhost:8766`.
+Verbs read the server at `--server`, else `STARPULSE_URL`, else `http://localhost:8766`. A hub
+answers 401 until signed in: set `STARPULSE_TOKEN` to its reader token (`reader_token_env`) to read it.

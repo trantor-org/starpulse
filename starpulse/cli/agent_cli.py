@@ -36,7 +36,9 @@ board's guard refuses, is `{"ok": false, "reason": "...", "skill": "..."}`, the 
 The exit code is 0 for success (for `doctor`, every check passing), 1 for a refused or invalid request, a refused
 move or a failed `doctor` check, 2 for a usage error, 3 when the server (or what the
 verb needs of it) is unavailable and 4 for something not found. The server is `--server`, else `STARPULSE_URL`, else
-`http://localhost:8766`; a verb reads it per call and keeps nothing. `starpulse help --agent` prints the manifest of
+`http://localhost:8766`; a verb reads it per call and keeps nothing. `STARPULSE_TOKEN`, when set, is sent as a bearer
+token on every request: a hub's reader token (`reader_token_env`), so an agent reads a hub without a browser sign-in.
+`starpulse help --agent` prints the manifest of
 verbs, generated from the parser below, so a verb added here is listed with its arguments, output keys and exit codes.
 `watch` is the one verb that writes more than one document: it holds the server's event stream open and writes one JSON
 line, `{"event": "task|move|pulls|claim|dags", "data": {...}}`, per change that `--machine` and `--task` leave in, until
@@ -209,16 +211,34 @@ class _Parser(argparse.ArgumentParser):
         raise CliError("usage", message)
 
 
-def server_url(flag: str | None, environ: Mapping[str, str]) -> str:
-    """The server to read: the `--server` flag, else `STARPULSE_URL`, else the default, without a trailing slash."""
-    return (flag or environ.get("STARPULSE_URL") or DEFAULT_SERVER).rstrip("/")
+class Server(str):
+    """A server's address, which formats as the address, carrying the bearer token every request to it sends."""
+
+    token: str
+
+    def __new__(cls, address: str, token: str = "") -> Server:
+        server = super().__new__(cls, address)
+        server.token = token
+        return server
+
+
+def server_url(flag: str | None, environ: Mapping[str, str]) -> Server:
+    """The server to read: the `--server` flag, else `STARPULSE_URL`, else the default, without a trailing slash, with
+    `STARPULSE_TOKEN` as its bearer token: a hub's reader token, which reads what a signed-in viewer reads."""
+    address = (flag or environ.get("STARPULSE_URL") or DEFAULT_SERVER).rstrip("/")
+    return Server(address, environ.get("STARPULSE_TOKEN", ""))
+
+
+def _auth(base: str) -> dict[str, str]:
+    """The Authorization header `base` carries, if any."""
+    return {"Authorization": f"Bearer {base.token}"} if isinstance(base, Server) and base.token else {}
 
 
 def _get(base: str, path: str) -> tuple[int, Any]:
     """The status and JSON body the server at `base` answers `path` with; None for a body that is no JSON."""
     try:
         with urllib.request.urlopen(
-            f"{base}{path}",
+            urllib.request.Request(f"{base}{path}", headers=_auth(base)),
             timeout=10.0,  # seconds the server may take to answer one read
         ) as resp:
             return resp.status, json.load(resp)
@@ -364,7 +384,10 @@ def _move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
 def _post(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     """The status and JSON object the server at `base` answers a POST of `body` to `path` with; {} for any other body."""
     request = urllib.request.Request(
-        f"{base}{path}", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST"
+        f"{base}{path}",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", **_auth(base)},
+        method="POST",
     )
     try:
         with urllib.request.urlopen(
@@ -569,7 +592,8 @@ def _run_start(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str
 def _frames(base: str) -> Iterator[tuple[str, Any]]:
     """Each named event the server's stream sends, keep-alive comments skipped; the stream's end is an error."""
     try:
-        with urllib.request.urlopen(f"{base}/api/events", timeout=_STREAM_TIMEOUT_S) as resp:
+        events = urllib.request.Request(f"{base}/api/events", headers=_auth(base))
+        with urllib.request.urlopen(events, timeout=_STREAM_TIMEOUT_S) as resp:
             name = ""
             for raw in resp:
                 line = raw.decode().rstrip("\r\n")

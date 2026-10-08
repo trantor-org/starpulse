@@ -42,3 +42,29 @@ def test_a_hub_with_no_engine_token_variable_has_no_engine_access() -> None:
     plain = OidcSettings(**{**SETTINGS.__dict__, "engine_token_env": None})
 
     assert isinstance(build(plain, {"HUB_SECRET": "s"}, {}), Gate)
+
+
+READING = OidcSettings(**{**SETTINGS.__dict__, "reader_token_env": "HUB_READER"})
+
+
+def test_a_named_but_unset_reader_token_variable_is_refused() -> None:
+    with pytest.raises(ValueError, match="HUB_READER is not set"):
+        build(READING, {"HUB_SECRET": "s", "HUB_ENGINE": "e"}, {})
+
+
+@pytest.mark.parametrize(
+    ("environ", "instances", "twin"),
+    [
+        ({"HUB_ENGINE": "e", "HUB_READER": "same"}, {"cron": "same"}, "reader token and instance cron"),
+        ({"HUB_ENGINE": "same", "HUB_READER": "same"}, {}, "reader token and the engine"),
+    ],
+)
+def test_the_reader_token_may_equal_no_other_token(
+    environ: dict[str, str], instances: dict[str, str], twin: str
+) -> None:
+    with pytest.raises(ValueError, match=f"{twin} hold the same token"):
+        build(READING, {"HUB_SECRET": "s", **environ}, instances)
+
+
+def test_a_gate_with_a_reader_token_is_built() -> None:
+    assert isinstance(build(READING, {"HUB_SECRET": "s", "HUB_ENGINE": "e", "HUB_READER": "r"}, {"cron": "c"}), Gate)

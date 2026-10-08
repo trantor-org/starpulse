@@ -147,7 +147,9 @@ starpulse demo --out demo.html                          # the self-contained dem
 ```
 
 These verbs read the running server (`starpulse serve`) over HTTP: `--server URL`, else `STARPULSE_URL`, else
-`http://localhost:8766`. Each writes one JSON document to stdout and nothing to stderr, except `watch`, which writes
+`http://localhost:8766`. `STARPULSE_TOKEN`, when set, is sent as a bearer token on every request, so a verb reads a
+hub with its reader token (`reader_token_env`) instead of a browser sign-in.
+Each writes one JSON document to stdout and nothing to stderr, except `watch`, which writes
 one JSON line per change; an error is `{"error": "...", "code": "..."}`. The exit code is 0 for success, 1 for a refused or invalid request, a refused move or a failed `doctor` check, 2 for a usage
 error, 3 when the server is unreachable (the error names the address tried) or has no board writer and 4 for something not found. A verb
 reads the server on every call and keeps nothing, and `help --agent` is generated from the command parser, so it
@@ -605,12 +607,17 @@ allowed_groups = ["flow-viewers"]                      # an account holding none
 groups_claim = "groups"                                # optional: the ID token claim that lists an account's groups
 scopes = ["openid", "profile", "email"]                # optional: add the scope your issuer needs for the groups claim
 engine_token_env = "STARPULSE_ENGINE_TOKEN"            # optional: the token of an insights engine, never a viewer's
+reader_token_env = "STARPULSE_TOKEN"                   # optional: an agent's read-only token; it reads, never writes
 ```
 
 Before sign-in every path but `/auth/login` and `/auth/callback` answers 401, including the page, `/api/events` and every
 write. Sign-in sets an `HttpOnly` session cookie that lasts eight hours; sessions live in the hub's memory, so a restart
 signs everyone out. The credentials are separate: a per-instance token passes only on `POST /api/runs/events` and `POST /api/forward`, the
-engine token only on the engine's routes, and neither signs a viewer in. A new route of the server is a viewer route
+engine token only on the engine's routes, and neither signs a viewer in. The reader token is for an agent that reads
+the hub without a browser: a `GET` or `HEAD` of a viewer route with `Authorization: Bearer <reader token>` is served as
+a signed-in viewer's would be, and the same token on any write, instance or engine route answers 401. Set the same
+value as `STARPULSE_TOKEN` where the agent CLI runs, and its verbs read the hub. The hub refuses to start when any two
+of the instance, engine and reader tokens are equal. A new route of the server is a viewer route
 until the gate says otherwise. The test suite signs in against a
 [mock OIDC server](https://github.com/navikt/mock-oauth2-server) container, so it needs Docker or Podman for those cases.
 
