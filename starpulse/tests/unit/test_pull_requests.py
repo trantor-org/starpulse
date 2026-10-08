@@ -134,16 +134,30 @@ def _pulls(feed: BoardFeed) -> dict:
     return feed.snapshot()["pulls"]
 
 
+def _drawn(pulls: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """`pulls` as the page is sent them: without the `files` a record keeps for the feed's own reads."""
+    return {
+        task: [{k: v for k, v in pull.items() if k != "files"} for pull in found] for task, found in pulls.items()
+    }
+
+
+def _records(feed: BoardFeed) -> dict[str, dict]:
+    """The records by URL the reader last handed the feed, `files` and `applied_by` included."""
+    return feed.pull_answers()["records"]
+
+
 def test_the_snapshot_carries_each_tasks_pr_number_check_rollup_merged_state_and_open_thread_count() -> None:
     github = _Github(pr1750=_record(1750, "failing", threads=2), pr1751=_record(1751, "pass", merged=True))
     feed = _feed(proj_7=[FIRST], proj_8=[SECOND])
 
     PullRequests(feed, github).refresh()
 
-    assert _pulls(feed) == {
-        "PROJ-7": [_record(1750, "failing", threads=2)],
-        "PROJ-8": [_record(1751, "pass", merged=True)],
-    }
+    assert _pulls(feed) == _drawn(
+        {
+            "PROJ-7": [_record(1750, "failing", threads=2)],
+            "PROJ-8": [_record(1751, "pass", merged=True)],
+        }
+    )
 
 
 def test_a_task_with_several_prs_carries_them_in_the_order_it_cites_them() -> None:
@@ -205,7 +219,7 @@ def test_a_failed_refresh_keeps_the_last_value_marked_stale() -> None:
     github.down = True
     source.refresh()
 
-    assert _pulls(feed) == {"PROJ-7": [_record(1750, "pass", threads=1, stale=True)]}
+    assert _pulls(feed) == _drawn({"PROJ-7": [_record(1750, "pass", threads=1, stale=True)]})
 
 
 def test_the_next_good_refresh_clears_the_stale_marker_and_takes_the_new_value() -> None:
@@ -220,7 +234,7 @@ def test_the_next_good_refresh_clears_the_stale_marker_and_takes_the_new_value()
     github.records[FIRST] = _record(1750, "pass")
     source.refresh()
 
-    assert _pulls(feed) == {"PROJ-7": [_record(1750, "pass")]}
+    assert _pulls(feed) == _drawn({"PROJ-7": [_record(1750, "pass")]})
 
 
 def test_a_refresh_that_fails_before_any_success_leaves_the_map_empty() -> None:
@@ -257,8 +271,8 @@ def test_a_change_is_published_to_subscribers_and_an_unchanged_refresh_is_not() 
     source.refresh()
 
     assert [changes.get_nowait() for _ in range(changes.qsize())] == [
-        ("pulls", {"pulls": {"PROJ-7": [_record(1750, "pending")]}}),
-        ("pulls", {"pulls": {"PROJ-7": [_record(1750, "pass")]}}),
+        ("pulls", {"pulls": _drawn({"PROJ-7": [_record(1750, "pending")]})}),
+        ("pulls", {"pulls": _drawn({"PROJ-7": [_record(1750, "pass")]})}),
     ]
 
 
@@ -381,10 +395,12 @@ def test_a_partial_outage_keeps_the_unreadable_repositorys_last_value_stale_besi
     github.records[FIRST] = _record(1750, "failing")
     source.refresh()
 
-    assert _pulls(feed) == {
-        "PROJ-7": [_record(1750, "failing")],
-        "PROJ-9": [{**_record(9, "pass"), "url": OTHER, "stale": True}],
-    }
+    assert _pulls(feed) == _drawn(
+        {
+            "PROJ-7": [_record(1750, "failing")],
+            "PROJ-9": [{**_record(9, "pass"), "url": OTHER, "stale": True}],
+        }
+    )
 
 
 def test_every_repository_failing_is_a_failed_read() -> None:
@@ -498,8 +514,8 @@ def test_a_merged_pr_of_a_pinned_repository_carries_the_parent_merge_that_applie
 
     PullRequests(feed, github, repos=repos, pins=_Pins()).refresh()
 
-    assert _pulls(feed)["PROJ-8"][0]["applied_by"] == SHA
-    assert "applied_by" not in _pulls(feed)["PROJ-7"][0]
+    assert _records(feed)[child]["applied_by"] == SHA
+    assert "applied_by" not in _records(feed)[FIRST]
 
 
 def _pinned_github() -> tuple[_Github, str]:
@@ -542,7 +558,7 @@ def test_pin_answers_saved_with_the_board_spare_a_restarted_reader_every_pointer
     restarted.refresh()
 
     assert asked == []
-    assert _pulls(after)["PROJ-8"][0]["applied_by"] == SHA
+    assert _records(after)[child]["applied_by"] == SHA
 
 
 def test_the_first_refresh_waits_for_the_board_replay_and_then_runs_without_waiting_the_interval() -> None:
@@ -691,7 +707,7 @@ def _refresh_pinned(graph: _Graph, monkeypatch: pytest.MonkeyPatch) -> tuple[dic
     monkeypatch.setattr(subprocess, "run", _gh_pins(rest))
     feed = _feed(proj_7=[FIRST], proj_8=[CHILD])
     PullRequests(feed, partial(fetch, read=graph, repos=PINNED), repos=PINNED, pins=GitHub()).refresh()
-    return _pulls(feed)["PROJ-8"][0], rest
+    return _records(feed)[CHILD], rest
 
 
 def test_one_refresh_makes_one_graphql_read_per_repository_and_no_rest_read_when_the_pointer_history_holds_the_merge(
@@ -759,7 +775,7 @@ def test_a_second_refresh_reads_the_same_answers_from_memory(monkeypatch: pytest
     source.refresh()
 
     assert rest == []
-    assert _pulls(feed)["PROJ-8"][0]["applied_by"] == SHA
+    assert _records(feed)[CHILD]["applied_by"] == SHA
 
 
 class _GraphWithUnpinningRepo(_Graph):
@@ -797,4 +813,4 @@ def test_a_merge_in_a_repository_that_does_not_pin_the_child_costs_no_gh_call_on
     source.refresh()
 
     assert calls == []
-    assert _pulls(feed)["PROJ-8"][0]["applied_by"] == SHA
+    assert _records(feed)[CHILD]["applied_by"] == SHA
