@@ -226,6 +226,7 @@ from starpulse.adapters.runs.pull_store import PullSync
 from starpulse.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.api import forward
 from starpulse.api.forward import Forwarder
+from starpulse.api.snapshot_cache import SnapshotCache
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api import encode, event
 from starpulse.domain.level import Level
@@ -1247,6 +1248,7 @@ def request_handler(
     pulls: PullStore | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
+    snapshots = SnapshotCache(feed)
     flows = feed.machines.keys()
 
     class Handler(_ApiHandler):
@@ -1276,7 +1278,7 @@ def request_handler(
             if url.path == "/api/events":
                 self._stream_events()
             elif url.path == "/api/snapshot":
-                self._send(encode("snapshot", feed.snapshot()))
+                self._send(snapshots.get().body)
             elif url.path == "/api/merges":
                 self._send(*merges_response(feed, parse_qs(url.query)))
             elif url.path == "/api/doctor":
@@ -1327,13 +1329,21 @@ def request_handler(
 
         def _stream_events(self) -> None:
             """Hold the connection open: the Board's snapshot, then each change as it happens."""
-            body, changes = feed.subscribe()
+            changes = None
             try:
+                # The held snapshot is sent as it is, however many changes it lacks, so a page connecting while the next
+                # one is built is not held up by it: it applies those changes after it.
+                served = snapshots.latest() or snapshots.get()
+                while (attached := feed.watch_from(served.sent)) is None:
+                    served = snapshots.get()
+                missed, changes = attached
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")  # pragma: no mutate: names are case-insensitive
                 self.send_header("Cache-Control", "no-store")  # pragma: no mutate: names are case-insensitive
                 self.end_headers()
-                self._event("snapshot", body)
+                self._frame("snapshot", served.body.decode())
+                for change in missed:
+                    self._event(*change)
                 while True:
                     try:
                         self._event(*changes.get(timeout=_PING_S))
@@ -1345,10 +1355,14 @@ def request_handler(
             except ValidationError:
                 logger.exception("StarPulse: /api/events sent a body its model refuses; the stream ends")
             finally:
-                feed.unsubscribe(changes)
+                if changes is not None:
+                    feed.unsubscribe(changes)
 
         def _event(self, name: str, data: dict) -> None:
-            self.wfile.write(f"event: {name}\ndata: {event(name, data)}\n\n".encode())
+            self._frame(name, event(name, data))
+
+        def _frame(self, name: str, data: str) -> None:
+            self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode())
             self.wfile.flush()
 
         def log_message(self, format: str, *args: Any) -> None:
