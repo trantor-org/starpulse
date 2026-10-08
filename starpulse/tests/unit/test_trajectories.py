@@ -5,6 +5,7 @@ calibration over the loop-conditioned chain."""
 
 from collections import defaultdict, deque
 from collections.abc import Iterable
+from random import Random
 
 import pytest
 
@@ -465,3 +466,68 @@ def test_too_few_ended_runs_hold_none_out_and_score_nothing() -> None:
 
     assert (calibration["fit"], calibration["held_out"], calibration["predictions"]) == (4, 0, 0)
     assert calibration["calibrated"] is None
+
+
+HUB_STATES = ("waiting", "ready", "in_progress", "needs_attention", "review", "done", "archived")
+HUB = {"states": [{"id": s, "initial": s == "waiting", "final": s in {"done", "archived"}} for s in HUB_STATES]}
+HUB_LEVEL = Level("board", "done", (Terminal("done", "goal"), Terminal("archived", "abandoned")))
+
+
+def _hub(runs: list[Run]) -> dict:
+    return trajectory_analytics(HUB_LEVEL, HUB, runs, now=NOW, window_s=WINDOW)
+
+
+def test_regression_a_loop_target_the_search_met_first_is_not_a_trip_and_never_raises() -> None:
+    # TASK-1 on the live hub: the depth-first search reaches in_progress by ready, so done -> in_progress is a back-edge
+    # of the whole path, yet that step is the first visit of in_progress and has no earlier one to loop back to
+    task_1 = _run(
+        "TASK-1",
+        (0, "done"),
+        (1, "ready"),
+        (2, "done"),
+        (3, "in_progress"),
+        (4, "ready"),
+        (5, "in_progress"),
+        (6, "archived"),
+    )
+    # TASK-1258: waiting -> needs_attention is likewise a back-edge whose step is needs_attention's first visit
+    task_1258 = _run(
+        "TASK-1258",
+        *enumerate(
+            ("waiting", "ready", "in_progress", "waiting", "needs_attention", "in_progress", "needs_attention")
+            + ("in_progress", "review", "done")
+        ),
+    )
+
+    result = _hub([task_1, task_1258])
+    by_task = {r["task"]: r for r in result["runs"]}
+
+    assert by_task["TASK-1"]["loops"] == [
+        {"from": "in_progress", "to": "ready", "trips": 1, "days": _days(3)},
+        {"from": "ready", "to": "done", "trips": 1, "days": _days(2)},
+    ]
+    assert (by_task["TASK-1"]["back_edges"], by_task["TASK-1"]["sccs"]) == (2, 1)
+    assert by_task["TASK-1258"]["loops"] == [
+        {"from": "needs_attention", "to": "in_progress", "trips": 2, "days": pytest.approx(_days(5))},
+        {"from": "in_progress", "to": "waiting", "trips": 1, "days": pytest.approx(_days(3))},
+    ]
+    assert (by_task["TASK-1258"]["back_edges"], by_task["TASK-1258"]["sccs"]) == (2, 1)
+
+
+def test_no_walk_over_the_board_machine_makes_the_analytics_raise() -> None:
+    rng = Random(3308)
+    runs = []
+    for i in range(400):
+        length = rng.randint(1, 14)
+        states = [rng.choice(HUB_STATES) for _ in range(length)]
+        if i % 4:  # three of four end in a terminal, the rest are still going
+            states.append(rng.choice(("done", "archived")))
+        runs.append(_run(f"w{i}", *((float(at), state) for at, state in enumerate(states))))
+
+    result = _hub(runs)
+
+    assert result["ended"] > 0 and result["forecast"]
+    for trajectory in result["runs"]:
+        assert trajectory["back_edges"] == len(trajectory["loops"])
+        assert all(loop["trips"] >= 1 and loop["days"] >= 0 for loop in trajectory["loops"])
+    assert all(f["loops"] >= 0 for f in result["forecast"])
