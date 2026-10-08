@@ -160,3 +160,23 @@ def test_a_surface_no_run_sampled_keeps_its_note():
     runs = [[pl.Row("docs/<id>", "request", 50.0, note="no record to read")] for _ in range(3)]
     (row,) = pl.median_run(runs)
     assert row.samples == [] and row.note == "no record to read"
+
+
+def test_a_ceiling_raises_one_rows_budget_and_says_so():
+    rows = [pl.Row("first paint", "interaction", 50.0, [79.0]), pl.Row("switch", "interaction", 50.0, [90.0])]
+    pl.apply_ceilings(rows, ["first paint=120"])
+    assert [r.budget for r in rows] == [120.0, 50.0]
+    assert [r.over for r in rows] == [False, True]
+    assert "ceiling 120" in rows[0].note
+    assert rows[1].note == ""
+
+
+def test_a_ceiling_still_fails_a_row_that_passes_it():
+    rows = [pl.Row("first paint", "interaction", 50.0, [130.0])]
+    pl.apply_ceilings(rows, ["first paint=120"])
+    assert rows[0].over
+
+
+def test_a_ceiling_naming_no_row_is_refused():
+    with pytest.raises(ValueError, match="no row named first paintt"):
+        pl.apply_ceilings([pl.Row("first paint", "interaction", 50.0, [1.0])], ["first paintt=120"])

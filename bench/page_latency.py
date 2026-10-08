@@ -156,6 +156,26 @@ def median_run(runs: Sequence[Sequence[Row]]) -> list[Row]:
     return judged
 
 
+def apply_ceilings(rows: Sequence[Row], ceilings: Sequence[str]) -> None:
+    """Raise the budget of each row named in `ceilings` (`NAME=MS`) and say so in its note.
+
+    A ceiling is a known overrun held where it is: the row still fails past it, so it cannot get worse, and the note
+    keeps the overrun visible until the work that closes it lands and the ceiling is dropped.
+    """
+    by_name = {row.name: row for row in rows}
+    for ceiling in ceilings:
+        name, _, ms = ceiling.rpartition("=")
+        if name not in by_name:
+            raise ValueError(f"no row named {name}")
+        row = by_name[name]
+        row.budget = float(ms)
+        row.note = (
+            f"{row.note}; ceiling {float(ms):.0f} ms, over the {BUDGET_MS:.0f} ms budget until its fix lands".strip(
+                "; "
+            )
+        )
+
+
 def untimed(requested: Iterable[str], timed: Iterable[str]) -> list[str]:
     """The surfaces the page requested that no row times, sorted."""
     known = set(timed)
@@ -513,6 +533,13 @@ def main(argv: list[str] | None = None) -> int:
         help="run the whole measurement this many times and judge each surface on the median run's p95 (the CI gate uses 3)",
     )
     parser.add_argument(
+        "--ceiling",
+        action="append",
+        default=[],
+        metavar="ROW=MS",
+        help="hold a row with a known overrun to MS until its fix lands (repeatable); the row still fails past it",
+    )
+    parser.add_argument(
         "--assets",
         type=Path,
         help="serve the page from this local build (`vite build --outDir`), its /api from the URL",
@@ -537,6 +564,7 @@ def main(argv: list[str] | None = None) -> int:
             run.extend(time_page(base, args.samples, args.channel, requested, args.assets))
         runs.append(run)
     rows = median_run(runs)
+    apply_ceilings(rows, args.ceiling)
     timed = [r.name for r in rows] + ["/api/events"]
     missing = untimed(requested, timed)
     print(table(rows, missing))

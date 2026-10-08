@@ -51,6 +51,15 @@ def test_the_gate_fails_the_job_on_a_row_over_budget_and_never_continues_on_erro
     assert re.search(r'exit "?\$(status|\?)"?', bench["run"]), bench["run"]
 
 
+def test_only_the_first_paint_row_has_a_ceiling_and_the_job_names_the_work_that_lifts_it():
+    job = _gate()
+    runs = _runs(job)
+    ceilings = re.findall(r'--ceiling "([^"]+)"', runs)
+
+    assert [c.rpartition("=")[0] for c in ceilings] == ["first paint of the board"], ceilings
+    assert all(f"TASK-{n}" in WORKFLOW.read_text() for n in (3334, 3335, 3336, 3337))
+
+
 def test_the_gate_builds_the_page_the_server_draws_before_it_starts_the_server():
     order = [step.get("run", "") for step in _gate()["steps"]]
     built = next(i for i, run in enumerate(order) if "run build" in run)

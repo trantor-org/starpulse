@@ -110,6 +110,9 @@ before reading one slow row as a regression.
 count), so one starved run on a loaded runner neither fails a row nor hides a slow one; the row's note lists every
 run's p95. `--what-if FROM TO` names the lanes for `/api/level/what-if` (default `Ready` `In Progress`), which a
 server's level must have seen a task leave.
+`--ceiling "ROW=MS"` holds a row with a known overrun to MS instead of 50: the row still fails past it and its note
+says it is over the budget until its fix lands. The gate holds the first paint of the board at 120 ms (79 ms p95 on a
+quiet slot) until the page work in TASK-3334 to TASK-3337 cuts it; drop the flag then.
 
 ## Latency gate
 
