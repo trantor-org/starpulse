@@ -40,6 +40,7 @@ READERS = {
     "design/*": ("ci/ui_preview.py",),
     "ci/preview.toml": ("ci/ui_preview.py",),
     "starpulse/store/migrations/*": ("starpulse/api/hub.py",),
+    "bench/page_latency.py": ("ci/test_page_latency.py",),
 }
 
 #: Workflow files are read by the `ci/` tests that assert on them.
@@ -54,7 +55,10 @@ INERT = (
     ".github/actionlint.yaml",
     ".github/ISSUE_TEMPLATE/*",
     ".github/pull_request_template.md",
-    "bench/*",
+    "bench/README.md",
+    "bench/flow_reads.py",
+    "bench/hub_ingest.py",
+    "bench/ic_event_log.py",
 )
 
 #: The board seam and `config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a
