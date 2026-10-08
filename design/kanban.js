@@ -1,5 +1,5 @@
 // Design mockup of the Kanban's Waiting stacks, drawn when the address carries ?view=kanban.
-// The board, columns, buckets and cards copy the page's Kanban (starpulse/web/src/Kanban.tsx and style.css) over board.js, a saved
+// The board, columns, buckets and cards copy the page's Kanban (starpulse/web/src/features/kanban/Kanban.tsx and style.css) over board.js, a saved
 // live Board. New here: a Waiting card whose dependency is Waiting in the same milestone stacks under it, the blocker on top with a
 // count badge; hovering a stack unstacks it downward, shifting the cards below; a dependency on a Waiting task in another milestone
 // shows as a link badge that opens the blocker's modal. Moves are simulated in the page against each task's saved move verdicts.

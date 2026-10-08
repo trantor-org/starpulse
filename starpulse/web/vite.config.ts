@@ -9,6 +9,6 @@ export default defineConfig({
   build: { outDir: "../static", emptyOutDir: true },
   // `pnpm --filter flow-view dev` reads a running starpulse.api.server's snapshot.
   server: { proxy: { "/api": "http://127.0.0.1:8766" } },
-  // The stylesheet is read for real so a test can hold its scrolling rules (`src/scroll.test.ts`).
+  // The stylesheet is read for real so a test can hold its scrolling rules (`src/shared/scroll.test.ts`).
   test: { environment: "node", css: { include: /style\.css/ } },
 });
