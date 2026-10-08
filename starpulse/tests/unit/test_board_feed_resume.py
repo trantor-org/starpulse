@@ -288,3 +288,31 @@ def test_a_board_saved_before_pull_requests_were_kept_still_resumes_with_none() 
 
     assert cursor == "7-0"
     assert feed.pull_answers() == {}
+
+
+class _Lanes:
+    def __init__(self) -> None:
+        self.recorded: list[tuple[str, str]] = []
+
+    def record_lane(self, event_id: str, task: str, status: str, at: float) -> bool:
+        self.recorded.append((task, status))
+        return True
+
+
+def test_a_restored_task_that_drops_a_dependency_is_placed_and_its_lane_change_recorded() -> None:
+    store = _Store()
+    first = BoardFeed()
+    first.put(BoardTask(id="TASK-1", team="demo", title="waits", lane="in_progress", dependencies=("TASK-0",)))
+    first.put(BoardTask(id="TASK-2", team="demo", title="waits too", lane="in_progress", dependencies=("TASK-0",)))
+    first.seen("7-0")
+    first.resume(store, STREAM, lambda cursor: False)
+    first.save()
+    feed, _ = _resumed(store)
+    lanes = _Lanes()
+    feed.record_lanes(lanes)
+
+    feed.put(BoardTask(id="TASK-1", team="demo", title="waits", lane="review", dependencies=()))
+    feed.put(BoardTask(id="TASK-2", team="demo", title="waits too", lane="done"))
+
+    assert lanes.recorded == [("TASK-1", "review"), ("TASK-2", "done")]
+    assert {a["id"]: a["state"] for a in feed.snapshot()["flows"][0]["agents"]} == {"TASK-1": "review", "TASK-2": "done"}

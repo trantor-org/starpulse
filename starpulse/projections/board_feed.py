@@ -305,6 +305,9 @@ class BoardFeed:
         with self._lock:
             self._open, self._settled, self._assignees, self._seen, self._saved = open_, settled, assignees, seen, seen
             self._pulls, self._pull_answers = pulls, answers
+            self._dependents = {}  # the saved Board keeps no reverse links; `_link` needs them for the next change
+            for task_id, agent in open_.items():
+                self._link(task_id, (), agent["dependencies"])
         logger.warning("StarPulse: resuming after %s", cursor)
         return cursor
 
