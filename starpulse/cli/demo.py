@@ -1,10 +1,10 @@
 """Build StarPulse as one self-contained HTML file that runs with no server.
 
-    .venv/bin/python -m starpulse.demo --server http://127.0.0.1:8766 --out .tmp/flow-demo.html
-    .venv/bin/python -m starpulse.demo --mockup <the design mockup directory> --out .tmp/mockup-demo.html
-    .venv/bin/python -m starpulse.demo --elements design/elements --out .tmp/element-sheet.html
+    .venv/bin/python -m starpulse.cli.demo --server http://127.0.0.1:8766 --out .tmp/flow-demo.html
+    .venv/bin/python -m starpulse.cli.demo --mockup <the design mockup directory> --out .tmp/mockup-demo.html
+    .venv/bin/python -m starpulse.cli.demo --elements design/elements --out .tmp/element-sheet.html
 
-It reads a running starpulse.server's snapshot for its structure (the
+It reads a running starpulse.api.server's snapshot for its structure (the
 machines, the DAGs and their steps) and replaces every task with a synthetic
 one in the same state, so no task text, PR or address leaves. The
 built page in `static/` is inlined around the result, which the page reads as
@@ -22,11 +22,11 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-from starpulse.adapters.boards.upstream_backlog import board_machine
-from starpulse.analytics import move_shares
-from starpulse.board_feed import SUN_DAYS
+from starpulse.domain.transitions import board_machine
+from starpulse.projections.analytics import move_shares
+from starpulse.projections.board_feed import SUN_DAYS
 
-STATIC = Path(__file__).parent / "static"
+STATIC = Path(__file__).parents[1] / "static"
 #: Board labels that say what kind of work a task is and nothing about it.
 LABELS = re.compile(r"^(kind-[a-z]+|size-\d+|agent-resolvable|needs-human|adr-needed|bug|feature)$")
 #: The mockup data keys `scrub_mockup` knows how to clean; any other key is refused rather than passed through.

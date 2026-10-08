@@ -2,7 +2,7 @@
   "name": "flow-view",
   "private": true,
   "type": "module",
-  "description": "StarPulse: React HUD over a canvas renderer, built into ../static for starpulse.server",
+  "description": "StarPulse: React HUD over a canvas renderer, built into ../static for starpulse.api.server",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

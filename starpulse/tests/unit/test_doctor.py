@@ -7,10 +7,10 @@ from typing import Any
 
 import pytest
 
-from starpulse import agent_cli as cli
-from starpulse import doctor
-from starpulse.adapter_kit import serve, task, url
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import serve, task, url
+from starpulse.cli import agent_cli as cli
+from starpulse.projections import doctor
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import CommitKeys, Config, Repo, RunsInstance
 from starpulse.tests.dagu_stub import dagu
 from starpulse.tests.hosts import FakeHost

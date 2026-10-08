@@ -6,8 +6,8 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
-from starpulse.adapter_kit import BoardAdapterKit, MachineEventsAdapterKit, RunsAdapterKit, _AdapterKit
 from starpulse.adapters.boards.seam import Written
+from starpulse.api.adapter_kit import BoardAdapterKit, MachineEventsAdapterKit, RunsAdapterKit, _AdapterKit
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 

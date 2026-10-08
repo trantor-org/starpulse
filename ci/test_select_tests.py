@@ -21,15 +21,16 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/adapters/boards/seam.py": "import importlib\nfrom starpulse.adapters import module_name\n",
         "starpulse/adapters/runs/dagu.py": "def start(): ...\ndef follow(): ...\n",
         "starpulse/adapters/__init__.py": 'BUILT_IN = {"dagu": "starpulse.adapters.runs.dagu", "jira": "x"}\n',
-        "starpulse/server.py": "",
-        "starpulse/hub.py": "from starpulse import leaf\n",
+        "starpulse/api/__init__.py": "",
+        "starpulse/api/server.py": "",
+        "starpulse/api/hub.py": "from starpulse import leaf\n",
         "starpulse/store/migrations/versions/0001_initial.py": "",
         "starpulse/adapters/boards/jira.py": "def board(settings, base):\n    return None\n",
         "starpulse/tests/__init__.py": "",
         "starpulse/tests/conftest.py": "",
         "starpulse/tests/helpers.py": "from starpulse import lone\n",
         "starpulse/tests/unit/test_leaf.py": "from starpulse.leaf import X\n",
-        "starpulse/tests/unit/test_hub.py": "from starpulse import hub\n",
+        "starpulse/tests/unit/test_hub.py": "from starpulse.api import hub\n",
         "starpulse/tests/unit/test_lone.py": "from starpulse.tests.helpers import lone\n",
         "starpulse/tests/unit/test_board.py": 'from starpulse.adapters.boards import seam\n\nKIND = "jira"\n',
         "starpulse/tests/unit/test_public_surface.py": "",
@@ -125,7 +126,7 @@ def test_a_file_no_test_reads_selects_nothing(repo, path):
 
 
 def test_a_non_python_file_whose_mapped_reader_is_gone_runs_the_full_suite(repo):
-    (repo / "starpulse/server.py").unlink()
+    (repo / "starpulse/api/server.py").unlink()
     assert select(repo, ["README.md"]) == FULL
 
 

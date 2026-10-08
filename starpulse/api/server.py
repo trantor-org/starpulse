@@ -1,6 +1,6 @@
 """Serve StarPulse: every lifecycle machine, the tasks in each, and the workflows of each runs adapter instance.
 
-    .venv/bin/python -m starpulse.server [--host 127.0.0.1] [--port 8766] [--hours 6] [--config starpulse.toml]
+    .venv/bin/python -m starpulse.api.server [--host 127.0.0.1] [--port 8766] [--hours 6] [--config starpulse.toml]
 
 Every write (POST /api/..., PUT /api/forwarding, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
 no `Origin` or this server's own (else 403), so a web page on another site cannot write through the operator's browser.
@@ -169,7 +169,6 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse import analytics, doctor, forward, lane_events
 from starpulse.adapters.boards.seam import (
     AssigneeWriter,
     Board,
@@ -188,24 +187,27 @@ from starpulse.adapters.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIn
 from starpulse.adapters.runs.ingest import tokens as ingest_tokens
 from starpulse.adapters.runs.pull_requests import PullRequests
 from starpulse.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
-from starpulse.board_feed import BoardFeed, follow
-from starpulse.ci import attach
-from starpulse.ci_trail import CiTrail
+from starpulse.api import forward
+from starpulse.api.forward import Forwarder
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.contracts.api import encode, event
 from starpulse.domain.level import Level
 from starpulse.domain.level_metrics import RunWindow, WindowPastHistory, level_metrics
 from starpulse.domain.snapshot import qualifier
 from starpulse.domain.trajectories import trajectory_analytics
-from starpulse.forward import Forwarder
-from starpulse.insights import Insights, InsightStore, restore
-from starpulse.ledger import PAGE
-from starpulse.machine_tasks import MachineTasks
-from starpulse.machine_tasks import tables as machine_tables
+from starpulse.projections import analytics, doctor
+from starpulse.projections.board_feed import BoardFeed, follow
+from starpulse.projections.ci import attach
+from starpulse.projections.ci_trail import CiTrail
+from starpulse.projections.insights import Insights, InsightStore, restore
+from starpulse.projections.ledger import PAGE
+from starpulse.projections.machine_tasks import MachineTasks
+from starpulse.projections.machine_tasks import tables as machine_tables
 from starpulse.settings.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse.settings.harnesses import Harnesses
 from starpulse.settings.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse.store import events as machine_events
+from starpulse.store import lane_events
 from starpulse.store.event_log import EventLog, prune_forever
 from starpulse.store.history import (
     HealthHistory,
@@ -220,7 +222,7 @@ from starpulse.store.history import (
 )
 
 logger = logging.getLogger(__name__)
-_HERE = Path(__file__).parent
+_HERE = Path(__file__).parents[1]
 #: The Vite build of web/; it holds nothing but the page, so all of it is served.
 _STATIC = _HERE / "static"
 #: The page's one address and the retired per-graph ones, which the page redirects to their level.
@@ -1207,7 +1209,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     gate = None
     if args.hub:
         try:
-            from starpulse import hub, oidc  # noqa: PLC0415 - hub-only code; an IC instance never imports it
+            from starpulse.api import (
+                hub,  # noqa: PLC0415 - hub-only code; an IC instance never imports it
+                oidc,  # noqa: PLC0415 - hub-only code; an IC instance never imports it
+            )
         except ImportError as exc:
             parser.exit(1, f"hub mode needs the hub extras: pip install 'starpulse[hub]' ({exc})\n")
         if config.oidc is None:

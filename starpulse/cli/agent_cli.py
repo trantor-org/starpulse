@@ -47,9 +47,11 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
-from starpulse import demo, doctor, mermaid_import, skill_install
+from starpulse.cli import demo, skill_install
 from starpulse.contracts.adapters import Move
+from starpulse.domain import mermaid_import
 from starpulse.domain.machine_definition import MachineDefinitionError, Registry, load_machine
+from starpulse.projections import doctor
 from starpulse.settings.config import ConfigError, load
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
@@ -542,7 +544,7 @@ def _gates(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Every install check of `starpulse.doctor`; `ok` is false, and the exit code 1, when any fails."""
+    """Every install check of `starpulse.projections.doctor`; `ok` is false, and the exit code 1, when any fails."""
     base = server_url(args.server, environ)
     path = args.config or (Path("starpulse.toml") if Path("starpulse.toml").is_file() else None)
     try:

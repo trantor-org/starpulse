@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.adapter_kit import RunsAdapterKit
 from starpulse.adapters.runs import run_events
 from starpulse.adapters.runs.dagu import (
     _STATUS,
@@ -29,8 +28,9 @@ from starpulse.adapters.runs.dagu import (
     status_of,
 )
 from starpulse.adapters.runs.dagu import follow as follow_instance
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import RunsAdapterKit
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.store.event_log import EventLog
 from starpulse.tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
 

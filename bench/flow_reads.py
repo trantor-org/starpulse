@@ -24,10 +24,11 @@ from pathlib import Path
 from typing import NamedTuple
 
 from sqlalchemy import event
+
+from starpulse.api.server import health_response, level_response, trajectories_response
 from starpulse.domain.level import Level, Orbit, Terminal
-from starpulse.server import health_response, level_response, trajectories_response
+from starpulse.domain.transitions import board_machine
 from starpulse.store.history import HistoryStore
-from starpulse.upstream_backlog import board_machine
 
 LANES = ("To Do", "Ready", "In Progress", "Review", "Done")
 MACHINES = {"board": board_machine(LANES)}

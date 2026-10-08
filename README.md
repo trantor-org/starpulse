@@ -565,7 +565,7 @@ hub_retention_days = 14   # the default; a whole number of days, 1 or more
 
 - **Partitions.** The hub creates today's and tomorrow's partition before it serves and again every hour, so an
   insert at midnight finds its partition already there. An event whose `at` falls on a day with no partition is refused
-  by the database, so a forwarder must create that day's partition (`starpulse.hub.ensure_partitions`) or refuse
+  by the database, so a forwarder must create that day's partition (`starpulse.api.hub.ensure_partitions`) or refuse
   events older than the retention bound.
 - **Retention.** A day more than `hub_retention_days` before today is rolled up and then dropped (`DROP TABLE`,
   never `DELETE`), in one transaction, so a partition is never dropped without its rollup. A reader whose cursor sat
@@ -879,8 +879,11 @@ share checkout state on one worker. CI sizes `-n` to its runner's memory with `c
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import
 graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite, and so does every
 push to `main`.
-`uv run lint-imports` checks the package layers: `store` imports from `settings`, `domain` and `contracts`; `settings` from
-`domain`; none import upward.
+`uv run lint-imports` checks the package layers, top to bottom: `api` and `cli` (the server's routes, the hub and the
+command line), `adapters`, `projections` (the feed, the machine and analytics reads), `store` (the tables and the
+event log), `settings`, then `domain` and `contracts`. A layer imports its own or one below; none import upward, and
+`api` and `cli` never import each other. The top level holds only the public modules listed above, each a facade over
+its layer.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 Every `/api` body is a pydantic model in `starpulse/contracts/api.py`, and the server builds each response through it.
 The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts.api`
@@ -890,7 +893,7 @@ and commit both. CI's `api-types` job regenerates them and fails on any differen
 
 [`design/`](design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`) and, behind
 `?view=kanban`, a saved Board (`board.js`) drawn by `kanban.js`; view it with
-`uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse.demo --mockup design --out
+`uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse.cli.demo --mockup design --out
 mockup.html` writes it as one scrubbed file. A pull request that changes the page (`starpulse/web/**`), the mockup or
 the preview itself gets one UI-preview comment from
 [`.github/workflows/ui-preview.yml`](.github/workflows/ui-preview.yml): screenshots of each changed surface's
@@ -898,7 +901,7 @@ scrubbed demo, built by [`ci/ui_preview.py`](ci/ui_preview.py) against the demo 
 [`ci/preview.toml`](ci/preview.toml), with the demos published to `trantor-org/starpulse-demo` under `pr-<N>/`
 while the pull request is open. That config draws a fictional workspace at a working team's scale: the Board adapter
 [`ci/demo_workspace.py`](ci/demo_workspace.py) serves a nine-lane Board whose In Progress opens a delivery machine and
-the lifecycle machines in [`ci/workspace/`](ci/workspace), beside five DAG domains, and `starpulse.demo` fills it with
+the lifecycle machines in [`ci/workspace/`](ci/workspace), beside five DAG domains, and `starpulse.cli.demo` fills it with
 synthetic tasks, sessions, runs and pools. Each changed sub-mockup, a `design/<dir>/index.html` layered over a scrubbed page
 capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request. A push to `main`
 that touches the same paths republishes both demos under `main/`, the live demo linked above.

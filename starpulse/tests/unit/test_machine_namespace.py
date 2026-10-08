@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from starpulse.domain.machine_definition import MachineDefinitionError
-from starpulse.machine_namespace import Source, definition, merge
+from starpulse.domain.machine_namespace import Source, definition, merge
 
 MACHINES = Path(__file__).parent.parent / "fixtures" / "machines"
 

@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.adapter_kit import next_event as _next_event
-from starpulse.adapter_kit import serve as _serve
-from starpulse.adapter_kit import task
-from starpulse.adapter_kit import url as _url
 from starpulse.adapters.boards.seam import Written
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import next_event as _next_event
+from starpulse.api.adapter_kit import serve as _serve
+from starpulse.api.adapter_kit import task
+from starpulse.api.adapter_kit import url as _url
 from starpulse.contracts.adapters import Move
-from starpulse.machine_tasks import MachineTasks
+from starpulse.projections.board_feed import BoardFeed
+from starpulse.projections.machine_tasks import MachineTasks
 from starpulse.settings.config import CommitKeys
 from starpulse.tests.machines import MACHINES
 
@@ -163,7 +163,7 @@ def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Pat
 def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse.server._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.api.server._PING_S", 0.05)
     with _serve(tmp_path) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
             lines = [resp.readline() for _ in range(5)]
@@ -172,7 +172,7 @@ def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
 
 
 def test_a_page_that_goes_away_is_unsubscribed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("starpulse.server._PING_S", 0.05)
+    monkeypatch.setattr("starpulse.api.server._PING_S", 0.05)
     feed = BoardFeed()
     with _serve(tmp_path, feed) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:

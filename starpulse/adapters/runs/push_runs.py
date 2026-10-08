@@ -14,8 +14,8 @@ from datetime import UTC, datetime
 from typing import Any, Protocol, get_args
 
 from starpulse.adapters.runs import run_events
-from starpulse.board_feed import PUSHED_INSTANCE, InstanceRuns
 from starpulse.contracts.adapters import RunStatus
+from starpulse.projections.board_feed import PUSHED_INSTANCE, InstanceRuns
 
 __all__ = ["PUSHED_INSTANCE", "PushRuns"]
 

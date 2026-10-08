@@ -10,11 +10,11 @@ from pathlib import Path
 import pytest
 from pydantic import TypeAdapter
 
-from starpulse.adapter_kit import serve, task, url
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import serve, task, url
 from starpulse.contracts.api import RESPONSES
-from starpulse.store.history import HistoryStore
 from starpulse.domain.level import Level, Orbit, Terminal
+from starpulse.projections.board_feed import BoardFeed
+from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import NOW, ROWS
 from starpulse.tests.unit.test_board_feed import _paged_feed

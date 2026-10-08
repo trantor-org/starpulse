@@ -4,10 +4,10 @@ import json
 import urllib.request
 from pathlib import Path
 
-from starpulse.adapter_kit import serve, url
-from starpulse.board_feed import BoardFeed
-from starpulse.doctor import contract
-from starpulse.server import _cached
+from starpulse.api.adapter_kit import serve, url
+from starpulse.api.server import _cached
+from starpulse.projections.board_feed import BoardFeed
+from starpulse.projections.doctor import contract
 from starpulse.settings.config import Config, Repo, RunsInstance
 from starpulse.tests.hosts import FakeHost
 

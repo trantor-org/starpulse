@@ -29,8 +29,8 @@ from sqlalchemy import Engine, create_engine, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse.board_feed import BoardFeed
 from starpulse.contracts.adapters import Finding
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.store.event_log import create_tables
 from starpulse.store.tables import insights as table
 

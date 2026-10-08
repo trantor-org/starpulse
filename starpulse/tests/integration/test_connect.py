@@ -1,11 +1,11 @@
 """`starpulse connect native|backlog|jira`: check the tracker answers, then write `[board]` into starpulse.toml."""
 
-import tomllib
 from pathlib import Path
 
 import pytest
+import tomllib
 
-from starpulse import agent_cli, connect
+from starpulse.cli import agent_cli, connect
 from starpulse.settings.config import load
 from starpulse.tests.integration.test_jira import WORKFLOW, recorded_site, serve
 

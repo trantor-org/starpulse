@@ -1,5 +1,5 @@
 // The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
-// demo page (`starpulse.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
+// demo page (`starpulse.cli.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
 import { demoLevel } from "./demoLevel";
 import { arriveMerge, demoContract, demoLedger, demoPins, demoStrip, scenarioOf } from "./demoLedger";
 import { PAGE } from "./ledgerScroll";
@@ -99,7 +99,7 @@ export function stepRuns(prev: Snapshot, random = Math.random): Snapshot {
   return snap;
 }
 
-/** The snapshot `starpulse.demo` embeds, with each Board task's lane changes as `/api/history?task=` answers them. */
+/** The snapshot `starpulse.cli.demo` embeds, with each Board task's lane changes as `/api/history?task=` answers them. */
 export type DemoFixture = Snapshot & { history?: Record<string, LaneStep[]> };
 
 type Handler = (server: DemoServer, path: string, query: URLSearchParams, init?: RequestInit) => Response | Promise<Response>;
@@ -147,7 +147,7 @@ const HANDLERS: Record<string, Handler> = {
 
 /** The hub a demo page pretends to forward to: `refused` answers an opt-in 403 (a hub that keeps no names), `down` never answers, `none` is an instance with no `[forward]` block. */
 export type ForwardDemo = "refused" | "down" | "none";
-/** The fields `forward.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
+/** The fields `adapters.runs.forwarded.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
 const CONTRACT = {
   "machine:events": ["machine", "event", "task", "run", "actor", "assignee", "time"],
   "runs:events": ["time", "phase", "workflow", "run_id", "status", "step", "depends"],
@@ -177,7 +177,7 @@ function columns(m: Machine, state: string): string[] {
 const ALLOWED = { allowed: true, reason: "", skill: "" };
 
 /**
- * The server a demo page has instead of starpulse.server: it holds the snapshot, plays the `?demo` walk on it, keeps
+ * The server a demo page has instead of starpulse.api.server: it holds the snapshot, plays the `?demo` walk on it, keeps
  * each Board card's lane history and move verdicts current, and answers /api requests from that, so every view and
  * every hover of a page with no server behaves as it does on a served one.
  */
@@ -395,7 +395,7 @@ export class DemoServer {
     return json({ task: id }, 201);
   }
 
-  /** `/api/forwarding` as starpulse.server answers it: the moves the forwarder would send next, cut as it cuts them, and a PUT that flips the opt-in. */
+  /** `/api/forwarding` as starpulse.api.server answers it: the moves the forwarder would send next, cut as it cuts them, and a PUT that flips the opt-in. */
   forwarding(method: string, raw: string): Response {
     if (this.forward === "none") return method === "PUT" ? json({ error: "this instance forwards nothing" }, 404) : json({ configured: false });
     if (method === "PUT") {
@@ -481,7 +481,7 @@ const demoRecord = (card: RawAgent): TaskRecord => ({
 export const embedded = (): DemoFixture | null => (globalThis as { __FLOW_FIXTURE__?: DemoFixture }).__FLOW_FIXTURE__ ?? null;
 
 let server: DemoServer | null = null;
-/** The page's one DemoServer when it embeds a fixture, else null: a served page asks starpulse.server. */
+/** The page's one DemoServer when it embeds a fixture, else null: a served page asks starpulse.api.server. */
 export const demoServer = (): DemoServer | null => {
   const fixture = embedded();
   const query = new URLSearchParams(globalThis.location?.search ?? "");
@@ -491,7 +491,7 @@ export const demoServer = (): DemoServer | null => {
   return fixture ? (server ??= new DemoServer(many ? padMachines(fixture, many) : fixture, undefined, refuseEdits, forward)) : null;
 };
 
-/** A write says it is JSON, body or none: starpulse.server refuses any other, which a web page on another site cannot send without asking first. */
+/** A write says it is JSON, body or none: starpulse.api.server refuses any other, which a web page on another site cannot send without asking first. */
 const asJson = (init?: RequestInit): RequestInit | undefined => {
   if (!init?.method || init.method === "GET") return init;
   const headers = new Headers(init.headers);
@@ -499,5 +499,5 @@ const asJson = (init?: RequestInit): RequestInit | undefined => {
   return { ...init, headers };
 };
 
-/** `fetch` for the page's /api requests: answered by the demo server on a demo page, by starpulse.server otherwise. */
+/** `fetch` for the page's /api requests: answered by the demo server on a demo page, by starpulse.api.server otherwise. */
 export const apiFetch = (url: string, init?: RequestInit): Promise<Response> => demoServer()?.fetch(url, init) ?? fetch(url, asJson(init));

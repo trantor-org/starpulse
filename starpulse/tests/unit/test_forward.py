@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from starpulse import forward
 from starpulse.adapters.runs import run_events
-from starpulse.forward import OPT_IN_FILE, OptIn, build, project, start
+from starpulse.api import forward
+from starpulse.api.forward import OPT_IN_FILE, OptIn, build, project, start
 from starpulse.settings.config import Config, Forward
 from starpulse.store import events
 from starpulse.store.event_log import EventLog

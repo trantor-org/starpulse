@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse import mermaid_import
+from starpulse.domain import mermaid_import
 from starpulse.domain.machine_definition import MachineDefinitionError, validate
-from starpulse.mermaid_import import Diagram, draft_machine, parse
+from starpulse.domain.mermaid_import import Diagram, draft_machine, parse
 
 SAMPLE = """\
 %% comment

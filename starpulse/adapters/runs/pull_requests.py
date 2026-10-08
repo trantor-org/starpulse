@@ -22,8 +22,8 @@ from itertools import groupby
 from types import MappingProxyType
 from typing import Protocol
 
-from starpulse.board_feed import BoardFeed
-from starpulse.ci_trail import PullHistory, parse
+from starpulse.projections.board_feed import BoardFeed
+from starpulse.projections.ci_trail import PullHistory, parse
 from starpulse.settings.config import Repo
 from starpulse.settings.pins import GitHub, Pins, contained, link
 

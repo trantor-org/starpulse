@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.server import assemble
+from starpulse.api.server import assemble
 from starpulse.settings.config import load
 from starpulse.tests import fake_board
 

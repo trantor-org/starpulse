@@ -11,7 +11,7 @@ from starpulse.domain.machine_definition import load_machine
 from starpulse.domain.snapshot import describe
 from starpulse.settings.config import ConfigError
 
-CI = load_machine(Path(__file__).with_name("machines") / "ci.yaml")
+CI = load_machine(Path(__file__).parents[1] / "machines" / "ci.yaml")
 #: The machine as the page draws it, keyed by name like a board adapter's machines.
 CI_MACHINES = {CI.name: describe(CI.machine)}
 

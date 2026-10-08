@@ -15,16 +15,17 @@ from typing import Any
 
 import pytest
 
-from starpulse import agent_cli as cli
-from starpulse import doctor, skill_install
-from starpulse.adapter_kit import serve as _real_serve
-from starpulse.adapter_kit import task
-from starpulse.adapter_kit import url as _url
 from starpulse.adapters.boards.seam import Written
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import serve as _real_serve
+from starpulse.api.adapter_kit import task
+from starpulse.api.adapter_kit import url as _url
+from starpulse.api.server import _no_writer
+from starpulse.cli import agent_cli as cli
+from starpulse.cli import skill_install
 from starpulse.contracts.adapters import Move
 from starpulse.domain.level import Level, Orbit, Terminal
-from starpulse.server import _no_writer
+from starpulse.projections import doctor
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.store.history import HistoryStore
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES

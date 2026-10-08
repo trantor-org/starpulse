@@ -55,7 +55,7 @@ def test_a_hub_writes_a_machine_event_to_postgres_and_reads_it_back(
     )
     monkeypatch.setenv("HUB_OIDC_SECRET", "hub-secret")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "starpulse.server", "--hub", "--port", str(port), "--config", str(config)]
+        [sys.executable, "-m", "starpulse.api.server", "--hub", "--port", str(port), "--config", str(config)]
     )
     try:
         _until(lambda: call(f"{base}/api/snapshot")[0] == 401, proc, "serving, and answering 401 before sign-in")

@@ -6,8 +6,8 @@ import pytest
 
 from starpulse.adapters.boards.seam import Board
 from starpulse.adapters.boards.upstream_backlog import UpstreamBacklog
-from starpulse.board_feed import BoardFeed
-from starpulse.server import assemble, create_task, task_record
+from starpulse.api.server import assemble, create_task, task_record
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import load
 from starpulse.store.event_log import EventLog
 

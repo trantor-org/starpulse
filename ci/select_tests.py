@@ -35,11 +35,11 @@ FULL_SUITE = (
 
 #: Non-Python files and the Python files that open them by path; each reader counts as changed.
 READERS = {
-    "README.md": ("starpulse/server.py", "starpulse/tests/unit/test_public_surface.py", "ci/ui_preview.py"),
+    "README.md": ("starpulse/api/server.py", "starpulse/tests/unit/test_public_surface.py", "ci/ui_preview.py"),
     "starpulse/web/*": ("starpulse/tests/unit/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
     "ci/preview.toml": ("ci/ui_preview.py",),
-    "starpulse/store/migrations/*": ("starpulse/hub.py",),
+    "starpulse/store/migrations/*": ("starpulse/api/hub.py",),
 }
 
 #: Workflow files are read by the `ci/` tests that assert on them.

@@ -4,10 +4,10 @@ import json
 import re
 from pathlib import Path
 
-from starpulse.adapter_kit import MachineEventsAdapterKit
 from starpulse.adapters.harnesses.claude_code import ClaudeCodeAdapter, publisher
 from starpulse.adapters.harnesses.harness import HARNESS_MACHINES
 from starpulse.adapters.harnesses.otlp import BRANCH, LogEvent, parse
+from starpulse.api.adapter_kit import MachineEventsAdapterKit
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.domain.transitions import Table
 from starpulse.store.event_log import EventLog, Tail

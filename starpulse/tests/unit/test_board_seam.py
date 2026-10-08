@@ -8,7 +8,7 @@ import pytest
 
 from starpulse.adapters.boards.seam import Board
 from starpulse.adapters.boards.seam import load as load_board
-from starpulse.server import assemble, history_store
+from starpulse.api.server import assemble, history_store
 from starpulse.settings.config import ConfigError, load
 from starpulse.store.event_log import EventLog
 from starpulse.store.history import DEFAULT_FILE, HistoryStore

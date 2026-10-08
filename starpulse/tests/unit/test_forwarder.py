@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from starpulse.adapters.runs import run_events
-from starpulse.forward import PREVIEW, Forwarder, OptIn
+from starpulse.api.forward import PREVIEW, Forwarder, OptIn
 from starpulse.settings.config import Forward
 from starpulse.store import events
 from starpulse.store.event_log import EventLog

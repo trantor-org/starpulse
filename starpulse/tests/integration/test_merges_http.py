@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.adapter_kit import serve, url
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import serve, url
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import CommitKeys
 
 NOW = datetime(2026, 10, 7, 1, tzinfo=UTC).timestamp()

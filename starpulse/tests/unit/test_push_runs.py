@@ -11,8 +11,8 @@ import pytest
 
 from starpulse.adapters.runs import run_events
 from starpulse.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
-from starpulse.board_feed import BoardFeed, follow
 from starpulse.contracts.adapters import Dag
+from starpulse.projections.board_feed import BoardFeed, follow
 from starpulse.store.event_log import EventLog
 from starpulse.store.history import HistoryStore
 

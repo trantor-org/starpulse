@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.board_feed import BoardFeed
-from starpulse.ci import CI_MACHINES
-from starpulse.ci_trail import CiTrail, parse
-from starpulse.machine_tasks import MachineTasks
+from starpulse.projections.board_feed import BoardFeed
+from starpulse.projections.ci import CI_MACHINES
+from starpulse.projections.ci_trail import CiTrail, parse
+from starpulse.projections.machine_tasks import MachineTasks
 from starpulse.store import events
 from starpulse.store.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES

@@ -14,7 +14,7 @@ import argparse
 import json
 from pathlib import Path
 
-from starpulse import demo
+from starpulse.cli import demo
 
 HERE = Path(__file__).parent
 ap = argparse.ArgumentParser()

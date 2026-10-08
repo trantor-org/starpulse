@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.adapter_kit import serve, url
-from starpulse.board_feed import BoardFeed
+from starpulse.api.adapter_kit import serve, url
+from starpulse.projections.board_feed import BoardFeed
 from starpulse.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 

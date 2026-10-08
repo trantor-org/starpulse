@@ -72,10 +72,12 @@ starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*
 root_package = "starpulse"
 
 [[tool.importlinter.contracts]]
-name = "adapters, store, settings, domain and contracts are layered"
+name = "api and cli, adapters, projections, store, settings, domain and contracts are layered"
 type = "layers"
 layers = [
+    "starpulse.api | starpulse.cli",
     "starpulse.adapters",
+    "starpulse.projections",
     "starpulse.store",
     "starpulse.settings",
     "starpulse.domain | starpulse.contracts",
