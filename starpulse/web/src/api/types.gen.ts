@@ -1214,6 +1214,7 @@ export interface Trajectories {
   gates: GateSummary[];
   goal: string;
   history_s: number;
+  loops: LevelLoop[];
   machine: string;
   norm: Norm | null;
   now: number;
@@ -1243,6 +1244,16 @@ export interface GateWitness {
   path: string[];
   task: string;
 }
+/**
+ * One back-edge across the runs that took it, summed from the runs' own figures.
+ */
+export interface LevelLoop {
+  days: number;
+  from: string;
+  runs: number;
+  to: string;
+  trips: number;
+}
 export interface Norm {
   count: number;
   path: string[];
@@ -1254,9 +1265,12 @@ export interface Outlier {
   task: string;
 }
 export interface TrajectoryRun {
+  back_edges: number;
   gates: RunGate[];
+  loops: RunLoop[];
   path: string[];
   reached_goal: boolean;
+  sccs: number;
   source: string;
   task: string;
 }
@@ -1267,6 +1281,15 @@ export interface RunGate {
   mandatory: boolean;
   post_dominators: string[];
   witness: string[] | null;
+}
+/**
+ * One back-edge a run took: its trips and the days they took, from the target's previous visit to each return.
+ */
+export interface RunLoop {
+  days: number;
+  from: string;
+  to: string;
+  trips: number;
 }
 export interface Variant {
   count: number;

@@ -2182,6 +2182,36 @@
       "title": "LevelFacet",
       "type": "object"
     },
+    "LevelLoop": {
+      "additionalProperties": false,
+      "description": "One back-edge across the runs that took it, summed from the runs' own figures.",
+      "properties": {
+        "days": {
+          "type": "number"
+        },
+        "from": {
+          "type": "string"
+        },
+        "runs": {
+          "type": "integer"
+        },
+        "to": {
+          "type": "string"
+        },
+        "trips": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "runs",
+        "trips",
+        "days"
+      ],
+      "title": "LevelLoop",
+      "type": "object"
+    },
     "LevelOrbit": {
       "additionalProperties": false,
       "properties": {
@@ -3449,6 +3479,32 @@
       "title": "RunGate",
       "type": "object"
     },
+    "RunLoop": {
+      "additionalProperties": false,
+      "description": "One back-edge a run took: its trips and the days they took, from the target's previous visit to each return.",
+      "properties": {
+        "days": {
+          "type": "number"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "trips": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "trips",
+        "days"
+      ],
+      "title": "RunLoop",
+      "type": "object"
+    },
     "RunStarted": {
       "additionalProperties": false,
       "properties": {
@@ -4233,6 +4289,12 @@
         "history_s": {
           "type": "number"
         },
+        "loops": {
+          "items": {
+            "$ref": "#/$defs/LevelLoop"
+          },
+          "type": "array"
+        },
         "machine": {
           "type": "string"
         },
@@ -4285,6 +4347,7 @@
         "betweenness",
         "bottleneck",
         "gates",
+        "loops",
         "runs"
       ],
       "title": "Trajectories",
@@ -4293,9 +4356,18 @@
     "TrajectoryRun": {
       "additionalProperties": false,
       "properties": {
+        "back_edges": {
+          "type": "integer"
+        },
         "gates": {
           "items": {
             "$ref": "#/$defs/RunGate"
+          },
+          "type": "array"
+        },
+        "loops": {
+          "items": {
+            "$ref": "#/$defs/RunLoop"
           },
           "type": "array"
         },
@@ -4307,6 +4379,9 @@
         },
         "reached_goal": {
           "type": "boolean"
+        },
+        "sccs": {
+          "type": "integer"
         },
         "source": {
           "type": "string"
@@ -4320,6 +4395,9 @@
         "task",
         "path",
         "reached_goal",
+        "back_edges",
+        "sccs",
+        "loops",
         "gates"
       ],
       "title": "TrajectoryRun",

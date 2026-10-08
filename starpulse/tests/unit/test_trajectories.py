@@ -261,3 +261,49 @@ def test_each_trajectory_lists_what_dominates_and_post_dominates_each_gate_in_it
     assert by_task["g4"]["gates"][0]["post_dominators"] == ["work", "done"]
     assert (by_task["ab"]["reached_goal"], by_task["ab"]["gates"]) == (False, [])
     assert by_task["g1"]["path"] == ["todo", "work", "review", "done"]
+
+
+def _days(hours: float) -> float:
+    return hours * H / 86400.0
+
+
+def test_a_run_counts_its_back_edges_and_loops_with_the_days_each_took() -> None:
+    runs = [
+        _run("clean", (0, "work"), (10, "review"), (20, "done")),
+        _run("loop", (0, "work"), (10, "review"), (20, "work"), (30, "review"), (40, "done")),
+        # two back-edges in one strongly connected component: work<->todo and work<->review
+        _run("knot", (0, "todo"), (5, "work"), (10, "todo"), (15, "work"), (20, "review"), (25, "work"), (30, "done")),
+    ]
+
+    by_task = {r["task"]: r for r in _analytics(runs)["runs"]}
+
+    assert (by_task["clean"]["back_edges"], by_task["clean"]["sccs"], by_task["clean"]["loops"]) == (0, 0, [])
+    assert (by_task["loop"]["back_edges"], by_task["loop"]["sccs"]) == (1, 1)
+    assert by_task["loop"]["loops"] == [{"from": "review", "to": "work", "trips": 1, "days": _days(20)}]
+    assert (by_task["knot"]["back_edges"], by_task["knot"]["sccs"]) == (2, 1)
+
+
+def test_the_level_sums_each_loop_across_the_runs_that_took_it() -> None:
+    runs = [
+        _run("a", (0, "work"), (10, "review"), (20, "work"), (30, "review"), (40, "done")),
+        # review -> work twice: back to a work first entered at 0 (15 h), then to the one entered at 15 (15 h)
+        _run("b", (0, "work"), (5, "review"), (15, "work"), (20, "review"), (30, "work"), (35, "review"), (40, "done")),
+        _run("c", (0, "work"), (10, "review"), (20, "done")),
+    ]
+
+    assert _analytics(runs)["loops"] == [
+        {"from": "review", "to": "work", "runs": 2, "trips": 3, "days": _days(50)},
+    ]
+
+
+def test_a_loop_that_exists_only_in_the_union_of_two_runs_is_never_reported() -> None:
+    # todo -> work -> review in one run and review -> todo in the other close a cycle no run went round
+    runs = [
+        _run("one", (0, "todo"), (5, "work"), (10, "review"), (20, "done")),
+        _run("two", (0, "review"), (3, "todo"), (9, "done")),
+    ]
+
+    result = _analytics(runs)
+
+    assert result["loops"] == []
+    assert [(r["back_edges"], r["sccs"]) for r in result["runs"]] == [(0, 0), (0, 0)]
