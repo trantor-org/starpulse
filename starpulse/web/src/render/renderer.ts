@@ -25,7 +25,7 @@ import { inView } from "../features/level/ledgerStrip";
 import { RerunStore, rerunLine } from "../features/level/rerun";
 import { spotIn, type Target } from "../features/level/search";
 import {
-  BOARD_COLOR, GALAXY_MIN, RAMP, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, textW, turnPage,
+  BOARD_COLOR, SUN_R, RAMP, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, textW, turnPage,
   type BEdge, type Body, type Curve, type Galaxy, type GNode, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
   type LedgerView, type MachineTask, type Moon, type Pager, type RowView, type Star, type SubState, type Sun,
 } from "./scene";
@@ -225,17 +225,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // ---- view: scroll zooms about the cursor (scale only, never changes level), drag pans; kept per screen size and level ----
   const railW = () => document.getElementById("rail")?.offsetWidth ?? 0;
-  // the panel's open and folded widths, never its current one, so a fold neither resizes the canvas nor moves a body
-  const navWidths = () => {
-    const css = getComputedStyle(document.documentElement), px = (v: string) => parseFloat(css.getPropertyValue(v)) || 0;
-    return { open: px("--nav"), fold: px("--nav-fold") };
-  };
+  const navW = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--nav")) || 0;
   // the canvas is the page between the navigator and the rail, so its size (not the window's) keys the remembered zoom
   const viewKey = () => `fv.view.${W}x${H}.${pathKey(path)}.${scene?.w}x${scene?.h}`;
   // the default view fits the level's content box (the whole sky on the Board), centred between the open navigator and the
-  // rail, `I` from the canvas's left edge; a panel floats over it
-  const inFitBox = (v: View): View => ({ ...v, x: v.x + I });
-  const fitScene = (): View => inFitBox(fitLevel(scene!, FW, H));
+  // rail; a panel floats over it
+  const fitScene = (): View => fitLevel(scene!, FW, H);
   /** A name's width in the type the ledger draws it in, so the layout places names by the width they take. */
   const nameWidth = (s: string, size: number, weight = 300) => {
     const was = cx.letterSpacing;
@@ -249,7 +244,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const chromeBoxes = () => {
     const box = (el: Element | null) => {
       const b = el?.getBoundingClientRect();
-      return b?.width ? [{ x0: b.left - L - I - 6, y0: b.top - 4, x1: b.right - L - I + 6, y1: b.bottom + 4 }] : [];
+      return b?.width ? [{ x0: b.left - L - 6, y0: b.top - 4, x1: b.right - L + 6, y1: b.bottom + 4 }] : [];
     };
     const crumb = box(document.getElementById("crumb"));
     return { avoid: [...crumb, ...box(els.clock)], inset: crumb[0] ? crumb[0].y1 + 2 : 0 };
@@ -270,8 +265,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       scrollPos = Math.min(scrollPos, scene.top.max);
     }
     // the machine across a level's top is laid out in screen pixels: it is drawn at 1:1 from the fit box's left edge and never zooms or pans
-    fit = scene.top ? { k: 1, x: I, y: 0 } : fitScene();
-    if (scene.hub) edgePaths(scene, { k: fit.k, x: fit.x - I }, FW, stateName);
+    fit = scene.top ? { k: 1, x: 0, y: 0 } : fitScene();
+    if (scene.hub) edgePaths(scene, { k: fit.k, x: fit.x }, FW, stateName);
     if (scene.top) view = fit;
     else if (keepView) view = refitView(view, was, fit); // a view at the old fit follows the new one, so the sky zooms out smoothly as a state grows
     else {
@@ -289,11 +284,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     tip.style.opacity = "0";
     loop.wake();
   }
-  // the canvas's left edge on the page (the folded navigator's width); the fit box's offset in it and its width
-  let L = 0, I = 0, FW = 0, laidScale = 100;
+  // the canvas's left edge on the page (the navigator's width) and the width the level is fitted in
+  let L = 0, FW = 0, laidScale = 100;
   const resize = (keepView = false) => {
     const dpr = devicePixelRatio || 1;
-    ({ left: L, width: W, inset: I, fitWidth: FW } = canvasSpace(innerWidth, navWidths(), railW()));
+    ({ left: L, width: W } = canvasSpace(innerWidth, navW(), railW()));
+    FW = W;
     H = innerHeight;
     cv.width = W * dpr;
     cv.height = H * dpr;
@@ -344,7 +340,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const top = scene?.top, row = came?.kind === "machine" ? top?.rows.find((r) => r.name === came.flow) : undefined;
     if (top && row) {
       glow = { name: row.name, t0: performance.now() };
-      fx = I + top.metaX + top.metaW / 2;
+      fx = top.metaX + top.metaW / 2;
       fy = Math.min(top.laneBottom, Math.max(top.laneTop, top.laneTop + row.y + row.h / 2));
     }
     syncUrl();
@@ -543,6 +539,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       dagData: dagData(sky),
       pools: sky.pools,
       cards: kanbanTasks(sky),
+      settled: Object.values(sky.settled),
       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
       claims: sky.claims,
       boardUrl: sky.boardUrl,
@@ -1295,14 +1292,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       drawTrackRings(s, s.color);
       return;
     }
-    // the glow reaches as far past the sun as it did when every sun was GALAXY_MIN, so a large sun does not wash out its level
-    const glow = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r + 5 * GALAXY_MIN);
+    // the glow reaches five suns' radii past the sun
+    const glow = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r + 5 * SUN_R);
     glow.addColorStop(0, rgba(s.color, 0.55));
     glow.addColorStop(0.25, rgba(s.color, 0.2));
     glow.addColorStop(1, rgba(s.color, 0));
     cx.fillStyle = glow;
     cx.beginPath();
-    cx.arc(s.x, s.y, r + 5 * GALAXY_MIN, 0, TAU);
+    cx.arc(s.x, s.y, r + 5 * SUN_R, 0, TAU);
     cx.fill();
     const core = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
     core.addColorStop(0, "#f5f3ff");
@@ -2636,7 +2633,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (scene?.top) {
       scrollStep();
       railHover = mouse && !trans ? railHit(mouse.ox - view.x, mouse.oy) : null;
-      cv.style.cursor = railHover ? "pointer" : "";
     }
     if (anim) anim(now);
     if (scene) update(clock);

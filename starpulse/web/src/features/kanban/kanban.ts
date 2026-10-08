@@ -117,16 +117,21 @@ export interface Outline {
   done: number;
   total: number;
 }
-/** The milestones with a task not Done, largest first and newest among equals; tasks with no milestone have no row. */
-export function milestoneOutline(tasks: KanbanTask[]): Outline[] {
+/**
+ * The milestones with a task not Done, by milestone number; tasks with no milestone have no row. A completed task has left the Board for
+ * `settled`, so it is counted there, done, or finishing a task would shrink its milestone's total instead of raising its done count.
+ */
+export function milestoneOutline(tasks: KanbanTask[], settled: { state: string; milestone?: string }[] = []): Outline[] {
   const counts = new Map<string, Outline>();
-  for (const t of tasks.filter((x) => x.milestone)) {
-    const row = counts.get(t.milestone) ?? { milestone: t.milestone, done: 0, total: 0 };
+  const count = (milestone: string, done: boolean) => {
+    const row = counts.get(milestone) ?? { milestone, done: 0, total: 0 };
     row.total++;
-    if (t.lane === "done") row.done++;
-    counts.set(t.milestone, row);
-  }
-  return [...counts.values()].filter((r) => r.done < r.total).sort((a, b) => b.total - a.total || milestoneNumber(b.milestone) - milestoneNumber(a.milestone));
+    if (done) row.done++;
+    counts.set(milestone, row);
+  };
+  for (const t of tasks) if (t.milestone) count(t.milestone, t.lane === "done");
+  for (const s of settled) if (s.milestone && s.state === "completed") count(s.milestone, true);
+  return [...counts.values()].filter((r) => r.done < r.total).sort((a, b) => milestoneNumber(a.milestone) - milestoneNumber(b.milestone));
 }
 
 /** The labels containing the word being typed (the last word of the bar, after a `label:` prefix), most used first. */

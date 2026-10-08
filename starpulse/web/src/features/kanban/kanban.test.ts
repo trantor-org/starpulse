@@ -555,7 +555,7 @@ describe("Waiting cards linked to a blocker in another milestone", () => {
 });
 
 describe("the milestone outline", () => {
-  it("lists each open milestone with its done and total, largest first, and leaves out finished milestones and tasks with none", () => {
+  it("lists each open milestone with its done and total by milestone number, and leaves out finished milestones and tasks with none", () => {
     const tasks = [
       task("T-1", "done", "m-1"), task("T-2", "ready", "m-1"),
       task("T-3", "done", "m-2"), task("T-4", "done", "m-2"),
@@ -565,9 +565,22 @@ describe("the milestone outline", () => {
     ];
 
     expect(milestoneOutline(tasks)).toEqual([
+      { milestone: "m-1", done: 1, total: 2 },
       { milestone: "m-3", done: 0, total: 3 },
       { milestone: "m-4", done: 1, total: 2 },
-      { milestone: "m-1", done: 1, total: 2 },
+    ]);
+  });
+
+  it("counts a completed task that has left the Board as done, so finishing one raises the numerator and keeps the total", () => {
+    const tasks = [task("T-1", "ready", "m-10"), task("T-2", "done", "m-10"), task("T-3", "ready", "m-9")];
+    const settled = [
+      { state: "completed", milestone: "m-10" }, { state: "completed", milestone: "m-10" },
+      { state: "archived", milestone: "m-10" }, { state: "completed", milestone: "m-8" }, { state: "completed", milestone: "" },
+    ];
+
+    expect(milestoneOutline(tasks, settled)).toEqual([
+      { milestone: "m-9", done: 0, total: 1 },
+      { milestone: "m-10", done: 3, total: 4 },
     ]);
   });
 });

@@ -46,10 +46,10 @@ afterEach(() => {
 });
 
 describe("the Kanban milestone outline in the navigator", () => {
-  it("lists each open milestone with its ID and done/total, largest first, under a Milestones heading with no clear ✕", () => {
+  it("lists each open milestone with its ID and done/total, by milestone number, under a Milestones heading with no clear ✕", () => {
     expect(outline.querySelector("h3")!.textContent).toBe("Milestones");
-    expect(rows().map((r) => [r.querySelector(".id")!.textContent, r.querySelector(".w")!.textContent])).toEqual([["m-3", "0/3"], ["m-1", "1/2"]]);
-    expect(rows().map((r) => r.querySelector<HTMLElement>(".bar i")!.style.width)).toEqual(["0%", "50%"]);
+    expect(rows().map((r) => [r.querySelector(".id")!.textContent, r.querySelector(".w")!.textContent])).toEqual([["m-1", "1/2"], ["m-3", "0/3"]]);
+    expect(rows().map((r) => r.querySelector<HTMLElement>(".bar i")!.style.width)).toEqual(["50%", "0%"]);
     expect(clear()).toBeNull();
     expect(host.querySelector(".filters")!.textContent).not.toContain("m-1");
   });
@@ -57,10 +57,10 @@ describe("the Kanban milestone outline in the navigator", () => {
   it("sets the Kanban milestone filter on a click: only that milestone's cards show and the counts follow", () => {
     expect(shown()).toEqual(["TASK-1", "TASK-2", "TASK-3", "TASK-4", "TASK-5", "TASK-6"]);
 
-    act(() => rows()[1].click());
+    act(() => rows()[0].click());
 
     expect(shown()).toEqual(["TASK-1", "TASK-2"]);
-    expect(rows().map((r) => r.classList.contains("on"))).toEqual([false, true]);
+    expect(rows().map((r) => r.classList.contains("on"))).toEqual([true, false]);
     expect(counter()).toBe("2 of 6 tasks");
     expect(columnCounts()).toMatchObject({ ready: "1", done: "1", review: "0" });
     expect(host.querySelector(".filters")!.textContent).toContain("m-1");
@@ -68,10 +68,10 @@ describe("the Kanban milestone outline in the navigator", () => {
   });
 
   it("clears on a second click of the chosen row", () => {
-    act(() => rows()[0].click());
+    act(() => rows()[1].click());
     expect(shown()).toEqual(["TASK-4", "TASK-5", "TASK-6"]);
 
-    act(() => rows()[0].click());
+    act(() => rows()[1].click());
 
     expect(shown()).toHaveLength(6);
     expect(rows().some((r) => r.classList.contains("on"))).toBe(false);
@@ -79,8 +79,8 @@ describe("the Kanban milestone outline in the navigator", () => {
   });
 
   it("clears on clear ✕ and moves the choice when another row is clicked", () => {
-    act(() => rows()[1].click());
     act(() => rows()[0].click());
+    act(() => rows()[1].click());
     expect(shown()).toEqual(["TASK-4", "TASK-5", "TASK-6"]);
 
     act(() => clear()!.click());

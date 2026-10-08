@@ -429,14 +429,8 @@ export const clip = (s: string) => (s.length > NAME_MAX ? `${s.slice(0, NAME_MAX
 
 /** The events a machine takes from one of its states back to the same state. */
 const loopsOf = (flow: { machine: { transitions: Transition[] } }, id: string) => flow.machine.transitions.filter((t) => t.source === id && t.target === id).map((t) => t.event);
-/** A Board state's radius: GALAXY_MIN with no tasks, growing with the square root of its count to GALAXY_MAX, which it reaches near 450 tasks. */
-export const GALAXY_MIN = 34, GALAXY_MAX = 140;
-const galaxyR = (n: number) => Math.min(GALAXY_MAX, GALAXY_MIN + 5 * Math.sqrt(n));
-/**
- * A Board state's sun from its `share` of the week's moves, `busiest` being the largest share: its area is proportional to the share, the
- * busiest state's reaching GALAXY_MAX, and a quiet state keeps GALAXY_MIN so it stays visible.
- */
-export const sunR = (share: number, busiest: number) => Math.max(GALAXY_MIN, GALAXY_MAX * Math.sqrt(busiest ? share / busiest : 0));
+/** Every Board state's sun, on the Board and on its own level: one fixed size, so neither its tasks nor its share of the moves resizes it. */
+export const SUN_R = 34;
 /**
  * A machine state's radius from its task count, growing with its square root to a fixed maximum (near 150 tasks on a machine level, 55 inside
  * a planet).
@@ -674,8 +668,6 @@ export function build(ctx: Ctx, l: Level): Scene {
 
 function layoutLevel(ctx: Ctx, l: Level): Scene {
   const { S, moves, W, H, T } = ctx, ease = ctx.ease ?? ((_key: string, v: number) => v), routes = ctx.routes ?? new Map<string, Pt>(), EVENTS = moves.events, board = S.board, SUBS = S.subs, dagBy = S.dagBy;
-  // a state the server sized (`Sky.suns`) takes its sun from its share of the week's moves, which live tasks never change; one it did not takes it from its count
-  const sunSized = (id: string) => id in S.suns, busiest = Math.max(0, ...Object.values(S.suns));
   const stateName = (id: string) => board.machine.states.find((s) => s.id === id)?.name || id;
   const scene: Scene = { w: 2460, h: 1340, galaxies: {}, bEdges: [], tasks: [], machineTasks: [], mStates: {}, mEdges: [], planets: [], moons: [], subStates: [], stars: {}, groups: [], sun: null, flow: null, hub: null, hops: [], entries: [], exits: [] };
   // a DAG's instance prefix is drawn only where another instance runs a DAG by the same bare name
@@ -730,7 +722,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const radius = (st: (typeof states)[number]) => {
       const all = byState[st.id] || [], at = new Map(all.map((a) => [a, deepest(a)])), fs = flowsOf(st.id);
       const on = (f: string, state?: string) => all.filter((a) => at.get(a)?.flow === f && at.get(a)?.state === state);
-      const k = st.id === "in_progress" ? 1.25 : 1, here = all.filter((a) => !at.get(a)), r = sunSized(st.id) ? sunR(S.suns[st.id], busiest) * k : Math.min(GALAXY_MAX * k, oneRing(here.length, 11, 14, galaxyR(stateCount(S, st.id)) * k)), outer = here.length ? rings(here.length, r + 14, 11, 12).outer : r;
+      const here = all.filter((a) => !at.get(a)), r = SUN_R, outer = here.length ? rings(here.length, r + 14, 11, 12).outer : r;
       const machine = (f: string) => {
         const ss = subStatesOf(f).map((q) => ({ ...q, name: q.name.replace(/^Pr /, "PR ") })), label = `${f}${ss.length ? ` › ${ss.map((q) => q.name).join(" · ")}` : ""}`;
         return { f, ss, label, slot: { moon: orbit(on(f).length, 9, 17), subs: ss.map((q) => orbit(on(f, q.id).length, 6, 14)), name: textW(clipped ? clip(label) : label, 10.5) * F } };
@@ -969,7 +961,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const cx0 = scene.w / 2, cy0 = scene.h / 2;
     if (!subs.length) {
       const n = stateCount(S, sid);
-      const sun: Sun = { id: sid, name: stateName(sid), final: !!st?.final, today: st && daily(st) ? today.length : undefined, x: cx0, y: cy0, r: ease(`${sid}.r`, sunSized(sid) ? sunR(S.suns[sid], busiest) : Math.min(GALAXY_MAX, oneRing(list.length, 16, 30, galaxyR(n)))), R: 0, n, color: BOARD_COLOR[sid] ?? "#94a3b8" };
+      const sun: Sun = { id: sid, name: stateName(sid), final: !!st?.final, today: st && daily(st) ? today.length : undefined, x: cx0, y: cy0, r: SUN_R, R: 0, n, color: BOARD_COLOR[sid] ?? "#94a3b8" };
       scene.sun = sun;
       scene.hub = sun;
       sun.R = attach(list, sun, sun.r + 30, 16, 16, true);

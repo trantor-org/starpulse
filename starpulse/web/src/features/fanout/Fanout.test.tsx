@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { FeedLines, Queues } from "./Fanout";
+import { FeedLines, linesThatFit, Queues } from "./Fanout";
 import type { FeedLine } from "../../render/hud";
 import type { Pool } from "../../api";
 
@@ -41,20 +41,22 @@ describe("the navigator's Queues section", () => {
 const line = (over: Partial<FeedLine>): FeedLine => ({ key: "k", at: 1, time: "16:00", who: "x", what: "", where: "y", ...over });
 
 describe("the Recent feed's lines", () => {
-  it("keeps the move line's shape: time, task, event, machine", () => {
+  it("shows a line's time and what it is about, never what happened to it", () => {
     const html = renderToStaticMarkup(<FeedLines lines={[line({ who: "TASK-1", what: "moved", where: "deliver" })]} />);
 
-    expect(html).toContain("<em>16:00</em> <b>TASK-1</b> moved <em>deliver</em>");
+    expect(html).toContain("<em>16:00</em> <b>TASK-1</b></div>");
+    expect(html).not.toContain("moved");
+    expect(html).not.toContain("deliver");
   });
 
-  it("colours a run's outcome green or red and leaves the others as they are", () => {
+  it("colours a run's name by its outcome, green or red, and leaves the others as they are", () => {
     const html = renderToStaticMarkup(
-      <FeedLines lines={[line({ key: "a", where: "succeeded · TASK-1", tone: "ok" }), line({ key: "b", where: "failed at lint · TASK-2", tone: "failed" }), line({ key: "c", where: "lint · TASK-3" })]} />,
+      <FeedLines lines={[line({ key: "a", who: "dagu/a", tone: "ok" }), line({ key: "b", who: "dagu/b", tone: "failed" }), line({ key: "c", who: "dagu/c" })]} />,
     );
 
-    expect(html).toContain('<em class="ok">succeeded · TASK-1</em>');
-    expect(html).toContain('<em class="failed">failed at lint · TASK-2</em>');
-    expect(html).toContain("<em>lint · TASK-3</em>");
+    expect(html).toContain('<b class="ok">dagu/a</b>');
+    expect(html).toContain('<b class="failed">dagu/b</b>');
+    expect(html).toContain("<b>dagu/c</b>");
   });
 
   it("flashes a line born after the page's first read, once", () => {
@@ -92,5 +94,13 @@ describe("a Recent line that points at a task or DAG", () => {
 
     expect(html).toContain('<span class="why">hidden by the filter</span>');
     expect(html.match(/class="why"/g)).toHaveLength(1);
+  });
+});
+
+describe("the Recent feed's height", () => {
+  it("keeps only the newest lines its box shows whole, and never a negative count", () => {
+    expect(linesThatFit(200, 18)).toBe(11);
+    expect(linesThatFit(17, 18)).toBe(0);
+    expect(linesThatFit(0, 0)).toBe(0);
   });
 });

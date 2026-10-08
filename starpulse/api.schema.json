@@ -4281,7 +4281,7 @@
     },
     "Settled": {
       "additionalProperties": false,
-      "description": "A task that left the Board's lanes for good: where it settled, when, and the title and assignee it settled with.",
+      "description": "A task that left the Board's lanes for good: where it settled, when, and the title, assignee and milestone it settled with.",
       "properties": {
         "at": {
           "anyOf": [
@@ -4302,6 +4302,11 @@
               "type": "null"
             }
           ]
+        },
+        "milestone": {
+          "default": "",
+          "description": "The milestone it settled in; empty when it had none.",
+          "type": "string"
         },
         "model": {
           "type": "string"

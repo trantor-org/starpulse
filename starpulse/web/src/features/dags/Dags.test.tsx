@@ -47,6 +47,7 @@ const chip = (label: string) => all(".fchip").find((c) => c.textContent!.startsW
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   post.mockReset();
+  localStorage.clear();
   host = document.body.appendChild(document.createElement("div"));
   root = createRoot(host);
 });
@@ -129,6 +130,21 @@ describe("the DAGs view's filters", () => {
     expect(names()).toEqual(["deploy"]);
     type("ops");
     expect(names()).toEqual(["deploy", "never"]);
+  });
+
+  it("opens on the filters it last had, after a reload", async () => {
+    await draw();
+    const box = q<HTMLInputElement>('.filters input');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(box, "deploy");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => root.unmount());
+    root = createRoot(host);
+    await draw();
+
+    expect(q<HTMLInputElement>('.filters input').value).toBe("deploy");
+    expect(names()).toEqual(["deploy"]);
   });
 
   it("hides a DAG last run before the Last run window, keeps one running, and counts each window", async () => {

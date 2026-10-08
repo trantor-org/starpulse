@@ -138,13 +138,14 @@ class RawAgent(_Api):
 
 
 class Settled(_Api):
-    """A task that left the Board's lanes for good: where it settled, when, and the title and assignee it settled with."""
+    """A task that left the Board's lanes for good: where it settled, when, and the title, assignee and milestone it settled with."""
 
     state: str
     at: float | None
     created: float | None
     title: str
     model: str
+    milestone: str = Field(default="", description="The milestone it settled in; empty when it had none.")
 
 
 class Tie(_Api):

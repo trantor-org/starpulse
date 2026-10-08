@@ -2,6 +2,7 @@
 // its state dot, its steps as a small constellation, its last run, its pool and its first Board tie, and on a run-safe row the
 // Kanban's ▶ edge strip. It reuses the Kanban's filter chips, menus and folds, and the Star Map's DAG colors (DAG_COLOR).
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
 import { DagModal } from "./DagModal";
 import { lastLine, Orb, poolText, Strip, TieChip, type LedgerGo } from "./DagParts";
 import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rows, short, ties, type DagData, type Phase, type Row } from "./dags";
@@ -78,10 +79,10 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 /** The DAGs view. `spot` is the DAG a Recent line is hovered for: its row lights as a hovered row does and scrolls into view. A new `opening` opens that DAG's modal. */
 export function Dags({ data, post, openPath, spot = null, opening = null }: { data: DagData | null; post?: Post; openPath?: (p: Path) => void; spot?: string | null; opening?: { name: string } | null }) {
-  const [q, setQ] = useState("");
-  const [only, setOnly] = useState<Exclude<Phase, "queued"> | null>(null);
-  const [dom, setDom] = useState<string | null>(null);
-  const [win, setWin] = useState<string | null>(null);
+  // the filters survive a reload, so the view opens as it was left
+  const [kept, keep] = useFilters(DAG_PREFS_KEY, NO_DAG_FILTERS);
+  const { q, dom, win } = kept, only = kept.only as Exclude<Phase, "queued"> | null;
+  const setQ = (v: string) => keep({ q: v }), setOnly = (v: typeof only) => keep({ only: v }), setDom = (v: string | null) => keep({ dom: v }), setWin = (v: string | null) => keep({ win: v });
   const [menu, setMenu] = useState<"status" | "domain" | "recency" | null>(null);
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ text: string; n: number } | null>(null);
@@ -171,7 +172,7 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
               name={(v) => v} set={setWin} close={() => setMenu(null)} />
           )}
         </div>
-        {(only || dom || win || q) && <button className="clear" onClick={() => { setOnly(null); setDom(null); setWin(null); setQ(""); }}>clear</button>}
+        {(only || dom || win || q) && <button className="clear" onClick={() => keep(NO_DAG_FILTERS)}>clear</button>}
         <span className="shown">{rs.length === all.length ? `${all.length} shown` : `${rs.length} of ${all.length} shown`}</span>
       </div>
       {rs.length ? <Catalog data={data} rs={rs} now={now} spot={spot} why={why} run={run} ledger={ledger} open={(r) => { setRefusedRun(null); setOpened(r.d.name); }} folded={folded} toggle={toggle} /> : <div className="none">No DAG matches the filters.</div>}

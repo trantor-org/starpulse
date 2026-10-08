@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { NO_PREFS, hideMilestone, hideTask, toggleFold, type Prefs } from "./kanban";
 import { PREFS_KEY, linkedTask, loadPrefs, savePrefs, withoutFilters } from "./kanbanPrefs";
-import type { FoldStorage } from "../../shared/nav";
+import type { PrefStorage } from "../../shared/nav";
 
-const memory = (): FoldStorage & { data: Map<string, string> } => {
+const memory = (): PrefStorage & { data: Map<string, string> } => {
   const data = new Map<string, string>();
   return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
 };
@@ -41,7 +41,7 @@ describe("the view's persistence", () => {
   });
 
   it("still works for the session when storage is off or absent", () => {
-    const off: FoldStorage = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
+    const off: PrefStorage = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
 
     expect(loadPrefs(off, "")).toEqual(NO_PREFS);
     expect(() => savePrefs(off, chosen)).not.toThrow();

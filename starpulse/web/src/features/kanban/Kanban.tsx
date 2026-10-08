@@ -108,7 +108,8 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
   const playing = onPlay && !claim && startLane(task);
   const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
   const finished = task.lane === "done";
-  const badge = stacked > 0 && <StackBadge count={stacked} done={finished} />;
+  // a Waiting stack's ⛓ already counts what it holds; only a Done chain adds the green count
+  const badge = stacked > 0 && finished && <StackBadge count={stacked} />;
   const guard = task.moves.in_progress?.allowed === false ? task.moves.in_progress.reason : "";
   return (
     <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} onClick={onOpen} onPointerDown={onPress}
@@ -165,10 +166,10 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
   );
 }
 
-/** The count of tasks stacked under a card, beside its ⛓: Waiting tasks stacked under it, or in a green Done chain the Done tasks its chain finished first. */
-function StackBadge({ count, done }: { count: number; done: boolean }) {
+/** The green count on a Done chain's top card: the Done tasks its chain finished first. */
+function StackBadge({ count }: { count: number }) {
   return (
-    <span className={`sk${done ? " dn" : ""}`} title={`${count} ${done ? "Done" : "Waiting"} task${count === 1 ? "" : "s"} ${done ? "this one's chain finished first" : "stacked under this one"}; hover to unstack`}>
+    <span className="sk dn" title={`${count} Done task${count === 1 ? "" : "s"} this one's chain finished first; hover to unstack`}>
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="2.5" y="2" width="11" height="7" rx="1.5" /><path d="M3.5 11.5h9M5 14h6" /></svg>{count}
     </span>
   );
@@ -199,7 +200,7 @@ export function StackView({ stack, state, onEvent, card }: { stack: Stack; state
 }
 
 /** Milliseconds the pointer rests on a stack before it unstacks, so sweeping across a column does not open every stack it crosses. */
-const INTENT_MS = 140;
+const INTENT_MS = 350;
 
 function OpenStack({ stack, card, enabled }: { stack: Stack; card: DrawCard; enabled: boolean }) {
   const [state, setState] = useState(CLOSED);
@@ -293,8 +294,8 @@ function Segments({ label, options, value, set }: {
   );
 }
 
-/** How a move to In progress starts: a session on a picked harness, tier and effort (1), or the task worked by hand (2). */
-function StartQuestion({ asking, harnesses, names, canStart, pick, start, manual, cancel }: {
+/** How a move to In progress starts: a session on a picked harness, tier and effort (1), or the task worked by hand (2). The picks sit on one label/value grid and the three answers on one footer row, as the confirmation box lays its own out. */
+export function StartQuestion({ asking, harnesses, names, canStart, pick, start, manual, cancel }: {
   asking: Asking; harnesses: Harnesses; names: Record<string, string>; canStart: boolean; pick: (change: Partial<Pick>) => void;
   start: () => void; manual: () => void; cancel: () => void;
 }) {
@@ -307,7 +308,7 @@ function StartQuestion({ asking, harnesses, names, canStart, pick, start, manual
       <div className="modal ask" role="dialog" aria-label={`Start ${task.id}`}>
         <div className="k">{task.id} · {names[task.lane] ?? task.lane} → {names.in_progress ?? "In progress"}</div>
         <h2>{task.title}</h2>
-        <div className={`opt go${canStart ? "" : " off"}`}>
+        <div className={`opt${canStart ? "" : " off"}`}>
           {harnesses.harnesses.length > 1 && (
             <Segments label="Harness" value={p.harness} set={(harness) => pick({ harness })}
               options={harnesses.harnesses.map((h) => ({ value: h.name, text: h.label, reason: h.sessions ? undefined : h.reason || "runs no sessions" }))} />
@@ -326,23 +327,25 @@ function StartQuestion({ asking, harnesses, names, canStart, pick, start, manual
                   </span>
                 ) : <span className="none">none for this tier</span>}
               </div>
-              <div className="row"><span className="lb" /><span className="runs">{runsOn(p, harnesses)}</span></div>
+              <div className="row"><span className="lb">Runs</span><span className="runs">{runsOn(p, harnesses).replace(/^runs /, "")}</span></div>
               <div className="row">
                 <span className="lb">Assignee</span>
-                <code>{assignee}</code>
-                {assignee !== task.assignee && <span className="was">was {task.assignee || "unassigned"} · saved on start</span>}
+                <span><code>{assignee}</code>{assignee !== task.assignee && <span className="was">was {task.assignee || "unassigned"} · saved on start</span>}</span>
               </div>
             </>
           )}
-          <button className="startbtn" disabled={!canStart} onClick={start}>▶ Start session <kbd>1</kbd></button>
-          <p>{canStart
-            ? "Opens a Remote Control session; its agent claims the task, and the card waits in In progress until it does."
-            : "No configured harness can open a session here."}</p>
+          {!harness && <div className="row"><span className="lb" /><span className="none">No configured harness can open a session here.</span></div>}
         </div>
-        <button className="opt manual" onClick={manual}>
-          <span><b>Work it manually</b><br />Moves it to In progress through the board writer. No session starts.</span><kbd>2</kbd>
-        </button>
-        <div className="afoot"><button className="cancel" onClick={cancel}>Cancel</button><kbd>Esc</kbd></div>
+        <p className="note">
+          <b>Start session</b> opens a Remote Control session; its agent claims the task, and the card waits in In progress until it does.
+          {" "}<b>Work it manually</b> moves it through the board writer; no session starts.
+        </p>
+        <div className="afoot">
+          <button className="cancel" onClick={cancel}>Cancel <kbd>Esc</kbd></button>
+          <span className="sp" />
+          <button className="manual" onClick={manual}>Work it manually <kbd>2</kbd></button>
+          <button className="startbtn" disabled={!canStart} onClick={start}>▶ Start session <kbd>1</kbd></button>
+        </div>
       </div>
     </div>
   );
@@ -389,11 +392,11 @@ const LIFT_PX = 5;
 /**
  * The Kanban view. `spot` is the task a Recent line is hovered for: its card lights as a hovered card does and its column scrolls to it,
  * and `note` hears why it has no card in view. A new `opening` opens that task's modal.
- * `searchSlot` is the navigator's search slot, where the text search draws; `onQuery` tells the navigator what it holds.
+ * `searchSlot` is the navigator's search slot, where the text search draws; `onQuery` hears what it holds.
  * `outlineSlot` is the navigator's outline slot, where the milestone outline draws and sets the Milestone filter.
  */
 export function Kanban({ hud, moves, starts, compact, constellation, searchSlot, outlineSlot, onQuery, spot = null, note, opening = null }: {
-  hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; outlineSlot: HTMLElement | null; onQuery: (query: string) => void;
+  hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; outlineSlot: HTMLElement | null; onQuery?: (query: string) => void;
   spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
 }) {
   const [storage] = useState(browserStorage);
@@ -612,7 +615,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
     addEventListener("pointercancel", cancel);
     addEventListener("keydown", onKey);
   };
-  useEffect(() => { onQuery(prefs.query); }, [onQuery, prefs.query]);
+  useEffect(() => { onQuery?.(prefs.query); }, [onQuery, prefs.query]);
   const lifted = lift ? cards.find((t) => t.id === lift.id) : undefined;
   const heldTask = held ? cards.find((t) => t.id === held.id) : undefined;
   const openCard = (id: string) => () => !clickEnds.current && setOpen(id);
@@ -624,7 +627,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
   );
   const taskStack = task && stackOf(view, task.id);
-  const outline = useMemo(() => milestoneOutline(cards), [cards]);
+  const outline = useMemo(() => milestoneOutline(cards, hud.settled), [cards, hud.settled]);
   return (
     <main id="kb" className={compact ? "compact" : undefined}>
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
