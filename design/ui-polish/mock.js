@@ -11,6 +11,34 @@
     localStorage.setItem(k, JSON.stringify(p));
   } catch { /* storage off: the page keeps 100% */ }
 
+  // apply-on-merge's live step graph (17 steps, a ten-way fan into verify_applied) and its GitHub workflow, which the demo capture
+  // lacks: mid-run (?apply=run), last run passed (done) or failed at one fan step (fail).
+  const F = window.__FLOW_FIXTURE__;
+  if (F) {
+    const apply = q.get("apply") || "run", iso = (s) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
+    const fan = ["apply_unraid", "apply_rulesets", "apply_board", "apply_flow_view", "apply_machine_event_mapper", "apply_session_start", "apply_skills_claude", "apply_skills_codex", "apply_skills_unraid"];
+    const graph = [["validate_event", []], ["classify", ["validate_event"]], ["apply_migrations", ["classify"]], ["apply_images", ["apply_migrations"]],
+      ["apply_deploy", ["apply_images"]], ["apply_systemd", ["apply_deploy"]], ["push_dashboards", ["apply_systemd"]], ...fan.map((n) => [n, ["classify"]]),
+      ["verify_applied", ["push_dashboards", ...fan]]];
+    const run = { validate_event: "succeeded", classify: "succeeded", apply_migrations: "succeeded", apply_images: "running", apply_unraid: "succeeded",
+      apply_rulesets: "succeeded", apply_board: "running", apply_flow_view: "running", apply_machine_event_mapper: "queued", apply_session_start: "queued" };
+    const at = (n) => apply === "done" ? "succeeded" : apply === "fail" ? (n === "apply_board" ? "failed" : n === "verify_applied" ? "skipped" : "succeeded") : run[n] ?? "not_started";
+    const steps = graph.map(([name, depends]) => ({ name, depends, status: at(name), kind: null }));
+    const end = F.now - 1500, start = apply === "run" ? F.now - 95 : end - 212;
+    F.dags.push({ name: "dagu/apply-on-merge", status: apply === "run" ? "running" : apply === "fail" ? "failed" : "succeeded", runId: "apply-demo-1",
+      startedAt: iso(start), finishedAt: apply === "run" ? "" : iso(end), steps, pool: "default",
+      active: apply === "run" ? [{ runId: "apply-demo-1", status: "running", startedAt: iso(start), step: "apply_images", stepStartedAt: iso(F.now - 40),
+        steps: Object.fromEntries(steps.map((s) => [s.name, s.status])) }] : [] });
+    const job = (j, ss) => ss.map((s, i) => [`${j} / ${s}`, [i ? `${j} / ${ss[i - 1]}` : j]]);
+    const A = "Apply merged changes through Dagu", G = "Submit code graph refresh to Dagu";
+    const wf = [[A, []], ...job(A, ["Set up job", "Set up runner", "Fast-forward the shared checkout", "Validate the push", "Submit the merge to Dagu", "Complete runner", "Complete job"]),
+      ["Page on two consecutive failed applies", [A]], [G, [A]], ...job(G, ["Set up job", "Set up runner", "Submit", "Complete runner", "Complete job"])];
+    F.dags.push({ name: "github/apply-on-merge.yml", status: "succeeded", runId: "gh-demo-1", startedAt: iso(end - 260), finishedAt: iso(end - 20), pool: "default", active: [],
+      steps: wf.map(([name, depends]) => ({ name, depends, status: name.startsWith("Page on") ? "skipped" : "succeeded", kind: null })) });
+    const dom = F.domains.find((d) => d.name === "Delivery & CI") || F.domains[0];
+    dom.dags.push({ name: "dagu/apply-on-merge", runSafe: false }, { name: "github/apply-on-merge.yml", runSafe: false });
+  }
+
   // The live server's /api/harnesses, and a second harness for the Harness picker; ?harness=none is a server that names none.
   const claude = { name: "claude", label: "Claude Code", sessions: true, reason: null,
     tiers: { fast: { model: "haiku", efforts: [] }, standard: { model: "sonnet", efforts: ["medium", "high"] }, deep: { model: "opus", efforts: ["medium", "high"] } } };
@@ -45,10 +73,11 @@
     #mockbar a { padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(148,163,184,.18); color: #b6c0d3; text-decoration: none; }
     #mockbar a.on { border-color: #fbbf24; color: #fde68a; background: rgba(251,191,36,.10); }
   </style><b>MOCKUP</b>`;
-  const cur = { view: q.get("view"), s: q.get("s") || "", harness: q.get("harness") || "two", fs: q.get("fs") || "100" };
+  const cur = { view: q.get("view"), s: q.get("s") || "", harness: q.get("harness") || "two", apply: q.get("apply") || "run", fs: q.get("fs") || "100" };
   const groups = [
     ["View", "view", [["kanban", "Kanban"], ["dags", "DAGs"], ["constellation", "Star Map"]]],
     ["Open", "s", [["", "Nothing"], ["stack", "Stack"], ["start", "Start question"]]],
+    ["apply-on-merge", "apply", [["run", "Running"], ["done", "Passed"], ["fail", "Failed"]]],
     ["Harnesses", "harness", [["two", "Two"], ["one", "One"], ["none", "None"]]],
     ["Text", "fs", [["100", "100%"], ["125", "125%"], ["150", "150%"]]],
   ];
@@ -61,6 +90,7 @@
       else u.delete(key);
       // the stack and the start question are on the Kanban
       if (key === "s" && v) u.set("view", "kanban");
+      if (key === "apply") u.set("view", "dags");
       a.href = `?${u}`;
       a.textContent = l;
       if (cur[key] === v) a.className = "on";

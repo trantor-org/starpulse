@@ -32,7 +32,7 @@ html = demo.page(demo.STATIC, snap)
 head = (
     "<!--\n  Design mockup of the Kanban, DAGs and start-question UI polish, under operator review; not served by starpulse.\n"
     "  The real page, built from the branch with ui-polish-src.patch, over the demo capture, with mock.js layered on.\n"
-    "  Variants: ?view=kanban|dags|constellation  ?s=stack|start  ?harness=two|one|none  ?fs=100|125|150\n-->\n"
+    "  Variants: ?view=kanban|dags|constellation  ?s=stack|start  ?harness=two|one|none  ?apply=run|done|fail  ?fs=100|125|150\n-->\n"
 )
 html = html.replace("<head>", "<head>\n" + head, 1).replace("</body>", '<script src="mock.js"></script>\n</body>', 1)
 (HERE / "index.html").write_text(html)

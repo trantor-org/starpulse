@@ -236,3 +236,16 @@ describe("the DAGs catalog's columns", () => {
     expect(css).toMatch(/#dg \.thead, #dg \.trow \{ padding-right: calc\(max\(30px, 30px \* var\(--fs\)\) \+ 12px\); \}/);
   });
 });
+
+describe("a row's step strip for a wide fan", () => {
+  it("draws a ten-way fan, as apply-on-merge's, with no two step stars overlapping, and a three-step fan likewise", async () => {
+    const fan = (n: number) => Array.from({ length: n }, (_, i) => step(`apply_${i}`, ["classify"]));
+    for (const width of [10, 3]) {
+      const steps = [step("validate"), step("classify", ["validate"]), ...fan(width), step("verify", fan(width).map((s) => s.name))];
+      await draw({ ...data, dags: [dag("runs/apply", "succeeded", { steps })], domains: [{ name: "Ops", dags: [{ name: "runs/apply", runSafe: false }] }] });
+      const rings = all("svg.dstrip g.step circle.ring").map((c) => ({ x: +c.getAttribute("cx")!, y: +c.getAttribute("cy")!, r: +c.getAttribute("r")! }));
+      expect(rings).toHaveLength(steps.length);
+      for (const [i, a] of rings.entries()) for (const b of rings.slice(i + 1)) expect(Math.hypot(a.x - b.x, a.y - b.y), `${width}-wide fan`).toBeGreaterThanOrEqual(a.r + b.r + 1);
+    }
+  });
+});

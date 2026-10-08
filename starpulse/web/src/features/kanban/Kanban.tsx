@@ -200,7 +200,7 @@ export function StackView({ stack, state, onEvent, card }: { stack: Stack; state
 }
 
 /** Milliseconds the pointer rests on a stack before it unstacks, so sweeping across a column does not open every stack it crosses. */
-const INTENT_MS = 2000;
+const INTENT_MS = 1000;
 
 function OpenStack({ stack, card, enabled }: { stack: Stack; card: DrawCard; enabled: boolean }) {
   const [state, setState] = useState(CLOSED);

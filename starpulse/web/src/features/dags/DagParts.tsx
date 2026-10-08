@@ -56,8 +56,9 @@ export function chartBox(r: Row, min = 924) {
  *  and an agent step is ringed. `big` is the modal's chart: larger stars, each named, a fan folded into sub-columns. */
 export function Strip({ r, w = 220, h = 20, big = false }: { r: Row; w?: number; h?: number; big?: boolean }) {
   const st = r.d.steps;
-  const p = big ? bigPlace(st, w, h - 12, labelPx()) : place(st, w, h, 7, 3, 5.5, 34, Math.min(7, (h - 6) / 2));
-  const rr = big ? 6 : st.length > 9 ? 3 : 4, uid = useId().replace(/:/g, "");
+  // a folded fan's sub-columns sit a small star's width and a gap apart, and a strip whose column stacks draws small stars
+  const p = big ? bigPlace(st, w, h - 12, labelPx()) : place(st, w, h, 7, 3, 8, 34, Math.min(7, (h - 6) / 2));
+  const rr = big ? 6 : st.length > 9 || p.wide > 1 ? 3 : 4, uid = useId().replace(/:/g, "");
   const at = (n: string) => r.steps[n] ?? "not_started";
   return (
     <svg className={`dstrip${big ? " big" : ""}`} width={big ? w : "100%"} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMinYMid meet" aria-hidden={!big}>
