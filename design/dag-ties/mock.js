@@ -4,7 +4,8 @@
 // the text size (?fs=100|125|150) and their runs, simulated on a loop shaped like the live day: autopilot claims, reconciliation releases, a
 // merge cues apply-on-merge and graph-refresh, the sweep, a skill eval. ?sim=live (the loop, where a forced rerun clears apply-on-merge's
 // failure), rest (nothing running) or fail (apply-on-merge failed and left unresolved: the loop skips the rerun); ?at=<seconds> opens the loop
-// at that moment.
+// at that moment. ?place= picks where each hangar docks: edge (beside its busiest line, clear of it), line (on that line), side
+// (round its state), rim (on the state's ring), orbit (its DAGs orbit the state itself) or label (small, in the state's name).
 // It runs before the page's module.
 (() => {
   const q = new URLSearchParams(location.search);
@@ -65,8 +66,9 @@
         #mockbar a { padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(148,163,184,.18); color: #b6c0d3; text-decoration: none; }
         #mockbar a.on { border-color: #fbbf24; color: #fde68a; background: rgba(251,191,36,.10); }
       </style><b>MOCKUP</b>`;
-      const cur = { sim, fs: q.get("fs") || "100" };
+      const cur = { place: q.get("place") || "edge", sim, fs: q.get("fs") || "100" };
       const groups = [
+        ["Place", "place", [["edge", "Off its line"], ["line", "On its line"], ["side", "Beside it"], ["rim", "On its ring"], ["orbit", "Round it"], ["label", "In its name"]]],
         ["Runs", "sim", [["live", "Live loop"], ["rest", "At rest"], ["fail", "Failure"]]],
         ["Text", "fs", [["100", "100%"], ["125", "125%"], ["150", "150%"]]],
       ];
