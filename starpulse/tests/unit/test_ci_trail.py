@@ -185,3 +185,11 @@ def test_a_cancelled_suite_is_neither_a_failure_nor_a_pass_and_a_commit_without_
 
     assert [event for _, event, _ in ci.steps()] == ["PR_OPENED", "PUSHED"]
     assert ci.agent()["state"] == "running"
+
+
+def test_an_app_suite_with_no_workflow_run_stuck_queued_does_not_hold_the_checks_open(ci: _Trail) -> None:
+    never_ran = {**_suite("QUEUED", None, 1, 1), "workflowRun": None}
+    ci.poll(6, first=_node(commits={"aaa": [never_ran, _done("SUCCESS", 1, 5), _done("SUCCESS", 1, 4)]}))
+
+    assert [event for _, event, _ in ci.steps()] == ["PR_OPENED", "PUSHED", "CHECKS_PASSED"]
+    assert ci.agent()["state"] == "passing"

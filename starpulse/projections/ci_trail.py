@@ -74,6 +74,11 @@ def _epoch(text: str) -> float:
     return datetime.fromisoformat(text).timestamp()
 
 
+def _ran(suite: dict) -> bool:
+    """False for an app's suite GitHub holds QUEUED for good: no workflow run backs it, so no check will report."""
+    return suite["status"] == "COMPLETED" or bool(suite.get("workflowRun"))
+
+
 def parse(url: str, node: dict) -> PullHistory:
     """The history in one GraphQL `pullRequest` node (the `Pull` fragment of `pull_requests`)."""
     chain = [item["commit"] for item in node.get("commits", {}).get("nodes", [])]
@@ -87,6 +92,7 @@ def parse(url: str, node: dict) -> PullHistory:
                 attempt=(suite.get("workflowRun") or {}).get("runAttempt", 1),
             )
             for suite in commit["checkSuites"]["nodes"]
+            if _ran(suite)
         )
         if suites:  # a push the checks saw; a commit that started none was not a head
             started = min(_epoch(suite["createdAt"]) for suite in commit["checkSuites"]["nodes"])
