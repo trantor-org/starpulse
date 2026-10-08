@@ -232,7 +232,10 @@ def build(
         own = [o for o in occurrences if not o.child]
         paired = {dag: pair(own, runs.get(dag, ()), keys(dag)) for dag in dags}
         failed = {dag: failures(own, runs.get(dag, ()), keys(dag), resolves(event, dag)) for dag in dags}
-        applies = {o.key: [c.key for c in occurrences if c.applied_by == o.key] for o in own}
+        applies: dict[str, list[str]] = {}
+        for c in occurrences:
+            if c.applied_by is not None:
+                applies.setdefault(c.applied_by, []).append(c.key)
         ledgers[event] = [
             {
                 "key": o.key,

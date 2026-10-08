@@ -254,3 +254,49 @@ def test_an_entry_from_an_instance_is_its_own_workflow_beside_a_pushed_one_of_th
     assert drawn(feed)["runId"] == "r1"
     assert drawn(feed, "cron/nightly")["runId"] == "c1"
     assert drawn(feed, "cron/nightly")["status"] == "failed"
+
+
+def _kinds(changes: Any) -> list[str]:
+    out = []
+    while not changes.empty():
+        out.append(changes.get_nowait()[0])
+    return out
+
+
+def test_the_startup_replay_publishes_the_workflows_once_when_it_reaches_the_last_entry() -> None:
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))
+    _, changes = feed.subscribe()
+    runs.expect("3-0")
+
+    runs.handle_entry("1-0", fields("start", "running"))
+    runs.handle_entry("2-0", fields("start", "running", step="load"))
+    assert _kinds(changes) == []
+
+    runs.handle_entry("3-0", fields("end", "succeeded", step="load"))
+    assert _kinds(changes) == ["dags"]
+    assert [(s["name"], s["status"]) for s in drawn(feed)["steps"]] == [("load", "succeeded")]
+
+    runs.handle_entry("4-0", fields("end", "succeeded", at=START + 60))
+    assert _kinds(changes) == ["dags"]
+
+
+def test_a_replay_whose_last_entry_is_dropped_still_publishes_what_it_read() -> None:
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))
+    runs.expect("2-0")
+
+    runs.handle_entry("1-0", fields("start", "running"))
+    runs.handle_entry("2-0", fields("start", "running", run="r0", step="late"))
+
+    assert drawn(feed)["status"] == "running"
+
+
+def test_an_empty_stream_holds_nothing_back() -> None:
+    feed = BoardFeed()
+    runs = PushRuns(feed.runs(PUSHED_INSTANCE), HistoryStore("sqlite://", {}))
+    runs.expect("0-0")
+
+    runs.handle_entry("1-0", fields("start", "running"))
+
+    assert drawn(feed)["status"] == "running"
