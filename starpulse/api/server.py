@@ -81,10 +81,11 @@ GET /api/level/trajectories[?hours=N]
                    the trajectory analytics (`trajectories.trajectory_analytics`) of the level's runs that ended in a
                    terminal in the last `hours`, default 168: `variants` and the `norm`, `outliers` ranked by
                    Levenshtein distance from it, the absorbing `chain` (expected days and `p_goal` per state),
-                   `betweenness` and the path-time `bottleneck`, per configured gate whether it is `bypassable` with
-                   the bypassing run's `witness` path, and per run its own `gates` with their `dominators` and
-                   `post_dominators`, computed on that run's graph and never the union of all runs'. The window and
-                   its refusals are `/api/level`'s
+                   `betweenness` and the path-time `bottleneck`, the rework `loops` (each back-edge with its runs,
+                   trips and days), per configured gate whether it is `bypassable` with the bypassing run's
+                   `witness` path, and per run its `back_edges`, `sccs`, `loops` and own `gates` with their
+                   `dominators` and `post_dominators`, computed on that run's graph and never the union of all
+                   runs'. The window and its refusals are `/api/level`'s
 GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
 POST /api/run/<instance>/<workflow>
                    start a run-safe workflow through its instance's optional `start`: {runId}, or {error}

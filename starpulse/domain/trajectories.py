@@ -12,6 +12,8 @@ functions of those runs: a fixture gives answers that can be worked out by hand.
 - Gates: the dominators and post-dominators of each configured gate in each run's own graph, never in the union of all
   runs' graphs, which holds paths no run took. A gate is bypassable when a run that reached the goal had a path to it
   that skips the gate, and that run's own path is the witness.
+- Rework loops: per run the back-edges and non-trivial strongly connected components of its own step graph, and across
+  runs each back-edge's trips and total days, summed from the runs' own figures and never found in the union graph.
 """
 
 from __future__ import annotations
@@ -77,7 +79,7 @@ def trajectory_analytics(
     nodes = betweenness(edges)
     bottleneck = max(path_days, key=lambda state: (path_days[state], state), default=None)
 
-    trajectories = [(run, _trajectory(level, run, path)) for run, path in paths]
+    trajectories = [(run, _trajectory(level, run, steps)) for run, steps in ended]
     return {
         "now": now,
         "window_s": window_s,
@@ -92,6 +94,7 @@ def trajectory_analytics(
         "betweenness": nodes,
         "bottleneck": {"state": bottleneck, "path_days": path_days[bottleneck]} if bottleneck else None,
         "gates": _level_gates(level, trajectories),
+        "loops": _level_loops(trajectories),
         "runs": [trajectory for _, trajectory in trajectories],
     }
 
@@ -228,8 +231,11 @@ def _shortest(succ: Mapping[str, Iterable[str]], entry: str, exit: str, avoiding
     return []
 
 
-def _trajectory(level: Level, run: Run, path: list[str]) -> dict[str, Any]:
-    """One run's path and, when it reached the goal, how each configured gate stands in the graph of its own steps."""
+def _trajectory(level: Level, run: Run, steps: Sequence[tuple[float, str]]) -> dict[str, Any]:
+    """One run's path, its rework loops and, when it reached the goal, how each configured gate stands in the graph of
+    its own steps."""
+    path = [state for _, state in steps]
+    loops, sccs = _rework(steps)
     reached = path[-1] == level.goal
     gates: list[dict[str, Any]] = []
     if reached:
@@ -255,7 +261,82 @@ def _trajectory(level: Level, run: Run, path: list[str]) -> dict[str, Any]:
                     "witness": None if mandatory else _shortest(succ, path[0], path[-1], gate),
                 }
             )
-    return {"source": run.source, "task": run.task, "path": path, "reached_goal": reached, "gates": gates}
+    return {
+        "source": run.source,
+        "task": run.task,
+        "path": path,
+        "reached_goal": reached,
+        "back_edges": len(loops),
+        "sccs": sccs,
+        "loops": loops,
+        "gates": gates,
+    }
+
+
+def _rework(steps: Sequence[tuple[float, str]]) -> tuple[list[dict[str, Any]], int]:
+    """A run's rework loops and its count of non-trivial strongly connected components, in the graph of its own steps.
+
+    A loop is a back-edge of a depth-first search from the run's first state (an edge into a state still on the stack),
+    reported with its `trips` (the steps that took it) and `days`: for each trip, from the target's previous visit to
+    the step back into it. The components are found by Tarjan's algorithm, a state with no way back counting for none.
+    """
+    succ: dict[str, dict[str, None]] = defaultdict(dict)
+    for (_, a), (_, b) in zip(steps, steps[1:], strict=False):
+        succ[a][b] = None
+        succ[b]
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    stack: list[str] = []
+    back: set[tuple[str, str]] = set()
+    sccs = 0
+
+    def visit(u: str) -> None:
+        nonlocal sccs
+        index[u] = low[u] = len(index)
+        stack.append(u)
+        for v in succ[u]:
+            if v not in index:
+                visit(v)
+                low[u] = min(low[u], low[v])
+            elif v in stack:
+                back.add((u, v))
+                low[u] = min(low[u], index[v])
+        if low[u] == index[u]:
+            size = 0
+            while True:
+                size += 1
+                if stack.pop() == u:
+                    break
+            sccs += size > 1
+
+    if steps:
+        visit(steps[0][1])
+    seen: dict[str, float] = {}
+    found: dict[tuple[str, str], list[float]] = {}
+    previous = None
+    for at, state in steps:
+        if (previous, state) in back:
+            trips = found.setdefault((previous, state), [0, 0.0])
+            trips[0] += 1
+            trips[1] += (at - seen[state]) / _DAY_S
+        seen[state] = at
+        previous = state
+    loops = [{"from": a, "to": b, "trips": int(n), "days": days} for (a, b), (n, days) in found.items()]
+    return sorted(loops, key=lambda loop: (-loop["days"], loop["from"], loop["to"])), sccs
+
+
+def _level_loops(trajectories: Sequence[tuple[Run, dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Each back-edge any run took, with how many runs took it and its trips and days summed over them, the longest
+    first. It reads each run's own loops, so a cycle that only the union of two runs' steps closes is never in it."""
+    total: dict[tuple[str, str], dict[str, Any]] = {}
+    for _, trajectory in trajectories:
+        for loop in trajectory["loops"]:
+            row = total.setdefault((loop["from"], loop["to"]), {"runs": 0, "trips": 0, "days": 0.0})
+            row["runs"] += 1
+            row["trips"] += loop["trips"]
+            row["days"] += loop["days"]
+    rows = [{"from": a, "to": b, **row} for (a, b), row in total.items()]
+    return sorted(rows, key=lambda row: (-row["days"], row["from"], row["to"]))
 
 
 def _level_gates(level: Level, trajectories: Sequence[tuple[Run, dict[str, Any]]]) -> list[dict[str, Any]]:

@@ -784,7 +784,10 @@ def test_analytics_trajectories_serves_variants_the_norm_outliers_the_chain_and_
     assert doc["chain"]["review"]["p_goal"] == pytest.approx(1.0)
     assert set(doc["betweenness"]) == {"to_do", "ready", "in_progress", "review", "done"}
     assert doc["bottleneck"]["state"] == "in_progress"
+    assert doc["loops"] == [{"from": "review", "to": "in_progress", "runs": 1, "trips": 1, "days": 16 * H / 86400}]
+    assert [(run["task"], run["back_edges"], run["sccs"]) for run in doc["runs"]] == [("A", 0, 0), ("B", 1, 1)]
     assert "gates" not in doc
+    assert "dominators" not in json.dumps(doc["runs"])
 
 
 def test_analytics_gates_marks_a_bypassed_gate_bypassable_and_returns_the_bypassing_runs_path(

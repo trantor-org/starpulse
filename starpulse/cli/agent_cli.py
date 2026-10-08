@@ -113,6 +113,8 @@ _TRAJECTORY_KEYS = (
     "chain",
     "betweenness",
     "bottleneck",
+    "loops",
+    "runs",
 )
 _GATE_KEYS = ("now", "window_s", "history_s", "machine", "goal", "ended", "gates", "runs")
 _HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
@@ -524,8 +526,13 @@ def _level(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
 
 
 def _trajectories(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The level's variants, norm, outliers, absorbing chain and betweenness as `/api/level/trajectories` answers."""
-    return _level_read(args, environ, "/api/level/trajectories", _TRAJECTORY_KEYS)
+    """The level's variants, norm, outliers, absorbing chain, betweenness and rework loops as
+    `/api/level/trajectories` answers; each run keeps its path and loop counts, its gates being `gates`'."""
+    document = _level_read(args, environ, "/api/level/trajectories", _TRAJECTORY_KEYS)
+    document["runs"] = [
+        {key: run[key] for key in ("source", "task", "path", "back_edges", "sccs", "loops")} for run in document["runs"]
+    ]
+    return document
 
 
 def _gates(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -875,7 +882,8 @@ def _parser() -> argparse.ArgumentParser:
         analytics_verbs,
         "trajectories",
         "the runs that ended in the window as paths: variants and the norm, ranked outliers, the absorbing chain's "
-        "expected days and chance of the goal, betweenness and the path-time bottleneck",
+        "expected days and chance of the goal, betweenness, the path-time bottleneck, and the rework loops each run took "
+        "with the days they cost",
         _trajectories,
         _TRAJECTORY_KEYS,
         (0, 1, 2, 3),

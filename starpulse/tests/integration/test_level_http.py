@@ -155,6 +155,14 @@ def test_trajectories_cover_the_runs_that_ended_in_the_window(server: ThreadingH
     assert body["chain"]["in_progress"]["p_goal"] == pytest.approx(1.0)  # every ended run reached the goal
 
 
+def test_trajectories_report_the_rework_loop_of_a_run_and_its_days(server: ThreadingHTTPServer) -> None:
+    _, body = _trajectories(server, "?hours=48")
+
+    assert [(run["task"], run["back_edges"], run["sccs"]) for run in body["runs"]] == [("A", 0, 0), ("B", 1, 1)]
+    # B went back from review to the in progress it entered at 70h, at 86h
+    assert body["loops"] == [{"from": "review", "to": "in_progress", "runs": 1, "trips": 1, "days": 16 * H / 86400}]
+
+
 def test_a_run_that_detoured_through_the_gate_leaves_it_bypassable_with_that_runs_own_path(
     server: ThreadingHTTPServer,
 ) -> None:

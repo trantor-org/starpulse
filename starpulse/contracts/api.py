@@ -745,11 +745,24 @@ class RunGate(_Api):
     witness: list[str] | None
 
 
+class RunLoop(_Api):
+    """One back-edge a run took: its trips and the days they took, from the target's previous visit to each return."""
+
+    # `from` is a Python keyword.
+    origin: str = Field(alias="from")
+    to: str
+    trips: int
+    days: float
+
+
 class TrajectoryRun(_Api):
     source: str
     task: str
     path: list[str]
     reached_goal: bool
+    back_edges: int
+    sccs: int
+    loops: list[RunLoop]
     gates: list[RunGate]
 
 
@@ -768,6 +781,17 @@ class GateSummary(_Api):
     witness: GateWitness | None
 
 
+class LevelLoop(_Api):
+    """One back-edge across the runs that took it, summed from the runs' own figures."""
+
+    # `from` is a Python keyword.
+    origin: str = Field(alias="from")
+    to: str
+    runs: int
+    trips: int
+    days: float
+
+
 class Trajectories(_Api):
     """`GET /api/level/trajectories`: the paths of the runs that ended in a terminal over a window."""
 
@@ -784,6 +808,7 @@ class Trajectories(_Api):
     betweenness: dict[str, float]
     bottleneck: Bottleneck | None
     gates: list[GateSummary]
+    loops: list[LevelLoop]
     runs: list[TrajectoryRun]
 
 
