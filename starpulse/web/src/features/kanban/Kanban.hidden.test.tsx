@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 describe("a Kanban left behind by the view switch", () => {
-  it("takes its search box and outline out of the navigator, and puts them back when shown", () => {
+  it("takes its search box and outline out of the navigator, and puts them back once it is live again", async () => {
     render(true);
     expect(search.querySelector("#kbq")).not.toBeNull();
 
@@ -45,6 +45,8 @@ describe("a Kanban left behind by the view switch", () => {
     expect(outline.childElementCount).toBe(0);
 
     render(true);
+    expect(search.querySelector("#kbq")).toBeNull();
+    await act(async () => { for (let i = 0; i < 3; i++) await new Promise((r) => requestAnimationFrame(r)); });
     expect(search.querySelector("#kbq")).not.toBeNull();
   });
 });

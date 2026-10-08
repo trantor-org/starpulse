@@ -31,7 +31,7 @@ afterEach(() => {
 const last = () => host.querySelector(".last")?.textContent;
 
 describe("the DAGs view when it is left", () => {
-  it("stops counting a run's seconds, and counts them again when it is shown", async () => {
+  it("stops counting a run's seconds, and counts them again once it is shown and live", async () => {
     const draw = (on: boolean) => act(async () => root.render(<Kept on={on}><Dags data={data} /></Kept>));
     await draw(true);
     const before = last();
@@ -42,6 +42,7 @@ describe("the DAGs view when it is left", () => {
     await act(async () => void vi.advanceTimersByTime(10_000));
     expect(last()).toBe(left);
     await draw(true);
+    await act(async () => void vi.advanceTimersByTime(50)); // the frames before a view shown again is live
     await act(async () => void vi.advanceTimersByTime(3_000));
     expect(last()).not.toBe(left);
   });
