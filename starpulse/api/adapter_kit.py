@@ -369,6 +369,7 @@ def serve(
     forwarding: Forwarder | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
     contract: Callable[[], dict[str, Any]] | None = None,
+    milestones: Board | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -401,6 +402,7 @@ def serve(
         forwarding=forwarding,
         reruns=reruns,
         contract=contract,
+        milestones=milestones,
     )
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

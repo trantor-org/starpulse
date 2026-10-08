@@ -118,6 +118,8 @@ starpulse task moves PROJ-45                     # every column it may move to, 
 starpulse task move PROJ-45 review               # move it as the agent; a refusal is the verdict, exit 1
 starpulse task trace PROJ-45 --flow in-progress  # where the task has been: Board lanes, or one machine's events
 starpulse machine show in-progress               # a machine's states, transitions and the tasks now in each
+starpulse milestone list                         # every open milestone: title, outcome, specs and ADRs
+starpulse milestone add "Launch" --outcome "Shipped" --spec "doc-1 - plan" --adr docs/adr/a.md
 starpulse runs list                              # each workflow as <instance>/<workflow> with its latest status
 starpulse runs start prod/nightly                # start a run-safe workflow through Run now; its run id
 starpulse watch --task PROJ-45                   # one JSON line per change, until you stop it: wait without polling
@@ -159,6 +161,11 @@ lists exactly the verbs there are.
 | `machine show` | `NAME` | `name`, `states` (each `{id, name, initial, final, count, tasks}`) and `transitions`; an unknown machine exits 4 and names those drawn |
 | `machine validate` | `PATH...` | `ok` and `machines`: each `{path, ok, errors}`, an error `{file, line, message}` (`line` is null when the compiler cannot place it); exit 1 when any file is refused. A guard or action name is taken as the adapter's to register |
 | `machine import mermaid` | `SOURCE`, `--out` | `written`: the new file, by default `.starpulse/machines/<name>.yaml`; an existing file is refused (exit 1), a missing source is exit 4 |
+| `milestone list` | `--json` | `milestones`: each open milestone as `{id, title, outcome, specs, adrs, retro, description}`, by ascending number; `--json` is accepted and changes nothing, since every verb prints JSON; a board that keeps no milestones exits 3 |
+| `milestone show` | `MILESTONE` | one milestone's record as above; one that is not open exits 4 |
+| `milestone add` | `TITLE`, `--outcome`, `--spec`, `--adr`, `--retro` | `milestone`: the new id (the next number past every open and archived milestone); `--spec` and `--adr` repeat; a blank title exits 1 |
+| `milestone edit` | `MILESTONE`, `--title`, `--outcome`, `--spec`, `--adr`, `--retro` | `milestone` and `changed`, the fields whose value differs; `--spec` or `--adr` given at all replaces that whole list, and a change that changes nothing writes nothing; naming no field exits 2, a refused change exits 1, an unknown milestone exits 4 |
+| `milestone archive` | `MILESTONE` | `milestone`: moves the file to `archive/milestones/`; refusals as `milestone edit` |
 | `runs list` | | `runs`: each workflow as `{workflow, status, raw, run_id, started_at, finished_at}` with `workflow` `<instance>/<workflow>`, and `error`, the runs adapters' error or null |
 | `runs start` | `WORKFLOW` | `workflow` and `run_id`: starts `<instance>/<workflow>` through the server's Run now path, so only a workflow in the instance's `run_safe` starts and only from the loopback or private network, as JSON with no foreign `Origin` (exit 1 when refused); an instance with no start exits 3, a workflow outside `run_safe` exits 4 |
 | `watch` | `--machine`, `--task` | one line per change after the connect snapshot, `{event, data}` with `event` `task`, `move`, `pulls`, `claim` or `dags` and `data` the server's delta; `--machine` keeps that machine's changes (`board` takes `task`, `pulls` and `claim`), `--task` that task's, and either drops `dags`; an unknown machine exits 4, the server ending the stream exits 3, and an interrupt exits 0 |
@@ -782,7 +789,11 @@ directory. The `Board` says:
   archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `create(title, details)` that
   makes a task in the board's starting lane with the details the page filled (description, priority, labels,
   milestone, assignee, dependencies, acceptance criteria) and answers with its id (`POST /api/tasks`;
-  `capabilities.create`). `serve` records every machine event (task- and run-keyed) and each Board lane change it
+  `capabilities.create`), and optionally milestone records: `milestones()`, `read_milestone(id)`,
+  `create_milestone(title, details)` (answering with the new id), `edit_milestone(id, changes)` and
+  `archive_milestone(id)` (`GET /api/milestones`, `GET /api/milestones/<id>`, `POST /api/milestones`,
+  `POST /api/milestones/edit` and `POST /api/milestones/archive`; the writes answer only the loopback and private
+  network, and a board that sets none answers 404). `serve` records every machine event (task- and run-keyed) and each Board lane change it
   places into StarPulse's own store (`starpulse_machine_events`, `starpulse_lane_changes`), and the page reads that
   store: a `Board` has no history of its own. In the same transaction the store folds each of them into
   summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
@@ -820,6 +831,13 @@ dependencies is workable. It is workable since the latest of when it entered its
 when a pass first saw its criteria all met. The server evaluates the criteria of Waiting tasks whose dependencies are
 done in the background every 30 seconds through the same cache, never per page, and keeps that first-met moment in
 `starpulse_criteria_met` while the criteria stay met, so a restart does not reset it.
+The native board also keeps milestones in Backlog.md's format, so a Backlog.md project's milestone files read
+unchanged: `milestones/m-N - slug.md`, with the front matter `id` and `title` and, under `## Description`, the sections `## Outcome`, `## Spec`
+and `## ADRs` (bullet lists) and `## Retro`. The slug is the title lowercased, whitespace to `-`, `<>:"/\|?*` removed
+and cut to 50 characters. A new milestone takes the next number past every file in `milestones/` and
+`archive/milestones/`; an edit rewrites only the sections it names (keeping unknown sections and the text before the
+first heading byte for byte) and renames the file when the title changes, and an archive moves the file to
+`archive/milestones/`.
 `starpulse.adapters.boards.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
@@ -852,7 +870,7 @@ internal and can change in any release.
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
 
-- `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer and task protocols).
+- `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer, task and milestone protocols).
 - `starpulse.board_feed`: the feed a board adapter places tasks on (`BoardFeed`) and what following a stream needs of it.
 - `starpulse.contracts`: the board, machine-event, runs (`Dag`, `RecentRun`) and insights (`Finding`) records, their JSON Schemas, and `RunsSink`.
 - `starpulse.adapter_kit`: the test kit an adapter or insights engine author runs against their work, and the helpers that serve it.

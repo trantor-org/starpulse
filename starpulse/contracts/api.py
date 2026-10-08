@@ -894,6 +894,30 @@ class TaskRecord(_Api):
     record: dict[str, Any]
 
 
+class MilestoneRecord(_Api):
+    """A milestone as the board's reader gives it: its sections as text and bullet lists, and its whole description."""
+
+    id: str
+    title: str
+    outcome: str
+    specs: list[str]
+    adrs: list[str]
+    retro: str
+    description: str
+
+
+class Milestones(_Api):
+    """`GET /api/milestones`: every open milestone, by ascending number."""
+
+    milestones: list[MilestoneRecord]
+
+
+class MilestoneShown(_Api):
+    """`GET /api/milestones/<id>`: one open milestone."""
+
+    milestone: MilestoneRecord
+
+
 # --- writes -----------------------------------------------------------------------------------------------------
 
 
@@ -940,6 +964,29 @@ class CreateRequest(_Api):
     labels: list[str] | None = None
     dependencies: list[str] | None = None
     acceptanceCriteria: list[str] | None = None
+
+
+class MilestoneCreateRequest(_Api):
+    """`POST /api/milestones`: open a milestone; only the title is required."""
+
+    title: str
+    outcome: str | None = None
+    specs: list[str] | None = None
+    adrs: list[str] | None = None
+    retro: str | None = None
+
+
+class MilestoneEditRequest(_Api):
+    """`POST /api/milestones/edit`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` `changes` names."""
+
+    milestone: str
+    changes: dict[str, Any]
+
+
+class MilestoneArchiveRequest(_Api):
+    """`POST /api/milestones/archive`: archive `milestone`."""
+
+    milestone: str
 
 
 class WindowRequest(_Api):
@@ -1026,6 +1073,19 @@ class Created(_Api):
     task: str
 
 
+class MilestoneCreated(_Api):
+    milestone: str
+
+
+class MilestoneEdited(_Api):
+    milestone: str
+    changed: list[str]
+
+
+class MilestoneArchived(_Api):
+    milestone: str
+
+
 class Started(_Api):
     task: str
     url: str
@@ -1067,6 +1127,8 @@ RESPONSES: dict[str, Any] = {
     "/api/history-window": WindowState,
     "/api/doctor": ContractReport,
     "/api/task/": TaskRecord,
+    "/api/milestones": Milestones,
+    "/api/milestones/": MilestoneShown,
     "/api/history": LaneHistory | MachineHistory,
     "/api/forwarding": ForwardingStatus | ForwardingUnconfigured,
 }
@@ -1078,6 +1140,9 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/edit": EditRequest,
     "/api/archive": ArchiveRequest,
     "/api/tasks": CreateRequest,
+    "/api/milestones": MilestoneCreateRequest,
+    "/api/milestones/edit": MilestoneEditRequest,
+    "/api/milestones/archive": MilestoneArchiveRequest,
     "/api/history-window": WindowRequest,
     "/api/forwarding": ForwardingRequest,
     "/api/runs/events": RunEventRequest,
@@ -1105,6 +1170,11 @@ BODIES: dict[str, Any] = {
     "edit": Edited | StaleEdit | SkillRefusal | ApiError,
     "archive": Archived | SkillRefusal | ApiError,
     "create": Created | SkillRefusal | ApiError,
+    "milestones": Milestones | ApiError,
+    "milestone": MilestoneShown | ApiError,
+    "milestone_create": MilestoneCreated | SkillRefusal | ApiError,
+    "milestone_edit": MilestoneEdited | SkillRefusal | ApiError,
+    "milestone_archive": MilestoneArchived | SkillRefusal | ApiError,
     "run": RunStarted | ApiError,
     "ingest": Accepted | ApiError,
     "forward": ForwardAccepted | ApiError,
@@ -1148,12 +1218,17 @@ class ApiContract(_Api):
     forwardingUnconfigured: ForwardingUnconfigured
     contractReport: ContractReport
     taskRecord: TaskRecord
+    milestones: Milestones
+    milestoneShown: MilestoneShown
     requests: list[
         MoveRequest
         | StartRequest
         | EditRequest
         | ArchiveRequest
         | CreateRequest
+        | MilestoneCreateRequest
+        | MilestoneEditRequest
+        | MilestoneArchiveRequest
         | WindowRequest
         | ForwardingRequest
         | RunEventRequest
@@ -1164,6 +1239,9 @@ class ApiContract(_Api):
         | Edited
         | Archived
         | Created
+        | MilestoneCreated
+        | MilestoneEdited
+        | MilestoneArchived
         | Started
         | RunStarted
         | Accepted

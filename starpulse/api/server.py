@@ -112,6 +112,15 @@ POST /api/tasks    {title, description, priority, labels, milestone, assignee, d
                    with its id; only the title is required. 400 for a missing, blank or over-long title or a detail of
                    the wrong kind, 403 outside loopback and RFC 1918, 404 when the board
                    does not create (the snapshot's `capabilities.create` says which). A GET answers 405
+GET /api/milestones, /api/milestones/<id>
+                   {milestones} or {milestone}: the board's open milestones, each {id, title, outcome, specs, adrs, retro,
+                   description}; 404 for a board that keeps none or for a milestone that is not open
+POST /api/milestones, /api/milestones/edit, /api/milestones/archive
+                   {title[, outcome, specs, adrs, retro]} (201 {milestone}, the new id), {milestone, changes} (200
+                   {milestone, changed}) and {milestone} (200 {milestone}), through the board's `create_milestone`,
+                   `edit_milestone` and `archive_milestone`; 400 for a malformed body or detail, 403 outside loopback and
+                   RFC 1918, 404 for a board without the writer or a milestone that is not open, 409 for the writer's
+                   refusal. A GET answers 405
 POST /api/runs/events
                    push one run event from a producer that cannot reach the event log, with `Authorization: Bearer
                    <token>`: {phase, workflow: "<instance>/<workflow>", run_id, status[, time, step, depends]}, the
@@ -257,9 +266,14 @@ _TASK = "/api/task/"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
 _TASKS = "/api/tasks"
+_MILESTONES = "/api/milestones"
+_MILESTONE_EDIT = "/api/milestones/edit"
+_MILESTONE_ARCHIVE = "/api/milestones/archive"
 _INGEST = "/api/runs/events"
 _FORWARD = "/api/forward"
 _INSIGHTS = "/api/insights"
+#: The write routes of milestone records; `/api/milestones/<id>` reads one, so a GET of these answers 405.
+_MILESTONE_WRITES = frozenset({_MILESTONES, _MILESTONE_EDIT, _MILESTONE_ARCHIVE})
 #: The body each write route answers, by `contracts.api.BODIES`; a run and a rerun answer `run`.
 _WRITES = {
     _MOVE: "move",
@@ -267,6 +281,9 @@ _WRITES = {
     _EDIT: "edit",
     _ARCHIVE: "archive",
     _TASKS: "create",
+    _MILESTONES: "milestone_create",
+    _MILESTONE_EDIT: "milestone_edit",
+    _MILESTONE_ARCHIVE: "milestone_archive",
     _INGEST: "ingest",
     _FORWARD: "forward",
     _INSIGHTS: "insight",
@@ -543,6 +560,97 @@ def create_task(source: str, raw: bytes, create: TaskCreator | None) -> tuple[in
     return 201, {"task": written.output}
 
 
+def milestones_list(board: Board | None) -> tuple[int, dict[str, Any]]:
+    """The open milestones the board keeps: the HTTP status and JSON body. Reading is not LAN-limited, like the snapshot."""
+    if board is None or board.milestones is None:
+        return 404, {"error": "this board keeps no milestones"}
+    return 200, {"milestones": board.milestones()}
+
+
+def milestone_record(board: Board | None, milestone: str) -> tuple[int, dict[str, Any]]:
+    """The record of one open milestone: the HTTP status and JSON body."""
+    if board is None or board.read_milestone is None:
+        return 404, {"error": "this board keeps no milestones"}
+    if (record := board.read_milestone(milestone)) is None:
+        return 404, {"error": f"{milestone} is not an open milestone"}
+    return 200, {"milestone": record}
+
+
+def _milestone_request(
+    source: str, raw: bytes, action: str
+) -> tuple[dict[str, Any] | None, tuple[int, dict[str, Any]]]:
+    """The JSON object `raw` holds for a milestone write at `source`, or None with the refusal to answer."""
+    if not _on_lan(source):
+        return None, (
+            403,
+            {"error": f"{action} a milestone answers only loopback and private network (RFC 1918) browsers"},
+        )
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        return None, (400, {"error": "a milestone write takes a JSON object"})
+    return body, (200, {})
+
+
+def create_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Open the milestone `raw` names through the board's `create_milestone`, for a browser at `source`: the HTTP status
+    and JSON body, which holds the new milestone's id. Only the title is required."""
+    body, refusal = _milestone_request(source, raw, "Adding")
+    if body is None:
+        return refusal
+    title = body.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return 400, {"error": 'an add needs {"title": "<text>"}'}
+    if board is None or board.create_milestone is None:
+        return 404, {"error": "this board does not create milestones"}
+    written = board.create_milestone(title, {field: value for field, value in body.items() if field != "title"})
+    if not written.ok:  # the writer refuses a detail it cannot store, or a title it cannot file
+        return 400, {"error": written.output, "skill": written.skill}
+    return 201, {"milestone": written.output}
+
+
+def edit_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Apply the `changes` `raw` names to a milestone through the board's `edit_milestone`, for a browser at `source`: the
+    HTTP status and JSON body. `changed` names the fields whose value the edit changed; an edit that changes none writes
+    nothing."""
+    body, refusal = _milestone_request(source, raw, "Editing")
+    if body is None:
+        return refusal
+    milestone, changes = body.get("milestone"), body.get("changes")
+    if not isinstance(milestone, str) or not isinstance(changes, dict) or not changes:
+        return 400, {"error": 'an edit needs {"milestone": "m-N", "changes": {...}}'}
+    if board is None or board.read_milestone is None or board.edit_milestone is None:
+        return 404, {"error": "this board does not edit milestones"}
+    if (current := board.read_milestone(milestone)) is None:
+        return 404, {"error": f"{milestone} is not an open milestone"}
+    if not (todo := {field: value for field, value in changes.items() if value != current.get(field)}):
+        return 200, {"milestone": milestone, "changed": []}
+    written = board.edit_milestone(milestone, todo)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"milestone": milestone, "changed": list(todo)}
+
+
+def archive_milestone(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Archive the milestone `raw` names through the board's `archive_milestone`, for a browser at `source`: the HTTP status
+    and JSON body."""
+    body, refusal = _milestone_request(source, raw, "Archiving")
+    if body is None:
+        return refusal
+    if not isinstance(milestone := body.get("milestone"), str):
+        return 400, {"error": 'an archive needs {"milestone": "m-N"}'}
+    if board is None or board.read_milestone is None or board.archive_milestone is None:
+        return 404, {"error": "this board does not archive milestones"}
+    if board.read_milestone(milestone) is None:
+        return 404, {"error": f"{milestone} is not an open milestone"}
+    written = board.archive_milestone(milestone)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"milestone": milestone}
+
+
 def start_task(
     source: str,
     raw: bytes,
@@ -792,6 +900,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     gate: Callable[[BaseHTTPRequestHandler], bool] | None
     forward: ForwardIngest | None
     forwarding: Forwarder | None
+    milestones: Board | None
 
     def handle_one_request(self) -> None:
         """Answer the request; a body its model refuses is a logged 500, since the page reads only what a model names."""
@@ -810,7 +919,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         if (
             path.startswith(_RUN)
             or _is_rerun(path)
-            or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS}
+            or path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS, *_MILESTONE_WRITES}
         ):
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
@@ -829,11 +938,13 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
         if (
-            path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS} or path.startswith(_RUN) or _is_rerun(path)
+            path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, *_MILESTONE_WRITES}
+            or path.startswith(_RUN)
+            or _is_rerun(path)
         ) and self._refused_write():
             return
         kind = _WRITES.get(path, "run")
-        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS}:
+        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, *_MILESTONE_WRITES}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
             if path == _MOVE:
@@ -844,6 +955,12 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = archive_task(self.client_address[0], raw, self.feed, self.archive)
             elif path == _TASKS:
                 status, body = create_task(self.client_address[0], raw, self.create)
+            elif path == _MILESTONES:
+                status, body = create_milestone(self.client_address[0], raw, self.milestones)
+            elif path == _MILESTONE_EDIT:
+                status, body = edit_milestone(self.client_address[0], raw, self.milestones)
+            elif path == _MILESTONE_ARCHIVE:
+                status, body = archive_milestone(self.client_address[0], raw, self.milestones)
             else:
                 status, body = start_task(self.client_address[0], raw, self.feed, self.assign, self.start_session)
         elif path == _INGEST and self.ingest is not None:
@@ -963,6 +1080,7 @@ def request_handler(
     forwarding: Forwarder | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
     contract: Callable[[], dict[str, Any]] | None = None,
+    milestones: Board | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
     flows = feed.machines.keys()
@@ -986,6 +1104,7 @@ def request_handler(
             self.gate = gate
             self.forward = forward
             self.forwarding = forwarding
+            self.milestones = milestones
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
         def do_GET(self) -> None:
@@ -1011,6 +1130,12 @@ def request_handler(
             elif url.path.startswith(_TASK):
                 status, body = task_record(feed, read, unquote(url.path.removeprefix(_TASK)))
                 self._send(encode("task", body), status)
+            elif url.path == _MILESTONES:
+                status, body = milestones_list(self.milestones)
+                self._send(encode("milestones", body), status)
+            elif url.path.startswith(f"{_MILESTONES}/") and url.path not in _MILESTONE_WRITES:
+                status, body = milestone_record(self.milestones, unquote(url.path.removeprefix(f"{_MILESTONES}/")))
+                self._send(encode("milestone", body), status)
             elif url.path == "/api/harnesses":
                 self._send(harnesses_body)
             elif url.path == _WINDOW:
@@ -1334,6 +1459,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         forwarding=forwarder,
         reruns=reruns,
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),
+        milestones=board,
     )
     serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
 
