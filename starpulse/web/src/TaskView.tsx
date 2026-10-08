@@ -1,13 +1,13 @@
-// The task view: the same framed fields in read and edit mode, with one guarded write for the complete diff.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+// The task view: every section reads in place and edits in place, one at a time, each Save a guarded write of that section's diff.
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ago, fmtAt } from "./clock";
 import { columnsOf, type KanbanTask } from "./kanban";
 import { startLane, startable } from "./start";
 import { StartCriteria } from "./StartCriteria";
 import type { Capabilities, Pull } from "./api";
 import {
-  PRIORITIES, changedFields, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, discardMessage, editKey, markdown, menuKey, metCount, newlyChecked, onScrim, saveTask,
-  type CiPull, type DepRow, type Item, type MenuState, type TaskField, type TaskRecord,
+  PRIORITIES, SECTION_NAMES, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, editKey, fetchRecord, markdown, menuKey, metCount, onScrim, saveSection, toggleItem,
+  type CiPull, type DepRow, type Item, type MenuState, type Section, type TaskField, type TaskRecord,
 } from "./taskView";
 
 export interface TaskViewProps {
@@ -37,15 +37,15 @@ export interface TaskViewProps {
   start: () => void;
   archive?: () => void;
   onSaved?: (record: TaskRecord, changed: TaskField[]) => void;
-  /** A deterministic entry state for the self-contained preview and static render tests. */
-  initialEditing?: boolean;
+  /** The section whose editor starts open: a deterministic entry state for the self-contained preview and static render tests. */
+  initialEditing?: Section;
 }
 
-interface FieldProps { field: TaskField; editing: boolean; dirty: boolean; bad: boolean }
-const fieldClass = (base: string, dirty: boolean, bad: boolean) => `${base}${dirty ? " dirty" : ""}${bad ? " bad" : ""}`;
+interface FieldProps { field: TaskField; editing: boolean; bad: boolean }
+const fieldClass = (base: string, live: boolean, bad: boolean) => `${base}${live ? " live" : ""}${bad ? " bad" : ""}`;
 
-function Txt({ value, label, className = "", long, onChange, ...f }: FieldProps & {
-  value: string; label: string; className?: string; long?: boolean; onChange: (value: string) => void;
+function Txt({ value, label, className = "", long, focus, onChange, ...f }: FieldProps & {
+  value: string; label: string; className?: string; long?: boolean; focus?: boolean; onChange: (value: string) => void;
 }) {
   const el = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -54,7 +54,13 @@ function Txt({ value, label, className = "", long, onChange, ...f }: FieldProps 
     t.style.height = "auto";
     t.style.height = `${t.scrollHeight + 2}px`;
   }, [value, long]);
-  const classes = fieldClass(`fv${long ? " long" : ""}${className && ` ${className}`}`, f.dirty, f.bad);
+  useEffect(() => {
+    const t = el.current;
+    if (!focus || !f.editing || !t) return;
+    t.focus();
+    t.setSelectionRange(t.value.length, t.value.length);
+  }, [focus, f.editing]);
+  const classes = fieldClass(`fv${long ? " long" : ""}${className && ` ${className}`}`, f.editing, f.bad);
   return <textarea ref={el} data-field={f.field} className={classes} rows={long ? 7 : 1} value={value} placeholder="—"
     aria-label={label} readOnly={!f.editing} tabIndex={f.editing || long ? 0 : -1} onChange={(e) => onChange(e.currentTarget.value)} />;
 }
@@ -64,7 +70,7 @@ function Select({ value, options, label, onChange, ...f }: FieldProps & {
 }) {
   const known = options.some(([v]) => v === value) ? options : [...options, [value, value] as [string, string]];
   return (
-    <select data-field={f.field} className={fieldClass("fv", f.dirty, f.bad)} aria-label={label} value={value}
+    <select data-field={f.field} className={fieldClass("fv", true, f.bad)} aria-label={label} value={value}
       onChange={(e) => onChange(e.currentTarget.value)}>
       {known.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
     </select>
@@ -74,16 +80,6 @@ function Select({ value, options, label, onChange, ...f }: FieldProps & {
 /** Labels in the rail's read table: a chip each, with the one that needs the operator highlighted. */
 function ChipList({ values, flag }: { values: string[]; flag: string }) {
   return values.length ? <span className="chips">{values.map((v) => <span key={v} className={`chip${v === flag ? " nh" : ""}`}>{v}</span>)}</span> : <span className="k">—</span>;
-}
-
-/** The edit-mode box for a list of ids or labels, one comma-separated input. */
-function Chips({ values, label, onChange, ...f }: FieldProps & { values: string[]; label: string; onChange: (values: string[]) => void }) {
-  return (
-    <div data-field={f.field} className={fieldClass("fv chips", f.dirty, f.bad)}>
-      <input className="chipinput" value={values.join(", ")} aria-label={label}
-        onChange={(e) => onChange(e.currentTarget.value.split(",").map((v) => v.trim()).filter(Boolean))} />
-    </div>
-  );
 }
 
 const LanePill = ({ lane, name, small = false }: { lane: string; name: string; small?: boolean }) =>
@@ -163,63 +159,50 @@ function MachineRows({ machines, now }: { machines: KanbanTask["machines"]; now:
   ) : <span className="none">In no machine right now</span>;
 }
 
-function Checks({ name, field, items, base, editing, dirty, bad, evidence, tried, change, setEvidence }: {
-  name: string; field: "acceptanceCriteria" | "definitionOfDone"; items: Item[]; base: Item[]; editing: boolean; dirty: boolean; bad: boolean;
-  evidence: Record<number, string>; tried: Set<number>; change: (items: Item[]) => void; setEvidence: (n: number, value: string) => void;
-}) {
-  const was = new Map(base.map((item) => [item.n, item.checked]));
-  const update = (at: number, item: Item) => change(items.map((old, i) => i === at ? item : old));
-  const add = () => change([...items, { n: Math.max(0, ...items.map((item) => item.n)) + 1, text: "", checked: false }]);
-  const head = <div className="sh"><span className="t">{name}</span><span className="n">{items.filter((i) => i.checked).length}/{items.length}</span></div>;
+/** A section's description, plan or notes as Markdown blocks. */
+function Md({ text, className = "md", drawn = false }: { text: string; className?: string; drawn?: boolean }) {
+  return <div className={className}>{markdown(text, drawn).map((b, i) => b.kind === "h" ? <h4 key={i}>{b.text}</h4> : b.kind === "pre" ? <pre key={i}>{b.text}</pre> : <p key={i} className={b.kind === "moved" ? "moved" : undefined}>{b.text}</p>)}</div>;
+}
+
+interface ChecksProps {
+  name: string; field: "acceptanceCriteria" | "definitionOfDone"; items: Item[]; editing: boolean; canToggle: boolean; bad: boolean;
+  evidenceFor: number | null; evidence: Record<number, string>; tried: Set<number>;
+  change: (items: Item[]) => void; toggle: (n: number, checked: boolean) => void; setEvidence: (n: number, value: string) => void;
+}
+
+/** A checklist: rows with a direct checkbox, or in its editor a growing text field and a ✕ per row. */
+function Checks({ name, field, items, editing, canToggle, bad, evidenceFor, evidence, tried, change, toggle, setEvidence }: ChecksProps) {
+  const word = field === "acceptanceCriteria" ? "criterion" : "item";
   if (!editing) {
     return (
-      <section className="sec">
-        {head}
-        <div className="rlist">
-          {items.length ? items.map((item) => (
-            <label key={item.n} className={`ritem${item.checked ? " done" : ""}`}>
-              <input type="checkbox" checked={item.checked} disabled aria-label={`${name} #${item.n} done`} />
+      <div className="rlist">
+        {items.length ? items.map((item) => (
+          <Fragment key={item.n}>
+            <label className={`ritem${item.checked ? " done" : ""}`}>
+              <input type="checkbox" checked={item.checked} disabled={!canToggle} aria-label={`${name} #${item.n} done`}
+                onChange={(e) => toggle(item.n, e.currentTarget.checked)} />
               <span className="nn">#{item.n}</span><span className="tx">{item.text}</span>
             </label>
-          )) : <span className="none">—</span>}
-        </div>
-      </section>
+            {evidenceFor === item.n && <label className={`evidence${tried.has(item.n) && !evidence[item.n]?.trim() ? " missing" : ""}`}>
+              Evidence for #{item.n}<textarea autoFocus value={evidence[item.n] ?? ""} onChange={(e) => setEvidence(item.n, e.currentTarget.value)} />
+            </label>}
+          </Fragment>
+        )) : <span className="none">—</span>}
+      </div>
     );
   }
   return (
-    <section className="sec">
-      {head}
-      <div className="list">
-        {items.map((item, at) => {
-          const needsEvidence = field === "acceptanceCriteria" && item.checked && !was.get(item.n);
-          return (
-            <div key={item.n} className={`item${item.checked ? " done" : ""}`}>
-              <input type="checkbox" checked={item.checked} aria-label={`${name} #${item.n} done`}
-                onChange={(e) => update(at, { ...item, checked: e.currentTarget.checked })} />
-              <input type="text" data-field={field} className={fieldClass("fv", dirty, bad)} value={item.text}
-                aria-label={`${name} #${item.n}`}
-                onChange={(e) => update(at, { ...item, text: e.currentTarget.value })} />
-              <button className="remove" aria-label={`Remove ${name} #${item.n}`}
-                onClick={() => change(items.filter((_, i) => i !== at))}>−</button>
-              {needsEvidence && <label className={`evidence${tried.has(item.n) && !evidence[item.n]?.trim() ? " missing" : ""}`}>
-                Evidence for #{item.n}<textarea value={evidence[item.n] ?? ""} onChange={(e) => setEvidence(item.n, e.currentTarget.value)} />
-              </label>}
-            </div>
-          );
-        })}
-        <button className="add" onClick={add}>+ Add {field === "acceptanceCriteria" ? "criterion" : "item"}</button>
-      </div>
-    </section>
-  );
-}
-
-/** The plan and notes: plain text with its line breaks in read mode, the framed box in edit mode. */
-function Prose({ name, value, change, ...f }: FieldProps & { name: string; value: string; change: (value: string) => void }) {
-  return (
-    <section className="sec"><div className="sh"><span className="t">{name}</span></div>
-      {f.editing ? <Txt {...f} value={value} label={name} long onChange={change} />
-        : value ? <div className="md pre">{value}</div> : <span className="none">—</span>}
-    </section>
+    <div className="list">
+      {items.map((item, at) => (
+        <div key={at} className="item">
+          <span className="nn">{item.n ? `#${item.n}` : "new"}</span>
+          <Txt field={field} editing bad={bad} value={item.text} label={`${name} #${item.n || "new"}`} focus={item.n === 0 || at === 0}
+            onChange={(text) => change(items.map((old, i) => i === at ? { ...old, text } : old))} />
+          <button className="remove" aria-label={`Remove ${name} #${item.n || "new"}`} onClick={() => change(items.filter((_, i) => i !== at))}>✕</button>
+        </div>
+      ))}
+      <button className="add" onClick={() => change([...items, { n: 0, text: "", checked: false }])}>+ Add {word}</button>
+    </div>
   );
 }
 
@@ -260,28 +243,30 @@ const fromSnapshot = (task: KanbanTask): TaskRecord => ({
 });
 const priorityValue = (value: string) => PRIORITIES.find((v) => v.toLowerCase() === value.toLowerCase()) ?? value;
 
+const CHECKLIST_FIELDS = ["acceptanceCriteria", "definitionOfDone"] as const;
+const unnumbered = (r: TaskRecord) => CHECKLIST_FIELDS.some((field) => r[field].some((item) => !item.n));
+
 export function TaskView(p: TaskViewProps) {
   const opened = p.record ?? fromSnapshot(p.task);
-  const [editing, setEditing] = useState(Boolean(p.initialEditing && p.record));
+  const [editing, setEditing] = useState<Section | null>(p.record ? p.initialEditing ?? null : null);
   const [seenRecord, setSeenRecord] = useState(p.record);
   const [base, setBase] = useState<TaskRecord>(opened);
   const [draft, setDraft] = useState<TaskRecord>(opened);
+  const [preview, setPreview] = useState(false);
+  const [evidenceFor, setEvidenceFor] = useState<number | null>(null);
   const [evidence, setEvidence] = useState<Record<number, string>>({});
   const [tried, setTried] = useState<Set<number>>(new Set());
   const [invalid, setInvalid] = useState<Set<TaskField>>(new Set());
   const [writing, setWriting] = useState(false);
   const [writeRefusal, setWriteRefusal] = useState<{ reason: string; skill: string } | null>(null);
-  const [saved, setSaved] = useState("");
-  const [discard, setDiscard] = useState<"cancel" | "close" | null>(null);
-  const diff = changedFields(base, draft);
-  const dirty = new Set(diff.fields);
+  const [toast, setToast] = useState("");
   const names = p.names ?? {};
+  const canEdit = Boolean(p.capabilities?.edit && p.record);
   const change = (field: TaskField, value: TaskRecord[TaskField]) => {
     setDraft((record) => ({ ...record, [field]: value } as TaskRecord));
     setInvalid((fields) => { const next = new Set(fields); next.delete(field); return next; });
-    setSaved("");
   };
-  const fp = (field: TaskField): FieldProps => ({ field, editing, dirty: dirty.has(field), bad: invalid.has(field) });
+  const fp = (field: TaskField, section: Section = field as Section): FieldProps => ({ field, editing: editing === section, bad: invalid.has(field) });
 
   // A record can arrive after the snapshot-sized modal opened. Adjust this form before that render completes.
   if (p.record !== seenRecord && !editing) {
@@ -292,48 +277,40 @@ export function TaskView(p: TaskViewProps) {
     }
   }
 
-  const beginEdit = () => {
-    if (!p.record) return;
-    setBase(p.record);
-    setDraft(p.record);
+  const clear = useCallback(() => {
     setEvidence({});
+    setEvidenceFor(null);
     setTried(new Set());
     setInvalid(new Set());
     setWriteRefusal(null);
-    setSaved("");
-    setEditing(true);
-  };
-  const cancelEdit = useCallback(() => {
+    setPreview(false);
+  }, []);
+  const edit = (section: Section) => {
+    clear();
+    setToast("");
     setDraft(base);
-    setEditing(false);
-    setDiscard(null);
-    setWriteRefusal(null);
-    setInvalid(new Set());
-  }, [base]);
-  const askLeave = useCallback((after: "cancel" | "close") => {
-    if (diff.fields.length) return setDiscard(after);
-    if (after === "close") p.close();
-    else cancelEdit();
-  }, [cancelEdit, diff.fields.length, p]);
-  const confirmDiscard = () => {
-    const after = discard;
-    cancelEdit();
-    if (after === "close") p.close();
+    setEditing(section);
   };
-  const save = useCallback(async () => {
-    if (!editing || writing) return;
+  const cancel = useCallback(() => {
+    clear();
+    setDraft(base);
+    setEditing(null);
+  }, [base, clear]);
+  const commit = useCallback(async (section: Section, next: TaskRecord, notes: Record<number, string>) => {
+    if (writing) return;
     setWriting(true);
     setWriteRefusal(null);
-    const result = await saveTask(p.task.id, base, draft, evidence);
+    const result = await saveSection(p.task.id, section, base, next, notes);
     setWriting(false);
     if (result.ok) {
-      const labels = result.changed.join(", ");
-      setBase(result.record);
-      setDraft(result.record);
-      setEditing(false);
-      setInvalid(new Set());
-      setSaved(`Saved ${result.changed.length} field${result.changed.length === 1 ? "" : "s"}${labels ? ` (${labels})` : ""}`);
-      p.onSaved?.(result.record, result.changed);
+      // an added row has no number until the board gives it one, so a later save would send it as new again
+      const saved = result.changed.length && unnumbered(result.record) ? await fetchRecord(p.task.id) ?? result.record : result.record;
+      clear();
+      setBase(saved);
+      setDraft(saved);
+      setEditing(null);
+      setToast(result.changed.length ? `✓ Saved ${SECTION_NAMES[section]}` : "Nothing changed");
+      if (result.changed.length) p.onSaved?.(saved, result.changed);
     } else if ("missingEvidence" in result) {
       setTried(new Set(result.missingEvidence));
       setInvalid(new Set(["acceptanceCriteria"]));
@@ -341,22 +318,41 @@ export function TaskView(p: TaskViewProps) {
       setInvalid(new Set(result.fields));
       setWriteRefusal({ reason: result.reason, skill: result.skill });
     }
-  }, [base, draft, editing, evidence, p, writing]);
+  }, [base, clear, p, writing]);
+  const save = useCallback(() => { if (editing) void commit(editing, draft, evidence); }, [commit, draft, editing, evidence]);
+  /** A checkbox writes at once, except a newly checked criterion, which first asks for its evidence under the item. */
+  const toggle = (field: typeof CHECKLIST_FIELDS[number]) => (n: number, checked: boolean) => {
+    const next = toggleItem(base, field, n, checked);
+    clear();
+    setToast("");
+    setDraft(next);
+    if (field === "acceptanceCriteria" && checked) {
+      setEditing(field);
+      setEvidenceFor(n);
+      return;
+    }
+    setEditing(null);
+    void commit(field, next, {});
+  };
 
   useEffect(() => {
     if (!editing) return;
     const onKey = (event: KeyboardEvent) => {
-      const action = editKey(event.key, event.ctrlKey, event.metaKey, diff.fields.length > 0);
+      const action = editKey(event.key, event.ctrlKey, event.metaKey);
       if (!action) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (action === "save") void save();
-      else if (action === "discard") setDiscard("cancel");
-      else cancelEdit();
+      if (action === "save") save();
+      else cancel();
     };
     addEventListener("keydown", onKey, true);
     return () => removeEventListener("keydown", onKey, true);
-  }, [cancelEdit, diff.fields.length, editing, save]);
+  }, [cancel, editing, save]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 2200);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const criteria = base.start_criteria ?? [];
   const deps = dependencyRows(p.tasks, p.task);
@@ -364,8 +360,7 @@ export function TaskView(p: TaskViewProps) {
     to: c, text: names[c] ?? c, allowed: p.task.moves[c].allowed, reason: p.task.moves[c].reason ?? "",
   }));
   const startVisible = startLane(p.task) && !p.claiming;
-  const unavailable = editing || p.saving || writing;
-  const checked = new Set(newlyChecked(base, draft));
+  const unavailable = p.saving || writing;
   const [copied, setCopied] = useState(false);
   const copy = () => void copyToClipboard(copyText(p.task, base.title)).then((ok) => {
     if (!ok) return;
@@ -374,14 +369,43 @@ export function TaskView(p: TaskViewProps) {
   });
   const { close } = p;
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => !event.defaultPrevented && closesOnKey(event.key, editing) && close();
+    const onKey = (event: KeyboardEvent) => !event.defaultPrevented && closesOnKey(event.key, editing !== null) && close();
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [close, editing]);
 
+  const pen = (section: Section) => canEdit && editing !== section && (
+    <button className="pen" title={`Edit ${SECTION_NAMES[section]}`} aria-label={`Edit ${SECTION_NAMES[section]}`} onClick={() => edit(section)}>✎ Edit</button>
+  );
+  const bar = (
+    <div className="edbar">
+      <span className="k">Ctrl+Enter saves · Esc cancels</span>
+      <button className="cancelbtn" onClick={cancel}>Cancel</button>
+      <button className="savebtn" disabled={writing} onClick={save}>Save</button>
+    </div>
+  );
+  /** One editable section: its heading with the ✎, the body, and while it is the open one an outline and the bar. */
+  const sec = (section: Section, name: string, body: ReactNode, count?: string, rail = false) => (
+    <section className={`sec${rail ? " rs" : ""}${editing === section ? " on" : ""}`}>
+      <div className="sh"><span className="t">{name}</span>{count && <span className="n">{count}</span>}{pen(section)}</div>
+      {body}
+      {editing === section && bar}
+    </section>
+  );
+  const checks = (section: typeof CHECKLIST_FIELDS[number], name: string) => {
+    const items = draft[section];
+    return sec(section, name, <Checks name={name} field={section} items={items} editing={editing === section && evidenceFor === null} canToggle={canEdit && !writing} bad={invalid.has(section)}
+      evidenceFor={editing === section ? evidenceFor : null} evidence={evidence} tried={tried} change={(value) => change(section, value)} toggle={toggle(section)}
+      setEvidence={(n, value) => setEvidence((all) => ({ ...all, [n]: value }))} />, `${items.filter((i) => i.checked).length}/${items.length}`);
+  };
+  const prose = (section: "plan" | "notes", name: string) => sec(section, name, editing === section
+    ? <Txt {...fp(section)} value={draft[section]} label={name} long focus onChange={(value) => change(section, value)} />
+    : draft[section] ? <div className="md pre">{draft[section]}</div> : <span className="none">—</span>);
+  const tab = (on: boolean, text: string) => <button role="tab" aria-selected={preview === on} className={preview === on ? "on" : ""} onClick={() => setPreview(on)}>{text}</button>;
+
   return (
-    <div id="kbm" onClick={(event) => onScrim(event.target, event.currentTarget) && (editing ? askLeave("close") : p.close())}>
-      <div className={`modal tv${editing ? " editing" : ""}`} role="dialog" aria-label={`${p.task.id} ${base.title}`}>
+    <div id="kbm" onClick={(event) => onScrim(event.target, event.currentTarget) && p.close()}>
+      <div className="modal tv" role="dialog" aria-label={`${p.task.id} ${base.title}`}>
         <div className="tvhead">
           <div className="tvmeta">
             <span className="tid">{p.task.id}</span>
@@ -393,40 +417,31 @@ export function TaskView(p: TaskViewProps) {
             <a href="/" onClick={(e) => { e.preventDefault(); p.constellation(); }}>Open in Star Map ↗</a>
             <div className="acts">
               {startVisible && <button className="startbtn" disabled={!startable(p.task) || unavailable}
-                title={editing ? "Finish editing before starting a session" : startable(p.task) ? undefined : p.task.moves.in_progress?.reason}
+                title={startable(p.task) ? undefined : p.task.moves.in_progress?.reason}
                 onClick={p.start}>▶ Start session</button>}
               <MoveMenu items={offered} disabled={unavailable} move={p.move} />
-              {editing ? <>
-                <span className="changed">{diff.fields.length} field{diff.fields.length === 1 ? "" : "s"} changed</span>
-                <button className="cancelbtn" onClick={() => askLeave("cancel")}>Cancel <kbd>Esc</kbd></button>
-                <button className="savebtn" disabled={writing || !diff.fields.length} onClick={() => void save()}>Save <kbd>Ctrl+Enter</kbd></button>
-              </> : <>
-                <button className="hidebtn" onClick={p.hide}>Hide task</button>
-                {p.capabilities?.archive && <button className="archbtn" onClick={p.archive}>Archive…</button>}
-                {p.capabilities?.edit && p.record && <button className="editbtn" onClick={beginEdit}>✎ Edit</button>}
-              </>}
-              <button className="tvx" onClick={() => editing ? askLeave("close") : p.close()} aria-label="Close">✕</button>
+              <button className="hidebtn" onClick={p.hide}>Hide task</button>
+              {p.capabilities?.archive && <button className="archbtn" onClick={p.archive}>Archive…</button>}
+              <button className="tvx" onClick={p.close} aria-label="Close">✕</button>
             </div>
           </div>
-          <Txt {...fp("title")} value={draft.title} label="Title" className="title" onChange={(value) => change("title", value)} />
+          <div className={`titlerow${editing === "title" ? " on" : ""}`}>
+            <Txt {...fp("title")} value={draft.title} label="Title" className="title" focus onChange={(value) => change("title", value)} />
+            {pen("title")}
+            {editing === "title" && bar}
+          </div>
         </div>
         <div className="tvbody">
           <div className="tvcol tvleft">
-            {saved && <div className="saveok">✓ {saved}</div>}
             {writeRefusal && <div className="editrefusal"><b>Save refused.</b> {writeRefusal.reason}{writeRefusal.skill && <div>Required skill: <code>{writeRefusal.skill}</code></div>}</div>}
-            <section className="sec"><div className="sh"><span className="t">Description</span></div>
-              {editing ? <Txt {...fp("description")} value={draft.description} label="Description" onChange={(value) => change("description", value)} />
-                : <div className="md">{markdown(draft.description, criteria.length > 0).map((b, i) => b.kind === "h" ? <h4 key={i}>{b.text}</h4> : b.kind === "pre" ? <pre key={i}>{b.text}</pre> : <p key={i} className={b.kind === "moved" ? "moved" : undefined}>{b.text}</p>)}</div>}
-            </section>
-            {p.record && <Checks name="Acceptance criteria" field="acceptanceCriteria" items={draft.acceptanceCriteria} base={base.acceptanceCriteria}
-              editing={editing} dirty={dirty.has("acceptanceCriteria")} bad={invalid.has("acceptanceCriteria")} evidence={evidence} tried={tried}
-              change={(value) => change("acceptanceCriteria", value)} setEvidence={(n, value) => setEvidence((all) => ({ ...all, [n]: value }))} />}
-            {p.record && <Checks name="Definition of done" field="definitionOfDone" items={draft.definitionOfDone} base={base.definitionOfDone}
-              editing={editing} dirty={dirty.has("definitionOfDone")} bad={invalid.has("definitionOfDone")} evidence={{}} tried={new Set()}
-              change={(value) => change("definitionOfDone", value)} setEvidence={() => {}} />}
-            {p.record && <Prose name="Implementation plan" value={draft.plan} {...fp("plan")} change={(value) => change("plan", value)} />}
-            {p.record && <Prose name="Notes" value={draft.notes} {...fp("notes")} change={(value) => change("notes", value)} />}
-            {editing && checked.size > 0 && <div className="evidence-note">Evidence is required for each newly checked acceptance criterion before Save.</div>}
+            {sec("description", "Description", editing === "description" ? <>
+              <div className="tabs" role="tablist">{tab(false, "Write")}{tab(true, "Preview")}<span className="k">Markdown</span></div>
+              {preview ? <Md text={draft.description} className="md prev" drawn={criteria.length > 0} /> : <Txt {...fp("description")} value={draft.description} label="Description" long focus onChange={(value) => change("description", value)} />}
+            </> : <Md text={draft.description} drawn={criteria.length > 0} />)}
+            {p.record && checks("acceptanceCriteria", "Acceptance criteria")}
+            {p.record && checks("definitionOfDone", "Definition of done")}
+            {p.record && prose("plan", "Implementation plan")}
+            {p.record && prose("notes", "Notes")}
           </div>
           <div className="tvcol tvrail">
             {p.refusal}
@@ -441,8 +456,7 @@ export function TaskView(p: TaskViewProps) {
             <RailSection name="Dependencies" count={deps.dependsOn.length + deps.holds.length + deps.more}>
               <div className="deps">
                 <div className="lb">Depends on</div>
-                {editing ? <Chips {...fp("dependencies")} label="Dependencies" values={draft.dependencies} onChange={(value) => change("dependencies", value)} />
-                  : deps.dependsOn.length ? <DepRows rows={deps.dependsOn} names={names} open={p.open} /> : <span className="none">—</span>}
+                {deps.dependsOn.length ? <DepRows rows={deps.dependsOn} names={names} open={p.open} /> : <span className="none">—</span>}
                 {deps.holds.length > 0 && <>
                   <div className="lb">Holds</div>
                   <DepRows rows={deps.holds} names={names} open={p.open} />
@@ -451,21 +465,18 @@ export function TaskView(p: TaskViewProps) {
               </div>
             </RailSection>
             <RailSection name="Machines" count={p.task.machines.length}><MachineRows machines={p.task.machines} now={p.now} /></RailSection>
-            <RailSection name="Details">
+            {sec("details", "Details", (
               <table className="props"><tbody>
-                <tr><td>profile</td><td>{editing ? <Select {...fp("profile")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—"}</td></tr>
-                <tr><td>priority</td><td>{editing ? <Select {...fp("priority")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /> : priorityValue(draft.priority) || "—"}</td></tr>
-                <tr><td>labels</td><td>{editing ? <Chips {...fp("labels")} values={draft.labels} label="Labels" onChange={(value) => change("labels", value)} /> : <ChipList values={draft.labels} flag="needs-human" />}</td></tr>
-                <tr><td>milestone</td><td>{editing ? <Select {...fp("milestone")} label="Milestone" value={draft.milestone} options={[["", "—"], ...p.milestones.map((v): [string, string] => [v, v])]} onChange={(value) => change("milestone", value)} /> : draft.milestone || "—"}</td></tr>
+                <tr><td>profile</td><td>{editing === "details" ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—"}</td></tr>
+                <tr><td>priority</td><td>{editing === "details" ? <Select {...fp("priority", "details")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /> : priorityValue(draft.priority) || "—"}</td></tr>
+                <tr><td>labels</td><td><ChipList values={draft.labels} flag="needs-human" /></td></tr>
+                <tr><td>milestone</td><td>{editing === "details" ? <Select {...fp("milestone", "details")} label="Milestone" value={draft.milestone} options={[["", "—"], ...p.milestones.map((v): [string, string] => [v, v])]} onChange={(value) => change("milestone", value)} /> : draft.milestone || "—"}</td></tr>
                 <tr><td>created</td><td><span className="k">{p.task.created ? `${ago(p.now - p.task.created)} ago` : "—"}</span></td></tr>
               </tbody></table>
-            </RailSection>
+            ), undefined, true)}
           </div>
         </div>
-        {discard && <div className="discard" role="alertdialog" aria-label="Discard changes">
-          <div><b>{discardMessage(diff.fields.length)}</b><p>Your edits have not been saved.</p></div>
-          <div className="discardacts"><button onClick={() => setDiscard(null)}>Keep editing</button><button className="danger" onClick={confirmDiscard}>Discard</button></div>
-        </div>}
+        {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </div>
   );

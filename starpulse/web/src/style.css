@@ -415,12 +415,31 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv tr.ro td:last-child { color: var(--ink-3); }
 #kbm .tv .sec { display: flex; flex-direction: column; gap: 6px; }
 #kbm .tv .sh { display: flex; align-items: center; gap: 8px; font-size: calc(10px * var(--fs)); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
-#kbm .tv .sh .n { letter-spacing: 0; }
+#kbm .tv .sh .n { letter-spacing: 0; text-transform: none; color: var(--slate-4); }
+/* Per-section editing (approved mockup, starpulse#90): a faint ✎ beside each heading, and the open section outlined with its bar. */
+#kbm .tv .pen { all: unset; cursor: pointer; margin-left: auto; padding: 1px 8px; border-radius: 5px; color: var(--dim); font-size: calc(11px * var(--fs)); letter-spacing: 0; text-transform: none; opacity: .55; }
+#kbm .tv .sec:hover .pen, #kbm .tv .titlerow:hover .pen, #kbm .tv .pen:focus-visible { opacity: 1; }
+#kbm .tv .pen:hover { color: var(--agent-hi); background: color-mix(in srgb, var(--agent) 12%, transparent); }
+#kbm .tv .pen:focus-visible { outline: 1px solid color-mix(in srgb, var(--agent) 60%, transparent); }
+#kbm .tv .sec.on, #kbm .tv .titlerow.on { margin: -8px -12px; padding: 8px 12px 10px; border-radius: 8px; background: color-mix(in srgb, var(--agent) 5%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--agent) 35%, transparent); }
+#kbm .tv .titlerow { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 8px; }
+#kbm .tv .titlerow .fv { flex: 1 1 0; min-width: 0; }
+#kbm .tv .titlerow .pen { margin-left: 0; opacity: 0; } #kbm .tv .titlerow:hover .pen, #kbm .tv .titlerow .pen:focus-visible { opacity: 1; }
+#kbm .tv .titlerow .edbar { flex: 1 0 100%; }
+#kbm .tv .titlerow .fv.title:not(.live) { background: transparent; border-color: transparent; }
+#kbm .tv .edbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; } #kbm .tv .edbar .k { margin-right: auto; }
+#kbm .tv .sec.on textarea.fv.long { height: 220px; resize: vertical; font: calc(12px * var(--fs)) / 1.55 "JetBrains Mono", ui-monospace, monospace; color: var(--ink-2); }
+#kbm .tv .edbar .savebtn { border-color: color-mix(in srgb, var(--agent) 60%, transparent); background: color-mix(in srgb, var(--agent) 16%, transparent); color: var(--agent-hi); }
+#kbm .tv .edbar .savebtn:hover { background: color-mix(in srgb, var(--agent) 28%, transparent); }
+#kbm .tv .tabs { display: flex; gap: 2px; align-items: center; }
+#kbm .tv .tabs button { all: unset; cursor: pointer; padding: 2px 10px; border-radius: 5px; color: var(--slate-4); font-size: calc(11px * var(--fs)); }
+#kbm .tv .tabs button.on { background: color-mix(in srgb, var(--agent) 18%, transparent); color: var(--ink); } #kbm .tv .tabs .k { margin-left: auto; }
+#kbm .tv .md.prev { min-height: 150px; padding: 3px 8px; border: 1px dashed color-mix(in srgb, var(--slate) 22%, transparent); border-radius: 6px; }
+#kbm .tv .toast { position: absolute; z-index: 9; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 8px 14px; border-radius: 8px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--ok) 50%, transparent); color: var(--ok-text); font-size: calc(12px * var(--fs)); box-shadow: 0 10px 30px color-mix(in srgb, var(--veil) 50%, transparent); }
 #kbm .tv .fv { box-sizing: border-box; width: calc(100% + 9px); margin: 0 0 0 -9px; font: inherit; line-height: 1.5; color: var(--ink); background: color-mix(in srgb, var(--slate) 3%, transparent);
   border: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); border-radius: 6px; padding: 3px 8px; outline: none; opacity: 1; }
-#kbm .tv.editing .fv { background: color-mix(in srgb, var(--slate) 6%, transparent); border-color: color-mix(in srgb, var(--slate) 22%, transparent); }
-#kbm .tv.editing .fv:focus-within, #kbm .tv.editing .fv:focus { border-color: color-mix(in srgb, var(--agent) 65%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--agent) 22%, transparent); }
-#kbm .tv .fv.dirty { border-left-color: var(--agent); box-shadow: inset 2px 0 color-mix(in srgb, var(--agent) 55%, transparent); }
+#kbm .tv .fv.live { background: color-mix(in srgb, var(--slate) 6%, transparent); border-color: color-mix(in srgb, var(--slate) 22%, transparent); }
+#kbm .tv .fv.live:focus-within, #kbm .tv .fv.live:focus { border-color: color-mix(in srgb, var(--agent) 65%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--agent) 22%, transparent); }
 #kbm .tv .fv.bad { border-color: color-mix(in srgb, var(--fail) 80%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fail) 18%, transparent); }
 #kbm .tv .fv::placeholder { color: var(--faint); }
 #kbm .tv textarea.fv { display: block; resize: none; overflow: hidden; white-space: pre-wrap; color: var(--ink-3); }
@@ -429,6 +448,9 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .newtaskform .item .n { color: var(--dim); font-size: calc(11px * var(--fs)); }
 #kbm .tv select.fv { appearance: none; width: auto; min-width: 240px; padding-right: 26px; -webkit-text-fill-color: var(--ink); }
 #kbm .tvrail select.fv { min-width: 0; width: calc(100% + 9px); }
+/* Open, Details stacks each label above its field so a long profile name fits at 150% text. */
+#kbm .tvrail .sec.on .props, #kbm .tvrail .sec.on .props tbody, #kbm .tvrail .sec.on .props tr, #kbm .tvrail .sec.on .props td { display: block; width: 100%; }
+#kbm .tvrail .sec.on .props tr { margin-bottom: 6px; } #kbm .tvrail .sec.on .props td:first-child { padding: 0 0 2px; font-size: calc(10.5px * var(--fs)); }
 #kbm .tv select option { background: var(--surface); }
 /* Plan and notes are fixed 150 px boxes that scroll inside rather than growing the view. */
 #kbm .tv textarea.fv.long { height: 150px; }
@@ -463,25 +485,16 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kbm .tv .ritem.done .tx { color: var(--slate-4); } #kbm .tv .none { color: var(--faint); }
 #kbm .tv .archbtn { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .archbtn:hover, #kbm .tv .archbtn:focus-visible { background: color-mix(in srgb, var(--danger) 10%, transparent); }
-#kbm .tv .editbtn { all: unset; cursor: pointer; padding: 4px 14px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--agent) 60%, transparent); background: color-mix(in srgb, var(--agent) 16%, transparent); color: var(--agent-hi); font-size: calc(11.5px * var(--fs)); }
-#kbm .tv .editbtn:hover, #kbm .tv .editbtn:focus-visible { background: color-mix(in srgb, var(--agent) 28%, transparent); }
 #kbm .tv .changed { color: var(--agent); font-size: calc(10.5px * var(--fs)); }
 #kbm .tv .cancelbtn, #kbm .tv .savebtn { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 28%, transparent); color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .savebtn { border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok-text); }
 #kbm .tv .cancelbtn:hover, #kbm .tv .savebtn:hover { background: color-mix(in srgb, var(--slate) 12%, transparent); }
 #kbm .tv .savebtn:disabled { opacity: .4; cursor: default; }
 #kbm .tv kbd { margin-left: 4px; color: var(--dim); font: calc(9px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
-#kbm .tv .saveok, #kbm .tv .editrefusal { padding: 8px 10px; border-radius: 7px; font-size: calc(11px * var(--fs)); }
-#kbm .tv .saveok { border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); color: var(--ok-text); }
+#kbm .tv .editrefusal { padding: 8px 10px; border-radius: 7px; font-size: calc(11px * var(--fs)); }
 #kbm .tv .editrefusal { border: 1px solid color-mix(in srgb, var(--fail) 40%, transparent); background: color-mix(in srgb, var(--fail-bg) 65%, transparent); color: var(--fail-hi); }
 #kbm .tv .editrefusal code { color: var(--agent-text); }
 #kbm .tv .refusal { margin: 0; }
-#kbm .tv .discard { position: absolute; inset: 0; z-index: 8; display: grid; place-content: center; gap: 18px; padding: 30px; background: color-mix(in srgb, var(--veil) 91%, transparent); text-align: center; }
-#kbm .tv .discard b { font-size: calc(15px * var(--fs)); font-weight: 500; }
-#kbm .tv .discard p { margin: 4px 0 0; color: var(--slate); }
-#kbm .tv .discardacts { display: flex; justify-content: center; gap: 8px; }
-#kbm .tv .discardacts button { cursor: pointer; padding: 5px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 30%, transparent); background: color-mix(in srgb, var(--slate) 8%, transparent); color: var(--ink); }
-#kbm .tv .discardacts .danger { border-color: color-mix(in srgb, var(--fail) 50%, transparent); color: var(--fail-text); }
 /* Move to opens downward, right-aligned under its button in the header. */
 #kbm .tvhead .mv { position: relative; }
 #kbm .tvhead .startbtn { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-text); font-size: calc(11.5px * var(--fs)); white-space: nowrap; }

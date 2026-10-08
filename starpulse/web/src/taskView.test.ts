@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KanbanTask } from "./kanban";
-import { changedFields, ciHistory, discardMessage, editKey, fetchRecord, markdown, menuKey, saveTask, type MenuState, type TaskRecord } from "./taskView";
+import { changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, saveSection, saveTask, SECTION_FIELDS, toggleItem, type MenuState, type TaskRecord } from "./taskView";
 
 const record = {
   title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-human"], milestone: "m-89", dependencies: ["TASK-1"],
@@ -68,15 +68,89 @@ describe("saving an edited task", () => {
   });
 });
 
+describe("saving one section", () => {
+  const base = record as TaskRecord;
+  const ok = () => vi.fn(async () => new Response(JSON.stringify({ task: "TASK-9" })));
+  const sent = (fetcher: ReturnType<typeof ok>) => JSON.parse((fetcher.mock.calls[0] as unknown as [string, { body: string }])[1].body);
+
+  it("sends only that section's diff although the draft differs elsewhere", async () => {
+    const draft = { ...base, title: "Other title", description: "new text", plan: "2. b" };
+    const fetcher = ok();
+
+    const result = await saveSection("TASK-9", "description", base, draft, {}, fetcher);
+
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(sent(fetcher)).toMatchObject({ base: { description: "d" }, changes: { description: "new text" } });
+    expect(Object.keys(sent(fetcher).changes)).toEqual(["description"]);
+    expect(result).toMatchObject({ ok: true, changed: ["description"] });
+  });
+
+  it("writes Details' profile, priority and milestone and nothing else", async () => {
+    const draft = { ...base, profile: "@agent-light-low", priority: "Low", milestone: "m-90", labels: ["x"], notes: "z" };
+    const fetcher = ok();
+
+    await saveSection("TASK-9", "details", base, draft, {}, fetcher);
+
+    expect(SECTION_FIELDS.details).toEqual(["profile", "priority", "milestone"]);
+    expect(Object.keys(sent(fetcher).changes)).toEqual(["profile", "priority", "milestone"]);
+  });
+
+  it("sends a criterion added in the editor without a number, which the board assigns", async () => {
+    const draft = { ...base, acceptanceCriteria: [...base.acceptanceCriteria, { n: 0, text: "a new gate", checked: false }] };
+    const fetcher = ok();
+
+    await saveSection("TASK-9", "acceptanceCriteria", base, draft, {}, fetcher);
+
+    expect(sent(fetcher).changes.acceptanceCriteria).toEqual([{ n: 1, text: "a gate", checked: true }, { text: "a new gate", checked: false }]);
+  });
+});
+
+describe("a checklist row left blank", () => {
+  it("is dropped from the write, which the board refuses for blank text", async () => {
+    const base = record as TaskRecord;
+    const draft = { ...base, acceptanceCriteria: [...base.acceptanceCriteria, { n: 0, text: "  ", checked: false }] };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ task: "TASK-9" })));
+
+    const result = await saveSection("TASK-9", "acceptanceCriteria", base, draft, {}, fetcher);
+
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: true, changed: [], record: base });
+  });
+});
+
+describe("toggling a checkbox without an editor", () => {
+  const open = { ...record, acceptanceCriteria: [{ n: 1, text: "a gate", checked: false }], definitionOfDone: [{ n: 1, text: "done item", checked: false }] } as TaskRecord;
+
+  it("flips one item and leaves the rest of the record alone", () => {
+    const toggled = toggleItem(open, "definitionOfDone", 1, true);
+
+    expect(toggled.definitionOfDone).toEqual([{ n: 1, text: "done item", checked: true }]);
+    expect(toggled.acceptanceCriteria).toBe(open.acceptanceCriteria);
+  });
+
+  it("writes the checklist alone, with no comment for a Definition of done item", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ task: "TASK-9" })));
+
+    await saveSection("TASK-9", "definitionOfDone", open, toggleItem(open, "definitionOfDone", 1, true), {}, fetcher);
+
+    const body = JSON.parse((fetcher.mock.calls[0] as unknown as [string, { body: string }])[1].body);
+    expect(body).toEqual({ task: "TASK-9", base: { definitionOfDone: open.definitionOfDone }, changes: { definitionOfDone: [{ n: 1, text: "done item", checked: true }] }, comment: "" });
+  });
+
+  it("asks for evidence before writing a newly checked acceptance criterion", async () => {
+    const fetcher = vi.fn();
+
+    expect(await saveSection("TASK-9", "acceptanceCriteria", open, toggleItem(open, "acceptanceCriteria", 1, true), {}, fetcher)).toMatchObject({ ok: false, missingEvidence: [1] });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
 describe("edit keyboard actions", () => {
-  it("asks before discarding dirty edits, cancels a clean edit, and saves on Ctrl/Command+Enter", () => {
-    expect(editKey("Escape", false, false, true)).toBe("discard");
-    expect(editKey("Escape", false, false, false)).toBe("cancel");
-    expect(editKey("Enter", true, false, true)).toBe("save");
-    expect(editKey("Enter", false, true, true)).toBe("save");
-    expect(editKey("Enter", false, false, true)).toBeNull();
-    expect(discardMessage(1)).toBe("Discard 1 change?");
-    expect(discardMessage(3)).toBe("Discard 3 changes?");
+  it("cancels the open editor on Escape and saves on Ctrl/Command+Enter", () => {
+    expect(editKey("Escape", false, false)).toBe("cancel");
+    expect(editKey("Enter", true, false)).toBe("save");
+    expect(editKey("Enter", false, true)).toBe("save");
+    expect(editKey("Enter", false, false)).toBeNull();
   });
 });
 

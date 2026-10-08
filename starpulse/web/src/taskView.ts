@@ -65,6 +65,12 @@ export type SaveResult =
   | { ok: false; missingEvidence: number[]; record: TaskRecord }
   | { ok: false; reason: string; skill: string; fields: TaskField[]; record: TaskRecord };
 
+const CHECKLISTS: TaskField[] = ["acceptanceCriteria", "definitionOfDone"];
+
+/** A checklist item added in the editor carries n 0 until the board numbers it; the writer takes an item without a number as new. */
+const withoutNew = (changes: Partial<TaskRecord>): Partial<TaskRecord> => Object.fromEntries(Object.entries(changes).map(([field, value]) =>
+  [field, CHECKLISTS.includes(field as TaskField) ? (value as Item[]).map(({ n, ...rest }) => n ? { n, ...rest } : rest) : value]));
+
 /** Save one task diff. Validation happens before the sole request, and a refusal returns the caller's draft intact. */
 export async function saveTask(
   task: string,
@@ -84,7 +90,7 @@ export async function saveTask(
     response = await fetcher("/api/edit", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ task, base: diff.base, changes: diff.changes, comment }),
+      body: JSON.stringify({ task, base: diff.base, changes: withoutNew(diff.changes), comment }),
     });
   } catch {
     return { ok: false, reason: "The task writer could not be reached.", skill: "", fields: diff.fields, record: draft };
@@ -100,13 +106,40 @@ export async function saveTask(
   };
 }
 
-export type EditAction = "save" | "discard" | "cancel";
+/** The parts of the task the view edits one at a time, each owning the record fields its Save writes. */
+export type Section = "title" | "description" | "acceptanceCriteria" | "definitionOfDone" | "plan" | "notes" | "details";
+export const SECTION_FIELDS: Record<Section, TaskField[]> = {
+  title: ["title"], description: ["description"], acceptanceCriteria: ["acceptanceCriteria"], definitionOfDone: ["definitionOfDone"],
+  plan: ["plan"], notes: ["notes"], details: ["profile", "priority", "milestone"],
+};
 
-export const discardMessage = (changes: number): string => `Discard ${changes} change${changes === 1 ? "" : "s"}?`;
+/** How a section is named in its ✎ label and in the toast that confirms its save. */
+export const SECTION_NAMES: Record<Section, string> = {
+  title: "title", description: "description", acceptanceCriteria: "acceptance criteria", definitionOfDone: "definition of done",
+  plan: "implementation plan", notes: "notes", details: "details",
+};
 
-/** The edit form's document-level shortcuts. */
-export function editKey(key: string, ctrl: boolean, meta: boolean, dirty: boolean): EditAction | null {
-  if (key === "Escape") return dirty ? "discard" : "cancel";
+/** Save one section: the guarded write carries that section's diff and nothing else the draft holds. A result's `record` is the base with that section applied. */
+export async function saveSection(
+  task: string, section: Section, base: TaskRecord, draft: TaskRecord, evidence: Record<number, string>, fetcher: typeof apiFetch = apiFetch,
+): Promise<SaveResult> {
+  const scoped = { ...base, ...Object.fromEntries(SECTION_FIELDS[section].map((field) => [field, draft[field]])) } as TaskRecord;
+  // the board refuses a checklist item with no text, so a row added and left empty is not part of the write
+  scoped.acceptanceCriteria = scoped.acceptanceCriteria.filter((item) => item.text.trim());
+  scoped.definitionOfDone = scoped.definitionOfDone.filter((item) => item.text.trim());
+  return saveTask(task, base, scoped, evidence, fetcher);
+}
+
+/** The record with one checklist item checked or unchecked: the direct toggle, which needs no editor. */
+export function toggleItem(record: TaskRecord, field: "acceptanceCriteria" | "definitionOfDone", n: number, checked: boolean): TaskRecord {
+  return { ...record, [field]: record[field].map((item) => item.n === n ? { ...item, checked } : item) };
+}
+
+export type EditAction = "save" | "cancel";
+
+/** The open editor's document-level shortcuts. */
+export function editKey(key: string, ctrl: boolean, meta: boolean): EditAction | null {
+  if (key === "Escape") return "cancel";
   if (key === "Enter" && (ctrl || meta)) return "save";
   return null;
 }
