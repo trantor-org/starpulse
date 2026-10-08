@@ -7,6 +7,10 @@ mode = "ic"
 [board]
 type = "ci.demo_workspace"
 
+# The shipped ci machine under the Board states that hold a pull request; the demo seeds each task's trail (`starpulse.cli.demo`).
+[ci]
+states = ["in_progress", "review"]
+
 [[runs]]
 name = "dagu"
 type = "dagu"

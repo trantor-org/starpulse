@@ -443,7 +443,21 @@ def scrub(live: dict) -> dict:
         }
         for f in live["flows"]
     ]
+    demo_pulls = {
+        names[t]: [
+            p | {"number": 1000 * j + 100 + int(names[t].removeprefix("DEMO-")) - 1, "url": "#", "stale": False}
+            for j, p in enumerate(ps)
+        ]
+        for t, ps in pulls.items()
+        if t in names and ps
+    }
     _seed_delivery(flows, live["now"])
+    _seed_ci(
+        flows,
+        {a["id"]: a["title"] for f in flows if f["name"] == "board" for a in f["agents"]},
+        demo_pulls,
+        live["now"],
+    )
 
     def settled_task(id_: str, entry: dict) -> tuple[str, dict]:
         name = names.setdefault(id_, f"DEMO-{len(names) + 1}")
@@ -474,14 +488,7 @@ def scrub(live: dict) -> dict:
         "dags": [_demo_dag(i, d) for i, d in enumerate(live["dags"])] + seeded_dags + catalog,
         **({"pools": seeded_pools} if seeded_pools else {}),
         "flows": flows,
-        "pulls": {
-            names[t]: [
-                p | {"number": 1000 * j + 100 + int(names[t].removeprefix("DEMO-")) - 1, "url": "#", "stale": False}
-                for j, p in enumerate(ps)
-            ]
-            for t, ps in pulls.items()
-            if t in names and ps
-        },
+        "pulls": demo_pulls,
         "settled": day,
         "error": None,
         "history": history,
@@ -579,6 +586,57 @@ def _seed_delivery(flows: list[dict], now: float) -> None:
                     "active": trail[-1]["at"],
                 }
             )
+
+
+#: The CI events each seeded pull request went through, by how it stands now (its checks, and whether it merged).
+CI_SCRIPTS = {
+    ("pass", True): [
+        "PUSHED",
+        "CHECKS_FAILED",
+        "RERUN",
+        "CHECKS_PASSED",
+        "CONFLICTED",
+        "REBASED",
+        "CHECKS_PASSED",
+        "MERGED",
+    ],
+    ("pass", False): ["PUSHED", "CHECKS_FAILED", "PUSHED", "CHECKS_PASSED"],
+    ("failing", False): ["PUSHED", "CHECKS_FAILED", "RERUN", "CHECKS_FAILED"],
+    ("pending", False): ["PUSHED"],
+}
+#: The seconds between two CI steps of a seeded pull request.
+CI_STEP_S = 420
+
+
+def _seed_ci(flows: list[dict], titles: dict[str, str], pulls: dict[str, list[dict]], now: float) -> None:
+    """When the capture carries the shipped `ci` machine, one agent on it for each task with pull requests, its trail
+    the pull requests in order, each opened and then taken through `CI_SCRIPTS` as its checks and merge say, as GitHub
+    would have moved it: the trail a real server records from GitHub, which a demo has no way to read."""
+    flow = next((f for f in flows if f["name"] == "ci"), None)
+    if flow is None:
+        return
+    machine = flow["machine"]
+    initial = next(s["id"] for s in machine["states"] if s.get("initial"))
+    after = {(t["source"], t["event"]): t["target"] for t in machine["transitions"]}
+    flow["agents"] = []
+    for i, (task, mine) in enumerate(pulls.items()):
+        events = [e for p in mine for e in ("PR_OPENED", *CI_SCRIPTS.get((p["checks"], p["merged"]), ["PUSHED"]))]
+        state, trail = initial, []
+        for k, event in enumerate(events):
+            state = initial if k == 0 else after[(state, event)]
+            trail.append({"state": state, "event": event, "at": now - CI_STEP_S * (len(events) - k) - 90 * i})
+        flow["agents"].append(
+            {
+                "id": task,
+                "title": titles[task],
+                "task": task,
+                "state": state,
+                "model": "",
+                "steps": len(trail),
+                "trail": trail,
+                "active": trail[-1]["at"],
+            }
+        )
 
 
 def _history(flows: list[dict], now: float) -> dict[str, list[dict]]:

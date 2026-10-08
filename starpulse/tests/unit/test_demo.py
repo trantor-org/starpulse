@@ -11,6 +11,7 @@ import pytest
 
 from starpulse.cli.demo import TITLES, _send_back, capture, elements, mockup, page, scrub, scrub_board, scrub_mockup
 from starpulse.contracts.adapters import SCHEMAS, Dag, Pool
+from starpulse.projections.ci import CI_MACHINES
 
 SECRET = "Rotate the router admin password"
 
@@ -406,6 +407,27 @@ def test_the_seeded_board_has_a_review_task_with_two_pulls_and_a_task_holding_th
     assert len({p["number"] for p in demo["pulls"][board[20]["id"]]}) == 2
     held = [a for a in board if board[6]["id"] in a["dependencies"]]
     assert [a["state"] for a in held] == ["waiting"] * 3
+
+
+def test_scrub_seeds_one_ci_agent_per_task_with_pull_requests_walking_the_machine_per_pull_request() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = []
+    live["flows"].append({"name": "ci", "machine": CI_MACHINES["ci"], "agents": []})
+
+    demo = scrub(live)
+
+    flow = next(f for f in demo["flows"] if f["name"] == "ci")
+    ci = {a["task"]: a for a in flow["agents"]}
+    assert set(ci) == set(demo["pulls"])  # a task with no pull request is in no ci agent
+    two = ci["DEMO-21"]  # a Review task with a merged pull request, then an open one
+    assert [s["event"] for s in two["trail"]].count("PR_OPENED") == 2 and two["state"] == "passing"
+    assert ci["DEMO-8"]["state"] == "failing" and ci["DEMO-8"]["trail"][-1]["event"] == "CHECKS_FAILED"
+    next_state = {(t["source"], t["event"]): t["target"] for t in flow["machine"]["transitions"]}
+    for agent in ci.values():
+        assert agent["steps"] == len(agent["trail"]) and agent["active"] == agent["trail"][-1]["at"] <= live["now"]
+        assert [s["at"] for s in agent["trail"]] == sorted(s["at"] for s in agent["trail"])
+        steps = zip(agent["trail"], agent["trail"][1:])
+        assert all(next_state[(a["state"], b["event"])] == b["state"] for a, b in steps)
 
 
 def test_the_seeded_board_has_a_waiting_task_blocked_from_another_milestone_for_the_kanban_link() -> None:

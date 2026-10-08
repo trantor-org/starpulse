@@ -212,10 +212,10 @@ describe("the task view's right rail", () => {
   const trail = Array.from({ length: 7 }, (_, i) => ({ state: `step_${i}`, event: `event_${i}`, at: 800 + i }));
   const rows = (html: string, section: string) => railOf(html).split('<section').find((x) => x.includes(`<span class="t">${section}</span>`)) ?? "";
 
-  it("draws Status, Pull requests, Dependencies, Machines and Details in that order, each heading with its count", () => {
+  it("draws Status, Pull requests, CI history, Dependencies, Machines and Details in that order, each heading with its count", () => {
     const html = draw({ tasks: many });
 
-    expect(headings(html)).toEqual(["Status", "Pull requests", "Dependencies", "Machines", "Details"]);
+    expect(headings(html)).toEqual(["Status", "Pull requests", "CI history", "Dependencies", "Machines", "Details"]);
     expect(rows(html, "Pull requests")).toContain('<span class="n">1</span>');
     expect(rows(html, "Dependencies")).toContain('<span class="n">9</span>');
     expect(rows(html, "Machines")).toContain('<span class="n">1</span>');
@@ -387,5 +387,50 @@ describe("the description's start_criteria block", () => {
     const { left } = html(draw({ record: { ...record, description: `Wait.\n\n${yaml}` } }));
 
     expect(left).toContain("<pre>start_criteria:\n- id: rows\n  kind: sql</pre>");
+  });
+});
+
+describe("the task view's CI history", () => {
+  const step = (event: string, state: string, at: number) => ({ event, state, at });
+  const pull = (number: number) => ({ number, url: `http://pr/${number}`, checks: "pass" as const, merged: false, merge_sha: null, merged_at: null, threads: 0, stale: false });
+  const trail = [
+    step("PR_OPENED", "opened", 1), step("PUSHED", "running", 2), step("CHECKS_FAILED", "failing", 3), step("RERUN", "running", 4), step("CHECKS_PASSED", "passing", 5),
+    step("CONFLICTED", "conflicting", 6), step("REBASED", "running", 7), step("CHECKS_PASSED", "passing", 8), step("MERGED", "merged", 9),
+    step("PR_OPENED", "opened", 10), step("PUSHED", "running", 11), step("CHECKS_FAILED", "failing", 12),
+  ];
+  const ci = (source: string | null = "GitHub") => [{ machine: "ci", state: "failing", at: 12, source, trail }];
+  const section = (html: string) => railOf(html).split('<section class="sec rs">').find((s) => s.includes(">CI history<")) ?? "";
+  const two = { prs: [pull(15), pull(12)], machines: ci() };
+
+  it("totals the task's runs, re-runs, rebases and conflicts, then gives each pull request its own counts and state", () => {
+    const html = section(draw({ task: { ...task, ...two } }));
+
+    expect(html).toContain('<span class="n">2</span>');
+    expect(html).toMatch(/2 runs/);
+    expect(html).toMatch(/1 re-run/);
+    expect(html).toMatch(/1 rebase/);
+    expect(html).toMatch(/1 conflict/);
+    expect(html.indexOf("#12")).toBeGreaterThan(-1);
+    expect(html.indexOf("#12")).toBeLessThan(html.indexOf("#15"));
+    expect(html).toMatch(/#12[\s\S]*merged[\s\S]*#15[\s\S]*failing/);
+  });
+
+  it("totals only when there are two pull requests to total, since one pull request's counts are the task's", () => {
+    const one = { prs: [pull(12)], machines: [{ ...ci()[0], trail: trail.slice(0, 9) }] };
+
+    expect(section(draw({ task: { ...task, ...two } }))).toContain('class="tot"');
+    expect(section(draw({ task: { ...task, ...one } }))).not.toContain('class="tot"');
+    expect(section(draw({ task: { ...task, ...one } }))).toMatch(/#12[\s\S]*merged/);
+  });
+
+  it("draws the state in the mapped colour only when a third party moves the machine", () => {
+    expect(section(draw({ task: { ...task, ...two } }))).toContain("mapped");
+    expect(section(draw({ task: { ...task, prs: two.prs, machines: ci(null) } }))).not.toContain("mapped");
+    expect(styles).toMatch(/#kbm \.tvrail \.ci \.st\.mapped[^{]*\{[^}]*var\(--mapped\)/);
+  });
+
+  it("says why it is empty: no pull request, or none recorded yet", () => {
+    expect(section(draw({ task: { ...task, prs: [], machines: [] } }))).toContain("No pull request yet");
+    expect(section(draw({ task: { ...task, machines: [] } }))).toContain("No CI recorded yet");
   });
 });

@@ -244,3 +244,33 @@ export function criterionDetail(c: StartCriterion, now: number): string {
   const last = c.status === "error" || waitsForTime(c) || c.observed == null ? "" : `last ${String(c.observed)}`;
   return [threshold, last, Number.isNaN(checked) ? "" : `checked ${ago(now - checked)} ago`].filter(Boolean).join(" · ");
 }
+
+/** What one pull request put its CI through, counted by the D10 definitions: a run is a push, a rebase and a re-run are counted apart. */
+export interface CiPull { number: number | null; url: string | null; runs: number; reruns: number; rebases: number; conflicts: number; state: string }
+export interface CiHistory { pulls: CiPull[]; total: Pick<CiPull, "runs" | "reruns" | "rebases" | "conflicts"> }
+
+const CI_COUNTED = { PUSHED: "runs", RERUN: "reruns", REBASED: "rebases", CONFLICTED: "conflicts" } as const;
+
+/**
+ * The CI history of a task from its `ci` machine's trail, or null when it is in no such machine. The trail carries no pull request
+ * number: a pull request is the run of steps from one PR_OPENED to the next, and the server opens a task's pull requests oldest
+ * first, so the n-th run belongs to the n-th pull request by number.
+ */
+export function ciHistory(task: KanbanTask): CiHistory | null {
+  const trail = task.machines.find((m) => m.machine === "ci")?.trail;
+  if (!trail) return null;
+  const prs = [...task.prs].sort((a, b) => a.number - b.number);
+  const pulls: CiPull[] = [];
+  trail.forEach((step, i) => {
+    if (!pulls.length || (step.event === "PR_OPENED" && i > 0)) {
+      const pr = prs[pulls.length];
+      pulls.push({ number: pr?.number ?? null, url: pr?.url ?? null, runs: 0, reruns: 0, rebases: 0, conflicts: 0, state: step.state });
+    }
+    const pull = pulls[pulls.length - 1];
+    const counted = CI_COUNTED[step.event as keyof typeof CI_COUNTED];
+    if (counted) pull[counted]++;
+    pull.state = step.state;
+  });
+  const sum = (key: keyof CiHistory["total"]) => pulls.reduce((n, p) => n + p[key], 0);
+  return { pulls, total: { runs: sum("runs"), reruns: sum("reruns"), rebases: sum("rebases"), conflicts: sum("conflicts") } };
+}
