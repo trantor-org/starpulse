@@ -209,7 +209,7 @@ whose config has a `[level]` table. It counts the level's machine on the Backlog
 the sources that forward to the hub, a source being the prefix of an event id (`<source>/<id>`; `unattributed` when
 none). `wip` is the runs now in a working state (`orbit.working`, else every state that is neither initial nor a
 terminal), `throughput` the entries into the goal in the window, `time_in_state` each non-final state's stays clipped
-to the window, and `aging` each working run's age since it first entered a working state against `threshold_s`, the
+to the window, and `aging` each working run's age since its current working interval began against `threshold_s`, the
 85th-percentile cycle time of the trailing 12 weeks (null with no completion to measure). `orbit` totals the ended runs
 per terminal and the working time per working state, and each of `sources` carries its `ended` runs with
 `terminal_share`, its `dwell` per working state with `time_share`; a set of shares sums to 1, and is empty, not zero,

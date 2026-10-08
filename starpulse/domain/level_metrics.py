@@ -92,7 +92,7 @@ def level_metrics(
 
     `wip` counts the runs now in a working state: the level's `orbit.working`, else each state that is neither the
     initial one nor a terminal. `throughput` is the entries into the goal inside the window. `time_in_state` clips
-    each stay to the window. `aging` lists each working run's age since it first entered a working state, against the 85th-percentile cycle time of the completions of the
+    each stay to the window. `aging` lists each working run's age since its current working interval began, against the 85th-percentile cycle time of the completions of the
     trailing 12 weeks. `sources` carry each source's ended runs with their terminal shares, its dwell per working state
     with its time shares: a source with nothing ended or no working time has no shares, not zero ones. Raises
     `WindowPastHistory` when the window is longer than the history.
@@ -129,7 +129,7 @@ def level_metrics(
                 completed += 1
         if steps and steps[-1][1] in working:
             wip[steps[-1][1]] += 1
-            began = next(at for at, state in steps if state in working)
+            began = _interval_start(steps, working)
             working_runs.append(
                 {"source": run.source, "task": run.task, "state": steps[-1][1], "age_s": now - began, "began": began}
             )
@@ -213,6 +213,16 @@ def _cycles(steps: list[tuple[float, str]], working: list[str], goal: str, now: 
     for at, state in steps[1:]:
         if state == goal and now - AGING_WINDOW_S <= at <= now and began <= at:
             yield at - began
+
+
+def _interval_start(steps: list[tuple[float, str]], working: list[str]) -> float:
+    """When the run's current contiguous stretch of working states began; moves between working states stay inside it."""
+    began = steps[-1][0]
+    for at, state in reversed(steps):
+        if state not in working:
+            break
+        began = at
+    return began
 
 
 def _nearest_rank(values: list[float], fraction: float) -> float | None:

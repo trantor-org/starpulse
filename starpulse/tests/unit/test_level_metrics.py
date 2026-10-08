@@ -70,7 +70,7 @@ def test_an_entry_before_the_window_opened_is_no_throughput() -> None:
     assert _metrics(runs, window_s=40 * H)["throughput"] == {"count": 0, "per_day": 0.0}
 
 
-def test_aging_is_the_hours_since_a_run_first_entered_a_working_state_against_the_cycle_time_p85() -> None:
+def test_aging_is_the_hours_since_a_run_entered_its_current_working_interval_against_the_cycle_time_p85() -> None:
     aging = _metrics()["aging"]
 
     assert aging["threshold_s"] == 30 * H  # cycle times A1 20h, B1 30h; nearest rank 0.85 * 2 is the second
@@ -78,6 +78,22 @@ def test_aging_is_the_hours_since_a_run_first_entered_a_working_state_against_th
         {"source": "b", "task": "B2", "state": "review", "age_s": 50 * H, "over": True},
         {"source": "a", "task": "A3", "state": "work", "age_s": 10 * H, "over": False},
     ]
+
+
+def test_aging_counts_from_the_current_working_interval_after_a_bounce_through_a_waiting_state() -> None:
+    bounced = _run("a", "A", (10, "work"), (20, "to_do"), (90, "work"))
+
+    runs = _metrics([bounced])["aging"]["runs"]
+
+    assert [run["age_s"] for run in runs] == [10 * H]
+
+
+def test_aging_keeps_the_first_entry_when_a_run_moves_between_working_states() -> None:
+    moved = _run("a", "A", (10, "work"), (20, "review"))
+
+    runs = _metrics([moved])["aging"]["runs"]
+
+    assert [run["age_s"] for run in runs] == [90 * H]
 
 
 def test_aging_has_no_threshold_when_no_completion_has_an_observed_start() -> None:
