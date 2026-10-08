@@ -9,6 +9,9 @@ export interface ApiContract {
     | Edited
     | Archived
     | Created
+    | MilestoneCreated
+    | MilestoneEdited
+    | MilestoneArchived
     | Started
     | RunStarted
     | Accepted
@@ -31,12 +34,17 @@ export interface ApiContract {
   machineHistory: MachineHistory;
   machines: Machines;
   merges: Merges;
+  milestoneShown: MilestoneShown;
+  milestones: Milestones;
   requests: (
     | MoveRequest
     | StartRequest
     | EditRequest
     | ArchiveRequest
     | CreateRequest
+    | MilestoneCreateRequest
+    | MilestoneEditRequest
+    | MilestoneArchiveRequest
     | WindowRequest
     | ForwardingRequest
     | RunEventRequest
@@ -61,6 +69,16 @@ export interface Archived {
 }
 export interface Created {
   task: string;
+}
+export interface MilestoneCreated {
+  milestone: string;
+}
+export interface MilestoneEdited {
+  changed: string[];
+  milestone: string;
+}
+export interface MilestoneArchived {
+  milestone: string;
 }
 export interface Started {
   at: number;
@@ -959,6 +977,30 @@ export interface Merges {
   more: boolean;
 }
 /**
+ * `GET /api/milestones/<id>`: one open milestone.
+ */
+export interface MilestoneShown {
+  milestone: MilestoneRecord;
+}
+/**
+ * A milestone as the board's reader gives it: its sections as text and bullet lists, and its whole description.
+ */
+export interface MilestoneRecord {
+  adrs: string[];
+  description: string;
+  id: string;
+  outcome: string;
+  retro: string;
+  specs: string[];
+  title: string;
+}
+/**
+ * `GET /api/milestones`: every open milestone, by ascending number.
+ */
+export interface Milestones {
+  milestones: MilestoneRecord[];
+}
+/**
  * `POST /api/move`: move `task` to the column `to`.
  */
 export interface MoveRequest {
@@ -1006,6 +1048,31 @@ export interface CreateRequest {
   milestone?: string | null;
   priority?: string | null;
   title: string;
+}
+/**
+ * `POST /api/milestones`: open a milestone; only the title is required.
+ */
+export interface MilestoneCreateRequest {
+  adrs?: string[] | null;
+  outcome?: string | null;
+  retro?: string | null;
+  specs?: string[] | null;
+  title: string;
+}
+/**
+ * `POST /api/milestones/edit`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` `changes` names.
+ */
+export interface MilestoneEditRequest {
+  changes: {
+    [k: string]: unknown;
+  };
+  milestone: string;
+}
+/**
+ * `POST /api/milestones/archive`: archive `milestone`.
+ */
+export interface MilestoneArchiveRequest {
+  milestone: string;
 }
 /**
  * `PUT /api/history-window`: set the shared history window.

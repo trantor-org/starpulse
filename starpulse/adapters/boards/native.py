@@ -18,6 +18,7 @@ from typing import Any
 
 import yaml
 
+from starpulse.adapters.boards import native_milestones
 from starpulse.adapters.boards.seam import Board, MoveWriter, TaskArchiver, TaskCreator, TaskEditor, TaskReader, Written
 from starpulse.adapters.boards.upstream_backlog import (
     _FOLDERS,
@@ -376,5 +377,10 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "evaluate": evaluate,
             "edit": _editor(root),
             "archive": _archiver(root),
+            "milestones": native_milestones.lister(root),
+            "read_milestone": native_milestones.reader(root),
+            "create_milestone": native_milestones.creator(root),
+            "edit_milestone": native_milestones.editor(root),
+            "archive_milestone": native_milestones.archiver(root),
         },
     )

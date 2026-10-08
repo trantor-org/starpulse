@@ -28,6 +28,11 @@ __all__ = [
     "DEFAULT_TYPE",
     "AssigneeWriter",
     "Board",
+    "MilestoneArchiver",
+    "MilestoneCreator",
+    "MilestoneEditor",
+    "MilestoneLister",
+    "MilestoneReader",
     "MoveWriter",
     "TaskArchiver",
     "TaskCreator",
@@ -95,6 +100,39 @@ class TaskCreator(Protocol):
     def __call__(self, title: str, details: Mapping[str, Any], /) -> Written: ...
 
 
+class MilestoneLister(Protocol):
+    """A board reader: every open milestone as `{id, title, outcome, specs, adrs, retro, description}`, oldest id first."""
+
+    def __call__(self) -> list[Mapping[str, Any]]: ...
+
+
+class MilestoneReader(Protocol):
+    """A board reader: one milestone's record, or None when the board has no open milestone with that id."""
+
+    def __call__(self, milestone: str, /) -> Mapping[str, Any] | None: ...
+
+
+class MilestoneCreator(Protocol):
+    """A board writer: open a milestone with this title and details, and say what it did.
+
+    `details` holds `outcome` and `retro` as text and `specs` and `adrs` as lists of text, each optional.
+    A successful `Written.output` is the new milestone's id."""
+
+    def __call__(self, title: str, details: Mapping[str, Any], /) -> Written: ...
+
+
+class MilestoneEditor(Protocol):
+    """A board writer: replace the `title`, `outcome`, `specs`, `adrs` or `retro` a milestone is given, keeping the rest."""
+
+    def __call__(self, milestone: str, changes: Mapping[str, Any], /) -> Written: ...
+
+
+class MilestoneArchiver(Protocol):
+    """A board writer: archive a milestone, and say what it did."""
+
+    def __call__(self, milestone: str, /) -> Written: ...
+
+
 def _no_cues(qualify: Qualify) -> list[dict]:
     return []
 
@@ -128,6 +166,16 @@ class Board:
     """Archives a task from any column; None refuses every archive."""
     create: TaskCreator | None = None
     """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
+    milestones: MilestoneLister | None = None
+    """Lists the open milestones; None leaves the board with no milestone records."""
+    read_milestone: MilestoneReader | None = None
+    """Reads one milestone's record; None when the board keeps none."""
+    create_milestone: MilestoneCreator | None = None
+    """Opens a milestone; None refuses every one."""
+    edit_milestone: MilestoneEditor | None = None
+    """Saves a milestone's changes in one write; None refuses every one."""
+    archive_milestone: MilestoneArchiver | None = None
+    """Archives a milestone; None refuses every one."""
     evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None
     """Evaluates a task's Start Criteria, given its id and description; None leaves each `not evaluated`, so a Waiting task
     that declares any is never workable."""

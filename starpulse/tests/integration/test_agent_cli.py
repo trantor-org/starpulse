@@ -2,6 +2,7 @@
 
 import json
 import re
+import shutil
 import socket
 import string
 import threading
@@ -15,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from starpulse.adapters.boards import native
 from starpulse.adapters.boards.seam import Written
 from starpulse.api.adapter_kit import serve as _real_serve
 from starpulse.api.adapter_kit import task
@@ -203,6 +205,16 @@ def leveled(tmp_path: Path) -> Iterator[str]:
 def bare(tmp_path: Path) -> Iterator[str]:
     """A server with `_moving_board` and no board writer, as one with no `[board]` adapter that writes."""
     with _serve(tmp_path, _moving_board(), writer=_no_writer) as server:
+        yield _url(server, "")
+
+
+@pytest.fixture
+def milestoned(tmp_path: Path) -> Iterator[str]:
+    """A server whose native board keeps one open milestone, `m-106`, copied from a real Backlog.md file."""
+    board = native.board({}, tmp_path)
+    source = Path(__file__).parent.parent / "fixtures" / "native_board" / "milestones"
+    shutil.copytree(source, tmp_path / ".starpulse" / "board" / "milestones")
+    with _serve(tmp_path, BoardFeed(machines=MACHINES), milestones=board) as server:
         yield _url(server, "")
 
 
@@ -599,6 +611,11 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "machine show",
         "machine validate",
         "machine import mermaid",
+        "milestone list",
+        "milestone show",
+        "milestone add",
+        "milestone edit",
+        "milestone archive",
         "runs list",
         "runs start",
         "watch",
@@ -1144,6 +1161,27 @@ CASES = {
     ("machine show", 2): ["machine", "show"],
     ("machine show", 3): ["machine", "show", "board", "--server", "{down}"],
     ("machine show", 4): ["machine", "show", "nowhere", "--server", "{server}"],
+    ("milestone list", 0): ["milestone", "list", "--server", "{milestoned}"],
+    ("milestone list", 2): ["milestone", "list", "--nope"],
+    ("milestone list", 3): ["milestone", "list", "--server", "{server}"],  # a board that keeps no milestones
+    ("milestone show", 0): ["milestone", "show", "m-106", "--server", "{milestoned}"],
+    ("milestone show", 2): ["milestone", "show"],
+    ("milestone show", 3): ["milestone", "show", "m-106", "--server", "{down}"],
+    ("milestone show", 4): ["milestone", "show", "m-99", "--server", "{milestoned}"],
+    ("milestone add", 0): ["milestone", "add", "Launch", "--outcome", "Shipped", "--server", "{milestoned}"],
+    ("milestone add", 1): ["milestone", "add", " ", "--server", "{milestoned}"],
+    ("milestone add", 2): ["milestone", "add"],
+    ("milestone add", 3): ["milestone", "add", "Launch", "--server", "{down}"],
+    ("milestone edit", 0): ["milestone", "edit", "m-106", "--outcome", "Shipped", "--server", "{milestoned}"],
+    ("milestone edit", 1): ["milestone", "edit", "m-106", "--title", " ", "--server", "{milestoned}"],
+    ("milestone edit", 2): ["milestone", "edit", "m-106", "--server", "{milestoned}"],
+    ("milestone edit", 3): ["milestone", "edit", "m-106", "--outcome", "Shipped", "--server", "{down}"],
+    ("milestone edit", 4): ["milestone", "edit", "m-99", "--outcome", "Shipped", "--server", "{milestoned}"],
+    ("milestone archive", 0): ["milestone", "archive", "m-106", "--server", "{milestoned}"],
+    ("milestone archive", 1): ["milestone", "archive", "m-106", "--server", "{forbidden}"],
+    ("milestone archive", 2): ["milestone", "archive"],
+    ("milestone archive", 3): ["milestone", "archive", "m-106", "--server", "{down}"],
+    ("milestone archive", 4): ["milestone", "archive", "m-99", "--server", "{milestoned}"],
     ("runs list", 0): ["runs", "list", "--server", "{server}"],
     ("runs list", 2): ["runs", "list", "--nope"],
     ("runs list", 3): ["runs", "list", "--server", "{down}"],
@@ -1226,6 +1264,7 @@ SERVERS = {
     "bare": "bare",
     "runnable": "runnable",
     "forbidden": "forbidden",
+    "milestoned": "milestoned",
 }
 
 

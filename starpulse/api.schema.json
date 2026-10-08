@@ -2835,6 +2835,224 @@
       "title": "Merges",
       "type": "object"
     },
+    "MilestoneArchiveRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/milestones/archive`: archive `milestone`.",
+      "properties": {
+        "milestone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "milestone"
+      ],
+      "title": "MilestoneArchiveRequest",
+      "type": "object"
+    },
+    "MilestoneArchived": {
+      "additionalProperties": false,
+      "properties": {
+        "milestone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "milestone"
+      ],
+      "title": "MilestoneArchived",
+      "type": "object"
+    },
+    "MilestoneCreateRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/milestones`: open a milestone; only the title is required.",
+      "properties": {
+        "adrs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retro": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "specs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "title": "MilestoneCreateRequest",
+      "type": "object"
+    },
+    "MilestoneCreated": {
+      "additionalProperties": false,
+      "properties": {
+        "milestone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "milestone"
+      ],
+      "title": "MilestoneCreated",
+      "type": "object"
+    },
+    "MilestoneEditRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/milestones/edit`: replace the `title`, `outcome`, `specs`, `adrs` or `retro` `changes` names.",
+      "properties": {
+        "changes": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "milestone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "milestone",
+        "changes"
+      ],
+      "title": "MilestoneEditRequest",
+      "type": "object"
+    },
+    "MilestoneEdited": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "milestone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "milestone",
+        "changed"
+      ],
+      "title": "MilestoneEdited",
+      "type": "object"
+    },
+    "MilestoneRecord": {
+      "additionalProperties": false,
+      "description": "A milestone as the board's reader gives it: its sections as text and bullet lists, and its whole description.",
+      "properties": {
+        "adrs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "retro": {
+          "type": "string"
+        },
+        "specs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "outcome",
+        "specs",
+        "adrs",
+        "retro",
+        "description"
+      ],
+      "title": "MilestoneRecord",
+      "type": "object"
+    },
+    "MilestoneShown": {
+      "additionalProperties": false,
+      "description": "`GET /api/milestones/<id>`: one open milestone.",
+      "properties": {
+        "milestone": {
+          "$ref": "#/$defs/MilestoneRecord"
+        }
+      },
+      "required": [
+        "milestone"
+      ],
+      "title": "MilestoneShown",
+      "type": "object"
+    },
+    "Milestones": {
+      "additionalProperties": false,
+      "description": "`GET /api/milestones`: every open milestone, by ascending number.",
+      "properties": {
+        "milestones": {
+          "items": {
+            "$ref": "#/$defs/MilestoneRecord"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "milestones"
+      ],
+      "title": "Milestones",
+      "type": "object"
+    },
     "Move": {
       "additionalProperties": false,
       "description": "The verdict on moving a task to one column: allowed, or guarded by a declared rule.",
@@ -4575,6 +4793,15 @@
             "$ref": "#/$defs/Created"
           },
           {
+            "$ref": "#/$defs/MilestoneCreated"
+          },
+          {
+            "$ref": "#/$defs/MilestoneEdited"
+          },
+          {
+            "$ref": "#/$defs/MilestoneArchived"
+          },
+          {
             "$ref": "#/$defs/Started"
           },
           {
@@ -4669,6 +4896,12 @@
     "merges": {
       "$ref": "#/$defs/Merges"
     },
+    "milestoneShown": {
+      "$ref": "#/$defs/MilestoneShown"
+    },
+    "milestones": {
+      "$ref": "#/$defs/Milestones"
+    },
     "requests": {
       "items": {
         "anyOf": [
@@ -4686,6 +4919,15 @@
           },
           {
             "$ref": "#/$defs/CreateRequest"
+          },
+          {
+            "$ref": "#/$defs/MilestoneCreateRequest"
+          },
+          {
+            "$ref": "#/$defs/MilestoneEditRequest"
+          },
+          {
+            "$ref": "#/$defs/MilestoneArchiveRequest"
           },
           {
             "$ref": "#/$defs/WindowRequest"
@@ -4732,6 +4974,8 @@
     "forwardingUnconfigured",
     "contractReport",
     "taskRecord",
+    "milestones",
+    "milestoneShown",
     "requests",
     "answers"
   ],

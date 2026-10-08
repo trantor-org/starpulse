@@ -6,6 +6,11 @@
     starpulse task move PROJ-45 review
     starpulse task trace PROJ-45 --flow in-progress
     starpulse machine show in-progress
+    starpulse milestone list
+    starpulse milestone show m-106
+    starpulse milestone add "Launch" --outcome "Shipped" --spec "doc-1 - spec" --adr docs/adr/a.md
+    starpulse milestone edit m-106 --outcome "Shipped and measured"
+    starpulse milestone archive m-106
     starpulse runs list
     starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
@@ -30,6 +35,8 @@ verbs, generated from the parser below, so a verb added here is listed with its 
 line, `{"event": "task|move|pulls|claim|dags", "data": {...}}`, per change that `--machine` and `--task` leave in, until
 it is interrupted (exit 0) or the server ends the stream (an error line, exit 3). `runs start` calls the server's Run
 now path, so its LAN and `run_safe` guards apply to the agent as they do to the page.
+`milestone` reads and writes the board's milestone records (title, outcome, specs, ADRs, retro) through the server;
+a board that keeps none answers exit 3. A `--spec` or `--adr` on `milestone edit` replaces that whole list.
 `skills` reads no server: it copies the bundled skills into the project or, with `--user`, the home directory.
 """
 
@@ -132,6 +139,7 @@ _TASK_KEYS = (
     "description",
 )
 _MOVE_KEYS = ("ok", "task", "to", "reason", "skill", "advice")
+_MILESTONE_KEYS = ("id", "title", "outcome", "specs", "adrs", "retro", "description")
 #: Seconds `watch` waits for the next byte: the server pings every 15, so a longer silence is a server that is gone.
 _STREAM_TIMEOUT_S = 45.0
 
@@ -348,6 +356,62 @@ def _json_or_empty(resp: Any) -> dict[str, Any]:
     except ValueError:
         return {}
     return document if isinstance(document, dict) else {}
+
+
+def _milestone_call(base: str, path: str, status: int, reply: Any, *, ok: tuple[int, ...] = (200,)) -> dict[str, Any]:
+    """The JSON object a milestone route answered with, or the `CliError` its status maps to."""
+    document = reply if isinstance(reply, dict) else {}
+    if status in ok and document:
+        return document
+    message = document.get("error") or f"{base} answered {status} for {path}: is it a StarPulse server?"
+    if status == 404 and "error" in document:
+        # The server gives both 404s as text only: a board that keeps no milestones, else a milestone that is not open.
+        raise CliError("not_found" if "is not an open milestone" in message else "unavailable", message)
+    if status in (400, 403, 409):
+        raise CliError("refused", message)
+    raise CliError("unavailable", f"{base}: {message}")
+
+
+def _milestone_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/milestones"
+    status, reply = _get(base, path)
+    return {"milestones": _milestone_call(base, path, status, reply)["milestones"]}
+
+
+def _milestone_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), f"/api/milestones/{urllib.parse.quote(args.milestone, safe='')}"
+    status, reply = _get(base, path)
+    return _milestone_call(base, path, status, reply)["milestone"]
+
+
+def _milestone_add(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/milestones"
+    body: dict[str, Any] = {"title": args.title}
+    body.update(_milestone_fields(args))
+    status, reply = _post(base, path, body)
+    return {"milestone": _milestone_call(base, path, status, reply, ok=(201,))["milestone"]}
+
+
+def _milestone_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/milestones/edit"
+    changes = {**({"title": args.title} if args.title is not None else {}), **_milestone_fields(args)}
+    if not changes:
+        raise CliError("usage", "name what to change: --title, --outcome, --spec, --adr or --retro")
+    status, reply = _post(base, path, {"milestone": args.milestone, "changes": changes})
+    document = _milestone_call(base, path, status, reply)
+    return {"milestone": document["milestone"], "changed": document["changed"]}
+
+
+def _milestone_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/milestones/archive"
+    status, reply = _post(base, path, {"milestone": args.milestone})
+    return {"milestone": _milestone_call(base, path, status, reply)["milestone"]}
+
+
+def _milestone_fields(args: argparse.Namespace) -> dict[str, Any]:
+    """The detail fields (outcome, specs, ADRs, retro) the caller gave; a list flag given at all replaces the list."""
+    given = {"outcome": args.outcome, "specs": args.spec, "adrs": args.adr, "retro": args.retro}
+    return {field: value for field, value in given.items() if value is not None}
 
 
 def _trace(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -824,6 +888,63 @@ def _parser() -> argparse.ArgumentParser:
     )
     mermaid.add_argument("source", type=Path, help="the stateDiagram-v2 .mmd file")
     mermaid.add_argument("--out", type=Path, help="default: .starpulse/machines/<source name>.yaml")
+    milestone = verbs.add_parser("milestone", description="the Board's milestones", help="the Board's milestones")
+    milestone_verbs = milestone.add_subparsers(dest="verb", required=True, metavar="verb")
+    milestone_list = leaf(
+        milestone_verbs,
+        "list",
+        "every open milestone with its title, outcome, specs and ADRs",
+        _milestone_list,
+        ("milestones",),
+        (0, 2, 3),
+    )
+    milestone_list.add_argument("--json", action="store_true", help="accepted for clarity: every verb prints JSON")
+    milestone_show = leaf(
+        milestone_verbs,
+        "show",
+        "one open milestone: its title, outcome, specs, ADRs, retro and whole description",
+        _milestone_show,
+        _MILESTONE_KEYS,
+        (0, 2, 3, 4),
+    )
+    milestone_show.add_argument("milestone", help="the milestone's id (`m-106`), as `milestone list` shows it")
+    milestone_add = leaf(
+        milestone_verbs,
+        "add",
+        "open a milestone and return its new id",
+        _milestone_add,
+        ("milestone",),
+        (0, 1, 2, 3),
+    )
+    milestone_add.add_argument("title", help="the milestone's title")
+    milestone_edit = leaf(
+        milestone_verbs,
+        "edit",
+        "replace the fields given on an open milestone and return those that changed",
+        _milestone_edit,
+        ("milestone", "changed"),
+        (0, 1, 2, 3, 4),
+    )
+    milestone_edit.add_argument("milestone", help="the milestone's id (`m-106`)")
+    milestone_edit.add_argument("--title", help="the new title; the file is renamed to match")
+    for command in (milestone_add, milestone_edit):
+        command.add_argument("--outcome", help="the milestone's Outcome section")
+        command.add_argument(
+            "--spec", action="append", help="a Spec bullet; repeat for more (replaces the list on edit)"
+        )
+        command.add_argument(
+            "--adr", action="append", help="an ADRs bullet; repeat for more (replaces the list on edit)"
+        )
+        command.add_argument("--retro", help="the milestone's Retro section")
+    milestone_archive = leaf(
+        milestone_verbs,
+        "archive",
+        "move an open milestone to the board's archive",
+        _milestone_archive,
+        ("milestone",),
+        (0, 1, 2, 3, 4),
+    )
+    milestone_archive.add_argument("milestone", help="the milestone's id (`m-106`)")
     runs = verbs.add_parser("runs", description="the workflows of the runs adapters", help="its workflows")
     runs_verbs = runs.add_subparsers(dest="verb", required=True, metavar="verb")
     leaf(
