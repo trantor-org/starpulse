@@ -39,6 +39,7 @@ def repo(tmp_path: Path) -> Path:
         "ci/test_sizer.py": "from sizer import X\n",
         "ci/ui_preview.py": "",
         "ci/test_page_latency.py": "",
+        "ci/test_soak.py": "",
         "ci/test_ui_preview.py": "import ui_preview\n",
     }
     for path, text in files.items():
@@ -105,8 +106,12 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
     [
         ("README.md", ["ci/test_ui_preview.py", "starpulse/tests/unit/test_public_surface.py"]),
         ("starpulse/web/src/App.tsx", ["ci/test_ui_preview.py", "starpulse/tests/unit/test_neutrality.py"]),
-        (".github/workflows/ci.yml", ["ci/test_page_latency.py", "ci/test_sizer.py", "ci/test_ui_preview.py"]),
-        ("bench/page_latency.py", ["ci/test_page_latency.py"]),
+        (
+            ".github/workflows/ci.yml",
+            ["ci/test_page_latency.py", "ci/test_sizer.py", "ci/test_soak.py", "ci/test_ui_preview.py"],
+        ),
+        ("bench/page_latency.py", ["ci/test_page_latency.py", "ci/test_soak.py"]),
+        ("bench/soak.py", ["ci/test_soak.py"]),
     ],
 )
 def test_a_mapped_non_python_file_selects_the_tests_that_read_it(repo, path, tests):

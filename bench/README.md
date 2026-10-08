@@ -1,8 +1,9 @@
 # Benchmarks
 
-Three scripts measure the event log at the two ends of a deployment and the reads of the store beside it, and a
-fourth times a running page against its latency budget. They are not part of the installed package and the test
-suite does not run them; `ci/test_page_latency.py` holds the page harness's rules.
+Three scripts measure the event log at the two ends of a deployment and the reads of the store beside it, a fourth
+times a running page against its latency budget, and a fifth holds that page open idle to see it degrade. They are not
+part of the installed package and the test suite does not run them; `ci/test_page_latency.py` and `ci/test_soak.py`
+hold the two page harnesses' rules.
 
 | Script | Measures | Needs |
 | --- | --- | --- |
@@ -10,8 +11,9 @@ suite does not run them; `ci/test_page_latency.py` holds the page harness's rule
 | `ic_event_log.py` | concurrent fail-open appends to an instance's SQLite WAL log while a reader polls by cursor, at 10 thousand and 1 million rows | a scratch file path |
 | `flow_reads.py` | the p95 of flow health, the level and its trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
 | `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint, each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
+| `soak.py` | one idle tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files | a running StarPulse and Google Chrome |
 
-Run them from the repository root after `uv sync`; `page_latency.py` also needs `uv sync --group bench`.
+Run them from the repository root after `uv sync`; `page_latency.py` and `soak.py` also need `uv sync --group bench`.
 
 ## Hub ingest
 
@@ -91,3 +93,25 @@ that no row times. It exits 1 on either, so a new page request is measured befor
 record (`/api/task/<id>`) reads the first one the server's snapshot or listing holds; a route the server does not
 serve reports its status in the row's note. Wall-clock times on a busy host carry its load: run it more than once
 before reading one slow row as a regression.
+
+## Soak
+
+```sh
+uv run --group bench python bench/soak.py http://127.0.0.1:8766 --duration 24h --report .tmp/soak.json
+uv run --group bench python bench/soak.py http://127.0.0.1:8766 --duration 60m --sample-every 3m --report .tmp/soak.json
+```
+
+It opens the page in one Chrome tab and leaves it untouched, reusing `page_latency.py`'s probe. Every `--sample-every`
+(5 minutes) it records the tab's JS heap after a garbage collection, DOM nodes, event listeners, animation frames per
+second and the renderer's busy share over 5 idle seconds, and the server process's RSS, threads and open files. The
+process is the one listening on the URL's port on this host, found again at every sample so a restart shows as a new
+pid (`--pid` pins one; a server on another host reports the tab only). Every `--interval` (10 minutes) it times each read route and the event stream, opens and closes the task
+modal on the Kanban three times, and returns to the view the tab was on; the modal is opened every probe so growth per
+open shows, which an untouched tab would not.
+
+It exits 1, naming each cause, when a probe row's p95 is over its budget or has no sample, when a sample or probe
+fails (a server restart overlapping one does; three failed calls in a row end the run), or when a metric trends
+upward: the lowest value of the run's last third sits above the lowest of its first
+third by more than the metric's allowance (`ALLOWANCE` in the script). The lowest value ignores the sawtooth of
+garbage collection and still catches a leak, which lifts it. A run under six samples is reported but not judged for
+trends. `--report` holds every probe, sample, trend and failure as JSON.
