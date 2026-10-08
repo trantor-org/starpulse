@@ -36,6 +36,7 @@ export interface ApiContract {
   merges: Merges;
   milestoneShown: MilestoneShown;
   milestones: Milestones;
+  pulls: Pulls;
   requests: (
     | MoveRequest
     | StartRequest
@@ -999,6 +1000,34 @@ export interface MilestoneRecord {
  */
 export interface Milestones {
   milestones: MilestoneRecord[];
+}
+/**
+ * `GET /api/pulls`: the stored pull requests matching every filter given, by repository then number.
+ */
+export interface Pulls {
+  pulls: PullRecord[];
+}
+/**
+ * One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).
+ */
+export interface PullRecord {
+  baseRefName: string;
+  body: string;
+  checks: "pass" | "failing" | "pending" | "none";
+  fetchedAt: number;
+  headRefOid: string;
+  isDraft: boolean;
+  mergeable: string;
+  number: number;
+  repo: string;
+  requiredChecks: RequiredCheck[];
+  state: "OPEN" | "MERGED" | "CLOSED";
+  threads: number;
+  updatedAt: string;
+}
+export interface RequiredCheck {
+  name: string;
+  result: "pass" | "failing" | "pending";
 }
 /**
  * `POST /api/move`: move `task` to the column `to`.

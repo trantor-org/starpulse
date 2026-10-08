@@ -6,7 +6,20 @@ the tables they share are declared here, where neither module has to import the 
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Column, Date, Float, Index, Integer, MetaData, PrimaryKeyConstraint, String, Table, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    Float,
+    Index,
+    Integer,
+    MetaData,
+    PrimaryKeyConstraint,
+    String,
+    Table,
+    Text,
+)
 
 metadata = MetaData()
 
@@ -85,4 +98,28 @@ insights = Table(
     Column("expires_at", Float),
     Column("retracted_at", Float),
     Index("ix_starpulse_insights_live", "retracted_at", "expires_at"),
+)
+
+#: Each pull request the PR store read from GitHub, one row per (repository, number), replaced by each read of an open
+#: one and never read again once `state` is MERGED or CLOSED. `checks` is the required-check rollup (pass, failing,
+#: pending, none), `required` each required check as {name, result}, `updated_at` GitHub's own ISO 8601 UTC text
+#: (equal-width, so it sorts as time) and `fetched_at` the epoch second this row was read.
+pull_requests = Table(
+    "starpulse_pull_requests",
+    metadata,
+    Column("repo", String, nullable=False),
+    Column("number", Integer, nullable=False),
+    Column("state", String, nullable=False),
+    Column("is_draft", Boolean, nullable=False),
+    Column("mergeable", String, nullable=False),
+    Column("base", String, nullable=False),
+    Column("head", String, nullable=False),
+    Column("body", Text, nullable=False),
+    Column("checks", String, nullable=False),
+    Column("required", JSON, nullable=False),
+    Column("threads", Integer, nullable=False),
+    Column("updated_at", String, nullable=False),
+    Column("fetched_at", Float, nullable=False),
+    PrimaryKeyConstraint("repo", "number"),
+    Index("ix_starpulse_pull_requests_state", "state", "repo"),
 )
