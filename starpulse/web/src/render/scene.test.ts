@@ -1251,15 +1251,11 @@ describe("a task's trail on a state level", () => {
 });
 
 describe("a Board state's sun", () => {
-  const sized = (suns: Record<string, number>, counts: Record<string, number> = {}) => {
-    const sky = withTasks(boardSky(), counts);
-    sky.S.suns = suns;
-    return build(sky, { kind: "board" }).galaxies;
-  };
+  const sized = (counts: Record<string, number> = {}) => build(withTasks(boardSky(), counts), { kind: "board" }).galaxies;
 
-  it("is one fixed size on every state, whatever its share of the week's moves or its live tasks", () => {
-    const quiet = sized({ new: 0, ready: 0, in_progress: 0, review: 0, done: 0 });
-    const busy = sized({ new: 0.1, ready: 0.1, in_progress: 0.2, review: 0.2, done: 0.4 }, { new: 5, ready: 80, review: 120, done: 3000 });
+  it("is one fixed size on every state, whatever its live tasks", () => {
+    const quiet = sized();
+    const busy = sized({ new: 5, ready: 80, review: 120, done: 3000 });
 
     for (const g of [quiet, busy]) for (const id of Object.keys(g)) expect(g[id].r).toBe(SUN_R);
   });

@@ -29,7 +29,7 @@ export interface ApiContract {
   contractReport: ContractReport;
   docShown: DocShown;
   docs: Docs;
-  events: (TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | SunsDelta | LedgersDelta | InsightDelta)[];
+  events: (TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta)[];
   forwardingStatus: ForwardingStatus;
   forwardingUnconfigured: ForwardingUnconfigured;
   harnesses: Harnesses;
@@ -474,11 +474,6 @@ export interface ClaimDelta {
   at: number;
   reason: string;
   task: string;
-}
-export interface SunsDelta {
-  suns: {
-    [k: string]: number;
-  };
 }
 export interface LedgersDelta {
   ledgers: {
@@ -1292,12 +1287,6 @@ export interface Snapshot {
   settled: {
     [k: string]: Settled;
   };
-  /**
-   * Each Board state's share of the lane moves in the week before the last local midnight, which sizes its sun.
-   */
-  suns?: {
-    [k: string]: number;
-  } | null;
 }
 /**
  * What the board writes beyond moves: the page draws Edit, Archive… and New task only for what its board does.

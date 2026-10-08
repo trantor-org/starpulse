@@ -9,7 +9,7 @@
 // Ask for the snapshot now: the server answers while the bundle loads. src/api/stream.ts takes this connection over and replays what it held.
 (function () {
   var early = (window.__earlyStream = { src: new EventSource("/api/events"), events: [] });
-  ["snapshot", "task", "move", "dags", "pulls", "suns", "ledgers", "claim"].forEach(function (type) {
+  ["snapshot", "task", "move", "dags", "pulls", "ledgers", "claim"].forEach(function (type) {
     early.src.addEventListener(type, function (e) {
       if (!early.adopted) early.events.push({ type: type, data: e.data });
     });

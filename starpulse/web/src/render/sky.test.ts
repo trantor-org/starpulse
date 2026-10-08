@@ -276,13 +276,6 @@ describe("the step rings a run raises", () => {
   });
 });
 
-describe("the suns a snapshot carries", () => {
-  it("are each Board state's share of the week's moves, and none when the server sent none", () => {
-    expect(merge({ ...snap(1000, [], []), suns: { ready: 0.25, review: 0.75 } }, 1000).suns).toEqual({ ready: 0.25, review: 0.75 });
-    expect(merge(snap(1000, [], []), 1000).suns).toEqual({});
-  });
-});
-
 describe("a Ledger delta's sky", () => {
   const row = (key: string) => ({ key, at: 1, tasks: [], runs: {}, fails: {}, pinned: false });
   const strip = { since: 0, bucket: 900, buckets: [{ merges: 1, failed: 0, reruns: 0 }] };

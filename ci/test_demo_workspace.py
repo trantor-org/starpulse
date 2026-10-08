@@ -74,7 +74,6 @@ def _capture() -> dict:
         "pools": [],
         "pulls": {},
         "settled": {},
-        "suns": dict.fromkeys(LANES, 0.0),
         "boardUrl": None,
         "hint": None,
     }

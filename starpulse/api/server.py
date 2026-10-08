@@ -19,10 +19,9 @@ GET /board, /flow/<name>, /runs
                    the same page; it opens the level that draws that graph, then rewrites the address to /
 GET /?demo         the page driven by synthetic agents, for a look without live data
 GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, pools, flows: [{name,
-                   machine, agents}], pulls, settled, suns, error, now}: every machine with its tasks, the
+                   machine, agents}], pulls, settled, error, now}: every machine with its tasks, the
                    workflow declarations, the workflows, each named `<instance>/<workflow>`, and the
-                   concurrency pools they run on, each named `<instance>/<pool>`, and `suns`, each Board state's
-                   share of the lane moves in the week before the last local midnight), then
+                   concurrency pools they run on, each named `<instance>/<pool>`), then
                    a `task` delta ({id, agent, settled}) per Board task change, a `move` delta ({flow, id, agent}) per task a machine placed, a
                    `dags` delta ({dags, pools, error}) per runs change, a `pulls` delta ({pulls}) per
                    change to a task's pull requests and a `claim` delta ({task, reason, at}) per
@@ -1572,8 +1571,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     feed.record_lanes(store, log if config.forward is not None else None)
     feed.track_criteria(board.evaluate, store)
     threading.Thread(target=feed.keep_criteria, args=(threading.Event(),), name="board-criteria", daemon=True).start()
-    feed.size_suns(store.lane_rows)
-    threading.Thread(target=feed.keep_suns, args=(threading.Event(),), name="board-suns", daemon=True).start()
+    feed.read_lanes(store.lane_rows)
     if args.hub:
         # The first pass runs before serving, so the hub never takes an event without today's partition.
         keeping = {"retention_days": config.hub_retention_days, "machines": machine_tables(feed.machines)}

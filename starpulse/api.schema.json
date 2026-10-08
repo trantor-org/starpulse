@@ -4593,21 +4593,6 @@
             "$ref": "#/$defs/Settled"
           },
           "type": "object"
-        },
-        "suns": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "type": "number"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Each Board state's share of the lane moves in the week before the last local midnight, which sizes its sun."
         }
       },
       "required": [
@@ -4852,22 +4837,6 @@
         "when"
       ],
       "title": "SubFlow",
-      "type": "object"
-    },
-    "SunsDelta": {
-      "additionalProperties": false,
-      "properties": {
-        "suns": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "type": "object"
-        }
-      },
-      "required": [
-        "suns"
-      ],
-      "title": "SunsDelta",
       "type": "object"
     },
     "TaskDelta": {
@@ -5490,9 +5459,6 @@
           },
           {
             "$ref": "#/$defs/ClaimDelta"
-          },
-          {
-            "$ref": "#/$defs/SunsDelta"
           },
           {
             "$ref": "#/$defs/LedgersDelta"

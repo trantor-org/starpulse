@@ -395,11 +395,6 @@ class Snapshot(_Api):
         default=None,
         description="Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds).",
     )
-    suns: dict[str, float] | None = Field(
-        default=None,
-        description="Each Board state's share of the lane moves in the week before the last local midnight, which "
-        "sizes its sun.",
-    )
     ledgers: dict[str, list[LedgerRow]] | None = Field(default=None, description="Each Ledger event's rows, newest first.")
     mergeStrip: MergeStrip | None = None
     mergePins: list[LedgerRow] | None = Field(
@@ -456,10 +451,6 @@ class ClaimDelta(_Api):
     at: float
 
 
-class SunsDelta(_Api):
-    suns: dict[str, float]
-
-
 class LedgersDelta(_Api):
     ledgers: dict[str, list[LedgerRow]]
     mergeStrip: MergeStrip | None
@@ -481,7 +472,6 @@ EVENTS: dict[str, type[BaseModel]] = {
     "dags": DagsDelta,
     "pulls": PullsDelta,
     "claim": ClaimDelta,
-    "suns": SunsDelta,
     "ledgers": LedgersDelta,
     "insight": InsightDelta,
 }
@@ -1388,7 +1378,7 @@ class ApiContract(_Api):
 
     snapshot: Snapshot
     events: list[
-        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | SunsDelta | LedgersDelta | InsightDelta
+        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta
     ]
     merges: Merges
     machines: Machines

@@ -943,39 +943,6 @@ def test_scrub_seeds_nothing_when_the_capture_lacks_the_boards_delivery_flow() -
     assert [f["name"] for f in demo["flows"]] == ["board"]
 
 
-def test_scrub_sizes_the_demo_suns_from_its_own_week_of_lane_changes() -> None:
-    live = _structured(
-        [{"id": "TASK-D1", "state": "review"}, {"id": "TASK-D2", "state": "ready"}, {"id": "TASK-D3", "state": "new"}],
-        [],
-    )
-
-    suns = scrub(live).get("suns")
-
-    # the six lane ends of the synthetic history above: ready 3, in progress 2, review 1
-    assert suns is not None
-    assert (suns["ready"], suns["in_progress"], suns["review"]) == pytest.approx((3 / 6, 2 / 6, 1 / 6))
-    assert sum(suns.values()) == pytest.approx(1)
-
-
-def test_scrub_keeps_the_suns_a_capture_reports() -> None:
-    live = _structured([{"id": "TASK-D1", "state": "review"}], [])
-    live["suns"] = {"ready": 0.25, "review": 0.75}
-
-    assert scrub(live)["suns"] == {"ready": 0.25, "review": 0.75}
-
-
-def test_scrub_sizes_the_suns_itself_when_the_capture_saw_no_moves() -> None:
-    live = _structured(
-        [{"id": "TASK-D1", "state": "review"}, {"id": "TASK-D2", "state": "ready"}, {"id": "TASK-D3", "state": "new"}],
-        [],
-    )
-    live["suns"] = {state["id"]: 0.0 for state in BOARD["states"]}  # a fresh server's all-zero shares
-
-    suns = scrub(live)["suns"]
-
-    assert suns["ready"] == pytest.approx(3 / 6)
-
-
 def test_elements_inlines_the_local_stylesheet_and_script_and_leaves_a_remote_link(tmp_path: Path) -> None:
     (tmp_path / "up").mkdir()
     (tmp_path / "up/real.css").write_text("/* TASK-1 */ :root { --ok: #34d399; }")

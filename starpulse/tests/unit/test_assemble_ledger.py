@@ -27,7 +27,7 @@ def _feed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, commit: str):
     path.write_text(CONFIG + commit)
     _, feed = assemble(load(path), tmp_path, None, ())
     entered = time.time() - 60
-    feed.size_suns(lambda since=None: [("FAKE-1", entered, "open", "shut")])
+    feed.read_lanes(lambda since=None: [("FAKE-1", entered, "open", "shut")])
     feed.set_dags(
         "q",
         [

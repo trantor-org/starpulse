@@ -1,5 +1,5 @@
 // The wire types are generated (types.gen.ts); this file only names what the page derives from them.
-import type { ClaimDelta, DagBody, DagsDelta, LedgersDelta, MoveDelta, PullsDelta, RawAgent as WireAgent, Step, SunsDelta, TaskDelta } from "./types.gen";
+import type { ClaimDelta, DagBody, DagsDelta, LedgersDelta, MoveDelta, PullsDelta, RawAgent as WireAgent, Step, TaskDelta } from "./types.gen";
 
 export * from "./types.gen";
 
@@ -18,5 +18,4 @@ export type Delta =
   | ({ kind: "dags" } & DagsDelta)
   | ({ kind: "pulls" } & PullsDelta)
   | ({ kind: "claim" } & ClaimDelta)
-  | ({ kind: "suns" } & SunsDelta)
   | ({ kind: "ledgers" } & LedgersDelta);
