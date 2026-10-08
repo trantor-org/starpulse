@@ -34,6 +34,7 @@ from sqlalchemy import (
     delete,
     func,
     select,
+    text,
     update,
 )
 from sqlalchemy.dialects import postgresql, sqlite
@@ -172,7 +173,7 @@ class HealthHistory(LaneHistory, Protocol):
 class SummarisedHealth(HealthHistory, Protocol):
     """A history that keeps lane summaries, so flow health reads a window of them and not every lane change."""
 
-    def health_stays(self, machine: dict, *, start: float, now: float) -> LaneStays: ...
+    def health_stays(self, machine: dict, *, start: float, now: float, stuck_s: float) -> LaneStays: ...
 
 
 @runtime_checkable
@@ -241,6 +242,8 @@ class HistoryStore:
         create_tables(self.engine)  # a reader thread of the log may be creating its own at the same time
         for index in (*cases.indexes, *lane_intervals.indexes):  # create_all leaves a table that predates an index
             index.create(self.engine, checkfirst=True)
+        with self.engine.begin() as db:  # the stay index leads with the columns this one held
+            db.execute(text("DROP INDEX IF EXISTS ix_starpulse_lane_intervals_lane"))
         if self.repair_lanes():
             self.rebuild_summaries()
         self.build_summaries()
@@ -440,30 +443,50 @@ class HistoryStore:
             # pragma: no mutate end
         return [{"stream": s, "after_id": a, "before_id": b, "lost": n} for s, a, b, n in rows]
 
-    def health_stays(self, machine: dict, *, start: float, now: float) -> LaneStays:
+    def health_stays(self, machine: dict, *, start: float, now: float, stuck_s: float) -> LaneStays:
         """The lane stays the Board `machine`'s health between `start` and `now` reads, from the lane summaries.
 
-        The database folds the stays that ended at or after `start` into one `Dwell` per lane and counts the stays
-        that began in the window per lane, so what comes back is a row per lane plus the stays still going in a state
-        that is not final: it grows with the lanes and the tasks in flight, not with the stays the window holds; the
-        tasks in each lane now and every lane recorded come from the lane counts.
+        The database folds the stays that ended at or after `start` into one `Dwell` per lane, counts the stays that
+        began in the window per lane and folds the stays still going in a state that is not final into one `Dwell`
+        per lane, so what comes back is a row per lane plus the stays still going in a state that is neither initial
+        nor final for `stuck_s` or nearly: it grows with the lanes and the tasks stuck, not with the stays the window
+        holds or the tasks in flight; the tasks in each lane now and every lane recorded come from the lane counts.
         """
         i = lane_intervals.c
         live = [lane for state in machine["states"] if not state["final"] for lane in (state["name"], state["id"])]
+        watched = [
+            lane
+            for state in machine["states"]
+            if not (state["final"] or state["initial"])
+            for lane in (state["name"], state["id"])
+        ]
         length = i.left_at - i.entered_at
-        # grouped by an expression because a bare `GROUP BY lane` makes SQLite scan the whole lane index for its order
-        by_lane = i.lane.concat("")
-        ended = select(by_lane, func.count(), func.sum(length), func.max(length)).where(i.left_at >= start)
-        entered = select(i.lane, func.count()).where(i.entered_at.between(start, now)).group_by(i.lane)
-        going = select(i.id, i.task, i.lane, i.entered_at).where(i.left_at.is_(None), i.lane.in_(live))
+        # a second of slack, so the reader's own `now - began >= stuck_s` decides a stay at the threshold
+        stuck = (
+            select(i.task, i.lane, i.entered_at)
+            .where(i.left_at.is_(None), i.lane.in_(watched), i.entered_at < now - stuck_s + 1.0)
+            .order_by(i.entered_at, i.id)
+        )
         held = select(lanes.c.lane, func.sum(lanes.c.open_tasks)).group_by(lanes.c.lane).order_by(lanes.c.lane)
         with self.engine.connect() as db:
-            dwell = {lane: Dwell(n, total, longest) for lane, n, total, longest in db.execute(ended.group_by(by_lane))}
             counts = dict(db.execute(held).all())
+            # every lane a stay was in is counted, so naming them lets the stay index seek each lane's stays in the
+            # window: a bare `GROUP BY lane` would scan the whole index, and a window's range sorts what it reads
+            recorded = i.lane.in_(list(counts))
+            ended = select(i.lane, func.count(), func.sum(length), func.max(length)).where(recorded, i.left_at >= start)
+            entered = select(i.lane, func.count()).where(recorded, i.entered_at.between(start, now))
+            going = select(i.lane, func.count(), func.sum(now - i.entered_at), func.min(i.entered_at)).where(
+                i.lane.in_(live), i.left_at.is_(None)
+            )
+            dwell = {lane: Dwell(n, total, longest) for lane, n, total, longest in db.execute(ended.group_by(i.lane))}
+            open_dwell = {
+                lane: Dwell(n, total, now - first) for lane, n, total, first in db.execute(going.group_by(i.lane))
+            }
             return LaneStays(
                 dwell,
-                dict(db.execute(entered).all()),
-                [Stay(*row[1:], None) for row in sorted(db.execute(going))],
+                dict(db.execute(entered.group_by(i.lane)).all()),
+                open_dwell,
+                [Stay(task, lane, began, None) for task, lane, began in db.execute(stuck)],
                 counts,
                 list(counts),
             )

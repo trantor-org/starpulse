@@ -952,9 +952,9 @@ def health_response(
         return _error("this history does not keep every task's lane changes, so it cannot report flow health"), 501
     start = now - window * 3600
     if isinstance(history, SummarisedHealth):
-        held = history.health_stays(machines["board"], start=start, now=now)
+        held = history.health_stays(machines["board"], start=start, now=now, stuck_s=stuck * 3600)
     else:
-        held = analytics.lane_stays(history.lane_rows(), start=start, now=now)
+        held = analytics.lane_stays(history.lane_rows(), start=start, now=now, stuck_s=stuck * 3600)
     health = analytics.stay_health(
         machines["board"], held, history.gaps(), now=now, window_s=window * 3600, stuck_s=stuck * 3600
     )

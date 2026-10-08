@@ -35,15 +35,18 @@ class LaneStays:
     """What `stay_health` reads of a lane history for one window, without every stay the history ever kept.
 
     `ended` is each lane's stays that ended at or after the window's start, as a `Dwell`. `entered` is how many stays
-    began in each lane inside the window. `going` are the stays still in their lane (more than a state that is not
-    final needs are harmless). `open_by_lane` is how many tasks are in each lane now, and `lanes` every lane the
-    history has recorded. All but `going` are one row per lane, so the read grows with the lanes and the tasks in
-    flight, not with the stays the window holds.
+    began in each lane inside the window. `going` is each lane's stays still in it, as a `Dwell` of their lengths to
+    now (more lanes than a state that is not final needs are harmless). `stuck` are the stays still going that have
+    lasted the stuck threshold or nearly (more than a state that is neither initial nor final needs are harmless; the
+    reader checks each). `open_by_lane` is how many tasks are in each lane now, and `lanes` every lane the history has
+    recorded. All but `stuck` are one row per lane, so the read grows with the lanes and the stays that are stuck, not
+    with the stays the window holds or the tasks in flight.
     """
 
     ended: Mapping[str, Dwell]
     entered: Mapping[str, int]
-    going: Sequence[Stay]
+    going: Mapping[str, Dwell]
+    stuck: Sequence[Stay]
     open_by_lane: Mapping[str, int]
     lanes: Sequence[str]
 
@@ -59,18 +62,23 @@ def _stays(rows: Iterable[LaneRow]) -> Iterable[Stay]:
             yield Stay(task, lane, start, later[0] if later else None)
 
 
-def lane_stays(rows: Iterable[LaneRow], *, start: float, now: float) -> LaneStays:
+def lane_stays(rows: Iterable[LaneRow], *, start: float, now: float, stuck_s: float) -> LaneStays:
     """What `stay_health` reads of the stays `rows` hold for the window from `start` to `now`, the tasks now in each
-    lane and the lanes in the order they first appear."""
+    lane and the lanes in the order they first appear; `stuck_s` is how long a stay lasts to be listed as stuck."""
     stays = list(_stays(rows))
     lengths: dict[str, list[float]] = defaultdict(list)
     for stay in stays:
         if stay.ended is not None and stay.ended >= start:
             lengths[stay.lane].append(stay.ended - stay.began)
+    going: dict[str, list[float]] = defaultdict(list)
+    for stay in stays:
+        if stay.ended is None:
+            going[stay.lane].append(now - stay.began)
     return LaneStays(
         {lane: Dwell(len(found), sum(found), max(found)) for lane, found in lengths.items()},
         Counter(stay.lane for stay in stays if start <= stay.began <= now),
-        [stay for stay in stays if stay.ended is None],
+        {lane: Dwell(len(found), sum(found), max(found)) for lane, found in going.items()},
+        [stay for stay in stays if stay.ended is None and now - stay.began >= stuck_s],
         Counter(stay.lane for stay in stays if stay.ended is None),
         list(dict.fromkeys(s.lane for s in stays)),
     )

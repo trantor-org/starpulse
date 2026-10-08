@@ -90,7 +90,8 @@ lane_intervals = Table(
     Index("ix_starpulse_lane_intervals_task", "task", "left_at"),
     Index("ix_starpulse_lane_intervals_entered", "entered_at"),
     Index("ix_starpulse_lane_intervals_left", "left_at"),
-    Index("ix_starpulse_lane_intervals_lane", "lane", "left_at"),
+    # each lane's stays by when they ended, with when they began: the health read seeks it lane by lane, never the table
+    Index("ix_starpulse_lane_intervals_stay", "lane", "left_at", "entered_at"),
 )
 lanes = Table(
     "starpulse_lanes",

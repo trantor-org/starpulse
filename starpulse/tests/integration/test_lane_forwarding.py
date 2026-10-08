@@ -46,13 +46,13 @@ class Clock:
 class Site:
     """An IC with a Board feed, its log and store, and a hub's log, store and ingest, joined by one forwarder."""
 
-    def __init__(self, tmp_path: Path) -> None:
+    def __init__(self, tmp_path: Path, machines: dict = MACHINES) -> None:
         self.clock = Clock()
         self.ic_url = f"sqlite:///{tmp_path / 'ic.sqlite'}"
         self.hub_url = f"sqlite:///{tmp_path / 'hub.sqlite'}"
-        self.ic_log, self.ic_store = EventLog(self.ic_url), HistoryStore(self.ic_url, MACHINES)
-        self.hub_log, self.hub_store = EventLog(self.hub_url), HistoryStore(self.hub_url, MACHINES)
-        self.feed = BoardFeed(machines=MACHINES, clock=self.clock)
+        self.ic_log, self.ic_store = EventLog(self.ic_url), HistoryStore(self.ic_url, machines)
+        self.hub_log, self.hub_store = EventLog(self.hub_url), HistoryStore(self.hub_url, machines)
+        self.feed = BoardFeed(machines=machines, clock=self.clock)
         self.feed.record_lanes(self.ic_store, self.ic_log)
         self.ingest = ForwardIngest({"ana": TOKEN}, self.hub_log)
         self.opt_in = OptIn(tmp_path / OPT_IN_FILE)
@@ -259,3 +259,58 @@ def test_a_reconcile_puts_the_lane_a_held_task_is_in_where_the_history_missed_it
     site.drain(site.forwarder())
     site.fold()
     assert {(task, new) for task, _, _, new in site.hub_store.lane_rows()} >= {("T-1", "review"), ("T-3", "archived")}
+
+
+#: A Board whose sweep moves a finished task on to a final `completed` state, as trantor's does.
+SWEPT = {
+    **MACHINES,
+    "board": {
+        **MACHINES["board"],
+        "states": [
+            *MACHINES["board"]["states"],
+            {"id": "completed", "name": "Completed", "initial": False, "final": True},
+        ],
+    },
+}
+
+
+def _completed(task: str, *, at: float) -> BoardTask:
+    """A swept task: its file keeps the done status, and the folder it sits in says it settled completed."""
+    return BoardTask(id=task, team="demo", title="t", lane="done", settled="completed", settled_at=at)
+
+
+def test_a_completed_task_leaves_done_for_the_completed_lane_where_the_board_has_one(tmp_path: Path) -> None:
+    site = Site(tmp_path, SWEPT)
+    site.move("T-1", "done", at=0)
+    site.clock.now = T0 + H
+    site.feed.put(_completed("T-1", at=T0 + H))
+    site.feed.put(_completed("T-1", at=T0 + H))  # the hourly reconcile republishes it
+
+    site.drain(site.forwarder())
+    site.fold()
+
+    expected = [("T-1", None, "done"), ("T-1", "done", "completed")]
+    assert [(task, old, new) for task, _, old, new in site.ic_store.lane_rows()] == expected
+    assert [(task, old, new) for task, _, old, new in site.hub_store.lane_rows()] == expected
+
+
+def test_a_completed_task_adds_no_row_where_the_board_has_no_completed_state(tmp_path: Path) -> None:
+    site = Site(tmp_path)
+    site.move("T-1", "done", at=0)
+    site.feed.put(_completed("T-1", at=T0 + H))
+
+    assert [new for _, _, _, new in site.ic_store.lane_rows()] == ["done"]
+
+
+def test_a_reconcile_moves_a_held_completed_task_the_history_keeps_in_done(tmp_path: Path) -> None:
+    site = Site(tmp_path, SWEPT)
+    site.ic_store.record_lane("T-1@done@1000000.0", "T-1", "done", T0)
+    held = BoardFeed(machines=SWEPT, clock=site.clock)  # the feed that missed the sweep had no recorder
+    held.put(_completed("T-1", at=T0 + H))
+    held.record_lanes(site.ic_store, site.ic_log)
+
+    assert held.reconcile_lanes(site.ic_store.current_lanes()) == 1
+    assert held.reconcile_lanes(site.ic_store.current_lanes()) == 0
+
+    changes = [(task, old, new, at) for task, at, old, new in site.ic_store.lane_rows() if old is not None]
+    assert changes == [("T-1", "done", "completed", T0 + H)]
