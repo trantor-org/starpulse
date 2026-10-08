@@ -69,3 +69,18 @@ url = "http://127.0.0.1:9"
   "disk-report",
   "metrics-snapshot",
 ]
+
+# The flow graph the gate's seeded server draws (ci/seeded_server.py). An IC instance parses it and draws no level, so the
+# UI preview is unchanged.
+[level]
+machine = "board"
+goal = "completed"
+gates = ["review"]
+terminals = [
+  { id = "completed", role = "goal" },
+  { id = "archived", role = "abandoned" },
+]
+
+[level.orbit]
+suns = "working"
+working = ["ready", "in_progress", "review"]

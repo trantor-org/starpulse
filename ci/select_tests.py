@@ -38,7 +38,7 @@ READERS = {
     "README.md": ("starpulse/api/server.py", "starpulse/tests/unit/test_public_surface.py", "ci/ui_preview.py"),
     "starpulse/web/*": ("starpulse/tests/unit/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
-    "ci/preview.toml": ("ci/ui_preview.py",),
+    "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
     "starpulse/store/migrations/*": ("starpulse/api/hub.py",),
     "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py"),
     "bench/soak.py": ("ci/test_soak.py",),

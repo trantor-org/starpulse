@@ -106,6 +106,25 @@ record (`/api/task/<id>`) reads the first one the server's snapshot or listing h
 serve reports its status in the row's note. Wall-clock times on a busy host carry its load: run it more than once
 before reading one slow row as a regression.
 
+`--repeat N` times every surface N times and judges each row on the median run's p95 (the lower median for an even
+count), so one starved run on a loaded runner neither fails a row nor hides a slow one; the row's note lists every
+run's p95. `--what-if FROM TO` names the lanes for `/api/level/what-if` (default `Ready` `In Progress`), which a
+server's level must have seen a task leave.
+
+## Latency gate
+
+Every pull request runs the `latency` job in `.github/workflows/ci.yml`: it builds the page, serves `ci/seeded_server.py`
+(`ci/preview.toml`'s workspace with the real request handler, a month of lane history for about 160 tasks and a level),
+runs `page_latency.py --repeat 3` against it and fails on a row over budget or an untimed request. The table is the
+job's step summary. `ci/seeded_server.py` runs the same server by hand:
+
+```sh
+uv run python -m ci.seeded_server --port 8766 --dir .tmp/gate
+uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --repeat 3 --what-if in_progress review
+```
+
+The seeded board is smaller than a live one: a cost that grows with the board is the nightly `soak.py`'s to find.
+
 ## Soak
 
 ```sh

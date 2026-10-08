@@ -80,6 +80,12 @@ def test_a_route_is_filled_from_the_records_the_server_holds():
     assert pl.fill("/api/task/{task}", {}) is None
 
 
+def test_the_what_if_route_takes_the_lanes_it_is_asked_for():
+    ids = dict(zip(("from", "to"), ("In Progress", "review"), strict=True))
+    path = pl.fill(pl.READS["/api/level/what-if"], ids)
+    assert path == "/api/level/what-if?hours=168&from=In%20Progress&to=review&p=0.5"
+
+
 def test_every_read_route_the_server_answers_is_timed():
     server = (Path(__file__).resolve().parents[1] / "starpulse" / "api" / "server.py").read_text()
     for route in pl.READS:
@@ -111,3 +117,46 @@ def test_the_viewer_enters_its_scope_once(monkeypatch):
     execs.clear()
     pl.enter_viewer(["bench/page_latency.py", "http://h", "--viewer"])
     assert execs == []
+
+
+def _runs(*p95s: float) -> list[list[pl.Row]]:
+    """One run per p95: 18 samples of 1 ms and two of that p95, so the run's nearest-rank p95 is the value."""
+    return [[pl.Row("switch", "interaction", 50.0, [1.0] * 18 + [p95, p95])] for p95 in p95s]
+
+
+def test_a_surface_is_judged_on_the_median_run_p95_so_one_starved_run_does_not_fail_it():
+    (row,) = pl.median_run(_runs(10.0, 900.0, 20.0))
+    assert row.p95 == 20.0
+    assert row.over is False
+    assert "median of 3 runs" in row.note
+
+
+def test_a_surface_over_budget_in_most_runs_fails_whatever_the_best_run_read():
+    (row,) = pl.median_run(_runs(10.0, 90.0, 80.0))
+    assert row.p95 == 80.0
+    assert row.over is True
+
+
+def test_an_even_number_of_runs_judges_the_lower_median_so_a_tie_does_not_fail_on_noise():
+    (row,) = pl.median_run(_runs(10.0, 90.0))
+    assert row.p95 == 10.0
+
+
+def test_one_run_is_reported_as_it_ran():
+    runs = _runs(90.0)
+    assert pl.median_run(runs) == runs[0]
+
+
+def test_rows_are_matched_by_name_and_a_row_one_run_lacks_is_judged_on_the_runs_that_have_it():
+    first = [pl.Row("a", "request", 50.0, [1.0]), pl.Row("stream `move` to paint", "stream", 50.0, [99.0])]
+    second = [pl.Row("a", "request", 50.0, [2.0])]
+    rows = {r.name: r for r in pl.median_run([first, second])}
+    assert list(rows) == ["a", "stream `move` to paint"]
+    assert rows["a"].p95 == 1.0
+    assert rows["stream `move` to paint"].p95 == 99.0
+
+
+def test_a_surface_no_run_sampled_keeps_its_note():
+    runs = [[pl.Row("docs/<id>", "request", 50.0, note="no record to read")] for _ in range(3)]
+    (row,) = pl.median_run(runs)
+    assert row.samples == [] and row.note == "no record to read"

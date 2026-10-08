@@ -56,7 +56,9 @@ VIEWER_CPU_WEIGHT = 10_000
 VIEWER_ENV = "STARPULSE_BENCH_VIEWER"
 
 #: The read routes and how to build each one's path from what the snapshot holds; `{task}`, `{milestone}` and `{doc}`
-#: are filled from the server's own records.
+#: are filled from the server's own records, `{from}` and `{to}` from `--what-if`.
+#: The states the what-if reads on the live Backlog board; the gate's seeded board spells its states as lane ids.
+WHAT_IF = ("Ready", "In Progress")
 READS: dict[str, str] = {
     "/api/snapshot": "/api/snapshot",
     "/api/merges": "/api/merges?limit=20",
@@ -67,7 +69,7 @@ READS: dict[str, str] = {
     "/api/analytics/health": "/api/analytics/health",
     "/api/level": "/api/level?hours=168",
     "/api/level/trajectories": "/api/level/trajectories?hours=168",
-    "/api/level/what-if": "/api/level/what-if?hours=168&from=Ready&to=In%20Progress&p=0.5",
+    "/api/level/what-if": "/api/level/what-if?hours=168&from={from}&to={to}&p=0.5",
     "/api/harnesses": "/api/harnesses",
     "/api/task/<id>": "/api/task/{task}",
     "/api/milestones": "/api/milestones",
@@ -124,6 +126,34 @@ def surface(url: str) -> str | None:
         if path.startswith(prefix) and rest and "/" not in rest and rest not in ("edit", "archive", "gone", "repo"):
             return f"{prefix}<id>"
     return path
+
+
+def median_run(runs: Sequence[Sequence[Row]]) -> list[Row]:
+    """One row per surface, from the run whose p95 is the median of that surface's runs (the lower of two).
+
+    The validate lane is noisy: one starved run reads over budget on a surface that is fast in the others, and one lucky
+    run reads under on a slow one. Judging the median run's p95 fails a surface only when most runs agree it is slow.
+    Rows are matched by name, in the order they first appear; a surface a run did not sample (a stream event that run
+    never saw) is judged on the runs that did, and one no run sampled keeps its note. Several runs say so in the note.
+    """
+    by_name: dict[str, list[Row]] = {}
+    for run in runs:
+        for row in run:
+            by_name.setdefault(row.name, []).append(row)
+    judged = []
+    for rows in by_name.values():
+        sampled = sorted((r for r in rows if r.samples), key=lambda r: r.p95 or 0.0)
+        if not sampled:
+            judged.append(rows[0])
+        elif len(runs) == 1:
+            judged.append(sampled[0])
+        else:
+            median = sampled[(len(sampled) - 1) // 2]
+            note = f"median of {len(runs)} runs, p95 {'/'.join(f'{r.p95:.0f}' for r in sampled)}"
+            judged.append(
+                Row(median.name, median.kind, median.budget, median.samples, f"{median.note}; {note}".strip("; "))
+            )
+    return judged
 
 
 def untimed(requested: Iterable[str], timed: Iterable[str]) -> list[str]:
@@ -209,11 +239,12 @@ class Client:
         return json.loads(body) if status == 200 else {}
 
 
-def time_reads(client: Client, samples: int) -> list[Row]:
+def time_reads(client: Client, samples: int, what_if: Sequence[str] = WHAT_IF) -> list[Row]:
     snapshot = client.json("/api/snapshot")
     ids = ids_of(
         snapshot if isinstance(snapshot, dict) else {}, client.json("/api/milestones"), client.json("/api/docs")
     )
+    ids |= dict(zip(("from", "to"), what_if, strict=True))
     rows = []
     for name, template in READS.items():
         row = Row(name, "request", BUDGET_MS)
@@ -469,6 +500,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--channel", default="chrome", help="the Playwright browser channel to drive")
     parser.add_argument("--no-page", action="store_true", help="time the requests only")
     parser.add_argument(
+        "--what-if",
+        nargs=2,
+        metavar=("FROM", "TO"),
+        default=WHAT_IF,
+        help="the two states /api/level/what-if is asked about, as the server spells them (default: the live board's)",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="run the whole measurement this many times and judge each surface on the median run's p95 (the CI gate uses 3)",
+    )
+    parser.add_argument(
         "--assets",
         type=Path,
         help="serve the page from this local build (`vite build --outDir`), its /api from the URL",
@@ -484,11 +528,15 @@ def main(argv: list[str] | None = None) -> int:
         enter_viewer(sys.argv)
     base = args.url.rstrip("/")
 
-    rows = time_reads(Client(base), args.samples)
-    rows.append(time_stream(base, max(1, args.samples // 4)))
     requested: list[str] = []
-    if not args.no_page:
-        rows.extend(time_page(base, args.samples, args.channel, requested, args.assets))
+    runs = []
+    for _ in range(max(1, args.repeat)):
+        run = time_reads(Client(base), args.samples, args.what_if)
+        run.append(time_stream(base, max(1, args.samples // 4)))
+        if not args.no_page:
+            run.extend(time_page(base, args.samples, args.channel, requested, args.assets))
+        runs.append(run)
+    rows = median_run(runs)
     timed = [r.name for r in rows] + ["/api/events"]
     missing = untimed(requested, timed)
     print(table(rows, missing))
