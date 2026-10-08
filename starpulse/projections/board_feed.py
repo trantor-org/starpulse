@@ -43,7 +43,8 @@ from starpulse.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 
 __all__ = ["BoardFeed", "BoardStore", "Followed", "Resumable"]
 
-logger = logging.getLogger(__name__)
+# The public path's name, not this module's: operators and trantor's tests filter the feed's records by it.
+logger = logging.getLogger("starpulse.board_feed")
 
 _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 # The runs instance pushed workflows belong to, so the page names them `pushed/<workflow>`.

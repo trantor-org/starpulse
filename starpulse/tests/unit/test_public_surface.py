@@ -112,3 +112,7 @@ def test_the_top_level_holds_only_public_facades() -> None:
 
     facades = {module.removeprefix("starpulse.") for module in PUBLIC} - {"contracts"}  # a package, not a module
     assert top_level == facades | {"__init__", "__main__", "claude_code"}
+
+
+def test_the_board_feed_logs_under_its_public_path() -> None:
+    assert importlib.import_module("starpulse.projections.board_feed").logger.name == "starpulse.board_feed"

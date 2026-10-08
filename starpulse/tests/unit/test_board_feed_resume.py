@@ -66,7 +66,7 @@ def test_a_saved_board_restores_its_tasks_assignees_and_cursor_and_is_ready_at_t
 
 
 def _start_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
-    return [r.getMessage() for r in caplog.records if r.name == "starpulse.projections.board_feed"]
+    return [r.getMessage() for r in caplog.records if r.name == "starpulse.board_feed"]
 
 
 def test_a_start_with_saved_state_logs_the_cursor_it_resumes_after(caplog: pytest.LogCaptureFixture) -> None:
@@ -76,7 +76,7 @@ def test_a_start_with_saved_state_logs_the_cursor_it_resumes_after(caplog: pytes
     first.save()
     caplog.clear()
 
-    with caplog.at_level(logging.INFO, logger="starpulse.projections.board_feed"):
+    with caplog.at_level(logging.INFO, logger="starpulse.board_feed"):
         _resumed(store)
 
     assert _start_lines(caplog) == ["StarPulse: resuming after 7-0"]
@@ -93,7 +93,7 @@ def test_a_start_with_saved_state_logs_the_cursor_it_resumes_after(caplog: pytes
 def test_a_start_without_usable_state_logs_why_it_replays(
     caplog: pytest.LogCaptureFixture, store: _Store, retained: bool, reason: str
 ) -> None:
-    with caplog.at_level(logging.INFO, logger="starpulse.projections.board_feed"):
+    with caplog.at_level(logging.INFO, logger="starpulse.board_feed"):
         _resumed(store, retained)
 
     assert _start_lines(caplog) == [f"StarPulse: replaying: {reason}"]
