@@ -154,9 +154,9 @@ def statements(store: HistoryStore, read: Callable[[], object]) -> int:
     return count[0]
 
 
-def rows(read: Callable[[], object]) -> int:
+def rows(store: HistoryStore, read: Callable[[], object]) -> int:
     """How many rows one read pulls out of the database."""
-    with rows_fetched() as fetched:
+    with rows_fetched(store.engine) as fetched:
         read()
     return fetched[0]
 
@@ -195,7 +195,7 @@ def main() -> int:
         print(
             f"events={events:>10}  load={loaded:6.1f}s summarise={summarised:6.1f}s  db={path.stat().st_size / 1e6:6.0f}MB  "
             + "  ".join(
-                f"{name} p95={t.wall:7.1f}ms wall {t.cpu:7.1f}ms cpu ({statements(store, reads(store, now)[name])} statements, {rows(reads(store, now)[name])} rows)"
+                f"{name} p95={t.wall:7.1f}ms wall {t.cpu:7.1f}ms cpu ({statements(store, reads(store, now)[name])} statements, {rows(store, reads(store, now)[name])} rows)"
                 for name, t in timed.items()
             ),
             flush=True,

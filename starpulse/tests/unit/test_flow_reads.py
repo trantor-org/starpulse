@@ -88,7 +88,7 @@ def _churn(store: HistoryStore, tasks: int) -> None:
 def _health_rows(store: HistoryStore) -> int:
     """The rows one health read fetches, after a read that lets the engine open its connection."""
     health_response(store, {}, MACHINES, NOW)
-    with rows_fetched() as fetched:
+    with rows_fetched(store.engine) as fetched:
         body, status = health_response(store, {}, MACHINES, NOW)
     assert status == 200, body
     return fetched[0]
