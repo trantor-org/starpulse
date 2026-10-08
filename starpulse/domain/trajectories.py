@@ -496,7 +496,8 @@ def _rework(steps: Sequence[tuple[float, str]]) -> tuple[list[dict[str, Any]], i
 
     A loop is a back-edge of a depth-first search from the run's first state (an edge into a state still on the stack),
     reported with its `trips` (the steps that took it) and `days`: for each trip, from the target's previous visit to
-    the step back into it. The components are found by Tarjan's algorithm, a state with no way back counting for none.
+    the step back into it. A step into a state the run has not yet visited is no trip, as the search can meet that state
+    by a later edge. The components are found by Tarjan's algorithm, a state with no way back counting for none.
     """
     succ: dict[str, dict[str, None]] = defaultdict(dict)
     for (_, a), (_, b) in zip(steps, steps[1:], strict=False):
@@ -533,7 +534,7 @@ def _rework(steps: Sequence[tuple[float, str]]) -> tuple[list[dict[str, Any]], i
     found: dict[tuple[str, str], list[float]] = {}
     previous = None
     for at, state in steps:
-        if (previous, state) in back:
+        if (previous, state) in back and state in seen:
             trips = found.setdefault((previous, state), [0, 0.0])
             trips[0] += 1
             trips[1] += (at - seen[state]) / _DAY_S
