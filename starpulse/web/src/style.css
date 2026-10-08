@@ -31,7 +31,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg0); 
 *, *::before, *::after { cursor: default; }
 canvas { position: fixed; left: 0; top: 0; display: block; }
 aside { position: fixed; z-index: 2; top: 0; bottom: 0; box-sizing: border-box; padding: 20px 18px; overflow: hidden; background: color-mix(in srgb, var(--glass) 78%, transparent);
-  backdrop-filter: blur(6px); display: flex; flex-direction: column; gap: 18px; font-size: calc(11px * var(--fs)); color: var(--muted); }
+  display: flex; flex-direction: column; gap: 18px; font-size: calc(11px * var(--fs)); color: var(--muted); }
 aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500; letter-spacing: .28em; text-transform: uppercase; color: var(--muted); }
 #rail { right: 0; width: var(--rail); border-left: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); }
 
@@ -888,3 +888,7 @@ body.graph #c, body.graph #tip, body.graph #panel, body.graph .hud { visibility:
 /* A view left behind stays mounted (shared/Kept): its rendering is skipped while it is away, so showing it again lays nothing out. */
 .kept { display: contents; }
 .kept[inert] > * { content-visibility: hidden; }
+/* Showing the Kanban or the DAGs styles and paints only the cards and rows on screen; one scrolled out of sight keeps the
+   size it last drew at. */
+#kb .card { content-visibility: auto; contain-intrinsic-size: auto 64px; }
+#dg .trow { content-visibility: auto; contain-intrinsic-size: auto 40px; }

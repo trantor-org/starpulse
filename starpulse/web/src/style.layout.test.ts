@@ -17,6 +17,20 @@ describe("the page's fixed layout", () => {
   });
 });
 
+describe("switching views under load", () => {
+  const block = (sel: string) => css.slice(css.indexOf(`${sel} {`), css.indexOf("}", css.indexOf(`${sel} {`)));
+
+  it("draws the navigator and rail as flat glass: a backdrop blur recomposites both on every frame of a switch", () => {
+    expect(block("aside")).toContain("background:");
+    expect(block("aside")).not.toContain("backdrop-filter");
+  });
+
+  it("skips the Kanban cards and DAG rows scrolled out of sight, so showing either view styles and paints only what is on screen", () => {
+    expect(css).toMatch(/#kb \.card \{[^}]*content-visibility: auto; contain-intrinsic-size: auto \d+px/);
+    expect(css).toMatch(/#dg \.trow \{[^}]*content-visibility: auto; contain-intrinsic-size: auto \d+px/);
+  });
+});
+
 describe("the start question", () => {
   it("reuses the task modal's section heading and buttons rather than drawing its own", () => {
     expect(css).toMatch(/#kbm \.ask \.sh, #kbm \.tv \.sh \{/);

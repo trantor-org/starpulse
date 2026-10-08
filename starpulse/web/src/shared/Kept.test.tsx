@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Kept, useViewActive } from "./Kept";
 
 let host: HTMLDivElement, root: Root;
@@ -27,6 +27,8 @@ function Counter({ label }: { label: string }) {
 }
 const show = (on: boolean, children: ReactNode) => act(async () => root.render(<Kept on={on}>{children}</Kept>));
 const button = () => host.querySelector("button");
+/** Lets the frames after a reveal pass, when the view goes live again. */
+const frames = () => act(async () => { for (let i = 0; i < 3; i++) await new Promise((r) => requestAnimationFrame(r)); });
 
 describe("Kept", () => {
   beforeEach(() => { mounts = 0; renders = 0; });
@@ -63,6 +65,41 @@ describe("Kept", () => {
     expect(renders).toBe(before);
     expect(button()!.dataset.label).toBe("a");
     await show(true, <Counter label="b" />);
+    await frames();
     expect(button()!.dataset.label).toBe("b");
+  });
+
+  it("shows a view that is returned to at once, as it was left, and renders it and tells it it is active only frames later", async () => {
+    await show(true, <Counter label="a" />);
+    await show(false, <Counter label="a" />);
+    const before = renders;
+    await show(true, <Counter label="b" />);
+    expect(button()!.closest("[inert]")).toBeNull();
+    expect(button()!.dataset.label).toBe("a");
+    expect(button()!.dataset.active).toBe("false");
+    expect(renders).toBe(before);
+    await frames();
+    expect(button()!.dataset.label).toBe("b");
+    expect(button()!.dataset.active).toBe("true");
+  });
+
+  it("pauses the animations running in a view that is left, and plays exactly those again once it is live", async () => {
+    const anim = (playState: string) => ({ playState, pause: vi.fn(), play: vi.fn() });
+    const running = anim("running"), still = anim("paused");
+    const proto = Element.prototype as { getAnimations?: () => unknown[] };
+    proto.getAnimations = () => [running, still];
+    try {
+      await show(true, <Counter label="a" />);
+      await show(false, <Counter label="a" />);
+      expect(running.pause).toHaveBeenCalledOnce();
+      expect(still.pause).not.toHaveBeenCalled();
+      await show(true, <Counter label="a" />);
+      expect(running.play).not.toHaveBeenCalled();
+      await frames();
+      expect(running.play).toHaveBeenCalledOnce();
+      expect(still.play).not.toHaveBeenCalled();
+    } finally {
+      delete proto.getAnimations;
+    }
   });
 });

@@ -153,7 +153,8 @@ export interface Renderer {
   go(path: Path, fx?: number, fy?: number, then?: () => View): void;
   /** Fly back to the level's fit. */
   fitView(): void;
-  /** The canvas is the page again after another view hid it: resize it and refit, keeping a zoomed-in view. */
+  /** The canvas is the page again after another view hid it: resize it and refit, keeping a zoomed-in view. The frame after
+   *  the click shows the sky the canvas last drew; the refit and a fresh frame follow two frames later. */
   resize(): void;
   /** Whether the Star Map is the view showing; while another view hides it, the canvas draws no frame. */
   show(on: boolean): void;
@@ -210,7 +211,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // ZS: zoom beyond the fit size; K: absolute zoom. Text, pulses and dashes divide by these so they never balloon.
   const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
   let T = Date.now() / 1000, clock = 0, liveTasks = new Set<string>(), hotEdge = new Set<string>(), ZS = 1, K = 1;
-  let away = false, timer = 0, clockTimer = 0, fanTimer = 0, stopped = false, saveT = 0, tick = 0, clockText = "", live: "" | "on" | "off" = "";
+  let away = false, refit = 0, timer = 0, clockTimer = 0, fanTimer = 0, stopped = false, saveT = 0, tick = 0, clockText = "", live: "" | "on" | "off" = "";
   // The stream the page reads its snapshot and every change after it from.
   let stream: { close(): void } | null = null, last = 0;
 
@@ -2757,6 +2758,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     stop() {
       stopped = true;
       loop.stop();
+      cancelAnimationFrame(refit);
       stream?.close();
       clearTimeout(timer);
       clearInterval(timer);
@@ -2784,9 +2786,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       away = !on;
     },
     resize: () => {
-      resize(true);
-      frame(performance.now()); // resizing blanks the canvas: repaint in the same task, or the next frame shown is black
-      wake();
+      cancelAnimationFrame(refit);
+      refit = requestAnimationFrame(() => (refit = requestAnimationFrame(() => {
+        if (away || stopped) return;
+        resize(true);
+        frame(performance.now()); // resizing blanks the canvas: repaint in the same task, or the next frame shown is black
+        wake();
+      })));
     },
     spot(target, near = false) {
       spotted = target;
