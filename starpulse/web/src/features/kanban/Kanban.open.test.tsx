@@ -7,7 +7,7 @@ import type { HudState } from "../../render/hud";
 import type { KanbanTask } from "./kanban";
 import { MoveStore } from "./move";
 import { StartStore, startLane } from "./start";
-import type { TaskRecord } from "./taskView";
+import { PRE_DRAW_REST_MS, type TaskRecord } from "./taskView";
 
 // every card asks startLane while it draws, so its calls count the cards a render drew
 vi.mock("./start", async (actual) => {
@@ -29,6 +29,8 @@ const cardOf = (id: string) => host.querySelector<HTMLElement>(`#cols .card[data
 const dialog = () => document.querySelector<HTMLElement>("[role=dialog]");
 const settle = () => act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
 const hover = (el: HTMLElement) => act(() => void el.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })));
+const leave = (el: HTMLElement) => act(() => void el.dispatchEvent(new MouseEvent("pointerout", { bubbles: true, relatedTarget: document.body })));
+const rest = () => act(async () => { await new Promise((r) => setTimeout(r, PRE_DRAW_REST_MS + 20)); for (let i = 0; i < 5; i++) await Promise.resolve(); });
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -71,6 +73,59 @@ describe("opening a task's modal", () => {
     await settle();
     expect(dialog()?.getAttribute("aria-busy")).toBe("false");
     expect(fetched).toEqual(["/api/task/TASK-2"]);
+  });
+
+  it("draws a rested card's modal hidden and inert, so the click shows that same dialog instead of building one", async () => {
+    hover(cardOf("TASK-1"));
+    await rest();
+
+    const drawn = dialog();
+    expect(drawn).not.toBeNull();
+    expect(drawn?.closest("[inert]")).not.toBeNull();
+    expect(drawn?.getAttribute("aria-busy")).toBe("false");
+    act(() => void document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(dialog()).toBe(drawn);
+
+    act(() => cardOf("TASK-1").click());
+
+    expect(dialog()).toBe(drawn);
+    expect(drawn?.closest("[inert]")).toBeNull();
+    expect(drawn?.textContent).toContain("the full record's notes");
+  });
+
+  it("draws a rested card's modal before its record lands, and fills it when the record lands after the click", async () => {
+    let land: (v: unknown) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      fetched.push(url);
+      return new Promise((resolve) => { land = resolve; });
+    }));
+    hover(cardOf("TASK-1"));
+    await rest();
+
+    const drawn = dialog();
+    expect(drawn?.closest("[inert]")).not.toBeNull();
+    expect(drawn?.getAttribute("aria-busy")).toBe("true");
+    act(() => cardOf("TASK-1").click());
+    expect(dialog()).toBe(drawn);
+
+    await act(async () => { land({ ok: true, json: async () => ({ record }) }); for (let i = 0; i < 5; i++) await Promise.resolve(); });
+    expect(drawn?.getAttribute("aria-busy")).toBe("false");
+    expect(drawn?.textContent).toContain("the full record's notes");
+    expect(fetched).toEqual(["/api/task/TASK-1"]);
+  });
+
+  it("draws no modal for a pointer that passes over a card without resting, and drops the hidden one when the pointer leaves", async () => {
+    hover(cardOf("TASK-1"));
+    leave(cardOf("TASK-1"));
+    await rest();
+    expect(dialog()).toBeNull();
+
+    hover(cardOf("TASK-2"));
+    await rest();
+    expect(dialog()).not.toBeNull();
+    leave(cardOf("TASK-2"));
+    await settle();
+    expect(dialog()).toBeNull();
   });
 
   it("leaves the board's cards undrawn as the modal opens and closes", async () => {

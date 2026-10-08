@@ -1,6 +1,6 @@
 // The Kanban view: the Board's open tasks as six columns of milestone buckets, with drag and modal moves and sessions started from a card.
 // The model is kanban.ts, move.ts and start.ts; this draws them.
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { Fragment, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { archiveDialogKey, withoutArchived } from "./archive";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
@@ -25,7 +25,7 @@ import { MilestoneOutline } from "./MilestoneOutline";
 import { NewTaskAction } from "./NewTask";
 import { SearchClear } from "../../shared/SearchClear";
 import { TaskView } from "./TaskView";
-import { RecordCache, fetchRecord, type TaskRecord } from "./taskView";
+import { PRE_DRAW_REST_MS, READ_AHEAD_MS, RecordCache, fetchRecord, type TaskRecord } from "./taskView";
 import type { Capabilities, Pull } from "../../api";
 
 /** A milestone's header: the key the snapshot carries, or the bucket for tasks with none. */
@@ -394,11 +394,20 @@ interface Press {
 /** The task whose modal is open. The Kanban only writes it and the modal host alone reads it, so opening or closing a task leaves the board undrawn. */
 class OpenTask {
   private fns = new Set<() => void>();
+  private pre: string | null = null;
   constructor(private id: string | null) {}
   get = () => this.id;
+  /** The task whose modal is drawn hidden ahead of its click, while no modal is open. */
+  ahead = () => this.pre;
   set = (id: string | null) => {
     if (id === this.id) return;
     this.id = id;
+    this.pre = null;
+    this.fns.forEach((fn) => fn());
+  };
+  ready = (id: string | null) => {
+    if (this.id !== null || id === this.pre) return;
+    this.pre = id;
     this.fns.forEach((fn) => fn());
   };
   subscribe = (fn: () => void) => {
@@ -407,11 +416,17 @@ class OpenTask {
   };
 }
 
-/** The open task's modal, drawn by `draw`; a task with no card opens no modal. */
+/**
+ * The open task's modal, drawn by `draw`; a task with no card opens no modal. While none is open, the modal of the card the
+ * pointer rests on is drawn hidden and inert, so its click only shows it. That draw is a transition: a click landing first
+ * draws the modal itself, as it would with nothing ahead.
+ */
 function ModalHost({ store, cards, draw }: { store: OpenTask; cards: KanbanTask[]; draw: (task: KanbanTask) => ReactNode }) {
   const id = useSyncExternalStore(store.subscribe, store.get);
-  const task = id ? cards.find((t) => t.id === id) : undefined;
-  return task ? draw(task) : null;
+  const [ahead, setAhead] = useState(store.ahead);
+  useEffect(() => store.subscribe(() => startTransition(() => setAhead(store.ahead()))), [store]);
+  const task = cards.find((t) => t.id === (id ?? ahead));
+  return task ? <div className="mh" inert={id === null}>{draw(task)}</div> : null;
 }
 
 /** Pixels a press travels before it lifts the card instead of opening it. */
@@ -434,6 +449,24 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
   const [openTask] = useState(() => new OpenTask(linkedTask(location.search)));
   const setOpen = openTask.set;
   const [records] = useState(() => new RecordCache());
+  // the card the pointer rests on, and the timer that draws its modal hidden once it has rested; the record read on hover
+  // fills that modal when it lands, so a slow server delays the record, never the drawing
+  const resting = useRef<{ id: string | null; timer?: ReturnType<typeof setTimeout> }>({ id: null });
+  const rest = (id: string, on: boolean) => {
+    clearTimeout(resting.current.timer);
+    if (!on) {
+      if (resting.current.id === id) resting.current = { id: null };
+      if (openTask.ahead() === id) openTask.ready(null);
+      return;
+    }
+    records.readAhead(id);
+    resting.current = { id, timer: setTimeout(() => {
+      openTask.ready(id);
+      // a modal drawn ahead keeps the record it was drawn with: past the read-ahead window, the click reads it again
+      resting.current.timer = setTimeout(() => openTask.ahead() === id && openTask.ready(null), READ_AHEAD_MS);
+    }, PRE_DRAW_REST_MS) };
+  };
+  useEffect(() => () => clearTimeout(resting.current.timer), []);
   const [menu, setMenu] = useState<MenuName | null>(null);
   const [typing, setTyping] = useState(false);
   const [pick, setPick] = useState(0);
@@ -659,7 +692,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
     <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} cross={view.cross.get(t.id)} onCross={setOpen} {...extra} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
       style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
       onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
-      onHover={(on) => { if (on) records.readAhead(t.id); setHovered((h) => (on ? t.id : h === t.id ? null : h)); }}
+      onHover={(on) => { rest(t.id, on); setHovered((h) => (on ? t.id : h === t.id ? null : h)); }}
       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
   );
   const outline = useMemo(() => milestoneOutline(cards, hud.settled), [cards, hud.settled]);

@@ -22,7 +22,10 @@ page from a local build instead of the server's, so a branch's page change is ti
 ``--viewer`` times the page as a viewer's own machine would draw it while the server stays under its host's load: the
 bench, its Chrome included, re-runs in a user systemd scope weighted far over the host's other work, since a viewer's
 browser does not share the server's CPU. Without it, a loaded host starves the measuring browser too, and even a
-click that draws nothing new reads over budget.
+click that draws nothing new reads over budget. That weight counts only against the scope's siblings, so work in
+another slice, such as a Docker container, can still starve it: the run reads its scope's own ``cpu.pressure`` before
+and after, and a run whose scope waited for CPU over ``STARVED_SHARE`` of its time is marked STARVED and exits 2, a
+measure of the host and not of the page, neither a pass nor a failure.
 """
 
 from __future__ import annotations
@@ -54,6 +57,10 @@ HOVER_MS = 150
 VIEWER_CPU_WEIGHT = 10_000
 #: Set inside the `--viewer` scope, so the bench enters it once.
 VIEWER_ENV = "STARPULSE_BENCH_VIEWER"
+#: The share of a `--viewer` run its scope's tasks may wait for CPU (`cpu.pressure` some) before the run is starved.
+STARVED_SHARE = 0.05
+#: The exit of a starved run: it measured the host's load, not the page.
+STARVED = 2
 
 #: The read routes and how to build each one's path from what the snapshot holds; `{task}`, `{milestone}` and `{doc}`
 #: are filled from the server's own records, `{from}` and `{to}` from `--what-if`.
@@ -182,13 +189,20 @@ def untimed(requested: Iterable[str], timed: Iterable[str]) -> list[str]:
     return sorted({s for url in requested if (s := surface(url)) and s not in known})
 
 
-def verdict(rows: Sequence[Row], missing: Sequence[str]) -> int:
-    """0 when every row is under its budget and the page made no untimed request, else 1."""
+def starved(waited: float | None) -> bool:
+    """Whether a run whose scope waited for CPU that share of its time measured a starved browser."""
+    return waited is not None and waited > STARVED_SHARE
+
+
+def verdict(rows: Sequence[Row], missing: Sequence[str], waited: float | None = None) -> int:
+    """STARVED for a starved run; else 0 when every row is under its budget and the page made no untimed request, else 1."""
+    if starved(waited):
+        return STARVED
     return 1 if missing or any(r.over for r in rows) else 0
 
 
-def table(rows: Sequence[Row], missing: Sequence[str]) -> str:
-    """The rows as a fixed-width table, over-budget rows marked, then the untimed requests."""
+def table(rows: Sequence[Row], missing: Sequence[str], waited: float | None = None) -> str:
+    """The rows as a fixed-width table, over-budget rows marked, then the untimed requests and a starved run's mark."""
     fmt = "{:<44} {:<12} {:>6} {:>9} {:>9} {:>7}  {}"
     out = [fmt.format("surface", "kind", "n", "p50 ms", "p95 ms", "budget", "")]
 
@@ -203,6 +217,11 @@ def table(rows: Sequence[Row], missing: Sequence[str]) -> str:
             )
         )
     out.extend(f"UNTIMED request the page made: {s}" for s in missing)
+    if starved(waited):
+        out.append(
+            f"STARVED: the viewer scope waited for CPU {waited:.0%} of the run, over {STARVED_SHARE:.0%}; "
+            "its rows measure the host's load, not the page"
+        )
     return "\n".join(out)
 
 
@@ -360,13 +379,15 @@ _CLICK = """async (sel) => {
 }"""
 
 #: Open a task's card and resolve with the ms from the click to the second frame after its modal drew the full record:
-#: the dialog clears `aria-busy` once it holds the record, whether a hover read it ahead or the click did. A build from
-#: before that marker ends where it always did, at the record's response.
+#: the dialog clears `aria-busy` once it holds the record, whether a hover read it ahead or the click did. A dialog
+#: drawn ahead of the click waits inert, so only one outside an `[inert]` counts as shown; whether one waited is returned
+#: too. A build from before that marker ends where it always did, at the record's response.
 _OPEN = """async (id) => {
   const el = document.querySelector(`#cols .card[data-id="${id}"]`);
   if (!el) return null;
   const got = window.__sp.fetched(`/api/task/${encodeURIComponent(id)}`);
-  const drawn = () => document.querySelector("[role=dialog][aria-busy=false]");
+  const drawn = () => [...document.querySelectorAll("[role=dialog][aria-busy=false]")].some((d) => !d.closest("[inert]"));
+  const ahead = !!document.querySelector("[inert] [role=dialog]");
   const s = performance.now();
   el.click();
   await new Promise((resolve) => {
@@ -375,10 +396,12 @@ _OPEN = """async (id) => {
     const done = () => { seen.disconnect(); clearTimeout(cap); resolve(); };
     got.then(() => { const d = document.querySelector("[role=dialog]"); if (d && !d.hasAttribute("aria-busy")) done(); });
     if (drawn()) return done();
-    seen.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-busy"] });
+    seen.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-busy", "inert"] });
   });
-  return (await window.__sp.twoFrames()) - s;
+  return { ms: (await window.__sp.twoFrames()) - s, ahead };
 }"""
+#: True once no dialog shows: one drawn ahead of a click waits inert.
+_SHOWN_GONE = """() => ![...document.querySelectorAll("[role=dialog]")].some((d) => !d.closest("[inert]"))"""
 #: The ms between frames for `ms` after clicking `sel`: what an animation it starts looks like.
 _INTERVALS = """async ([sel, ms]) => {
   const el = document.querySelector(sel);
@@ -453,14 +476,18 @@ def time_page(base: str, samples: int, channel: str, requested: list[str], asset
         )
         page.evaluate(_CLICK, _nav("Kanban"))
         page.wait_for_selector("#cols .card[data-id]", timeout=30_000)
+        ahead = 0
         for task in page.eval_on_selector_all("#cols .card[data-id]", "els => els.map(e => e.dataset.id)")[:samples]:
             page.hover(f'#cols .card[data-id="{task}"]')
             page.wait_for_timeout(HOVER_MS)
-            ms = page.evaluate(_OPEN, task)
-            if ms is not None:
-                modal.samples.append(ms)
+            opened = page.evaluate(_OPEN, task)
+            if opened is not None:
+                modal.samples.append(opened["ms"])
+                ahead += opened["ahead"]
             page.keyboard.press("Escape")
-            page.wait_for_selector("[role=dialog]", state="detached", timeout=10_000)
+            # the pointer still rests on the card, so its modal may be drawn again, hidden and inert, for the next click
+            page.wait_for_function(_SHOWN_GONE, timeout=10_000)
+        modal.note += f"; {ahead} of {len(modal.samples)} drawn ahead"
         rows.append(modal)
 
         fly = Row("Star Map fly-to start", "interaction", BUDGET_MS, note="click on Star Map while it shows")
@@ -502,6 +529,26 @@ def time_page(base: str, samples: int, channel: str, requested: list[str], asset
 def viewer_command(argv: Sequence[str], python: str) -> list[str]:
     """This bench's own command line, run in a user scope that outweighs the host's other work."""
     return ["systemd-run", "--user", "--scope", "--quiet", "-p", f"CPUWeight={VIEWER_CPU_WEIGHT}", "--", python, *argv]
+
+
+def pressure_total(text: str) -> int:
+    """The `some` line's `total`: the µs at least one of the cgroup's tasks waited for CPU."""
+    some = next(line for line in text.splitlines() if line.startswith("some "))
+    return int(some.rsplit("total=", 1)[1])
+
+
+def waited(before: int, after: int, seconds: float) -> float:
+    """The share of `seconds` the cgroup's tasks waited for CPU, from its `some` totals before and after."""
+    return (after - before) / (seconds * 1e6)
+
+
+def scope_pressure() -> int | None:
+    """This process's own cgroup's `some` CPU-pressure total, or None where it cannot be read."""
+    try:
+        group = Path("/proc/self/cgroup").read_text().strip().rsplit(":", 1)[1]
+        return pressure_total((Path("/sys/fs/cgroup") / group.lstrip("/") / "cpu.pressure").read_text())
+    except (OSError, IndexError, StopIteration, ValueError):
+        return None
 
 
 def enter_viewer(argv: Sequence[str]) -> None:
@@ -554,6 +601,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.viewer:
         enter_viewer(sys.argv)
     base = args.url.rstrip("/")
+    start, before = time.monotonic(), scope_pressure() if args.viewer else None
 
     requested: list[str] = []
     runs = []
@@ -567,7 +615,9 @@ def main(argv: list[str] | None = None) -> int:
     apply_ceilings(rows, args.ceiling)
     timed = [r.name for r in rows] + ["/api/events"]
     missing = untimed(requested, timed)
-    print(table(rows, missing))
+    after = scope_pressure() if before is not None else None
+    share = waited(before, after, time.monotonic() - start) if before is not None and after is not None else None
+    print(table(rows, missing, share))
     if args.json:
         json.dump(
             {
@@ -585,11 +635,13 @@ def main(argv: list[str] | None = None) -> int:
                     for r in rows
                 ],
                 "untimed": missing,
+                "viewer_waited": share,
+                "starved": starved(share),
             },
             args.json,
             indent=2,
         )
-    return verdict(rows, missing)
+    return verdict(rows, missing, share)
 
 
 if __name__ == "__main__":
