@@ -8,6 +8,7 @@ import { focusDetails, type Details } from "./orbitDetails";
 import { clickFocus, focusKey, focusOrder, refocus } from "./orbitFocus";
 import { orbitInput, type LevelResponse, type LevelState } from "./levelData";
 import { fitLevel, toWorld, wheelFactor, zoomAbout, type View } from "../../render/zoom";
+import { useViewActive } from "../../shared/Kept";
 
 const DAY = 86400;
 
@@ -57,6 +58,8 @@ function Orbit({ level, motion, names }: { level: LevelResponse; motion: boolean
   const input = useMemo(() => orbitInput(level, (id) => names[id] ?? id.replace(/_/g, " "), aspect), [level, aspect, names]);
   const scene = useMemo(() => layoutOrbit(input), [input]);
   const arrivals = useMemo(() => arrivalDays(level.arrivals, level.now, level.window_s), [level]);
+  // a view that is left draws no frames until it is shown again
+  const active = useViewActive();
   const live = useRef({ scene, input, arrivals, level, days, motion });
   const view = useRef<View | null>(null), hover = useRef<Hover | null>(null), focus = useRef<Hover | null>(null), offsets = useRef(new Map<string, number>()), paint = useRef<(now?: number) => void>(() => {});
 
@@ -128,10 +131,10 @@ function Orbit({ level, motion, names }: { level: LevelResponse; motion: boolean
       paint.current(ts);
       raf = requestAnimationFrame(frame);
     };
-    if (motion) raf = requestAnimationFrame(frame);
+    if (motion && active) raf = requestAnimationFrame(frame);
     else paint.current();
     return () => cancelAnimationFrame(raf);
-  }, [size, scene, motion]);
+  }, [size, scene, motion, active]);
 
   // the wheel zooms about the cursor and the drag pans, as on the Star Map; a still click focuses a body and one on empty space
   // clears it, Tab steps through the bodies and Esc clears; a second click or Enter on the focused body is held for drilling in

@@ -7,6 +7,7 @@ import { DagModal } from "./DagModal";
 import { lastLine, Orb, poolText, StepStar, Strip, TieChip, type LedgerGo } from "./DagParts";
 import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rows, short, ties, type DagData, type Phase, type Row } from "./dags";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
+import { useViewActive } from "../../shared/Kept";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
 import { refused, startRun } from "../../render/panels";
 
@@ -99,10 +100,13 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
   // the server's clock, read at each snapshot and counted on between them, so a browser clock that is off does not skew "5m ago"
   const [now, setNow] = useState(data?.now ?? 0), [seen, setSeen] = useState(data?.now ?? 0);
   if (data && data.now !== seen) { setSeen(data.now); setNow(data.now); }
+  // a view that is left stands still: it counts no seconds until it is shown again
+  const active = useViewActive();
   useEffect(() => {
+    if (!active) return;
     const id = setInterval(() => setNow((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [active]);
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(null), 4000);

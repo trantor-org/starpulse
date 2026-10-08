@@ -43,8 +43,9 @@ export const Orb = ({ phase, big = false }: { phase: Phase; big?: boolean }) => 
 
 /** A name cut to `n` characters with an ellipsis: the strip draws outside its box, so its text must fit. */
 const fit = (t: string, n: number) => (t.length <= n ? t : `${t.slice(0, Math.max(1, Math.floor(n) - 1))}…`);
-/** What one character of a step's name measures on screen: the page's text scale (`--fs`) times the chart's base size. */
-export const labelPx = () => 6.1 * (Number(getComputedStyle(document.documentElement).getPropertyValue("--fs")) || 1);
+/** What one character of a step's name measures on screen: the page's text scale (`--fs`) times the chart's base size. The Admin sets the scale
+ *  inline on `<html>`, which answers without the style recalculation `getComputedStyle` forces after every DOM change. */
+export const labelPx = () => 6.1 * (Number(document.documentElement.style.getPropertyValue("--fs")) || 1);
 
 /** The modal chart's size for a DAG: as wide as its steps and their names need (at least `min`), as high as its widest column. */
 export function chartBox(r: Row, min = 924) {

@@ -884,3 +884,7 @@ body.graph #c, body.graph #tip, body.graph #panel, body.graph .hud { visibility:
 .src::after { content: attr(data-src); margin-left: .45em; color: color-mix(in srgb, var(--mapped) 70%, transparent); }
 #legend .mapleg i { background: var(--mapped); }
 #kb .mach .p.mapped { background: var(--mapped); box-shadow: 0 0 6px var(--mapped); }
+
+/* A view left behind stays mounted (shared/Kept): its rendering is skipped while it is away, so showing it again lays nothing out. */
+.kept { display: contents; }
+.kept[inert] > * { content-visibility: hidden; }

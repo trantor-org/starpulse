@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { archiveDialogKey, withoutArchived } from "./archive";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { ArchiveDialog } from "./ArchiveConfirm";
+import { useViewActive } from "../../shared/Kept";
 import { ago } from "../../shared/clock";
 import { ConnectTracker } from "./ConnectTracker";
 import type { HudState } from "../../render/hud";
@@ -400,6 +401,8 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
   hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; outlineSlot: HTMLElement | null; onQuery?: (query: string) => void;
   spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
 }) {
+  // the view stays mounted behind the one showing: its navigator slots, dialogs, keys and clock rest until it shows again
+  const active = useViewActive();
   const [storage] = useState(browserStorage);
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(storage, location.search));
   const [open, setOpen] = useState<string | null>(() => linkedTask(location.search));
@@ -425,9 +428,12 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
   const clickEnds = useRef(false);
   // the "ago" stamps keep counting between snapshots
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now() / 1000), 30_000);
-    return () => clearInterval(timer);
-  }, []);
+    if (!active) return;
+    const tick = () => setNow(Date.now() / 1000);
+    const catchUp = setTimeout(tick, 0); // the stamps stood still while the view was away
+    const timer = setInterval(tick, 30_000);
+    return () => { clearTimeout(catchUp); clearInterval(timer); };
+  }, [active]);
   // what the operator chose is kept for the next visit; a deep link's filters are the first thing kept
   useEffect(() => savePrefs(storage, prefs), [storage, prefs]);
   // once the view has taken a deep link's filters they leave the address, or a reload would undo what was changed since
@@ -449,6 +455,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
     return true;
   }, [starts, held]);
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (starts.get().asking) {
         if (!e.metaKey && !e.ctrlKey && !e.altKey && answer(e.key)) e.preventDefault();
@@ -459,7 +466,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [starts, answer]);
+  }, [starts, answer, active]);
   // a streamed board ends the moves and refusals it has overtaken, and the claims its agents made or were refused
   useEffect(() => moves.sync(hud.cards), [moves, hud.cards]);
   useEffect(() => starts.sync(hud.cards, hud.claims), [starts, hud.cards, hud.claims]);
@@ -632,7 +639,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
   return (
     <main id="kb" className={compact ? "compact" : undefined}>
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
-      {searchSlot && createPortal(
+      {active && searchSlot && createPortal(
         <div className="fw">
           <input id="kbq" ref={searchBox} type="text" value={prefs.query} placeholder="filter by id, title or label…" aria-label="Filter tasks by id, title or label" autoComplete="off" spellCheck={false}
             onChange={(e) => { setPrefs((p) => ({ ...p, query: e.target.value })); setPick(0); }}
@@ -650,7 +657,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
         </div>,
         searchSlot,
       )}
-      {outlineSlot && createPortal(<MilestoneOutline rows={outline} chosen={prefs.milestone} choose={(milestone) => setPrefs((p) => ({ ...p, milestone }))} />, outlineSlot)}
+      {active && outlineSlot && createPortal(<MilestoneOutline rows={outline} chosen={prefs.milestone} choose={(milestone) => setPrefs((p) => ({ ...p, milestone }))} />, outlineSlot)}
       <div className="filters">
         <div className="fw">
           {chip("assignee", "Assignee", prefs.assignee, prefs.assignee ? shortProfile(prefs.assignee) : "unassigned")}
@@ -724,11 +731,11 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
           <Card task={heldTask} now={now} names={hud.names} compact={compact} marks={{}} onOpen={() => {}} dismiss={() => {}} style={{ width: held.w }} />
         </div>
       )}
-      {started.asking && (
+      {active && started.asking && (
         <StartQuestion asking={started.asking} harnesses={started.harnesses} names={hud.names} canStart={starts.canStart()} pick={(change) => starts.pick(change)}
           start={() => answer("1")} manual={() => answer("2")} cancel={() => answer("Escape")} />
       )}
-      {task && (
+      {active && task && (
         <Modal key={task.id} task={task} tasks={cards} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
           profiles={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task.id)} constellation={() => constellation(task.lane)}
@@ -737,7 +744,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
           dismiss={() => moves.dismiss(task.id)} dismissStart={() => starts.dismiss(task.id)}
           saved={(record) => setEdited((all) => ({ ...all, [task.id]: { record, source: hud.cards } }))} />
       )}
-      {archiveTask && (
+      {active && archiveTask && (
         <ArchiveDialog key={archiveDialogKey(archiveTask.id)} task={archiveTask} lane={hud.names[archiveTask.lane] ?? archiveTask.lane} close={() => setArchiving(null)}
           archived={(reason) => {
             setGone((ids) => new Set(ids).add(archiveTask.id));

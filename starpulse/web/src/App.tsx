@@ -15,6 +15,7 @@ import { BOARD, pathKey, type Path } from "./render/levels";
 import { Crumb } from "./features/level/Crumb";
 import { Dags, DagLegend } from "./features/dags/Dags";
 import { FeedLines, linesThatFit, Queues } from "./features/fanout/Fanout";
+import { Kept } from "./shared/Kept";
 import { SearchClear } from "./shared/SearchClear";
 import { Kanban } from "./features/kanban/Kanban";
 import { Leaderboard } from "./features/kanban/Leaderboard";
@@ -103,15 +104,15 @@ export function App() {
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       {view === "constellation" && <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} />}
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
-      {view === "admin" && <Admin store={admin} window={historyWindow} forwarding={(clock) => <ForwardingCard store={forwarding} clock={clock} />} />}
-      {view === "graph" && (
+      <Kept on={view === "admin"}><Admin store={admin} window={historyWindow} forwarding={(clock) => <ForwardingCard store={forwarding} clock={clock} />} /></Kept>
+      <Kept on={view === "graph"}>
         <OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} />
-      )}
-      {view === "kanban" && (
+      </Kept>
+      <Kept on={view === "kanban"}>
         <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
           spot={spotted} note={setWhy} opening={opening} />
-      )}
-      {view === "dags" && <Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} />}
+      </Kept>
+      <Kept on={view === "dags"}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Kept>
       <Rail hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
