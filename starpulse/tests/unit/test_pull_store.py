@@ -279,3 +279,45 @@ def test_a_sync_reads_the_repositories_the_tasks_the_store_and_the_config_name_a
     PullSync(store, feed, (Repo("skills", "skills", "pin-bump"),), graphql, lambda: 100.0).refresh()
 
     assert sorted(asked) == ["acme/old", "acme/skills", "acme/widgets"]
+
+
+def test_a_pr_with_no_commits_is_recorded_with_an_empty_rollup_and_leaves_the_others_saved(store: PullStore) -> None:
+    github = Github()
+    github.add(1, checks={"lint": "SUCCESS"})
+    github.add(2)
+    node = github._node
+    github._node = lambda number: node(number) | ({"commits": {"nodes": []}} if number == 2 else {})  # type: ignore[method-assign]
+
+    refresh_repository(REPO, store, 100.0, github)
+
+    assert {pull["number"]: (pull["checks"], pull["requiredChecks"]) for pull in store.find()} == {
+        1: ("pass", [{"name": "lint", "result": "pass"}]),
+        2: ("none", []),
+    }
+
+
+def test_an_error_reading_one_repository_does_not_stop_the_others_or_end_run_forever(
+    store: PullStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store.save([{**_stored("acme/a", 1), "state": "MERGED"}, {**_stored("acme/b", 2), "state": "MERGED"}])
+    asked: list[str] = []
+
+    def graphql(repo: str, query: str) -> dict:
+        asked.append(repo)
+        if repo == "acme/a":
+            raise IndexError("list index out of range")
+        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}}
+
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise KeyboardInterrupt  # ends the loop the test is watching
+
+    monkeypatch.setattr("starpulse._internal.pulls.pull_store.time.sleep", sleep)
+
+    with pytest.raises(KeyboardInterrupt):
+        PullSync(store, BoardFeed(), (), graphql, lambda: 100.0).run_forever(1.0)
+
+    assert asked == ["acme/a", "acme/b", "acme/a", "acme/b"]
