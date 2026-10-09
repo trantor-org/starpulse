@@ -34,6 +34,44 @@ The modules an adapter may import, each exporting exactly the names in its `__al
 
 A package test pins this list and each module's names, so adding or removing one is a reviewed change.
 
+## Board rules
+
+`[[board.rules]]` in the config file (the native board's `rules` setting) declares record-level rules every task write
+must satisfy, whichever writer makes it: `starpulse task move` and the other agent verbs, the page, and a workflow.
+They are enforced where the native board lands a task file, so a move from the CLI and the same move from the page
+meet the same rule and are refused with the same `reason` and `skill`, and nothing is written. The Backlog.md adapter
+writes through the upstream CLI and does not enforce them. A board with no rules accepts every write it accepted
+before, and a rule it cannot read (an unknown key or primitive, a missing `reason`, a bad pattern) is a startup error
+naming `rules[N]`.
+
+A rule is a table of:
+
+| Key | Holds |
+|---|---|
+| `on` | which writes it judges: `{ to, from }` (a write that enters `to`, from one of `from` when given; either is a state name or a list), `{ to, from, while = true }` (also a write that leaves the task in a `to` state) or `{ write = true }` (every write, create and archive included) |
+| `require` | one primitive the task as it will be after the write must satisfy |
+| `reason` | the refusal text the CLI and the page show (required) |
+| `skill` | the skill that satisfies the rule, carried with the refusal (optional) |
+| `unless_actor` | actors the rule does not judge: `operator`, `agent` or `<instance>/<workflow>` as a machine's `writers` spell them (optional) |
+
+A primitive is a one-key table naming its kind (`require = { label = { contains = "needs-human" } }`); the table gives
+the value under that key:
+
+| Primitive | Value under the key | Holds when |
+|---|---|---|
+| `field` | `{ field = "references", matches = "/pull/\\d+$", in = [...], min = 1 }` | a scalar or list front matter field has at least `min` (default 1) items that match the pattern and are in the set; one of `matches`, `in` or `min` is required |
+| `label` | `{ contains = "needs-human" }` or `{ prefix = "size-", in = [1, 2, 3, 5, 8] }` | the task has the label, or has a label with the prefix and every such label is the prefix and a value of `in` |
+| `section` | `{ heading = "Needs attention", nonempty = true }` or `{ heading = "Needs attention", not_matching = "\\bTASK-\\d+\\b", except_self = true }` | the body has a `## <heading>` section (up to the next `##`); with `nonempty` it is not blank; with `not_matching` its text, an absent section's counting as empty, does not match, `except_self` first dropping the task's own id |
+| `dependencies` | `{ all_in = ["Done"] }` | every task in `dependencies` is in one of the named states; a dependency with no task file is in none, and no dependencies holds |
+| `checklist` | `{ sections = ["acceptance_criteria", "definition_of_done"], all_checked = true }` | every item of the named lists is checked; an empty or absent list holds |
+| `all_of`, `any_of`, `exactly_one`, `none_of` | a non-empty list of primitives | all, at least one, exactly one or none of them hold |
+
+A write names its actor, which `unless_actor` matches. `POST /api/move` takes `actor` (`operator` when absent, which is what
+the page sends; `starpulse task move` sends `agent`). `POST /api/edit`, `/api/archive`, `/api/tasks` and `/api/start`
+take an optional `actor` the same way: a board writer's `edit`, `archive`, `create` and `assign` receive it as the
+`actor` keyword only when the request named one, so a writer that predates actors keeps working, and a name that is
+not non-empty text is a 400.
+
 ## Versioning
 
 StarPulse is versioned `0.y.z` until its interfaces settle: a minor version can break the config file, the adapter
