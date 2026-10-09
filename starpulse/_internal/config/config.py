@@ -33,6 +33,7 @@ from starpulse._internal.config.adapter_types import module_name
 from starpulse._internal.config.autopilot import Autopilot, AutopilotError, parse_autopilot
 from starpulse._internal.config.level import Level, LevelError, parse_level
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
+from starpulse._internal.config.triggers import Trigger, TriggerError, parse_triggers
 
 #: The board adapter type a config without a `[board]` table names.
 DEFAULT_TYPE = "native"
@@ -57,6 +58,7 @@ _KEYS = {
     "sources",
     "aggregates_only",
     "autopilot",
+    "triggers",
 }
 _OIDC_KEYS = {
     "issuer",
@@ -425,6 +427,8 @@ class Config:
     """The Board states the shipped `ci` machine is attached to as a sub-flow (`[ci] states`); none: it is not drawn."""
     autopilot: Autopilot = field(default_factory=Autopilot)
     """The policy the autopilot runs under (`[autopilot]`); every key is optional, so no block is the defaults."""
+    triggers: tuple[Trigger, ...] = ()
+    """The runs to start when a board event arrives (`[[triggers]]`); none: no event starts a run."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -445,6 +449,19 @@ def _autopilot(raw: object) -> Autopilot:
         return parse_autopilot(raw)
     except AutopilotError as exc:
         raise ConfigError(str(exc)) from exc
+
+
+def _triggers(raw: object, runs: Sequence[RunsInstance]) -> tuple[Trigger, ...]:
+    """The `[[triggers]]` tables as triggers, each naming a workflow of an instance that can start one."""
+    try:
+        triggers = parse_triggers(raw)
+    except TriggerError as exc:
+        raise ConfigError(str(exc)) from exc
+    startable = {instance.name for instance in runs if instance.type}
+    for at, trigger in enumerate(triggers):
+        if (name := trigger.start.partition("/")[0]) not in startable:
+            raise ConfigError(f"triggers[{at}]: start names {name}, which is no configured runs instance with a type")
+    return triggers
 
 
 def _level(raw: Mapping[str, object]) -> Level | None:
@@ -553,4 +570,5 @@ def load(path: Path | None) -> Config:
         repos=_repos(raw.get("repos", [])),
         ci=_ci(raw),
         autopilot=_autopilot(raw.get("autopilot")),
+        triggers=_triggers(raw.get("triggers"), runs),
     )

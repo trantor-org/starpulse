@@ -183,6 +183,7 @@ from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse._internal.runs.triggers import run_triggers
 from starpulse._internal.hub import forward
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.hub.forward import Forwarder
@@ -1226,6 +1227,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         if (factory := getattr(adapter, "rerun", None)) and (rerun := factory(instance.url))
     }
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
+    if unstartable := sorted({t.start for t in config.triggers if t.start.partition("/")[0] not in starts}):
+        parser.exit(1, f"triggers start workflows no adapter can start a run of: {', '.join(unstartable)}\n")
     try:
         board, feed = assemble(config, base, args.hours * 3600, run_safe)
     except ValueError as exc:
@@ -1242,7 +1245,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     if config.forward is not None:
         # before the adapter starts, so the history precedes the live changes in the log
         lane_events.replay(store, log)
-    feed.record_lanes(store, log if config.forward is not None else None)
+    # a lane entry reaches the log for the hub it is forwarded to and for the triggers that start a run on it
+    feed.record_lanes(store, log if config.forward is not None or config.triggers else None)
     feed.track_criteria(board.evaluate, store)
     threading.Thread(target=feed.keep_criteria, args=(threading.Event(),), name="board-criteria", daemon=True).start()
     feed.read_lanes(store.lane_rows)
@@ -1277,6 +1281,13 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     if args.hub:  # the lane changes the hub's sources forward become its Board trajectories
         threading.Thread(
             target=record_lane_events, args=(store, log, threading.Event()), name="lane-history", daemon=True
+        ).start()
+    if config.triggers:
+        threading.Thread(
+            target=run_triggers,
+            args=(config.triggers, starts, store, log, threading.Event()),
+            name="board-triggers",
+            daemon=True,
         ).start()
     # The learned step graphs persist only in StarPulse's own store.
     pushed = PushRuns(feed.runs(PUSHED_INSTANCE), store)

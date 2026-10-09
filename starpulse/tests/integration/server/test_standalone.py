@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.server import server
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import DEFAULT_FILE, HistoryStore
 
 _CLIENT_MODULE = "re" + "dis"
@@ -198,3 +199,87 @@ def test_an_instance_whose_token_variable_is_unset_stops_the_server_naming_it(tm
 
     assert started.returncode == 1
     assert "runs instance cron: CRON_INGEST_TOKEN is not set" in started.stderr
+
+
+_FAKE_RUNS = '''
+from pathlib import Path
+
+
+def start(url):
+    if url.endswith(".none"):
+        return None
+
+    def run(workflow):
+        with Path(url).open("a") as marker:
+            marker.write(workflow + "\\n")
+        return "run-1"
+
+    return run
+
+
+def follow(url, runs, log):
+    pass
+'''
+
+
+def _fake_runs(tmp_path: Path, url: str) -> str:
+    """A package with a runs adapter whose `start` appends the workflow to the file `url` names, and its config."""
+    package = tmp_path / "fakes"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "runs.py").write_text(_FAKE_RUNS)
+    return (
+        f'[[runs]]\nname = "fake"\ntype = "fakes.runs"\nurl = "{url}"\n\n'
+        '[[triggers]]\non = "lane"\nstart = "fake/reconcile"\nwhen = { lane = { equals = "done" } }\n'
+    )
+
+
+@pytest.mark.usefixtures("build")
+def test_a_lane_event_a_trigger_matches_starts_the_run_through_the_adapter_and_one_it_does_not_match_starts_none(
+    tmp_path: Path,
+) -> None:
+    port = _free_port()
+    marker = tmp_path / "started.txt"
+    config = tmp_path / "starpulse.toml"
+    config.write_text(_fake_runs(tmp_path, str(marker)))
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(port), "--config", str(config)],
+        env=_env(PYTHONPATH=os.pathsep.join([str(tmp_path), os.environ.get("PYTHONPATH", "")])),
+    )
+    history = HistoryStore(f"sqlite:///{tmp_path / DEFAULT_FILE}", {})
+    log = EventLog(f"sqlite:///{tmp_path / DEFAULT_FILE}")
+    try:
+        deadline = time.monotonic() + 30
+        while history.cursor("triggers") is None:  # the consumer has taken its place at the log's head
+            assert proc.poll() is None, "the server exited before serving"
+            assert time.monotonic() < deadline, "the trigger consumer never started"
+            time.sleep(0.2)
+        assert log.append("board:lanes", {"task": "TASK-1", "lane": "review", "time": 1.0}, event_id="TASK-1@review@1")
+        assert log.append("board:lanes", {"task": "TASK-1", "lane": "done", "time": 2.0}, event_id="TASK-1@done@2")
+        while not marker.exists():
+            assert proc.poll() is None, "the server exited"
+            assert time.monotonic() < deadline, "the matching event never started the run"
+            time.sleep(0.2)
+        time.sleep(1)  # a second start, were there one, would be read by now
+        assert marker.read_text() == "reconcile\n"
+    finally:
+        proc.terminate()
+        proc.wait(timeout=30)
+        history.engine.dispose()
+
+
+@pytest.mark.usefixtures("build")
+def test_a_trigger_whose_adapter_cannot_start_a_run_stops_the_server_naming_the_workflow(tmp_path: Path) -> None:
+    config = tmp_path / "starpulse.toml"
+    config.write_text(_fake_runs(tmp_path, str(tmp_path / "started.none")))
+
+    started = subprocess.run(
+        [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(_free_port()), "--config", str(config)],
+        env=_env(PYTHONPATH=os.pathsep.join([str(tmp_path), os.environ.get("PYTHONPATH", "")])),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert started.returncode == 1
+    assert "no adapter can start a run of: fake/reconcile" in started.stderr

@@ -105,6 +105,13 @@ name = "skills"
 path = "skills"
 applied_by = "pin-bump"
 
+# Optional: start a run when a board event arrives (see Triggers). `on` names the event, `start` the workflow as
+# `<instance>/<workflow>` of a [[runs]] instance whose adapter has `start`, `when` filters the event's fields.
+[[triggers]]
+on = "lane"                              # `lane`: a task entered a lane; `machine`: a lifecycle machine event
+start = "dagu/reconcile"
+when = { lane = { equals = "done" } }    # optional: each field must match by `equals`, `in` or `exists`
+
 # Optional: the autopilot's policy. Every key is optional; with no [autopilot] table the defaults below apply.
 # [autopilot]
 # lane = "to_do"          # the lane whose tasks are eligible; unset: the board's initial lane
@@ -121,6 +128,34 @@ applied_by = "pin-bump"
 # sessions = 2   # harness sessions in flight
 # review = 20    # points of tasks in the review lane
 ```
+
+## Triggers
+
+A `[[triggers]]` table declares a run to start when a board event arrives. `serve` reads the event log and, for each
+entry a trigger matches, calls that instance's runs adapter `start(url)` with the workflow once; nothing else is
+needed on the instance, and the workflow need not be in `run_safe`, because the declaration is the authority.
+
+| Key | Meaning |
+|---|---|
+| `on` | The event: `lane` reads `board:lanes` (a task entered a lane; fields `task`, `lane`, `time`, `team`, and `milestone`, `labels`, `assignee` when the task has them), `machine` reads `machine:events` (fields `machine`, `event`, `task` or `run`, `actor`, `time`). Required. |
+| `start` | `<instance>/<workflow>`: a `[[runs]]` instance with a `type`, and a workflow of it. Required. |
+| `when` | Optional filter, the machine guard's field match: a table of field name to exactly one of `equals` (a string, number or boolean), `in` (a non-empty list of those) or `exists` (a boolean). Every listed field must match; a field the entry lacks matches only `exists = false`. No `when` matches every entry of the event. |
+
+Several tables may name the same event; an entry that matches two starts both. `serve` refuses to start when a table
+is malformed, names an instance that is not configured or is push-only, or names an instance whose adapter has no
+`start`.
+
+- **Where it starts reading.** A trigger first started takes its place at the head of the event log, so what the log
+  retains from before is not replayed into runs. The reader keeps one cursor in the history store (`triggers`), so a
+  restart resumes after the last entry it handled and starts nothing that it handled before. A lane entry reaches the
+  log for a trigger as it does for a hub: on a store that holds no lane history, the first read of the board places
+  every task and each placement is a lane entry.
+- **Once per entry.** An entry id starts a trigger's workflow at most once in a run of `serve`: an entry read again
+  after a failed cursor save, or appended again under the same event id, starts nothing more. Delivery is
+  at-least-once across a crash: one that falls between a start and its cursor save repeats that one start.
+- **A refused start is dropped.** An adapter that answers `StartFailedError` is logged as `triggers: <start> was not
+  started for <event id>` and the entry is not retried, so an unreachable adapter does not hold later events. A start
+  that succeeds is logged as `triggers: started <start> (run <id>) for <event id>`.
 
 ## Autopilot
 

@@ -168,6 +168,11 @@ class EventLog:
         with self.engine.connect() as db:
             return db.execute(select(func.max(events.c.id)).where(events.c.stream == stream)).scalar()
 
+    def head(self) -> int | None:
+        """The cursor of the newest row of any stream, or None when the log holds none; raises when the database does."""
+        with self.engine.connect() as db:
+            return db.execute(select(func.max(events.c.id))).scalar()
+
     def oldest(self) -> int | None:
         """The cursor of the oldest row the log retains, or None when it holds none; raises when the database does."""
         with self.engine.connect() as db:
