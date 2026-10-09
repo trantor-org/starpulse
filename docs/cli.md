@@ -213,6 +213,10 @@ to `~/.claude/skills` or `~/.agents/skills`. An install records what it wrote, s
 refused (exit 1) until you pass `--force`, while one the package has since updated is replaced; `skills list` reports
 which of the four each copy is.
 
+Claude Code can load the same skills as a plugin instead of copies: the repository is a plugin marketplace
+(`.claude-plugin/`), so `/plugin marketplace add trantor-org/starpulse` then `/plugin install starpulse@starpulse`, or
+a `directory` marketplace pointing at a local checkout, serves them as `starpulse:<skill>`, read in place.
+
 ## The pull-request store
 
 With `gh` available, `serve` keeps a store of pull requests (table `starpulse_pull_requests`) and refreshes it every

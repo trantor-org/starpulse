@@ -1693,6 +1693,15 @@ def test_every_skill_is_a_directory_named_in_its_front_matter_with_a_description
         assert skill_install.description(name)
 
 
+def test_the_claude_plugin_marketplace_serves_the_bundled_skills() -> None:
+    root = skill_install.SOURCE.parents[1]
+    marketplace = json.loads((root / ".claude-plugin/marketplace.json").read_text())
+    [plugin] = marketplace["plugins"]
+    manifest = json.loads((root / plugin["source"] / ".claude-plugin/plugin.json").read_text())
+    assert manifest["name"] == plugin["name"]
+    assert [(root / plugin["source"] / p).resolve() for p in manifest["skills"]] == [skill_install.SOURCE.resolve()]
+
+
 def _named_verbs(skill: str, verbs: dict[str, set[str]]) -> list[str]:
     """The manifest verb behind each `starpulse ...` command the skill names, each with its flags checked."""
     named = []
