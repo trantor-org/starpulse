@@ -17,14 +17,16 @@ import time
 from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Any
 
-from starpulse._internal.pulls.pull_requests import PULL_URL, REFRESH_S, GhUnavailableError, query_github
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import Repo
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.pulls.pull_requests import PULL_URL, REFRESH_S, GhUnavailableError, query_github
 from starpulse._internal.pulls.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 
 _PAGE = 100
+#: Merged rows still lacking a merge commit that one refresh reads again, to bound its query cost.
+_BACKFILL = 25
 #: A required check's result, by the `conclusion` of a check run or the `state` of a commit status.
 _PASSED = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 _RUNNING = {"IN_PROGRESS", "QUEUED", "WAITING", "PENDING", "REQUESTED", "EXPECTED"}
@@ -130,12 +132,11 @@ def refresh_repository(
     the listings do not reach it, as an old merged PR is not."""
     saved = {record["number"]: record for record in store.find(repo=repo, detailed=True)}
     cursor = max((record["updatedAt"] for record in saved.values()), default=None)
-    # a merged row saved before the store read the merge commit is read again until it has one
-    held = sorted(
-        number
-        for number, record in saved.items()
-        if record["state"] == "OPEN" or (record["state"] == "MERGED" and not record["mergeSha"])
+    # a merged row saved before the store read the merge commit is read again until it has one, a few per refresh
+    backfill = sorted(
+        number for number, record in saved.items() if record["state"] == "MERGED" and not record["mergeSha"]
     )
+    held = sorted([number for number, record in saved.items() if record["state"] == "OPEN"] + backfill[:_BACKFILL])
     answer = graphql(repo, _query(held, listing=True))
     if answer["open"]["pageInfo"]["hasNextPage"]:
         logger.warning("pull requests: %s has more than %d open PRs; the rest are not read", repo, _PAGE)
