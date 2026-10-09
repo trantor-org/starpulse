@@ -5,7 +5,13 @@
 What a release keeps compatible; a minor `0.y` release may break it, and its notes say so. Everything else in the package is
 internal and can change in any release.
 
-- The `starpulse` command line: its verbs, their JSON output and their exit codes.
+- The `starpulse` command line: its verbs, their JSON output and their exit codes ([each verb](cli.md)). The task write
+  verbs are `task create TITLE [--description --priority --milestone --assignee --label --dependency --ac]`, which
+  returns `{task}`; `task edit TASK [--title --type --priority --milestone --label --dependency --reference
+  --documentation --modified-file --description --plan --notes --final-summary --comment --base]`, which returns
+  `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base; and
+  `task assign TASK ASSIGNEE`, which returns `{task, assignee, changed}`. Each exits 0 on success, 1 refused, 2 usage,
+  3 when the board cannot write tasks and, for `edit` and `assign`, 4 for an unknown task.
 - The documented entry point `python -m starpulse.claude_code`.
 - The config file's keys and the machine YAML with its JSON Schema (`machine.schema.json`).
 

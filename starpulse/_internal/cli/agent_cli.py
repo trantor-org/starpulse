@@ -5,6 +5,9 @@
     starpulse task moves PROJ-45
     starpulse task move PROJ-45 review
     starpulse task trace PROJ-45 --flow in-progress
+    starpulse task create "Rotate the secret" --priority high --label ops --ac "It rotates"
+    starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops --label security
+    starpulse task assign PROJ-45 @agent-standard-high
     starpulse machine show in-progress
     starpulse milestone list
     starpulse milestone show m-106
@@ -44,6 +47,12 @@ verbs, generated from the parser below, so a verb added here is listed with its 
 line, `{"event": "task|move|pulls|claim|dags", "data": {...}}`, per change that `--machine` and `--task` leave in, until
 it is interrupted (exit 0) or the server ends the stream (an error line, exit 3). `runs start` calls the server's Run
 now path, so its LAN and `run_safe` guards apply to the agent as they do to the page.
+`task create`, `task edit` and `task assign` write a task through the server's create and edit routes, as the Kanban page
+does. `task edit` sends every field given in one write, which the server refuses whole (exit 1) when any field it
+changes is no longer the value the edit was based on: that value is read from the task at the call, or is `--base`, the
+JSON object of values the caller read earlier. A `--label`, `--dependency`, `--reference`, `--documentation` or
+`--modified-file` given at all replaces that whole list, and a blank value clears a field. `task assign` is an edit of
+the assignee alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
 `milestone` reads and writes the board's milestone records (title, outcome, specs, ADRs, retro) through the server;
 a board that keeps none answers exit 3. A `--spec` or `--adr` on `milestone edit` replaces that whole list.
 `doc` reads and writes the board's doc records (title, type, dates, folder, body) the same way: `doc list` leaves the
@@ -408,32 +417,121 @@ def _json_or_empty(resp: Any) -> dict[str, Any]:
     return document if isinstance(document, dict) else {}
 
 
-def _milestone_call(
-    base: str, path: str, status: int, reply: Any, *, ok: tuple[int, ...] = (200,), noun: str = "milestone"
+#: What a task route's 404 says when the board has no such task, as opposed to a board that cannot read or write tasks.
+_TASK_MISSING = ("is not on the board", "has no record to read")
+
+
+def _record_call(
+    base: str,
+    path: str,
+    status: int,
+    reply: Any,
+    *,
+    ok: tuple[int, ...] = (200,),
+    noun: str = "milestone",
+    missing: tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    """The JSON object a milestone or doc route answered with, or the `CliError` its status maps to."""
+    """The JSON object a milestone, doc or task route answered with, or the `CliError` its status maps to."""
     document = reply if isinstance(reply, dict) else {}
     if status in ok and document:
         return document
     message = document.get("error") or f"{base} answered {status} for {path}: is it a StarPulse server?"
     if status == 404 and "error" in document:
         # The server gives both 404s as text only: a board that keeps no such records, else one that is not open.
-        raise CliError("not_found" if f"is not an open {noun}" in message else "unavailable", message)
+        absent = (f"is not an open {noun}", *missing)
+        raise CliError("not_found" if any(text in message for text in absent) else "unavailable", message)
     if status in (400, 403, 409):
         raise CliError("refused", message)
     raise CliError("unavailable", f"{base}: {message}")
 
 
+#: Each `task edit` flag's destination and the record field it sets, in the order `changed` reports them.
+_TASK_EDIT_FIELDS = {
+    "title": "title",
+    "type": "type",
+    "priority": "priority",
+    "milestone": "milestone",
+    "label": "labels",
+    "dependency": "dependencies",
+    "reference": "references",
+    "documentation": "documentation",
+    "modified_file": "modifiedFiles",
+    "description": "description",
+    "plan": "plan",
+    "notes": "notes",
+    "final_summary": "finalSummary",
+}
+
+
+def _task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/tasks"
+    given = {
+        "description": args.description,
+        "priority": args.priority,
+        "milestone": args.milestone,
+        "assignee": args.assignee,
+        "labels": args.label,
+        "dependencies": args.dependency,
+        "acceptanceCriteria": args.ac,
+    }
+    status, reply = _post(base, path, {"title": args.title, **{k: v for k, v in given.items() if v is not None}})
+    return {"task": _record_call(base, path, status, reply, ok=(201,))["task"]}
+
+
+def _task_edit_call(
+    args: argparse.Namespace,
+    environ: Mapping[str, str],
+    changes: dict[str, Any],
+    base_record: dict[str, Any] | None,
+    comment: str = "",
+) -> list[str]:
+    """Send `changes` to `/api/edit` as one write and return the fields that changed.
+
+    `base_record` is what the caller read the task as; without one the task is read now, so the edit is refused only
+    for a field another writer changes between that read and this write.
+    """
+    base = server_url(args.server, environ)
+    if base_record is None:
+        path = f"/api/task/{urllib.parse.quote(args.task, safe='')}"
+        status, reply = _get(base, path)
+        current = _record_call(base, path, status, reply, missing=_TASK_MISSING)["record"]
+        base_record = {field: current.get(field) for field in changes}
+    body = {"task": args.task, "base": base_record, "changes": changes, "comment": comment}
+    status, reply = _post(base, "/api/edit", body)
+    return _record_call(base, "/api/edit", status, reply, missing=_TASK_MISSING)["changed"]
+
+
+def _task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    changes = {field: getattr(args, flag) for flag, field in _TASK_EDIT_FIELDS.items() if getattr(args, flag) is not None}
+    if not changes:
+        flags = ", ".join(f"--{flag.replace('_', '-')}" for flag in _TASK_EDIT_FIELDS)
+        raise CliError("usage", f"name what to change: {flags}")
+    base_record = None
+    if args.base is not None:
+        try:
+            base_record = json.loads(args.base)
+        except ValueError:
+            base_record = None
+        if not isinstance(base_record, dict):
+            raise CliError("usage", '--base must be a JSON object of the values read, as {"title": "..."}')
+    return {"task": args.task, "changed": _task_edit_call(args, environ, changes, base_record, args.comment)}
+
+
+def _task_assign(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    changed = _task_edit_call(args, environ, {"profile": args.assignee}, None)
+    return {"task": args.task, "assignee": args.assignee, "changed": changed}
+
+
 def _milestone_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = server_url(args.server, environ), "/api/milestones"
     status, reply = _get(base, path)
-    return {"milestones": _milestone_call(base, path, status, reply)["milestones"]}
+    return {"milestones": _record_call(base, path, status, reply)["milestones"]}
 
 
 def _milestone_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = server_url(args.server, environ), f"/api/milestones/{urllib.parse.quote(args.milestone, safe='')}"
     status, reply = _get(base, path)
-    return _milestone_call(base, path, status, reply)["milestone"]
+    return _record_call(base, path, status, reply)["milestone"]
 
 
 def _milestone_add(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -441,7 +539,7 @@ def _milestone_add(args: argparse.Namespace, environ: Mapping[str, str]) -> dict
     body: dict[str, Any] = {"title": args.title}
     body.update(_milestone_fields(args))
     status, reply = _post(base, path, body)
-    return {"milestone": _milestone_call(base, path, status, reply, ok=(201,))["milestone"]}
+    return {"milestone": _record_call(base, path, status, reply, ok=(201,))["milestone"]}
 
 
 def _milestone_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -450,26 +548,26 @@ def _milestone_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dic
     if not changes:
         raise CliError("usage", "name what to change: --title, --outcome, --spec, --adr or --retro")
     status, reply = _post(base, path, {"milestone": args.milestone, "changes": changes})
-    document = _milestone_call(base, path, status, reply)
+    document = _record_call(base, path, status, reply)
     return {"milestone": document["milestone"], "changed": document["changed"]}
 
 
 def _milestone_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = server_url(args.server, environ), "/api/milestones/archive"
     status, reply = _post(base, path, {"milestone": args.milestone})
-    return {"milestone": _milestone_call(base, path, status, reply)["milestone"]}
+    return {"milestone": _record_call(base, path, status, reply)["milestone"]}
 
 
 def _doc_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = server_url(args.server, environ), "/api/docs"
     status, reply = _get(base, path)
-    return {"docs": _milestone_call(base, path, status, reply, noun="doc")["docs"]}
+    return {"docs": _record_call(base, path, status, reply, noun="doc")["docs"]}
 
 
 def _doc_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = server_url(args.server, environ), f"/api/docs/{urllib.parse.quote(args.doc, safe='')}"
     status, reply = _get(base, path)
-    return _milestone_call(base, path, status, reply, noun="doc")["doc"]
+    return _record_call(base, path, status, reply, noun="doc")["doc"]
 
 
 def _doc_fields(args: argparse.Namespace) -> dict[str, Any]:
@@ -481,7 +579,7 @@ def _doc_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
     base, path = server_url(args.server, environ), "/api/docs"
     body = {"title": args.title, **_doc_fields(args), **({"folder": args.folder} if args.folder is not None else {})}
     status, reply = _post(base, path, body)
-    return {"doc": _milestone_call(base, path, status, reply, ok=(201,), noun="doc")["doc"]}
+    return {"doc": _record_call(base, path, status, reply, ok=(201,), noun="doc")["doc"]}
 
 
 def _doc_update(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -490,14 +588,14 @@ def _doc_update(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
     if not changes:
         raise CliError("usage", "name what to change: --title, --type or --body")
     status, reply = _post(base, path, {"doc": args.doc, "changes": changes})
-    document = _milestone_call(base, path, status, reply, noun="doc")
+    document = _record_call(base, path, status, reply, noun="doc")
     return {"doc": document["doc"], "changed": document["changed"]}
 
 
 def _doc_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = server_url(args.server, environ), "/api/docs/archive"
     status, reply = _post(base, path, {"doc": args.doc})
-    return {"doc": _milestone_call(base, path, status, reply, noun="doc")["doc"]}
+    return {"doc": _record_call(base, path, status, reply, noun="doc")["doc"]}
 
 
 def _milestone_fields(args: argparse.Namespace) -> dict[str, Any]:
@@ -959,6 +1057,60 @@ def _parser() -> argparse.ArgumentParser:
     )
     trace.add_argument("task", help="the task's key (`PROJ-45`)")
     trace.add_argument("--flow", help="the machine to trace the task on (`in-progress`), else the Board's lanes")
+    create = leaf(
+        task_verbs,
+        "create",
+        "open a task in the board's first lane and return its new id",
+        _task_create,
+        ("task",),
+        (0, 1, 2, 3),
+    )
+    create.add_argument("title", help="the task's title")
+    create.add_argument("--description", help="the task's Description section")
+    create.add_argument("--priority", help="`high`, `medium` or `low`")
+    create.add_argument("--milestone", help="the milestone's id (`m-106`)")
+    create.add_argument("--assignee", help="who or which agent profile holds it (`@agent-standard-high`)")
+    create.add_argument("--label", action="append", help="a label; repeat for several")
+    create.add_argument("--dependency", action="append", help="a task it depends on; repeat for several")
+    create.add_argument("--ac", action="append", help="an Acceptance Criterion; repeat for several, in order")
+    edit = leaf(
+        task_verbs,
+        "edit",
+        "replace the fields given on a task in one write and return those that changed; refused whole when a field's value has changed since it was read",
+        _task_edit,
+        ("task", "changed"),
+        (0, 1, 2, 3, 4),
+    )
+    edit.add_argument("task", help="the task's key (`PROJ-45`)")
+    edit.add_argument("--title", help="the new title; blank is refused")
+    edit.add_argument("--type", help="the task's type; blank removes it")
+    edit.add_argument("--priority", help="`high`, `medium` or `low`; blank removes it")
+    edit.add_argument("--milestone", help="the milestone's id; blank removes it")
+    edit.add_argument("--label", action="append", help="a label; given at all, replaces the whole list (blank clears)")
+    edit.add_argument("--dependency", action="append", help="a task it depends on; replaces the whole list")
+    edit.add_argument("--reference", action="append", help="a reference; replaces the whole list")
+    edit.add_argument("--documentation", action="append", help="a documentation link; replaces the whole list")
+    edit.add_argument("--modified-file", action="append", dest="modified_file", help="a modified file; replaces the whole list")
+    edit.add_argument("--description", help="the Description section")
+    edit.add_argument("--plan", help="the Implementation Plan section")
+    edit.add_argument("--notes", help="the Implementation Notes section")
+    edit.add_argument("--final-summary", dest="final_summary", help="the Final Summary section")
+    edit.add_argument("--comment", default="", help="a comment to append to the task with the edit")
+    edit.add_argument(
+        "--base",
+        help='a JSON object of the values the fields were read as (`{"priority": "high"}`); the edit is refused whole when '
+        "any field it changes is no longer that value, else the task is read now",
+    )
+    assign = leaf(
+        task_verbs,
+        "assign",
+        "set the task's assignee, refused when the board's writer refuses it",
+        _task_assign,
+        ("task", "assignee", "changed"),
+        (0, 1, 2, 3, 4),
+    )
+    assign.add_argument("task", help="the task's key (`PROJ-45`)")
+    assign.add_argument("assignee", help="who or which agent profile holds it (`@agent-standard-high`); blank clears")
     machine = verbs.add_parser(
         "machine",
         description="the machines the server draws and the machine files",

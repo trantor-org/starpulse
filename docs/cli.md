@@ -8,6 +8,9 @@ starpulse task show PROJ-45                      # one task: lane, what it waits
 starpulse task moves PROJ-45                     # every column it may move to, allowed or refused to the agent
 starpulse task move PROJ-45 review               # move it as the agent; a refusal is the verdict, exit 1
 starpulse task trace PROJ-45 --flow in-progress  # where the task has been: Board lanes, or one machine's events
+starpulse task create "Rotate the secret" --priority high --label ops --ac "It rotates"  # open a task; its id
+starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops   # one write, refused whole when stale
+starpulse task assign PROJ-45 @agent-standard-high  # set the assignee
 starpulse machine show in-progress               # a machine's states, transitions and the tasks now in each
 starpulse milestone list                         # every open milestone: title, outcome, specs and ADRs
 starpulse milestone add "Launch" --outcome "Shipped" --spec "doc-1 - plan" --adr docs/adr/a.md
@@ -54,6 +57,9 @@ lists exactly the verbs there are.
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
 | `task move` | `TASK`, `TO`, `--session` | `ok`, `task`, `to`, `reason`, `skill` and `advice`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer |
 | `task trace` | `TASK`, `--flow` | `task`, `flow` (null without `--flow`), `path` and `steps`; the Board's `{at, from, to}` lane changes, or with `--flow` that machine's `{at, event, state}`, oldest first; an unknown flow exits 4, a task never seen has an empty `path` |
+| `task create` | `TITLE`, `--description`, `--priority`, `--milestone`, `--assignee`, `--label`, `--dependency`, `--ac` | `task`: the new id (the next number past every open, completed and archived task); the task starts in the board's first lane; `--label`, `--dependency` and `--ac` repeat, the criteria numbered in order; `--priority` is `high`, `medium` or `low`; a blank title or an unknown priority exits 1; a board that cannot create tasks exits 3 |
+| `task edit` | `TASK`, `--title`, `--type`, `--priority`, `--milestone`, `--label`, `--dependency`, `--reference`, `--documentation`, `--modified-file`, `--description`, `--plan`, `--notes`, `--final-summary`, `--comment`, `--base` | `task` and `changed`, the fields whose value differs, in the record's field names (`labels`, `modifiedFiles`, `finalSummary`); every field given is written in one write, or none: `--base` is a JSON object of the values the caller read, else the task is read at the call, and the edit is refused whole (exit 1, the error naming the stale fields) when any field it changes no longer has its base value; a list flag given at all replaces that whole list, a blank value clears the field, and a change that changes nothing writes nothing; naming no field or a `--base` that is no JSON object exits 2, a blank title exits 1, an unknown task exits 4, a board that cannot read or edit tasks exits 3 |
+| `task assign` | `TASK`, `ASSIGNEE` | `task`, `assignee` and `changed` (`["profile"]`, or empty when the assignee already is that value): the edit of the assignee alone, with the refusals of `task edit`; a blank assignee clears it |
 | `machine list` | | `machines`: each `{name, states, tasks}` with its state ids and its live task count |
 | `machine show` | `NAME` | `name`, `states` (each `{id, name, initial, final, count, tasks}`) and `transitions`; an unknown machine exits 4 and names those drawn |
 | `machine validate` | `PATH...` | `ok` and `machines`: each `{path, ok, errors}`, an error `{file, line, message}` (`line` is null when the compiler cannot place it); exit 1 when any file is refused. A guard or action name is taken as the adapter's to register |

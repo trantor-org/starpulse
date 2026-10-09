@@ -18,6 +18,7 @@ import pytest
 
 from starpulse._internal.board import native
 from starpulse._internal.board.seam import Written
+from starpulse._internal.board.upstream_backlog import UpstreamBacklog
 from starpulse._internal.kit.adapter_kit import serve as _real_serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
@@ -217,6 +218,50 @@ def milestoned(tmp_path: Path) -> Iterator[str]:
     for records in ("milestones", "docs"):
         shutil.copytree(source / records, tmp_path / ".starpulse" / "board" / records)
     with _serve(tmp_path, BoardFeed(machines=MACHINES), milestones=board) as server:
+        yield _url(server, "")
+
+
+TASK_FILE = """---
+id: task-1
+title: Draw the board
+status: To Do
+assignee:
+  - '@agent-standard-high'
+labels:
+  - ui
+priority: high
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Draw it.
+<!-- SECTION:DESCRIPTION:END -->
+"""
+
+
+def _task_file(tmp_path: Path, task_id: str = "task-1") -> Path:
+    """The file of a task of the `tasked` board, found by its id whatever its title's slug."""
+    return next((tmp_path / ".starpulse" / "board" / "tasks").glob(f"{task_id} - *.md"))
+
+
+@pytest.fixture
+def tasked(tmp_path: Path) -> Iterator[str]:
+    """A server whose native board holds `task-1`, read, edited, created and assigned through its own writers."""
+    board = native.board({}, tmp_path)
+    root = tmp_path / ".starpulse" / "board"
+    (root / "tasks" / "task-1 - Draw the board.md").write_text(TASK_FILE)
+    feed = BoardFeed(machines=MACHINES)
+    UpstreamBacklog(root, feed.put).scan()
+    with _serve(
+        tmp_path,
+        feed,
+        writer=board.writer,
+        assign=board.assign,
+        read=board.read,
+        edit=board.edit,
+        create=board.create,
+    ) as server:
         yield _url(server, "")
 
 
@@ -573,6 +618,110 @@ def test_task_move_on_a_board_with_no_writer_exits_3_and_says_so(bare: str, caps
     assert "no board writer is configured" in doc["error"]
 
 
+def test_task_create_writes_a_task_with_the_details_given_and_reports_its_id(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["task", "create", "Rotate the secret", "--priority", "High", "--milestone", "m-3", "--assignee", "@agent-a"]
+    argv += ["--description", "Rotate it.", "--label", "ops", "--label", "sec", "--dependency", "task-1"]
+    argv += ["--ac", "It rotates", "--ac", "It logs", "--server", tasked]
+
+    code, doc = _run(capsys, argv)
+
+    assert (code, doc) == (0, {"task": "task-2"})
+    written = _task_file(tmp_path, "task-2").read_text()
+    assert "title: Rotate the secret" in written
+    assert "priority: high" in written
+    assert "milestone: m-3" in written
+    assert "- '@agent-a'" in written
+    assert "- ops\n- sec" in written
+    assert "- task-1" in written
+    assert "Rotate it." in written
+    assert "- [ ] #1 It rotates\n- [ ] #2 It logs" in written
+
+
+def test_task_create_with_a_priority_the_board_does_not_know_is_refused_and_writes_nothing(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "create", "Rotate", "--priority", "urgent", "--server", tasked])
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "priority" in doc["error"]
+    assert not list((tmp_path / ".starpulse" / "board" / "tasks").glob("task-2 - *.md"))
+
+
+def test_task_edit_writes_every_field_given_in_one_write_and_reports_those_that_changed(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["task", "edit", "task-1", "--title", "Draw the lanes", "--priority", "low", "--label", "ui", "--label", "api"]
+    argv += ["--description", "Draw them.", "--comment", "Retitled", "--server", tasked]
+
+    code, doc = _run(capsys, argv)
+
+    assert code == 0
+    assert doc["task"] == "task-1"
+    assert sorted(doc["changed"]) == ["description", "labels", "priority", "title"]
+    written = _task_file(tmp_path).read_text()
+    assert "title: Draw the lanes" in written
+    assert "priority: low" in written
+    assert "- ui\n- api" in written
+    assert "Draw them." in written
+    assert "Retitled" in written
+
+
+def test_task_edit_that_changes_nothing_writes_nothing(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _task_file(tmp_path).read_text()
+
+    code, doc = _run(capsys, ["task", "edit", "task-1", "--priority", "high", "--server", tasked])
+
+    assert (code, doc) == (0, {"task": "task-1", "changed": []})
+    assert _task_file(tmp_path).read_text() == before
+
+
+def test_task_edit_against_a_base_a_field_has_left_is_refused_whole_and_writes_nothing(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _task_file(tmp_path).read_text()
+    base = json.dumps({"title": "Draw the board", "priority": "medium"})  # the priority is high on the board
+
+    code, doc = _run(
+        capsys,
+        ["task", "edit", "task-1", "--title", "Draw the lanes", "--priority", "low", "--base", base, "--server", tasked],
+    )
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "priority" in doc["error"]
+    assert _task_file(tmp_path).read_text() == before
+
+
+def test_task_edit_with_a_base_that_is_no_json_object_is_a_usage_error(
+    tasked: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "edit", "task-1", "--title", "X", "--base", "[1]", "--server", tasked])
+
+    assert (code, doc["code"]) == (2, "usage")
+    assert "--base" in doc["error"]
+
+
+def test_task_assign_sets_the_assignee_and_nothing_else(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "assign", "task-1", "@agent-fast-low", "--server", tasked])
+
+    assert (code, doc) == (0, {"task": "task-1", "assignee": "@agent-fast-low", "changed": ["profile"]})
+    written = _task_file(tmp_path).read_text()
+    assert "- '@agent-fast-low'" in written
+    assert "@agent-standard-high" not in written
+    assert "title: Draw the board" in written
+
+
+def test_task_edit_on_a_board_that_cannot_edit_exits_3_and_says_so(bare: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["task", "edit", "PROJ-6", "--title", "X", "--server", bare])
+
+    assert (code, doc["code"]) == (3, "unavailable")
+
+
 def test_no_verb_is_a_usage_error_as_json(capsys: pytest.CaptureFixture[str]) -> None:
     code, doc = _run(capsys, [])
 
@@ -609,6 +758,9 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task moves",
         "task move",
         "task trace",
+        "task create",
+        "task edit",
+        "task assign",
         "machine list",
         "machine show",
         "machine validate",
@@ -957,10 +1109,20 @@ def runnable(tmp_path: Path) -> Iterator[str]:
 
 
 @contextmanager
-def _canned(status: int, body: dict[str, Any]) -> Iterator[str]:
-    """A server that answers every request with `status` and the JSON `body`, as one the run guards refuse."""
+def _canned(status: int, body: dict[str, Any], reads: dict[str, Any] | None = None) -> Iterator[str]:
+    """A server that answers every POST with `status` and the JSON `body`, as one the run guards refuse, and every
+    GET with `reads` (200) when given, else 501."""
 
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if reads is None:
+                self.send_error(501)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(reads).encode())
+
         def do_POST(self) -> None:
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -982,6 +1144,14 @@ def _canned(status: int, body: dict[str, Any]) -> Iterator[str]:
 def forbidden() -> Iterator[str]:
     """A server that refuses Run now to the caller, as it does one outside loopback and the private network."""
     with _canned(403, {"error": "Run now answers only loopback and private network (RFC 1918) browsers"}) as base:
+        yield base
+
+
+@pytest.fixture
+def readonly() -> Iterator[str]:
+    """A server that reads `task-1` and refuses every write, as one does a browser outside the private network."""
+    reads = {"task": "task-1", "record": {"title": "Draw the board", "profile": "@agent-standard-high"}}
+    with _canned(403, {"error": "Editing a task answers only loopback and private network (RFC 1918) browsers"}, reads) as base:
         yield base
 
 
@@ -1219,6 +1389,20 @@ CASES = {
     ("task trace", 2): ["task", "trace"],
     ("task trace", 3): ["task", "trace", "PROJ-1", "--server", "{down}"],
     ("task trace", 4): ["task", "trace", "PROJ-1", "--flow", "nowhere", "--server", "{server}"],
+    ("task create", 0): ["task", "create", "Rotate the secret", "--server", "{tasked}"],
+    ("task create", 1): ["task", "create", " ", "--server", "{tasked}"],
+    ("task create", 2): ["task", "create"],
+    ("task create", 3): ["task", "create", "Rotate the secret", "--server", "{down}"],
+    ("task edit", 0): ["task", "edit", "task-1", "--title", "Draw the lanes", "--server", "{tasked}"],
+    ("task edit", 1): ["task", "edit", "task-1", "--title", " ", "--server", "{tasked}"],
+    ("task edit", 2): ["task", "edit", "task-1", "--server", "{tasked}"],
+    ("task edit", 3): ["task", "edit", "task-1", "--title", "Draw the lanes", "--server", "{down}"],
+    ("task edit", 4): ["task", "edit", "task-99", "--title", "Draw the lanes", "--server", "{tasked}"],
+    ("task assign", 0): ["task", "assign", "task-1", "@agent-fast-low", "--server", "{tasked}"],
+    ("task assign", 1): ["task", "assign", "task-1", "@agent-fast-low", "--server", "{readonly}"],
+    ("task assign", 2): ["task", "assign", "task-1"],
+    ("task assign", 3): ["task", "assign", "task-1", "@agent-fast-low", "--server", "{down}"],
+    ("task assign", 4): ["task", "assign", "task-99", "@agent-fast-low", "--server", "{tasked}"],
     ("machine list", 0): ["machine", "list", "--server", "{server}"],
     ("machine list", 2): ["machine", "list", "--nope"],
     ("machine list", 3): ["machine", "list", "--server", "{down}"],
@@ -1351,6 +1535,8 @@ SERVERS = {
     "runnable": "runnable",
     "forbidden": "forbidden",
     "milestoned": "milestoned",
+    "tasked": "tasked",
+    "readonly": "readonly",
 }
 
 
