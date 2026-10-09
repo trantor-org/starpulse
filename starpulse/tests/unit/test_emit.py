@@ -9,7 +9,7 @@ from typing import Any, get_args
 
 import pytest
 
-from starpulse._internal.adapters.runs import emit
+from starpulse._internal.runs import emit
 from starpulse.contracts.adapters import RunStatus
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import DEFAULT_FILE

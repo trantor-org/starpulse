@@ -6,7 +6,7 @@ An adapter is a producer of these records for StarPulse: a Backlog.md or Jira re
 hub's insights API; a finding is about a team, machine, state or task, and the contract has no
 field for a person.
 Each model is also published as a JSON Schema under `schemas/`, regenerated with
-`python -m starpulse.contracts`; `starpulse._internal.api.adapter_kit` runs an adapter's output against them.
+`python -m starpulse.contracts`; `starpulse._internal.kit.adapter_kit` runs an adapter's output against them.
 """
 
 from __future__ import annotations

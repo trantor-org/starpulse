@@ -35,11 +35,11 @@ FULL_SUITE = (
 
 #: Non-Python files and the Python files that open them by path; each reader counts as changed.
 READERS = {
-    "README.md": ("starpulse/_internal/api/server.py", "starpulse/tests/unit/test_public_surface.py", "ci/ui_preview.py"),
+    "README.md": ("starpulse/_internal/server/server.py", "starpulse/tests/unit/test_public_surface.py", "ci/ui_preview.py"),
     "starpulse/web/*": ("starpulse/tests/unit/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
-    "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/api/hub.py",),
+    "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/hub/hub.py",),
     "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py", "ci/test_load.py"),
     "bench/soak.py": ("ci/test_soak.py",),
     "bench/load.py": ("ci/test_load.py",),
@@ -66,7 +66,10 @@ INERT = (
 #: The board seam and `config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a
 #: test reaching either reaches each adapter whose name appears in a module it reaches: a configured `kind = "dagu"` in
 #: the test or a helper, or the loader's own default (`config.DEFAULT_TYPE`).
-NAMED_LOADERS = ("starpulse._internal.adapters.boards.seam", "starpulse._internal.config.config")
+NAMED_LOADERS = ("starpulse._internal.board.seam", "starpulse._internal.config.config")
+
+#: The feature packages that hold adapters; a module directly in one of them may be an adapter.
+ADAPTER_PACKAGES = tuple(f"starpulse._internal.{package}." for package in ("board", "runs", "pulls", "harnesses"))
 
 #: The module that lists every built-in adapter's name. Every loader reaches it, so its text names no adapter a test
 #: names: it would otherwise select every adapter's tests for a change to any loader.
@@ -198,7 +201,7 @@ def select(root: Path, changed: list[str]) -> Selection:
     adapters = {
         name: name.rpartition(".")[2]
         for name, path in modules.items()
-        if name.startswith("starpulse._internal.adapters.") and name.count(".") == 4 and _is_adapter(path)
+        if name.startswith(ADAPTER_PACKAGES) and name.count(".") == 3 and _is_adapter(path)
     }
 
     def reaches(name: str) -> set[str]:

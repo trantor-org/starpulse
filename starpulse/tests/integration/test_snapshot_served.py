@@ -11,10 +11,10 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.feed import snapshot_cache
-from starpulse._internal.api.adapter_kit import next_event as _next_event
-from starpulse._internal.api.adapter_kit import serve as _serve
-from starpulse._internal.api.adapter_kit import task
-from starpulse._internal.api.adapter_kit import url as _url
+from starpulse._internal.kit.adapter_kit import next_event as _next_event
+from starpulse._internal.kit.adapter_kit import serve as _serve
+from starpulse._internal.kit.adapter_kit import task
+from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse.tests.machines import MACHINES
 

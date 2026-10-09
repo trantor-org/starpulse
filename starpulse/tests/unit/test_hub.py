@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import starpulse._internal.api
-from starpulse._internal.api import server
+import starpulse._internal.hub
+from starpulse._internal.server import server
 
 needs_extras = pytest.mark.skipif(
     importlib.util.find_spec("alembic") is None, reason="the hub extras are not installed"
@@ -42,8 +42,8 @@ def _serve_hub(tmp_path: Path, config_text: str, oidc: str | None = _OIDC, argv:
 def test_a_hub_without_the_hub_extras_names_the_extra_to_install(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delitem(sys.modules, "starpulse._internal.api.hub", raising=False)
-    monkeypatch.delattr(starpulse._internal.api, "hub", raising=False)  # `from starpulse._internal.api import hub` finds the attribute first
+    monkeypatch.delitem(sys.modules, "starpulse._internal.hub.hub", raising=False)
+    monkeypatch.delattr(starpulse._internal.hub, "hub", raising=False)  # `from starpulse._internal.hub import hub` finds the attribute first
     monkeypatch.setitem(sys.modules, "alembic", None)  # importing it raises, as on a machine without the extras
 
     assert _serve_hub(tmp_path, f'database_url = "postgresql+psycopg://h/{tmp_path.name}"\n') == 1
@@ -112,7 +112,7 @@ from pathlib import Path
 
 from starpulse import __main__
 
-from starpulse._internal.api import server
+from starpulse._internal.server import server
 
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
@@ -127,8 +127,8 @@ stop = threading.Event()
 threading.Timer(1.0, stop.set).start()
 record_machine_events(store, log, stop, interval=0.05)
 assert store.machine_path("IC-1", "in-progress")[1] == 1
-assert "starpulse._internal.api.hub" not in sys.modules, "IC mode imported the hub module"
-assert "starpulse._internal.api.oidc" not in sys.modules, "IC mode imported the sign-in module"
+assert "starpulse._internal.hub.hub" not in sys.modules, "IC mode imported the hub module"
+assert "starpulse._internal.hub.oidc" not in sys.modules, "IC mode imported the sign-in module"
 """
 
 

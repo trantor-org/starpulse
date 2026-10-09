@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.adapters.boards.seam import Board
-from starpulse._internal.adapters.boards.upstream_backlog import UpstreamBacklog, _split
-from starpulse._internal.api.server import assemble
-from starpulse._internal.api.writes import archive_task, edit_task, task_record
+from starpulse._internal.board.seam import Board
+from starpulse._internal.board.upstream_backlog import UpstreamBacklog, _split
+from starpulse._internal.server.server import assemble
+from starpulse._internal.server.writes import archive_task, edit_task, task_record
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog

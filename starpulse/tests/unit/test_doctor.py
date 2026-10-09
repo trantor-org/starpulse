@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.api.adapter_kit import serve, task, url
+from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import doctor
 from starpulse._internal.feed.board_feed import BoardFeed

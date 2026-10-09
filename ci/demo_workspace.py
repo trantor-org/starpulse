@@ -13,7 +13,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.adapters.boards.seam import Board
+from starpulse._internal.board.seam import Board
 from starpulse._internal.machines.machine_definition import load_machine, refuse_unlisted
 from starpulse._internal.machines.snapshot import Qualify, describe
 

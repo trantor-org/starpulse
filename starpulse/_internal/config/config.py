@@ -8,7 +8,7 @@ The `[board]` table names the board adapter by `type` (`starpulse.board`); the r
 adapter's settings. `database_url` is the SQLAlchemy URL of the history store (`starpulse.history`).
 
 Each `[[runs]]` table is one instance of a runs adapter: its `name`, the adapter module `type` (a built-in name from
-`starpulse._internal.adapters`, or the dotted path of a module an installed package provides), the `url` it reads (an instance with a
+`config.adapter_types`, or the dotted path of a module an installed package provides), the `url` it reads (an instance with a
 `token_env` and neither `type` nor `url` is push-only: it pulls nothing and draws what the ingest receives), the workflows Run now may start (`run_safe`) and the `domains` that
 group its workflows on the page, and optionally `token_env`, the name of the environment variable that holds the
 token the HTTP ingest accepts for it (the token itself is never in this file). A workflow is shown as `<instance>/<workflow>`, so two instances can

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse._internal.adapters.boards.upstream_backlog import (
+from starpulse._internal.board.upstream_backlog import (
     BacklogConfig,
     UpstreamBacklog,
     _split,
@@ -20,8 +20,8 @@ from starpulse._internal.adapters.boards.upstream_backlog import (
     read_config,
     upstream_keys,
 )
-from starpulse._internal.api.adapter_kit import BoardAdapterKit
-from starpulse._internal.api.writes import move_task
+from starpulse._internal.kit.adapter_kit import BoardAdapterKit
+from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask, Move
 from starpulse._internal.machines.machine_definition import Writer
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -489,7 +489,7 @@ def test_the_adapter_runs_with_no_network_transport_and_no_backlog_server(
 def test_the_adapter_module_pulls_in_neither_the_legacy_client_nor_the_projection_contract() -> None:
     client = "re" + "dis"
     code = (
-        "import sys, starpulse._internal.adapters.boards.upstream_backlog;"
+        "import sys, starpulse._internal.board.upstream_backlog;"
         f"bad = [m for m in ({client!r}, 'event_stream', 'backlog_projection', 'backlog_lifecycle') if m in sys.modules];"
         "sys.exit(','.join(bad) or 0)"
     )

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.api import server
+from starpulse._internal.server import server
 from starpulse._internal.eventlog.history import DEFAULT_FILE, HistoryStore
 
 _CLIENT_MODULE = "re" + "dis"
@@ -67,7 +67,7 @@ def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_histor
     config.write_text("")
     env = _env(PATH=str(tmp_path))  # an empty directory: no docker, podman or gh resolves
     proc = subprocess.Popen(
-        [sys.executable, "-m", "starpulse._internal.api.server", "--port", str(port), "--config", str(config)], env=env
+        [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(port), "--config", str(config)], env=env
     )
     try:
         deadline = time.monotonic() + 30
@@ -121,7 +121,7 @@ def test_the_served_snapshot_sizes_each_suns_share_from_the_history_the_server_k
     history.record_lane("l2", "T-1", "Done", time.time() - 2 * day)  # a move out of it, into Done
     history.engine.dispose()
     proc = subprocess.Popen(
-        [sys.executable, "-m", "starpulse._internal.api.server", "--port", str(port), "--config", str(config)], env=_env()
+        [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(port), "--config", str(config)], env=_env()
     )
     try:
         deadline = time.monotonic() + 30
@@ -150,7 +150,7 @@ def test_an_event_posted_with_the_token_in_the_environment_reaches_the_snapshot_
     config = tmp_path / "starpulse.toml"
     config.write_text(_INGEST_CONFIG)
     proc = subprocess.Popen(
-        [sys.executable, "-m", "starpulse._internal.api.server", "--port", str(port), "--config", str(config)],
+        [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(port), "--config", str(config)],
         env=_env(CRON_INGEST_TOKEN="s3cret"),
     )
     event = json.dumps({"phase": "start", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}).encode()
@@ -189,7 +189,7 @@ def test_an_instance_whose_token_variable_is_unset_stops_the_server_naming_it(tm
     config.write_text(_INGEST_CONFIG)
 
     started = subprocess.run(
-        [sys.executable, "-m", "starpulse._internal.api.server", "--port", str(_free_port()), "--config", str(config)],
+        [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(_free_port()), "--config", str(config)],
         env=_env(),
         capture_output=True,
         text=True,

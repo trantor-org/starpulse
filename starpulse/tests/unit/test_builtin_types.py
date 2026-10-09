@@ -36,7 +36,7 @@ def test_builtin_types_every_documented_bare_type_loads(kind: str) -> None:
 def test_builtin_types_every_table_entry_names_an_importable_adapter(kind: str) -> None:
     module = importlib.import_module(module_name(kind))
 
-    assert module.__name__.startswith("starpulse._internal.adapters."), "a built-in adapter lives under adapters/"
+    assert module.__name__.startswith(("starpulse._internal.board.", "starpulse._internal.runs.")), "a built-in adapter lives in its feature package"
     assert _offers_an_adapter(module)
 
 

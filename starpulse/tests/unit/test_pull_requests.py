@@ -10,8 +10,8 @@ from functools import partial
 
 import pytest
 
-from starpulse._internal.adapters.runs.pull_requests import GhUnavailableError, PullRequests, Pulls, fetch, read_repository
-from starpulse._internal.api.adapter_kit import task
+from starpulse._internal.pulls.pull_requests import GhUnavailableError, PullRequests, Pulls, fetch, read_repository
+from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.ci.ci_trail import PullHistory, parse
 from starpulse._internal.config.config import Repo
@@ -918,7 +918,7 @@ def test_each_query_logs_the_rate_limit_cost_github_returned_for_its_repository(
     rate = {"cost": 3, "remaining": 4210, "resetAt": "2026-10-07T21:00:00Z"}
     _run(monkeypatch, stdout=json.dumps({"data": {"rateLimit": rate, "repository": {}}}))
 
-    with caplog.at_level(logging.INFO, logger="starpulse._internal.adapters.runs.pull_requests"):
+    with caplog.at_level(logging.INFO, logger="starpulse._internal.pulls.pull_requests"):
         fetch([FIRST, CHILD])
 
     costs = [record.getMessage() for record in caplog.records if "cost" in record.getMessage()]

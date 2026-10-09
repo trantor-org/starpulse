@@ -559,7 +559,7 @@ run_safe = ["ui-preview.yml"]
 - **Run now** dispatches the workflow on the default branch (`workflow_dispatch`) and answers its run id. It is drawn
   only on a `run_safe` workflow whose file declares `workflow_dispatch`; any other workflow is refused.
 - **Events.** The repository is listed every 60 s. A `workflow_run` webhook, mapped with
-  `starpulse._internal.adapters.runs.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
+  `starpulse._internal.runs.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
   at once.
 
 ### systemd timers
@@ -587,11 +587,11 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
 
 ### Show pull requests and Copilot work
 
-`python -m starpulse._internal.adapters.runs.github` reads a repository's 30 most recently updated pull requests every `--interval` seconds
+`python -m starpulse._internal.pulls.github` reads a repository's 30 most recently updated pull requests every `--interval` seconds
 (300 by default) and appends their events to the event log, beside the server:
 
 ```sh
-uvx --from starpulse python -m starpulse._internal.adapters.runs.github --repo trantor-org/starpulse
+uvx --from starpulse python -m starpulse._internal.pulls.github --repo trantor-org/starpulse
 ```
 
 - **`github-pull-request` machine.** `PR_OPENED`, then `CHECKS_PASSED` or `CHECKS_FAILED` once every check run on the
@@ -659,7 +659,7 @@ hub_retention_days = 14   # the default; a whole number of days, 1 or more
 
 - **Partitions.** The hub creates today's and tomorrow's partition before it serves and again every hour, so an
   insert at midnight finds its partition already there. An event whose `at` falls on a day with no partition is refused
-  by the database, so a forwarder must create that day's partition (`starpulse._internal.api.hub.ensure_partitions`) or refuse
+  by the database, so a forwarder must create that day's partition (`starpulse._internal.hub.hub.ensure_partitions`) or refuse
   events older than the retention bound.
 - **Retention.** A day more than `hub_retention_days` before today is rolled up and then dropped (`DROP TABLE`,
   never `DELETE`), in one transaction, so a partition is never dropped without its rollup. A reader whose cursor sat
@@ -900,7 +900,7 @@ directory. The `Board` says:
   [Scaling notes](#flow-read-scaling)). A history that supplies only `lane_rows` and `level_runs`, as the Board adapter
   hook does, is read whole, and a level on a machine other than the Board reads that machine's events whole.
 
-`starpulse._internal.adapters.boards.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
+`starpulse._internal.board.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
 criteria, plan, notes and definition of done) back for the task view, applies an edit to a task's file in one write,
 and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments.
@@ -940,7 +940,7 @@ key out), and the body's description, plan, notes, final summary, acceptance cri
 with its `n` keeps it, one without takes the next). `appendNotes` adds a line to the end of the notes, a non-blank
 `comment` adds a comment, and `read` returns the comments as `{created, text}`, which an edit cannot set. `complete(task)`
 refuses a task that is not Done and moves one that is to `completed/`.
-`starpulse._internal.adapters.boards.upstream_backlog` is the reference adapter for a tracker with its own
+`starpulse._internal.board.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
@@ -948,7 +948,7 @@ whose states are those lanes and whose `writers` reserve a move to an actor, suc
 with the `backlog` CLI, answering a failed write with the CLI's output. An adapter with a writer subclasses
 `BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
 the machine leaves to the operator is refused to the agent. A board kit also declares `teams`, the team key the
-adapter derives for each task it produces, and asserts each record carries it. `starpulse._internal.adapters.boards.jira` reads a Jira project and has no writer. It imports the named workflow from the site's
+adapter derives for each task it produces, and asserts each record carries it. `starpulse._internal.board.jira` reads a Jira project and has no writer. It imports the named workflow from the site's
 `workflows/search` as the Board machine (a state per status, an event per transition, a global transition leaving every
 other status), refusing a workflow with a status in no transition, two statuses that make one lane, or no single initial
 transition. Each issue is a task in the lane of its status and the team of its Jira project; an issue it `Blocks` waits on

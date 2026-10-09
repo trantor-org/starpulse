@@ -15,8 +15,8 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 
-from starpulse._internal.adapters.runs.ingest import MAX_BODY
-from starpulse._internal.api.adapter_kit import next_event, serve, url
+from starpulse._internal.runs.ingest import MAX_BODY
+from starpulse._internal.kit.adapter_kit import next_event, serve, url
 from starpulse.contracts.adapters import Finding
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.level.insights import Insights, InsightStore, restore

@@ -13,10 +13,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import update
 
-from starpulse._internal.adapters.boards.seam import MoveWriter, Written
-from starpulse._internal.api.adapter_kit import serve, task, url
-from starpulse._internal.api.server import _adapter, _config, _no_writer, keep_event_log
-from starpulse._internal.api.writes import move_task, rerun_dag, run_dag, start_task
+from starpulse._internal.board.seam import MoveWriter, Written
+from starpulse._internal.kit.adapter_kit import serve, task, url
+from starpulse._internal.server.server import _adapter, _config, _no_writer, keep_event_log
+from starpulse._internal.server.writes import move_task, rerun_dag, run_dag, start_task
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import CommitKeys, Config, RunsInstance, load
@@ -524,7 +524,7 @@ def test_an_instance_is_read_by_the_adapter_module_its_type_names() -> None:
 
     module = _adapter(parser, RunsInstance("ci", "dagu", "http://ci.test"))
 
-    assert module.__name__ == "starpulse._internal.adapters.runs.dagu"
+    assert module.__name__ == "starpulse._internal.runs.dagu"
 
 
 def test_an_instance_type_that_is_not_a_runs_adapter_exits_naming_the_instance(

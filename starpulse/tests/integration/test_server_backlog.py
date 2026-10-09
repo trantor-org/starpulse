@@ -3,7 +3,7 @@
 import socket
 from http.server import BaseHTTPRequestHandler
 
-from starpulse._internal.api.server import StarPulseServer
+from starpulse._internal.server.server import StarPulseServer
 
 
 def test_fifty_pages_connecting_before_any_is_accepted_all_connect() -> None:

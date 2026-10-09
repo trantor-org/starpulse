@@ -11,8 +11,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.adapters.runs.ingest import ForwardIngest
-from starpulse._internal.api.forward import OPT_IN_FILE, Forwarder, OptIn
+from starpulse._internal.runs.ingest import ForwardIngest
+from starpulse._internal.hub.forward import OPT_IN_FILE, Forwarder, OptIn
 from starpulse.contracts import BoardTask
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.eventlog.level_metrics import level_metrics

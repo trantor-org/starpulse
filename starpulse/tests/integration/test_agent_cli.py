@@ -16,12 +16,12 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.adapters.boards import native
-from starpulse._internal.adapters.boards.seam import Written
-from starpulse._internal.api.adapter_kit import serve as _real_serve
-from starpulse._internal.api.adapter_kit import task
-from starpulse._internal.api.adapter_kit import url as _url
-from starpulse._internal.api.server import _no_writer
+from starpulse._internal.board import native
+from starpulse._internal.board.seam import Written
+from starpulse._internal.kit.adapter_kit import serve as _real_serve
+from starpulse._internal.kit.adapter_kit import task
+from starpulse._internal.kit.adapter_kit import url as _url
+from starpulse._internal.server.server import _no_writer
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import skill_install
 from starpulse.contracts.adapters import Move

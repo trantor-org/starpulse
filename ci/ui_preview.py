@@ -324,7 +324,7 @@ def _flow_view() -> Iterator[int]:  # pragma: no cover — process boundary
     port = _free_port()
     env = {k: v for k, v in os.environ.items() if k != "DATABASE_URI"}
     server = subprocess.Popen(
-        [sys.executable, "-m", "starpulse._internal.api.server", "--port", str(port), "--config", PREVIEW_CONFIG], env=env
+        [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(port), "--config", PREVIEW_CONFIG], env=env
     )
     try:
         _wait_ready(f"http://127.0.0.1:{port}/api/snapshot", 180)

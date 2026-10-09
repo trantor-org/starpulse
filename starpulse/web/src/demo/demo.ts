@@ -178,7 +178,7 @@ function columns(m: Machine, state: string): string[] {
 const ALLOWED = { allowed: true, reason: "", skill: "" };
 
 /**
- * The server a demo page has instead of starpulse._internal.api.server: it holds the snapshot, plays the `?demo` walk on it, keeps
+ * The server a demo page has instead of starpulse._internal.server.server: it holds the snapshot, plays the `?demo` walk on it, keeps
  * each Board card's lane history and move verdicts current, and answers /api requests from that, so every view and
  * every hover of a page with no server behaves as it does on a served one.
  */
@@ -398,7 +398,7 @@ export class DemoServer {
     return json({ task: id }, 201);
   }
 
-  /** `/api/forwarding` as starpulse._internal.api.server answers it: the moves the forwarder would send next, cut as it cuts them, and a PUT that flips the opt-in. */
+  /** `/api/forwarding` as starpulse._internal.server.server answers it: the moves the forwarder would send next, cut as it cuts them, and a PUT that flips the opt-in. */
   forwarding(method: string, raw: string): Response {
     if (this.forward === "none") return method === "PUT" ? json({ error: "this instance forwards nothing" }, 404) : json({ configured: false });
     if (method === "PUT") {
@@ -488,7 +488,7 @@ const demoRecord = (card: RawAgent, now: number, failing = false): TaskRecord =>
 export const embedded = (): DemoFixture | null => (globalThis as { __FLOW_FIXTURE__?: DemoFixture }).__FLOW_FIXTURE__ ?? null;
 
 let server: DemoServer | null = null;
-/** The page's one DemoServer when it embeds a fixture, else null: a served page asks starpulse._internal.api.server. */
+/** The page's one DemoServer when it embeds a fixture, else null: a served page asks starpulse._internal.server.server. */
 export const demoServer = (): DemoServer | null => {
   const fixture = embedded();
   const query = new URLSearchParams(globalThis.location?.search ?? "");
