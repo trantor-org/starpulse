@@ -40,6 +40,8 @@ beforeEach(async () => {
   stores.length = 0;
   history.replaceState(null, "", "/?view=constellation");
   host = document.body.appendChild(document.createElement("div"));
+  // the views load on demand: have this one loaded, so a mount that opens it draws it at once
+  await import("../features/dags/Dags");
   root = createRoot(host);
   await act(async () => root.render(<App />));
   act(() => stores[0].set({ dags: dagData.dags.map((d) => d.name), dagData, pools: dagData.pools }));
@@ -58,8 +60,8 @@ describe("the navigator's DAGs entry", () => {
     expect(dagsNode().querySelector(".n")!.textContent).toBe("2");
   });
 
-  it("opens the DAGs view when selected, and puts it in the address", () => {
-    act(() => dagsNode().click());
+  it("opens the DAGs view when selected, and puts it in the address", async () => {
+    await act(async () => dagsNode().click());
 
     expect(q("#dg")).not.toBeNull();
     expect(q("#dg header .title")!.textContent).toBe("DAGs");

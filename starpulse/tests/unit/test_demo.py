@@ -9,7 +9,18 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from starpulse.cli.demo import TITLES, _send_back, capture, elements, mockup, page, scrub, scrub_board, scrub_mockup
+from starpulse.cli.demo import (
+    STATIC,
+    TITLES,
+    _send_back,
+    capture,
+    elements,
+    mockup,
+    page,
+    scrub,
+    scrub_board,
+    scrub_mockup,
+)
 from starpulse.contracts.adapters import SCHEMAS, Dag, Pool
 from starpulse.contracts.api import Snapshot
 from starpulse.projections.ci import CI_MACHINES
@@ -543,6 +554,13 @@ def test_page_inlines_the_bundle_and_embeds_the_fixture(tmp_path: Path) -> None:
         "  <script type=\"module\">x('<\\/script>')</script>\n"
         "  <style>body{margin:0}</style>\n</head>"
     )
+
+
+def test_the_demo_inlines_the_one_script_build_the_page_config_writes_for_it() -> None:
+    config = (Path(__file__).parents[2] / "web" / "vite.config.ts").read_text()
+
+    assert f'"../static/{STATIC.name}"' in config
+    assert STATIC.parent.name == "static"
 
 
 def test_page_drops_the_early_stream_script_a_demo_has_no_server_for(tmp_path: Path) -> None:

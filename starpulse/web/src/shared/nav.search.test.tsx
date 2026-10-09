@@ -23,6 +23,8 @@ beforeEach(async () => {
   localStorage.clear();
   history.replaceState(null, "", "/?view=constellation");
   host = document.body.appendChild(document.createElement("div"));
+  // the views load on demand: have this one loaded, so a mount that opens it draws it at once
+  await import("../features/kanban/Kanban");
   root = createRoot(host);
   await act(async () => root.render(<App />));
 });

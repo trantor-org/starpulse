@@ -24,7 +24,8 @@ from pathlib import Path
 
 from starpulse.domain.transitions import board_machine
 
-STATIC = Path(__file__).parents[1] / "static"
+#: The page built as one script (`vite build --mode one-file`): a demo is one file, with no server to fetch a lazy chunk from.
+STATIC = Path(__file__).parents[1] / "static" / "one-file"
 #: Board labels that say what kind of work a task is and nothing about it.
 LABELS = re.compile(r"^(kind-[a-z]+|size-\d+|agent-resolvable|needs-human|adr-needed|bug|feature)$")
 #: The mockup data keys `scrub_mockup` knows how to clean; any other key is refused rather than passed through.

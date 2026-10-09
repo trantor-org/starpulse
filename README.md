@@ -989,9 +989,11 @@ A package test pins this list and each module's names, so adding or removing one
 ```sh
 git clone https://github.com/trantor-org/starpulse && cd starpulse
 uv sync
-pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page, built into starpulse/static
+pnpm --dir starpulse/web install && pnpm --dir starpulse/web build   # the page, built into starpulse/static; its Kanban, DAGs, Admin and Flow graph views load on demand
 uv run starpulse serve
 ```
+
+The build also writes `starpulse/static/one-file`, the same page as a single script, which `starpulse demo` inlines: a demo is one HTML file with no server to fetch a view's chunk from.
 
 `uv run pytest` runs the suite with Python alone. When Docker or Podman is available, it also runs the Postgres-backed
 integration cases; otherwise those cases are skipped. `uv sync --no-group hub` installs without the hub extras, as an IC
