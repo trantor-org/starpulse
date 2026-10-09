@@ -69,6 +69,29 @@ describe("Kept", () => {
     expect(visible.hasAttribute("inert")).toBe(false);
   });
 
+  it("reuses a paused compositor animation for imperative reveals", async () => {
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "animate");
+    const fade = { currentTime: null, pause: vi.fn() } as unknown as Animation;
+    const animate = vi.fn(() => fade);
+    Object.defineProperty(HTMLElement.prototype, "animate", { configurable: true, value: animate });
+    try {
+      await act(async () => root.render(<Kept name="a" on><span>a</span></Kept>));
+      expect(animate).toHaveBeenCalledOnce();
+      expect(fade.pause).toHaveBeenCalledOnce();
+      expect(fade.currentTime).toBe(1);
+      expect((host.querySelector("span") as HTMLElement).style.opacity).toBe("");
+
+      expect(revealKept(null)).toBe(true);
+      expect(fade.currentTime).toBe(0);
+      expect(revealKept("a")).toBe(true);
+      expect(fade.currentTime).toBe(1);
+      expect(animate).toHaveBeenCalledOnce();
+    } finally {
+      if (original) Object.defineProperty(HTMLElement.prototype, "animate", original);
+      else delete (HTMLElement.prototype as { animate?: unknown }).animate;
+    }
+  });
+
   it("keeps the view mounted with its state when it is left, and shows that state again on return", async () => {
     await show(true, <Counter label="a" />);
     await act(async () => button()!.click());
