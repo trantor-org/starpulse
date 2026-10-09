@@ -11,7 +11,8 @@ from starpulse.adapters.boards.native import board
 from starpulse.adapters.boards.seam import Board
 from starpulse.adapters.boards.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
 from starpulse.api.adapter_kit import BoardAdapterKit
-from starpulse.api.server import announce, assemble, move_task
+from starpulse.api.server import announce, assemble
+from starpulse.api.writes import move_task
 from starpulse.contracts.adapters import BoardTask
 from starpulse.domain.machine_definition import Writer
 from starpulse.projections.board_feed import BoardFeed

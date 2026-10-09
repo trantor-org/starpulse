@@ -22,7 +22,7 @@ import pytest
 pytest.importorskip("jwt", reason="the hub extras are not installed")
 
 from starpulse.adapters.runs.ingest import ForwardIngest, Ingest
-from starpulse.api import server
+from starpulse.api import server, writes
 from starpulse.api.adapter_kit import serve, url
 from starpulse.api.oidc import ENGINE, INSTANCE, PUBLIC, ROUTE_PREFIXES, ROUTES, SESSION_S, Gate
 from starpulse.cli import agent_cli
@@ -52,10 +52,10 @@ PROBE = "/api/engine-probe"
 
 
 def documented_routes() -> set[tuple[str, str]]:
-    """Every `METHOD /path` the server's docstring documents, with a path's `<name>` and `?query` parts cut off."""
+    """Every `METHOD /path` the server's two docstrings document, with a path's `<name>` and `?query` parts cut off."""
     found = set()
     pattern = r"\b((?:GET|POST|PUT|DELETE)(?: and DELETE)?)\s+(/[^\s,)]*(?:,\s*/[^\s,)]*)*)"
-    for methods, paths in re.findall(pattern, server.__doc__ or ""):
+    for methods, paths in re.findall(pattern, f"{server.__doc__}\n{writes.__doc__}"):
         for path in paths.split(","):
             path = re.sub(r"[<?\[].*", "", path.strip())
             found |= {(method, path) for method in methods.split(" and ")}

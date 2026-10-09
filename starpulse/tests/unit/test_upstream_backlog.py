@@ -21,7 +21,7 @@ from starpulse.adapters.boards.upstream_backlog import (
     upstream_keys,
 )
 from starpulse.api.adapter_kit import BoardAdapterKit
-from starpulse.api.server import move_task
+from starpulse.api.writes import move_task
 from starpulse.contracts.adapters import BoardTask, Move
 from starpulse.domain.machine_definition import Writer
 from starpulse.projections.board_feed import BoardFeed
