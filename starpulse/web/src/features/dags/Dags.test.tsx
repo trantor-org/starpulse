@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DagData } from "./dags";
 import { lastLine } from "./DagParts";
-import { DagLegend, Dags } from "./Dags";
+import { Dags } from "./Dags";
 import { rows } from "./dags";
 import css from "../../style.css?raw";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
@@ -214,14 +214,6 @@ describe("Run now", () => {
     await click(all("button.play.edge")[0]);
 
     expect(q(".dtoast").textContent).toContain("Not started: pool runs/main is full");
-  });
-});
-
-describe("the DAGs view's legend", () => {
-  it("names the dot states, the steps, an agent step, a Board tie and a run-safe row", () => {
-    const html = renderToStaticMarkup(<DagLegend />);
-
-    for (const word of ["running", "healthy", "last run failed", "never run", "steps", "agent step", "Board tie", "run-safe"]) expect(html).toContain(word);
   });
 });
 

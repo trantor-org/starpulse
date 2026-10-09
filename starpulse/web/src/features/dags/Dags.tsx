@@ -1,11 +1,11 @@
 // The DAGs view: a view of its own beside the Kanban, in the Kanban's frame. A catalog with a fold per domain and a row per DAG:
 // its state dot, its steps as a small constellation, its last run, its pool and its first Board tie, and on a run-safe row the
 // Kanban's ▶ edge strip. It reuses the Kanban's filter chips, menus and folds, and draws each DAG's steps as the Star Map's DAG bodies do (StepStar).
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { same } from "../../api/same";
 import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
 import { DagModal } from "./DagModal";
-import { lastLine, Orb, poolText, StepStar, Strip, TieChip, type LedgerGo } from "./DagParts";
+import { lastLine, Orb, poolText, Strip, TieChip, type LedgerGo } from "./DagParts";
 import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rows, short, ties, type DagData, type Phase, type Row, type Tie } from "./dags";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { useViewActive } from "../../shared/Kept";
@@ -192,20 +192,5 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
       {shown && <DagModal data={data} r={shown} now={now} starting={starting.has(shown.d.name)} refused={refusedRun} run={() => void run(shown)} close={() => setOpened(null)} ledger={ledger} />}
       {toast && <div className="dtoast" key={toast.n} role="status">{toast.text}</div>}
     </main>
-  );
-}
-
-const key = (c: string): CSSProperties => ({ color: c });
-
-/** The legend panel's lines for this view. */
-export function DagLegend() {
-  return (
-    <>
-      <span><Orb phase="running" />running</span><span><Orb phase="ok" />healthy</span><br />
-      <span><Orb phase="failed" />last run failed</span><span><Orb phase="idle" />never run</span><br />
-      <span><svg width="34" height="12" aria-hidden="true"><path d="M9 6H13M21 6H25" className="e" /><StepStar x={5} y={6} r={4} status="succeeded" /><StepStar x={17} y={6} r={4} status="running" /><StepStar x={29} y={6} r={4} status="not_started" /></svg> steps</span>
-      <span><svg width="14" height="14" aria-hidden="true"><StepStar x={7} y={7} r={4} status="succeeded" /><circle cx="7" cy="7" r="6.5" className="ring" /></svg> agent step</span><br />
-      <span><span style={key("var(--agent)")}>⇢</span> Board tie</span><span><span style={key("var(--ok)")}>▶</span> run-safe</span>
-    </>
   );
 }

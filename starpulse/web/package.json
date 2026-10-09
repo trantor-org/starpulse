@@ -5,7 +5,7 @@
   "description": "StarPulse: React HUD over a canvas renderer, built into ../static for starpulse.api.server",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && vite build --mode one-file",
     "gen:types": "json2ts -i ../api.schema.json -o src/api/types.gen.ts --bannerComment \"/* Generated from starpulse/api.schema.json by pnpm run gen:types; edit starpulse/contracts/api.py, not this file. */\"",
     "typecheck": "tsc6 --noEmit -p .",
     "lint": "eslint . --max-warnings 0",
