@@ -39,6 +39,7 @@ PUBLIC: dict[str, set[str]] = {
         "TaskCreator",
         "TaskEditor",
         "TaskReader",
+        "UpstreamBacklog",
         "Written",
         "load",
         "module_name",

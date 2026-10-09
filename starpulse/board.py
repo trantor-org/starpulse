@@ -1,4 +1,4 @@
-"""The board adapter seam; the implementation is in `starpulse.adapters.boards.seam`."""
+"""The board adapter seam; the implementation is in `starpulse.adapters.boards.seam` and `upstream_backlog`."""
 
 from starpulse.adapters.boards.seam import (
     DEFAULT_TYPE,
@@ -24,6 +24,7 @@ from starpulse.adapters.boards.seam import (
     load,
     module_name,
 )
+from starpulse.adapters.boards.upstream_backlog import UpstreamBacklog
 
 __all__ = [
     "DEFAULT_TYPE",
@@ -45,6 +46,7 @@ __all__ = [
     "TaskCreator",
     "TaskEditor",
     "TaskReader",
+    "UpstreamBacklog",
     "Written",
     "load",
     "module_name",
