@@ -14,6 +14,15 @@ describe("the page's fixed layout", () => {
     expect(rule("#c")).toContain("height: 100%");
   });
 
+  it("collapses the navigator and rail under a phone-width viewport, so the canvas keeps a positive width", () => {
+    const at = css.indexOf("@media (max-width: 900px) {");
+    expect(at).toBeGreaterThan(-1);
+    const phone = css.slice(at, css.indexOf("\n}", at));
+    expect(phone).toContain("--nav: 0px");
+    expect(phone).toContain("--rail: 0px");
+    expect(phone).toMatch(/#nav, #rail \{ display: none/);
+  });
+
   it("peeks a stack's edges uniformly: each the same step narrower and lower, each under the one above it", () => {
     const edge = css.slice(css.indexOf("#kb .stack > .edge {"), css.indexOf("}", css.indexOf("#kb .stack > .edge {")));
     expect(edge).toContain("left: calc((var(--i) + 1) * 6px)");
