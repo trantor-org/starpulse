@@ -50,7 +50,8 @@ from starpulse.adapters.boards.seam import (
 from starpulse.adapters.runs.ingest import ForwardIngest, Ingest
 from starpulse.api.forward import Forwarder
 from starpulse.api.server import assemble as _assemble
-from starpulse.api.server import move_task, request_handler
+from starpulse.api.server import request_handler
+from starpulse.api.writes import move_task
 from starpulse.contracts.adapters import (
     FINDING_TEXT_MAX,
     SCHEMAS,

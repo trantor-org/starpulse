@@ -8,7 +8,8 @@ import pytest
 
 from starpulse.adapters.boards.seam import Board, Written
 from starpulse.api.adapter_kit import task
-from starpulse.api.server import archive_task, assemble, edit_task, task_record
+from starpulse.api.server import assemble
+from starpulse.api.writes import archive_task, edit_task, task_record
 from starpulse.contracts.adapters import Move
 from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import load

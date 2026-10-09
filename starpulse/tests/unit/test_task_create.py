@@ -11,7 +11,8 @@ import pytest
 from starpulse.adapters.boards.seam import Board
 from starpulse.adapters.boards.upstream_backlog import UpstreamBacklog, _split
 from starpulse.api.adapter_kit import serve, url
-from starpulse.api.server import assemble, create_task
+from starpulse.api.server import assemble
+from starpulse.api.writes import create_task
 from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import load
 from starpulse.store.event_log import EventLog

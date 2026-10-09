@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from starpulse.api.adapter_kit import serve, url
-from starpulse.api.server import history_window
+from starpulse.api.writes import history_window
 from starpulse.projections.board_feed import BoardFeed
 from starpulse.projections.machine_tasks import MachineTasks
 from starpulse.settings.history_window import HistoryWindow

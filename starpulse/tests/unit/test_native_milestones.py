@@ -14,7 +14,7 @@ from pydantic import TypeAdapter
 from starpulse.adapters.boards import native
 from starpulse.adapters.boards.seam import Board
 from starpulse.api.adapter_kit import serve, url
-from starpulse.api.server import create_milestone
+from starpulse.api.writes import create_milestone
 from starpulse.cli import agent_cli as cli
 from starpulse.contracts.api import RESPONSES
 from starpulse.projections.board_feed import BoardFeed

@@ -15,16 +15,8 @@ from sqlalchemy import update
 
 from starpulse.adapters.boards.seam import MoveWriter, Written
 from starpulse.api.adapter_kit import serve, task, url
-from starpulse.api.server import (
-    _adapter,
-    _config,
-    _no_writer,
-    keep_event_log,
-    move_task,
-    rerun_dag,
-    run_dag,
-    start_task,
-)
+from starpulse.api.server import _adapter, _config, _no_writer, keep_event_log
+from starpulse.api.writes import move_task, rerun_dag, run_dag, start_task
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse.projections.board_feed import BoardFeed
 from starpulse.settings.config import CommitKeys, Config, RunsInstance, load

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from starpulse.api.adapter_kit import serve, url
-from starpulse.api.server import forwarding
+from starpulse.api.writes import forwarding
 from starpulse.tests.unit.test_forwarder import Rig
 
 
