@@ -225,6 +225,7 @@ from starpulse.adapters.runs.pull_requests import PullRequests
 from starpulse.adapters.runs.pull_store import PullSync
 from starpulse.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.api import forward
+from starpulse.api.compression import accepts_gzip, compressed, gzip_stream
 from starpulse.api.forward import Forwarder
 from starpulse.api.snapshot_cache import SnapshotCache
 from starpulse.contracts.adapters import Move, StartFailedError
@@ -1191,6 +1192,9 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
+        if (gzipped := compressed(body, self.headers.get("Accept-Encoding"))) is not None:
+            body = gzipped
+            self.send_header("Content-Encoding", "gzip")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1340,6 +1344,11 @@ def request_handler(
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")  # pragma: no mutate: names are case-insensitive
                 self.send_header("Cache-Control", "no-store")  # pragma: no mutate: names are case-insensitive
+                if accepts_gzip(self.headers.get("Accept-Encoding")):
+                    self.send_header("Content-Encoding", "gzip")  # pragma: no mutate: names are case-insensitive
+                    self._write = gzip_stream(self.wfile)
+                else:
+                    self._write = self._write_plain
                 self.end_headers()
                 self._frame("snapshot", served.body.decode())
                 for change in missed:
@@ -1348,8 +1357,7 @@ def request_handler(
                     try:
                         self._event(*changes.get(timeout=_PING_S))
                     except queue.Empty:
-                        self.wfile.write(b": ping\n\n")  # a closed page fails this write, which ends the stream
-                        self.wfile.flush()
+                        self._write(b": ping\n\n")  # a closed page fails this write, which ends the stream
             except OSError:
                 pass
             except ValidationError:
@@ -1362,7 +1370,10 @@ def request_handler(
             self._frame(name, event(name, data))
 
         def _frame(self, name: str, data: str) -> None:
-            self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode())
+            self._write(f"event: {name}\ndata: {data}\n\n".encode())
+
+        def _write_plain(self, data: bytes) -> None:
+            self.wfile.write(data)
             self.wfile.flush()
 
         def log_message(self, format: str, *args: Any) -> None:
