@@ -233,7 +233,7 @@ function MoveMenu({ items, disabled, move }: { items: { to: string; text: string
       <div className="mvmenu" role="menu" hidden={!menu.open}>
         {items.map((it, i) => (
           <div key={it.to} role="menuitem" className={`${it.allowed ? "ok" : "guard"}${i === menu.on ? " on" : ""}`} aria-disabled={disabled} title={it.allowed ? undefined : it.reason}
-            onMouseMove={() => setMenu({ open: true, on: i })} onClick={(e) => { e.stopPropagation(); if (!disabled) pick(i); }}>
+            onMouseMove={() => setMenu((m) => m.open && m.on === i ? m : { open: true, on: i })} onClick={(e) => { e.stopPropagation(); if (!disabled) pick(i); }}>
             <span className="g">{it.allowed ? "→" : "⊘"}</span>{it.text}
           </div>
         ))}

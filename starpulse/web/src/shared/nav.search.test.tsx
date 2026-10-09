@@ -128,3 +128,42 @@ describe("the navigator's search slot", () => {
     expect(host.querySelector("#nav")!.classList.contains("folded")).toBe(false);
   });
 });
+
+describe("the navigator search's Matches while they scroll", () => {
+  it("marks the list scrolling until the frame after it has rested 300 ms, so the rows it passes under a still pointer light nothing", () => {
+    // the Matches draw only over a loaded tree; a box of that class in the navigator scrolls the same
+    const matches = host.querySelector("#nav")!.appendChild(Object.assign(document.createElement("section"), { className: "away matches" }));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+    try {
+      const scrolling = () => matches.classList.contains("scrolling");
+      act(() => void matches.dispatchEvent(new Event("scroll")));
+      expect(scrolling()).toBe(true);
+      act(() => void vi.advanceTimersByTime(200));
+      act(() => void matches.dispatchEvent(new Event("scroll")));
+      act(() => void vi.advanceTimersByTime(200));
+      expect(scrolling()).toBe(true);
+      act(() => void vi.advanceTimersByTime(120));
+      expect(scrolling()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ends the rest at a frame, after that frame's scroll events, so a long task that outlasts the rest cannot end it mid-scroll", () => {
+    const matches = host.querySelector("#nav")!.appendChild(Object.assign(document.createElement("section"), { className: "away matches" }));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+    try {
+      const scrolling = () => matches.classList.contains("scrolling");
+      act(() => void matches.dispatchEvent(new Event("scroll")));
+      act(() => void vi.advanceTimersByTime(300));
+      expect(scrolling()).toBe(true);
+      act(() => void matches.dispatchEvent(new Event("scroll")));
+      act(() => void vi.advanceTimersByTime(20));
+      expect(scrolling()).toBe(true);
+      act(() => void vi.advanceTimersByTime(320));
+      expect(scrolling()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

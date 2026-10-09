@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 // @ts-expect-error Same Node-only import: jsdom swaps the global URL for one readFileSync refuses.
 import { URL as NodeURL } from "node:url";
-import { act, useState } from "react";
+import { act, Profiler, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -677,5 +677,28 @@ describe("opening the task view stays off the layout engine", () => {
 
     expect(scrim).toContain("background:");
     expect(scrim).not.toContain("backdrop-filter");
+  });
+});
+
+describe("the Move to menu under a moving pointer", () => {
+  it("commits nothing while the pointer moves within the row already lit, and lights the row it moves onto", () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.body.appendChild(document.createElement("div")), root = createRoot(host);
+    let commits = 0;
+    act(() => root.render(<Profiler id="tv" onRender={() => commits++}><TaskView {...props()} /></Profiler>));
+    try {
+      act(() => host.querySelector<HTMLButtonElement>('.mv button[aria-haspopup="menu"]')!.click());
+      const rows = [...host.querySelectorAll<HTMLElement>('.mvmenu [role="menuitem"]')];
+      const move = (row: HTMLElement) => act(() => void row.dispatchEvent(new MouseEvent("mousemove", { bubbles: true })));
+      move(rows[0]);
+      const before = commits;
+      for (let i = 0; i < 5; i++) move(rows[0]);
+      expect(commits).toBe(before);
+      move(rows[1]);
+      expect(rows[1].classList.contains("on")).toBe(true);
+    } finally {
+      act(() => root.unmount());
+      host.remove();
+    }
   });
 });

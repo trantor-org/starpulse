@@ -42,7 +42,9 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 
 /* The navigator is always open, styled as the right rail. */
 #nav { left: 0; width: var(--nav); border-right: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); }
-#nav .matches { flex: 1; min-height: 0; }
+#nav .matches { flex: 1; min-height: 0; scrollbar-gutter: stable; }
+/* matches scrolling under a still pointer would each light their target on the canvas */
+#nav .matches.scrolling .hit { pointer-events: none; }
 #nav > section { width: calc(var(--nav) - 36px); }
 #nav .views { margin: 0 -18px; width: auto; }
 #nav .views h3 { padding-left: 18px; }

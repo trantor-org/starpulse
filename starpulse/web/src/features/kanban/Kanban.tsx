@@ -24,6 +24,7 @@ import {
 import { MilestoneOutline } from "./MilestoneOutline";
 import { NewTaskAction } from "./NewTask";
 import { SearchClear } from "../../shared/SearchClear";
+import { useScrollRest } from "../../shared/scrollRest";
 import { TaskView } from "./TaskView";
 import { PRE_DRAW_REST_MS, READ_AHEAD_MS, RecordCache, fetchRecord, type TaskRecord } from "./taskView";
 import type { Capabilities, Pull } from "../../api";
@@ -464,8 +465,6 @@ function ModalHost({ store, cards, draw }: { store: OpenTask; cards: KanbanTask[
 
 /** Pixels a press travels before it lifts the card instead of opening it. */
 const LIFT_PX = 5;
-/** Milliseconds a column rests after its last scroll before its cards take the pointer again. */
-const SCROLL_REST_MS = 300;
 
 /**
  * The Kanban view. `spot` is the task a Recent line is hovered for: its card lights as a hovered card does and its column scrolls to it,
@@ -531,21 +530,8 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     const timer = setInterval(tick, 30_000);
     return () => { clearTimeout(catchUp); clearInterval(timer); };
   }, [active]);
-  // a scrolling column marks itself on the element, not in state, so the scroll draws nothing
-  useEffect(() => {
-    const el = columns.current;
-    if (!el) return;
-    const rests = new Map<Element, ReturnType<typeof setTimeout>>();
-    const onScroll = (e: Event) => {
-      const body = e.target as Element;
-      if (!body.classList?.contains("body")) return;
-      body.classList.add("scrolling");
-      clearTimeout(rests.get(body));
-      rests.set(body, setTimeout(() => { body.classList.remove("scrolling"); rests.delete(body); }, SCROLL_REST_MS));
-    };
-    el.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    return () => { el.removeEventListener("scroll", onScroll, { capture: true }); rests.forEach(clearTimeout); };
-  }, []);
+  // a scrolling column stands its cards aside, so those passing under a still pointer neither light, read nor draw ahead
+  useScrollRest(columns, ".body");
   // what the operator chose is kept for the next visit; a deep link's filters are the first thing kept
   useEffect(() => savePrefs(storage, prefs), [storage, prefs]);
   // once the view has taken a deep link's filters they leave the address, or a reload would undo what was changed since

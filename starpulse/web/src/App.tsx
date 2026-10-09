@@ -15,6 +15,7 @@ import { DagLegend } from "./features/dags/DagLegend";
 import { FeedLines, linesThatFit, Queues } from "./features/fanout/Fanout";
 import { Kept } from "./shared/Kept";
 import { SearchClear } from "./shared/SearchClear";
+import { useScrollRest } from "./shared/scrollRest";
 import { useBoardDrawn } from "./shared/boardDrawn";
 import { Leaderboard } from "./features/kanban/Leaderboard";
 import { MoveStore, postMove } from "./features/kanban/move";
@@ -147,7 +148,10 @@ export function App() {
 
 /** The navigator's frame is always there (the canvas starts at its edge); `shell` fills it. */
 function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof NavigatorBody>[0]) {
-  return <aside id="nav">{shell && <NavigatorBody {...props} />}</aside>;
+  const nav = useRef<HTMLElement>(null);
+  // a scrolling Matches list stands its rows aside, so those passing under a still pointer light nothing on the canvas
+  useScrollRest(nav, ".matches");
+  return <aside id="nav" ref={nav}>{shell && <NavigatorBody {...props} />}</aside>;
 }
 
 function NavigatorBody({ hud, view, slot, outlineSlot, choose, hasLevel, open, spot, selectTask }: {
