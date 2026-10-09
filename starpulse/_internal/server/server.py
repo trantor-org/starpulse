@@ -47,7 +47,7 @@ GET /api/merges[?before=T][&limit=N]
                    skips a merge. A `before` that is not a finite number, or a `limit` outside 1-100, is 400
 GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_contains=TEXT]
                    {pulls}: the pull requests the PR store read from GitHub (one query per repository a minute, the
-                   open ones every time, a merged or closed one until it is final), those matching every filter
+                   open ones every time, a merged or closed one until it is final, a merged one also until it has its mergeSha), those matching every filter
                    given, by repository then number, each {repo, number, state (OPEN, MERGED, CLOSED), isDraft,
                    mergeable, baseRefName, headRefOid, body, checks (pass, failing, pending, none: the required
                    checks at the head commit), requiredChecks [{name, result}], threads (unresolved), updatedAt,

@@ -85,7 +85,7 @@ class Github:
             "updatedAt": pull["updated"],
             "createdAt": OLD,
             "mergedAt": pull["merged_at"],
-            "mergeCommit": {"oid": f"{number:040x}"[::-1]} if pull["merged_at"] else None,
+            "mergeCommit": {"oid": f"{number:040x}"[::-1]} if pull["state"] == "MERGED" else None,
             "files": {"nodes": [{"path": path} for path in pull["files"]]},
             "headRef": None if pull["behind"] is None else {"compare": {"aheadBy": pull["behind"]}},
             "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": contexts}}}}]},
@@ -214,6 +214,34 @@ def test_a_final_pr_the_store_never_saw_is_read_only_when_updated_since_the_curs
     refresh_repository(REPO, store, 160.0, github)
 
     assert [pull["number"] for pull in store.find()] == [1, 3]
+
+
+def test_a_merged_row_saved_without_its_merge_sha_is_read_again_until_it_has_one(store: PullStore) -> None:
+    github = Github()
+    github.add(1, state="MERGED", merged_at=OLD)
+    github.add(2, state="MERGED", merged_at=OLD)
+    store.save(
+        [
+            {**_stored(REPO, 1), "state": "MERGED"},  # saved before the store read the merge commit
+            {**_stored(REPO, 2), "state": "MERGED", "mergedAt": OLD, "mergeSha": "a" * 40},
+        ]
+    )
+
+    refresh_repository(REPO, store, 100.0, github)
+
+    assert {pull["number"]: (pull["mergedAt"], pull["mergeSha"]) for pull in store.find()} == {
+        1: (OLD, f"{1:040x}"[::-1]),
+        2: (OLD, "a" * 40),
+    }
+    (query,) = github.queries
+    assert "pullRequest(number: 1)" in query
+    assert "pullRequest(number: 2)" not in query
+    github.queries.clear()
+
+    refresh_repository(REPO, store, 160.0, github)
+
+    (query,) = github.queries
+    assert "pullRequest(number: 1)" not in query
 
 
 def test_a_required_check_turning_red_with_updated_at_unchanged_reaches_the_store_on_the_next_refresh(

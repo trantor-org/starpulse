@@ -104,7 +104,7 @@ insights = Table(
 )
 
 #: Each pull request the PR store read from GitHub, one row per (repository, number), replaced by each read of an open
-#: one and never read again once `state` is MERGED or CLOSED. `checks` is the required-check rollup (pass, failing,
+#: one and never read again once `state` is MERGED or CLOSED (a MERGED row without `merge_sha` is read until it has one). `checks` is the required-check rollup (pass, failing,
 #: pending, none), `required` each required check as {name, result}, `updated_at` GitHub's own ISO 8601 UTC text
 #: (equal-width, so it sorts as time), `fetched_at` the epoch second this row was read and `detail` what the Board's
 #: per-task pull request state reads beside the served fields (merge commit and time, commits behind main, changed
