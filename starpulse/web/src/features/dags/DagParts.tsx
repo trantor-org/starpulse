@@ -17,8 +17,8 @@ export function StepStar({ x, y, r, status }: { x: number; y: number; r: number;
   );
 }
 
-/** A dependency as the Star Map draws one inside a DAG body: a dashed curve shaded from one step's colour to the next, streaming toward the step that waits;
- *  brighter and heavier while either end runs. */
+/** A dependency as the Star Map draws one inside a DAG body: a dashed curve shaded from one step's colour to the next, streaming toward the step that waits
+ *  in the row the pointer, keyboard or a Recent line rests on and in the open DAG's chart (style.css); brighter and heavier while either end runs. */
 function Link({ id, a, b, r, from, to }: { id: string; a: { x: number; y: number }; b: { x: number; y: number }; r: number; from: string; to: string }) {
   const hot = from === "running" || to === "running", dx = (b.x - a.x) / 2, [x0, x1] = [a.x + r, b.x - r];
   return (

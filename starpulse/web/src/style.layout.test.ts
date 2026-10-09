@@ -46,3 +46,12 @@ describe("the DAGs view at a larger text size", () => {
     expect(css).toMatch(/\.orb \{[^}]*width: calc\(11px \* var\(--fs\)\); height: calc\(11px \* var\(--fs\)\)/);
   });
 });
+
+describe("the DAGs view at rest", () => {
+  it("streams links only in the row the pointer, keyboard or a Recent line rests on and in the open DAG's chart: stroke-dashoffset repaints every frame", () => {
+    const streams = css.split("\n").filter((l) => l.includes("animation: dag-stream"));
+    expect(streams).toEqual([
+      "@media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.trow:is(:hover, .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }",
+    ]);
+  });
+});
