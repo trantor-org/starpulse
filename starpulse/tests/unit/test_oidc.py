@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("jwt", reason="the hub extras are not installed")
 
-from starpulse._internal.api.oidc import Gate, build
+from starpulse._internal.hub.oidc import Gate, build
 from starpulse._internal.config.config import OidcSettings
 
 SETTINGS = OidcSettings(

@@ -11,10 +11,10 @@ from typing import Any
 import pytest
 from pydantic import TypeAdapter
 
-from starpulse._internal.adapters.boards import native
-from starpulse._internal.adapters.boards.seam import Board
-from starpulse._internal.api.adapter_kit import serve, url
-from starpulse._internal.api.writes import create_milestone
+from starpulse._internal.board import native
+from starpulse._internal.board.seam import Board
+from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.writes import create_milestone
 from starpulse._internal.cli import agent_cli as cli
 from starpulse.contracts.api import RESPONSES
 from starpulse._internal.feed.board_feed import BoardFeed

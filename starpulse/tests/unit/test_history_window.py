@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.api.adapter_kit import serve, url
-from starpulse._internal.api.writes import history_window
+from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.server.writes import history_window
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.config.history_window import HistoryWindow

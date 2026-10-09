@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.adapters.boards.seam import Board, Written
+from starpulse._internal.board.seam import Board, Written
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 
 #: Each `(settings, base)` the view built this board from.

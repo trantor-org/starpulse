@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.api.adapter_kit import serve, url
+from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import CommitKeys
 

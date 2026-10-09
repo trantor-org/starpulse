@@ -19,7 +19,7 @@ from collections.abc import Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse._internal.api.server import StarPulseServer, assemble, request_handler
+from starpulse._internal.server.server import StarPulseServer, assemble, request_handler
 from starpulse.contracts.adapters import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import load

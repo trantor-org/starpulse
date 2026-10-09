@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse._internal.adapters.boards.native import board
-from starpulse._internal.adapters.boards.seam import Board
-from starpulse._internal.adapters.boards.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
-from starpulse._internal.api.adapter_kit import BoardAdapterKit
-from starpulse._internal.api.server import announce, assemble
-from starpulse._internal.api.writes import move_task
+from starpulse._internal.board.native import board
+from starpulse._internal.board.seam import Board
+from starpulse._internal.board.upstream_backlog import UpstreamBacklog, board_moves, upstream_keys
+from starpulse._internal.kit.adapter_kit import BoardAdapterKit
+from starpulse._internal.server.server import announce, assemble
+from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask
 from starpulse._internal.machines.machine_definition import Writer
 from starpulse._internal.feed.board_feed import BoardFeed

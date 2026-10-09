@@ -76,18 +76,28 @@ starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*
 root_package = "starpulse"
 
 [[tool.importlinter.contracts]]
-name = "api, cli, adapters, the derived features, the event log and the core features, and contracts are layered"
+name = "entrypoints, producers, derived features and the core are layered, and siblings in a tier are independent"
 type = "layers"
-# The producers and entrypoints are still role packages (`adapters`, `api`, `cli`) until they are regrouped into
-# features; `api` sits over `cli` because the server serves the doctor's checks.
+# Four tiers, each importing only the tiers below it and `contracts`. Features on one `|` line are independent; a line
+# of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): `kit` drives a `server` and the
+# hub forwarder, `server` serves the hub gate and the doctor's checks from `cli`, `pulls` reads GitHub Actions runs
+# from `runs`, `level` restores insights from the board feed, and the history store in `eventlog` reads `config` and
+# `machines`.
 layers = [
-    "starpulse._internal.api",
-    "starpulse._internal.cli",
-    "starpulse._internal.adapters",
+    # entrypoints
+    "starpulse._internal.kit",
+    "starpulse._internal.server",
+    "starpulse._internal.cli | starpulse._internal.hub",
+    # producers
+    "starpulse._internal.pulls",
+    "starpulse._internal.board | starpulse._internal.runs | starpulse._internal.harnesses",
+    # derived
     "starpulse._internal.level",
     "starpulse._internal.feed | starpulse._internal.ci",
+    # core
     "starpulse._internal.eventlog",
-    "starpulse._internal.config | starpulse._internal.machines | starpulse.contracts",
+    "starpulse._internal.config | starpulse._internal.machines",
+    "starpulse.contracts",
 ]
 
 [tool.pytest.ini_options]

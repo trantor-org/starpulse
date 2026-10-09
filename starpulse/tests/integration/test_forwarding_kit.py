@@ -15,10 +15,10 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.adapters.runs.ingest import ForwardIngest
-from starpulse._internal.api import forward
-from starpulse._internal.api.adapter_kit import serve, url
-from starpulse._internal.api.forward import OPT_IN_FILE, Forwarder, OptIn, post
+from starpulse._internal.runs.ingest import ForwardIngest
+from starpulse._internal.hub import forward
+from starpulse._internal.kit.adapter_kit import serve, url
+from starpulse._internal.hub.forward import OPT_IN_FILE, Forwarder, OptIn, post
 from starpulse.contracts import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import Forward

@@ -1,6 +1,6 @@
 """What StarPulse draws, held in memory and kept current by the adapters.
 
-The board adapter (`starpulse._internal.adapters.boards.seam`) places each Board task here, the server keeps each task's latest state,
+The board adapter (`starpulse._internal.board.seam`) places each Board task here, the server keeps each task's latest state,
 and every connected page gets one snapshot and then a delta per change. Each other machine's tasks arrive from
 the event log (`machine_tasks`), and each runs adapter instance's workflows from its adapter module.
 """

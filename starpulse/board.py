@@ -1,6 +1,6 @@
-"""The board adapter seam; the implementation is in `starpulse._internal.adapters.boards.seam` and `upstream_backlog`."""
+"""The board adapter seam; the implementation is in `starpulse._internal.board.seam` and `upstream_backlog`."""
 
-from starpulse._internal.adapters.boards.seam import (
+from starpulse._internal.board.seam import (
     DEFAULT_TYPE,
     AssigneeWriter,
     Board,
@@ -24,7 +24,7 @@ from starpulse._internal.adapters.boards.seam import (
     load,
     module_name,
 )
-from starpulse._internal.adapters.boards.upstream_backlog import UpstreamBacklog
+from starpulse._internal.board.upstream_backlog import UpstreamBacklog
 
 __all__ = [
     "DEFAULT_TYPE",

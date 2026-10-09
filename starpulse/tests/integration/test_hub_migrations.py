@@ -15,7 +15,7 @@ from alembic.config import Config  # noqa: E402
 from alembic.runtime.migration import MigrationContext  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
 
-from starpulse._internal.api import hub  # noqa: E402
+from starpulse._internal.hub import hub  # noqa: E402
 from starpulse._internal.eventlog import history  # noqa: E402, F401 - history declares its tables on the shared metadata
 from starpulse._internal.eventlog.tables import metadata  # noqa: E402
 

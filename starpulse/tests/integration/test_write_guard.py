@@ -11,11 +11,11 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.adapters.boards.seam import Written
-from starpulse._internal.api import server as server_module
-from starpulse._internal.api.adapter_kit import serve as _serve
-from starpulse._internal.api.adapter_kit import task
-from starpulse._internal.api.adapter_kit import url as _url
+from starpulse._internal.board.seam import Written
+from starpulse._internal.server import server as server_module
+from starpulse._internal.kit.adapter_kit import serve as _serve
+from starpulse._internal.kit.adapter_kit import task
+from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse.contracts.adapters import Move
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.history_window import HistoryWindow

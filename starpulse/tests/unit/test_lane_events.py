@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.adapters.runs.ingest import ForwardIngest
+from starpulse._internal.runs.ingest import ForwardIngest
 from starpulse.contracts import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog import lane_events

@@ -4,7 +4,7 @@
     .venv/bin/python -m starpulse._internal.cli.demo --mockup <the design mockup directory> --out .tmp/mockup-demo.html
     .venv/bin/python -m starpulse._internal.cli.demo --elements design/elements --out .tmp/element-sheet.html
 
-It reads a running starpulse._internal.api.server's snapshot for its structure (the
+It reads a running starpulse._internal.server.server's snapshot for its structure (the
 machines, the DAGs and their steps) and replaces every task with a synthetic
 one in the same state, so no task text, PR or address leaves. The
 built page in `static/` is inlined around the result, which the page reads as

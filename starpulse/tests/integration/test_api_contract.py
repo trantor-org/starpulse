@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from pydantic import TypeAdapter
 
-from starpulse._internal.api.adapter_kit import serve, task, url
+from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.contracts.api import RESPONSES
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.feed.board_feed import BoardFeed

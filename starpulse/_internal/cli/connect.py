@@ -25,7 +25,7 @@ from typing import Any
 
 import tomllib
 
-from starpulse._internal.adapters.boards import jira, native, upstream_backlog
+from starpulse._internal.board import jira, native, upstream_backlog
 from starpulse.contracts.adapters import BoardTask
 from starpulse._internal.config.config import ConfigError, load
 

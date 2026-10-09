@@ -1,7 +1,7 @@
 """The static shape StarPulse draws: a lifecycle machine as the page reads it, and the workflow declarations.
 
 A machine's tasks come from `machine_tasks` (the `machine:events` stream) and the Board's from the configured
-board adapter (`starpulse._internal.adapters.boards.seam`); this module holds the shape of each machine.
+board adapter (`starpulse._internal.board.seam`); this module holds the shape of each machine.
 """
 
 from __future__ import annotations
