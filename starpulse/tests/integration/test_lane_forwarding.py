@@ -314,3 +314,20 @@ def test_a_reconcile_moves_a_held_completed_task_the_history_keeps_in_done(tmp_p
 
     changes = [(task, old, new, at) for task, at, old, new in site.ic_store.lane_rows() if old is not None]
     assert changes == [("T-1", "done", "completed", T0 + H)]
+
+
+def test_a_completed_task_stamped_before_its_first_move_never_opens_its_trajectory_with_completed(
+    tmp_path: Path,
+) -> None:
+    site = Site(tmp_path, SWEPT)
+    site.feed.date_lanes(site.ic_store.lane_path)
+    site.move("T-1", "to_do", at=8 * H)
+    site.move("T-1", "in_progress", at=9 * H)
+    site.move("T-1", "done", at=10 * H)
+    site.clock.now = T0 + 11 * H
+    site.feed.put(_completed("T-1", at=T0 + 3 * H))  # a file stamped in a zone 7 hours behind reads before the moves
+
+    changes = [(old, new) for _, _, old, new in site.ic_store.lane_rows()]
+    assert changes == [(None, "to_do"), ("to_do", "in_progress"), ("in_progress", "done"), ("done", "completed")]
+    (run,) = site.ic_store.level_runs("board")
+    assert [state for _, state in run.steps] == ["to_do", "in_progress", "done", "completed"]
