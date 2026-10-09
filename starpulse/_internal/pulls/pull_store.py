@@ -66,7 +66,8 @@ def _result(check: dict) -> str:
 
 def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
     """The served record of one `pullRequest` node, its required checks reduced to a rollup."""
-    rollup = node["commits"]["nodes"][-1]["commit"]["statusCheckRollup"] or {"contexts": {"nodes": []}}
+    head = next(iter(node["commits"]["nodes"]), None)  # a PR can hold no commits: record it with an empty rollup
+    rollup = (head and head["commit"]["statusCheckRollup"]) or {"contexts": {"nodes": []}}
     required = [
         {"name": check.get("name") or check["context"], "result": _result(check)}
         for check in rollup["contexts"]["nodes"]
@@ -145,12 +146,14 @@ class PullSync:
         return sorted(linked | pinned | set(self._store.repos()))
 
     def refresh(self) -> None:
-        """Read every tracked repository once; one that cannot be read is logged and keeps its records."""
+        """Read every tracked repository once; one that cannot be read or parsed is logged and keeps its records."""
         for repo in self.tracked():
             try:
                 refresh_repository(repo, self._store, self._clock(), self._graphql)
             except GhUnavailableError as exc:
                 logger.warning("pull requests: %s", exc)
+            except Exception:  # one repository's bad answer must not end the refresh thread
+                logger.exception("pull requests: %s failed to refresh", repo)
 
     def run_forever(self, interval_s: float = REFRESH_S) -> None:  # pragma: no mutate block — timer loop
         """Refresh once the Board replay is done, so the first read sees every task, then every `interval_s`."""
