@@ -3822,8 +3822,28 @@
         "isDraft": {
           "type": "boolean"
         },
+        "mergeSha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "mergeable": {
           "type": "string"
+        },
+        "mergedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "number": {
           "type": "integer"
@@ -3865,6 +3885,8 @@
         "requiredChecks",
         "threads",
         "updatedAt",
+        "mergedAt",
+        "mergeSha",
         "fetchedAt"
       ],
       "title": "PullRecord",
