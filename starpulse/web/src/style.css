@@ -776,10 +776,11 @@ body.dags canvas, body.dags #tip, body.dags #panel { visibility: hidden; }
 #nav .dg-glyph circle { fill: currentColor; stroke: none; }
 .orb { display: inline-block; flex: none; width: calc(11px * var(--fs)); height: calc(11px * var(--fs)); vertical-align: middle; }
 .orb svg { display: block; width: 100%; height: 100%; overflow: visible; }
-/* a dependency streams toward the step that waits, as the Star Map's DAG links do */
-svg.dstrip path.link { animation: dag-stream .42s linear infinite; }
+/* a dependency streams toward the step that waits, as the Star Map's DAG links do, in the row the pointer, the keyboard or a
+   Recent line rests on and in the open DAG's chart only: stroke-dashoffset repaints on the main thread every frame, and a
+   whole catalog streaming kept an idle page's main thread busy 40% of the time */
+@media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.trow:is(:hover, .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
 @keyframes dag-stream { to { stroke-dashoffset: -6; } }
-@media (prefers-reduced-motion: reduce) { svg.dstrip path.link { animation: none; } }
 #dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
 .census { display: inline-flex; align-items: center; gap: 10px; margin-left: 8px; font-size: calc(11px * var(--fs)); font-weight: 400; letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
 .census > span { display: inline-flex; align-items: center; gap: 5px; }
