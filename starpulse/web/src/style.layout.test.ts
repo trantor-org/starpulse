@@ -29,6 +29,14 @@ describe("switching views under load", () => {
     expect(css).toMatch(/#kb \.card \{[^}]*content-visibility: auto; contain-intrinsic-size: auto \d+px/);
     expect(css).toMatch(/#dg \.trow \{[^}]*content-visibility: auto; contain-intrinsic-size: auto \d+px/);
   });
+
+  it("keeps a Kanban column's width when its scrollbar comes and goes, as an unstacked stack overflows it", () => {
+    expect(block("#kb .col .body")).toContain("scrollbar-gutter: stable");
+  });
+
+  it("takes a scrolling column's cards out of hit-testing, so cards passing under a still pointer do not hover", () => {
+    expect(block("#kb .col .body.scrolling .card")).toContain("pointer-events: none");
+  });
 });
 
 describe("the start question", () => {
