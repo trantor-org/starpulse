@@ -23,6 +23,11 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
+try:  # libyaml's loader: the same safe schema and errors, a tenth of the pure-Python parse time over a whole board
+    from yaml import CSafeLoader as _FrontmatterLoader
+except ImportError:
+    from yaml import SafeLoader as _FrontmatterLoader
+
 from starpulse.adapters.boards.seam import Board, MoveWriter, Written
 from starpulse.contracts.adapters import BoardTask, Move, TaskKeys
 from starpulse.domain.machine_definition import Writer, load_machine
@@ -155,7 +160,7 @@ def _split(text: str) -> tuple[Any, str]:
     if not text.startswith("---\n") or end == -1:
         return None, ""
     try:
-        return yaml.safe_load(text[4:end]), text[end + 4 :]
+        return yaml.load(text[4:end], Loader=_FrontmatterLoader), text[end + 4 :]
     except yaml.YAMLError:
         return None, ""
 
