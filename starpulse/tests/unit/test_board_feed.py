@@ -929,6 +929,35 @@ def test_the_snapshot_strip_counts_the_whole_day_of_merges_not_just_the_loaded_p
     assert len(strip["buckets"]) == 96
 
 
+def _ledgers_delta(deltas) -> dict:
+    return dict(deltas.get_nowait() for _ in range(deltas.qsize()))["ledgers"]
+
+
+def test_a_ledgers_delta_carries_the_one_row_a_run_changed_and_not_the_rows_it_left_alone() -> None:
+    feed = ledger_feed()
+    feed.set_pulls(dict(_merged(n, n) for n in range(5)))
+    _, deltas = feed.subscribe()
+
+    feed.set_dags("ci", [_dag("apply", {**APPLIED, "params": {"AFTER": f"{2:040x}"}})], None)
+
+    delta = _ledgers_delta(deltas)
+    assert [row["tasks"] for row in delta["ledgers"]["MERGED"]] == [["TASK-2"]]
+    assert delta["gone"] == {}
+
+
+def test_a_ledgers_delta_names_the_new_row_and_the_key_of_the_row_that_left() -> None:
+    feed = ledger_feed()
+    feed.set_pulls(dict(_merged(n, n) for n in range(5)))
+    (oldest,) = (row for row in feed.snapshot()["ledgers"]["MERGED"] if row["tasks"] == ["TASK-0"])
+    _, deltas = feed.subscribe()
+
+    feed.set_pulls(dict(_merged(n, n) for n in range(1, 6)))
+
+    delta = _ledgers_delta(deltas)
+    assert [row["tasks"] for row in delta["ledgers"]["MERGED"]] == [["TASK-5"]]
+    assert delta["gone"] == {"MERGED": [oldest["key"]]}
+
+
 def test_a_pinned_merge_older_than_the_loaded_page_still_rides_the_snapshot_and_the_ledgers_event() -> None:
     feed = ledger_feed()
     feed.set_pulls(dict(_merged(n, n) for n in range(25)))

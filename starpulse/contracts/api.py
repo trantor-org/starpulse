@@ -457,7 +457,11 @@ class ClaimDelta(_Api):
 
 
 class LedgersDelta(_Api):
+    """The Ledger since the last event: per event the rows that are new or differ (newest first), and the keys of rows
+    that left the page or the window; every other row stands. `mergeStrip` and `mergePins` are whole."""
+
     ledgers: dict[str, list[LedgerRow]]
+    gone: dict[str, list[str]]
     mergeStrip: MergeStrip | None
     mergePins: list[LedgerRow]
 

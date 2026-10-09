@@ -2385,7 +2385,17 @@
     },
     "LedgersDelta": {
       "additionalProperties": false,
+      "description": "The Ledger since the last event: per event the rows that are new or differ (newest first), and the keys of rows\nthat left the page or the window; every other row stands. `mergeStrip` and `mergePins` are whole.",
       "properties": {
+        "gone": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
         "ledgers": {
           "additionalProperties": {
             "items": {
@@ -2414,6 +2424,7 @@
       },
       "required": [
         "ledgers",
+        "gone",
         "mergeStrip",
         "mergePins"
       ],
