@@ -99,3 +99,19 @@ def test_a_filter_that_cannot_match_is_refused(server: ThreadingHTTPServer, quer
 
     assert status == 400
     assert "error" in body
+
+
+def test_a_repeated_read_is_answered_without_asking_the_store_again_until_it_changes(tmp_path: Path) -> None:
+    store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
+    store.save([_pull("acme/widgets", 1, "OPEN", "Session: aaa-111", 100.0)])
+    asked = []
+    find = store.find
+    store.find = lambda *a, **k: asked.append(a) or find(*a, **k)  # type: ignore[method-assign]
+    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=store) as server:
+        for _ in range(3):
+            _get(server, "")
+        store.save([_pull("acme/widgets", 2, "OPEN", "Session: bbb-222", 101.0)])
+        numbers = _numbers(server, "")
+
+    assert len(asked) == 2
+    assert numbers == [("acme/widgets", 1), ("acme/widgets", 2)]

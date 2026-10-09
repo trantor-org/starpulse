@@ -149,6 +149,7 @@ import signal
 import sys
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Collection, Mapping
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -179,9 +180,9 @@ from starpulse._internal.adapters.runs.pull_requests import PullRequests
 from starpulse._internal.adapters.runs.pull_store import PullSync
 from starpulse._internal.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.api import forward
-from starpulse._internal.api.compression import LEVEL, accepts_gzip, compressed, gzip_stream
+from starpulse._internal.api.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.api.forward import Forwarder
-from starpulse._internal.feed.snapshot_cache import SnapshotCache
+from starpulse._internal.feed.snapshot_cache import KEPT, SnapshotCache
 from starpulse._internal.api.writes import (
     OPERATOR,
     archive_doc,
@@ -669,11 +670,17 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         status, body = forwarding(self.client_address[0], method, raw, self.forwarding)
         return encode("forwarding", body), status
 
-    def _send(self, body: bytes, status: int = 200) -> None:
+    def _send(self, body: bytes | Encoded, status: int = 200, cache: str = "no-store") -> None:
+        """`body` as JSON; an `Encoded` one is sent as the gzip it already holds to a page that accepts gzip."""
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Cache-Control", "no-store")
-        if (gzipped := compressed(body, self.headers.get("Accept-Encoding"))) is not None:
+        self.send_header("Cache-Control", cache)
+        accepted = self.headers.get("Accept-Encoding")
+        if isinstance(body, Encoded):
+            body, gzipped = body.body, body.gzipped if accepts_gzip(accepted) else None
+        else:
+            gzipped = compressed(body, accepted)
+        if gzipped is not None:
             body = gzipped
             self.send_header("Content-Encoding", "gzip")
         self.end_headers()
@@ -734,6 +741,8 @@ def request_handler(
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
     snapshots = SnapshotCache(feed)
+    pull_reads = _PullReads(pulls)
+    snapshot_bodies = _SnapshotBodies()
     event_text = _EventText()
     flows = feed.machines.keys()
 
@@ -766,7 +775,8 @@ def request_handler(
             elif url.path.startswith(_SNAPSHOT_BODY):
                 self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
             elif url.path == "/api/snapshot":
-                self._send(snapshots.get().body)
+                served = snapshots.get()
+                self._send(snapshot_bodies(served.key, served.body))
             elif url.path == "/api/merges":
                 self._send(*merges_response(feed, parse_qs(url.query)))
             elif url.path == "/api/doctor":
@@ -776,7 +786,7 @@ def request_handler(
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows))
             elif url.path == "/api/pulls":
-                self._send(*pulls_response(pulls, parse_qs(url.query)))
+                self._send(*pull_reads(url.query))
             elif url.path == "/api/analytics/health":
                 self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
             elif url.path == "/api/level":
@@ -819,14 +829,7 @@ def request_handler(
             body = snapshots.body(key)
             if body is None:
                 return self._send(encode("error", {"error": f"no snapshot {key} is held"}), 404)
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")  # pragma: no mutate: names are case-insensitive
-            self.send_header("Cache-Control", "max-age=3600, immutable")  # pragma: no mutate: names are case-insensitive
-            if (gzipped := compressed(body, self.headers.get("Accept-Encoding"))) is not None:
-                body = gzipped
-                self.send_header("Content-Encoding", "gzip")  # pragma: no mutate: names are case-insensitive
-            self.end_headers()
-            self.wfile.write(body)
+            self._send(snapshot_bodies(key, body), cache="max-age=3600, immutable")
 
         def _stream_events(self, by_ref: bool = False) -> None:
             """Hold the connection open: the Board's snapshot, then each change as it happens. `by_ref` sends the snapshot
@@ -961,6 +964,57 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
     Opening it puts every StarPulse table, the event log's included, on that database.
     """
     return HistoryStore(database_url(config.database_url, base), machines)
+
+
+class _SnapshotBodies:
+    """Each snapshot body with its gzip, by the key that names it: gzip of the ~1.5 MB snapshot takes tens of ms, so the
+    first page to read a snapshot compresses it and the rest are sent that."""
+
+    def __init__(self, keep: int = KEPT) -> None:
+        self._keep = keep
+        self._held: OrderedDict[str, Encoded] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def __call__(self, key: str, body: bytes) -> Encoded:
+        with self._lock:
+            if (held := self._held.get(key)) is None:
+                held = self._held[key] = Encoded.of(body)
+                while len(self._held) > self._keep:
+                    self._held.popitem(last=False)
+            return held
+
+
+class _PullReads:
+    """`/api/pulls`' answers, by query, held until the store saves: the unfiltered list is ~1 MB to read, encode and
+    gzip, and every page asks for it."""
+
+    #: How many distinct queries are held; past it the oldest is dropped.
+    KEEP = 16
+
+    def __init__(self, pulls: PullStore | None) -> None:
+        self._pulls = pulls
+        self._held: OrderedDict[str, tuple[int, Encoded, int]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def __call__(self, query: str) -> tuple[Encoded, int]:
+        rev = self._pulls.rev if self._pulls else 0
+        with self._lock:
+            held = self._held.get(query)
+        if held is None or held[0] != rev:
+            body, status = pulls_response(self._pulls, parse_qs(query))
+            held = (rev, Encoded.of(body), status)
+            with self._lock:
+                self._held[query] = held
+                while len(self._held) > self.KEEP:
+                    self._held.popitem(last=False)
+        return held[1], held[2]
+
+
+class StarPulseServer(ThreadingHTTPServer):
+    """The view's HTTP server, with a listen backlog a crowd of pages connecting at once fits in: the stock 5 drops the
+    rest's SYNs, and each waits out a 1 s retransmit before its first byte."""
+
+    request_queue_size = 128
 
 
 class _EventText:
@@ -1188,7 +1242,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         milestones=board,
         pulls=pulls,
     )
-    serve_until_stopped(ThreadingHTTPServer((args.host, args.port), handler), feed)
+    serve_until_stopped(StarPulseServer((args.host, args.port), handler), feed)
 
 
 if __name__ == "__main__":

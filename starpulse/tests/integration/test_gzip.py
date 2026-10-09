@@ -145,3 +145,15 @@ def test_a_hashed_asset_is_gzipped_and_kept_for_a_year(tmp_path: Path) -> None:
 def test_the_page_itself_is_not_kept(tmp_path: Path) -> None:
     with _serve(tmp_path) as server, urllib.request.urlopen(_url(server, "/")) as resp:
         assert resp.headers["Cache-Control"] is None
+
+
+def test_the_snapshot_is_gzipped_once_however_many_pages_read_it(tmp_path: Path, monkeypatch) -> None:
+    calls = []
+    real = gzip.compress
+    monkeypatch.setattr(gzip, "compress", lambda *a, **k: calls.append(1) or real(*a, **k))
+    with _serve(tmp_path, _large_feed()) as server:
+        ref = _snapshot_ref(server)
+        bodies = {_get(server, path, GZIP)[1] for path in ["/api/snapshot", ref] * 3}
+
+    assert len(bodies) == 1
+    assert len(calls) == 1
