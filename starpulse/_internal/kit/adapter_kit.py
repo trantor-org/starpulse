@@ -42,6 +42,7 @@ from starpulse._internal.board.seam import (
     Board,
     MoveWriter,
     TaskArchiver,
+    TaskCompleter,
     TaskCreator,
     TaskEditor,
     TaskReader,
@@ -377,6 +378,7 @@ def serve(
     milestones: Board | None = None,
     pulls: PullStore | None = None,
     telemetry: TelemetryLog | None = None,
+    complete: TaskCompleter | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -413,6 +415,7 @@ def serve(
         milestones=milestones,
         pulls=pulls,
         telemetry=telemetry,
+        complete=complete,
     )
     server = StarPulseServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

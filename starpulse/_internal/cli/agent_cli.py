@@ -8,6 +8,9 @@
     starpulse task create "Rotate the secret" --priority high --label ops --ac "It rotates"
     starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops --label security
     starpulse task assign PROJ-45 @agent-standard-high
+    starpulse task archive PROJ-45 --reason "superseded"
+    starpulse task complete PROJ-45
+    starpulse task checkpoint-ac PROJ-45 2 "pytest exits 0"
     starpulse machine show in-progress
     starpulse milestone list
     starpulse milestone show m-106
@@ -53,6 +56,10 @@ changes is no longer the value the edit was based on: that value is read from th
 JSON object of values the caller read earlier. A `--label`, `--dependency`, `--reference`, `--documentation` or
 `--modified-file` given at all replaces that whole list, and a blank value clears a field. `task assign` is an edit of
 the assignee alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
+`task archive` moves a task from any lane to the board's archive, recording `--reason` as a comment when given;
+`task complete` moves a Done task to the board's completed tasks and refuses one that is not Done (exit 1);
+`task checkpoint-ac` checks one Acceptance Criterion and records its evidence as the comment `Verified AC #N: <evidence>`
+in one write, refusing a criterion the task lacks (exit 1) without writing. A board that cannot do one answers exit 3.
 `milestone` reads and writes the board's milestone records (title, outcome, specs, ADRs, retro) through the server;
 a board that keeps none answers exit 3. A `--spec` or `--adr` on `milestone edit` replaces that whole list.
 `doc` reads and writes the board's doc records (title, type, dates, folder, body) the same way: `doc list` leaves the
@@ -520,6 +527,38 @@ def _task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str
 def _task_assign(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     changed = _task_edit_call(args, environ, {"profile": args.assignee}, None)
     return {"task": args.task, "assignee": args.assignee, "changed": changed}
+
+
+def _task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/archive"
+    status, reply = _post(base, path, {"task": args.task, "reason": args.reason})
+    return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+
+
+def _task_complete(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/complete"
+    status, reply = _post(base, path, {"task": args.task})
+    return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+
+
+def _task_checkpoint_ac(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    evidence = args.evidence.strip()
+    if not evidence:
+        raise CliError("usage", "evidence is required to check an Acceptance Criterion")
+    base, path = server_url(args.server, environ), f"/api/task/{urllib.parse.quote(args.task, safe='')}"
+    status, reply = _get(base, path)
+    criteria = _record_call(base, path, status, reply, missing=_TASK_MISSING)["record"].get("acceptanceCriteria") or []
+    if args.criterion not in {item["n"] for item in criteria}:
+        raise CliError("refused", f"{args.task} has no Acceptance Criteria item #{args.criterion}")
+    checked = [{**item, "checked": True} if item["n"] == args.criterion else item for item in criteria]
+    changed = _task_edit_call(
+        args,
+        environ,
+        {"acceptanceCriteria": checked},
+        {"acceptanceCriteria": criteria},
+        f"Verified AC #{args.criterion}: {evidence}",
+    )
+    return {"task": args.task, "criterion": args.criterion, "changed": changed}
 
 
 def _milestone_list(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1112,6 +1151,36 @@ def _parser() -> argparse.ArgumentParser:
     )
     assign.add_argument("task", help="the task's key (`PROJ-45`)")
     assign.add_argument("assignee", help="who or which agent profile holds it (`@agent-standard-high`); blank clears")
+    archive = leaf(
+        task_verbs,
+        "archive",
+        "move a task from any lane to the board's archive, recording the reason when given",
+        _task_archive,
+        ("task",),
+        (0, 1, 2, 3, 4),
+    )
+    archive.add_argument("task", help="the task's key (`PROJ-45`)")
+    archive.add_argument("--reason", default="", help="why it is archived, recorded as a comment on the task")
+    complete = leaf(
+        task_verbs,
+        "complete",
+        "move a Done task to the board's completed tasks; refused when it is not Done",
+        _task_complete,
+        ("task",),
+        (0, 1, 2, 3, 4),
+    )
+    complete.add_argument("task", help="the task's key (`PROJ-45`)")
+    checkpoint = leaf(
+        task_verbs,
+        "checkpoint-ac",
+        "check one Acceptance Criterion and record its evidence in one write; refused when the task lacks it",
+        _task_checkpoint_ac,
+        ("task", "criterion", "changed"),
+        (0, 1, 2, 3, 4),
+    )
+    checkpoint.add_argument("task", help="the task's key (`PROJ-45`)")
+    checkpoint.add_argument("criterion", type=int, help="the criterion's number (`2` for `#2`)")
+    checkpoint.add_argument("evidence", help="what shows it holds, recorded as `Verified AC #N: <evidence>`")
     machine = verbs.add_parser(
         "machine",
         description="the machines the server draws and the machine files",

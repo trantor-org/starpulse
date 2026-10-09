@@ -9,9 +9,12 @@ internal and can change in any release.
   verbs are `task create TITLE [--description --priority --milestone --assignee --label --dependency --ac]`, which
   returns `{task}`; `task edit TASK [--title --type --priority --milestone --label --dependency --reference
   --documentation --modified-file --description --plan --notes --final-summary --comment --base]`, which returns
-  `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base; and
-  `task assign TASK ASSIGNEE`, which returns `{task, assignee, changed}`. Each exits 0 on success, 1 refused, 2 usage,
-  3 when the board cannot write tasks and, for `edit` and `assign`, 4 for an unknown task.
+  `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base;
+  `task assign TASK ASSIGNEE`, which returns `{task, assignee, changed}`; `task archive TASK [--reason]`, which returns
+  `{task}`; `task complete TASK`, which returns `{task}` and is refused (exit 1) for a task that is not Done; and
+  `task checkpoint-ac TASK CRITERION EVIDENCE`, which returns `{task, criterion, changed}` and is refused (exit 1) for a
+  criterion the task lacks. Each exits 0 on success, 1 refused, 2 usage, 3 when the board cannot write tasks and, for
+  every verb but `create`, 4 for an unknown task.
 - `starpulse import-history`, and the JSON Lines it reads: one `{event_id, task, lane, time}` object per line ([format](cli.md#importing-a-boards-history)).
 - The documented entry point `python -m starpulse.claude_code`, which receives Claude Code's and Codex's OTLP log
   exports.

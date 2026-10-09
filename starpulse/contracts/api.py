@@ -1181,6 +1181,12 @@ class ArchiveRequest(_Api):
     reason: str | None = None
 
 
+class CompleteRequest(_Api):
+    """`POST /api/complete`: move the Done task `task` into the board's completed tasks."""
+
+    task: str
+
+
 class CreateRequest(_Api):
     """`POST /api/tasks`: create a task in the board's starting lane."""
 
@@ -1325,6 +1331,10 @@ class Archived(_Api):
     task: str
 
 
+class Completed(_Api):
+    task: str
+
+
 class Created(_Api):
     task: str
 
@@ -1414,6 +1424,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/start": StartRequest,
     "/api/edit": EditRequest,
     "/api/archive": ArchiveRequest,
+    "/api/complete": CompleteRequest,
     "/api/tasks": CreateRequest,
     "/api/milestones": MilestoneCreateRequest,
     "/api/milestones/edit": MilestoneEditRequest,
@@ -1452,6 +1463,7 @@ BODIES: dict[str, Any] = {
     "start": Started | SkillRefusal | ApiError,
     "edit": Edited | StaleEdit | SkillRefusal | ApiError,
     "archive": Archived | SkillRefusal | ApiError,
+    "complete": Completed | SkillRefusal | ApiError,
     "create": Created | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,
     "milestone": MilestoneShown | ApiError,
@@ -1520,6 +1532,7 @@ class ApiContract(_Api):
         | StartRequest
         | EditRequest
         | ArchiveRequest
+        | CompleteRequest
         | CreateRequest
         | MilestoneCreateRequest
         | MilestoneEditRequest
@@ -1537,6 +1550,7 @@ class ApiContract(_Api):
         Moved
         | Edited
         | Archived
+        | Completed
         | Created
         | MilestoneCreated
         | MilestoneEdited

@@ -436,6 +436,41 @@ def test_a_task_is_read_edited_and_archived_through_the_server(tmp_path: Path) -
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
 
 
+def test_a_done_task_is_completed_through_the_server_and_a_refusal_carries_its_skill(tmp_path: Path) -> None:
+    completed: list[str] = []
+
+    def complete(task: str) -> Written:
+        completed.append(task)
+        return Written(task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is Ready, not Done", skill="finishing")
+
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Done"))
+    feed.put(task("PROJ-4", "Ready"))
+    with _serve(tmp_path, feed, complete=complete) as server:
+        done = _post(server, "/api/complete", {"task": "PROJ-3"})
+        early = _post(server, "/api/complete", {"task": "PROJ-4"})
+        absent = _post(server, "/api/complete", {"task": "PROJ-9"})
+        malformed = _post(server, "/api/complete", {})
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/complete"), timeout=5)
+
+    assert done == (200, {"task": "PROJ-3"})
+    assert early == (409, {"error": "PROJ-4 is Ready, not Done", "skill": "finishing"})
+    assert absent == (404, {"error": "PROJ-9 is not on the board"})
+    assert malformed[0] == 400
+    assert completed == ["PROJ-3", "PROJ-4"]
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def test_a_board_that_completes_no_tasks_answers_404(tmp_path: Path) -> None:
+    feed = BoardFeed()
+    feed.put(task("PROJ-3", "Done"))
+    with _serve(tmp_path, feed) as server:
+        answer = _post(server, "/api/complete", {"task": "PROJ-3"})
+
+    assert answer == (404, {"error": "this board does not complete tasks"})
+
+
 def test_the_page_script_is_served_as_text_javascript_whatever_the_hosts_mime_table_says(
     server: ThreadingHTTPServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
