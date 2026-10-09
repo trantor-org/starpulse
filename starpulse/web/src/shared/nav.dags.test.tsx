@@ -69,7 +69,10 @@ describe("the navigator's DAGs entry", () => {
     expect(q("#dg")).not.toBeNull();
     expect(q("#dg header .title")!.textContent).toBe("DAGs");
     expect(dagsNode().className).toContain("on here");
-    expect(document.body.classList.contains("dags")).toBe(true);
+    const surface = q('.kept[data-view="dags"]')!;
+    expect(surface.hasAttribute("inert")).toBe(false);
+    expect((surface.firstElementChild as HTMLElement).style.opacity).not.toBe("0");
+    expect(q("#c")!.classList.contains("off")).toBe(true);
     expect(location.search).toBe("?view=dags");
   });
 });

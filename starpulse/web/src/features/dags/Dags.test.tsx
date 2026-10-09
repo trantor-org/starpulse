@@ -58,15 +58,26 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   post.mockReset();
   localStorage.clear();
+  vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
   host = document.body.appendChild(document.createElement("div"));
   root = createRoot(host);
 });
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+  vi.unstubAllGlobals();
 });
 
 describe("the DAGs view's catalog", () => {
+  it("mounts only a viewport and overscan of a long catalog", async () => {
+    const dags = Array.from({ length: 60 }, (_, i) => dag(`runs/job-${i}`, "succeeded"));
+    await draw({ ...data, dags, domains: [{ name: "Ops", dags: dags.map((d) => ({ name: d.name, runSafe: false })) }] });
+
+    expect(all("#catalog [data-viewport-row]")).toHaveLength(60);
+    expect(all("#catalog .trow").length).toBeLessThan(60);
+    expect(names()).toContain("job-0");
+  });
+
   it("draws a fold per domain with its census, and a row per DAG with its dot, name, step strip, last run, pool and first tie", async () => {
     await draw();
 

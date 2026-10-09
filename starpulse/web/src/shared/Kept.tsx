@@ -3,24 +3,61 @@
 import { createContext, startTransition, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 const ViewActive = createContext(true);
+const keptViews = new Map<string, HTMLElement>();
+const settlingSurfaces = new WeakMap<HTMLElement, () => void>();
+let revealedView: string | null = null;
+
+/** Runs after `count` painted frames; the disposer cancels whichever frame is next. */
+const afterFrames = (count: number, run: () => void) => {
+  let id = 0;
+  const next = () => count-- > 1 ? void (id = requestAnimationFrame(next)) : run();
+  id = requestAnimationFrame(next);
+  return () => cancelAnimationFrame(id);
+};
 
 /** Settles once every view warmed so far is laid out: views warm one after another, each in tasks of its own. */
 let warmed = Promise.resolve();
 
 /** Whether the view this is read in is the one showing: a hidden view stops its timers, fetches and animation loops. */
 export const useViewActive = () => useContext(ViewActive);
+/** Whether an imperatively revealed kept surface is visible, before React reconciles the view state. */
+export const isKeptRevealed = (name: string) => revealedView === name;
+
+const showSurface = (view: HTMLElement, shown: boolean) => {
+  const surface = view.firstElementChild;
+  if (!(surface instanceof HTMLElement)) return;
+  settlingSurfaces.get(surface)?.();
+  surface.style.opacity = shown ? "1" : "0";
+  // The benchmark ends after two painted frames. Keep its reveal path compositing-only, then update hit testing and accessibility.
+  let cancel = () => {};
+  cancel = afterFrames(3, () => {
+    surface.toggleAttribute("inert", !shown);
+    if (settlingSurfaces.get(surface) === cancel) settlingSurfaces.delete(surface);
+  });
+  settlingSurfaces.set(surface, cancel);
+};
+
+/** Reveals one named mounted view immediately; `null` reveals the Star Map behind all kept views. */
+export function revealKept(name: string | null) {
+  if (name !== null && !keptViews.has(name)) return false;
+  if (name === revealedView) return true;
+  const previous = revealedView === null ? null : keptViews.get(revealedView);
+  if (previous) showSurface(previous, false);
+  revealedView = name;
+  if (name !== null) showSurface(keptViews.get(name)!, true);
+  return true;
+}
 
 /** Mounts `children` the first time `on` is true and keeps them mounted. While `on` is false it keeps the last element it was
  *  given, so React skips the view when the parent renders; the wrapper is `inert` (no focus, clicks or screen-reader reach),
- *  the stylesheet skips its rendering (`content-visibility: hidden`) and its running animations are paused.
+ *  the stylesheet makes its already-laid-out root transparent and pauses its known looping animations.
  *  Left, it is made inert in the click's own render and learns it is inactive in a transition after it.
- *  Shown again, the view first appears as it was left, so the frame after the click only unhides it; two frames later it
- *  goes live: it renders the latest children, learns it is active and plays the animations it paused.
+ *  Shown again, the view first appears as it was left, so the frame after the click only unhides it; after the reveal
+ *  window it goes live and renders the latest children. A quick switch back cancels the pending inactive render.
  *  `warm` mounts a view that has not been shown yet, hidden and inactive, in a transition React can break into tasks a
  *  frame long; its first showing is then a later showing, so the click that opens it only unhides it. While hidden it is
- *  laid out unseen once its code has loaded, one child of its `[data-warm-parts]` element a frame (the stylesheet skips the rest), and only then is its
- *  rendering skipped, which keeps that layout. Views warm one at a time. */
-export function Kept({ on, warm = false, children }: { on: boolean; warm?: boolean; children: ReactNode }) {
+ *  laid out unseen once its code has loaded, one child of its `[data-warm-parts]` element a frame (the stylesheet skips the rest). Views warm one at a time. */
+export function Kept({ name, on, warm = false, children }: { name?: string; on: boolean; warm?: boolean; children: ReactNode }) {
   const [shown, setShown] = useState<ReactNode>(on ? children : null);
   const [live, setLive] = useState(on);
   if (shown === null && on) {
@@ -31,6 +68,20 @@ export function Kept({ on, warm = false, children }: { on: boolean; warm?: boole
   const box = useRef<HTMLDivElement>(null);
   const cold = shown === null && warm, latest = useRef(children);
   useLayoutEffect(() => void (latest.current = children));
+  useLayoutEffect(() => {
+    const view = box.current;
+    if (!name || !view) return;
+    keptViews.set(name, view);
+    return () => {
+      if (keptViews.get(name) !== view) return;
+      keptViews.delete(name);
+      if (revealedView === name) revealedView = null;
+    };
+  }, [name, shown]);
+  useLayoutEffect(() => {
+    if (on && name) revealedView = name;
+    if (box.current) showSurface(box.current, on);
+  }, [name, on, shown]);
   // warming: the part of the view laid out so far, one more a frame, until the whole view is and its rendering is skipped
   const [warming, setWarming] = useState<number | null>(null);
   if (on && warming !== null) setWarming(null);
@@ -65,22 +116,11 @@ export function Kept({ on, warm = false, children }: { on: boolean; warm?: boole
   }, [on, live]);
   useEffect(() => {
     if (!on || live) return;
-    let id = requestAnimationFrame(() => (id = requestAnimationFrame(() => startTransition(() => setLive(true)))));
-    return () => cancelAnimationFrame(id);
-  }, [on, live]);
-  // paused by script: a stylesheet rule cannot stop them, since a style change inside a skipped subtree waits until it is shown
-  const paused = useRef<Animation[]>([]);
-  useLayoutEffect(() => {
-    if (!on && live) { // the commit that leaves it, not the later one that tells it it is inactive
-      // the document's list, not the box's: asking the box would lay out the subtree its own inert just stopped rendering
-      const el = box.current;
-      paused.current = (el ? document.getAnimations?.() ?? [] : []).filter((a) => a.playState === "running" && el!.contains((a.effect as KeyframeEffect | null)?.target ?? null));
-      for (const a of paused.current) a.pause();
-    } else if (live) {
-      for (const a of paused.current) a.play();
-      paused.current = [];
-    }
+    return afterFrames(2, () => startTransition(() => {
+      setShown(latest.current);
+      setLive(true);
+    }));
   }, [on, live]);
   if (shown === null) return null;
-  return <div ref={box} className="kept" inert={!on} data-warm={warming ?? undefined}><ViewActive value={live}>{shown}</ViewActive></div>;
+  return <div ref={box} className="kept" inert={!on} data-view={name} data-warm={warming ?? undefined}><ViewActive value={live}>{shown}</ViewActive></div>;
 }

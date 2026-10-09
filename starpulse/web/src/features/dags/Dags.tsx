@@ -11,6 +11,7 @@ import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { useViewActive } from "../../shared/Kept";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
 import { refused, startRun } from "../../render/panels";
+import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 
 type Post = Parameters<typeof startRun>[1];
 
@@ -65,18 +66,24 @@ function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle, spot }
   data: DagData; rs: Row[]; now: number; spot: string | null; why: (r: Row) => string | null; run: (r: Row) => void; open: (r: Row) => void; ledger?: LedgerGo; folded: Set<string>; toggle: (k: string) => void;
 }) {
   const doms = [...new Set([...data.domains.map((d) => d.name), ...rs.map((r) => r.domain)])].filter((d) => rs.some((r) => r.domain === d));
+  let row = 0;
   return (
-    <div id="catalog">
+    <Viewport id="catalog">
       <div className="thead"><span /><span>DAG</span><span>Steps</span><span>Last run</span><span>Pool</span><span>Board</span><span /></div>
       {doms.map((d) => {
         const list = rs.filter((r) => r.domain === d).sort(order);
         return (
           <Fold key={d} k={`cat|${d}`} title={<>{d} <Census rs={list} /></>} n={list.length} folded={folded} toggle={toggle}>
-            {list.map((r) => <DagRow key={r.d.name} r={r} now={now} spot={r.d.name === spot} why={why(r)} pool={poolText(data.pools, r)} tie={ties(data, r.d.name)[0]} ledger={ledger} run={run} open={open} />)}
+            {list.map((r) => {
+              const at = row++;
+              return <ViewportRow key={r.d.name} initial={at < 24} estimate={47} force={r.d.name === spot}>
+                <DagRow r={r} now={now} spot={r.d.name === spot} why={why(r)} pool={poolText(data.pools, r)} tie={ties(data, r.d.name)[0]} ledger={ledger} run={run} open={open} />
+              </ViewportRow>;
+            })}
           </Fold>
         );
       })}
-    </div>
+    </Viewport>
   );
 }
 

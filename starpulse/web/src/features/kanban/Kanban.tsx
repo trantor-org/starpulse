@@ -6,6 +6,7 @@ import { archiveDialogKey, withoutArchived } from "./archive";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { ArchiveDialog } from "./ArchiveConfirm";
 import { useViewActive } from "../../shared/Kept";
+import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 import { ago } from "../../shared/clock";
 import { ConnectTracker } from "./ConnectTracker";
 import type { HudState } from "../../render/hud";
@@ -802,6 +803,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       </div>
       <div id="cols" ref={columns} data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
         {view.columns.map((col) => {
+          let row = 0;
           const target = lift?.kinds[col.id];
           const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
           const colCls = ["col", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
@@ -815,7 +817,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
               </h2>
               {target?.kind === "guard" && <div className="why"><Reason text={target.reason} /></div>}
               {col.id === "waiting" && !lift && <HeldBy holders={blockers} open={(id) => setOpen(id)} hover={setHovered} />}
-              <div className="body">
+              <Viewport className="body">
                 {col.buckets.length === 0 && <div className="empty">no tasks</div>}
                 {col.buckets.map((b) => (
                   <div key={b.milestone} className={`bucket${b.folded ? " folded" : ""}`}>
@@ -824,10 +826,20 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
                       <span className="tw">▾</span><span className="bn">{milestoneName(b.milestone)}</span><span className="c">{b.tasks.length}</span>
                       <button className="hide" title="Hide this milestone" onClick={(e) => { e.stopPropagation(); setPrefs((p) => hideMilestone(p, b.milestone)); }}>hide</button>
                     </div>
-                    {!b.folded && (STACKED.includes(col.id) ? <Stacks stacks={b.stacks} card={drawCard} enabled={!lift} /> : b.tasks.map((t) => drawCard(t)))}
+                    {!b.folded && (STACKED.includes(col.id)
+                      ? b.stacks.map((s) => {
+                        const at = row++;
+                        return <ViewportRow key={s.top.id} initial={at < 12} estimate={96} force={s.members.some((t) => t.id === spot)}>
+                          {s.members.length > 1 ? <OpenStack stack={s} card={drawCard} enabled={!lift} /> : drawCard(s.top)}
+                        </ViewportRow>;
+                      })
+                      : b.tasks.map((t) => {
+                        const at = row++;
+                        return <ViewportRow key={t.id} initial={at < 12} estimate={96} force={t.id === spot}>{drawCard(t)}</ViewportRow>;
+                      }))}
                   </div>
                 ))}
-              </div>
+              </Viewport>
             </section>
           );
         })}

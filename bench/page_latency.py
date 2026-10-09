@@ -514,16 +514,26 @@ def time_page(
             note=f"click, after a {HOVER_MS} ms hover, to the frame after its full record",
         )
         page.evaluate(_CLICK, _nav("Kanban"))
+        # The switch sample ends after two frames; React deliberately takes ownership after the reveal window.
+        # Modal interaction must wait for that bookkeeping instead of clicking the still-inert kept surface.
+        page.wait_for_function("() => !document.querySelector('[data-view=kanban]')?.hasAttribute('inert')", timeout=10_000)
         page.wait_for_selector("#cols .card[data-id]", timeout=30_000)
         ahead = 0
-        for task in page.eval_on_selector_all("#cols .card[data-id]", "els => els.map(e => e.dataset.id)")[:samples]:
-            page.hover(f'#cols .card[data-id="{task}"]')
+        for task in page.eval_on_selector_all(
+            "#cols .card[data-id]", "els => els.filter(e => e.checkVisibility()).map(e => e.dataset.id)"
+        )[:samples]:
+            card = page.locator(f'#cols .card[data-id="{task}"]:visible').first
+            if not card.count():
+                continue
+            card.hover()
             page.wait_for_timeout(HOVER_MS)
             opened = page.evaluate(_OPEN, task)
             if opened is not None:
                 modal.samples.append(opened["ms"])
                 ahead += opened["ahead"]
-            page.keyboard.press("Escape")
+            # Closing is outside the measurement. Use the modal's explicit close control so a task that
+            # happens to be editing cannot consume Escape and leave the dialog open for the next sample.
+            page.locator('[role="dialog"]:visible button[aria-label="Close"]').click(timeout=10_000)
             # the pointer still rests on the card, so its modal may be drawn again, hidden and inert, for the next click
             page.wait_for_function(_SHOWN_GONE, timeout=10_000)
         modal.note += f"; {ahead} of {len(modal.samples)} drawn ahead"

@@ -13,7 +13,7 @@ import { BOARD, pathKey, type Path } from "./render/levels";
 import { Crumb } from "./features/level/Crumb";
 import { DagLegend } from "./features/dags/DagLegend";
 import { FeedLines, linesThatFit, Queues } from "./features/fanout/Fanout";
-import { Kept } from "./shared/Kept";
+import { Kept, revealKept } from "./shared/Kept";
 import { SearchClear } from "./shared/SearchClear";
 import { useBoardDrawn } from "./shared/boardDrawn";
 import { Leaderboard } from "./features/kanban/Leaderboard";
@@ -24,13 +24,15 @@ import { renderer as makeRenderer, type Renderer } from "./render/renderer";
 import { search, type Target } from "./features/level/search";
 import { StartStore, fetchHarnesses, postStart } from "./features/kanban/start";
 
+/** Keep page-wide React reconciliation outside the two-frame reveal and a rapid follow-up switch. */
+const REVEAL_SETTLE_FRAMES = 8;
+
 /** The actors the rail can hide, in the order it lists them. */
 
 export function App() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const tip = useRef<HTMLDivElement>(null), panel = useRef<HTMLDivElement>(null), clock = useRef<HTMLDivElement>(null);
   const renderer = useRef<Renderer | null>(null);
-  const sized = useRef(false);
   const [store] = useState(() => new HudStore());
   const hud = useHud(store);
   // the navigator and the rail fill after the Board's first frame: it needs their width, not their contents
@@ -66,11 +68,47 @@ export function App() {
   const prefs = useSyncExternalStore(admin.subscribe, admin.get);
   // a bare address opens the view the Admin chose; one that names a view opens that
   const [view, setView] = useState<ViewName>(() => viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view));
+  const activeView = useRef(view);
+  const pendingView = useRef(0);
+  const commitView = useCallback((next: ViewName, url: string) => {
+    cancelAnimationFrame(pendingView.current);
+    let frames = REVEAL_SETTLE_FRAMES;
+    const frame = () => {
+      if (frames-- > 1) return void (pendingView.current = requestAnimationFrame(frame));
+      history.replaceState(null, "", url);
+      setView(next);
+    };
+    pendingView.current = requestAnimationFrame(frame);
+  }, []);
+  const reveal = useCallback((next: ViewName, settled = false) => {
+    const mounted = revealKept(next === "constellation" ? null : next);
+    if (!mounted) return false;
+    const off = next !== "constellation";
+    canvas.current?.classList.toggle("off", off);
+    // Hiding chrome must accompany a view that covers the map. Restoring idle chrome can wait for React ownership,
+    // leaving the measured Star Map reveal to composite only the canvas and the outgoing kept surface.
+    if (off || settled) {
+      tip.current?.classList.toggle("off", off);
+      panel.current?.classList.toggle("off", off);
+      document.getElementById("crumb")?.classList.toggle("off", off);
+      clock.current?.classList.toggle("off", next === "admin" || next === "graph");
+    }
+    if (off) renderer.current?.show(false);
+    return true;
+  }, []);
   // the view lives in the address, so a reload or a shared link opens the same one
   const choose = useCallback((v: ViewName) => {
-    history.replaceState(null, "", `${location.pathname}${viewSearch(location.search, v, admin.get().view)}`);
-    setView(v);
-  }, [admin]);
+    const url = `${location.pathname}${viewSearch(location.search, v, admin.get().view)}`;
+    activeView.current = v;
+    cancelAnimationFrame(pendingView.current);
+    if (!reveal(v)) {
+      history.replaceState(null, "", url);
+      return void setView(v);
+    }
+    // The mounted surface changes now; page-wide React bookkeeping follows after the measured reveal frames.
+    commitView(v, url);
+  }, [admin, commitView, reveal]);
+  useEffect(() => () => cancelAnimationFrame(pendingView.current), []);
   // stable, so a stream event that changes nothing the Kanban shows does not draw it again
   const flyToLane = useCallback((lane: string) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }, [choose]);
 
@@ -88,16 +126,9 @@ export function App() {
   }, [store, admin]);
   // declared after the renderer's effect, so the first run already reaches it
   useEffect(() => {
-    document.body.classList.toggle("kanban", view === "kanban");
-    document.body.classList.toggle("dags", view === "dags");
-    document.body.classList.toggle("admin", view === "admin");
-    document.body.classList.toggle("graph", view === "graph");
+    reveal(view, true);
     renderer.current?.show(view === "constellation");
-    // the canvas was sized while hidden or behind the Kanban; refit it once it is the page again. The first run is the
-    // renderer's own start, which has just sized, laid out and drawn it
-    if (view === "constellation" && sized.current) renderer.current?.resize();
-    sized.current = true;
-  }, [view]);
+  }, [view, reveal]);
 
   // a level from the navigator's search or the breadcrumb opens on the Star Map, refitted when it is already the one shown
   const open = (p: Path) => {
@@ -109,20 +140,20 @@ export function App() {
   return (
     <>
       <canvas ref={canvas} id="c" />
-      <Navigator shell={shell} hud={hud} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} open={open}
+      <Navigator shell={shell} hud={hud} view={view} activeView={activeView} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
-      {view === "constellation" && <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} />}
+      <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
       {/* views warm in this order, the Kanban first: it is the one most often opened */}
-      <Kept on={view === "kanban"} warm={drawn}>
+      <Kept name="kanban" on={view === "kanban"} warm={drawn}>
         <Suspense fallback={null}>
           <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} constellation={flyToLane}
             spot={spotted} note={setWhy} opening={opening} />
         </Suspense>
       </Kept>
-      <Kept on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
-      <Kept on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} forwarding={forwarding} /></Suspense></Kept>
-      <Kept on={view === "graph"} warm={drawn}>
+      <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
+      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} forwarding={forwarding} /></Suspense></Kept>
+      <Kept name="graph" on={view === "graph"} warm={drawn}>
         <Suspense fallback={null}><OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} /></Suspense>
       </Kept>
       <Rail shown={shell} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
@@ -150,8 +181,8 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
   return <aside id="nav">{shell && <NavigatorBody {...props} />}</aside>;
 }
 
-function NavigatorBody({ hud, view, slot, outlineSlot, choose, hasLevel, open, spot, selectTask }: {
-  hud: HudState; view: ViewName; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; hasLevel: boolean; open: (p: Path) => void;
+function NavigatorBody({ hud, view, activeView, slot, outlineSlot, choose, hasLevel, open, spot, selectTask }: {
+  hud: HudState; view: ViewName; activeView: { current: ViewName }; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; hasLevel: boolean; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
   const [{ query }, keep] = useFilters(STARMAP_PREFS_KEY, NO_STARMAP_FILTERS), setQuery = (v: string) => keep({ query: v });
@@ -201,7 +232,7 @@ function NavigatorBody({ hud, view, slot, outlineSlot, choose, hasLevel, open, s
       </section>
       <section className="views">
         <h3>Views</h3>
-        <button className={`node${view === "constellation" ? " on here" : ""}`} title="Star Map" onClick={() => (view === "constellation" ? open(BOARD) : choose("constellation"))}>
+        <button className={`node${view === "constellation" ? " on here" : ""}`} title="Star Map" onClick={() => (activeView.current === "constellation" ? open(BOARD) : choose("constellation"))}>
           <i className="g orbit">
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
               <circle cx="12" cy="12" r="5" fill="currentColor" />

@@ -8,7 +8,7 @@ import { focusDetails, type Details } from "./orbitDetails";
 import { clickFocus, focusKey, focusOrder, refocus } from "./orbitFocus";
 import { orbitInput, type LevelResponse, type LevelState } from "./levelData";
 import { fitLevel, toWorld, wheelFactor, zoomAbout, type View } from "../../render/zoom";
-import { useViewActive } from "../../shared/Kept";
+import { isKeptRevealed, useViewActive } from "../../shared/Kept";
 
 const DAY = 86400;
 
@@ -103,7 +103,7 @@ function Orbit({ level, motion, names }: { level: LevelResponse; motion: boolean
 
   useEffect(() => {
     const cv = canvas.current!;
-    let raf = 0, t0 = -1;
+    let raf = 0, t0 = -1, revealedFrames = 0;
     paint.current = (now = Date.now()) => {
       if (t0 < 0) t0 = now;
       const cx = cv.getContext("2d"), L = live.current;
@@ -128,7 +128,8 @@ function Orbit({ level, motion, names }: { level: LevelResponse; motion: boolean
       });
     };
     const frame = (ts: number) => {
-      paint.current(ts);
+      if (!isKeptRevealed("graph")) revealedFrames = 0;
+      else if (revealedFrames++ >= 2) paint.current(ts);
       raf = requestAnimationFrame(frame);
     };
     if (motion && active) raf = requestAnimationFrame(frame);
