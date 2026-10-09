@@ -1,0 +1,331 @@
+diff --git a/starpulse/web/src/AdminPage.tsx b/starpulse/web/src/AdminPage.tsx
+index 7c6ff1b..cea3f98 100644
+--- a/starpulse/web/src/AdminPage.tsx
++++ b/starpulse/web/src/AdminPage.tsx
+@@ -1,10 +1,11 @@
+ // The Admin view with the forwarding card it hosts: one module, so the page loads both as one chunk when Admin first opens.
+ import { Admin } from "./features/admin/Admin";
++import { TrackerCard } from "./features/kanban/ConnectTracker";
+ import type { AdminStore } from "./features/admin/adminPrefs";
+ import type { HistoryWindowStore } from "./features/admin/historyWindow";
+ import { ForwardingCard } from "./features/forwarding/ForwardingCard";
+ import type { ForwardingStore } from "./features/forwarding/forwarding";
+ 
+-export function AdminPage({ store, window, forwarding }: { store: AdminStore; window: HistoryWindowStore; forwarding: ForwardingStore }) {
+-  return <Admin store={store} window={window} forwarding={(clock) => <ForwardingCard store={forwarding} clock={clock} />} />;
++export function AdminPage({ store, window, forwarding, hint }: { store: AdminStore; window: HistoryWindowStore; forwarding: ForwardingStore; hint?: string | null }) {
++  return <Admin store={store} window={window} tracker={<TrackerCard hint={hint} />} forwarding={(clock) => <ForwardingCard store={forwarding} clock={clock} />} />;
+ }
+diff --git a/starpulse/web/src/App.tsx b/starpulse/web/src/App.tsx
+index b9f25b6..68bbc3b 100644
+--- a/starpulse/web/src/App.tsx
++++ b/starpulse/web/src/App.tsx
+@@ -151,7 +151,7 @@ export function App() {
+         </Suspense>
+       </Kept>
+       <Kept name="dags" on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
+-      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} forwarding={forwarding} /></Suspense></Kept>
++      <Kept name="admin" on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} forwarding={forwarding} hint={hud.hint} /></Suspense></Kept>
+       <Kept name="graph" on={view === "graph"} warm={drawn}>
+         <Suspense fallback={null}><OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} /></Suspense>
+       </Kept>
+diff --git a/starpulse/web/src/demo/demo.ts b/starpulse/web/src/demo/demo.ts
+index e6a70c2..8ab3daa 100644
+--- a/starpulse/web/src/demo/demo.ts
++++ b/starpulse/web/src/demo/demo.ts
+@@ -432,6 +432,8 @@ export class DemoServer {
+     const [path, search = ""] = input.split("?", 2); // no URL(): a base address would be a host in the public file
+     const route = Object.keys(ROUTES).find((r) => path === r || path.startsWith(`${r}/`));
+     const handler = route ? HANDLERS[route] : undefined;
++    const mock = (globalThis as { __MOCK_API__?: Record<string, (init: RequestInit | undefined, server: DemoServer) => [unknown, number]> }).__MOCK_API__?.[path];
++    if (mock) return Promise.resolve(json(...mock(init, this)));
+     if (handler) return Promise.resolve(handler(this, path, new URLSearchParams(search), init));
+     return Promise.resolve(json({ error: (route && ROUTES[route]) || `This demo does not serve ${path}.` }, 404));
+   }
+diff --git a/starpulse/web/src/features/admin/Admin.tsx b/starpulse/web/src/features/admin/Admin.tsx
+index 27f4fe0..cfc43b9 100644
+--- a/starpulse/web/src/features/admin/Admin.tsx
++++ b/starpulse/web/src/features/admin/Admin.tsx
+@@ -107,7 +107,7 @@ function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" |
+ }
+ 
+ /** `forwarding` draws the Forwarding card in the settings column: the card is its own feature, so App hands it in with the clock it is to show. */
+-export function Admin({ store, window: historyWindow, forwarding }: { store: AdminStore; window: HistoryWindowStore; forwarding: (clock: ClockMode) => ReactNode }) {
++export function Admin({ store, window: historyWindow, forwarding, tracker }: { store: AdminStore; window: HistoryWindowStore; forwarding: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
+   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
+   return (
+     <div id="admin">
+@@ -148,6 +148,7 @@ export function Admin({ store, window: historyWindow, forwarding }: { store: Adm
+             <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>
+           </section>
+           <ServerCard store={historyWindow} clock={clock} />
++          {tracker}
+           {forwarding(clock)}
+         </div>
+         <Preview scale={scale} compact={density === "compact"} />
+diff --git a/starpulse/web/src/features/autopilot/AutopilotStrip.tsx b/starpulse/web/src/features/autopilot/AutopilotStrip.tsx
+new file mode 100644
+index 0000000..8896842
+--- /dev/null
++++ b/starpulse/web/src/features/autopilot/AutopilotStrip.tsx
+@@ -0,0 +1,89 @@
++// The Kanban toolbar's autopilot strip: the global toggle, each capacity dimension's use against its limit, the sessions in flight and the
++// next pick with why it goes or waits. Off stops admission only, so the strip dims and counts the sessions still running.
++import { useEffect, useState, useSyncExternalStore } from "react";
++import { ago } from "../../shared/clock";
++import { useViewActive } from "../../shared/Kept";
++import { level, type AutopilotStore, type Dimension, type InFlight, type NextPick } from "./autopilot";
++
++/** The sampler emits on a headroom crossing; the strip also re-reads on this interval so its meters move with the host. */
++const REFRESH_MS = 5000;
++
++const pct = (d: Dimension) => `${Math.min(100, (d.used / d.limit) * 100)}%`;
++
++function Meter({ d, children }: { d: Dimension; children?: React.ReactNode }) {
++  return (
++    <div className={`dm ${level(d)}`} title={d.detail}>
++      <div className="r"><span>{d.name}</span><b>{d.used}/{d.limit}{d.unit}</b></div>
++      <div className="m"><i style={{ width: pct(d) }} /></div>
++      {children}
++    </div>
++  );
++}
++
++function Sessions({ d, sessions, now, close }: { d: Dimension; sessions: InFlight[]; now: number; close: () => void }) {
++  useEffect(() => {
++    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
++    document.addEventListener("keydown", onKey);
++    return () => document.removeEventListener("keydown", onKey);
++  }, [close]);
++  return (
++    <div className="menu ap-ses" role="menu" aria-label="Sessions in flight">
++      <div className="hd">In flight · {d.used} of {d.limit}</div>
++      {sessions.length === 0 && <div className="none">No autopilot session is running.</div>}
++      {sessions.map((s) => (
++        <a key={s.task} role="menuitem" href={s.url} target="_blank" rel="noreferrer">
++          <span className="id">{s.task}</span><span className="tt">{s.title}</span><span className="md">{s.model} · {ago(now - s.started)}</span>
++        </a>
++      ))}
++    </div>
++  );
++}
++
++const why = (next: NextPick) => (next.verdict === "starting" ? "starting" : `waits: ${next.reason}`);
++
++export function AutopilotStrip({ store, now, openTask }: { store: AutopilotStore; now: number; openTask: (id: string) => void }) {
++  const { current, phase, unavailable } = useSyncExternalStore(store.subscribe, store.get);
++  const [menu, setMenu] = useState(false);
++  const active = useViewActive();
++  useEffect(() => {
++    if (!active) return;
++    void store.load();
++    const refresh = setInterval(() => void store.load(), REFRESH_MS);
++    return () => clearInterval(refresh);
++  }, [store, active]);
++  if (!current) return unavailable ? <span className="ap down" title={unavailable}>Autopilot unavailable</span> : null;
++  const { on, dimensions, inFlight, next } = current;
++  const running = inFlight.length;
++  return (
++    <div className={`ap${on ? "" : " off"}`}>
++      <label className="sw-l">
++        <button type="button" className="sw" role="switch" aria-checked={on} aria-label="Autopilot" disabled={phase.kind === "saving"}
++          onClick={() => void store.setOn(!on)} />
++        Autopilot
++      </label>
++      <div className="dims">
++        {dimensions.map((d) =>
++          d.key === "sessions" ? (
++            <div key={d.key} className="fw">
++              <button type="button" className="dmb" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Meter d={d} /></button>
++              {menu && <Sessions d={d} sessions={inFlight} now={now} close={() => setMenu(false)} />}
++            </div>
++          ) : <Meter key={d.key} d={d} />,
++        )}
++      </div>
++      {!on && <span className="paused" title={`${running === 1 ? "1 session" : `${running} sessions`} still running`}>Paused · {running} running</span>}
++      {on && (next ? (
++        // the pick's color carries its state (green starting, yellow waiting); the words stay on hover and for screen readers
++        <button type="button" className={`nx ${next.verdict}`} title={`${why(next)} · ${next.title}`} aria-label={`Next ${next.task}, ${why(next)}`}
++          onClick={() => openTask(next.task)}>
++          Next <b>{next.task}</b>
++        </button>
++      ) : <span className="nx none">Next · nothing eligible</span>)}
++      {phase.kind === "refused" && (
++        <div className="refusal ap-ref" role="alert">
++          <div className="k">the server refused the change</div><div className="via">{phase.reason}<button type="button" className="dismiss" aria-label="Dismiss" onClick={() => store.dismiss()}>✕</button></div>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/starpulse/web/src/features/autopilot/autopilot.ts b/starpulse/web/src/features/autopilot/autopilot.ts
+new file mode 100644
+index 0000000..8bfbba2
+--- /dev/null
++++ b/starpulse/web/src/features/autopilot/autopilot.ts
+@@ -0,0 +1,94 @@
++// The Kanban's autopilot strip: the global toggle and what the admission loop sees, read from /api/autopilot.
++// Off stops admission only: sessions already running keep running, and the strip says how many.
++import { apiFetch } from "../../api/apiFetch";
++
++export const ROUTE = "/api/autopilot";
++
++/** One capacity dimension: what is in use against the limit admission holds it under. `detail` is the meter's tooltip. */
++export interface Dimension {
++  key: string;
++  name: string;
++  used: number;
++  limit: number;
++  unit: string;
++  detail: string;
++}
++/** A session autopilot started and that is still running its task. */
++export interface InFlight {
++  task: string;
++  title: string;
++  model: string;
++  started: number;
++  url: string;
++}
++/** The task the loop would admit next, and whether it fits now or which dimension it waits on. */
++export interface NextPick {
++  task: string;
++  title: string;
++  verdict: "starting" | "waits";
++  reason: string;
++}
++export interface AutopilotState {
++  on: boolean;
++  dimensions: Dimension[];
++  inFlight: InFlight[];
++  next: NextPick | null;
++}
++
++export type Phase = { kind: "idle" } | { kind: "saving" } | { kind: "refused"; reason: string };
++export interface AutopilotView {
++  current: AutopilotState | null;
++  phase: Phase;
++  unavailable: string;
++}
++
++/** A dimension's meter state: quiet under 80% of its limit, near from there to the limit, over past it. */
++export const level = (d: Dimension): "ok" | "near" | "over" => (d.used > d.limit ? "over" : d.used >= 0.8 * d.limit ? "near" : "ok");
++
++type Answer = { ok: true; state: AutopilotState } | { ok: false; reason: string };
++
++async function ask(fetcher: typeof apiFetch, init: RequestInit | undefined, unreachable: string): Promise<Answer> {
++  let response: Response;
++  try {
++    response = await fetcher(ROUTE, init);
++  } catch {
++    return { ok: false, reason: unreachable };
++  }
++  const body: (Partial<AutopilotState> & { error?: string }) | null = await response.json().catch(() => null);
++  if (response.ok && Array.isArray(body?.dimensions) && Array.isArray(body?.inFlight)) return { ok: true, state: body as AutopilotState };
++  return { ok: false, reason: body?.error ?? `the server answered ${response.status}` };
++}
++
++export class AutopilotStore {
++  private view: AutopilotView = { current: null, phase: { kind: "idle" }, unavailable: "" };
++  private listeners = new Set<() => void>();
++  constructor(private fetcher: typeof apiFetch = apiFetch) {}
++
++  get = () => this.view;
++  subscribe = (fn: () => void) => {
++    this.listeners.add(fn);
++    return () => this.listeners.delete(fn);
++  };
++  private set(patch: Partial<AutopilotView>) {
++    this.view = { ...this.view, ...patch };
++    for (const fn of this.listeners) fn();
++  }
++
++  async load(): Promise<void> {
++    const answer = await ask(this.fetcher, undefined, "the server did not answer");
++    if (answer.ok) this.set({ current: answer.state, unavailable: "" });
++    else this.set({ unavailable: answer.reason });
++  }
++
++  async setOn(on: boolean): Promise<void> {
++    if (this.view.phase.kind === "saving") return;
++    this.set({ phase: { kind: "saving" } });
++    const answer = await ask(this.fetcher, { method: "PUT", body: JSON.stringify({ on }) }, "the change did not reach the server");
++    if (answer.ok) this.set({ current: answer.state, unavailable: "", phase: { kind: "idle" } });
++    else this.set({ phase: { kind: "refused", reason: answer.reason } });
++  }
++
++  dismiss() {
++    this.set({ phase: { kind: "idle" } });
++  }
++}
+diff --git a/starpulse/web/src/features/kanban/ConnectTracker.tsx b/starpulse/web/src/features/kanban/ConnectTracker.tsx
+index e701e1f..732f159 100644
+--- a/starpulse/web/src/features/kanban/ConnectTracker.tsx
++++ b/starpulse/web/src/features/kanban/ConnectTracker.tsx
+@@ -114,6 +114,21 @@ export function TrackerModal({ hint, close }: { hint?: string | null; close: ()
+   );
+ }
+ 
++/** The Admin view's Tracker card: which tracker the board is drawn from, and the setup steps for connecting another. */
++export function TrackerCard({ hint }: { hint?: string | null }) {
++  const [open, setOpen] = useState(false);
++  return (
++    <section className="card">
++      <h2>Tracker <span className="c">where the board's tasks come from</span></h2>
++      <div className="row">
++        <div><div className="lb">Board source</div><div className="hint">{hint ? "A tracker was found beside this board" : "StarPulse's own Markdown board until you connect another"}</div></div>
++        <div><button type="button" className="btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Connect a tracker</button></div>
++      </div>
++      {open && <TrackerModal hint={hint} close={() => setOpen(false)} />}
++    </section>
++  );
++}
++
+ export function ConnectTracker({ hint }: { hint?: string | null }) {
+   const [open, setOpen] = useState(false);
+   return (
+diff --git a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/features/kanban/Kanban.tsx
+index 46484e9..9aad3c6 100644
+--- a/starpulse/web/src/features/kanban/Kanban.tsx
++++ b/starpulse/web/src/features/kanban/Kanban.tsx
+@@ -8,7 +8,8 @@ import { ArchiveDialog } from "./ArchiveConfirm";
+ import { useViewActive } from "../../shared/Kept";
+ import { Viewport, ViewportRow } from "../../shared/ViewportRows";
+ import { ago } from "../../shared/clock";
+-import { ConnectTracker } from "./ConnectTracker";
++import { AutopilotStore } from "../autopilot/autopilot";
++import { AutopilotStrip } from "../autopilot/AutopilotStrip";
+ import type { HudState } from "../../render/hud";
+ import {
+   CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
+@@ -475,6 +476,8 @@ const LIFT_PX = 5;
+  * `searchSlot` is the navigator's search slot, where the text search draws; `onQuery` hears what it holds.
+  * `outlineSlot` is the navigator's outline slot, where the milestone outline draws and sets the Milestone filter.
+  */
++const autopilot = new AutopilotStore();
++
+ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, outlineSlot, onQuery, spot = null, note, opening = null }: {
+   hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; outlineSlot: HTMLElement | null; onQuery?: (query: string) => void;
+   spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
+@@ -784,11 +787,16 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+             {menu === "hidden" && <HiddenMenu prefs={prefs} tasks={cards} set={setPrefs} close={() => setMenu(null)} />}
+           </div>
+         )}
+-        <span className="shown">{view.shown} of {view.total} tasks</span>
+-        <NewTaskAction capabilities={hud.capabilities} lane={hud.names[lanes[0]] ?? lanes[0]}
+-          assignees={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)}
+-          created={(id) => setToast({ text: `${id} created`, sub: `in ${hud.names[lanes[0]] ?? lanes[0]}` })} />
+-        <ConnectTracker hint={hud.hint} />
++        <div className="rt">
++          <AutopilotStrip store={autopilot} now={now} openTask={setOpen} />
++          <span className="shown">{view.shown} of {view.total} tasks</span>
++          {/* a fixed slot, so the strip does not move when the count changes or New task arrives with the capabilities */}
++          <span className="nt">
++            <NewTaskAction capabilities={hud.capabilities} lane={hud.names[lanes[0]] ?? lanes[0]}
++              assignees={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)}
++              created={(id) => setToast({ text: `${id} created`, sub: `in ${hud.names[lanes[0]] ?? lanes[0]}` })} />
++          </span>
++        </div>
+       </div>
+       <div id="cols" ref={columns} data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
+         {view.columns.map((col) => {

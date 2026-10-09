@@ -922,3 +922,44 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
    size it last drew at. */
 #kb .card { content-visibility: auto; contain-intrinsic-size: auto 64px; }
 #dg .trow { content-visibility: auto; contain-intrinsic-size: auto 40px; }
+
+/* the Kanban toolbar's autopilot strip: the toggle, each capacity dimension's used/limit meter, the sessions in flight and the next pick */
+/* one static width per text size, fitted to the widest label, in every state: the switch and meters hold their places, the last label sits against the count and truncates first */
+#kb .ap { position: relative; display: flex; align-items: center; gap: 12px; flex: none; width: calc(147px + 438px * var(--fs)); min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 12px; border-inline: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); white-space: nowrap; }
+/* the strip leads the right-hand group, so the task count and New task follow it and wrap with it */
+#kb .filters .rt { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 0; min-width: 0; max-width: 100%; margin-left: auto; }
+#kb .ap + .shown { margin-left: 12px; width: calc(90px * var(--fs)); font-variant-numeric: tabular-nums; }
+#kb .rt .nt { display: flex; justify-content: flex-end; width: calc(86px * var(--fs)); }
+#kb .ap .sw-l { flex: none; display: flex; align-items: center; gap: 7px; font-size: calc(11.5px * var(--fs)); color: var(--ink-3); }
+:is(#admin, #kb) .sw:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
+#kb .sw { all: unset; position: relative; display: block; width: 30px; height: 16px; border-radius: 8px; background: color-mix(in srgb, var(--slate) 25%, transparent); transition: background .15s; }
+#kb .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); transition: left .15s; }
+#kb .sw[aria-checked=true] { background: var(--agent-deep); } #kb .sw[aria-checked=true]::after { left: 16px; }
+#kb .sw[disabled] { opacity: .45; }
+#kb .ap .dims { display: flex; flex: none; gap: 12px; transition: opacity .2s; }
+#kb .ap.off .dims { opacity: .45; }
+#kb .ap .dm { min-width: calc(56px * var(--fs)); }
+#kb .ap .dm .r { display: flex; justify-content: space-between; gap: 6px; font-size: calc(10.5px * var(--fs)); color: var(--muted); }
+#kb .ap .dm .r b { font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+#kb .ap .dm.near .r b { color: var(--run); } #kb .ap .dm.over .r b, #kb .ap .dm.over .r span { color: var(--fail); }
+#kb .ap .dm .m { height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--slate) 15%, transparent); margin-top: 3px; overflow: hidden; }
+#kb .ap .dm .m i { display: block; height: 100%; transition: width .5s; background: var(--slate); }
+#kb .ap .dm.near .m i { background: var(--run); } #kb .ap .dm.over .m i { background: var(--fail); }
+#kb .ap .dmb { all: unset; display: block; border-radius: 4px; }
+#kb .ap .dmb:hover .r span, #kb .ap .dmb:focus-visible .r span { color: var(--ink); } #kb .ap .dmb:focus-visible { outline: 1px solid var(--agent); outline-offset: 3px; }
+#kb .ap .paused { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: calc(11px * var(--fs)); color: var(--muted); }
+#kb .ap .nx { all: unset; flex: 1 1 0; min-width: 0; white-space: nowrap; text-align: right; overflow: hidden; text-overflow: ellipsis; font-size: calc(11px * var(--fs)); color: var(--muted); }
+#kb .ap button.nx:hover b, #kb .ap button.nx:focus-visible b { text-decoration: underline; }
+#kb .ap .nx b { font-weight: 500; color: var(--agent-text); }
+/* the pick takes the board's state colors: purple neutral, green activity, yellow hold, red error */
+#kb .ap .nx.waits b { color: var(--run-text); } #kb .ap .nx.starting b { color: var(--ok); animation: ap-go 1.2s ease-in-out infinite; }
+#kb .ap .nx.none { color: var(--agent-text); }
+@keyframes ap-go { 50% { opacity: .45; } }
+#kb .ap .ap-ses { left: auto; right: 0; min-width: 340px; }
+#kb .ap .ap-ses a { box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; width: 100%; padding: 5px 8px; border-radius: 5px; color: var(--ink-3); text-decoration: none; font-size: calc(12px * var(--fs)); }
+#kb .ap .ap-ses a:hover, #kb .ap .ap-ses a:focus-visible { background: color-mix(in srgb, var(--agent) 15%, transparent); color: var(--ink); outline: none; }
+#kb .ap .ap-ses .id { color: var(--agent-text); } #kb .ap .ap-ses .tt { overflow: hidden; text-overflow: ellipsis; } #kb .ap .ap-ses .md { color: var(--muted); }
+#kb .ap .ap-ses .none { padding: 5px 8px; color: var(--dim); font-size: calc(12px * var(--fs)); }
+#kb .ap .ap-ref { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; margin: 0; width: 320px; white-space: normal; border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); border-radius: 7px; }
+#kb .ap.down { justify-content: flex-end; font-size: calc(11px * var(--fs)); color: var(--fail-text); }
+@media (prefers-reduced-motion: reduce) { #kb .ap .dm .m i, #kb .ap .dims { transition: none; } #kb .ap .nx.starting b { animation: none; } }
