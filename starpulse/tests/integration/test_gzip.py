@@ -105,3 +105,43 @@ def test_the_stream_is_plain_for_a_page_that_does_not_accept_gzip(tmp_path: Path
 
     assert encoding is None
     assert first == b"event: snapshot\n"
+
+
+def _snapshot_ref(server: ThreadingHTTPServer) -> str:
+    """The body route a page that asks for the snapshot by reference reads it from."""
+    with urllib.request.urlopen(_url(server, "/api/events?snapshot=ref"), timeout=5) as resp:
+        frame = resp.readline() + resp.readline()
+    return frame.decode().partition("data: ref ")[2].strip()
+
+
+def test_the_snapshot_body_a_page_reads_by_reference_is_gzipped_for_a_page_that_accepts_gzip(tmp_path: Path) -> None:
+    with _serve(tmp_path, _large_feed()) as server:
+        ref = _snapshot_ref(server)
+        encoding, compressed = _get(server, ref, GZIP)
+        plain_encoding, plain = _get(server, ref, {})
+
+    assert (encoding, plain_encoding) == ("gzip", None)
+    assert gzip.decompress(compressed) == plain
+    assert len(compressed) < len(plain) // 3
+
+
+def test_a_hashed_asset_is_gzipped_and_kept_for_a_year(tmp_path: Path) -> None:
+    script = "export const board = 'a long line of the bundle';\n" * 400
+    with _serve(tmp_path) as server:
+        (tmp_path / "static" / "assets" / "index-abc123.js").write_text(script)
+        with urllib.request.urlopen(
+            urllib.request.Request(_url(server, "/assets/index-abc123.js"), headers=GZIP)
+        ) as resp:
+            zipped, body, kind = resp.headers, resp.read(), resp.headers["Content-Type"]
+        with urllib.request.urlopen(_url(server, "/assets/index-abc123.js")) as resp:
+            plain, plain_body = resp.headers, resp.read()
+
+    assert (zipped["Content-Encoding"], kind) == ("gzip", "text/javascript")
+    assert gzip.decompress(body).decode() == script == plain_body.decode()
+    assert plain["Content-Encoding"] is None
+    assert zipped["Cache-Control"] == plain["Cache-Control"] == "public, max-age=31536000, immutable"
+
+
+def test_the_page_itself_is_not_kept(tmp_path: Path) -> None:
+    with _serve(tmp_path) as server, urllib.request.urlopen(_url(server, "/")) as resp:
+        assert resp.headers["Cache-Control"] is None

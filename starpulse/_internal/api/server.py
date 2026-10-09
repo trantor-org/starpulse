@@ -138,6 +138,8 @@ from __future__ import annotations
 
 import argparse
 import functools
+import gzip
+import io
 import logging
 import math
 import os
@@ -177,7 +179,7 @@ from starpulse._internal.adapters.runs.pull_requests import PullRequests
 from starpulse._internal.adapters.runs.pull_store import PullSync
 from starpulse._internal.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.api import forward
-from starpulse._internal.api.compression import accepts_gzip, compressed, gzip_stream
+from starpulse._internal.api.compression import LEVEL, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.api.forward import Forwarder
 from starpulse._internal.api.snapshot_cache import SnapshotCache
 from starpulse._internal.api.writes import (
@@ -476,6 +478,19 @@ def _level_view(
     return encode(kind, answer), 200
 
 
+#: The Vite build names every file under it by its content's digest, so a new build never reuses a name.
+_ASSETS = "/assets/"
+_KEPT = "public, max-age=31536000, immutable"
+#: The static files worth gzipping: the build's text. Its images and fonts are already compressed.
+_TEXT = (".html", ".js", ".mjs", ".css", ".svg", ".json", ".map")
+
+
+@functools.lru_cache(maxsize=64)
+def _gzipped(path: str, mtime_ns: int) -> bytes:
+    """A static file gzipped once per build: `mtime_ns` keys a rebuilt file afresh."""
+    return gzip.compress(Path(path).read_bytes(), compresslevel=LEVEL, mtime=0)
+
+
 class _ApiHandler(SimpleHTTPRequestHandler):
     """The run endpoint and the JSON answer every API route sends; the page's routes subclass it."""
 
@@ -500,6 +515,30 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     forward: ForwardIngest | None
     forwarding: Forwarder | None
     milestones: Board | None
+
+    #: Whether the response being written is a hashed build asset's file, which a browser may keep for good.
+    _immutable = False
+
+    def send_head(self) -> Any:
+        """A static file's headers and the file to copy, gzipped when it is text and the page accepts gzip."""
+        path = self.translate_path(self.path)
+        self._immutable = urlsplit(self.path).path.startswith(_ASSETS) and os.path.isfile(path)
+        if not (path.endswith(_TEXT) and os.path.isfile(path) and accepts_gzip(self.headers.get("Accept-Encoding"))):
+            return super().send_head()
+        body = _gzipped(path, os.stat(path).st_mtime_ns)
+        self.send_response(200)
+        self.send_header("Content-Type", self.guess_type(path))  # pragma: no mutate: names are case-insensitive
+        self.send_header("Content-Encoding", "gzip")  # pragma: no mutate: names are case-insensitive
+        self.send_header("Vary", "Accept-Encoding")  # pragma: no mutate: names are case-insensitive
+        self.send_header("Content-Length", str(len(body)))  # pragma: no mutate: names are case-insensitive
+        self.end_headers()
+        return io.BytesIO(body)
+
+    def end_headers(self) -> None:
+        if self._immutable:
+            self.send_header("Cache-Control", _KEPT)  # pragma: no mutate: names are case-insensitive
+            self._immutable = False
+        super().end_headers()
 
     def handle_one_request(self) -> None:
         """Answer the request; a body its model refuses is a logged 500, since the page reads only what a model names."""
@@ -782,6 +821,9 @@ def request_handler(
             self.send_response(200)
             self.send_header("Content-Type", "application/json")  # pragma: no mutate: names are case-insensitive
             self.send_header("Cache-Control", "max-age=3600, immutable")  # pragma: no mutate: names are case-insensitive
+            if (gzipped := compressed(body, self.headers.get("Accept-Encoding"))) is not None:
+                body = gzipped
+                self.send_header("Content-Encoding", "gzip")  # pragma: no mutate: names are case-insensitive
             self.end_headers()
             self.wfile.write(body)
 
