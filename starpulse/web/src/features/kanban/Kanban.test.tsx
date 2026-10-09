@@ -219,12 +219,12 @@ describe("a Waiting stack", () => {
 
   it("re-forms when a drag moves a stacked task out of Waiting, so the badge and its cards go with it", () => {
     const draw = (tasks: KanbanTask[]) => renderToStaticMarkup(
-      <>{layout(tasks, { waiting: "Waiting" }, NO_PREFS).columns.find((c) => c.id === "waiting")!.buckets.map((b) => <Stacks key={b.milestone} stacks={b.stacks} card={card} enabled />)}</>,
+      <>{layout(tasks, { waiting: "Waiting" }, NO_PREFS, 0).columns.find((c) => c.id === "waiting")!.buckets.map((b) => <Stacks key={b.milestone} stacks={b.stacks} card={card} enabled />)}</>,
     );
     const moved = place(chain, { pending: { "T-2": { from: "waiting", to: "ready", saving: true, at: 1 } }, refused: {} });
 
     expect(draw(chain)).toContain('class="stack"');
-    expect(stackOf(layout(chain, {}, NO_PREFS), "T-3")?.members).toHaveLength(3);
+    expect(stackOf(layout(chain, {}, NO_PREFS, 0), "T-3")?.members).toHaveLength(3);
     const after = draw(moved);
     expect(after).not.toContain('class="stack"');
     expect(after).not.toContain('class="sk"');

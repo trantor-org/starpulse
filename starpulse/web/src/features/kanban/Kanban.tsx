@@ -11,7 +11,7 @@ import { ago } from "../../shared/clock";
 import { ConnectTracker } from "./ConnectTracker";
 import type { HudState } from "../../render/hud";
 import {
-  CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll,
+  CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
   STACKED, stackOf, stackStep, toggleFold, unstacked, whyHidden,
   type KanbanTask, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanban";
@@ -579,7 +579,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     const saved = edited[card.id];
     return saved?.source === hud.cards ? applyTaskRecord(card, saved.record) : card;
   }), gone), [edited, gone, hud.cards, moved, started]);
-  const view = useMemo(() => layout(cards, hud.names, prefs), [cards, hud.names, prefs]);
+  const view = useMemo(() => layout(cards, hud.names, prefs, now), [cards, hud.names, prefs, now]);
   const holds = useMemo(() => holdCounts(cards), [cards]);
   const blockers = useMemo(() => holders(cards, holds), [cards, holds]);
   const [pointed, setHovered] = useState<string | null>(null);
@@ -592,9 +592,9 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   }, [cards, hovered, lift, spot]);
   useEffect(() => {
     if (!spot) return void note?.(null);
-    note?.(whyHidden(cards, hud.names, prefs, spot));
+    note?.(whyHidden(cards, hud.names, prefs, spot, now));
     document.querySelector<HTMLElement>(`#cols .card[data-id="${spot}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [spot, cards, hud.names, prefs, note]);
+  }, [spot, cards, hud.names, prefs, note, now]);
   // each click is a new object, so the same line clicked twice opens it twice; a task with no card opens no modal
   const opened = useRef(opening);
   useLayoutEffect(() => {
@@ -610,10 +610,11 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   }, [toast]);
   const marksOf = (id: string): Marks => ({ saving: moved.pending[id]?.saving, refusal: moved.refused[id], claim: started.claiming[id], failed: started.failed[id] });
   const lanes = useMemo(() => columnsOf(hud.names), [hud.names]);
-  const suggestions = useMemo(() => labelSuggestions(cards, prefs.query, lanes), [cards, prefs.query, lanes]);
+  const drawn = useMemo(() => recent(cards, now), [cards, now]);
+  const suggestions = useMemo(() => labelSuggestions(drawn, prefs.query, lanes), [drawn, prefs.query, lanes]);
   const at = Math.min(pick, suggestions.length - 1);
-  const assignees = useMemo(() => assigneeOptions(cards, lanes), [cards, lanes]);
-  const milestones = useMemo(() => milestoneOptions(cards, lanes), [cards, lanes]);
+  const assignees = useMemo(() => assigneeOptions(drawn, lanes), [drawn, lanes]);
+  const milestones = useMemo(() => milestoneOptions(drawn, lanes), [drawn, lanes]);
   const choose = (label: string) => {
     setPrefs((p) => ({ ...p, query: applySuggestion(p.query, label) }));
     setPick(0);
