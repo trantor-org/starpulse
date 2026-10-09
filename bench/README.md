@@ -1,9 +1,9 @@
 # Benchmarks
 
 Three scripts measure the event log at the two ends of a deployment and the reads of the store beside it, a fourth
-times a running page against its latency budget, and a fifth holds that page open idle to see it degrade. They are not
-part of the installed package and the test suite does not run them; `ci/test_page_latency.py` and `ci/test_soak.py`
-hold the two page harnesses' rules.
+times a running page against its latency budget, a fifth holds that page open idle to see it degrade, and a sixth loads
+it with many viewers at once. They are not part of the installed package and the test suite does not run them;
+`ci/test_page_latency.py`, `ci/test_soak.py` and `ci/test_load.py` hold the page harnesses' rules.
 
 | Script | Measures | Needs |
 | --- | --- | --- |
@@ -12,8 +12,9 @@ hold the two page harnesses' rules.
 | `flow_reads.py` | the p95 of flow health, the level and its trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
 | `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
 | `soak.py` | one idle tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files | a running StarPulse and Google Chrome |
+| `load.py` | a Locust crowd of viewers, each holding the event stream open and reading the `/api` routes: per-route p50, p95 and p99 and the stream's first snapshot, against 50 ms | a running StarPulse |
 
-Run them from the repository root after `uv sync`; `page_latency.py` and `soak.py` also need `uv sync --group bench`.
+Run them from the repository root after `uv sync`; `page_latency.py`, `soak.py` and `load.py` also need `uv sync --group bench`.
 
 ## Hub ingest
 
@@ -164,3 +165,22 @@ upward: the lowest value of the run's last third sits above the lowest of its fi
 third by more than the metric's allowance (`ALLOWANCE` in the script). The lowest value ignores the sawtooth of
 garbage collection and still catches a leak, which lifts it. A run under six samples is reported but not judged for
 trends. `--report` holds every probe, sample, trend and failure as JSON.
+
+## Load
+
+```sh
+uv run --group bench locust -f bench/load.py --host http://127.0.0.1:8766 --headless -u 50 -r 5 -t 2m
+uv run --group bench locust -f bench/load.py --host http://127.0.0.1:8766
+```
+
+`page_latency.py` times one viewer; this times the same budget under a crowd. Each Locust user is one open page: it
+holds `/api/events?snapshot=ref` open, reads the snapshot body its first event names, then reads a random `/api` route
+from `page_latency.py`'s `READS` every 0.5 to 2 seconds. Each viewer first probes every route once (the `discovery`
+row, not judged) and skips one that does not answer 200, as the seeded server's milestones and docs do not. `-u` is
+the crowd, `-r` how many join a second, `-t` the run; without `--headless` Locust serves its web UI on port 8089 and
+charts the crowd live. `--what-if FROM TO` is `page_latency.py`'s (`in_progress review` on `ci/seeded_server.py`).
+
+At the end Locust prints each route's p50 to p100 and `/api/events first snapshot`, connect to the end of the
+stream's first `snapshot` event. The run exits 1, printing an `OVER BUDGET` line per cause, when a route's p95 is over
+50 ms or one of its requests failed. Every viewer holds a server thread for its stream, so a high `-u` also measures
+how the server shares its threads; host load moves the tail as it does `page_latency.py`'s.

@@ -40,8 +40,9 @@ READERS = {
     "design/*": ("ci/ui_preview.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
     "starpulse/store/migrations/*": ("starpulse/api/hub.py",),
-    "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py"),
+    "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py", "ci/test_load.py"),
     "bench/soak.py": ("ci/test_soak.py",),
+    "bench/load.py": ("ci/test_load.py",),
 }
 
 #: Workflow files are read by the `ci/` tests that assert on them.
