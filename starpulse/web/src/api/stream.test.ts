@@ -129,7 +129,7 @@ describe("applyDelta", () => {
     const s = board([], { dags, pools: [{ name: "ci/a", cap: 1, running: 0, queued: 0 }], ledgers, mergePins: [row("p")] });
 
     const d = applyDelta(s, { kind: "dags", dags: wire(dags.map((x) => (x.name === "ci/b" ? { ...x, status: "failed" } : x))), pools: wire(s.pools!), error: null });
-    const l = applyDelta(s, { kind: "ledgers", ledgers: wire({ ...ledgers, pr_merged: [row("b"), row("c")] }), mergeStrip: null, mergePins: wire(s.mergePins!) });
+    const l = applyDelta(s, { kind: "ledgers", ledgers: wire({ pr_merged: [row("c")] }), gone: {}, mergeStrip: null, mergePins: wire(s.mergePins!) });
 
     expect(d.dags[0]).toBe(s.dags[0]);
     expect(d.dags[1]).not.toBe(s.dags[1]);
@@ -137,6 +137,7 @@ describe("applyDelta", () => {
     expect(d.pools).toBe(s.pools);
     expect(l.ledgers!.pr_opened).toBe(ledgers.pr_opened);
     expect(l.ledgers!.pr_merged).toHaveLength(2);
+    expect(l.ledgers!.pr_merged[0]).toBe(ledgers.pr_merged[0]);
     expect(l.mergePins).toBe(s.mergePins);
   });
 
