@@ -969,7 +969,7 @@ internal and can change in any release.
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
 
-- `starpulse.board`: the board adapter seam (`Board`, `Written` and the writer, task, milestone and doc protocols).
+- `starpulse.board`: the board adapter seam (`Board`, `Written`, the writer, task, milestone and doc protocols, and the `UpstreamBacklog` reference adapter).
 - `starpulse.board_feed`: the feed a board adapter places tasks on (`BoardFeed`) and what following a stream needs of it.
 - `starpulse.contracts`: the board, machine-event, runs (`Dag`, `RecentRun`) and insights (`Finding`) records, their JSON Schemas, and `RunsSink`.
 - `starpulse.adapter_kit`: the test kit an adapter or insights engine author runs against their work, and the helpers that serve it.
