@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { arrivalRings, DAG_COLOR, dagRings, feedOf, orbiterLook, tierColor } from "./renderer";
+import { arrivalRings, tierColor } from "./draw";
+import { DAG_COLOR, dagRings, feedOf, orbiterLook } from "./renderer";
 import { nameLines } from "./dagTies";
 import { PULSE } from "./sky";
 import type { Dag } from "../api";

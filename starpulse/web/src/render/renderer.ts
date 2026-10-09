@@ -11,6 +11,7 @@ import { apiFetch } from "../api/apiFetch";
 import { demoLive, demoStep } from "../demo/demo";
 import { RunEvents, type RunLine } from "../features/fanout/fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
+import { ACT, EXT, OFF, TRACE, drawing, ease, easeO, rgba, tierColor, type DrawCtx, type Hover, type LTask } from "./draw";
 import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
 import { freshKeys, optionalSteps, statusLine } from "../features/level/ledger";
@@ -26,8 +27,7 @@ import { RerunStore, rerunLine } from "../features/level/rerun";
 import { spotIn, type Target } from "../features/level/search";
 import {
   BOARD_COLOR, SUN_R, RAMP, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, textW, turnPage,
-  type BEdge, type Body, type Curve, type Galaxy, type GNode, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene,
-  type LedgerView, type MachineTask, type Moon, type Pager, type RowView, type Star, type SubState, type Sun,
+  type BEdge, type Body, type Curve, type GNode, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene, type Pager, type Star,
 } from "./scene";
 import { FLARE, Moves, PULSE, RING, TRAVEL, countText, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
 import { kanbanTasks } from "../features/kanban/kanban";
@@ -37,22 +37,22 @@ import { createHistory } from "../api/history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "../features/level/trace";
 import { dagData } from "../features/dags/dags";
-import { boardTies, hangarLevel, nameLines, tieLedger, touches, type Hub, type Orbiter, type Ties } from "./dagTies";
+import { boardTies, hangarLevel, nameLines, tieLedger, touches, type Hub, type Ties } from "./dagTies";
 import { hubTip, tieTip } from "./dagTieTips";
-import type { ContractReport, Dag, Delta, LedgerRow, Machine, MachineEntry, RawAgent, Snapshot, Writer } from "../api";
+import type { Dag, Delta, LedgerRow, Machine, RawAgent, Snapshot, Writer } from "../api";
 import { fanBadge, fanTip, stepStatus } from "../features/fanout/fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
-import { ADMIN_DEFAULTS, labelPx, type AdminPrefs } from "../features/admin/adminPrefs";
+import { ADMIN_DEFAULTS, type AdminPrefs } from "../features/admin/adminPrefs";
 import { clockHm, clockHms, stamp } from "../shared/clock";
-import { sizes as ledgerSizes, slot as ledgerSlot } from "../features/level/machineLedger";
-import { entryAt, entryPath, PAGE, rowLabels } from "../features/level/machineLanes";
-import { emptyNote, firstOpened, rowMeta, stuckCount } from "../features/level/machineRows";
+import { sizes as ledgerSizes } from "../features/level/machineLedger";
+import { firstOpened, rowMeta } from "../features/level/machineRows";
 import { asked, arrived as pageArrived, failed, nextQuery, paging, reveal, RETRY, wantNext, type Paging } from "../features/level/machinePaging";
-import { dragTo, inputGoal, revealGoal, thumbOf, windowOf, type ScrollInput, type Thumb } from "../features/level/machineScroll";
-import { stripLabel, stripScale, tickAt, ticks, viewSpan, type Tick } from "../features/level/machineStrip";
-import { heldBy, sessionsOf, traceSteps, type Spot } from "../features/level/machineTrace";
+import { dragTo, inputGoal, revealGoal, type ScrollInput } from "../features/level/machineScroll";
+import { tickAt } from "../features/level/machineStrip";
+import { heldBy, sessionsOf, traceSteps } from "../features/level/machineTrace";
 import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, retired, viewOf, viewSearch } from "../shared/nav";
+import { machineLedger, type Rail } from "./machineLedgerDraw";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
 export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
@@ -61,24 +61,9 @@ export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "
 /** The Ledger's colours by run state: an overdue cue is drawn as a failure, and another repository's unapplied merge as waiting. */
 const LEDGER_PALETTE: Record<string, string> = { ...DAG_COLOR, waiting: CROSS, overdue: DAG_COLOR.failed };
 export const orbiterLook = (status: string) => ({ spin: status === "running", color: status === "queued" ? "#94a3b8" : DAG_COLOR[status] || "#94a3b8", dashed: status === "failed" });
-/** Declared step kind rings on a DAG's level. */
-/** Activity: everything that moves on any level uses this one colour. */
-const ACT = "#fbbf24";
-/** An agent is coloured by the tier its profile names (`@agent-<tier>-<effort>`); a person or fast is the other colour. */
-export const tierColor = (profile = "") =>
-  profile.startsWith("@agent-deep") ? "#c4b5fd" : profile.startsWith("@agent-standard") ? "#67e8f9" : "#fde68a";
-const rgba = (h: string, a: number) => {
-  const n = parseInt(h.slice(1), 16);
-  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
-};
-const ease = (u: number) => (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
-/** The current board's ease-out for a hop. */
-const easeO = (u: number) => 1 - Math.pow(1 - u, 3);
 const finished = (iso: string) => (iso ? Date.parse(iso) / 1000 : NaN);
 
 /** The ring a DAG's run ending at `fin` has on screen at `now`, as its age from 0 to 1: one ring per event, over PULSE, never repeated. */
-/** The ring an arrival shows at `age`, 0 to 1 over PULSE: one ring, never a second a beat behind it. */
-export const arrivalRings = (age: number): number[] => (age > 0 && age < 1 ? [age] : []);
 export const dagRings = (fin: number | undefined, now: number): number[] =>
   fin !== undefined && fin <= now && now - fin < PULSE ? [(now - fin) / PULSE] : [];
 
@@ -103,32 +88,6 @@ function keep(key: string, value: unknown) {
 let seed = 7;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 const STARS = Array.from({ length: 160 }, () => ({ x: rnd(), y: rnd(), r: rnd() * 1.1 + 0.2, p: rnd() * TAU }));
-
-/** A task's session in one machine of the machine ledger. */
-type LTask = { flow: string; agent: RawAgent };
-type Hover =
-  | { kind: "mtask"; o: MachineTask }
-  | { kind: "ltask"; o: LTask }
-  | { kind: "task"; o: Body }
-  | { kind: "dag"; o: Star }
-  | { kind: "state"; o: MState }
-  | { kind: "planet"; o: Planet }
-  | { kind: "sun"; o: Sun }
-  | { kind: "galaxy"; o: Galaxy }
-  | { kind: "moon"; o: Moon }
-  | { kind: "sat"; o: SubState }
-  | { kind: "medge"; o: MEdge }
-  | { kind: "row"; o: RowView }
-  | { kind: "rstate"; o: RowView["nodes"][number] }
-  | { kind: "bedge"; o: BEdge }
-  | { kind: "tie"; o: Orbiter }
-  | { kind: "hub"; o: Hub }
-  | { kind: "link"; o: Hop }
-  | { kind: "caption"; o: LedgerView["cols"][number] }
-  | { kind: "lrow"; o: LedgerRow }
-  | { kind: "lstep"; o: GNode }
-  | { kind: "ljunction"; o: LedgerView }
-  | { kind: "ldoctor"; o: ContractReport };
 
 /** What the Playwright probe reads: the level, where its box sits on screen, and what a click there opens. */
 export interface Probe {
@@ -218,6 +177,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // The stream the page reads its snapshot and every change after it from.
   let stream: { close(): void } | null = null, last = 0;
 
+  // The frame's drawing: the primitives read the zoom, clock, type scale and hover as they run, and the machine ledger draws from the state below.
+  const dc: DrawCtx = {
+    cx, get K() { return K; }, get ZS() { return ZS; }, get clock() { return clock; }, get scale() { return prefs().scale; }, get hover() { return hover; },
+  };
+  const pen = drawing(dc);
+  const { nameWidth, text, labPx, label, circle, dot, isHot, disc, hole, comet, pulse, flowLine, fitText, stroke, rail, arrow, badge, pill, body, drawTrackRings, machine, machineName } = pen;
+  const mled = machineLedger(dc, pen, {
+    get S() { return S; }, get scene() { return scene; }, get FW() { return FW; }, get H() { return H; }, get T() { return T; }, get hotEdge() { return hotEdge; },
+    events: () => EVENTS(), hhmm, get scrollPos() { return scrollPos; }, get pg() { return pg; }, get pickedRow() { return pickedRow; }, get lpin() { return lpin; },
+    get railHover() { return railHover; }, get thumbDrag() { return !!thumbDrag; }, get glow() { return glow; }, set glow(g) { glow = g; },
+  });
+
   // A self-contained demo page: its embedded snapshot already holds every flow, and its address is not the server's.
   const fixture = embedded() !== null;
   const level = (): Level => path[path.length - 1];
@@ -235,16 +206,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // the default view fits the level's content box (the whole sky on the Board), centred between the open navigator and the
   // rail; a panel floats over it
   const fitScene = (): View => fitLevel(scene!, FW, H);
-  /** A name's width in the type the ledger draws it in, so the layout places names by the width they take. */
-  const nameWidth = (s: string, size: number, weight = 300) => {
-    const was = cx.letterSpacing;
-    cx.font = `${weight} ${size}px Inter, system-ui, sans-serif`;
-    cx.letterSpacing = "0.6px";
-    const w = cx.measureText(s).width;
-    cx.letterSpacing = was; // measured mid-draw, so the text drawn after it keeps its spacing
-    return w;
-  };
-  /** The page's crumb and clock float over the canvas: the boxes they cover, in the ledger's own pixels, and where the crumb ends. */
   const chromeBoxes = () => {
     const box = (el: Element | null) => {
       const b = el?.getBoundingClientRect();
@@ -430,8 +391,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     drag = null;
   };
   const onMove = (e: MouseEvent) => {
-    if (thumbDrag && railThumb && scene?.top) {
-      scrollGoal = scrollPos = dragTo(railThumb, thumbDrag.g0, e.clientY - thumbDrag.y, scene.top.max);
+    if (thumbDrag && mled.thumb && scene?.top) {
+      scrollGoal = scrollPos = dragTo(mled.thumb, thumbDrag.g0, e.clientY - thumbDrag.y, scene.top.max);
       return;
     }
     if (scroll.drag) {
@@ -714,9 +675,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** What the machine across a level's top is under (x, y): a task, a state or a flow line, each sized to grow with the text. */
   function hitTop(sc: Scene, x: number, y: number): Hover | null {
     const { gs } = ledgerSizes(prefs().scale), top = sc.top!;
-    for (const t of ledTasks) if (Math.hypot(t.x - x, t.y - y) < 11) return { kind: "ltask", o: t.o };
+    for (const t of mled.tasks) if (Math.hypot(t.x - x, t.y - y) < 11) return { kind: "ltask", o: t.o };
     if (y >= top.laneTop && y < top.laneBottom && x > top.metaX - 10 && x < top.x1 + 20) {
-      const d = lane.find((q) => y >= q.y && y < q.y + q.row.h);
+      const d = mled.lane.find((q) => y >= q.y && y < q.y + q.row.h);
       if (!d) return null;
       const n = d.row.nodes.find((q) => Math.hypot(q.x - x, d.y + d.row.c + q.oy - y) < q.r + 4 * gs);
       return n ? { kind: "rstate", o: n } : { kind: "row", o: d.row };
@@ -1009,16 +970,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** A state's name in one machine of the ledger. */
   const stName = (m: string, s: string) => S?.flows[m]?.machine.states.find((x) => x.id === s)?.name ?? s;
   const boardTitle = (a: RawAgent) => S?.board.agents.find((b) => b.id === a.task)?.title ?? "";
-  /** Whether the ledger lays out a state: the top machine's, or a row's. */
-  const ledgerHas = (s: Spot) => {
-    const top = scene!.top!;
-    return s.machine === top.flow ? top.nodes.some((n) => n.id === s.state) : !!top.rows.find((r) => r.name === s.machine)?.nodes.some((n) => n.id === s.state);
-  };
   /** A click on a ledger task pins its path and lists its sessions and its steps in the panel. */
   function openLedgerTask(o: LTask) {
     const sky = S!, all = sessionsOf(sky.flows, o.flow, o.agent);
     pinLedger({ flow: o.flow, id: o.agent.id, task: o.agent.task ?? null, label: o.agent.task || o.agent.title || o.agent.id, machines: all.map((b) => b.machine) });
-    const top = scene!.top!, steps = traceSteps(sky.flows, all, top.flow, ledgerHas);
+    const top = scene!.top!, steps = traceSteps(sky.flows, all, top.flow, mled.ledgerHas);
     const colOf = (m: string) => {
       const init = sky.flows[m]?.machine.states.find((s) => s.initial)?.id ?? sky.flows[m]?.machine.states[0]?.id;
       return (m === top.flow ? scene!.mStates[init ?? ""]?.color : top.rows.find((r) => r.name === m)?.nodes.find((n) => n.id === init)?.color) ?? RAMP[2];
@@ -1081,120 +1037,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
 
   // ---- drawing ----
-  function text(s: string, x: number, y: number, size: number, col: string, align: CanvasTextAlign = "center", weight = 400) {
-    cx.font = `${weight} ${size}px Inter, system-ui, sans-serif`;
-    cx.fillStyle = col;
-    cx.textAlign = align;
-    cx.textBaseline = "middle";
-    cx.fillText(s, x, y);
-  }
-  const labPx = (n: number) => labelPx(n, K, prefs().scale);
-  // names sit outside their node in a light, translucent face (the same see-through weight as the flow lines); a hovered node's name firms up
-  function label(name: string, x: number, y: number, hot: boolean, sub?: string | null, size = 12.5) {
-    size = labelPx(size, K, prefs().scale); // type is a fixed size on screen: readable at fit, never balloons when zoomed in; the Admin font size scales it
-    cx.letterSpacing = `${0.6 / K}px`;
-    text(name, x, y, size, rgba("#cfd9ea", hot ? 0.95 : 0.58), "center", 300);
-    if (sub) text(sub, x, y + size + 3 / K, size - labelPx(2, K, prefs().scale), rgba("#94a3b8", hot ? 0.8 : 0.42), "center", 300);
-    cx.letterSpacing = "0px";
-  }
-  function circle(x: number, y: number, r: number, stroke: string, w = 1, dash?: number[] | null) {
-    cx.strokeStyle = stroke;
-    cx.lineWidth = w;
-    cx.setLineDash(dash || []);
-    cx.beginPath();
-    cx.arc(x, y, r, 0, TAU);
-    cx.stroke();
-    cx.setLineDash([]);
-  }
-  function dot(x: number, y: number, r: number, fill: string) {
-    cx.fillStyle = fill;
-    cx.beginPath();
-    cx.arc(x, y, r, 0, TAU);
-    cx.fill();
-  }
-  const isHot = (kind: Hover["kind"], o: unknown) => !!hover && hover.kind === kind && hover.o === o;
-  function disc(x: number, y: number, r: number, col: string, hot: boolean, alpha = 0.16) {
-    const grd = cx.createRadialGradient(x, y, 0, x, y, r);
-    grd.addColorStop(0, rgba(col, alpha));
-    grd.addColorStop(1, rgba(col, 0.02));
-    cx.fillStyle = grd;
-    cx.beginPath();
-    cx.arc(x, y, r, 0, TAU);
-    cx.fill();
-    circle(x, y, r, rgba(col, hot ? 0.9 : 0.4), hot ? 2 : 1.2);
-  }
-  /** A terminal state as a black hole: a lensing halo in the state's colour, a shadow darker than the sky, one bright photon ring and a faint outer edge. */
-  function hole(x: number, y: number, r: number, col: string, hot: boolean) {
-    const rs = r * 0.6, g = cx.createRadialGradient(x, y, rs, x, y, r);
-    g.addColorStop(0, rgba(col, hot ? 0.42 : 0.28));
-    g.addColorStop(1, rgba(col, 0));
-    cx.fillStyle = g;
-    cx.beginPath();
-    cx.arc(x, y, r, 0, TAU);
-    cx.fill();
-    dot(x, y, rs, "#010205");
-    circle(x, y, rs, rgba(col, hot ? 1 : 0.85), hot ? 2 : 1.4);
-    circle(x, y, r, rgba(col, hot ? 0.5 : 0.14), 1);
-  }
   /** The value `key` shows on this level, eased from the one it showed when a snapshot changes it: the Board's places, sky and sizes and a
    *  state's sun take it as the level is laid out (`layout`), so their tasks, paths and neighbours move with them; a machine's states draw at it. */
   const sized = (key: string, r: number) => grown.of(`${pathKey(path)}|${key}`, r, performance.now());
-  /** A Board state's or a fold end's body: a black hole where a task's lifecycle ends, else its disc. */
-  const body = (o: Pt & { id: string; name: string; r: number; color: string; final: boolean }, hot: boolean) => {
-    if (terminal(o)) hole(o.x, o.y, o.r, o.color, hot);
-    else disc(o.x, o.y, o.r, o.color, hot);
-  };
-  // the current board's hop: a tapering tail (alpha and width grow toward the head), then a glowing head, in the mover's model colour
-  function comet(p0: Pt, c: Pt, p1: Pt, u: number, r = 3, col = ACT) {
-    const n = 14, span = 0.27 * Math.min(1, u + 0.05);
-    for (let i = 1; i <= n; i++) {
-      const a = bez(p0, c, p1, Math.max(0, u - span * (1 - (i - 1) / n))), b = bez(p0, c, p1, Math.max(0, u - span * (1 - i / n)));
-      cx.strokeStyle = rgba(col, (i / n) * 0.6);
-      cx.lineWidth = ((i / n) * 2.6) / Math.max(1, ZS * 0.8);
-      cx.beginPath();
-      cx.moveTo(a.x, a.y);
-      cx.lineTo(b.x, b.y);
-      cx.stroke();
-    }
-    const h = bez(p0, c, p1, u), gr = 14 / ZS;
-    cx.globalCompositeOperation = "lighter";
-    const g = cx.createRadialGradient(h.x, h.y, 0, h.x, h.y, gr);
-    g.addColorStop(0, rgba(col, 0.7));
-    g.addColorStop(1, rgba(col, 0));
-    cx.fillStyle = g;
-    cx.beginPath();
-    cx.arc(h.x, h.y, gr, 0, TAU);
-    cx.fill();
-    cx.globalCompositeOperation = "source-over";
-    dot(h.x, h.y, r, rgba(col, 0.95));
-  }
-  // an arrival's ring: one ring, radius eased out, fading fast; sized in screen terms so a hard zoom keeps it small
-  function pulse(x: number, y: number, r: number, age: number, col = ACT, grow = 38) {
-    for (const q of arrivalRings(age)) {
-      circle(x, y, r + (easeO(q) * grow) / ZS, rgba(col, Math.pow(1 - q, 2) * 0.85), (2 * (1 - q) + 0.4) / ZS);
-    }
-  }
-  const drawTrackRings = (host: { x: number; y: number; rings?: number[] }, col: string) => {
-    for (const R of host.rings || []) circle(host.x, host.y, R, rgba(col, 0.11));
-  };
-  // a lifecycle machine is a flat disc with a thin ring outside it, the one mark that tells it from a state
-  function machine(x: number, y: number, r: number, hot: boolean, alpha: number, mapped = false) {
-    const col = mapped ? EXT : "#c084fc";
-    disc(x, y, r, col, hot, alpha);
-    circle(x, y, r + 3, rgba(col, hot ? 0.9 : 0.5), 1);
-  }
-  /** A mapped machine (machine.source: a third party moves it) is drawn like a local one, in a colour of its own: blue, never purple. */
-  const EXT = "#60a5fa";
   const sourceOf = (flow: string | null | undefined) => (flow ? S?.flows[flow]?.machine.source ?? undefined : undefined);
-  /** A machine's name; a mapped machine's name and source are in its colour, and the pair keeps the alignment the name had. */
-  function machineName(s: string, x: number, y: number, size: number, col: string, align: CanvasTextAlign, src?: string) {
-    if (!src) return text(s, x, y, size, col, align, 300);
-    cx.font = `300 ${size}px Inter, system-ui, sans-serif`;
-    const wm = cx.measureText(s).width, gap = size * 0.45, ws = cx.measureText(src).width, x0 = align === "left" ? x : align === "right" ? x - wm - gap - ws : x - (wm + gap + ws) / 2;
-    text(s, x0, y, size, rgba(EXT, 0.95), "left", 300);
-    text(src, x0 + wm + gap, y, size, rgba(EXT, 0.6), "left", 300);
-  }
-
   function drawGalaxies() {
     for (const g of Object.values(scene!.galaxies)) {
       const hot = isHot("galaxy", g);
@@ -1337,15 +1183,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const f = moves.flare[n];
     return f !== undefined && f <= T ? Math.max(0, 1 - (T - f) / FLARE) : 0;
   };
-  function flowLine(a: Pt & { color: string }, b: Pt & { color: string }, alpha: number, heat: number, dash = [2, 5]) {
-    const g = cx.createLinearGradient(a.x, a.y, b.x, b.y);
-    g.addColorStop(0, rgba(a.color, alpha));
-    g.addColorStop(1, rgba(b.color, alpha));
-    cx.strokeStyle = g;
-    cx.lineWidth = (1 + heat * 1.5) / Math.min(1, K) ** 0.5 / Math.max(1, ZS);
-    cx.setLineDash(dash.map((d) => (d / K) * 1.2));
-    cx.lineDashOffset = ((-clock * 12) / K) * 1.2;
-  }
   function drawBoardEdges() {
     const sc = scene!;
     for (const e of sc.bEdges) {
@@ -1606,36 +1443,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       }
     }
   }
-  /** `s` cut to `max` px at `size`, ending in an ellipsis when it was cut. */
-  function fitText(s: string, max: number, size: number) {
-    cx.font = `400 ${size}px Inter, system-ui, sans-serif`;
-    if (cx.measureText(s).width <= max) return s;
-    let lo = 0, hi = s.length;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (cx.measureText(`${s.slice(0, mid)}…`).width <= max) lo = mid;
-      else hi = mid - 1;
-    }
-    return `${s.slice(0, lo)}…`;
-  }
-  /** A stroked polyline at screen weight `w`. */
-  function stroke(pts: Pt[], col: string, w = 1, dash?: number[]) {
-    cx.strokeStyle = col;
-    cx.lineWidth = w / K ** 0.5;
-    cx.setLineDash((dash ?? []).map((d) => d / K));
-    cx.beginPath();
-    pts.forEach((p, i) => (i ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y)));
-    cx.stroke();
-    cx.setLineDash([]);
-  }
-  /** A rail: the dashed stream the page draws for every action, brighter and moving while its DAG runs; a cue's dots are sparser. */
-  function rail(pts: (Pt & { c?: Pt })[], a: string, b: string, heat: number, cue: boolean) {
-    flowLine({ ...pts[0], color: a }, { ...pts[pts.length - 1], color: b }, (cue ? 0.32 : 0.45) + heat * 0.45, heat, cue ? [1.5, 7] : [2, 5]);
-    cx.beginPath();
-    pts.forEach((p, i) => (i ? (p.c ? cx.quadraticCurveTo(p.c.x, p.c.y, p.x, p.y) : cx.lineTo(p.x, p.y)) : cx.moveTo(p.x, p.y)));
-    cx.stroke();
-    cx.setLineDash([]);
-  }
   // A Ledger's arrivals: the rows it held at the last look (null until a look, so a page opened or a level entered shows its rows still), each new row's
   // clock, and the rings and comets its merge sets off along the path. A level not drawn for a while forgets what it held.
   let ledgerSeen: Set<string> | null = null, ledgerAt = 0;
@@ -1859,39 +1666,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
     drawFx(f);
   }
-  const TRACE = "#fbbf24", OFF = "#fb7185";
-  function arrow(from: Pt, to: Pt, col: string, size: number) {
-    const a = Math.atan2(to.y - from.y, to.x - from.x), s = size / K;
-    cx.fillStyle = col;
-    cx.beginPath();
-    cx.moveTo(to.x, to.y);
-    cx.lineTo(to.x - s * Math.cos(a - 0.4), to.y - s * Math.sin(a - 0.4));
-    cx.lineTo(to.x - s * Math.cos(a + 0.4), to.y - s * Math.sin(a + 0.4));
-    cx.closePath();
-    cx.fill();
-  }
-  function badge(p: Pt, nums: number[], col: string) {
-    const s = nums.join(" · "), w = Math.max(16 / K, textW(s, 10.5) / K + 10 / K), h = 16 / K;
-    cx.fillStyle = "rgba(6,10,20,0.96)";
-    cx.strokeStyle = rgba(col, 0.95);
-    cx.lineWidth = 1.2 / K;
-    cx.beginPath();
-    cx.roundRect(p.x - w / 2, p.y - h / 2, w, h, h / 2);
-    cx.fill();
-    cx.stroke();
-    text(s, p.x, p.y + 0.5 / K, 10.5 / K, "#fef3c7", "center", 600);
-  }
-  function pill(s: string, x: number, y: number, col: string) {
-    const w = textW(s, 10.5) / K + 12 / K, h = 17 / K;
-    cx.fillStyle = "rgba(6,10,20,0.92)";
-    cx.strokeStyle = rgba(col, 0.6);
-    cx.lineWidth = 1 / K;
-    cx.beginPath();
-    cx.roundRect(x - w / 2, y - h / 2, w, h, 4 / K);
-    cx.fill();
-    cx.stroke();
-    text(s, x, y + 0.5 / K, 10.5 / K, "#f8fafc", "center", 500);
-  }
   /** Where the traced task sits now, or null when this level does not draw it. */
   function bodyOf(s: Subject): (Pt & { model: string }) | null {
     const sc = scene!;
@@ -2012,274 +1786,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     text(`mapped from ${src} · ${src} moves it, StarPulse observes`, (Math.min(...xs) + Math.max(...xs)) / 2, top - 70 / K, labPx(11), rgba(EXT, 0.8), "center", 300);
     cx.letterSpacing = "0px";
   }
-  // ---- the machine across a state level's top, in screen pixels (machineLedger.ts places it; the type and dots grow with the square root of the text size) ----
-  const INK = "#cfd9ea", SUB = "#94a3b8", DAGC = "#fcd34d", PLANET = RAMP[4];
-  /** A flow line between two states, trimmed to their discs. */
-  function flowBetween(a: Pt & { color: string; r: number }, b: Pt & { color: string; r: number }, bend: number, alpha: number, heat: number, dash?: number[]) {
-    const c = curveOf(a, b, bend), len = Math.hypot(b.x - a.x, b.y - a.y) || 1, t0 = Math.min(0.4, (a.r + 1) / len), t1 = 1 - Math.min(0.4, (b.r + 2) / len);
-    flowLine(a, b, alpha, heat, dash);
-    cx.beginPath();
-    for (let i = 0; i <= 16; i++) {
-      const q = bez(c.p0, c.c, c.p1, t0 + ((t1 - t0) * i) / 16);
-      if (i) cx.lineTo(q.x, q.y);
-      else cx.moveTo(q.x, q.y);
-    }
-    cx.stroke();
-    cx.setLineDash([]);
-  }
-  /** Each task orbits the state its latest move left it on; one that moved just now rides the flow line there as a comet. `seen` is told where each is drawn. */
-  function orbitTasks(
-    flow: string, agents: { id: string; state: string; model?: string }[], where: (state: string) => (Pt & { r: number }) | undefined,
-    bend: (from: string, to: string) => number, seen?: (id: string, at: Pt | null, state: string) => void, big?: (id: string) => boolean,
-  ) {
-    const scale = prefs().scale, { gs, dot: dr } = ledgerSizes(scale), seat: Record<string, number> = {};
-    for (const s of agents) {
-      const ev = EVENTS().findLast((m) => m.task === s.id && m.flow === flow && m.at <= T), state = ev ? ev.to : s.state, cur = where(state);
-      if (!cur) {
-        seen?.(s.id, null, state);
-        continue;
-      }
-      const prev = ev?.from && ev.from !== state ? where(ev.from) : undefined, u = ev ? (T - ev.at) / TRAVEL : 9;
-      if (prev && u < 1) {
-        const c = curveOf(prev, cur, bend(ev!.from!, state)), q = bez(c.p0, c.c, c.p1, easeO(u));
-        comet(c.p0, c.c, c.p1, easeO(u), dr * 1.5, tierColor(s.model));
-        seen?.(s.id, q, state);
-        continue;
-      }
-      const pa = ev ? (T - ev.at - TRAVEL) / PULSE : 9;
-      if (prev && pa >= 0 && pa < 1) pulse(cur.x, cur.y, 3, pa, ACT, 18 * gs); // the task landed: one ring where it sits
-      const sl = ledgerSlot(cur.r, (seat[state] = (seat[state] ?? 0) + 1) - 1, scale), th = sl.a + clock * 0.06, p = { x: cur.x + sl.R * Math.cos(th), y: cur.y + sl.R * Math.sin(th) };
-      seen?.(s.id, p, state);
-      dot(p.x, p.y, big?.(s.id) ? dr * 1.5 : dr, rgba(tierColor(s.model), 0.9));
-    }
-  }
-  /** A DAG launch: the star, and its dashed line to the machine's first state. */
-  function launch(sx: number, sy: number, to: Pt & { r: number; color: string }, gs: number) {
-    flowBetween({ x: sx, y: sy, r: 7, color: DAGC }, to, 0, 0.4, 0, [1, 4]);
-    dot(sx, sy, 11 * gs, rgba(DAGC, 0.12));
-    cx.fillStyle = rgba(DAGC, 0.9);
-    cx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const r = (i % 2 ? 0.3 : 1) * 5.5 * gs, th = (i * Math.PI) / 4 - Math.PI / 2;
-      cx.lineTo(sx + r * Math.cos(th), sy + r * Math.sin(th));
-    }
-    cx.closePath();
-    cx.fill();
-  }
-  function drawTop() {
-    const sc = scene!, top = sc.top!, scale = prefs().scale, { fs, gs } = ledgerSizes(scale), nodes = new Map(top.nodes.map((n) => [n.id, n]));
-    const flow = S!.flows[top.flow], stuck = stuckCount(S!.flows, top.ranked);
-    const name = 12 * fs, sub = 10 * fs, mx = top.metaX, mw = top.metaW;
-    ledTasks = [];
-    ledLabs = [];
-    ledSpots.clear();
-    rowNames.clear();
-    // the template's own name and what it holds, then the machines entered from it, over the spine under the header
-    cx.letterSpacing = "0.6px";
-    text(fitText(top.flow, mw, name * 1.08), mx, top.metaT + 4 + name * 0.6, name * 1.08, rgba(INK, 0.9), "left", 400);
-    text(fitText(`template · ${top.nodes.length} states · ${flow?.agents.length ?? 0} tasks`, mw, sub), mx, top.metaT + 6 + name * 1.3 + sub * 0.6, sub, rgba(SUB, 0.7), "left", 300);
-    const count = (ink: number) => text(fitText(`${top.total} machine${top.total === 1 ? "" : "s"}${top.task ? ` holding ${top.task}` : stuck ? ` · ${stuck} stuck` : " · newest first"}`, mw, sub), mx, top.hdrB - sub, sub, rgba(SUB, ink), "left", 300);
-    count(0.6);
-    cx.letterSpacing = "0px";
-    cx.fillStyle = rgba(SUB, 0.16);
-    cx.fillRect(mx - 10, top.hdrB, top.x1 + 22 - mx, 1);
-    for (const id of top.entered) {
-      const n = nodes.get(id);
-      if (n) dot(n.x, top.hdrB + 0.5, 2.2 * gs, rgba(sc.mStates[id].color, 0.9)); // a state some machine is entered from marks the hairline
-    }
-    cx.save();
-    cx.beginPath();
-    cx.rect(0, 0, FW, top.hdrB);
-    cx.clip();
-    for (const e of sc.mEdges) {
-      const a = e.a && nodes.get(e.a.id), b = e.b && nodes.get(e.b.id);
-      if (!e.a || !e.b || !a || !b || e.a === e.b) continue;
-      const hot = hover?.kind === "state" && (hover.o === e.a || hover.o === e.b), heat = hotEdge.has(`${e.flow}:${e.source}>${e.target}`) ? 1 : 0;
-      flowBetween({ x: a.x, y: a.y, r: a.r, color: e.a.color }, { x: b.x, y: b.y, r: b.r, color: e.b.color }, e.bend ?? 0.08, Math.min(1, (hot || isHot("medge", e) ? 0.95 : 0.4) + heat * 0.5), heat + (hot ? 0.8 : 0));
-    }
-    // a state: a coloured rim and centre over a faint wash of its own colour; a final state has a second ring
-    for (const n of top.nodes) {
-      const col = sc.mStates[n.id].color, hot = isHot("state", sc.mStates[n.id]);
-      dot(n.x, n.y, n.r, rgba(col, hot ? 0.3 : 0.12));
-      circle(n.x, n.y, n.r, rgba(col, hot ? 1 : 0.85), hot ? 2 : 1.6);
-      if (n.final) circle(n.x, n.y, n.r + 2.5, rgba(col, 0.45), 1);
-      dot(n.x, n.y, Math.min((n.initial ? 5.5 : 4) * gs, n.r * 0.4), rgba(col, 0.9));
-      ledSpots.set(`${top.flow}:${n.id}`, { x: n.x, y: n.y, r: n.r, color: col, y0: 0, y1: top.hdrB });
-    }
-    // a DAG that launches this machine itself: its star left of the first state
-    const first = top.nodes.find((n) => n.initial) ?? top.nodes[0];
-    (flow?.ties ?? []).filter((t) => t.kind === "dag").forEach((_, k) => first && launch(first.x - first.orbit - 14, first.y + k * 14, { ...first, color: sc.mStates[first.id].color }, gs));
-    // each task orbits the state its latest move left it on
-    orbitTasks(top.flow, sc.machineTasks, (st) => nodes.get(st), (from, to) => sc.mEdges.find((e) => e.a === sc.mStates[from] && e.b === sc.mStates[to])?.bend ?? 0.28, (id, at, state) => {
-      const s = sc.machineTasks.find((q) => q.id === id)!;
-      s._x = at?.x;
-      s._y = at?.y;
-      if (at) s._state = state;
-      if (at) ledTasks.push({ o: ltaskOf(top.flow, s), x: at.x, y: at.y });
-    }, (id) => hover?.kind === "ltask" && hover.o.flow === top.flow && hover.o.agent.id === id);
-    // names: beside or against a state, or on a hairline from it when crowded; drawn last, over the trace
-    for (const l of top.labels) {
-      const cy = l.y + l.h / 2;
-      ledLabs.push({ key: `${top.flow}:${l.id}`, text: l.text, x: l.x, y: cy, px: l.px, ink: 0.7, ga: 1, weight: top.entered.includes(l.id) ? 400 : 300, hot: isHot("state", sc.mStates[l.id]), lead: l.lead ? { ...l.lead, to: l.lead.y > cy ? l.y + l.h : l.y } : undefined, y0: 0, y1: top.hdrB });
-    }
-    cx.restore();
-    drawLane();
-    drawRail();
-    // a pinned path is the focused setting: the rest of the ledger steps back under the page's dark veil
-    if (pinnedTask()) {
-      cx.fillStyle = "rgba(4,6,11,0.66)";
-      cx.fillRect(0, 0, FW, H);
-      cx.letterSpacing = "0.6px";
-      count(0.9); // the count names the task the rows are narrowed to, over the veil
-      cx.letterSpacing = "0px";
-    }
-    drawLedgerLabels(drawLedgerTrace());
-  }
-  /** What the ledger drew this frame: each task's dot, each state and each name, for the hover, the trace and the names over the veil. */
-  type LSpot = Pt & { r: number; color: string; y0: number; y1: number; row?: number };
-  type LLabel = { key: string; text: string; x: number; y: number; px: number; ink: number; ga: number; weight: number; hot: boolean; lead?: Pt & { to: number }; y0: number; y1: number };
-  let ledTasks: { o: LTask; x: number; y: number }[] = [], ledLabs: LLabel[] = [];
-  const ledSpots = new Map<string, LSpot>(), rowNames = new Map<string, { text: string; x: number; y: number; px: number }>(), ltasks = new Map<string, LTask>();
-  /** One object per session while its snapshot stands, so the hover card is rewritten only when the session changes. */
-  function ltaskOf(flow: string, agent: RawAgent): LTask {
-    const k = `${flow}:${agent.id}`, o = ltasks.get(k);
-    if (o?.agent === agent) return o;
-    const n = { flow, agent };
-    ltasks.set(k, n);
-    return n;
-  }
-  function pinnedTask(): LTask | null {
-    const a = lpin && S?.flows[lpin.flow]?.agents.find((x) => x.id === lpin!.id);
-    return a ? ltaskOf(lpin!.flow, a) : null;
-  }
-  const clipY = (y0: number, y1: number, fn: () => void) => {
-    cx.save();
-    cx.beginPath();
-    cx.rect(0, y0, FW, y1 - y0);
-    cx.clip();
-    fn();
-    cx.restore();
-  };
-  type LPath = Curve | ReturnType<typeof entryPath>;
-  const pathAt = (e: LPath, t: number) => ("c1" in e ? entryAt(e, t) : bez(e.p0, e.c, e.p1, t));
-  const badgeW = (s: string) => {
-    cx.font = "600 10px Inter, system-ui, sans-serif";
-    return Math.max(16, cx.measureText(s).width + 10);
-  };
-  function stepBadge(p: Pt, s: string, col: string) {
-    const w = badgeW(s), h = 15;
-    cx.fillStyle = "rgba(6,10,20,0.92)";
-    cx.strokeStyle = rgba(col, 0.95);
-    cx.lineWidth = 1.1;
-    cx.beginPath();
-    cx.roundRect(p.x - w / 2, p.y - h / 2, w, h, h / 2);
-    cx.fill();
-    cx.stroke();
-    text(s, p.x, p.y + 0.5, 10, "#fef3c7", "center", 600);
-  }
-  /**
-   * The hovered task's path, else the pinned one's, across every machine of the ledger it has a session in: each hop retraced along the flow line
-   * it took in the colours of its two states, a hop with no line bowing off red and dashed, an entry dropping from the state it left; numbered in
-   * order, its states' rims firmed and its rows named over the veil, and its own dots ringed. Returns the states it lit.
-   */
-  function drawLedgerTrace(): Set<string> {
-    const src = hover?.kind === "ltask" ? hover.o : pinnedTask(), sc = scene!, top = sc.top!;
-    if (!src || !S) return new Set();
-    const key = (s: Spot) => `${s.machine}:${s.state}`, sessions = sessionsOf(S.flows, src.flow, src.agent);
-    const steps = traceSteps(S.flows, sessions, top.flow, ledgerHas).filter((s) => ledSpots.has(key(s.a)) && ledSpots.has(key(s.b)));
-    const lit = new Set(steps.flatMap((s) => [key(s.a), key(s.b)]));
-    const bendOf = (a: LSpot, b: LSpot, from: string, to: string) =>
-      a.row === undefined ? (sc.mEdges.find((e) => e.a === sc.mStates[from] && e.b === sc.mStates[to])?.bend ?? 0.08) : b.x < a.x - 1 ? Math.min(0.28, (a.row * 0.6) / (Math.hypot(b.x - a.x, b.y - a.y) || 1)) : 0.04;
-    const geo = steps.map((s) => {
-      const a = ledSpots.get(key(s.a))!, b = ledSpots.get(key(s.b))!, len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      const e: LPath = s.kind === "entry" ? entryPath(a, b) : curveOf(a, b, s.off ? (a.row === undefined ? 0.28 : Math.min(0.28, (a.row * 0.6) / (Math.abs(b.x - a.x) || 1))) : bendOf(a, b, s.a.state, s.b.state));
-      return { s, a, b, e, t0: Math.min(0.4, (a.r + 2) / len), t1: 1 - Math.min(0.4, (b.r + 4) / len), y0: s.kind === "entry" ? 0 : a.y0, y1: s.kind === "entry" ? top.laneBottom : a.y1 };
-    });
-    for (const { s, a, b, e, t0, t1, y0, y1 } of geo)
-      clipY(y0, y1, () => {
-        const g = cx.createLinearGradient(a.x, a.y, b.x, b.y);
-        g.addColorStop(0, rgba(s.off ? OFF : a.color, 0.95));
-        g.addColorStop(1, rgba(s.off ? OFF : b.color, 0.95));
-        cx.strokeStyle = g;
-        cx.lineWidth = 2.4;
-        cx.setLineDash(s.off ? [5, 5] : []);
-        cx.beginPath();
-        for (let i = 0; i <= 24; i++) {
-          const q = pathAt(e, t0 + ((t1 - t0) * i) / 24);
-          if (i) cx.lineTo(q.x, q.y);
-          else cx.moveTo(q.x, q.y);
-        }
-        cx.stroke();
-        cx.setLineDash([]);
-        arrow(pathAt(e, t1 - 0.02), pathAt(e, t1), rgba(s.off ? OFF : b.color, 0.95), 8);
-      });
-    // each state the path visits: its rim firms up, and a row's name comes back over the veil
-    for (const k of lit) {
-      const n = ledSpots.get(k)!;
-      clipY(n.y0, n.y1, () => circle(n.x, n.y, n.r, rgba(n.color, 1), 2));
-    }
-    cx.letterSpacing = "0.6px";
-    for (const m of new Set(steps.flatMap((s) => [s.a.machine, s.b.machine]))) {
-      const r = rowNames.get(m);
-      if (r) clipY(top.laneTop, top.laneBottom, () => text(r.text, r.x, r.y, r.px, rgba(INK, 0.97), "left", 400));
-    }
-    cx.letterSpacing = "0px";
-    // step numbers at each line's middle, a line taken twice carrying both, slid along it clear of the others
-    const byLine = new Map<string, { g: (typeof geo)[number]; nums: number[] }>();
-    for (const g of geo) {
-      const k = `${key(g.s.a)}>${key(g.s.b)}>${g.s.kind}`;
-      if (!byLine.has(k)) byLine.set(k, { g, nums: [] });
-      byLine.get(k)!.nums.push(g.s.n);
-    }
-    const taken: Pt[] = [];
-    for (const { g, nums } of byLine.values()) {
-      const txt = nums.join(" · "), w = badgeW(txt) + 4, h = 19, along = (t: number) => pathAt(g.e, g.t0 + (g.t1 - g.t0) * t);
-      const p = [0.5, 0.38, 0.62, 0.28, 0.72].map(along).find((q) => !taken.some((o) => Math.abs(o.x - q.x) < w && Math.abs(o.y - q.y) < h)) ?? along(0.5);
-      taken.push(p);
-      clipY(g.y0, g.y1, () => stepBadge(p, txt, g.s.off ? OFF : ACT));
-    }
-    // the traced task's own dots, ringed
-    for (const s of sessions) {
-      const t = ledTasks.find((q) => q.o.flow === s.machine && q.o.agent.id === s.agent.id);
-      if (t) circle(t.x, t.y, 6, rgba(ACT, 0.95), 1.4);
-    }
-    return lit;
-  }
-  /** The ledger's state names, over the trace: under a pinned path's veil they dim, except the states the path visits. */
-  function drawLedgerLabels(lit: Set<string>) {
-    const veil = pinnedTask() ? 0.4 : 1;
-    cx.letterSpacing = "0.6px";
-    for (const l of ledLabs)
-      clipY(l.y0, l.y1, () => {
-        const hot = l.hot || lit.has(l.key);
-        cx.globalAlpha = l.ga * (hot ? 1 : veil);
-        if (l.lead) {
-          cx.strokeStyle = rgba(INK, 0.22);
-          cx.lineWidth = 1;
-          cx.beginPath();
-          cx.moveTo(l.lead.x, l.lead.y);
-          cx.lineTo(l.lead.x, l.lead.to);
-          cx.stroke();
-        }
-        text(l.text, l.x, l.y, l.px, rgba(INK, hot ? 0.95 : l.ink), "left", l.weight);
-        cx.globalAlpha = 1;
-      });
-    cx.letterSpacing = "0px";
-  }
   // ---- the machine ledger's scroll, the footer that loads older machines, and the 24 h strip along the bottom ----
-  type Box = { x0: number; y0: number; x1: number; y1: number };
-  type Rail = { kind: "thumb" } | { kind: "chip" } | { kind: "foot" } | { kind: "tick"; tick: Tick };
-  /** Where the rail was drawn this frame, in the ledger's pixels, for the hover and the clicks. */
-  const railBox = { thumbX: 0, laneTop: 0, chip: null as Box | null, foot: null as Box | null, stripT: 0, sx0: 0, sx1: 0 };
-  let railThumb: Thumb | null = null, railTicks: Tick[] = [], railHover: Rail | null = null, railMoving = false;
+  let railHover: Rail | null = null, railMoving = false;
   /** What the rail is under (x, y) of the ledger: the back-to-newest chip, the thumb, a tick of the strip or the footer. */
   function railHit(x: number, y: number): Rail | null {
-    const r = railBox, within = (b: Box | null) => !!b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
+    const r = mled.railBox, within = (b: { x0: number; y0: number; x1: number; y1: number } | null) => !!b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
     if (!scene?.top) return null;
     if (within(r.chip)) return { kind: "chip" };
-    if (railThumb && Math.abs(x - r.thumbX) < 8 && y > r.laneTop + railThumb.y0 && y < r.laneTop + railThumb.y1) return { kind: "thumb" };
+    if (mled.thumb && Math.abs(x - r.thumbX) < 8 && y > r.laneTop + mled.thumb.y0 && y < r.laneTop + mled.thumb.y1) return { kind: "thumb" };
     if (y >= r.stripT) {
-      const t = x < r.sx0 - 4 || x > r.sx1 + 4 ? null : tickAt(railTicks, x);
+      const t = x < r.sx0 - 4 || x > r.sx1 + 4 ? null : tickAt(mled.ticks, x);
       return t ? { kind: "tick", tick: t } : null;
     }
     return within(r.foot) ? { kind: "foot" } : null;
@@ -2334,285 +1850,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     railMoving = scrollPos !== scrollGoal;
     if (wantNext(pg, top.more > 0 && top.laneTop + top.content - top.foot - scrollPos < top.laneBottom, T)) loadNext();
   }
-  /** The colour a tick takes: the state its machine was entered from, amber for a DAG launch. */
-  function entryColor(e: MachineEntry): string {
-    const sc = scene!, top = sc.top!;
-    if (e.dag != null) return DAGC;
-    if (!e.from) return PLANET;
-    if (e.from.machine === top.flow) return sc.mStates[e.from.state]?.color ?? PLANET;
-    const st = S!.flows[e.from.machine]?.machine.states ?? [], j = st.findIndex((s) => s.id === e.from!.state);
-    return j < 0 ? PLANET : RAMP[Math.round((st.length > 1 ? j / (st.length - 1) : 0) * (RAMP.length - 1))];
-  }
-  /** The thumb, the back-to-newest chip and the strip of the last 24 h of machine entries under the lane, with the rows in view shaded on it. */
-  function drawRail() {
-    const top = scene!.top!, { fs } = ledgerSizes(prefs().scale), sp = 10 * fs, stripT = top.laneBottom, sx0 = top.metaX, sx1 = top.x1, hot = hotRow();
-    cx.fillStyle = rgba(SUB, 0.16);
-    cx.fillRect(top.metaX - 10, stripT, top.x1 + 20 - top.metaX, 1);
-    railThumb = thumbOf(top.content, { h: stripT - top.laneTop, fs }, scrollPos, top.max);
-    Object.assign(railBox, { thumbX: top.x1 + 18, laneTop: top.laneTop, stripT, sx0, sx1, chip: null, foot: null });
-    if (railThumb) {
-      const t = railThumb, x = railBox.thumbX;
-      cx.fillStyle = rgba(SUB, 0.08);
-      cx.fillRect(x - 1, top.laneTop + t.y0, 2, t.y1 - t.y0);
-      cx.fillStyle = rgba(SUB, railHover?.kind === "thumb" || thumbDrag ? 0.65 : 0.32);
-      cx.beginPath();
-      cx.roundRect(x - 2, top.laneTop + t.ty, 4, t.th, 2);
-      cx.fill();
-    }
-    if (top.more) {
-      const footY = top.laneTop + top.content - top.foot - scrollPos;
-      railBox.foot = { x0: top.metaX - 10, x1: top.x1 + 20, y0: Math.max(top.laneTop, footY), y1: Math.min(stripT, footY + top.foot) };
-    }
-    if (scrollPos > 8) {
-      const label = "↑ back to newest", w = nameWidth(label, sp) + 24 * fs, h = 20 * fs, x0 = (top.x0 + top.x1) / 2 - w / 2, y0 = top.laneTop + 8;
-      railBox.chip = { x0, y0, x1: x0 + w, y1: y0 + h };
-      cx.beginPath();
-      cx.roundRect(x0, y0, w, h, h / 2);
-      cx.fillStyle = "rgba(12,19,34,0.92)";
-      cx.fill();
-      cx.strokeStyle = `rgba(167,139,250,${railHover?.kind === "chip" ? 0.7 : 0.35})`;
-      cx.lineWidth = 1;
-      cx.stroke();
-      cx.letterSpacing = "0.6px";
-      text(label, x0 + w / 2, y0 + h / 2, sp, rgba(INK, 0.9), "center", 400);
-      cx.letterSpacing = "0px";
-    }
-    // the strip: one continuous stretch shaded for the rows in view, a tick per entry, hours along the axis
-    const scale = stripScale(sx0, sx1, T), by = stripT + 30 * fs;
-    railTicks = ticks(S!.machineEntries, top.ranked, scale);
-    const inView = windowOf(top.rows, scrollPos, { h: stripT - top.laneTop, fs }).inView.map((i) => S!.flows[top.rows[i].name]?.last ?? null), span = viewSpan(inView, scale.t0);
-    if (span) {
-      const a = scale.x(span.from), b = scale.x(span.to);
-      cx.fillStyle = rgba(PLANET, 0.12);
-      cx.fillRect(a - 3, by - 14 * fs, b - a + 6, 14 * fs);
-      cx.fillStyle = rgba(PLANET, 0.5);
-      cx.fillRect(a - 3, by, b - a + 6, 1);
-    }
-    cx.fillStyle = rgba(SUB, 0.22);
-    cx.fillRect(sx0, by, sx1 - sx0, 1);
-    cx.letterSpacing = "0.6px";
-    for (let h = Math.ceil(scale.t0 / 10800) * 10800; h <= scale.t1; h += 10800) {
-      const x = scale.x(h);
-      cx.fillStyle = rgba(SUB, 0.3);
-      cx.fillRect(x, by, 1, 4);
-      if (x - sx0 > 18 && sx1 - x > 18) text(hhmm(h), x, by + 11 * fs, sp * 0.95, rgba(SUB, 0.5), "center", 300);
-    }
-    for (const t of railTicks) {
-      const on = hot === t.entry.row || (railHover?.kind === "tick" && railHover.tick === t), len = (on ? 13 : 8) * fs;
-      cx.fillStyle = rgba(entryColor(t.entry), on ? 1 : 0.62);
-      cx.fillRect(t.x - 0.75, by - len, 1.5, len);
-    }
-    text("24 h · machine entries", sx0, stripT + 8 * fs, sp, rgba(SUB, 0.6), "left", 300);
-    text(stripLabel(span, top.rows.length, top.total, hhmm), sx1, stripT + 8 * fs, sp, rgba(SUB, 0.7), "right", 300);
-    cx.letterSpacing = "0px";
-  }
-  const rowTop = new Map<string, number>();
-  /** Where each row is drawn this frame (down the canvas), for the hover. */
-  let lane: { row: RowView; y: number; to: number }[] = [], sliding = false, rowsHeld = false;
+  let rowsHeld = false;
   const overRows = () => !!(mouse && scene?.top && mouse.oy > scene.top.laneTop && mouse.oy < scene.top.laneBottom);
-  /** The row the pointer is on, over its name or one of its states. */
-  const hotRow = () => (hover?.kind === "row" ? hover.o.name : hover?.kind === "rstate" ? (scene!.top!.rows.find((r) => r.nodes.includes((hover as { o: RowView["nodes"][number] }).o))?.name ?? null) : null);
-  /** The band at a row's foot that shows where its nesting is (machineChain.ts): each state's stem in its colour, then a block per machine entered from it. */
-  function drawChain(row: RowView, y: number, on: boolean) {
-    const sp = 10 * ledgerSizes(prefs().scale).fs, al = on ? 0.95 : 0.72, col = new Map(row.nodes.map((n) => [n.id, n.color])), ramp = (j: number, n: number) => RAMP[Math.round((j / Math.max(1, n - 1)) * (RAMP.length - 1))];
-    const fit = (t: string, w: number) => {
-      if (nameWidth(t, sp) <= w) return t;
-      let s = t;
-      while (s.length > 1 && nameWidth(`${s}…`, sp) > w) s = s.slice(0, -1);
-      return `${s}…`;
-    };
-    cx.lineWidth = 1;
-    for (const c of row.chain!.cols) {
-      cx.save();
-      cx.beginPath();
-      cx.rect(c.clip.x0, y, c.clip.x1 - c.clip.x0, row.h);
-      cx.clip();
-      for (const st of c.stems) {
-        cx.strokeStyle = rgba(col.get(st.state) ?? PLANET, al * 0.7);
-        cx.beginPath();
-        st.pts.forEach((p, i) => (i ? cx.lineTo(p.x, y + p.y) : cx.moveTo(p.x, y + p.y)));
-        for (const d of st.drops) {
-          cx.moveTo(d.x, y + d.y0);
-          cx.lineTo(d.x, y + d.y1);
-        }
-        cx.stroke();
-      }
-      for (const b of c.blocks) {
-        for (const l of b.lines) {
-          cx.strokeStyle = rgba(SUB, 0.35 * al * l.a);
-          cx.beginPath();
-          cx.moveTo(l.x, y + l.y);
-          cx.lineTo(l.x + (l.states.length - 1) * l.dx, y + l.y);
-          cx.stroke();
-          l.states.forEach((_, j) => dot(l.x + j * l.dx, y + l.y, l.r, rgba(ramp(j, l.states.length), al * l.a)));
-        }
-        cx.setLineDash([1.5, 2]);
-        for (const h of b.hangs) {
-          cx.strokeStyle = rgba(PLANET, al * h.a);
-          cx.beginPath();
-          cx.moveTo(h.x, y + h.y0);
-          cx.lineTo(h.x, y + h.y1);
-          cx.stroke();
-        }
-        cx.setLineDash([]);
-        const lab = fit(b.name, Math.max(12, b.label.w - (b.tail ? nameWidth(b.tail, sp) : 0)));
-        cx.letterSpacing = "0.6px";
-        text(lab, b.label.x, y + b.label.y, sp, rgba(PLANET, al), "left", 300);
-        if (b.tail) text(b.tail, b.label.x + nameWidth(lab, sp), y + b.label.y, sp, rgba(SUB, 0.75), "left", 300);
-        cx.letterSpacing = "0px";
-      }
-      cx.restore();
-    }
-  }
-  /** The machine ledger's rows under the top: each machine entered from it, newest activity first, with its tie, its stuck mark and its DAG launches. */
-  function drawLane() {
-    const sc = scene!, top = sc.top!, scale = prefs().scale, { fs, gs } = ledgerSizes(scale), mx = top.metaX, mw = top.metaW, nameP = 12 * fs, subP = 10 * fs, top0 = new Map(top.nodes.map((n) => [n.id, n]));
-    const hot = hotRow(), hs = hover?.kind === "state" ? hover.o : null, now = T, fl = glow ? Math.max(0, 1 - (performance.now() - glow.t0) / 1600) : 0;
-    if (!fl) glow = null;
-    cx.save();
-    cx.beginPath();
-    cx.rect(0, top.laneTop, FW, top.laneBottom - top.laneTop);
-    cx.clip();
-    // a faint guide down the lane from each state some row is entered from
-    for (const id of top.entered) {
-      const n = top0.get(id);
-      if (!n) continue;
-      cx.strokeStyle = rgba(sc.mStates[id].color, hs?.id === id ? 0.35 : 0.1);
-      cx.lineWidth = 1;
-      cx.setLineDash([2, 5]);
-      cx.beginPath();
-      cx.moveTo(n.x, top.hdrB + 3);
-      cx.lineTo(n.x, top.laneBottom);
-      cx.stroke();
-      cx.setLineDash([]);
-    }
-    // each row eases to its place, so a row that moves slides (and fades while it does)
-    sliding = false;
-    lane = top.rows.map((row) => {
-      const to = top.laneTop + row.y, was = rowTop.get(row.name), eased = was === undefined || Math.abs(was - to) > 1500 ? to : Math.abs(to - was) < 0.3 ? to : was + (to - was) * 0.3;
-      rowTop.set(row.name, eased);
-      if (eased !== to) sliding = true;
-      return { row, y: eased - scrollPos, to: to - scrollPos };
-    });
-    if (fl) sliding = true; // the glow fades over frames
-    if (!top.rows.length) text(emptyNote(top.flow), (top.x0 + top.x1) / 2, (top.laneTop + top.laneBottom) / 2, subP, rgba(SUB, 0.6), "center", 300);
-    const shown = lane.filter(({ row, y }) => y + row.h > top.laneTop && y < top.laneBottom);
-    const pos = (row: RowView, y: number) => new Map(row.nodes.map((n) => [n.id, { x: n.x, y: y + row.c + n.oy, r: n.r, color: n.color, orbit: n.orbit }]));
-    const spots = new Map(shown.map((d) => [d.row.name, pos(d.row, d.y)])); // only the rows in view are placed
-    for (const { row, y, to: place } of shown) {
-      const f = S!.flows[row.name], m = rowMeta(S!.flows, row.name, top.flow, now), ns = spots.get(row.name)!, picked = pickedRow === row.name, on = hot === row.name || picked, fade = Math.abs(y - place) > 3 ? 0.3 : 1;
-      for (const [id, p] of ns) ledSpots.set(`${row.name}:${id}`, { ...p, y0: top.laneTop, y1: top.laneBottom, row: row.h });
-      cx.globalAlpha = fade;
-      const lit = Math.max(on ? (picked ? 0.09 : 0.055) : 0, glow?.name === row.name ? 0.16 * fl : 0);
-      if (lit) {
-        cx.fillStyle = rgba(PLANET, lit);
-        cx.fillRect(mx - 10, y, top.x1 + 20 - mx, row.h);
-      }
-      cx.fillStyle = rgba(SUB, 0.09);
-      cx.fillRect(mx - 10, y + row.h - 1, top.x1 + 20 - mx, 1);
-      if (m.status.stuck) {
-        cx.fillStyle = rgba(OFF, 0.85);
-        cx.fillRect(mx - 10, y + 6, 2, row.h - 12);
-      }
-      // the notch under the column of the template state this machine is entered from: filled when declared, hollow when observed
-      const src = m.tie.machine === top.flow && m.tie.state ? top0.get(m.tie.state) : undefined;
-      if (src && m.tie.state) {
-        const col = rgba(sc.mStates[m.tie.state].color, 0.95);
-        cx.fillStyle = col;
-        cx.strokeStyle = col;
-        cx.lineWidth = 1.2;
-        cx.beginPath();
-        cx.moveTo(src.x - 4.5, y + 1.5);
-        cx.lineTo(src.x + 4.5, y + 1.5);
-        cx.lineTo(src.x, y + 8);
-        cx.closePath();
-        if (m.tie.kind === "declared") cx.fill();
-        else cx.stroke();
-      }
-      // meta: its name, where it is entered from, and what its tasks are doing
-      const ty = y + row.h / 2 - (nameP * 1.4 + 2 * subP * 1.5) / 2;
-      cx.letterSpacing = "0.6px";
-      const endW = nameWidth(m.end, subP) + 8;
-      text(m.end, mx + mw, ty + nameP * 0.7, subP, rgba(PLANET, on ? 1 : 0.7), "right", 300);
-      const nm = { text: fitText(row.name, mw - endW, nameP), x: mx, y: ty + nameP * 0.7, px: nameP };
-      rowNames.set(row.name, nm);
-      text(nm.text, nm.x, nm.y, nameP, rgba(INK, on ? 0.97 : m.status.idle ? 0.55 : 0.85), "left", 400);
-      const dotCol = m.tie.kind === "none" || m.tie.kind === "dag" ? null : m.tie.machine === top.flow ? sc.mStates[m.tie.state!]?.color : (top.rows.find((q) => q.name === m.tie.machine)?.nodes.find((n) => n.id === m.tie.state)?.color ?? PLANET);
-      const tieInk = m.tie.kind === "dag" ? rgba(DAGC, 0.75) : m.tie.kind === "none" ? rgba(SUB, 0.5) : rgba(INK, 0.62), ly = ty + nameP * 1.4 + subP * 0.75;
-      if (dotCol) dot(mx + 3, ly, 2.6 * gs, rgba(dotCol, 0.95));
-      text(fitText(m.tie.text, mw - (dotCol ? 11 : 0), subP), mx + (dotCol ? 11 : 0), ly, subP, tieInk, "left", 300);
-      text(fitText(m.status.text, mw, subP), mx, ty + nameP * 1.4 + subP * 2.25, subP, m.status.stuck ? rgba(OFF, 0.9) : rgba(SUB, m.status.idle ? 0.5 : 0.7), "left", 300);
-      cx.letterSpacing = "0px";
-      // its DAG launches, each a star left of the first state
-      const dags = (f.ties ?? []).filter((t) => t.kind === "dag"), init = ns.get(row.init)!, stars = dags.map((_, k) => ({ x: top.x0 - 18 * fs, y: y + row.c + (k - (dags.length - 1) / 2) * 12 * fs }));
-      for (const s of stars) launch(s.x, s.y, init, gs);
-      // the machine itself: its flow lines, states, tasks and names
-      cx.globalAlpha = fade * (m.status.idle && !on ? 0.75 : 1);
-      for (const t of f.machine.transitions) {
-        const a = ns.get(t.source), b = ns.get(t.target);
-        if (!a || !b || a === b) continue;
-        flowBetween(a, b, b.x < a.x - 1 ? Math.min(0.28, (row.h * 0.6) / (Math.hypot(b.x - a.x, b.y - a.y) || 1)) : 0.04, Math.min(1, on ? 0.95 : 0.36), on ? 0.8 : 0, [1.5, 4]);
-      }
-      for (const n of row.nodes) {
-        const p = ns.get(n.id)!, hotN = hover?.kind === "rstate" && hover.o === n;
-        dot(p.x, p.y, n.r, rgba(n.color, hotN ? 0.3 : 0.12));
-        circle(p.x, p.y, n.r, rgba(n.color, hotN ? 1 : 0.85), hotN ? 2 : 1.2);
-        if (n.final) circle(p.x, p.y, n.r + 2.5, rgba(n.color, 0.45), 1);
-        dot(p.x, p.y, Math.min(3 * gs, n.r * 0.4), rgba(n.color, 0.9));
-      }
-      if (row.chain) drawChain(row, y, on);
-      cx.globalAlpha = fade;
-      orbitTasks(row.name, f.agents, (st) => ns.get(st), (from, to) => (ns.get(to)!.x < ns.get(from)!.x - 1 ? 0.28 : 0.04), (id, at) => {
-        const a = at && at.y > top.laneTop && at.y < top.laneBottom && f.agents.find((q) => q.id === id);
-        if (a) ledTasks.push({ o: ltaskOf(row.name, a), x: at.x, y: at.y });
-      });
-      for (const l of rowLabels(row, { scale, measure: (t, px) => nameWidth(t, px), x0: top.x0, x1: top.x1 }, stars.map((q) => ({ x: q.x, y: q.y - y, r: 11 }))))
-        ledLabs.push({ key: `${row.name}:${l.id}`, text: l.text, x: l.x, y: y + l.y + l.h / 2, px: l.px, ink: on ? 0.85 : 0.5, ga: fade, weight: 300, hot: hover?.kind === "rstate" && hover.o.id === l.id && on, y0: top.laneTop, y1: top.laneBottom });
-      cx.globalAlpha = 1;
-    }
-    if (top.more) {
-      const footY = top.laneTop + top.content - top.foot - scrollPos, busy = pg?.busy, wait = pg?.failedAt != null && !busy;
-      cx.letterSpacing = "0.6px";
-      text(busy ? `loading ${Math.min(PAGE, top.more)} more…` : wait ? `could not load ${Math.min(PAGE, top.more)} more · trying again` : `${top.more} more · scroll to load`, (top.x0 + top.x1) / 2, footY + top.foot / 2, subP, rgba(wait ? OFF : SUB, 0.7), "center", 300);
-      cx.letterSpacing = "0px";
-    }
-    // a row's tie, drawn while the row or the state it is entered from is under the pointer, along the path its sessions take in; it crosses the
-    // gap under the top machine, so it clips to the lane's bottom rather than its top
-    cx.restore();
-    cx.save();
-    cx.beginPath();
-    cx.rect(0, 0, FW, top.laneBottom);
-    cx.clip();
-    for (const { row } of shown) {
-      const f = S!.flows[row.name], to = spots.get(row.name)!.get(row.init);
-      if (!to) continue;
-      f.ties?.forEach((t, i) => {
-        if (t.kind === "dag" || !t.machine || !t.state) return;
-        const a = t.machine === top.flow ? top0.get(t.state) : spots.get(t.machine)?.get(t.state);
-        if (!a) return;
-        const al = hot === row.name || pickedRow === row.name || (hs && hs.flow === t.machine && hs.id === t.state) ? (i ? 0.45 : 0.9) : 0;
-        if (!al) return;
-        const col = t.machine === top.flow ? sc.mStates[t.state].color : (a as { color: string }).color, e = entryPath(a, to), len = Math.hypot(to.x - a.x, to.y - a.y) || 1, t0 = Math.min(0.4, (a.r + 2) / len), t1 = 1 - Math.min(0.4, (to.r + 3) / len);
-        flowLine({ x: a.x, y: a.y, color: col }, { x: to.x, y: to.y, color: to.color }, al, 0.5, t.kind === "observed" ? [1.5, 6] : [2, 5]);
-        cx.beginPath();
-        for (let k = 0; k <= 28; k++) {
-          const q = entryAt(e, t0 + ((t1 - t0) * k) / 28);
-          if (k) cx.lineTo(q.x, q.y);
-          else cx.moveTo(q.x, q.y);
-        }
-        cx.stroke();
-        cx.setLineDash([]);
-        arrow(entryAt(e, t1 - 0.02), entryAt(e, t1), rgba(to.color, al), 7 * gs);
-      });
-    }
-    cx.restore();
-  }
   function drawScene(k: number, x: number, y: number) {
     const dpr = devicePixelRatio || 1;
     cx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
     K = scene!.unit ? Math.max(k, 1 / scene!.unit) : k; // a zoomed-out Board draws its names at the size it laid them out at
     ZS = Math.max(1, k / fit.k);
-    if (scene!.top) return drawTop();
+    if (scene!.top) return mled.drawTop();
     drawFold();
     drawGalaxies();
     drawMoons();
@@ -2699,7 +1944,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
   };
   /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
-  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || sliding || scrolling() || railMoving);
+  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || mled.sliding || scrolling() || railMoving);
   /** The loop settled: the feed and moving list get their last write, and the next wake starts the ambient clock afresh. */
   const settle = () => {
     last = 0;
