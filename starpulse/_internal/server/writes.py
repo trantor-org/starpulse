@@ -55,6 +55,11 @@ GET /api/forwarding
 PUT /api/forwarding {opt_in: bool}: let a person's name leave this instance, or stop it, by writing the opt-in file the
                    forwarder reads before every batch, and answer the status as a GET does; 400 for anything but a
                    boolean, 404 without a `[forward]` block, 403 outside loopback and RFC 1918
+GET /api/autopilot {enabled, sampledAt, dimensions}: whether the autopilot admits tasks, when capacity was last sampled
+                   and, for `cpu`, `memory`, `sessions` and `review`, each dimension's {name, use, limit}; no
+                   dimensions before the first sample
+PUT /api/autopilot {enabled: bool}: switch admission on or off by writing the file the autopilot reads, and answer the
+                   status as a GET does; 400 for anything but a boolean, 403 outside loopback and RFC 1918
 """
 
 from __future__ import annotations
@@ -77,6 +82,7 @@ from starpulse._internal.board.seam import (
     TaskEditor,
     TaskReader,
 )
+from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.hub.forward import Forwarder
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -621,3 +627,25 @@ def forwarding(source: str, method: str, raw: bytes, forwarder: Forwarder | None
             return 400, {"error": 'forwarding takes {"opt_in": true} or {"opt_in": false}'}
         forwarder.opt_in.set(opt_in)
     return 200, {"configured": True, **forwarder.status()}
+
+
+def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | None) -> tuple[int, dict[str, Any]]:
+    """Read (`GET`) whether the autopilot admits tasks and each capacity dimension's use against its limit, or set
+    (`PUT {"enabled": bool}`) whether it admits, for a browser at `source`: the HTTP status and JSON body.
+
+    The switch is the file the autopilot reads, so a PUT takes effect at the next admission and survives a restart. A
+    read answers any address, as every read does; a write answers only loopback and RFC 1918.
+    """
+    if runtime is None:
+        return 404, {"error": "this instance runs no autopilot"}
+    if method == "PUT":
+        if not _on_lan(source):
+            return 403, {"error": "The autopilot switch answers only loopback and private network (RFC 1918) browsers"}
+        try:
+            enabled = json.loads(raw)["enabled"]
+        except ValueError, TypeError, KeyError:
+            enabled = None
+        if not isinstance(enabled, bool):
+            return 400, {"error": 'the autopilot takes {"enabled": true} or {"enabled": false}'}
+        runtime.toggle.set(enabled)
+    return 200, runtime.status()

@@ -103,7 +103,47 @@ task = "TASK"                            # the task a run is for: pairs a run wi
 name = "skills"
 path = "skills"
 applied_by = "pin-bump"
+
+# Optional: the autopilot's policy. Every key is optional; with no [autopilot] table the defaults below apply.
+# [autopilot]
+# lane = "to_do"          # the lane whose tasks are eligible; unset: the board's initial lane
+# review_lane = "review"  # the lane whose tasks' points are the review load
+# unsized_points = 3      # the points a task with no `size-N` label counts as, a whole number of 1 or more
+# [autopilot.tier_weights]  # what a point costs on each agent tier; a tier left out keeps its weight
+# fast = 1
+# standard = 2
+# deep = 4
+# [autopilot.limits]        # each dimension's limit; a dimension left out keeps its limit
+# cpu = 80       # host CPU, percent
+# memory = 80    # host memory, percent
+# sessions = 2   # harness sessions in flight
+# review = 20    # points of tasks in the review lane
 ```
+
+## Autopilot
+
+The autopilot is a switch and a capacity reading; admission is not built yet. The switch is persisted in
+`starpulse-autopilot.json` beside the config file (in the working directory with none), so it survives a restart, and it starts off.
+
+`GET /api/autopilot` answers any address:
+
+```json
+{"enabled": false, "sampledAt": 1788307200.5, "dimensions": [{"name": "cpu", "use": 35.0, "limit": 80.0}]}
+```
+
+`dimensions` lists `cpu`, `memory`, `sessions` and `review` in that order, each as its use against its limit.
+`sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
+
+- `cpu` and `memory` are the host's busy share and used share, in percent, read from `/proc`.
+- `sessions` counts the tasks with an active harness session.
+- `review` sums the `size-N` labels of the tasks in `review_lane`; a task without one counts `unsized_points`.
+
+`PUT /api/autopilot` with `{"enabled": true}` or `{"enabled": false}` sets the switch and answers the same body. It
+answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhere, and like every write it needs
+`Content-Type: application/json`. A `serve` that runs no autopilot, an adapter-kit server, answers 404.
+
+The sampler reads every 60 seconds. The first sample is a baseline; after it, a dimension going from below its limit
+to at or over it, or back, logs one `StarPulse autopilot: <dimension> is full|free (<use> of <limit>)` line.
 
 ## Event log archive
 

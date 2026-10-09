@@ -962,6 +962,22 @@ class ForwardingUnconfigured(_Api):
     configured: Literal[False]
 
 
+class AutopilotDimension(_Api):
+    """One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`."""
+
+    name: Literal["cpu", "memory", "sessions", "review"]
+    use: float
+    limit: float
+
+
+class AutopilotStatus(_Api):
+    """Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample."""
+
+    enabled: bool
+    sampledAt: float | None
+    dimensions: list[AutopilotDimension]
+
+
 class ForwardingStatus(_Api):
     """What the forwarder would send next, and why."""
 
@@ -1157,6 +1173,12 @@ class ForwardingRequest(_Api):
     opt_in: bool
 
 
+class AutopilotRequest(_Api):
+    """`PUT /api/autopilot`: whether the autopilot admits tasks."""
+
+    enabled: bool
+
+
 class RunEventRequest(_Api):
     """`POST /api/runs/events`: one workflow phase a producer reports."""
 
@@ -1304,6 +1326,7 @@ RESPONSES: dict[str, Any] = {
     "/api/history": LaneHistory | MachineHistory,
     "/api/pulls": Pulls,
     "/api/forwarding": ForwardingStatus | ForwardingUnconfigured,
+    "/api/autopilot": AutopilotStatus,
 }
 
 #: Each write route's request body.
@@ -1321,6 +1344,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/docs/archive": DocArchiveRequest,
     "/api/history-window": WindowRequest,
     "/api/forwarding": ForwardingRequest,
+    "/api/autopilot": AutopilotRequest,
     "/api/runs/events": RunEventRequest,
     "/api/forward": ForwardRequest,
     "/api/insights": Finding,
@@ -1341,6 +1365,7 @@ BODIES: dict[str, Any] = {
     "harnesses": Harnesses,
     "window": WindowState | ApiError,
     "forwarding": ForwardingStatus | ForwardingUnconfigured | ApiError,
+    "autopilot": AutopilotStatus | ApiError,
     "doctor": ContractReport,
     "task": TaskRecord | ApiError,
     "move": Moved | SkillRefusal | ApiError,
@@ -1402,6 +1427,7 @@ class ApiContract(_Api):
     windowState: WindowState
     forwardingStatus: ForwardingStatus
     forwardingUnconfigured: ForwardingUnconfigured
+    autopilotStatus: AutopilotStatus
     contractReport: ContractReport
     taskRecord: TaskRecord
     milestones: Milestones
@@ -1422,6 +1448,7 @@ class ApiContract(_Api):
         | DocArchiveRequest
         | WindowRequest
         | ForwardingRequest
+        | AutopilotRequest
         | RunEventRequest
         | ForwardRequest
     ]

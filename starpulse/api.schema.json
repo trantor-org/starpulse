@@ -188,6 +188,80 @@
       "title": "Arrival",
       "type": "object"
     },
+    "AutopilotDimension": {
+      "additionalProperties": false,
+      "description": "One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.",
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "name": {
+          "enum": [
+            "cpu",
+            "memory",
+            "sessions",
+            "review"
+          ],
+          "type": "string"
+        },
+        "use": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "use",
+        "limit"
+      ],
+      "title": "AutopilotDimension",
+      "type": "object"
+    },
+    "AutopilotRequest": {
+      "additionalProperties": false,
+      "description": "`PUT /api/autopilot`: whether the autopilot admits tasks.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "AutopilotRequest",
+      "type": "object"
+    },
+    "AutopilotStatus": {
+      "additionalProperties": false,
+      "description": "Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.",
+      "properties": {
+        "dimensions": {
+          "items": {
+            "$ref": "#/$defs/AutopilotDimension"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "sampledAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "sampledAt",
+        "dimensions"
+      ],
+      "title": "AutopilotStatus",
+      "type": "object"
+    },
     "Bottleneck": {
       "additionalProperties": false,
       "properties": {
@@ -5449,6 +5523,9 @@
       },
       "type": "array"
     },
+    "autopilotStatus": {
+      "$ref": "#/$defs/AutopilotStatus"
+    },
     "contractReport": {
       "$ref": "#/$defs/ContractReport"
     },
@@ -5565,6 +5642,9 @@
             "$ref": "#/$defs/ForwardingRequest"
           },
           {
+            "$ref": "#/$defs/AutopilotRequest"
+          },
+          {
             "$ref": "#/$defs/RunEventRequest"
           },
           {
@@ -5606,6 +5686,7 @@
     "windowState",
     "forwardingStatus",
     "forwardingUnconfigured",
+    "autopilotStatus",
     "contractReport",
     "taskRecord",
     "milestones",

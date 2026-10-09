@@ -26,6 +26,7 @@ export interface ApiContract {
     | StaleEdit
     | WindowTooLong
   )[];
+  autopilotStatus: AutopilotStatus;
   contractReport: ContractReport;
   docShown: DocShown;
   docs: Docs;
@@ -56,6 +57,7 @@ export interface ApiContract {
     | DocArchiveRequest
     | WindowRequest
     | ForwardingRequest
+    | AutopilotRequest
     | RunEventRequest
     | ForwardRequest
   )[];
@@ -152,6 +154,22 @@ export interface StaleEdit {
 export interface WindowTooLong {
   error: string;
   history_s: number;
+}
+/**
+ * Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.
+ */
+export interface AutopilotStatus {
+  dimensions: AutopilotDimension[];
+  enabled: boolean;
+  sampledAt: number | null;
+}
+/**
+ * One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.
+ */
+export interface AutopilotDimension {
+  limit: number;
+  name: "cpu" | "memory" | "sessions" | "review";
+  use: number;
 }
 /**
  * The contract checks `starpulse doctor` runs; `ok` is false when any fails.
@@ -1198,6 +1216,12 @@ export interface WindowRequest {
  */
 export interface ForwardingRequest {
   opt_in: boolean;
+}
+/**
+ * `PUT /api/autopilot`: whether the autopilot admits tasks.
+ */
+export interface AutopilotRequest {
+  enabled: boolean;
 }
 /**
  * `POST /api/runs/events`: one workflow phase a producer reports.

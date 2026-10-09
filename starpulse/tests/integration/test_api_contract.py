@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 from pydantic import TypeAdapter
 
+from starpulse._internal.autopilot.runtime import build
+from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.contracts.api import RESPONSES
 from starpulse._internal.config.level import Level, Orbit, Terminal
@@ -31,6 +33,7 @@ ROUTES = (
     "/api/harnesses",
     "/api/history-window",
     "/api/forwarding",
+    "/api/autopilot",
     "/api/doctor",
     "/api/task/T-1",
     "/api/level?hours=48",
@@ -47,7 +50,11 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
     for i, (name, at, _old, new) in enumerate(ROWS):
         store.record_lane(f"{'a' if name in 'AB' else 'b'}/{i}", name, new, at)
     store.record_lane("l0", "T-1", "In Progress", NOW - 3600)
-    with serve(tmp_path, feed, history=store, read=lambda t: {"title": t}, clock=lambda: NOW, level=LEVEL) as server:
+    runtime = build(Autopilot(), tmp_path / "autopilot.json", feed, probe=lambda: {"cpu": 10.0, "memory": 20.0})
+    runtime.sampler.sample()
+    with serve(
+        tmp_path, feed, history=store, read=lambda t: {"title": t}, clock=lambda: NOW, level=LEVEL, autopilot=runtime
+    ) as server:
         yield server
 
 

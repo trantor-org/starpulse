@@ -2,7 +2,7 @@
 
     .venv/bin/python -m starpulse._internal.server.server [--host 127.0.0.1] [--port 8766] [--hours 6] [--config starpulse.toml]
 
-Every write (POST /api/..., PUT /api/forwarding, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
+Every write (POST /api/..., PUT /api/forwarding, PUT /api/autopilot, PUT and DELETE /api/history-window) must be `Content-Type: application/json` (else 415) and carry
 no `Origin` or this server's own (else 403), so a web page on another site cannot write through the operator's browser.
 It listens on --host, 127.0.0.1 by default.
 
@@ -186,6 +186,7 @@ from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip,
 from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.feed.snapshot_cache import KEPT, SnapshotCache
 from starpulse._internal.server.writes import (
+    autopilot,
     OPERATOR,
     archive_doc,
     archive_milestone,
@@ -226,6 +227,8 @@ from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.feed.machine_tasks import tables as machine_tables
 from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.harnesses import Harnesses
+from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
+from starpulse._internal.autopilot.toggle import TOGGLE_FILE
 from starpulse._internal.config.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events
@@ -258,6 +261,7 @@ _MOVE = "/api/move"
 _START = "/api/start"
 _WINDOW = "/api/history-window"
 _FORWARDING = "/api/forwarding"
+_AUTOPILOT = "/api/autopilot"
 _TASK = "/api/task/"
 _SNAPSHOT_BODY = "/api/events/body/"
 _EDIT = "/api/edit"
@@ -518,6 +522,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     gate: Callable[[BaseHTTPRequestHandler], bool] | None
     forward: ForwardIngest | None
     forwarding: Forwarder | None
+    autopilot: Runtime | None
     milestones: Board | None
 
     #: Whether the response being written is a hashed build asset's file, which a browser may keep for good.
@@ -651,8 +656,14 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             self._window("DELETE")
 
     def _window(self, method: str) -> None:
-        """Answer the route a PUT or DELETE names: the history window's, or a PUT to the forwarding opt-in."""
+        """Answer the route a PUT or DELETE names: the history window's, or a PUT to the forwarding opt-in or the autopilot switch."""
         path = urlsplit(self.path).path
+        if path == _AUTOPILOT and method == "PUT":
+            if self._refused_write():
+                return
+            declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
+            self._send(*self._autopilot(method, self.rfile.read(int(declared or 0))))
+            return
         if path == _FORWARDING and method == "PUT":
             if self._refused_write():
                 return
@@ -667,6 +678,10 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
         status, body = history_window(self.client_address[0], method, self.rfile.read(int(declared or 0)), self.window)
         self._send(encode("window", body), status)
+
+    def _autopilot(self, method: str, raw: bytes) -> tuple[bytes, int]:
+        status, body = autopilot(self.client_address[0], method, raw, self.autopilot)
+        return encode("autopilot", body), status
 
     def _forwarding(self, method: str, raw: bytes) -> tuple[bytes, int]:
         status, body = forwarding(self.client_address[0], method, raw, self.forwarding)
@@ -739,6 +754,7 @@ def request_handler(
     level: Level | None = None,
     insights: Insights | None = None,
     forwarding: Forwarder | None = None,
+    autopilot: Runtime | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
     contract: Callable[[], dict[str, Any]] | None = None,
     milestones: Board | None = None,
@@ -770,6 +786,7 @@ def request_handler(
             self.gate = gate
             self.forward = forward
             self.forwarding = forwarding
+            self.autopilot = autopilot
             self.milestones = milestones
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
@@ -826,6 +843,8 @@ def request_handler(
                 self._window("GET")  # pragma: no mutate: any method but PUT and DELETE reads the window
             elif url.path == _FORWARDING:
                 self._send(*self._forwarding("GET", b""))
+            elif url.path == _AUTOPILOT:
+                self._send(*self._autopilot("GET", b""))
             elif url.path in _PAGES or url.path.startswith("/flow/") and url.path[6:] in flows - {"board"}:
                 self.path = "/index.html"
                 super().do_GET()
@@ -1226,6 +1245,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     if forwarder is not None:
         forward.start(forwarder, forwarding)
     announce(args.port, feed.snapshot()["hint"])
+    autopilot_runtime = build_autopilot(config.autopilot, base / TOGGLE_FILE, feed)
+    threading.Thread(
+        target=autopilot_runtime.sampler.run_forever, args=(threading.Event(),), name="autopilot-sampler", daemon=True
+    ).start()
     handler = request_handler(
         feed,
         _STATIC,
@@ -1251,6 +1274,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),
         milestones=board,
         pulls=pulls,
+        autopilot=autopilot_runtime,
     )
     serve_until_stopped(StarPulseServer((args.host, args.port), handler), feed)
 
