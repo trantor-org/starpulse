@@ -121,6 +121,8 @@ export class LevelStore {
   };
   async refresh() {
     this.state = await this.load();
+    // a server with no level will not grow one while the page is open: a reload asks again
+    if (this.state.kind === "none") clearInterval(this.timer);
     for (const fn of this.listeners) fn();
   }
   dispose() {

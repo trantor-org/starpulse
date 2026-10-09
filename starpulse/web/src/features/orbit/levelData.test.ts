@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fetchLevel, LevelStore, orbitInput, type LevelResponse } from "./levelData";
 
 const DAY = 86400;
@@ -113,5 +113,18 @@ describe("LevelStore", () => {
     await store.refresh();
     expect(seen).toEqual(["none", "ok"]);
     store.dispose();
+  });
+
+  it("stops asking every minute once the server says it has no level, and asks again only when told to", async () => {
+    vi.useFakeTimers();
+    let asked = 0;
+    const store = new LevelStore(async () => (asked++, { kind: "none" }));
+    await store.refresh();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(asked).toBe(1);
+    await store.refresh();
+    expect(asked).toBe(2);
+    store.dispose();
+    vi.useRealTimers();
   });
 });

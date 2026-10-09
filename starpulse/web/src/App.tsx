@@ -45,7 +45,7 @@ export function App() {
   const [admin] = useState(() => new AdminStore());
   const [historyWindow] = useState(() => new HistoryWindowStore());
   const [forwarding] = useState(() => new ForwardingStore());
-  // the level above the Board: asked for once and then every minute, and its navigator entry shown only when the server has one
+  // the level above the Board: asked for once and then every minute while the server has one, its navigator entry shown only then
   const [levels] = useState(() => new LevelStore());
   useEffect(() => {
     void levels.refresh();
