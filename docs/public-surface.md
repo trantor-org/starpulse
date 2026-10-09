@@ -13,7 +13,8 @@ internal and can change in any release.
   `task assign TASK ASSIGNEE`, which returns `{task, assignee, changed}`. Each exits 0 on success, 1 refused, 2 usage,
   3 when the board cannot write tasks and, for `edit` and `assign`, 4 for an unknown task.
 - The documented entry point `python -m starpulse.claude_code`.
-- The config file's keys and the machine YAML with its JSON Schema (`machine.schema.json`).
+- The config file's keys, among them each `[[triggers]]` table's `on`, `start` and `when` ([Triggers](serving.md#triggers)),
+  and the machine YAML with its JSON Schema (`machine.schema.json`).
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
 

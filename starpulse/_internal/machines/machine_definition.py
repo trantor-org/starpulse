@@ -44,6 +44,7 @@ __all__ = [
     "MachineDefinitionError",
     "Registry",
     "Writer",
+    "field_matches",
     "load_machine",
     "refuse_unlisted",
     "validate",
@@ -267,9 +268,14 @@ def _named[F: Callable[..., Any]](name: str, table: Mapping[str, F], path: Path)
     return table[name]
 
 
+def field_matches(when: Mapping[str, Mapping[str, Any]], fields: Mapping[str, Any]) -> bool:
+    """Whether every field `when` lists matches `fields`: the grammar a guard's `when:` and a trigger's `when` share."""
+    return all(_holds(match, name in fields, fields.get(name)) for name, match in when.items())
+
+
 def _field_match(when: Mapping[str, Mapping[str, Any]]) -> Callable[..., bool]:
     def matches(**fields: Any) -> bool:
-        return all(_holds(match, name in fields, fields.get(name)) for name, match in when.items())
+        return field_matches(when, fields)
 
     return matches
 
