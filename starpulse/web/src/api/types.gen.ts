@@ -475,7 +475,14 @@ export interface ClaimDelta {
   reason: string;
   task: string;
 }
+/**
+ * The Ledger since the last event: per event the rows that are new or differ (newest first), and the keys of rows
+ * that left the page or the window; every other row stands. `mergeStrip` and `mergePins` are whole.
+ */
 export interface LedgersDelta {
+  gone: {
+    [k: string]: string[];
+  };
   ledgers: {
     [k: string]: LedgerRow[];
   };

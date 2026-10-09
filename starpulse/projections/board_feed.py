@@ -915,8 +915,9 @@ class BoardFeed:
                 strip_ = view["mergeStrip"]
                 seen = (view["ledgers"], strip_ and strip_["buckets"], view["mergePins"])
                 if seen != (self._ledgers, self._strip and self._strip["buckets"], self._pins):
+                    changed, gone = _ledger_changes(self._ledgers, view["ledgers"])
                     self._ledgers, self._strip, self._pins = view["ledgers"], strip_, view["mergePins"]
-                    self._publish("ledgers", view)
+                    self._publish("ledgers", {**view, "ledgers": changed, "gone": gone})
 
     def _drawn_pools(self) -> list[dict]:
         """Every instance's concurrency pools, each named `<instance>/<pool>` like the `pool` a workflow names."""
@@ -1094,6 +1095,23 @@ def follow(
     thread = threading.Thread(target=run, name="board-feed", daemon=True)
     thread.start()
     return thread
+
+
+def _ledger_changes(
+    sent: Mapping[str, Sequence[dict]], now: Mapping[str, Sequence[dict]]
+) -> tuple[dict[str, list[dict]], dict[str, list[str]]]:
+    """Per event, the rows of `now` that differ from the same key in `sent` (or are new), and the keys of `sent` that `now` lacks."""
+    changed: dict[str, list[dict]] = {}
+    gone: dict[str, list[str]] = {}
+    for event in sent.keys() | now.keys():
+        before = {row["key"]: row for row in sent.get(event, ())}
+        rows = [row for row in now.get(event, ()) if before.get(row["key"]) != row]
+        left = before.keys() - {row["key"] for row in now.get(event, ())}
+        if rows:
+            changed[event] = rows
+        if left:
+            gone[event] = sorted(left)
+    return changed, gone
 
 
 def _drawn_pulls(pulls: Mapping[str, Sequence[Mapping]]) -> dict[str, list[dict]]:
