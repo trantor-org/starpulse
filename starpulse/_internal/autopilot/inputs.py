@@ -11,14 +11,14 @@ from typing import Any
 _SIZE = re.compile(r"size-(\d+)")
 
 
-def _points(labels: Iterable[str], unsized: int) -> int:
+def points(labels: Iterable[str], unsized: int) -> int:
     """A task's points: its `size-N` label, else `unsized`."""
     return next((int(match[1]) for label in labels if (match := _SIZE.fullmatch(label))), unsized)
 
 
 def review_points(tasks: Iterable[Mapping[str, Any]], lane: str, unsized: int) -> int:
     """The points of the Board tasks in `lane`, an unsized one counting `unsized`."""
-    return sum(_points(task["labels"], unsized) for task in tasks if task["state"] == lane)
+    return sum(points(task["labels"], unsized) for task in tasks if task["state"] == lane)
 
 
 def sessions_in_flight(agents: Iterable[Mapping[str, Any]]) -> int:
