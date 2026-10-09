@@ -1,15 +1,17 @@
 // Design mockup layer (Star Map sizing per resolution), never part of the page. The page above is a scrubbed capture of the
-// real StarPulse page, built from a source copy (star-map-scale-src.patch) that adds a column sizing rule: the Board stays one
-// lifecycle row, each state gets one column of the canvas and one fixed footprint (its name, its task band, and a fixed number of moon
-// rows hung under its sun, each moon named under it), busy or empty; the zoom is the largest that fits a column, and the labels scale
-// with the sun, clamped to 12-20 px. Without ?frame this layer draws the review frame: the page at a chosen
+// real StarPulse page, built from a source copy (star-map-scale-src.patch) that adds a spread sizing rule: the Board keeps its rings
+// (moons on a ring round each sun, sub-states in chains off them) and its states spread out from the canvas's centre to fill it, the zoom
+// the largest at which no two states' footprints meet, and the labels scale with the sun, clamped to 12-20 px. The arrangement is the
+// Board's own places stretched to the canvas, or the main line staggered above and below the axis; the footprint is fixed (a ring of
+// 8 moons for every state) or grows with each state's load. Without ?frame this layer draws the review frame: the page at a chosen
 // resolution, today's rendering beside the proposal, each in an iframe at its real CSS size and scaled down to fit, with a table read
 // live from each frame's flowProbe(). It runs before the page's module.
 //   ?res=1920x1080   the resolution compared (the buttons set it)       ?fs=100|125|150   the Admin text size
-//   ?frame=1&sizing=current|grid&rails=off   one page alone, as each iframe loads it
+//   ?arr=stagger|stretch   the proposal's arrangement                    ?foot=fixed|load   the proposal's footprint
+//   ?frame=1&sizing=current|spread&rails=off   one page alone, as each iframe loads it
 (() => {
   const q = new URLSearchParams(location.search), F = window.__FLOW_FIXTURE__;
-  const fs = Number(q.get("fs") || 100);
+  const fs = Number(q.get("fs") || 100), arr = q.get("arr") === "stretch" ? "stretch" : "stagger", foot = q.get("foot") === "fixed" ? "fixed" : "load";
   try {
     const k = "fv.admin.prefs", p = JSON.parse(localStorage.getItem(k) || "{}");
     p.scale = fs;
@@ -17,7 +19,7 @@
   } catch { /* storage off: the page keeps 100% */ }
 
   if (q.has("frame")) {
-    if ((q.get("sizing") || "grid") === "grid") window.__SIZING__ = { mode: "grid", text: fs / 100 };
+    if ((q.get("sizing") || "spread") === "spread") window.__SIZING__ = { mode: "spread", text: fs / 100, arr, foot };
     // a phone's width is spent by the 250 px rails today: rails=off shows the canvas the sizing rule gets once they fold
     if (q.get("rails") === "off") {
       const st = document.createElement("style");
@@ -63,19 +65,22 @@
   const seg = (label, key, vals, cur, names = {}) => `<span class="lb">${label}</span><span class="seg">${
     vals.map((v) => `<button data-k="${key}" data-v="${v}" class="${v === cur ? "on" : ""}">${names[v] ?? v}</button>`).join("")}</span>`;
   const frame = (sizing) => {
-    const p = new URLSearchParams({ frame: "1", sizing, fs: String(fs) });
+    const p = new URLSearchParams({ frame: "1", sizing, fs: String(fs), ...(sizing === "spread" ? { arr, foot } : {}) });
     if (phone) p.set("rails", "off");
     return `${location.pathname}?${p}`;
   };
   const root = document.getElementById("root");
   root.innerHTML = `<div id="cmp">
     <h1>Star Map size per screen resolution</h1>
-    <p class="lede">Left: today, every body sized in world units and the whole Board fit to the canvas width. Right: the proposal, still one
-      lifecycle row: a column of the canvas per state, its moons hung in rows under its sun in the height today leaves empty, one fixed
-      footprint per state busy or empty, labels scaled with the sun. Each frame is the page at the
+    <p class="lede">Left: today, every body sized in world units and the whole Board fit to the canvas width. Right: the proposal, the same
+      rings, moons and sub-state chains, with the states spread out from the canvas's centre to fill it and drawn as large as their spacing
+      allows, labels scaled with the sun. Arrangement: stagger moves the main line's states alternately above and below the centre line,
+      stretch keeps today's places. Footprint: fixed gives every state the room of a ring of 8 moons, busy or empty; load sizes each state
+      by what it holds, as today. Each frame is the page at the
       chosen resolution, scaled down to fit here; open a side alone to see it at its real size. The table is read live from each frame.</p>
-    <div class="bar">${seg("Resolution", "res", RES, res)}${seg("Text size", "fs", ["100", "125", "150"], String(fs), { 100: "100%", 125: "125%", 150: "150%" })}</div>
-    <div class="pair">${[["current", "Today"], ["grid", "Proposed: one row, moons in rows under each state"]].map(([s, t]) => `<section class="side" data-s="${s}">
+    <div class="bar">${seg("Resolution", "res", RES, res)}${seg("Text size", "fs", ["100", "125", "150"], String(fs), { 100: "100%", 125: "125%", 150: "150%" })}
+      ${seg("Arrangement", "arr", ["stagger", "stretch"], arr)}${seg("Footprint", "foot", ["load", "fixed"], foot)}</div>
+    <div class="pair">${[["current", "Today"], ["spread", `Proposed: ${arr === "stagger" ? "staggered" : "stretched"}, ${foot === "fixed" ? "fixed footprint" : "footprint by load"}`]].map(([s, t]) => `<section class="side" data-s="${s}">
       <h2>${t}<a href="${frame(s)}" target="_blank">open alone</a></h2>
       <div class="vp"><iframe title="${t}" src="${frame(s)}" width="${VW}" height="${VH}"></iframe></div>
       <div class="sum"></div><table></table></section>`).join("")}</div></div>`;
@@ -102,7 +107,7 @@
       let pr;
       try { pr = side.querySelector("iframe").contentWindow.flowProbe?.(); } catch { pr = null; }
       if (!pr?.states?.length) continue;
-      const k = pr.fit, sun = SUN_R * k, grid = side.dataset.s === "grid";
+      const k = pr.fit, sun = SUN_R * k, grid = side.dataset.s === "spread";
       const label = (grid ? Math.min(20, Math.max(12, 0.45 * sun)) : 13) * fs / 100;
       const rows = [...pr.states].sort((a, b) => a.x - b.x || a.y - b.y);
       const Rs = rows.map((s) => s.r), lo = Math.min(...Rs), hi = Math.max(...Rs);
