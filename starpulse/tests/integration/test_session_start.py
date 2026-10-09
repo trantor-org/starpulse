@@ -12,8 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from starpulse.adapters.harnesses import session_start
-from starpulse.adapters.harnesses.session_start import starter
+from starpulse._internal.adapters.harnesses import session_start
+from starpulse._internal.adapters.harnesses.session_start import starter
 from starpulse.contracts.adapters import StartFailedError
 
 

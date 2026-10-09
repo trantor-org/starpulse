@@ -15,16 +15,16 @@ from typing import Any
 
 import pytest
 
-from starpulse.adapters.runs.ingest import ForwardIngest
-from starpulse.api import forward
-from starpulse.api.adapter_kit import serve, url
-from starpulse.api.forward import OPT_IN_FILE, Forwarder, OptIn, post
+from starpulse._internal.adapters.runs.ingest import ForwardIngest
+from starpulse._internal.api import forward
+from starpulse._internal.api.adapter_kit import serve, url
+from starpulse._internal.api.forward import OPT_IN_FILE, Forwarder, OptIn, post
 from starpulse.contracts import BoardTask
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.settings.config import Forward
-from starpulse.store import lane_events
-from starpulse.store.event_log import EventLog, Tail
-from starpulse.store.history import HistoryStore
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.settings.config import Forward
+from starpulse._internal.store import lane_events
+from starpulse._internal.store.event_log import EventLog, Tail
+from starpulse._internal.store.history import HistoryStore
 
 TOKEN = "ana-secret"
 ASSIGNEE = "bob-the-assignee"

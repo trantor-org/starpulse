@@ -15,8 +15,8 @@ from sqlalchemy import Engine, create_engine, text
 
 pytest.importorskip("alembic", reason="the hub extras are not installed")
 
-from starpulse.store import events  # noqa: E402
-from starpulse.store.event_log import EventLog  # noqa: E402
+from starpulse._internal.store import events  # noqa: E402
+from starpulse._internal.store.event_log import EventLog  # noqa: E402
 from starpulse.tests.integration.test_standalone import (  # noqa: E402, F401 - `build` is a fixture
     _free_port,
     build,
@@ -55,7 +55,7 @@ def test_a_hub_writes_a_machine_event_to_postgres_and_reads_it_back(
     )
     monkeypatch.setenv("HUB_OIDC_SECRET", "hub-secret")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "starpulse.api.server", "--hub", "--port", str(port), "--config", str(config)]
+        [sys.executable, "-m", "starpulse._internal.api.server", "--hub", "--port", str(port), "--config", str(config)]
     )
     try:
         _until(lambda: call(f"{base}/api/snapshot")[0] == 401, proc, "serving, and answering 401 before sign-in")

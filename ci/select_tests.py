@@ -35,11 +35,11 @@ FULL_SUITE = (
 
 #: Non-Python files and the Python files that open them by path; each reader counts as changed.
 READERS = {
-    "README.md": ("starpulse/api/server.py", "starpulse/tests/unit/test_public_surface.py", "ci/ui_preview.py"),
+    "README.md": ("starpulse/_internal/api/server.py", "starpulse/tests/unit/test_public_surface.py", "ci/ui_preview.py"),
     "starpulse/web/*": ("starpulse/tests/unit/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
-    "starpulse/store/migrations/*": ("starpulse/api/hub.py",),
+    "starpulse/_internal/store/migrations/*": ("starpulse/_internal/api/hub.py",),
     "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py", "ci/test_load.py"),
     "bench/soak.py": ("ci/test_soak.py",),
     "bench/load.py": ("ci/test_load.py",),
@@ -66,11 +66,11 @@ INERT = (
 #: The board seam and `config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a
 #: test reaching either reaches each adapter whose name appears in a module it reaches: a configured `kind = "dagu"` in
 #: the test or a helper, or the loader's own default (`config.DEFAULT_TYPE`).
-NAMED_LOADERS = ("starpulse.adapters.boards.seam", "starpulse.settings.config")
+NAMED_LOADERS = ("starpulse._internal.adapters.boards.seam", "starpulse._internal.settings.config")
 
 #: The module that lists every built-in adapter's name. Every loader reaches it, so its text names no adapter a test
 #: names: it would otherwise select every adapter's tests for a change to any loader.
-TYPE_TABLE = "starpulse.adapters"
+TYPE_TABLE = "starpulse._internal.adapters"
 
 
 @dataclass(frozen=True)
@@ -198,7 +198,7 @@ def select(root: Path, changed: list[str]) -> Selection:
     adapters = {
         name: name.rpartition(".")[2]
         for name, path in modules.items()
-        if name.startswith("starpulse.adapters.") and name.count(".") == 3 and _is_adapter(path)
+        if name.startswith("starpulse._internal.adapters.") and name.count(".") == 4 and _is_adapter(path)
     }
 
     def reaches(name: str) -> set[str]:

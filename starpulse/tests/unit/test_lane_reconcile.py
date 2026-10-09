@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from starpulse.api.writes import reconcile_lanes
+from starpulse._internal.api.writes import reconcile_lanes
 
 
 class _Feed:

@@ -1,6 +1,6 @@
-"""The database event log; the implementation is in `starpulse.store.event_log`."""
+"""The database event log; the implementation is in `starpulse._internal.store.event_log`."""
 
-from starpulse.store.event_log import (
+from starpulse._internal.store.event_log import (
     Entry,
     EventLog,
     Tail,

@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.adapters.runs import run_events
-from starpulse.api.forward import PREVIEW, Forwarder, OptIn
-from starpulse.settings.config import Forward
-from starpulse.store import events
-from starpulse.store.event_log import EventLog
-from starpulse.store.history import HistoryStore
+from starpulse._internal.adapters.runs import run_events
+from starpulse._internal.api.forward import PREVIEW, Forwarder, OptIn
+from starpulse._internal.settings.config import Forward
+from starpulse._internal.store import events
+from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.store.history import HistoryStore
 
 URL = "https://hub.example.test"
 

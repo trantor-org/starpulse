@@ -17,11 +17,11 @@ from urllib.parse import quote
 
 import pytest
 
-from starpulse.adapters.runs.github import GITHUB_MACHINES, GitHubAdapter, poll, read
-from starpulse.adapters.runs.github_actions import connect
-from starpulse.api.adapter_kit import MachineEventsAdapterKit
+from starpulse._internal.adapters.runs.github import GITHUB_MACHINES, GitHubAdapter, poll, read
+from starpulse._internal.adapters.runs.github_actions import connect
+from starpulse._internal.api.adapter_kit import MachineEventsAdapterKit
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.store.event_log import EventLog, Tail
+from starpulse._internal.store.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "github"

@@ -1,6 +1,6 @@
-"""The history a board adapter may keep; the implementation is in `starpulse.store.history`."""
+"""The history a board adapter may keep; the implementation is in `starpulse._internal.store.history`."""
 
-from starpulse.store.history import (
+from starpulse._internal.store.history import (
     History,
     machine_steps,
 )

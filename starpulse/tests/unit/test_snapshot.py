@@ -6,9 +6,9 @@ import pytest
 import yaml
 from statemachine import State, StateChart
 
-from starpulse.domain import snapshot
-from starpulse.domain.machine_definition import MachineDefinitionError, load_machine
-from starpulse.domain.snapshot import describe
+from starpulse._internal.domain import snapshot
+from starpulse._internal.domain.machine_definition import MachineDefinitionError, load_machine
+from starpulse._internal.domain.snapshot import describe
 
 
 class _Tiny(StateChart):

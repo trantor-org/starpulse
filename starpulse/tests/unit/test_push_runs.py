@@ -9,12 +9,12 @@ from typing import Any
 
 import pytest
 
-from starpulse.adapters.runs import run_events
-from starpulse.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
+from starpulse._internal.adapters.runs import run_events
+from starpulse._internal.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.contracts.adapters import Dag
-from starpulse.projections.board_feed import BoardFeed, follow
-from starpulse.store.event_log import EventLog
-from starpulse.store.history import HistoryStore
+from starpulse._internal.projections.board_feed import BoardFeed, follow
+from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.store.history import HistoryStore
 
 START = 1_700_000_000.0
 

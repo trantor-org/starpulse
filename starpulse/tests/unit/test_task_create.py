@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.adapters.boards.seam import Board
-from starpulse.adapters.boards.upstream_backlog import UpstreamBacklog, _split
-from starpulse.api.adapter_kit import serve, url
-from starpulse.api.server import assemble
-from starpulse.api.writes import create_task
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.settings.config import load
-from starpulse.store.event_log import EventLog
+from starpulse._internal.adapters.boards.seam import Board
+from starpulse._internal.adapters.boards.upstream_backlog import UpstreamBacklog, _split
+from starpulse._internal.api.adapter_kit import serve, url
+from starpulse._internal.api.server import assemble
+from starpulse._internal.api.writes import create_task
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.settings.config import load
+from starpulse._internal.store.event_log import EventLog
 
 LAN = "192.168.0.42"
 

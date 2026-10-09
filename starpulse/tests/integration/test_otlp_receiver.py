@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from starpulse.adapters.harnesses.otlp import LogEvent, receiver
+from starpulse._internal.adapters.harnesses.otlp import LogEvent, receiver
 
 
 class Spy:
@@ -204,7 +204,7 @@ def test_a_body_over_the_size_bound_is_refused_and_one_at_the_bound_is_read(
     served: tuple[str, Spy], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     base, _ = served
-    monkeypatch.setattr("starpulse.adapters.harnesses.otlp.MAX_BODY", 8)
+    monkeypatch.setattr("starpulse._internal.adapters.harnesses.otlp.MAX_BODY", 8)
     headers = {"Content-Type": "application/json"}
 
     at_bound = raw(base, "POST", "/v1/logs", b'{"a": 1}', {**headers, "Content-Length": "8"})

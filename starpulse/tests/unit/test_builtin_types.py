@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.adapters import BUILT_IN, module_name
+from starpulse._internal.adapters import BUILT_IN, module_name
 
 README = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "README.md"
 
@@ -36,7 +36,7 @@ def test_builtin_types_every_documented_bare_type_loads(kind: str) -> None:
 def test_builtin_types_every_table_entry_names_an_importable_adapter(kind: str) -> None:
     module = importlib.import_module(module_name(kind))
 
-    assert module.__name__.startswith("starpulse.adapters."), "a built-in adapter lives under adapters/"
+    assert module.__name__.startswith("starpulse._internal.adapters."), "a built-in adapter lives under adapters/"
     assert _offers_an_adapter(module)
 
 

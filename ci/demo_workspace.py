@@ -2,7 +2,7 @@
 
 It draws what a working team's StarPulse draws, from the machine files in `ci/workspace`: a nine-lane Board whose In
 Progress opens a delivery machine (and, under that machine's open pull request, a review triage), and the lifecycle
-machines of the other skills an agent session runs. It places no task: `starpulse.cli.demo` seeds the tasks, sessions and
+machines of the other skills an agent session runs. It places no task: `starpulse._internal.cli.demo` seeds the tasks, sessions and
 runs at a real workspace's scale onto this structure, so nothing a real tracker holds is behind the public demo.
 """
 
@@ -13,9 +13,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from starpulse.adapters.boards.seam import Board
-from starpulse.domain.machine_definition import load_machine, refuse_unlisted
-from starpulse.domain.snapshot import Qualify, describe
+from starpulse._internal.adapters.boards.seam import Board
+from starpulse._internal.domain.machine_definition import load_machine, refuse_unlisted
+from starpulse._internal.domain.snapshot import Qualify, describe
 
 WORKSPACE = Path(__file__).with_name("workspace")
 #: The Board's main line: every lane a task passes on its way to Done, the settled lanes after it left out.

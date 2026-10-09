@@ -8,8 +8,8 @@ from pathlib import Path
 
 from sqlalchemy import select, update
 
-from starpulse.store.event_log import Entry, EventLog, Tail, prune_forever
-from starpulse.store.tables import events, gaps
+from starpulse._internal.store.event_log import Entry, EventLog, Tail, prune_forever
+from starpulse._internal.store.tables import events, gaps
 
 _APPEND = (
     "import sys; from starpulse.event_log import EventLog; "

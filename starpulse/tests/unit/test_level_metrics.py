@@ -3,8 +3,8 @@ equal hand-worked values, and a window longer than the history is refused with t
 
 import pytest
 
-from starpulse.domain.level import Level, Terminal
-from starpulse.domain.level_metrics import UNATTRIBUTED, Run, WindowPastHistory, level_metrics
+from starpulse._internal.domain.level import Level, Terminal
+from starpulse._internal.domain.level_metrics import UNATTRIBUTED, Run, WindowPastHistory, level_metrics
 
 H = 3600.0
 NOW = 100 * H

@@ -13,9 +13,9 @@ from sqlalchemy import Engine, create_engine, event, text
 
 pytest.importorskip("alembic", reason="the hub extras are not installed")
 
-from starpulse.api import hub  # noqa: E402
-from starpulse.projections.machine_tasks import tables  # noqa: E402
-from starpulse.store.event_log import EventLog, Tail  # noqa: E402
+from starpulse._internal.api import hub  # noqa: E402
+from starpulse._internal.projections.machine_tasks import tables  # noqa: E402
+from starpulse._internal.store.event_log import EventLog, Tail  # noqa: E402
 from starpulse.tests.machines import MACHINES  # noqa: E402
 
 TODAY = date(2026, 10, 6)
@@ -207,7 +207,7 @@ def test_a_failed_maintenance_pass_is_logged_and_the_loop_goes_on(
 ) -> None:
     unreachable = create_engine(f"sqlite:///{tmp_path / 'not-a-hub.sqlite'}")
 
-    with caplog.at_level(logging.ERROR, logger="starpulse.api.hub"):
+    with caplog.at_level(logging.ERROR, logger="starpulse._internal.api.hub"):
         _run_loop_briefly(unreachable, lambda: caplog.text.count("hub maintenance pass failed") >= 2)
 
     assert caplog.text.count("hub maintenance pass failed") >= 2

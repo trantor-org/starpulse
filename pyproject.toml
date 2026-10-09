@@ -68,7 +68,7 @@ exclude = ["starpulse.tests", "starpulse.tests.*"]
 
 # The built page and the machine schema are read from beside the module through `__file__`.
 [tool.setuptools.package-data]
-starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*.yaml", "skills/*/SKILL.md", "store/migrations/*.py", "store/migrations/versions/*.py"]
+starpulse = ["static/**/*", "schemas/*.json", "machine.schema.json", "machines/*.yaml", "skills/*/SKILL.md", "_internal/store/migrations/*.py", "_internal/store/migrations/versions/*.py"]
 
 # The layers the package is organized in (docs: StarPulse Is Layered Around Its Event Log): a module imports from its own
 # layer or one below, never above. `settings` may be read by every layer above `domain` and imports only `domain`.
@@ -79,16 +79,16 @@ root_package = "starpulse"
 name = "api and cli, adapters, projections, store, settings, domain and contracts are layered"
 type = "layers"
 layers = [
-    "starpulse.api | starpulse.cli",
-    "starpulse.adapters",
-    "starpulse.projections",
-    "starpulse.store",
-    "starpulse.settings",
-    "starpulse.domain | starpulse.contracts",
+    "starpulse._internal.api | starpulse._internal.cli",
+    "starpulse._internal.adapters",
+    "starpulse._internal.projections",
+    "starpulse._internal.store",
+    "starpulse._internal.settings",
+    "starpulse._internal.domain | starpulse.contracts",
 ]
 # The config resolves a bare adapter type through the table of built-in names, which imports nothing. The table lives in
 # `adapters` because an engine's name belongs only inside an adapter (StarPulse Runs Are Orchestrator-Neutral).
-ignore_imports = ["starpulse.settings.config -> starpulse.adapters"]
+ignore_imports = ["starpulse._internal.settings.config -> starpulse._internal.adapters"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

@@ -11,13 +11,13 @@ from typing import Any
 import pytest
 from pydantic import TypeAdapter
 
-from starpulse.adapters.boards import native, native_docs
-from starpulse.adapters.boards.seam import Board
-from starpulse.api.adapter_kit import serve, url
-from starpulse.api.writes import create_doc
-from starpulse.cli import agent_cli as cli
+from starpulse._internal.adapters.boards import native, native_docs
+from starpulse._internal.adapters.boards.seam import Board
+from starpulse._internal.api.adapter_kit import serve, url
+from starpulse._internal.api.writes import create_doc
+from starpulse._internal.cli import agent_cli as cli
 from starpulse.contracts.api import RESPONSES
-from starpulse.projections.board_feed import BoardFeed
+from starpulse._internal.projections.board_feed import BoardFeed
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "native_board" / "docs"
 REAL = "specs/doc-84 - Nightly-infrastructure-audit-—-2026-10-04.md"

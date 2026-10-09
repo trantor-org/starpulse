@@ -11,9 +11,9 @@ from sqlalchemy import text
 
 from starpulse.contracts.adapters import BoardTask, TaskKeys
 from starpulse.contracts.api import event
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.settings.config import CommitKeys
-from starpulse.store.history import HistoryStore
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.settings.config import CommitKeys
+from starpulse._internal.store.history import HistoryStore
 from starpulse.tests.machines import FLOWS, MACHINES
 
 PR = "https://github.com/acme/widgets/pull/1750"

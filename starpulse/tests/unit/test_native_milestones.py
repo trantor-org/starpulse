@@ -11,13 +11,13 @@ from typing import Any
 import pytest
 from pydantic import TypeAdapter
 
-from starpulse.adapters.boards import native
-from starpulse.adapters.boards.seam import Board
-from starpulse.api.adapter_kit import serve, url
-from starpulse.api.writes import create_milestone
-from starpulse.cli import agent_cli as cli
+from starpulse._internal.adapters.boards import native
+from starpulse._internal.adapters.boards.seam import Board
+from starpulse._internal.api.adapter_kit import serve, url
+from starpulse._internal.api.writes import create_milestone
+from starpulse._internal.cli import agent_cli as cli
 from starpulse.contracts.api import RESPONSES
-from starpulse.projections.board_feed import BoardFeed
+from starpulse._internal.projections.board_feed import BoardFeed
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "native_board" / "milestones"
 REAL = "m-106 - starpulse-gitlink-promotes-one-green-sha.md"

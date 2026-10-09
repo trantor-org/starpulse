@@ -1,4 +1,4 @@
-// The merge Ledger a self-contained demo page shows. A served page gets its rows from starpulse.projections.ledger; a demo page has no server, so this builds the
+// The merge Ledger a self-contained demo page shows. A served page gets its rows from starpulse._internal.projections.ledger; a demo page has no server, so this builds the
 // same rows from the snapshot's ties: the merges of the last day, a run of every tied DAG on each, and a new merge now and then.
 // `?ms=` picks what the rows show: `live` (the default) keys every run by commit with the newest still running, `fail` pins two failed applies (one past the head page),
 // `cross` adds another repository's merges and the pin bump that applies one, `infer` is an install that declares no commit key, so time pairs every run, and
