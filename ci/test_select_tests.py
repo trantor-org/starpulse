@@ -35,6 +35,7 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/tests/unit/test_board.py": 'from starpulse._internal.board import seam\n\nKIND = "jira"\n',
         "starpulse/tests/unit/test_public_surface.py": "",
         "starpulse/tests/unit/test_neutrality.py": "",
+        "starpulse/tests/unit/test_builtin_types.py": "",
         "ci/sizer.py": "",
         "ci/test_sizer.py": "from sizer import X\n",
         "ci/ui_preview.py": "",
@@ -107,6 +108,8 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
     [
         ("README.md", ["ci/test_ui_preview.py", "starpulse/tests/unit/test_public_surface.py"]),
         ("starpulse/web/src/App.tsx", ["ci/test_ui_preview.py", "starpulse/tests/unit/test_neutrality.py"]),
+        ("docs/serving.md", ["starpulse/tests/unit/test_builtin_types.py"]),
+        ("docs/sources.md", ["starpulse/tests/unit/test_builtin_types.py"]),
         (
             ".github/workflows/ci.yml",
             [

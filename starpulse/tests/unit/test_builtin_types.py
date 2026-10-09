@@ -8,12 +8,15 @@ import pytest
 
 from starpulse._internal.config.adapter_types import BUILT_IN, module_name
 
-README = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "README.md"
+DOCS = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "docs"
+#: The docs that show a `[board]` or `[[runs]]` table: the config file, and the sources a runs adapter reads.
+CONFIG_DOCS = (DOCS / "serving.md", DOCS / "sources.md")
 
 
 def _documented_bare_types() -> set[str]:
-    """Every `type = "name"` the README shows, commented or not, that names no dotted module."""
-    return {name for name in re.findall(r'^#?\s*type = "([^"]+)"', README.read_text(), re.MULTILINE) if "." not in name}
+    """Every `type = "name"` the config docs show, commented or not, that names no dotted module."""
+    text = "\n".join(doc.read_text() for doc in CONFIG_DOCS)
+    return {name for name in re.findall(r'^#?\s*type = "([^"]+)"', text, re.MULTILINE) if "." not in name}
 
 
 def _offers_an_adapter(module) -> bool:
@@ -22,7 +25,7 @@ def _offers_an_adapter(module) -> bool:
     )
 
 
-def test_the_readme_documents_bare_types() -> None:
+def test_the_config_docs_document_bare_types() -> None:
     assert {"native", "upstream_backlog", "jira", "dagu", "github_actions", "systemd"} <= _documented_bare_types()
 
 
