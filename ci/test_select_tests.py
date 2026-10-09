@@ -29,13 +29,13 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/tests/__init__.py": "",
         "starpulse/tests/conftest.py": "",
         "starpulse/tests/helpers.py": "from starpulse import lone\n",
-        "starpulse/tests/unit/test_leaf.py": "from starpulse.leaf import X\n",
-        "starpulse/tests/unit/test_hub.py": "from starpulse._internal.hub import hub\n",
-        "starpulse/tests/unit/test_lone.py": "from starpulse.tests.helpers import lone\n",
-        "starpulse/tests/unit/test_board.py": 'from starpulse._internal.board import seam\n\nKIND = "jira"\n',
-        "starpulse/tests/unit/test_public_surface.py": "",
-        "starpulse/tests/unit/test_neutrality.py": "",
-        "starpulse/tests/unit/test_builtin_types.py": "",
+        "starpulse/tests/unit/feed/test_leaf.py": "from starpulse.leaf import X\n",
+        "starpulse/tests/unit/hub/test_hub.py": "from starpulse._internal.hub import hub\n",
+        "starpulse/tests/unit/feed/test_lone.py": "from starpulse.tests.helpers import lone\n",
+        "starpulse/tests/unit/board/test_board.py": 'from starpulse._internal.board import seam\n\nKIND = "jira"\n',
+        "starpulse/tests/unit/contracts/test_public_surface.py": "",
+        "starpulse/tests/unit/contracts/test_neutrality.py": "",
+        "starpulse/tests/unit/config/test_builtin_types.py": "",
         "ci/sizer.py": "",
         "ci/test_sizer.py": "from sizer import X\n",
         "ci/ui_preview.py": "",
@@ -52,16 +52,16 @@ def repo(tmp_path: Path) -> Path:
 
 def test_a_changed_module_selects_the_tests_that_import_it_directly_or_through_another_module(repo):
     assert select(repo, ["starpulse/leaf.py"]) == Selection(
-        ["starpulse/tests/unit/test_hub.py", "starpulse/tests/unit/test_leaf.py"]
+        ["starpulse/tests/unit/feed/test_leaf.py", "starpulse/tests/unit/hub/test_hub.py"]
     )
 
 
 def test_a_changed_test_helper_selects_the_tests_that_import_it(repo):
-    assert select(repo, ["starpulse/tests/helpers.py"]) == Selection(["starpulse/tests/unit/test_lone.py"])
+    assert select(repo, ["starpulse/tests/helpers.py"]) == Selection(["starpulse/tests/unit/feed/test_lone.py"])
 
 
 def test_a_changed_test_file_selects_itself(repo):
-    assert select(repo, ["starpulse/tests/unit/test_lone.py"]) == Selection(["starpulse/tests/unit/test_lone.py"])
+    assert select(repo, ["starpulse/tests/unit/feed/test_lone.py"]) == Selection(["starpulse/tests/unit/feed/test_lone.py"])
 
 
 def test_a_ci_script_selects_the_ci_test_that_imports_it_by_its_bare_name(repo):
@@ -69,7 +69,7 @@ def test_a_ci_script_selects_the_ci_test_that_imports_it_by_its_bare_name(repo):
 
 
 def test_an_adapter_selects_the_tests_of_the_loader_that_imports_it_by_name(repo):
-    assert "starpulse/tests/unit/test_board.py" in select(repo, ["starpulse/_internal/board/jira.py"]).tests
+    assert "starpulse/tests/unit/board/test_board.py" in select(repo, ["starpulse/_internal/board/jira.py"]).tests
 
 
 def test_a_package_init_selects_every_test_under_the_package(repo):
@@ -80,7 +80,7 @@ def test_a_package_init_selects_every_test_under_the_package(repo):
 
 def test_a_migration_selects_the_tests_of_the_module_that_runs_migrations(repo):
     assert select(repo, ["starpulse/_internal/eventlog/migrations/versions/0001_initial.py"]) == Selection(
-        ["starpulse/tests/unit/test_hub.py"]
+        ["starpulse/tests/unit/hub/test_hub.py"]
     )
 
 
@@ -107,10 +107,10 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
     ("path", "tests"),
     [
         ("README.md", ["ci/test_ui_preview.py"]),
-        ("docs/public-surface.md", ["starpulse/tests/unit/test_public_surface.py"]),
-        ("starpulse/web/src/App.tsx", ["ci/test_ui_preview.py", "starpulse/tests/unit/test_neutrality.py"]),
-        ("docs/serving.md", ["starpulse/tests/unit/test_builtin_types.py"]),
-        ("docs/sources.md", ["starpulse/tests/unit/test_builtin_types.py"]),
+        ("docs/public-surface.md", ["starpulse/tests/unit/contracts/test_public_surface.py"]),
+        ("starpulse/web/src/App.tsx", ["ci/test_ui_preview.py", "starpulse/tests/unit/contracts/test_neutrality.py"]),
+        ("docs/serving.md", ["starpulse/tests/unit/config/test_builtin_types.py"]),
+        ("docs/sources.md", ["starpulse/tests/unit/config/test_builtin_types.py"]),
         (
             ".github/workflows/ci.yml",
             [
@@ -153,7 +153,7 @@ def test_a_non_python_file_whose_mapped_reader_is_gone_runs_the_full_suite(repo)
 def test_the_real_repository_selects_a_subset_for_one_adapter():
     root = Path(__file__).resolve().parents[1]
     selected = select(root, ["starpulse/_internal/board/jira.py"]).tests
-    assert "starpulse/tests/integration/test_jira.py" in selected
+    assert "starpulse/tests/integration/board/test_jira.py" in selected
     assert "ci/test_workflow_placement.py" not in selected
 
 
@@ -179,9 +179,9 @@ def test_a_module_a_conftest_fixture_uses_selects_the_tests_that_request_the_fix
     (repo / "starpulse/tests/conftest.py").write_text(
         "import pytest\nfrom starpulse.lone import Y\n\n\n@pytest.fixture\ndef answer():\n    return Y\n"
     )
-    (repo / "starpulse/tests/unit/test_leaf.py").write_text("def test_it(answer):\n    assert answer\n")
+    (repo / "starpulse/tests/unit/feed/test_leaf.py").write_text("def test_it(answer):\n    assert answer\n")
     assert select(repo, ["starpulse/lone.py"]) == Selection(
-        ["starpulse/tests/unit/test_leaf.py", "starpulse/tests/unit/test_lone.py"]
+        ["starpulse/tests/unit/feed/test_leaf.py", "starpulse/tests/unit/feed/test_lone.py"]
     )
 
 
