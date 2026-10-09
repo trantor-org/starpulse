@@ -2,7 +2,7 @@
 // the right rail (recent moves on top, the legend at the bottom), the clock, and the
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
-import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/viewPrefs";
 import { AdminStore } from "./features/admin/adminPrefs";
 import { ForwardingStore } from "./features/forwarding/forwarding";
@@ -65,10 +65,12 @@ export function App() {
   // a bare address opens the view the Admin chose; one that names a view opens that
   const [view, setView] = useState<ViewName>(() => viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view));
   // the view lives in the address, so a reload or a shared link opens the same one
-  const choose = (v: ViewName) => {
+  const choose = useCallback((v: ViewName) => {
     history.replaceState(null, "", `${location.pathname}${viewSearch(location.search, v, admin.get().view)}`);
     setView(v);
-  };
+  }, [admin]);
+  // stable, so a stream event that changes nothing the Kanban shows does not draw it again
+  const flyToLane = useCallback((lane: string) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }, [choose]);
 
   useEffect(() => {
     const els = { tip: tip.current!, panel: panel.current!, clock: clock.current! };
@@ -115,7 +117,7 @@ export function App() {
       </Kept>
       <Kept on={view === "kanban"}>
         <Suspense fallback={null}>
-          <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} constellation={(lane) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }}
+          <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} constellation={flyToLane}
             spot={spotted} note={setWhy} opening={opening} />
         </Suspense>
       </Kept>
