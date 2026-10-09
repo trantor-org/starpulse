@@ -20,12 +20,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from starpulse._internal.adapters.runs.forwarded import FIELDS, PERSON, project
-from starpulse._internal.store import lane_events
-from starpulse._internal.store.event_log import EventLog, Tail
+from starpulse._internal.eventlog import lane_events
+from starpulse._internal.eventlog.event_log import EventLog, Tail
 
 if TYPE_CHECKING:
-    from starpulse._internal.settings.config import Config, Forward
-    from starpulse._internal.store.history import HistoryStore
+    from starpulse._internal.config.config import Config, Forward
+    from starpulse._internal.eventlog.history import HistoryStore
 
 logger = logging.getLogger(__name__)
 

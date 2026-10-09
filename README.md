@@ -615,7 +615,7 @@ The two machine definitions ship in the package under `starpulse/machines/`.
 Install the hub extras (`uvx --from 'starpulse[hub]' starpulse serve --hub`) and set `database_url` to a Postgres
 database in the config; a config with none, or with a SQLite URL, is refused before anything starts. The hub brings
 the database's schema to the latest revision on every start: the history tables are versioned with the package by
-Alembic (`starpulse/_internal/store/migrations`, revisions recorded in `starpulse_alembic_version`), so upgrading the package and
+Alembic (`starpulse/_internal/eventlog/migrations`, revisions recorded in `starpulse_alembic_version`), so upgrading the package and
 restarting upgrades the schema. An instance without `--hub` keeps its SQLite file and never imports the hub extras.
 
 A hub also requires an `[oidc]` table, because viewers sign in with the hub's OpenID Connect issuer before anything is
@@ -1006,11 +1006,10 @@ share checkout state on one worker. CI sizes `-n` to its runner's memory with `c
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import
 graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite, and so does every
 push to `main`.
-`uv run lint-imports` checks the package layers, top to bottom: `api` and `cli` (the server's routes, the hub and the
-command line), `adapters`, `projections` (the feed, the machine and analytics reads), `store` (the tables and the
-event log), `settings`, then `domain` and `contracts`. A layer imports its own or one below; none import upward, and
-`api` and `cli` never import each other. The top level holds only the public modules listed above, each a facade over
-its layer.
+`uv run lint-imports` checks the tiers under `starpulse/_internal`, top to bottom: `api` over `cli` (the server's routes and
+the hub, then the command line), `adapters`, `level`, `feed` and `ci`, `eventlog`, then `config`, `machines` and
+`contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.
+The top level holds only the public modules listed above, each a facade over its feature.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 The page's `web/src` is organized by feature: `api/` (types, `apiFetch`, the event stream), `features/<name>/` (a view with its
 pure model and colocated tests), `render/` (the canvas), `shared/` and `demo/`. ESLint's `no-restricted-imports` holds a feature

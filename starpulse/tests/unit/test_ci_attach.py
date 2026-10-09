@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.api.server import assemble
-from starpulse._internal.settings.config import ConfigError, load
+from starpulse._internal.config.config import ConfigError, load
 
 
 def _snapshot(tmp_path: Path, text: str) -> dict:

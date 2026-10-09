@@ -13,8 +13,8 @@ import pytest
 
 from starpulse._internal.api.server import serve_until_stopped
 from starpulse.contracts.adapters import BoardTask
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.eventlog.event_log import EventLog
 
 STREAM = "board:tasks"
 

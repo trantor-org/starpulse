@@ -19,9 +19,9 @@ from starpulse._internal.api.adapter_kit import serve as _serve
 from starpulse._internal.api.adapter_kit import task
 from starpulse._internal.api.adapter_kit import url as _url
 from starpulse.contracts.adapters import Move
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.projections.machine_tasks import MachineTasks
-from starpulse._internal.settings.config import CommitKeys
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.config.config import CommitKeys
 from starpulse.tests.machines import MACHINES
 
 RUN_SAFE = frozenset({"dagu/whole-repo-gate"})

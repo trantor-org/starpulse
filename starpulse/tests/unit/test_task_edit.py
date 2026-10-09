@@ -11,8 +11,8 @@ from starpulse._internal.api.adapter_kit import task
 from starpulse._internal.api.server import assemble
 from starpulse._internal.api.writes import archive_task, edit_task, task_record
 from starpulse.contracts.adapters import Move
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import load
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import load
 from starpulse.tests import fake_board
 from starpulse.tests.machines import MACHINES
 

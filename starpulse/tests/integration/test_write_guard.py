@@ -17,8 +17,8 @@ from starpulse._internal.api.adapter_kit import serve as _serve
 from starpulse._internal.api.adapter_kit import task
 from starpulse._internal.api.adapter_kit import url as _url
 from starpulse.contracts.adapters import Move
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.history_window import HistoryWindow
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.history_window import HistoryWindow
 
 _FOREIGN = "https://evil.example"
 #: Every route that writes, as (method, path, body): a refused request must reach none of their writers.

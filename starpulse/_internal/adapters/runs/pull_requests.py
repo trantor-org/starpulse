@@ -24,10 +24,10 @@ from itertools import groupby
 from types import MappingProxyType
 from typing import Protocol
 
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.projections.ci_trail import PullHistory, parse
-from starpulse._internal.settings.config import Repo
-from starpulse._internal.settings.pins import GitHub, Pins, contained, link
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.ci.ci_trail import PullHistory, parse
+from starpulse._internal.config.config import Repo
+from starpulse._internal.config.pins import GitHub, Pins, contained, link
 
 logger = logging.getLogger(__name__)
 

@@ -42,7 +42,7 @@ from starpulse._internal.adapters.boards.upstream_backlog import (
     lane_id,
     project_board,
 )
-from starpulse._internal.projections import criteria
+from starpulse._internal.feed import criteria
 
 #: Where the board lives, relative to the config's directory (or the working directory without a config).
 DEFAULT_PATH = ".starpulse/board"

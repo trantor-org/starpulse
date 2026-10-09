@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.adapters import BUILT_IN, module_name
+from starpulse._internal.config.adapter_types import BUILT_IN, module_name
 
 README = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "README.md"
 

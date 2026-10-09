@@ -20,9 +20,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 
-from starpulse._internal.domain.transitions import Table
-from starpulse._internal.store.events import STREAM
-from starpulse._internal.store.tables import day_rollups, events
+from starpulse._internal.machines.transitions import Table
+from starpulse._internal.eventlog.events import STREAM
+from starpulse._internal.eventlog.tables import VERSION_TABLE, day_rollups, events
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +38,7 @@ __all__ = [
     "rollup_day",
 ]
 
-#: Where the database records the revision it is at, named so it never meets a host project's own Alembic table.
-VERSION_TABLE = "starpulse_alembic_version"
-_MIGRATIONS = Path(__file__).parents[1] / "store" / "migrations"
+_MIGRATIONS = Path(__file__).parents[1] / "eventlog" / "migrations"
 
 
 class HubError(ValueError):

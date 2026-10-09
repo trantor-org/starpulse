@@ -21,10 +21,10 @@ from pathlib import Path
 
 from starpulse._internal.api.server import assemble, request_handler
 from starpulse.contracts.adapters import BoardTask
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import load
-from starpulse._internal.settings.history_window import HistoryWindow
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import load
+from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.eventlog.history import HistoryStore
 
 import starpulse
 

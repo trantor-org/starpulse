@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import event
 
 from starpulse._internal.api.server import health_response, level_response, trajectories_response
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.integration.test_level_http import LEVEL
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.rows import rows_fetched

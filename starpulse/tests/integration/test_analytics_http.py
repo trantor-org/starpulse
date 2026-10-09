@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.api.adapter_kit import serve, url
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import NOW, ROWS, H
 

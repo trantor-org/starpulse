@@ -9,9 +9,9 @@ import pytest
 from starpulse._internal.adapters.boards.seam import Board
 from starpulse._internal.adapters.boards.seam import load as load_board
 from starpulse._internal.api.server import assemble, history_store
-from starpulse._internal.settings.config import ConfigError, load
-from starpulse._internal.store.event_log import EventLog
-from starpulse._internal.store.history import DEFAULT_FILE, HistoryStore
+from starpulse._internal.config.config import ConfigError, load
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.history import DEFAULT_FILE, HistoryStore
 from starpulse.tests import fake_board
 
 TASK = """---

@@ -39,7 +39,7 @@ READERS = {
     "starpulse/web/*": ("starpulse/tests/unit/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
-    "starpulse/_internal/store/migrations/*": ("starpulse/_internal/api/hub.py",),
+    "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/api/hub.py",),
     "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py", "ci/test_load.py"),
     "bench/soak.py": ("ci/test_soak.py",),
     "bench/load.py": ("ci/test_load.py",),
@@ -66,11 +66,11 @@ INERT = (
 #: The board seam and `config.py` import an adapter by the name configuration gives (`importlib.import_module`), so a
 #: test reaching either reaches each adapter whose name appears in a module it reaches: a configured `kind = "dagu"` in
 #: the test or a helper, or the loader's own default (`config.DEFAULT_TYPE`).
-NAMED_LOADERS = ("starpulse._internal.adapters.boards.seam", "starpulse._internal.settings.config")
+NAMED_LOADERS = ("starpulse._internal.adapters.boards.seam", "starpulse._internal.config.config")
 
 #: The module that lists every built-in adapter's name. Every loader reaches it, so its text names no adapter a test
 #: names: it would otherwise select every adapter's tests for a change to any loader.
-TYPE_TABLE = "starpulse._internal.adapters"
+TYPE_TABLE = "starpulse._internal.config.adapter_types"
 
 
 @dataclass(frozen=True)

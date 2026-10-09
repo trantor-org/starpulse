@@ -12,9 +12,9 @@ from pydantic import TypeAdapter
 
 from starpulse._internal.api.adapter_kit import serve, task, url
 from starpulse.contracts.api import RESPONSES
-from starpulse._internal.domain.level import Level, Orbit, Terminal
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.config.level import Level, Orbit, Terminal
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import NOW, ROWS
 from starpulse.tests.unit.test_board_feed import _paged_feed

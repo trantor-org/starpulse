@@ -12,9 +12,9 @@ from sqlalchemy import create_engine
 from starpulse._internal.adapters.runs.pull_requests import GhUnavailableError
 from starpulse._internal.adapters.runs.pull_store import PullSync, refresh_repository
 from starpulse._internal.api.adapter_kit import task
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import Repo
-from starpulse._internal.store.pulls import PullStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import Repo
+from starpulse._internal.adapters.runs.pulls import PullStore
 
 REPO = "acme/widgets"
 OLD, NEW = "2026-10-07T12:00:00Z", "2026-10-07T13:00:00Z"

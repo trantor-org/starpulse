@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.store import events
-from starpulse._internal.store.event_log import EventLog, Tail
+from starpulse._internal.eventlog import events
+from starpulse._internal.eventlog.event_log import EventLog, Tail
 
 
 @pytest.fixture

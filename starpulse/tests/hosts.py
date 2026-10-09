@@ -5,8 +5,8 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from starpulse._internal.projections import doctor
-from starpulse._internal.settings.config import RunsInstance
+from starpulse._internal.cli import doctor
+from starpulse._internal.config.config import RunsInstance
 
 
 class FakeHost:

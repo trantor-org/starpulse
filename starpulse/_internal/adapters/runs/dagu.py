@@ -26,7 +26,7 @@ from typing import Any, get_args
 
 from starpulse._internal.adapters.runs import run_events
 from starpulse.contracts.adapters import RunsSink, RunStatus, StartFailedError
-from starpulse._internal.store.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
+from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 
 #: Seconds between two listings of a followed Dagu instance.
 RECONCILE_INTERVAL = 30.0

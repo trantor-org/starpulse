@@ -62,15 +62,15 @@ from starpulse.contracts.adapters import (
     Pool,
     TaskKeys,
 )
-from starpulse._internal.domain.level import Level
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.projections.insights import Insights, InsightStore
-from starpulse._internal.projections.machine_tasks import MachineTasks
-from starpulse._internal.settings.config import Config
-from starpulse._internal.settings.harnesses import Harnesses
-from starpulse._internal.settings.history_window import HistoryWindow
-from starpulse._internal.store.history import History, HistoryStore
-from starpulse._internal.store.pulls import PullStore
+from starpulse._internal.config.level import Level
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.level.insights import Insights, InsightStore
+from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.config.config import Config
+from starpulse._internal.config.harnesses import Harnesses
+from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.eventlog.history import History, HistoryStore
+from starpulse._internal.adapters.runs.pulls import PullStore
 
 __all__ = [
     "BoardAdapterKit",

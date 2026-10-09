@@ -16,8 +16,8 @@ from alembic.runtime.migration import MigrationContext  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
 
 from starpulse._internal.api import hub  # noqa: E402
-from starpulse._internal.store import history  # noqa: E402, F401 - history declares its tables on the shared metadata
-from starpulse._internal.store.tables import metadata  # noqa: E402
+from starpulse._internal.eventlog import history  # noqa: E402, F401 - history declares its tables on the shared metadata
+from starpulse._internal.eventlog.tables import metadata  # noqa: E402
 
 
 def _url(engine: Engine) -> str:
@@ -25,7 +25,7 @@ def _url(engine: Engine) -> str:
 
 
 def _head() -> str:
-    script = ScriptDirectory(str(Path(hub.__file__).parents[1] / "store" / "migrations"))
+    script = ScriptDirectory(str(Path(hub.__file__).parents[1] / "eventlog" / "migrations"))
     return script.get_current_head()
 
 
@@ -77,7 +77,7 @@ def test_preparing_a_database_already_at_head_changes_nothing(empty_database: En
 
 def test_events_a_hub_already_holds_survive_the_move_into_partitions(empty_database: Engine) -> None:
     config = Config()
-    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "store" / "migrations"))
+    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "eventlog" / "migrations"))
     with empty_database.begin() as db:
         config.attributes["connection"] = db
         command.upgrade(config, "0001")
@@ -107,7 +107,7 @@ def test_events_a_hub_already_holds_survive_the_move_into_partitions(empty_datab
 def test_the_summaries_revision_adds_its_tables_and_a_downgrade_drops_them(empty_database: Engine) -> None:
     summaries = {"starpulse_step_summaries", "starpulse_cases", "starpulse_lane_intervals"}
     config = Config()
-    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "store" / "migrations"))
+    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "eventlog" / "migrations"))
     with empty_database.begin() as db:
         config.attributes["connection"] = db
         command.upgrade(config, "0004")
@@ -127,7 +127,7 @@ def test_the_lane_counts_revision_counts_the_lanes_the_intervals_hold_and_a_down
     empty_database: Engine,
 ) -> None:
     config = Config()
-    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "store" / "migrations"))
+    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "eventlog" / "migrations"))
     with empty_database.begin() as db:
         config.attributes["connection"] = db
         command.upgrade(config, "0005")
@@ -159,7 +159,7 @@ def test_the_lane_counts_revision_counts_the_lanes_the_intervals_hold_and_a_down
 
 def test_the_stay_index_revision_replaces_the_lane_index_and_a_downgrade_restores_it(empty_database: Engine) -> None:
     config = Config()
-    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "store" / "migrations"))
+    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "eventlog" / "migrations"))
     with empty_database.begin() as db:
         config.attributes["connection"] = db
         command.upgrade(config, "0009")

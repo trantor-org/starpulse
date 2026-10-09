@@ -17,9 +17,9 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from starpulse._internal.adapters.runs.pull_requests import PULL_URL, REFRESH_S, GhUnavailableError, query_github
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import Repo
-from starpulse._internal.store.pulls import PullStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import Repo
+from starpulse._internal.adapters.runs.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 

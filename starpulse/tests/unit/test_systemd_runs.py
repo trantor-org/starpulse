@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from starpulse._internal.adapters import BUILT_IN, module_name
+from starpulse._internal.config.adapter_types import BUILT_IN, module_name
 from starpulse._internal.adapters.runs import systemd
 from starpulse._internal.api.adapter_kit import RunsAdapterKit
 from starpulse.contracts.adapters import TaskKeys

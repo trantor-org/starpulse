@@ -17,7 +17,7 @@ from starpulse._internal.api.adapter_kit import serve, url
 from starpulse._internal.api.writes import create_doc
 from starpulse._internal.cli import agent_cli as cli
 from starpulse.contracts.api import RESPONSES
-from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.feed.board_feed import BoardFeed
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "native_board" / "docs"
 REAL = "specs/doc-84 - Nightly-infrastructure-audit-—-2026-10-04.md"

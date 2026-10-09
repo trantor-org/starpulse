@@ -1,6 +1,6 @@
-"""Drafting a machine definition from a Mermaid state diagram, `python -m starpulse.mermaid_import flow.mmd`; the implementation is in `starpulse._internal.domain.mermaid_import`."""
+"""Drafting a machine definition from a Mermaid state diagram, `python -m starpulse.mermaid_import flow.mmd`; the implementation is in `starpulse._internal.machines.mermaid_import`."""
 
-from starpulse._internal.domain.mermaid_import import Diagram, Edge, draft_machine, dump, main, parse
+from starpulse._internal.machines.mermaid_import import Diagram, Edge, draft_machine, dump, main, parse
 
 __all__ = ["Diagram", "Edge", "draft_machine", "dump", "parse"]
 

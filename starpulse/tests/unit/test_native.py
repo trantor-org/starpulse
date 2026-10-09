@@ -14,10 +14,10 @@ from starpulse._internal.api.adapter_kit import BoardAdapterKit
 from starpulse._internal.api.server import announce, assemble
 from starpulse._internal.api.writes import move_task
 from starpulse.contracts.adapters import BoardTask
-from starpulse._internal.domain.machine_definition import Writer
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import load
-from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.machines.machine_definition import Writer
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import load
+from starpulse._internal.eventlog.event_log import EventLog
 
 LANES = ["To Do", "In Progress", "Done"]
 _OPERATOR_ONLY = """\

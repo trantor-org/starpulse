@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.api import server
-from starpulse._internal.store.history import DEFAULT_FILE, HistoryStore
+from starpulse._internal.eventlog.history import DEFAULT_FILE, HistoryStore
 
 _CLIENT_MODULE = "re" + "dis"
 _ENV_DROPPED = (f"{_CLIENT_MODULE.upper()}_URL", f"{_CLIENT_MODULE.upper()}_PASSWORD", "DATABASE_URI")

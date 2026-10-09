@@ -25,10 +25,10 @@ from starpulse._internal.api.server import _no_writer
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import skill_install
 from starpulse.contracts.adapters import Move
-from starpulse._internal.domain.level import Level, Orbit, Terminal
-from starpulse._internal.projections import doctor
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.config.level import Level, Orbit, Terminal
+from starpulse._internal.cli import doctor
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import NOW, ROWS, H

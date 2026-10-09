@@ -15,14 +15,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
-from starpulse._internal.adapters import module_name
+from starpulse._internal.config.adapter_types import module_name
 from starpulse.contracts.adapters import TaskKeys
-from starpulse._internal.domain.snapshot import Qualify
-from starpulse._internal.settings.config import DEFAULT_TYPE
+from starpulse._internal.machines.snapshot import Qualify
+from starpulse._internal.config.config import DEFAULT_TYPE
 
 if TYPE_CHECKING:
-    from starpulse._internal.projections.board_feed import BoardFeed
-    from starpulse._internal.store.event_log import EventLog
+    from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse._internal.eventlog.event_log import EventLog
 
 __all__ = [
     "DEFAULT_TYPE",
