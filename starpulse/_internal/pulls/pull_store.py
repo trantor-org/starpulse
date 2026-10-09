@@ -96,6 +96,8 @@ def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
         "requiredChecks": required,
         "threads": sum(not thread["isResolved"] for thread in node["reviewThreads"]["nodes"]),
         "updatedAt": node["updatedAt"],
+        "mergedAt": node["mergedAt"],
+        "mergeSha": (node["mergeCommit"] or {}).get("oid"),
         "fetchedAt": now,
         "detail": {
             "mergedAt": node["mergedAt"],

@@ -24,6 +24,8 @@ _FIELDS = {
     "required": "requiredChecks",
     "threads": "threads",
     "updated_at": "updatedAt",
+    "merged_at": "mergedAt",
+    "merge_sha": "mergeSha",
     "fetched_at": "fetchedAt",
 }
 
@@ -40,9 +42,12 @@ class PullStore:
         #: Counts saves, so a reader holding an answer knows when it is stale.
         self.rev = 0
         create_tables(engine, [pull_requests])
-        if "detail" not in {column["name"] for column in inspect(engine).get_columns(pull_requests.name)}:
-            with engine.begin() as db:  # a table an earlier version created: the hub's migration 0010 adds it there
-                db.execute(text(f"ALTER TABLE {pull_requests.name} ADD COLUMN detail JSON"))
+        present = {column["name"] for column in inspect(engine).get_columns(pull_requests.name)}
+        added = {"detail": "JSON", "merged_at": "VARCHAR", "merge_sha": "VARCHAR"}
+        with engine.begin() as db:  # a table an earlier version created: the hub's migrations 0010 and 0011 add these
+            for column, kind in added.items():
+                if column not in present:
+                    db.execute(text(f"ALTER TABLE {pull_requests.name} ADD COLUMN {column} {kind}"))
 
     def save(self, records: Iterable[dict[str, Any]]) -> None:
         """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository

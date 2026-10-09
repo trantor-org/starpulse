@@ -50,8 +50,9 @@ GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_con
                    open ones every time, a merged or closed one until it is final), those matching every filter
                    given, by repository then number, each {repo, number, state (OPEN, MERGED, CLOSED), isDraft,
                    mergeable, baseRefName, headRefOid, body, checks (pass, failing, pending, none: the required
-                   checks at the head commit), requiredChecks [{name, result}], threads (unresolved), updatedAt, and
-                   fetchedAt (epoch seconds this record was read)}. A `number` that is not an integer, or a `state`
+                   checks at the head commit), requiredChecks [{name, result}], threads (unresolved), updatedAt,
+                   mergedAt and mergeSha (ISO 8601 UTC merge time and merge commit; null until merged, and for a
+                   merge stored before they were kept), and fetchedAt (epoch seconds this record was read)}. A `number` that is not an integer, or a `state`
                    that is none of those, is 400
 GET /metrics       Prometheus text: `starpulse_pull_store_age_seconds{repo}`, the seconds since the newest record of
                    each repository holding an open pull request was read; a stale one means the refresh stopped

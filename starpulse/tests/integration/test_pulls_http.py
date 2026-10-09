@@ -30,6 +30,8 @@ def _pull(repo: str, number: int, state: str, body: str, fetched: float) -> dict
         "requiredChecks": [{"name": "lint", "result": "pass"}],
         "threads": 0,
         "updatedAt": "2026-10-07T12:00:00Z",
+        "mergedAt": None,
+        "mergeSha": None,
         "fetchedAt": fetched,
     }
 
