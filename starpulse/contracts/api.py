@@ -556,6 +556,8 @@ class PullRecord(_Api):
     requiredChecks: list[RequiredCheck]
     threads: int
     updatedAt: str
+    mergedAt: str | None
+    mergeSha: str | None
     fetchedAt: float
 
 

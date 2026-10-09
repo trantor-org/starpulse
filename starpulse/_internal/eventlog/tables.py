@@ -124,6 +124,8 @@ pull_requests = Table(
     Column("required", JSON, nullable=False),
     Column("threads", Integer, nullable=False),
     Column("updated_at", String, nullable=False),
+    Column("merged_at", String),
+    Column("merge_sha", String),
     Column("fetched_at", Float, nullable=False),
     Column("detail", JSON, nullable=True),
     PrimaryKeyConstraint("repo", "number"),

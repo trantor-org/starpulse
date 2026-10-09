@@ -133,6 +133,8 @@ def _stored(repo: str, number: int) -> dict:
         "requiredChecks": [],
         "threads": 0,
         "updatedAt": OLD,
+        "mergedAt": None,
+        "mergeSha": None,
         "fetchedAt": 1.0,
     }
 
@@ -253,6 +255,8 @@ def test_a_record_carries_the_facts_pr_status_prints(store: PullStore) -> None:
             "requiredChecks": [{"name": "lint", "result": "pass"}],
             "threads": 2,
             "updatedAt": OLD,
+            "mergedAt": None,
+            "mergeSha": None,
             "fetchedAt": 100.0,
         }
     ]
@@ -300,6 +304,29 @@ def test_a_table_an_earlier_version_created_gains_the_detail_column_and_keeps_it
     store.save([{**_stored(REPO, 2), "detail": {"files": ["a.py"]}}])
 
     assert {pull["number"]: pull["detail"] for pull in store.find(detailed=True)} == {1: None, 2: {"files": ["a.py"]}}
+
+
+def test_a_table_an_earlier_version_created_gains_the_merge_columns_and_keeps_its_rows(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "CREATE TABLE starpulse_pull_requests (repo VARCHAR NOT NULL, number INTEGER NOT NULL, state VARCHAR NOT NULL,"
+            " is_draft BOOLEAN NOT NULL, mergeable VARCHAR NOT NULL, base VARCHAR NOT NULL, head VARCHAR NOT NULL,"
+            " body TEXT NOT NULL, checks VARCHAR NOT NULL, required JSON NOT NULL, threads INTEGER NOT NULL,"
+            " updated_at VARCHAR NOT NULL, fetched_at FLOAT NOT NULL, detail JSON, PRIMARY KEY (repo, number))"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO starpulse_pull_requests VALUES ('acme/widgets', 1, 'OPEN', 0, 'UNKNOWN', 'main', 'abc', '',"
+            " 'pass', '[]', 0, '2026-10-07T12:00:00Z', 1.0, NULL)"
+        )
+
+    store = PullStore(engine)
+    store.save([{**_stored(REPO, 2), "state": "MERGED", "mergedAt": NEW, "mergeSha": "a" * 40}])
+
+    assert {pull["number"]: (pull["mergedAt"], pull["mergeSha"]) for pull in store.find()} == {
+        1: (None, None),
+        2: (NEW, "a" * 40),
+    }
 
 
 def test_a_pr_an_open_task_cites_is_read_when_the_store_lacks_it_or_holds_it_without_detail(store: PullStore) -> None:
@@ -475,6 +502,8 @@ def _record(repo: str, number: int, state: str, fetched: float) -> dict:
         "requiredChecks": [],
         "threads": 0,
         "updatedAt": OLD,
+        "mergedAt": None,
+        "mergeSha": None,
         "fetchedAt": fetched,
     }
 
@@ -504,3 +533,15 @@ def test_age_gauge_leaves_out_a_repository_holding_no_open_pull_request(tmp_path
 
     assert 'repo="acme/widgets"' not in store.age_gauge(1000.0)
     assert 'starpulse_pull_store_age_seconds{repo="acme/skills"} 10' in store.age_gauge(1000.0)
+
+
+def test_a_merged_pr_is_recorded_with_its_merge_commit_and_time_and_an_open_one_with_neither(store: PullStore) -> None:
+    github = Github()
+    github.add(1)
+    github.add(2, state="MERGED", merged_at="2026-10-07T12:30:00Z")
+
+    refresh_repository(REPO, store, 100.0, github)
+
+    open_pull, merged = store.find()
+    assert (open_pull["mergedAt"], open_pull["mergeSha"]) == (None, None)
+    assert (merged["mergedAt"], merged["mergeSha"]) == ("2026-10-07T12:30:00Z", f"{2:040x}"[::-1])

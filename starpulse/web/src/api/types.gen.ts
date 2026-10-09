@@ -1095,7 +1095,9 @@ export interface PullRecord {
   fetchedAt: number;
   headRefOid: string;
   isDraft: boolean;
+  mergeSha: string | null;
   mergeable: string;
+  mergedAt: string | null;
   number: number;
   repo: string;
   requiredChecks: RequiredCheck[];
