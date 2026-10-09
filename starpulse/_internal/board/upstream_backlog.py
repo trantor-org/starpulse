@@ -51,6 +51,8 @@ _DESCRIPTION = re.compile(r"<!-- SECTION:DESCRIPTION:BEGIN -->(.*?)<!-- SECTION:
 _HEADED_DESCRIPTION = re.compile(r"^## Description\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
 _NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END -->", re.S)
 _HOLDER = re.compile(r"^\*\*Holder:\*\* (\S+)[ \t]*$", re.M)
+_CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
+_ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
 
 
 @dataclass(frozen=True)
@@ -153,6 +155,18 @@ def _holder(body: str) -> str:
     return held[-1] if held else ""
 
 
+def _criteria(body: str) -> tuple[str, ...]:
+    """The text of each acceptance criterion, in file order."""
+    found = _CRITERIA.search(body)
+    return tuple(text for _, _, text in _ITEM.findall(found.group(1))) if found else ()
+
+
+def _notes(body: str) -> str:
+    """The task's notes without the holder markers, trimmed; empty when it has none."""
+    found = _NOTES.search(body)
+    return _HOLDER.sub("", found.group(1)).strip() if found else ""
+
+
 def _split(text: str) -> tuple[Any, str]:
     """A task file's YAML frontmatter and the Markdown after it; `(None, "")` for a file with neither."""
     text = text.replace("\r\n", "\n")
@@ -246,6 +260,8 @@ class UpstreamBacklog:
             labels=_strings(frontmatter.get("labels")),
             milestone=str(frontmatter.get("milestone") or "").strip(),
             description=_description(body),
+            acceptance_criteria=_criteria(body),
+            notes=_notes(body),
             moves={} if settled else dict(self._moves.get(lane, {})),
         )
 

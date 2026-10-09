@@ -240,6 +240,7 @@ from starpulse._internal.ci.ci_trail import CiTrail
 from starpulse._internal.level.insights import Insights, InsightStore, restore
 from starpulse._internal.feed.ledger import PAGE
 from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.feed.machine_tasks import tables as machine_tables
 from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.harnesses import Harnesses
@@ -397,6 +398,27 @@ def pulls_response(pulls: PullStore | None, query: dict[str, list[str]]) -> tupl
         else []
     )
     return encode("pulls", {"pulls": found}), 200
+
+
+#: `/api/search`'s default and largest number of hits.
+_SEARCH_HITS = 10
+_SEARCH_LIMIT = 100
+
+
+def search_response(search: SearchIndex | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
+    """The body and status for `/api/search`: the tasks holding every word of `?q=`, best first, at most `?limit=`.
+
+    A server with no index is 404; a blank `q` or a `limit` that is not an integer from 1 to 100 is 400."""
+    if search is None:
+        return _error("this server keeps no search index"), 404
+    words = query.get("q", [""])[0].strip()
+    try:
+        limit = int(query["limit"][0]) if "limit" in query else _SEARCH_HITS
+    except ValueError:
+        limit = 0
+    if not words or not 0 < limit <= _SEARCH_LIMIT:
+        return _error(f"search takes a ?q= of words and a ?limit= from 1 to {_SEARCH_LIMIT}"), 400
+    return encode("search", {"query": words, "hits": search.search(words, limit)}), 200
 
 
 #: `/api/analytics/health`'s defaults: the window it counts over, and how long a stay in one state makes a task stuck.
@@ -805,6 +827,7 @@ def request_handler(
     pulls: PullStore | None = None,
     telemetry: TelemetryLog | None = None,
     complete: TaskCompleter | None = None,
+    search: SearchIndex | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
     snapshots = SnapshotCache(feed)
@@ -856,6 +879,8 @@ def request_handler(
                 self._send(*history_response(history, parse_qs(url.query), flows))
             elif url.path == "/api/pulls":
                 self._send(*pull_reads(url.query))
+            elif url.path == "/api/search":
+                self._send(*search_response(search, parse_qs(url.query)))
             elif url.path == "/metrics":
                 self._send(
                     (pulls.age_gauge(clock()) if pulls else "").encode(),
@@ -1320,6 +1345,10 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
             name="hub-maintenance",
             daemon=True,
         ).start()
+    # the instance indexes its board for search; a hub holds no individual's task text, so it keeps no index
+    search = None if args.hub else SearchIndex.open(log.engine)
+    if search is not None:
+        feed.index_tasks(search)
     board.start(feed, f"flow-view-{args.port}", log)
     # a move the feed applied but never recorded (a restart between the two) is put in the history once the replay is read
     threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
@@ -1409,6 +1438,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         pulls=pulls,
         telemetry=TelemetryLog(log),
         autopilot=autopilot_runtime,
+        search=search,
     )
     serve_until_stopped(StarPulseServer((args.host, args.port), handler), feed)
 

@@ -63,6 +63,7 @@ export interface ApiContract {
     | RunEventRequest
     | ForwardRequest
   )[];
+  searchResults: SearchResults;
   sessions: Sessions;
   snapshot: Snapshot;
   taskRecord: TaskRecord;
@@ -1262,6 +1263,23 @@ export interface ForwardedEvent {
     [k: string]: unknown;
   };
   stream: string;
+}
+/**
+ * `GET /api/search?q=&limit=`: the tasks holding every word of `q`, best match first.
+ */
+export interface SearchResults {
+  hits: SearchHit[];
+  query: string;
+}
+/**
+ * One task a search found: where it is now, and the text around the match.
+ */
+export interface SearchHit {
+  lane: string;
+  score: number;
+  snippet: string;
+  task: string;
+  title: string;
 }
 /**
  * `GET /api/analytics/sessions`: session and slice health over a window.

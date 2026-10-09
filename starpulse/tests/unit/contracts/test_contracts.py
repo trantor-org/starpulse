@@ -215,3 +215,13 @@ def test_a_board_task_carries_the_team_key_its_adapter_derived() -> None:
 
     assert task.model_dump(mode="json")["team"] == "PROJ"
     assert "team" in SCHEMAS["board"]["required"]
+
+
+def test_a_board_task_carries_its_acceptance_criteria_and_notes_and_is_without_them_by_default() -> None:
+    bare = BoardTask(id="PROJ-1", title="t", lane="to_do", team="PROJ")
+    full = BoardTask(
+        id="PROJ-1", title="t", lane="to_do", team="PROJ", acceptance_criteria=("It draws", "It scrolls"), notes="n"
+    )
+
+    assert (bare.acceptance_criteria, bare.notes) == ((), "")
+    assert (full.acceptance_criteria, full.notes) == (("It draws", "It scrolls"), "n")

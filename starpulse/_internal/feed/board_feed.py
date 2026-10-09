@@ -113,6 +113,14 @@ class LaneRecorder(Protocol):
         """Keep one lane change; True when it wrote a row, False for a repeat of the task's last lane or a known id."""
 
 
+class TaskIndex(Protocol):
+    """Where the feed keeps each task's searchable text (`search.SearchIndex`)."""
+
+    def index(self, task: BoardTask) -> None: ...
+
+    def remove(self, task_id: str) -> None: ...
+
+
 class BoardStore(Protocol):
     """Where a feed keeps the Board it saved: the event log, or any store that holds one state per stream."""
 
@@ -171,6 +179,8 @@ class BoardFeed:
         self._lanes: LaneRecorder | None = None
         #: Where each lane change `_lanes` wrote is also appended as a `lane_events` entry; None appends nothing.
         self._lane_log: EventLog | None = None
+        #: Each task placed or retracted is also kept in `_search`; None keeps none.
+        self._search: TaskIndex | None = None
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
@@ -393,6 +403,15 @@ class BoardFeed:
         self._lanes = lanes
         self._lane_log = log
 
+    def index_tasks(self, search: TaskIndex) -> None:
+        """Keep every task the feed places in `search`, and drop each one it retracts.
+
+        A task is indexed as it arrives, before the feed decides whether anything it draws changed, so a change the
+        page does not show (an acceptance criterion, a note) is still searchable. An index that cannot be written is
+        logged: the task is still placed.
+        """
+        self._search = search
+
     def read_lanes(self, lane_rows: Callable[..., list[LaneRow]]) -> None:
         """Read the Ledger's lane moves through `lane_rows` (`LaneHistory.lane_rows`)."""
         self._lane_rows = lane_rows
@@ -401,6 +420,11 @@ class BoardFeed:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
         if self._keys is not None and not self._keys.matches(task.id):
             return
+        if self._search is not None:
+            try:
+                self._search.index(task)
+            except Exception as exc:  # the index is down; the task is placed and the next change is indexed
+                logger.warning("StarPulse: cannot index %s for search: %s", task.id, exc)
         change = self._place(task)
         if change is None:
             return
@@ -503,6 +527,11 @@ class BoardFeed:
 
     def retract(self, task_id: str) -> None:
         """Remove a task the adapter's source no longer holds, open or settled; a task not placed is a no-op."""
+        if self._search is not None:
+            try:
+                self._search.remove(task_id)
+            except Exception as exc:  # the index is down; a stale hit is dropped when the task is next indexed
+                logger.warning("StarPulse: cannot drop %s from the search index: %s", task_id, exc)
         with self._lock:
             self._assignees.pop(task_id, None)
             self._cited.pop(task_id, None)

@@ -141,6 +141,14 @@ class BoardTask(_Contract):
     labels: tuple[str, ...] = Field(default=(), description="The task's labels.")
     milestone: str = Field(default="", description="The milestone the task belongs to; empty when it has none.")
     description: str = Field(default="", description="The task's description text, shown when the task is opened.")
+    acceptance_criteria: tuple[str, ...] = Field(
+        default=(),
+        description="The text of each acceptance criterion, searched with the title and description; empty when the board keeps none.",
+    )
+    notes: str = Field(
+        default="",
+        description="The task's running notes, searched with the title and description; empty when the board keeps none.",
+    )
     moves: dict[str, Move] = Field(
         default_factory=dict,
         description="The verdict on each Board column the task may move to, by state id; empty for a settled task.",

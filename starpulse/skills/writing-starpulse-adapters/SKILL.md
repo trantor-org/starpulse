@@ -10,7 +10,7 @@ Schema under `starpulse/schemas/`. Unknown fields are an error, so a misspelt on
 
 | Contract | Record | Written to |
 |---|---|---|
-| `board` | `BoardTask`: `id`, `title`, `team`, `lane`, `dependencies`, `references`, `settled`, `created_at`, `settled_at`, `observed_at`, `assignee`, `holder`, `labels`, `milestone`, `description`, `moves` | a board adapter's `Board` |
+| `board` | `BoardTask`: `id`, `title`, `team`, `lane`, `dependencies`, `references`, `settled`, `created_at`, `settled_at`, `observed_at`, `assignee`, `holder`, `labels`, `milestone`, `description`, `acceptance_criteria`, `notes`, `moves` | a board adapter's `Board` |
 | `machine-events` | `MachineEvent`: `machine`, `event`, exactly one of `task` or `run`, `actor`, `time` (epoch seconds) | the database event log under `machine:events` |
 | `runs` | `Dag`: `name`, `status`, `runId`, `startedAt`, `finishedAt`, `steps` | a runs adapter's `RunsSink`, or `starpulse emit` |
 | `insights` | `Finding`: `id`, `engine` (`name`, `version`), `scope` (any of `team`, `machine`, `state`, `task`), `severity` (`info`, `warn`, `act`), `text` (at most 280 characters), `evidence` (each a labelled `url` or `query`), `created_at`, `expires_at` | a hub's `POST /api/insights` under the engine token; `DELETE /api/insights/<id>` retracts |

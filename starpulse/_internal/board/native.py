@@ -33,8 +33,10 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.board.upstream_backlog import (
+    _CRITERIA,
     _FOLDERS,
     _HEADED_DESCRIPTION,
+    _ITEM,
     _NOTES,
     DEFAULT_PREFIX,
     DEFAULT_STATUSES,
@@ -61,12 +63,10 @@ Validate = Callable[[Path, "str | None", str], "str | None"]
 _STAMP = "%Y-%m-%d %H:%M"
 _NOTES_END = re.compile(r"\s*<!-- SECTION:NOTES:END -->")
 _PLAN = re.compile(r"<!-- SECTION:PLAN:BEGIN -->(.*?)<!-- SECTION:PLAN:END -->", re.S)
-_CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
 _DONE = re.compile(r"<!-- DOD:BEGIN -->(.*?)<!-- DOD:END -->", re.S)
 _FINAL_SUMMARY = re.compile(r"<!-- SECTION:FINAL_SUMMARY:BEGIN -->(.*?)<!-- SECTION:FINAL_SUMMARY:END -->", re.S)
 _COMMENTS_SECTION = re.compile(r"<!-- COMMENTS:BEGIN -->(.*?)<!-- COMMENTS:END -->", re.S)
 _COMMENT_HEAD = re.compile(r"^created: (\S+ \S+)\n---\n", re.M)
-_ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
 _NOTES_SECTION = "\n## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{}\n<!-- SECTION:NOTES:END -->\n"
 
 

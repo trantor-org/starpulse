@@ -4418,6 +4418,57 @@
       "title": "RunStarted",
       "type": "object"
     },
+    "SearchHit": {
+      "additionalProperties": false,
+      "description": "One task a search found: where it is now, and the text around the match.",
+      "properties": {
+        "lane": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number"
+        },
+        "snippet": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "title",
+        "lane",
+        "score",
+        "snippet"
+      ],
+      "title": "SearchHit",
+      "type": "object"
+    },
+    "SearchResults": {
+      "additionalProperties": false,
+      "description": "`GET /api/search?q=&limit=`: the tasks holding every word of `q`, best match first.",
+      "properties": {
+        "hits": {
+          "items": {
+            "$ref": "#/$defs/SearchHit"
+          },
+          "type": "array"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "hits"
+      ],
+      "title": "SearchResults",
+      "type": "object"
+    },
     "SessionHealth": {
       "additionalProperties": false,
       "description": "One harness session's work on one task (`task` None: a branch that names none), from its OTLP signals.",
@@ -6042,6 +6093,9 @@
       },
       "type": "array"
     },
+    "searchResults": {
+      "$ref": "#/$defs/SearchResults"
+    },
     "sessions": {
       "$ref": "#/$defs/Sessions"
     },
@@ -6069,6 +6123,7 @@
     "laneHistory",
     "machineHistory",
     "pulls",
+    "searchResults",
     "health",
     "sessions",
     "level",
