@@ -635,6 +635,82 @@ class Health(_Api):
     warnings: list[Annotated[GapWarning | UnknownLaneWarning, Field(discriminator="kind")]]
 
 
+class TokenCounts(_Api):
+    input: int
+    output: int
+    cache_read: int
+    cache_write: int
+    reasoning: int
+
+
+class SessionHealth(_Api):
+    """One harness session's work on one task (`task` None: a branch that names none), from its OTLP signals."""
+
+    harness: str
+    session: str
+    task: str | None
+    kind: Literal["headless", "interactive", "unknown"]
+    first_at: float
+    last_at: float
+    prompts: int
+    operator_prompts: int
+    requests: int
+    side_requests: int
+    tool_calls: int
+    tool_failures: int
+    tools: dict[str, int]
+    rejections: dict[str, int]
+    skills: dict[str, int]
+    compactions: dict[str, int]
+    interrupts: int
+    models: list[str]
+    efforts: list[str]
+    model_changes: int
+    effort_changes: int
+    tokens: TokenCounts
+    cost_usd: float | None
+    agent_s: float
+    operator_wait_s: float
+    idle_s: float
+
+
+class SliceHealth(_Api):
+    """What the sessions that worked one task did together."""
+
+    task: str
+    sessions: int
+    harnesses: list[str]
+    first_at: float
+    last_at: float
+    models: list[str]
+    efforts: list[str]
+    steps: int
+    side_steps: int
+    tool_calls: int
+    operator_prompts: int
+    interrupts: int
+    rejections: int
+    interventions: int
+    compactions: int
+    skills: dict[str, int]
+    escalated: bool
+    clean: bool
+    tokens: TokenCounts
+    cost_usd: float | None
+    active_s: float
+    operator_wait_s: float
+    idle_s: float
+
+
+class Sessions(_Api):
+    """`GET /api/analytics/sessions`: session and slice health over a window."""
+
+    now: float
+    window_s: float
+    sessions: list[SessionHealth]
+    slices: list[SliceHealth]
+
+
 class LevelTerminal(_Api):
     id: str
     role: str
@@ -1314,6 +1390,7 @@ RESPONSES: dict[str, Any] = {
     "/api/merges": Merges,
     "/api/machines": Machines,
     "/api/analytics/health": Health,
+    "/api/analytics/sessions": Sessions,
     "/api/level": Level,
     "/api/level/trajectories": Trajectories,
     "/api/level/what-if": WhatIf,
@@ -1361,6 +1438,7 @@ BODIES: dict[str, Any] = {
     "history": LaneHistory | MachineHistory | ApiError,
     "pulls": Pulls | ApiError,
     "health": Health | ApiError,
+    "sessions": Sessions | ApiError,
     "level": Level | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
     "what_if": WhatIf | ApiError | WindowTooLong,
@@ -1422,6 +1500,7 @@ class ApiContract(_Api):
     machineHistory: MachineHistory
     pulls: Pulls
     health: Health
+    sessions: Sessions
     level: Level
     trajectories: Trajectories
     whatIf: WhatIf

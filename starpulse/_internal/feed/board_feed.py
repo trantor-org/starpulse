@@ -820,6 +820,11 @@ class BoardFeed:
             for dag in dags
         }
 
+    @property
+    def keys(self) -> TaskKeys | None:
+        """The task keys the feed was built with, or None when it takes every key."""
+        return self._keys
+
     def commit_keys(self, instance: str) -> CommitKeys | None:
         """The `[runs.commit]` of runs instance `instance`, or None when it declares none."""
         return self._commit.get(instance)

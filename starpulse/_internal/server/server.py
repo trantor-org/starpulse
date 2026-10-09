@@ -82,6 +82,13 @@ GET /api/analytics/health[?hours=N][&stuck_hours=N]
                    `stuck_hours` or longer, default 24, each `counted_to_now`) and `warnings` (the history's
                    recorded gaps). A `hours` or `stuck_hours` that is no positive number is 400; a history that
                    does not keep lane changes for every task is 501
+GET /api/analytics/sessions[?hours=N]
+                   session and slice health from the harness OTLP exports the Claude Code receiver recorded
+                   (`sessions.session_health`, `sessions.slice_health`) over the last `hours`, default 168:
+                   `sessions` (one row per harness session and task, with its prompts, requests, tools,
+                   rejections, tokens, cost and agent, operator-wait and idle seconds) and `slices` (per task, the
+                   sessions that worked it with its interventions, `escalated` and `clean`). A `hours` that is no
+                   positive number is 400, a server with no telemetry log 501 and one that cannot read it 503
 GET /api/level[?hours=N]
                    the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
                    last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
@@ -222,6 +229,8 @@ from starpulse._internal.eventlog.level_metrics import RunWindow, WindowPastHist
 from starpulse._internal.machines.snapshot import qualifier
 from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_analytics, what_if
 from starpulse._internal.level import analytics
+from starpulse._internal.level.sessions import session_health, slice_health
+from starpulse.contracts.adapters import TaskKeys
 from starpulse._internal.cli import doctor
 from starpulse._internal.feed.board_feed import WAITING, BoardFeed, follow
 from starpulse._internal.ci.ci import attach
@@ -251,6 +260,7 @@ from starpulse._internal.eventlog.history import (
     record_machine_events,
 )
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.harnesses.telemetry import TelemetryLog
 
 logger = logging.getLogger(__name__)
 _HERE = Path(__file__).parents[2]
@@ -418,6 +428,27 @@ def health_response(
         machines["board"], held, history.gaps(), now=now, window_s=window * 3600, stuck_s=stuck * 3600
     )
     return encode("health", health), 200
+
+
+def sessions_response(
+    telemetry: TelemetryLog | None, query: dict[str, list[str]], keys: TaskKeys | None, now: float
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/sessions`: session and slice health of the signals from the last
+    `hours` (default 168) as of `now`. An instance that receives no harness telemetry is 501, a log that cannot be
+    read 503."""
+    window = _hours(query, "hours", _HEALTH_HOURS)
+    if window is None:
+        return _error("hours must be a positive number"), 400
+    if telemetry is None:
+        return _error("this instance receives no harness telemetry, so it cannot report session health"), 501
+    try:
+        found = telemetry.read(now - window * 3600)
+    except Exception as exc:  # the event log's database is unreachable
+        logger.warning("sessions: telemetry unreadable: %s", exc)
+        return _error("the telemetry log cannot be read"), 503
+    rows = session_health(found, keys)
+    body = {"now": now, "window_s": window * 3600, "sessions": rows, "slices": slice_health(rows)}
+    return encode("sessions", body), 200
 
 
 def level_response(
@@ -765,6 +796,7 @@ def request_handler(
     contract: Callable[[], dict[str, Any]] | None = None,
     milestones: Board | None = None,
     pulls: PullStore | None = None,
+    telemetry: TelemetryLog | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
     snapshots = SnapshotCache(feed)
@@ -822,6 +854,8 @@ def request_handler(
                 )
             elif url.path == "/api/analytics/health":
                 self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
+            elif url.path == "/api/analytics/sessions":
+                self._send(*sessions_response(telemetry, parse_qs(url.query), feed.keys, clock()))
             elif url.path == "/api/level":
                 self._send(*level_response(history, parse_qs(url.query), level, feed.machines, clock()))
             elif url.path == "/api/level/trajectories":
@@ -1363,6 +1397,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),
         milestones=board,
         pulls=pulls,
+        telemetry=TelemetryLog(log),
         autopilot=autopilot_runtime,
     )
     serve_until_stopped(StarPulseServer((args.host, args.port), handler), feed)

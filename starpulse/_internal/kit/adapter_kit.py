@@ -72,6 +72,7 @@ from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.config.history_window import HistoryWindow
 from starpulse._internal.eventlog.history import History, HistoryStore
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.harnesses.telemetry import TelemetryLog
 
 __all__ = [
     "BoardAdapterKit",
@@ -375,6 +376,7 @@ def serve(
     contract: Callable[[], dict[str, Any]] | None = None,
     milestones: Board | None = None,
     pulls: PullStore | None = None,
+    telemetry: TelemetryLog | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -410,6 +412,7 @@ def serve(
         contract=contract,
         milestones=milestones,
         pulls=pulls,
+        telemetry=telemetry,
     )
     server = StarPulseServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
