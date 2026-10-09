@@ -5,7 +5,7 @@ from __future__ import annotations
 import gzip
 import zlib
 from collections.abc import Callable
-from typing import BinaryIO
+from typing import BinaryIO, NamedTuple
 
 #: A body this size or smaller is sent as it is: gzip's header and the page's decode cost more than it saves.
 MIN_BYTES = 64 * 1024
@@ -27,6 +27,18 @@ def compressed(body: bytes, accept_encoding: str | None) -> bytes | None:
     if len(body) <= MIN_BYTES or not accepts_gzip(accept_encoding):
         return None
     return gzip.compress(body, compresslevel=LEVEL, mtime=0)
+
+
+class Encoded(NamedTuple):
+    """A body and its gzip, made once for a body many pages read: gzip of a ~1 MB body takes tens of ms."""
+
+    body: bytes
+    #: None when the body is too small to be worth compressing.
+    gzipped: bytes | None
+
+    @classmethod
+    def of(cls, body: bytes) -> Encoded:
+        return cls(body, compressed(body, "gzip"))
 
 
 def gzip_stream(out: BinaryIO) -> Callable[[bytes], None]:

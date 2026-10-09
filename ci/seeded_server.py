@@ -19,7 +19,7 @@ from collections.abc import Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse._internal.api.server import assemble, request_handler
+from starpulse._internal.api.server import StarPulseServer, assemble, request_handler
 from starpulse.contracts.adapters import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import load
@@ -140,7 +140,7 @@ def serve(port: int, directory: Path, *, now: float | None = None) -> ThreadingH
     handler = request_handler(
         feed, STATIC, {}, [], store, window, read=lambda task: records.get(task), level=config.level
     )
-    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+    return StarPulseServer(("127.0.0.1", port), handler)
 
 
 def main(argv: list[str] | None = None) -> None:  # pragma: no cover — process boundary

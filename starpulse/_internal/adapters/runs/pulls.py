@@ -33,6 +33,8 @@ class PullStore:
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
+        #: Counts saves, so a reader holding an answer knows when it is stale.
+        self.rev = 0
         create_tables(engine, [pull_requests])
 
     def save(self, records: Iterable[dict[str, Any]]) -> None:
@@ -46,6 +48,7 @@ class PullStore:
                     delete(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
                 )
             db.execute(insert(pull_requests), rows)
+        self.rev += 1
 
     def repos(self) -> list[str]:
         """The repositories the store holds a record of."""

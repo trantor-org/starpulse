@@ -50,7 +50,7 @@ from starpulse._internal.adapters.boards.seam import (
 from starpulse._internal.adapters.runs.ingest import ForwardIngest, Ingest
 from starpulse._internal.api.forward import Forwarder
 from starpulse._internal.api.server import assemble as _assemble
-from starpulse._internal.api.server import request_handler
+from starpulse._internal.api.server import StarPulseServer, request_handler
 from starpulse._internal.api.writes import move_task
 from starpulse.contracts.adapters import (
     FINDING_TEXT_MAX,
@@ -408,7 +408,7 @@ def serve(
         milestones=milestones,
         pulls=pulls,
     )
-    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    server = StarPulseServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         yield server
