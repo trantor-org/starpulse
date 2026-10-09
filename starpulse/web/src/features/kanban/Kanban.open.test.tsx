@@ -7,12 +7,19 @@ import type { HudState } from "../../render/hud";
 import type { KanbanTask } from "./kanban";
 import { MoveStore } from "./move";
 import { StartStore, startLane } from "./start";
+import { TaskView } from "./TaskView";
 import { PRE_DRAW_REST_MS, type TaskRecord } from "./taskView";
 
 // every card asks startLane while it draws, so its calls count the cards a render drew
 vi.mock("./start", async (actual) => {
   const start = await actual<typeof import("./start")>();
   return { ...start, startLane: vi.fn(start.startLane) };
+});
+
+// every modal body drawn calls TaskView, so its calls count the times the modal's tree was drawn
+vi.mock("./TaskView", async (actual) => {
+  const view = await actual<typeof import("./TaskView")>();
+  return { ...view, TaskView: vi.fn(view.TaskView) };
 });
 
 const card = (id: string): KanbanTask => ({
@@ -142,6 +149,18 @@ describe("opening a task's modal", () => {
     expect(dialog()).toBe(drawn);
     expect(drawn?.closest("[inert]")).toBeNull();
     expect(drawn?.textContent).toContain("the full record's notes");
+  });
+
+  it("shows the modal drawn ahead without drawing its tree again, at the click or after it", async () => {
+    hover(cardOf("TASK-1"));
+    await rest();
+    expect(dialog()).not.toBeNull();
+    vi.mocked(TaskView).mockClear();
+
+    act(() => cardOf("TASK-1").click());
+    expect(TaskView).not.toHaveBeenCalled();
+    await rest();
+    expect(TaskView).not.toHaveBeenCalled();
   });
 
   it("draws a rested card's modal before its record lands, and fills it when the record lands after the click", async () => {

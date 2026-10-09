@@ -461,7 +461,9 @@ function ModalHost({ store, cards, draw }: { store: OpenTask; cards: KanbanTask[
   const [ahead, setAhead] = useState(store.ahead);
   useEffect(() => store.subscribe(() => startTransition(() => setAhead(store.ahead()))), [store]);
   const task = cards.find((t) => t.id === (id ?? ahead));
-  return task ? <div className="mh" inert={id === null}>{draw(task)}</div> : null;
+  // the same element while the task and `draw` hold, so the click that shows the modal drawn ahead changes `inert` and leaves its tree undrawn
+  const modal = useMemo(() => task && draw(task), [task, draw]);
+  return task ? <div className="mh" inert={id === null}>{modal}</div> : null;
 }
 
 /** Pixels a press travels before it lifts the card instead of opening it. */
