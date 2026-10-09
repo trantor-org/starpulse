@@ -302,6 +302,24 @@ describe("openStream", () => {
     expect(seen[2].error).toBe("ci: down");
   });
 
+  it("hands over a whole-section event once while its body repeats, and again once it changes or a snapshot resyncs", () => {
+    openStream(handlers, open);
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+
+    last().send("dags", { dags: [], error: "ci: down" });
+    last().send("dags", { dags: [], error: "ci: down" });
+    last().send("pulls", { pulls: [] });
+    last().send("pulls", { pulls: [] });
+    expect(kinds).toEqual([undefined, "dags", "pulls"]);
+
+    last().send("dags", { dags: [], error: null });
+    expect(kinds).toEqual([undefined, "dags", "pulls", "dags"]);
+
+    last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+    last().send("dags", { dags: [], error: null });
+    expect(kinds).toEqual([undefined, "dags", "pulls", "dags", undefined, "dags"]);
+  });
+
   it("folds the Ledger rows a merge's runs changed into the snapshot", () => {
     openStream(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));

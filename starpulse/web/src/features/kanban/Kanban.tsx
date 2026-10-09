@@ -1,6 +1,6 @@
 // The Kanban view: the Board's open tasks as six columns of milestone buckets, with drag and modal moves and sessions started from a card.
 // The model is kanban.ts, move.ts and start.ts; this draws them.
-import { Fragment, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { Fragment, memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { archiveDialogKey, withoutArchived } from "./archive";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
@@ -177,6 +177,30 @@ function StackBadge({ count }: { count: number }) {
 }
 
 /** How a stack's cards are drawn: the card for a task, with what the stack adds to it. */
+const HANDLERS = new Set(["onCross", "onOpen", "onPress", "onPlay", "onHover", "dismiss", "dismissStart"]);
+const same = (a: unknown, b: unknown) => {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, i) => x === b[i]);
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const x = a as Record<string, unknown>, y = b as Record<string, unknown>;
+    return Object.keys({ ...x, ...y }).every((k) => x[k] === y[k]);
+  }
+  return false;
+};
+/** The clock only reaches a card through its machine line: whether it is hot and its age text. */
+const stamp = (t: KanbanTask, now: number) => (t.live ? `${now - t.live.at < HOT_S} ${ago(now - t.live.at)}` : "");
+/**
+ * A card redraws when something it shows changes. Its handlers are rebuilt on every board render yet act on the same task through stable stores,
+ * so only whether one is set counts, and a tick of the clock redraws only the cards whose stamp text moved.
+ */
+const BoardCard = memo(Card, (before, after) =>
+  stamp(before.task, before.now) === stamp(after.task, after.now) &&
+  Object.keys({ ...before, ...after }).every((k) => {
+    const key = k as keyof typeof before;
+    if (key === "now") return true;
+    return HANDLERS.has(k) ? !before[key] === !after[key] : same(before[key], after[key]);
+  }));
+
 type DrawCard = (task: KanbanTask, extra?: { stacked?: number; under?: boolean; links?: string[] }) => ReactNode;
 
 /**
@@ -447,7 +471,7 @@ const LIFT_PX = 5;
  * `searchSlot` is the navigator's search slot, where the text search draws; `onQuery` hears what it holds.
  * `outlineSlot` is the navigator's outline slot, where the milestone outline draws and sets the Milestone filter.
  */
-export function Kanban({ hud, moves, starts, compact, constellation, searchSlot, outlineSlot, onQuery, spot = null, note, opening = null }: {
+function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, outlineSlot, onQuery, spot = null, note, opening = null }: {
   hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; outlineSlot: HTMLElement | null; onQuery?: (query: string) => void;
   spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
 }) {
@@ -698,7 +722,7 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
   const heldTask = held ? cards.find((t) => t.id === held.id) : undefined;
   const openCard = (id: string) => () => !clickEnds.current && setOpen(id);
   const drawCard: DrawCard = (t, extra) => (
-    <Card key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} cross={view.cross.get(t.id)} onCross={setOpen} {...extra} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
+    <BoardCard key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} cross={view.cross.get(t.id)} onCross={setOpen} {...extra} now={now} names={hud.names} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
       style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
       onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play")}
       onHover={(on) => { rest(t.id, on); setHovered((h) => (on ? t.id : h === t.id ? null : h)); }}
@@ -829,3 +853,10 @@ export function Kanban({ hud, moves, starts, compact, constellation, searchSlot,
     </main>
   );
 }
+
+/** The `hud` fields the view draws. The rest of the HUD (the clock, the DAGs, the feed) changes on most stream events and none of it is on the Kanban. */
+const SHOWN = ["cards", "names", "claims", "settled", "capabilities", "hint"] as const;
+
+/** `KanbanView`, drawn again only when a field it shows or another prop changes, so an event that moves no card draws none. */
+export const Kanban = memo(KanbanView, ({ hud: before, ...a }, { hud: after, ...b }) =>
+  SHOWN.every((k) => before[k] === after[k]) && (Object.keys(a) as (keyof typeof a)[]).every((k) => a[k] === b[k]));

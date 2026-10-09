@@ -30,7 +30,7 @@ import {
   type BEdge, type Body, type Curve, type GNode, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene, type Pager, type Star,
 } from "./scene";
 import { FLARE, Moves, PULSE, RING, TRAVEL, countText, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
-import { kanbanTasks } from "../features/kanban/kanban";
+import { kanbanTasks, type KanbanTask } from "../features/kanban/kanban";
 import { embedded, openStream } from "../api/stream";
 import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
@@ -53,6 +53,8 @@ import { tickAt } from "../features/level/machineStrip";
 import { heldBy, sessionsOf, traceSteps } from "../features/level/machineTrace";
 import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, retired, viewOf, viewSearch } from "../shared/nav";
 import { machineLedger, type Rail } from "./machineLedgerDraw";
+import { staged } from "./staged";
+import { whenShown } from "./shown";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 
 export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
@@ -174,6 +176,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
   let T = Date.now() / 1000, clock = 0, liveTasks = new Set<string>(), hotEdge = new Set<string>(), ZS = 1, K = 1;
   let away = false, refit = 0, timer = 0, clockTimer = 0, fanTimer = 0, stopped = false, saveT = 0, tick = 0, clockText = "", live: "" | "on" | "off" = "";
+  // a delta behind another view skips the Star Map layout nothing draws, and lays it out when the map is shown or asked for
+  const relay = whenShown(() => layout(true)), publishLater = staged();
   // The stream the page reads its snapshot and every change after it from.
   let stream: { close(): void } | null = null, last = 0;
 
@@ -478,7 +482,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       if (!fixture && retired(location.pathname, location.hash)) history.replaceState(null, "", "/" + viewSearch(location.search, viewOf(location.search), prefs().view));
       keep("fv.path", path);
     }
-    layout(!first);
+    if (first) layout(false);
+    else relay.request();
     if (first) {
       const named = levelParams(location.search).focus;
       pickedRow = named && scene?.top?.rows.some((r) => r.name === named) ? named : null; // the address restores the row picked out, if this level still has it
@@ -495,13 +500,26 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     snap = next;
     T = Date.now() / 1000;
     S = withLedgers(S!, next);
-    layout(true);
+    relay.request();
     paintMerge();
     if (away) heartbeat();
     else loop.wake();
   }
-  /** What the HUD shows, written once per snapshot. */
+  /** What the HUD shows, written once per snapshot in tasks after the event's own, the build in one and the write that redraws the page in the next. */
   function publish() {
+    publishLater(() => {
+      const next = compose();
+      return () => write(next);
+    });
+  }
+  /** A delta rarely changes what the HUD shows, so only changed fields reach React and an unchanged HUD does not re-render; a field that
+   * changed keeps the reference of each part of it that did not (a card by its id), so the views draw what changed and not all they hold. */
+  function write(next: Partial<HudState>) {
+    const now = hud.get() as unknown as Record<string, unknown>;
+    const changed = Object.fromEntries(Object.entries(next).map(([k, v]): [string, unknown] => [k, k === "cards" ? reuse(now.cards as KanbanTask[], v as KanbanTask[], (c) => c.id) : reuse(now[k], v)]).filter(([k, v]) => v !== now[k]));
+    if (Object.keys(changed).length) hud.set(changed);
+  }
+  function compose(): Partial<HudState> {
     const sky = S!, board = sky.board;
     const at = stamp(sky.now, prefs().clock);
     const next: Partial<HudState> = {
@@ -522,11 +540,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       capabilities: sky.capabilities,
       hint: sky.hint,
     };
-    // a delta rarely changes what the HUD shows, so only changed fields reach React and an unchanged HUD does not re-render; a field that
-    // changed keeps the reference of each part of it that did not, so the views draw what changed and not all they hold
-    const now = hud.get() as unknown as Record<string, unknown>;
-    const changed = Object.fromEntries(Object.entries(next).map(([k, v]): [string, unknown] => [k, reuse(now[k], v)]).filter(([k, v]) => v !== now[k]));
-    if (Object.keys(changed).length) hud.set(changed);
+    return next;
   }
   /** Every quarter second: the feed and the navigator's moving machines, written only when they change. */
   function heartbeat() {
@@ -2006,6 +2020,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     },
     stop() {
       stopped = true;
+      publishLater.cancel();
       loop.stop();
       cancelAnimationFrame(refit);
       stream?.close();
@@ -2026,13 +2041,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       cv.removeEventListener("wheel", onWheel);
     },
     go: (p, fx, fy, then) => {
+      relay.settle();
       if (S) go(p, fx, fy, then);
     },
     fitView: () => {
+      relay.settle();
       if (scene) flyTo(fit);
     },
     show(on) {
       away = !on;
+      relay.show(on);
     },
     resize: () => {
       cancelAnimationFrame(refit);
@@ -2051,11 +2069,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     },
     refresh() {
       if (!S) return;
-      publish();
+      publishLater.cancel();
+      write(compose());
       heartbeat();
       paintClock();
     },
     openTask(id) {
+      relay.settle();
       if (!S || !scene) return;
       const h = spotIn(scene, { kind: "task", id, lane: "" }) as Hover | null, raw = S.board.agents.find((a) => a.id === id);
       if (h) {
@@ -2069,6 +2089,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       loop.wake();
     },
     selectTask(id) {
+      relay.settle();
       if (!S) return;
       if (level().kind !== "board") go(BOARD);
       const h = spotIn(scene!, { kind: "task", id, lane: "" }) as Hover | null;

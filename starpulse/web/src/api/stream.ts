@@ -126,11 +126,21 @@ export function openStream(
     hand(delta.kind);
   };
 
+  /** The last body of each event that replaces a whole section: the server resends the DAGs, pulls and Ledger on any change, often with nothing new in them. */
+  const held = new Map<string, string>();
+  const replacing = (kind: "dags" | "pulls" | "ledgers") => (e: Event) => {
+    const body = (e as MessageEvent<string>).data;
+    if (held.get(kind) === body) return;
+    held.set(kind, body);
+    fold({ kind, ...JSON.parse(body) });
+  };
+
   const connect = (adopt: EarlyStream | null = null) => {
     const src = adopt?.src ?? open("/api/events");
     source = src;
     src.addEventListener("snapshot", (e) => {
       state = JSON.parse((e as MessageEvent<string>).data) as Snapshot;
+      held.clear(); // the snapshot is the page's truth again, so what the next event says is news
       hand();
     });
     src.addEventListener("task", (e) =>
@@ -139,15 +149,9 @@ export function openStream(
     src.addEventListener("move", (e) =>
       fold({ kind: "move", ...JSON.parse((e as MessageEvent<string>).data) }),
     );
-    src.addEventListener("dags", (e) =>
-      fold({ kind: "dags", ...JSON.parse((e as MessageEvent<string>).data) }),
-    );
-    src.addEventListener("pulls", (e) =>
-      fold({ kind: "pulls", ...JSON.parse((e as MessageEvent<string>).data) }),
-    );
-    src.addEventListener("ledgers", (e) =>
-      fold({ kind: "ledgers", ...JSON.parse((e as MessageEvent<string>).data) }),
-    );
+    src.addEventListener("dags", replacing("dags"));
+    src.addEventListener("pulls", replacing("pulls"));
+    src.addEventListener("ledgers", replacing("ledgers"));
     src.addEventListener("claim", (e) =>
       fold({ kind: "claim", ...JSON.parse((e as MessageEvent<string>).data) }),
     );

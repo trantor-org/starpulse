@@ -245,10 +245,12 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .mach b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; color: var(--agent-text); }
 #kb .mach .s { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #kb .mach .p { flex: none; position: relative; top: -1px; width: 6px; height: 6px; border-radius: 50%; background: var(--agent); box-shadow: 0 0 6px var(--agent); }
-#kb .mach.hot .p { background: var(--run); box-shadow: 0 0 0 3px color-mix(in srgb, var(--run) 25%, transparent), 0 0 10px var(--run); animation: kb-pulse 1.4s ease-in-out infinite; }
+#kb .mach.hot .p { background: var(--run); box-shadow: 0 0 0 3px color-mix(in srgb, var(--run) 25%, transparent), 0 0 10px var(--run); }
+/* the pulse is a ring that grows and fades on its own layer: transform and opacity run on the compositor, where a box-shadow keyframe repaints the page every frame */
+#kb .mach.hot .p::after { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 2px color-mix(in srgb, var(--run) 25%, transparent), 0 0 8px var(--run); will-change: transform, opacity; animation: kb-pulse 1.4s ease-in-out infinite; }
 #kb .mach .ago { flex: none; margin-left: auto; color: var(--faint); }
-@keyframes kb-pulse { 0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--run) 25%, transparent), 0 0 8px var(--run); } 50% { box-shadow: 0 0 0 6px transparent, 0 0 16px var(--run); } }
-@media (prefers-reduced-motion: reduce) { #kb .mach.hot .p { animation: none; } }
+@keyframes kb-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(2.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #kb .mach.hot .p::after { animation: none; } }
 #kb .foot { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: calc(10px * var(--fs)); color: var(--muted); }
 #kb .lab { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 5px; border-radius: 3px; background: color-mix(in srgb, var(--slate) 10%, transparent); color: var(--slate); line-height: 15px; }
 #kb .lab.nh { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail-text); } #kb .lab.sz { background: color-mix(in srgb, var(--waits) 10%, transparent); color: var(--waits-text); }
