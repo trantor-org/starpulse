@@ -14,9 +14,11 @@ from starpulse.contracts.adapters import (
     ActiveRun,
     BoardTask,
     Dag,
+    LaneEvent,
     MachineEvent,
     Pool,
     RecentRun,
+    RunEvent,
     Step,
     TaskKeys,
 )
@@ -64,7 +66,7 @@ def test_a_task_outside_the_declared_scheme_is_not_placed() -> None:
     assert _agents(feed, "in-progress") == []
 
 
-@pytest.mark.parametrize("model", [BoardTask, MachineEvent, Dag, Step, ActiveRun, RecentRun, Pool])
+@pytest.mark.parametrize("model", [BoardTask, MachineEvent, RunEvent, LaneEvent, Dag, Step, ActiveRun, RecentRun, Pool])
 def test_every_field_of_a_contract_says_what_it_holds(model: type[BaseModel]) -> None:
     assert model.model_fields
     assert [name for name, field in model.model_fields.items() if not field.description] == []

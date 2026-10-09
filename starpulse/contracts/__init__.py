@@ -2,6 +2,7 @@
 
 from starpulse.contracts.adapters import (
     CONTRACTS,
+    EVENT_STREAMS,
     FINDING_TEXT_MAX,
     SCHEMAS,
     ActiveRun,
@@ -11,10 +12,12 @@ from starpulse.contracts.adapters import (
     Finding,
     FindingEngine,
     FindingScope,
+    LaneEvent,
     MachineEvent,
     Move,
     Pool,
     RecentRun,
+    RunEvent,
     RunsSink,
     RunStatus,
     StartFailedError,
@@ -24,6 +27,7 @@ from starpulse.contracts.adapters import (
 
 __all__ = [
     "CONTRACTS",
+    "EVENT_STREAMS",
     "FINDING_TEXT_MAX",
     "SCHEMAS",
     "ActiveRun",
@@ -33,10 +37,12 @@ __all__ = [
     "Finding",
     "FindingEngine",
     "FindingScope",
+    "LaneEvent",
     "MachineEvent",
     "Move",
     "Pool",
     "RecentRun",
+    "RunEvent",
     "RunStatus",
     "RunsSink",
     "StartFailedError",

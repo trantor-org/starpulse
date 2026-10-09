@@ -1,0 +1,77 @@
+{
+  "additionalProperties": false,
+  "description": "One workflow run, or one step of it, starting or ending; the `runs:events` entry's fields.",
+  "properties": {
+    "time": {
+      "description": "When it happened, in epoch seconds.",
+      "minimum": 0,
+      "title": "Time",
+      "type": "number"
+    },
+    "phase": {
+      "description": "Whether the run or step started or ended.",
+      "enum": [
+        "start",
+        "end"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "workflow": {
+      "description": "The workflow's name, unique on its scheduler.",
+      "minLength": 1,
+      "title": "Workflow",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "The run's id.",
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "status": {
+      "description": "The run's status, or the step's when `step` is set.",
+      "enum": [
+        "not_started",
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "aborted",
+        "skipped"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "step": {
+      "default": "",
+      "description": "The step this entry reports; empty when it reports the run itself.",
+      "title": "Step",
+      "type": "string"
+    },
+    "depends": {
+      "default": [],
+      "description": "Names of the steps `step` waits on; empty when it waits on none, and needs `step`.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Depends",
+      "type": "array"
+    },
+    "instance": {
+      "default": "",
+      "description": "The runs adapter instance whose token pushed the entry over HTTP; empty for an entry a hook emitted.",
+      "title": "Instance",
+      "type": "string"
+    }
+  },
+  "required": [
+    "time",
+    "phase",
+    "workflow",
+    "run_id",
+    "status"
+  ],
+  "title": "RunEvent",
+  "type": "object"
+}

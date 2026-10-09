@@ -1,0 +1,58 @@
+{
+  "additionalProperties": false,
+  "description": "One task entering a Board lane; the `board:lanes` entry's fields. It never carries a title, a description, a\nholder or any session detail.",
+  "properties": {
+    "task": {
+      "description": "The task key that changed lane.",
+      "minLength": 1,
+      "title": "Task",
+      "type": "string"
+    },
+    "lane": {
+      "description": "The id of the Board machine state the task entered.",
+      "minLength": 1,
+      "title": "Lane",
+      "type": "string"
+    },
+    "time": {
+      "description": "When the task entered the lane, in epoch seconds.",
+      "minimum": 0,
+      "title": "Time",
+      "type": "number"
+    },
+    "team": {
+      "default": "",
+      "description": "The task's team key; empty on an entry replayed from the history.",
+      "title": "Team",
+      "type": "string"
+    },
+    "milestone": {
+      "default": "",
+      "description": "The task's milestone; empty when it has none.",
+      "title": "Milestone",
+      "type": "string"
+    },
+    "labels": {
+      "default": [],
+      "description": "The task's labels; empty when it has none.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Labels",
+      "type": "array"
+    },
+    "assignee": {
+      "default": "",
+      "description": "Who or which agent model held the task; empty when unassigned, and a person's name.",
+      "title": "Assignee",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task",
+    "lane",
+    "time"
+  ],
+  "title": "LaneEvent",
+  "type": "object"
+}
