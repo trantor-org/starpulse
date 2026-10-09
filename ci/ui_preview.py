@@ -5,7 +5,7 @@ design mockup and element sheet (`design/**`) or this preview. It builds each ch
 `starpulse._internal.cli.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
 inlined, screenshots the demos, publishes them to the public `starpulse-demo` Pages repository while the
 pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
-touches the same paths runs it with `--main`, which republishes every demo as `main/`, the live demo the README
+touches the same paths runs it with `--main`, which republishes every demo as `main/`, the live demo and the screenshots the README
 links. The flow view is rendered against `ci/preview.toml`, a demo config naming no real board or runs adapter.
 """
 
@@ -246,11 +246,12 @@ def _delete(gh: Callable[..., str], path: str, sha: str) -> None:
 def publish_demos(gh: Callable[..., str], folder: str, files: Sequence[Path], scratch: Path) -> list[str]:
     """Commit each demo to `folder` in the Pages repository, dropping any it no longer builds; returns their URLs.
 
-    Every file is scanned first, and one leak refuses the whole publish before anything is written. The contents
+    Every page is scanned first, and one leak refuses the whole publish before anything is written; a screenshot
+    is of a scanned page, and its bytes are not text. The contents
     API takes a file per request, and a demo is too large for an argument, so each body goes through a file in
     `scratch`.
     """
-    scan_demos(files)
+    scan_demos([f for f in files if f.suffix == ".html"])
     old = _published(gh, folder)
     scratch.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -420,7 +421,12 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
         return 0
     if args.main:
         built = _build_demos([demo_name(s) for s in SURFACE_GLOBS], args.out / "demo")
-        print(*publish_demos(_demo_gh, MAIN_FOLDER, built, args.out / "requests"), sep="\n")
+        with _serve(args.out / "demo") as port:  # the README shows these
+            shots = [
+                _shoot(f"http://127.0.0.1:{port}/{demo_name(FLOW_VIEW)}{query}", args.out / "demo" / f"{name}.png")
+                for name, query in PAGES[FLOW_VIEW].items()
+            ]
+        print(*publish_demos(_demo_gh, MAIN_FOLDER, built + shots, args.out / "requests"), sep="\n")
         return 0
     if None in (args.repo, args.pr, args.sha, args.run_url, args.action):
         parser.error("a pull request preview needs --repo, --pr, --sha, --run-url and --action")

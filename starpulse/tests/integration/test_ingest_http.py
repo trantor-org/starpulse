@@ -152,7 +152,7 @@ def test_a_push_only_instance_from_the_readmes_config_draws_its_pushed_run_with_
 
     with serve(tmp_path, feed, ingest=Ingest(tokens, log)) as server:
         stack = Stack(server, feed, log)
-        # the README's curl example
+        # docs/sources.md's curl example
         status, _ = stack.post(
             {"phase": "start", "workflow": "cron/nightly", "run_id": "2026-10-03", "status": "running"}, "cron-secret"
         )

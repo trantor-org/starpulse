@@ -35,9 +35,12 @@ FULL_SUITE = (
 
 #: Non-Python files and the Python files that open them by path; each reader counts as changed.
 READERS = {
-    "README.md": ("starpulse/_internal/server/server.py", "starpulse/tests/unit/test_public_surface.py", "ci/ui_preview.py"),
+    "README.md": ("starpulse/_internal/server/server.py", "ci/ui_preview.py"),
+    "docs/public-surface.md": ("starpulse/tests/unit/test_public_surface.py",),
     "starpulse/web/*": ("starpulse/tests/unit/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
+    "docs/serving.md": ("starpulse/tests/unit/test_builtin_types.py",),
+    "docs/sources.md": ("starpulse/tests/unit/test_builtin_types.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
     "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/hub/hub.py",),
     "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py", "ci/test_load.py"),
@@ -51,6 +54,11 @@ WORKFLOWS = ".github/workflows/*"
 #: Tracked files no test reads.
 INERT = (
     "CONTRIBUTING.md",
+    "docs/adapters.md",
+    "docs/cli.md",
+    "docs/development.md",
+    "docs/hub.md",
+    "docs/security.md",
     "LICENSE",
     ".gitignore",
     ".coderabbit.yaml",

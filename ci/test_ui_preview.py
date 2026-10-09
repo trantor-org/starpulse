@@ -297,6 +297,17 @@ def test_publishing_main_replaces_mains_demos_and_leaves_every_pr_folder(tmp_pat
     ]
 
 
+def test_publishing_main_carries_its_screenshots_without_leak_scanning_image_bytes(tmp_path: Path) -> None:
+    page, shot = tmp_path / "flow-view.html", tmp_path / "flow-view-kanban.png"
+    page.write_text("<html>")
+    shot.write_bytes(b"\x89PNG TASK-12 /home/x")
+    gh = DemoGh({})
+
+    publish_demos(gh, MAIN_FOLDER, [page, shot], tmp_path / "scratch")
+
+    assert [route for _, route, _ in gh.writes] == ["main/flow-view.html", "main/flow-view-kanban.png"]
+
+
 @pytest.mark.parametrize(
     ("text", "kind"),
     [
