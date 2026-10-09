@@ -957,7 +957,7 @@ def _manifest(parser: argparse.ArgumentParser) -> dict[str, Any]:
                 "exit_codes": leaf.get_default("exit_codes"),
             }
             for verb, leaf in _leaves(parser)
-            if leaf.get_default("run")  # `serve`, `emit`, `forward` and `connect` are listed for `--help` but read no running server
+            if leaf.get_default("run")  # `serve`, `emit`, `forward`, `connect` and `import-history` are listed for `--help` but read no running server
         ],
     }
 
@@ -967,7 +967,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="starpulse",
         description="StarPulse: the flow view of workflows and tasks. These verbs read a running server as JSON.",
-        epilog="`starpulse serve` runs the server, `starpulse emit` pushes a workflow run and `starpulse forward` sets the hub opt-in, and `starpulse connect` sets up a tracker; each has its own --help.",
+        epilog="`starpulse serve` runs the server, `starpulse emit` pushes a workflow run and `starpulse forward` sets the hub opt-in, `starpulse connect` sets up a tracker and `starpulse import-history` adds earlier lane changes to the store; each has its own --help.",
     )
     verbs = parser.add_subparsers(dest="command", required=True, metavar="command")
     # Listed so `--help` shows how to start the server; `__main__` hands these words to their own parsers before this one.
@@ -975,6 +975,7 @@ def _parser() -> argparse.ArgumentParser:
     verbs.add_parser("emit", help="push a workflow run onto the runs stream", add_help=False)
     verbs.add_parser("forward", help="let a person's name leave this instance for the hub, or stop it", add_help=False)
     verbs.add_parser("connect", help="set up a native, Backlog.md or Jira board in starpulse.toml", add_help=False)
+    verbs.add_parser("import-history", help="add a board's earlier lane changes to the store, once each", add_help=False)
 
     def leaf(
         group: argparse._SubParsersAction,

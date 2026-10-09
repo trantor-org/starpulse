@@ -237,3 +237,26 @@ few minutes means the refresh stopped; a repository with none open is left out, 
 
 `waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
 merged state, open review threads and commits behind `main` the server last read when it has them.
+
+## Importing a board's history
+
+`starpulse import-history FILE [--config starpulse.toml]` adds a board's earlier lane changes to the store the config's
+`database_url` names, as `serve` opens it. It is not an agent verb: it reads no server and `help --agent` leaves it out.
+`FILE` is JSON Lines, one change per line, and a blank line is skipped:
+
+```json
+{"event_id": "ff971697-10ef-4d27-9d71-eb7a45bac3b9", "task": "TASK-1095", "lane": "Done", "time": 1790289615.0}
+```
+
+`event_id` names the move and makes it land once, `lane` is the status as its tracker spelled it, and `time` is the
+epoch second the task entered it; a field beyond these four is ignored. A change into the lane its task was already in,
+or a move (task, lane, time) the store holds under another id, adds nothing. The changes may be older than the rows the
+store holds: each row is written unchained, then the store's lane history is repaired and its summaries rebuilt, as a
+start does, so each task's path chains in time order. Stop `serve` first: a row it records while the summaries rebuild
+is missing from them.
+
+It prints one JSON line: `source`, `store` (the database URL, password hidden), `read` (the change lines in the file),
+`imported` (the changes the store holds afterwards that it did not before, so a second run reports 0) and
+`summary_differences` (empty when the rebuilt summaries match the raw rows). A line that is not a change exits 1 and
+names the file and line; a flag the command does not allow, a file or config that cannot be read, or a board the config
+does not assemble exits 2.
