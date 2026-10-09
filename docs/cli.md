@@ -224,5 +224,9 @@ A repository with more than 100 open pull requests is read for the first 100, wi
 (`{name, result}`), `threads` (open review threads), `updatedAt` and `fetchedAt` (epoch seconds of the read). A `number` that is not an
 integer or an unknown `state` answers 400.
 
+`GET /metrics` serves Prometheus text: `starpulse_pull_store_age_seconds{repo="owner/name"}`, the seconds since the newest
+record of each repository holding an open pull request was read. The refresh reads those every minute, so a value past a
+few minutes means the refresh stopped; a repository with none open is left out, because nothing rewrites it.
+
 `waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
 merged state, open review threads and commits behind `main` the server last read when it has them.
