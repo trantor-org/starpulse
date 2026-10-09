@@ -14,7 +14,7 @@ from starpulse._internal.pulls.pull_store import PullSync, refresh_repository
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import Repo
-from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.pulls.pulls import AGE_HELP, PullStore
 
 REPO = "acme/widgets"
 OLD, NEW = "2026-10-07T12:00:00Z", "2026-10-07T13:00:00Z"
@@ -321,3 +321,48 @@ def test_an_error_reading_one_repository_does_not_stop_the_others_or_end_run_for
         PullSync(store, BoardFeed(), (), graphql, lambda: 100.0).run_forever(1.0)
 
     assert asked == ["acme/a", "acme/b", "acme/a", "acme/b"]
+
+
+def _record(repo: str, number: int, state: str, fetched: float) -> dict:
+    return {
+        "repo": repo,
+        "number": number,
+        "state": state,
+        "isDraft": False,
+        "mergeable": "MERGEABLE",
+        "baseRefName": "main",
+        "headRefOid": f"{number:040x}",
+        "body": "",
+        "checks": "none",
+        "requiredChecks": [],
+        "threads": 0,
+        "updatedAt": OLD,
+        "fetchedAt": fetched,
+    }
+
+
+def test_age_gauge_reports_each_repository_newest_fetched_at_age_in_seconds(tmp_path: Path) -> None:
+    store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
+    store.save(
+        [
+            _record("acme/widgets", 1, "OPEN", 900.0),
+            _record("acme/widgets", 2, "OPEN", 940.0),
+            _record("acme/skills", 7, "OPEN", 400.0),
+        ]
+    )
+
+    assert store.age_gauge(1000.0).splitlines() == [
+        f"# HELP starpulse_pull_store_age_seconds {AGE_HELP}",
+        "# TYPE starpulse_pull_store_age_seconds gauge",
+        'starpulse_pull_store_age_seconds{repo="acme/skills"} 600',
+        'starpulse_pull_store_age_seconds{repo="acme/widgets"} 60',
+    ]
+
+
+def test_age_gauge_leaves_out_a_repository_holding_no_open_pull_request(tmp_path: Path) -> None:
+    """A refresh rewrites only the open and the changed PRs, so a repository with none open ages without being stale."""
+    store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
+    store.save([_record("acme/widgets", 1, "MERGED", 100.0), _record("acme/skills", 1, "OPEN", 990.0)])
+
+    assert 'repo="acme/widgets"' not in store.age_gauge(1000.0)
+    assert 'starpulse_pull_store_age_seconds{repo="acme/skills"} 10' in store.age_gauge(1000.0)

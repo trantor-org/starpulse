@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from sqlalchemy import Engine, delete, insert, select
+from sqlalchemy import Engine, case, delete, func, insert, select
 
 from starpulse._internal.eventlog.event_log import create_tables
 from starpulse._internal.eventlog.tables import pull_requests
@@ -26,6 +26,10 @@ _FIELDS = {
     "updated_at": "updatedAt",
     "fetched_at": "fetchedAt",
 }
+
+
+AGE_METRIC = "starpulse_pull_store_age_seconds"
+AGE_HELP = "Seconds since the newest pull request record of a repository was read from GitHub."
 
 
 class PullStore:
@@ -54,6 +58,22 @@ class PullStore:
         """The repositories the store holds a record of."""
         with self._engine.connect() as db:
             return list(db.execute(select(pull_requests.c.repo).distinct().order_by(pull_requests.c.repo)).scalars())
+
+    def age_gauge(self, now: float) -> str:
+        """Prometheus text of the seconds since each repository's newest record was read, as of epoch `now`.
+
+        A refresh rewrites only the open and the changed PRs, so only a repository holding an open one is
+        re-read every cycle; one with none ages without being stale and is left out."""
+        newest = (
+            select(pull_requests.c.repo, func.max(pull_requests.c.fetched_at).label("newest"))
+            .group_by(pull_requests.c.repo)
+            .having(func.sum(case((pull_requests.c.state == "OPEN", 1), else_=0)) > 0)
+            .order_by(pull_requests.c.repo)
+        )
+        with self._engine.connect() as db:
+            rows = db.execute(newest).all()
+        samples = [f'{AGE_METRIC}{{repo="{repo}"}} {now - fetched:g}' for repo, fetched in rows]
+        return "\n".join([f"# HELP {AGE_METRIC} {AGE_HELP}", f"# TYPE {AGE_METRIC} gauge", *samples]) + "\n"
 
     def find(
         self,

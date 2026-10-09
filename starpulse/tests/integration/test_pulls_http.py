@@ -115,3 +115,16 @@ def test_a_repeated_read_is_answered_without_asking_the_store_again_until_it_cha
 
     assert len(asked) == 2
     assert numbers == [("acme/widgets", 1), ("acme/widgets", 2)]
+
+
+def test_metrics_serves_the_store_age_gauge_as_prometheus_text(tmp_path: Path) -> None:
+    store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
+    store.save([_pull("acme/widgets", 1, "OPEN", "", 940.0)])
+
+    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=store, clock=lambda: 1000.0) as server:
+        with urllib.request.urlopen(url(server, "/metrics"), timeout=5) as resp:
+            body = resp.read().decode()
+            content_type = resp.headers["Content-Type"]
+
+    assert content_type.startswith("text/plain")
+    assert 'starpulse_pull_store_age_seconds{repo="acme/widgets"} 60' in body.splitlines()

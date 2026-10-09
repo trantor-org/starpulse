@@ -53,6 +53,8 @@ GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_con
                    checks at the head commit), requiredChecks [{name, result}], threads (unresolved), updatedAt, and
                    fetchedAt (epoch seconds this record was read)}. A `number` that is not an integer, or a `state`
                    that is none of those, is 400
+GET /metrics       Prometheus text: `starpulse_pull_store_age_seconds{repo}`, the seconds since the newest record of
+                   each repository holding an open pull request was read; a stale one means the refresh stopped
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
@@ -670,10 +672,13 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         status, body = forwarding(self.client_address[0], method, raw, self.forwarding)
         return encode("forwarding", body), status
 
-    def _send(self, body: bytes | Encoded, status: int = 200, cache: str = "no-store") -> None:
-        """`body` as JSON; an `Encoded` one is sent as the gzip it already holds to a page that accepts gzip."""
+    def _send(
+        self, body: bytes | Encoded, status: int = 200, cache: str = "no-store", content_type: str = "application/json"
+    ) -> None:
+        """`body` as JSON unless told otherwise; an `Encoded` one is sent as the gzip it already holds to a page that
+        accepts gzip."""
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", cache)
         accepted = self.headers.get("Accept-Encoding")
         if isinstance(body, Encoded):
@@ -787,6 +792,11 @@ def request_handler(
                 self._send(*history_response(history, parse_qs(url.query), flows))
             elif url.path == "/api/pulls":
                 self._send(*pull_reads(url.query))
+            elif url.path == "/metrics":
+                self._send(
+                    (pulls.age_gauge(clock()) if pulls else "").encode(),
+                    content_type="text/plain; version=0.0.4; charset=utf-8",
+                )
             elif url.path == "/api/analytics/health":
                 self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
             elif url.path == "/api/level":
