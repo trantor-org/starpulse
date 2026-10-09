@@ -806,7 +806,9 @@ synthetic sources, and its address picks the state: `?view=graph`, `&suns=workin
 
 The right rail keeps one order in every view: the recent moves at the top and the legend at the bottom, each line
 wrapped whole rather than cut to an ellipsis. Nothing on the page scrolls sideways, and every box that scrolls does so vertically with the Kanban columns' thin scrollbar, from one
-shared rule at the end of `starpulse/web/src/style.css` that `src/shared/scroll.test.ts` holds to.
+shared rule at the end of `starpulse/web/src/style.css` that `src/shared/scroll.test.ts` holds to. A Kanban column keeps its scrollbar's
+gutter even when it does not overflow, so a stack unfolding past its foot does not narrow its cards, and while a column
+scrolls, and for 300 ms after, its cards take no pointer: one passing under a resting pointer lights no chain, reads no record and draws no modal ahead.
 
 ### Forward an instance's events to a hub
 

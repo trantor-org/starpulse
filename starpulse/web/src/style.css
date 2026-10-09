@@ -217,7 +217,9 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .col h2 { white-space: nowrap; }
 #kb .col h2 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #kb .col h2 .c, #kb .col h2 .hint { flex: none; }
-#kb .col .body { flex: 1; min-height: 0; padding: 8px; display: flex; flex-direction: column; gap: 7px; }
+#kb .col .body { flex: 1; min-height: 0; padding: 8px; display: flex; flex-direction: column; gap: 7px; scrollbar-gutter: stable; }
+/* cards scrolling under a still pointer would each hover: light their chain, read their record and draw their modal ahead */
+#kb .col .body.scrolling .card { pointer-events: none; }
 #kb .col .empty { margin: 18px auto; font-size: calc(11px * var(--fs)); color: var(--ghost); }
 
 /* A milestone bucket: a sticky header per milestone, folded in every column at once. */

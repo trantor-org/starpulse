@@ -464,6 +464,8 @@ function ModalHost({ store, cards, draw }: { store: OpenTask; cards: KanbanTask[
 
 /** Pixels a press travels before it lifts the card instead of opening it. */
 const LIFT_PX = 5;
+/** Milliseconds a column rests after its last scroll before its cards take the pointer again. */
+const SCROLL_REST_MS = 300;
 
 /**
  * The Kanban view. `spot` is the task a Recent line is hovered for: its card lights as a hovered card does and its column scrolls to it,
@@ -516,6 +518,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   // a card dropped on In progress waits where it was dropped until the start question is answered
   const [held, setHeld] = useState<{ id: string; rect: DOMRect; w: number } | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
+  const columns = useRef<HTMLDivElement>(null);
   const ghost = useRef<HTMLDivElement>(null);
   const press = useRef<Press | null>(null);
   const dropRect = useRef<{ id: string; rect: DOMRect } | null>(null);
@@ -528,6 +531,21 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
     const timer = setInterval(tick, 30_000);
     return () => { clearTimeout(catchUp); clearInterval(timer); };
   }, [active]);
+  // a scrolling column marks itself on the element, not in state, so the scroll draws nothing
+  useEffect(() => {
+    const el = columns.current;
+    if (!el) return;
+    const rests = new Map<Element, ReturnType<typeof setTimeout>>();
+    const onScroll = (e: Event) => {
+      const body = e.target as Element;
+      if (!body.classList?.contains("body")) return;
+      body.classList.add("scrolling");
+      clearTimeout(rests.get(body));
+      rests.set(body, setTimeout(() => { body.classList.remove("scrolling"); rests.delete(body); }, SCROLL_REST_MS));
+    };
+    el.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => { el.removeEventListener("scroll", onScroll, { capture: true }); rests.forEach(clearTimeout); };
+  }, []);
   // what the operator chose is kept for the next visit; a deep link's filters are the first thing kept
   useEffect(() => savePrefs(storage, prefs), [storage, prefs]);
   // once the view has taken a deep link's filters they leave the address, or a reload would undo what was changed since
@@ -782,7 +800,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           created={(id) => setToast({ text: `${id} created`, sub: `in ${hud.names[lanes[0]] ?? lanes[0]}` })} />
         <ConnectTracker hint={hud.hint} />
       </div>
-      <div id="cols" data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
+      <div id="cols" ref={columns} data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
         {view.columns.map((col) => {
           const target = lift?.kinds[col.id];
           const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
