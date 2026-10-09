@@ -4,7 +4,6 @@ import { createContext, startTransition, useContext, useEffect, useLayoutEffect,
 
 const ViewActive = createContext(true);
 const keptViews = new Map<string, HTMLElement>();
-const keptFades = new WeakMap<HTMLElement, Animation>();
 let revealedView: string | null = null;
 const PREPAINT_OPACITY = 0.001;
 
@@ -27,14 +26,7 @@ export const isKeptRevealed = (name: string) => revealedView === name;
 const setSurfaceOpacity = (view: HTMLElement, opacity: number) => {
   const surface = view.firstElementChild;
   if (!(surface instanceof HTMLElement)) return;
-  let fade = keptFades.get(surface);
-  if (!fade && surface.animate) {
-    fade = surface.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1, fill: "both" });
-    fade.pause();
-    keptFades.set(surface, fade);
-  }
-  if (fade) fade.currentTime = opacity;
-  else surface.style.opacity = String(opacity);
+  surface.style.opacity = String(opacity);
 };
 
 const showSurface = (view: HTMLElement, shown: boolean) => setSurfaceOpacity(view, shown ? 1 : 0);
@@ -68,6 +60,10 @@ export function Kept({ name, on, warm = false, children }: { name?: string; on: 
   }
   if (on && live && shown !== children) setShown(children);
   const box = useRef<HTMLDivElement>(null);
+  const everShown = useRef(on);
+  useLayoutEffect(() => {
+    if (on) everShown.current = true;
+  }, [on]);
   const cold = shown === null && warm, latest = useRef(children);
   useLayoutEffect(() => void (latest.current = children));
   useLayoutEffect(() => {
@@ -104,15 +100,11 @@ export function Kept({ name, on, warm = false, children }: { name?: string; on: 
     if (warming === null) {
       if (shown === null) return;
       const view = box.current;
-      if (!on && view) {
-        // A non-zero but sub-pixel alpha makes Chrome raster the promoted surface while it is warming; later reveals
-        // can then change only the compositor animation's current time instead of painting the whole view.
+      if (!on && !everShown.current && view) {
+        // A persistent non-zero but sub-pixel alpha keeps Chrome's warmed raster resident; the first reveal can then
+        // change only the prepared layer's opacity instead of painting the whole view.
         setSurfaceOpacity(view, PREPAINT_OPACITY);
-        const cancel = afterFrames(2, () => {
-          showSurface(view, false);
-          release.current?.();
-        });
-        return () => { cancel(); release.current?.(); };
+        return void release.current?.();
       }
       return void release.current?.();
     }
