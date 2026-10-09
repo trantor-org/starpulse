@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
+import { BOARD_DRAWN } from "./boardDrawn";
 
 // the canvas renderer needs a browser's 2D context; the navigator around it does not
 vi.mock("../render/renderer", () => ({
@@ -26,11 +27,13 @@ beforeEach(async () => {
   // the views load on demand: have this one loaded, so a mount that opens it draws it at once
   await import("../features/kanban/Kanban");
   root = createRoot(host);
+  performance.mark(BOARD_DRAWN); // a page past its first frame: the navigator is filled
   await act(async () => root.render(<App />));
 });
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+  performance.clearMarks(BOARD_DRAWN);
   vi.unstubAllGlobals();
 });
 

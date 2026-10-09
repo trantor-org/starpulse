@@ -33,7 +33,8 @@ export function App() {
   const sized = useRef(false);
   const [store] = useState(() => new HudStore());
   const hud = useHud(store);
-  useBoardDrawn(hud.tree !== null);
+  // the navigator and the rail fill after the Board's first frame: it needs their width, not their contents
+  const shell = useBoardDrawn(hud.tree !== null);
   // the other views load once the Board is up, so the first switch to one finds it loaded
   const drawn = hud.tree !== null;
   useEffect(() => (drawn ? prefetchViews() : undefined), [drawn]);
@@ -108,7 +109,7 @@ export function App() {
   return (
     <>
       <canvas ref={canvas} id="c" />
-      <Navigator hud={hud} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} open={open}
+      <Navigator shell={shell} hud={hud} view={view} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       {view === "constellation" && <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} />}
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
@@ -124,7 +125,7 @@ export function App() {
       <Kept on={view === "graph"} warm={drawn}>
         <Suspense fallback={null}><OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} /></Suspense>
       </Kept>
-      <Rail hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
+      <Rail shown={shell} hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
           setLine(l?.key ?? null);
@@ -144,7 +145,12 @@ export function App() {
   );
 }
 
-function Navigator({ hud, view, slot, outlineSlot, choose, hasLevel, open, spot, selectTask }: {
+/** The navigator's frame is always there (the canvas starts at its edge); `shell` fills it. */
+function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof NavigatorBody>[0]) {
+  return <aside id="nav">{shell && <NavigatorBody {...props} />}</aside>;
+}
+
+function NavigatorBody({ hud, view, slot, outlineSlot, choose, hasLevel, open, spot, selectTask }: {
   hud: HudState; view: ViewName; slot: (el: HTMLElement | null) => void; outlineSlot: (el: HTMLElement | null) => void; choose: (v: ViewName) => void; hasLevel: boolean; open: (p: Path) => void;
   spot: (target: Target | null) => void; selectTask: (id: string) => void;
 }) {
@@ -188,7 +194,7 @@ function Navigator({ hud, view, slot, outlineSlot, choose, hasLevel, open, spot,
     );
   }
   return (
-    <aside id="nav">
+    <>
       <section className="head">
         <h1>StarPulse</h1>
         <div className="sub"><span className={`dot ${hud.live}`} />{hud.stats}</div>
@@ -249,12 +255,17 @@ function Navigator({ hud, view, slot, outlineSlot, choose, hasLevel, open, spot,
           <span className="n" />
         </button>
       </section>
-    </aside>
+    </>
   );
 }
 
 /** The right rail, the same order in every view: the recent events at the top, the legend at the bottom. */
-export function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
+export function Rail({ shown = true, ...body }: { shown?: boolean } & Parameters<typeof RailBody>[0]) {
+  // the frame is always there (the canvas ends at its edge); `shown` fills it
+  return <aside id="rail">{shown && <RailBody {...body} />}</aside>;
+}
+
+function RailBody({ hud, view, ...feed }: { hud: HudState; view: ViewName } & Omit<Parameters<typeof FeedLines>[0], "lines">) {
   // the lines hold still under the pointer, so a run starting mid-aim doesn't push the next line under the click
   const [held, setHeld] = useState<FeedLine[] | null>(null);
   // the feed is a fixed box: it keeps only the newest lines it shows whole, and grows no scrollbar
@@ -269,7 +280,7 @@ export function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } &
     return () => watch.disconnect();
   }, []);
   return (
-    <aside id="rail">
+    <>
       <section className="recent">
         <h3>Recent</h3>
         <div id="feed" ref={box} onPointerEnter={() => setHeld(hud.feed)} onPointerLeave={() => setHeld(null)}>
@@ -300,6 +311,6 @@ export function Rail({ hud, view, ...feed }: { hud: HudState; view: ViewName } &
           </>
         )}
       </section>
-    </aside>
+    </>
   );
 }

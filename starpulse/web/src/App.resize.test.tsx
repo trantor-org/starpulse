@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { BOARD_DRAWN } from "./shared/boardDrawn";
 
 // the canvas renderer needs a browser's 2D context; this one records the calls the page makes on it
 const calls: string[] = [];
@@ -23,12 +24,14 @@ beforeEach(async () => {
   history.replaceState(null, "", "/?view=constellation");
   host = document.body.appendChild(document.createElement("div"));
   root = createRoot(host);
+  performance.mark(BOARD_DRAWN); // a page past its first frame: the navigator is filled
   await act(async () => root.render(<App />));
 });
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
   document.body.className = "";
+  performance.clearMarks(BOARD_DRAWN);
   vi.unstubAllGlobals();
 });
 
