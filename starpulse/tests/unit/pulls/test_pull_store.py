@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.pulls.pull_requests import GhUnavailableError
-from starpulse._internal.pulls.pull_store import PullSync, refresh_repository
-from starpulse._internal.kit.adapter_kit import task
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import Repo
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.kit.adapter_kit import task
+from starpulse._internal.pulls.pull_requests import GhUnavailableError, query_github
+from starpulse._internal.pulls.pull_store import PullSync, refresh_repository
 from starpulse._internal.pulls.pulls import AGE_HELP, PullStore
 
 REPO = "acme/widgets"
@@ -374,6 +374,38 @@ def test_a_pr_an_open_task_cites_is_read_when_the_store_lacks_it_or_holds_it_wit
     }
 
 
+def test_merged_rows_without_a_merge_sha_are_read_a_few_per_refresh_until_none_is_left(store: PullStore) -> None:
+    github = Github()
+    for number in range(1, 151):
+        github.add(number, state="MERGED", merged_at=OLD)
+    store.save([{**_stored(REPO, number), "state": "MERGED"} for number in range(1, 151)])
+
+    refreshes = 0
+    while any(pull["mergeSha"] is None for pull in store.find()):
+        github.queries.clear()
+        refresh_repository(REPO, store, 100.0 + refreshes, github)
+        refreshes += 1
+        assert len(re.findall(r"p\d+: pullRequest", github.queries[0])) <= 25
+        assert refreshes <= 10
+
+    assert refreshes == 6
+
+
+def test_a_query_too_large_for_an_argument_reaches_gh_on_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict = {}
+
+    def gh(command: list[str], **kwargs: str) -> subprocess.CompletedProcess[str]:
+        seen.update(command=command, input=kwargs["input"])
+        return subprocess.CompletedProcess(command, 0, '{"data": {"repository": {"p1": null}}}', "")
+
+    monkeypatch.setattr(subprocess, "run", gh)
+    query = "q" * 300_000
+
+    assert query_github(REPO, query) == {"p1": None}
+    assert sum(len(arg) for arg in seen["command"]) < 200
+    assert json.loads(seen["input"]) == {"query": query, "variables": {"owner": "acme", "name": "widgets"}}
+
+
 def test_each_query_logs_the_rate_limit_cost_github_returned(
     store: PullStore, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -381,8 +413,8 @@ def test_each_query_logs_the_rate_limit_cost_github_returned(
     github.add(1)
     costs = iter([2, 1])
 
-    def gh(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        query = next(arg for arg in command if arg.startswith("query="))
+    def gh(command: list[str], **kwargs: str) -> subprocess.CompletedProcess[str]:
+        query = json.loads(kwargs["input"])["query"]
         data = {"rateLimit": {"cost": next(costs), "remaining": 4210, "resetAt": "2026-10-07T21:00:00Z"}}
         return subprocess.CompletedProcess(
             command, 0, json.dumps({"data": data | {"repository": github(REPO, query)}}), ""
@@ -426,9 +458,7 @@ def test_a_sync_reads_the_prs_open_tasks_cite_that_the_listings_do_not_reach() -
 
     def graphql(repo: str, query: str) -> dict:
         asked.append(query)
-        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}} | {
-            "p9": None
-        }
+        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}} | {"p9": None}
 
     PullSync(PullStore(create_engine("sqlite://")), feed, (), graphql, lambda: 100.0).refresh()
 
@@ -455,7 +485,9 @@ def test_a_sync_projects_the_boards_pull_requests_after_each_read_and_survives_a
     assert "failed to project" in caplog.text
 
 
-def test_run_forever_projects_the_saved_store_before_the_first_read(store: PullStore, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_forever_projects_the_saved_store_before_the_first_read(
+    store: PullStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
     calls: list[str] = []
 
     def graphql(repo: str, query: str) -> dict:

@@ -45,9 +45,12 @@ def query_github(repo: str, query: str) -> dict:
     The request's `rateLimit` cost is logged. Raises `GhUnavailableError` when `gh` fails or answers nothing readable.
     """
     owner, name = repo.split("/")
-    command = ["gh", "api", "graphql", "-f", f"query={query}", "-f", f"owner={owner}", "-f", f"name={name}"]
+    # the query rides stdin: a many-PR query outgrows the 128 KB limit on one argument
+    body = json.dumps({"query": query, "variables": {"owner": owner, "name": name}})
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=_GH_TIMEOUT_S)
+        result = subprocess.run(
+            ["gh", "api", "graphql", "--input", "-"], input=body, capture_output=True, text=True, timeout=_GH_TIMEOUT_S
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         raise GhUnavailableError(str(exc)) from exc
     try:  # gh exits non-zero for a PR GraphQL cannot find but still prints the others, so read before judging the exit
