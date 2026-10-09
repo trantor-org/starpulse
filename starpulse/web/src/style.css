@@ -35,7 +35,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: radial-gradi
 /* One pointer everywhere: nothing the page draws changes the cursor, whether a link, a button, a text field, a draggable card or the canvas. */
 *, *::before, *::after { cursor: default; }
 canvas { position: fixed; left: 0; top: 0; display: block; }
-#c { will-change: opacity; }
+/* The Star Map's first paint lands in the box the renderer's resize() then sets inline, so the first load shifts nothing. */
+#c { left: var(--nav); right: var(--rail); height: 100%; will-change: opacity; }
 #c.off { opacity: 0; pointer-events: none; }
 aside { position: fixed; z-index: 2; top: 0; bottom: 0; box-sizing: border-box; padding: 20px 18px; overflow: hidden; background: color-mix(in srgb, var(--glass) 78%, transparent);
   display: flex; flex-direction: column; gap: 18px; font-size: calc(11px * var(--fs)); color: var(--muted); }
