@@ -647,5 +647,5 @@ def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | None) -> 
             enabled = None
         if not isinstance(enabled, bool):
             return 400, {"error": 'the autopilot takes {"enabled": true} or {"enabled": false}'}
-        runtime.toggle.set(enabled)
+        runtime.set_enabled(enabled)
     return 200, runtime.status()

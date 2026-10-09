@@ -24,6 +24,7 @@ def test_no_block_resolves_every_default_but_the_starter(tmp_path: Path) -> None
         assert autopilot.tier_weights == {"fast": 1, "standard": 2, "deep": 4}
         assert autopilot.unsized_points == 3
         assert autopilot.review_lane == "review"
+        assert autopilot.idle_minutes == 30
         assert set(autopilot.limits) == set(DIMENSIONS) == {"cpu", "memory", "sessions", "review"}
         assert all(limit > 0 for limit in autopilot.limits.values())
     assert callable(LocalProbe())  # the local CPU and memory probe is the sampler's default
@@ -37,6 +38,7 @@ def test_a_block_overrides_each_default(tmp_path: Path) -> None:
 lane = "ready"
 review_lane = "qa"
 unsized_points = 5
+idle_minutes = 10
 
 [autopilot.tier_weights]
 standard = 3
@@ -52,6 +54,7 @@ review = 30
     assert autopilot.eligible_lane("to_do") == "ready"
     assert autopilot.review_lane == "qa"
     assert autopilot.unsized_points == 5
+    assert autopilot.idle_minutes == 10
     assert autopilot.tier_weights == {"fast": 1, "standard": 3, "deep": 4}
     assert autopilot.limits["sessions"] == 4 and autopilot.limits["review"] == 30
     assert autopilot.limits["cpu"] == Autopilot().limits["cpu"]  # a limit left out keeps its default
@@ -66,6 +69,8 @@ review = 30
         ("[autopilot.limits]\nsessions = 'two'\n", "sessions"),
         ("[autopilot.tier_weights]\nstandard = -1\n", "standard"),
         ("[autopilot]\nunsized_points = 0\n", "unsized_points"),
+        ("[autopilot]\nidle_minutes = 0\n", "idle_minutes"),
+        ("[autopilot]\nidle_minutes = 'soon'\n", "idle_minutes"),
         ("[autopilot]\nlane = ''\n", "lane"),
         ("[autopilot]\nreview_lane = 3\n", "review_lane"),
         ("autopilot = 3\n", "autopilot"),
