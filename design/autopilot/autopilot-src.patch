@@ -65,7 +65,7 @@ index 27f4fe0..cfc43b9 100644
          <Preview scale={scale} compact={density === "compact"} />
 diff --git a/starpulse/web/src/features/autopilot/AutopilotStrip.tsx b/starpulse/web/src/features/autopilot/AutopilotStrip.tsx
 new file mode 100644
-index 0000000..36c6c2f
+index 0000000..8eeb9ba
 --- /dev/null
 +++ b/starpulse/web/src/features/autopilot/AutopilotStrip.tsx
 @@ -0,0 +1,85 @@
@@ -130,7 +130,6 @@ index 0000000..36c6c2f
 +          onClick={() => void store.setOn(!on)} />
 +        Autopilot
 +      </label>
-+      {!on && <span className="paused">Paused · {running === 1 ? "1 session" : `${running} sessions`} still running</span>}
 +      <div className="dims">
 +        {dimensions.map((d) =>
 +          d.key === "sessions" ? (
@@ -141,6 +140,7 @@ index 0000000..36c6c2f
 +          ) : <Meter key={d.key} d={d} />,
 +        )}
 +      </div>
++      {!on && <span className="paused" title={`${running === 1 ? "1 session" : `${running} sessions`} still running`}>Paused · {running} running</span>}
 +      {on && (next ? (
 +        <button type="button" className={`nx ${next.verdict}`} title={next.title} onClick={() => openTask(next.task)}>
 +          Next <b>{next.task}</b> <span className="why">{next.verdict === "starting" ? "starting" : `waits: ${next.reason}`}</span>
@@ -281,7 +281,7 @@ index e701e1f..732f159 100644
    const [open, setOpen] = useState(false);
    return (
 diff --git a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/features/kanban/Kanban.tsx
-index 1d07d61..60f9e8f 100644
+index 46484e9..161e4a9 100644
 --- a/starpulse/web/src/features/kanban/Kanban.tsx
 +++ b/starpulse/web/src/features/kanban/Kanban.tsx
 @@ -8,7 +8,8 @@ import { ArchiveDialog } from "./ArchiveConfirm";
@@ -293,7 +293,7 @@ index 1d07d61..60f9e8f 100644
 +import { AutopilotStrip } from "../autopilot/AutopilotStrip";
  import type { HudState } from "../../render/hud";
  import {
-   CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll,
+   CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
 @@ -475,6 +476,8 @@ const LIFT_PX = 5;
   * `searchSlot` is the navigator's search slot, where the text search draws; `onQuery` hears what it holds.
   * `outlineSlot` is the navigator's outline slot, where the milestone outline draws and sets the Milestone filter.
@@ -303,7 +303,7 @@ index 1d07d61..60f9e8f 100644
  function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, outlineSlot, onQuery, spot = null, note, opening = null }: {
    hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; outlineSlot: HTMLElement | null; onQuery?: (query: string) => void;
    spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
-@@ -783,11 +786,13 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+@@ -784,11 +787,13 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
              {menu === "hidden" && <HiddenMenu prefs={prefs} tasks={cards} set={setPrefs} close={() => setMenu(null)} />}
            </div>
          )}

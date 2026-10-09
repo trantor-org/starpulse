@@ -924,11 +924,12 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #dg .trow { content-visibility: auto; contain-intrinsic-size: auto 40px; }
 
 /* the Kanban toolbar's autopilot strip: the toggle, each capacity dimension's used/limit meter, the sessions in flight and the next pick */
-#kb .ap { position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 12px; border-inline: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); white-space: nowrap; }
+/* one static width in every state and text size: the switch and meters hold their places, the last slot truncates */
+#kb .ap { position: relative; display: flex; align-items: center; gap: 12px; flex: none; width: 780px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 12px; border-inline: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); white-space: nowrap; }
 /* the strip leads the right-hand group, so the task count and New task follow it and wrap with it */
 #kb .filters .rt { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 0; min-width: 0; max-width: 100%; margin-left: auto; }
 #kb .ap + .shown { margin-left: 12px; }
-#kb .ap .sw-l { display: flex; align-items: center; gap: 7px; font-size: calc(11.5px * var(--fs)); color: var(--ink-3); }
+#kb .ap .sw-l { flex: none; display: flex; align-items: center; gap: 7px; font-size: calc(11.5px * var(--fs)); color: var(--ink-3); }
 :is(#admin, #kb) .sw:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
 #kb .sw { all: unset; position: relative; display: block; width: 30px; height: 16px; border-radius: 8px; background: color-mix(in srgb, var(--slate) 25%, transparent); transition: background .15s; }
 #kb .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); transition: left .15s; }
@@ -945,8 +946,8 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb .ap .dm.near .m i { background: var(--run); } #kb .ap .dm.over .m i { background: var(--fail); }
 #kb .ap .dmb { all: unset; display: block; border-radius: 4px; }
 #kb .ap .dmb:hover .r span, #kb .ap .dmb:focus-visible .r span { color: var(--ink); } #kb .ap .dmb:focus-visible { outline: 1px solid var(--agent); outline-offset: 3px; }
-#kb .ap .paused { font-size: calc(11px * var(--fs)); color: var(--muted); }
-#kb .ap .nx { all: unset; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: calc(11px * var(--fs)); color: var(--muted); }
+#kb .ap .paused { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11px * var(--fs)); color: var(--muted); }
+#kb .ap .nx { all: unset; flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: calc(11px * var(--fs)); color: var(--muted); }
 #kb .ap button.nx:hover b, #kb .ap button.nx:focus-visible b { text-decoration: underline; }
 #kb .ap .nx b { font-weight: 500; color: var(--agent-text); }
 #kb .ap .nx.waits .why { color: var(--run-text); } #kb .ap .nx.starting .why { color: var(--ok); animation: ap-go 1.2s ease-in-out infinite; }
