@@ -130,7 +130,8 @@ export function feedOf(moves: Move[], dags: Dag[], runs: RunLine[], now: number)
   return ev.sort((a, b) => b.at - a.at).slice(0, 40);
 }
 
-export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement }, demo: boolean, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS): Renderer {
+/** `onDrawn` runs once, in the frame whose canvas first shows the level (the page's first paint). */
+export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement }, demo: boolean, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS, onDrawn?: () => void): Renderer {
   const cx = cv.getContext("2d")!, { tip, panel } = els;
   const hhmm = (sec: number) => clockHm(sec, prefs().clock);
   let S: Sky | null = null, snap: Snapshot | null = null, scene: Scene | null = null;
@@ -1265,6 +1266,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     drawTrace();
   }
   let wash: { w: number; h: number; g?: CanvasGradient } = { w: 0, h: 0 };
+  let shown1 = false;
   const frame = (now: number) => {
     if (away) return; // the canvas is hidden behind another view
     // The ambient clock (orbits, twinkle, dash drift) advances only across frames drawn back to back, so it freezes at rest and resumes where it stopped.
@@ -1322,6 +1324,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         cx.globalAlpha = 1;
         if (q >= 1) trans = null;
       }
+    }
+    if (scene && !trans && onDrawn && !shown1) {
+      shown1 = true;
+      onDrawn();
     }
     if (now - tick > 250) {
       tick = now;

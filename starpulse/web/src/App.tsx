@@ -7,7 +7,7 @@ import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/view
 import { AdminStore } from "./features/admin/adminPrefs";
 import { ForwardingStore } from "./features/forwarding/forwarding";
 import { HistoryWindowStore } from "./features/admin/historyWindow";
-import { HudStore, useHud, type FeedLine, type HudState } from "./render/hud";
+import { HudStore, type FeedLine, type HudState } from "./render/hud";
 import { LevelStore } from "./features/orbit/levelData";
 import { BOARD, pathKey, type Path } from "./render/levels";
 import { Crumb } from "./features/level/Crumb";
@@ -22,6 +22,7 @@ import { MoveStore, postMove } from "./features/kanban/move";
 import { AdminPage, Dags, Kanban, OrbitCard, prefetchViews } from "./lazyViews";
 import { retired, viewOf, viewSearch, type ViewName } from "./shared/nav";
 import { renderer as makeRenderer, type Renderer } from "./render/renderer";
+import { booted } from "./boot";
 import { search, type Target } from "./features/level/search";
 import { StartStore, fetchHarnesses, postStart } from "./features/kanban/start";
 
@@ -31,18 +32,20 @@ const REVEAL_SETTLE_FRAMES = 8;
 /** The actors the rail can hide, in the order it lists them. */
 
 export function App() {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const tip = useRef<HTMLDivElement>(null), panel = useRef<HTMLDivElement>(null);
-  const renderer = useRef<Renderer | null>(null);
-  const [store] = useState(() => new HudStore());
-  const hud = useHud(store);
+  // the page's entry starts the Board before this mounts and holds what it drew with; a page mounted on its own makes them here
+  const [held] = useState(booted);
+  const canvas = useRef<HTMLCanvasElement | null>(held?.canvas ?? null);
+  const tip = useRef<HTMLDivElement | null>(held?.tip ?? null), panel = useRef<HTMLDivElement | null>(held?.panel ?? null);
+  const renderer = useRef<Renderer | null>(held?.renderer ?? null);
+  const [store] = useState(() => held?.store ?? new HudStore());
+  const hud = useSyncExternalStore(store.subscribe, store.get);
   // the navigator and the rail fill after the Board's first frame: it needs their width, not their contents
   const shell = useBoardDrawn(hud.tree !== null);
   // the other views load once the Board is up, so the first switch to one finds it loaded
   const drawn = hud.tree !== null;
   useEffect(() => (drawn ? prefetchViews() : undefined), [drawn]);
   // once it is, the views not yet opened also mount hidden in the background, so a first switch to one only unhides it
-  const [admin] = useState(() => new AdminStore());
+  const [admin] = useState(() => held?.admin ?? new AdminStore());
   const [historyWindow] = useState(() => new HistoryWindowStore());
   const [forwarding] = useState(() => new ForwardingStore());
   // the level above the Board: asked for once and then every minute while the server has one, its navigator entry shown only then
@@ -113,17 +116,17 @@ export function App() {
   const flyToLane = useCallback((lane: string) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }, [choose]);
 
   useEffect(() => {
-    const els = { tip: tip.current!, panel: panel.current! };
-    const r = makeRenderer(canvas.current!, store, els, new URLSearchParams(location.search).has("demo"), admin.get);
+    // a booted renderer outlives the page's tree: it was started before this mounted and is never stopped by it
+    const r = held?.renderer ?? makeRenderer(canvas.current!, store, { tip: tip.current!, panel: panel.current! }, new URLSearchParams(location.search).has("demo"), admin.get);
     renderer.current = r;
-    r.start();
+    if (!held) r.start();
     // times are written at the source, so a new clock is a new subtitle and feed
     const unsubscribe = admin.subscribe(() => r.refresh());
     return () => {
       unsubscribe();
-      r.stop();
+      if (!held) r.stop();
     };
-  }, [store, admin]);
+  }, [held, store, admin]);
   // declared after the renderer's effect, so the first run already reaches it
   useEffect(() => {
     reveal(view, true);
@@ -139,7 +142,7 @@ export function App() {
 
   return (
     <>
-      <canvas ref={canvas} id="c" />
+      {!held && <canvas ref={canvas} id="c" />}
       <Navigator shell={shell} hud={hud} view={view} activeView={activeView} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
@@ -169,8 +172,8 @@ export function App() {
           else if (view === "dags") setOpeningDag({ name: l.dag! });
           else renderer.current?.openTask(l.task!);
         }} />
-      <div ref={tip} id="tip" />
-      <div ref={panel} id="panel" />
+      {!held && <div ref={tip} id="tip" />}
+      {!held && <div ref={panel} id="panel" />}
     </>
   );
 }

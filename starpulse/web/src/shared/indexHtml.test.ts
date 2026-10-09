@@ -90,3 +90,21 @@ describe("index.html's early stream", () => {
     expect(early.events).toEqual([{ type: "snapshot", data: "{}" }]);
   });
 });
+
+describe("index.html's frames", () => {
+  const body = page.slice(page.indexOf("<body>"), page.indexOf('<script type="module"'));
+  const at = (id: string) => body.search(new RegExp(`id="${id}"`));
+
+  it("carries the canvas and the two boxes the renderer draws into, so the first frame does not wait on the React tree", () => {
+    for (const id of ["c", "tip", "panel", "crumb", "nav", "rail"]) expect(at(id), id).toBeGreaterThan(-1);
+  });
+
+  it("keeps their stacking order: the canvas, then the page's chrome, then the tip and the panel above it", () => {
+    expect([at("c"), at("root"), at("tip"), at("panel")]).toEqual([...[at("c"), at("root"), at("tip"), at("panel")]].sort((a, b) => a - b));
+  });
+
+  it("leaves the navigator, crumb and rail inside #root, where the React page replaces them at its first commit", () => {
+    const root = body.slice(at("root"), at("tip"));
+    for (const id of ["nav", "crumb", "rail"]) expect(root).toContain(`id="${id}"`);
+  });
+});

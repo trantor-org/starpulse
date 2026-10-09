@@ -1,14 +1,15 @@
 // Every time the page shows, written in Arizona time in the clock the Admin view chose. Formatting happens here, at the source, so
 // no text is rewritten after the fact.
-const TZ = "America/Phoenix";
+// Arizona keeps UTC-7 all year with no daylight saving time, so its wall clock is fixed arithmetic. An Intl.DateTimeFormat built at module
+// load cost ~20 ms of the cold first paint on the ai-vm-1 profile (ICU data load) for the same strings.
+const MST_MS = -7 * 3600 * 1000;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export type ClockMode = "24" | "12";
 
-// One formatter: toLocaleTimeString with a time zone builds a new one per call, and the feed formats every move four times a second.
-const PARTS = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hourCycle: "h23", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-
 function parts(ms: number) {
-  const p = Object.fromEntries(PARTS.formatToParts(ms).map((x) => [x.type, x.value]));
-  return { year: p.year, month: p.month, day: p.day, hour: Number(p.hour), minute: p.minute };
+  const d = new Date(ms + MST_MS);
+  const m = d.getUTCMinutes();
+  return { year: d.getUTCFullYear(), month: MONTHS[d.getUTCMonth()], day: d.getUTCDate(), hour: d.getUTCHours(), minute: m < 10 ? `0${m}` : String(m) };
 }
 
 const time = (hour: number, minute: string, mode: ClockMode) =>
