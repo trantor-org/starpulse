@@ -77,6 +77,8 @@ def _stored(
         "requiredChecks": [],
         "threads": threads,
         "updatedAt": "2026-10-06T20:00:00Z",
+        "mergedAt": merged_at,
+        "mergeSha": merge_sha,
         "fetchedAt": fetched,
         "detail": {
             "mergedAt": merged_at,
