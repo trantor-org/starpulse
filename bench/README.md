@@ -45,29 +45,29 @@ uv run python bench/flow_reads.py .tmp/bench-flow 10000 1000000 --scan 1000000
 uv run python bench/flow_reads.py .tmp/bench-flow --reuse          # read the stores a run left
 ```
 
+**When to run.** After any change to a summarised read, rerun `flow_reads.py` at 10 thousand and 1 million events.
+
 The script records synthetic Board lane changes at a fixed rate (about 125 a day) into a SQLite store, summarises
 them as the store does at start-up, and asks `/api/analytics/health`, `/api/level` and `/api/level/trajectories`
 for the default week 60 times each. It prints the p95 in wall and CPU time with the statements each read sends, and
 exits 1 when the CPU p95 at any size is over 2x the first size's. `--scan N` also times the whole-table reads the
 summaries replaced, on the stores up to N events.
 
-Result (ai-vm-1, SQLite, 60 reads each; the host was shared at a load average of 200, so one stalled read sets the wall p95, e.g. the 2101 ms
-at 10 thousand, and the CPU time judges):
+Result (ai-vm-1, SQLite, 60 reads each; CPU time judges the 2x gate):
 
 | Events | Health p95 (wall / CPU) | Level p95 (wall / CPU) | Trajectories p95 (wall / CPU) | Store |
 | ---: | --- | --- | --- | ---: |
-| 10 thousand | 8.6 / 6.5 ms | 2101 / 171 ms | 226 / 164 ms | 3 MB |
-| 1 million | 6.3 / 6.3 ms (x0.98) | 157 / 142 ms (x0.83) | 152 / 135 ms (x0.82) | 280 MB |
-| 10 million | 15.0 / 8.0 ms (x1.24) | 280 / 180 ms (x1.05) | 173 / 155 ms (x0.95) | 2.9 GB |
+| 10 thousand | 3.8 / 3.8 ms | 135.5 / 135.5 ms | 213.1 / 175.7 ms | 3 MB |
+| 1 million | 3.9 / 3.9 ms (x1.05) | 145.7 / 145.7 ms (x1.08) | 165.4 / 165.2 ms (x0.94) | 289 MB |
+| 10 million | 3.7 / 3.8 ms (x0.99) | 68.5 / 67.6 ms (x0.50) | 106.0 / 104.4 ms (x0.59) | 3.0 GB |
 
-The ratios are the CPU p95 against the 10 thousand row, all under 2x. Run to run on this shared host they moved
-by up to 1.5x on the 6 to 15 ms health read and by 1.2x on the level, in both directions, with no trend in the size. Each read sends 5 or 7 statements at every size,
-health fetches under 100 rows (72 at 10 thousand, 98 at 1 million: a row per lane and per task in flight, not per lane
-interval) and none touches `starpulse_machine_events` or `starpulse_lane_changes`. Before the summaries the same reads folded
-every lane change: at 1 million, health took 9.2 s and the level 11.6 s (p95 of 3 reads, wall). At 10 thousand the
-level reads the whole history, because the trailing 12 weeks that set the aging threshold reach back past its start;
-that is the most it ever reads, and why the level's cost stays where it is as the history grows. Loading 10 million
-lane changes took about a minute and `rebuild_summaries` about 6 minutes.
+The ratios are the CPU p95 against the 10 thousand row, all under 2x. Health sends six statements at every size and
+fetches 29, 37 and 45 rows: rows for the lanes and tasks in flight, not every lane interval. None of the reads touches
+`starpulse_machine_events` or `starpulse_lane_changes`. Before the summaries the same reads folded every lane change:
+at 1 million, health took 9.2 s and the level 11.6 s (p95 of 3 reads, wall). At 10 thousand the level reads the whole
+history, because the trailing 12 weeks that set the aging threshold reach back past its start; that is the most it
+ever reads, and why the level's cost stays where it is as the history grows. Loading 10 million lane changes took
+69.5 seconds and `rebuild_summaries` took 289.9 seconds.
 
 Rates depend on the host, so compare runs on the same machine.
 
