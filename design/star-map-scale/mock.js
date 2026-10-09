@@ -1,4 +1,4 @@
-// Design mockup layer (Star Map sizing per resolution, TASK-3747), never part of the page. The page above is a scrubbed capture of the
+// Design mockup layer (Star Map sizing per resolution), never part of the page. The page above is a scrubbed capture of the
 // real StarPulse page, built from a source copy (star-map-scale-src.patch) that adds a grid sizing rule: each Board state gets one cell
 // of the canvas and one fixed footprint (task band, moon orbit, clearance R), busy or empty; the zoom is the largest that fits a cell,
 // and the labels scale with the sun, clamped to 12-20 px. Without ?frame this layer draws the review frame: the page at a chosen
@@ -18,7 +18,7 @@
 
   if (q.has("frame")) {
     if ((q.get("sizing") || "grid") === "grid") window.__SIZING__ = { mode: "grid", layout, text: fs / 100 };
-    // a phone's width is spent by the 250 px rails today (TASK-3767): rails=off shows the canvas the sizing rule gets once they fold
+    // a phone's width is spent by the 250 px rails today: rails=off shows the canvas the sizing rule gets once they fold
     if (q.get("rails") === "off") {
       const st = document.createElement("style");
       st.textContent = ":root { --nav: 0px !important; --rail: 0px !important; } #nav, #rail { display: none !important; }";
