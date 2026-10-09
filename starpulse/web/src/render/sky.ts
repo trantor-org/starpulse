@@ -90,8 +90,16 @@ const joined = (a: RawAgent, board: Map<string, RawAgent>): RawAgent => {
 export function hosted(sky: Pick<Sky, "flows" | "board" | "tree">, flow: string, host?: string): RawAgent[] {
   const agents = sky.flows[flow]?.agents ?? [];
   if (host === undefined || Object.values(sky.tree.subs).filter((fs) => fs.includes(flow)).length < 2) return agents;
-  const state = new Map(sky.board.agents.map((a) => [a.id, a.state]));
+  const state = boardStates(sky.board);
   return agents.filter((a) => state.get(a.task ?? a.id) === host);
+}
+
+/** Each Board task's state by id, built once per Board: a frame asks it of every moon it draws. */
+const statesOf = new WeakMap<FlowSnapshot, Map<string, string>>();
+function boardStates(board: FlowSnapshot): Map<string, string> {
+  let state = statesOf.get(board);
+  if (!state) statesOf.set(board, (state = new Map(board.agents.map((a) => [a.id, a.state]))));
+  return state;
 }
 
 /** Local midnight today, in epoch seconds. */
@@ -170,8 +178,8 @@ export function withLedgers(sky: Sky, snap: Snapshot): Sky {
  * and on a terminal state the day's arrivals there not already in it. */
 export function stateCount(sky: Sky, sid: string): number {
   if (sky.board.machine.states.find((s) => s.id === sid)?.initial) return sky.today[sid]?.length ?? 0;
-  const here = sky.board.agents.filter((a) => a.state === sid);
-  return here.length + (sky.today[sid] ?? []).filter((t) => !here.some((a) => a.id === t.id)).length;
+  const here = new Set(sky.board.agents.filter((a) => a.state === sid).map((a) => a.id));
+  return here.size + (sky.today[sid] ?? []).filter((t) => !here.has(t.id)).length;
 }
 
 /** How a Board state's count reads: `n`, or on a starting or terminal state `N today`, with every task drawn first when some did not arrive today. */

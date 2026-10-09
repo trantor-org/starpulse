@@ -526,16 +526,21 @@ export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn
   const others = all.filter((g) => g !== a && g !== b);
   const shape = (c: Pt): Curve => ({ p0: rim(a, c), c, p1: rim(b, c) });
   // both tests walk the same points sample() would give, without allocating them: every spot on the sky runs them
+  // a path lies inside the box of its three points, so only a state whose margin reaches that box can block it
   const clear = ({ p0, c, p1 }: Curve, by = CLEAR) => {
+    const x0 = Math.min(p0.x, c.x, p1.x), x1 = Math.max(p0.x, c.x, p1.x), y0 = Math.min(p0.y, c.y, p1.y), y1 = Math.max(p0.y, c.y, p1.y);
+    const near = others.filter((g) => g.x + g.R + by > x0 && g.x - g.R - by < x1 && g.y + g.R + by > y0 && g.y - g.R - by < y1);
+    if (!near.length) return true;
     for (let i = 0; i <= 48; i++) {
       const t = i / 48, u = 1 - t, x = u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, y = u * u * p0.y + 2 * u * t * c.y + t * t * p1.y;
-      for (const g of others) if ((x - g.x) ** 2 + (y - g.y) ** 2 < (g.R + by) ** 2) return false;
+      for (const g of near) if ((x - g.x) ** 2 + (y - g.y) ** 2 < (g.R + by) ** 2) return false;
     }
     return true;
   };
-  const crossings = ({ p0, c, p1 }: Curve) => {
+  /** The paths drawn that `e` crosses, counted only while they can still bring it under `cap`. */
+  const crossings = ({ p0, c, p1 }: Curve, cap: number) => {
     let n = 0;
-    for (let i = 0; i <= 30; i++) {
+    for (let i = 0; i <= 30 && n < cap; i++) {
       const t = i / 30, u = 1 - t;
       if (drawn.near(u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, u * u * p0.y + 2 * u * t * c.y + t * t * p1.y)) n++;
     }
@@ -546,18 +551,39 @@ export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn
   // shrinking across the line never flips it back and forth
   if (clear(straight, held ? CLEAR + HOLD : CLEAR)) return straight;
   if (held && clear(shape(held))) return shape(held);
-  const spots: { c: Pt; bend: number }[] = [];
-  for (let x = 10; x <= sky.x - 10; x += 40) for (let y = 10; y <= sky.y - 10; y += 40) spots.push({ c: { x, y }, bend: Math.hypot(x - c0.x, y - c0.y) / 200 });
+  // the spots in order of bend, a tie in the order the grid lists them, as a stable sort leaves them
+  const { xs, ys } = grid(sky), bends = new Float64Array(xs.length), order = new Uint32Array(xs.length);
+  for (let i = 0; i < xs.length; i++) {
+    bends[i] = Math.hypot(xs[i] - c0.x, ys[i] - c0.y) / 200;
+    order[i] = i;
+  }
+  order.sort((i, j) => bends[i] - bends[j] || i - j);
   let best = straight, cost = Infinity;
-  for (const { c, bend } of spots.sort((p, q) => p.bend - q.bend)) {
+  for (const i of order) {
+    const bend = bends[i];
     if (bend >= cost) break;
-    const e = shape(c);
+    const e = shape({ x: xs[i], y: ys[i] });
     if (!clear(e)) continue;
-    const crossed = crossings(e);
+    const crossed = crossings(e, cost - bend);
     if (bend + crossed < cost) [cost, best] = [bend + crossed, e];
   }
   return best;
 }
+/** The spots on a sky a bent path's control point may take, 40 px apart, column by column; kept for the last sky asked about. */
+const grid = (() => {
+  let key = "", held = { xs: new Float64Array(), ys: new Float64Array() };
+  return (sky: Pt) => {
+    if (key === `${sky.x}x${sky.y}`) return held;
+    const xs: number[] = [], ys: number[] = [];
+    for (let x = 10; x <= sky.x - 10; x += 40)
+      for (let y = 10; y <= sky.y - 10; y += 40) {
+        xs.push(x);
+        ys.push(y);
+      }
+    [key, held] = [`${sky.x}x${sky.y}`, { xs: Float64Array.from(xs), ys: Float64Array.from(ys) }];
+    return held;
+  };
+})();
 /** The points of the paths drawn so far, bucketed in 10 px cells so a point checks only the nine cells round it for one within 10 px. */
 export class Drawn {
   private cells = new Map<number, Pt[]>();

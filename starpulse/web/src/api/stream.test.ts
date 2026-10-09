@@ -205,6 +205,18 @@ class FakeSource {
   }
 }
 const open = (url: string) => new FakeSource(url) as unknown as EventSource;
+const EVENTS = "/api/events?snapshot=ref";
+const BODY = "/api/events/body/0123abcd";
+/** A fetch whose answers the test settles itself, one per call. */
+function fetchStub() {
+  const calls: { url: string; settle(ok: boolean, body?: unknown): void }[] = [];
+  const fn = vi.fn((url: string) => new Promise<Response>((resolve) => {
+    calls.push({ url, settle: (ok, body) => resolve({ ok, status: ok ? 200 : 404, json: () => Promise.resolve(body) } as Response) });
+  }));
+  vi.stubGlobal("fetch", fn);
+  return calls;
+}
+const flush = () => vi.advanceTimersByTimeAsync(0);
 const last = () => FakeSource.made[FakeSource.made.length - 1];
 
 describe("openStream", () => {
@@ -222,18 +234,18 @@ describe("openStream", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it("opens one connection to /api/events and hands over its snapshot", () => {
+  it("opens one connection to /api/events, asking for its snapshot by reference, and hands over its snapshot", () => {
     openStream(handlers, open);
 
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
 
-    expect(FakeSource.made.map((f) => f.url)).toEqual(["/api/events"]);
+    expect(FakeSource.made.map((f) => f.url)).toEqual([EVENTS]);
     expect(seen.map(ids)).toEqual([["PROJ-1:to_do"]]);
   });
 
   describe("a connection index.html opened before the bundle ran", () => {
     const early = (readyState: number, events: { type: string; data: string }[]) => {
-      const src = new FakeSource("/api/events");
+      const src = new FakeSource(EVENTS);
       src.readyState = readyState;
       FakeSource.made = [];
       return { src: src as unknown as EventSource, events };
@@ -267,7 +279,7 @@ describe("openStream", () => {
 
       vi.advanceTimersByTime(RETRY_MS);
 
-      expect(FakeSource.made.map((f) => f.url)).toEqual(["/api/events"]);
+      expect(FakeSource.made.map((f) => f.url)).toEqual([EVENTS]);
     });
   });
 
@@ -372,8 +384,66 @@ describe("openStream", () => {
     vi.advanceTimersByTime(60_000);
 
     expect(seen.at(-1)!.flows[1].agents.map((a) => `${a.id}:${a.state}`)).toEqual(["PROJ-1:worktree_ready"]);
-    expect([fetched.mock.calls.length, FakeSource.made.map((f) => f.url)]).toEqual([0, ["/api/events"]]);
+    expect([fetched.mock.calls.length, FakeSource.made.map((f) => f.url)]).toEqual([0, [EVENTS]]);
     vi.unstubAllGlobals();
+  });
+
+  describe("a snapshot the server sends by reference", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("is read from the path it names, and the deltas that arrived while it was read are folded into it in order", async () => {
+      const reads = fetchStub();
+      openStream(handlers, open);
+
+      last().dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
+      last().send("task", { id: "PROJ-1", agent: agent("PROJ-1", "in_progress"), settled: null });
+      last().send("dags", { dags: [], error: "ci: down" });
+      expect(seen).toEqual([]);
+      reads[0].settle(true, board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      expect(reads.map((r) => r.url)).toEqual([BODY]);
+      expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:in_progress"], ["PROJ-1:in_progress"]]);
+      expect([kinds, seen[2].error]).toEqual([[undefined, "task", "dags"], "ci: down"]);
+    });
+
+    it("is read once when index.html's connection already asked for it", async () => {
+      const reads = fetchStub();
+      const asked = fetch(BODY);
+      const src = new FakeSource(EVENTS);
+      FakeSource.made = [];
+      openStream(handlers, open, null, { src: src as unknown as EventSource, events: [{ type: "snapshot", data: `ref ${BODY}` }], bodies: { [BODY]: asked } });
+
+      reads[0].settle(true, board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      expect([reads.length, seen.map(ids)]).toEqual([1, [["PROJ-1:to_do"]]]);
+    });
+
+    it("gives way to a newer snapshot that arrives while it is read", async () => {
+      const reads = fetchStub();
+      openStream(handlers, open);
+
+      last().dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
+      last().send("snapshot", board([agent("PROJ-1", "done")]));
+      reads[0].settle(true, board([agent("PROJ-1", "to_do")]));
+      await flush();
+
+      expect(seen.map(ids)).toEqual([["PROJ-1:done"]]);
+    });
+
+    it("that cannot be read drops the connection for a fresh one, which sends a fresh snapshot", async () => {
+      const reads = fetchStub();
+      openStream(handlers, open);
+      const first = last();
+
+      first.dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
+      reads[0].settle(false);
+      await flush();
+      vi.advanceTimersByTime(RETRY_MS);
+
+      expect([first.readyState, lives, FakeSource.made.length, seen]).toEqual([2, [false], 2, []]);
+    });
   });
 
   it("ignores a delta that arrives before any snapshot", () => {

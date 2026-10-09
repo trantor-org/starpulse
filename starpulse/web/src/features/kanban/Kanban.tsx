@@ -782,7 +782,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           created={(id) => setToast({ text: `${id} created`, sub: `in ${hud.names[lanes[0]] ?? lanes[0]}` })} />
         <ConnectTracker hint={hud.hint} />
       </div>
-      <div id="cols" style={{ "--cols": view.columns.length } as CSSProperties}>
+      <div id="cols" data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
         {view.columns.map((col) => {
           const target = lift?.kinds[col.id];
           const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
