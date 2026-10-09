@@ -27,7 +27,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import Any
 
 from starpulse.domain.level import Level
-from starpulse.domain.level_metrics import Run, WindowPastHistory, collapse
+from starpulse.domain.level_metrics import Run, WindowPastHistory, held_steps
 
 __all__ = ["WhatIfRefused", "betweenness", "trajectory_analytics", "what_if"]
 
@@ -62,7 +62,7 @@ def trajectory_analytics(
     only be the ones that ended in the window if the history says where it begins (`history_start`); `sources` is
     taken so the two views answer the same call.
     """
-    held, first, ended = _window(level, runs, now=now, window_s=window_s, history_start=history_start)
+    held, first, ended = _window(level, machine, runs, now=now, window_s=window_s, history_start=history_start)
     paths = [(run, [state for _, state in steps]) for run, steps in ended]
     variants = Counter(tuple(path) for _, path in paths)
     ranked = sorted(variants.items(), key=lambda variant: (-variant[1], len(variant[0]), variant[0]))
@@ -118,7 +118,7 @@ def what_if(
     `origin` or `to` (a terminal needs none), `to` is `origin`, `p` is no probability, `origin` has no other exit to
     give the rest to, or the changed chain never finishes.
     """
-    _, first, ended = _window(level, runs, now=now, window_s=window_s, history_start=history_start)
+    _, first, ended = _window(level, machine, runs, now=now, window_s=window_s, history_start=history_start)
     model = _Model(level, ended)
     counts, terminals = model.counts, {terminal.id for terminal in level.terminals}
     if not 0 <= p <= 1:
@@ -167,11 +167,17 @@ _Held = tuple[Run, list[tuple[float, str]]]
 
 
 def _window(
-    level: Level, runs: Iterable[Run], *, now: float, window_s: float, history_start: float | None
+    level: Level,
+    machine: Mapping[str, Any],
+    runs: Iterable[Run],
+    *,
+    now: float,
+    window_s: float,
+    history_start: float | None,
 ) -> tuple[list[_Held], float, list[_Held]]:
     """Every run with its collapsed steps, where the history begins, and the runs that ended in a terminal in the window
     by task; refuses (`WindowPastHistory`) a window longer than the history."""
-    held = [(run, collapse(run.steps)) for run in runs]
+    held = [(run, held_steps(level, machine, run.steps)) for run in runs]
     first = (
         history_start if history_start is not None else min((steps[0][0] for _, steps in held if steps), default=now)
     )

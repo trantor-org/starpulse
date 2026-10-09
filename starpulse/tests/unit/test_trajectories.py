@@ -531,3 +531,17 @@ def test_no_walk_over_the_board_machine_makes_the_analytics_raise() -> None:
         assert trajectory["back_edges"] == len(trajectory["loops"])
         assert all(loop["trips"] >= 1 and loop["days"] >= 0 for loop in trajectory["loops"])
     assert all(f["loops"] >= 0 for f in result["forecast"])
+
+
+def test_a_run_swept_from_the_goal_into_a_settle_ended_in_the_goal_when_it_reached_it() -> None:
+    swept = {"states": MACHINE["states"] + [{"id": "completed", "initial": False, "final": True}]}
+    runs = [
+        _run("t1", (0, "work"), (10, "review"), (20, "done"), (30, "completed")),
+        _run("t2", (0, "work"), (10, "review"), (25, "done")),
+    ]
+
+    result = trajectory_analytics(LEVEL, swept, runs, now=NOW, window_s=WINDOW)
+
+    assert result["ended"] == 2
+    assert result["variants"] == [{"path": ["work", "review", "done"], "count": 2, "share": 1.0}]
+    assert {run["task"]: run["reached_goal"] for run in result["runs"]} == {"t1": True, "t2": True}
