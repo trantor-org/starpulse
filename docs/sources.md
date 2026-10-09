@@ -57,8 +57,9 @@ A session is one harness session id; it has one row per task it worked, found fr
 
 What an export cannot say is absent rather than guessed: Claude Code exports no user interrupt, Codex exports an
 interrupted turn only in `codex.turn_cost`, which it sends only with an API key, and Codex has no compaction event.
-Signals are kept in the event log's `telemetry:signals` stream, pruned by `event_log_retention_days` like any row, so a
-window longer than the retention reads only what remains. A server with no such stream is 501, a window that is no
+Signals are kept in the event log's `telemetry:signals` stream, a private stream that is no contract and changes
+without notice, pruned by `event_log_retention_days` like any row, so a window longer than the retention reads only
+what remains. A server with no such stream is 501, a window that is no
 positive number 400.
 
 ## Report runs from any scheduler

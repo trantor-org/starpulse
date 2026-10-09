@@ -188,6 +188,8 @@ _FIELDS = {f.name for f in fields(Signal)}
 class TelemetryLog:
     """The signals both harnesses' exports gave, kept in the event log's `telemetry:signals` stream.
 
+    The stream is private to the instance: it has no entry in `EVENT_STREAMS` and no consumer tails it.
+
     `publish` appends each signal under its `key`, so a replayed export adds nothing, and fails open like the log: a
     database that cannot be opened drops the signals, never the export. `read` returns the signals no older than
     `since`, in the order they were published; it polls the stream's tail since its last read and holds what it
