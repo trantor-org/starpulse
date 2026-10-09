@@ -13,15 +13,17 @@ import os
 import re
 import threading
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from starpulse._internal.board import native_docs, native_milestones
+from starpulse._internal.board import native_docs, native_milestones, rules
 from starpulse._internal.board.seam import (
     Board,
+    OPERATOR,
     MoveWriter,
     TaskArchiver,
     TaskCompleter,
@@ -49,8 +51,9 @@ from starpulse._internal.feed import criteria
 DEFAULT_PATH = ".starpulse/board"
 #: The `[board]` settings this adapter reads: `path` is the board's directory, `machine` a machine file for the Board,
 #: relative to the config, `criteria` the command that evaluates a task's Start Criteria (`{id}` is the task's id),
-#: `validate` the `module:function` that may refuse a task write before it lands.
-_SETTINGS = {"type", "path", "interval", "machine", "criteria", "validate"}
+#: `validate` the `module:function` that may refuse a task write before it lands, `rules` the record-level rules every
+#: task write must satisfy (`starpulse._internal.board.rules`).
+_SETTINGS = {"type", "path", "interval", "machine", "criteria", "validate", "rules"}
 #: A task write's check: the file's path, its text before (None for a create) and the text about to be written; it
 #: returns why the write is refused, or None to let it land.
 Validate = Callable[[Path, "str | None", str], "str | None"]
@@ -92,6 +95,21 @@ def _find(root: Path, task: str) -> Path | None:
     return None
 
 
+def _state_of(root: Path) -> Callable[[str], str | None]:
+    """A lookup of the state (its lane id) a task's file is in, None for a task with no file."""
+
+    def state(task: str) -> str | None:
+        if (path := _find(root, task)) is None:
+            return None
+        try:
+            frontmatter, _ = _split(path.read_text())
+        except OSError:
+            return None  # moved or removed while looking
+        return lane_id(str(frontmatter.get("status") or "").strip()) if isinstance(frontmatter, dict) else None
+
+    return state
+
+
 def _hook(setting: object) -> Validate | None:
     """The function a `validate` setting names as `module:function`, or None without one."""
     if setting is None:
@@ -119,26 +137,57 @@ def _stamped(frontmatter: dict, *, created: bool = False) -> dict:
     return stamped
 
 
-def _land(path: Path, before: str | None, frontmatter: dict, body: str, validate: Validate | None) -> Written | None:
-    """Write the task file at `path` in one rename, unless `validate` refuses it: the refusal, or None once it landed."""
+@dataclass(frozen=True)
+class _Guard:
+    """What a task write must pass before it lands: the board's rules, then its `validate` hook."""
+
+    rules: tuple[rules.Rule, ...] = ()
+    validate: Validate | None = None
+    #: The state of another task (a dependency a rule reads), or None when the board has none.
+    state_of: Callable[[str], str | None] = lambda _: None
+
+    def refusal(
+        self, path: Path, before: str | None, frontmatter: dict, body: str, text: str, actor: str
+    ) -> Written | None:
+        """Why the write of `text` over `before` (None for a create) by `actor` is refused, or None to let it land."""
+        if self.rules:
+            earlier = None if before is None else rules.Record(*_split_record(before))
+            if broken := rules.refusal(self.rules, earlier, rules.Record(frontmatter, body, self.state_of), actor):
+                return Written(False, broken.reason, broken.skill)
+        if self.validate is not None and (reason := self.validate(path, before, text)):
+            return Written(False, reason)
+        return None
+
+
+def _split_record(text: str) -> tuple[dict, str]:
+    frontmatter, body = _split(text)
+    return (frontmatter if isinstance(frontmatter, dict) else {}), body
+
+
+def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: _Guard, actor: str) -> Written | None:
+    """Write the task file at `path` in one rename, unless `guard` refuses `actor`'s write: the refusal, or None once
+    it landed."""
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}"
-    if validate is not None and (reason := validate(path, before, text)):
-        return Written(False, reason)
+    if refused := guard.refusal(path, before, frontmatter, body, text, actor):
+        return refused
     scratch = path.with_name(f"{path.name}.tmp")  # not a `.md` file, so a scan never reads it half written
     scratch.write_text(text)
     os.replace(scratch, path)
     return None
 
 
-def _update(root: Path, task: str, edit: Callable[[dict, str], str], validate: Validate | None = None) -> Written:
-    """Rewrite the file of `task` with its front matter edited in place, its body as `edit` returns it and a new `updated_date`."""
+def _update(
+    root: Path, task: str, edit: Callable[[dict, str], str], guard: _Guard = _Guard(), actor: str = OPERATOR
+) -> Written:
+    """Rewrite the file of `task` with its front matter edited in place, its body as `edit` returns it and a new
+    `updated_date`, as `actor`."""
     if (path := _find(root, task)) is None:
         return Written(False, f"{task} has no task file in {root / 'tasks'}")
     try:
         before = path.read_text()
         frontmatter, body = _split(before)
         body = edit(frontmatter, body)
-        if refused := _land(path, before, _stamped(frontmatter), body, validate):
+        if refused := _land(path, before, _stamped(frontmatter), body, guard, actor):
             return refused
     except OSError as error:
         return Written(False, f"{path}: {error}")
@@ -347,7 +396,7 @@ def _apply(task: str, frontmatter: dict, body: str, changes: Mapping[str, Any], 
     return body
 
 
-def _editor(root: Path, statuses: tuple[str, ...], validate: Validate | None = None) -> TaskEditor:
+def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> TaskEditor:
     """A board writer that applies every change to a task's file in one write, or refuses the whole edit.
 
     `changes` holds the new value of each field `read` names except `comments`, which `comment` appends to: one text, or a
@@ -357,7 +406,7 @@ def _editor(root: Path, statuses: tuple[str, ...], validate: Validate | None = N
     """
     spelled = {lane_id(status): status for status in statuses}
 
-    def edit(task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /) -> Written:
+    def edit(task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /, actor: str = OPERATOR) -> Written:
         def apply(frontmatter: dict, body: str) -> str:
             body = _apply(task, frontmatter, body, changes, spelled)
             for text in [comment] if isinstance(comment, str) else comment:
@@ -365,23 +414,25 @@ def _editor(root: Path, statuses: tuple[str, ...], validate: Validate | None = N
             return body
 
         try:
-            return _update(root, task, apply, validate)
+            return _update(root, task, apply, guard, actor)
         except ValueError as refusal:  # raised before the file is written, so a refusal writes nothing
             return Written(False, f"{task}: {refusal}")
 
     return edit
 
 
-def _archiver(root: Path, validate: Validate | None = None) -> TaskArchiver:
+def _archiver(root: Path, guard: _Guard = _Guard()) -> TaskArchiver:
     """A board writer that moves a task's file to `archive/tasks/`, from any lane, after recording a non-blank reason as a comment."""
 
-    def archive(task: str, reason: str, /) -> Written:
+    def archive(task: str, reason: str, /, actor: str = OPERATOR) -> Written:
         if (path := _find(root, task)) is None:
             return Written(False, f"{task} has no task file in {root / 'tasks'}")
         if (
             reason.strip()
             and not (
-                noted := _update(root, task, lambda _, body: _comment(body, f"Archived: {reason.strip()}"), validate)
+                noted := _update(
+                    root, task, lambda _, body: _comment(body, f"Archived: {reason.strip()}"), guard, actor
+                )
             ).ok
         ):
             return noted
@@ -401,7 +452,7 @@ def _holder(body: str, session: str) -> str:
     return _append_notes(body, f"**Holder:** {session}")
 
 
-def _writer(root: Path, statuses: tuple[str, ...], validate: Validate | None = None) -> MoveWriter:
+def _writer(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
 
     An agent's claim (a move to `In Progress` that names its session) also records the session as the task's holder.
@@ -409,13 +460,13 @@ def _writer(root: Path, statuses: tuple[str, ...], validate: Validate | None = N
     spelled = {lane_id(status): status for status in statuses}
 
     def write(task: str, status: str, actor: str, session: str = "") -> Written:
-        claim = actor != "operator" and session and lane_id(status) == "in_progress"
+        claim = actor != OPERATOR and session and lane_id(status) == "in_progress"
 
         def edit(frontmatter: dict, body: str) -> str:
             frontmatter["status"] = spelled.get(lane_id(status), status)
             return _holder(body, session) if claim else body
 
-        return _update(root, task, edit, validate)
+        return _update(root, task, edit, guard, actor)
 
     return write
 
@@ -478,7 +529,7 @@ def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) ->
     return text
 
 
-def _creator(root: Path, config: BacklogConfig, validate: Validate | None = None) -> TaskCreator:
+def _creator(root: Path, config: BacklogConfig, guard: _Guard = _Guard()) -> TaskCreator:
     """A board writer that makes a task file with the next id, `<id> - <title as a slug>.md`, in one write.
 
     It starts in the first lane; any detail beyond the ones the page fills (a `status`, `type`, `references`,
@@ -488,7 +539,7 @@ def _creator(root: Path, config: BacklogConfig, validate: Validate | None = None
     lock = threading.Lock()  # two creates must not both read the same highest id
     spelled = {lane_id(status): status for status in config.statuses}
 
-    def create(title: str, details: Mapping[str, Any], /) -> Written:
+    def create(title: str, details: Mapping[str, Any], /, actor: str = OPERATOR) -> Written:
         with lock:
             task = _next_id(root, config.prefix)
             slug = re.sub(r"[^\w-]+", "-", title).strip("-")[:60].strip("-") or "Task"
@@ -497,7 +548,7 @@ def _creator(root: Path, config: BacklogConfig, validate: Validate | None = None
             rest = {field: value for field, value in details.items() if field not in _NEW_TASK_DETAILS}
             try:
                 body = _apply(task, frontmatter, body, rest, spelled)
-                if refused := _land(path, None, _stamped(frontmatter, created=True), body, validate):
+                if refused := _land(path, None, _stamped(frontmatter, created=True), body, guard, actor):
                     return refused
             except ValueError as refusal:
                 return Written(False, f"{title}: {refusal}")
@@ -519,27 +570,27 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     root = base / str(settings.get("path", DEFAULT_PATH))
     _create(root, base.resolve().name)
     evaluate = criteria.evaluator(settings.get("criteria"), base)
-    validate = _hook(settings.get("validate"))
+    guard = _Guard(rules.load(settings.get("rules")), _hook(settings.get("validate")), _state_of(root))
 
-    def assign(task: str, assignee: str, /) -> Written:
+    def assign(task: str, assignee: str, /, actor: str = OPERATOR) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
             frontmatter["assignee"] = [assignee]
             return body
 
-        return _update(root, task, edit, validate)
+        return _update(root, task, edit, guard, actor)
 
     return project_board(
         root,
         settings,
         base,
         lambda config: {
-            "writer": _writer(root, config.statuses, validate),
+            "writer": _writer(root, config.statuses, guard),
             "assign": assign,
-            "create": _creator(root, config, validate),
+            "create": _creator(root, config, guard),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
-            "edit": _editor(root, config.statuses, validate),
-            "archive": _archiver(root, validate),
+            "edit": _editor(root, config.statuses, guard),
+            "archive": _archiver(root, guard),
             "complete": _completer(root),
             "docs": native_docs.lister(root),
             "read_doc": native_docs.reader(root),

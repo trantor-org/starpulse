@@ -20,11 +20,13 @@ POST /api/move     {task, to[, actor]}: set a Board task's status through the bo
                    is refused 409 before the writer is asked; a board with no writer answers 501
 GET /api/task/<id> {task, record}: every editable field of a task from the board's `read`, which the snapshot's
                    entry does not carry; 404 when the board cannot read or the task is not on it
-POST /api/edit     {task, base, changes, comment}: one write of every change through the board's `edit`. 409 with the
+POST /api/edit     {task, base, changes, comment[, actor]}: one write of every change through the board's `edit`. 409 with the
                    stale fields and their current values when any changed field no longer equals its `base`, or with
                    the writer's refusal and its skill; 403 outside loopback and RFC 1918. A GET answers 405
-POST /api/archive  {task, reason}: archive a task from any lane through the board's `archive`; refusals as for an edit
-POST /api/tasks    {title, description, priority, labels, milestone, assignee, dependencies, acceptanceCriteria}: create
+POST /api/archive  {task, reason[, actor]}: archive a task from any lane through the board's `archive`; refusals as for
+                   an edit
+POST /api/tasks    {title, description, priority, labels, milestone, assignee, dependencies, acceptanceCriteria[,
+                   actor]}: create
                    a task in the board's starting lane through the board's `create`, and answer 201 {task}
                    with its id; only the title is required. 400 for a missing, blank or over-long title or a detail of
                    the wrong kind, 403 outside loopback and RFC 1918, 404 when the board
@@ -46,7 +48,7 @@ POST /api/docs, /api/docs/edit, /api/docs/archive
                    (200 {doc}), through the board's `create_doc`, `edit_doc` and `archive_doc`; 400 for a malformed body or
                    detail, 403 outside loopback and RFC 1918, 404 for a board without the writer or a doc that is not open,
                    409 for the writer's refusal. A GET answers 405. These routes read the same Board as the milestone routes
-POST /api/start    {task, assignee}: start a task's session at `session_start_url` (see Start in the README)
+POST /api/start    {task, assignee[, actor]}: start a task's session at `session_start_url` (see Start in the README)
 GET /api/forwarding
                    what this instance's forwarder would send the hub next, as the Admin view lists it: {configured,
                    url, optIn, names, refused, lastSent, problem, next, more, contract}. `next` holds the first entries
@@ -76,6 +78,7 @@ from urllib.parse import urlsplit
 from starpulse._internal.board.seam import (
     AssigneeWriter,
     Board,
+    OPERATOR,
     MoveWriter,
     TaskArchiver,
     TaskCreator,
@@ -105,8 +108,6 @@ _LAN = (
         )
     ),
 )
-#: Who a move is made by when the request names no actor: the page, which acts for the operator.
-OPERATOR = "operator"
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
 #: The details a create takes besides its title, as one text value or a list of them.
@@ -195,6 +196,21 @@ def rerun_dag(
         return 502, {"error": str(exc)}
 
 
+_BAD_ACTOR = {
+    "error": 'a write may name its "actor", a non-empty text, as `operator`, `agent` or `<instance>/<workflow>`'
+}
+
+
+def _named_actor(request: Any) -> dict[str, str] | None:
+    """`{"actor": name}` for a request that names its actor, `{}` for one that names none and None for a name that is not
+    text. A writer is called with the keyword only when the request named one, so a writer that predates actors, or a
+    page that never names its own, is called as it always was."""
+    if not isinstance(request, dict) or "actor" not in request:
+        return {}
+    actor = request["actor"]
+    return {"actor": actor.strip()} if isinstance(actor, str) and actor.strip() else None
+
+
 def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
     """Move a task to the column `raw` names, through `writer`, for a browser at `source`: the HTTP status and JSON body.
 
@@ -259,14 +275,17 @@ def edit_task(
     try:
         request = json.loads(raw)
         task, base, changes, comment = request["task"], request["base"], request["changes"], request.get("comment", "")
+        named = _named_actor(request)
     except ValueError, TypeError, KeyError:
-        task = base = changes = comment = None
+        task = base = changes = comment = named = None
     if not (
         isinstance(task, str) and isinstance(base, dict) and isinstance(changes, dict) and changes
     ) or not isinstance(comment, str):
         return 400, {
             "error": 'an edit needs {"task": "TASK-N", "base": {...}, "changes": {...}, "comment": "<optional>"}'
         }
+    if named is None:
+        return 400, _BAD_ACTOR
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
     if feed.task(task) is None:
@@ -287,7 +306,7 @@ def edit_task(
             }
         if not (todo := {field: value for field, value in changes.items() if value != current[field]}):
             return 200, {"task": task, "changed": []}
-        written = edit(task, todo, comment)
+        written = edit(task, todo, comment, **named)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task, "changed": list(todo)}
@@ -305,15 +324,18 @@ def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver
     try:
         request = json.loads(raw)
         task, reason = request["task"], request.get("reason", "")
+        named = _named_actor(request)
     except ValueError, TypeError, KeyError:
-        task = reason = None
+        task = reason = named = None
     if not isinstance(task, str) or not isinstance(reason, str):
         return 400, {"error": 'an archive needs {"task": "TASK-N", "reason": "<optional text>"}'}
+    if named is None:
+        return 400, _BAD_ACTOR
     if archive is None:
         return 404, {"error": "this board does not archive tasks"}
     if feed.task(task) is None:
         return 404, {"error": f"{task} is not on the board"}
-    written = archive(task, reason)
+    written = archive(task, reason, **named)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
@@ -323,7 +345,7 @@ def _create_details(body: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
     """The filled details of a create body, trimmed, and the first field that is unknown or of the wrong kind, or ""."""
     details: dict[str, Any] = {}
     for field, value in body.items():
-        if field == "title":
+        if field in ("title", "actor"):
             continue
         if field in _CREATE_TEXT:
             ok = isinstance(value, str)
@@ -357,16 +379,19 @@ def create_task(source: str, raw: bytes, create: TaskCreator | None) -> tuple[in
     try:
         body = json.loads(raw)
         title = body["title"]
+        named = _named_actor(body)
     except ValueError, TypeError, KeyError:
-        body, title = {}, None
+        body, title, named = {}, None, None
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > _TITLE_MAX:
         return 400, {"error": f'a create needs {{"title": "<1 to {_TITLE_MAX} characters>"}}'}
+    if named is None:
+        return 400, _BAD_ACTOR
     details, wrong = _create_details(body)
     if wrong:
         return 400, {"error": wrong}
     if create is None:
         return 404, {"error": "this board does not create tasks"}
-    written = create(title.strip(), details)
+    written = create(title.strip(), details, **named)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 201, {"task": written.output}
@@ -554,10 +579,13 @@ def start_task(
     try:
         request = json.loads(raw)
         task, assignee = request["task"], request["assignee"]
+        named = _named_actor(request)
     except ValueError, TypeError, KeyError:
-        task = assignee = None
+        task = assignee = named = None
     if not isinstance(task, str) or not isinstance(assignee, str):
         return 400, {"error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>"}'}
+    if named is None:
+        return 400, _BAD_ACTOR
     if start_session is None:
         return 404, {"error": "no session-start service is configured (session_start_url)"}
     if (agent := feed.task(task)) is None:
@@ -567,7 +595,7 @@ def start_task(
             "error": f"{task} is in {agent['state']}: a session starts only a ready, waiting or needs_attention task"
         }
     at = clock()
-    if assignee != agent["model"] and not (written := assign(task, assignee)).ok:
+    if assignee != agent["model"] and not (written := assign(task, assignee, **named)).ok:
         return 409, {"error": written.output, "skill": written.skill}
     try:
         return 200, {"task": task, "url": start_session(task), "at": at}

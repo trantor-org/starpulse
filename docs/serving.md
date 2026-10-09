@@ -54,6 +54,23 @@ type = "native"
 # criteria = "my-evaluator {id}"  # evaluates a task's Start Criteria; {id} is the task's id (see docs/adapters.md)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 
+# Rules every task write must satisfy, whoever makes it: the agent CLI, the page or a workflow (see Board rules in
+# docs/public-surface.md for every primitive). Each is judged on the task as it will be after the write, by the actor
+# that makes it, and the first one broken refuses the write with its `reason` (and `skill`), the same text to the CLI
+# and the page; nothing is written. A board with no rules accepts every write it accepted before.
+#   on       = { to = "Done" }                 a write that enters Done (`from = [...]` narrows it to those states)
+#            | { to = "Done", while = true }   ... and a write that leaves the task in Done
+#            | { write = true }                every write, whatever the task's state
+#   require  = one primitive: field, label, section, dependencies, checklist, or all_of, any_of, exactly_one,
+#              none_of over a list of them
+#   unless_actor = ["dagu/reconciler"]         actors the rule does not judge: operator, agent, <instance>/<workflow>
+# [[board.rules]]
+# on = { to = "Done" }
+# require = { field = { field = "references", matches = "/pull/\\d+$", min = 1 } }
+# reason = "Done needs a pull request in references"
+# skill = "completing-tasks"
+# unless_actor = ["dagu/reconciler"]
+
 # To draw a Backlog.md project instead:
 # [board]
 # type = "upstream_backlog"

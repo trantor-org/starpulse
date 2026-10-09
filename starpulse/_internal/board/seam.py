@@ -39,6 +39,7 @@ __all__ = [
     "MilestoneLister",
     "MilestoneReader",
     "MoveWriter",
+    "OPERATOR",
     "TaskArchiver",
     "TaskCompleter",
     "TaskCreator",
@@ -48,6 +49,10 @@ __all__ = [
     "load",
     "module_name",
 ]
+
+#: Who a write is made by when it names no actor: the page, which acts for the operator.
+OPERATOR = "operator"
+
 
 class Written(NamedTuple):
     """What a board writer did with a status change: `output` is its response, or its refusal and the `skill` that satisfies it.
@@ -73,9 +78,12 @@ class MoveWriter(Protocol):
 
 
 class AssigneeWriter(Protocol):
-    """A board writer: set a task's assignee, and say what it did."""
+    """A board writer: set a task's assignee on behalf of `actor`, and say what it did.
 
-    def __call__(self, task: str, assignee: str, /) -> Written: ...
+    A write that names its `actor` calls the writer with it as a keyword; one that names none omits it, so a writer that
+    predates actors keeps working. The same holds for `TaskEditor`, `TaskArchiver` and `TaskCreator`."""
+
+    def __call__(self, task: str, assignee: str, /, actor: str = OPERATOR) -> Written: ...
 
 
 class TaskReader(Protocol):
@@ -88,13 +96,15 @@ class TaskEditor(Protocol):
     """A board writer: apply every change to a task in one write, with the comment the write records (or a list of them,
     in order), and say what it did."""
 
-    def __call__(self, task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /) -> Written: ...
+    def __call__(
+        self, task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /, actor: str = OPERATOR
+    ) -> Written: ...
 
 
 class TaskArchiver(Protocol):
     """A board writer: archive a task, recording the reason when there is one, and say what it did."""
 
-    def __call__(self, task: str, reason: str, /) -> Written: ...
+    def __call__(self, task: str, reason: str, /, actor: str = OPERATOR) -> Written: ...
 
 
 class TaskCompleter(Protocol):
@@ -113,7 +123,7 @@ class TaskCreator(Protocol):
     A caller in the same process may pass any other field the board's `TaskEditor` sets, which the native board writes
     in the same write. A successful `Written.output` is the new task's id."""
 
-    def __call__(self, title: str, details: Mapping[str, Any], /) -> Written: ...
+    def __call__(self, title: str, details: Mapping[str, Any], /, actor: str = OPERATOR) -> Written: ...
 
 
 class MilestoneLister(Protocol):

@@ -51,6 +51,10 @@ to no function is a startup error) and calls it before every task write with the
 (`None` for a create) and the text about to be written. A returned string refuses the write: the writer answers with it
 as its refusal and writes nothing, so a refused create leaves no file and its id to the next create. `None` lets the
 write land.
+With `[[board.rules]]` set, the board judges each task write against those rules first, as the actor that makes it, and
+a rule broken refuses the write with its `reason` and `skill` before `validate` is asked (see Board rules in
+[public-surface.md](public-surface.md)); the `edit`, `archive`, `create` and `assign` writers take that actor as a
+keyword, `edit(task, changes, comment, actor="agent")`, and the server passes it only when the request names one.
 A task record also carries `start_criteria`: each criterion of the `start_criteria` YAML block under the
 description's `## Start Criteria` heading (`id`, `kind`, `expr`, `cmp` and `want` for its threshold), with its
 `status` (`met`, `unmet`, `error` or `not evaluated`), `observed` value, `error` and `checked` time. With `[board]
