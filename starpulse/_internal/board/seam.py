@@ -85,9 +85,10 @@ class TaskReader(Protocol):
 
 
 class TaskEditor(Protocol):
-    """A board writer: apply every change to a task in one write, with the comment the write records, and say what it did."""
+    """A board writer: apply every change to a task in one write, with the comment the write records (or a list of them,
+    in order), and say what it did."""
 
-    def __call__(self, task: str, changes: Mapping[str, Any], comment: str, /) -> Written: ...
+    def __call__(self, task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /) -> Written: ...
 
 
 class TaskArchiver(Protocol):
@@ -109,7 +110,8 @@ class TaskCreator(Protocol):
 
     `details` holds only the fields the page filled, each checked by the server: `description`, `priority`
     (`high`, `medium` or `low`), `labels`, `milestone`, `assignee`, `dependencies` and `acceptanceCriteria`.
-    A successful `Written.output` is the new task's id."""
+    A caller in the same process may pass any other field the board's `TaskEditor` sets, which the native board writes
+    in the same write. A successful `Written.output` is the new task's id."""
 
     def __call__(self, title: str, details: Mapping[str, Any], /) -> Written: ...
 

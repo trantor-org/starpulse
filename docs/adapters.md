@@ -42,6 +42,15 @@ directory. The `Board` says:
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
 criteria, plan, notes and definition of done) back for the task view, applies an edit to a task's file in one write,
 and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments.
+Every task write is one rename of a whole file: an edit applies all its changes and every comment it carries (one text
+or a list, in order) at once, and a create also sets any further field an edit sets (`status`, `type`, `references`,
+`documentation`, `definitionOfDone`, `plan`, `notes`) in the same write, refusing the whole create on a field it cannot
+set. Each write stamps `updated_date`, and a create `created_date`, in UTC as `YYYY-MM-DD HH:MM`.
+With `[board] validate` set to `module:function`, the board imports that function when it loads (a name that resolves
+to no function is a startup error) and calls it before every task write with the file's path, its text before the write
+(`None` for a create) and the text about to be written. A returned string refuses the write: the writer answers with it
+as its refusal and writes nothing, so a refused create leaves no file and its id to the next create. `None` lets the
+write land.
 A task record also carries `start_criteria`: each criterion of the `start_criteria` YAML block under the
 description's `## Start Criteria` heading (`id`, `kind`, `expr`, `cmp` and `want` for its threshold), with its
 `status` (`met`, `unmet`, `error` or `not evaluated`), `observed` value, `error` and `checked` time. With `[board]

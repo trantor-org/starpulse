@@ -52,6 +52,7 @@ type = "native"
 # path = ".starpulse/board"  # the board's directory, relative to this file; created empty when absent
 # machine = "board.yaml"     # a machine file for the Board: its transitions and `writers` decide which moves are offered, and to whom
 # criteria = "my-evaluator {id}"  # evaluates a task's Start Criteria; {id} is the task's id (see docs/adapters.md)
+# validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 
 # To draw a Backlog.md project instead:
 # [board]

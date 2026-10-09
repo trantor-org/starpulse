@@ -116,6 +116,12 @@ def _record(built: Board, task: str) -> dict[str, Any]:
     return record
 
 
+def _unstamped(frontmatter: dict) -> dict:
+    """`frontmatter` without the `updated_date` every write stamps, which must be there."""
+    assert frontmatter.get("updated_date")
+    return {key: item for key, item in frontmatter.items() if key != "updated_date"}
+
+
 @pytest.mark.parametrize("task", TASKS)
 @pytest.mark.parametrize("edit", EDITS)
 def test_field_round_trip_edits_one_field_and_nothing_else(served: tuple[Board, Path], task: str, edit: str) -> None:
@@ -148,11 +154,11 @@ def test_field_round_trip_edits_one_field_and_nothing_else(served: tuple[Board, 
         assert after == {**before, field: value}
     if field in FRONT:
         assert body == before_body
-        assert {key: item for key, item in frontmatter.items() if key != FRONT[field]} == {
-            key: item for key, item in before_frontmatter.items() if key != FRONT[field]
+        assert {key: item for key, item in _unstamped(frontmatter).items() if key != FRONT[field]} == {
+            key: item for key, item in before_frontmatter.items() if key not in (FRONT[field], "updated_date")
         }
     else:
-        assert frontmatter == before_frontmatter
+        assert _unstamped(frontmatter) == {key: item for key, item in before_frontmatter.items() if key != "updated_date"}
         marker = SECTIONS[field]
         if f"<!-- {marker}:BEGIN -->" in before_body:
             assert _blank(body, marker) == _blank(before_body, marker)
@@ -173,7 +179,7 @@ def test_field_round_trip_of_a_comment_adds_one_comment_and_nothing_else(served:
 
     frontmatter, body = _split(path.read_text())
     after = _record(built, task)
-    assert frontmatter == before_frontmatter
+    assert _unstamped(frontmatter) == {key: item for key, item in before_frontmatter.items() if key != "updated_date"}
     assert _blank(body, "COMMENTS") == _blank(before_body, "COMMENTS") or "<!-- COMMENTS:BEGIN -->" not in before_body
     assert [comment["text"] for comment in after["comments"]] == [
         *(comment["text"] for comment in before["comments"]),
