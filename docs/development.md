@@ -45,7 +45,7 @@ while the pull request is open. That config draws a fictional workspace at a wor
 the lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse._internal.cli.demo` fills it with
 synthetic tasks, sessions, runs and pools. Each changed sub-mockup, a `design/<dir>/index.html` layered over a scrubbed page
 capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request. A push to `main`
-that touches the same paths republishes both demos under `main/`, the [live demo](https://trantor-org.github.io/starpulse-demo/main/flow-view.html).
+that touches the same paths republishes both demos under `main/`, the [live demo](https://trantor-org.github.io/starpulse-demo/main/flow-view.html), with a screenshot of each flow-view view that the README shows.
 
 ## Flow read scaling
 

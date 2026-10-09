@@ -4,7 +4,7 @@ name: UI preview
 #
 # Every open UI pull request publishes its scrubbed demos to the public trantor-org/starpulse-demo Pages repository,
 # under pr-<N>/, and links them in its description; closing the pull request unpublishes them, which is why that
-# event starts a run too. A push to main, or a dispatch, republishes main/, the live demo the README links.
+# event starts a run too. A push to main, or a dispatch, republishes main/, the live demo and screenshots the README shows.
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
