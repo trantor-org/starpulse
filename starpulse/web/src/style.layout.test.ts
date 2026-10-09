@@ -8,6 +8,12 @@ describe("the page's fixed layout", () => {
     expect(rule("#legend")).toContain("margin-top: auto");
   });
 
+  it("paints the Star Map canvas between the navigator and the rail before the renderer sizes it, so the first load shifts nothing", () => {
+    expect(rule("#c")).toContain("left: var(--nav)");
+    expect(rule("#c")).toContain("right: var(--rail)");
+    expect(rule("#c")).toContain("height: 100%");
+  });
+
   it("peeks a stack's edges uniformly: each the same step narrower and lower, each under the one above it", () => {
     const edge = css.slice(css.indexOf("#kb .stack > .edge {"), css.indexOf("}", css.indexOf("#kb .stack > .edge {")));
     expect(edge).toContain("left: calc((var(--i) + 1) * 6px)");
