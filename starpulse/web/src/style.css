@@ -896,6 +896,21 @@ body.graph #c, body.graph #tip, body.graph #panel, body.graph .hud { visibility:
 /* A view left behind stays mounted (shared/Kept): its rendering is skipped while it is away, so showing it again lays nothing out. */
 .kept { display: contents; }
 .kept[inert] > * { content-visibility: hidden; }
+/* A view warmed before it is first shown is laid out unseen, one part (a Kanban column) more a frame, the count in data-warm. */
+.kept[inert][data-warm] > * { content-visibility: visible; visibility: hidden; }
+.kept[data-warm] [data-warm-parts] > * { content-visibility: hidden; }
+.kept[data-warm="1"] [data-warm-parts] > :nth-child(-n+1),
+.kept[data-warm="2"] [data-warm-parts] > :nth-child(-n+2),
+.kept[data-warm="3"] [data-warm-parts] > :nth-child(-n+3),
+.kept[data-warm="4"] [data-warm-parts] > :nth-child(-n+4),
+.kept[data-warm="5"] [data-warm-parts] > :nth-child(-n+5),
+.kept[data-warm="6"] [data-warm-parts] > :nth-child(-n+6),
+.kept[data-warm="7"] [data-warm-parts] > :nth-child(-n+7),
+.kept[data-warm="8"] [data-warm-parts] > :nth-child(-n+8),
+.kept[data-warm="9"] [data-warm-parts] > :nth-child(-n+9),
+.kept[data-warm="10"] [data-warm-parts] > :nth-child(-n+10),
+.kept[data-warm="11"] [data-warm-parts] > :nth-child(-n+11),
+.kept[data-warm="12"] [data-warm-parts] > :nth-child(-n+12) { content-visibility: visible; }
 /* Showing the Kanban or the DAGs styles and paints only the cards and rows on screen; one scrolled out of sight keeps the
    size it last drew at. */
 #kb .card { content-visibility: auto; contain-intrinsic-size: auto 64px; }

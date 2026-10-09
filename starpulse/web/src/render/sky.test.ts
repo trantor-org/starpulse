@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countText, merge, Moves, RING, stateCount, TRAVEL, withLedgers } from "./sky";
+import { countText, hosted, merge, Moves, RING, stateCount, TRAVEL, withLedgers } from "./sky";
 import type { ActiveRun, Dag, Machine, RawAgent, Snapshot } from "../api";
 
 const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
@@ -72,6 +72,26 @@ describe("the sky", () => {
     const base = snap(5000, [{ ...task("PROJ-1", "ready"), created: 1500 }, { ...task("PROJ-2", "ready"), created: 10 }], []);
 
     expect(stateCount(merge(base, 1000), "ready")).toBe(1);
+  });
+  it("gives a flow two Board states open each state only the tasks whose Board task sits there, reading the Board once however often it is asked", () => {
+    const base = snap(5000, [task("PROJ-1", "in_progress"), task("PROJ-2", "review")], [placed("PROJ-1", [["worktree_ready", "w", 1]]), placed("PROJ-2", [["pr_opened", "p", 2]])]);
+    base.flows[0].machine.subflows!.push({ state: "review", flow: "in-progress", exits: {}, parent: "board", when: "" });
+    const S = merge(base, 1000), agents = S.board.agents;
+    let reads = 0;
+    Object.defineProperty(S.board, "agents", { get: () => (reads++, agents) });
+
+    const at = (state: string) => hosted(S, "in-progress", state).map((a) => a.id);
+    expect([at("in_progress"), at("review"), at("in_progress"), at("ready")]).toEqual([["PROJ-1"], ["PROJ-2"], ["PROJ-1"], []]);
+    expect(hosted(S, "in-progress").map((a) => a.id)).toEqual(["PROJ-1", "PROJ-2"]);
+    expect(reads).toBe(1);
+  });
+  it("counts a terminal state's arrivals already in its lane once, on a lane of many tasks", () => {
+    const lane = Array.from({ length: 50 }, (_, i) => ({ ...task(`PROJ-${i}`, "completed"), entered: i % 2 ? 1500 : 10 }));
+    const base = snap(5000, lane, []);
+    base.flows[0].machine.states.push({ id: "completed", name: "completed", initial: false, final: true });
+    base.settled = { "PROJ-99": { state: "completed", at: 1200, created: 10, title: "shipped", model: "" } };
+
+    expect(stateCount(merge(base, 1000), "completed")).toBe(51);
   });
   it("reads a starting or terminal state's count as the day's, saying how many it holds when some did not arrive today", () => {
     expect([countText(5), countText(4, 4), countText(6, 4), countText(0, 0)]).toEqual(["5", "4 today", "6 · 4 today", "0 today"]);

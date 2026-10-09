@@ -8,6 +8,8 @@ export { embedded } from "../demo/demo";
 
 /** How long after the browser gives a connection up before the page opens a fresh one. */
 export const RETRY_MS = 3000;
+/** The stream, asking for each snapshot as `ref <path>`: a browser reads a long event on its main thread, a fetched body off it. */
+const EVENTS = "/api/events?snapshot=ref";
 const OPEN = 1;
 const CLOSED = 2;
 
@@ -68,6 +70,8 @@ export interface EarlyStream {
   events: { type: string; data: string }[];
   /** Set once the page listens itself, so index.html stops holding events. */
   adopted?: boolean;
+  /** The answer to each snapshot body index.html asked for, by its path. */
+  bodies?: Record<string, Promise<Response>>;
 }
 
 /** The page's one early connection, handed over once: a reconnect opens its own. */
@@ -120,6 +124,16 @@ export function openStream(
     handlers.snapshot(state!, kind);
   };
 
+  /** While a snapshot's body is read, the events after it, run in order once it is the page's state. */
+  let waiting: (() => void)[] | null = null;
+  const take = (snap: Snapshot) => {
+    waiting = null;
+    state = snap;
+    held.clear(); // the snapshot is the page's truth again, so what the next event says is news
+    hand();
+  };
+  const later = (fn: (e: Event) => void) => (e: Event) => void (waiting ? waiting.push(() => fn(e)) : fn(e));
+
   const fold = (delta: Delta) => {
     if (!state) return; // a delta means nothing before the snapshot it extends
     state = applyDelta(state, delta);
@@ -136,29 +150,52 @@ export function openStream(
   };
 
   const connect = (adopt: EarlyStream | null = null) => {
-    const src = adopt?.src ?? open("/api/events");
+    const src = adopt?.src ?? open(EVENTS);
     source = src;
+    waiting = null;
+    const reopen = () => {
+      if (!stopped) timer = setTimeout(() => connect(), RETRY_MS);
+    };
     src.addEventListener("snapshot", (e) => {
-      state = JSON.parse((e as MessageEvent<string>).data) as Snapshot;
-      held.clear(); // the snapshot is the page's truth again, so what the next event says is news
-      hand();
+      const data = (e as MessageEvent<string>).data;
+      if (!data.startsWith("ref ")) return take(JSON.parse(data) as Snapshot);
+      const path = data.slice(4);
+      const mine: (() => void)[] = (waiting = []);
+      const asked = adopt?.bodies?.[path] ?? fetch(path);
+      if (adopt?.bodies) delete adopt.bodies[path];
+      asked
+        .then((r) => (r.ok ? (r.json() as Promise<Snapshot>) : Promise.reject(new Error(`${path}: ${r.status}`))))
+        .then(
+          (snap) => {
+            if (waiting !== mine) return; // a newer snapshot or connection took its place
+            take(snap);
+            for (const run of mine) run();
+          },
+          () => {
+            if (waiting !== mine) return;
+            waiting = null;
+            src.close(); // the server holds no body by that name now: a fresh connection sends a fresh snapshot
+            handlers.live(false);
+            reopen();
+          },
+        );
     });
-    src.addEventListener("task", (e) =>
+    src.addEventListener("task", later((e) =>
       fold({ kind: "task", ...JSON.parse((e as MessageEvent<string>).data) }),
-    );
-    src.addEventListener("move", (e) =>
+    ));
+    src.addEventListener("move", later((e) =>
       fold({ kind: "move", ...JSON.parse((e as MessageEvent<string>).data) }),
-    );
-    src.addEventListener("dags", replacing("dags"));
-    src.addEventListener("pulls", replacing("pulls"));
-    src.addEventListener("ledgers", replacing("ledgers"));
-    src.addEventListener("claim", (e) =>
+    ));
+    src.addEventListener("dags", later(replacing("dags")));
+    src.addEventListener("pulls", later(replacing("pulls")));
+    src.addEventListener("ledgers", later(replacing("ledgers")));
+    src.addEventListener("claim", later((e) =>
       fold({ kind: "claim", ...JSON.parse((e as MessageEvent<string>).data) }),
-    );
+    ));
     src.onopen = () => handlers.live(true);
     src.onerror = () => {
       handlers.live(false);
-      if (src.readyState === CLOSED && !stopped) timer = setTimeout(() => connect(), RETRY_MS);
+      if (src.readyState === CLOSED) reopen();
     };
     if (!adopt) return;
     // what the connection did before the page listened: the events in order through the listeners just added, then its open or its end

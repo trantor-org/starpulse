@@ -225,6 +225,20 @@ describe("the cards drawn from a snapshot", () => {
     expect(tasks.find((t) => t.id === "PROJ-2")!.machines).toEqual([]);
   });
 
+  it("read each machine's sessions once however many tasks the Board holds, so a large board's cards build in one pass", () => {
+    const sky = merge(snapshot());
+    let reads = 0;
+    for (const f of Object.values(sky.flows).filter((f) => f.name !== "board")) {
+      const agents = f.agents;
+      Object.defineProperty(f, "agents", { get: () => (reads++, agents) });
+    }
+    const machines = Object.values(sky.flows).length - 1;
+    kanbanTasks(sky);
+
+    expect(sky.board.agents.length).toBeGreaterThan(1);
+    expect(reads).toBe(machines);
+  });
+
   it("have no milestone, pull requests or machine when the snapshot names none", () => {
     expect(kanbanTasks(merge(snapshot())).find((t) => t.id === "PROJ-2")).toMatchObject({ milestone: "", prs: [], live: null });
   });

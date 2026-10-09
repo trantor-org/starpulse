@@ -7,11 +7,14 @@
 <link rel="icon" href="data:,">
 <script>
 // Ask for the snapshot now: the server answers while the bundle loads. src/api/stream.ts takes this connection over and replays what it held.
+// The snapshot comes as `ref <path>` and its body is fetched at once, so the browser reads it off its main thread.
 (function () {
-  var early = (window.__earlyStream = { src: new EventSource("/api/events"), events: [] });
+  var early = (window.__earlyStream = { src: new EventSource("/api/events?snapshot=ref"), events: [], bodies: {} });
   ["snapshot", "task", "move", "dags", "pulls", "ledgers", "claim"].forEach(function (type) {
     early.src.addEventListener(type, function (e) {
-      if (!early.adopted) early.events.push({ type: type, data: e.data });
+      if (early.adopted) return;
+      early.events.push({ type: type, data: e.data });
+      if (type === "snapshot" && e.data.slice(0, 4) === "ref ") early.bodies[e.data.slice(4)] = fetch(e.data.slice(4));
     });
   });
 })();

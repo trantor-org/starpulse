@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, useEffect, useState, type ReactNode } from "react";
+import { act, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Kept, useViewActive } from "./Kept";
@@ -25,7 +26,7 @@ function Counter({ label }: { label: string }) {
   useEffect(() => void mounts++, []);
   return <button data-label={label} data-active={String(active)} onClick={() => setN(n + 1)}>{n}</button>;
 }
-const show = (on: boolean, children: ReactNode) => act(async () => root.render(<Kept on={on}>{children}</Kept>));
+const show = (on: boolean, children: ReactNode, warm = false) => act(async () => root.render(<Kept on={on} warm={warm}>{children}</Kept>));
 const button = () => host.querySelector("button");
 /** Lets the frames after a reveal pass, when the view goes live again. */
 const frames = () => act(async () => { for (let i = 0; i < 3; i++) await new Promise((r) => requestAnimationFrame(r)); });
@@ -84,22 +85,127 @@ describe("Kept", () => {
   });
 
   it("pauses the animations running in a view that is left, and plays exactly those again once it is live", async () => {
-    const anim = (playState: string) => ({ playState, pause: vi.fn(), play: vi.fn() });
-    const running = anim("running"), still = anim("paused");
-    const proto = Element.prototype as { getAnimations?: () => unknown[] };
-    proto.getAnimations = () => [running, still];
+    await show(true, <Counter label="a" />);
+    const anim = (playState: string, target: Element) => ({ playState, effect: { target }, pause: vi.fn(), play: vi.fn() });
+    const running = anim("running", button()!), still = anim("paused", button()!), elsewhere = anim("running", document.body);
+    const doc = document as { getAnimations?: () => unknown[] };
+    doc.getAnimations = () => [running, still, elsewhere];
     try {
-      await show(true, <Counter label="a" />);
       await show(false, <Counter label="a" />);
       expect(running.pause).toHaveBeenCalledOnce();
       expect(still.pause).not.toHaveBeenCalled();
+      expect(elsewhere.pause).not.toHaveBeenCalled();
       await show(true, <Counter label="a" />);
       expect(running.play).not.toHaveBeenCalled();
       await frames();
       expect(running.play).toHaveBeenCalledOnce();
       expect(still.play).not.toHaveBeenCalled();
     } finally {
-      delete proto.getAnimations;
+      delete doc.getAnimations;
     }
+  });
+
+  it("mounts a warmed view hidden and inactive before it is first shown, so the click that shows it only unhides it", async () => {
+    await show(false, <Counter label="a" />, true);
+    await frames();
+    expect(button()!.closest("[inert]")).not.toBeNull();
+    expect(button()!.dataset.active).toBe("false");
+    expect(mounts).toBe(1);
+    const before = renders;
+    await show(true, <Counter label="a" />, true);
+    expect(renders).toBe(before);
+    expect(button()!.closest("[inert]")).toBeNull();
+    await frames();
+    expect(button()!.dataset.active).toBe("true");
+    expect(mounts).toBe(1);
+  });
+
+  it("draws a warmed view's first showing exactly as a cold first showing draws it", async () => {
+    await show(true, <Counter label="b" />);
+    await frames();
+    const cold = host.innerHTML;
+    act(() => root.unmount());
+    root = createRoot(host);
+    await show(false, <Counter label="a" />, true);
+    await frames();
+    await show(true, <Counter label="b" />, true);
+    await frames();
+    expect(host.innerHTML).toBe(cold);
+  });
+
+  it("hides a view in the click's own render without rendering it, and tells it it is inactive in a later transition", async () => {
+    await show(true, <Counter label="a" />);
+    await frames();
+    const drawn = host.innerHTML, before = renders;
+    const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    env.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      flushSync(() => root.render(<Kept on={false}>{<Counter label="a" />}</Kept>));
+      expect(renders).toBe(before);
+      expect(button()!.closest("[inert]")).not.toBeNull();
+    } finally {
+      env.IS_REACT_ACT_ENVIRONMENT = true;
+    }
+    await act(async () => {});
+    expect(button()!.dataset.active).toBe("false");
+    expect(host.innerHTML).toBe(drawn.replace('class="kept"', 'class="kept" inert=""').replace('data-active="true"', 'data-active="false"'));
+  });
+
+  /** A view in three parts, the way the Kanban's columns are its parts. */
+  const Parts = ({ label }: { label: string }) => <div data-warm-parts=""><section>{label}1</section><section>{label}2</section><section>{label}3</section></div>;
+  const wrapper = (text: string) => [...host.querySelectorAll<HTMLElement>(".kept")].find((k) => k.textContent?.startsWith(text))!;
+  const frame = () => act(async () => { await new Promise((r) => requestAnimationFrame(r)); });
+  /** Lets the timer pass that mounts a warmed view after the frame that asked for it. */
+  const tick = () => act(async () => { await new Promise((r) => setTimeout(r)); });
+
+  it("lays a warmed view out one part a frame while it is hidden, then skips its rendering, drawing the same view throughout", async () => {
+    await show(false, <Parts label="a" />, true);
+    await tick();
+    const drawn = wrapper("a").innerHTML, steps = [wrapper("a").dataset.warm];
+    for (let i = 0; i < 6; i++) {
+      await frame();
+      steps.push(wrapper("a").dataset.warm);
+      expect(wrapper("a").innerHTML).toBe(drawn);
+    }
+    expect(steps).toEqual(["0", "1", "2", "3", undefined, undefined, undefined]);
+    expect(wrapper("a").hasAttribute("inert")).toBe(true);
+  });
+
+  it("waits for a warmed view whose code is still loading, then lays it out one part a frame", async () => {
+    let arrive!: () => void;
+    const Late = lazy(() => new Promise<{ default: typeof Parts }>((r) => (arrive = () => r({ default: Parts }))));
+    await show(false, <Suspense fallback={null}><Late label="a" /></Suspense>, true);
+    await tick();
+    for (let i = 0; i < 3; i++) await frame();
+    expect(host.querySelector<HTMLElement>(".kept")!.dataset.warm).toBe("0");
+    await act(async () => arrive());
+    const steps = [];
+    for (let i = 0; i < 5; i++) {
+      await frame();
+      steps.push(wrapper("a").dataset.warm);
+    }
+    expect(steps).toEqual(["1", "2", "3", undefined, undefined]);
+  });
+
+  it("warms one view at a time, the next once the one ahead of it is laid out", async () => {
+    await act(async () => root.render(<><Kept on={false} warm><Parts label="a" /></Kept><Kept on={false} warm><Parts label="b" /></Kept></>));
+    await tick();
+    expect(wrapper("a")).toBeDefined();
+    expect(wrapper("b")).toBeUndefined();
+    for (let i = 0; i < 4; i++) await frame();
+    expect(wrapper("a").dataset.warm).toBeUndefined();
+    expect(wrapper("b")).toBeUndefined();
+    await tick();
+    expect(wrapper("b").dataset.warm).toBe("0");
+  });
+
+  it("stops warming a view the moment it is shown", async () => {
+    await show(false, <Parts label="a" />, true);
+    await tick();
+    await frame();
+    expect(wrapper("a").dataset.warm).toBe("1");
+    await show(true, <Parts label="a" />, true);
+    expect(wrapper("a").dataset.warm).toBeUndefined();
+    expect(wrapper("a").hasAttribute("inert")).toBe(false);
   });
 });

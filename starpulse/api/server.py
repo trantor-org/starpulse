@@ -33,6 +33,11 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    last value with `stale` true.
                    Everything is held in memory: the Board from the configured board adapter, other machines' tasks
                    from machine:events, each instance's workflows from its adapter (`pushed/`: runs:events)
+                   `?snapshot=ref` sends the `snapshot` as `ref /api/events/body/<key>`, the path its document is read
+                   from, so a browser parses it off its main thread rather than as one long event.
+GET /api/events/body/<key>
+                   the `snapshot` document a `ref` named, cacheable for an hour (its key is its digest); 404 once the
+                   server has built four newer ones
 GET /api/snapshot  the document /api/events sends on connect, as one response, for `starpulse snapshot|board|task`
 GET /api/merges[?before=T][&limit=N]
                    {merges, more}: the merge ledger's next `limit` rows (default 20, at most 100) older than `before`
@@ -293,6 +298,7 @@ _START = "/api/start"
 _WINDOW = "/api/history-window"
 _FORWARDING = "/api/forwarding"
 _TASK = "/api/task/"
+_SNAPSHOT_BODY = "/api/events/body/"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
 _TASKS = "/api/tasks"
@@ -1281,7 +1287,9 @@ def request_handler(
         def do_GET(self) -> None:
             url = urlsplit(self.path)
             if url.path == "/api/events":
-                self._stream_events()
+                self._stream_events(parse_qs(url.query).get("snapshot") == ["ref"])
+            elif url.path.startswith(_SNAPSHOT_BODY):
+                self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
             elif url.path == "/api/snapshot":
                 self._send(snapshots.get().body)
             elif url.path == "/api/merges":
@@ -1332,8 +1340,20 @@ def request_handler(
         def list_directory(self, path: str | os.PathLike[str]) -> None:
             self.send_error(404)
 
-        def _stream_events(self) -> None:
-            """Hold the connection open: the Board's snapshot, then each change as it happens."""
+        def _snapshot_body(self, key: str) -> None:
+            body = snapshots.body(key)
+            if body is None:
+                return self._send(encode("error", {"error": f"no snapshot {key} is held"}), 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")  # pragma: no mutate: names are case-insensitive
+            self.send_header("Cache-Control", "max-age=3600, immutable")  # pragma: no mutate: names are case-insensitive
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _stream_events(self, by_ref: bool = False) -> None:
+            """Hold the connection open: the Board's snapshot, then each change as it happens. `by_ref` sends the snapshot
+            as `ref <path>`, the path its body is read from: a browser reads a long event on its main thread, a fetched
+            body off it."""
             changes = None
             try:
                 # The held snapshot is sent as it is, however many changes it lacks, so a page connecting while the next
@@ -1351,7 +1371,7 @@ def request_handler(
                 else:
                     self._write = self._write_plain
                 self.end_headers()
-                self._frame("snapshot", served.body.decode())
+                self._frame("snapshot", f"ref {_SNAPSHOT_BODY}{served.key}" if by_ref else served.body.decode())
                 for change in missed:
                     self._event(*change)
                 while True:

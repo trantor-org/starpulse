@@ -33,6 +33,7 @@ def test_the_percentile_is_the_nearest_rank():
         ("http://h:8766/api/milestones/edit", "/api/milestones/edit"),
         ("http://h:8766/api/docs/archive", "/api/docs/archive"),
         ("http://h:8766/api/milestones", "/api/milestones"),
+        ("http://h:8766/api/events/body/0123abcd", "/api/events/body/<id>"),
         ("http://h:8766/assets/index.js", None),
         ("http://h:8766/", None),
     ],
@@ -78,6 +79,12 @@ def test_a_route_is_filled_from_the_records_the_server_holds():
     assert ids == {"task": "TASK-7", "milestone": "m-1", "doc": "doc-2"}
     assert pl.fill("/api/task/{task}", ids) == "/api/task/TASK-7"
     assert pl.fill("/api/task/{task}", {}) is None
+
+
+def test_the_snapshot_body_route_is_filled_from_the_reference_the_stream_sent():
+    assert pl.ref_key("ref /api/events/body/0123abcd") == "0123abcd"
+    assert pl.ref_key('{"flows": []}') is None
+    assert pl.fill(pl.READS["/api/events/body/<id>"], {"snapshot": "0123abcd"}) == "/api/events/body/0123abcd"
 
 
 def test_the_what_if_route_takes_the_lanes_it_is_asked_for():

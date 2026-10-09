@@ -296,6 +296,16 @@ const cited = (urls: string[], read: Pull[]): Pull[] => {
 /** The Board's tasks as cards: its own fields, the pull requests the server read for it and the machine that last placed it. */
 export function kanbanTasks(sky: Sky): KanbanTask[] {
   const open = new Set(sky.board.agents.filter((a) => a.state !== "done").map((a) => a.id));
+  // every machine's sessions by task, read in one pass over the machines and kept in their order
+  const sessions = new Map<string, KanbanTask["machines"]>();
+  for (const f of Object.values(sky.flows)) {
+    if (f.name === "board") continue;
+    for (const m of f.agents) {
+      if (!m.task) continue;
+      const row = { machine: f.name, state: m.state, at: m.active ?? 0, source: f.machine.source, model: m.model, steps: m.steps ?? 0, trail: m.trail ?? [] };
+      sessions.set(m.task, [...(sessions.get(m.task) ?? []), row]);
+    }
+  }
   return sky.board.agents.map((a) => {
     const latest = sky.latest[a.id], dependencies = a.dependencies ?? [];
     return {
@@ -303,8 +313,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
       released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
-      machines: Object.values(sky.flows).filter((f) => f.name !== "board").flatMap((f) => f.agents.filter((m) => m.task === a.id)
-        .map((m) => ({ machine: f.name, state: m.state, at: m.active ?? 0, source: f.machine.source, model: m.model, steps: m.steps ?? 0, trail: m.trail ?? [] }))),
+      machines: sessions.get(a.id) ?? [],
     };
   });
 }

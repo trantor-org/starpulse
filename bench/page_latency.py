@@ -89,10 +89,11 @@ READS: dict[str, str] = {
     "/api/docs/<id>": "/api/docs/{doc}",
     "/api/forwarding": "/api/forwarding",
     "/api/history-window": "/api/history-window",
+    "/api/events/body/<id>": "/api/events/body/{snapshot}",
 }
 
 #: Where a path segment is a record's id, so `/api/task/TASK-9` and `/api/task/TASK-10` are one surface.
-_ID_ROUTES = ("/api/task/", "/api/milestones/", "/api/docs/", "/api/insights/")
+_ID_ROUTES = ("/api/task/", "/api/milestones/", "/api/docs/", "/api/insights/", "/api/events/body/")
 
 
 @dataclass
@@ -288,6 +289,8 @@ def time_reads(client: Client, samples: int, what_if: Sequence[str] = WHAT_IF) -
         snapshot if isinstance(snapshot, dict) else {}, client.json("/api/milestones"), client.json("/api/docs")
     )
     ids |= dict(zip(("from", "to"), what_if, strict=True))
+    if key := ref_key(first_snapshot(f"http://{client.host}:{client.port}", "/api/events?snapshot=ref") or ""):
+        ids["snapshot"] = key
     rows = []
     for name, template in READS.items():
         row = Row(name, "request", BUDGET_MS)
@@ -305,6 +308,29 @@ def time_reads(client: Client, samples: int, what_if: Sequence[str] = WHAT_IF) -
             row.note = f"answered {sorted(statuses)}"
         rows.append(row)
     return rows
+
+
+def ref_key(data: str) -> str | None:
+    """The key a `snapshot` event sent by reference names (`ref /api/events/body/<key>`), None for one sent inline."""
+    return data.removeprefix("ref /api/events/body/") if data.startswith("ref /api/events/body/") else None
+
+
+def first_snapshot(base: str, path: str) -> str | None:
+    """The data of the first `snapshot` event the stream at `path` sends."""
+    parts = urllib.parse.urlsplit(base)
+    conn = http.client.HTTPConnection(parts.hostname or "127.0.0.1", parts.port or 80, timeout=60)
+    try:
+        conn.request("GET", path, headers={"accept": "text/event-stream"})
+        response, event = conn.getresponse(), None
+        while line := response.fp.readline():
+            text = line.decode("utf-8", "replace").rstrip("\r\n")
+            if text.startswith("event:"):
+                event = text[6:].strip()
+            elif text.startswith("data:") and event == "snapshot":
+                return text[5:].strip()
+        return None
+    finally:
+        conn.close()
 
 
 def time_stream(base: str, samples: int) -> Row:

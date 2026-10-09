@@ -39,15 +39,16 @@ describe("index.html's early stream", () => {
     }
   }
   const run = () => {
-    const win: { __earlyStream?: { src: Source; events: { type: string; data: string }[]; adopted?: boolean } } = {};
-    new Function("window", "EventSource", inline[0])(win, Source);
-    return win.__earlyStream!;
+    const win: { __earlyStream?: { src: Source; events: { type: string; data: string }[]; adopted?: boolean; bodies: Record<string, unknown> } } = {};
+    const asked: string[] = [];
+    new Function("window", "EventSource", "fetch", inline[0])(win, Source, (url: string) => (asked.push(url), `read ${url}`));
+    return Object.assign(win.__earlyStream!, { asked });
   };
 
   it("runs before the bundle's module script, so the snapshot is requested while the bundle loads", () => {
     expect(inline).toHaveLength(1);
     expect(page.indexOf("<script>")).toBeLessThan(page.indexOf('<script type="module"'));
-    expect(run().src.url).toBe("/api/events");
+    expect(run().src.url).toBe("/api/events?snapshot=ref");
   });
 
   it("holds every event type the page listens for, in the order they arrive", () => {
@@ -58,6 +59,13 @@ describe("index.html's early stream", () => {
     for (const [i, type] of types.entries()) early.src.send(type, `{"n":${i}}`);
 
     expect(early.events).toEqual(types.map((type, i) => ({ type, data: `{"n":${i}}` })));
+  });
+
+  it("asks for a snapshot's body the moment its reference arrives, and holds the answer for the page", () => {
+    const early = run();
+    early.src.send("snapshot", "ref /api/events/body/0123abcd");
+
+    expect([early.asked, early.bodies]).toEqual([["/api/events/body/0123abcd"], { "/api/events/body/0123abcd": "read /api/events/body/0123abcd" }]);
   });
 
   it("stops holding events once the page listens itself", () => {

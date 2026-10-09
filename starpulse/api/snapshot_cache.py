@@ -6,9 +6,11 @@ change, so a page that connects finds it current; a request that finds it out of
 many ask at the same time, so what is served always includes every change made before the request.
 """
 
+import hashlib
 import logging
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import NamedTuple
 
@@ -22,6 +24,8 @@ logger = logging.getLogger(__name__)
 TTL_S = 30.0
 #: How long the rebuild waits after a change for the burst it belongs to to end.
 SETTLE_S = 0.25
+#: How many snapshots are kept by their key after a newer one is built, for a page that was sent a reference to one.
+KEPT = 4
 
 
 class Served(NamedTuple):
@@ -30,6 +34,8 @@ class Served(NamedTuple):
     sent: int
     at: float
     body: bytes
+    #: The body's digest, which names it at `/api/events/body/<key>`.
+    key: str
 
 
 class SnapshotCache:
@@ -47,6 +53,7 @@ class SnapshotCache:
         self._held: Served | None = None
         self._building = threading.Lock()
         self._thread: threading.Thread | None = None
+        self._kept: OrderedDict[str, bytes] = OrderedDict()
 
     def _current(self, held: Served | None) -> bool:
         return held is not None and held.rev == self._feed.rev and self._clock() - held.at < self._ttl_s
@@ -60,8 +67,16 @@ class SnapshotCache:
             if self._current(held := self._held):
                 return held  # type: ignore[return-value]
             rev, sent, snapshot = self._feed.snapshot_at()
-            self._held = held = Served(rev, sent, self._clock(), encode("snapshot", snapshot))
+            body = encode("snapshot", snapshot)
+            self._held = held = Served(rev, sent, self._clock(), body, hashlib.sha1(body).hexdigest())
+            self._kept[held.key] = body
+            while len(self._kept) > KEPT:
+                self._kept.popitem(last=False)
             return held
+
+    def body(self, key: str) -> bytes | None:
+        """The snapshot `key` names, while it is one of the last few built."""
+        return self._kept.get(key)
 
     def latest(self) -> Served | None:
         """The snapshot held, however many changes it lacks, unless it is older than a refresh should leave it."""

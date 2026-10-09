@@ -2,6 +2,7 @@
 
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections import Counter
 from http.server import ThreadingHTTPServer
@@ -138,3 +139,42 @@ def test_a_page_connecting_during_a_rebuild_is_not_held_up_by_it(tmp_path: Path,
     assert first[0] == "snapshot"
     assert [(a["id"], a["state"]) for a in first[1]["flows"][0]["agents"]] == [("PROJ-1", "to_do")]
     assert (second[0], second[1]["id"], second[1]["agent"]["state"]) == ("task", "PROJ-1", "in_progress")
+
+
+def _raw_event(resp) -> tuple[str, str]:
+    """The next named event on the stream with its data as sent, skipping keep-alive comments."""
+    name = ""
+    while line := resp.readline().decode():
+        if line.startswith("event: "):
+            name = line.removeprefix("event: ").strip()
+        elif line.startswith("data: "):
+            return name, line.removeprefix("data: ").rstrip("\n")
+    raise AssertionError("the stream ended")
+
+
+def test_a_page_that_asks_for_the_snapshot_by_reference_reads_the_same_snapshot_from_its_body_route(tmp_path: Path) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-1"))
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
+            inline = _raw_event(resp)
+        with urllib.request.urlopen(_url(server, "/api/events?snapshot=ref"), timeout=5) as resp:
+            name, ref = _raw_event(resp)
+            assert name == "snapshot"
+            assert ref.startswith("ref /api/events/body/")
+            with urllib.request.urlopen(_url(server, ref.removeprefix("ref ")), timeout=5) as body:
+                read, kind, cache = body.read().decode(), body.headers["Content-Type"], body.headers["Cache-Control"]
+            feed.put(task("PROJ-2"))
+            after = _next_event(resp)
+
+    # the body is the snapshot the stream would have sent inline, and the stream goes on with the changes after it
+    assert (inline[0], read) == ("snapshot", inline[1])
+    assert (kind, cache) == ("application/json", "max-age=3600, immutable")
+    assert (after[0], after[1]["id"]) == ("task", "PROJ-2")
+
+
+def test_a_snapshot_body_the_server_does_not_hold_is_not_found(tmp_path: Path) -> None:
+    with _serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(_url(server, "/api/events/body/" + "0" * 40), timeout=5)
+    assert refused.value.code == 404

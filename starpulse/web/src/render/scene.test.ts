@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_GROW, build, Drawn, SUN_R, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type MState, type Pt, type Scene } from "./scene";
+import { BOARD_GROW, build, Drawn, SUN_R, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
 import { ledgerLevel, type Level } from "./levels";
 import { merge, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
@@ -267,6 +267,52 @@ describe("a Board path's route", () => {
     expect(routed(a, b, c0, [a, b, by(4)], new Drawn(), sky).c).toEqual(c0);
     expect(routed(a, b, c0, [a, b, by(4)], new Drawn(), sky, held).c).toEqual(held);
     expect(routed(a, b, c0, [a, b, by(30)], new Drawn(), sky, held).c).toEqual(c0);
+  });
+});
+
+describe("a Board path's route search", () => {
+  // the search as first written: every spot on the sky in order of bend, each one tested at every sample against every other state
+  const reference = (a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: Pt, held?: Pt): Curve => {
+    const others = all.filter((g) => g !== a && g !== b);
+    const rim = (g: Galaxy, c: Pt) => {
+      const ex = c.x - g.x, ey = c.y - g.y, l = Math.hypot(ex, ey) || 1;
+      return { x: g.x + (ex / l) * g.R, y: g.y + (ey / l) * g.R };
+    };
+    const shape = (c: Pt): Curve => ({ p0: rim(a, c), c, p1: rim(b, c) });
+    const at = ({ p0, c, p1 }: Curve, t: number) => ({ x: (1 - t) ** 2 * p0.x + 2 * (1 - t) * t * c.x + t * t * p1.x, y: (1 - t) ** 2 * p0.y + 2 * (1 - t) * t * c.y + t * t * p1.y });
+    const clear = (e: Curve, by = 20) => Array.from({ length: 49 }, (_, i) => at(e, i / 48)).every((p) => others.every((g) => (p.x - g.x) ** 2 + (p.y - g.y) ** 2 >= (g.R + by) ** 2));
+    const crossings = (e: Curve) => Array.from({ length: 31 }, (_, i) => at(e, i / 30)).filter((p) => drawn.near(p.x, p.y)).length;
+    const straight = shape(c0);
+    if (clear(straight, held ? 36 : 20)) return straight;
+    if (held && clear(shape(held))) return shape(held);
+    const spots: { c: Pt; bend: number }[] = [];
+    for (let x = 10; x <= sky.x - 10; x += 40) for (let y = 10; y <= sky.y - 10; y += 40) spots.push({ c: { x, y }, bend: Math.hypot(x - c0.x, y - c0.y) / 200 });
+    let best = straight, cost = Infinity;
+    for (const { c, bend } of spots.sort((p, q) => p.bend - q.bend)) {
+      const e = shape(c);
+      if (!clear(e)) continue;
+      if (bend + crossings(e) < cost) [cost, best] = [bend + crossings(e), e];
+    }
+    return best;
+  };
+  // a seeded generator, so a failure names the case that broke
+  const rand = (seed: number) => () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+
+  it("picks the same path as a search that tries every spot against every state, so a faster search draws the same Board", () => {
+    let searched = 0;
+    for (let n = 0; n < 60; n++) {
+      const r = rand(n + 1), sky = { x: 1200 + r() * 1200, y: 700 + r() * 600 };
+      const gs = Array.from({ length: 4 + Math.floor(r() * 10) }, (_, i) => ({ id: `s${i}`, x: 60 + r() * (sky.x - 120), y: 60 + r() * (sky.y - 120), R: 15 + r() * 60 })) as unknown as Galaxy[];
+      const [a, b] = gs, c0 = { x: (a.x + b.x) / 2 + (r() - 0.5) * 200, y: (a.y + b.y) / 2 + (r() - 0.5) * 200 };
+      const drawn = new Drawn();
+      drawn.add(Array.from({ length: 200 }, () => ({ x: r() * sky.x, y: r() * sky.y })));
+      const held = n % 3 ? undefined : { x: r() * sky.x, y: r() * sky.y };
+
+      const got = routed(a, b, c0, gs, drawn, sky, held);
+      expect(got, `case ${n}`).toEqual(reference(a, b, c0, gs, drawn, sky, held));
+      if (got.c !== c0 && got.c.x % 40 === 10) searched++;
+    }
+    expect(searched).toBeGreaterThan(20); // most cases ran the search rather than drawing straight or keeping their bend
   });
 });
 

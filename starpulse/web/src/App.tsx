@@ -37,6 +37,7 @@ export function App() {
   // the other views load once the Board is up, so the first switch to one finds it loaded
   const drawn = hud.tree !== null;
   useEffect(() => (drawn ? prefetchViews() : undefined), [drawn]);
+  // once it is, the views not yet opened also mount hidden in the background, so a first switch to one only unhides it
   const [admin] = useState(() => new AdminStore());
   const [historyWindow] = useState(() => new HistoryWindowStore());
   const [forwarding] = useState(() => new ForwardingStore());
@@ -111,17 +112,18 @@ export function App() {
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       {view === "constellation" && <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} />}
       <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
-      <Kept on={view === "admin"}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} forwarding={forwarding} /></Suspense></Kept>
-      <Kept on={view === "graph"}>
-        <Suspense fallback={null}><OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} /></Suspense>
-      </Kept>
-      <Kept on={view === "kanban"}>
+      {/* views warm in this order, the Kanban first: it is the one most often opened */}
+      <Kept on={view === "kanban"} warm={drawn}>
         <Suspense fallback={null}>
           <Kanban hud={hud} moves={moves} starts={starts} compact={prefs.density === "compact"} searchSlot={searchSlot} outlineSlot={outlineSlot} constellation={flyToLane}
             spot={spotted} note={setWhy} opening={opening} />
         </Suspense>
       </Kept>
-      <Kept on={view === "dags"}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
+      <Kept on={view === "dags"} warm={drawn}><Suspense fallback={null}><Dags data={hud.dagData} openPath={open} spot={spottedDag} opening={openingDag} /></Suspense></Kept>
+      <Kept on={view === "admin"} warm={drawn}><Suspense fallback={null}><AdminPage store={admin} window={historyWindow} forwarding={forwarding} /></Suspense></Kept>
+      <Kept on={view === "graph"} warm={drawn}>
+        <Suspense fallback={null}><OrbitCard state={level} retry={() => void levels.refresh()} motion={prefs.motion} names={hud.names} /></Suspense>
+      </Kept>
       <Rail hud={hud} view={view} note={view === "kanban" && line && why ? { key: line, text: why } : null}
         can={(l) => (view === "kanban" ? !!l.task : view === "dags" ? !!l.dag : view === "constellation" && !!l.task)}
         spot={(l) => {
