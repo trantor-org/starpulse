@@ -65,16 +65,16 @@ index 27f4fe0..cfc43b9 100644
          <Preview scale={scale} compact={density === "compact"} />
 diff --git a/starpulse/web/src/features/autopilot/AutopilotStrip.tsx b/starpulse/web/src/features/autopilot/AutopilotStrip.tsx
 new file mode 100644
-index 0000000..8eeb9ba
+index 0000000..8896842
 --- /dev/null
 +++ b/starpulse/web/src/features/autopilot/AutopilotStrip.tsx
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,89 @@
 +// The Kanban toolbar's autopilot strip: the global toggle, each capacity dimension's use against its limit, the sessions in flight and the
 +// next pick with why it goes or waits. Off stops admission only, so the strip dims and counts the sessions still running.
 +import { useEffect, useState, useSyncExternalStore } from "react";
 +import { ago } from "../../shared/clock";
 +import { useViewActive } from "../../shared/Kept";
-+import { level, type AutopilotStore, type Dimension, type InFlight } from "./autopilot";
++import { level, type AutopilotStore, type Dimension, type InFlight, type NextPick } from "./autopilot";
 +
 +/** The sampler emits on a headroom crossing; the strip also re-reads on this interval so its meters move with the host. */
 +const REFRESH_MS = 5000;
@@ -110,6 +110,8 @@ index 0000000..8eeb9ba
 +  );
 +}
 +
++const why = (next: NextPick) => (next.verdict === "starting" ? "starting" : `waits: ${next.reason}`);
++
 +export function AutopilotStrip({ store, now, openTask }: { store: AutopilotStore; now: number; openTask: (id: string) => void }) {
 +  const { current, phase, unavailable } = useSyncExternalStore(store.subscribe, store.get);
 +  const [menu, setMenu] = useState(false);
@@ -142,8 +144,10 @@ index 0000000..8eeb9ba
 +      </div>
 +      {!on && <span className="paused" title={`${running === 1 ? "1 session" : `${running} sessions`} still running`}>Paused · {running} running</span>}
 +      {on && (next ? (
-+        <button type="button" className={`nx ${next.verdict}`} title={next.title} onClick={() => openTask(next.task)}>
-+          Next <b>{next.task}</b> <span className="why">{next.verdict === "starting" ? "starting" : `waits: ${next.reason}`}</span>
++        // the pick's color carries its state (green starting, yellow waiting); the words stay on hover and for screen readers
++        <button type="button" className={`nx ${next.verdict}`} title={`${why(next)} · ${next.title}`} aria-label={`Next ${next.task}, ${why(next)}`}
++          onClick={() => openTask(next.task)}>
++          Next <b>{next.task}</b>
 +        </button>
 +      ) : <span className="nx none">Next · nothing eligible</span>)}
 +      {phase.kind === "refused" && (

@@ -950,8 +950,9 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb .ap .nx { all: unset; flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: calc(11px * var(--fs)); color: var(--muted); }
 #kb .ap button.nx:hover b, #kb .ap button.nx:focus-visible b { text-decoration: underline; }
 #kb .ap .nx b { font-weight: 500; color: var(--agent-text); }
-#kb .ap .nx.waits .why { color: var(--run-text); } #kb .ap .nx.starting .why { color: var(--ok); animation: ap-go 1.2s ease-in-out infinite; }
-#kb .ap .nx.none { color: var(--dim); }
+/* the pick takes the board's state colors: purple neutral, green activity, yellow hold, red error */
+#kb .ap .nx.waits b { color: var(--run-text); } #kb .ap .nx.starting b { color: var(--ok); animation: ap-go 1.2s ease-in-out infinite; }
+#kb .ap .nx.none { color: var(--agent-text); }
 @keyframes ap-go { 50% { opacity: .45; } }
 #kb .ap .ap-ses { left: auto; right: 0; min-width: 340px; }
 #kb .ap .ap-ses a { box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; width: 100%; padding: 5px 8px; border-radius: 5px; color: var(--ink-3); text-decoration: none; font-size: calc(12px * var(--fs)); }
@@ -959,5 +960,5 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb .ap .ap-ses .id { color: var(--agent-text); } #kb .ap .ap-ses .tt { overflow: hidden; text-overflow: ellipsis; } #kb .ap .ap-ses .md { color: var(--muted); }
 #kb .ap .ap-ses .none { padding: 5px 8px; color: var(--dim); font-size: calc(12px * var(--fs)); }
 #kb .ap .ap-ref { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; margin: 0; width: 320px; white-space: normal; border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); border-radius: 7px; }
-#kb .ap.down { font-size: calc(11px * var(--fs)); color: var(--dim); }
-@media (prefers-reduced-motion: reduce) { #kb .ap .dm .m i, #kb .ap .dims { transition: none; } #kb .ap .nx.starting .why { animation: none; } }
+#kb .ap.down { font-size: calc(11px * var(--fs)); color: var(--fail-text); }
+@media (prefers-reduced-motion: reduce) { #kb .ap .dm .m i, #kb .ap .dims { transition: none; } #kb .ap .nx.starting b { animation: none; } }
