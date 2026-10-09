@@ -122,7 +122,7 @@ applied_by = "pin-bump"
 
 ## Autopilot
 
-The autopilot is a switch and a capacity reading; admission is not built yet. The switch is persisted in
+The autopilot is a switch, a capacity reading and an admission rule; no loop acts on the rule yet. The switch is persisted in
 `starpulse-autopilot.json` beside the config file (in the working directory with none), so it survives a restart, and it starts off.
 
 `GET /api/autopilot` answers any address:
@@ -144,6 +144,30 @@ answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhe
 
 The sampler reads every 60 seconds. The first sample is a baseline; after it, a dimension going from below its limit
 to at or over it, or back, logs one `StarPulse autopilot: <dimension> is full|free (<use> of <limit>)` line.
+
+### Admission
+
+`autopilot.admission.decide` answers, for each workable task in the eligible lane, whether it fits and where it ranks. It is
+a pure function of the open tasks, the sampler's readings, the `[autopilot]` policy, the trajectory chain and the run ledger.
+
+- **Demand.** A task draws `size points x its tier's weight` percent of CPU and of memory, one session, and its points of
+  review. The tier is the middle word of its profile (`@agent-standard-high` is `standard`); a tier with no weight, or no
+  profile, prices at the dearest weight. Once 3 runs of the same tier and size are in the ledger, their mean peak replaces
+  that prior.
+- **Fit.** A task is admitted only if its demand is at most the headroom (limit less use) on every dimension; otherwise
+  the decision names the first dimension it overfits.
+- **Order.** The admitted tasks go in the order of critical-path depth, the task itself plus the longest chain of open
+  tasks waiting on it. In shadow, the default, a second order is only logged: `value / dominant share`, where value is depth
+  times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the chain's
+  `p_goal` for the lane (`trajectory_analytics(...)["chain"]`), and 1 when the lane has no history. An optional predictor, a
+  function from a task's title and description to a score, replaces P(goal) in that shadow value and is logged; a
+  predictor that raises leaves the score empty.
+- **Log.** Each decision logs one line:
+  `StarPulse autopilot: <task> admitted|refused (<dimension> full) p_goal=<p> predictor=<score> shadow_rank=<n> enforced_rank=<n>`.
+  Ranks number the admitted tasks from 1; a refused task has none.
+
+The run ledger, `starpulse-autopilot-runs.jsonl` beside the switch, holds one JSON line per finished run: its task, tier,
+points, outcome, duration in seconds and the peak demand it drew on each dimension.
 
 ## Event log archive
 
