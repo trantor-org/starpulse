@@ -36,12 +36,12 @@ export function boot(mount: () => void): Booted {
     mounted = true;
     mount();
   };
-  // the frame after the draw: the mark is the page's first paint, and the page mounts behind it
-  const marked = () => requestAnimationFrame(() => {
+  // the draw's own frame: the mark is the page's first paint, and the page mounts a frame behind it
+  const drawn = () => {
     markDrawn();
-    open();
-  });
-  const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? marked : undefined);
+    requestAnimationFrame(open);
+  };
+  const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? drawn : undefined);
   held = { store, admin, renderer: r, canvas, tip, panel };
   r.start();
   if (!star) {
@@ -50,7 +50,10 @@ export function boot(mount: () => void): Booted {
     const unsubscribe = store.subscribe(() => {
       if (store.get().tree === null) return;
       unsubscribe();
-      marked();
+      requestAnimationFrame(() => {
+        markDrawn();
+        open();
+      });
     });
   }
   setTimeout(open, NO_BOARD_MS);

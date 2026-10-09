@@ -53,19 +53,18 @@ describe("the page's boot", () => {
     expect(mount).not.toHaveBeenCalled();
   });
 
-  it("marks the frame after the renderer's first draw, then mounts the page", async () => {
+  it("marks in the frame the renderer first draws, then mounts the page a frame behind it", async () => {
     const mount = vi.fn();
     const { boot } = await import("./boot");
     boot(mount);
     const onDrawn = made.calls[0][5] as () => void;
 
     onDrawn();
-    expect(marked()).toBe(false);
+    expect(marked()).toBe(true);
     expect(mount).not.toHaveBeenCalled();
 
     frame();
 
-    expect(marked()).toBe(true);
     expect(mount).toHaveBeenCalledTimes(1);
   });
 
