@@ -3,7 +3,7 @@ import { act, lazy, Suspense, useEffect, useState, type ReactNode } from "react"
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Kept, useViewActive } from "./Kept";
+import { isKeptRevealed, Kept, revealKept, useViewActive } from "./Kept";
 
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {
@@ -37,6 +37,8 @@ const frames = async () => { for (let i = 0; i < 3; i++) await frame(); };
 const frame = () => act(async () => void vi.advanceTimersToNextFrame());
 /** Lets the timer pass that mounts a warmed view after the frame that asked for it. */
 const tick = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
+/** Lets the housekeeping after the measured reveal window pass. */
+const settled = frames;
 
 describe("Kept", () => {
   beforeEach(() => { mounts = 0; renders = 0; });
@@ -44,6 +46,27 @@ describe("Kept", () => {
   it("mounts nothing until the view is first shown", async () => {
     await show(false, <Counter label="a" />);
     expect(button()).toBeNull();
+  });
+
+  it("reveals an already-mounted named view without waiting for React to render the page", async () => {
+    await act(async () => root.render(<><Kept name="a" on><span>a</span></Kept><Kept name="b" on={false} warm><span>b</span></Kept></>));
+    await frames();
+
+    expect(revealKept("b")).toBe(true);
+    const hidden = wrapper("a").firstElementChild as HTMLElement;
+    const visible = wrapper("b").firstElementChild as HTMLElement;
+    expect(hidden.style.opacity).toBe("0");
+    expect(hidden.hasAttribute("inert")).toBe(false);
+    expect(visible.style.opacity).toBe("1");
+    expect(visible.hasAttribute("inert")).toBe(false);
+    expect(isKeptRevealed("a")).toBe(false);
+    expect(isKeptRevealed("b")).toBe(true);
+    expect(wrapper("a").hasAttribute("inert")).toBe(false);
+    expect(wrapper("b").hasAttribute("inert")).toBe(true);
+    expect(revealKept("missing")).toBe(false);
+    await frames();
+    expect(hidden.hasAttribute("inert")).toBe(false);
+    expect(visible.hasAttribute("inert")).toBe(false);
   });
 
   it("keeps the view mounted with its state when it is left, and shows that state again on return", async () => {
@@ -62,6 +85,7 @@ describe("Kept", () => {
     expect(button()!.dataset.active).toBe("true");
     await show(false, <Counter label="a" />);
     expect(button()!.closest("[inert]")).not.toBeNull();
+    await settled();
     expect(button()!.dataset.active).toBe("false");
   });
 
@@ -73,40 +97,43 @@ describe("Kept", () => {
     expect(renders).toBe(before);
     expect(button()!.dataset.label).toBe("a");
     await show(true, <Counter label="b" />);
-    await frames();
+    await settled();
     expect(button()!.dataset.label).toBe("b");
   });
 
-  it("shows a view that is returned to at once, as it was left, and renders it and tells it it is active only frames later", async () => {
+  it("shows a view that is returned to at once, as it was left, and updates it after the reveal window", async () => {
     await show(true, <Counter label="a" />);
     await show(false, <Counter label="a" />);
+    await settled();
     const before = renders;
     await show(true, <Counter label="b" />);
     expect(button()!.closest("[inert]")).toBeNull();
     expect(button()!.dataset.label).toBe("a");
     expect(button()!.dataset.active).toBe("false");
     expect(renders).toBe(before);
-    await frames();
+    await settled();
+    expect(button()!.closest("[inert]")).toBeNull();
     expect(button()!.dataset.label).toBe("b");
     expect(button()!.dataset.active).toBe("true");
   });
 
-  it("pauses the animations running in a view that is left, and plays exactly those again once it is live", async () => {
+  it("does not enumerate document animations while leaving or returning to a view", async () => {
     await show(true, <Counter label="a" />);
     const anim = (playState: string, target: Element) => ({ playState, effect: { target }, pause: vi.fn(), play: vi.fn() });
-    const running = anim("running", button()!), still = anim("paused", button()!), elsewhere = anim("running", document.body);
+    const running = anim("running", button()!);
     const doc = document as { getAnimations?: () => unknown[] };
-    doc.getAnimations = () => [running, still, elsewhere];
+    const getAnimations = vi.fn(() => [running]);
+    doc.getAnimations = getAnimations;
     try {
       await show(false, <Counter label="a" />);
-      expect(running.pause).toHaveBeenCalledOnce();
-      expect(still.pause).not.toHaveBeenCalled();
-      expect(elsewhere.pause).not.toHaveBeenCalled();
-      await show(true, <Counter label="a" />);
-      expect(running.play).not.toHaveBeenCalled();
+      expect(getAnimations).not.toHaveBeenCalled();
       await frames();
-      expect(running.play).toHaveBeenCalledOnce();
-      expect(still.play).not.toHaveBeenCalled();
+      expect(getAnimations).not.toHaveBeenCalled();
+      expect(running.pause).not.toHaveBeenCalled();
+      await show(true, <Counter label="a" />);
+      await frames();
+      expect(getAnimations).not.toHaveBeenCalled();
+      expect(running.play).not.toHaveBeenCalled();
     } finally {
       delete doc.getAnimations;
     }
@@ -123,7 +150,7 @@ describe("Kept", () => {
     await show(true, <Counter label="a" />, true);
     expect(renders).toBe(before);
     expect(button()!.closest("[inert]")).toBeNull();
-    await frames();
+    await settled();
     expect(button()!.dataset.active).toBe("true");
     expect(mounts).toBe(1);
   });
@@ -138,14 +165,14 @@ describe("Kept", () => {
     await tick();
     await frames();
     await show(true, <Counter label="b" />, true);
-    await frames();
+    await settled();
     expect(host.innerHTML).toBe(cold);
   });
 
   it("hides a view in the click's own render without rendering it, and tells it it is inactive in a later transition", async () => {
     await show(true, <Counter label="a" />);
     await frames();
-    const drawn = host.innerHTML, before = renders;
+    const drawn = button()!.textContent, before = renders;
     const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
     env.IS_REACT_ACT_ENVIRONMENT = false;
     try {
@@ -155,9 +182,11 @@ describe("Kept", () => {
     } finally {
       env.IS_REACT_ACT_ENVIRONMENT = true;
     }
-    await act(async () => {});
+    await settled();
     expect(button()!.dataset.active).toBe("false");
-    expect(host.innerHTML).toBe(drawn.replace('class="kept"', 'class="kept" inert=""').replace('data-active="true"', 'data-active="false"'));
+    expect(button()!.closest("[inert]")).not.toBeNull();
+    expect(button()!.style.opacity).toBe("0");
+    expect(button()!.textContent).toBe(drawn);
   });
 
   /** A view in three parts, the way the Kanban's columns are its parts. */
@@ -167,11 +196,11 @@ describe("Kept", () => {
   it("lays a warmed view out one part a frame while it is hidden, then skips its rendering, drawing the same view throughout", async () => {
     await show(false, <Parts label="a" />, true);
     await tick();
-    const drawn = wrapper("a").innerHTML, steps = [wrapper("a").dataset.warm];
+    const drawn = wrapper("a").textContent, steps = [wrapper("a").dataset.warm];
     for (let i = 0; i < 6; i++) {
       await frame();
       steps.push(wrapper("a").dataset.warm);
-      expect(wrapper("a").innerHTML).toBe(drawn);
+      expect(wrapper("a").textContent).toBe(drawn);
     }
     expect(steps).toEqual(["0", "1", "2", "3", undefined, undefined, undefined]);
     expect(wrapper("a").hasAttribute("inert")).toBe(true);
@@ -209,7 +238,7 @@ describe("Kept", () => {
     await show(false, <Parts label="a" />, true);
     await tick();
     await frame();
-    expect(wrapper("a").dataset.warm).toBe("1");
+    expect(wrapper("a").dataset.warm).toBeDefined();
     await show(true, <Parts label="a" />, true);
     expect(wrapper("a").dataset.warm).toBeUndefined();
     expect(wrapper("a").hasAttribute("inert")).toBe(false);

@@ -76,10 +76,10 @@ describe("the Star Map navigator", () => {
     expect(host.querySelector("#nav ~ #crumb")).toBe(crumb);
   });
 
-  it("draws no breadcrumb on the Kanban", async () => {
+  it("keeps the breadcrumb hidden on the Kanban", async () => {
     await remount("kanban");
 
-    expect(host.querySelector("#crumb")).toBeNull();
+    expect(host.querySelector("#crumb")?.classList).toContain("off");
   });
 });
 
