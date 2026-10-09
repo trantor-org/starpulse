@@ -144,6 +144,12 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # memory = 80    # host memory, percent
 # sessions = 2   # harness sessions in flight
 # review = 20    # points of tasks in the review lane
+
+# Optional: release Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task
+# it depends on is Done (see Release); with no [release] table it releases none. The board must edit tasks and draw
+# `waiting` and `ready` lanes, else `serve` refuses to start.
+# [release]
+# settle = "pin-bump"  # optional: a dependency citing a pull request in a [[repos]] repository settles only when the parent's pin bump has merged
 ```
 
 ## Triggers
@@ -252,6 +258,28 @@ runs and never admits.
 
 The runs in flight are held in memory. A restart forgets them: a session started before it still counts toward capacity
 once the harness sees it, but the loop neither settles nor records it.
+
+## Release
+
+With a `[release]` table, `serve` moves each Waiting task to Ready once all of its dependencies have settled, through the
+board's task editor, which records a comment on the task. It checks every 30 seconds after the Board replay, so a task is
+Ready within one poll of its last dependency settling. A board with no dependencies has nothing to release, and a config
+without the table releases nothing.
+
+A dependency settles when its task is Done: in the `done` lane, or completed. An archived dependency never settles, so its
+dependents stay Waiting. A task whose description declares Start Criteria is left to them, whatever its dependencies.
+
+`settle = "pin-bump"` is the stricter rule for a parent that applies a child repository by pin bump (`[[repos]]`; it is
+refused without one). A dependency task that cites a pull request in such a repository settles only when:
+
+- the pull request is merged and the PR store holds its merge commit;
+- a later merged pull request of the same owner, in a repository that is not pinned, changed the submodule's path and pins
+  a commit containing that merge commit (`pins.link`, the rule that sets a pull request's `applied_by`).
+
+A pull request the store does not hold, or holds open, holds the dependent, the fail-closed direction. A closed, unmerged
+one never reaches the pin and is ignored. The bump is looked for among the store's merged pull requests, so one no task
+cites still settles the dependency, while one older than the store's records is not found and holds it. The pointer and
+containment reads are the memoized `gh` calls the pull request projection makes.
 
 ## Event log archive
 
