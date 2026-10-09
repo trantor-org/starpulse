@@ -198,7 +198,7 @@ def select(root: Path, changed: list[str]) -> Selection:
     adapters = {
         name: name.rpartition(".")[2]
         for name, path in modules.items()
-        if name.startswith("starpulse._internal.adapters.") and name.count(".") == 3 and _is_adapter(path)
+        if name.startswith("starpulse._internal.adapters.") and name.count(".") == 4 and _is_adapter(path)
     }
 
     def reaches(name: str) -> set[str]:

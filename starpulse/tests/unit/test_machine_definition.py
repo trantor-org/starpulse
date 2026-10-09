@@ -155,7 +155,7 @@ class TestTheSchema:
             validate(_doc(writers=writers))
 
     def test_the_published_schema_is_the_one_that_validates(self) -> None:
-        schema = Path(machine_definition.__file__).parents[1] / "machine.schema.json"
+        schema = Path(machine_definition.__file__).parents[2] / "machine.schema.json"
 
         assert json.loads(schema.read_text()) == machine_definition.SCHEMA
 
