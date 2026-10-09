@@ -551,39 +551,30 @@ export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn
   // shrinking across the line never flips it back and forth
   if (clear(straight, held ? CLEAR + HOLD : CLEAR)) return straight;
   if (held && clear(shape(held))) return shape(held);
-  // the spots in order of bend, a tie in the order the grid lists them, as a stable sort leaves them
-  const { xs, ys } = grid(sky), bends = new Float64Array(xs.length), order = new Uint32Array(xs.length);
-  for (let i = 0; i < xs.length; i++) {
-    bends[i] = Math.hypot(xs[i] - c0.x, ys[i] - c0.y) / 200;
-    order[i] = i;
-  }
-  order.sort((i, j) => bends[i] - bends[j] || i - j);
+  // the spots are tried nearest first, equals in sky order. The search stops a few dozen in, so it takes the spots a band of bend at a time
+  // (each band twice as wide as the last, so a spot is measured once more at most) and sorts only the band it reaches
+  const lattice = (extent: number) => Math.floor((extent - 20) / 40), reach = Math.hypot(Math.max(c0.x - 10, sky.x - 10 - c0.x), Math.max(c0.y - 10, sky.y - 10 - c0.y)) / 200;
   let best = straight, cost = Infinity;
-  for (const i of order) {
-    const bend = bends[i];
-    if (bend >= cost) break;
-    const e = shape({ x: xs[i], y: ys[i] });
-    if (!clear(e)) continue;
-    const crossed = crossings(e, cost - bend);
-    if (bend + crossed < cost) [cost, best] = [bend + crossed, e];
+  for (let lo = 0, hi = 0.5; lo < cost && lo <= reach; lo = hi, hi *= 2) {
+    const band: { c: Pt; bend: number }[] = [], r = hi * 200;
+    // the lattice columns and rows within r of c0, one more each side than the arithmetic needs
+    const kx = [Math.max(0, Math.ceil((c0.x - r - 10) / 40) - 1), Math.min(lattice(sky.x), Math.floor((c0.x + r - 10) / 40) + 1)];
+    const ky = [Math.max(0, Math.ceil((c0.y - r - 10) / 40) - 1), Math.min(lattice(sky.y), Math.floor((c0.y + r - 10) / 40) + 1)];
+    for (let i = kx[0]; i <= kx[1]; i++)
+      for (let j = ky[0]; j <= ky[1]; j++) {
+        const x = 10 + 40 * i, y = 10 + 40 * j, bend = Math.hypot(x - c0.x, y - c0.y) / 200;
+        if (bend >= lo && bend < hi) band.push({ c: { x, y }, bend });
+      }
+    for (const { c, bend } of band.sort((p, q) => p.bend - q.bend)) {
+      if (bend >= cost) break;
+      const e = shape(c);
+      if (!clear(e)) continue;
+      const crossed = crossings(e, cost - bend);
+      if (bend + crossed < cost) [cost, best] = [bend + crossed, e];
+    }
   }
   return best;
 }
-/** The spots on a sky a bent path's control point may take, 40 px apart, column by column; kept for the last sky asked about. */
-const grid = (() => {
-  let key = "", held = { xs: new Float64Array(), ys: new Float64Array() };
-  return (sky: Pt) => {
-    if (key === `${sky.x}x${sky.y}`) return held;
-    const xs: number[] = [], ys: number[] = [];
-    for (let x = 10; x <= sky.x - 10; x += 40)
-      for (let y = 10; y <= sky.y - 10; y += 40) {
-        xs.push(x);
-        ys.push(y);
-      }
-    [key, held] = [`${sky.x}x${sky.y}`, { xs: Float64Array.from(xs), ys: Float64Array.from(ys) }];
-    return held;
-  };
-})();
 /** The points of the paths drawn so far, bucketed in 10 px cells so a point checks only the nine cells round it for one within 10 px. */
 export class Drawn {
   private cells = new Map<number, Pt[]>();
