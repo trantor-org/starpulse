@@ -62,9 +62,10 @@ describe("Kept", () => {
     expect(isKeptRevealed("a")).toBe(false);
     expect(isKeptRevealed("b")).toBe(true);
     expect(wrapper("a").hasAttribute("inert")).toBe(false);
+    expect(wrapper("b").hasAttribute("inert")).toBe(true);
     expect(revealKept("missing")).toBe(false);
     await frames();
-    expect(hidden.hasAttribute("inert")).toBe(true);
+    expect(hidden.hasAttribute("inert")).toBe(false);
     expect(visible.hasAttribute("inert")).toBe(false);
   });
 
@@ -106,7 +107,7 @@ describe("Kept", () => {
     await settled();
     const before = renders;
     await show(true, <Counter label="b" />);
-    expect(button()!.closest("[inert]")).not.toBeNull();
+    expect(button()!.closest("[inert]")).toBeNull();
     expect(button()!.dataset.label).toBe("a");
     expect(button()!.dataset.active).toBe("false");
     expect(renders).toBe(before);
@@ -183,7 +184,7 @@ describe("Kept", () => {
     }
     await settled();
     expect(button()!.dataset.active).toBe("false");
-    expect(button()!.hasAttribute("inert")).toBe(true);
+    expect(button()!.closest("[inert]")).not.toBeNull();
     expect(button()!.style.opacity).toBe("0");
     expect(button()!.textContent).toBe(drawn);
   });
@@ -229,6 +230,8 @@ describe("Kept", () => {
     for (let i = 0; i < 4; i++) await frame();
     expect(wrapper("a").dataset.warm).toBeUndefined();
     expect(wrapper("b")).toBeUndefined();
+    await frame();
+    await frame();
     await tick();
     expect(wrapper("b").dataset.warm).toBe("0");
   });

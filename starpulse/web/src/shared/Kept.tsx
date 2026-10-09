@@ -4,8 +4,9 @@ import { createContext, startTransition, useContext, useEffect, useLayoutEffect,
 
 const ViewActive = createContext(true);
 const keptViews = new Map<string, HTMLElement>();
-const settlingSurfaces = new WeakMap<HTMLElement, () => void>();
+const keptFades = new WeakMap<HTMLElement, Animation>();
 let revealedView: string | null = null;
+const PREPAINT_OPACITY = 0.001;
 
 /** Runs after `count` painted frames; the disposer cancels whichever frame is next. */
 const afterFrames = (count: number, run: () => void) => {
@@ -23,19 +24,20 @@ export const useViewActive = () => useContext(ViewActive);
 /** Whether an imperatively revealed kept surface is visible, before React reconciles the view state. */
 export const isKeptRevealed = (name: string) => revealedView === name;
 
-const showSurface = (view: HTMLElement, shown: boolean) => {
+const setSurfaceOpacity = (view: HTMLElement, opacity: number) => {
   const surface = view.firstElementChild;
   if (!(surface instanceof HTMLElement)) return;
-  settlingSurfaces.get(surface)?.();
-  surface.style.opacity = shown ? "1" : "0";
-  // The benchmark ends after two painted frames. Keep its reveal path compositing-only, then update hit testing and accessibility.
-  let cancel = () => {};
-  cancel = afterFrames(3, () => {
-    surface.toggleAttribute("inert", !shown);
-    if (settlingSurfaces.get(surface) === cancel) settlingSurfaces.delete(surface);
-  });
-  settlingSurfaces.set(surface, cancel);
+  let fade = keptFades.get(surface);
+  if (!fade && surface.animate) {
+    fade = surface.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1, fill: "both" });
+    fade.pause();
+    keptFades.set(surface, fade);
+  }
+  if (fade) fade.currentTime = opacity;
+  else surface.style.opacity = String(opacity);
 };
+
+const showSurface = (view: HTMLElement, shown: boolean) => setSurfaceOpacity(view, shown ? 1 : 0);
 
 /** Reveals one named mounted view immediately; `null` reveals the Star Map behind all kept views. */
 export function revealKept(name: string | null) {
@@ -99,7 +101,21 @@ export function Kept({ name, on, warm = false, children }: { name?: string; on: 
     return () => { gone = true; clearTimeout(id); };
   }, [cold]);
   useEffect(() => {
-    if (warming === null) return void (shown !== null && release.current?.());
+    if (warming === null) {
+      if (shown === null) return;
+      const view = box.current;
+      if (!on && view) {
+        // A non-zero but sub-pixel alpha makes Chrome raster the promoted surface while it is warming; later reveals
+        // can then change only the compositor animation's current time instead of painting the whole view.
+        setSurfaceOpacity(view, PREPAINT_OPACITY);
+        const cancel = afterFrames(2, () => {
+          showSurface(view, false);
+          release.current?.();
+        });
+        return () => { cancel(); release.current?.(); };
+      }
+      return void release.current?.();
+    }
     let id = 0;
     const step = () => {
       const el = box.current;
@@ -109,7 +125,7 @@ export function Kept({ name, on, warm = false, children }: { name?: string; on: 
     };
     id = requestAnimationFrame(step);
     return () => cancelAnimationFrame(id);
-  }, [warming, shown]);
+  }, [on, warming, shown]);
   useEffect(() => () => release.current?.(), []);
   useEffect(() => {
     if (!on && live) startTransition(() => setLive(false));
