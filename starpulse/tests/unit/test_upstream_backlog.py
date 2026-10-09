@@ -8,6 +8,7 @@ import threading
 from pathlib import Path
 
 import pytest
+import yaml
 
 from starpulse.adapters.boards.upstream_backlog import (
     BacklogConfig,
@@ -356,6 +357,21 @@ def test_a_file_that_is_no_task_is_skipped(tmp_path: Path) -> None:
 )
 def test_a_task_file_splits_into_its_frontmatter_and_the_markdown_after_it(text: str, expected: tuple) -> None:
     assert _split(text) == expected
+
+
+@pytest.mark.skipif(not yaml.__with_libyaml__, reason="this PyYAML build has no libyaml")
+def test_the_frontmatter_is_parsed_by_libyaml_when_the_build_has_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    loaders: list[type] = []
+    load = yaml.load
+
+    def spy(stream: str, Loader: type) -> object:  # noqa: N803 - PyYAML's keyword
+        loaders.append(Loader)
+        return load(stream, Loader=Loader)
+
+    monkeypatch.setattr(yaml, "load", spy)
+
+    assert _split("---\nid: a\n---\nbody") == ({"id": "a"}, "\nbody")
+    assert loaders == [yaml.CSafeLoader]
 
 
 def test_a_file_that_cannot_be_read_is_retried_by_the_next_scan_and_does_not_hide_the_others(
