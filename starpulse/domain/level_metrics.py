@@ -11,7 +11,7 @@ the first step any run holds: a window that reaches before it is refused, never 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +24,7 @@ __all__ = [
     "RunWindow",
     "WindowPastHistory",
     "collapse",
+    "held_steps",
     "level_metrics",
     "state_roles",
 ]
@@ -104,8 +105,7 @@ def level_metrics(
     which `sources` reported, which the runs it left out would have told.
     """
     terminals, working, waiting = state_roles(level, machine)
-    settles = {s["id"] for s in machine["states"] if s["final"]} - set(terminals)
-    held = [(run, _settled_in_goal(collapse(run.steps), level.goal, settles)) for run in runs]
+    held = [(run, held_steps(level, machine, run.steps)) for run in runs]
     first = (
         history_start if history_start is not None else min((steps[0][0] for _, steps in held if steps), default=now)
     )
@@ -216,6 +216,13 @@ def _cycles(steps: list[tuple[float, str]], working: list[str], goal: str, now: 
     for at, state in steps[1:]:
         if state == goal and now - AGING_WINDOW_S <= at <= now and began <= at:
             yield at - began
+
+
+def held_steps(level: Level, machine: Mapping[str, Any], steps: Sequence[tuple[float, str]]) -> list[tuple[float, str]]:
+    """A run's `steps` as the level reads them: collapsed, with each move from the goal into a settle (a final state no
+    terminal names, such as `completed`) dropped, so a swept run ends in the goal when it reached it."""
+    settles = {s["id"] for s in machine["states"] if s["final"]} - {terminal.id for terminal in level.terminals}
+    return _settled_in_goal(collapse(steps), level.goal, settles)
 
 
 def _settled_in_goal(steps: list[tuple[float, str]], goal: str, settles: set[str]) -> list[tuple[float, str]]:
