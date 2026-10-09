@@ -58,6 +58,7 @@ _KEYS = {
     "sources",
     "aggregates_only",
     "autopilot",
+    "release",
     "triggers",
 }
 _OIDC_KEYS = {
@@ -138,6 +139,15 @@ class Repo:
     """Where the parent repository holds it as a submodule."""
     applied_by: str
     """How its merges are applied; only `pin-bump`."""
+
+
+@dataclass(frozen=True)
+class Release:
+    """The `[release]` table: StarPulse moves a Waiting task to Ready once its dependencies settle."""
+
+    settle: str | None = None
+    """`pin-bump` holds a dependency whose pull request is in a `[[repos]]` repository until the parent's pin bump applies
+    it; none: a dependency settles when its task is Done."""
 
 
 @dataclass(frozen=True)
@@ -429,6 +439,8 @@ class Config:
     """The policy the autopilot runs under (`[autopilot]`); every key is optional, so no block is the defaults."""
     triggers: tuple[Trigger, ...] = ()
     """The runs to start when a board event arrives (`[[triggers]]`); none: no event starts a run."""
+    release: Release | None = None
+    """The `[release]` table: None releases no task, so a config without it leaves release to whoever does it today."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -462,6 +474,22 @@ def _triggers(raw: object, runs: Sequence[RunsInstance]) -> tuple[Trigger, ...]:
         if (name := trigger.start.partition("/")[0]) not in startable:
             raise ConfigError(f"triggers[{at}]: start names {name}, which is no configured runs instance with a type")
     return triggers
+
+
+def _release(raw: Mapping[str, object], repos: Sequence[Repo]) -> Release | None:
+    """The `[release]` table, or None when the config has none; a table the server cannot apply is a `ConfigError`."""
+    if "release" not in raw:
+        return None
+    table = raw["release"]
+    if not isinstance(table, dict) or not table.keys() <= {"settle"}:
+        raise ConfigError("release: the [release] table takes only settle")
+    if (settle := table.get("settle")) is None:
+        return Release()
+    if settle != "pin-bump":
+        raise ConfigError("release: settle must be pin-bump")
+    if not repos:
+        raise ConfigError("release: settle = pin-bump needs a [[repos]] entry to say which repositories the parent pins")
+    return Release(settle="pin-bump")
 
 
 def _level(raw: Mapping[str, object]) -> Level | None:
@@ -550,6 +578,7 @@ def load(path: Path | None) -> Config:
     if url is not None and not isinstance(url, str):
         raise ConfigError("database_url must be text")
     oidc = _oidc(raw["oidc"]) if "oidc" in raw else None
+    repos = _repos(raw.get("repos", []))
     return Config(
         raw.get("tracker_url"),
         mode,
@@ -567,8 +596,9 @@ def load(path: Path | None) -> Config:
         _aggregates_only(raw.get("aggregates_only", False)),
         event_log_retention_days=log_retention,
         event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", "starpulse-archive")),
-        repos=_repos(raw.get("repos", [])),
+        repos=repos,
         ci=_ci(raw),
         autopilot=_autopilot(raw.get("autopilot")),
         triggers=_triggers(raw.get("triggers"), runs),
+        release=_release(raw, repos),
     )

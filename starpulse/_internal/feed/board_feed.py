@@ -64,6 +64,11 @@ LEDGER_WINDOW = 86400.0
 _SENT_LOG = 512
 
 
+def cited_pulls(task: BoardTask) -> list[str]:
+    """The pull request links among the task's references."""
+    return [ref for ref in task.references if _PULL_REQUEST.fullmatch(ref)]
+
+
 def task_agent(task: BoardTask) -> dict:
     """One task as an agent on the Board machine, its lane as the state id."""
     return {
@@ -74,7 +79,7 @@ def task_agent(task: BoardTask) -> dict:
         "labels": list(task.labels),
         "milestone": task.milestone,
         "dependencies": list(task.dependencies),
-        "prs": [ref for ref in task.references if _PULL_REQUEST.fullmatch(ref)],
+        "prs": cited_pulls(task),
         "description": task.description,
         "moves": {column: move.model_dump() for column, move in task.moves.items()},
         "created": task.created_at,
@@ -206,6 +211,9 @@ class BoardFeed:
         self._settled: dict[str, dict] = {}
         #: Every placed task's assignee, a settled one's included, so a machine still drawing it keeps its colour.
         self._assignees: dict[str, str] = {}
+        #: The pull request links every placed task cites, a settled one's included: its dependents read them for the
+        #: pin bump that applies each (`cited`).
+        self._cited: dict[str, list[str]] = {}
         self._dags: dict[str, list] = {}
         self._pools: dict[str, list] = {}
         #: The workflows each instance's adapter reported it can start; an instance not here can start all it has.
@@ -456,6 +464,7 @@ class BoardFeed:
         with self._lock:
             filed = self._settled.get(task.id)
             self._assignees[task.id] = task.assignee
+            self._cited[task.id] = cited_pulls(task)
             agent, settled = (None, settled_entry(task)) if task.settled else (task_agent(task), None)
             before = self._open.get(task.id)
             if agent and before:
@@ -496,6 +505,7 @@ class BoardFeed:
         """Remove a task the adapter's source no longer holds, open or settled; a task not placed is a no-op."""
         with self._lock:
             self._assignees.pop(task_id, None)
+            self._cited.pop(task_id, None)
             gone = self._open.pop(task_id, None)
             if gone is None and self._settled.pop(task_id, None) is None:
                 return
@@ -660,6 +670,11 @@ class BoardFeed:
         entry is replaced, never changed in place.
         """
         return self._open.get(task_id)
+
+    def cited(self, task_id: str) -> list[str]:
+        """The pull request links the task cites, open or settled; none for a task the Board does not hold."""
+        with self._lock:
+            return list(self._cited.get(task_id, ()))
 
     def open_tasks(self) -> list[dict]:
         """Every open Board task as the page draws it, read under the lock so a caller walks a list no placement changes."""

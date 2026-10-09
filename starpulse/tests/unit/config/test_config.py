@@ -230,7 +230,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, autopilot, board, ci, database_url, event_log_archive_dir, event_log_retention_days, "
-        "forward, harnesses_file, hub_retention_days, level, mode, oidc, repos, runs, session_start_url, sources, tracker_url, triggers"
+        "forward, harnesses_file, hub_retention_days, level, mode, oidc, release, repos, runs, session_start_url, sources, tracker_url, triggers"
     )
 
 

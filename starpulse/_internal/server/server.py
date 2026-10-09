@@ -180,6 +180,8 @@ from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
+from starpulse._internal.pulls.release import READY, RELEASE_S, Releaser
+from starpulse._internal.config.pins import GitHub
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
@@ -221,7 +223,7 @@ from starpulse._internal.machines.snapshot import qualifier
 from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_analytics, what_if
 from starpulse._internal.level import analytics
 from starpulse._internal.cli import doctor
-from starpulse._internal.feed.board_feed import BoardFeed, follow
+from starpulse._internal.feed.board_feed import WAITING, BoardFeed, follow
 from starpulse._internal.ci.ci import attach
 from starpulse._internal.ci.ci_trail import CiTrail
 from starpulse._internal.level.insights import Insights, InsightStore, restore
@@ -1187,6 +1189,18 @@ def keep_event_log(
     return thread
 
 
+def _keep_released(releaser: Releaser, feed: BoardFeed, interval_s: float = RELEASE_S) -> None:  # pragma: no mutate block
+    """Once the Board replay is done, release the Waiting tasks whose dependencies settled every `interval_s` seconds;
+    a failed pass is logged and never ends the loop."""
+    feed.wait_replayed()
+    while True:
+        try:
+            releaser.release()
+        except Exception:
+            logger.exception("release: the pass failed")
+        time.sleep(interval_s)
+
+
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
     logging.basicConfig(level=logging.INFO)  # the GraphQL cost of each pull request read is an INFO line
     parser = serve_parser()
@@ -1269,10 +1283,19 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     pulls = PullStore(log.engine)
+    pins = GitHub()  # one memo of the pointer reads for the pull request projection and the release of dependents
     if shutil.which("gh"):  # without the GitHub CLI there is no source, and a task simply carries no PR state
-        pull_requests = PullRequests(feed, pulls, repos=config.repos, trail=CiTrail(log) if config.ci else None)
+        pull_requests = PullRequests(
+            feed, pulls, repos=config.repos, pins=pins, trail=CiTrail(log) if config.ci else None
+        )
         sync = PullSync(pulls, feed, config.repos, project=pull_requests.refresh)
         threading.Thread(target=sync.run_forever, name="pull-store", daemon=True).start()
+    if config.release is not None:
+        lanes = {state["id"] for state in feed.machines["board"]["states"]}
+        if board.edit is None or not {WAITING, READY} <= lanes:
+            parser.exit(1, "[release] needs a board that edits tasks and draws waiting and ready lanes\n")
+        releaser = Releaser(feed, pulls, board.edit, config.repos, config.release.settle, pins)
+        threading.Thread(target=_keep_released, args=(releaser, feed), name="board-release", daemon=True).start()
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)
     threading.Thread(
