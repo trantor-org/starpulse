@@ -16,6 +16,9 @@ from starpulse._internal.machines.transitions import lane_id
 #: How long after the board made a move the lane stream may have read it and still be taken for the same move.
 TWIN_WINDOW_S = 3600.0
 
+#: The lane a swept task settles into, which no task leaves: the stream dated one by the file's age, before the moves.
+SETTLED = "completed"
+
 #: `(id, event_id, task, old_status, new_status, observed_at)`, a row of `starpulse_lane_changes`.
 Row = tuple[int, str, str, str | None, str, float]
 
@@ -36,8 +39,8 @@ def plan(rows: Iterable[Row]) -> tuple[dict[int, tuple[str | None, str]], list[i
 
     Per task and source, in time order (the earlier insert first on a tie): a row the lane stream wrote is dropped when
     a board row into the same lane came no more than `TWIN_WINDOW_S` before it, each board row twinning one stream
-    row; a row into the lane the one before it entered is dropped; the rest are rewritten as lane ids chaining off
-    the row before. A history that needs nothing gives two empty results.
+    row; a settle the stream recorded behind a move it is dated before is dropped; a row into the lane the one before
+    it entered is dropped; the rest are rewritten as lane ids chaining off the row before. A history that needs nothing gives two empty results.
     """
     groups: dict[tuple[str, str], list[Row]] = defaultdict(list)
     for row in rows:
@@ -46,7 +49,7 @@ def plan(rows: Iterable[Row]) -> tuple[dict[int, tuple[str | None, str]], list[i
     drops: list[int] = []
     for group in groups.values():
         group.sort(key=lambda row: (row[5], row[0]))
-        twinned = _twinned(group)
+        twinned = _twinned(group) | _misdated_settles(group)
         kept: list[Row] = []
         for row in group:
             if row[0] in twinned or (kept and lane_id(kept[-1][4]) == lane_id(row[4])):
@@ -77,3 +80,20 @@ def _twinned(group: list[Row]) -> set[int]:
             waiting.remove(match)
             twinned.add(row[0])
     return twinned
+
+
+def _misdated_settles(group: list[Row]) -> set[int]:
+    """The ids of the settle rows the stream recorded after a later-dated move: they put the lane mid-path.
+
+    The settle is read after the moves it follows, so a row inserted after a row that sorts after it was dated before
+    them (by the file's age), and a floored twin closes the path. A settle inserted before the later move is a task
+    that really left the lane.
+    """
+    earliest_later = None  # the first insert among the rows after the one in hand that are not settles
+    misdated: set[int] = set()
+    for row in reversed(group):
+        if lane_id(row[4]) != SETTLED:
+            earliest_later = row[0] if earliest_later is None else min(earliest_later, row[0])
+        elif _fed(row[1]) and earliest_later is not None and earliest_later < row[0]:
+            misdated.add(row[0])
+    return misdated
