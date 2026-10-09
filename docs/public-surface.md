@@ -12,6 +12,7 @@ internal and can change in any release.
   `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base; and
   `task assign TASK ASSIGNEE`, which returns `{task, assignee, changed}`. Each exits 0 on success, 1 refused, 2 usage,
   3 when the board cannot write tasks and, for `edit` and `assign`, 4 for an unknown task.
+- `starpulse import-history`, and the JSON Lines it reads: one `{event_id, task, lane, time}` object per line ([format](cli.md#importing-a-boards-history)).
 - The documented entry point `python -m starpulse.claude_code`.
 - The config file's keys, among them each `[[triggers]]` table's `on`, `start` and `when` ([Triggers](serving.md#triggers)),
   and the machine YAML with its JSON Schema (`machine.schema.json`).

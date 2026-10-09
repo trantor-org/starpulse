@@ -16,7 +16,7 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -63,6 +63,7 @@ from starpulse._internal.eventlog.summaries import (
     write_lane,
     write_step,
 )
+from starpulse._internal.eventlog.lane_import import Change
 from starpulse._internal.eventlog.tables import gaps as _gaps
 from starpulse._internal.eventlog.tables import metadata
 
@@ -188,6 +189,15 @@ class SummarisedLevel(History, Protocol):
     """A history that keeps lane summaries, so the level reads the runs a window touches and not every lane change."""
 
     def level_window(self, level: Level, *, now: float, window_s: float) -> RunWindow: ...
+
+
+def _held_ids(db: Connection, event_ids: list[str]) -> set[str]:
+    """The `event_ids` the lane history holds."""
+    c = _lane_changes.c
+    held: set[str] = set()
+    for start in range(0, len(event_ids), _TASKS_PER_QUERY):
+        held.update(db.execute(select(c.event_id).where(c.event_id.in_(event_ids[start : start + _TASKS_PER_QUERY]))).scalars())
+    return held
 
 
 def database_url(configured: str | None, directory: Path) -> str:
@@ -343,6 +353,35 @@ class HistoryStore:
             write_step(db, self._insert, key, step)
         write_lane(db, self._insert, event_id, task, status, at)
         return True
+
+    def import_lanes(self, changes: Iterable[Change]) -> int:
+        """Add the lane changes of an earlier history, each once: how many of them the store holds that it did not.
+
+        A change is written as the board's own event id names it, so one the store holds is not written again, and a
+        move the store holds under another id (task, lane, time) or a change into the lane its task was already in
+        adds nothing. Changes may be older than the rows the store holds, so each row is written unchained and the
+        store's lane history is then repaired (`repair_lanes`) and its summaries rebuilt, as a start does: nothing may
+        record while it runs.
+        """
+        ordered = sorted(changes, key=lambda change: change.at)
+        ids = [change.event_id for change in ordered]
+        last: dict[str, str] = {}
+        with self.engine.begin() as db:
+            held = _held_ids(db, ids)
+            for event_id, task, lane, at in ordered:
+                status = lane_id(lane)
+                if last.get(task) == status:
+                    continue
+                last[task] = status
+                name, slash, _ = event_id.partition("/")
+                if _holds_move(db, task, name if slash and name else None, status, at):
+                    continue
+                row = {"event_id": event_id, "task": task, "old_status": None, "new_status": status, "observed_at": at}
+                db.execute(self._insert(_lane_changes).values(row).on_conflict_do_nothing())
+        self.repair_lanes()
+        self.rebuild_summaries()
+        with self.engine.connect() as db:
+            return len(_held_ids(db, ids) - held)
 
     def build_summaries(self) -> None:
         """Build the summaries from the raw rows when they are empty: the start-up pass for a store that predates them.
