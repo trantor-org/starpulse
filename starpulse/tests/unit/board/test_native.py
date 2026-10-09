@@ -1,6 +1,7 @@
 """The native board: StarPulse's own Markdown tasks under `.starpulse/board/`, created on first serve and written in Python."""
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -117,7 +118,9 @@ def test_a_move_the_machine_allows_rewrites_the_status_in_the_task_file(tmp_path
     written = built.writer("task-1", "Done", "operator")
 
     assert written.ok
-    assert path.read_text() == before.replace("status: In Progress", "status: Done")
+    after = path.read_text()
+    assert re.search(r"^updated_date: '?\d{4}-\d\d-\d\d \d\d:\d\d'?\n", after, re.M)
+    assert re.sub(r"^updated_date: .*\n", "", after, flags=re.M) == before.replace("status: In Progress", "status: Done")
     assert [(task.id, task.lane) for task in scanned(tmp_path)] == [("task-1", "done")]
 
 

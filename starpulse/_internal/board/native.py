@@ -8,11 +8,12 @@ edits the files with no `backlog` CLI, and creates the board, empty, when its di
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import threading
-from collections.abc import Callable, Mapping
-from datetime import datetime
+from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -47,8 +48,14 @@ from starpulse._internal.feed import criteria
 #: Where the board lives, relative to the config's directory (or the working directory without a config).
 DEFAULT_PATH = ".starpulse/board"
 #: The `[board]` settings this adapter reads: `path` is the board's directory, `machine` a machine file for the Board,
-#: relative to the config, `criteria` the command that evaluates a task's Start Criteria (`{id}` is the task's id).
-_SETTINGS = {"type", "path", "interval", "machine", "criteria"}
+#: relative to the config, `criteria` the command that evaluates a task's Start Criteria (`{id}` is the task's id),
+#: `validate` the `module:function` that may refuse a task write before it lands.
+_SETTINGS = {"type", "path", "interval", "machine", "criteria", "validate"}
+#: A task write's check: the file's path, its text before (None for a create) and the text about to be written; it
+#: returns why the write is refused, or None to let it land.
+Validate = Callable[[Path, "str | None", str], "str | None"]
+#: The stamps' format, read as UTC.
+_STAMP = "%Y-%m-%d %H:%M"
 _NOTES_END = re.compile(r"\s*<!-- SECTION:NOTES:END -->")
 _PLAN = re.compile(r"<!-- SECTION:PLAN:BEGIN -->(.*?)<!-- SECTION:PLAN:END -->", re.S)
 _CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
@@ -85,16 +92,54 @@ def _find(root: Path, task: str) -> Path | None:
     return None
 
 
-def _update(root: Path, task: str, edit: Callable[[dict, str], str]) -> Written:
-    """Rewrite the file of `task` with its front matter edited in place and its body as `edit` returns it."""
+def _hook(setting: object) -> Validate | None:
+    """The function a `validate` setting names as `module:function`, or None without one."""
+    if setting is None:
+        return None
+    module, _, name = str(setting).partition(":")
+    try:
+        found = getattr(importlib.import_module(module), name, None) if module and name else None
+    except ImportError as error:
+        raise ValueError(f"board: validate {setting!r}: {error}") from error
+    if not callable(found):
+        raise ValueError(f"board: validate {setting!r} names no function (expected module:function)")
+    return found
+
+
+def _stamped(frontmatter: dict, *, created: bool = False) -> dict:
+    """`frontmatter` with `updated_date` (and `created_date` on a new task) set to now in UTC, after the assignee or status."""
+    now = f"{datetime.now(timezone.utc):{_STAMP}}"
+    stamps = {key: now for key in ("created_date", "updated_date") if created or key == "updated_date"}
+    anchor = "assignee" if "assignee" in frontmatter else "status"
+    stamped: dict[str, Any] = {}
+    for key, value in frontmatter.items():
+        stamped[key] = stamps.get(key, value)
+        if key == anchor:
+            stamped |= {stamp: now for stamp in stamps if stamp not in frontmatter}
+    return stamped
+
+
+def _land(path: Path, before: str | None, frontmatter: dict, body: str, validate: Validate | None) -> Written | None:
+    """Write the task file at `path` in one rename, unless `validate` refuses it: the refusal, or None once it landed."""
+    text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}"
+    if validate is not None and (reason := validate(path, before, text)):
+        return Written(False, reason)
+    scratch = path.with_name(f"{path.name}.tmp")  # not a `.md` file, so a scan never reads it half written
+    scratch.write_text(text)
+    os.replace(scratch, path)
+    return None
+
+
+def _update(root: Path, task: str, edit: Callable[[dict, str], str], validate: Validate | None = None) -> Written:
+    """Rewrite the file of `task` with its front matter edited in place, its body as `edit` returns it and a new `updated_date`."""
     if (path := _find(root, task)) is None:
         return Written(False, f"{task} has no task file in {root / 'tasks'}")
     try:
-        frontmatter, body = _split(path.read_text())
+        before = path.read_text()
+        frontmatter, body = _split(before)
         body = edit(frontmatter, body)
-        scratch = path.with_name(f"{path.name}.tmp")  # not a `.md` file, so a scan never reads it half written
-        scratch.write_text(f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}")
-        os.replace(scratch, path)
+        if refused := _land(path, before, _stamped(frontmatter), body, validate):
+            return refused
     except OSError as error:
         return Written(False, f"{path}: {error}")
     return Written(True, f"Updated task {task}")
@@ -294,32 +339,40 @@ def _set_body(task: str, body: str, field: str, value: Any) -> str:
     raise ValueError(f"{field} is not an editable field")
 
 
-def _editor(root: Path, statuses: tuple[str, ...]) -> TaskEditor:
+def _apply(task: str, frontmatter: dict, body: str, changes: Mapping[str, Any], spelled: Mapping[str, str]) -> str:
+    """Set each field of `changes` in `frontmatter` or `body`, returning the body; a field it cannot set raises ValueError."""
+    for field, value in changes.items():
+        if not _set_front(frontmatter, field, value, spelled):
+            body = _set_body(task, body, field, value)
+    return body
+
+
+def _editor(root: Path, statuses: tuple[str, ...], validate: Validate | None = None) -> TaskEditor:
     """A board writer that applies every change to a task's file in one write, or refuses the whole edit.
 
-    `changes` holds the new value of each field `read` names except `comments`, which a non-blank `comment` appends to;
-    `appendNotes` is one more, text added to the end of the notes. An empty priority, milestone, assignee or type and an
-    empty references, documentation or modified-files list removes its key, a status is spelled as its lane is, and a
-    checklist item without a number is new.
+    `changes` holds the new value of each field `read` names except `comments`, which `comment` appends to: one text, or a
+    list appended in order, each blank one skipped; `appendNotes` is one more, text added to the end of the notes. An
+    empty priority, milestone, assignee or type and an empty references, documentation or modified-files list removes its
+    key, a status is spelled as its lane is, and a checklist item without a number is new.
     """
     spelled = {lane_id(status): status for status in statuses}
 
-    def edit(task: str, changes: Mapping[str, Any], comment: str, /) -> Written:
+    def edit(task: str, changes: Mapping[str, Any], comment: str | Sequence[str], /) -> Written:
         def apply(frontmatter: dict, body: str) -> str:
-            for field, value in changes.items():
-                if not _set_front(frontmatter, field, value, spelled):
-                    body = _set_body(task, body, field, value)
-            return _comment(body, comment) if comment.strip() else body
+            body = _apply(task, frontmatter, body, changes, spelled)
+            for text in [comment] if isinstance(comment, str) else comment:
+                body = _comment(body, text) if text.strip() else body
+            return body
 
         try:
-            return _update(root, task, apply)
+            return _update(root, task, apply, validate)
         except ValueError as refusal:  # raised before the file is written, so a refusal writes nothing
             return Written(False, f"{task}: {refusal}")
 
     return edit
 
 
-def _archiver(root: Path) -> TaskArchiver:
+def _archiver(root: Path, validate: Validate | None = None) -> TaskArchiver:
     """A board writer that moves a task's file to `archive/tasks/`, from any lane, after recording a non-blank reason as a comment."""
 
     def archive(task: str, reason: str, /) -> Written:
@@ -327,7 +380,9 @@ def _archiver(root: Path) -> TaskArchiver:
             return Written(False, f"{task} has no task file in {root / 'tasks'}")
         if (
             reason.strip()
-            and not (noted := _update(root, task, lambda _, body: _comment(body, f"Archived: {reason.strip()}"))).ok
+            and not (
+                noted := _update(root, task, lambda _, body: _comment(body, f"Archived: {reason.strip()}"), validate)
+            ).ok
         ):
             return noted
         target = root / "archive" / "tasks" / path.name
@@ -346,7 +401,7 @@ def _holder(body: str, session: str) -> str:
     return _append_notes(body, f"**Holder:** {session}")
 
 
-def _writer(root: Path, statuses: tuple[str, ...]) -> MoveWriter:
+def _writer(root: Path, statuses: tuple[str, ...], validate: Validate | None = None) -> MoveWriter:
     """A board writer that sets a status in the task's file. A lane's status is the board's own spelling of it.
 
     An agent's claim (a move to `In Progress` that names its session) also records the session as the task's holder.
@@ -360,7 +415,7 @@ def _writer(root: Path, statuses: tuple[str, ...]) -> MoveWriter:
             frontmatter["status"] = spelled.get(lane_id(status), status)
             return _holder(body, session) if claim else body
 
-        return _update(root, task, edit)
+        return _update(root, task, edit, validate)
 
     return write
 
@@ -402,6 +457,10 @@ def _next_id(root: Path, prefix: str) -> str:
     return f"{prefix}-{highest + 1}"
 
 
+#: The details `_new_task` writes itself; any other detail is set as `edit` sets that field.
+_NEW_TASK_DETAILS = {"assignee", "labels", "milestone", "dependencies", "priority", "description", "acceptanceCriteria"}
+
+
 def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) -> str:
     """A new task file as Backlog.md writes one: its front matter, then its Description and Acceptance Criteria."""
     frontmatter: dict[str, Any] = {"id": task, "title": title, "status": status}
@@ -419,19 +478,29 @@ def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) ->
     return text
 
 
-def _creator(root: Path, config: BacklogConfig) -> TaskCreator:
-    """A board writer that makes a task file in the first lane with the next id, `<id> - <title as a slug>.md`."""
+def _creator(root: Path, config: BacklogConfig, validate: Validate | None = None) -> TaskCreator:
+    """A board writer that makes a task file with the next id, `<id> - <title as a slug>.md`, in one write.
+
+    It starts in the first lane; any detail beyond the ones the page fills (a `status`, `type`, `references`,
+    `documentation`, `definitionOfDone`, `plan`, `notes` or other field `edit` sets) is set as `edit` sets it, so a
+    detail it cannot set refuses the create and nothing is written. A refused create leaves its id to the next one.
+    """
     lock = threading.Lock()  # two creates must not both read the same highest id
+    spelled = {lane_id(status): status for status in config.statuses}
 
     def create(title: str, details: Mapping[str, Any], /) -> Written:
         with lock:
             task = _next_id(root, config.prefix)
             slug = re.sub(r"[^\w-]+", "-", title).strip("-")[:60].strip("-") or "Task"
             path = root / "tasks" / f"{task} - {slug}.md"
-            scratch = path.with_name(f"{path.name}.tmp")  # not a `.md` file, so a scan never reads it half written
+            frontmatter, body = _split(_new_task(task, title, config.statuses[0], details))
+            rest = {field: value for field, value in details.items() if field not in _NEW_TASK_DETAILS}
             try:
-                scratch.write_text(_new_task(task, title, config.statuses[0], details))
-                os.replace(scratch, path)
+                body = _apply(task, frontmatter, body, rest, spelled)
+                if refused := _land(path, None, _stamped(frontmatter, created=True), body, validate):
+                    return refused
+            except ValueError as refusal:
+                return Written(False, f"{title}: {refusal}")
             except OSError as error:
                 return Written(False, f"{path}: {error}")
         return Written(True, task)
@@ -450,26 +519,27 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     root = base / str(settings.get("path", DEFAULT_PATH))
     _create(root, base.resolve().name)
     evaluate = criteria.evaluator(settings.get("criteria"), base)
+    validate = _hook(settings.get("validate"))
 
     def assign(task: str, assignee: str, /) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
             frontmatter["assignee"] = [assignee]
             return body
 
-        return _update(root, task, edit)
+        return _update(root, task, edit, validate)
 
     return project_board(
         root,
         settings,
         base,
         lambda config: {
-            "writer": _writer(root, config.statuses),
+            "writer": _writer(root, config.statuses, validate),
             "assign": assign,
-            "create": _creator(root, config),
+            "create": _creator(root, config, validate),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
-            "edit": _editor(root, config.statuses),
-            "archive": _archiver(root),
+            "edit": _editor(root, config.statuses, validate),
+            "archive": _archiver(root, validate),
             "complete": _completer(root),
             "docs": native_docs.lister(root),
             "read_doc": native_docs.reader(root),

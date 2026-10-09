@@ -110,6 +110,7 @@ def test_a_create_writes_every_detail_as_backlog_markdown_and_the_next_scan_read
 
     assert created == (201, {"task": "task-2"})
     frontmatter, body = _split((_tasks(tmp_path) / "task-2 - Write-the-quickstart.md").read_text())
+    assert frontmatter.pop("created_date") == frontmatter.pop("updated_date")
     assert frontmatter == {
         "id": "task-2",
         "title": "Write the quickstart",
