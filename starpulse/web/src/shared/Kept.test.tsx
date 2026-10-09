@@ -11,10 +11,13 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  // frames and timers pass only when a test steps them, so a loaded runner cannot slip one in between its checks
+  vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "setTimeout", "clearTimeout"] });
 });
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+  vi.useRealTimers();
 });
 
 let mounts = 0, renders = 0;
@@ -29,7 +32,11 @@ function Counter({ label }: { label: string }) {
 const show = (on: boolean, children: ReactNode, warm = false) => act(async () => root.render(<Kept on={on} warm={warm}>{children}</Kept>));
 const button = () => host.querySelector("button");
 /** Lets the frames after a reveal pass, when the view goes live again. */
-const frames = () => act(async () => { for (let i = 0; i < 3; i++) await new Promise((r) => requestAnimationFrame(r)); });
+const frames = async () => { for (let i = 0; i < 3; i++) await frame(); };
+/** Passes one frame. */
+const frame = () => act(async () => void vi.advanceTimersToNextFrame());
+/** Lets the timer pass that mounts a warmed view after the frame that asked for it. */
+const tick = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
 describe("Kept", () => {
   beforeEach(() => { mounts = 0; renders = 0; });
@@ -107,6 +114,7 @@ describe("Kept", () => {
 
   it("mounts a warmed view hidden and inactive before it is first shown, so the click that shows it only unhides it", async () => {
     await show(false, <Counter label="a" />, true);
+    await tick();
     await frames();
     expect(button()!.closest("[inert]")).not.toBeNull();
     expect(button()!.dataset.active).toBe("false");
@@ -127,6 +135,7 @@ describe("Kept", () => {
     act(() => root.unmount());
     root = createRoot(host);
     await show(false, <Counter label="a" />, true);
+    await tick();
     await frames();
     await show(true, <Counter label="b" />, true);
     await frames();
@@ -154,9 +163,6 @@ describe("Kept", () => {
   /** A view in three parts, the way the Kanban's columns are its parts. */
   const Parts = ({ label }: { label: string }) => <div data-warm-parts=""><section>{label}1</section><section>{label}2</section><section>{label}3</section></div>;
   const wrapper = (text: string) => [...host.querySelectorAll<HTMLElement>(".kept")].find((k) => k.textContent?.startsWith(text))!;
-  const frame = () => act(async () => { await new Promise((r) => requestAnimationFrame(r)); });
-  /** Lets the timer pass that mounts a warmed view after the frame that asked for it. */
-  const tick = () => act(async () => { await new Promise((r) => setTimeout(r)); });
 
   it("lays a warmed view out one part a frame while it is hidden, then skips its rendering, drawing the same view throughout", async () => {
     await show(false, <Parts label="a" />, true);
@@ -179,16 +185,12 @@ describe("Kept", () => {
     for (let i = 0; i < 3; i++) await frame();
     expect(host.querySelector<HTMLElement>(".kept")!.dataset.warm).toBe("0");
     await act(async () => arrive());
-    // A frame can pass inside the act above on a loaded runner, so the first step seen is "0" or "1";
-    // what must hold is that each frame advances one part and the view ends skipped.
     const steps = [wrapper("a").dataset.warm];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 5; i++) {
       await frame();
       steps.push(wrapper("a").dataset.warm);
     }
-    const seen = steps.filter((s, i) => s !== steps[i - 1]);
-    expect(seen).toEqual(["0", "1", "2", "3", undefined].slice(-seen.length));
-    expect(seen.length).toBeGreaterThanOrEqual(3);
+    expect(steps).toEqual(["0", "1", "2", "3", undefined, undefined]);
   });
 
   it("warms one view at a time, the next once the one ahead of it is laid out", async () => {
