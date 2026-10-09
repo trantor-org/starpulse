@@ -268,6 +268,149 @@ describe("a Board path's route", () => {
     expect(routed(a, b, c0, [a, b, by(4)], new Drawn(), sky, held).c).toEqual(held);
     expect(routed(a, b, c0, [a, b, by(30)], new Drawn(), sky, held).c).toEqual(c0);
   });
+
+  describe("searched for a Board's first snapshot", () => {
+    const round = (n: number) => Math.round(n * 1e6) / 1e6;
+    const routesOf = (sky: ReturnType<typeof savedBoardSky>) => build(sky, { kind: "board" }).bEdges.map((e) => `${e.source}>${e.target} ${round(e.c!.x)},${round(e.c!.y)}`);
+    const crowd = (counts: Record<string, number>) => (snap: Snapshot) => {
+      snap.flows[0].agents = Object.entries(counts).flatMap(([state, n]) => Array.from({ length: n }, (_, i) => ({ id: `${state}-${i}`, title: "t", state, model: "", labels: [] })));
+    };
+
+    it("bends each blocked path to the same spot on the saved Board, empty and crowded, at each window size", () => {
+      const sizes: [number, number][] = [[1920, 1080], [1280, 720]];
+      const routes = Object.fromEntries(sizes.flatMap(([W, H]) => [
+        [`${W}x${H}`, routesOf(savedBoardSky(W, H))],
+        [`${W}x${H} crowded`, routesOf(savedBoardSky(W, H, crowd({ ready: 90, waiting: 60, in_progress: 40, done: 90, review: 20 })))],
+      ]));
+      expect(routes).toMatchInlineSnapshot(`
+        {
+          "1280x720": [
+            "new>ready 346,540.5",
+            "new>blocked 476,416.686747",
+            "new>waiting 476,664.313253",
+            "new>in_progress 690,690",
+            "ready>in_progress 736,540.5",
+            "ready>blocked 578.761084,388.086747",
+            "ready>waiting 578.761084,692.913253",
+            "ready>archived 890,890",
+            "blocked>ready 578.761084,388.086747",
+            "blocked>in_progress 838.761084,445.286747",
+            "blocked>archived 892,943.5",
+            "waiting>ready 578.761084,692.913253",
+            "waiting>in_progress 866,664.313253",
+            "waiting>archived 892,943.5",
+            "in_progress>blocked 838.761084,445.286747",
+            "in_progress>review 1126,569.1",
+            "in_progress>done 1250,410",
+            "in_progress>needs_attention 909.582265,313.798795",
+            "in_progress>archived 1113,943.5",
+            "review>done 1386,540.5",
+            "review>in_progress 1126,569.1",
+            "review>archived 1334,943.5",
+            "needs_attention>ready 606,342.398795",
+            "needs_attention>in_progress 909.582265,313.798795",
+            "needs_attention>archived 1530,570",
+            "done>completed 1646,339",
+          ],
+          "1280x720 crowded": [
+            "new>ready 346,540.5",
+            "new>blocked 476,416.686747",
+            "new>waiting 476,664.313253",
+            "new>in_progress 410,130",
+            "ready>in_progress 736,540.5",
+            "ready>blocked 578.761084,388.086747",
+            "ready>waiting 578.761084,692.913253",
+            "ready>archived 690,730",
+            "blocked>ready 578.761084,388.086747",
+            "blocked>in_progress 838.761084,445.286747",
+            "blocked>archived 892,943.5",
+            "waiting>ready 578.761084,692.913253",
+            "waiting>in_progress 866,664.313253",
+            "waiting>archived 892,943.5",
+            "in_progress>blocked 838.761084,445.286747",
+            "in_progress>review 1126,569.1",
+            "in_progress>done 1250,410",
+            "in_progress>needs_attention 909.582265,313.798795",
+            "in_progress>archived 1113,943.5",
+            "review>done 1386,540.5",
+            "review>in_progress 1126,569.1",
+            "review>archived 1334,943.5",
+            "needs_attention>ready 606,342.398795",
+            "needs_attention>in_progress 909.582265,313.798795",
+            "needs_attention>archived 1690,210",
+            "done>completed 1646,339",
+          ],
+          "1920x1080": [
+            "new>ready 283.5,505",
+            "new>blocked 413.5,381.186747",
+            "new>waiting 413.5,628.813253",
+            "new>in_progress 570,370",
+            "ready>in_progress 673.5,505",
+            "ready>blocked 516.261084,352.586747",
+            "ready>waiting 516.261084,657.413253",
+            "ready>archived 450,970",
+            "blocked>ready 516.261084,352.586747",
+            "blocked>in_progress 776.261084,409.786747",
+            "blocked>archived 829.5,908",
+            "waiting>ready 516.261084,657.413253",
+            "waiting>in_progress 803.5,628.813253",
+            "waiting>archived 829.5,908",
+            "in_progress>blocked 776.261084,409.786747",
+            "in_progress>review 1063.5,533.6",
+            "in_progress>done 1210,370",
+            "in_progress>needs_attention 847.082265,278.298795",
+            "in_progress>archived 1050.5,908",
+            "review>done 1323.5,505",
+            "review>in_progress 1063.5,533.6",
+            "review>archived 1271.5,908",
+            "needs_attention>ready 543.5,306.898795",
+            "needs_attention>in_progress 847.082265,278.298795",
+            "needs_attention>archived 850,450",
+            "done>completed 1583.5,303.5",
+          ],
+          "1920x1080 crowded": [
+            "new>ready 283.5,505",
+            "new>blocked 413.5,381.186747",
+            "new>waiting 413.5,628.813253",
+            "new>in_progress 290,890",
+            "ready>in_progress 673.5,505",
+            "ready>blocked 516.261084,352.586747",
+            "ready>waiting 516.261084,657.413253",
+            "ready>archived 690,690",
+            "blocked>ready 516.261084,352.586747",
+            "blocked>in_progress 776.261084,409.786747",
+            "blocked>archived 829.5,908",
+            "waiting>ready 516.261084,657.413253",
+            "waiting>in_progress 803.5,628.813253",
+            "waiting>archived 829.5,908",
+            "in_progress>blocked 776.261084,409.786747",
+            "in_progress>review 1063.5,533.6",
+            "in_progress>done 1210,370",
+            "in_progress>needs_attention 847.082265,278.298795",
+            "in_progress>archived 1050.5,908",
+            "review>done 1323.5,505",
+            "review>in_progress 1063.5,533.6",
+            "review>archived 1271.5,908",
+            "needs_attention>ready 543.5,306.898795",
+            "needs_attention>in_progress 847.082265,278.298795",
+            "needs_attention>archived 1690,250",
+            "done>completed 1583.5,303.5",
+          ],
+        }
+      `);
+    });
+    it("takes the spot first met on the search order when equally near spots tie, the lower y first", () => {
+      // c0 sits on the 40 px lattice the search walks, so the spots above and below it are equally near and equally clear
+      const from = at("new", 100, 290, 30), to = at("done", 700, 290, 30), o = at("ready", 410, 290, 40);
+      const tied = routed(from, to, { x: 410, y: 290 }, [from, to, o], new Drawn(), sky);
+      expect({ x: round(tied.c.x), y: round(tied.c.y) }).toMatchInlineSnapshot(`
+        {
+          "x": 410,
+          "y": 170,
+        }
+      `);
+    });
+  });
 });
 
 describe("a Board path's route search", () => {
