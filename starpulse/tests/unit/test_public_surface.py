@@ -1,4 +1,4 @@
-"""The public surface is pinned: the modules the README lists, the names each exports, and nothing else."""
+"""The public surface is pinned: the modules docs/public-surface.md lists, the names each exports, and nothing else."""
 
 import importlib
 import re
@@ -95,17 +95,17 @@ PUBLIC: dict[str, set[str]] = {
     "starpulse.snapshot": {"Qualify", "describe", "is_workflow", "qualifier", "writers"},
 }
 
-README = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "README.md"
+SURFACE = next(root for root in Path(__file__).resolve().parents if (root / "README.md").is_file()) / "docs/public-surface.md"
 
 
-def _listed_in_readme() -> set[str]:
-    section = re.search(r"^## Public surface\n(.*?)(?=^## )", README.read_text(), re.MULTILINE | re.DOTALL)
-    assert section, "the README has no `## Public surface` section"
+def _listed_on_the_page() -> set[str]:
+    section = re.search(r"^## Public surface\n(.*?)(?=^## )", SURFACE.read_text(), re.MULTILINE | re.DOTALL)
+    assert section, "docs/public-surface.md has no `## Public surface` section"
     return set(re.findall(r"^- `(starpulse\.[a-z_]+)`", section.group(1), re.MULTILINE))
 
 
-def test_the_readme_lists_exactly_the_pinned_modules() -> None:
-    assert _listed_in_readme() == set(PUBLIC)
+def test_the_public_surface_page_lists_exactly_the_pinned_modules() -> None:
+    assert _listed_on_the_page() == set(PUBLIC)
 
 
 @pytest.mark.parametrize("module", sorted(PUBLIC))
@@ -122,7 +122,7 @@ ROOT_OTHER = {"__init__", "__main__", "claude_code", "_internal", "tests"}
 
 
 def _unlisted_at_root(package: Path) -> set[str]:
-    """The Python modules and packages directly under `package` that neither the README lists nor `ROOT_OTHER` allows."""
+    """The Python modules and packages directly under `package` that neither docs/public-surface.md lists nor `ROOT_OTHER` allows."""
     found = {path.stem for path in package.glob("*.py")} | {path.parent.name for path in package.glob("*/__init__.py")}
     return found - {module.removeprefix("starpulse.") for module in PUBLIC} - ROOT_OTHER
 

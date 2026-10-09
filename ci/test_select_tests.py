@@ -106,7 +106,8 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
 @pytest.mark.parametrize(
     ("path", "tests"),
     [
-        ("README.md", ["ci/test_ui_preview.py", "starpulse/tests/unit/test_public_surface.py"]),
+        ("README.md", ["ci/test_ui_preview.py"]),
+        ("docs/public-surface.md", ["starpulse/tests/unit/test_public_surface.py"]),
         ("starpulse/web/src/App.tsx", ["ci/test_ui_preview.py", "starpulse/tests/unit/test_neutrality.py"]),
         ("docs/serving.md", ["starpulse/tests/unit/test_builtin_types.py"]),
         ("docs/sources.md", ["starpulse/tests/unit/test_builtin_types.py"]),
@@ -133,6 +134,7 @@ def test_a_mapped_non_python_file_selects_the_tests_that_read_it(repo, path, tes
     "path",
     [
         "CONTRIBUTING.md",
+        "docs/security.md",
         "LICENSE",
         ".github/ISSUE_TEMPLATE/bug.yml",
         ".github/pull_request_template.md",

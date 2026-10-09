@@ -20,7 +20,7 @@ push to `main`.
 `uv run lint-imports` checks the tiers under `starpulse/_internal`, top to bottom: `api` over `cli` (the server's routes and
 the hub, then the command line), `adapters`, `level`, `feed` and `ci`, `eventlog`, then `config`, `machines` and
 `contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.
-The top level holds only the public modules the [README](../README.md#public-surface) lists, each a facade over its feature.
+The top level holds only the public modules the [Public surface](public-surface.md#public-surface) lists, each a facade over its feature.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 The page's `web/src` is organized by feature: `api/` (types, `apiFetch`, the event stream), `features/<name>/` (a view with its
 pure model and colocated tests), `render/` (the canvas), `shared/` and `demo/`. ESLint's `no-restricted-imports` holds a feature
