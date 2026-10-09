@@ -12,7 +12,7 @@ import os
 import re
 import threading
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,8 +27,8 @@ _FOLDER = re.compile(r"[\w -]+(/[\w -]+)*")
 
 
 def _stamp() -> str:
-    """Now, in the host's local time, as Backlog.md writes a doc's dates."""
-    return datetime.now().strftime("%Y-%m-%d %H:%M")
+    """Now, in UTC, as Backlog.md writes a doc's dates."""
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
 
 
 def _parts(text: str) -> tuple[str, str] | None:
