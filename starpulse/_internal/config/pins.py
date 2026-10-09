@@ -3,8 +3,8 @@
 A `[[repos]]` entry says a repository's merges reach live state through the parent's pin bump: the parent merge whose
 submodule pointer first contains the child's merge commit. `link` finds that merge; the pointer and containment
 reads are GitHub calls, so `GitHub` memoizes them (a commit's pointer and a pair of commits never change) and the
-caller runs `link` on the timer that reads pull requests, never under the feed's lock. The per-repository GraphQL read
-that answers each pull request's status also answers these (`learn`); REST is the fallback for what it could not.
+caller runs `link` on the timer that projects pull requests, never under the feed's lock. The answers are saved with
+the Board (`answers`, `restore`), so a restart asks GitHub for none of them again.
 """
 
 from __future__ import annotations
@@ -115,18 +115,6 @@ class GitHub:
         if key not in self._reaches and (status := _api(f"repos/{repo}/compare/{sha}...{pointer}", ".status")):
             self._reaches[key] = status in _CONTAINS
         return self._reaches.get(key, False)
-
-    def learn(
-        self, pointers: Mapping[tuple[str, str, str], str | None], reaches: Mapping[tuple[str, str, str], bool]
-    ) -> None:
-        """Keep the answers a batched GraphQL read already gave, so `pointer` and `reaches` need no REST call for them.
-
-        A pointer of None says the merge has nothing at that path, which is as settled as a commit.
-        """
-        for key, found in pointers.items():
-            self._pointers.setdefault(key, found)
-        for key, contains in reaches.items():
-            self._reaches.setdefault(key, contains)
 
     def answers(self) -> dict[str, list[list]]:
         """Every answer kept, as JSON a saved Board can hold; `restore` takes it back."""
