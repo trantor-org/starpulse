@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from starpulse.adapters.boards.seam import Written
+from starpulse.api import server as server_module
 from starpulse.api.adapter_kit import next_event as _next_event
 from starpulse.api.adapter_kit import serve as _serve
 from starpulse.api.adapter_kit import task
@@ -158,6 +159,26 @@ def test_the_event_stream_sends_a_snapshot_then_a_delta_per_change(tmp_path: Pat
         "PROJ-1",
         "worktree_ready",
     )
+
+
+def test_a_change_is_encoded_once_however_many_pages_are_streaming(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    encoded: list[str] = []
+    encode_event = server_module.event
+    monkeypatch.setattr(server_module, "event", lambda name, data: encoded.append(name) or encode_event(name, data))
+    feed = BoardFeed()
+    with _serve(tmp_path, feed) as server:
+        with (
+            urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as one,
+            urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as other,
+        ):
+            _next_event(one)
+            _next_event(other)
+            feed.set_dags("ci", [_DAG], None)
+            seen = [_next_event(one), _next_event(other)]
+
+    assert [name for name, _ in seen] == ["dags", "dags"]
+    assert seen[0][1] == seen[1][1]
+    assert encoded == ["dags"]
 
 
 def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(

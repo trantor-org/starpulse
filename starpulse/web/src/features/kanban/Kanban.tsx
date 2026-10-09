@@ -263,17 +263,26 @@ function Modal({ task, tasks, records, stack, names, marks, now, profiles, miles
   // otherwise it is read when the task opens, and the entry draws meanwhile
   const [held] = useState(() => records.fresh(task.id));
   const [record, setRecord] = useState<TaskRecord | null>(held?.got ?? null);
+  // a read that fails is shown, with a retry, rather than leaving the modal busy for good
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (held?.got) return;
+    if (!attempt && held?.got) return;
     let current = true;
-    void (held && held.got === undefined ? held.read : fetchRecord(task.id)).then((r) => current && setRecord(r));
+    // a read ahead that fails is read once more rather than shown
+    void (!attempt && held && held.got === undefined ? held.read.then((r) => r ?? fetchRecord(task.id)) : fetchRecord(task.id)).then((r) => {
+      if (!current) return;
+      setRecord(r);
+      setFailed(!r);
+    });
     return () => { current = false; };
-  }, [held, task.id]);
+  }, [held, task.id, attempt]);
   return (
       <TaskView task={task} tasks={tasks} record={record} stack={stack} lane={names[task.lane] ?? task.lane} names={names} now={now} open={open}
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
         startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
+        readNote={failed && <div className="editrefusal" role="alert"><b>The full record could not be read.</b> <button onClick={() => { setFailed(false); setAttempt((n) => n + 1); }}>Retry</button></div>}
         close={close} hide={hide} archive={archive} constellation={constellation} move={move} start={start}
         onSaved={(next) => { setRecord(next); saved(next); }} />
   );
