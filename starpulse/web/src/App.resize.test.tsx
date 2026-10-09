@@ -77,16 +77,17 @@ describe("the page sizing the canvas", () => {
     const crumb = host.querySelector<HTMLElement>("#crumb")!;
     act(() => node("Kanban").click());
     expect(!crumb.isConnected || crumb.classList.contains("off")).toBe(true);
-    expect(host.querySelector("#clock")?.classList).not.toContain("off");
 
     act(() => node("Star Map").click());
     expect(host.querySelector("#crumb")?.classList).toContain("off");
     await act(async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => requestAnimationFrame(resolve)); });
     expect(host.querySelector("#crumb")?.classList).not.toContain("off");
-    expect(host.querySelector("#clock")?.classList).not.toContain("off");
 
     act(() => adminNode().click());
     expect(host.querySelector("#crumb")?.classList).toContain("off");
-    expect(host.querySelector("#clock")?.classList).toContain("off");
+  });
+
+  it("shows the time once, in the navigator's live line, with no second header clock", () => {
+    expect(host.querySelector("#clock")).toBeNull();
   });
 });

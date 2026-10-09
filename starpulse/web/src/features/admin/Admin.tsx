@@ -142,7 +142,7 @@ export function Admin({ store, window: historyWindow, forwarding }: { store: Adm
               <Seg label="Kanban cards" value={density} options={[["comfortable", "Comfortable"], ["compact", "Compact"]]} onPick={(v) => store.setDensity(v)} />
             </div>
             <div className="row">
-              <div><div className="lb">Clock</div><div className="hint">Header clock, Recent feed, panels and tooltips, now {sample(clock)} MST</div></div>
+              <div><div className="lb">Clock</div><div className="hint">Navigator time, Recent feed, panels and tooltips, now {sample(clock)} MST</div></div>
               <Seg label="Clock" value={clock} options={[["24", "24-hour"], ["12", "12-hour"]]} onPick={(v) => store.setClock(v)} />
             </div>
             <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>

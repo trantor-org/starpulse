@@ -1,5 +1,5 @@
 // The page's DOM around the canvas: the left navigator, always open,
-// the right rail (recent moves on top, the legend at the bottom), the clock, and the
+// the right rail (recent moves on top, the legend at the bottom), and the
 // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
 // what it publishes and asks it to move.
 import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -32,7 +32,7 @@ const REVEAL_SETTLE_FRAMES = 8;
 
 export function App() {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const tip = useRef<HTMLDivElement>(null), panel = useRef<HTMLDivElement>(null), clock = useRef<HTMLDivElement>(null);
+  const tip = useRef<HTMLDivElement>(null), panel = useRef<HTMLDivElement>(null);
   const renderer = useRef<Renderer | null>(null);
   const [store] = useState(() => new HudStore());
   const hud = useHud(store);
@@ -92,7 +92,6 @@ export function App() {
       tip.current?.classList.toggle("off", off);
       panel.current?.classList.toggle("off", off);
       document.getElementById("crumb")?.classList.toggle("off", off);
-      clock.current?.classList.toggle("off", next === "admin" || next === "graph");
     }
     if (off) renderer.current?.show(false);
     return true;
@@ -114,11 +113,11 @@ export function App() {
   const flyToLane = useCallback((lane: string) => { choose("constellation"); renderer.current?.go([...BOARD, { kind: "state", id: lane }]); }, [choose]);
 
   useEffect(() => {
-    const els = { tip: tip.current!, panel: panel.current!, clock: clock.current! };
+    const els = { tip: tip.current!, panel: panel.current! };
     const r = makeRenderer(canvas.current!, store, els, new URLSearchParams(location.search).has("demo"), admin.get);
     renderer.current = r;
     r.start();
-    // times are written at the source, so a new clock is a new subtitle, feed and header clock
+    // times are written at the source, so a new clock is a new subtitle and feed
     const unsubscribe = admin.subscribe(() => r.refresh());
     return () => {
       unsubscribe();
@@ -144,7 +143,6 @@ export function App() {
       <Navigator shell={shell} hud={hud} view={view} activeView={activeView} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
-      <div ref={clock} id="clock" className="hud" style={{ top: 18, left: "auto", right: "calc(var(--rail) + 24px)" }} />
       {/* views warm in this order, the Kanban first: it is the one most often opened */}
       <Kept name="kanban" on={view === "kanban"} warm={drawn}>
         <Suspense fallback={null}>

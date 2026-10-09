@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clockHm, clockHms, fmtAt, stamp } from "./clock";
+import { clockHm, fmtAt, stamp } from "./clock";
 
 // 2026-10-02 01:00 UTC is 18:00 on Oct 1 in Arizona (UTC-7, no daylight saving time)
 const SIX_PM = 1790902800;
@@ -12,7 +12,6 @@ describe("a time as the clock setting writes it", () => {
     expect(clockHm(SIX_PM, "24")).toBe("18:00");
     expect(clockHm(EARLY, "24")).toBe("06:05");
     expect(clockHm(MIDNIGHT, "24")).toBe("00:00");
-    expect(clockHms(EARLY * 1000, "24")).toBe("06:05:09");
   });
 
   it("writes 12-hour time with am or pm and no padded hour", () => {
@@ -20,7 +19,6 @@ describe("a time as the clock setting writes it", () => {
     expect(clockHm(EARLY, "12")).toBe("6:05 am");
     expect(clockHm(MIDNIGHT, "12")).toBe("12:00 am");
     expect(clockHm(NOON, "12")).toBe("12:00 pm");
-    expect(clockHms(EARLY * 1000, "12")).toBe("6:05:09 am");
   });
 
   it("puts the date before the time in a stamp and a trace moment", () => {
