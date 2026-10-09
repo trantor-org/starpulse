@@ -1,8 +1,8 @@
 // What the DAGs catalog and a DAG's modal both draw: the state dot, the step constellation (small in a row, large in the modal),
-// the last-run line, the pool text and a Board tie's chip. Steps and links are drawn as the Star Map draws a DAG body's (renderer drawStars), in DAG_COLOR.
+// the last-run line, the pool text and a Board tie's chip. Steps and links are drawn as the Star Map draws a DAG body's (boardDraw drawStars), in DAG_COLOR.
 import type { CSSProperties, ReactNode } from "react";
 import { ago, bigPlace, chartHeight, place, short, took, type Phase, type Row, type Tie } from "./dags";
-import { DAG_COLOR } from "../../render/renderer";
+import { DAG_COLOR } from "../../render/draw";
 import { useId } from "react";
 import type { Pool } from "../../api";
 
