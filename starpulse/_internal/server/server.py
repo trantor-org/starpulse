@@ -143,6 +143,7 @@ import argparse
 import functools
 import gzip
 import io
+import json
 import logging
 import math
 import os
@@ -229,6 +230,7 @@ from starpulse._internal.feed.machine_tasks import tables as machine_tables
 from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
+from starpulse._internal.autopilot.starter import builtin_starter
 from starpulse._internal.autopilot.toggle import TOGGLE_FILE
 from starpulse._internal.config.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.eventlog import events as machine_events
@@ -988,6 +990,59 @@ def announce(port: int, hint: str | None) -> None:
         print(hint, flush=True)
 
 
+#: How long the dispatch loop holds the trajectory chain it ranks on: the analytics read the whole history.
+_CHAIN_TTL_S = 300
+
+
+def start_autopilot(
+    config: Config,
+    base: Path,
+    feed: BoardFeed,
+    board: Board,
+    history: History,
+    level: Level | None,
+    stop: threading.Event,
+    probe: Callable[[], Mapping[str, float]] | None = None,
+) -> Runtime:
+    """The autopilot's runtime with its sampler and dispatch loop running on daemon threads until `stop` is set.
+
+    The loop admits from the lane `[autopilot] lane` names (else the board's initial lane), starts a session through
+    `session_start_url` (else the built-in tmux starter in `base`), and settles a stuck one by moving it to Needs
+    attention through the board's editor. Its chain is the trajectory analytics' when this server has a level.
+    """
+
+    def settle(task: str, reason: str) -> Written:
+        if board.edit is None:
+            return Written(False, "this board has no editor", unavailable=True)
+        return board.edit(task, {"status": "needs_attention"}, reason)
+
+    def claim(task: str, comment: str) -> Written:
+        if board.edit is None:
+            return Written(False, "this board has no editor", unavailable=True)
+        return board.edit(task, {}, comment)
+
+    def read_chain() -> dict[str, Any]:
+        body, status = trajectories_response(history, {}, level, feed.machines, time.time())
+        return json.loads(body)["chain"] if status == 200 else {}
+
+    initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
+    runtime = build_autopilot(
+        config.autopilot,
+        base / TOGGLE_FILE,
+        feed,
+        probe,
+        start=starter(config.session_start_url) or builtin_starter(base),
+        settle=settle,
+        claim=claim,
+        chain=_cached(read_chain, _CHAIN_TTL_S),
+        lane=config.autopilot.eligible_lane(initial),
+    )
+    threading.Thread(target=runtime.sampler.run_forever, args=(stop,), name="autopilot-sampler", daemon=True).start()
+    if runtime.loop is not None:
+        threading.Thread(target=runtime.loop.run_forever, args=(stop,), name="autopilot-loop", daemon=True).start()
+    return runtime
+
+
 def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> HistoryStore:
     """StarPulse's store at `database_url` or beside the config: the one history `serve` records into and the page reads.
 
@@ -1246,10 +1301,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     if forwarder is not None:
         forward.start(forwarder, forwarding)
     announce(args.port, feed.snapshot()["hint"])
-    autopilot_runtime = build_autopilot(config.autopilot, base / TOGGLE_FILE, feed)
-    threading.Thread(
-        target=autopilot_runtime.sampler.run_forever, args=(threading.Event(),), name="autopilot-sampler", daemon=True
-    ).start()
+    autopilot_runtime = start_autopilot(
+        config, base, feed, board, store, config.level if args.hub else None, threading.Event()
+    )
     handler = request_handler(
         feed,
         _STATIC,

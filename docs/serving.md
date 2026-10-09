@@ -110,6 +110,7 @@ applied_by = "pin-bump"
 # lane = "to_do"          # the lane whose tasks are eligible; unset: the board's initial lane
 # review_lane = "review"  # the lane whose tasks' points are the review load
 # unsized_points = 3      # the points a task with no `size-N` label counts as, a whole number of 1 or more
+# idle_minutes = 30       # minutes a started session may sit idle with its task still open before it is settled
 # [autopilot.tier_weights]  # what a point costs on each agent tier; a tier left out keeps its weight
 # fast = 1
 # standard = 2
@@ -123,7 +124,7 @@ applied_by = "pin-bump"
 
 ## Autopilot
 
-The autopilot is a switch, a capacity reading and an admission rule; no loop acts on the rule yet. The switch is persisted in
+The autopilot is a switch, a capacity reading, an admission rule and a loop that acts on the rule. The switch is persisted in
 `starpulse-autopilot.json` beside the config file (in the working directory with none), so it survives a restart, and it starts off.
 
 `GET /api/autopilot` answers any address:
@@ -169,6 +170,36 @@ a pure function of the open tasks, the sampler's readings, the `[autopilot]` pol
 
 The run ledger, `starpulse-autopilot-runs.jsonl` beside the switch, holds one JSON line per finished run: its task, tier,
 points, outcome, duration in seconds and the peak demand it drew on each dimension.
+
+### Dispatch
+
+While the switch is on, the loop calls `decide` and starts the admitted tasks. It runs on events, never on a dispatch timer:
+
+- a task enters the eligible lane (or a task there becomes workable);
+- a harness session stops, or a started task changes;
+- the switch turns on;
+- the sampler's reading of a dimension crosses its limit.
+
+Each pass starts the first admitted task, then decides again over readings that carry that task's demand, so two tasks that
+do not fit together are never both started in one pass. A run holds its capacity from its start until its task leaves
+`in_progress`; until the harness reports the session active the loop adds that demand to the sampler's readings itself.
+A start that fails (`StartFailedError`) is logged and skipped until the next pass. A start that succeeds comments
+`Autopilot started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
+
+A session starts through `session_start_url` when the config sets it. With none, the built-in starter runs
+`tmux new-session -d -s starpulse-<task> -c <config directory> claude --remote-control <task> "Start <task>"` and needs
+`tmux` and `claude` on `PATH`, so a board with no `[autopilot]` table and no `session_start_url` starts a task out of the
+box. `POST /api/start/<task>` is unchanged and uses only `session_start_url`.
+
+When a run's task leaves the eligible lane and `in_progress`, the loop writes its outcome (the lane it went to), duration and
+peak to the ledger. A started session that has been idle longer than `idle_minutes` (the harness's last active event, or
+its start before any) with its task still open is settled once: the task moves to `needs_attention` with a comment saying
+why, and is never started again. A board with no editor, or no `needs_attention` lane, refuses the move; the loop logs the
+refusal and retries on the next sampler period. The sampler period (60 seconds) is the only timer; it finishes and settles
+runs and never admits.
+
+The runs in flight are held in memory. A restart forgets them: a session started before it still counts toward capacity
+once the harness sees it, but the loop neither settles nor records it.
 
 ## Event log archive
 

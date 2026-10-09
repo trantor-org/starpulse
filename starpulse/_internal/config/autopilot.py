@@ -2,7 +2,8 @@
 
 With no block the autopilot has everything it needs: the board's initial lane is the eligible lane, the built-in
 tier weights price a task by its tier, an unsized task counts as `unsized_points`, and the four capacity
-dimensions have the limits below. `lane`, `unsized_points`, `[autopilot.tier_weights]` and `[autopilot.limits]`
+dimensions have the limits below, and a session idle for `idle_minutes` with its task still open is settled to Needs
+attention. `lane`, `review_lane`, `unsized_points`, `idle_minutes`, `[autopilot.tier_weights]` and `[autopilot.limits]`
 each override one default; a key left out keeps its default.
 """
 
@@ -16,7 +17,7 @@ __all__ = ["DIMENSIONS", "Autopilot", "AutopilotError", "parse_autopilot"]
 #: The capacity dimensions: host CPU and memory (percent), autopilot sessions in flight, and review-lane points.
 DIMENSIONS = ("cpu", "memory", "sessions", "review")
 
-_KEYS = {"lane", "review_lane", "unsized_points", "tier_weights", "limits"}
+_KEYS = {"lane", "review_lane", "unsized_points", "idle_minutes", "tier_weights", "limits"}
 
 
 class AutopilotError(ValueError):
@@ -31,6 +32,8 @@ class Autopilot:
     """The lane whose tasks' points are the review load."""
     unsized_points: int = 3
     """The points a task with no `size-N` label counts as."""
+    idle_minutes: float = 30
+    """How long a session may sit with no event before its still-open task is settled to Needs attention."""
     tier_weights: Mapping[str, float] = field(default_factory=lambda: {"fast": 1, "standard": 2, "deep": 4})
     """What a point costs on each agent tier: a task's demand starts from its points times its tier's weight."""
     limits: Mapping[str, float] = field(
@@ -77,12 +80,14 @@ def parse_autopilot(raw: object) -> Autopilot:
     unsized = raw.get("unsized_points", defaults.unsized_points)
     if isinstance(unsized, bool) or not isinstance(unsized, int) or unsized < 1:
         raise AutopilotError("autopilot unsized_points must be a whole number of 1 or more")
+    idle = _number(raw.get("idle_minutes", defaults.idle_minutes), "idle_minutes")
     weights = _table(raw.get("tier_weights", {}), "tier_weights", None)
     limits = _table(raw.get("limits", {}), "limits", defaults.limits)
     return Autopilot(
         lane,
         review_lane,
         unsized,
+        idle,
         {**defaults.tier_weights, **weights},
         {**defaults.limits, **limits},
     )
