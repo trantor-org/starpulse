@@ -928,7 +928,8 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb .ap { position: relative; display: flex; align-items: center; gap: 12px; flex: none; width: 780px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 12px; border-inline: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); white-space: nowrap; }
 /* the strip leads the right-hand group, so the task count and New task follow it and wrap with it */
 #kb .filters .rt { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 0; min-width: 0; max-width: 100%; margin-left: auto; }
-#kb .ap + .shown { margin-left: 12px; }
+#kb .ap + .shown { margin-left: 12px; width: calc(90px * var(--fs)); font-variant-numeric: tabular-nums; }
+#kb .rt .nt { display: flex; justify-content: flex-end; width: calc(86px * var(--fs)); }
 #kb .ap .sw-l { flex: none; display: flex; align-items: center; gap: 7px; font-size: calc(11.5px * var(--fs)); color: var(--ink-3); }
 :is(#admin, #kb) .sw:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
 #kb .sw { all: unset; position: relative; display: block; width: 30px; height: 16px; border-radius: 8px; background: color-mix(in srgb, var(--slate) 25%, transparent); transition: background .15s; }

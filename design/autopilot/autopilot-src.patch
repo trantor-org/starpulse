@@ -285,7 +285,7 @@ index e701e1f..732f159 100644
    const [open, setOpen] = useState(false);
    return (
 diff --git a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/features/kanban/Kanban.tsx
-index 46484e9..161e4a9 100644
+index 46484e9..9aad3c6 100644
 --- a/starpulse/web/src/features/kanban/Kanban.tsx
 +++ b/starpulse/web/src/features/kanban/Kanban.tsx
 @@ -8,7 +8,8 @@ import { ArchiveDialog } from "./ArchiveConfirm";
@@ -307,7 +307,7 @@ index 46484e9..161e4a9 100644
  function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, outlineSlot, onQuery, spot = null, note, opening = null }: {
    hud: HudState; moves: MoveStore; starts: StartStore; compact: boolean; constellation: (lane: string) => void; searchSlot: HTMLElement | null; outlineSlot: HTMLElement | null; onQuery?: (query: string) => void;
    spot?: string | null; note?: (why: string | null) => void; opening?: { id: string } | null;
-@@ -784,11 +787,13 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+@@ -784,11 +787,16 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
              {menu === "hidden" && <HiddenMenu prefs={prefs} tasks={cards} set={setPrefs} close={() => setMenu(null)} />}
            </div>
          )}
@@ -319,9 +319,12 @@ index 46484e9..161e4a9 100644
 +        <div className="rt">
 +          <AutopilotStrip store={autopilot} now={now} openTask={setOpen} />
 +          <span className="shown">{view.shown} of {view.total} tasks</span>
-+          <NewTaskAction capabilities={hud.capabilities} lane={hud.names[lanes[0]] ?? lanes[0]}
-+            assignees={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)}
-+            created={(id) => setToast({ text: `${id} created`, sub: `in ${hud.names[lanes[0]] ?? lanes[0]}` })} />
++          {/* a fixed slot, so the strip does not move when the count changes or New task arrives with the capabilities */}
++          <span className="nt">
++            <NewTaskAction capabilities={hud.capabilities} lane={hud.names[lanes[0]] ?? lanes[0]}
++              assignees={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)}
++              created={(id) => setToast({ text: `${id} created`, sub: `in ${hud.names[lanes[0]] ?? lanes[0]}` })} />
++          </span>
 +        </div>
        </div>
        <div id="cols" ref={columns} data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
