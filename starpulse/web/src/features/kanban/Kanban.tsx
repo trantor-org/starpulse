@@ -282,7 +282,7 @@ function Modal({ task, tasks, records, stack, names, marks, now, profiles, miles
         profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
         startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
-        readNote={failed && <div className="editrefusal" role="alert"><b>The full record could not be read.</b> <button onClick={() => { setFailed(false); setAttempt((n) => n + 1); }}>Retry</button></div>}
+        readNote={failed && <div className="editrefusal" role="alert"><b>The full record could not be read.</b> <button className="hidebtn" onClick={() => { setFailed(false); setAttempt((n) => n + 1); }}>Retry</button></div>}
         close={close} hide={hide} archive={archive} constellation={constellation} move={move} start={start}
         onSaved={(next) => { setRecord(next); saved(next); }} />
   );
