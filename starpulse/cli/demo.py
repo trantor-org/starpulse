@@ -14,6 +14,7 @@ sheet's stylesheet and script, so the palette page is one file too.
 """
 
 import argparse
+import base64
 import collections
 import itertools
 import json
@@ -789,16 +790,20 @@ def elements(sheet: Path) -> str:
 
 def page(static: Path, fixture: dict) -> str:
     """`static/index.html` with its bundle inlined and `fixture` embedded ahead of it, minus the early stream a demo
-    has no server for."""
+    has no server for. The stylesheet carries its fonts as `data:` URIs, so the preloads of the files it now holds go."""
     html = re.sub(r"<script>\n// Ask for the snapshot now.*?</script>\n", "", (static / "index.html").read_text(), flags=re.S)
+    html = re.sub(r'[ \t]*<link rel="preload" href="/[^"]+" as="font"[^>]*>\n?', "", html)
     data = json.dumps(fixture).replace("</", "<\\/")
 
     def script(m: re.Match) -> str:
         js = (static / m[1]).read_text().replace("</script", "<\\/script")
         return f'<script>window.__FLOW_FIXTURE__ = {data}</script>\n  <script type="module">{js}</script>'
 
+    def font(m: re.Match) -> str:
+        return f"url(data:font/woff2;base64,{base64.b64encode((static / m[1]).read_bytes()).decode()})"
+
     def style(m: re.Match) -> str:
-        return f"<style>{(static / m[1]).read_text()}</style>"
+        return f"<style>{re.sub(r'url\(/([^)]+\.woff2)\)', font, (static / m[1]).read_text())}</style>"
 
     html = re.sub(r'<script type="module" crossorigin src="/([^"]+)"></script>', script, html)
     return re.sub(r'<link rel="stylesheet" crossorigin href="/([^"]+)">', style, html)

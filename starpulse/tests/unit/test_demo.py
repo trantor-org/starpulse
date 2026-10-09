@@ -563,6 +563,26 @@ def test_the_demo_inlines_the_one_script_build_the_page_config_writes_for_it() -
     assert STATIC.parent.name == "static"
 
 
+def test_page_inlines_the_fonts_as_data_uris_and_drops_their_preloads(tmp_path: Path) -> None:
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "index-a.js").write_text("x()")
+    (tmp_path / "assets" / "index-b.css").write_text(
+        '@font-face{font-family:Inter;src:url(/assets/inter-latin-400-normal-C38fXH4l.woff2) format("woff2")}'
+    )
+    (tmp_path / "assets" / "inter-latin-400-normal-C38fXH4l.woff2").write_bytes(b"wOF2\x00\xff")
+    (tmp_path / "index.html").write_text(
+        '<head>\n  <link rel="preload" href="/assets/inter-latin-400-normal-C38fXH4l.woff2" as="font" type="font/woff2" crossorigin>\n'
+        '  <script type="module" crossorigin src="/assets/index-a.js"></script>\n'
+        '  <link rel="stylesheet" crossorigin href="/assets/index-b.css">\n</head>'
+    )
+
+    html = page(tmp_path, {})
+
+    assert '<style>@font-face{font-family:Inter;src:url(data:font/woff2;base64,d09GMgD/) format("woff2")}</style>' in html
+    assert "/assets/" not in html  # one file: nothing is fetched, and a preload of a file the page now carries would be
+    assert "preload" not in html
+
+
 def test_page_drops_the_early_stream_script_a_demo_has_no_server_for(tmp_path: Path) -> None:
     (tmp_path / "assets").mkdir()
     (tmp_path / "assets" / "index-a.js").write_text("x()")

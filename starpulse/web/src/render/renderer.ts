@@ -56,6 +56,7 @@ import { machineLedger, type Rail } from "./machineLedgerDraw";
 import { staged } from "./staged";
 import { whenShown } from "./shown";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
+import { loadFonts } from "./fonts";
 
 export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
   aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155" };
@@ -2013,7 +2014,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       for (const [target, type] of wakers) target.addEventListener(type, wake);
       resize();
       loop.wake();
-      stream = openStream({ snapshot: onSnapshot, live: onLive });
+      // the first layout measures label widths and the first frame draws them: both wait for the page's fonts, which index.html preloads
+      void loadFonts().then(() => {
+        if (!stopped) stream = openStream({ snapshot: onSnapshot, live: onLive });
+      });
       clockTimer = window.setInterval(paintClock, 1000);
       fanTimer = window.setInterval(paintFan, 1000);
       paintClock();
