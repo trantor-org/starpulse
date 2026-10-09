@@ -13,10 +13,10 @@ from typing import Any
 
 import pytest
 
-from starpulse.adapters.runs.ingest import MAX_FORWARD_BODY, ForwardIngest
-from starpulse.api.adapter_kit import serve, url
-from starpulse.store import events
-from starpulse.store.event_log import EventLog, Tail
+from starpulse._internal.adapters.runs.ingest import MAX_FORWARD_BODY, ForwardIngest
+from starpulse._internal.api.adapter_kit import serve, url
+from starpulse._internal.store import events
+from starpulse._internal.store.event_log import EventLog, Tail
 
 EVENT = {
     "event_id": "e1",

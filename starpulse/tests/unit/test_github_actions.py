@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from starpulse.adapters.runs import run_events
-from starpulse.adapters.runs.github_actions import (
+from starpulse._internal.adapters.runs import run_events
+from starpulse._internal.adapters.runs.github_actions import (
     _CONCLUSION,
     _STATUS,
     GitHubRuns,
@@ -26,12 +26,12 @@ from starpulse.adapters.runs.github_actions import (
     status_of,
     workflow_run_entry,
 )
-from starpulse.adapters.runs.github_actions import follow as follow_repository
-from starpulse.api.adapter_kit import RunsAdapterKit, serve, url
+from starpulse._internal.adapters.runs.github_actions import follow as follow_repository
+from starpulse._internal.api.adapter_kit import RunsAdapterKit, serve, url
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.settings.config import runs_adapter
-from starpulse.store.event_log import EventLog
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.settings.config import runs_adapter
+from starpulse._internal.store.event_log import EventLog
 from starpulse.tests.github_stub import REPO, Recorded
 
 #: Every status and conclusion GitHub documents for a run, job or step, plus `startup_failure` its webhooks and API
@@ -285,7 +285,7 @@ def test_a_listing_of_named_workflows_reads_only_those_and_reports_only_their_di
 
 
 def test_the_config_type_github_actions_names_a_runs_adapter() -> None:
-    assert runs_adapter("github_actions").__name__ == "starpulse.adapters.runs.github_actions"
+    assert runs_adapter("github_actions").__name__ == "starpulse._internal.adapters.runs.github_actions"
 
 
 LISTED_AT = 100.0
@@ -414,9 +414,9 @@ def wait_until(condition, timeout: float = 5.0) -> None:
 def test_following_a_repository_lists_it_then_moves_a_workflow_by_the_entries_on_the_stream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("starpulse.adapters.runs.github_actions._reconcile_forever", lambda runs: None)  # only the entries move it
+    monkeypatch.setattr("starpulse._internal.adapters.runs.github_actions._reconcile_forever", lambda runs: None)  # only the entries move it
     served = [Recorded()]
-    monkeypatch.setattr("starpulse.adapters.runs.github_actions.connect", lambda token: lambda *call: served[0](*call))
+    monkeypatch.setattr("starpulse._internal.adapters.runs.github_actions.connect", lambda token: lambda *call: served[0](*call))
     started: list[threading.Thread] = []
     real_start = threading.Thread.start
     monkeypatch.setattr(threading.Thread, "start", lambda self: (started.append(self), real_start(self))[1])

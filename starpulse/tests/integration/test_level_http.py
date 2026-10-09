@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.api.adapter_kit import serve, url
-from starpulse.domain.level import Level, Orbit, Terminal
-from starpulse.projections.analytics import board_health
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.store.history import HistoryStore
+from starpulse._internal.api.adapter_kit import serve, url
+from starpulse._internal.domain.level import Level, Orbit, Terminal
+from starpulse._internal.projections.analytics import board_health
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import BOARD, NOW, ROWS, H
 

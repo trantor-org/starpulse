@@ -6,9 +6,9 @@ from typing import Any
 import pytest
 
 from starpulse.contracts.adapters import BoardTask
-from starpulse.projections import criteria
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.store.history import HistoryStore
+from starpulse._internal.projections import criteria
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.store.history import HistoryStore
 
 BLOCK = """## Start Criteria
 

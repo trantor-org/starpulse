@@ -33,7 +33,7 @@ from ui_preview import (
     unpublish_demos,
 )
 
-from starpulse.cli import demo
+from starpulse._internal.cli import demo
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,12 +44,12 @@ ROOT = Path(__file__).resolve().parents[1]
         (["starpulse/web/src/App.tsx"], [FLOW_VIEW]),
         (["ci/preview.toml"], [FLOW_VIEW]),
         ([".github/workflows/ui-preview.yml"], [FLOW_VIEW]),
-        (["starpulse/cli/demo.py"], [FLOW_VIEW]),
+        (["starpulse/_internal/cli/demo.py"], [FLOW_VIEW]),
         (["design/hub/index.html"], [MOCKUP]),
         (["design/elements/index.html"], [MOCKUP, ELEMENTS]),
         (["starpulse/web/src/style.css"], [FLOW_VIEW, ELEMENTS]),
         (["design/data.js", "starpulse/web/src/features/kanban/Kanban.tsx"], [FLOW_VIEW, MOCKUP]),
-        (["starpulse/api/server.py", "README.md", "starpulse/tests/unit/test_demo.py", ".github/workflows/ci.yml"], []),
+        (["starpulse/_internal/api/server.py", "README.md", "starpulse/tests/unit/test_demo.py", ".github/workflows/ci.yml"], []),
     ],
 )
 def test_surfaces_follow_the_changed_paths(changed: list[str], expected: list[str]) -> None:
@@ -73,7 +73,7 @@ def test_the_shipped_mockup_builds_a_demo_that_leaks_nothing() -> None:
     ("changed", "expected"),
     [
         (["design/task-modal/task-modal.js"], ["task-modal"]),
-        (["design/hub/index.html", "design/edit/edit.js", "design/hub/hub.js", "starpulse/api/server.py"], ["edit", "hub"]),
+        (["design/hub/index.html", "design/edit/edit.js", "design/hub/hub.js", "starpulse/_internal/api/server.py"], ["edit", "hub"]),
         (["design/index.html", "design/data.js"], []),
         (["design/elements/index.html", "design/elements/elements.js"], []),
         (["starpulse/web/src/features/kanban/Kanban.tsx"], []),

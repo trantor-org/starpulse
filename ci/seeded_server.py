@@ -19,12 +19,12 @@ from collections.abc import Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse.api.server import assemble, request_handler
+from starpulse._internal.api.server import assemble, request_handler
 from starpulse.contracts.adapters import BoardTask
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.settings.config import load
-from starpulse.settings.history_window import HistoryWindow
-from starpulse.store.history import HistoryStore
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.settings.config import load
+from starpulse._internal.settings.history_window import HistoryWindow
+from starpulse._internal.store.history import HistoryStore
 
 import starpulse
 

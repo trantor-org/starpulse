@@ -21,17 +21,17 @@ import pytest
 
 pytest.importorskip("jwt", reason="the hub extras are not installed")
 
-from starpulse.adapters.runs.ingest import ForwardIngest, Ingest
-from starpulse.api import server, writes
-from starpulse.api.adapter_kit import serve, url
-from starpulse.api.oidc import ENGINE, INSTANCE, PUBLIC, ROUTE_PREFIXES, ROUTES, SESSION_S, Gate
-from starpulse.cli import agent_cli
-from starpulse.domain.level import Level, Orbit, Terminal
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.projections.insights import Insights, InsightStore
-from starpulse.settings.config import OidcSettings
-from starpulse.store.event_log import EventLog
-from starpulse.store.history import HistoryStore
+from starpulse._internal.adapters.runs.ingest import ForwardIngest, Ingest
+from starpulse._internal.api import server, writes
+from starpulse._internal.api.adapter_kit import serve, url
+from starpulse._internal.api.oidc import ENGINE, INSTANCE, PUBLIC, ROUTE_PREFIXES, ROUTES, SESSION_S, Gate
+from starpulse._internal.cli import agent_cli
+from starpulse._internal.domain.level import Level, Orbit, Terminal
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.projections.insights import Insights, InsightStore
+from starpulse._internal.settings.config import OidcSettings
+from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.store.history import HistoryStore
 from starpulse.tests import mock_issuer
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.mock_issuer import Answer, call, session_of

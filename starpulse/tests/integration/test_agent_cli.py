@@ -16,19 +16,19 @@ from typing import Any
 
 import pytest
 
-from starpulse.adapters.boards import native
-from starpulse.adapters.boards.seam import Written
-from starpulse.api.adapter_kit import serve as _real_serve
-from starpulse.api.adapter_kit import task
-from starpulse.api.adapter_kit import url as _url
-from starpulse.api.server import _no_writer
-from starpulse.cli import agent_cli as cli
-from starpulse.cli import skill_install
+from starpulse._internal.adapters.boards import native
+from starpulse._internal.adapters.boards.seam import Written
+from starpulse._internal.api.adapter_kit import serve as _real_serve
+from starpulse._internal.api.adapter_kit import task
+from starpulse._internal.api.adapter_kit import url as _url
+from starpulse._internal.api.server import _no_writer
+from starpulse._internal.cli import agent_cli as cli
+from starpulse._internal.cli import skill_install
 from starpulse.contracts.adapters import Move
-from starpulse.domain.level import Level, Orbit, Terminal
-from starpulse.projections import doctor
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.store.history import HistoryStore
+from starpulse._internal.domain.level import Level, Orbit, Terminal
+from starpulse._internal.projections import doctor
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.store.history import HistoryStore
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_analytics import NOW, ROWS, H

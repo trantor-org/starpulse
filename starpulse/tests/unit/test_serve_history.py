@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from starpulse.api import server
-from starpulse.store import events
-from starpulse.store.event_log import EventLog
-from starpulse.store.history import HistoryStore
+from starpulse._internal.api import server
+from starpulse._internal.store import events
+from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.store.history import HistoryStore
 from starpulse.tests import fake_board
 
 

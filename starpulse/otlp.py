@@ -1,6 +1,6 @@
-"""Claude Code's OTLP/HTTP log events; the implementation is in `starpulse.adapters.harnesses.otlp`."""
+"""Claude Code's OTLP/HTTP log events; the implementation is in `starpulse._internal.adapters.harnesses.otlp`."""
 
-from starpulse.adapters.harnesses.otlp import (
+from starpulse._internal.adapters.harnesses.otlp import (
     ASSISTANT_RESPONSE,
     BRANCH,
     SKILL_ACTIVATED,

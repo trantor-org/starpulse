@@ -6,13 +6,13 @@ from typing import Any
 
 import pytest
 
-from starpulse.adapters.boards.seam import Board, Written
-from starpulse.api.adapter_kit import task
-from starpulse.api.server import assemble
-from starpulse.api.writes import archive_task, edit_task, task_record
+from starpulse._internal.adapters.boards.seam import Board, Written
+from starpulse._internal.api.adapter_kit import task
+from starpulse._internal.api.server import assemble
+from starpulse._internal.api.writes import archive_task, edit_task, task_record
 from starpulse.contracts.adapters import Move
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.settings.config import load
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.settings.config import load
 from starpulse.tests import fake_board
 from starpulse.tests.machines import MACHINES
 

@@ -13,16 +13,16 @@ from pathlib import Path
 import pytest
 from sqlalchemy import update
 
-from starpulse.adapters.boards.seam import MoveWriter, Written
-from starpulse.api.adapter_kit import serve, task, url
-from starpulse.api.server import _adapter, _config, _no_writer, keep_event_log
-from starpulse.api.writes import move_task, rerun_dag, run_dag, start_task
+from starpulse._internal.adapters.boards.seam import MoveWriter, Written
+from starpulse._internal.api.adapter_kit import serve, task, url
+from starpulse._internal.api.server import _adapter, _config, _no_writer, keep_event_log
+from starpulse._internal.api.writes import move_task, rerun_dag, run_dag, start_task
 from starpulse.contracts.adapters import Move, StartFailedError
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.settings.config import CommitKeys, Config, RunsInstance, load
-from starpulse.settings.harnesses import load_harnesses
-from starpulse.store.event_log import EventLog
-from starpulse.store.tables import events
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.settings.config import CommitKeys, Config, RunsInstance, load
+from starpulse._internal.settings.harnesses import load_harnesses
+from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.store.tables import events
 from starpulse.tests.machines import MACHINES
 
 #: The workflows the config declares run-safe in these tests, and the domains it groups them in.
@@ -524,7 +524,7 @@ def test_an_instance_is_read_by_the_adapter_module_its_type_names() -> None:
 
     module = _adapter(parser, RunsInstance("ci", "dagu", "http://ci.test"))
 
-    assert module.__name__ == "starpulse.adapters.runs.dagu"
+    assert module.__name__ == "starpulse._internal.adapters.runs.dagu"
 
 
 def test_an_instance_type_that_is_not_a_runs_adapter_exits_naming_the_instance(

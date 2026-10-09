@@ -7,7 +7,7 @@ from pathlib import Path
 import demo_workspace
 import tomllib
 
-from starpulse.cli.demo import scrub
+from starpulse._internal.cli.demo import scrub
 
 PREVIEW = Path(__file__).with_name("preview.toml")
 NOW = 1_790_000_000.0

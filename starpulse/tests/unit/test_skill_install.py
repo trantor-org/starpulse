@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.cli import skill_install as skills
+from starpulse._internal.cli import skill_install as skills
 
 
 @pytest.fixture

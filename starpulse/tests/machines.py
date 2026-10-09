@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from starpulse.domain.machine_definition import load_machine
-from starpulse.domain.snapshot import describe
-from starpulse.domain.transitions import board_machine
+from starpulse._internal.domain.machine_definition import load_machine
+from starpulse._internal.domain.snapshot import describe
+from starpulse._internal.domain.transitions import board_machine
 
 FIXTURES = Path(__file__).parent / "fixtures" / "machines"
 #: The Board's statuses, in the order its lanes are drawn.

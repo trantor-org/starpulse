@@ -1,13 +1,13 @@
 # The demo config the UI preview renders the flow view against (ci/ui_preview.py). It names no real board or runs
 # system: the board is the synthetic workspace in `ci/demo_workspace.py` (its machines in `ci/workspace`), the one runs
 # instance points at a closed port, and the domains give the DAG layer a working team's job layout to draw.
-# `starpulse.cli.demo` then seeds every task, session and run.
+# `starpulse._internal.cli.demo` then seeds every task, session and run.
 mode = "ic"
 
 [board]
 type = "ci.demo_workspace"
 
-# The shipped ci machine under the Board states that hold a pull request; the demo seeds each task's trail (`starpulse.cli.demo`).
+# The shipped ci machine under the Board states that hold a pull request; the demo seeds each task's trail (`starpulse._internal.cli.demo`).
 [ci]
 states = ["in_progress", "review"]
 

@@ -117,14 +117,38 @@ def test_each_public_module_exports_exactly_its_pinned_names(module: str) -> Non
     assert [name for name in PUBLIC[module] if not hasattr(imported, name)] == []
 
 
-def test_the_top_level_holds_only_public_facades() -> None:
-    """Each layer package holds the code; a module beside `__init__` is a public path kept importable (D2 of doc-115)."""
-    package = Path(importlib.import_module("starpulse").__file__ or "").parent
-    top_level = {path.stem for path in package.glob("*.py")}
+#: Root entries that are not a listed public module: the entry points, the internal code and the packages that ship data.
+ROOT_OTHER = {"__init__", "__main__", "claude_code", "_internal", "tests"}
 
-    facades = {module.removeprefix("starpulse.") for module in PUBLIC} - {"contracts"}  # a package, not a module
-    assert top_level == facades | {"__init__", "__main__", "claude_code"}
+
+def _unlisted_at_root(package: Path) -> set[str]:
+    """The Python modules and packages directly under `package` that neither the README lists nor `ROOT_OTHER` allows."""
+    found = {path.stem for path in package.glob("*.py")} | {path.parent.name for path in package.glob("*/__init__.py")}
+    return found - {module.removeprefix("starpulse.") for module in PUBLIC} - ROOT_OTHER
+
+
+def test_the_root_holds_only_the_public_surface_and_the_internal_package() -> None:
+    """Everything that is not a public path lives under `_internal` (D1 of doc-130)."""
+    package = Path(importlib.import_module("starpulse").__file__ or "").parent
+
+    assert _unlisted_at_root(package) == set()
+
+
+def test_every_listed_module_is_a_root_module() -> None:
+    package = Path(importlib.import_module("starpulse").__file__ or "").parent
+    top_level = {path.stem for path in package.glob("*.py")} | {path.parent.name for path in package.glob("*/__init__.py")}
+
+    assert {module.removeprefix("starpulse.") for module in PUBLIC} <= top_level
+
+
+@pytest.mark.parametrize("stray", ["stray.py", "stray/__init__.py"])
+def test_an_unlisted_root_module_or_package_is_found(tmp_path: Path, stray: str) -> None:
+    (tmp_path / stray).parent.mkdir(exist_ok=True)
+    (tmp_path / stray).write_text("")
+    (tmp_path / "board.py").write_text("")
+
+    assert _unlisted_at_root(tmp_path) == {"stray"}
 
 
 def test_the_board_feed_logs_under_its_public_path() -> None:
-    assert importlib.import_module("starpulse.projections.board_feed").logger.name == "starpulse.board_feed"
+    assert importlib.import_module("starpulse._internal.projections.board_feed").logger.name == "starpulse.board_feed"

@@ -6,9 +6,9 @@ import sys
 import time
 from pathlib import Path
 
-from starpulse.adapters.boards import native
-from starpulse.adapters.boards.seam import Board, TaskReader
-from starpulse.projections import criteria
+from starpulse._internal.adapters.boards import native
+from starpulse._internal.adapters.boards.seam import Board, TaskReader
+from starpulse._internal.projections import criteria
 
 TASK = """---
 id: task-7

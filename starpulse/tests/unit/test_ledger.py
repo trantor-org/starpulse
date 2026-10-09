@@ -14,9 +14,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from starpulse.projections import ledger
-from starpulse.projections.ledger import Occurrence, _matches, build, page, pair, pull_occurrences, reruns, strip
-from starpulse.settings.config import CommitKeys
+from starpulse._internal.projections import ledger
+from starpulse._internal.projections.ledger import Occurrence, _matches, build, page, pair, pull_occurrences, reruns, strip
+from starpulse._internal.settings.config import CommitKeys
 
 KEYS = CommitKeys(after="AFTER", before="BEFORE", force="FORCE", task="TASK")
 SHA_A, SHA_B, SHA_C = "a" * 40, "b" * 40, "c" * 40

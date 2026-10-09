@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from starpulse.adapters.runs.ingest import ForwardIngest
+from starpulse._internal.adapters.runs.ingest import ForwardIngest
 from starpulse.contracts import BoardTask
-from starpulse.projections.board_feed import BoardFeed
-from starpulse.store import lane_events
-from starpulse.store.event_log import EventLog, Tail
-from starpulse.store.history import HistoryStore
+from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.store import lane_events
+from starpulse._internal.store.event_log import EventLog, Tail
+from starpulse._internal.store.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 
 GOOD = {"task": "T-1", "lane": "in_progress", "time": 5.0}

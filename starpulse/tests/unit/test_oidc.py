@@ -6,8 +6,8 @@ import pytest
 
 pytest.importorskip("jwt", reason="the hub extras are not installed")
 
-from starpulse.api.oidc import Gate, build
-from starpulse.settings.config import OidcSettings
+from starpulse._internal.api.oidc import Gate, build
+from starpulse._internal.settings.config import OidcSettings
 
 SETTINGS = OidcSettings(
     issuer="https://id.example.test/realm",
