@@ -3,7 +3,8 @@
 // (moons on a ring round each sun, sub-states in chains off them) and its states spread out from the canvas's centre to fill it, the zoom
 // the largest at which no two states' footprints meet, and the labels scale with the sun, clamped to 12-20 px. The arrangement is the
 // states in one row in lifecycle order, the Board's own places stretched to the canvas, or the main line staggered above and below the
-// axis, or (the default) each of the board machine's configured tiers a grid cell, left to right, wrapping only where that grows the sun; the footprint is fixed by each state's configuration
+// axis, or (the default) each of the board machine's configured tiers a grid cell, left to right, single-state tiers alternating up and
+// down, wrapping only where that grows the sun; the footprint is fixed by each state's configuration
 // (the sun, three task rings, and a ring of 8 moons where machines map to it) or grows with each state's load. Without ?frame this layer draws the review frame: the page at a chosen
 // resolution, today's rendering beside the proposal, each in an iframe at its real CSS size and scaled down to fit, with a table read
 // live from each frame's flowProbe(). It runs before the page's module.
@@ -13,6 +14,7 @@
 //   ?sun=1|1.5|2|3|4|fill   the sun's size against its task dots and moons (1: today's ratio, the default; fill: the largest the footprint allows)
 //   ?rings=fewest|2|3|4|6   the rings a sun's tasks spread over (fewest: a ring added when the last fills, as today)
 //   ?tiers=config|places   the grid's cells: the board machine's configured tiers, or the Board's own columns
+//   ?tuck=on|off   single-state tiers side by side alternate up and down, their moon names tucked past each other
 //   ?grows=auto|1|2|3   the grid's rows (auto: the fewest that draw the sun within 5% of its largest)
 //   ?frame=1&sizing=current|spread&rails=off   one page alone, as each iframe loads it
 (() => {
@@ -20,7 +22,7 @@
   const fs = Number(q.get("fs") || 100), arr = ["row", "stagger", "stretch"].includes(q.get("arr")) ? q.get("arr") : "grid", foot = q.get("foot") === "load" ? "load" : "fixed";
   const SUNS = ["1", "1.5", "2", "3", "4", "fill"], RINGS = ["fewest", "2", "3", "4", "6"], GROWS = ["auto", "1", "2", "3"];
   const sun = SUNS.includes(q.get("sun")) ? q.get("sun") : "1", rings = RINGS.includes(q.get("rings")) ? q.get("rings") : "fewest";
-  const grows = GROWS.includes(q.get("grows")) ? q.get("grows") : "auto", tiers = q.get("tiers") === "places" ? "places" : "config";
+  const grows = GROWS.includes(q.get("grows")) ? q.get("grows") : "auto", tiers = q.get("tiers") === "places" ? "places" : "config", tuck = q.get("tuck") === "off" ? "off" : "on";
   try {
     const k = "fv.admin.prefs", p = JSON.parse(localStorage.getItem(k) || "{}");
     p.scale = fs;
@@ -28,7 +30,7 @@
   } catch { /* storage off: the page keeps 100% */ }
 
   if (q.has("frame")) {
-    if ((q.get("sizing") || "spread") === "spread") window.__SIZING__ = { mode: "spread", text: fs / 100, arr, foot, sun: Number(sun) || 0, rings: Number(rings) || 0, grows: Number(grows) || 0, tiers };
+    if ((q.get("sizing") || "spread") === "spread") window.__SIZING__ = { mode: "spread", text: fs / 100, arr, foot, sun: Number(sun) || 0, rings: Number(rings) || 0, grows: Number(grows) || 0, tiers, tuck };
     // a phone's width is spent by the 250 px rails today: rails=off shows the canvas the sizing rule gets once they fold
     if (q.get("rails") === "off") {
       const st = document.createElement("style");
@@ -74,7 +76,7 @@
   const seg = (label, key, vals, cur, names = {}) => `<span class="lb">${label}</span><span class="seg">${
     vals.map((v) => `<button data-k="${key}" data-v="${v}" class="${v === cur ? "on" : ""}">${names[v] ?? v}</button>`).join("")}</span>`;
   const frame = (sizing) => {
-    const p = new URLSearchParams({ frame: "1", sizing, fs: String(fs), ...(sizing === "spread" ? { arr, foot, sun, rings, grows, tiers } : {}) });
+    const p = new URLSearchParams({ frame: "1", sizing, fs: String(fs), ...(sizing === "spread" ? { arr, foot, sun, rings, grows, tiers, tuck } : {}) });
     if (phone) p.set("rails", "off");
     return `${location.pathname}?${p}`;
   };
@@ -87,8 +89,10 @@
       Attention, the holding area; In Progress, the working state; Review, the second holding state; Done and Archived, the terminal
       states. A tier is one grid cell, its states stacked in it. Tiers come from the board machine's configuration (a <code>tiers</code>
       list beside <code>mainLine</code>), so a user changes them without a contract change; Tiers: places shows the Board's own columns
-      instead. A cell is as wide as its widest state's footprint and the room left over is shared evenly across and down; the tiers wrap
-      into a second row only where that draws the sun more than 5% larger (Grid rows forces a count). Row puts every state on the centre
+      instead. Tiers that hold one state side by side (Needs Attention, In Progress, Review) alternate up and down, so their moon names
+      tuck above or below their neighbour's and each sun still sits right of the last (Tuck: off lines them up). The room left over is
+      shared evenly across and down; the tiers wrap into a second row only where that draws the sun more than 5% larger (Grid rows forces
+      a count). Row puts every state on the centre
       line; stagger moves the main line alternately above and below it; stretch keeps today's places. Footprint: fixed gives every state a
       footprint set by its configuration, never by what it holds: the sun with three tight task rings, plus a ring of 8 moons with their
       names where machines map to the state; load sizes each state by what it holds, as today. Sun size ×1 (the default) keeps today's
@@ -98,7 +102,7 @@
       from each frame.</p>
     <div class="bar">${seg("Resolution", "res", RES, res)}${seg("Text size", "fs", ["100", "125", "150"], String(fs), { 100: "100%", 125: "125%", 150: "150%" })}
       ${seg("Arrangement", "arr", ["grid", "row", "stagger", "stretch"], arr)}${seg("Footprint", "foot", ["fixed", "load"], foot)}
-      ${seg("Sun size", "sun", SUNS, sun, { 1: "×1", 1.5: "×1.5", 2: "×2", 3: "×3", 4: "×4" })}${seg("Task rings", "rings", RINGS, rings)}${seg("Grid rows", "grows", GROWS, grows)}${seg("Tiers", "tiers", ["config", "places"], tiers)}</div>
+      ${seg("Sun size", "sun", SUNS, sun, { 1: "×1", 1.5: "×1.5", 2: "×2", 3: "×3", 4: "×4" })}${seg("Task rings", "rings", RINGS, rings)}${seg("Grid rows", "grows", GROWS, grows)}${seg("Tiers", "tiers", ["config", "places"], tiers)}${seg("Tuck", "tuck", ["on", "off"], tuck)}</div>
     <div class="pair">${[["current", "Today"], ["spread", `Proposed: ${{ grid: "grid", row: "one row", stagger: "staggered", stretch: "stretched" }[arr]}, ${foot === "fixed" ? "fixed footprint" : "footprint by load"}, sun ${sun === "fill" ? "filling it" : `×${sun}`}, tasks in ${rings === "fewest" ? "the fewest rings" : `${rings} rings`}`]].map(([s, t]) => `<section class="side" data-s="${s}">
       <h2>${t}<a href="${frame(s)}" target="_blank">open alone</a></h2>
       <div class="vp"><iframe title="${t}" src="${frame(s)}" width="${VW}" height="${VH}"></iframe></div>
