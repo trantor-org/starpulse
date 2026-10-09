@@ -273,7 +273,8 @@ body.kanban canvas, body.kanban #tip, body.kanban #panel { visibility: hidden; }
 #kb .heldby .hb.nh { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail-text); }
 #kb .heldby .hb:hover, #kb .heldby .hb:focus-visible { outline: 1px solid color-mix(in srgb, var(--hold) 60%, transparent); }
 #kb .heldby .more { color: var(--muted); }
-#kb .col h2 .cc { margin-left: 6px; color: var(--hold); font-weight: 600; letter-spacing: 0; }
+/* the chain glyph falls back to an emoji font, whose taller line would grow the header and drop the column while a chain is lit */
+#kb .col h2 .cc { margin-left: 6px; color: var(--hold); font-weight: 600; letter-spacing: 0; line-height: 0; }
 /* A Waiting stack or Done chain (approved mockup, starpulse#89). Folded, the top card is whole and one or two card edges peek below it; unstacked, the
    cards under it open downward in the column's flow, pushing what is below, joined by a spine. The rest sit in a grid row that grows
    from 0fr, so the unfold needs no measuring; folded they are hidden from the pointer and the tab order. */

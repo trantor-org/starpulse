@@ -38,6 +38,10 @@ describe("switching views under load", () => {
     expect(block("#kb .col .body.scrolling .card")).toContain("pointer-events: none");
   });
 
+  it("keeps a column's header its height when a chain lights its badge, whatever font draws the chain glyph", () => {
+    expect(block("#kb .col h2 .cc")).toContain("line-height: 0");
+  });
+
   it("keeps the navigator search's Matches as wide when they overflow as when they fit, and takes a scrolling list's rows out of hit-testing", () => {
     expect(block("#nav .matches")).toContain("scrollbar-gutter: stable");
     expect(block("#nav .matches.scrolling .hit")).toContain("pointer-events: none");
