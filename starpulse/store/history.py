@@ -470,11 +470,12 @@ class HistoryStore:
         held = select(lanes.c.lane, func.sum(lanes.c.open_tasks)).group_by(lanes.c.lane).order_by(lanes.c.lane)
         with self.engine.connect() as db:
             counts = dict(db.execute(held).all())
-            # every lane a stay was in is counted, so naming them lets the stay index seek each lane's stays in the
-            # window: a bare `GROUP BY lane` would scan the whole index, and a window's range sorts what it reads
+            # Every lane a stay was in is counted, so naming them lets ended seek each lane's stays in the window.
             recorded = i.lane.in_(list(counts))
             ended = select(i.lane, func.count(), func.sum(length), func.max(length)).where(recorded, i.left_at >= start)
-            entered = select(i.lane, func.count()).where(recorded, i.entered_at.between(start, now))
+            # Keep the lane predicate off entered: with it SQLite satisfies GROUP BY from the stay index by scanning
+            # every stay in each lane; the time range alone seeks the entered-at index and groups only the window.
+            entered = select(i.lane, func.count()).where(i.entered_at.between(start, now))
             going = select(i.lane, func.count(), func.sum(now - i.entered_at), func.min(i.entered_at)).where(
                 i.lane.in_(live), i.left_at.is_(None)
             )

@@ -101,6 +101,27 @@ def test_flow_health_fetches_no_more_rows_as_the_week_holds_more_lane_intervals(
     assert (_health_rows(store), store.summary_differences()) == (few, [])
 
 
+def test_flow_health_seeks_entries_by_the_window_not_every_stay(store: HistoryStore) -> None:
+    executions: list[tuple[str, tuple]] = []
+
+    def capture(_conn, _cursor, statement, parameters, *_args) -> None:
+        if "entered_at BETWEEN" in statement:
+            executions.append((statement, parameters))
+
+    event.listen(store.engine, "before_cursor_execute", capture)
+    try:
+        health_response(store, {}, MACHINES, NOW)
+    finally:
+        event.remove(store.engine, "before_cursor_execute", capture)
+
+    assert len(executions) == 1
+    statement, parameters = executions[0]
+    with store.engine.connect() as db:
+        plan = " ".join(row[3] for row in db.exec_driver_sql(f"EXPLAIN QUERY PLAN {statement}", parameters))
+
+    assert "ix_starpulse_lane_intervals_entered" in plan
+
+
 def test_flow_health_fetches_no_row_for_a_task_in_flight_that_is_not_stuck(store: HistoryStore) -> None:
     few = _health_rows(store)
     for task in range(200):
