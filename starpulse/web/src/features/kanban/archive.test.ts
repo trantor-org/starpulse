@@ -40,7 +40,7 @@ describe("posting an archive", () => {
 
 describe("what leaves the board when a task is archived", () => {
   const cards = [task("TASK-1", "ready"), task("TASK-2", "ready"), task("TASK-3", "review")];
-  const count = (list: KanbanTask[], lane: string) => layout(list, {}, NO_PREFS).columns.find((c) => c.id === lane)?.count;
+  const count = (list: KanbanTask[], lane: string) => layout(list, {}, NO_PREFS, 0).columns.find((c) => c.id === lane)?.count;
 
   it("takes the card out of its column and drops the column's count and the open total", () => {
     const after = withoutArchived(cards, new Set(["TASK-1"]));
@@ -48,7 +48,7 @@ describe("what leaves the board when a task is archived", () => {
     expect(after.map((t) => t.id)).toEqual(["TASK-2", "TASK-3"]);
     expect(count(cards, "ready")).toBe(2);
     expect(count(after, "ready")).toBe(1);
-    expect(layout(after, {}, NO_PREFS).open).toBe(2);
+    expect(layout(after, {}, NO_PREFS, 0).open).toBe(2);
   });
 
   it("keeps every card when nothing was archived, as after a refusal", () => {

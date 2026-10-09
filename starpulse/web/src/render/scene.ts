@@ -18,8 +18,8 @@ import type { Dag, DagStep, RawAgent, Transition, Writer } from "../api";
 export const TAU = Math.PI * 2;
 export const BOARD_COLOR: Record<string, string> = { new: "#94a3b8", ready: "#60a5fa", waiting: "#fbbf24", blocked: "#fb7185", in_progress: "#a78bfa",
   review: "#e879f9", needs_attention: "#64748b", done: "#34d399", completed: "#2dd4bf", archived: "#475569" };
-/** Where a task's lifecycle ends, drawn as a black hole: a final Board state. Done is not one (the sweep moves it on to Completed), nor is a
- *  nested machine's final state, which hands its task back to the state that runs the machine. */
+/** Where a task's lifecycle ends, drawn as a black hole: a final Board state, Done once the board machine declares it final. A nested
+ *  machine's final state is not one: it hands its task back to the state that runs the machine. */
 export const terminal = (s: { final: boolean; flow?: string }) => s.final && !s.flow;
 export const RAMP = ["#94a3b8", "#60a5fa", "#818cf8", "#a78bfa", "#c084fc", "#e879f9", "#f472b6", "#fbbf24", "#34d399"];
 

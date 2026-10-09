@@ -7,6 +7,12 @@ import type { Move, Pull, TrailStep } from "../../api";
 /** The Board states drawn as columns, in order. New is the creation pseudo-state and Completed and Archived have left the lanes. */
 export const COLUMNS = ["ready", "waiting", "in_progress", "review", "needs_attention", "done"];
 
+/** How long a task stays in the Done column after it entered it, seconds; the board keeps Done tasks for days, the column shows the last day. */
+export const DONE_WINDOW = 24 * 3600;
+
+/** The tasks a column may draw: every task, except a Done one that entered over a day before `now`. A Done task the snapshot gave no time for (`entered` 0) is drawn. */
+export const recent = (tasks: KanbanTask[], now: number): KanbanTask[] => tasks.filter((t) => t.lane !== "done" || !t.entered || now - t.entered <= DONE_WINDOW);
+
 /** The lanes drawn as columns: the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses), except those six on a board with the `ready` lane (trantor's lifecycle) and before the board's lanes are known. */
 export const columnsOf = (names: Record<string, string>): string[] => ("ready" in names || !Object.keys(names).length ? COLUMNS : Object.keys(names));
 
@@ -256,9 +262,9 @@ export const unstacked = (s: StackOpen) => s.hover || s.focus;
 export const stackOf = (l: Layout, id: string): Stack | undefined =>
   l.columns.flatMap((c) => c.buckets).flatMap((b) => b.stacks).find((s) => s.members.length > 1 && s.members.some((t) => t.id === id));
 
-export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs): Layout {
+export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, now: number): Layout {
   const lanes = columnsOf(names);
-  const drawn = tasks.filter((t) => lanes.includes(t.lane));
+  const drawn = recent(tasks, now).filter((t) => lanes.includes(t.lane));
   const visible = drawn.filter(
 (t) => !prefs.hiddenTasks.has(t.id) && !prefs.hiddenMilestones.has(t.milestone) && filtered(t, prefs));
   const columns = lanes.map((id): Column => {
@@ -277,10 +283,11 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs
   };
 }
 
-/** Why task `id` has no card in view: hidden, its milestone hidden, filtered out or folded away; null when its card is drawn. */
-export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, id: string): string | null {
+/** Why task `id` has no card in view: Done over a day ago, hidden, its milestone hidden, filtered out or folded away; null when its card is drawn. */
+export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, id: string, now: number): string | null {
   const t = tasks.find((x) => x.id === id);
   if (!t || !columnsOf(names).includes(t.lane)) return "not on the board";
+  if (!recent([t], now).length) return "Done over 24 hours ago";
   if (prefs.hiddenTasks.has(id)) return "hidden";
   if (prefs.hiddenMilestones.has(t.milestone)) return "its milestone is hidden";
   if (!filtered(t, prefs)) return "filtered out";

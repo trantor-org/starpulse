@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanban";
+import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanban";
 import { merge } from "../../render/sky";
 import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "../../api";
@@ -8,7 +8,8 @@ const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", 
 const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): KanbanTask => ({
   id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered, created: null, workableSince: null, machines: [],
 });
-const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, prefs);
+const NOW = 1_000_000, HOURS = 3600;
+const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, prefs, NOW);
 const column = (v: ReturnType<typeof view>, id: string) => v.columns.find((c) => c.id === id)!;
 const headers = (v: ReturnType<typeof view>, id: string) => column(v, id).buckets.map((b) => b.milestone);
 
@@ -22,7 +23,7 @@ describe("the columns", () => {
 
   it("are the board's own lanes in order when it has no ready lane, so a native board's first-lane task is drawn", () => {
     const native = { to_do: "To Do", in_progress: "In Progress", done: "Done" };
-    const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, NO_PREFS);
+    const v = layout([task("TASK-1", "to_do"), task("TASK-2", "done")], native, NO_PREFS, NOW);
 
     expect(columnsOf(native)).toEqual(["to_do", "in_progress", "done"]);
     expect(v.columns.map((c) => [c.id, c.name, c.count])).toEqual([["to_do", "To Do", 1], ["in_progress", "In Progress", 0], ["done", "Done", 1]]);
@@ -397,7 +398,7 @@ describe("what holds the Waiting lane", () => {
 
 describe("why a task the Recent rail points at has no card in view", () => {
   const tasks = [task("PROJ-1", "ready", "m-12"), task("PROJ-2", "ready", "m-9"), task("PROJ-3", "archived")];
-  const why = (id: string, prefs: Partial<typeof NO_PREFS> = {}) => whyHidden(tasks, NAMES, { ...NO_PREFS, ...prefs }, id);
+  const why = (id: string, prefs: Partial<typeof NO_PREFS> = {}) => whyHidden(tasks, NAMES, { ...NO_PREFS, ...prefs }, id, NOW);
 
   it("is nothing for a card the board draws", () => {
     expect(why("PROJ-1")).toBeNull();
@@ -596,5 +597,36 @@ describe("the milestone outline", () => {
       { milestone: "m-9", done: 0, total: 1 },
       { milestone: "m-10", done: 3, total: 4 },
     ]);
+  });
+});
+
+describe("the Done column", () => {
+  const finished = (id: string, hoursAgo: number, milestone = "m-1") => task(id, "done", milestone, 0, NOW - hoursAgo * HOURS);
+
+  it("draws a task that entered Done 23 hours ago and not one that entered 25 hours ago, and counts only what it draws", () => {
+    const tasks = [finished("T-OLD", 25), finished("T-NEW", 23), task("T-1", "ready", "m-1")];
+    const v = view(tasks);
+
+    expect(column(v, "done").buckets.flatMap((b) => b.tasks.map((t) => t.id))).toEqual(["T-NEW"]);
+    expect([column(v, "done").count, v.done, v.open, v.shown, v.total]).toEqual([1, 1, 1, 2, 2]);
+    expect(whyHidden(tasks, NAMES, NO_PREFS, "T-OLD", NOW)).toBe("Done over 24 hours ago");
+    expect(whyHidden(tasks, NAMES, NO_PREFS, "T-NEW", NOW)).toBeNull();
+  });
+
+  it("draws a Done task the snapshot gave no time for, since its age is unknown", () => {
+    expect(column(view([task("T-1", "done", "m-1")]), "done").count).toBe(1);
+  });
+
+  it("leaves an undrawn Done task in its milestone's done and total", () => {
+    const tasks = [finished("T-OLD", 25), finished("T-NEW", 1), task("T-1", "ready", "m-1")];
+
+    expect(column(view(tasks), "done").count).toBe(1);
+    expect(milestoneOutline(tasks)).toEqual([{ milestone: "m-1", done: 2, total: 3 }]);
+  });
+
+  it("keeps the toolbar's counts to the tasks drawn", () => {
+    const tasks = [{ ...finished("T-OLD", 25), assignee: "gone" }, finished("T-NEW", 1)];
+
+    expect(assigneeOptions(recent(tasks, NOW))).toEqual([{ value: "", count: 1 }]);
   });
 });
