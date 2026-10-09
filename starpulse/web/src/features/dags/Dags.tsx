@@ -1,11 +1,12 @@
 // The DAGs view: a view of its own beside the Kanban, in the Kanban's frame. A catalog with a fold per domain and a row per DAG:
 // its state dot, its steps as a small constellation, its last run, its pool and its first Board tie, and on a run-safe row the
 // Kanban's ▶ edge strip. It reuses the Kanban's filter chips, menus and folds, and draws each DAG's steps as the Star Map's DAG bodies do (StepStar).
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { same } from "../../api/same";
 import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
 import { DagModal } from "./DagModal";
 import { lastLine, Orb, poolText, StepStar, Strip, TieChip, type LedgerGo } from "./DagParts";
-import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rows, short, ties, type DagData, type Phase, type Row } from "./dags";
+import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rows, short, ties, type DagData, type Phase, type Row, type Tie } from "./dags";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { useViewActive } from "../../shared/Kept";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
@@ -45,6 +46,21 @@ function Census({ rs }: { rs: Row[] }) {
   );
 }
 
+interface RowProps { r: Row; now: number; spot: boolean; why: string | null; pool: string; tie: Tie | undefined; ledger?: LedgerGo; run: (r: Row) => void; open: (r: Row) => void }
+
+/** One DAG's row. It draws again only when what it shows changed: its row's reference holds while its DAG does, and a tie is new on every read, so it is compared by what it says. */
+const DagRow = memo(function DagRow({ r, now, spot, why, pool, tie, ledger, run, open }: RowProps) {
+  return (
+    <div className={`trow p-${r.phase}${r.runSafe ? " startable" : ""}${spot ? " spot" : ""}`} data-dag={r.d.name} tabIndex={0} onClick={() => open(r)}
+      onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && open(r)}>
+      <Orb phase={r.phase} /><span className="nm" title={r.d.name}>{short(r.d.name)}</span><Strip r={r} />
+      <span className="last">{lastLine(r, now)}</span><span className="pool">{pool || "—"}</span>
+      <span>{tie ? <TieChip t={tie} ledger={ledger} /> : <span className="none">—</span>}</span>
+      <RunBtn r={r} why={why} run={run} />
+    </div>
+  );
+}, (a, b) => (Object.keys(a) as (keyof RowProps)[]).every((k) => (k === "tie" ? same(a.tie, b.tie) : a[k] === b[k])));
+
 function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle, spot }: {
   data: DagData; rs: Row[]; now: number; spot: string | null; why: (r: Row) => string | null; run: (r: Row) => void; open: (r: Row) => void; ledger?: LedgerGo; folded: Set<string>; toggle: (k: string) => void;
 }) {
@@ -56,18 +72,7 @@ function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle, spot }
         const list = rs.filter((r) => r.domain === d).sort(order);
         return (
           <Fold key={d} k={`cat|${d}`} title={<>{d} <Census rs={list} /></>} n={list.length} folded={folded} toggle={toggle}>
-            {list.map((r) => {
-              const t = ties(data, r.d.name)[0];
-              return (
-                <div key={r.d.name} className={`trow p-${r.phase}${r.runSafe ? " startable" : ""}${r.d.name === spot ? " spot" : ""}`} data-dag={r.d.name} tabIndex={0} onClick={() => open(r)}
-                  onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && open(r)}>
-                  <Orb phase={r.phase} /><span className="nm" title={r.d.name}>{short(r.d.name)}</span><Strip r={r} />
-                  <span className="last">{lastLine(r, now)}</span><span className="pool">{poolText(data.pools, r) || "—"}</span>
-                  <span>{t ? <TieChip t={t} ledger={ledger} /> : <span className="none">—</span>}</span>
-                  <RunBtn r={r} why={why(r)} run={run} />
-                </div>
-              );
-            })}
+            {list.map((r) => <DagRow key={r.d.name} r={r} now={now} spot={r.d.name === spot} why={why(r)} pool={poolText(data.pools, r)} tie={ties(data, r.d.name)[0]} ledger={ledger} run={run} open={open} />)}
           </Fold>
         );
       })}
@@ -114,22 +119,27 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
   }, [toast]);
 
   const all = useMemo(() => (data ? rows(data) : []), [data]);
-  if (!data) return <main id="dg"><header><span className="title">DAGs</span><span className="count">no DAGs read</span></header></main>;
-
-  const why = (r: Row) => refusal(r, starting.has(r.d.name));
-  const run = async (r: Row) => {
+  // the handlers a row holds keep their reference, so a row draws again for its own change and not for the view's
+  const run = useCallback(async (r: Row) => {
     const name = r.d.name;
     setStarting((s) => new Set(s).add(name));
     const line = await startRun(name, post);
     setRefusedRun(refused(line));
     setStarting((s) => { const n = new Set(s); n.delete(name); return n; });
     setToast((t) => ({ text: `${short(name)}: ${line}`, n: (t?.n ?? 0) + 1 }));
-  };
-  // a tie links to the Ledger of its transition, when the Board has one for the event
-  const ledger: LedgerGo = (ev) => {
-    const level = openPath && ev ? ledgerLevel(data, ev) : null;
-    return level ? () => openPath!([...BOARD, level]) : null;
-  };
+  }, [post]);
+  const openRow = useCallback((r: Row) => { setRefusedRun(null); setOpened(r.d.name); }, []);
+  // a tie links to the Ledger of its transition, when the Board has one for the event; it reads `openPath` when clicked
+  const go = useRef(openPath);
+  useEffect(() => { go.current = openPath; });
+  const flows = data?.flows, cues = data?.cues;
+  const ledger = useCallback<LedgerGo>((ev) => {
+    const level = go.current && ev && flows ? ledgerLevel({ flows, cues }, ev) : null;
+    return level ? () => go.current!([...BOARD, level]) : null;
+  }, [flows, cues]);
+  if (!data) return <main id="dg"><header><span className="title">DAGs</span><span className="count">no DAGs read</span></header></main>;
+
+  const why = (r: Row) => refusal(r, starting.has(r.d.name));
   const cutoff = (label: string) => now - RECENCY.find(([l]) => l === label)![1];
   const rs = filterRows(all, { q, only, dom, since: win ? cutoff(win) : 0 });
   const shown = opened ? all.find((r) => r.d.name === opened) : undefined;
@@ -178,7 +188,7 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
         {(only || dom || win || q) && <button className="clear" onClick={() => keep(NO_DAG_FILTERS)}>clear</button>}
         <span className="shown">{rs.length === all.length ? `${all.length} shown` : `${rs.length} of ${all.length} shown`}</span>
       </div>
-      {rs.length ? <Catalog data={data} rs={rs} now={now} spot={spot} why={why} run={run} ledger={ledger} open={(r) => { setRefusedRun(null); setOpened(r.d.name); }} folded={folded} toggle={toggle} /> : <div className="none">No DAG matches the filters.</div>}
+      {rs.length ? <Catalog data={data} rs={rs} now={now} spot={spot} why={why} run={run} ledger={ledger} open={openRow} folded={folded} toggle={toggle} /> : <div className="none">No DAG matches the filters.</div>}
       {shown && <DagModal data={data} r={shown} now={now} starting={starting.has(shown.d.name)} refused={refusedRun} run={() => void run(shown)} close={() => setOpened(null)} ledger={ledger} />}
       {toast && <div className="dtoast" key={toast.n} role="status">{toast.text}</div>}
     </main>

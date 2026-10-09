@@ -100,6 +100,14 @@ competes with the browser. So the run reads its scope's `cpu.pressure` before an
 CPU over `STARVED_SHARE` (5%) of the run, it ends the table with a `STARVED` line, sets `starved` in the JSON and exits
 2, neither a pass nor a failure: its rows measure the host's load, not the page.
 
+`--cpu-throttle N` slows the page's CPU N times once the board has painted (Chrome's `Emulation.setCPUThrottlingRate`), so
+a view switch, a stream event and a modal are timed on a machine N times slower than the bench's, as a viewer's laptop
+draws them. The first-paint row stays unthrottled. Pair it with `--viewer`:
+
+```sh
+uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --assets .tmp/page-build --viewer --cpu-throttle 4
+```
+
 A task modal's sample hovers its card for 150 ms before the click, as a hand slows onto a target, and ends at the
 second frame after a dialog outside any `[inert]` ancestor clears `aria-busy`, which it does once it holds the full
 record. A modal the page drew ahead of the click waits inert, and the row's note counts the opens that found one.

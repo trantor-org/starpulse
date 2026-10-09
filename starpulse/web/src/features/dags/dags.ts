@@ -46,18 +46,25 @@ export interface Row {
 
 const iso = (s: string) => (s ? Date.parse(s) / 1000 : 0);
 
+/** The row each DAG object last made, so a DAG a delta left as it was keeps its row's reference and the view redraws only the rows that changed. */
+const made = new WeakMap<Dag, Row>();
+
 export function rows(data: DagData): Row[] {
   const home: Record<string, { domain: string; runSafe: boolean }> = {};
   for (const dom of data.domains) for (const x of dom.dags) home[x.name] = { domain: dom.name, runSafe: x.runSafe };
   return data.dags.map((d) => {
+    const had = made.get(d), domain = home[d.name]?.domain ?? "Other", runSafe = home[d.name]?.runSafe ?? false;
+    if (had && had.domain === domain && had.runSafe === runSafe) return had;
     const run = d.active?.[0];
     const phase: Phase = run || d.status === "running" ? "running" : d.status === "queued" ? "queued"
       : d.status === "failed" || d.status === "aborted" ? "failed" : d.status === "not_started" ? "idle" : "ok";
-    return {
-      d, domain: home[d.name]?.domain ?? "Other", runSafe: home[d.name]?.runSafe ?? false, phase,
+    const row: Row = {
+      d, domain, runSafe, phase,
       steps: Object.fromEntries(d.steps.map((x) => [x.name, run?.steps[x.name] ?? x.status])),
       startedAt: iso(run?.startedAt ?? d.startedAt), finishedAt: iso(d.finishedAt), step: run?.step ?? "",
     };
+    made.set(d, row);
+    return row;
   });
 }
 

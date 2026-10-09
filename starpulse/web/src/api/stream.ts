@@ -2,6 +2,7 @@
 
 import { demoServer, type DemoServer } from "../demo/demo";
 import type { Delta, Snapshot } from ".";
+import { keep } from "./same";
 
 export { embedded } from "../demo/demo";
 
@@ -12,9 +13,10 @@ const CLOSED = 2;
 
 /** `snap` with one delta folded in; `snap` itself is left as it was. */
 export function applyDelta(snap: Snapshot, delta: Delta): Snapshot {
-  if (delta.kind === "dags") return { ...snap, dags: delta.dags, pools: delta.pools ?? snap.pools, error: delta.error };
-  if (delta.kind === "pulls") return { ...snap, pulls: delta.pulls };
-  if (delta.kind === "ledgers") return { ...snap, ledgers: delta.ledgers, mergeStrip: delta.mergeStrip, mergePins: delta.mergePins };
+  // a delta carries the whole of what it replaces; whatever it leaves as it was keeps its old reference, so the page's work follows what changed
+  if (delta.kind === "dags") return { ...snap, dags: keep(snap.dags, delta.dags, (d) => d.name), pools: delta.pools ? keep(snap.pools, delta.pools, (p) => p.name) : snap.pools, error: delta.error };
+  if (delta.kind === "pulls") return { ...snap, pulls: keep(snap.pulls, delta.pulls) };
+  if (delta.kind === "ledgers") return { ...snap, ledgers: keep(snap.ledgers, delta.ledgers), mergeStrip: keep(snap.mergeStrip, delta.mergeStrip), mergePins: keep(snap.mergePins, delta.mergePins) };
   if (delta.kind === "claim") return { ...snap, claims: { ...snap.claims, [delta.task]: { reason: delta.reason, at: delta.at } } };
   if (delta.kind === "move") {
     const flows = snap.flows.map((flow) => {
