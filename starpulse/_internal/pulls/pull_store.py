@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Any
 
 from starpulse._internal.pulls.pull_requests import PULL_URL, REFRESH_S, GhUnavailableError, query_github
@@ -38,7 +38,15 @@ def _selection(number: int) -> str:
     """The alias reading PR `number`: its facts, its required checks at the head commit and its review threads."""
     return f"""
   p{number}: pullRequest(number: {number}) {{
-    number state isDraft mergeable baseRefName headRefOid body updatedAt
+    number state isDraft mergeable baseRefName headRefOid body updatedAt createdAt mergedAt
+    mergeCommit {{ oid }}
+    files(first: 100) {{ nodes {{ path }} }}
+    headRef {{ compare(headRef: "main") {{ aheadBy }} }}
+    ciCommits: commits(last: 100) {{ nodes {{ commit {{ oid
+      checkSuites(first: 20) {{ nodes {{ status conclusion createdAt updatedAt workflowRun {{ runAttempt }} }} }} }} }} }}
+    timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT]) {{
+      nodes {{ ... on HeadRefForcePushedEvent {{ createdAt afterCommit {{ oid }} }} }}
+    }}
     commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ contexts(first: 100) {{ nodes {{
       __typename
       ... on CheckRun {{ name status conclusion isRequired(pullRequestNumber: {number}) }}
@@ -89,14 +97,35 @@ def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
         "threads": sum(not thread["isResolved"] for thread in node["reviewThreads"]["nodes"]),
         "updatedAt": node["updatedAt"],
         "fetchedAt": now,
+        "detail": {
+            "mergedAt": node["mergedAt"],
+            "mergeSha": (node["mergeCommit"] or {}).get("oid"),
+            "behindMain": ((node["headRef"] or {}).get("compare") or {}).get("aheadBy"),
+            "files": [file["path"] for file in node["files"]["nodes"]],
+            "ci": {  # the parts of the node `ci_trail.parse` reads
+                "createdAt": node["createdAt"],
+                "mergeable": node["mergeable"],
+                "merged": node["state"] == "MERGED",
+                "mergedAt": node["mergedAt"],
+                "commits": node["ciCommits"],
+                "timelineItems": node["timelineItems"],
+            },
+        },
     }
 
 
 def refresh_repository(
-    repo: str, store: PullStore, now: float, graphql: Callable[[str, str], dict] = query_github
+    repo: str,
+    store: PullStore,
+    now: float,
+    graphql: Callable[[str, str], dict] = query_github,
+    linked: Collection[int] = (),
 ) -> None:
-    """Bring `store`'s records of `repo` up to date as of epoch `now`; `GhUnavailableError` leaves them as they were."""
-    saved = {record["number"]: record for record in store.find(repo=repo)}
+    """Bring `store`'s records of `repo` up to date as of epoch `now`; `GhUnavailableError` leaves them as they were.
+
+    `linked` are the numbers open tasks cite: one the store lacks, or holds without its `detail`, is read even when
+    the listings do not reach it, as an old merged PR is not."""
+    saved = {record["number"]: record for record in store.find(repo=repo, detailed=True)}
     cursor = max((record["updatedAt"] for record in saved.values()), default=None)
     held = sorted(number for number, record in saved.items() if record["state"] == "OPEN")
     answer = graphql(repo, _query(held, listing=True))
@@ -111,6 +140,7 @@ def refresh_repository(
             and saved.get(item["number"], {}).get("state") != item["state"]
             and (item["state"] == "OPEN" or cursor is None or item["updatedAt"] > cursor)
         }
+        | {number for number in linked if number not in nodes and not saved.get(number, {}).get("detail")}
     )
     if unseen:
         answer = graphql(repo, _query(unseen, listing=False))
@@ -119,7 +149,8 @@ def refresh_repository(
 
 
 class PullSync:
-    """Refreshes `store` from GitHub, one query per repository a minute, for every repository worth asking about."""
+    """Refreshes `store` from GitHub, one query per repository a minute, for every repository worth asking about, and
+    after each read hands the Board its tasks' pull requests (`project`, `PullRequests.refresh`)."""
 
     def __init__(
         self,
@@ -128,36 +159,58 @@ class PullSync:
         repos: Sequence[Repo] = (),
         graphql: Callable[[str, str], dict] = query_github,
         clock: Callable[[], float] = time.time,
+        project: Callable[[], None] | None = None,
     ) -> None:
         self._store = store
         self._feed = feed
         self._repos = repos
         self._graphql = graphql
         self._clock = clock
+        self._project = project
+
+    def _linked(self) -> dict[str, set[int]]:
+        """The numbers the open tasks' PR links name, by repository."""
+        linked: dict[str, set[int]] = {}
+        for prs in self._feed.pull_requests().values():
+            for url in prs:
+                if match := PULL_URL.fullmatch(url):
+                    linked.setdefault(match[1], set()).add(int(match[2]))
+        return linked
 
     def tracked(self) -> list[str]:
         """The repositories to read: those the open tasks' PR links and the store name, and each `[[repos]]` entry
         under an owner a link names."""
-        linked = {
-            match[1] for prs in self._feed.pull_requests().values() for url in prs if (match := PULL_URL.fullmatch(url))
-        }
+        linked = set(self._linked())
         owners = {repo.split("/")[0] for repo in linked}
         pinned = {f"{owner}/{repo.name}" for owner in owners for repo in self._repos}
         return sorted(linked | pinned | set(self._store.repos()))
 
     def refresh(self) -> None:
-        """Read every tracked repository once; one that cannot be read or parsed is logged and keeps its records."""
+        """Read every tracked repository once; one that cannot be read or parsed is logged and keeps its records.
+        Then project the Board's pull requests from the store."""
+        linked = self._linked()
         for repo in self.tracked():
             try:
-                refresh_repository(repo, self._store, self._clock(), self._graphql)
+                refresh_repository(repo, self._store, self._clock(), self._graphql, linked.get(repo, ()))
             except GhUnavailableError as exc:
                 logger.warning("pull requests: %s", exc)
             except Exception:  # one repository's bad answer must not end the refresh thread
                 logger.exception("pull requests: %s failed to refresh", repo)
+        self.project()
+
+    def project(self) -> None:
+        """Hand the Board its tasks' pull requests from the store; a failure is logged, never ends the thread."""
+        if self._project:
+            try:
+                self._project()
+            except Exception:
+                logger.exception("pull requests: the Board's pull requests failed to project")
 
     def run_forever(self, interval_s: float = REFRESH_S) -> None:  # pragma: no mutate block — timer loop
-        """Refresh once the Board replay is done, so the first read sees every task, then every `interval_s`."""
+        """Once the Board replay is done, so the first projection sees every task, project what the store already
+        holds, then refresh every `interval_s`."""
         self._feed.wait_replayed()
+        self.project()
         while True:
             self.refresh()
             time.sleep(interval_s)

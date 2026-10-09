@@ -212,7 +212,7 @@ class BoardFeed:
         self._startable: dict[str, frozenset[str]] = {}
         self._runs_errors: dict[str, str] = {}
         self._pulls: dict[str, list[dict]] = {}
-        #: What the pull request reader learned from GitHub (`PullRequests.answers`), saved so a restart reads warm.
+        #: What the pull request projection kept (`PullRequests.answers`), saved so a restart reads warm.
         self._pull_answers: dict = {}
         self._pulls_unsaved = False
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
@@ -636,7 +636,7 @@ class BoardFeed:
 
     def set_pulls(self, pulls: dict[str, list[dict]], answers: dict | None = None) -> None:
         """Take each task's pull request state and publish it when it differs from before; `answers` is what the
-        reader learned from GitHub, kept with the saved Board so a restart need not ask again."""
+        projection kept, saved with the Board so a restart need not ask GitHub again."""
         with self._lock:
             if answers is not None and answers != self._pull_answers:
                 self._pull_answers, self._pulls_unsaved = answers, True

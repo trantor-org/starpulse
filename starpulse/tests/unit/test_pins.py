@@ -154,13 +154,10 @@ def test_a_path_a_merge_does_not_pin_is_a_remembered_answer_that_is_never_asked_
     monkeypatch.setattr(subprocess, "run", gh)
     github = GitHub()
 
-    github.learn({("trantor-org/unraid", "p1", "skills"): None}, {})
+    github.restore({"pointers": [["trantor-org/unraid", "p1", "skills", None]]})
 
     assert github.pointer("trantor-org/unraid", "p1", "skills") is None
     assert github.answers()["pointers"] == [["trantor-org/unraid", "p1", "skills", None]]
-    restored = GitHub()
-    restored.restore(github.answers())
-    assert restored.pointer("trantor-org/unraid", "p1", "skills") is None
     assert gh.asked == []
 
 
@@ -225,23 +222,3 @@ def test_a_history_page_says_whether_it_holds_a_merge_or_is_too_short_to_tell(
     history: dict | None, answer: bool | None
 ) -> None:
     assert contained(CHILD_SHA, MERGED_AT, history) is answer
-
-
-def test_answers_learned_from_the_batched_read_are_never_asked_of_gh_and_are_saved(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    gh = Gh({})
-    monkeypatch.setattr(subprocess, "run", gh)
-    github = GitHub()
-
-    github.learn(
-        {("trantor-org/trantor", "p1", "skills"): NEW_POINTER}, {("trantor-org/skills", CHILD_SHA, NEW_POINTER): True}
-    )
-
-    assert github.pointer("trantor-org/trantor", "p1", "skills") == NEW_POINTER
-    assert github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is True
-    assert gh.asked == []
-    assert github.answers() == {
-        "pointers": [["trantor-org/trantor", "p1", "skills", NEW_POINTER]],
-        "reaches": [["trantor-org/skills", CHILD_SHA, NEW_POINTER, True]],
-    }

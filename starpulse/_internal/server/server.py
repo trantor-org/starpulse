@@ -1191,9 +1191,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     pulls = PullStore(log.engine)
     if shutil.which("gh"):  # without the GitHub CLI there is no source, and a task simply carries no PR state
-        pull_requests = PullRequests(feed, repos=config.repos, trail=CiTrail(log) if config.ci else None)
-        threading.Thread(target=pull_requests.run_forever, name="pull-requests", daemon=True).start()
-        threading.Thread(target=PullSync(pulls, feed, config.repos).run_forever, name="pull-store", daemon=True).start()
+        pull_requests = PullRequests(feed, pulls, repos=config.repos, trail=CiTrail(log) if config.ci else None)
+        sync = PullSync(pulls, feed, config.repos, project=pull_requests.refresh)
+        threading.Thread(target=sync.run_forever, name="pull-store", daemon=True).start()
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)
     threading.Thread(

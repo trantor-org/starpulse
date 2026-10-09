@@ -19,6 +19,13 @@ from starpulse._internal.pulls.pulls import AGE_HELP, PullStore
 REPO = "acme/widgets"
 OLD, NEW = "2026-10-07T12:00:00Z", "2026-10-07T13:00:00Z"
 _PASSED = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+SUITE = {
+    "status": "COMPLETED",
+    "conclusion": "SUCCESS",
+    "createdAt": OLD,
+    "updatedAt": NEW,
+    "workflowRun": {"runAttempt": 1},
+}
 
 
 class Github:
@@ -27,6 +34,8 @@ class Github:
     def __init__(self) -> None:
         self.pulls: dict[int, dict] = {}
         self.queries: list[str] = []
+        #: PRs that exist but sit beyond the listings' reach, as an old merged PR does.
+        self.unlisted: set[int] = set()
 
     def add(
         self,
@@ -37,6 +46,9 @@ class Github:
         body: str = "",
         checks: dict[str, str] | None = None,
         threads: tuple[bool, ...] = (),
+        merged_at: str | None = None,
+        files: tuple[str, ...] = (),
+        behind: int | None = None,
     ) -> None:
         """A PR; `checks` maps each required check to its conclusion, or to IN_PROGRESS while it runs."""
         self.pulls[number] = {
@@ -45,6 +57,9 @@ class Github:
             "body": body,
             "checks": checks or {},
             "threads": threads,
+            "merged_at": merged_at,
+            "files": files,
+            "behind": behind,
         }
 
     def _node(self, number: int) -> dict:
@@ -68,7 +83,14 @@ class Github:
             "headRefOid": f"{number:040x}",
             "body": pull["body"],
             "updatedAt": pull["updated"],
+            "createdAt": OLD,
+            "mergedAt": pull["merged_at"],
+            "mergeCommit": {"oid": f"{number:040x}"[::-1]} if pull["merged_at"] else None,
+            "files": {"nodes": [{"path": path} for path in pull["files"]]},
+            "headRef": None if pull["behind"] is None else {"compare": {"aheadBy": pull["behind"]}},
             "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": contexts}}}}]},
+            "ciCommits": {"nodes": [{"commit": {"oid": f"{number:040x}", "checkSuites": {"nodes": [SUITE]}}}]},
+            "timelineItems": {"nodes": []},
             "reviewThreads": {"nodes": [{"isResolved": resolved} for resolved in pull["threads"]]},
         }
 
@@ -77,7 +99,7 @@ class Github:
         self.queries.append(query)
         answer: dict = {}
         if "open: pullRequests" in query:
-            listed = [(n, p) for n, p in self.pulls.items()]
+            listed = [(n, p) for n, p in self.pulls.items() if n not in self.unlisted]
             answer["open"] = {
                 "pageInfo": {"hasNextPage": False},
                 "nodes": [
@@ -236,6 +258,67 @@ def test_a_record_carries_the_facts_pr_status_prints(store: PullStore) -> None:
     ]
 
 
+def test_a_merged_prs_record_keeps_what_the_task_consumers_read_beside_the_served_fields(store: PullStore) -> None:
+    github = Github()
+    github.add(5, state="MERGED", merged_at=NEW, files=("a.py", "b.py"), behind=3)
+
+    refresh_repository(REPO, store, 100.0, github)
+
+    (record,) = store.find(number=5, detailed=True)
+    assert record["detail"] == {
+        "mergedAt": NEW,
+        "mergeSha": f"{5:040x}"[::-1],
+        "behindMain": 3,
+        "files": ["a.py", "b.py"],
+        "ci": {
+            "createdAt": OLD,
+            "mergeable": "MERGEABLE",
+            "merged": True,
+            "mergedAt": NEW,
+            "commits": {"nodes": [{"commit": {"oid": f"{5:040x}", "checkSuites": {"nodes": [SUITE]}}}]},
+            "timelineItems": {"nodes": []},
+        },
+    }
+    assert "detail" not in store.find(number=5)[0]
+
+
+def test_a_table_an_earlier_version_created_gains_the_detail_column_and_keeps_its_rows(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "CREATE TABLE starpulse_pull_requests (repo VARCHAR NOT NULL, number INTEGER NOT NULL, state VARCHAR NOT NULL,"
+            " is_draft BOOLEAN NOT NULL, mergeable VARCHAR NOT NULL, base VARCHAR NOT NULL, head VARCHAR NOT NULL,"
+            " body TEXT NOT NULL, checks VARCHAR NOT NULL, required JSON NOT NULL, threads INTEGER NOT NULL,"
+            " updated_at VARCHAR NOT NULL, fetched_at FLOAT NOT NULL, PRIMARY KEY (repo, number))"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO starpulse_pull_requests VALUES ('acme/widgets', 1, 'MERGED', 0, 'UNKNOWN', 'main', 'abc', '',"
+            " 'pass', '[]', 0, '2026-10-07T12:00:00Z', 1.0)"
+        )
+
+    store = PullStore(engine)
+    store.save([{**_stored(REPO, 2), "detail": {"files": ["a.py"]}}])
+
+    assert {pull["number"]: pull["detail"] for pull in store.find(detailed=True)} == {1: None, 2: {"files": ["a.py"]}}
+
+
+def test_a_pr_an_open_task_cites_is_read_when_the_store_lacks_it_or_holds_it_without_detail(store: PullStore) -> None:
+    github = Github()
+    github.add(1)
+    github.add(8, state="MERGED", merged_at=OLD, updated="2026-10-01T00:00:00Z")
+    github.add(9, state="MERGED", merged_at=OLD, updated="2026-10-01T00:00:00Z")
+    github.unlisted = {8, 9}
+    store.save([{**_stored(REPO, 9), "state": "MERGED"}])  # saved by a version that kept no detail
+
+    refresh_repository(REPO, store, 100.0, github, linked={8, 9, 77})  # 77 does not exist on GitHub
+
+    assert {pull["number"]: pull["detail"] is not None for pull in store.find(detailed=True)} == {
+        1: True,
+        8: True,
+        9: True,
+    }
+
+
 def test_each_query_logs_the_rate_limit_cost_github_returned(
     store: PullStore, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -279,6 +362,61 @@ def test_a_sync_reads_the_repositories_the_tasks_the_store_and_the_config_name_a
     PullSync(store, feed, (Repo("skills", "skills", "pin-bump"),), graphql, lambda: 100.0).refresh()
 
     assert sorted(asked) == ["acme/old", "acme/skills", "acme/widgets"]
+
+
+def test_a_sync_reads_the_prs_open_tasks_cite_that_the_listings_do_not_reach() -> None:
+    feed = BoardFeed()
+    feed.put(task("PROJ-7", "In Progress", references=["https://github.com/acme/widgets/pull/9", "x"]))
+    asked: list[str] = []
+
+    def graphql(repo: str, query: str) -> dict:
+        asked.append(query)
+        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}} | {
+            "p9": None
+        }
+
+    PullSync(PullStore(create_engine("sqlite://")), feed, (), graphql, lambda: 100.0).refresh()
+
+    assert "p9: pullRequest(number: 9)" in asked[-1]
+
+
+def test_a_sync_projects_the_boards_pull_requests_after_each_read_and_survives_a_projection_that_fails(
+    store: PullStore, caplog: pytest.LogCaptureFixture
+) -> None:
+    store.save([{**_stored("acme/old", 1), "state": "MERGED"}])
+    calls: list[str] = []
+
+    def graphql(repo: str, query: str) -> dict:
+        calls.append("read")
+        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}}
+
+    def project() -> None:
+        calls.append("project")
+        raise RuntimeError("bad record")
+
+    PullSync(store, BoardFeed(), (), graphql, lambda: 100.0, project).refresh()
+
+    assert calls == ["read", "project"]
+    assert "failed to project" in caplog.text
+
+
+def test_run_forever_projects_the_saved_store_before_the_first_read(store: PullStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def graphql(repo: str, query: str) -> dict:
+        calls.append("read")
+        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}}
+
+    def sleep(seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    store.save([{**_stored("acme/old", 1), "state": "MERGED"}])
+    monkeypatch.setattr("starpulse._internal.pulls.pull_store.time.sleep", sleep)
+
+    with pytest.raises(KeyboardInterrupt):
+        PullSync(store, BoardFeed(), (), graphql, lambda: 100.0, lambda: calls.append("project")).run_forever(1.0)
+
+    assert calls == ["project", "read", "project"]
 
 
 def test_a_pr_with_no_commits_is_recorded_with_an_empty_rollup_and_leaves_the_others_saved(store: PullStore) -> None:

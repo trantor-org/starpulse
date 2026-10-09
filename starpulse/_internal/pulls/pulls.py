@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from sqlalchemy import Engine, case, delete, func, insert, select
+from sqlalchemy import Engine, case, delete, func, inspect, insert, select, text
 
 from starpulse._internal.eventlog.event_log import create_tables
 from starpulse._internal.eventlog.tables import pull_requests
@@ -40,10 +40,17 @@ class PullStore:
         #: Counts saves, so a reader holding an answer knows when it is stale.
         self.rev = 0
         create_tables(engine, [pull_requests])
+        if "detail" not in {column["name"] for column in inspect(engine).get_columns(pull_requests.name)}:
+            with engine.begin() as db:  # a table an earlier version created: the hub's migration 0010 adds it there
+                db.execute(text(f"ALTER TABLE {pull_requests.name} ADD COLUMN detail JSON"))
 
     def save(self, records: Iterable[dict[str, Any]]) -> None:
-        """Replace each record (served names, as `find` returns them) by its repository and number."""
-        rows = [{column: record[name] for column, name in _FIELDS.items()} for record in records]
+        """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository
+        and number."""
+        rows = [
+            {**{column: record[name] for column, name in _FIELDS.items()}, "detail": record.get("detail")}
+            for record in records
+        ]
         if not rows:
             return
         with self._engine.begin() as db:
@@ -81,8 +88,11 @@ class PullStore:
         number: int | None = None,
         state: str | None = None,
         body_contains: str | None = None,
+        detailed: bool = False,
     ) -> list[dict[str, Any]]:
-        """The records matching every given filter, by repository then number; `body_contains` is a body substring."""
+        """The records matching every given filter, by repository then number; `body_contains` is a body substring.
+
+        `detailed` adds each record's `detail`, which is not served: None for a record saved before it was kept."""
         query = select(pull_requests).order_by(pull_requests.c.repo, pull_requests.c.number)
         for column, value in (("repo", repo), ("number", number), ("state", state)):
             if value is not None:
@@ -90,4 +100,7 @@ class PullStore:
         if body_contains:
             query = query.where(pull_requests.c.body.contains(body_contains, autoescape=True))
         with self._engine.connect() as db:
-            return [{name: row[column] for column, name in _FIELDS.items()} for row in db.execute(query).mappings()]
+            return [
+                {name: row[column] for column, name in _FIELDS.items()} | ({"detail": row["detail"]} if detailed else {})
+                for row in db.execute(query).mappings()
+            ]

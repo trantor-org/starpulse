@@ -106,7 +106,9 @@ insights = Table(
 #: Each pull request the PR store read from GitHub, one row per (repository, number), replaced by each read of an open
 #: one and never read again once `state` is MERGED or CLOSED. `checks` is the required-check rollup (pass, failing,
 #: pending, none), `required` each required check as {name, result}, `updated_at` GitHub's own ISO 8601 UTC text
-#: (equal-width, so it sorts as time) and `fetched_at` the epoch second this row was read.
+#: (equal-width, so it sorts as time), `fetched_at` the epoch second this row was read and `detail` what the Board's
+#: per-task pull request state reads beside the served fields (merge commit and time, commits behind main, changed
+#: files and the CI history), null in a row saved before it was kept.
 pull_requests = Table(
     "starpulse_pull_requests",
     metadata,
@@ -123,6 +125,7 @@ pull_requests = Table(
     Column("threads", Integer, nullable=False),
     Column("updated_at", String, nullable=False),
     Column("fetched_at", Float, nullable=False),
+    Column("detail", JSON, nullable=True),
     PrimaryKeyConstraint("repo", "number"),
     Index("ix_starpulse_pull_requests_state", "state", "repo"),
 )
