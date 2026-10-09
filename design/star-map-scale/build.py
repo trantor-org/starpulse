@@ -6,7 +6,8 @@ usage: git apply design/star-map-scale/star-map-scale-src.patch
        git apply -R design/star-map-scale/star-map-scale-src.patch
 
 The patch adds a spread sizing rule for the Board (`window.__SIZING__`, set by mock.js): the same rings, moons and sub-state chains,
-the states spread out from the canvas's centre to fill it, staggered or stretched, each with a fixed footprint or one sized by its load,
+the states spread out from the canvas's centre to fill it, in one row, staggered or stretched, each with a fixed footprint or one sized by
+its load, the sun and its task rings grown by a chosen factor,
 the zoom the largest at which no two footprints meet, labels scaled with the sun. Without it the page draws as today, so one build serves both
 sides of the comparison. `--fixture` reuses a saved capture, else the server is captured and the capture saved there.
 `measure.py` samples today's sizes per viewport (the table in TASK-3747).
@@ -34,7 +35,7 @@ html = demo.page(demo.STATIC, snap)
 head = (
     "<!--\n  Design mockup of the Star Map's size per screen resolution, under operator review; not served by starpulse.\n"
     "  The real page, built from a source copy that adds a spread sizing rule (star-map-scale-src.patch), over a scrubbed capture, with\n"
-    "  mock.js layered on. Variants: ?res=WxH  ?fs=100|125|150  ?arr=stagger|stretch  ?foot=fixed|load  ?frame=1&sizing=current|spread&rails=off\n-->\n"
+    "  mock.js layered on. Variants: ?res=WxH  ?fs=100|125|150  ?arr=auto|row|stagger|stretch  ?foot=load|fixed  ?sun=fill|1|1.5|2|3|4  ?rings=fewest|2|3|4|6  ?frame=1&sizing=current|spread&rails=off\n-->\n"
 )
 html = html.replace("<head>", "<head>\n" + head, 1).replace("</body>", '<script src="mock.js"></script>\n</body>', 1)
 (HERE / "index.html").write_text(html)
