@@ -5,7 +5,8 @@ every open PR and of the PRs updated most recently, and in the same request for 
 open. `isRequired` takes the PR's number, so a required check can only be read through `pullRequest(number:)`, never
 inside a listing; a PR the listing shows that the store lacks, or holds in another state, costs one more request, for
 itself alone. A check finishing does not change a PR's `updatedAt`, so the open PRs are asked for on every refresh; a
-merged or closed PR whose saved record is final is never asked for again. A repository holding more open PRs than one
+merged or closed PR whose saved record is final is never asked for again (a merged one without its `mergeSha`
+is not final yet). A repository holding more open PRs than one
 listing page (`_PAGE`) is read for the first page only, and says so.
 """
 
@@ -129,7 +130,12 @@ def refresh_repository(
     the listings do not reach it, as an old merged PR is not."""
     saved = {record["number"]: record for record in store.find(repo=repo, detailed=True)}
     cursor = max((record["updatedAt"] for record in saved.values()), default=None)
-    held = sorted(number for number, record in saved.items() if record["state"] == "OPEN")
+    # a merged row saved before the store read the merge commit is read again until it has one
+    held = sorted(
+        number
+        for number, record in saved.items()
+        if record["state"] == "OPEN" or (record["state"] == "MERGED" and not record["mergeSha"])
+    )
     answer = graphql(repo, _query(held, listing=True))
     if answer["open"]["pageInfo"]["hasNextPage"]:
         logger.warning("pull requests: %s has more than %d open PRs; the rest are not read", repo, _PAGE)
