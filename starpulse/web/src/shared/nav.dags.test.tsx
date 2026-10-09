@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
+import { BOARD_DRAWN } from "./boardDrawn";
 import type { DagData } from "../features/dags/dags";
 import type { HudStore } from "../render/hud";
 
@@ -43,6 +44,7 @@ beforeEach(async () => {
   // the views load on demand: have this one loaded, so a mount that opens it draws it at once
   await import("../features/dags/Dags");
   root = createRoot(host);
+  performance.mark(BOARD_DRAWN); // a page past its first frame: the navigator is filled
   await act(async () => root.render(<App />));
   act(() => stores[0].set({ dags: dagData.dags.map((d) => d.name), dagData, pools: dagData.pools }));
 });
@@ -50,6 +52,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   document.body.className = "";
+  performance.clearMarks(BOARD_DRAWN);
   vi.unstubAllGlobals();
 });
 
