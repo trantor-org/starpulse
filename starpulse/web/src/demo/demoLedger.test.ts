@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { arriveMerge, demoLedger, scenarioOf } from "./demoLedger";
 import { PAGE } from "../features/level/ledgerScroll";
-import { markOf } from "../features/level/ledger";
+import { markOf, statusLine, tiesOf } from "../features/level/ledger";
 import type { Cue, Dag, Machine, Snapshot } from "../api";
 
 const dag = (name: string, steps: string[]): Dag => ({ name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "", steps: steps.map((n, i) => ({ name: n, depends: i ? [steps[i - 1]] : [], status: "succeeded", kind: null })) });
@@ -10,7 +10,7 @@ const machine = (): Machine => ({
   transitions: [{ source: "review", target: "done", event: "MERGED" }],
   writers: { MERGED: [{ actor: "main-follow", trigger: "push" }] }, dagActors: ["main-follow"], mainLine: ["review", "done"],
 } as Machine);
-const cues: Cue[] = [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge", resolves: "forced" }];
+const cues: Cue[] = [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge", resolves: "forced", grace: 300 }];
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   graphs: ["board"], flows: [{ name: "board", agents: [], machine: machine() }], cues, settled: {}, error: null, now: 1000,
   dags: [dag("main-follow", ["checkout", "push"]), dag("apply-on-merge", ["classify", "apply_deploy", "verify"])], ...over,
@@ -19,7 +19,7 @@ const NOW = 10_000;
 
 describe("scenarioOf", () => {
   it("reads the page's ?ms= and falls back to live", () => {
-    expect([scenarioOf("?ms=cross"), scenarioOf("?ms=infer"), scenarioOf("?ms=fail"), scenarioOf("?ms=nope"), scenarioOf("")]).toEqual(["cross", "infer", "fail", "live", "live"]);
+    expect([scenarioOf("?ms=cross"), scenarioOf("?ms=infer"), scenarioOf("?ms=fail"), scenarioOf("?ms=outage"), scenarioOf("?ms=nope"), scenarioOf("")]).toEqual(["cross", "infer", "fail", "outage", "live", "live"]);
   });
 });
 
@@ -63,6 +63,15 @@ describe("demoLedger", () => {
       expect(r.fails["apply-on-merge"]).toMatchObject({ resolves: "forced", resolved: null });
       expect(r.runs["apply-on-merge"].status).toBe("failed");
     }
+  });
+
+  it("leaves the cues of the three merges before the newest unstarted in the outage scenario, so each draws overdue", () => {
+    const s = snap(), rows = demoLedger(s, NOW, "outage"), cue = tiesOf(s, "MERGED").find((t) => t.role === "cue")!;
+    const states = rows.map((r) => statusLine(r, cue, r.runs[cue.dag], { event: "MERGED", now: NOW, hm: String, optional: new Set(), by: () => undefined }).state);
+
+    expect(states.slice(0, 5)).toEqual(["running", "overdue", "overdue", "overdue", "succeeded"]);
+    expect(rows.slice(1, 4).every((r) => Object.keys(r.runs).join() === "main-follow")).toBe(true);
+    expect(states.filter((x) => x === "overdue")).toHaveLength(3);
   });
 
   it("adds another repository's merges in the cross scenario: one a pin bump applied, one still waiting for its bump", () => {

@@ -35,7 +35,7 @@ function ledger(rows: LedgerRow[]) {
   const led = scene.fold!.ledger!, byKey = new Map(rows.map((r) => [r.key, r]));
   const ctx: PanelCtx = {
     event: "MERGED", from: "Review", to: "Done", ties: led.cols, steps: Object.fromEntries(led.cols.map((c) => [c.dag, scene.stars[c.dag].glyph.nodes.map((n) => n.name)])),
-    optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(rows, c.dag)])), palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" },
+    optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(rows, c.dag)])), runnable: new Set(led.cols.map((c) => c.dag)), palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" },
     now: 2000, hm: (s) => `t${s % 1000}`, by: (k) => byKey.get(k), task: (id) => id,
   };
   return { scene, led, ctx, shown: place(take(newScroll(), rows, led.grid!), led.grid!) };

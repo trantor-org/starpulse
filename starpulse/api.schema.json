@@ -526,6 +526,11 @@
         "event": {
           "type": "string"
         },
+        "grace": {
+          "default": 300,
+          "description": "Seconds after the event a run of the DAG may take to start before the Ledger draws the merge overdue.",
+          "type": "integer"
+        },
         "on": {
           "type": "string"
         },

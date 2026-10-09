@@ -57,6 +57,8 @@ import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type V
 export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
   aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155" };
 /** How a tied DAG's orbiter looks: the Spinner while its DAG runs, else its last run's colour, with a dashed ring after a failed run. */
+/** The Ledger's colours by run state: an overdue cue is drawn as a failure, and another repository's unapplied merge as waiting. */
+const LEDGER_PALETTE: Record<string, string> = { ...DAG_COLOR, waiting: CROSS, overdue: DAG_COLOR.failed };
 export const orbiterLook = (status: string) => ({ spin: status === "running", color: status === "queued" ? "#94a3b8" : DAG_COLOR[status] || "#94a3b8", dashed: status === "failed" });
 /** Declared step kind rings on a DAG's level. */
 /** Activity: everything that moves on any level uses this one colour. */
@@ -821,8 +823,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     return {
       event: led.event, from: fold.a!.name, to: fold.b!.name, ties: led.cols,
       steps: Object.fromEntries(dags.map((d) => [d, sc.stars[d].glyph.nodes.map((n) => n.name)])),
-      optional: Object.fromEntries(dags.map((d) => [d, optionalSteps(rows, d)])),
-      palette: { ...DAG_COLOR, waiting: CROSS }, now: T, hm: hhmm, by: (k) => byKey.get(k), task: (id) => taskLink(id, id, S!), rerun: rerunStore.state,
+      optional: Object.fromEntries(dags.map((d) => [d, optionalSteps(rows, d)])), runnable: S!.runnable,
+      palette: LEDGER_PALETTE, now: T, hm: hhmm, by: (k) => byKey.get(k), task: (id) => taskLink(id, id, S!), rerun: rerunStore.state,
     };
   }
   /** The row whose panel is open, if one is. */
@@ -1844,7 +1846,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       };
       scrollHits = drawRows(rowInk, {
         led, glyphs: Object.fromEntries(led.cols.map((c) => [c.dag, sc.stars[c.dag].glyph])), ctx: { event: led.event, now: T, hm: hhmm, by: (k) => byKey.get(k) },
-        optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(scroll.rows, c.dag)])), px: labPx, palette: { ...DAG_COLOR, waiting: CROSS }, clock, age, scroll,
+        optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(scroll.rows, c.dag)])), px: labPx, palette: LEDGER_PALETTE, clock, age, scroll,
         lit: hover?.kind === "lrow" ? hover.o.key : openRow()?.key, pins, rerunning: rerunLine(rerunStore.state.started, S?.dags ?? [], T),
         title: (id) => S?.settled[id]?.title ?? S?.board.agents.find((a) => a.id === id)?.title,
       });

@@ -276,9 +276,10 @@ writer is asked, so a move declared for `operator` alone (sending an In Progress
 argument: `writer(task, status, actor)`. `/api/move` is unauthenticated on the LAN, so this stops an agent's
 accident, not an adversary.
 
-The same file names, in a `cues:` block, the workflows an event cues: each entry is `{event, dag, on, resolves}`, with
+The same file names, in a `cues:` block, the workflows an event cues: each entry is `{event, dag, on, resolves, grace}`, with
 `dag` as `<instance>/<workflow>`, `on` the occasion the page shows (`push to main`) and `resolves` either `forced` (a
-failed run stays pinned until a forced rerun) or `next` (it clears on the DAG's next run). The cued event must reach
+failed run stays pinned until a forced rerun) or `next` (it clears on the DAG's next run). `grace` is optional, in seconds, and defaults to 300: a merge whose
+cued run has not started that long after it shows `overdue` on the Ledger. The cued event must reach
 exactly one state, beside which the page draws the cue; a file with no block has no cues.
 
 A move may also name the mover's session: `POST /api/move` takes `{task, to, actor, session}`, and `starpulse task move`

@@ -1,12 +1,13 @@
 // The merge Ledger a self-contained demo page shows. A served page gets its rows from starpulse.projections.ledger; a demo page has no server, so this builds the
 // same rows from the snapshot's ties: the merges of the last day, a run of every tied DAG on each, and a new merge now and then.
 // `?ms=` picks what the rows show: `live` (the default) keys every run by commit with the newest still running, `fail` pins two failed applies (one past the head page),
-// `cross` adds another repository's merges and the pin bump that applies one, and `infer` is an install that declares no commit key, so time pairs every run.
+// `cross` adds another repository's merges and the pin bump that applies one, `infer` is an install that declares no commit key, so time pairs every run, and
+// `outage` is a cue that stopped starting: the three merges after the newest have no run of it, so they draw overdue.
 import { MERGE_EVENT, tiesOf, type Tie } from "../features/level/ledger";
 import type { ContractCheck, ContractReport, LedgerRow, LedgerRun, MergeStrip, RunStatus, Snapshot } from "../api";
 
-export type Scenario = "live" | "fail" | "cross" | "infer";
-const SCENARIOS: Scenario[] = ["live", "fail", "cross", "infer"];
+export type Scenario = "live" | "fail" | "cross" | "infer" | "outage";
+const SCENARIOS: Scenario[] = ["live", "fail", "cross", "infer", "outage"];
 
 /** The scenario a page's address names, else `live`. */
 export const scenarioOf = (search: string): Scenario => SCENARIOS.find((s) => s === new URLSearchParams(search).get("ms")) ?? "live";
@@ -51,11 +52,12 @@ export function demoLedger(snap: Snapshot, now: number, scenario: Scenario): Led
   if (!ties.length) return [];
   const rows = AGO.map((ago, i): LedgerRow => {
     const at = now - ago, last = ties.filter((t) => t.role === "cue").at(-1)?.dag, failing = scenario === "fail" && (i === 2 || i === 30), fails: LedgerRow["fails"] = {};
-    const runs = Object.fromEntries(ties.map((t) => {
+    const runs = Object.fromEntries(ties.flatMap((t) => {
+      if (scenario === "outage" && t.role === "cue" && i >= 1 && i <= 3) return [];
       const state = i === 0 ? (t.role === "cue" ? "running" : "done") : failing && t.dag === last ? "failed" : "done";
       const run = runOf(snap, t, at, i, scenario, state);
       if (state === "failed") fails[t.dag] = { runId: run.runId, step: Object.entries(run.steps).find(([, s]) => s === "failed")?.[0] ?? "", startedAt: run.startedAt, finishedAt: run.finishedAt, resolves: t.resolves, resolved: null };
-      return [t.dag, run];
+      return [[t.dag, run]];
     }));
     return { key: sha(i), at, tasks: [`DEMO-${i + 1}`], sha: sha(i), pr: { repo: "trantor", number: 300 - i, url: "#" }, runs, fails, pinned: failing };
   });

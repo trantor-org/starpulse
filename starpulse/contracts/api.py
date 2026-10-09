@@ -245,6 +245,11 @@ class Cue(_Api):
         description="How a failed run of the DAG clears: `forced` only on a green forced rerun, `next` on the DAG's "
         "next green run.",
     )
+    grace: int = Field(
+        default=300,
+        description="Seconds after the event a run of the DAG may take to start before the Ledger draws the merge "
+        "overdue.",
+    )
 
 
 class Pull(_Api):

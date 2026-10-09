@@ -82,12 +82,14 @@ class Writer:
 @dataclass(frozen=True)
 class Cue:
     """A workflow `dag` an `event` cues, `on` the occasion the page names, and how its failure `resolves`:
-    `forced` stays pinned until a forced rerun, `next` clears on the DAG's next run."""
+    `forced` stays pinned until a forced rerun, `next` clears on the DAG's next run. `grace` is the seconds after its
+    event a run of `dag` may take to start before the page marks the merge overdue."""
 
     event: str
     dag: str
     on: str
     resolves: str
+    grace: int = 300
 
 
 def refuse_unlisted(machine: str, writers: Mapping[str, tuple[Writer, ...]], listed: Collection[str]) -> None:

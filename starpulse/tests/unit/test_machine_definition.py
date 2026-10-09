@@ -174,6 +174,18 @@ class TestCues:
             Cue("GO", "dagu/graph-refresh", "push to main", "next"),
         )
 
+    def test_a_cue_may_declare_the_seconds_its_run_has_to_start_and_otherwise_gets_five_minutes(self, tmp_path: Path) -> None:
+        timed = {**_CUE, "dag": "dagu/graph-refresh", "grace": 120}
+
+        compiled = load_machine(_written(tmp_path, _doc(cues=[_CUE, timed])))
+
+        assert [cue.grace for cue in compiled.cues] == [300, 120]
+
+    def test_a_grace_that_is_not_a_positive_whole_number_is_refused(self, tmp_path: Path) -> None:
+        for grace in (0, -5, 1.5, "soon"):
+            with pytest.raises(MachineDefinitionError):
+                load_machine(_written(tmp_path, _doc(cues=[{**_CUE, "grace": grace}])))
+
     def test_a_bare_on_key_in_the_yaml_is_the_cues_on_not_a_boolean(self, tmp_path: Path) -> None:
         path = tmp_path / "sample.yaml"
         path.write_text(
