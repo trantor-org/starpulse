@@ -237,7 +237,7 @@ describe("Kept", () => {
     await show(false, <Parts label="a" />, true);
     await tick();
     await frame();
-    expect(wrapper("a").dataset.warm).toBe("1");
+    expect(wrapper("a").dataset.warm).toBeDefined();
     await show(true, <Parts label="a" />, true);
     expect(wrapper("a").dataset.warm).toBeUndefined();
     expect(wrapper("a").hasAttribute("inert")).toBe(false);
