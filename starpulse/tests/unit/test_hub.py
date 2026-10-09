@@ -114,9 +114,9 @@ from starpulse import __main__
 
 from starpulse._internal.api import server
 
-from starpulse._internal.store import events
-from starpulse._internal.store.event_log import EventLog
-from starpulse._internal.store.history import HistoryStore, record_machine_events
+from starpulse._internal.eventlog import events
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.history import HistoryStore, record_machine_events
 from starpulse.tests.machines import MACHINES
 
 url = f"sqlite:///{Path(tempfile.mkdtemp()) / 'ic.sqlite'}"

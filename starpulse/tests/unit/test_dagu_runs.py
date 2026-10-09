@@ -30,8 +30,8 @@ from starpulse._internal.adapters.runs.dagu import (
 from starpulse._internal.adapters.runs.dagu import follow as follow_instance
 from starpulse._internal.api.adapter_kit import RunsAdapterKit
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse.tests.dagu_stub import InFlight, Past, Queue, dagu, run_entry, step_entry
 
 LISTING = "/api/v1/dags?perPage=200"

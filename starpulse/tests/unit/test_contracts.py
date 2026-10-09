@@ -20,8 +20,8 @@ from starpulse.contracts.adapters import (
     Step,
     TaskKeys,
 )
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.projections.machine_tasks import MachineTasks
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_machine_tasks import _agents, _entry
 

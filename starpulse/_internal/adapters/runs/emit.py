@@ -21,8 +21,8 @@ from typing import get_args
 
 from starpulse._internal.adapters.runs import run_events
 from starpulse.contracts.adapters import RunStatus
-from starpulse._internal.store.event_log import EventLog
-from starpulse._internal.store.history import open_event_log
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.history import open_event_log
 
 
 def _parser() -> argparse.ArgumentParser:

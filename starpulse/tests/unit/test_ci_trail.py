@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.projections.ci import CI_MACHINES
-from starpulse._internal.projections.ci_trail import CiTrail, parse
-from starpulse._internal.projections.machine_tasks import MachineTasks
-from starpulse._internal.store import events
-from starpulse._internal.store.event_log import EventLog, Tail
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.ci.ci import CI_MACHINES
+from starpulse._internal.ci.ci_trail import CiTrail, parse
+from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.eventlog import events
+from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES
 
 TASK = "PROJ-7"

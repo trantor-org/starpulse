@@ -18,11 +18,11 @@ from starpulse._internal.api.adapter_kit import serve, task, url
 from starpulse._internal.api.server import _adapter, _config, _no_writer, keep_event_log
 from starpulse._internal.api.writes import move_task, rerun_dag, run_dag, start_task
 from starpulse.contracts.adapters import Move, StartFailedError
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import CommitKeys, Config, RunsInstance, load
-from starpulse._internal.settings.harnesses import load_harnesses
-from starpulse._internal.store.event_log import EventLog
-from starpulse._internal.store.tables import events
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import CommitKeys, Config, RunsInstance, load
+from starpulse._internal.config.harnesses import load_harnesses
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.tables import events
 from starpulse.tests.machines import MACHINES
 
 #: The workflows the config declares run-safe in these tests, and the domains it groups them in.

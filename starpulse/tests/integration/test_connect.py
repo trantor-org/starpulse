@@ -6,7 +6,7 @@ import pytest
 import tomllib
 
 from starpulse._internal.cli import agent_cli, connect
-from starpulse._internal.settings.config import load
+from starpulse._internal.config.config import load
 from starpulse.tests.integration.test_jira import WORKFLOW, recorded_site, serve
 
 OTHER_TABLES = '# the hub this instance reports to\ntracker_url = "https://tracker.example"\n\n[[runs]]\nname = "prod"\ntype = "dagu"\nurl = "http://dagu:8080"\n'

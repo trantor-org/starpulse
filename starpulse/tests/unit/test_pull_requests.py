@@ -12,10 +12,10 @@ import pytest
 
 from starpulse._internal.adapters.runs.pull_requests import GhUnavailableError, PullRequests, Pulls, fetch, read_repository
 from starpulse._internal.api.adapter_kit import task
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.projections.ci_trail import PullHistory, parse
-from starpulse._internal.settings.config import Repo
-from starpulse._internal.settings.pins import GitHub
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.ci.ci_trail import PullHistory, parse
+from starpulse._internal.config.config import Repo
+from starpulse._internal.config.pins import GitHub
 
 REPO = "https://github.com/acme/widgets/pull"
 FIRST, SECOND = f"{REPO}/1750", f"{REPO}/1751"

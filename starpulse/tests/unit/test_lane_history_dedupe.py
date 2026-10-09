@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy import text
 
 from starpulse.contracts import BoardTask
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 
 MOVE = ("T-1", 100.0)

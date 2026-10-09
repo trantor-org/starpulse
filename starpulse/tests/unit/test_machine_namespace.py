@@ -6,8 +6,8 @@ from typing import Any
 import pytest
 import yaml
 
-from starpulse._internal.domain.machine_definition import MachineDefinitionError
-from starpulse._internal.domain.machine_namespace import Source, definition, merge
+from starpulse._internal.machines.machine_definition import MachineDefinitionError
+from starpulse._internal.machines.machine_namespace import Source, definition, merge
 
 MACHINES = Path(__file__).parent.parent / "fixtures" / "machines"
 

@@ -67,10 +67,10 @@ from typing import Any, NoReturn
 
 from starpulse._internal.cli import demo, skill_install
 from starpulse.contracts.adapters import Move
-from starpulse._internal.domain import mermaid_import
-from starpulse._internal.domain.machine_definition import MachineDefinitionError, Registry, load_machine
-from starpulse._internal.projections import doctor
-from starpulse._internal.settings.config import ConfigError, load
+from starpulse._internal.machines import mermaid_import
+from starpulse._internal.machines.machine_definition import MachineDefinitionError, Registry, load_machine
+from starpulse._internal.cli import doctor
+from starpulse._internal.config.config import ConfigError, load
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
@@ -732,7 +732,7 @@ def _what_if(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, 
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    """Every install check of `starpulse._internal.projections.doctor`; `ok` is false, and the exit code 1, when any fails."""
+    """Every install check of `starpulse._internal.cli.doctor`; `ok` is false, and the exit code 1, when any fails."""
     base = server_url(args.server, environ)
     path = args.config or (Path("starpulse.toml") if Path("starpulse.toml").is_file() else None)
     try:

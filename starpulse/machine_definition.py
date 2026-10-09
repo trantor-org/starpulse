@@ -1,6 +1,6 @@
-"""Loading and validating a machine; the implementation is in `starpulse._internal.domain.machine_definition`."""
+"""Loading and validating a machine; the implementation is in `starpulse._internal.machines.machine_definition`."""
 
-from starpulse._internal.domain.machine_definition import (
+from starpulse._internal.machines.machine_definition import (
     Compiled,
     Cue,
     MachineDefinitionError,

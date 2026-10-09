@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from starpulse._internal.adapters.runs import run_events
-from starpulse._internal.store import events, lane_events
+from starpulse._internal.eventlog import events, lane_events
 
 __all__ = ["FIELDS", "PERSON", "project"]
 

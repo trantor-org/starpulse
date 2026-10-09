@@ -29,9 +29,9 @@ from starpulse._internal.adapters.runs.github_actions import (
 from starpulse._internal.adapters.runs.github_actions import follow as follow_repository
 from starpulse._internal.api.adapter_kit import RunsAdapterKit, serve, url
 from starpulse.contracts.adapters import StartFailedError, TaskKeys
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import runs_adapter
-from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import runs_adapter
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse.tests.github_stub import REPO, Recorded
 
 #: Every status and conclusion GitHub documents for a run, job or step, plus `startup_failure` its webhooks and API

@@ -26,12 +26,12 @@ from starpulse._internal.api import server, writes
 from starpulse._internal.api.adapter_kit import serve, url
 from starpulse._internal.api.oidc import ENGINE, INSTANCE, PUBLIC, ROUTE_PREFIXES, ROUTES, SESSION_S, Gate
 from starpulse._internal.cli import agent_cli
-from starpulse._internal.domain.level import Level, Orbit, Terminal
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.projections.insights import Insights, InsightStore
-from starpulse._internal.settings.config import OidcSettings
-from starpulse._internal.store.event_log import EventLog
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.config.level import Level, Orbit, Terminal
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.level.insights import Insights, InsightStore
+from starpulse._internal.config.config import OidcSettings
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests import mock_issuer
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.mock_issuer import Answer, call, session_of

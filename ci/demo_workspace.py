@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from starpulse._internal.adapters.boards.seam import Board
-from starpulse._internal.domain.machine_definition import load_machine, refuse_unlisted
-from starpulse._internal.domain.snapshot import Qualify, describe
+from starpulse._internal.machines.machine_definition import load_machine, refuse_unlisted
+from starpulse._internal.machines.snapshot import Qualify, describe
 
 WORKSPACE = Path(__file__).with_name("workspace")
 #: The Board's main line: every lane a task passes on its way to Done, the settled lanes after it left out.

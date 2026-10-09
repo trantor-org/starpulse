@@ -30,13 +30,13 @@ except ImportError:
 
 from starpulse._internal.adapters.boards.seam import Board, MoveWriter, Written
 from starpulse.contracts.adapters import BoardTask, Move, TaskKeys
-from starpulse._internal.domain.machine_definition import Writer, load_machine
-from starpulse._internal.domain.snapshot import Qualify, describe
-from starpulse._internal.domain.transitions import DEFAULT_STATUSES, board_machine, lane_id
+from starpulse._internal.machines.machine_definition import Writer, load_machine
+from starpulse._internal.machines.snapshot import Qualify, describe
+from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
 
 if TYPE_CHECKING:
-    from starpulse._internal.projections.board_feed import BoardFeed
-    from starpulse._internal.store.event_log import EventLog
+    from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse._internal.eventlog.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 

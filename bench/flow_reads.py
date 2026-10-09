@@ -26,9 +26,9 @@ from typing import NamedTuple
 from sqlalchemy import event
 
 from starpulse._internal.api.server import health_response, level_response, trajectories_response
-from starpulse._internal.domain.level import Level, Orbit, Terminal
-from starpulse._internal.domain.transitions import board_machine
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.config.level import Level, Orbit, Terminal
+from starpulse._internal.machines.transitions import board_machine
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.rows import rows_fetched
 
 LANES = ("To Do", "Ready", "In Progress", "Review", "Done")

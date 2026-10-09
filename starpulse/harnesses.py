@@ -1,6 +1,6 @@
-"""The harness tiers; the implementation is in `starpulse._internal.settings.harnesses`."""
+"""The harness tiers; the implementation is in `starpulse._internal.config.harnesses`."""
 
-from starpulse._internal.settings.harnesses import (
+from starpulse._internal.config.harnesses import (
     Harness,
     HarnessError,
     Harnesses,

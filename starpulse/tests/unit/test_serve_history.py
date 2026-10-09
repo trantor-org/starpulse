@@ -7,9 +7,9 @@ import pytest
 from sqlalchemy import text
 
 from starpulse._internal.api import server
-from starpulse._internal.store import events
-from starpulse._internal.store.event_log import EventLog
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.eventlog import events
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests import fake_board
 
 

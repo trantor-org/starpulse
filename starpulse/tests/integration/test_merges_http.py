@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 from starpulse._internal.api.adapter_kit import serve, url
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import CommitKeys
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import CommitKeys
 
 NOW = datetime(2026, 10, 7, 1, tzinfo=UTC).timestamp()
 MACHINE = {

@@ -18,13 +18,13 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/__init__.py": "",
         "starpulse/leaf.py": "X = 1\n",
         "starpulse/lone.py": "Y = 2\n",
-        "starpulse/_internal/adapters/boards/seam.py": "import importlib\nfrom starpulse._internal.adapters import module_name\n",
+        "starpulse/_internal/adapters/boards/seam.py": "import importlib\nfrom starpulse._internal.config.adapter_types import module_name\n",
         "starpulse/_internal/adapters/runs/dagu.py": "def start(): ...\ndef follow(): ...\n",
-        "starpulse/_internal/adapters/__init__.py": 'BUILT_IN = {"dagu": "starpulse._internal.adapters.runs.dagu", "jira": "x"}\n',
+        "starpulse/_internal/config/adapter_types.py": 'BUILT_IN = {"dagu": "starpulse._internal.adapters.runs.dagu", "jira": "x"}\n',
         "starpulse/_internal/api/__init__.py": "",
         "starpulse/_internal/api/server.py": "",
         "starpulse/_internal/api/hub.py": "from starpulse import leaf\n",
-        "starpulse/_internal/store/migrations/versions/0001_initial.py": "",
+        "starpulse/_internal/eventlog/migrations/versions/0001_initial.py": "",
         "starpulse/_internal/adapters/boards/jira.py": "def board(settings, base):\n    return None\n",
         "starpulse/tests/__init__.py": "",
         "starpulse/tests/conftest.py": "",
@@ -78,7 +78,7 @@ def test_a_package_init_selects_every_test_under_the_package(repo):
 
 
 def test_a_migration_selects_the_tests_of_the_module_that_runs_migrations(repo):
-    assert select(repo, ["starpulse/_internal/store/migrations/versions/0001_initial.py"]) == Selection(
+    assert select(repo, ["starpulse/_internal/eventlog/migrations/versions/0001_initial.py"]) == Selection(
         ["starpulse/tests/unit/test_hub.py"]
     )
 

@@ -9,8 +9,8 @@ from starpulse._internal.adapters.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.adapters.harnesses.otlp import BRANCH, LogEvent, parse
 from starpulse._internal.api.adapter_kit import MachineEventsAdapterKit
 from starpulse.contracts.adapters import TaskKeys
-from starpulse._internal.domain.transitions import Table
-from starpulse._internal.store.event_log import EventLog, Tail
+from starpulse._internal.machines.transitions import Table
+from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES
 
 #: A two-turn session exported with `OTEL_LOG_TOOL_DETAILS=1`, scrubbed of account ids, prompt and reply text.

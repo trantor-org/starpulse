@@ -181,7 +181,7 @@ from starpulse._internal.adapters.runs.push_runs import PUSHED_INSTANCE, PushRun
 from starpulse._internal.api import forward
 from starpulse._internal.api.compression import LEVEL, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.api.forward import Forwarder
-from starpulse._internal.api.snapshot_cache import SnapshotCache
+from starpulse._internal.feed.snapshot_cache import SnapshotCache
 from starpulse._internal.api.writes import (
     OPERATOR,
     archive_doc,
@@ -208,25 +208,26 @@ from starpulse._internal.api.writes import (
     write_refusal,
 )
 from starpulse.contracts.api import encode, event
-from starpulse._internal.domain.level import Level
-from starpulse._internal.domain.level_metrics import RunWindow, WindowPastHistory, level_metrics
-from starpulse._internal.domain.snapshot import qualifier
-from starpulse._internal.domain.trajectories import WhatIfRefused, trajectory_analytics, what_if
-from starpulse._internal.projections import analytics, doctor
-from starpulse._internal.projections.board_feed import BoardFeed, follow
-from starpulse._internal.projections.ci import attach
-from starpulse._internal.projections.ci_trail import CiTrail
-from starpulse._internal.projections.insights import Insights, InsightStore, restore
-from starpulse._internal.projections.ledger import PAGE
-from starpulse._internal.projections.machine_tasks import MachineTasks
-from starpulse._internal.projections.machine_tasks import tables as machine_tables
-from starpulse._internal.settings.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
-from starpulse._internal.settings.harnesses import Harnesses
-from starpulse._internal.settings.history_window import SETTINGS_FILE, HistoryWindow
-from starpulse._internal.store import events as machine_events
-from starpulse._internal.store import lane_events
-from starpulse._internal.store.event_log import EventLog, prune_forever
-from starpulse._internal.store.history import (
+from starpulse._internal.config.level import Level
+from starpulse._internal.eventlog.level_metrics import RunWindow, WindowPastHistory, level_metrics
+from starpulse._internal.machines.snapshot import qualifier
+from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_analytics, what_if
+from starpulse._internal.level import analytics
+from starpulse._internal.cli import doctor
+from starpulse._internal.feed.board_feed import BoardFeed, follow
+from starpulse._internal.ci.ci import attach
+from starpulse._internal.ci.ci_trail import CiTrail
+from starpulse._internal.level.insights import Insights, InsightStore, restore
+from starpulse._internal.feed.ledger import PAGE
+from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.feed.machine_tasks import tables as machine_tables
+from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
+from starpulse._internal.config.harnesses import Harnesses
+from starpulse._internal.config.history_window import SETTINGS_FILE, HistoryWindow
+from starpulse._internal.eventlog import events as machine_events
+from starpulse._internal.eventlog import lane_events
+from starpulse._internal.eventlog.event_log import EventLog, prune_forever
+from starpulse._internal.eventlog.history import (
     HealthHistory,
     History,
     HistoryStore,
@@ -237,7 +238,7 @@ from starpulse._internal.store.history import (
     record_lane_events,
     record_machine_events,
 )
-from starpulse._internal.store.pulls import PullStore
+from starpulse._internal.adapters.runs.pulls import PullStore
 
 logger = logging.getLogger(__name__)
 _HERE = Path(__file__).parents[2]

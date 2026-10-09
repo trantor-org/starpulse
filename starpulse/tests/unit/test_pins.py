@@ -6,8 +6,8 @@ import subprocess
 
 import pytest
 
-from starpulse._internal.settings.config import Repo
-from starpulse._internal.settings.pins import GitHub, contained, link
+from starpulse._internal.config.config import Repo
+from starpulse._internal.config.pins import GitHub, contained, link
 
 REPOS = (Repo(name="skills", path="skills", applied_by="pin-bump"),)
 CHILD_SHA, LATER_SHA = "c1" * 20, "c2" * 20

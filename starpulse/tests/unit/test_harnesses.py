@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.settings.harnesses import HarnessError, load_harnesses
+from starpulse._internal.config.harnesses import HarnessError, load_harnesses
 
 _CLAUDE = """
 tiers = ["fast", "standard", "deep"]

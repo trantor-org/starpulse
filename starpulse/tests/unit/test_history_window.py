@@ -10,9 +10,9 @@ import pytest
 
 from starpulse._internal.api.adapter_kit import serve, url
 from starpulse._internal.api.writes import history_window
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.projections.machine_tasks import MachineTasks
-from starpulse._internal.settings.history_window import HistoryWindow
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.config.history_window import HistoryWindow
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.test_machine_tasks import _entry
 from starpulse.tests.unit.test_server import _ip
@@ -201,7 +201,7 @@ def test_a_put_or_delete_to_any_other_path_is_a_404_and_leaves_the_window(tmp_pa
 
 
 def test_a_history_with_lane_rows_and_no_gaps_can_feed_the_ledger_but_not_answer_health() -> None:
-    from starpulse._internal.store.history import HealthHistory, LaneHistory
+    from starpulse._internal.eventlog.history import HealthHistory, LaneHistory
 
     class LanesOnly:
         def lane_path(self, task: str) -> list[dict]:

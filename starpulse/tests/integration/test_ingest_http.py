@@ -20,9 +20,9 @@ from starpulse._internal.adapters.runs.ingest import MAX_BODY, Ingest
 from starpulse._internal.adapters.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.adapters.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.api.adapter_kit import serve, url
-from starpulse._internal.projections.board_feed import BoardFeed, follow
-from starpulse._internal.settings.config import load
-from starpulse._internal.store.event_log import EventLog, Tail
+from starpulse._internal.feed.board_feed import BoardFeed, follow
+from starpulse._internal.config.config import load
+from starpulse._internal.eventlog.event_log import EventLog, Tail
 
 TOKENS = {"cron": "cron-secret", "rundeck": "rundeck-secret"}
 EVENT = {"phase": "start", "workflow": "cron/nightly", "run_id": "r1", "status": "running"}

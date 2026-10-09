@@ -10,10 +10,10 @@ import pytest
 
 from starpulse._internal.adapters.runs import run_events
 from starpulse._internal.api.forward import PREVIEW, Forwarder, OptIn
-from starpulse._internal.settings.config import Forward
-from starpulse._internal.store import events
-from starpulse._internal.store.event_log import EventLog
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.config.config import Forward
+from starpulse._internal.eventlog import events
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.history import HistoryStore
 
 URL = "https://hub.example.test"
 

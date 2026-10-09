@@ -21,7 +21,7 @@ from starpulse._internal.adapters.runs.github import GITHUB_MACHINES, GitHubAdap
 from starpulse._internal.adapters.runs.github_actions import connect
 from starpulse._internal.api.adapter_kit import MachineEventsAdapterKit
 from starpulse.contracts.adapters import TaskKeys
-from starpulse._internal.store.event_log import EventLog, Tail
+from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse.tests.machines import MACHINES
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "github"

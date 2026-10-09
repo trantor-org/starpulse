@@ -11,8 +11,8 @@ import pytest
 
 from starpulse._internal.adapters.runs import emit
 from starpulse.contracts.adapters import RunStatus
-from starpulse._internal.store.event_log import EventLog, Tail
-from starpulse._internal.store.history import DEFAULT_FILE
+from starpulse._internal.eventlog.event_log import EventLog, Tail
+from starpulse._internal.eventlog.history import DEFAULT_FILE
 
 NOW = 1_700_000_000.0
 

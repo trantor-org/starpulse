@@ -9,8 +9,8 @@ import pytest
 import yaml
 from statemachine import StateChart
 
-from starpulse._internal.domain import machine_definition
-from starpulse._internal.domain.machine_definition import (
+from starpulse._internal.machines import machine_definition
+from starpulse._internal.machines.machine_definition import (
     Cue,
     MachineDefinitionError,
     Registry,

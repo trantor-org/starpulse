@@ -11,7 +11,7 @@ from pathlib import Path
 from starpulse._internal.api.adapter_kit import serve as _serve
 from starpulse._internal.api.adapter_kit import task
 from starpulse._internal.api.adapter_kit import url as _url
-from starpulse._internal.projections.board_feed import BoardFeed
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse.tests.machines import MACHINES
 
 GZIP = {"Accept-Encoding": "gzip"}

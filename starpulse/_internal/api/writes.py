@@ -79,9 +79,9 @@ from starpulse._internal.adapters.boards.seam import (
 )
 from starpulse._internal.api.forward import Forwarder
 from starpulse.contracts.adapters import Move, StartFailedError
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.history_window import HistoryWindow
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.eventlog.history import HistoryStore
 
 logger = logging.getLogger(__name__)
 

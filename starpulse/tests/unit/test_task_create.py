@@ -13,9 +13,9 @@ from starpulse._internal.adapters.boards.upstream_backlog import UpstreamBacklog
 from starpulse._internal.api.adapter_kit import serve, url
 from starpulse._internal.api.server import assemble
 from starpulse._internal.api.writes import create_task
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import load
-from starpulse._internal.store.event_log import EventLog
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import load
+from starpulse._internal.eventlog.event_log import EventLog
 
 LAN = "192.168.0.42"
 

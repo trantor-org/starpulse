@@ -27,7 +27,7 @@ import tomllib
 
 from starpulse._internal.adapters.boards import jira, native, upstream_backlog
 from starpulse.contracts.adapters import BoardTask
-from starpulse._internal.settings.config import ConfigError, load
+from starpulse._internal.config.config import ConfigError, load
 
 __all__ = ["main"]
 

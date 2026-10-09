@@ -9,9 +9,9 @@ from random import Random
 
 import pytest
 
-from starpulse._internal.domain.level import Level, Terminal
-from starpulse._internal.domain.level_metrics import Run, WindowPastHistory
-from starpulse._internal.domain.trajectories import WhatIfRefused, betweenness, trajectory_analytics, what_if
+from starpulse._internal.config.level import Level, Terminal
+from starpulse._internal.eventlog.level_metrics import Run, WindowPastHistory
+from starpulse._internal.level.trajectories import WhatIfRefused, betweenness, trajectory_analytics, what_if
 
 H = 3600.0
 NOW = 100 * H

@@ -20,11 +20,11 @@ from starpulse._internal.api import forward
 from starpulse._internal.api.adapter_kit import serve, url
 from starpulse._internal.api.forward import OPT_IN_FILE, Forwarder, OptIn, post
 from starpulse.contracts import BoardTask
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import Forward
-from starpulse._internal.store import lane_events
-from starpulse._internal.store.event_log import EventLog, Tail
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import Forward
+from starpulse._internal.eventlog import lane_events
+from starpulse._internal.eventlog.event_log import EventLog, Tail
+from starpulse._internal.eventlog.history import HistoryStore
 
 TOKEN = "ana-secret"
 ASSIGNEE = "bob-the-assignee"

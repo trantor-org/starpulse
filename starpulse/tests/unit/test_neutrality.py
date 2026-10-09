@@ -13,7 +13,7 @@ def _sources() -> list[Path]:
         p
         for p in PACKAGE.rglob("*.py")
         if p.name not in ADAPTER
-        and p != PACKAGE / "_internal" / "adapters" / "__init__.py"
+        and p != PACKAGE / "_internal" / "config" / "adapter_types.py"
         and not {"tests", "web", "node_modules"} & set(p.relative_to(PACKAGE).parts)
     ]
     pages = [

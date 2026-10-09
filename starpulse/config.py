@@ -1,6 +1,6 @@
-"""Loading the config file; the implementation is in `starpulse._internal.settings.config`."""
+"""Loading the config file; the implementation is in `starpulse._internal.config.config`."""
 
-from starpulse._internal.settings.config import (
+from starpulse._internal.config.config import (
     CommitKeys,
     Config,
     ConfigError,

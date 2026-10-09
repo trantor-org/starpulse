@@ -151,4 +151,4 @@ def test_an_unlisted_root_module_or_package_is_found(tmp_path: Path, stray: str)
 
 
 def test_the_board_feed_logs_under_its_public_path() -> None:
-    assert importlib.import_module("starpulse._internal.projections.board_feed").logger.name == "starpulse.board_feed"
+    assert importlib.import_module("starpulse._internal.feed.board_feed").logger.name == "starpulse.board_feed"

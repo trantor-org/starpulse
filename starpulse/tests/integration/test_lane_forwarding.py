@@ -14,13 +14,13 @@ from typing import Any
 from starpulse._internal.adapters.runs.ingest import ForwardIngest
 from starpulse._internal.api.forward import OPT_IN_FILE, Forwarder, OptIn
 from starpulse.contracts import BoardTask
-from starpulse._internal.domain.level import Level, Orbit, Terminal
-from starpulse._internal.domain.level_metrics import level_metrics
-from starpulse._internal.projections.board_feed import BoardFeed
-from starpulse._internal.settings.config import Forward
-from starpulse._internal.store import lane_events
-from starpulse._internal.store.event_log import EventLog, Tail
-from starpulse._internal.store.history import HistoryStore
+from starpulse._internal.config.level import Level, Orbit, Terminal
+from starpulse._internal.eventlog.level_metrics import level_metrics
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.config import Forward
+from starpulse._internal.eventlog import lane_events
+from starpulse._internal.eventlog.event_log import EventLog, Tail
+from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 
 H = 3600.0

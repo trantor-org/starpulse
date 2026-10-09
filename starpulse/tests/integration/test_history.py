@@ -8,11 +8,11 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
-from starpulse._internal.domain.level_metrics import UNATTRIBUTED, Run
-from starpulse._internal.store import events
-from starpulse._internal.store.event_log import EventLog
-from starpulse._internal.store.history import HistoryStore, record_machine_events
-from starpulse._internal.store.tables import metadata
+from starpulse._internal.eventlog.level_metrics import UNATTRIBUTED, Run
+from starpulse._internal.eventlog import events
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.history import HistoryStore, record_machine_events
+from starpulse._internal.eventlog.tables import metadata
 from starpulse.tests.machines import MACHINES
 
 _CLAIM = {"event_id": "e-1", "machine": "in-progress", "event": "WORKTREE_READY", "task": "PROJ-7", "time": "100"}

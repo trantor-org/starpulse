@@ -28,13 +28,13 @@ from urllib.request import Request, urlopen
 from starpulse._internal.adapters.boards.seam import Board
 from starpulse._internal.adapters.boards.upstream_backlog import board_moves
 from starpulse.contracts.adapters import BoardTask, TaskKeys
-from starpulse._internal.domain.machine_definition import MachineDefinitionError, compile_document, validate
-from starpulse._internal.domain.snapshot import Qualify, describe
-from starpulse._internal.domain.transitions import lane_id
+from starpulse._internal.machines.machine_definition import MachineDefinitionError, compile_document, validate
+from starpulse._internal.machines.snapshot import Qualify, describe
+from starpulse._internal.machines.transitions import lane_id
 
 if TYPE_CHECKING:
-    from starpulse._internal.projections.board_feed import BoardFeed
-    from starpulse._internal.store.event_log import EventLog
+    from starpulse._internal.feed.board_feed import BoardFeed
+    from starpulse._internal.eventlog.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
