@@ -39,7 +39,7 @@ import { fanTip, stepStatus } from "../features/fanout/fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
 import { ADMIN_DEFAULTS, type AdminPrefs } from "../features/admin/adminPrefs";
-import { clockHm, clockHms, stamp } from "../shared/clock";
+import { clockHm, stamp } from "../shared/clock";
 import { sizes as ledgerSizes } from "../features/level/machineLedger";
 import { firstOpened, rowMeta } from "../features/level/machineRows";
 import { asked, arrived as pageArrived, failed, nextQuery, paging, reveal, RETRY, wantNext, type Paging } from "../features/level/machinePaging";
@@ -130,7 +130,7 @@ export function feedOf(moves: Move[], dags: Dag[], runs: RunLine[], now: number)
   return ev.sort((a, b) => b.at - a.at).slice(0, 40);
 }
 
-export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement; clock: HTMLElement }, demo: boolean, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS): Renderer {
+export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLElement; panel: HTMLElement }, demo: boolean, prefs: () => AdminPrefs = () => ADMIN_DEFAULTS): Renderer {
   const cx = cv.getContext("2d")!, { tip, panel } = els;
   const hhmm = (sec: number) => clockHm(sec, prefs().clock);
   let S: Sky | null = null, snap: Snapshot | null = null, scene: Scene | null = null;
@@ -160,7 +160,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // ZS: zoom beyond the fit size; K: absolute zoom. Text, pulses and dashes divide by these so they never balloon.
   const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
   let T = Date.now() / 1000, clock = 0, liveTasks = new Set<string>(), hotEdge = new Set<string>(), ZS = 1, K = 1;
-  let away = false, timer = 0, clockTimer = 0, fanTimer = 0, stopped = false, saveT = 0, tick = 0, clockText = "", live: "" | "on" | "off" = "";
+  let away = false, timer = 0, fanTimer = 0, stopped = false, saveT = 0, tick = 0;
   // a delta behind another view skips the Star Map layout nothing draws, and lays it out when the map is shown or asked for
   const relay = whenShown(() => layout(true)), publishLater = staged();
   // The stream the page reads its snapshot and every change after it from.
@@ -201,7 +201,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       return b?.width ? [{ x0: b.left - L - 6, y0: b.top - 4, x1: b.right - L + 6, y1: b.bottom + 4 }] : [];
     };
     const crumb = box(document.getElementById("crumb"));
-    return { avoid: [...crumb, ...box(els.clock)], inset: crumb[0] ? crumb[0].y1 + 2 : 0 };
+    return { avoid: crumb, inset: crumb[0] ? crumb[0].y1 + 2 : 0 };
   };
   /** Lay the level out for the canvas's shape, so a wider screen spreads it instead of framing it with empty sky. */
   function layout(keepView: boolean) {
@@ -442,9 +442,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   function onLive(on: boolean) {
     if (!on) moves.resync(Date.now() / 1000); // the reconnect's snapshot places what the drop missed, as a returning tab's does
-    live = on ? "on" : "off";
-    hud.set({ live });
-    paintClock();
+    hud.set({ live: on ? "on" : "off" });
   }
   const demoTick = () => {
     if (stopped || !snap) return;
@@ -1266,11 +1264,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     boardDrawing.drawStars();
     drawTrace();
   }
-  /** The header clock, ticked by a timer so it keeps time while the canvas is idle. */
-  function paintClock() {
-    const t = clockHms(Date.now(), prefs().clock), txt = live === "off" ? `○ reconnecting · ${t} MST` : `● live · ${t} MST`;
-    if (txt !== clockText) els.clock.textContent = clockText = txt;
-  }
   let wash: { w: number; h: number; g?: CanvasGradient } = { w: 0, h: 0 };
   const frame = (now: number) => {
     if (away) return; // the canvas is hidden behind another view
@@ -1395,9 +1388,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       void loadFonts().then(() => {
         if (!stopped) stream = openStream({ snapshot: onSnapshot, live: onLive });
       });
-      clockTimer = window.setInterval(paintClock, 1000);
       fanTimer = window.setInterval(paintFan, 1000);
-      paintClock();
     },
     stop() {
       stopped = true;
@@ -1406,7 +1397,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       stream?.close();
       clearTimeout(timer);
       clearInterval(timer);
-      clearInterval(clockTimer);
       clearInterval(fanTimer);
       clearTimeout(saveT);
       for (const [target, type] of wakers) target.removeEventListener(type, wake);
@@ -1443,7 +1433,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       publishLater.cancel();
       write(compose());
       heartbeat();
-      paintClock();
     },
     openTask(id) {
       relay.settle();

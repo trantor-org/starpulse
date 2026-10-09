@@ -57,9 +57,6 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #nav .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 6px; font-size: calc(11px * var(--fs)); line-height: 1.6; }
 #nav .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--run); margin-right: 7px; vertical-align: 1px; box-shadow: 0 0 8px currentColor; }
 #nav .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); } #nav .dot.off { background: var(--fail); }
-#clock { color: var(--run); font: calc(10.5px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
-/* the panel opens over the clock's corner, so the clock steps out rather than showing through it */
-body:has(#panel.open) #clock { opacity: 0; }
 #q, #kbq, #dgq { all: unset; text-overflow: ellipsis; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: color-mix(in srgb, var(--slate) 6%, transparent);
   font-size: calc(12px * var(--fs)); color: var(--ink); }
 #q:focus, #kbq:focus, #dgq:focus { border-color: var(--agent); }
@@ -119,7 +116,7 @@ body:has(#panel.open) #clock { opacity: 0; }
 #crumb button:hover, #crumb button:focus-visible { color: var(--ink); }
 #crumb .here { color: var(--ink); }
 #crumb .sep { opacity: .5; }
-#crumb.off, #clock.off { visibility: hidden; }
+#crumb.off { visibility: hidden; }
 #tip { position: fixed; z-index: 4; pointer-events: none; padding: 8px 11px; border-radius: 8px; font-size: calc(12px * var(--fs)); line-height: 1.5;
   background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); backdrop-filter: blur(6px); max-width: 380px; opacity: 0; transition: opacity .12s; }
 #tip .k { color: var(--muted); font-size: calc(11px * var(--fs)); } #tip .n { font-weight: 500; }
