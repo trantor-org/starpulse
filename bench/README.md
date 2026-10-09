@@ -122,10 +122,11 @@ quiet slot) until the page work in TASK-3334 to TASK-3337 cuts it; drop the flag
 
 ## Latency gate
 
-Every pull request runs the `latency` job in `.github/workflows/ci.yml`: it builds the page, serves `ci/seeded_server.py`
-(`ci/preview.toml`'s workspace with the real request handler, a month of lane history for about 160 tasks and a level),
-runs `page_latency.py --repeat 3` against it and fails on a row over budget or an untimed request. The table is the
-job's step summary. `ci/seeded_server.py` runs the same server by hand:
+trantor's nightly whole-repo gate runs it (`make starpulse-latency`, `bin/starpulse_latency_gate.sh` in trantor) against
+the starpulse commit trantor pins; pull requests do not, because on the shared `validate` lane it was the slowest job and
+red from host load alone. It builds the page, serves `ci/seeded_server.py` (`ci/preview.toml`'s workspace with the real
+request handler, a month of lane history for about 160 tasks and a level), runs `page_latency.py --repeat 3` against it
+and fails on a row over budget or an untimed request. `ci/seeded_server.py` runs the same server by hand:
 
 ```sh
 uv run python -m ci.seeded_server --port 8766 --dir .tmp/gate
