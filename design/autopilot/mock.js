@@ -29,7 +29,7 @@
   const inLane = (lane) => agents.filter((a) => a.state === lane);
   const MODELS = ["opus · high", "sonnet · high", "sonnet · medium"];
   const session = (a, i) => ({ task: a.id, title: titleOf(a), model: MODELS[i % MODELS.length], started: now() - (14 + 23 * i) * 60,
-    url: `https://claude.ai/code/session_demo${String(i + 1).padStart(3, "0")}` });
+    url: `#demo-session-${a.id.replace(/\D/g, "").padStart(4, "0")}` }); // a fragment, as the demo's own sessions, so the public demo names no real host
   const flying = inLane("in_progress").slice(0, 3).map(session);
 
   // the loop's state: limits are trantor's defaults in the spec's shape; CPU and RAM drift with the sampler
