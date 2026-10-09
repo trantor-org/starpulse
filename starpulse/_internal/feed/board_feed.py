@@ -661,6 +661,16 @@ class BoardFeed:
         """
         return self._open.get(task_id)
 
+    def open_tasks(self) -> list[dict]:
+        """Every open Board task as the page draws it, read under the lock so a caller walks a list no placement changes."""
+        with self._lock:
+            return list(self._open.values())
+
+    def machine_tasks(self, flow: str) -> list[dict]:
+        """Every task as `flow`'s machine last placed it; none for a machine the feed does not draw."""
+        with self._lock:
+            return list(self._machines.get(flow, {}).values())
+
     def machine_task(self, flow: str, task_id: str) -> dict | None:
         """The task as `flow`'s machine last placed it, or None when it has not been placed there."""
         with self._lock:

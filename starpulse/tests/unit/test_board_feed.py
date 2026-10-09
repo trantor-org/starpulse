@@ -9,9 +9,10 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import text
 
-from starpulse.contracts.adapters import BoardTask, TaskKeys
+from starpulse.contracts.adapters import BoardTask, MachineEvent, TaskKeys
 from starpulse.contracts.api import event
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.config.config import CommitKeys
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import FLOWS, MACHINES
@@ -1046,3 +1047,18 @@ def test_the_snapshot_and_the_pulls_event_carry_only_the_fields_the_api_contract
     event("pulls", delta)
     event("snapshot", feed.snapshot())
     assert feed.snapshot()["ledgers"]["MERGED"][0]["sha"] == SHA
+
+
+def test_the_open_tasks_and_a_machines_tasks_can_be_read_without_a_snapshot() -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="t", lane="review", labels=["size-3"]))
+    feed.put(BoardTask(id="PROJ-2", team="demo", title="t", lane="to_do"))
+    MachineTasks(feed).put(MachineEvent(machine="in-progress", event="WORKTREE_READY", task="PROJ-1", time=time.time()))
+
+    assert {(t["id"], t["state"], tuple(t["labels"])) for t in feed.open_tasks()} == {
+        ("PROJ-1", "review", ("size-3",)),
+        ("PROJ-2", "to_do", ()),
+    }
+    assert [t["state"] for t in feed.machine_tasks("in-progress")] == ["worktree_ready"]
+    assert feed.machine_tasks("authoring-skills") == []  # drawn, nothing placed
+    assert feed.machine_tasks("not-a-machine") == []

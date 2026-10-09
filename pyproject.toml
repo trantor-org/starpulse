@@ -81,7 +81,7 @@ type = "layers"
 # Four tiers, each importing only the tiers below it and `contracts`. Features on one `|` line are independent; a line
 # of its own marks a named edge (the ADR "StarPulse Is Layered Around Its Event Log"): `kit` drives a `server` and the
 # hub forwarder, `server` serves the hub gate and the doctor's checks from `cli`, `pulls` reads GitHub Actions runs
-# from `runs`, `level` restores insights from the board feed, and the history store in `eventlog` reads `config` and
+# from `runs`, `autopilot` samples the board feed and the harness machine, `level` restores insights from the board feed, and the history store in `eventlog` reads `config` and
 # `machines`.
 layers = [
     # entrypoints
@@ -89,7 +89,7 @@ layers = [
     "starpulse._internal.server",
     "starpulse._internal.cli | starpulse._internal.hub",
     # producers
-    "starpulse._internal.pulls",
+    "starpulse._internal.pulls | starpulse._internal.autopilot",
     "starpulse._internal.board | starpulse._internal.runs | starpulse._internal.harnesses",
     # derived
     "starpulse._internal.level",

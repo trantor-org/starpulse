@@ -30,6 +30,7 @@ from types import ModuleType
 from urllib.parse import urlsplit
 
 from starpulse._internal.config.adapter_types import module_name
+from starpulse._internal.config.autopilot import Autopilot, AutopilotError, parse_autopilot
 from starpulse._internal.config.level import Level, LevelError, parse_level
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
 
@@ -55,6 +56,7 @@ _KEYS = {
     "forward",
     "sources",
     "aggregates_only",
+    "autopilot",
 }
 _OIDC_KEYS = {
     "issuer",
@@ -421,6 +423,8 @@ class Config:
     """The repositories whose merges apply through the parent's pin bump (`[[repos]]`)."""
     ci: tuple[str, ...] = ()
     """The Board states the shipped `ci` machine is attached to as a sub-flow (`[ci] states`); none: it is not drawn."""
+    autopilot: Autopilot = field(default_factory=Autopilot)
+    """The policy the autopilot runs under (`[autopilot]`); every key is optional, so no block is the defaults."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -433,6 +437,14 @@ class Config:
     def qualified_run_safe(self) -> tuple[str, ...]:
         """Every instance's run-safe workflows as `<instance>/<workflow>`."""
         return tuple(f"{instance.name}/{w}" for instance in self.runs for w in instance.run_safe)
+
+
+def _autopilot(raw: object) -> Autopilot:
+    """The `[autopilot]` table's policy, or the defaults when the config has none; a refusal is a `ConfigError`."""
+    try:
+        return parse_autopilot(raw)
+    except AutopilotError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def _level(raw: Mapping[str, object]) -> Level | None:
@@ -540,4 +552,5 @@ def load(path: Path | None) -> Config:
         event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", "starpulse-archive")),
         repos=_repos(raw.get("repos", [])),
         ci=_ci(raw),
+        autopilot=_autopilot(raw.get("autopilot")),
     )

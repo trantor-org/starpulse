@@ -48,6 +48,7 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.runs.ingest import ForwardIngest, Ingest
+from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.server.server import assemble as _assemble
 from starpulse._internal.server.server import StarPulseServer, request_handler
@@ -369,6 +370,7 @@ def serve(
     forward: ForwardIngest | None = None,
     level: Level | None = None,
     forwarding: Forwarder | None = None,
+    autopilot: Runtime | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
     contract: Callable[[], dict[str, Any]] | None = None,
     milestones: Board | None = None,
@@ -403,6 +405,7 @@ def serve(
         level,
         insights=insights,
         forwarding=forwarding,
+        autopilot=autopilot,
         reruns=reruns,
         contract=contract,
         milestones=milestones,

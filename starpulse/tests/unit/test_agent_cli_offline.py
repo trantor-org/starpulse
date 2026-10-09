@@ -133,6 +133,13 @@ class TestConfigCheck:
             "event_log_retention_days": 7,
             "event_log_archive_dir": "starpulse-archive",
             "ci": [],
+            "autopilot": {
+                "lane": None,
+                "review_lane": "review",
+                "unsized_points": 3,
+                "tier_weights": {"fast": 1, "standard": 2, "deep": 4},
+                "limits": {"cpu": 80, "memory": 80, "sessions": 2, "review": 20},
+            },
         }
 
     def test_with_no_file_it_reports_the_defaults(
