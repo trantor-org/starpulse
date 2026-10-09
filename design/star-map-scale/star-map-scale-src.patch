@@ -82,6 +82,23 @@ index a0440cf..2cf5ee7 100644
        cx.letterSpacing = "0px";
      }
      for (const b of sc.subStates) {
+diff --git a/starpulse/web/src/render/dagTies.ts b/starpulse/web/src/render/dagTies.ts
+index 7dacc20..a9e597c 100644
+--- a/starpulse/web/src/render/dagTies.ts
++++ b/starpulse/web/src/render/dagTies.ts
+@@ -170,6 +170,12 @@ export function obstacles(sc: Scene, placed: Hub[], u: number, ts: number, state
+     out.push([s.lab.x - w - pad, s.lab.y - 16 * u * ts - pad, s.lab.x + w + pad, s.lab.y + 26 * u * ts + pad, 1]);
+   }
+   for (const m of sc.moons) {
++    // Mockup (TASK-3747): under the column rule a moon's name sits under it, as wide as its column
++    if (sc.grid?.kind === "column") {
++      const hw = sc.grid.cw / 2;
++      out.push([m.parent.x - hw - pad, m.y - m.R - pad, m.parent.x + hw + pad, m.y + m.R + 16 * u * ts + pad, 1]);
++      continue;
++    }
+     const left = m.x < m.parent.x, x0 = m.x + (left ? -1 : 1) * (m.R + m.ext + 10), w = (m.label.length * 6 + 4) * u * ts, h = 9 * u * ts;
+     out.push(left ? [x0 - w - pad, m.y - h - pad, m.x + m.R + pad, m.y + h + pad, 1] : [m.x - m.R - pad, m.y - h - pad, x0 + w + pad, m.y + h + pad, 1]);
+   }
 diff --git a/starpulse/web/src/render/renderer.ts b/starpulse/web/src/render/renderer.ts
 index e6e4658..6e9c4ee 100644
 --- a/starpulse/web/src/render/renderer.ts
@@ -96,7 +113,7 @@ index e6e4658..6e9c4ee 100644
    const pen = drawing(dc);
    const { nameWidth, text, labPx, label, circle, dot, arrow, badge, pill } = pen;
 diff --git a/starpulse/web/src/render/scene.ts b/starpulse/web/src/render/scene.ts
-index 20ef710..4be32bd 100644
+index a5de328..dfc07dc 100644
 --- a/starpulse/web/src/render/scene.ts
 +++ b/starpulse/web/src/render/scene.ts
 @@ -306,6 +306,10 @@ export interface Scene {
