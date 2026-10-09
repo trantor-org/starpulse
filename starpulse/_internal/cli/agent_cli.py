@@ -642,7 +642,7 @@ def _search(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, A
     query = {"q": " ".join(args.query), **({"limit": args.limit} if args.limit is not None else {})}
     path = f"/api/search?{urllib.parse.urlencode(query)}"
     status, reply = _get(base, path)
-    found = _milestone_call(base, path, status, reply, noun="search")
+    found = _record_call(base, path, status, reply, noun="search")
     return {"query": found["query"], "hits": found["hits"]}
 
 
