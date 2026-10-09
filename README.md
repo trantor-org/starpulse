@@ -20,6 +20,7 @@
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/cli.md">Agent CLI</a> ·
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/hub.md">Hub</a> ·
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/adapters.md">Adapters</a> ·
+  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/consumers.md">Consumers</a> ·
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/security.md">Security</a> ·
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/public-surface.md">Compatibility</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>

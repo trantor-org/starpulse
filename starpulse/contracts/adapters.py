@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "CONTRACTS",
+    "EVENT_STREAMS",
     "FINDING_TEXT_MAX",
     "SCHEMAS",
     "ActiveRun",
@@ -29,10 +30,12 @@ __all__ = [
     "Finding",
     "FindingEngine",
     "FindingScope",
+    "LaneEvent",
     "MachineEvent",
     "Move",
     "Pool",
     "RecentRun",
+    "RunEvent",
     "RunStatus",
     "RunsSink",
     "StartFailedError",
@@ -349,13 +352,62 @@ class Finding(_Contract):
         return self
 
 
+class RunEvent(_Contract):
+    """One workflow run, or one step of it, starting or ending; the `runs:events` entry's fields."""
+
+    time: float = Field(ge=0, allow_inf_nan=False, description="When it happened, in epoch seconds.")
+    phase: Literal["start", "end"] = Field(description="Whether the run or step started or ended.")
+    workflow: str = Field(min_length=1, description="The workflow's name, unique on its scheduler.")
+    run_id: str = Field(min_length=1, description="The run's id.")
+    status: RunStatus = Field(description="The run's status, or the step's when `step` is set.")
+    step: str = Field(default="", description="The step this entry reports; empty when it reports the run itself.")
+    depends: tuple[str, ...] = Field(
+        default=(), description="Names of the steps `step` waits on; empty when it waits on none, and needs `step`."
+    )
+    instance: str = Field(
+        default="",
+        description="The runs adapter instance whose token pushed the entry over HTTP; empty for an entry a hook emitted.",
+    )
+
+    @model_validator(mode="after")
+    def _depends_names_a_step(self) -> Self:
+        if self.depends and not self.step:
+            raise ValueError("depends needs step")
+        return self
+
+
+class LaneEvent(_Contract):
+    """One task entering a Board lane; the `board:lanes` entry's fields. It never carries a title, a description, a
+    holder or any session detail."""
+
+    task: str = Field(min_length=1, description="The task key that changed lane.")
+    lane: str = Field(min_length=1, description="The id of the Board machine state the task entered.")
+    time: float = Field(ge=0, allow_inf_nan=False, description="When the task entered the lane, in epoch seconds.")
+    team: str = Field(default="", description="The task's team key; empty on an entry replayed from the history.")
+    milestone: str = Field(default="", description="The task's milestone; empty when it has none.")
+    labels: tuple[str, ...] = Field(default=(), description="The task's labels; empty when it has none.")
+    assignee: str = Field(
+        default="", description="Who or which agent model held the task; empty when unassigned, and a person's name."
+    )
+
+
 #: Each contract's model, by the name its checked-in schema file carries.
 CONTRACTS: dict[str, type[BaseModel]] = {
     "board": BoardTask,
     "machine-events": MachineEvent,
+    "run-events": RunEvent,
+    "lane-events": LaneEvent,
     "runs": Dag,
     "pools": Pool,
     "insights": Finding,
+}
+#: The contract of each stream of the event log (`starpulse.event_log`), by the name `CONTRACTS` gives it: the
+#: `fields` of an `Entry` read from that stream are a record of that model. A package test fails for a stream a
+#: producer declares that is missing here.
+EVENT_STREAMS: dict[str, str] = {
+    "machine:events": "machine-events",
+    "runs:events": "run-events",
+    "board:lanes": "lane-events",
 }
 #: Each contract's JSON Schema, by the same names.
 SCHEMAS: dict[str, dict] = {name: model.model_json_schema() for name, model in CONTRACTS.items()}
