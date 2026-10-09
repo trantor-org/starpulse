@@ -5,8 +5,8 @@ usage: git apply design/star-map-scale/star-map-scale-src.patch
        PYTHONPATH=. python design/star-map-scale/build.py [--fixture PATH] [--server URL]
        git apply -R design/star-map-scale/star-map-scale-src.patch
 
-The patch adds a grid sizing rule for the Board (`window.__SIZING__`, set by mock.js): one canvas cell and one fixed footprint per
-state, the zoom the largest that fits a cell, labels scaled with the sun. Without it the page draws as today, so one build serves both
+The patch adds a column sizing rule for the Board (`window.__SIZING__`, set by mock.js): one lifecycle row, one canvas column and one
+fixed footprint per state with its moons in rows under its sun, the zoom the largest that fits a column, labels scaled with the sun. Without it the page draws as today, so one build serves both
 sides of the comparison. `--fixture` reuses a saved capture, else the server is captured and the capture saved there.
 `measure.py` samples today's sizes per viewport (the table in TASK-3747).
 """
@@ -32,8 +32,8 @@ else:
 html = demo.page(demo.STATIC, snap)
 head = (
     "<!--\n  Design mockup of the Star Map's size per screen resolution, under operator review; not served by starpulse.\n"
-    "  The real page, built from a source copy that adds a grid sizing rule (star-map-scale-src.patch), over a scrubbed capture, with\n"
-    "  mock.js layered on. Variants: ?res=WxH  ?fs=100|125|150  ?layout=auto|row|wrap  ?frame=1&sizing=current|grid&rails=off\n-->\n"
+    "  The real page, built from a source copy that adds a column sizing rule (star-map-scale-src.patch), over a scrubbed capture, with\n"
+    "  mock.js layered on. Variants: ?res=WxH  ?fs=100|125|150  ?frame=1&sizing=current|grid&rails=off\n-->\n"
 )
 html = html.replace("<head>", "<head>\n" + head, 1).replace("</body>", '<script src="mock.js"></script>\n</body>', 1)
 (HERE / "index.html").write_text(html)

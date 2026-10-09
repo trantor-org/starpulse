@@ -1,15 +1,15 @@
 // Design mockup layer (Star Map sizing per resolution), never part of the page. The page above is a scrubbed capture of the
-// real StarPulse page, built from a source copy (star-map-scale-src.patch) that adds a grid sizing rule: each Board state gets one cell
-// of the canvas and one fixed footprint (task band, moon orbit, clearance R), busy or empty; the zoom is the largest that fits a cell,
-// and the labels scale with the sun, clamped to 12-20 px. Without ?frame this layer draws the review frame: the page at a chosen
+// real StarPulse page, built from a source copy (star-map-scale-src.patch) that adds a column sizing rule: the Board stays one
+// lifecycle row, each state gets one column of the canvas and one fixed footprint (its name, its task band, and a fixed number of moon
+// rows hung under its sun, each moon named under it), busy or empty; the zoom is the largest that fits a column, and the labels scale
+// with the sun, clamped to 12-20 px. Without ?frame this layer draws the review frame: the page at a chosen
 // resolution, today's rendering beside the proposal, each in an iframe at its real CSS size and scaled down to fit, with a table read
 // live from each frame's flowProbe(). It runs before the page's module.
 //   ?res=1920x1080   the resolution compared (the buttons set it)       ?fs=100|125|150   the Admin text size
-//   ?layout=auto|row|wrap   the proposal's cell layout (auto picks the larger cells; row keeps today's columns)
 //   ?frame=1&sizing=current|grid&rails=off   one page alone, as each iframe loads it
 (() => {
   const q = new URLSearchParams(location.search), F = window.__FLOW_FIXTURE__;
-  const fs = Number(q.get("fs") || 100), layout = q.get("layout") || "auto";
+  const fs = Number(q.get("fs") || 100);
   try {
     const k = "fv.admin.prefs", p = JSON.parse(localStorage.getItem(k) || "{}");
     p.scale = fs;
@@ -17,7 +17,7 @@
   } catch { /* storage off: the page keeps 100% */ }
 
   if (q.has("frame")) {
-    if ((q.get("sizing") || "grid") === "grid") window.__SIZING__ = { mode: "grid", layout, text: fs / 100 };
+    if ((q.get("sizing") || "grid") === "grid") window.__SIZING__ = { mode: "grid", text: fs / 100 };
     // a phone's width is spent by the 250 px rails today: rails=off shows the canvas the sizing rule gets once they fold
     if (q.get("rails") === "off") {
       const st = document.createElement("style");
@@ -63,19 +63,19 @@
   const seg = (label, key, vals, cur, names = {}) => `<span class="lb">${label}</span><span class="seg">${
     vals.map((v) => `<button data-k="${key}" data-v="${v}" class="${v === cur ? "on" : ""}">${names[v] ?? v}</button>`).join("")}</span>`;
   const frame = (sizing) => {
-    const p = new URLSearchParams({ frame: "1", sizing, fs: String(fs), layout });
+    const p = new URLSearchParams({ frame: "1", sizing, fs: String(fs) });
     if (phone) p.set("rails", "off");
     return `${location.pathname}?${p}`;
   };
   const root = document.getElementById("root");
   root.innerHTML = `<div id="cmp">
     <h1>Star Map size per screen resolution</h1>
-    <p class="lede">Left: today, every body sized in world units and the whole Board fit to the canvas width. Right: the proposal, one cell
-      of the canvas per state, one fixed footprint per state busy or empty, labels scaled with the sun. Each frame is the page at the
+    <p class="lede">Left: today, every body sized in world units and the whole Board fit to the canvas width. Right: the proposal, still one
+      lifecycle row: a column of the canvas per state, its moons hung in rows under its sun in the height today leaves empty, one fixed
+      footprint per state busy or empty, labels scaled with the sun. Each frame is the page at the
       chosen resolution, scaled down to fit here; open a side alone to see it at its real size. The table is read live from each frame.</p>
-    <div class="bar">${seg("Resolution", "res", RES, res)}${seg("Text size", "fs", ["100", "125", "150"], String(fs), { 100: "100%", 125: "125%", 150: "150%" })}${
-      seg("Proposal layout", "layout", ["auto", "row", "wrap"], layout)}</div>
-    <div class="pair">${[["current", "Today"], ["grid", "Proposed: grid cell, fixed footprint"]].map(([s, t]) => `<section class="side" data-s="${s}">
+    <div class="bar">${seg("Resolution", "res", RES, res)}${seg("Text size", "fs", ["100", "125", "150"], String(fs), { 100: "100%", 125: "125%", 150: "150%" })}</div>
+    <div class="pair">${[["current", "Today"], ["grid", "Proposed: one row, moons in rows under each state"]].map(([s, t]) => `<section class="side" data-s="${s}">
       <h2>${t}<a href="${frame(s)}" target="_blank">open alone</a></h2>
       <div class="vp"><iframe title="${t}" src="${frame(s)}" width="${VW}" height="${VH}"></iframe></div>
       <div class="sum"></div><table></table></section>`).join("")}</div></div>`;

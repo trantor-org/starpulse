@@ -13,6 +13,75 @@ index 98f5a7e..18d42e5 100644
    <StrictMode>
      <App />
    </StrictMode>,
+diff --git a/starpulse/web/src/render/boardDraw.ts b/starpulse/web/src/render/boardDraw.ts
+index a0440cf..2cf5ee7 100644
+--- a/starpulse/web/src/render/boardDraw.ts
++++ b/starpulse/web/src/render/boardDraw.ts
+@@ -7,7 +7,7 @@ import { stepStates } from "../features/level/ledgerPanel";
+ import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
+ import { nameLines, touches, type Hub, type Ties } from "./dagTies";
+ import {
+-  BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
++  BOARD_COLOR, FOOT, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
+   type BEdge, type Curve, type GNode, type MEdge, type MState, type Planet, type Scene,
+ } from "./scene";
+ import { FLARE, PULSE, RING, TRAVEL, countText, hosted, type Move, type Moves, type Sky } from "./sky";
+@@ -41,20 +41,42 @@ export interface BoardIO {
+ 
+ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
+   const { cx } = dc;
+-  const { text, labPx, label, circle, dot, isHot, disc, hole, comet, pulse, flowLine, body, drawTrackRings, machine, machineName } = d;
++  const { text, labPx, label, circle, dot, isHot, disc, hole, comet, pulse, flowLine, fitText, body, drawTrackRings, machine, machineName } = d;
+   function drawGalaxies() {
+     for (const g of Object.values(io.scene!.galaxies)) {
+       const hot = isHot("galaxy", g);
+       body(g, hot);
+       drawTrackRings(g, g.color);
+-      label(g.name, g.lab.x, g.lab.y, hot, `${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 13);
++      // Mockup (TASK-3747): under the column rule the moon count is the column itself, and a name wider than its column breaks onto a line above
++      const sc = io.scene!, cw = sc.grid?.kind === "column" ? sc.grid.cw : 0, sub = `${countText(g.n, g.today)}${g.subs.length && !cw ? ` · ${g.subs.length} lifecycles` : ""}`;
++      const cut = cw && textW(g.name, 13) * (labPx(13) / 13) > cw ? g.name.lastIndexOf(" ") : -1;
++      if (cut > 0) {
++        label(g.name.slice(0, cut), g.lab.x, g.lab.y - labPx(13) - 2 / dc.K, hot, null, 13);
++        label(g.name.slice(cut + 1), g.lab.x, g.lab.y, hot, sub, 13);
++      } else label(g.name, g.lab.x, g.lab.y, hot, sub, 13);
+     }
+   }
+   // lifecycle moons: still, named bodies on their state's dashed outer ring, brighter while they have sessions, ringed in amber while one moves.
+   // A machine's sub-states run outward from its moon in its row on dashed stems, the machine's name past them.
+   function drawMoons() {
+     const sc = io.scene!;
+-    for (const g of Object.values(sc.galaxies)) if (sc.moons.some((m) => m.parent === g)) circle(g.x, g.y, g.moonR, rgba(g.color, isHot("galaxy", g) ? 0.6 : 0.25), 1, [2, 5]);
++    // Mockup (TASK-3747): under the column rule a state's moons hang in rows under it on a dashed spine, not on a ring round it
++    const column = sc.grid?.kind === "column";
++    for (const g of Object.values(sc.galaxies)) {
++      const ms = sc.moons.filter((m) => m.parent === g);
++      if (!ms.length) continue;
++      if (!column) circle(g.x, g.y, g.moonR, rgba(g.color, isHot("galaxy", g) ? 0.6 : 0.25), 1, [2, 5]);
++      else {
++        cx.strokeStyle = rgba(g.color, isHot("galaxy", g) ? 0.6 : 0.25);
++        cx.lineWidth = 1 / dc.K;
++        cx.setLineDash([2 / dc.K, 5 / dc.K]);
++        cx.beginPath();
++        cx.moveTo(ms[0].x, g.y + g.visR);
++        cx.lineTo(ms[0].x, Math.max(...ms.map((m) => m.y)));
++        cx.stroke();
++        cx.setLineDash([]);
++      }
++    }
+     for (const m of sc.moons) {
+       const hot = isHot("moon", m), flows = m.pager?.hidden ?? [m.name], mv = flows.flatMap(io.moving).length, busy = flows.some((name) => !!hosted(io.S!, name, m.parent.id).length);
+       drawTrackRings(m, "#c084fc");
+@@ -65,7 +87,8 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
+       const left = m.x < m.parent.x - 1;
+       cx.letterSpacing = `${0.5 / dc.K}px`;
+       const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
+-      machineName(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, labPx(10.5), col, left ? "right" : "left", src);
++      if (column) machineName(fitText(m.label, sc.grid!.cw - (src ? textW(src, 10.5) * labPx(10.5) / 10.5 + 4 : 0), labPx(10.5)), m.parent.x, m.y + FOOT.moon + labPx(10.5) * 0.7, labPx(10.5), col, "center", src);
++      else machineName(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, labPx(10.5), col, left ? "right" : "left", src);
+       cx.letterSpacing = "0px";
+     }
+     for (const b of sc.subStates) {
 diff --git a/starpulse/web/src/render/renderer.ts b/starpulse/web/src/render/renderer.ts
 index e6e4658..6e9c4ee 100644
 --- a/starpulse/web/src/render/renderer.ts
@@ -27,7 +96,7 @@ index e6e4658..6e9c4ee 100644
    const pen = drawing(dc);
    const { nameWidth, text, labPx, label, circle, dot, arrow, badge, pill } = pen;
 diff --git a/starpulse/web/src/render/scene.ts b/starpulse/web/src/render/scene.ts
-index 20ef710..f56597f 100644
+index 20ef710..4be32bd 100644
 --- a/starpulse/web/src/render/scene.ts
 +++ b/starpulse/web/src/render/scene.ts
 @@ -306,6 +306,10 @@ export interface Scene {
@@ -37,26 +106,27 @@ index 20ef710..f56597f 100644
 +  /** Mockup (TASK-3747): the Board's type scale under the grid sizing rule, against its 13 px state names. */
 +  labelScale?: number;
 +  /** Mockup (TASK-3747): the grid the Board was laid out on. */
-+  grid?: { kind: string; cols: number; rows: number; k: number };
++  grid?: { kind: string; cols: number; rows: number; k: number; cw: number };
    galaxies: Record<string, Galaxy>;
    bEdges: BEdge[];
    tasks: Body[];
-@@ -644,6 +648,67 @@ export function rings(n: number, r0: number, gap: number, ringGap: number) {
+@@ -644,6 +648,59 @@ export function rings(n: number, r0: number, gap: number, ringGap: number) {
    return { slots, radii, outer: radii.length ? radii[radii.length - 1] : r0 };
  }
  
-+/** Mockup (TASK-3747): the grid sizing rule, switched on by the design page through `window.__SIZING__`. */
-+type GridLayout = "auto" | "row" | "wrap";
-+const gridRule = (): { layout: GridLayout; text: number } | null => {
-+  const g = (globalThis as { __SIZING__?: { mode?: string; layout?: GridLayout; text?: number } }).__SIZING__;
-+  return g?.mode === "grid" ? { layout: g.layout ?? "auto", text: g.text ?? 1 } : null;
++/** Mockup (TASK-3747): the column sizing rule, switched on by the design page through `window.__SIZING__`. */
++const gridRule = (): { text: number; rows: number; dx: number; dy: (i: number) => number } | null => {
++  const g = (globalThis as { __SIZING__?: { mode?: string; text?: number } }).__SIZING__;
++  return g?.mode === "grid" ? { text: g.text ?? 1, rows: ROWS, dx: 0, dy: () => 0 } : null;
 +};
 +/**
-+ * A Board state's fixed footprint in sky units, at the sun's own size (SUN_R): tasks ring the sun from task0 to task1, machines sit on the
-+ * moonR ring, a moon and its tasks reach `moon`, a sub-state and its tasks `sub`, and the state clears `R`. `name` is a cut moon name's
-+ * screen width (NAME_MAX characters at 10.5 px). Every state takes it, busy or empty, with machines or none.
++ * A Board state's fixed footprint in sky units, at the sun's own size (SUN_R): tasks ring the sun from task0 to task1, a moon and its tasks
++ * reach `moon`, a sub-state and its tasks `sub`, and a moon row is `row` tall above the name under it. Every state takes the same moon
++ * rows under its sun, busy or empty, with machines or none.
 + */
-+export const FOOT = { task0: SUN_R + 14, task1: SUN_R + 38, moonR: 108, moon: 18, sub: 16, R: 134, name: 64.8 };
++export const FOOT = { task0: SUN_R + 14, task1: SUN_R + 38, moon: 18, sub: 16, row: 40 };
++/** The most and the fewest moon rows under a Board state's sun, its pager nodes among them: the canvas's spare height sets how many between. */
++export const ROWS = 12, MIN_ROWS = 8;
 +/** The dot and ring gaps that hold `n` bodies in rings from r0 out to r1: a fuller body adds rings inside its band, closer together, never past it. */
 +export function pack(n: number, r0: number, r1: number, gap: number, ringGap: number) {
 +  for (let g = gap; g >= 3; g -= 0.5)
@@ -69,47 +139,38 @@ index 20ef710..f56597f 100644
 +}
 +/** The Board's type scale at fit zoom k: a state's name is 0.45 of its sun's screen radius, 12 to 20 px, against the 13 px it is drawn at. */
 +export const labelScale = (k: number) => Math.min(20, Math.max(12, 0.45 * SUN_R * k)) / 13;
-+/** The largest fit zoom at which a footprint, its name above it and its cut moon names beside it fit a cw x ch px cell, `gap` px from the next,
-+ * at the Admin text size `text` (1 at 100%).
-+ * The name takes 40 px of the cell's height once, above the footprint, so the footprint sits that much below the cell's centre. */
-+export function cellZoom(cw: number, ch: number, text = 1, gap = 24) {
++/** The screen height of a moon row's name line, and of a state's name (room for two lines) and count above its sun, at type scale ls. */
++const NAME_LINE = 14, STATE_NAME = 58;
++/**
++ * The largest fit zoom at which a state's column, `gap` px from the next, holds its task band and its widest moon row (a moon and one
++ * sub-state) across cw px, and its name, task band and MIN_ROWS moon rows, each with its name under it, down ch px, at the Admin text size
++ * `text` (1 at 100%); then the rows, up to ROWS, that the height left at that zoom holds. A moon's name is cut to the column's width.
++ */
++export function columnZoom(cw: number, ch: number, text = 1, gap = 16) {
++  const fixed = (k: number, ls: number) => STATE_NAME * ls + (2 * FOOT.task1 + 6) * k, row = (k: number, ls: number) => FOOT.row * k + NAME_LINE * ls;
 +  const ok = (k: number) => {
 +    const ls = labelScale(k) * text;
-+    return (FOOT.moonR + FOOT.moon + 10) * k + FOOT.name * ls <= cw / 2 - gap / 2 && 2 * (FOOT.R + 14) * k + 40 * ls <= ch - gap;
++    return Math.max(2 * FOOT.task1, 2 * FOOT.moon + 8 + 2 * FOOT.sub) * k <= cw - gap && fixed(k, ls) + MIN_ROWS * row(k, ls) <= ch - gap;
 +  };
 +  let lo = 0.05, hi = 6;
-+  if (!ok(lo)) return lo;
-+  for (let i = 0; i < 40; i++) {
-+    const m = (lo + hi) / 2;
-+    if (ok(m)) lo = m;
-+    else hi = m;
-+  }
-+  return lo;
-+}
-+/**
-+ * Each Board state's cell and the zoom the cells allow: one lifecycle row (a column per slot, bands above, on and below the axis), or the
-+ * states in lifecycle order wrapped to the canvas's shape, each row running back the way the last one came. `auto` takes the larger zoom.
-+ */
-+export function gridPlaces(order: string[], BP: Record<string, [number, number]>, W: number, H: number, layout: GridLayout, text = 1) {
-+  const cw = 0.94 * W, ch = 0.94 * H, cands: { k: number; cols: number; rows: number; at: Record<string, [number, number]>; kind: string }[] = [];
-+  if (layout !== "wrap") {
-+    const xs = [...new Set(order.map((id) => BP[id][0]))].sort((a, b) => a - b), off = order.some((id) => BP[id][1] !== AXIS_Y), rows = off ? 3 : 1;
-+    const at = Object.fromEntries(order.map((id) => [id, [xs.indexOf(BP[id][0]), off ? (BP[id][1] < AXIS_Y ? 0 : BP[id][1] > AXIS_Y ? 2 : 1) : 0] as [number, number]]));
-+    cands.push({ k: cellZoom(cw / xs.length, ch / rows, text), cols: xs.length, rows, at, kind: "row" });
-+  }
-+  if (layout !== "row")
-+    for (let c = 1; c <= order.length; c++) {
-+      const rows = Math.ceil(order.length / c);
-+      const at = Object.fromEntries(order.map((id, i) => [id, [Math.floor(i / c) % 2 ? c - 1 - (i % c) : i % c, Math.floor(i / c)] as [number, number]]));
-+      cands.push({ k: cellZoom(cw / c, ch / rows, text), cols: c, rows, at, kind: "wrap" });
++  if (ok(lo))
++    for (let i = 0; i < 40; i++) {
++      const m = (lo + hi) / 2;
++      if (ok(m)) lo = m;
++      else hi = m;
 +    }
-+  return cands.reduce((a, b) => (b.k > a.k * 1.03 ? b : a));
++  const ls = labelScale(lo) * text;
++  return { k: lo, rows: Math.max(MIN_ROWS, Math.min(ROWS, Math.floor((ch - gap - fixed(lo, ls)) / row(lo, ls)))) };
++}
++/** Each Board state's column, in lifecycle order (a slot's states above the axis first), and the zoom the columns allow: one row, never wrapped. */
++export function columnPlaces(order: string[], W: number, H: number, text = 1) {
++  return { ...columnZoom((0.94 * W) / order.length, 0.94 * H, text), cols: order.length, at: Object.fromEntries(order.map((id, i) => [id, i])) };
 +}
 +
  export const PAGE_SIZE = 12;
  /** How many times its base width the Board's sky may grow before its states page their machines sooner than PAGE_SIZE, each by its own size. */
  export const BOARD_GROW = 1.5;
-@@ -713,6 +778,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -713,6 +770,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
      return o.outer;
    };
    function buildBoard() {
@@ -117,7 +178,7 @@ index 20ef710..f56597f 100644
      // The Board's places come from its machine and its declared main line, scaled to the sky.
      const states = board.machine.states, transitions = board.machine.transitions;
      const BP = boardPlaces(states, transitions, board.machine.mainLine ?? undefined);
-@@ -739,22 +805,27 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -739,21 +797,24 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
      const radius = (st: (typeof states)[number]) => {
        const all = byState[st.id] || [], at = new Map(all.map((a) => [a, deepest(a)])), fs = flowsOf(st.id);
        const on = (f: string, state?: string) => all.filter((a) => at.get(a)?.flow === f && at.get(a)?.state === state);
@@ -129,75 +190,66 @@ index 20ef710..f56597f 100644
 +        return { f, ss, label, slot: { moon: G ? FOOT.moon : orbit(on(f).length, 9, 17), subs: ss.map((q) => (G ? FOOT.sub : orbit(on(f, q.id).length, 6, 14))), name: textW(clipped ? clip(label) : label, 10.5) * F } };
        };
 -      if (!fs.length) return { r, outer, R: outer + 10, rows: null, ms: [], pg: paged(st.id, []), here, on, at };
-+      // under the grid rule a state holds a fixed number of machine rows a side, and pages the rest
-+      const cap = Math.max(1, Math.floor((2 * FOOT.moonR) / Math.max(16 * F, 2 * FOOT.moon + 6) - 1));
-+      if (G) sizes[st.id] = 2 * cap - 1;
-+      if (!fs.length) return { r, outer, R: G ? FOOT.R : outer + 10, rows: null, ms: [], pg: paged(st.id, []), here, on, at };
++      // under the column rule a state holds ROWS moon rows under its sun, two of them its pager nodes once it pages
++      if (G) sizes[st.id] = fs.length > G.rows ? G.rows - 3 : G.rows - 1;
++      if (!fs.length) return { r, outer, R: G ? FOOT.task1 + 4 : outer + 10, rows: null, ms: [], pg: paged(st.id, []), here, on, at };
        const primary = machine(fs[0]), rest = fs.slice(1), pg = paged(st.id, rest, ctx.pages?.[st.id] ?? 0, sizes[st.id]);
        const pageCount = Math.max(1, pg.pagers[0]?.pages ?? 1), pageSets = Array.from({ length: pageCount }, (_, i) => [primary, ...paged(st.id, rest, i, sizes[st.id]).shown.map(machine)]), ms = [primary, ...pg.shown.map(machine)];
--      const slots = Math.max(...pageSets.map((set) => set.length)), per: [number, number] = [Math.ceil(slots / 2), Math.floor(slots / 2)];
-+      const slots = Math.max(...pageSets.map((set) => set.length)), per: [number, number] = G ? [cap, cap] : [Math.ceil(slots / 2), Math.floor(slots / 2)];
+       const slots = Math.max(...pageSets.map((set) => set.length)), per: [number, number] = [Math.ceil(slots / 2), Math.floor(slots / 2)];
        // a pager node's orbit, at its busiest page, sizes the rows as a machine's does
        const pagerSets = pg.pagers.length ? Array.from({ length: pageCount }, (_, i) => paged(st.id, rest, i, sizes[st.id]).pagers).flat() : [];
 -      const pagerR = Math.max(0, ...pagerSets.map((pager) => orbit(all.filter((a) => pager.hidden.includes(at.get(a)?.flow ?? "")).length, 9, 17)));
 +      const pagerR = G ? (pagerSets.length ? FOOT.moon : 0) : Math.max(0, ...pagerSets.map((pager) => orbit(all.filter((a) => pager.hidden.includes(at.get(a)?.flow ?? "")).length, 9, 17)));
        const bodies = [...pageSets.flatMap((set) => set.map((m) => Math.max(m.slot.moon, ...m.slot.subs))), ...(pagerR ? [pagerR] : [])], mR = Math.max(...bodies), rowH = Math.max(16 * F, ...bodies.map((body) => 2 * body + 6));
 -      const moonR = Math.max(outer + 10 + mR, (rowH * (per[0] + 1)) / 2);
-+      const moonR = G ? FOOT.moonR : Math.max(outer + 10 + mR, (rowH * (per[0] + 1)) / 2);
-+      // the grid's fixed rows fill from the middle out, so one machine sits level with its sun
-+      const mid = (j: number, n: number) => (G ? Math.floor((n - 1) / 2) + (j % 2 ? (j + 1) / 2 : -j / 2) : j);
++      const moonR = G ? 0 : Math.max(outer + 10 + mR, (rowH * (per[0] + 1)) / 2);
        const offset = (i: number) => {
--        const sd = i % 2, j = Math.floor(i / 2), dy = -moonR + ((j + 1) * 2 * moonR) / (per[sd] + 1);
-+        const sd = i % 2, j = mid(Math.floor(i / 2), per[sd]), dy = -moonR + ((j + 1) * 2 * moonR) / (per[sd] + 1);
++        if (G) return { dx: G.dx, dy: G.dy(i) };
+         const sd = i % 2, j = Math.floor(i / 2), dy = -moonR + ((j + 1) * 2 * moonR) / (per[sd] + 1);
          return { dx: (sd ? -1 : 1) * Math.sqrt(moonR ** 2 - dy ** 2), dy };
        };
-       const reach: [number, number] = [moonR + mR, moonR + mR];
-@@ -765,7 +836,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -765,7 +826,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
        // the two pager nodes sit on the bottom of the ring, each named on its outer side
        const pagerAt = pagerDx(moonR, pagerR);
        if (pagerSets.length) for (const sd of [0, 1]) reach[sd] = Math.max(reach[sd], pagerAt + pagerR + 10 + Math.max(...pagerSets.map((pager) => textW(pager.title, 10.5))) * F);
 -      const rows = { moonR, R: moonR + 8 + mR, reach, pagerAt, at: ms.map((_, i) => offset(i)) };
-+      if (G) reach[0] = reach[1] = FOOT.moonR + FOOT.moon + 10 + FOOT.name * F;
-+      const rows = { moonR, R: G ? FOOT.R : moonR + 8 + mR, reach, pagerAt, at: ms.map((_, i) => offset(i)) };
++      if (G) reach[0] = reach[1] = FOOT.task1;
++      const rows = { moonR, R: G ? FOOT.task1 + 4 : moonR + 8 + mR, reach, pagerAt, at: ms.map((_, i) => offset(i)) };
        return { r, outer, R: rows.R, rows, ms, pg, here, on, at };
      };
      // The sky takes the canvas's shape, and the states fill it.
-@@ -825,6 +897,25 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -825,6 +887,30 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
      // A Board that would grow past BOARD_GROW times its base pages its states' machines sooner, one state a step: the one whose page, one
      // machine shorter, takes the most width off the sky at that limit (the widest, when none does), until the sky holds or every page is down
      // to MIN_PAGE. Past that the names are cut to NAME_MAX, and then the sky grows: a Board this wide wants another level, not a wider row.
-+    // Mockup (TASK-3747): under the grid rule each state takes one cell of the canvas, the zoom is the largest every cell's fixed footprint
-+    // fits at, and a sky unit is a screen pixel over that zoom
++    // Mockup (TASK-3747): under the column rule each state takes one column of the canvas in lifecycle order, its name, sun and moon rows
++    // centred down it; the zoom is the largest every column's fixed footprint fits at, and a sky unit is a screen pixel over that zoom
 +    const gridded = () => {
 +      const order = [...states].sort((a, b) => BP[a.id][0] - BP[b.id][0] || BP[a.id][1] - BP[b.id][1]).map((s) => s.id);
-+      const g = gridPlaces(order, BP, W, H, G!.layout, G!.text), ls = labelScale(g.k);
++      const g = columnPlaces(order, W, H, G!.text), ls = labelScale(g.k), T = G!.text;
 +      F = ls / g.k;
 +      clipped = true;
 +      w = (0.94 * W) / g.k;
-+      const h = (0.94 * H) / g.k, cw = w / g.cols, chh = h / g.rows;
++      const h = (0.94 * H) / g.k, cw = w / g.cols, line = FOOT.row + NAME_LINE * F * T;
++      G!.rows = g.rows;
++      const foot = STATE_NAME * F * T + 2 * FOOT.task1 + 6 + g.rows * line, sunY = (h - foot) / 2 + STATE_NAME * F * T + FOOT.task1;
++      // a column's moons line up left of its centre, so a moon and its one sub-state sit centred, each name centred under its row
++      G!.dx = FOOT.moon - (2 * FOOT.moon + 8 + 2 * FOOT.sub) / 2;
++      G!.dy = (i) => FOOT.task1 + 8 + FOOT.moon + i * line;
 +      const sized = Object.fromEntries(states.map((st) => [st.id, radius(st)]));
-+      const ps = states.map((st) => ({ id: st.id, R: sized[st.id].R, x: ease(`${st.id}.x`, (g.at[st.id][0] + 0.5) * cw), y: ease(`${st.id}.y`, (g.at[st.id][1] + 0.5) * chh + 20 * F) }));
++      const ps = states.map((st) => ({ id: st.id, R: sized[st.id].R, x: ease(`${st.id}.x`, (g.at[st.id] + 0.5) * cw), y: ease(`${st.id}.y`, sunY) }));
 +      scene.w = w;
 +      scene.h = h;
 +      scene.clipped = true;
 +      scene.labelScale = ls;
-+      scene.grid = { kind: g.kind, cols: g.cols, rows: g.rows, k: g.k };
++      scene.grid = { kind: "column", cols: g.cols, rows: g.rows, k: g.k, cw: cw - 16 / g.k };
 +      return { sized, ps, hb: h - 40 };
 +    };
 +    const classic = () => {
      const limit = BOARD_GROW * w0, shown = (id: string) => Math.min(sizes[id], Math.max(0, flowsOf(id).length - 1));
      let need = fit(limit).need;
      // when even every page at MIN_PAGE leaves the sky too wide, there is nothing to choose: page them all there and cut the names
-@@ -852,7 +943,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
-     clipped = need > limit;
-     Fcap = limit / (0.94 * W);
-     const fitted = solve(8 * w0);
--    const { sized, ps, shift, grow, left } = fitted;
-+    const { sized, ps, shift, grow, left } = fitted; // eslint-disable-line
-     w = Math.max(w, fitted.need);
-     // each state's place and the sky's width ease toward the layout's targets, so a state changing size moves its neighbours and the fit smoothly
-     for (const p of ps) {
-@@ -865,11 +956,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -865,11 +951,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
      scene.h = Math.round(w / A);
      scene.clipped = clipped;
      if (F < w / (0.94 * W)) scene.unit = F;
@@ -215,12 +267,14 @@ index 20ef710..f56597f 100644
        g.moonR = ease(`${st.id}.moonR`, rows ? rows.moonR : outer + 16);
        if (rows) g.reach = rows.reach;
        g.visR = outer + 7; // a task hopping in orbits on the outer edge
-@@ -878,14 +973,14 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -877,15 +967,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+       // the machines are moons on the dashed ring, each with the tasks working it outside its sub-states; its sub-states run outward in its
        // row as a chain of small bodies, each with the tasks whose session holds it
        ms.forEach((m, i) => {
-         const dx = ease(`${st.id}/${m.f}.dx`, rows!.at[i].dx), dy = ease(`${st.id}/${m.f}.dy`, rows!.at[i].dy), mx = x + dx, my = y + dy, sg = dx < 0 ? -1 : 1, tasks = on(m.f);
+-        const dx = ease(`${st.id}/${m.f}.dx`, rows!.at[i].dx), dy = ease(`${st.id}/${m.f}.dy`, rows!.at[i].dy), mx = x + dx, my = y + dy, sg = dx < 0 ? -1 : 1, tasks = on(m.f);
 -        const moon: Moon = { name: m.f, label: m.label, parent: g, x: mx, y: my, r: 9, R: 9, n: tasks.length, nStates: S.flows[m.f].machine.states.length, ext: 0, chain: [] };
 -        if (tasks.length) moon.R = attach(tasks, moon, 17, 9, 8, false);
++        const dx = ease(`${st.id}/${m.f}.dx`, rows!.at[i].dx), dy = ease(`${st.id}/${m.f}.dy`, rows!.at[i].dy), mx = x + dx, my = y + dy, sg = G || dx >= 0 ? 1 : -1, tasks = on(m.f);
 +        const moon: Moon = { name: m.f, label: m.label, parent: g, x: mx, y: my, r: 9, R: G ? FOOT.moon : 9, n: tasks.length, nStates: S.flows[m.f].machine.states.length, ext: 0, chain: [] };
 +        if (tasks.length) moon.R = G ? (attach(tasks, moon, 13, pack(tasks.length, 13, FOOT.moon, 9, 8).gap, pack(tasks.length, 13, FOOT.moon, 9, 8).ringGap, false), FOOT.moon) : attach(tasks, moon, 17, 9, 8, false);
          let c = moon.R, prev: Host = moon;
@@ -234,16 +288,20 @@ index 20ef710..f56597f 100644
            c += 2 * R;
            prev = b;
            moon.chain.push(b);
-@@ -897,7 +992,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -895,9 +985,9 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+         scene.moons.push(moon);
+       });
        for (const pager of pg.pagers) {
-         const tasks = (byState[st.id] || []).filter((a) => pager.hidden.includes(at.get(a)?.flow ?? "")), dx = pager.d * rows!.pagerAt;
-         const moon: Moon = { name: pager.title, label: pager.title, pager, parent: g, x: x + dx, y: y + Math.sqrt(g.moonR ** 2 - dx ** 2), r: 9, R: 9, n: tasks.length, nStates: 0, ext: 0, chain: [] };
+-        const tasks = (byState[st.id] || []).filter((a) => pager.hidden.includes(at.get(a)?.flow ?? "")), dx = pager.d * rows!.pagerAt;
+-        const moon: Moon = { name: pager.title, label: pager.title, pager, parent: g, x: x + dx, y: y + Math.sqrt(g.moonR ** 2 - dx ** 2), r: 9, R: 9, n: tasks.length, nStates: 0, ext: 0, chain: [] };
 -        if (tasks.length) moon.R = attach(tasks, moon, 17, 9, 8, false);
++        const tasks = (byState[st.id] || []).filter((a) => pager.hidden.includes(at.get(a)?.flow ?? "")), dx = G ? G.dx : pager.d * rows!.pagerAt;
++        const moon: Moon = { name: pager.title, label: pager.title, pager, parent: g, x: x + dx, y: y + (G ? G.dy(G.rows - 2 + (pager.d > 0 ? 1 : 0)) : Math.sqrt(g.moonR ** 2 - dx ** 2)), r: 9, R: 9, n: tasks.length, nStates: 0, ext: 0, chain: [] };
 +        if (tasks.length) moon.R = G ? (attach(tasks, moon, 13, pack(tasks.length, 13, FOOT.moon, 9, 8).gap, pack(tasks.length, 13, FOOT.moon, 9, 8).ringGap, false), FOOT.moon) : attach(tasks, moon, 17, 9, 8, false);
          scene.moons.push(moon);
        }
      }
-@@ -944,7 +1039,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -944,7 +1034,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
        const cands = [{ x0: g.x - hw, x1: g.x + hw, y0: top - 38 * f, y1: top, ly: top - 38 * f + 12 }, { x0: g.x - hw, x1: g.x + hw, y0: bot, y1: bot + 40 * f, ly: bot + 16 }];
        // the side that prints the name least over another state (one stacked in the same slot) or its moon rows, then the one fewer paths cross
        const on = (c: (typeof cands)[number]) => gs.reduce((a, o) => a + (o === g ? 0 : Math.max(0, Math.min(c.x1, o.x + o.reach[0]) - Math.max(c.x0, o.x - o.reach[1])) * Math.max(0, Math.min(c.y1, o.y + o.R) - Math.max(c.y0, o.y - o.R))), 0);
