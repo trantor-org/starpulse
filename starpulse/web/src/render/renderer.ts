@@ -11,25 +11,20 @@ import { apiFetch } from "../api/apiFetch";
 import { demoLive, demoStep } from "../demo/demo";
 import { RunEvents, type RunLine } from "../features/fanout/fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
-import { ACT, EXT, OFF, TRACE, drawing, ease, easeO, rgba, tierColor, type DrawCtx, type Hover, type LTask } from "./draw";
+import { DAG_COLOR, EXT, OFF, TRACE, drawing, ease, easeO, rgba, tierColor, type DrawCtx, type Hover, type LTask } from "./draw";
 import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
-import { freshKeys, optionalSteps, statusLine } from "../features/level/ledger";
-import { bannerOf, doctorTip, focusRow, junctionTip, ledgerHit, mergePanel, mergeTip, stepStates, stepTip, type DoctorBox, type PanelCtx } from "../features/level/ledgerPanel";
+import { optionalSteps } from "../features/level/ledger";
+import { doctorTip, focusRow, junctionTip, ledgerHit, mergePanel, mergeTip, stepTip, type DoctorBox, type PanelCtx } from "../features/level/ledgerPanel";
 import { createContract } from "../features/level/contract";
-import { fetchMerges } from "../features/level/ledgerPage";
-import { AMBER, drawRows, CROSS, type Hits, type Ink } from "../features/level/ledgerRows";
-import { begin, dragMove, dragStart, ease as easeScroll, fail, keyScroll, newScroll, place, receive, take, wantsPage, wheelScroll, type Scroll } from "../features/level/ledgerScroll";
-import { pinsOf, portOf, withPins, type Pins } from "../features/level/ledgerPins";
-import { drawStrip } from "../features/level/ledgerStripDraw";
-import { inView } from "../features/level/ledgerStrip";
-import { RerunStore, rerunLine } from "../features/level/rerun";
+import { type Hits } from "../features/level/ledgerRows";
+import { dragMove, dragStart, keyScroll, wheelScroll } from "../features/level/ledgerScroll";
+import { RerunStore } from "../features/level/rerun";
 import { spotIn, type Target } from "../features/level/search";
 import {
-  BOARD_COLOR, SUN_R, RAMP, TAU, bez, terminal, build, clip, curveDist, curveOf, edgePaths, nearestWithin, stateR, taskSlot, textW, turnPage,
-  type BEdge, type Body, type Curve, type GNode, type Hop, type MEdge, type MState, type Planet, type Pt, type Scene, type Pager, type Star,
+  RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
 } from "./scene";
-import { FLARE, Moves, PULSE, RING, TRAVEL, countText, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
+import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
 import { kanbanTasks, type KanbanTask } from "../features/kanban/kanban";
 import { embedded, openStream } from "../api/stream";
 import { keep as reuse } from "../api/same";
@@ -37,10 +32,10 @@ import { createHistory } from "../api/history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "../features/level/trace";
 import { dagData } from "../features/dags/dags";
-import { boardTies, hangarLevel, nameLines, tieLedger, touches, type Hub, type Ties } from "./dagTies";
+import { boardTies, hangarLevel, tieLedger, type Ties } from "./dagTies";
 import { hubTip, tieTip } from "./dagTieTips";
 import type { Dag, Delta, LedgerRow, Machine, RawAgent, Snapshot, Writer } from "../api";
-import { fanBadge, fanTip, stepStatus } from "../features/fanout/fanout";
+import { fanTip, stepStatus } from "../features/fanout/fanout";
 import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
 import { ADMIN_DEFAULTS, type AdminPrefs } from "../features/admin/adminPrefs";
@@ -52,23 +47,15 @@ import { dragTo, inputGoal, revealGoal, type ScrollInput } from "../features/lev
 import { tickAt } from "../features/level/machineStrip";
 import { heldBy, sessionsOf, traceSteps } from "../features/level/machineTrace";
 import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, retired, viewOf, viewSearch } from "../shared/nav";
+import { boardDraw } from "./boardDraw";
+import { LEDGER_PALETTE, foldDraw } from "./foldDraw";
 import { machineLedger, type Rail } from "./machineLedgerDraw";
 import { staged } from "./staged";
 import { whenShown } from "./shown";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 import { loadFonts } from "./fonts";
 
-export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
-  aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155" };
-/** How a tied DAG's orbiter looks: the Spinner while its DAG runs, else its last run's colour, with a dashed ring after a failed run. */
-/** The Ledger's colours by run state: an overdue cue is drawn as a failure, and another repository's unapplied merge as waiting. */
-const LEDGER_PALETTE: Record<string, string> = { ...DAG_COLOR, waiting: CROSS, overdue: DAG_COLOR.failed };
-export const orbiterLook = (status: string) => ({ spin: status === "running", color: status === "queued" ? "#94a3b8" : DAG_COLOR[status] || "#94a3b8", dashed: status === "failed" });
 const finished = (iso: string) => (iso ? Date.parse(iso) / 1000 : NaN);
-
-/** The ring a DAG's run ending at `fin` has on screen at `now`, as its age from 0 to 1: one ring per event, over PULSE, never repeated. */
-export const dagRings = (fin: number | undefined, now: number): number[] =>
-  fin !== undefined && fin <= now && now - fin < PULSE ? [(now - fin) / PULSE] : [];
 
 // Browser storage can be absent (a private window) or hold anything; the page works without it.
 function recall<T>(key: string): T | null {
@@ -187,7 +174,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx, get K() { return K; }, get ZS() { return ZS; }, get clock() { return clock; }, get scale() { return prefs().scale; }, get hover() { return hover; },
   };
   const pen = drawing(dc);
-  const { nameWidth, text, labPx, label, circle, dot, isHot, disc, hole, comet, pulse, flowLine, fitText, stroke, rail, arrow, badge, pill, body, drawTrackRings, machine, machineName } = pen;
+  const { nameWidth, text, labPx, label, circle, dot, arrow, badge, pill } = pen;
   const mled = machineLedger(dc, pen, {
     get S() { return S; }, get scene() { return scene; }, get FW() { return FW; }, get H() { return H; }, get T() { return T; }, get hotEdge() { return hotEdge; },
     events: () => EVENTS(), hhmm, get scrollPos() { return scrollPos; }, get pg() { return pg; }, get pickedRow() { return pickedRow; }, get lpin() { return lpin; },
@@ -352,9 +339,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     if (trans || !scene) return;
-    const grid = ledgerPort();
+    const grid = foldDrawing.ledgerPort();
     if (grid) {
-      scroll = wheelScroll(scroll, grid, e, view.k);
+      foldDrawing.scroll = wheelScroll(foldDrawing.scroll, grid, e, view.k);
       return;
     }
     if (scene.top) {
@@ -372,8 +359,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   const onDown = (e: MouseEvent) => {
     if (e.button !== 0) return;
-    if (ledgerGrid() && inBox(scrollHits.thumb, worldAt(e.offsetX, e.offsetY))) {
-      scroll = dragStart(scroll, e.clientY);
+    if (foldDrawing.ledgerGrid() && inBox(foldDrawing.scrollHits.thumb, worldAt(e.offsetX, e.offsetY))) {
+      foldDrawing.scroll = dragStart(foldDrawing.scroll, e.clientY);
       return;
     }
     if (scene?.top && !trans && railHit(e.offsetX - view.x, e.offsetY)?.kind === "thumb") {
@@ -387,10 +374,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       thumbDrag = null;
       return;
     }
-    if (scroll.drag) scroll = { ...scroll, drag: null };
+    if (foldDrawing.scroll.drag) foldDrawing.scroll = { ...foldDrawing.scroll, drag: null };
     else if (drag && !drag.moved && e.target === cv) {
-      const grid = ledgerPort();
-      if (grid && inBox(scrollHits.chip, worldAt(e.offsetX, e.offsetY))) scroll = keyScroll(scroll, grid, "Home") ?? scroll;
+      const grid = foldDrawing.ledgerPort();
+      if (grid && inBox(foldDrawing.scrollHits.chip, worldAt(e.offsetX, e.offsetY))) foldDrawing.scroll = keyScroll(foldDrawing.scroll, grid, "Home") ?? foldDrawing.scroll;
       else click(e.offsetX, e.offsetY);
     }
     drag = null;
@@ -400,9 +387,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       scrollGoal = scrollPos = dragTo(mled.thumb, thumbDrag.g0, e.clientY - thumbDrag.y, scene.top.max);
       return;
     }
-    if (scroll.drag) {
-      const grid = ledgerPort();
-      if (grid) scroll = dragMove(scroll, grid, e.clientY, view.k, labPx(24));
+    if (foldDrawing.scroll.drag) {
+      const grid = foldDrawing.ledgerPort();
+      if (grid) foldDrawing.scroll = dragMove(foldDrawing.scroll, grid, e.clientY, view.k, labPx(24));
       return;
     }
     if (drag) {
@@ -424,10 +411,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onKey = (e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement) return void (e.key === "Escape" && closePanel());
     if (away) return;
-    const grid = ledgerPort(), next = grid && !e.ctrlKey && !e.metaKey && !e.altKey ? keyScroll(scroll, grid, e.key) : null;
+    const grid = foldDrawing.ledgerPort(), next = grid && !e.ctrlKey && !e.metaKey && !e.altKey ? keyScroll(foldDrawing.scroll, grid, e.key) : null;
     if (next) {
       e.preventDefault();
-      scroll = next;
+      foldDrawing.scroll = next;
       return;
     }
     if (scene?.top && !trans && scrollBy({ key: e.key })) return void e.preventDefault();
@@ -704,7 +691,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function hit(x: number, y: number): Hover | null {
     const sc = scene!, near = (o: Pt, r: number) => Math.hypot(o.x - x, o.y - y) < r;
     if (sc.top) return hitTop(sc, x, y);
-    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px, ledgerShown()) : null;
+    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px, foldDrawing.ledgerShown()) : null;
     if (mine) return mine;
     for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < Math.max(4, px(7))) return { kind: "mtask", o: s };
     for (const t of sc.tasks) if (!t.gone && near(t, Math.max(t.big ? 7 : 5, px(7)))) return { kind: "task", o: t };
@@ -791,7 +778,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let doctor: DoctorBox | null = null;
   const heldRows = () => {
     const led = scene?.fold?.ledger, held = led ? S?.ledgers[led.event] ?? [] : [];
-    const rows = held.length && held === scrollHeld ? scroll.rows : held, extra = S?.mergePins ?? [];
+    const rows = held.length && held === foldDrawing.scrollHeld ? foldDrawing.scroll.rows : held, extra = S?.mergePins ?? [];
     if (!extra.length) return rows;
     const have = new Set(rows.map((r) => r.key)), more = extra.filter((r) => !have.has(r.key));
     return more.length ? [...rows, ...more] : rows;
@@ -1056,46 +1043,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
    *  state's sun take it as the level is laid out (`layout`), so their tasks, paths and neighbours move with them; a machine's states draw at it. */
   const sized = (key: string, r: number) => grown.of(`${pathKey(path)}|${key}`, r, performance.now());
   const sourceOf = (flow: string | null | undefined) => (flow ? S?.flows[flow]?.machine.source ?? undefined : undefined);
-  function drawGalaxies() {
-    for (const g of Object.values(scene!.galaxies)) {
-      const hot = isHot("galaxy", g);
-      body(g, hot);
-      drawTrackRings(g, g.color);
-      label(g.name, g.lab.x, g.lab.y, hot, `${countText(g.n, g.today)}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`, 13);
-    }
-  }
-  // lifecycle moons: still, named bodies on their state's dashed outer ring, brighter while they have sessions, ringed in amber while one moves.
-  // A machine's sub-states run outward from its moon in its row on dashed stems, the machine's name past them.
-  function drawMoons() {
-    const sc = scene!;
-    for (const g of Object.values(sc.galaxies)) if (sc.moons.some((m) => m.parent === g)) circle(g.x, g.y, g.moonR, rgba(g.color, isHot("galaxy", g) ? 0.6 : 0.25), 1, [2, 5]);
-    for (const m of sc.moons) {
-      const hot = isHot("moon", m), flows = m.pager?.hidden ?? [m.name], mv = flows.flatMap(moving).length, busy = flows.some((name) => !!hosted(S!, name, m.parent.id).length);
-      drawTrackRings(m, "#c084fc");
-      const src = m.pager ? undefined : sourceOf(m.name);
-      machine(m.x, m.y, m.r!, hot, busy ? 0.32 : 0.14, !!src);
-      if (mv) circle(m.x, m.y, m.r! + 4, rgba(ACT, 0.85), 1.5);
-      // named beside the moon on the side away from its state, past its chain of sub-states
-      const left = m.x < m.parent.x - 1;
-      cx.letterSpacing = `${0.5 / K}px`;
-      const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
-      machineName(sc.clipped ? clip(m.label) : m.label, m.x + (left ? -1 : 1) * (m.R + m.ext + 10), m.y, labPx(10.5), col, left ? "right" : "left", src);
-      cx.letterSpacing = "0px";
-    }
-    for (const b of sc.subStates) {
-      const hot = isHot("sat", b), u = Math.sign(b.x - b.prev.x) || 1, col = b.color!;
-      cx.strokeStyle = rgba(col, hot ? 0.75 : 0.4);
-      cx.lineWidth = 1 / K ** 0.5;
-      cx.setLineDash([2 / K, 3 / K]);
-      cx.beginPath();
-      cx.moveTo(b.prev.x + u * ((b.prev.r ?? b.prev.R) + 3), b.prev.y);
-      cx.lineTo(b.x - u * (b.r! + 3), b.y);
-      cx.stroke();
-      cx.setLineDash([]);
-      disc(b.x, b.y, b.r!, col, hot, 0.22);
-      drawTrackRings(b, col);
-    }
-  }
   // The DAGs tied to a Board state (D7b): a hangar per state, its DAGs orbiting the state's ring, each turned toward the transition it acts on.
   const tieCache = new WeakMap<Scene, Ties>();
   function ties(): Ties | null {
@@ -1106,581 +1053,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (!t || t.u !== u || t.ts !== ts) tieCache.set(sc, (t = boardTies(sc, S, u, ts)));
     return t;
   }
-  /** Whether a tied writer ran at a Board move: it runs now, or its latest run ended about then (a move carries no actor). */
-  const ran = (dag: string, at: number) => S?.dagBy[dag]?.status === "running" || Math.abs((moves.flare[dag] ?? Infinity) - at) < FLARE;
-  /** The hangars, then the moment a tied DAG writes or is cued: the ticket's own comet runs that transition's edge into its state, once per edge,
-   *  and a cue rings the orbiter it wakes. Nothing marks the line at rest. The moving task rings the state it lands in, so a write adds no ring. */
-  function drawTies() {
-    const tz = ties();
-    if (!tz) return;
-    for (const h of tz.hubs) drawHub(h);
-    const run = new Set<BEdge>();
-    for (const t of touches(tz, EVENTS(), ran, T)) {
-      const e = t.anchor.edge, age = (T - t.at - TRAVEL) / PULSE;
-      if (e?.p0 && e.c && e.p1 && !e.loop && t.u < 1 && !run.has(e)) {
-        run.add(e);
-        comet(e.p0, e.c, e.p1, easeO(t.u), 3, ACT);
-      }
-      if (t.anchor.kind === "cue" && age >= 0 && age < 1) pulse(t.orbiter.x, t.orbiter.y, 5 / K, age, ACT, 16);
-    }
-  }
-  /** A hangar: a faint arc behind its orbiters, broken where it would cross a name, one orbiter per DAG and the hangar's name alone. Whether a
-   *  DAG runs or failed is its orbiter's to show: the Spinner, or red with a dashed ring. */
-  function drawHub(h: Hub) {
-    const TEAL = "#5eead4", hubHot = isHot("hub", h);
-    cx.strokeStyle = rgba(TEAL, hubHot ? 0.4 : 0.22);
-    cx.lineWidth = 1 / K;
-    for (const [a0, a1] of h.arcs) {
-      cx.beginPath();
-      cx.arc(h.c.x, h.c.y, h.orbit, a0, a1);
-      cx.stroke();
-    }
-    for (const o of h.orbs) {
-      const hot = isHot("tie", o), look = orbiterLook(S!.dagBy[o.dag]?.status ?? ""), r = (hot ? 7 : 6) / K;
-      // a hovered orbiter rings the states of the machine it writes
-      if (hot) for (const a of o.subs) circle(a.x, a.y, 10 / K, rgba("#a78bfa", 0.9), 1.4 / K, [2 / K, 2 / K]);
-      dot(o.x, o.y, r, "rgba(6,10,20,0.95)");
-      if (look.spin) {
-        circle(o.x, o.y, r, rgba(look.color, 0.95), 1.3 / K);
-        dot(o.x, o.y, r * 0.45, rgba(look.color, 0.95));
-        cx.strokeStyle = rgba(look.color, 0.9);
-        cx.lineWidth = 1.4 / K;
-        cx.beginPath();
-        cx.arc(o.x, o.y, r + 3.5 / K, clock * 4, clock * 4 + Math.PI / 2);
-        cx.stroke();
-        continue;
-      }
-      circle(o.x, o.y, r, rgba(look.color, look.dashed || hot ? 1 : 0.6), (hot ? 1.5 : 1.2) / K);
-      dot(o.x, o.y, r * 0.4, rgba(look.color, look.dashed ? 0.95 : 0.7));
-      if (look.dashed) circle(o.x, o.y, r + 4 / K, rgba(look.color, 0.7), 1 / K, [2 / K, 2 / K]);
-    }
-    const ls = labPx(11.5);
-    cx.letterSpacing = `${0.6 / K}px`;
-    nameLines(h.orbs).forEach((n, i) => text(n, h.lab.x, h.lab.y + i * (ls + 2 / K), ls, rgba("#cfd9ea", hubHot ? 0.95 : 0.58), h.align, 300));
-    cx.letterSpacing = "0px";
-  }
-  function drawSun() {
-    const s = scene!.sun;
-    if (!s) return;
-    const hot = isHot("sun", s), r = s.r;
-    // a terminal state's level centres on the black hole the Board draws for it, at the same size
-    if (terminal(s)) {
-      hole(s.x, s.y, r, s.color, hot);
-      drawTrackRings(s, s.color);
-      return;
-    }
-    // the glow reaches five suns' radii past the sun
-    const glow = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r + 5 * SUN_R);
-    glow.addColorStop(0, rgba(s.color, 0.55));
-    glow.addColorStop(0.25, rgba(s.color, 0.2));
-    glow.addColorStop(1, rgba(s.color, 0));
-    cx.fillStyle = glow;
-    cx.beginPath();
-    cx.arc(s.x, s.y, r + 5 * SUN_R, 0, TAU);
-    cx.fill();
-    const core = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
-    core.addColorStop(0, "#f5f3ff");
-    core.addColorStop(0.5, rgba(s.color, 0.95));
-    core.addColorStop(1, rgba(s.color, 0.6));
-    cx.fillStyle = core;
-    cx.beginPath();
-    cx.arc(s.x, s.y, r * (1 + 0.04 * Math.sin(clock * 2)), 0, TAU);
-    cx.fill();
-    if (hot) circle(s.x, s.y, r + 5, rgba(s.color, 0.9), 1.5);
-    drawTrackRings(s, s.color);
-  }
-  // action lines as on the current board: a dashed stroke that streams toward its target, a gradient from source colour to target colour,
-  // brighter and thicker while a writer DAG has just run (or is running)
-  const dagHeat = (n: string) => {
-    const d = S!.dagBy[n];
-    if (!d) return 0;
-    if (d.status === "running") return 1;
-    const f = moves.flare[n];
-    return f !== undefined && f <= T ? Math.max(0, 1 - (T - f) / FLARE) : 0;
-  };
-  function drawBoardEdges() {
-    const sc = scene!;
-    for (const e of sc.bEdges) {
-      const lit = isHot("bedge", e) || (hover?.kind === "tie" && hover.o.anchors.some((a) => a.edge === e)), col = sc.galaxies[e.source].color, heat = hotEdge.has(`board:${e.source}>${e.target}`) ? 1 : 0;
-      flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
-      cx.beginPath();
-      cx.moveTo(e.p0!.x, e.p0!.y);
-      cx.quadraticCurveTo(e.c!.x, e.c!.y, e.p1!.x, e.p1!.y);
-      cx.stroke();
-      cx.setLineDash([]);
-    }
-  }
-  // state level: the paths between machines and the Board paths off the edges, drawn as the Board draws its transitions
-  function drawStateLinks() {
-    const sc = scene!, stroke = (l: Curve) => {
-      cx.beginPath();
-      cx.moveTo(l.p0.x, l.p0.y);
-      cx.quadraticCurveTo(l.c.x, l.c.y, l.p1.x, l.p1.y);
-      cx.stroke();
-      cx.setLineDash([]);
-    };
-    for (const l of sc.hops) {
-      const lit = isHot("link", l), heat = l.busy ? 1 : 0;
-      flowLine({ ...l.p0, color: "#a78bfa" }, { ...l.p1, color: "#c084fc" }, lit ? 0.95 : 0.22 + heat * 0.55, heat + (lit ? 0.8 : 0));
-      stroke(l);
-    }
-    for (const l of [...sc.entries, ...sc.exits]) {
-      if (!l.p0) continue;
-      const lit = isHot("bedge", l), heat = l.busy ? 1 : 0;
-      flowLine({ ...l.p0, color: BOARD_COLOR[l.source] ?? "#94a3b8" }, { ...l.p1!, color: BOARD_COLOR[l.target] ?? "#94a3b8" }, lit ? 0.95 : (l.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
-      stroke(l as Curve);
-      label(l.lab!.name, l.lab!.x, l.lab!.y - 12 / K, lit, null, 10.5);
-    }
-  }
-  function drawMachineEdges(edges: MEdge[], thin = false) {
-    for (const e of edges) {
-      if (!e.a || !e.b) continue;
-      const lit = isHot("medge", e), heat = hotEdge.has(`${e.flow}:${e.source}>${e.target}`) ? 1 : 0;
-      if (e.a === e.b) continue; // a self-transition would sit under the orbiting tasks, so the state's tooltip lists it
-      const c = curveOf(e.a, e.b), L = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y), t0 = Math.min(0.4, stateR(e.a) / L), tEnd = 1 - Math.min(0.4, (stateR(e.b) + 2) / L);
-      flowLine(e.a, e.b, lit ? 0.95 : 0.2 + heat * 0.55, heat + (lit ? 0.8 : 0), thin ? [1.5, 4] : [2, 5]);
-      cx.beginPath();
-      for (let i = 0; i <= 16; i++) {
-        const p = bez(c.p0, c.c, c.p1, t0 + ((tEnd - t0) * i) / 16);
-        if (i) cx.lineTo(p.x, p.y);
-        else cx.moveTo(p.x, p.y);
-      }
-      cx.stroke();
-      cx.setLineDash([]);
-    }
-  }
-  function drawStates(states: Record<string, MState>, labels: boolean) {
-    for (const s of Object.values(states)) {
-      const R = sized(`state|${s.flow}:${s.id}`, stateR(s)), hot = isHot("state", s);
-      if (terminal(s)) {
-        hole(s.x, s.y, R, s.color, hot);
-        if (labels) label(s.name, s.lab ? s.lab.x : s.x, s.lab ? s.lab.y : s.y + R + 16, hot);
-        continue;
-      }
-      dot(s.x, s.y, R, "rgba(6,10,20,0.9)");
-      circle(s.x, s.y, R, rgba(s.color, hot ? 1 : s.n ? 0.85 : 0.45), hot ? 2.2 : s.mini ? 1 : 1.6);
-      dot(s.x, s.y, s.mini ? 1.5 : s.initial ? 4 : 2.5, rgba(s.color, 0.9));
-      if (labels) label(s.name, s.lab ? s.lab.x : s.x, s.lab ? s.lab.y : s.y + R + 16, hot);
-    }
-  }
-  // machine level: each task sits on the state its latest machine event left it in; a move the page has just seen slides it along its edge as a comet
-  function drawMachineTasks() {
-    const sc = scene!, at: Record<string, number> = {};
-    for (const s of sc.machineTasks) {
-      s._x = undefined;
-      const ev = EVENTS().findLast((e) => e.task === s.id && e.flow === s.flow && e.at <= T), state = ev ? ev.to : s.state;
-      const cur = sc.mStates[state];
-      if (!cur) continue;
-      s._state = state;
-      const prev = ev?.from ? sc.mStates[ev.from] : null, u = ev ? (T - ev.at) / TRAVEL : 9;
-      if (prev && prev !== cur && u < 1) {
-        const c = curveOf(prev, cur), q = bez(c.p0, c.c, c.p1, easeO(u));
-        comet(c.p0, c.c, c.p1, easeO(u), 3.4, tierColor(s.model));
-        s._x = q.x;
-        s._y = q.y;
-        continue;
-      }
-      const pa = ev ? (T - ev.at - TRAVEL) / PULSE : 9;
-      if (prev && prev !== cur && pa >= 0 && pa < 1) pulse(cur.x, cur.y, stateR(cur), pa, cur.color); // the state it landed on rings once
-      const k = (at[state] = (at[state] || 0) + 1) - 1, { t, rr } = taskSlot(sized(`state|${cur.flow}:${cur.id}`, stateR(cur)) + 7, k);
-      s._x = cur.x + Math.cos(t) * rr;
-      s._y = cur.y + Math.sin(t) * rr;
-      const hot = isHot("mtask", s), r = hot ? 4.5 : 2.8;
-      cx.fillStyle = rgba(tierColor(s.model), 0.9);
-      cx.beginPath();
-      cx.arc(s._x, s._y, r, 0, TAU);
-      cx.fill();
-    }
-  }
-  function drawTasks() {
-    for (const t of scene!.tasks) {
-      if (t.gone) continue;
-      const hot = isHot("task", t), r = t.big ? 4.2 : 2.6, lit = liveTasks.has(t.id);
-      if (t.arrive) pulse(t.arrive.x, t.arrive.y, t.arrive.r || 10, t.arrive.age, t.arrive.col);
-      if (t.moving && t.hop) {
-        const c = t.hop.c;
-        comet(c.p0, c.c, c.p1, t.hop.u, 3.2, tierColor(t.model)); // the head is drawn by the comet
-        if (t.via) {
-          const h = bez(c.p0, c.c, c.p1, t.hop.u);
-          label(`${t.id} ${t.via}`, h.x, h.y - 16 / K, false, null, 10.5);
-        }
-        continue;
-      }
-      if (t.big)
-        for (let i = 0; i < 8; i++) {
-          const a0 = t.ang - Math.sign(t.w) * 0.05 * (i + 1), a1 = t.ang - Math.sign(t.w) * 0.05 * i;
-          cx.strokeStyle = rgba(tierColor(t.model), 0.34 * (1 - i / 8));
-          cx.lineWidth = 2.2 * (1 - i / 10);
-          cx.beginPath();
-          cx.arc(t.host.x, t.host.y, t.R, Math.min(a0, a1), Math.max(a0, a1));
-          cx.stroke();
-        }
-      dot(t.x, t.y, hot ? r * 1.7 : r, rgba(tierColor(t.model), hot || lit ? 1 : 0.8));
-    }
-  }
-  // state level: each planet runs its own machine; every move is a comet along its chord and the planet's rim glows while it moves
-  // what sits beside a moon (its DAGs, its name) clears its orbits and its ring; `past` is where its launch-only DAGs start, beyond its sub-states
-  const clear = (p: Planet) => Math.max(p.rim ?? p.R, p.R + 5), past = (p: Planet) => clear(p) + (p.ext ?? 0) + 16;
-  // the dashed stem from a moon (or the sub-state before it) out to a sub-state, edge to edge
-  function stem(a: Planet, b: Planet, col: string, hot: boolean) {
-    const u = Math.sign(b.x - a.x) || 1;
-    cx.strokeStyle = rgba(col, hot ? 0.75 : 0.4);
-    cx.lineWidth = 1 / K ** 0.5;
-    cx.setLineDash([2 / K, 3 / K]);
-    cx.beginPath();
-    cx.moveTo(a.x + u * (a.R + 3), a.y);
-    cx.lineTo(b.x - u * (b.R + 3), b.y);
-    cx.stroke();
-    cx.setLineDash([]);
-  }
-  function drawPlanets() {
-    const sc = scene!;
-    for (const p of sc.planets) {
-      const hot = isHot("planet", p), mv = p.pager ? p.pager.hidden.flatMap(moving) : moving(p.name);
-      if (p.anchor) {
-        cx.strokeStyle = rgba("#a78bfa", 0.4);
-        cx.setLineDash([2, 4]);
-        cx.lineWidth = 1;
-        cx.beginPath();
-        cx.moveTo(p.anchor.x, p.anchor.y + stateR(p.anchor) + 26);
-        cx.lineTo(p.x, p.y - p.R - 18);
-        cx.stroke();
-        cx.setLineDash([]);
-      }
-      for (const R of p.rings || []) circle(p.x, p.y, R, rgba("#c4b5fd", 0.26), 1, [1.5, 4]); // the task orbits around this machine
-      // a sub-state: a small fuchsia disc on a dashed stem from the body before it
-      if (p.subState) {
-        stem(p.prev!, p, "#e879f9", hot);
-        disc(p.x, p.y, p.R, "#e879f9", hot, p.n ? 0.32 : 0.22);
-        continue;
-      }
-      // a skill moon: a still disc, brighter while it has sessions and ringed in amber while one moves, named beside it away from the primary, past
-      // the DAGs that orbit it; hover adds its states and sessions
-      if (p.moon) {
-        const sd = p.x < sc.hub!.x ? -1 : 1;
-        const src = p.pager ? undefined : sourceOf(p.name);
-        machine(p.x, p.y, p.R, hot, p.n ? 0.32 : 0.14, !!src);
-        if (mv.length) circle(p.x, p.y, p.R + 4, rgba(ACT, 0.85), 1.5);
-        cx.letterSpacing = `${0.5 / K}px`;
-        const col = rgba("#d8c8f5", hot ? 0.95 : 0.6);
-        machineName(p.label || p.name, p.x + sd * past(p), p.y, labPx(11.5), col, sd < 0 ? "right" : "left", src);
-        cx.letterSpacing = "0px";
-        continue;
-      }
-      const psrc = sourceOf(p.name);
-      dot(p.x, p.y, p.R + 14, "rgba(10,14,26,0.85)");
-      if (mv.length) {
-        const g = cx.createRadialGradient(p.x, p.y, p.R + 14, p.x, p.y, p.R + 30);
-        g.addColorStop(0, rgba(ACT, 0.2));
-        g.addColorStop(1, rgba(ACT, 0));
-        cx.fillStyle = g;
-        cx.beginPath();
-        cx.arc(p.x, p.y, p.R + 30, 0, TAU);
-        cx.arc(p.x, p.y, p.R + 14, 0, TAU, true);
-        cx.fill();
-      }
-      circle(p.x, p.y, p.R + 14, mv.length ? rgba(ACT, 0.6) : rgba(psrc ? EXT : "#c084fc", hot ? 0.9 : psrc ? 0.6 : p.n ? 0.45 : 0.22), hot ? 2 : 1.2);
-      drawMachineEdges(p.edges, true);
-      drawStates(p.states, false);
-      for (const e of mv) {
-        const a = e.from ? p.states[e.from] : undefined, b = p.states[e.to];
-        if (!a || !b || a === b) continue;
-        const c = curveOf(a, b);
-        comet(c.p0, c.c, c.p1, easeO((T - e.at) / TRAVEL), p.primary ? 3 : 2.4);
-      }
-      // a skill machine's name sits on its side facing away from the primary, so it never crosses the paths between them; the primary's goes below
-      const nt = sc.tasks.filter((k) => k.host === p && !k.gone).length, size = p.primary ? 14 : 12;
-      const sub = `${psrc ? `mapped from ${psrc} · ` : ""}${Object.keys(p.states).length} states${nt ? ` · ${nt} task${nt === 1 ? "" : "s"} orbiting` : ""} · ${p.n} task${p.n === 1 ? "" : "s"}${mv.length ? ` · ${mv.length} moving` : ""}`;
-      let ux = 0, uy = 1;
-      const hub = sc.hub;
-      if (hub && p !== hub) {
-        const dx = p.x - hub.x, dy = p.y - hub.y, L = Math.hypot(dx, dy) || 1;
-        [ux, uy] = [dx / L, dy / L];
-      }
-      const off = Math.max(p.outer || 0, p.R + 14) + 20, hw = Math.max(textW(p.name, size), textW(sub, size - 2)) / 2;
-      label(p.name, p.x + ux * (off + Math.abs(ux) * hw * 1.05), p.y + uy * off + (uy < 0 ? -16 : 0), hot, sub, size);
-    }
-  }
-  function drawStars() {
-    for (const grp of scene!.groups) {
-      for (const s of grp.stars) {
-        const live = !!s.active?.some((r) => r.status === "running"), status = live ? "running" : s.status;
-        const col = DAG_COLOR[status] || "#94a3b8", hot = isHot("dag", s), g = s.glyph;
-        if (hot || status === "running") {
-          // no resting glow: only a hovered or currently running DAG gets a faint halo
-          const glow = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.br * 1.3);
-          glow.addColorStop(0, rgba(col, 0.09));
-          glow.addColorStop(1, rgba(col, 0));
-          cx.fillStyle = glow;
-          cx.beginPath();
-          cx.arc(s.x, s.y, s.br * 1.3, 0, TAU);
-          cx.fill();
-        }
-        label(s.label, s.x, s.y + g.h / 2 + 16 / K, hot, null, 11);
-        // the DAG's own step graph in miniature: rounded links streaming toward the step that waits, ringed steps
-        const nr = (g.nodes.length === 1 ? 5.5 : 4) * (hot ? 1.15 : 1);
-        // a step's status: on a Ledger, the merge in focus's run; else from the runs in flight when there are any
-        const folded = scene!.fold?.ledger && heldRows().length ? stepStates(focused(), s.name, g.nodes.map((n) => n.name)) ?? {} : null;
-        const ss = (n: GNode) => (folded ? folded[n.name] ?? "not_started" : stepStatus(s, n.name, n.status));
-        for (const [p, q] of g.links) {
-          const a = { x: s.x + p.x, y: s.y + p.y, color: DAG_COLOR[ss(p)] || "#94a3b8" }, b = { x: s.x + q.x, y: s.y + q.y, color: DAG_COLOR[ss(q)] || "#94a3b8" };
-          const running = ss(p) === "running" || ss(q) === "running", dx = (b.x - a.x) / 2;
-          flowLine(a, b, hot || running ? 0.8 : 0.42, running ? 0.6 : 0, [1.5, 3.5]);
-          cx.beginPath();
-          cx.moveTo(a.x + nr, a.y);
-          cx.bezierCurveTo(a.x + dx, a.y, b.x - dx, b.y, b.x - nr, b.y);
-          cx.stroke();
-          cx.setLineDash([]);
-        }
-        for (const n of g.nodes) {
-          const st = ss(n), c = DAG_COLOR[st] || col, idle = st === "not_started", x = s.x + n.x, y = s.y + n.y;
-          dot(x, y, nr, "rgba(6,10,20,0.9)");
-          circle(x, y, nr, rgba(c, hot ? 1 : idle ? 0.45 : 0.85), hot ? 1.4 : 1);
-          dot(x, y, nr * 0.34, rgba(c, idle ? 0.45 : 0.9));
-          for (const r of moves.rings) if (r.dag === s.name && r.step === n.name) pulse(x, y, nr, (T - r.at) / RING, DAG_COLOR[r.status], 16); // a run entering or ending in this step rings it once
-        }
-        // the fan-out badge: the runs this DAG has running over its pool's cap, plus any waiting; red once the pool is full
-        const fan = fanBadge(s, S?.pools);
-        if (fan) {
-          const bc = fan.full ? DAG_COLOR.failed : ACT, bw = textW(fan.text, 10.5) / K + 6 / K, bh = 15 / K;
-          const bx = s.x + g.w / 2 + nr + 8 / K, by = s.y - g.h / 2 - nr - 10 / K;
-          cx.fillStyle = "rgba(6,10,20,0.85)";
-          cx.strokeStyle = rgba(bc, 0.8);
-          cx.lineWidth = 1 / K;
-          cx.beginPath();
-          cx.roundRect(bx, by - bh / 2, bw, bh, bh / 2);
-          cx.fill();
-          cx.stroke();
-          text(fan.text, bx + bw / 2, by + 0.5 / K, 10.5 / K, bc, "center", 500);
-        }
-        if (s.runnable) circle(s.x, s.y, s.br, rgba("#dbe4f3", 0.35), 1, [2, 3]);
-        for (const age of dagRings(moves.flare[s.name], T)) pulse(s.x, s.y, s.br, age, ACT, 38); // each run ending rings its DAG
-      }
-    }
-  }
-  // A Ledger's arrivals: the rows it held at the last look (null until a look, so a page opened or a level entered shows its rows still), each new row's
-  // clock, and the rings and comets its merge sets off along the path. A level not drawn for a while forgets what it held.
-  let ledgerSeen: Set<string> | null = null, ledgerAt = 0;
-  const arrived = new Map<string, number>(), ledgerFx: { x: number; y: number; r: number; t0: number; col: string; grow: number }[] = [], ledgerComets: number[] = [];
-  const rowInk: Ink = {
-    star4: (x, y, r, col) => {
-      cx.fillStyle = col;
-      cx.beginPath();
-      for (let i = 0; i < 8; i++) {
-        const a = (i * Math.PI) / 4 - Math.PI / 2, d = i % 2 ? r * 0.4 : r;
-        cx[i ? "lineTo" : "moveTo"](x + d * Math.cos(a), y + d * Math.sin(a));
-      }
-      cx.closePath();
-      cx.fill();
-    },
-    text, fit: fitText, stroke, circle: (x, y, r, col, w) => circle(x, y, r, col, w), dot, pulse: (x, y, r, age, col, grow) => pulse(x, y, r, age, col, grow),
-    width: (s, size, weight = 400) => {
-      cx.font = `${weight} ${size}px Inter, system-ui, sans-serif`;
-      return cx.measureText(s).width;
-    },
-    arc: (x, y, r, from, to, col, w) => {
-      cx.strokeStyle = col;
-      cx.lineWidth = w;
-      cx.beginPath();
-      cx.arc(x, y, r, from, to);
-      cx.stroke();
-    },
-    rect: (b, fill, line, w = 1) => {
-      cx.fillStyle = fill;
-      cx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-      if (!line) return;
-      cx.strokeStyle = line;
-      cx.lineWidth = w / K;
-      cx.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-    },
-    clip: (b, draw) => {
-      cx.save();
-      cx.beginPath();
-      cx.rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-      cx.clip();
-      draw();
-      cx.restore();
-    },
-  };
-  // A merge Ledger's scroll (ledgerScroll): every merge loaded and where the viewport sits on them, forgotten with the arrivals when the level has not been
-  // drawn for a while, and where the pointer can take it (thumb, chip) as last drawn. `scrollGen` drops a page asked for before a forgetting.
-  let scroll: Scroll = newScroll(), scrollAt = 0, scrollHeld: readonly LedgerRow[] | null = null, scrollView = "", scrollGen = 0, scrollHits: Hits = { thumb: null, chip: null };
-  /** The merge Ledger's viewport while one is on screen; null on any other level, and while a level is changing. */
-  const ledgerGrid = () => (!trans && level().kind === "fold" ? scene?.fold?.ledger?.grid ?? null : null);
-  /** The unresolved band as last drawn: the merges pinned above the rows, which scroll in the viewport left under it. */
-  let pins: Pins = { shown: [], all: [], below: 0, failed: 0 };
-  /** Where the rows scroll: the Ledger's viewport under the band. */
-  const ledgerPort = () => {
-    const grid = ledgerGrid();
-    return grid ? portOf(grid, pins.shown.length) : null;
-  };
-  /** The rows the pointer can hit: the band's, then those scrolling in the viewport under it. */
-  function ledgerShown() {
-    const grid = ledgerGrid(), port = ledgerPort();
-    if (!grid || !port) return [];
-    const band = pins.shown.map((row, i) => ({ row, y: grid.top + grid.rh / 2 + i * grid.rh }));
-    return [...band, ...place(scroll, port).filter((p) => p.y > port.top - port.rh / 2 && p.y < port.top + port.view + port.rh / 2)];
-  }
-  /** The Ledger scrolling or loading is something to animate: the offset easing, a page on its way, or a failed one waiting to be asked again. */
-  const scrolling = () => !!ledgerGrid() && (scroll.y !== scroll.ty || scroll.fetching || (scroll.more && scroll.retryAt > clock));
-  /** The footer row came into view: ask for the merges older than the oldest held. */
-  function askPage() {
-    const gen = scrollGen, before = scroll.rows.at(-1)?.at;
-    if (before === undefined) return;
-    scroll = begin(scroll);
-    void fetchMerges(before).then((page) => {
-      if (gen !== scrollGen) return;
-      scroll = page ? receive(scroll, page.merges, page.more) : fail(scroll, clock);
-      loop.wake();
-    });
-  }
-  /** A merge arrived: ring the junction, send a comet down the path and ring the event's mark and the second state as it passes. */
-  function arrive(led: NonNullable<NonNullable<Scene["fold"]>["ledger"]>, f: NonNullable<Scene["fold"]>) {
-    const at = { x: led.J.x, y: led.J.y };
-    ledgerFx.push({ ...at, r: 6, t0: clock, col: ACT, grow: 30 }, { x: led.mark.x, y: led.mark.y, r: 6, t0: clock + 0.7, col: ACT, grow: 30 }, { x: f.b!.x, y: f.b!.y, r: f.b!.r, t0: clock + 1.6, col: f.b!.color, grow: 30 });
-    ledgerComets.push(clock);
-  }
-  function drawFx(f: NonNullable<Scene["fold"]>) {
-    for (let i = ledgerFx.length - 1; i >= 0; i--) {
-      const p = ledgerFx[i], age = (clock - p.t0) / RING;
-      if (age > 1.3) ledgerFx.splice(i, 1);
-      else if (age > 0) pulse(p.x, p.y, p.r, age, p.col, p.grow);
-    }
-    for (let i = ledgerComets.length - 1; i >= 0; i--) {
-      const u = (clock - ledgerComets[i]) / 1.6;
-      if (u >= 1) ledgerComets.splice(i, 1);
-      else comet(f.p0!, { x: (f.p0!.x + f.p1!.x) / 2, y: f.p0!.y }, f.p1!, easeO(u), 3.4, ACT);
-    }
-  }
-  // a fold's level: the Board path an event takes, with the Ledger hung from it. Under the path's first state the PR (or task) that moves it meets
-  // the junction every rail leaves from; the DAG that writes the event is fed straight from it and ties up to the event's mark on the path, and
-  // each cue hangs off a bus below the templates. Each template keeps its own column, its caption stating the contract it declares.
-  /** `starpulse doctor`'s verdict on the contract, right-aligned at (x, y); hover for what it checked, or the key to add. */
-  function drawDoctor(x: number, y: number) {
-    const report = contract.report(), banner = bannerOf(report);
-    if (!report || !banner) return;
-    const col = banner.tone === "ok" ? DAG_COLOR.succeeded : banner.tone === "warn" ? AMBER : DAG_COLOR.failed, hot = hover?.kind === "ldoctor", head = labPx(10.5), sub = labPx(10);
-    text(banner.head, x, y, head, rgba(col, hot ? 1 : 0.85), "right", 500);
-    text(banner.sub, x, y + 14 / K, sub, rgba("#94a3b8", hot ? 0.8 : 0.55), "right");
-    const w = Math.max(textW(banner.head, head), textW(banner.sub, sub));
-    doctor = { x0: x - w, y0: y - 9 / K, x1: x, y1: y + 22 / K, report };
-  }
-  function drawFold() {
-    doctor = null;
-    const f = scene!.fold, led = f?.ledger;
-    if (!f?.a || !f.b || !f.p0 || !f.p1 || !led) return;
-    const { a, b, p0, p1 } = f, sc = scene!, named = hover?.kind === "dag" ? hover.o.name : hover?.kind === "caption" ? hover.o.dag : null, lit = !!named;
-    const heat = (n: string) => dagHeat(n), top = led.J.y - Math.min(...Object.values(sc.stars).map((s) => s.glyph.h)) / 2 - 50 / K, grid = led.grid;
-    const bottom = grid ? grid.top + grid.view : led.bus + 30 / K;
-    // a merge that landed since the last look arrives: its row lowers in and rings, and its comet runs the path
-    const held = S?.ledgers[led.event] ?? [];
-    if (clock - ledgerAt > 1.5) ledgerSeen = null;
-    ledgerAt = clock;
-    for (const k of freshKeys(ledgerSeen, held)) {
-      arrived.set(k, clock);
-      arrive(led, f);
-    }
-    ledgerSeen = new Set(held.map((r) => r.key));
-    // the rows scroll under the templates: the head the server sent joins the merges loaded, the offset eases, and the footer coming into view asks for a page
-    if (grid) {
-      if (clock - scrollAt > 1.5) [scroll, scrollHeld, scrollGen] = [newScroll(), null, scrollGen + 1];
-      // an unresolved failure pins above the rows, and the rows scroll past it in what the band leaves
-      pins = pinsOf([...held, ...scroll.rows], S?.mergePins ?? [], grid.cap);
-      scroll = withPins(scroll, pins);
-      const port = portOf(grid, pins.shown.length), dt = Math.min(0.1, clock - scrollAt), shape = `${port.view}/${port.rh}`;
-      if (held !== scrollHeld || shape !== scrollView) [scroll, scrollHeld, scrollView] = [take(scroll, held, port), held, shape];
-      [scroll, scrollAt] = [easeScroll(scroll, dt), clock];
-      if (wantsPage(scroll, port, clock)) askPage();
-    }
-    const hairs = rgba("#94a3b8", 0.1), writer = led.cols.find((c) => c.role === "writer");
-    // the grid: a column down from each template, and the spine the junction hangs from
-    for (const c of led.cols) stroke([{ x: c.x0, y: top }, { x: c.x0, y: bottom }], hairs);
-    stroke([{ x: led.J.x, y: led.J.y + 8 / K }, { x: led.J.x, y: bottom }], rgba(ACT, 0.35), 1.4);
-    if (led.rows === "merge") {
-      const lane = grid?.lane ?? led.J.x + 22 / K;
-      stroke([{ x: lane, y: led.bus + 4 / K }, { x: lane, y: bottom }], rgba(CROSS, 0.35), 1, [2, 4]);
-      text("other repos", lane + 4 / K, led.bus + 14 / K, labPx(9.5), rgba(CROSS, 0.6), "left");
-    }
-    // the path, with an arrow into the second state
-    flowLine({ ...p0, color: a.color }, { ...p1, color: b.color }, (lit ? 0.75 : 0.4) + Math.max(0, ...led.cols.map((c) => heat(c.dag))) * 0.4, Math.max(hotEdge.has(`board:${a.id}>${b.id}`) ? 1 : 0, ...led.cols.map((c) => heat(c.dag))) + (lit ? 0.5 : 0));
-    cx.beginPath();
-    cx.moveTo(p0.x, p0.y);
-    cx.lineTo(p1.x, p1.y);
-    cx.stroke();
-    cx.setLineDash([]);
-    arrow(p0, p1, rgba(b.color, 0.6), 7 / Math.max(1, ZS) * K);
-    for (const e of [a, b]) body(e, false);
-    text(a.name, a.x - a.r - 14 / K, a.y, labPx(13), rgba("#cfd9ea", 0.85), "right");
-    label(b.name, b.x, b.y + b.r + 24 / K, false, null, 13);
-    // the event's mark on the path, and the DAG that writes it tied up to it
-    const r = 4.5 / K ** 0.5, hotMark = !!writer && named === writer.dag;
-    dot(led.mark.x, led.mark.y, r, "rgba(6,10,20,0.95)");
-    circle(led.mark.x, led.mark.y, r, rgba(ACT, hotMark ? 1 : 0.7), 1.3 / K ** 0.5);
-    text(led.event, led.mark.x, led.mark.y - 14 / K, labPx(11), rgba("#dbe4f3", 0.8), "center", 500);
-    const rootOf = (s: Star) => ({ x: s.x + s.glyph.nodes[0].x, y: s.y + s.glyph.nodes[0].y }), nrOf = (s: Star) => (s.glyph.nodes.length === 1 ? 5.5 : 4);
-    for (const c of led.cols) if (c.role === "writer") {
-      const s = sc.stars[c.dag];
-      stroke([{ x: s.x, y: s.y - s.glyph.h / 2 - nrOf(s) - 3 / K }, { x: led.mark.x, y: led.mark.y + 6 / K }], rgba(ACT, 0.7), 1.2, [2, 4]);
-    }
-    if (writer) text(`writes ${led.event}`, sc.stars[writer.dag].x + 8 / K, (sc.stars[writer.dag].y + led.mark.y) / 2 + 6 / K, labPx(10.5), rgba(ACT, 0.8), "left");
-    // the junction: the PR (or task) that moves the path's first state meets it, and every rail leaves from it
-    const jr = 6 / K ** 0.5, mergeRow = led.rows === "merge";
-    rail([{ x: a.x, y: a.y + a.r + 4 / K }, { x: led.J.x, y: led.J.y - 9 / K, c: { x: a.x, y: (a.y + led.J.y) / 2 } }], a.color, ACT, 0, false);
-    cx.save();
-    cx.translate(led.J.x, led.J.y);
-    cx.rotate(Math.PI / 4);
-    cx.fillStyle = "rgba(6,10,20,0.95)";
-    cx.fillRect(-jr, -jr, 2 * jr, 2 * jr);
-    cx.strokeStyle = rgba(ACT, 0.8);
-    cx.lineWidth = 1.4 / K ** 0.5;
-    cx.strokeRect(-jr, -jr, 2 * jr, 2 * jr);
-    cx.restore();
-    text(mergeRow ? "merge to main" : led.event, led.J.x - 16 / K, led.J.y, labPx(12.5), rgba("#dbe4f3", 0.85), "right", 500);
-    text(mergeRow ? "PR merges" : "task moves", a.x - 8 / K, (a.y + a.r + led.J.y) / 2, labPx(10.5), rgba("#94a3b8", 0.55), "right");
-    // the rails: the writer straight from the junction, every other DAG off the bus under the templates
-    const feeds = led.cols.filter((c, i) => c.role === "cue" || i > 0);
-    if (writer && led.cols[0] === writer) {
-      const s = sc.stars[writer.dag], root = rootOf(s);
-      rail([{ x: led.J.x + 9 / K, y: led.J.y }, { x: root.x - nrOf(s) - 3 / K, y: root.y }], ACT, ACT, heat(writer.dag), false);
-    }
-    for (const c of feeds) {
-      const s = sc.stars[c.dag], root = rootOf(s);
-      rail([{ x: led.J.x, y: led.bus }, { x: root.x - 40 / K, y: led.bus }, { x: root.x - nrOf(s) - 2 / K, y: root.y, c: { x: root.x - 14 / K, y: led.bus } }], ACT, ACT, heat(c.dag), c.role === "cue");
-    }
-    if (feeds.length) text(mergeRow ? "cue · each merge to main" : `cue · each ${led.event}`, led.J.x + 10 / K, led.bus - 8 / K, labPx(10), rgba("#94a3b8", 0.55), "left");
-    if (mergeRow) drawDoctor(led.J.x - 16 / K, led.bus - 12 / K);
-    // each template's caption: the contract it declares, cut to its column, and under it the merge in focus
-    const byKey = new Map(heldRows().map((r) => [r.key, r])), fm = focused(), newest = held.find((r) => r.appliedBy === undefined);
-    for (const c of led.cols) {
-      const s = sc.stars[c.dag], hot = named === c.dag, size = labPx(10.5), y = s.y + s.glyph.h / 2 + 16 / K, max = c.x1 - c.x0 - 8 / K;
-      const lines = [c.role === "writer" ? `on ${c.on}` : `cue · on ${c.on}`, ...(c.resolves ? [`clears on ${c.resolves === "forced" ? "forced rerun" : "next success"}`] : [])];
-      // under the name, a line apart at the text size, so the lines never meet at 150%
-      lines.forEach((t, i) => text(fitText(t, max, size), s.x, y + labPx(15 + 15 * i), size, rgba("#94a3b8", hot ? 0.9 : 0.6), "center"));
-      if (!fm) continue;
-      const ln = statusLine(fm, c, fm.runs[c.dag], { event: led.event, now: T, hm: hhmm, optional: optionalSteps(held, c.dag), by: (k) => byKey.get(k) });
-      text(fitText(`${fm === newest ? "newest" : hhmm(fm.at)} ${(fm.sha ?? fm.key).slice(0, 7)} · ${ln.main}`, max, size), s.x, y + labPx(15 + 15 * lines.length), size, rgba(ln.state ? DAG_COLOR[ln.state] ?? CROSS : "#94a3b8", 0.85), "center");
-    }
-    // the merge rows, each template's cell beside its run's mini step graph; a row still arriving counts its own seconds
-    if (grid) {
-      const age = (key: string) => {
-        const t0 = arrived.get(key);
-        if (t0 === undefined) return undefined;
-        if (clock - t0 > 2) return void arrived.delete(key);
-        return clock - t0;
-      };
-      scrollHits = drawRows(rowInk, {
-        led, glyphs: Object.fromEntries(led.cols.map((c) => [c.dag, sc.stars[c.dag].glyph])), ctx: { event: led.event, now: T, hm: hhmm, by: (k) => byKey.get(k) },
-        optional: Object.fromEntries(led.cols.map((c) => [c.dag, optionalSteps(scroll.rows, c.dag)])), px: labPx, palette: LEDGER_PALETTE, clock, age, scroll,
-        lit: hover?.kind === "lrow" ? hover.o.key : openRow()?.key, pins, rerunning: rerunLine(rerunStore.state.started, S?.dags ?? [], T),
-        title: (id) => S?.settled[id]?.title ?? S?.board.agents.find((a) => a.id === id)?.title,
-      });
-      if (S?.mergeStrip) {
-        const day = heldRows().filter((r) => r.at > T - 86400).length;
-        drawStrip(rowInk, { led, data: S.mergeStrip, pins: pins.all, inView: inView(scroll, portOf(grid, pins.shown.length)), loaded: day, now: T, mode: prefs().clock, px: labPx, palette: { ...DAG_COLOR } });
-      }
-    }
-    drawFx(f);
-  }
+  const boardDrawing = boardDraw(dc, pen, {
+    get S() { return S; }, get scene() { return scene; }, get T() { return T; }, moves, get liveTasks() { return liveTasks; }, get hotEdge() { return hotEdge; },
+    events: () => EVENTS(), moving, sized, sourceOf, ties, heldRows, focused,
+  });
+  const foldDrawing = foldDraw(dc, pen, {
+    get S() { return S; }, get scene() { return scene; }, get T() { return T; }, get onFold() { return !trans && level().kind === "fold"; }, moves, get hotEdge() { return hotEdge; },
+    contract, rerunStore, hhmm, prefs, heldRows, focused, openRow, wake: () => loop.wake(), get doctor() { return doctor; }, set doctor(v) { doctor = v; },
+  });
   /** Where the traced task sits now, or null when this level does not draw it. */
   function bodyOf(s: Subject): (Pt & { model: string }) | null {
     const sc = scene!;
@@ -1873,20 +1253,20 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     K = scene!.unit ? Math.max(k, 1 / scene!.unit) : k; // a zoomed-out Board draws its names at the size it laid them out at
     ZS = Math.max(1, k / fit.k);
     if (scene!.top) return mled.drawTop();
-    drawFold();
-    drawGalaxies();
-    drawMoons();
-    drawBoardEdges();
-    drawTies();
-    drawStateLinks();
-    drawSun();
-    drawPlanets();
-    drawTasks();
-    drawMachineEdges(scene!.mEdges);
-    drawStates(scene!.mStates, true);
+    foldDrawing.drawFold();
+    boardDrawing.drawGalaxies();
+    boardDrawing.drawMoons();
+    boardDrawing.drawBoardEdges();
+    boardDrawing.drawTies();
+    boardDrawing.drawStateLinks();
+    boardDrawing.drawSun();
+    boardDrawing.drawPlanets();
+    boardDrawing.drawTasks();
+    boardDrawing.drawMachineEdges(scene!.mEdges);
+    boardDrawing.drawStates(scene!.mStates, true);
     drawSource();
-    drawMachineTasks();
-    drawStars();
+    boardDrawing.drawMachineTasks();
+    boardDrawing.drawStars();
     drawTrace();
   }
   /** The header clock, ticked by a timer so it keeps time while the canvas is idle. */
@@ -1959,7 +1339,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
   };
   /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
-  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || mled.sliding || scrolling() || railMoving);
+  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || mled.sliding || foldDrawing.scrolling() || railMoving);
   /** The loop settled: the feed and moving list get their last write, and the next wake starts the ambient clock afresh. */
   const settle = () => {
     last = 0;

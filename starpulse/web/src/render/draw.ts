@@ -18,6 +18,9 @@ export const EXT = "#60a5fa";
 /** An agent is coloured by the tier its profile names (`@agent-<tier>-<effort>`); a person or fast is the other colour. */
 export const tierColor = (profile = "") =>
   profile.startsWith("@agent-deep") ? "#c4b5fd" : profile.startsWith("@agent-standard") ? "#67e8f9" : "#fde68a";
+/** A DAG run's, or a step's, colour by its state. */
+export const DAG_COLOR: Record<string, string> = { running: "#fbbf24", queued: "#93c5fd", succeeded: "#34d399", failed: "#fb7185",
+  aborted: "#94a3b8", skipped: "#64748b", not_started: "#334155" };
 export const rgba = (h: string, a: number) => {
   const n = parseInt(h.slice(1), 16);
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;

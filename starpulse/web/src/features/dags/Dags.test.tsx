@@ -9,7 +9,7 @@ import { Dags } from "./Dags";
 import { rows } from "./dags";
 import css from "../../style.css?raw";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
-import { DAG_COLOR } from "../../render/renderer";
+import { DAG_COLOR } from "../../render/draw";
 import { applyDelta } from "../../api/stream";
 
 // every row draws one Strip, so the Strips drawn say which rows rendered
