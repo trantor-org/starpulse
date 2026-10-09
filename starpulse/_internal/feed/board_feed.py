@@ -399,20 +399,19 @@ class BoardFeed:
         if self._lanes is not None:
             lane, entered = change
             try:
+                if task.settled:
+                    path = self._lane_path(task.id)
+                    if path and lane_id(path[-1]["to"]) == lane:
+                        return
+                    # a file stamped in a zone behind the moves' would settle before them and open the trajectory
+                    entered = max(entered, path[-1]["at"]) if path else entered
                 event_id = f"{task.id}@{lane}@{entered}"
-                if task.settled and self._history_ends_in(task.id, lane):
-                    return
                 if self._lanes.record_lane(event_id, task.id, lane, entered) and self._lane_log is not None:
                     lane_events.publish(self._lane_log, event_id, task.model_copy(update={"lane": lane}), entered)
             except Exception as exc:  # the history is down; the task is placed and the next change is recorded
                 logger.warning("StarPulse: cannot record the lane change of %s: %s", task.id, exc)
         if not self._replaying():
             self._refresh_ledgers()  # the Ledger reads the move from the history; the replay's moves are built once, at its end
-
-    def _history_ends_in(self, task_id: str, lane: str) -> bool:
-        """Whether the history's last lane for the task is `lane` (a status spelled in any case counts)."""
-        path = self._lane_path(task_id)
-        return bool(path) and lane_id(path[-1]["to"]) == lane
 
     def reconcile_lanes(self, current: Iterable[tuple[str, str, str, float]]) -> int:
         """Record, and with a log publish, the lane a held task is in where the history's last lane for it differs.
