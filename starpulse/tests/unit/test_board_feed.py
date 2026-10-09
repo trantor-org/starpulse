@@ -627,6 +627,23 @@ def test_a_ledgers_event_is_sent_when_a_run_or_a_pull_changes_a_ledger_and_not_w
     assert kinds == ["pulls", "ledgers", "dags", "ledgers", "dags"]
 
 
+def test_the_ledger_is_rebuilt_only_when_a_run_of_a_tied_workflow_changes() -> None:
+    feed = ledger_feed()
+    feed.set_pulls({"TASK-1": [MERGED_PR]})
+    built: list[int] = []
+    build_ledger = feed._ledger
+    feed._ledger = lambda *args: built.append(1) or build_ledger(*args)  # type: ignore[method-assign]
+
+    feed.set_dags("ci", [_dag("apply", APPLIED)], None)
+    feed.set_dags("ci", [_dag("apply", APPLIED), _dag("untied", APPLIED)], None)  # a workflow no event ties
+    feed.set_dags("ci", [_dag("apply", APPLIED), _dag("untied", APPLIED)], "down")  # a new error
+    feed.set_dags("ci", [_dag("apply", APPLIED), _dag("untied", {**APPLIED, "runId": "r9"})], "down")
+    assert len(built) == 1
+
+    feed.set_dags("ci", [_dag("apply", {**APPLIED, "status": "failed"}), _dag("untied")], "down")
+    assert len(built) == 2
+
+
 def test_a_task_entering_the_lane_a_workflows_event_reaches_pairs_with_its_run_by_the_task_parameter() -> None:
     feed = ledger_feed()
     entered = datetime(2026, 10, 7, 0, 5, tzinfo=ZoneInfo("UTC")).timestamp()

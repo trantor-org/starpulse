@@ -1249,6 +1249,7 @@ def request_handler(
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
     snapshots = SnapshotCache(feed)
+    event_text = _EventText()
     flows = feed.machines.keys()
 
     class Handler(_ApiHandler):
@@ -1359,7 +1360,7 @@ def request_handler(
                     feed.unsubscribe(changes)
 
         def _event(self, name: str, data: dict) -> None:
-            self._frame(name, event(name, data))
+            self._frame(name, event_text(name, data))
 
         def _frame(self, name: str, data: str) -> None:
             self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode())
@@ -1451,6 +1452,31 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
     Opening it puts every StarPulse table, the event log's included, on that database.
     """
     return HistoryStore(database_url(config.database_url, base), machines)
+
+
+class _EventText:
+    """The JSON text of the events last sent, by the data each was made from.
+
+    Every page streaming `/api/events` is handed the same `data` object for a change, and encoding it holds the GIL
+    (the `ledgers` event is ~0.7 MB, ~45 ms), so the first page to reach a change encodes it under the lock and the
+    others take that text.
+    """
+
+    def __init__(self, keep: int = 8) -> None:
+        self._keep = keep
+        self._lock = threading.Lock()
+        self._made: dict[int, tuple[str, Any, str]] = {}
+
+    def __call__(self, name: str, data: Any) -> str:
+        with self._lock:
+            made = self._made.get(id(data))
+            if made is not None and made[0] == name and made[1] is data:
+                return made[2]
+            text = event(name, data)
+            self._made[id(data)] = (name, data, text)  # holds `data`, so its id is not reused while it is here
+            while len(self._made) > self._keep:
+                del self._made[next(iter(self._made))]
+            return text
 
 
 def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:

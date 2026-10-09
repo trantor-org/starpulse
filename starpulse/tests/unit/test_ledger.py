@@ -7,13 +7,15 @@ for certain; a run with no such parameter pairs with the newest occurrence befor
 
 from __future__ import annotations
 
+import random
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from starpulse.projections.ledger import Occurrence, build, page, pair, pull_occurrences, reruns, strip
+from starpulse.projections import ledger
+from starpulse.projections.ledger import Occurrence, _matches, build, page, pair, pull_occurrences, reruns, strip
 from starpulse.settings.config import CommitKeys
 
 KEYS = CommitKeys(after="AFTER", before="BEFORE", force="FORCE", task="TASK")
@@ -496,3 +498,69 @@ def test_a_run_whose_force_parameter_is_set_is_a_rerun_and_one_with_no_force_key
     assert reruns([forced, plain, off], KEYS) == [t(10)]
     assert reruns([forced], None) == []
     assert reruns([forced], CommitKeys(after="AFTER")) == []
+
+
+def _reference_matches(occurrences: list[Occurrence], runs: list[dict], keys: object) -> list[tuple]:
+    """The pairing as first written: a scan of every occurrence for each run, the oracle the fast one must equal."""
+
+    def names(value: str, sha: str) -> bool:
+        short, long = sorted((value.lower(), sha.lower()), key=len)
+        return len(short) >= 7 and long.startswith(short)
+
+    def keyed(ordered: list[Occurrence], value: str, by_sha: bool) -> Occurrence | None:
+        named = [o for o in ordered if (o.sha is not None and names(value, o.sha)) or (not by_sha and value in o.tasks)]
+        return named[-1] if named else None
+
+    epoch = lambda iso: datetime.fromisoformat(iso).timestamp()  # noqa: E731
+    ordered = sorted(occurrences, key=lambda o: o.at)
+    by_sha = any(o.sha is not None for o in ordered)
+    param = None if keys is None else keys.after if by_sha else keys.task  # type: ignore[attr-defined]
+    out, previous = [], float("-inf")
+    for start, run in sorted(((epoch(r["startedAt"]), r) for r in runs if r.get("startedAt")), key=lambda p: p[0]):
+        value = run.get("params", {}).get(param) if param else None
+        inferred, ambiguous = value is None, 0
+        if value is None:
+            earlier = [o for o in ordered if o.at <= start]
+            match = earlier[-1] if earlier else None
+            ambiguous = sum(o.at > previous for o in earlier[:-1])
+        else:
+            match = keyed(ordered, value, by_sha)
+        previous = start
+        if match is not None:
+            out.append((match, start, run, inferred, ambiguous))
+    return out
+
+
+@pytest.mark.parametrize("seed", range(40))
+@pytest.mark.parametrize("merges", [True, False])
+def test_the_pairing_equals_the_scan_of_every_occurrence_for_each_run(seed: int, merges: bool) -> None:
+    rng = random.Random(seed)
+    shas = ["".join(rng.choice("0123456789abcdef") for _ in range(40)) for _ in range(12)]
+    # moments repeat, so equal times and runs starting on an occurrence are exercised
+    moments = [rng.choice(range(0, 400, 10)) for _ in range(30)]
+    occurrences = [
+        Occurrence(f"k{i}", t(at), (f"TASK-{rng.randrange(8)}", f"TASK-{rng.randrange(8)}"), shas[i % 12] if merges else None)
+        for i, at in enumerate(moments)
+    ]
+    values = [None, "", "TASK-3", "TASK-99", "zzzzzzzz"] + [s[: rng.choice([3, 7, 12, 40])] for s in shas] + [s.upper() for s in shas[:3]]
+    runs = []
+    for i in range(40):
+        value = rng.choice(values)
+        params = {} if value is None else {"AFTER": value} if merges else {"TASK": value}
+        runs.append(run(f"r{i}", rng.choice(range(-20, 450, 5)), params, status=rng.choice(["succeeded", "failed"])))
+    runs.append({**run("nostart", 0), "startedAt": ""})
+
+    assert _matches(occurrences, runs, KEYS) == _reference_matches(occurrences, runs, KEYS)
+    assert _matches(occurrences, runs, None) == _reference_matches(occurrences, runs, None)
+
+
+def test_build_pairs_the_runs_of_a_workflow_once_for_its_runs_and_its_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    paired: list[int] = []
+    pair_runs = ledger._matches
+    monkeypatch.setattr(ledger, "_matches", lambda *args: paired.append(1) or pair_runs(*args))
+
+    rows = build({"E": [merge(SHA_A, 10)]}, {"E": ["ci/a", "ci/b"]}, {"ci/a": [run("r1", 20, {"AFTER": SHA_A}, status="failed")]}, lambda dag: KEYS)
+
+    assert len(paired) == 2
+    assert rows["E"][0]["fails"]["ci/a"]["runId"] == "r1"
+    assert rows["E"][0]["pinned"] is True

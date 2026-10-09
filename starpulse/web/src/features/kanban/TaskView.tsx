@@ -22,6 +22,8 @@ export interface TaskViewProps {
   milestones: string[];
   refusal: ReactNode;
   startNote: ReactNode;
+  /** Why the full record is missing, once its read failed: the modal is no longer busy waiting for it. */
+  readNote?: ReactNode;
   /** The Waiting stack or Done chain the task sits in, listed in its own row. */
   stack?: ReactNode;
   capabilities?: Capabilities;
@@ -413,7 +415,7 @@ export function TaskView(p: TaskViewProps) {
 
   return (
     <div id="kbm" onClick={(event) => onScrim(event.target, event.currentTarget) && p.close()}>
-      <div className="modal tv" role="dialog" aria-label={`${p.task.id} ${base.title}`} aria-busy={!p.record}>
+      <div className="modal tv" role="dialog" aria-label={`${p.task.id} ${base.title}`} aria-busy={!p.record && !p.readNote}>
         <div className="tvhead">
           <div className="tvmeta">
             <span className="tid">{p.task.id}</span>
@@ -441,6 +443,7 @@ export function TaskView(p: TaskViewProps) {
         </div>
         <div className="tvbody">
           <div className="tvcol tvleft">
+            {p.readNote}
             {writeRefusal && <div className="editrefusal"><b>Save refused.</b> {writeRefusal.reason}{writeRefusal.skill && <div>Required skill: <code>{writeRefusal.skill}</code></div>}</div>}
             {sec("description", "Description", editing === "description" ? <>
               <div className="tabs" role="tablist">{tab(false, "Write")}{tab(true, "Preview")}<span className="k">Markdown</span></div>

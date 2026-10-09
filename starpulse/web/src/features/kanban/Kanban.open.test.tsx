@@ -75,6 +75,57 @@ describe("opening a task's modal", () => {
     expect(fetched).toEqual(["/api/task/TASK-2"]);
   });
 
+  it("shows a failed record read, with a retry that draws the record, instead of staying busy", async () => {
+    vi.mocked(fetch).mockImplementationOnce(async (url) => { fetched.push(String(url)); throw new TypeError("network"); });
+    act(() => cardOf("TASK-2").click());
+    await settle();
+
+    expect(dialog()?.getAttribute("aria-busy")).toBe("false");
+    expect(dialog()?.querySelector("[role=alert]")?.textContent).toContain("could not be read");
+    expect(dialog()?.textContent).not.toContain("the full record's notes");
+
+    act(() => dialog()!.querySelector<HTMLButtonElement>("[role=alert] button")!.click());
+    expect(dialog()?.getAttribute("aria-busy")).toBe("true");
+    await settle();
+    expect(dialog()?.getAttribute("aria-busy")).toBe("false");
+    expect(dialog()?.querySelector("[role=alert]")).toBeNull();
+    expect(dialog()?.textContent).toContain("the full record's notes");
+    expect(fetched).toEqual(["/api/task/TASK-2", "/api/task/TASK-2"]);
+  });
+
+  it("reads the record again when the read ahead of the click failed, rather than showing that failure", async () => {
+    vi.mocked(fetch).mockImplementationOnce(async (url) => { fetched.push(String(url)); throw new TypeError("network"); });
+    hover(cardOf("TASK-1"));
+    await rest();
+    act(() => cardOf("TASK-1").click());
+    await settle();
+
+    expect(dialog()?.querySelector("[role=alert]")).toBeNull();
+    expect(dialog()?.getAttribute("aria-busy")).toBe("false");
+    expect(dialog()?.textContent).toContain("the full record's notes");
+    expect(fetched).toEqual(["/api/task/TASK-1", "/api/task/TASK-1"]);
+  });
+
+  it("reads the record again when the read ahead fails after the modal was drawn ahead, rather than showing that failure", async () => {
+    let fail: (e: unknown) => void = () => {};
+    vi.mocked(fetch).mockImplementationOnce((url) => {
+      fetched.push(String(url));
+      return new Promise((_, reject) => { fail = reject; });
+    });
+    hover(cardOf("TASK-1"));
+    await rest();
+    expect(dialog()?.getAttribute("aria-busy")).toBe("true");
+    await act(async () => { fail(new TypeError("network")); });
+    await settle();
+    act(() => cardOf("TASK-1").click());
+    await settle();
+
+    expect(dialog()?.querySelector("[role=alert]")).toBeNull();
+    expect(dialog()?.getAttribute("aria-busy")).toBe("false");
+    expect(dialog()?.textContent).toContain("the full record's notes");
+    expect(fetched).toEqual(["/api/task/TASK-1", "/api/task/TASK-1"]);
+  });
+
   it("draws a rested card's modal hidden and inert, so the click shows that same dialog instead of building one", async () => {
     hover(cardOf("TASK-1"));
     await rest();

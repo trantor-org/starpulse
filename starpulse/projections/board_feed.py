@@ -718,6 +718,8 @@ class BoardFeed:
             changed = reported != self._startable.get(instance)
             if not (moved or changed):
                 return
+            tied = {dag for dags_ in self._ties.values() for dag in dags_}
+            runs_moved = moved and self._tied_runs(instance, dags, tied) != self._tied_runs(instance, self._dags.get(instance, []), tied)
             self._dags[instance] = dags
             self._pools[instance] = pools
             if reported is not None:
@@ -730,8 +732,13 @@ class BoardFeed:
                 self._publish("dags", {"dags": self._workflows(), "pools": self._drawn_pools(), "error": self._error()})
             if changed:
                 self._publish("snapshot", self.snapshot())
-        if moved:
+        if runs_moved:
             self._refresh_ledgers()
+
+    @staticmethod
+    def _tied_runs(instance: str, dags: list, tied: set[str]) -> dict[str, list]:
+        """The recent runs of the workflows of `instance` that an event ties: all the Ledger reads of its workflows."""
+        return {f"{instance}/{dag['name']}": dag.get("recent", []) for dag in dags if f"{instance}/{dag['name']}" in tied}
 
     def _runnable(self) -> list[str]:
         """The `run_safe` workflows Run now is declared on: those their instance's adapter can start."""

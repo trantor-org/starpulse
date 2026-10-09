@@ -29,9 +29,11 @@ from __future__ import annotations
 
 import math
 import re
+from bisect import bisect_right
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
 
 from starpulse.settings.config import CommitKeys
 
@@ -67,6 +69,7 @@ class Occurrence:
     """For a child merge, the key of the parent merge whose pin bump includes it; none while no bump has."""
 
 
+@lru_cache(maxsize=65536)  # every rebuild reads the same run and pull timestamps again
 def _epoch(iso: str) -> float:
     return datetime.fromisoformat(iso).timestamp()
 
@@ -91,14 +94,17 @@ def pull_occurrences(pulls: Mapping[str, Sequence[Mapping]]) -> list[Occurrence]
 
 def _names(value: str, sha: str) -> bool:
     """Whether the commit `value` is `sha`, either spelled out in full or abbreviated."""
-    short, long = sorted((value.lower(), sha.lower()), key=len)
+    value, sha = value.lower(), sha.lower()
+    short, long = (value, sha) if len(value) <= len(sha) else (sha, value)
     return len(short) >= _MIN_ABBREV and long.startswith(short)
 
 
 def _keyed(occurrences: Sequence[Occurrence], value: str, by_sha: bool) -> Occurrence | None:
     """The newest occurrence a run parameter's `value` names: a commit for merges, a task for the rest."""
-    named = [o for o in occurrences if (o.sha is not None and _names(value, o.sha)) or (not by_sha and value in o.tasks)]
-    return named[-1] if named else None
+    return next(
+        (o for o in reversed(occurrences) if (o.sha is not None and _names(value, o.sha)) or (not by_sha and value in o.tasks)),
+        None,
+    )
 
 
 def _entry(run: Mapping, inferred: bool, ambiguous: int) -> dict:
@@ -122,6 +128,7 @@ def _matches(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: C
     A run that pairs with no occurrence is left out.
     """
     ordered = sorted(occurrences, key=lambda o: o.at)
+    ats = [o.at for o in ordered]
     by_sha = any(o.sha is not None for o in ordered)
     param = None if keys is None else keys.after if by_sha else keys.task
     out = []
@@ -130,9 +137,9 @@ def _matches(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: C
         value = run.get("params", {}).get(param) if param else None
         inferred, ambiguous = value is None, 0
         if value is None:
-            earlier = [o for o in ordered if o.at <= start]
-            match = earlier[-1] if earlier else None
-            ambiguous = sum(o.at > previous for o in earlier[:-1])
+            reached = bisect_right(ats, start)  # the occurrences at or before the run's start
+            match = ordered[reached - 1] if reached else None
+            ambiguous = max(0, reached - 1 - bisect_right(ats, previous))  # those before the match, after the previous run
         else:
             match = _keyed(ordered, value, by_sha)
         previous = start
@@ -141,14 +148,16 @@ def _matches(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: C
     return out
 
 
-def pair(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: CommitKeys | None) -> dict[str, dict]:
+def pair(
+    occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: CommitKeys | None, matches: list[tuple] | None = None
+) -> dict[str, dict]:
     """Each occurrence's run of one workflow, by occurrence key.
 
     `runs` are the workflow's recent runs (`Dag.recent`), `keys` its instance's `[runs.commit]` (None: time only).
-    An occurrence no run pairs with is left out.
+    An occurrence no run pairs with is left out. `matches` is `_matches` of the same three, when the caller has it.
     """
     paired: dict[str, tuple[tuple[int, float], dict]] = {}
-    for match, start, run, inferred, ambiguous in _matches(occurrences, runs, keys):
+    for match, start, run, inferred, ambiguous in _matches(occurrences, runs, keys) if matches is None else matches:
         rank = (0, -start) if inferred else (1, start)
         if match.key not in paired or rank > paired[match.key][0]:
             paired[match.key] = (rank, _entry(run, inferred, ambiguous))
@@ -176,10 +185,13 @@ def _covers(failed: Occurrence, forced: Mapping, ordered: Sequence[Occurrence], 
 
 
 def _resolution(
-    failed: Occurrence, began: float, runs: Sequence[Mapping], rule: str, keys: CommitKeys | None, ordered: Sequence[Occurrence]
+    failed: Occurrence, began: float, timed: Sequence[tuple[float, Mapping]], rule: str, keys: CommitKeys | None, ordered: Sequence[Occurrence]
 ) -> dict | None:
-    """The first successful run after the one that failed at `began` that the cue's `rule` accepts, as `{runId, at}`, else None."""
-    for start, run in sorted(((_epoch(r["startedAt"]), r) for r in runs if r.get("startedAt")), key=lambda p: p[0]):
+    """The first successful run after the one that failed at `began` that the cue's `rule` accepts, as `{runId, at}`, else None.
+
+    `timed` is the workflow's started runs as `(start, run)`, oldest first.
+    """
+    for start, run in timed:
         if run["status"] != "succeeded" or start <= began:
             continue
         if rule == NEXT or (_forced(run, keys) and _covers(failed, run, ordered, keys)):
@@ -187,16 +199,24 @@ def _resolution(
     return None
 
 
-def failures(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: CommitKeys | None, rule: str) -> dict[str, dict]:
+def failures(
+    occurrences: Sequence[Occurrence],
+    runs: Sequence[Mapping],
+    keys: CommitKeys | None,
+    rule: str,
+    matches: list[tuple] | None = None,
+) -> dict[str, dict]:
     """Each occurrence's failure of one workflow, by occurrence key: its latest run that failed, whichever run the row shows.
 
     A failure is `{runId, step, startedAt, finishedAt, resolves, resolved}`: the step that failed, the `rule` its cue
     resolves by and the run that cleared it (None while it is open). A later run of the occurrence that succeeds does
-    not clear a `forced` failure, so the failure is judged apart from the run `pair` shows.
+    not clear a `forced` failure, so the failure is judged apart from the run `pair` shows. `matches` is `_matches` of
+    `occurrences`, `runs` and `keys`, when the caller has it.
     """
     ordered = sorted(occurrences, key=lambda o: o.at)
+    timed = sorted(((_epoch(r["startedAt"]), r) for r in runs if r.get("startedAt")), key=lambda p: p[0])
     latest: dict[str, tuple[float, Mapping, Occurrence]] = {}
-    for match, start, run, _inferred, _ambiguous in _matches(occurrences, runs, keys):
+    for match, start, run, _inferred, _ambiguous in _matches(occurrences, runs, keys) if matches is None else matches:
         if run["status"] == "failed":
             latest[match.key] = (start, run, match)
     return {
@@ -206,7 +226,7 @@ def failures(occurrences: Sequence[Occurrence], runs: Sequence[Mapping], keys: C
             "startedAt": run["startedAt"],
             "finishedAt": run.get("finishedAt", ""),
             "resolves": rule,
-            "resolved": _resolution(match, start, runs, rule, keys, ordered),
+            "resolved": _resolution(match, start, timed, rule, keys, ordered),
         }
         for key, (start, run, match) in latest.items()
     }
@@ -230,8 +250,9 @@ def build(
     for event, dags in ties.items():
         occurrences = events.get(event, ())
         own = [o for o in occurrences if not o.child]
-        paired = {dag: pair(own, runs.get(dag, ()), keys(dag)) for dag in dags}
-        failed = {dag: failures(own, runs.get(dag, ()), keys(dag), resolves(event, dag)) for dag in dags}
+        matched = {dag: _matches(own, runs.get(dag, ()), keys(dag)) for dag in dags}
+        paired = {dag: pair(own, runs.get(dag, ()), keys(dag), matched[dag]) for dag in dags}
+        failed = {dag: failures(own, runs.get(dag, ()), keys(dag), resolves(event, dag), matched[dag]) for dag in dags}
         applies: dict[str, list[str]] = {}
         for c in occurrences:
             if c.applied_by is not None:
