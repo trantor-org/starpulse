@@ -3,21 +3,23 @@
 // (moons on a ring round each sun, sub-states in chains off them) and its states spread out from the canvas's centre to fill it, the zoom
 // the largest at which no two states' footprints meet, and the labels scale with the sun, clamped to 12-20 px. The arrangement is the
 // states in one row in lifecycle order, the Board's own places stretched to the canvas, or the main line staggered above and below the
-// axis; the footprint is fixed (room for a ring of 8 moons for every state, the sun, its task rings and its moon ring grown to fill it)
-// or grows with each state's load. Without ?frame this layer draws the review frame: the page at a chosen
+// axis, or (the default) each of the Board's columns a grid cell wrapping into rows; the footprint is fixed by each state's configuration
+// (the sun, three task rings, and a ring of 8 moons where machines map to it) or grows with each state's load. Without ?frame this layer draws the review frame: the page at a chosen
 // resolution, today's rendering beside the proposal, each in an iframe at its real CSS size and scaled down to fit, with a table read
 // live from each frame's flowProbe(). It runs before the page's module.
 //   ?res=1920x1080   the resolution compared (the buttons set it)       ?fs=100|125|150   the Admin text size
-//   ?arr=auto|row|stagger|stretch   the arrangement (auto: one row on a canvas 1.8:1 or wider, else stagger)
-//   ?foot=load|fixed   the proposal's footprint
+//   ?arr=grid|row|stagger|stretch   the arrangement (grid: each Board column a cell, wrapping into rows, states at one level kept together)
+//   ?foot=fixed|load   the proposal's footprint
 //   ?sun=fill|1|1.5|2|3|4   the sun's size against today's (fill: the largest the fixed footprint allows)
 //   ?rings=fewest|2|3|4|6   the rings a sun's tasks spread over (fewest: a ring added when the last fills, as today)
+//   ?grows=auto|1|2|3   the grid's rows (auto: the count that draws the sun largest, more rows winning a near tie)
 //   ?frame=1&sizing=current|spread&rails=off   one page alone, as each iframe loads it
 (() => {
   const q = new URLSearchParams(location.search), F = window.__FLOW_FIXTURE__;
-  const fs = Number(q.get("fs") || 100), arr = ["row", "stagger", "stretch"].includes(q.get("arr")) ? q.get("arr") : "auto", foot = q.get("foot") === "fixed" ? "fixed" : "load";
-  const SUNS = ["fill", "1", "1.5", "2", "3", "4"], RINGS = ["fewest", "2", "3", "4", "6"];
-  const sun = SUNS.includes(q.get("sun")) ? q.get("sun") : "2", rings = RINGS.includes(q.get("rings")) ? q.get("rings") : "3";
+  const fs = Number(q.get("fs") || 100), arr = ["row", "stagger", "stretch"].includes(q.get("arr")) ? q.get("arr") : "grid", foot = q.get("foot") === "load" ? "load" : "fixed";
+  const SUNS = ["fill", "1", "1.5", "2", "3", "4"], RINGS = ["fewest", "2", "3", "4", "6"], GROWS = ["auto", "1", "2", "3"];
+  const sun = SUNS.includes(q.get("sun")) ? q.get("sun") : "fill", rings = RINGS.includes(q.get("rings")) ? q.get("rings") : "fewest";
+  const grows = GROWS.includes(q.get("grows")) ? q.get("grows") : "auto";
   try {
     const k = "fv.admin.prefs", p = JSON.parse(localStorage.getItem(k) || "{}");
     p.scale = fs;
@@ -25,7 +27,7 @@
   } catch { /* storage off: the page keeps 100% */ }
 
   if (q.has("frame")) {
-    if ((q.get("sizing") || "spread") === "spread") window.__SIZING__ = { mode: "spread", text: fs / 100, arr, foot, sun: Number(sun) || 0, rings: Number(rings) || 0 };
+    if ((q.get("sizing") || "spread") === "spread") window.__SIZING__ = { mode: "spread", text: fs / 100, arr, foot, sun: Number(sun) || 0, rings: Number(rings) || 0, grows: Number(grows) || 0 };
     // a phone's width is spent by the 250 px rails today: rails=off shows the canvas the sizing rule gets once they fold
     if (q.get("rails") === "off") {
       const st = document.createElement("style");
@@ -71,7 +73,7 @@
   const seg = (label, key, vals, cur, names = {}) => `<span class="lb">${label}</span><span class="seg">${
     vals.map((v) => `<button data-k="${key}" data-v="${v}" class="${v === cur ? "on" : ""}">${names[v] ?? v}</button>`).join("")}</span>`;
   const frame = (sizing) => {
-    const p = new URLSearchParams({ frame: "1", sizing, fs: String(fs), ...(sizing === "spread" ? { arr, foot, sun, rings } : {}) });
+    const p = new URLSearchParams({ frame: "1", sizing, fs: String(fs), ...(sizing === "spread" ? { arr, foot, sun, rings, grows } : {}) });
     if (phone) p.set("rails", "off");
     return `${location.pathname}?${p}`;
   };
@@ -80,16 +82,19 @@
     <h1>Star Map size per screen resolution</h1>
     <p class="lede">Left: today, every body sized in world units and the whole Board fit to the canvas width. Right: the proposal, the same
       rings, moons and sub-state chains, with the states spread out from the canvas's centre to fill it and drawn as large as their spacing
-      allows, labels scaled with the sun. Arrangement: auto lays an ultrawide canvas (1.8:1 or wider) out in one row and staggers a narrower one; row puts every state on the centre line in lifecycle order; stagger moves the main
-      line's states alternately above and below it; stretch keeps today's places. Footprint: fixed gives every state the room of a ring
-      of 8 moons, busy or empty, and grows its sun, task rings and moon ring to fill that room; load sizes each state by what it holds,
-      as today. Sun size grows each sun against today's (fill: as large as the fixed footprint allows); Task rings spreads a sun's tasks
-      over that many rings, across the footprint's task band when it is fixed. Each frame is the page at the
+      allows, labels scaled with the sun. Arrangement: grid (the default) makes each of the Board's columns a grid cell, in lifecycle order,
+      wrapping into rows, so Waiting stays over Needs Attention and Completed over Archived as on the Board today; a cell is as wide as its
+      state's footprint and the room left over is shared evenly across and down; Grid rows picks the row count (auto: the one that draws
+      the sun largest). Row puts every state on the centre line; stagger moves the main line alternately above and below it; stretch keeps
+      today's places. Footprint: fixed gives every state a footprint set by its configuration, never by what it holds: the sun with three
+      tight task rings, plus a ring of 8 moons with their names where machines map to the state; load sizes each state by what it holds,
+      as today. Sun size grows each sun against today's (fill: the largest the layout allows while moons and task dots stay at least 3/4 of
+      their size); Task rings spreads a sun's tasks over that many rings. Each frame is the page at the
       chosen resolution, scaled down to fit here; open a side alone to see it at its real size. The table is read live from each frame.</p>
     <div class="bar">${seg("Resolution", "res", RES, res)}${seg("Text size", "fs", ["100", "125", "150"], String(fs), { 100: "100%", 125: "125%", 150: "150%" })}
-      ${seg("Arrangement", "arr", ["auto", "row", "stagger", "stretch"], arr)}${seg("Footprint", "foot", ["load", "fixed"], foot)}
-      ${seg("Sun size", "sun", SUNS, sun, { 1: "×1", 1.5: "×1.5", 2: "×2", 3: "×3", 4: "×4" })}${seg("Task rings", "rings", RINGS, rings)}</div>
-    <div class="pair">${[["current", "Today"], ["spread", `Proposed: ${{ auto: VW / VH >= 1.8 ? "one row (auto)" : "staggered (auto)", row: "one row", stagger: "staggered", stretch: "stretched" }[arr]}, ${foot === "fixed" ? "fixed footprint" : "footprint by load"}, sun ${sun === "fill" ? "filling it" : `×${sun}`}, tasks in ${rings === "fewest" ? "the fewest rings" : `${rings} rings`}`]].map(([s, t]) => `<section class="side" data-s="${s}">
+      ${seg("Arrangement", "arr", ["grid", "row", "stagger", "stretch"], arr)}${seg("Footprint", "foot", ["fixed", "load"], foot)}
+      ${seg("Sun size", "sun", SUNS, sun, { 1: "×1", 1.5: "×1.5", 2: "×2", 3: "×3", 4: "×4" })}${seg("Task rings", "rings", RINGS, rings)}${seg("Grid rows", "grows", GROWS, grows)}</div>
+    <div class="pair">${[["current", "Today"], ["spread", `Proposed: ${{ grid: "grid", row: "one row", stagger: "staggered", stretch: "stretched" }[arr]}, ${foot === "fixed" ? "fixed footprint" : "footprint by load"}, sun ${sun === "fill" ? "filling it" : `×${sun}`}, tasks in ${rings === "fewest" ? "the fewest rings" : `${rings} rings`}`]].map(([s, t]) => `<section class="side" data-s="${s}">
       <h2>${t}<a href="${frame(s)}" target="_blank">open alone</a></h2>
       <div class="vp"><iframe title="${t}" src="${frame(s)}" width="${VW}" height="${VH}"></iframe></div>
       <div class="sum"></div><table></table></section>`).join("")}</div></div>`;

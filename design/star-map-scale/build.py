@@ -35,7 +35,7 @@ html = demo.page(demo.STATIC, snap)
 head = (
     "<!--\n  Design mockup of the Star Map's size per screen resolution, under operator review; not served by starpulse.\n"
     "  The real page, built from a source copy that adds a spread sizing rule (star-map-scale-src.patch), over a scrubbed capture, with\n"
-    "  mock.js layered on. Variants: ?res=WxH  ?fs=100|125|150  ?arr=auto|row|stagger|stretch  ?foot=load|fixed  ?sun=fill|1|1.5|2|3|4  ?rings=fewest|2|3|4|6  ?frame=1&sizing=current|spread&rails=off\n-->\n"
+    "  mock.js layered on. Variants: ?res=WxH  ?fs=100|125|150  ?arr=grid|row|stagger|stretch  ?foot=fixed|load  ?sun=fill|1|1.5|2|3|4  ?rings=fewest|2|3|4|6  ?grows=auto|1|2|3  ?frame=1&sizing=current|spread&rails=off\n-->\n"
 )
 html = html.replace("<head>", "<head>\n" + head, 1).replace("</body>", '<script src="mock.js"></script>\n</body>', 1)
 (HERE / "index.html").write_text(html)
