@@ -180,7 +180,7 @@ from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
-from starpulse._internal.board.release import READY, RELEASE_S, Releaser
+from starpulse._internal.pulls.release import READY, RELEASE_S, Releaser
 from starpulse._internal.config.pins import GitHub
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_store import PullSync

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.board.release import Releaser
+from starpulse._internal.pulls.release import Releaser
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
