@@ -48,7 +48,7 @@ hub_retention_days = 14   # the default; a whole number of days, 1 or more
 
 - **Partitions.** The hub creates today's and tomorrow's partition before it serves and again every hour, so an
   insert at midnight finds its partition already there. An event whose `at` falls on a day with no partition is refused
-  by the database, so a forwarder must create that day's partition (`starpulse._internal.api.hub.ensure_partitions`) or refuse
+  by the database, so a forwarder must create that day's partition (`starpulse._internal.hub.hub.ensure_partitions`) or refuse
   events older than the retention bound.
 - **Retention.** A day more than `hub_retention_days` before today is rolled up and then dropped (`DROP TABLE`,
   never `DELETE`), in one transaction, so a partition is never dropped without its rollup. A reader whose cursor sat

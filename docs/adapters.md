@@ -38,7 +38,7 @@ directory. The `Board` says:
   [Flow read scaling](development.md#flow-read-scaling)). A history that supplies only `lane_rows` and `level_runs`, as the Board adapter
   hook does, is read whole, and a level on a machine other than the Board reads that machine's events whole.
 
-`starpulse._internal.adapters.boards.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
+`starpulse._internal.board.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
 criteria, plan, notes and definition of done) back for the task view, applies an edit to a task's file in one write,
 and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments.
@@ -78,7 +78,7 @@ key out), and the body's description, plan, notes, final summary, acceptance cri
 with its `n` keeps it, one without takes the next). `appendNotes` adds a line to the end of the notes, a non-blank
 `comment` adds a comment, and `read` returns the comments as `{created, text}`, which an edit cannot set. `complete(task)`
 refuses a task that is not Done and moves one that is to `completed/`.
-`starpulse._internal.adapters.boards.upstream_backlog` is the reference adapter for a tracker with its own
+`starpulse._internal.board.upstream_backlog` is the reference adapter for a tracker with its own
 writer: it polls a Backlog.md project's Markdown files, puts every task in the team named by its `config.yml`'s
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
@@ -86,7 +86,7 @@ whose states are those lanes and whose `writers` reserve a move to an actor, suc
 with the `backlog` CLI, answering a failed write with the CLI's output. An adapter with a writer subclasses
 `BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
 the machine leaves to the operator is refused to the agent. A board kit also declares `teams`, the team key the
-adapter derives for each task it produces, and asserts each record carries it. `starpulse._internal.adapters.boards.jira` reads a Jira project and has no writer. It imports the named workflow from the site's
+adapter derives for each task it produces, and asserts each record carries it. `starpulse._internal.board.jira` reads a Jira project and has no writer. It imports the named workflow from the site's
 `workflows/search` as the Board machine (a state per status, an event per transition, a global transition leaving every
 other status), refusing a workflow with a status in no transition, two statuses that make one lane, or no single initial
 transition. Each issue is a task in the lane of its status and the team of its Jira project; an issue it `Blocks` waits on

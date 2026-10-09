@@ -82,7 +82,7 @@ run_safe = ["ui-preview.yml"]
 - **Run now** dispatches the workflow on the default branch (`workflow_dispatch`) and answers its run id. It is drawn
   only on a `run_safe` workflow whose file declares `workflow_dispatch`; any other workflow is refused.
 - **Events.** The repository is listed every 60 s. A `workflow_run` webhook, mapped with
-  `starpulse._internal.adapters.runs.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
+  `starpulse._internal.runs.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
   at once.
 
 ## systemd timers
@@ -110,11 +110,11 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
 
 ## Show pull requests and Copilot work
 
-`python -m starpulse._internal.adapters.runs.github` reads a repository's 30 most recently updated pull requests every `--interval` seconds
+`python -m starpulse._internal.pulls.github` reads a repository's 30 most recently updated pull requests every `--interval` seconds
 (300 by default) and appends their events to the event log, beside the server:
 
 ```sh
-uvx --from starpulse python -m starpulse._internal.adapters.runs.github --repo trantor-org/starpulse
+uvx --from starpulse python -m starpulse._internal.pulls.github --repo trantor-org/starpulse
 ```
 
 - **`github-pull-request` machine.** `PR_OPENED`, then `CHECKS_PASSED` or `CHECKS_FAILED` once every check run on the
