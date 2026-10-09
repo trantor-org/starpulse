@@ -924,8 +924,8 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #dg .trow { content-visibility: auto; contain-intrinsic-size: auto 40px; }
 
 /* the Kanban toolbar's autopilot strip: the toggle, each capacity dimension's used/limit meter, the sessions in flight and the next pick */
-/* one static width in every state and text size: the switch and meters hold their places, the last slot truncates */
-#kb .ap { position: relative; display: flex; align-items: center; gap: 12px; flex: none; width: 780px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 12px; border-inline: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); white-space: nowrap; }
+/* one static width per text size, fitted to the widest label, in every state: the switch and meters hold their places, the last label sits against the count and truncates first */
+#kb .ap { position: relative; display: flex; align-items: center; gap: 12px; flex: none; width: calc(147px + 438px * var(--fs)); min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0 12px; border-inline: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); white-space: nowrap; }
 /* the strip leads the right-hand group, so the task count and New task follow it and wrap with it */
 #kb .filters .rt { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 0; min-width: 0; max-width: 100%; margin-left: auto; }
 #kb .ap + .shown { margin-left: 12px; width: calc(90px * var(--fs)); font-variant-numeric: tabular-nums; }
@@ -947,8 +947,8 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb .ap .dm.near .m i { background: var(--run); } #kb .ap .dm.over .m i { background: var(--fail); }
 #kb .ap .dmb { all: unset; display: block; border-radius: 4px; }
 #kb .ap .dmb:hover .r span, #kb .ap .dmb:focus-visible .r span { color: var(--ink); } #kb .ap .dmb:focus-visible { outline: 1px solid var(--agent); outline-offset: 3px; }
-#kb .ap .paused { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11px * var(--fs)); color: var(--muted); }
-#kb .ap .nx { all: unset; flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: calc(11px * var(--fs)); color: var(--muted); }
+#kb .ap .paused { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: calc(11px * var(--fs)); color: var(--muted); }
+#kb .ap .nx { all: unset; flex: 1 1 0; min-width: 0; white-space: nowrap; text-align: right; overflow: hidden; text-overflow: ellipsis; font-size: calc(11px * var(--fs)); color: var(--muted); }
 #kb .ap button.nx:hover b, #kb .ap button.nx:focus-visible b { text-decoration: underline; }
 #kb .ap .nx b { font-weight: 500; color: var(--agent-text); }
 /* the pick takes the board's state colors: purple neutral, green activity, yellow hold, red error */
@@ -961,5 +961,5 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb .ap .ap-ses .id { color: var(--agent-text); } #kb .ap .ap-ses .tt { overflow: hidden; text-overflow: ellipsis; } #kb .ap .ap-ses .md { color: var(--muted); }
 #kb .ap .ap-ses .none { padding: 5px 8px; color: var(--dim); font-size: calc(12px * var(--fs)); }
 #kb .ap .ap-ref { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; margin: 0; width: 320px; white-space: normal; border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); border-radius: 7px; }
-#kb .ap.down { font-size: calc(11px * var(--fs)); color: var(--fail-text); }
+#kb .ap.down { justify-content: flex-end; font-size: calc(11px * var(--fs)); color: var(--fail-text); }
 @media (prefers-reduced-motion: reduce) { #kb .ap .dm .m i, #kb .ap .dims { transition: none; } #kb .ap .nx.starting b { animation: none; } }
