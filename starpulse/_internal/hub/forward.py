@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from starpulse._internal.runs.forwarded import FIELDS, PERSON, project
 from starpulse._internal.eventlog import lane_events
 from starpulse._internal.eventlog.event_log import EventLog, Tail
+from starpulse._internal.eventlog.history import open_event_log
 
 if TYPE_CHECKING:
     from starpulse._internal.config.config import Config, Forward
@@ -115,6 +116,7 @@ class Forwarder:
         self.token = token
         self.opt_in = opt_in
         self.name = f"forward:{forward.url}"
+        self.instance = store.instance(self.name)  # the hub binds the source's token to the first one it sees
         self.url = f"{forward.url.rstrip('/')}/api/forward"
         self.interval = interval
         self._send = send
@@ -173,7 +175,7 @@ class Forwarder:
 
     def _deliver(self, batch: list[dict[str, Any]], sent_opt_in: bool) -> bool:
         """POST `batch` to the hub: True when it answered 200, else why not goes to `problem` and the log."""
-        body = json.dumps({"opt_in": sent_opt_in, "events": batch}).encode()
+        body = json.dumps({"opt_in": sent_opt_in, "instance": self.instance, "events": batch}).encode()
         try:
             status, answer = self._send(self.url, self.token, body)
         except OSError as exc:
@@ -237,19 +239,36 @@ class Forwarder:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """`starpulse forward opt-in|opt-out|status`: set or show whether a person's name may leave this instance.
+    """`starpulse forward opt-in|opt-out|status|rebind`: set or show whether a person's name may leave this instance,
+    or, on a hub, let another instance send under a source's token.
 
-    The flag is `OPT_IN_FILE` in the directory of `--config` (the working directory without one), where the running
-    server's forwarder reads it before every batch, so the change needs no restart and no hub.
+    The opt-in flag is `OPT_IN_FILE` in the directory of `--config` (the working directory without one), where the
+    running server's forwarder reads it before every batch, so the change needs no restart and no hub. `rebind
+    SOURCE` runs against the hub's own config: it drops the instance the hub bound SOURCE's token to, so the next
+    batch under that token, from any instance, binds it again. It exits 1 for a source that held no binding.
     """
     parser = argparse.ArgumentParser(
-        prog="starpulse forward", description="let a person's name leave this instance for the hub, or stop it"
+        prog="starpulse forward",
+        description="let a person's name leave this instance for the hub, or stop it; on a hub, rebind a source",
     )
-    parser.add_argument("action", choices=("opt-in", "opt-out", "status"))
+    parser.add_argument("action", choices=("opt-in", "opt-out", "status", "rebind"))
+    parser.add_argument("source", nargs="?", help="rebind: the `[[sources]]` name whose binding to drop")
     parser.add_argument(
         "--config", type=Path, help="the TOML config the server runs with; the flag is stored beside it"
     )
     args = parser.parse_args(argv)
+    if args.action == "rebind":
+        if not args.source:
+            parser.error("rebind needs the name of the source to rebind")
+        held = open_event_log(args.config).unbind_source(args.source)
+        print(
+            f"{args.source}: binding dropped; the next instance to send under its token takes it"
+            if held
+            else f"{args.source}: not bound; the first instance to send under its token takes it"
+        )
+        return 0 if held else 1
+    if args.source:
+        parser.error(f"{args.action} takes no source")
     flag = OptIn((args.config.parent if args.config else Path.cwd()) / OPT_IN_FILE)
     if args.action != "status":
         flag.set(args.action == "opt-in")

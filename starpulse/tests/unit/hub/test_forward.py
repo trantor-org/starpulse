@@ -126,6 +126,42 @@ def test_the_forward_command_refuses_an_unknown_action(tmp_path: Path) -> None:
     assert exited.value.code == 2
 
 
+def _hub_config(tmp_path: Path) -> tuple[Path, EventLog]:
+    url = f"sqlite:///{tmp_path / 'hub.sqlite'}"
+    config = tmp_path / "starpulse.toml"
+    config.write_text(f'database_url = "{url}"\n')
+    return config, EventLog(url)
+
+
+def test_the_rebind_command_drops_a_sources_binding_so_the_next_instance_takes_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config, log = _hub_config(tmp_path)
+    assert log.bind_source("ana", "i-1") == "i-1"
+    assert log.bind_source("ana", "i-2") == "i-1"
+
+    assert forward.main(["rebind", "ana", "--config", str(config)]) == 0
+
+    assert "ana" in capsys.readouterr().out
+    assert log.bind_source("ana", "i-2") == "i-2"
+
+
+def test_the_rebind_command_exits_1_for_a_source_that_holds_no_binding(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config, _ = _hub_config(tmp_path)
+
+    assert forward.main(["rebind", "ana", "--config", str(config)]) == 1
+    assert "not bound" in capsys.readouterr().out
+
+
+def test_the_rebind_command_needs_the_source_it_rebinds(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exited:
+        forward.main(["rebind", "--config", str(tmp_path / "starpulse.toml")])
+
+    assert exited.value.code == 2
+
+
 def _config(forward: Forward | None = None) -> Config:
     return Config(tracker_url=None, mode="ic", runs=(), forward=forward)
 

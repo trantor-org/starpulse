@@ -1443,6 +1443,7 @@ class ForwardRequest(_Api):
     """`POST /api/forward`: a batch of events an instance's forwarder sends a hub."""
 
     opt_in: bool
+    instance: str
     events: list[ForwardedEvent]
 
 

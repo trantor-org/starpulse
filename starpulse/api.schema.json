@@ -1806,12 +1806,16 @@
           },
           "type": "array"
         },
+        "instance": {
+          "type": "string"
+        },
         "opt_in": {
           "type": "boolean"
         }
       },
       "required": [
         "opt_in",
+        "instance",
         "events"
       ],
       "title": "ForwardRequest",

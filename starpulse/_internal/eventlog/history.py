@@ -16,6 +16,7 @@ import json
 import logging
 import threading
 import time
+import uuid
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -125,6 +126,14 @@ _cursors = Table(
     metadata,
     Column("stream", String, primary_key=True),
     Column("after_id", Integer, nullable=False),
+)
+#: The id this store sends a hub under each forwarder's cursor name, minted on first use and kept, so a restarted
+#: forwarder is the instance the hub bound and a second store, with no row here, is a new one.
+_instances = Table(
+    "starpulse_forward_instances",
+    metadata,
+    Column("name", String, primary_key=True),
+    Column("instance", String, nullable=False),
 )
 #: A path's order: by time, and the earlier insert first when two rows share one.
 _LANE_ORDER = (_lane_changes.c.observed_at, _lane_changes.c.id)
@@ -281,6 +290,14 @@ class HistoryStore:
         """The log id of the last `stream` entry recorded, or None for a store that has recorded none."""
         with self.engine.connect() as db:
             return db.execute(select(_cursors.c.after_id).where(_cursors.c.stream == stream)).scalar()
+
+    def instance(self, name: str) -> str:
+        """The id this store sends under `name`, a forwarder's cursor name: minted when the store has none, then the
+        same on every call and every restart. Two processes asking at once get the one that committed first."""
+        take = self._insert(_instances).values(name=name, instance=uuid.uuid4().hex).on_conflict_do_nothing()
+        with self.engine.begin() as db:
+            db.execute(take)
+            return db.execute(select(_instances.c.instance).where(_instances.c.name == name)).scalar_one()
 
     def record_machine(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> None:
         """Write one machine event and fold it into the summaries; one the store already holds is a no-op.

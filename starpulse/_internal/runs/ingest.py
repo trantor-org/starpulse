@@ -167,16 +167,19 @@ def _lane_event(fields: dict[str, Any]) -> str | None:
 class ForwardIngest:
     """Answers one `POST /api/forward`: `(authorization header, body)` to `(status, JSON body)`.
 
-    The body is `{"opt_in": bool, "events": [{"event_id", "stream", "fields"}, ...]}`, at most `MAX_BATCH` events,
-    sent by an instance's forwarder under that instance's token (a `[[sources]]` entry). Each event is cut to the
+    The body is `{"opt_in": bool, "instance": str, "events": [{"event_id", "stream", "fields"}, ...]}`, at most
+    `MAX_BATCH` events, sent by an instance's forwarder under that instance's token (a `[[sources]]` entry).
+    `instance` is the forwarder's stable id: the first one a source sends is bound to its token, and a batch from any
+    other id is refused until an operator rebinds the source (`starpulse forward rebind`). Each event is cut to the
     fields its stream allows, and a person's name is kept only from a batch that opted in. It is appended to the
     log as `<source>/<event_id>`, so one source's ids never meet another's, and an event the log holds is not
     appended again: a batch sent twice adds nothing.
 
     The answers: 200 with the counts accepted and rejected (an invalid event is rejected and counted, so one cannot
     hold a forwarder's cursor); 401 for a missing or wrong token; 403 for an opt-in sent to a hub that takes
-    aggregates only; 400 for a body that is not a batch; 503 when the log refused an event, which a resend repeats.
-    A refusal writes nothing, bar the events of a 503 batch ahead of the refused one.
+    aggregates only; 400 for a body that is not a batch; 409 for an instance id other than the one the source is
+    bound to; 503 when the log refused an event or the binding, which a resend repeats. A refusal writes nothing, bar
+    the events of a 503 batch ahead of the refused one.
     """
 
     def __init__(self, tokens: Mapping[str, str], log: EventLog, *, aggregates_only: bool = False) -> None:
@@ -193,12 +196,19 @@ class ForwardIngest:
             return 400, {"error": "the body is not JSON"}
         sent = body.get("events") if isinstance(body, dict) else None
         opt_in = body.get("opt_in") if isinstance(body, dict) else None
-        if not (isinstance(sent, list) and isinstance(opt_in, bool)):
-            return 400, {"error": 'the body must be {"opt_in": true|false, "events": [...]}'}
+        instance = body.get("instance") if isinstance(body, dict) else None
+        if not (isinstance(sent, list) and isinstance(opt_in, bool) and isinstance(instance, str) and instance):
+            return 400, {"error": 'the body must be {"opt_in": true|false, "instance": "<id>", "events": [...]}'}
         if len(sent) > MAX_BATCH:
             return 400, {"error": f"a batch is at most {MAX_BATCH} events"}
         if opt_in and self._aggregates_only:
             return 403, {"error": "this hub takes aggregates only; send the batch with opt_in false"}
+        if (bound := self._log.bind_source(source, instance)) is None:
+            return 503, {"error": "the event log refused the source's binding; retry"}
+        if bound != instance:
+            return 409, {
+                "error": f"source {source} is bound to another instance; rebind it on the hub to send from this one"
+            }
         accepted = 0
         for item in sent:
             if (entry := _forwarded(source, opt_in, item)) is None:

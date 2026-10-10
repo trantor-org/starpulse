@@ -7,19 +7,23 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.runs.ingest import ForwardIngest
-from starpulse.contracts import BoardTask
-from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog import lane_events
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.runs.ingest import ForwardIngest
+from starpulse.contracts import BoardTask
 from starpulse.tests.machines import MACHINES
 
 GOOD = {"task": "T-1", "lane": "in_progress", "time": 5.0}
 
 
 def _post(ingest: ForwardIngest, fields: dict) -> dict:
-    body = {"opt_in": False, "events": [{"event_id": "T-1@in_progress@5.0", "stream": lane_events.STREAM, "fields": fields}]}
+    body = {
+        "opt_in": False,
+        "instance": "i-1",
+        "events": [{"event_id": "T-1@in_progress@5.0", "stream": lane_events.STREAM, "fields": fields}],
+    }
     status, answer = ingest("Bearer tok", json.dumps(body).encode())
     assert status == 200
     return answer

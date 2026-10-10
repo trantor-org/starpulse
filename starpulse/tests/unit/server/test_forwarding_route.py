@@ -9,9 +9,11 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.config.config import Forward
+from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.writes import forwarding
-from starpulse.tests.unit.hub.test_forwarder import Rig
+from starpulse.tests.unit.hub.test_forwarder import URL, Hub, Rig
 
 
 @pytest.fixture
@@ -32,6 +34,28 @@ def test_a_get_answers_the_forwarders_status_marked_configured(rig: Rig) -> None
     assert status == 200
     assert body == {"configured": True, **forwarder.status()}
     assert body["names"] is False
+
+
+def test_a_forwarder_the_hub_refused_as_a_second_instance_reports_why_on_the_page(tmp_path: Path) -> None:
+    hub = Hub(tmp_path)
+    first = Rig(tmp_path)
+    first.move("T-1")
+    assert (
+        Forwarder(first.log, first.store, Forward(URL, "HUB_TOKEN", 50), "secret", first.opt_in, send=hub).step() == 1
+    )
+    (tmp_path / "worktree").mkdir()
+    second = Rig(tmp_path / "worktree")
+    second.move("T-9")
+    refused = Forwarder(second.log, second.store, Forward(URL, "HUB_TOKEN", 50), "secret", second.opt_in, send=hub)
+    assert refused.step() is None
+
+    status, body = forwarding("127.0.0.1", "GET", b"", refused)
+
+    assert status == 200
+    assert body["problem"] == (
+        "hub answered 409: source ana is bound to another instance; rebind it on the hub to send from this one"
+    )
+    assert body["lastSent"] is None
 
 
 def test_an_instance_without_a_forward_block_answers_not_configured(rig: Rig) -> None:

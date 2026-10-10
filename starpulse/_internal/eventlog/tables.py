@@ -64,6 +64,16 @@ board_state = Table(
     Column("saved_at", Float, nullable=False),
 )
 
+#: The one instance each forwarding source's token speaks for: the first instance id that source's forwarder sent.
+#: A hub writes it, on the first batch a source sends and never again until an operator drops the row to rebind.
+source_instances = Table(
+    "starpulse_source_instances",
+    metadata,
+    Column("source", String, primary_key=True),
+    Column("instance", String, nullable=False),
+    Column("bound_at", Float, nullable=False),
+)
+
 #: What a hub keeps of a day after its raw events are dropped (`hub.enforce_retention`): per team, machine and state,
 #: how many tasks or runs entered the state that UTC day (`entries`), how many of those had not left it when the day was
 #: rolled up (`open_entries`), and the seconds the others stayed. A hub writes it; an IC instance never does.
