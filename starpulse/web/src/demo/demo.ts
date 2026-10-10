@@ -453,7 +453,8 @@ export class DemoServer {
     } else if (method !== "GET") return json({ error: `${method} is not served here` }, 405);
     const at = this.clock();
     const cards = this.snapshot.flows.find((f) => f.name === "board")?.agents ?? [];
-    const inFlight = cards.filter((a) => a.state === "in_progress").map((a, i) => ({
+    // a demo board holds far more In Progress cards than a host admits: the listing stands in for two sessions, or the limit when over
+    const inFlight = cards.filter((a) => a.state === "in_progress").slice(0, this.pilot === "over" ? PILOT.sessions : 2).map((a, i) => ({
       task: a.id,
       title: a.title ?? a.id,
       model: a.model || "sonnet · high",

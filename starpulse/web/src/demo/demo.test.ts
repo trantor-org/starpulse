@@ -473,6 +473,22 @@ describe("the demo server", () => {
     expect((await down.json()).error).toContain("no autopilot");
   });
 
+  it("keeps a crowded board's sessions under the limit by default and at it when the host is over", async () => {
+    const crowded = (): DemoFixture => {
+      const f = fixture();
+      f.flows[0].agents = [...Array.from({ length: 9 }, (_, i) => card(`DEMO-${i + 1}`, "in_progress")), card("DEMO-10", "ready")];
+      return f;
+    };
+    const sessions = (s: { dimensions: { name: string; use: number }[]; inFlight: unknown[] }) => [s.dimensions.find((d) => d.name === "sessions")?.use, s.inFlight.length];
+
+    const calm = await body(new DemoServer(crowded(), () => 1000).fetch("/api/autopilot"));
+    const over = await body(new DemoServer(crowded(), () => 1000, false, undefined, false, "over").fetch("/api/autopilot"));
+
+    expect(sessions(calm)).toEqual([2, 2]);
+    expect(calm.next).toMatchObject({ task: "DEMO-10", verdict: "starting" });
+    expect(sessions(over)).toEqual([4, 4]);
+  });
+
   it("names its stand-in sessions without a host, which the demo publisher refuses in a public page", async () => {
     const listed = await new DemoServer(fixture(), () => 1000).fetch("/api/autopilot").then((r) => r.json());
 
