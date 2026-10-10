@@ -1,6 +1,8 @@
 """The full task record, the guarded edit and the archive the page asks the board adapter for."""
 
 import json
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +10,7 @@ import pytest
 
 from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.kit.adapter_kit import task
+from starpulse._internal.server import writes as server_writes
 from starpulse._internal.server.server import assemble
 from starpulse._internal.server.writes import archive_task, edit_task, task_record
 from starpulse.contracts.adapters import Move
@@ -204,6 +207,54 @@ def test_a_task_the_board_does_not_hold_is_not_edited(file: _File) -> None:
     status, body = _edit(file, {"task": "PROJ-99", "base": {"title": "x"}, "changes": {"title": "y"}})
 
     assert (status, body, file.sent) == (404, {"error": "PROJ-99 is not on the board"}, [])
+
+
+def _replaying() -> BoardFeed:
+    """A feed a restart left reading its stream: no task placed, not ready."""
+    feed = BoardFeed(machines=MACHINES)
+    feed.await_stream()
+    return feed
+
+
+def _edit_title(file: _File, feed: BoardFeed):
+    body = {"task": "PROJ-3", "base": {"title": RECORD["title"]}, "changes": {"title": "Draw it"}}
+    return _edit(file, body, feed=feed)
+
+
+def test_an_edit_that_meets_the_replay_waits_for_the_task_the_replay_places(file: _File) -> None:
+    feed = _replaying()
+
+    def finish_replay() -> None:
+        time.sleep(0.2)
+        feed.put(task("PROJ-3", "Review"))
+        feed.expect("0-0")
+
+    replay = threading.Thread(target=finish_replay)
+    replay.start()
+    try:
+        assert _edit_title(file, feed) == (200, {"task": "PROJ-3", "changed": ["title"]})
+    finally:
+        replay.join()
+    assert file.sent == [("PROJ-3", {"title": "Draw it"}, "")]
+
+
+def test_an_edit_the_replay_outlasts_is_a_retryable_503_not_a_404(
+    file: _File, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server_writes, "REPLAY_WAIT_S", 0.05)
+
+    status, body = _edit_title(file, _replaying())
+
+    assert (status, file.sent) == (503, [])
+    assert body == {"error": "PROJ-3 is not on the board yet: the board is replaying its feed, retry"}
+
+
+def test_a_task_the_finished_replay_does_not_hold_is_a_404_at_once(file: _File) -> None:
+    feed = _replaying()
+    feed.expect("0-0")
+
+    assert _edit_title(file, feed) == (404, {"error": "PROJ-3 is not on the board"})
+    assert file.sent == []
 
 
 def test_a_board_that_cannot_edit_refuses_an_edit(file: _File) -> None:
