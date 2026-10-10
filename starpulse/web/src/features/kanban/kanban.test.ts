@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NO_PREFS, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll, stackOf, toggleFold, whyHidden, type KanbanTask } from "./kanban";
-import { merge } from "../../render/sky";
+import { merge, midnight } from "../../render/sky";
 import type { TaskRecord } from "./taskView";
 import type { Pull, RawAgent, Snapshot } from "../../api";
 
@@ -8,7 +8,7 @@ const NAMES = { ready: "Ready", waiting: "Waiting", in_progress: "In progress", 
 const task = (id: string, lane: string, milestone = "", at = 0, entered = 0): KanbanTask => ({
   id, title: id, lane, milestone, labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: at ? { machine: "m", state: "s", at } : null, released: false, moves: {}, entered, created: null, workableSince: null, machines: [],
 });
-const NOW = 1_000_000, HOURS = 3600;
+const HOURS = 3600, NOW = midnight(new Date(2026, 9, 10)) + 12 * HOURS;
 const view = (tasks: KanbanTask[], prefs = NO_PREFS) => layout(tasks, NAMES, prefs, NOW);
 const column = (v: ReturnType<typeof view>, id: string) => v.columns.find((c) => c.id === id)!;
 const headers = (v: ReturnType<typeof view>, id: string) => column(v, id).buckets.map((b) => b.milestone);
@@ -603,13 +603,14 @@ describe("the milestone outline", () => {
 describe("the Done column", () => {
   const finished = (id: string, hoursAgo: number, milestone = "m-1") => task(id, "done", milestone, 0, NOW - hoursAgo * HOURS);
 
-  it("draws a task that entered Done 23 hours ago and not one that entered 25 hours ago, and counts only what it draws", () => {
-    const tasks = [finished("T-OLD", 25), finished("T-NEW", 23), task("T-1", "ready", "m-1")];
+  it("draws a task that entered Done since local midnight and not one that entered before it, and counts only what it draws", () => {
+    // NOW is local noon: 13 hours back is yesterday, inside a rolling day
+    const tasks = [finished("T-OLD", 13), finished("T-NEW", 11), task("T-1", "ready", "m-1")];
     const v = view(tasks);
 
     expect(column(v, "done").buckets.flatMap((b) => b.tasks.map((t) => t.id))).toEqual(["T-NEW"]);
     expect([column(v, "done").count, v.done, v.open, v.shown, v.total]).toEqual([1, 1, 1, 2, 2]);
-    expect(whyHidden(tasks, NAMES, NO_PREFS, "T-OLD", NOW)).toBe("Done over 24 hours ago");
+    expect(whyHidden(tasks, NAMES, NO_PREFS, "T-OLD", NOW)).toBe("Done before today");
     expect(whyHidden(tasks, NAMES, NO_PREFS, "T-NEW", NOW)).toBeNull();
   });
 
@@ -618,14 +619,14 @@ describe("the Done column", () => {
   });
 
   it("leaves an undrawn Done task in its milestone's done and total", () => {
-    const tasks = [finished("T-OLD", 25), finished("T-NEW", 1), task("T-1", "ready", "m-1")];
+    const tasks = [finished("T-OLD", 13), finished("T-NEW", 1), task("T-1", "ready", "m-1")];
 
     expect(column(view(tasks), "done").count).toBe(1);
     expect(milestoneOutline(tasks)).toEqual([{ milestone: "m-1", done: 2, total: 3 }]);
   });
 
   it("keeps the toolbar's counts to the tasks drawn", () => {
-    const tasks = [{ ...finished("T-OLD", 25), assignee: "gone" }, finished("T-NEW", 1)];
+    const tasks = [{ ...finished("T-OLD", 13), assignee: "gone" }, finished("T-NEW", 1)];
 
     expect(assigneeOptions(recent(tasks, NOW))).toEqual([{ value: "", count: 1 }]);
   });

@@ -1,5 +1,5 @@
 // The Kanban view's model: the Board's open tasks laid out as columns of milestone buckets. Pure, so the view only draws it.
-import { DONE_WINDOW, type Sky } from "../../render/sky";
+import { midnight, type Sky } from "../../render/sky";
 import type { TaskRecord } from "./taskView";
 import type { Option } from "../../shared/ChoiceMenu";
 import type { Move, Pull, TrailStep } from "../../api";
@@ -8,8 +8,8 @@ import type { Move, Pull, TrailStep } from "../../api";
 export const COLUMNS = ["ready", "waiting", "in_progress", "review", "needs_attention", "done"];
 
 
-/** The tasks a column may draw: every task, except a Done one that entered over a day before `now`. A Done task the snapshot gave no time for (`entered` 0) is drawn. */
-export const recent = (tasks: KanbanTask[], now: number): KanbanTask[] => tasks.filter((t) => t.lane !== "done" || !t.entered || now - t.entered <= DONE_WINDOW);
+/** The tasks a column may draw: every task, except a Done one that entered before the local midnight of `now`'s day. A Done task the snapshot gave no time for (`entered` 0) is drawn. */
+export const recent = (tasks: KanbanTask[], now: number): KanbanTask[] => tasks.filter((t) => t.lane !== "done" || !t.entered || t.entered >= midnight(new Date(now * 1000)));
 
 /** The lanes drawn as columns: the board's own lanes in order (StarPulse's native board, a Backlog.md project's statuses), except those six on a board with the `ready` lane (trantor's lifecycle) and before the board's lanes are known. */
 export const columnsOf = (names: Record<string, string>): string[] => ("ready" in names || !Object.keys(names).length ? COLUMNS : Object.keys(names));
@@ -281,11 +281,11 @@ export function layout(tasks: KanbanTask[], names: Record<string, string>, prefs
   };
 }
 
-/** Why task `id` has no card in view: Done over a day ago, hidden, its milestone hidden, filtered out or folded away; null when its card is drawn. */
+/** Why task `id` has no card in view: Done before today, hidden, its milestone hidden, filtered out or folded away; null when its card is drawn. */
 export function whyHidden(tasks: KanbanTask[], names: Record<string, string>, prefs: Prefs, id: string, now: number): string | null {
   const t = tasks.find((x) => x.id === id);
   if (!t || !columnsOf(names).includes(t.lane)) return "not on the board";
-  if (!recent([t], now).length) return "Done over 24 hours ago";
+  if (!recent([t], now).length) return "Done before today";
   if (prefs.hiddenTasks.has(id)) return "hidden";
   if (prefs.hiddenMilestones.has(t.milestone)) return "its milestone is hidden";
   if (!filtered(t, prefs)) return "filtered out";
