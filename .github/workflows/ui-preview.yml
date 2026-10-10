@@ -11,7 +11,10 @@ on:
     paths:
       - starpulse/web/**
       - starpulse/_internal/cli/demo.py
-      - ci/**
+      - ci/ui_preview.py
+      - ci/preview.toml
+      - ci/demo_workspace.py
+      - ci/workspace/**
       - .github/workflows/ui-preview.yml
       - design/**
       - design/elements/**
@@ -21,7 +24,10 @@ on:
     paths:
       - starpulse/web/**
       - starpulse/_internal/cli/demo.py
-      - ci/**
+      - ci/ui_preview.py
+      - ci/preview.toml
+      - ci/demo_workspace.py
+      - ci/workspace/**
       - .github/workflows/ui-preview.yml
       - design/**
       - design/elements/**

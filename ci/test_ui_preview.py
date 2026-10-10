@@ -15,6 +15,7 @@ from ui_preview import (
     MAIN_FOLDER,
     MARKER,
     MOCKUP,
+    PAGES,
     UI_GLOBS,
     DemoLeakError,
     comment_body,
@@ -22,9 +23,12 @@ from ui_preview import (
     find_comment,
     leaks,
     main,
+    pages,
     pr_body_with_demo,
     publish,
     publish_demos,
+    push_touches_ui,
+    rendered_sha,
     scan_demos,
     sub_mockup,
     sub_mockup_name,
@@ -43,6 +47,10 @@ ROOT = Path(__file__).resolve().parents[1]
     [
         (["starpulse/web/src/App.tsx"], [FLOW_VIEW]),
         (["ci/preview.toml"], [FLOW_VIEW]),
+        (["ci/ui_preview.py"], [FLOW_VIEW]),
+        (["ci/demo_workspace.py"], [FLOW_VIEW]),
+        (["ci/workspace/board.yaml"], [FLOW_VIEW]),
+        (["ci/select_tests.py", "ci/test_ui_preview.py", "ci/seeded_server.py"], []),
         ([".github/workflows/ui-preview.yml"], [FLOW_VIEW]),
         (["starpulse/_internal/cli/demo.py"], [FLOW_VIEW]),
         (["design/hub/index.html"], [MOCKUP]),
@@ -54,6 +62,82 @@ ROOT = Path(__file__).resolve().parents[1]
 )
 def test_surfaces_follow_the_changed_paths(changed: list[str], expected: list[str]) -> None:
     assert surfaces(changed) == expected
+
+
+KANBAN = "starpulse/web/src/features/kanban/Kanban.tsx"
+DAGS = "starpulse/web/src/features/dags/Dags.tsx"
+ORBIT = "starpulse/web/src/features/orbit/orbitDraw.ts"
+
+
+@pytest.mark.parametrize(
+    ("changed", "expected"),
+    [
+        ([KANBAN], ["flow-view-kanban"]),
+        ([DAGS], ["flow-view-dags"]),
+        ([ORBIT], ["flow-view-orbit"]),
+        ([DAGS, KANBAN, "README.md", "design/data.js"], ["flow-view-kanban", "flow-view-dags"]),
+        # anything the three view folders do not own may draw on every view
+        ([KANBAN, "starpulse/web/src/App.tsx"], list(PAGES[FLOW_VIEW])),
+        ([KANBAN, "starpulse/web/src/features/level/ledger.ts"], list(PAGES[FLOW_VIEW])),
+        (["starpulse/web/src/features/kanban"], list(PAGES[FLOW_VIEW])),
+        (["ci/preview.toml"], list(PAGES[FLOW_VIEW])),
+    ],
+)
+def test_the_flow_view_shoots_only_the_views_whose_folder_holds_every_changed_page_path(changed: list[str], expected: list[str]) -> None:
+    assert list(pages(FLOW_VIEW, changed)) == expected
+
+
+def test_a_view_keeps_the_query_it_opens_with_and_other_surfaces_keep_every_page() -> None:
+    assert pages(FLOW_VIEW, [KANBAN]) == {"flow-view-kanban": "?view=kanban"}
+    assert pages(MOCKUP, [KANBAN]) == PAGES[MOCKUP]
+
+
+SHA = "a" * 40
+
+
+def preview(sha_line: str, author: str = "bot", comment_id: int = 3) -> dict:
+    return {"id": comment_id, "user": {"login": author}, "body": f"{MARKER}\n{sha_line}\n## UI preview"}
+
+
+def test_the_comment_records_the_commit_it_was_rendered_from() -> None:
+    body = comment_body(SHOTS, run_url="u", sha=SHA)
+    assert rendered_sha([{"id": 1, "user": {"login": "bot"}, "body": body}], author="bot") == SHA
+
+
+def test_no_rendered_commit_is_known_without_the_authors_own_comment_naming_one() -> None:
+    assert rendered_sha([], author="bot") is None
+    assert rendered_sha([preview(f"<!-- rendered: {SHA} -->", author="someone")], author="bot") is None
+    assert rendered_sha([preview("## UI preview of `abcdef1`")], author="bot") is None
+    assert rendered_sha([preview("<!-- rendered: abcdef1 -->")], author="bot") is None
+
+
+def compare(*files: str, status: str = "ahead") -> dict:
+    return {"status": status, "files": [{"filename": f} for f in files]}
+
+
+def test_a_push_that_changed_no_ui_path_since_the_last_render_needs_no_render() -> None:
+    assert not push_touches_ui(compare("README.md", "starpulse/_internal/server/server.py", "ci/select_tests.py"))
+    assert not push_touches_ui(compare())
+
+
+def test_a_push_that_changed_a_ui_path_since_the_last_render_renders() -> None:
+    assert push_touches_ui(compare("README.md", KANBAN))
+    assert push_touches_ui(compare("design/hub/index.html"))
+
+
+def test_a_file_renamed_out_of_a_ui_path_renders() -> None:
+    moved = {"filename": "attic/Kanban.tsx", "previous_filename": KANBAN}
+    assert push_touches_ui({"status": "ahead", "files": [moved]})
+
+
+def test_a_push_the_comparison_cannot_vouch_for_renders() -> None:
+    # a rebase or force-push can carry main's UI changes; a failed comparison knows nothing
+    assert push_touches_ui(compare("README.md", status="diverged"))
+    assert push_touches_ui(compare("README.md", status="behind"))
+    assert push_touches_ui(None)
+    # GitHub lists at most 300 files, so a full page may hide a UI path
+    assert push_touches_ui(compare(*[f"docs/{n}.md" for n in range(300)]))
+    assert not push_touches_ui(compare(*[f"docs/{n}.md" for n in range(299)]))
 
 
 def test_the_workflow_filters_pull_requests_and_main_pushes_on_the_scripts_globs() -> None:
