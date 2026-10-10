@@ -1033,7 +1033,7 @@ export interface Machine {
    */
   subflows?: SubFlow[] | null;
   /**
-   * Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's states stacked in its cell; a state no tier names takes a tier of its own after them, and with none the Board draws its own columns.
+   * Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's states stacked in its cell; a state no tier names is drawn with the tier at the mean of the tiers its transitions join it to, stacked in it or in a tier of its own after it, else in a tier of its own after the last, and with none the Board draws its own columns.
    */
   tiers?: string[][] | null;
   transitions: Transition[];

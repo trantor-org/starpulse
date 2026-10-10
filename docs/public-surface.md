@@ -30,9 +30,13 @@ internal and can change in any release.
   (see [Connect sources](sources.md#find-missed-skill-loads-and-recurring-work)).
 - The board machine's `mainLine` and `tiers` in the `Machine` record of `api.schema.json`: `tiers` is a list of
   tiers, each a list of state ids, that the Star Map draws left to right, one grid cell per tier with a tier's states
-  stacked in its cell. A state no tier names takes a tier of its own after them, an id no state has is ignored, and a
-  machine with no `tiers` (or an empty list) draws the Board's own columns, as before. The Star Map draws one row
-  unless a second row makes the sun more than 5% larger, and keeps each state's footprint the same whatever it holds.
+  stacked in its cell. A tier of one state beside another such tier sits high or low by its state id, so the state
+  keeps its side when a neighbouring tier or state is added or removed. A state no tier names is drawn with the tier at
+  the mean of the tiers its transitions join it to, stacked in that tier or in a tier of its own right after it,
+  whichever lets the sun draw larger; one with no transition to a state a tier names takes a tier of its own after the
+  last. An id no state has is ignored, and a machine with no `tiers` (or an empty list) draws the Board's own columns,
+  as before. The Star Map draws one row unless a second row makes the sun more than 5% larger, and keeps each state's
+  footprint the same whatever it holds.
 - The config file's keys, among them each `[[triggers]]` table's `on`, `start` and `when` ([Triggers](serving.md#triggers)),
   the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills`, `injected_openings`, `claims`,
   `completion_skill`, `completion_call` and each `[[analytics.skill_loads]]`'s

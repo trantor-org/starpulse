@@ -120,8 +120,8 @@ describe("the hangar names, placed round the ring", () => {
 });
 
 describe("the hangar names beside the Board's paths", () => {
-  // the Board in the demo's tiers
-  const tiered = () => liveSky({}, {}, [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]]);
+  // the Board in the demo's tiers, with the two states of this live Board the demo does not have each in a tier after them
+  const tiered = () => liveSky({}, {}, [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"], ["blocked"], ["completed"]]);
   const crossed = (sc: Scene, h: Hub) => sc.bEdges.filter((e) => e.p0 && sample(e as Curve, 200).some((p) => p.x > h.box[0] && p.x < h.box[2] && p.y > h.box[1] && p.y < h.box[3])).map((e) => `${e.source}>${e.target}`);
 
   it("keep every name off the paths where a side of its DAGs is clear of them", () => {
