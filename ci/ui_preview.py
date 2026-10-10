@@ -1,10 +1,11 @@
 """Render a pull request's StarPulse UI and post the screenshots as one PR comment; publish main's live demo.
 
 `.github/workflows/ui-preview.yml` runs this on every pull request that touches the page (`starpulse/web/**`), the
-design mockup and element sheet (`design/**`) or this preview. It builds each changed surface's scrubbed one-file demo with
-`starpulse._internal.cli.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
-inlined, screenshots the demos, publishes them to the public `starpulse-demo` Pages repository while the
-pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
+design mockup and element sheet (`design/**`) or this preview. A push that changed no such path since the commit the
+comment was rendered from leaves the comment and demos as they are. It builds each changed surface's scrubbed
+one-file demo with `starpulse._internal.cli.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
+inlined, screenshots the demos (of the flow view, only the views the change can reach), publishes them to the public
+`starpulse-demo` Pages repository while the pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
 touches the same paths runs it with `--main`, which republishes every demo as `main/`, the live demo and the screenshots the README
 links. The flow view is rendered against `ci/preview.toml`, a demo config naming no real board or runs adapter.
 """
@@ -37,7 +38,16 @@ ELEMENTS_DIR = "elements"
 #: The paths whose change renders each surface; the workflow's `paths` filter is their union.
 SURFACE_GLOBS = {
     # the demo's scrub decides what the flow view's demo can draw
-    FLOW_VIEW: ("starpulse/web/**", "starpulse/_internal/cli/demo.py", "ci/**", ".github/workflows/ui-preview.yml"),
+    FLOW_VIEW: (
+        "starpulse/web/**",
+        "starpulse/_internal/cli/demo.py",
+        # of ci/, only what shapes the render: this script and the demo config, adapter and workspace it draws
+        "ci/ui_preview.py",
+        "ci/preview.toml",
+        "ci/demo_workspace.py",
+        "ci/workspace/**",
+        ".github/workflows/ui-preview.yml",
+    ),
     MOCKUP: ("design/**",),
     # the sheet draws the real stylesheet, so a palette change re-renders it too
     ELEMENTS: ("design/elements/**", "starpulse/web/src/style.css"),
@@ -56,6 +66,9 @@ PAGES = {
     MOCKUP: {"design-mockup": ""},
     ELEMENTS: {"element-sheet": ""},
 }
+_FEATURES = ("starpulse", "web", "src", "features")
+#: The feature folder that draws one flow-view page alone: a feature imports shared code and its own folder, never another's.
+VIEW_DIRS = {"kanban": "flow-view-kanban", "orbit": "flow-view-orbit", "dags": "flow-view-dags"}
 
 
 def _matches(path: str, glob: str) -> bool:
@@ -66,6 +79,19 @@ def surfaces(changed: Iterable[str]) -> list[str]:
     """The surfaces to render, in `SURFACE_GLOBS` order: each one a changed path falls under."""
     files = set(changed)
     return [s for s, globs in SURFACE_GLOBS.items() if any(_matches(f, g) for f in files for g in globs)]
+
+
+def pages(surface: str, changed: Iterable[str]) -> dict[str, str]:
+    """The screenshots `surface` takes for a change: every page, or for the flow view only the views `VIEW_DIRS` says
+    own every changed page path. A path outside those folders may draw on any view, so it shoots them all."""
+    if surface != FLOW_VIEW:
+        return PAGES[surface]
+    views = set()
+    for parts in (PurePosixPath(f).parts for f in changed if any(_matches(f, g) for g in SURFACE_GLOBS[FLOW_VIEW])):
+        if parts[:4] != _FEATURES or len(parts) < 6 or parts[4] not in VIEW_DIRS:
+            return PAGES[FLOW_VIEW]
+        views.add(VIEW_DIRS[parts[4]])
+    return {name: query for name, query in PAGES[FLOW_VIEW].items() if name in views}
 
 
 def demo_name(surface: str) -> str:
@@ -123,6 +149,7 @@ def comment_body(shots: Mapping[str, Sequence[Path]], run_url: str, sha: str, de
     """
     lines = [
         MARKER,
+        f"<!-- rendered: {sha} -->",
         f"## UI preview of `{sha[:7]}`",
         "",
         f"[Run]({run_url}). This render is review context, not an approval.",
@@ -141,6 +168,29 @@ def find_comment(comments: Sequence[Mapping[str, Any]], author: str) -> int | No
         (c["id"] for c in comments if c["user"]["login"] == author and c["body"].startswith(MARKER)),
         None,
     )
+
+
+_RENDERED = re.compile(r"<!-- rendered: ([0-9a-f]{40}) -->")
+#: The most files GitHub's comparison lists; a full list may be cut short.
+_COMPARE_FILES = 300
+
+
+def rendered_sha(comments: Sequence[Mapping[str, Any]], author: str) -> str | None:
+    """The commit `author`'s preview comment on this PR says it was rendered from, if there is one."""
+    found = find_comment(comments, author)
+    match = next((_RENDERED.search(c["body"]) for c in comments if c["id"] == found), None)
+    return match[1] if match else None
+
+
+def push_touches_ui(compare: Mapping[str, Any] | None) -> bool:
+    """Whether the commits since the last render need a new one, given GitHub's comparison of that render's commit to the head.
+
+    Only a fast-forward whose whole file list misses every UI path needs none. A rebase or force-push can carry
+    main's UI changes, and a missing or cut-short comparison vouches for nothing, so those render.
+    """
+    if not compare or compare["status"] != "ahead" or len(compare["files"]) >= _COMPARE_FILES:
+        return True
+    return bool(surfaces(name for f in compare["files"] for name in (f["filename"], f.get("previous_filename")) if name))
 
 
 def publish(gh: Callable[..., str], repo: str, pr: int, body: Path, images: Sequence[Path], author: str) -> str:
@@ -390,6 +440,14 @@ def _shoot(url: str, out: Path) -> Path:  # pragma: no cover — process boundar
     return out
 
 
+def _compare(repo: str, base: str, head: str) -> dict[str, Any] | None:  # pragma: no cover — process boundary
+    """GitHub's comparison of `base` to `head`, or None when it has none: a force-push can leave `base` unreachable."""
+    try:
+        return json.loads(_gh("api", f"repos/{repo}/compare/{base}...{head}"))
+    except RuntimeError:
+        return None
+
+
 def _set_demo_section(repo: str, pr: int, note: str, scratch: Path) -> None:  # pragma: no cover — process boundary
     body = _gh("pr", "view", str(pr), "--repo", repo, "--json", "body", "--jq", ".body")
     scratch.mkdir(parents=True, exist_ok=True)
@@ -442,6 +500,12 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
     if not todo:
         print("no UI surface to render")
         return 0
+    author = _gh("api", "user", "--jq", ".login").strip()
+    comments = json.loads(_gh("api", "--paginate", "--slurp", f"repos/{args.repo}/issues/{args.pr}/comments"))
+    last = rendered_sha([c for page in comments for c in page], author)
+    if last and not push_touches_ui(_compare(args.repo, last, args.sha)):
+        print(f"no UI path changed since the render of {last[:7]}; its comment and demos stand")
+        return 0
     demo_dir = args.out / "demo"  # the workflow uploads this directory as the `ui-demo` artifact
     names = [demo_name(s) for s in todo]
     built = _build_demos(names, demo_dir)
@@ -451,7 +515,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
         for surface in todo:
             shots[surface] = [
                 _shoot(f"http://127.0.0.1:{port}/{demo_name(surface)}{query}", args.out / f"{name}.png")
-                for name, query in PAGES[surface].items()
+                for name, query in pages(surface, changed).items()
             ]
         for sub in subs:
             shots[sub.stem] = [_shoot(f"http://127.0.0.1:{port}/{sub.name}", args.out / f"{sub.stem}.png")]
@@ -461,7 +525,6 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
     body = args.out / "body.md"
     body.write_text(comment_body(shots, args.run_url, args.sha, note))
     images = [p for paths in shots.values() for p in paths]
-    author = _gh("api", "user", "--jq", ".login").strip()
     print(publish(_gh, args.repo, args.pr, body, images, author))
     return 0
 
