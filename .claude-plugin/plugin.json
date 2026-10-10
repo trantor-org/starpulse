@@ -1,0 +1,10 @@
+{
+  "name": "starpulse",
+  "description": "Skills for setting up StarPulse, operating a board on it, authoring lifecycle machines and writing adapters.",
+  "author": {
+    "name": "trantor-org"
+  },
+  "skills": [
+    "./starpulse/skills"
+  ]
+}

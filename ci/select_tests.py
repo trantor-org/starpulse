@@ -40,6 +40,7 @@ READERS = {
     "docs/public-surface.md": ("starpulse/tests/unit/contracts/test_public_surface.py",),
     "starpulse/web/*": ("starpulse/tests/unit/contracts/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
+    ".claude-plugin/*": ("starpulse/tests/integration/cli/test_agent_cli.py",),
     "docs/serving.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
     "docs/sources.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
