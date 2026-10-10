@@ -4,7 +4,8 @@
 table and draws none. The gate (`bench/page_latency.py`, run nightly by trantor's whole-repo gate) needs every route and page
 surface to answer something, so this serves the preview workspace with the real request handler and the built page,
 and seeds what `starpulse serve` would hold after a month at a working team's scale: a Kanban of open tasks, the
-lane history behind each, and the finished runs the level reads. It writes nothing outside its directory.
+lane history behind each, the finished runs the level reads, the milestone and doc files of a native board, and an
+autopilot with one capacity reading. It writes nothing outside its directory.
 
     uv run python -m ci.seeded_server --port 8766 --dir .tmp/gate
 
@@ -24,9 +25,14 @@ from collections.abc import Callable, Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
+from starpulse._internal.autopilot.toggle import TOGGLE_FILE
+from starpulse._internal.board import native
+from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.server.server import StarPulseServer, assemble, request_handler
 from starpulse.contracts.adapters import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.config.config import load
 from starpulse._internal.config.history_window import HistoryWindow
 from starpulse._internal.eventlog.history import HistoryStore
@@ -40,6 +46,12 @@ DAY = 86400.0
 OPEN = {"new": 4, "ready": 20, "waiting": 12, "in_progress": 18, "review": 16, "needs_attention": 4}
 #: How many tasks are in Done, which the level reads as ended runs.
 DONE = 90
+#: How many open milestones and docs the native board holds, about half of what the live board keeps open: a doc read
+#: parses every doc file (about 0.4 ms each), so this leaves the route a margin under the budget on a loaded runner.
+MILESTONES = 16
+DOCS = 24
+#: The host reading the autopilot's sampler takes once, so the capacity strip has dimensions to draw.
+HOST = {"cpu": 0.25, "memory": 0.4}
 #: The lanes a task walks to reach each lane, the order the Board machine allows.
 ROUTES = {
     "new": ["new"],
@@ -135,6 +147,42 @@ def seed(feed: BoardFeed, store: HistoryStore, now: float) -> tuple[dict[str, di
     return records, placed
 
 
+def native_board(directory: Path) -> Board:
+    """A native board under `directory` holding `MILESTONES` milestones and `DOCS` docs, filed through its own writers
+    so the files are the ones a real board keeps and the routes read them from disk."""
+    board = native.board({}, directory)
+    assert board.create_milestone is not None and board.create_doc is not None
+    filed = [
+        board.create_milestone(f"Demo milestone {n}", {"outcome": "A synthetic outcome.", "specs": [], "adrs": []})
+        for n in range(1, MILESTONES + 1)
+    ] + [
+        board.create_doc(
+            f"Demo doc {n}",
+            {"type": ("specification", "guide", "readme", "other")[n % 4], "body": "A line of detail. " * 40},
+        )
+        for n in range(1, DOCS + 1)
+    ]
+    if refused := next((written for written in filed if not written.ok), None):
+        raise RuntimeError(f"the seeded board refused a record: {refused.output}")
+    return board
+
+
+def autopilot(directory: Path, feed: BoardFeed, policy: Autopilot) -> Runtime:
+    """The autopilot `GET /api/autopilot` reads, with its loop built over a starter that starts nothing, one capacity
+    sample taken and no thread running: the route reads the last sample and the loop's next pick, as a served one does."""
+    runtime = build_autopilot(
+        policy,
+        directory / TOGGLE_FILE,
+        feed,
+        lambda: HOST,
+        start=lambda task: "",
+        settle=lambda task, reason: Written(True, ""),
+        lane=policy.eligible_lane(next(s["id"] for s in feed.machines["board"]["states"] if s.get("initial"))),
+    )
+    runtime.sampler.sample()
+    return runtime
+
+
 def build(
     port: int, directory: Path, *, now: float | None = None
 ) -> tuple[ThreadingHTTPServer, BoardFeed, list[BoardTask]]:
@@ -146,7 +194,16 @@ def build(
     records, tasks = seed(feed, store, time.time() if now is None else now)
     window = HistoryWindow(feed, 24 * 7, directory / "starpulse-settings.json")
     handler = request_handler(
-        feed, STATIC, {}, [], store, window, read=lambda task: records.get(task), level=config.level
+        feed,
+        STATIC,
+        {},
+        [],
+        store,
+        window,
+        read=lambda task: records.get(task),
+        level=config.level,
+        autopilot=autopilot(directory, feed, config.autopilot),
+        milestones=native_board(directory),
     )
     return StarPulseServer(("127.0.0.1", port), handler), feed, tasks
 

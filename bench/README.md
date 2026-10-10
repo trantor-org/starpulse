@@ -139,7 +139,8 @@ interaction rows but can hold its routes and stream deliveries. An untimed reque
 trantor's nightly whole-repo gate runs it (`make starpulse-latency`, `bin/starpulse_latency_gate.sh` in trantor) against
 the starpulse commit trantor pins; pull requests do not, because on the shared `validate` lane it was the slowest job and
 red from host load alone. It builds the page, serves `ci/seeded_server.py` (`ci/preview.toml`'s workspace with the real
-request handler, a month of lane history for about 160 tasks and a level), runs `page_latency.py --repeat 3` against it
+request handler, a month of lane history for about 160 tasks, a level, 16 milestones and 24 docs on a native board,
+and an autopilot with one capacity sample), runs `page_latency.py --repeat 3` against it
 and fails on a row over budget or an untimed request. `ci/seeded_server.py` runs the same server by hand:
 
 ```sh
@@ -217,7 +218,7 @@ uv run --group bench locust -f bench/load.py --host http://127.0.0.1:8766
 `page_latency.py` times one viewer; this times the same budget under a crowd. Each Locust user is one open page: it
 holds `/api/events?snapshot=ref` open, reads the snapshot body its first event names, then reads a random `/api` route
 from `page_latency.py`'s `READS` every 0.5 to 2 seconds. The first viewer probes every route once (the `discovery`
-row, not judged) and skips one that does not answer 200, as the seeded server's milestones and docs do not; the
+row, not judged) and skips one that does not answer 200, as a server with no milestones, docs or autopilot does not; the
 viewers that spawn meanwhile wait for its answer. The body row (`/api/events/body/<id>`) asks for gzip and leaves the
 body compressed: a viewer's browser inflates it on the viewer's machine, and inflating a crowd's bodies in Locust's
 one process timed that process, not the server. `-u` is
