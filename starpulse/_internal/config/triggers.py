@@ -11,11 +11,9 @@ import json
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
 from typing import Any
-
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import best_match
 
 __all__ = ["EVENTS", "Trigger", "TriggerError", "parse_triggers"]
 
@@ -24,12 +22,20 @@ EVENTS = ("lane", "machine")
 
 _KEYS = {"on", "start", "when"}
 
-# The machine schema's `when`, with its reserved field names lifted: those names collide with the state-machine
-# library's injected arguments, which a guard's fields are passed as, but a trigger matches the entry's fields directly.
-_SCHEMA = json.loads((Path(__file__).parents[2] / "machine.schema.json").read_text())
-_WHEN = deepcopy(_SCHEMA["$defs"]["when"])
-del _WHEN["propertyNames"]["not"]
-_VALIDATOR = Draft202012Validator({**_WHEN, "$defs": _SCHEMA["$defs"]})
+
+@cache
+def _validator() -> Any:
+    """The machine schema's `when`, with its reserved field names lifted: those names collide with the state-machine
+    library's injected arguments, which a guard's fields are passed as, but a trigger matches the entry's fields directly.
+
+    Built on first use: `jsonschema` is the cost of importing this module, and a board read never parses a trigger.
+    """
+    from jsonschema import Draft202012Validator  # noqa: PLC0415 - import cost, paid on first use
+
+    schema = json.loads((Path(__file__).parents[2] / "machine.schema.json").read_text())
+    when = deepcopy(schema["$defs"]["when"])
+    del when["propertyNames"]["not"]
+    return Draft202012Validator({**when, "$defs": schema["$defs"]})
 
 
 class TriggerError(ValueError):
@@ -61,9 +67,12 @@ def _trigger(raw: object, at: int) -> Trigger:
     if not (instance and workflow):
         raise TriggerError(f"{who}: start must be <instance>/<workflow>")
     when = raw.get("when", {})
-    if "when" in raw and (error := best_match(_VALIDATOR.iter_errors(when))) is not None:
-        where = "/".join(str(part) for part in error.absolute_path)
-        raise TriggerError(f"{who}: when{f' {where}' if where else ''}: {error.message}")
+    if "when" in raw:
+        from jsonschema.exceptions import best_match  # noqa: PLC0415 - import cost, paid on first use
+
+        if (error := best_match(_validator().iter_errors(when))) is not None:
+            where = "/".join(str(part) for part in error.absolute_path)
+            raise TriggerError(f"{who}: when{f' {where}' if where else ''}: {error.message}")
     return Trigger(on, start, when)
 
 
