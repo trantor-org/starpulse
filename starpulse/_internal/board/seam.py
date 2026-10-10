@@ -33,6 +33,7 @@ __all__ = [
     "DocEditor",
     "DocLister",
     "DocReader",
+    "DocRestorer",
     "MilestoneArchiver",
     "MilestoneCreator",
     "MilestoneEditor",
@@ -45,6 +46,7 @@ __all__ = [
     "TaskCreator",
     "TaskEditor",
     "TaskReader",
+    "TaskRestorer",
     "Written",
     "load",
     "module_name",
@@ -105,6 +107,14 @@ class TaskArchiver(Protocol):
     """A board writer: archive a task, recording the reason when there is one, and say what it did."""
 
     def __call__(self, task: str, reason: str, /, actor: str = OPERATOR) -> Written: ...
+
+
+class TaskRestorer(Protocol):
+    """A board writer: return an archived task's file to the board's tasks, unchanged, and say what it did.
+
+    A task with no archived file, or whose number is already open or completed, is refused."""
+
+    def __call__(self, task: str, /) -> Written: ...
 
 
 class TaskCompleter(Protocol):
@@ -192,6 +202,16 @@ class DocArchiver(Protocol):
     def __call__(self, doc: str, /) -> Written: ...
 
 
+class DocRestorer(Protocol):
+    """A board writer: return an archived doc's file, unchanged, to the board's docs under `folder` (a path of plain
+    names under `docs/`, `docs/` itself when blank), and say what it did.
+
+    An archive keeps no folder, so the caller names where the doc goes. A doc with no archived file, one whose id is
+    already open, or whose destination file exists is refused."""
+
+    def __call__(self, doc: str, folder: str = "", /) -> Written: ...
+
+
 def _no_cues(qualify: Qualify) -> list[dict]:
     return []
 
@@ -223,6 +243,8 @@ class Board:
     """Saves the page's edits to a task in one write; None refuses every edit. Needs `read`, which it is checked against."""
     archive: TaskArchiver | None = None
     """Archives a task from any column; None refuses every archive."""
+    restore: TaskRestorer | None = None
+    """Returns an archived task to the board's tasks; None refuses every restore."""
     complete: TaskCompleter | None = None
     """Completes a Done task; None refuses every complete."""
     create: TaskCreator | None = None
@@ -247,6 +269,8 @@ class Board:
     """Saves a doc's changes in one write; None refuses every one."""
     archive_doc: DocArchiver | None = None
     """Archives a doc; None refuses every one."""
+    restore_doc: DocRestorer | None = None
+    """Returns an archived doc to the board's docs; None refuses every one."""
     evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None
     """Evaluates a task's Start Criteria, given its id and description; None leaves each `not evaluated`, so a Waiting task
     that declares any is never workable."""

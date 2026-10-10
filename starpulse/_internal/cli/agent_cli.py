@@ -9,6 +9,7 @@
     starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops --label security
     starpulse task assign PROJ-45 @agent-standard-high
     starpulse task archive PROJ-45 --reason "superseded"
+    starpulse task restore PROJ-45
     starpulse task complete PROJ-45
     starpulse task checkpoint-ac PROJ-45 2 "pytest exits 0"
     starpulse machine show in-progress
@@ -22,6 +23,7 @@
     starpulse doc create "Plan" --type specification --folder specs --body "# Plan"
     starpulse doc update doc-116 --body "# Plan, revised"
     starpulse doc archive doc-116
+    starpulse doc restore doc-116 --folder specs
     starpulse runs list
     starpulse runs start prod/nightly
     starpulse watch --machine in-progress --task PROJ-45
@@ -56,14 +58,18 @@ changes is no longer the value the edit was based on: that value is read from th
 JSON object of values the caller read earlier. A `--label`, `--dependency`, `--reference`, `--documentation` or
 `--modified-file` given at all replaces that whole list, and a blank value clears a field. `task assign` is an edit of
 the assignee alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
-`task archive` moves a task from any lane to the board's archive, recording `--reason` as a comment when given;
+`task archive` moves a task from any lane to the board's archive, recording `--reason` as a comment when given, and
+`task restore` returns an archived task's file to the board's tasks, unchanged, refusing one whose number is open or whose
+file name is taken (exit 1);
 `task complete` moves a Done task to the board's completed tasks and refuses one that is not Done (exit 1);
 `task checkpoint-ac` checks one Acceptance Criterion and records its evidence as the comment `Verified AC #N: <evidence>`
 in one write, refusing a criterion the task lacks (exit 1) without writing. A board that cannot do one answers exit 3.
 `milestone` reads and writes the board's milestone records (title, outcome, specs, ADRs, retro) through the server;
 a board that keeps none answers exit 3. A `--spec` or `--adr` on `milestone edit` replaces that whole list.
 `doc` reads and writes the board's doc records (title, type, dates, folder, body) the same way: `doc list` leaves the
-bodies out, `doc show` returns one with its `body`, and a board that keeps no docs answers exit 3.
+bodies out, `doc show` returns one with its `body`, and a board that keeps no docs answers exit 3. `doc restore`
+returns an archived doc's file, unchanged, to `--folder` under the docs (the docs folder itself by default), refusing a doc
+that is open or a destination that exists (exit 1).
 `skills` reads no server: it copies the bundled skills into the project or, with `--user`, the home directory.
 """
 
@@ -536,6 +542,12 @@ def _task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 
+def _task_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/restore"
+    status, reply = _post(base, path, {"task": args.task})
+    return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+
+
 def _task_complete(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = server_url(args.server, environ), "/api/complete"
     status, reply = _post(base, path, {"task": args.task})
@@ -635,6 +647,12 @@ def _doc_update(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
 def _doc_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = server_url(args.server, environ), "/api/docs/archive"
     status, reply = _post(base, path, {"doc": args.doc})
+    return {"doc": _record_call(base, path, status, reply, noun="doc")["doc"]}
+
+
+def _doc_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/docs/restore"
+    status, reply = _post(base, path, {"doc": args.doc, **({"folder": args.folder} if args.folder else {})})
     return {"doc": _record_call(base, path, status, reply, noun="doc")["doc"]}
 
 
@@ -1190,6 +1208,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     archive.add_argument("task", help="the task's key (`PROJ-45`)")
     archive.add_argument("--reason", default="", help="why it is archived, recorded as a comment on the task")
+    restore = leaf(
+        task_verbs,
+        "restore",
+        "return an archived task to the board's tasks, unchanged; refused when its number is open or its file name is taken",
+        _task_restore,
+        ("task",),
+        (0, 1, 2, 3),
+    )
+    restore.add_argument("task", help="the archived task's key (`PROJ-45`)")
     complete = leaf(
         task_verbs,
         "complete",
@@ -1354,6 +1381,16 @@ def _parser() -> argparse.ArgumentParser:
         (0, 1, 2, 3, 4),
     )
     doc_archive.add_argument("doc", help="the doc's id (`doc-116`)")
+    doc_restore = leaf(
+        doc_verbs,
+        "restore",
+        "return an archived doc to the board's docs, unchanged; refused when it is open or its destination exists",
+        _doc_restore,
+        ("doc",),
+        (0, 1, 2, 3),
+    )
+    doc_restore.add_argument("doc", help="the archived doc's id (`doc-116`)")
+    doc_restore.add_argument("--folder", default="", help="a folder under the board's docs (`specs`); default: docs itself")
     runs = verbs.add_parser("runs", description="the workflows of the runs adapters", help="its workflows")
     runs_verbs = runs.add_subparsers(dest="verb", required=True, metavar="verb")
     leaf(

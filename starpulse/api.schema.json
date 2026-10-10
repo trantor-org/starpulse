@@ -1131,6 +1131,44 @@
       "title": "DocRecord",
       "type": "object"
     },
+    "DocRestoreRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/docs/restore`: return the archived doc `doc` to `folder` under the board's docs (the docs folder\nitself when absent), unchanged.",
+      "properties": {
+        "doc": {
+          "type": "string"
+        },
+        "folder": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "title": "DocRestoreRequest",
+      "type": "object"
+    },
+    "DocRestored": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "title": "DocRestored",
+      "type": "object"
+    },
     "DocShown": {
       "additionalProperties": false,
       "description": "`GET /api/docs/<id>`: one open doc.",
@@ -4451,6 +4489,33 @@
       "title": "RequiredCheck",
       "type": "object"
     },
+    "RestoreRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged.",
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "RestoreRequest",
+      "type": "object"
+    },
+    "Restored": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "Restored",
+      "type": "object"
+    },
     "RunEventRequest": {
       "additionalProperties": false,
       "description": "`POST /api/runs/events`: one workflow phase a producer reports.",
@@ -6248,6 +6313,9 @@
             "$ref": "#/$defs/Archived"
           },
           {
+            "$ref": "#/$defs/Restored"
+          },
+          {
             "$ref": "#/$defs/Completed"
           },
           {
@@ -6270,6 +6338,9 @@
           },
           {
             "$ref": "#/$defs/DocArchived"
+          },
+          {
+            "$ref": "#/$defs/DocRestored"
           },
           {
             "$ref": "#/$defs/Started"
@@ -6400,6 +6471,9 @@
             "$ref": "#/$defs/ArchiveRequest"
           },
           {
+            "$ref": "#/$defs/RestoreRequest"
+          },
+          {
             "$ref": "#/$defs/CompleteRequest"
           },
           {
@@ -6422,6 +6496,9 @@
           },
           {
             "$ref": "#/$defs/DocArchiveRequest"
+          },
+          {
+            "$ref": "#/$defs/DocRestoreRequest"
           },
           {
             "$ref": "#/$defs/WindowRequest"

@@ -436,6 +436,27 @@ def test_a_task_is_read_edited_and_archived_through_the_server(tmp_path: Path) -
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
 
 
+def test_an_archived_task_is_restored_through_the_server_and_a_refusal_carries_its_reason(tmp_path: Path) -> None:
+    restored: list[str] = []
+
+    def restore(task: str) -> Written:
+        restored.append(task)
+        return Written(task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is already on the board", skill="reopening")
+
+    with _serve(tmp_path, BoardFeed(), restore=restore) as server:
+        back = _post(server, "/api/restore", {"task": "PROJ-3"})
+        taken = _post(server, "/api/restore", {"task": "PROJ-4"})
+        malformed = _post(server, "/api/restore", {})
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/restore"), timeout=5)
+
+    assert back == (200, {"task": "PROJ-3"})
+    assert taken == (409, {"error": "PROJ-4 is already on the board", "skill": "reopening"})
+    assert malformed[0] == 400
+    assert restored == ["PROJ-3", "PROJ-4"]
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
 def test_a_done_task_is_completed_through_the_server_and_a_refusal_carries_its_skill(tmp_path: Path) -> None:
     completed: list[str] = []
 

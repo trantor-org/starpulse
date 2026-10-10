@@ -180,6 +180,7 @@ from starpulse._internal.board.seam import (
     TaskCreator,
     TaskEditor,
     TaskReader,
+    TaskRestorer,
     Written,
 )
 from starpulse._internal.board.seam import load as load_board
@@ -220,6 +221,8 @@ from starpulse._internal.server.writes import (
     move_task,
     reconcile_lanes,
     rerun_dag,
+    restore_doc,
+    restore_task,
     run_dag,
     start_task,
     task_record,
@@ -288,6 +291,7 @@ _TASK = "/api/task/"
 _SNAPSHOT_BODY = "/api/events/body/"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
+_RESTORE = "/api/restore"
 _COMPLETE = "/api/complete"
 _TASKS = "/api/tasks"
 _MILESTONES = "/api/milestones"
@@ -296,19 +300,21 @@ _MILESTONE_ARCHIVE = "/api/milestones/archive"
 _DOCS = "/api/docs"
 _DOC_EDIT = "/api/docs/edit"
 _DOC_ARCHIVE = "/api/docs/archive"
+_DOC_RESTORE = "/api/docs/restore"
 _INGEST = "/api/runs/events"
 _FORWARD = "/api/forward"
 _INSIGHTS = "/api/insights"
 #: The write routes of milestone records; `/api/milestones/<id>` reads one, so a GET of these answers 405.
 _MILESTONE_WRITES = frozenset({_MILESTONES, _MILESTONE_EDIT, _MILESTONE_ARCHIVE})
 #: The write routes of doc records; `/api/docs/<id>` reads one, so a GET of these answers 405.
-_DOC_WRITES = frozenset({_DOCS, _DOC_EDIT, _DOC_ARCHIVE})
+_DOC_WRITES = frozenset({_DOCS, _DOC_EDIT, _DOC_ARCHIVE, _DOC_RESTORE})
 #: The body each write route answers, by `contracts.api.BODIES`; a run and a rerun answer `run`.
 _WRITES = {
     _MOVE: "move",
     _START: "start",
     _EDIT: "edit",
     _ARCHIVE: "archive",
+    _RESTORE: "restore",
     _COMPLETE: "complete",
     _TASKS: "create",
     _MILESTONES: "milestone_create",
@@ -317,6 +323,7 @@ _WRITES = {
     _DOCS: "doc_create",
     _DOC_EDIT: "doc_edit",
     _DOC_ARCHIVE: "doc_archive",
+    _DOC_RESTORE: "doc_restore",
     _INGEST: "ingest",
     _FORWARD: "forward",
     _INSIGHTS: "insight",
@@ -747,6 +754,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     read: TaskReader | None
     edit: TaskEditor | None
     archive: TaskArchiver | None
+    restore: TaskRestorer | None
     complete: TaskCompleter | None
     create: TaskCreator | None
     ingest: Ingest | None
@@ -799,7 +807,20 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             path.startswith(_RUN)
             or _is_rerun(path)
             or path
-            in {_MOVE, _START, _EDIT, _ARCHIVE, _COMPLETE, _TASKS, _INGEST, _FORWARD, _INSIGHTS, *_MILESTONE_WRITES, *_DOC_WRITES}
+            in {
+                _MOVE,
+                _START,
+                _EDIT,
+                _ARCHIVE,
+                _RESTORE,
+                _COMPLETE,
+                _TASKS,
+                _INGEST,
+                _FORWARD,
+                _INSIGHTS,
+                *_MILESTONE_WRITES,
+                *_DOC_WRITES,
+            }
         ):
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
@@ -818,13 +839,13 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
         if (
-            path in {_MOVE, _START, _EDIT, _ARCHIVE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}
+            path in {_MOVE, _START, _EDIT, _ARCHIVE, _RESTORE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}
             or path.startswith(_RUN)
             or _is_rerun(path)
         ) and self._refused_write():
             return
         kind = _WRITES.get(path, "run")
-        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}:
+        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _RESTORE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
             if path == _MOVE:
@@ -833,6 +854,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = edit_task(self.client_address[0], raw, self.feed, self.read, self.edit)
             elif path == _ARCHIVE:
                 status, body = archive_task(self.client_address[0], raw, self.feed, self.archive)
+            elif path == _RESTORE:
+                status, body = restore_task(self.client_address[0], raw, self.restore)
             elif path == _COMPLETE:
                 status, body = complete_task(self.client_address[0], raw, self.feed, self.complete)
             elif path == _TASKS:
@@ -849,6 +872,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = edit_doc(self.client_address[0], raw, self.milestones)
             elif path == _DOC_ARCHIVE:
                 status, body = archive_doc(self.client_address[0], raw, self.milestones)
+            elif path == _DOC_RESTORE:
+                status, body = restore_doc(self.client_address[0], raw, self.milestones)
             else:
                 status, body = start_task(self.client_address[0], raw, self.feed, self.assign, self.start_session)
         elif path == _INGEST and self.ingest is not None:
@@ -995,6 +1020,7 @@ def request_handler(
     pulls: PullStore | None = None,
     telemetry: TelemetryLog | None = None,
     complete: TaskCompleter | None = None,
+    restore: TaskRestorer | None = None,
     search: SearchIndex | None = None,
     analytics: Analytics | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
@@ -1018,6 +1044,7 @@ def request_handler(
             self.read = read
             self.edit = edit
             self.archive = archive
+            self.restore = restore
             self.complete = complete
             self.create = create
             self.ingest = ingest
@@ -1607,6 +1634,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         board.archive,
         board.create,
         complete=board.complete,
+        restore=board.restore,
         ingest=Ingest(instance_tokens, log) if instance_tokens else None,
         gate=gate,
         forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,

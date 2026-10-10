@@ -278,6 +278,7 @@ def _native_server(tmp_path: Path, *files: tuple[str, str]) -> Iterator[str]:
         read=board.read,
         edit=board.edit,
         archive=board.archive,
+        restore=board.restore,
         complete=board.complete,
         create=board.create,
     ) as server:
@@ -290,6 +291,31 @@ def tasked(tmp_path: Path) -> Iterator[str]:
     own writers."""
     with _native_server(tmp_path) as url:
         yield url
+
+
+@pytest.fixture
+def archived(tmp_path: Path) -> Iterator[str]:
+    """The `tasked` server with `task-1` moved into the board's archive."""
+    with _native_server(tmp_path) as url:
+        file = _task_file(tmp_path)
+        (tmp_path / ".starpulse" / "board" / "archive" / "tasks").mkdir(parents=True)
+        file.replace(tmp_path / ".starpulse" / "board" / "archive" / "tasks" / file.name)
+        yield url
+
+
+@pytest.fixture
+def shelved(tmp_path: Path) -> Iterator[str]:
+    """The `milestoned` server with `doc-84` moved into the board's archive."""
+    board = native.board({}, tmp_path)
+    source = Path(__file__).parent.parent.parent / "fixtures" / "native_board"
+    root = tmp_path / ".starpulse" / "board"
+    for records in ("milestones", "docs"):
+        shutil.copytree(source / records, root / records)
+    (root / "archive" / "docs").mkdir(parents=True)
+    file = next((root / "docs").rglob("doc-84 - *.md"))
+    file.replace(root / "archive" / "docs" / file.name)
+    with _serve(tmp_path, BoardFeed(machines=MACHINES), milestones=board) as server:
+        yield _url(server, "")
 
 
 @pytest.fixture
@@ -788,6 +814,53 @@ def test_task_archive_without_a_reason_records_none(
     assert "Archived:" not in archived.read_text()
 
 
+def test_task_restore_returns_the_archived_file_to_the_tasks_unchanged(
+    archived: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "restore", "task-1", "--server", archived])
+
+    assert (code, doc) == (0, {"task": "task-1"})
+    board = tmp_path / ".starpulse" / "board"
+    assert _task_file(tmp_path).read_text() == TASK_FILE
+    assert not list((board / "archive" / "tasks").glob("task-1 - *.md"))
+
+
+def test_task_restore_of_an_open_task_is_refused_and_leaves_its_file(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "restore", "task-1", "--server", tasked])
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "task-1 is already on the board" in doc["error"]
+    assert _task_file(tmp_path).read_text() == TASK_FILE
+
+
+def test_task_restore_undoes_an_archive_and_a_second_restore_is_refused(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gone = _run(capsys, ["task", "archive", "task-1", "--server", tasked])
+    back = _run(capsys, ["task", "restore", "task-1", "--server", tasked])
+    again = _run(capsys, ["task", "restore", "task-1", "--server", tasked])
+
+    assert (gone, back) == ((0, {"task": "task-1"}), (0, {"task": "task-1"}))
+    assert (again[0], again[1]["code"]) == (1, "refused")
+    assert _task_file(tmp_path).is_file()
+
+
+def test_doc_restore_returns_the_archived_file_unchanged_to_the_folder_named(
+    shelved: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / ".starpulse" / "board"
+    held = next((root / "archive" / "docs").glob("doc-84 - *.md"))
+    text = held.read_bytes()
+
+    code, doc = _run(capsys, ["doc", "restore", "doc-84", "--folder", "specs", "--server", shelved])
+
+    assert (code, doc) == (0, {"doc": "doc-84"})
+    assert (root / "docs" / "specs" / held.name).read_bytes() == text
+    assert not held.exists()
+
+
 def test_task_complete_moves_a_done_task_to_the_completed_tasks(
     shipped: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -886,6 +959,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task edit",
         "task assign",
         "task archive",
+        "task restore",
         "task complete",
         "task checkpoint-ac",
         "machine list",
@@ -902,6 +976,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "doc create",
         "doc update",
         "doc archive",
+        "doc restore",
         "runs list",
         "runs start",
         "watch",
@@ -1535,6 +1610,10 @@ CASES = {
     ("task archive", 2): ["task", "archive"],
     ("task archive", 3): ["task", "archive", "task-1", "--server", "{down}"],
     ("task archive", 4): ["task", "archive", "task-99", "--server", "{tasked}"],
+    ("task restore", 0): ["task", "restore", "task-1", "--server", "{archived}"],
+    ("task restore", 1): ["task", "restore", "task-1", "--server", "{tasked}"],
+    ("task restore", 2): ["task", "restore"],
+    ("task restore", 3): ["task", "restore", "task-1", "--server", "{down}"],
     ("task complete", 0): ["task", "complete", "task-2", "--server", "{shipped}"],
     ("task complete", 1): ["task", "complete", "task-1", "--server", "{shipped}"],
     ("task complete", 2): ["task", "complete"],
@@ -1594,6 +1673,10 @@ CASES = {
     ("doc archive", 2): ["doc", "archive"],
     ("doc archive", 3): ["doc", "archive", "doc-84", "--server", "{down}"],
     ("doc archive", 4): ["doc", "archive", "doc-99", "--server", "{milestoned}"],
+    ("doc restore", 0): ["doc", "restore", "doc-84", "--folder", "specs", "--server", "{shelved}"],
+    ("doc restore", 1): ["doc", "restore", "doc-84", "--server", "{milestoned}"],
+    ("doc restore", 2): ["doc", "restore"],
+    ("doc restore", 3): ["doc", "restore", "doc-84", "--server", "{down}"],
     ("search", 0): ["search", "signing", "--server", "{searchable}"],
     ("search", 1): ["search", " ", "--server", "{searchable}"],
     ("search", 2): ["search"],
@@ -1682,6 +1765,8 @@ SERVERS = {
     "forbidden": "forbidden",
     "milestoned": "milestoned",
     "tasked": "tasked",
+    "archived": "archived",
+    "shelved": "shelved",
     "shipped": "shipped",
     "readonly": "readonly",
     "searchable": "searchable",

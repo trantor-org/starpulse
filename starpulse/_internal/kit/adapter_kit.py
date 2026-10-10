@@ -46,6 +46,7 @@ from starpulse._internal.board.seam import (
     TaskCreator,
     TaskEditor,
     TaskReader,
+    TaskRestorer,
     Written,
 )
 from starpulse._internal.runs.ingest import ForwardIngest, Ingest
@@ -381,6 +382,7 @@ def serve(
     pulls: PullStore | None = None,
     telemetry: TelemetryLog | None = None,
     complete: TaskCompleter | None = None,
+    restore: TaskRestorer | None = None,
     search: SearchIndex | None = None,
     analytics: Analytics | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
@@ -420,6 +422,7 @@ def serve(
         pulls=pulls,
         telemetry=telemetry,
         complete=complete,
+        restore=restore,
         search=search,
         analytics=analytics,
     )

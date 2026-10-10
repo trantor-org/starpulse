@@ -8,6 +8,7 @@ export interface ApiContract {
     | Moved
     | Edited
     | Archived
+    | Restored
     | Completed
     | Created
     | MilestoneCreated
@@ -16,6 +17,7 @@ export interface ApiContract {
     | DocCreated
     | DocEdited
     | DocArchived
+    | DocRestored
     | Started
     | RunStarted
     | Accepted
@@ -50,6 +52,7 @@ export interface ApiContract {
     | StartRequest
     | EditRequest
     | ArchiveRequest
+    | RestoreRequest
     | CompleteRequest
     | CreateRequest
     | MilestoneCreateRequest
@@ -58,6 +61,7 @@ export interface ApiContract {
     | DocCreateRequest
     | DocEditRequest
     | DocArchiveRequest
+    | DocRestoreRequest
     | WindowRequest
     | ForwardingRequest
     | AutopilotRequest
@@ -85,6 +89,9 @@ export interface Edited {
 export interface Archived {
   task: string;
 }
+export interface Restored {
+  task: string;
+}
 export interface Completed {
   task: string;
 }
@@ -109,6 +116,9 @@ export interface DocEdited {
   doc: string;
 }
 export interface DocArchived {
+  doc: string;
+}
+export interface DocRestored {
   doc: string;
 }
 export interface Started {
@@ -1188,6 +1198,12 @@ export interface ArchiveRequest {
   task: string;
 }
 /**
+ * `POST /api/restore`: return the archived task `task` to the board's tasks, unchanged.
+ */
+export interface RestoreRequest {
+  task: string;
+}
+/**
  * `POST /api/complete`: move the Done task `task` into the board's completed tasks.
  */
 export interface CompleteRequest {
@@ -1254,6 +1270,14 @@ export interface DocEditRequest {
  */
 export interface DocArchiveRequest {
   doc: string;
+}
+/**
+ * `POST /api/docs/restore`: return the archived doc `doc` to `folder` under the board's docs (the docs folder
+ * itself when absent), unchanged.
+ */
+export interface DocRestoreRequest {
+  doc: string;
+  folder?: string | null;
 }
 /**
  * `PUT /api/history-window`: set the shared history window.

@@ -28,6 +28,9 @@ POST /api/archive  {task, reason[, actor]}: archive a task from any lane through
 POST /api/complete {task}: move a Done task into the board's completed tasks through its `complete`; refusals
                    as for an edit (409 for a task that is not Done), 404 when the board does not complete or the task is
                    not on it
+POST /api/restore  {task}: return an archived task to the board's tasks, unchanged, through its `restore`; 409 with the
+                   writer's refusal for a task that is not archived, is already open or completed, or whose file name is
+                   taken, 404 when the board does not restore
 POST /api/tasks    {title, description, priority, labels, milestone, assignee, dependencies, acceptanceCriteria[,
                    actor]}: create
                    a task in the board's starting lane through the board's `create`, and answer 201 {task}
@@ -46,9 +49,10 @@ POST /api/milestones, /api/milestones/edit, /api/milestones/archive
 GET /api/docs, /api/docs/<id>
                    {docs} or {doc}: the board's open docs, each {id, title, type, created_date, updated_date, path} and, for one
                    doc, its `body`; 404 for a board that keeps none or for a doc that is not open
-POST /api/docs, /api/docs/edit, /api/docs/archive
-                   {title[, type, folder, body]} (201 {doc}, the new id), {doc, changes} (200 {doc, changed}) and {doc}
-                   (200 {doc}), through the board's `create_doc`, `edit_doc` and `archive_doc`; 400 for a malformed body or
+POST /api/docs, /api/docs/edit, /api/docs/archive, /api/docs/restore
+                   {title[, type, folder, body]} (201 {doc}, the new id), {doc, changes} (200 {doc, changed}), {doc} (200
+                   {doc}) and {doc[, folder]} (200 {doc}, the archived file returned unchanged under `docs/<folder>`),
+                   through the board's `create_doc`, `edit_doc`, `archive_doc` and `restore_doc`; 400 for a malformed body or
                    detail, 403 outside loopback and RFC 1918, 404 for a board without the writer or a doc that is not open,
                    409 for the writer's refusal. A GET answers 405. These routes read the same Board as the milestone routes
 POST /api/start    {task, assignee[, actor]}: start a task's session at `session_start_url` (see Start in the README)
@@ -88,6 +92,7 @@ from starpulse._internal.board.seam import (
     TaskCreator,
     TaskEditor,
     TaskReader,
+    TaskRestorer,
 )
 from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.hub.forward import Forwarder
@@ -368,6 +373,29 @@ def complete_task(source: str, raw: bytes, feed: BoardFeed, complete: TaskComple
     return 200, {"task": task}
 
 
+def restore_task(source: str, raw: bytes, restore: TaskRestorer | None) -> tuple[int, dict[str, Any]]:
+    """Return the archived task `raw` names to the board's tasks through `restore`, for a browser at `source`: the HTTP
+    status and JSON body.
+
+    The writer owns every other refusal (no archived file, the number already open, the name taken), which answers 409 with
+    its reason.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Restoring a task answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        task = json.loads(raw)["task"]
+    except ValueError, TypeError, KeyError:
+        task = None
+    if not isinstance(task, str):
+        return 400, {"error": 'a restore needs {"task": "TASK-N"}'}
+    if restore is None:
+        return 404, {"error": "this board does not restore tasks"}
+    written = restore(task)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task}
+
+
 def _create_details(body: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
     """The filled details of a create body, trimmed, and the first field that is unknown or of the wrong kind, or ""."""
     details: dict[str, Any] = {}
@@ -582,6 +610,27 @@ def archive_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict
     if board.read_doc(doc) is None:
         return 404, {"error": f"{doc} is not an open doc"}
     written = board.archive_doc(doc)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"doc": doc}
+
+
+def restore_doc(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Return the archived doc `raw` names to the folder it names under the board's docs through the board's
+    `restore_doc`, for a browser at `source`: the HTTP status and JSON body.
+
+    The writer owns every other refusal (no archived file, the id already open, the destination taken, a folder that is
+    not a path of plain names), which answers 409 with its reason.
+    """
+    body, refusal = _record_request(source, raw, "Restoring", "doc")
+    if body is None:
+        return refusal
+    folder = body.get("folder", "")
+    if not isinstance(doc := body.get("doc"), str) or not isinstance(folder, str):
+        return 400, {"error": 'a restore needs {"doc": "doc-N"} and, optionally, {"folder": "specs"}'}
+    if board is None or board.restore_doc is None:
+        return 404, {"error": "this board does not restore docs"}
+    written = board.restore_doc(doc, folder)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"doc": doc}
