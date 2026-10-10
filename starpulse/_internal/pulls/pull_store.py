@@ -13,6 +13,8 @@ listing page (`_PAGE`) is read for the first page only, and says so.
 from __future__ import annotations
 
 import logging
+import queue
+import threading
 import time
 from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Any
@@ -157,9 +159,19 @@ def refresh_repository(
     store.save(_record(repo, node, now) for node in nodes.values() if node)
 
 
+def refresh_pull(
+    repo: str, number: int, store: PullStore, now: float, graphql: Callable[[str, str], dict] = query_github
+) -> None:
+    """Read pull request `number` of `repo` alone, one request, and save its record; a number GitHub has none for
+    leaves the store as it was."""
+    if node := graphql(repo, _query([number], listing=False))[f"p{number}"]:
+        store.save([_record(repo, node, now)])
+
+
 class PullSync:
     """Refreshes `store` from GitHub, one query per repository a minute, for every repository worth asking about, and
-    after each read hands the Board its tasks' pull requests (`project`, `PullRequests.refresh`)."""
+    after each read hands the Board its tasks' pull requests (`project`, `PullRequests.refresh`). A pull request
+    named to `request` is read alone on this same thread, between refreshes, as soon as it is asked for."""
 
     def __init__(
         self,
@@ -176,6 +188,8 @@ class PullSync:
         self._graphql = graphql
         self._clock = clock
         self._project = project
+        self._requests: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
+        self._wake = threading.Event()
 
     def _linked(self) -> dict[str, set[int]]:
         """The numbers the open tasks' PR links name, by repository."""
@@ -207,6 +221,42 @@ class PullSync:
                 logger.exception("pull requests: %s failed to refresh", repo)
         self.project()
 
+    def request(self, repo: str, number: int) -> bool:
+        """Queue a read of pull request `number` of `repo` for the refresh thread to serve now; False, queueing
+        nothing, for a repository this store does not track."""
+        if repo not in self.tracked():
+            return False
+        self._requests.put((repo, number))
+        self._wake.set()
+        return True
+
+    def serve_requests(self) -> None:
+        """Read each queued pull request alone, then project once; one that cannot be read is logged and left to the
+        next refresh."""
+        served = False
+        while True:
+            try:
+                repo, number = self._requests.get_nowait()
+            except queue.Empty:
+                break
+            served = True
+            try:
+                refresh_pull(repo, number, self._store, self._clock(), self._graphql)
+            except GhUnavailableError as exc:
+                logger.warning("pull requests: %s", exc)
+            except Exception:  # one request's bad answer must not end the refresh thread
+                logger.exception("pull requests: %s#%d failed to refresh", repo, number)
+        if served:
+            self.project()
+
+    def _idle(self, seconds: float) -> None:  # pragma: no mutate block — timer loop
+        """Wait `seconds` for the next refresh, serving each request as it arrives."""
+        deadline = time.monotonic() + seconds
+        while (left := deadline - time.monotonic()) > 0:
+            self._wake.wait(left)
+            self._wake.clear()  # before the drain: a request queued after it sets the event again
+            self.serve_requests()
+
     def project(self) -> None:
         """Hand the Board its tasks' pull requests from the store; a failure is logged, never ends the thread."""
         if self._project:
@@ -222,4 +272,4 @@ class PullSync:
         self.project()
         while True:
             self.refresh()
-            time.sleep(interval_s)
+            self._idle(interval_s)

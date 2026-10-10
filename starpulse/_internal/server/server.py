@@ -194,6 +194,8 @@ from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.release import READY, RELEASE_S, Releaser
 from starpulse._internal.config.pins import GitHub
 from starpulse._internal.pulls.pull_requests import PullRequests
+from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
+from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pull_store import PullSync
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.runs.triggers import run_triggers
@@ -307,6 +309,7 @@ _DOC_RESTORE = "/api/docs/restore"
 _INGEST = "/api/runs/events"
 _FORWARD = "/api/forward"
 _INSIGHTS = "/api/insights"
+_PULL_REFRESH = "/api/pulls/refresh"
 #: The write routes of milestone records; `/api/milestones/<id>` reads one, so a GET of these answers 405.
 _MILESTONE_WRITES = frozenset({_MILESTONES, _MILESTONE_EDIT, _MILESTONE_ARCHIVE})
 #: The write routes of doc records; `/api/docs/<id>` reads one, so a GET of these answers 405.
@@ -330,6 +333,7 @@ _WRITES = {
     _INGEST: "ingest",
     _FORWARD: "forward",
     _INSIGHTS: "insight",
+    _PULL_REFRESH: "ingest",
 }
 #: The most rows `/api/merges` and `/api/machines` serve at once.
 _PAGE_LIMIT = 100
@@ -764,6 +768,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     insights: Insights | None
     gate: Callable[[BaseHTTPRequestHandler], bool] | None
     forward: ForwardIngest | None
+    pull_refresh: PullRefresh | None
     forwarding: Forwarder | None
     autopilot: Runtime | None
     milestones: Board | None
@@ -821,6 +826,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 _INGEST,
                 _FORWARD,
                 _INSIGHTS,
+                _PULL_REFRESH,
                 *_MILESTONE_WRITES,
                 *_DOC_WRITES,
             }
@@ -885,6 +891,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             status, body = self._pushed(self.forward, MAX_FORWARD_BODY)
         elif path == _INSIGHTS and self.insights is not None:
             status, body = self._pushed(self.insights, MAX_BODY)
+        elif path == _PULL_REFRESH and self.pull_refresh is not None:
+            status, body = self._pushed(self.pull_refresh, MAX_REFRESH_BODY)
         elif _is_rerun(path):
             name = unquote(path.removeprefix(_RERUN).removesuffix(_RERUN_TAIL))
             status, body = rerun_dag(self.client_address[0], name, self.feed, self.reruns, self.run_safe)
@@ -1026,6 +1034,7 @@ def request_handler(
     restore: TaskRestorer | None = None,
     search: SearchIndex | None = None,
     analytics: Analytics | None = None,
+    pull_refresh: PullRefresh | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
     snapshots = SnapshotCache(feed)
@@ -1054,6 +1063,7 @@ def request_handler(
             self.insights = insights
             self.gate = gate
             self.forward = forward
+            self.pull_refresh = pull_refresh
             self.forwarding = forwarding
             self.autopilot = autopilot
             self.milestones = milestones
@@ -1490,6 +1500,9 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         source_tokens = ingest_tokens(config.sources, os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
+    refresh_token = os.environ.get(config.refresh_token_env or "")
+    if config.refresh_token_env and not refresh_token:
+        parser.exit(1, f"refresh_token_env: {config.refresh_token_env} is not set\n")
     gate = None
     if args.hub:
         try:
@@ -1570,6 +1583,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     pulls = PullStore(log.engine)
+    pull_refresh = None
     pins = GitHub()  # one memo of the pointer reads for the pull request projection and the release of dependents
     if shutil.which("gh"):  # without the GitHub CLI there is no source, and a task simply carries no PR state
         pull_requests = PullRequests(
@@ -1577,6 +1591,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         )
         sync = PullSync(pulls, feed, config.repos, project=pull_requests.refresh)
         threading.Thread(target=sync.run_forever, name="pull-store", daemon=True).start()
+        pull_refresh = PullRefresh(refresh_token, sync.request) if refresh_token else None
     if config.release is not None:
         lanes = {state["id"] for state in feed.machines["board"]["states"]}
         if board.edit is None or not {WAITING, READY} <= lanes:
@@ -1656,6 +1671,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         autopilot=autopilot_runtime,
         search=search,
         analytics=config.analytics,
+        pull_refresh=pull_refresh,
     )
     serve_until_stopped(StarPulseServer((args.host, args.port), handler), feed)
 
