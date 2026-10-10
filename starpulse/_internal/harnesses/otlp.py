@@ -77,7 +77,7 @@ class LogEvent:
 def _value(wrapped: Any) -> Any:
     if not isinstance(wrapped, dict):
         return None
-    for key in ("stringValue", "intValue", "boolValue"):
+    for key in ("stringValue", "intValue", "boolValue", "doubleValue"):
         if key in wrapped:
             return wrapped[key]
     return None
@@ -151,8 +151,13 @@ def parse(payload: dict[str, Any]) -> list[LogEvent]:
     return events
 
 
-def receiver(ingest: Callable[[list[LogEvent]], None]) -> type[BaseHTTPRequestHandler]:
-    """A request handler that parses each logs export and hands its events to `ingest`, one call per POST."""
+def receiver(
+    ingest: Callable[[list[LogEvent]], None], on_export: Callable[[dict[str, Any]], object] | None = None
+) -> type[BaseHTTPRequestHandler]:
+    """A request handler that parses each logs export and hands its events to `ingest`, one call per POST.
+
+    `on_export`, when given, is called with the decoded export itself, for a consumer that reads more than `ingest`'s
+    events; one that raises is logged and the export is still answered and ingested."""
 
     class Handler(BaseHTTPRequestHandler):
         def _reply(self, status: int, body: bytes = b"{}", content_type: str = "application/json") -> None:
@@ -189,6 +194,11 @@ def receiver(ingest: Callable[[list[LogEvent]], None]) -> type[BaseHTTPRequestHa
             except OSError, ValueError:
                 self._reply(400)
                 return
+            if on_export is not None and isinstance(payload, dict):
+                try:
+                    on_export(payload)
+                except Exception:
+                    log.exception("export consumer failed on an export of %d events", len(events))
             try:
                 ingest(events)
             except Exception:

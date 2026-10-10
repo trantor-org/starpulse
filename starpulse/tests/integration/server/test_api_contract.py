@@ -16,8 +16,11 @@ from starpulse._internal.kit.adapter_kit import serve, task, url
 from starpulse.contracts.api import RESPONSES
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 from starpulse.tests.unit.level.test_analytics import NOW, ROWS
 from starpulse.tests.unit.feed.test_board_feed import _paged_feed
 
@@ -30,6 +33,7 @@ ROUTES = (
     "/api/history?task=T-1&flow=in-progress",
     "/api/pulls",
     "/api/analytics/health",
+    "/api/analytics/sessions",
     "/api/harnesses",
     "/api/history-window",
     "/api/forwarding",
@@ -52,8 +56,18 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
     store.record_lane("l0", "T-1", "In Progress", NOW - 3600)
     runtime = build(Autopilot(), tmp_path / "autopilot.json", feed, probe=lambda: {"cpu": 10.0, "memory": 20.0})
     runtime.sampler.sample()
+    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines():
+        telemetry.publish(signals(json.loads(line)))
     with serve(
-        tmp_path, feed, history=store, read=lambda t: {"title": t}, clock=lambda: NOW, level=LEVEL, autopilot=runtime
+        tmp_path,
+        feed,
+        history=store,
+        read=lambda t: {"title": t},
+        clock=lambda: NOW,
+        level=LEVEL,
+        autopilot=runtime,
+        telemetry=telemetry,
     ) as server:
         yield server
 

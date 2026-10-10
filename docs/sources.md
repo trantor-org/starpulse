@@ -25,6 +25,43 @@ moves the task its branch names (`TASK-<n>` in the branch), so start Claude Code
 The receiver decodes each export but publishes only which session moved, on which event and when; prompt,
 reply and tool text is neither stored nor forwarded.
 
+## Measure session and slice health
+
+The same receiver also reads each export of Claude Code and of Codex for what a session did, and the server serves it as
+`GET /api/analytics/sessions[?hours=N]` (168 hours by default). Point Codex's log export at it in its `config.toml`:
+
+```toml
+[otel]
+log_user_prompt = false
+exporter = { otlp-http = { endpoint = "http://127.0.0.1:4319/v1/logs", protocol = "json" } }
+```
+
+A session is one harness session id; it has one row per task it worked, found from the branch the export names
+(`vcs.ref.head.name`, which Codex's export does not carry, so its sessions have no task until a shell `git switch` or
+`git checkout` in them names one). The body is `{now, window_s, sessions, slices}`:
+
+- A `sessions` row is `{harness, session, task, kind, first_at, last_at, prompts, operator_prompts, requests,
+  side_requests, tool_calls, tool_failures, tools, rejections, skills, compactions, interrupts, models, efforts,
+  model_changes, effort_changes, tokens, cost_usd, agent_s, operator_wait_s, idle_s}`. `kind` is `headless`,
+  `interactive` or `unknown`. `operator_prompts` are the human prompts after the first; `requests` are the main
+  thread's model calls and `side_requests` a subagent's. `rejections` counts rejected tool decisions by their source
+  and `compactions` by trigger. `tokens` is `{input, output, cache_read, cache_write, reasoning}`, with Codex's cached
+  tokens taken out of its input; `cost_usd` is null for a session whose harness exports no cost.
+- A `slices` entry adds up the sessions that worked one task: `sessions`, `steps`, `operator_prompts`, `interrupts`,
+  `interventions` (operator prompts plus interrupts), `escalated` (a model or effort changed between main-thread
+  requests) and `clean` (one session, no intervention, not escalated), with the same tokens, cost and time sums.
+  Whether the task then settled in Review or Done is the board's fact, which the reader joins.
+- Time is the gap between a session's consecutive signals, `operator_wait_s` where a human prompt ends it, `idle_s`
+  where it is longer than ten minutes, and `agent_s` otherwise. An export marks no turn end and no pending background
+  task, so a wait for one is `agent_s` up to ten minutes.
+
+What an export cannot say is absent rather than guessed: Claude Code exports no user interrupt, Codex exports an
+interrupted turn only in `codex.turn_cost`, which it sends only with an API key, and Codex has no compaction event.
+Signals are kept in the event log's `telemetry:signals` stream, a private stream that is no contract and changes
+without notice, pruned by `event_log_retention_days` like any row, so a window longer than the retention reads only
+what remains. A server with no such stream is 501, a window that is no
+positive number 400.
+
 ## Report runs from any scheduler
 
 ```sh

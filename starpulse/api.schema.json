@@ -4391,6 +4391,189 @@
       "title": "RunStarted",
       "type": "object"
     },
+    "SessionHealth": {
+      "additionalProperties": false,
+      "description": "One harness session's work on one task (`task` None: a branch that names none), from its OTLP signals.",
+      "properties": {
+        "agent_s": {
+          "type": "number"
+        },
+        "compactions": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effort_changes": {
+          "type": "integer"
+        },
+        "efforts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "first_at": {
+          "type": "number"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "idle_s": {
+          "type": "number"
+        },
+        "interrupts": {
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "headless",
+            "interactive",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "last_at": {
+          "type": "number"
+        },
+        "model_changes": {
+          "type": "integer"
+        },
+        "models": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "operator_prompts": {
+          "type": "integer"
+        },
+        "operator_wait_s": {
+          "type": "number"
+        },
+        "prompts": {
+          "type": "integer"
+        },
+        "rejections": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        },
+        "side_requests": {
+          "type": "integer"
+        },
+        "skills": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "$ref": "#/$defs/TokenCounts"
+        },
+        "tool_calls": {
+          "type": "integer"
+        },
+        "tool_failures": {
+          "type": "integer"
+        },
+        "tools": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "harness",
+        "session",
+        "task",
+        "kind",
+        "first_at",
+        "last_at",
+        "prompts",
+        "operator_prompts",
+        "requests",
+        "side_requests",
+        "tool_calls",
+        "tool_failures",
+        "tools",
+        "rejections",
+        "skills",
+        "compactions",
+        "interrupts",
+        "models",
+        "efforts",
+        "model_changes",
+        "effort_changes",
+        "tokens",
+        "cost_usd",
+        "agent_s",
+        "operator_wait_s",
+        "idle_s"
+      ],
+      "title": "SessionHealth",
+      "type": "object"
+    },
+    "Sessions": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/sessions`: session and slice health over a window.",
+      "properties": {
+        "now": {
+          "type": "number"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/SessionHealth"
+          },
+          "type": "array"
+        },
+        "slices": {
+          "items": {
+            "$ref": "#/$defs/SliceHealth"
+          },
+          "type": "array"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "sessions",
+        "slices"
+      ],
+      "title": "Sessions",
+      "type": "object"
+    },
     "Settled": {
       "additionalProperties": false,
       "description": "A task that left the Board's lanes for good: where it settled, when, and the title, assignee and milestone it settled with.",
@@ -4456,6 +4639,127 @@
         "skill"
       ],
       "title": "SkillRefusal",
+      "type": "object"
+    },
+    "SliceHealth": {
+      "additionalProperties": false,
+      "description": "What the sessions that worked one task did together.",
+      "properties": {
+        "active_s": {
+          "type": "number"
+        },
+        "clean": {
+          "type": "boolean"
+        },
+        "compactions": {
+          "type": "integer"
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "efforts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "escalated": {
+          "type": "boolean"
+        },
+        "first_at": {
+          "type": "number"
+        },
+        "harnesses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "idle_s": {
+          "type": "number"
+        },
+        "interrupts": {
+          "type": "integer"
+        },
+        "interventions": {
+          "type": "integer"
+        },
+        "last_at": {
+          "type": "number"
+        },
+        "models": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "operator_prompts": {
+          "type": "integer"
+        },
+        "operator_wait_s": {
+          "type": "number"
+        },
+        "rejections": {
+          "type": "integer"
+        },
+        "sessions": {
+          "type": "integer"
+        },
+        "side_steps": {
+          "type": "integer"
+        },
+        "skills": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "steps": {
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        },
+        "tokens": {
+          "$ref": "#/$defs/TokenCounts"
+        },
+        "tool_calls": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "task",
+        "sessions",
+        "harnesses",
+        "first_at",
+        "last_at",
+        "models",
+        "efforts",
+        "steps",
+        "side_steps",
+        "tool_calls",
+        "operator_prompts",
+        "interrupts",
+        "rejections",
+        "interventions",
+        "compactions",
+        "skills",
+        "escalated",
+        "clean",
+        "tokens",
+        "cost_usd",
+        "active_s",
+        "operator_wait_s",
+        "idle_s"
+      ],
+      "title": "SliceHealth",
       "type": "object"
     },
     "Snapshot": {
@@ -5074,6 +5378,35 @@
       "title": "Tie",
       "type": "object"
     },
+    "TokenCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_read": {
+          "type": "integer"
+        },
+        "cache_write": {
+          "type": "integer"
+        },
+        "input": {
+          "type": "integer"
+        },
+        "output": {
+          "type": "integer"
+        },
+        "reasoning": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "cache_read",
+        "cache_write",
+        "reasoning"
+      ],
+      "title": "TokenCounts",
+      "type": "object"
+    },
     "TrailStep": {
       "additionalProperties": false,
       "properties": {
@@ -5676,6 +6009,9 @@
       },
       "type": "array"
     },
+    "sessions": {
+      "$ref": "#/$defs/Sessions"
+    },
     "snapshot": {
       "$ref": "#/$defs/Snapshot"
     },
@@ -5701,6 +6037,7 @@
     "machineHistory",
     "pulls",
     "health",
+    "sessions",
     "level",
     "trajectories",
     "whatIf",

@@ -33,6 +33,7 @@ from pathlib import Path
 
 from starpulse._internal.harnesses.harness import HARNESS
 from starpulse._internal.harnesses.otlp import TOOL_RESULT, LogEvent, receiver
+from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse.contracts.adapters import TaskKeys
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog.event_log import EventLog
@@ -69,14 +70,18 @@ def _moves(log: LogEvent) -> bool:
     return log.kind in HARNESS.bindings and not (log.kind == TOOL_RESULT and log.tool_name == "Skill")
 
 
-def handler(adapter: ClaudeCodeAdapter, publish: Callable[[dict], object]) -> type[BaseHTTPRequestHandler]:
-    """An OTLP/HTTP logs handler that publishes each event an export maps to."""
+def handler(
+    adapter: ClaudeCodeAdapter,
+    publish: Callable[[dict], object],
+    telemetry: Callable[[dict], object] | None = None,
+) -> type[BaseHTTPRequestHandler]:
+    """An OTLP/HTTP logs handler that publishes each event an export maps to, and hands `telemetry` each export."""
 
     def ingest(logs: list[LogEvent]) -> None:
         for event in adapter.events(logs):
             publish(event)
 
-    return receiver(ingest)
+    return receiver(ingest, telemetry)
 
 
 def publisher(log: EventLog) -> Callable[[dict], int | None]:
@@ -114,8 +119,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     except (OSError, ValueError) as exc:
         parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
 
+    telemetry = TelemetryLog(log)
     print(f"claude code adapter on {args.host}:{args.port}", flush=True)
-    ThreadingHTTPServer((args.host, args.port), handler(ClaudeCodeAdapter(keys), publisher(log))).serve_forever()
+    ThreadingHTTPServer(
+        (args.host, args.port),
+        handler(ClaudeCodeAdapter(keys), publisher(log), lambda payload: telemetry.publish(signals(payload))),
+    ).serve_forever()
 
 
 if __name__ == "__main__":

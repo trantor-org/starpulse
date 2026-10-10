@@ -61,6 +61,7 @@ export interface ApiContract {
     | RunEventRequest
     | ForwardRequest
   )[];
+  sessions: Sessions;
   snapshot: Snapshot;
   taskRecord: TaskRecord;
   trajectories: Trajectories;
@@ -1250,6 +1251,91 @@ export interface ForwardedEvent {
     [k: string]: unknown;
   };
   stream: string;
+}
+/**
+ * `GET /api/analytics/sessions`: session and slice health over a window.
+ */
+export interface Sessions {
+  now: number;
+  sessions: SessionHealth[];
+  slices: SliceHealth[];
+  window_s: number;
+}
+/**
+ * One harness session's work on one task (`task` None: a branch that names none), from its OTLP signals.
+ */
+export interface SessionHealth {
+  agent_s: number;
+  compactions: {
+    [k: string]: number;
+  };
+  cost_usd: number | null;
+  effort_changes: number;
+  efforts: string[];
+  first_at: number;
+  harness: string;
+  idle_s: number;
+  interrupts: number;
+  kind: "headless" | "interactive" | "unknown";
+  last_at: number;
+  model_changes: number;
+  models: string[];
+  operator_prompts: number;
+  operator_wait_s: number;
+  prompts: number;
+  rejections: {
+    [k: string]: number;
+  };
+  requests: number;
+  session: string;
+  side_requests: number;
+  skills: {
+    [k: string]: number;
+  };
+  task: string | null;
+  tokens: TokenCounts;
+  tool_calls: number;
+  tool_failures: number;
+  tools: {
+    [k: string]: number;
+  };
+}
+export interface TokenCounts {
+  cache_read: number;
+  cache_write: number;
+  input: number;
+  output: number;
+  reasoning: number;
+}
+/**
+ * What the sessions that worked one task did together.
+ */
+export interface SliceHealth {
+  active_s: number;
+  clean: boolean;
+  compactions: number;
+  cost_usd: number | null;
+  efforts: string[];
+  escalated: boolean;
+  first_at: number;
+  harnesses: string[];
+  idle_s: number;
+  interrupts: number;
+  interventions: number;
+  last_at: number;
+  models: string[];
+  operator_prompts: number;
+  operator_wait_s: number;
+  rejections: number;
+  sessions: number;
+  side_steps: number;
+  skills: {
+    [k: string]: number;
+  };
+  steps: number;
+  task: string;
+  tokens: TokenCounts;
+  tool_calls: number;
 }
 export interface Snapshot {
   /**
