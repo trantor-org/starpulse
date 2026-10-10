@@ -54,6 +54,18 @@ def test_the_seeded_server_answers_the_level_routes_a_hubless_preview_cannot(see
     assert _get(seeded, "/api/level/what-if?hours=168&from=in_progress&to=review&p=0.5")[0] == 200
 
 
+def test_the_seeded_server_answers_the_autopilot_milestone_and_doc_routes_with_records(
+    seeded: ThreadingHTTPServer,
+) -> None:
+    status, autopilot = _get(seeded, "/api/autopilot")
+    assert status == 200 and autopilot["dimensions"], autopilot
+
+    for route, key in (("/api/milestones", "milestones"), ("/api/docs", "docs")):
+        status, listing = _get(seeded, route)
+        assert status == 200 and listing[key], (route, listing)
+        assert _get(seeded, f"{route}/{listing[key][0]['id']}")[0] == 200, route
+
+
 def test_every_seeded_route_follows_a_transition_the_board_machine_allows() -> None:
     machine = demo_workspace.board({"type": "demo_workspace"}, ROOT / "ci").machines(lambda n: n, [])["board"]
     allowed = {(t["source"], t["target"]) for t in machine["transitions"]}
