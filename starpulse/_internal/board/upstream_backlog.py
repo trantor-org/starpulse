@@ -29,14 +29,14 @@ except ImportError:
     from yaml import SafeLoader as _FrontmatterLoader
 
 from starpulse._internal.board.seam import Board, MoveWriter, Written
-from starpulse.contracts.adapters import BoardTask, Move, TaskKeys
-from starpulse._internal.machines.machine_definition import Writer, load_machine
-from starpulse._internal.machines.snapshot import Qualify, describe
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.machines.machine_definition import Writer
+    from starpulse._internal.machines.snapshot import Qualify
+    from starpulse.contracts.adapters import BoardTask, Move, TaskKeys
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,8 @@ def require_project(root: Path, config: BacklogConfig) -> str:
 
 def upstream_keys(prefix: str = DEFAULT_PREFIX) -> TaskKeys:
     """Task keys `<prefix>-N` (and subtasks `<prefix>-N.M`) and the branches that name them, in any case."""
+    from starpulse.contracts.adapters import TaskKeys  # noqa: PLC0415 - import cost, paid on first use
+
     key = rf"{re.escape(prefix)}-\d+(?:\.\d+)*"
     return TaskKeys(
         key=re.compile(key, re.I),
@@ -107,6 +109,8 @@ def board_moves(machine: dict, writers: Mapping[str, tuple[Writer, ...]] = {}) -
     A move's writers are the actors the YAML declares for the events that make it; when any of those events
     declares none, anyone may make the move.
     """
+    from starpulse.contracts.adapters import Move  # noqa: PLC0415 - import cost, paid on first use
+
     events: dict[tuple[str, str], list[str]] = {}
     for t in machine["transitions"]:
         if t["source"] != t["target"]:
@@ -244,6 +248,8 @@ class UpstreamBacklog:
                 "%s: status %r is not in %s's statuses; task skipped", path, status, self.root / "config.yml"
             )
             return None
+        from starpulse.contracts.adapters import BoardTask  # noqa: PLC0415 - import cost, paid on first use
+
         assignees = _strings(frontmatter.get("assignee"))
         return BoardTask(
             id=task_id,
@@ -308,6 +314,9 @@ def cli_writer(root: Path, statuses: tuple[str, ...], command: list[str]) -> Mov
 def _machine(path: Path, config: BacklogConfig) -> tuple[dict, dict[str, tuple[Writer, ...]], list[dict]]:
     """The Board machine a file declares, drawn, with its writers and its cues, each beside the lane its event reaches;
     refused unless its states are the project's lanes and each cued event reaches one."""
+    from starpulse._internal.machines.machine_definition import load_machine  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse._internal.machines.snapshot import describe  # noqa: PLC0415 - import cost, paid on first use
+
     compiled = load_machine(path)
     drawn = describe(compiled.machine)
     ids = [lane_id(status) for status in config.statuses]

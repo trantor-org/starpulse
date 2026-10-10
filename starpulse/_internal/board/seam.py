@@ -16,13 +16,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from starpulse._internal.config.adapter_types import module_name
-from starpulse.contracts.adapters import TaskKeys
-from starpulse._internal.machines.snapshot import Qualify
 from starpulse._internal.config.config import DEFAULT_TYPE
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.machines.snapshot import Qualify
+    from starpulse.contracts.adapters import TaskKeys
 
 __all__ = [
     "DEFAULT_TYPE",

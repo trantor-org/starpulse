@@ -10,8 +10,6 @@ import dataclasses
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from typing import Any
 
-from starpulse._internal.machines.machine_definition import writers_of
-
 __all__ = ["Qualify", "describe", "is_workflow", "qualifier", "writers"]
 
 #: Names a workflow as the page draws it. A machine or cue names its workflows by their own name; the page draws
@@ -64,6 +62,8 @@ def describe(machine: Any) -> dict:
 
 def writers(machine: Any) -> dict[str, list[dict]]:
     """Every writer the machine's YAML declares, by event, as the page draws it."""
+    from starpulse._internal.machines.machine_definition import writers_of  # noqa: PLC0415 - import cost, paid on first use
+
     return {event: [dataclasses.asdict(w) for w in ws] for event, ws in writers_of(machine).items()}
 
 

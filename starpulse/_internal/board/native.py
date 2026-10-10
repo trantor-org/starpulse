@@ -85,16 +85,45 @@ def _create(root: Path, project: str) -> None:
 
 def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed")) -> Path | None:
     """The file under `tasks/`, or `completed/` once it is completed, whose front matter holds `id: <task>`; `folders`
-    names where else to look."""
-    for folder in folders:
-        for path in sorted((root / folder).glob("*.md")):
+    names where else to look.
+
+    A file named for the id is checked first; any other is parsed only when its raw front matter has an `id:` line
+    spelling the id, so a lookup parses the file it returns rather than every file on the board.
+    """
+    paths = [path for folder in folders for path in sorted((root / folder).glob("*.md"))]
+    named = [path for path in paths if _named_for(path, task)]
+    others = [path for path in paths if not _named_for(path, task)]
+    spelled = _id_line(task)
+    for candidates, prefilter in ((named, False), (others, True)):
+        for path in candidates:
             try:
-                frontmatter, _ = _split(path.read_text())
+                text = path.read_text()
             except OSError:
                 continue  # moved or removed while looking
+            if prefilter and not spelled.search(_front_matter(text)):
+                continue
+            frontmatter, _ = _split(text)
             if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip() == task:
                 return path
     return None
+
+
+def _named_for(path: Path, task: str) -> bool:
+    """Whether the file's name starts with the id, as `task-5 - Title.md` does for `task-5` but not for `task-50`."""
+    name = path.name
+    return name[: len(task)].lower() == task.lower() and not name[len(task) : len(task) + 1].isalnum()
+
+
+def _front_matter(text: str) -> str:
+    """The raw text between a file's `---` fences, empty for a file with none."""
+    text = text.replace("\r\n", "\n")
+    end = text.find("\n---", 4)
+    return text[4:end] if text.startswith("---\n") and end != -1 else ""
+
+
+def _id_line(task: str) -> re.Pattern[str]:
+    """A front matter line that spells `task` as the `id:`, quoted or not."""
+    return re.compile(rf"^id:[ \t]*[\"']?{re.escape(task)}[\"']?[ \t]*$", re.M)
 
 
 def _state_of(root: Path) -> Callable[[str], str | None]:
