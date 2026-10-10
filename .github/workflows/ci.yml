@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The full suite runs nightly, not per change: a pull request or a push runs only the tests its files can reach.
+  schedule:
+    - cron: "17 9 * * *" # 02:17 MST, after trantor's 01:17 whole-repo gate
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,6 +17,7 @@ permissions:
 jobs:
   python:
     runs-on: [self-hosted, validate]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -23,32 +28,30 @@ jobs:
       - run: uv run --no-sync lint-imports
       # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
       - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
-      # A pull request runs only the tests its changed files can reach (ci/select_tests.py); a push to main runs all.
-      - if: github.event_name == 'pull_request'
+      # A pull request or a push to main runs only the tests its changed files can reach (ci/select_tests.py); the
+      # nightly schedule and a manual dispatch run all.
+      - if: github.event_name == 'pull_request' || github.event_name == 'push'
         run: git diff --name-only HEAD^1 HEAD | uv run --no-sync python ci/select_tests.py >> "$GITHUB_ENV"
       # Postgres-backed integration cases use the runner's Docker; SQLite cases need no container runtime.
       - if: env.PYTEST_SKIP != 'true'
         run: uv run pytest $PYTEST_TARGETS
 
-  # An IC instance runs without the hub extras: the same suite on an environment that holds neither the Postgres
-  # driver, Alembic nor the container tooling, so a hub-only import in IC mode fails here.
+  # An IC instance runs without the hub extras: import every module it can load (ci/ic_imports.py) on an
+  # environment that holds neither the Postgres driver, Alembic nor the container tooling, so a hub-only import in IC
+  # mode fails here.
   ic:
     runs-on: [self-hosted, validate]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2 # the pull request's merge commit and its base parent, for ci/select_tests.py
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --locked --no-group hub
       - run: uv run --no-sync python -c "import importlib.util as u, sys; sys.exit(any(u.find_spec(m) for m in ('alembic', 'psycopg', 'jwt', 'testcontainers')))"
-      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
-      - if: github.event_name == 'pull_request'
-        run: git diff --name-only HEAD^1 HEAD | uv run --no-sync python ci/select_tests.py >> "$GITHUB_ENV"
-      - if: env.PYTEST_SKIP != 'true'
-        run: uv run --no-sync pytest $PYTEST_TARGETS
+      - run: uv run --no-sync python ci/ic_imports.py
 
   web:
     runs-on: [self-hosted, validate]
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: starpulse/web
@@ -69,6 +72,7 @@ jobs:
   # and fail when either differs from what is committed: a model change ships with its schema and types.
   api-types:
     runs-on: [self-hosted, validate]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0

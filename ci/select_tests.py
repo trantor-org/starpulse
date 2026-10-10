@@ -6,7 +6,8 @@ A changed Python module selects every test file that imports it directly or thro
 import statements under `starpulse/` and `ci/`; a changed test file selects itself. A non-Python file selects the tests
 of the Python files that read it (`READERS`), a file no test reads selects nothing (`INERT`), and a change whose
 readers the import graph cannot name (`FULL_SUITE`, a deleted module, or any path this file does not know) runs
-everything. A push to main runs the full suite regardless, so what a selection misses fails there.
+everything. A push to main selects the same way; the nightly scheduled run is the full suite, so what a selection
+misses fails there.
 
 Prints `PYTEST_TARGETS` (empty means the whole suite) and `PYTEST_SKIP` (true when no test is selected).
 """

@@ -157,15 +157,17 @@ def test_the_real_repository_selects_a_subset_for_one_adapter():
     assert "ci/test_workflow_placement.py" not in selected
 
 
-@pytest.mark.parametrize("name", ["python", "ic"])
-def test_a_pull_request_runs_the_selection_and_a_push_runs_everything(name):
-    job = yaml.safe_load(CI.read_text())["jobs"][name]
+def test_a_pull_request_or_push_runs_the_selection_and_the_nightly_schedule_runs_everything():
+    workflow = yaml.safe_load(CI.read_text())
+    # PyYAML reads the bare `on:` key as True.
+    assert {"push", "pull_request", "schedule", "workflow_dispatch"} <= set(workflow[True])
+    job = workflow["jobs"]["python"]
     assert "if" not in job  # the job always runs, so its required check reports even when no test is selected
     steps = job["steps"]
     checkout = next(s for s in steps if s.get("uses", "").startswith("actions/checkout"))
     assert checkout["with"]["fetch-depth"] == 2  # the merge commit and its base parent
     select_step = next(s for s in steps if "ci/select_tests.py" in s.get("run", ""))
-    assert select_step["if"] == "github.event_name == 'pull_request'"
+    assert select_step["if"] == "github.event_name == 'pull_request' || github.event_name == 'push'"
     pytest_step = next(s for s in steps if s.get("run", "").rstrip().endswith("pytest $PYTEST_TARGETS"))
     assert pytest_step["if"] == "env.PYTEST_SKIP != 'true'"
     assert steps.index(select_step) < steps.index(pytest_step)

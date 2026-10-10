@@ -14,6 +14,9 @@ integration cases; otherwise those cases are skipped. `uv sync --no-group hub` i
 instance runs, and the suite then skips the Postgres and hub cases.
 `uv run pytest -n 4 --dist loadgroup` spreads it over four pytest-xdist workers; `loadgroup` keeps the tests that
 share checkout state on one worker. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
+CI runs only the tests a pull request or a push to main can reach (`ci/select_tests.py`); the full suite runs
+nightly and on a manual dispatch. CI's `ic` job imports every module an IC instance can load without the hub extras
+(`ci/ic_imports.py`) rather than running the suite a second time.
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import
 graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite, and so does every
 push to `main`.
