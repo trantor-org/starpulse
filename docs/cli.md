@@ -4,6 +4,7 @@ An agent reads and works the board through `starpulse` verbs, each printing one 
 
 ```sh
 starpulse board --milestone launch --label api   # tasks per column, with dependencies, pull requests and moves
+starpulse search "signing keys" --limit 5        # tasks holding every word in title, description, criteria or notes, best first
 starpulse task show PROJ-45                      # one task: lane, what it waits on, pull requests, moves
 starpulse task moves PROJ-45                     # every column it may move to, allowed or refused to the agent
 starpulse task move PROJ-45 review               # move it as the agent; a refusal is the verdict, exit 1
@@ -56,6 +57,7 @@ lists exactly the verbs there are.
 |---|---|---|
 | `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `insights`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it; `machinePage` and `machineStrip` page and count the machines entered from the In Progress one ([Machine rows](serving.md#machine-rows)) |
 | `board` | `--state`, `--milestone`, `--label`, `--assignee` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, milestone, labels, dependencies, waiting_on, prs, moves}` |
+| `search` | `QUERY...`, `--limit` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet}`, best match first, at most `--limit` (1 to 100, default 10); a blank query or a limit out of range exits 1, and a server that keeps no index (a hub) exits 3 |
 | `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
 | `task move` | `TASK`, `TO`, `--session` | `ok`, `task`, `to`, `reason`, `skill` and `advice`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer |
@@ -95,6 +97,17 @@ lists exactly the verbs there are.
 | `skills list` | `--user` | `scope` and `skills`: each `{name, description, claude, codex}`, each harness `absent`, `installed`, `outdated` or `modified` |
 | `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |
 | `help --agent` | | `exit_codes` and `verbs` |
+
+`search` reads `GET /api/search?q=QUERY[&limit=N]`: the words of `q` are each a quoted phrase and all must match, so
+punctuation (`PROJ-45`, `NEAR`, `title:`) is text and never query syntax. A task is searchable by its key, title,
+description, acceptance criteria and notes (its `**Holder:**` claim marker is not text), and a match in the title
+ranks above one in the description, which ranks above one in a criterion or a note; words are matched by their
+stem (`rotation` finds `rotate`). `score` is higher for a better match, `lane` is the lane the task is in now (or
+`completed` or `archived` once it settled) and `snippet` is the text around the match. The index is a SQLite FTS5
+table in the instance's own database, filled from the board adapter on the first read, so every adapter (native,
+Backlog.md, Jira) is searched the same way, and kept current as each task is placed, edited, moved or retracted; a
+task placed again unchanged, as every task is on a restart, writes nothing. A hub keeps none, since individual task
+text stays on the instance, and a SQLite built without FTS5 serves none: the route answers 404 and the verb exits 3.
 
 `analytics health` reads `GET /api/analytics/health[?hours=N][&stuck_hours=N]` (a window of 168 hours and a stuck
 threshold of 24 by default), the Board's flow health from the history's lane changes. `states` lists each Board state

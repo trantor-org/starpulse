@@ -169,6 +169,21 @@
       "title": "Description",
       "type": "string"
     },
+    "acceptance_criteria": {
+      "default": [],
+      "description": "The text of each acceptance criterion, searched with the title and description; empty when the board keeps none.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Acceptance Criteria",
+      "type": "array"
+    },
+    "notes": {
+      "default": "",
+      "description": "The task's running notes, searched with the title and description; empty when the board keeps none.",
+      "title": "Notes",
+      "type": "string"
+    },
     "moves": {
       "additionalProperties": {
         "$ref": "#/$defs/Move"

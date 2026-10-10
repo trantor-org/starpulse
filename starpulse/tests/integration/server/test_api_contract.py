@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import TypeAdapter
+from sqlalchemy import create_engine
 
 from starpulse._internal.autopilot.runtime import build
 from starpulse._internal.config.autopilot import Autopilot
@@ -17,6 +18,7 @@ from starpulse.contracts.api import RESPONSES
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
 from starpulse.tests.machines import MACHINES
@@ -40,6 +42,7 @@ ROUTES = (
     "/api/autopilot",
     "/api/doctor",
     "/api/task/T-1",
+    "/api/search?q=T-1",
     "/api/level?hours=48",
     "/api/level/trajectories?hours=48",
 )
@@ -59,6 +62,9 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines():
         telemetry.publish(signals(json.loads(line)))
+    search = SearchIndex.open(create_engine(f"sqlite:///{tmp_path / 'search.sqlite'}"))
+    assert search is not None
+    search.index(task("T-1", "In Progress"))
     with serve(
         tmp_path,
         feed,
@@ -68,6 +74,7 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
         level=LEVEL,
         autopilot=runtime,
         telemetry=telemetry,
+        search=search,
     ) as server:
         yield server
 

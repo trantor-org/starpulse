@@ -760,3 +760,26 @@ def test_a_machine_file_whose_states_are_not_the_projects_lanes_is_refused(tmp_p
 
     with pytest.raises(ValueError, match="doing"):
         board({"machine": "board.yaml"}, tmp_path)
+
+
+def test_a_task_carries_the_text_of_each_acceptance_criterion_checked_or_not(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    task = write_task(tmp_path, "tasks", "task-1", "To Do")
+    task.write_text(
+        task.read_text() + "\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n- [x] #1 It draws\n- [ ] #2 It scrolls\n<!-- AC:END -->\n"
+    )
+
+    assert scanned(tmp_path)[0].acceptance_criteria == ("It draws", "It scrolls")
+
+
+def test_a_task_carries_its_notes_without_the_holder_marker(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    task = write_task(tmp_path, "tasks", "task-1", "To Do")
+    task.write_text(
+        task.read_text()
+        + "\n## Implementation Notes\n\n"
+        + _notes("**Holder:** 0d617371", "Wired the writer.", "Second line")
+        + "\n"
+    )
+
+    assert scanned(tmp_path)[0].notes == "Wired the writer.\nSecond line"

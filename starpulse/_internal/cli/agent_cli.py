@@ -637,6 +637,15 @@ def _doc_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
     return {"doc": _record_call(base, path, status, reply, noun="doc")["doc"]}
 
 
+def _search(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base = server_url(args.server, environ)
+    query = {"q": " ".join(args.query), **({"limit": args.limit} if args.limit is not None else {})}
+    path = f"/api/search?{urllib.parse.urlencode(query)}"
+    status, reply = _get(base, path)
+    found = _record_call(base, path, status, reply, noun="search")
+    return {"query": found["query"], "hits": found["hits"]}
+
+
 def _milestone_fields(args: argparse.Namespace) -> dict[str, Any]:
     """The detail fields (outcome, specs, ADRs, retro) the caller gave; a list flag given at all replaces the list."""
     given = {"outcome": args.outcome, "specs": args.spec, "adrs": args.adr, "retro": args.retro}
@@ -1052,6 +1061,16 @@ def _parser() -> argparse.ArgumentParser:
     board.add_argument("--milestone", help="only tasks in this milestone")
     board.add_argument("--label", help="only tasks with this label")
     board.add_argument("--assignee", help="only tasks held by this assignee (`@agent-standard-high`)")
+    search = leaf(
+        verbs,
+        "search",
+        "the tasks whose title, description, acceptance criteria or notes hold every word, best match first",
+        _search,
+        ("query", "hits"),
+        (0, 1, 2, 3),
+    )
+    search.add_argument("query", nargs="+", help="the words to find (`signing keys`)")
+    search.add_argument("--limit", type=int, help="at most this many hits, from 1 to 100 (default 10)")
     task = verbs.add_parser("task", description="one task of the Board", help="one task of the Board")
     task_verbs = task.add_subparsers(dest="verb", required=True, metavar="verb")
     show = leaf(

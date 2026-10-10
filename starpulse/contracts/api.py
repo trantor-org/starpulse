@@ -567,6 +567,23 @@ class Pulls(_Api):
     pulls: list[PullRecord]
 
 
+class SearchHit(_Api):
+    """One task a search found: where it is now, and the text around the match."""
+
+    task: str
+    title: str
+    lane: str
+    score: float
+    snippet: str
+
+
+class SearchResults(_Api):
+    """`GET /api/search?q=&limit=`: the tasks holding every word of `q`, best match first."""
+
+    query: str
+    hits: list[SearchHit]
+
+
 class MachineHistory(_Api):
     """`GET /api/history?task=&flow=`: a task's path on one machine, and how many steps it has taken."""
 
@@ -1414,6 +1431,7 @@ RESPONSES: dict[str, Any] = {
     "/api/docs/": DocShown,
     "/api/history": LaneHistory | MachineHistory,
     "/api/pulls": Pulls,
+    "/api/search": SearchResults,
     "/api/forwarding": ForwardingStatus | ForwardingUnconfigured,
     "/api/autopilot": AutopilotStatus,
 }
@@ -1448,6 +1466,7 @@ BODIES: dict[str, Any] = {
     "machines": Machines | ApiError,
     "history": LaneHistory | MachineHistory | ApiError,
     "pulls": Pulls | ApiError,
+    "search": SearchResults | ApiError,
     "health": Health | ApiError,
     "sessions": Sessions | ApiError,
     "level": Level | ApiError | WindowTooLong,
@@ -1511,6 +1530,7 @@ class ApiContract(_Api):
     laneHistory: LaneHistory
     machineHistory: MachineHistory
     pulls: Pulls
+    searchResults: SearchResults
     health: Health
     sessions: Sessions
     level: Level

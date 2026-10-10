@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from sqlalchemy import create_engine
 
 from starpulse._internal.board import native
 from starpulse._internal.board.seam import Written
@@ -29,6 +30,7 @@ from starpulse.contracts.adapters import Move
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.cli import doctor
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
@@ -295,6 +297,17 @@ def shipped(tmp_path: Path) -> Iterator[str]:
     """The `tasked` server with a Done `task-2` as well."""
     with _native_server(tmp_path, ("task-2 - Ship the board.md", SHIPPED_FILE)) as url:
         yield url
+
+
+@pytest.fixture
+def searchable(tmp_path: Path) -> Iterator[str]:
+    """A server whose search index holds two tasks, one of them found by `signing`."""
+    index = SearchIndex.open(create_engine(f"sqlite:///{tmp_path / 'search.sqlite'}"))
+    assert index is not None
+    index.index(task("PROJ-1", "To Do", title="Rotate the signing keys", description="Cycle the authority"))
+    index.index(task("PROJ-2", "Ready", title="Drain the queue"))
+    with _serve(tmp_path, BoardFeed(machines=MACHINES), search=index) as server:
+        yield _url(server, "")
 
 
 @pytest.fixture(autouse=True)
@@ -864,6 +877,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
     assert [v["verb"] for v in doc["verbs"]] == [
         "snapshot",
         "board",
+        "search",
         "task show",
         "task moves",
         "task move",
@@ -1580,6 +1594,10 @@ CASES = {
     ("doc archive", 2): ["doc", "archive"],
     ("doc archive", 3): ["doc", "archive", "doc-84", "--server", "{down}"],
     ("doc archive", 4): ["doc", "archive", "doc-99", "--server", "{milestoned}"],
+    ("search", 0): ["search", "signing", "--server", "{searchable}"],
+    ("search", 1): ["search", " ", "--server", "{searchable}"],
+    ("search", 2): ["search"],
+    ("search", 3): ["search", "signing", "--server", "{server}"],
     ("runs list", 0): ["runs", "list", "--server", "{server}"],
     ("runs list", 2): ["runs", "list", "--nope"],
     ("runs list", 3): ["runs", "list", "--server", "{down}"],
@@ -1666,6 +1684,7 @@ SERVERS = {
     "tasked": "tasked",
     "shipped": "shipped",
     "readonly": "readonly",
+    "searchable": "searchable",
 }
 
 
