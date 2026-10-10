@@ -8,12 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.runs import run_events
-from starpulse._internal.hub.forward import PREVIEW, Forwarder, OptIn
 from starpulse._internal.config.config import Forward
 from starpulse._internal.eventlog import events
-from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.hub.forward import PREVIEW, Forwarder, OptIn
+from starpulse._internal.runs import run_events
+from starpulse._internal.runs.ingest import ForwardIngest
 
 URL = "https://hub.example.test"
 
@@ -266,7 +267,9 @@ def test_an_opt_in_puts_the_names_in_the_listing_and_an_opt_out_takes_them_out_a
 
 
 def test_the_listing_names_the_fields_that_stay_on_the_instance(rig: Rig) -> None:
-    rig.log.append(events.STREAM, {"machine": "board", "event": "MOVED", "task": "T-1", "session": "s-1", "tool": "Bash"})
+    rig.log.append(
+        events.STREAM, {"machine": "board", "event": "MOVED", "task": "T-1", "session": "s-1", "tool": "Bash"}
+    )
 
     [row] = rig.forwarder().status()["next"]
 
@@ -331,3 +334,46 @@ def test_the_status_carries_the_contract_with_the_person_fields_marked(rig: Rig)
         ("time", False),
     ]
     assert "actor" not in {f["field"] for f in contract[run_events.STREAM]}
+
+
+class Hub:
+    """The real hub ingest behind the forwarder's send seam, so a refusal is the hub's own answer."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.log = EventLog(f"sqlite:///{tmp_path / 'hub.sqlite'}")
+        self._ingest = ForwardIngest({"ana": "secret"}, self.log)
+
+    def __call__(self, url: str, token: str, body: bytes) -> tuple[int, dict]:
+        return self._ingest(f"Bearer {token}", body)
+
+
+def test_a_forwarder_restarted_on_its_own_store_keeps_its_instance_id_and_the_hub_takes_it(tmp_path: Path) -> None:
+    hub, ic = Hub(tmp_path), Rig(tmp_path)
+    ic.move("T-1")
+    first = Forwarder(ic.log, ic.store, Forward(URL, "HUB_TOKEN", 50), "secret", ic.opt_in, send=hub)
+    assert first.step() == 1
+    ic.move("T-2")
+
+    restarted = Forwarder(
+        ic.log, HistoryStore(ic.url, {}), Forward(URL, "HUB_TOKEN", 50), "secret", ic.opt_in, send=hub
+    )
+
+    assert restarted.step() == 1
+    assert (restarted.problem, restarted.instance) == (None, first.instance)
+
+
+def test_a_forwarder_on_a_fresh_store_is_a_second_instance_the_hub_refuses(tmp_path: Path) -> None:
+    hub, ic = Hub(tmp_path), Rig(tmp_path)
+    ic.move("T-1")
+    assert Forwarder(ic.log, ic.store, Forward(URL, "HUB_TOKEN", 50), "secret", ic.opt_in, send=hub).step() == 1
+    (tmp_path / "worktree").mkdir()
+    other = Rig(tmp_path / "worktree")
+    other.move("T-9")
+    second = Forwarder(other.log, other.store, Forward(URL, "HUB_TOKEN", 50), "secret", other.opt_in, send=hub)
+
+    assert second.step() is None
+    assert second.problem is not None and second.problem.startswith("hub answered 409")
+    assert other.store.cursor(f"forward:{URL}") is None
+    assert [e.event_id for e in Tail(hub.log, events.STREAM).poll()] == [
+        f"ana/{e.event_id}" for e in Tail(ic.log, events.STREAM).poll()
+    ]

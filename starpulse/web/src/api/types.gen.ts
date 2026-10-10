@@ -1366,6 +1366,7 @@ export interface RunEventRequest {
  */
 export interface ForwardRequest {
   events: ForwardedEvent[];
+  instance: string;
   opt_in: boolean;
 }
 export interface ForwardedEvent {

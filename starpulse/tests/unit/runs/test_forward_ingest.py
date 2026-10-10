@@ -32,7 +32,7 @@ def log(tmp_path: Path) -> EventLog:
 
 
 def batch(*sent: dict[str, Any], opt_in: bool = False) -> bytes:
-    return json.dumps({"opt_in": opt_in, "events": list(sent)}).encode()
+    return json.dumps({"opt_in": opt_in, "instance": "i-1", "events": list(sent)}).encode()
 
 
 def stored(log: EventLog) -> list[tuple[str, str, dict]]:
@@ -145,6 +145,29 @@ def test_a_body_that_is_not_a_batch_answers_400(log: EventLog, raw: bytes) -> No
     status, _ = ForwardIngest(TOKENS, log)("Bearer ana-secret", raw)
 
     assert status == 400
+
+
+@pytest.mark.parametrize("instance", [None, "", 7, ["i-1"]])
+def test_a_batch_without_a_text_instance_id_answers_400_and_writes_nothing(log: EventLog, instance: object) -> None:
+    raw = json.dumps({"opt_in": False, "instance": instance, "events": [MOVED]}).encode()
+    if instance is None:
+        raw = json.dumps({"opt_in": False, "events": [MOVED]}).encode()
+
+    status, _ = ForwardIngest(TOKENS, log)("Bearer ana-secret", raw)
+
+    assert status == 400
+    assert stored(log) == []
+
+
+def test_each_source_binds_its_own_instance_and_a_rebound_source_takes_a_new_one(log: EventLog) -> None:
+    ingest = ForwardIngest(TOKENS, log)
+    other = json.dumps({"opt_in": False, "instance": "i-2", "events": [MOVED]}).encode()
+
+    assert ingest("Bearer ana-secret", batch(MOVED))[0] == 200
+    assert ingest("Bearer bo-secret", other)[0] == 200  # bo's first instance is its own, whatever ana's is
+    assert ingest("Bearer ana-secret", other)[0] == 409
+    assert log.unbind_source("ana") is True
+    assert ingest("Bearer ana-secret", other)[0] == 200
 
 
 def test_a_batch_over_the_limit_answers_400_and_writes_nothing(log: EventLog) -> None:

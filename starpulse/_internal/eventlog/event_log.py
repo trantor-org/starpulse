@@ -34,7 +34,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse._internal.eventlog.tables import board_state, day_rollups, events, gaps, metadata
+from starpulse._internal.eventlog.tables import board_state, day_rollups, events, gaps, metadata, source_instances
 
 __all__ = ["Entry", "EventLog", "Tail"]
 
@@ -100,10 +100,41 @@ class EventLog:
                     self._engine = _create_engine(self.url)
                 if self._engine.dialect.name == "sqlite":
                     event.listen(self._engine, "connect", _sqlite_pragmas)
-                create_tables(self._engine, [events, gaps, board_state])
+                create_tables(self._engine, [events, gaps, board_state, source_instances])
                 self._ready = True
             assert self._engine is not None
             return self._engine
+
+    def bind_source(self, source: str, instance: str) -> str | None:
+        """The instance `source` is bound to once this call is done: `instance` when the source held no binding (this
+        call took it) or already held this one, else the instance that holds it. None when the database refused;
+        never raises.
+
+        Taking the binding is one insert that ignores a row already there, so two first batches racing bind the one
+        that committed first.
+        """
+        try:
+            engine = self.engine
+            take = (
+                _dialect(engine)
+                .insert(source_instances)
+                .values(source=source, instance=instance, bound_at=time.time())
+                .on_conflict_do_nothing()
+            )
+            with engine.begin() as db:
+                db.execute(take)
+                return db.execute(
+                    select(source_instances.c.instance).where(source_instances.c.source == source)
+                ).scalar()
+        except Exception as exc:  # fail open, see module docstring
+            logger.warning("EventLog: binding source %s failed: %s", source, exc)
+            return None
+
+    def unbind_source(self, source: str) -> bool:
+        """Drop `source`'s binding so the next instance to send binds it: True when it held one. Raises on a database
+        error, since an operator asked for it."""
+        with self.engine.begin() as db:
+            return db.execute(delete(source_instances).where(source_instances.c.source == source)).rowcount > 0
 
     def append(self, stream: str, fields: Mapping[str, Any], *, event_id: str | None = None) -> int | None:
         """Append one event and return its cursor, or None when it was not appended; never raises.

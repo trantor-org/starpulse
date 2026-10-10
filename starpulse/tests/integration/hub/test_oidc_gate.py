@@ -199,7 +199,7 @@ def test_a_viewer_session_does_not_pass_on_the_instance_ingest_route(hub: Hub) -
 
 def test_a_viewer_session_does_not_pass_on_the_forward_route_but_a_source_token_does(hub: Hub) -> None:
     cookie = session_of(sign_in(hub, "alice", ["ops"]))
-    batch = json.dumps({"opt_in": False, "events": []}).encode()
+    batch = json.dumps({"opt_in": False, "instance": "i-1", "events": []}).encode()
     post = {"Content-Type": "application/json", "Cookie": cookie}
 
     assert hub.call("/api/forward", "POST", post, batch)[0] == 401

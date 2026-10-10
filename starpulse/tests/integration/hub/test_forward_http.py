@@ -52,15 +52,27 @@ def hub(tmp_path: Path) -> Iterator[Hub]:
 
 
 def test_a_batch_posted_with_a_sources_token_is_appended(hub: Hub) -> None:
-    status, answer = hub.post({"opt_in": False, "events": [EVENT]})
+    status, answer = hub.post({"opt_in": False, "instance": "i-1", "events": [EVENT]})
 
     assert (status, answer) == (200, {"accepted": 1, "rejected": 0})
     assert hub.stored() == ["ana/e1"]
 
 
+def test_a_second_instance_under_one_sources_token_is_refused_and_writes_nothing(hub: Hub) -> None:
+    first = hub.post({"opt_in": False, "instance": "i-1", "events": [EVENT]})
+    second = hub.post({"opt_in": False, "instance": "i-2", "events": [{**EVENT, "event_id": "e2"}]})
+    first_again = hub.post({"opt_in": False, "instance": "i-1", "events": [{**EVENT, "event_id": "e3"}]})
+
+    assert first == (200, {"accepted": 1, "rejected": 0})
+    assert second[0] == 409
+    assert "bound to another instance" in second[1]["error"]
+    assert first_again == (200, {"accepted": 1, "rejected": 0})
+    assert hub.stored() == ["ana/e1", "ana/e3"]
+
+
 def test_a_wrong_token_answers_401_and_writes_nothing(hub: Hub) -> None:
-    assert hub.post({"opt_in": False, "events": [EVENT]}, "wrong")[0] == 401
-    assert hub.post({"opt_in": False, "events": [EVENT]}, None)[0] == 401
+    assert hub.post({"opt_in": False, "instance": "i-1", "events": [EVENT]}, "wrong")[0] == 401
+    assert hub.post({"opt_in": False, "instance": "i-1", "events": [EVENT]}, None)[0] == 401
     assert hub.stored() == []
 
 

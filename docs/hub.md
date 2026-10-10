@@ -243,8 +243,16 @@ batch = 50                   # events per request, 1 to 200
   (`forward:<url>`), not from a Redis consumer group. The cursor moves only after the hub answers 200, so a batch
   that fails, or a process killed between the send and the answer, is sent again whole; the hub stores each
   `event_id` once and drops the repeat. A new `url` replays the retained log to the new hub.
-- **`POST /api/forward`** takes `{"opt_in": bool, "events": [{"event_id", "stream", "fields"}]}` (at most 200 events
-  and 1 MiB) as a bearer. A missing or wrong token answers 401, an opt-in to an `aggregates_only` hub 403, a body
-  that is no batch 400, and none of them writes anything. An invalid event is counted `rejected` in the 200 so it
-  cannot hold the cursor; a 503 means the hub's log refused an event and the batch repeats.
+- **One instance per token.** Each batch carries `instance`, an id the forwarder keeps in the instance's own database
+  (`starpulse_forward_instances`), so a restart sends the same one and an instance with a fresh database sends a new
+  one. The hub binds a source's token to the first `instance` it sees (`starpulse_source_instances`) and answers 409,
+  writing nothing, to a batch from any other. The forwarder logs the reason and `GET /api/forwarding` shows it as
+  `problem`. A source whose instance is replaced on purpose (a rebuilt host, a restored database) is rebound on the
+  hub with `starpulse forward rebind <source> --config <hub config>`, which drops the binding so the next batch
+  binds again; it exits 1 for a source that held none. A copied database carries its id, so a copy is not refused.
+- **`POST /api/forward`** takes `{"opt_in": bool, "instance": str, "events": [{"event_id", "stream", "fields"}]}` (at
+  most 200 events and 1 MiB) as a bearer. A missing or wrong token answers 401, an opt-in to an `aggregates_only` hub
+  403, a body that is no batch (or has no `instance`) 400, an `instance` other than the one the source is bound to
+  409, and none of them writes anything. An invalid event is counted `rejected` in the 200 so it cannot hold the
+  cursor; a 503 means the hub's log refused an event or the binding and the batch repeats.
 - `[forward]` is for an instance; `serve --hub` refuses it.
