@@ -18,6 +18,11 @@ from typing import Any
 
 import yaml
 
+try:  # libyaml's loader: the same safe schema and errors, a tenth of the pure-Python parse time over a whole board
+    from yaml import CSafeLoader as _FrontmatterLoader
+except ImportError:
+    from yaml import SafeLoader as _FrontmatterLoader
+
 from starpulse._internal.board.seam import DocArchiver, DocCreator, DocEditor, DocLister, DocReader, DocRestorer, Written
 
 _TYPES = ("specification", "guide", "readme", "other")
@@ -51,7 +56,7 @@ def _files(root: Path, folder: str = "docs") -> list[tuple[Path, str, dict, str]
         if parts is None:
             continue
         try:
-            frontmatter = yaml.safe_load(parts[0])
+            frontmatter = yaml.load(parts[0], Loader=_FrontmatterLoader)
         except yaml.YAMLError:
             continue
         if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip():
