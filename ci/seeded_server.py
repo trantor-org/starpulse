@@ -8,14 +8,19 @@ lane history behind each, and the finished runs the level reads. It writes nothi
 
     uv run python -m ci.seeded_server --port 8766 --dir .tmp/gate
 
+`--replay-rate N` also moves a seeded task between In Progress and Review N times a second, as `bench/soak.py` runs it:
+every move is an event on each open stream, which a static board never sends. `--port 0` takes a free port.
+
 A server on this data is smaller than the live board: a cost that grows with the board is the nightly soak's to find.
 """
 
 from __future__ import annotations
 
 import argparse
+import signal
+import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -51,6 +56,10 @@ DETOURS = {
     1: ["new", "ready", "in_progress", "needs_attention", "ready", "in_progress", "review", "done"],
     2: ["new", "ready", "in_progress", "review", "in_progress", "review", "done"],
 }
+
+
+#: The two lanes the replay moves tasks between; the Board machine allows the move to Review and the send-back.
+FLIP = {"in_progress": "review", "review": "in_progress"}
 
 
 def lanes() -> Iterator[str]:
@@ -96,8 +105,9 @@ def record(index: int, final: str) -> dict:
     }
 
 
-def seed(feed: BoardFeed, store: HistoryStore, now: float) -> dict[str, dict]:
-    """Place every seeded task on the feed with its lane history in the store; the records the modal reads, by id.
+def seed(feed: BoardFeed, store: HistoryStore, now: float) -> tuple[dict[str, dict], list[BoardTask]]:
+    """Place every seeded task on the feed with its lane history in the store; the records the modal reads, by id, and
+    the tasks as placed.
 
     The whole history goes in one transaction and the feed records nothing: a commit per lane change takes minutes on a
     loaded runner. The gate never moves a task, so the feed needs no recorder.
@@ -108,45 +118,95 @@ def seed(feed: BoardFeed, store: HistoryStore, now: float) -> dict[str, dict]:
             for lane, at in path:
                 store._fold_lane(db, f"{task_id}@{lane}@{at}", task_id, lane, at)
     records: dict[str, dict] = {}
+    placed: list[BoardTask] = []
     for index, (task_id, (final, path)) in enumerate(paths.items()):
-        entered = path[-1][1]
-        feed.put(
-            BoardTask(
-                id=task_id,
-                title=f"Demo task {index}",
-                team="demo",
-                lane=final,
-                dependencies=(f"DEMO-{index - 1}",) if final == "waiting" else (),
-                created_at=path[0][1],
-                observed_at=entered,
-            )
+        task = BoardTask(
+            id=task_id,
+            title=f"Demo task {index}",
+            team="demo",
+            lane=final,
+            dependencies=(f"DEMO-{index - 1}",) if final == "waiting" else (),
+            created_at=path[0][1],
+            observed_at=path[-1][1],
         )
+        feed.put(task)
+        placed.append(task)
         records[task_id] = record(index, final)
-    return records
+    return records, placed
 
 
-def serve(port: int, directory: Path, *, now: float | None = None) -> ThreadingHTTPServer:
-    """The seeded server, bound to `port` on this machine; the caller runs `serve_forever`."""
+def build(
+    port: int, directory: Path, *, now: float | None = None
+) -> tuple[ThreadingHTTPServer, BoardFeed, list[BoardTask]]:
+    """The seeded server bound to `port` (0: any free one), the feed it draws and the tasks seeded on it."""
     directory.mkdir(parents=True, exist_ok=True)
     config = load(PREVIEW)
     _, feed = assemble(config, PREVIEW.parent, None, [])
     store = HistoryStore(f"sqlite:///{directory / 'history.sqlite'}", feed.machines)
-    records = seed(feed, store, time.time() if now is None else now)
+    records, tasks = seed(feed, store, time.time() if now is None else now)
     window = HistoryWindow(feed, 24 * 7, directory / "starpulse-settings.json")
     handler = request_handler(
         feed, STATIC, {}, [], store, window, read=lambda task: records.get(task), level=config.level
     )
-    return StarPulseServer(("127.0.0.1", port), handler)
+    return StarPulseServer(("127.0.0.1", port), handler), feed, tasks
+
+
+def serve(port: int, directory: Path, *, now: float | None = None) -> ThreadingHTTPServer:
+    """The seeded server, bound to `port` on this machine; the caller runs `serve_forever`."""
+    return build(port, directory, now=now)[0]
+
+
+def replay(
+    feed: BoardFeed,
+    tasks: list[BoardTask],
+    rate: float,
+    wait: Callable[[float], bool],
+    clock: Callable[[], float] = time.monotonic,
+) -> int:
+    """Move the seeded tasks that are in progress or in review to the other lane, `rate` moves a second, and return
+    how many were made once `wait` (`threading.Event.wait`, which returns True when set) says the run is over.
+
+    Every move is a `task` event on each open stream, as a working team's moves are, and the first pass sends each
+    task one way and the next sends it back. The pace is held against the clock, so a slow move is made up for.
+    """
+    held = [task for task in tasks if task.lane in FLIP]
+    interval = 1.0 / rate
+    due, sent = clock(), 0
+    while True:
+        task = held[sent % len(held)]
+        held[sent % len(held)] = task = task.model_copy(update={"lane": FLIP[task.lane], "observed_at": time.time()})
+        feed.put(task)
+        sent += 1
+        due += interval
+        if wait(max(0.0, due - clock())):
+            return sent
 
 
 def main(argv: list[str] | None = None) -> None:  # pragma: no cover — process boundary
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--port", type=int, required=True, help="0 takes any free port, which the first line prints")
     parser.add_argument("--dir", type=Path, required=True, help="where the history database and settings are written")
+    parser.add_argument(
+        "--replay-rate",
+        type=float,
+        help="moves a second of seeded tasks between In Progress and Review, sent to every stream until the server stops",
+    )
     args = parser.parse_args(argv)
-    server = serve(args.port, args.dir)
-    print(f"seeded StarPulse on :{args.port}", flush=True)
-    server.serve_forever()
+    server, feed, tasks = build(args.port, args.dir)
+    print(f"seeded StarPulse on :{server.server_port}", flush=True)
+    # `shutdown` waits for `serve_forever`, which is this thread: a signal handler must not call it here
+    signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
+    stop, sent = threading.Event(), []
+    feeder = threading.Thread(target=lambda: sent.append(replay(feed, tasks, args.replay_rate, stop.wait)), daemon=True)
+    if args.replay_rate:
+        feeder.start()
+    try:
+        server.serve_forever()
+    finally:
+        stop.set()
+        if args.replay_rate:
+            feeder.join()
+            print(f"replayed {sent[0]} events", flush=True)
 
 
 if __name__ == "__main__":

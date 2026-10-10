@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import http.client
 import importlib.util
 import json
 import os
+import signal
 import sys
+import threading
+import time
+import urllib.request
 from pathlib import Path
 
 import pytest
+import seeded_server
 
 _BENCH = Path(__file__).resolve().parents[1] / "bench"
 sys.path.insert(0, str(_BENCH))  # soak.py imports the page driver beside it
@@ -18,6 +24,7 @@ soak = sys.modules["soak"] = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(soak)
 
 MB = 1024 * 1024
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize(
@@ -177,3 +184,122 @@ def test_three_failed_calls_in_a_row_end_the_run():
     assert report["probes"] == [] and report["samples"] == []
     assert len(report["failures"]) == 3
     assert all("TimeoutError" in f or "ConnectionRefusedError" in f for f in report["failures"])
+
+
+class Hold:
+    """The feeder's clock without the wait: `wait` advances it and says the hold is over once `seconds` have passed."""
+
+    def __init__(self, seconds: float) -> None:
+        self.now, self.seconds = 0.0, seconds
+
+    def wait(self, delay: float) -> bool:
+        self.now += delay
+        return self.now >= self.seconds
+
+
+@pytest.fixture
+def seeded(tmp_path):
+    # `ci/preview.toml` names its board `ci.demo_workspace`, which needs the repository root on the import path
+    with pytest.MonkeyPatch.context() as patch:
+        patch.syspath_prepend(str(ROOT))
+        server, feed, tasks = seeded_server.build(0, tmp_path)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server, feed, tasks
+    server.shutdown()
+
+
+def _events(server):
+    """The names of the events a client on the server's stream is sent, one at a time, until the stream goes quiet."""
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=10)
+    conn.request("GET", "/api/events", headers={"accept": "text/event-stream"})
+    response = conn.getresponse()
+    try:
+        while line := response.fp.readline():
+            if line.startswith(b"event:"):
+                yield line[6:].strip().decode()
+    except TimeoutError:
+        return
+    finally:
+        conn.close()
+
+
+def test_the_replay_feeds_a_stream_client_one_task_event_a_step_at_the_rate(seeded):
+    server, feed, tasks = seeded
+    stream = _events(server)
+    assert next(stream) == "snapshot"  # the client is attached to the feed before the first step
+
+    sent = seeded_server.replay(feed, tasks, 8.0, (hold := Hold(5.0)).wait, lambda: hold.now)
+
+    assert sent == 40  # 8 a second for a 5 second hold
+    received = 0
+    for name in stream:
+        received += name == "task"
+        if received == sent:
+            break
+    assert received == sent
+
+
+def test_the_replay_stops_when_the_run_does(seeded):
+    server, feed, tasks = seeded
+    stop = threading.Event()
+    feeder = threading.Thread(target=seeded_server.replay, args=(feed, tasks, 200.0, stop.wait), daemon=True)
+    before = feed.rev
+    feeder.start()
+    deadline = time.monotonic() + 10
+    while feed.rev == before and time.monotonic() < deadline:
+        time.sleep(0.01)
+    stop.set()
+    feeder.join(timeout=5)
+
+    assert feed.rev > before  # it was feeding
+    assert not feeder.is_alive()
+
+
+def test_the_replay_rate_is_a_multiple_of_the_live_rate_and_the_default_passes_a_day_through_a_4_hour_hold():
+    assert soak.replay_rate(1) == pytest.approx(soak.LIVE_EVENTS_PER_DAY / 86400)
+    assert soak.replay_rate(12) == pytest.approx(2 * soak.replay_rate(6))
+    assert soak.replay_rate(soak.REPLAY_MULTIPLE) * 4 * 3600 == pytest.approx(soak.LIVE_EVENTS_PER_DAY)
+
+
+def test_the_soak_starts_a_seeded_server_replays_into_it_and_tears_it_down():
+    with soak.seeded(3000) as server:
+        assert server.pid > 0 and server.failure() is None
+        with urllib.request.urlopen(f"{server.base}/api/snapshot", timeout=30) as response:
+            assert response.status == 200
+        port = int(server.base.rsplit(":", 1)[1])
+        assert soak.listening_pid(port) == server.pid  # the process the soak reads /proc for is the server itself
+        time.sleep(1)
+
+    assert server.replayed > 0
+    assert not Path(f"/proc/{server.pid}").exists()
+    assert not server.scratch.exists()
+
+
+def test_a_seeded_server_that_dies_during_the_run_is_a_failure_of_the_run():
+    with soak.seeded(1) as server:
+        assert server.pid > 0  # pid 0 would signal the whole process group
+        os.kill(server.pid, signal.SIGKILL)
+        server.proc.wait(timeout=10)
+        assert "exited" in server.failure()
+
+
+def test_a_seeded_soak_without_the_built_page_says_how_to_build_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(soak, "REPO", tmp_path)
+    with pytest.raises(RuntimeError, match="not built.*pnpm"):
+        soak.require_built_page()
+
+
+def test_the_first_sample_follows_the_first_probe_so_the_page_it_measures_has_visited_its_views():
+    calls: list[str] = []
+
+    class Logged(FakeTarget):
+        def sample(self) -> dict:
+            calls.append("sample")
+            return super().sample()
+
+        def probe(self) -> list:
+            calls.append("probe")
+            return super().probe()
+
+    _run(Logged())
+    assert calls[:2] == ["probe", "sample"]
