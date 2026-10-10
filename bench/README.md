@@ -195,6 +195,10 @@ until the run ends.
   under its usual load. The default holds every row to the budget, which is what the Tower runner's hold is judged by.
 - A URL selects a running server and takes `--pid`; `--replay-multiple` is refused with one, and `--pid` without one.
 
+`.github/workflows/release.yml` runs this mode as its `soak` job on a `tower` runner: 4 hours on a `v*` tag, which the
+GitHub Release and PyPI jobs both need, and any `duration` on a `workflow_dispatch`, which publishes nothing. The report
+uploads as the run's `soak-report` artifact.
+
 **Replay rate.** The live instance's event log took 14,497 events in the 24 hours to 2026-10-10 09:30 MST, 1,312 of
 them lane changes, and 11,075 a day over the 7 days before. `LIVE_EVENTS_PER_DAY` in `soak.py` is 14,500, about 0.17
 events a second. The default is 6 times that, 1.007 events a second, because a 4 hour hold is a sixth of a day: 14,500

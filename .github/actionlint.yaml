@@ -1,5 +1,7 @@
-# The self-hosted runner lanes ci.yml targets; actionlint reads this file from here.
+# The self-hosted runner lanes the workflows target; actionlint reads this file from here. `tower` is the
+# Unraid farm slots the release soak runs on.
 self-hosted-runner:
   labels:
     - ai-vm-1
     - validate
+    - tower
