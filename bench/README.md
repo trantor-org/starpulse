@@ -98,8 +98,10 @@ uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --assets
 
 That weight outweighs only the scope's siblings in the user manager's `app.slice`; work in `system.slice` still
 competes with the browser. So the run reads its scope's `cpu.pressure` before and after, and when the scope waited for
-CPU over `STARVED_SHARE` (5%) of the run, it ends the table with a `STARVED` line, sets `starved` in the JSON and exits
-2, neither a pass nor a failure: its rows measure the host's load, not the page.
+CPU over `STARVED_SHARE` (0.25%) of the run, it ends the table with a `STARVED` line, sets `starved` in the JSON and
+exits 2, neither a pass nor a failure: its rows measure the host's load, not the page. The share is that small because
+a modal open is two frames, so one late frame puts it over budget: runs at load1 9 to 20 on a 36-core host waited 0.03%
+to 0.11% and opened every modal on time, and runs that waited 0.48% and up stalled opens for 250 ms and longer.
 
 `--cpu-throttle N` slows the page's CPU N times once the board has painted (Chrome's `Emulation.setCPUThrottlingRate`), so
 a view switch, a stream event and a modal are timed on a machine N times slower than the bench's, as a viewer's laptop

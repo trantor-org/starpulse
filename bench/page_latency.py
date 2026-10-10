@@ -62,7 +62,9 @@ VIEWER_CPU_WEIGHT = 10_000
 #: Set inside the `--viewer` scope, so the bench enters it once.
 VIEWER_ENV = "STARPULSE_BENCH_VIEWER"
 #: The share of a `--viewer` run its scope's tasks may wait for CPU (`cpu.pressure` some) before the run is starved.
-STARVED_SHARE = 0.05
+#: A modal open is two frames, so one frame late puts it over budget: runs on a quiet host waited 0.03% to 0.11% and
+#: opened every modal on time, and runs that waited 0.48% and up stalled modal opens for 250 ms and longer.
+STARVED_SHARE = 0.0025
 #: The exit of a starved run: it measured the host's load, not the page.
 STARVED = 2
 
@@ -224,7 +226,7 @@ def table(rows: Sequence[Row], missing: Sequence[str], waited: float | None = No
     out.extend(f"UNTIMED request the page made: {s}" for s in missing)
     if starved(waited):
         out.append(
-            f"STARVED: the viewer scope waited for CPU {waited:.0%} of the run, over {STARVED_SHARE:.0%}; "
+            f"STARVED: the viewer scope waited for CPU {waited:.2%} of the run, over {STARVED_SHARE:.2%}; "
             "its rows measure the host's load, not the page"
         )
     return "\n".join(out)
