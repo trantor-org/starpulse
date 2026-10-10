@@ -5,7 +5,7 @@ describe("keep", () => {
   it("returns the old value when nothing differs, and keeps every unchanged part of one that does", () => {
     const prev = { a: [{ id: "x", n: 1 }, { id: "y", n: 2 }], b: { c: 1 } };
 
-    expect(keep(prev, structuredClone(prev))).toBe(prev);
+    expect(keep(prev, JSON.parse(JSON.stringify(prev)))).toBe(prev); // a delta arrives as freshly parsed JSON
 
     const next = keep(prev, { a: [{ id: "x", n: 1 }, { id: "y", n: 3 }], b: { c: 1 } });
     expect(next).not.toBe(prev);
