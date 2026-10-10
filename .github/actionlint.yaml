@@ -1,7 +1,8 @@
 # The self-hosted runner lanes the workflows target; actionlint reads this file from here. `tower` is the
-# Unraid farm slots the release soak runs on.
+# Unraid farm slots the release soak runs on; `merge-event` is trantor's one runner for merge-event submits.
 self-hosted-runner:
   labels:
     - ai-vm-1
     - validate
+    - merge-event
     - tower
