@@ -25,7 +25,16 @@
 <link rel="preload" href="/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
-<div id="root"></div>
+<!-- The frames the first draw needs. src/boot.ts starts the renderer on the canvas and its two floating boxes from the entry chunk;
+     the React page mounts into #root after that frame, replacing the three placeholders, and adopts the rest. -->
+<canvas id="c"></canvas>
+<div id="root">
+<aside id="nav"></aside>
+<nav id="crumb" aria-label="Where the map is drilled"><span class="here" aria-current="location">Board</span></nav>
+<aside id="rail"></aside>
+</div>
+<div id="tip"></div>
+<div id="panel"></div>
 <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

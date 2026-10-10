@@ -1,6 +1,5 @@
 // What the React HUD shows. The renderer writes it only when something changed,
 // so the HUD re-renders on events, not on every animation frame.
-import { useSyncExternalStore } from "react";
 import type { KanbanTask } from "../features/kanban/kanban";
 import { BOARD, type Path, type Tree } from "./levels";
 import type { DagData } from "../features/dags/dags";
@@ -82,5 +81,3 @@ export class HudStore {
     for (const fn of this.listeners) fn();
   }
 }
-
-export const useHud = (store: HudStore) => useSyncExternalStore(store.subscribe, store.get);

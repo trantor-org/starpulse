@@ -28,4 +28,13 @@ describe("a time as the clock setting writes it", () => {
     expect(fmtAt(SIX_PM, "12")).toBe("Oct 1, 6:00 pm");
     expect(fmtAt(SIX_PM)).toBe("Oct 1, 18:00");
   });
+
+  it("rolls the date over in Arizona time, not UTC", () => {
+    // 2027-01-01 06:59 UTC is 23:59 Dec 31 2026 in Arizona; one minute later it is Jan 1 2027
+    const lastMinute = Date.UTC(2027, 0, 1, 6, 59) / 1000;
+    expect(stamp(lastMinute, "24")).toBe("Dec 31, 2026, 23:59");
+    expect(stamp(lastMinute + 60, "24")).toBe("Jan 1, 2027, 00:00");
+    // 2028-03-01 06:59 UTC falls on the leap day in Arizona
+    expect(fmtAt(Date.UTC(2028, 2, 1, 6, 59) / 1000, "12")).toBe("Feb 29, 11:59 pm");
+  });
 });
