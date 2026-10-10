@@ -3,7 +3,7 @@ import { boardTies, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, 
 import { BOARD, startPath, tree } from "./levels";
 import { crumbs } from "../features/level/Crumb";
 import { backStep } from "../shared/nav";
-import { build, type Scene } from "./scene";
+import { build, sample, type Curve, type Scene } from "./scene";
 import { fitLevel } from "./zoom";
 import { merge, Moves, PULSE, TRAVEL, type Move } from "./sky";
 import type { Cue, Dag, Machine, Snapshot } from "../api";
@@ -43,11 +43,11 @@ const launched = (writer: string): Machine => ({
   mainLine: ["open", "closed"],
   writers: { CLOSE: [{ actor: writer, trigger: "dagu" }] },
 });
-const liveSky = (status: Record<string, Dag["status"]> = {}, sub: Record<string, string> = {}) => {
+const liveSky = (status: Record<string, Dag["status"]> = {}, sub: Record<string, string> = {}, tiers?: string[][]) => {
   const names = [...Object.keys(WRITES), ...CUES.map((c) => c.dag), ...LAUNCH_ONLY, ...UNTIED];
   const snap: Snapshot = {
     graphs: ["board"],
-    flows: [{ name: "board", agents: [], machine: { ...machine, launches: { ...machine.launches, ...Object.fromEntries(Object.keys(sub).map((d) => [d, { skill: "investigating", flow: sub[d] }])) } } }, ...new Set(Object.values(sub))].map((f) => (typeof f === "string" ? { name: f, agents: [], machine: launched(Object.keys(sub).find((d) => sub[d] === f)!) } : f)),
+    flows: [{ name: "board", agents: [], machine: { ...machine, tiers, launches: { ...machine.launches, ...Object.fromEntries(Object.keys(sub).map((d) => [d, { skill: "investigating", flow: sub[d] }])) } } }, ...new Set(Object.values(sub))].map((f) => (typeof f === "string" ? { name: f, agents: [], machine: launched(Object.keys(sub).find((d) => sub[d] === f)!) } : f)),
     dags: names.map((n) => dag(n, status[n])),
     domains: [], cues: CUES, settled: {}, error: null, now: 1000,
   };
@@ -117,6 +117,18 @@ describe("the hangar names, placed round the ring", () => {
       }
     });
   }
+});
+
+describe("the hangar names beside the Board's paths", () => {
+  it("keep every name off the paths where a side of its DAGs is clear of them", () => {
+    // the Board in the demo's tiers on a 2560x1440 screen, where each hangar has a spot clear of every path at each text size
+    const ctx = liveSky({}, {}, [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]]);
+    const sc = build(ctx, { kind: "board" }), u = 1 / fitLevel(sc, 2560, 1440).k;
+    for (const ts of [1, 1.25, 1.5])
+      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).hubs)
+        for (const e of sc.bEdges)
+          for (const p of sample(e as Curve, 200)) expect(p.x > h.box[0] && p.x < h.box[2] && p.y > h.box[1] && p.y < h.box[3], `${h.state} name on ${e.source}>${e.target} at ${ts}`).toBe(false);
+  });
 });
 
 describe("a hangar's name", () => {
