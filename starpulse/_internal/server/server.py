@@ -55,7 +55,9 @@ GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_con
                    merge stored before they were kept), and fetchedAt (epoch seconds this record was read)}. A `number` that is not an integer, or a `state`
                    that is none of those, is 400
 GET /metrics       Prometheus text: `starpulse_pull_store_age_seconds{repo}`, the seconds since the newest record of
-                   each repository holding an open pull request was read; a stale one means the refresh stopped
+                   each repository holding an open pull request was read; a stale one means the refresh stopped.
+                   Also this process's `process_resident_memory_bytes`, `process_threads`, `process_open_fds` and
+                   `process_start_time_seconds`, which moves on every restart
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
@@ -197,6 +199,7 @@ from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.runs.triggers import run_triggers
 from starpulse._internal.hub import forward
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
+from starpulse._internal.server.process_metrics import process_gauges
 from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.feed.snapshot_cache import KEPT, SnapshotCache
 from starpulse._internal.server.writes import (
@@ -1079,7 +1082,7 @@ def request_handler(
                 self._send(*search_response(search, parse_qs(url.query)))
             elif url.path == "/metrics":
                 self._send(
-                    (pulls.age_gauge(clock()) if pulls else "").encode(),
+                    ((pulls.age_gauge(clock()) if pulls else "") + process_gauges()).encode(),
                     content_type="text/plain; version=0.0.4; charset=utf-8",
                 )
             elif url.path == "/api/analytics/health":

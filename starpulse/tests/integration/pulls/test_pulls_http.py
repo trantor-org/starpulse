@@ -130,3 +130,14 @@ def test_metrics_serves_the_store_age_gauge_as_prometheus_text(tmp_path: Path) -
 
     assert content_type.startswith("text/plain")
     assert 'starpulse_pull_store_age_seconds{repo="acme/widgets"} 60' in body.splitlines()
+
+
+def test_metrics_serves_the_server_process_gauges_with_or_without_a_pull_store(tmp_path: Path) -> None:
+    with serve(tmp_path, BoardFeed(machines=MACHINES)) as server:
+        with urllib.request.urlopen(url(server, "/metrics"), timeout=5) as resp:
+            samples = dict(line.split() for line in resp.read().decode().splitlines() if not line.startswith("#"))
+
+    assert int(samples["process_resident_memory_bytes"]) > 0
+    assert int(samples["process_threads"]) > 0
+    assert int(samples["process_open_fds"]) > 0
+    assert float(samples["process_start_time_seconds"]) > 1_700_000_000
