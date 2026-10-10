@@ -144,7 +144,16 @@ class TestConfigCheck:
                 "limits": {"cpu": 80, "memory": 80, "sessions": 2, "review": 20},
             },
             "release": None,
-            "analytics": {"roots": [], "stop_activities": [], "lifecycle_skills": [], "skill_loads": []},
+            "analytics": {
+                "roots": [],
+                "stop_activities": [],
+                "lifecycle_skills": [],
+                "skill_loads": [],
+                "injected_openings": [],
+                "claims": [],
+                "completion_skill": "",
+                "completion_call": None,
+            },
             "search": {"embeddings_url": None, "model": None, "token_env": None},
         }
 
@@ -157,6 +166,10 @@ class TestConfigCheck:
             'roots = ["/r"]\n'
             'stop_activities = ["Bash", "Read"]\n'
             'lifecycle_skills = ["starting-tasks"]\n'
+            'injected_openings = ["<task-notification"]\n'
+            "claims = ['start\\s+(TASK-\\d+)']\n"
+            'completion_skill = "completing-tasks"\n'
+            "completion_call = 'deliver\\b'\n"
             "[[analytics.skill_loads]]\n"
             'skill = "verifying-claims"\n'
             'title = "^verify"\n'
@@ -171,6 +184,10 @@ class TestConfigCheck:
             "stop_activities": ["Bash", "Read"],
             "lifecycle_skills": ["starting-tasks"],
             "skill_loads": [{"skill": "verifying-claims", "activities": [], "title": "^verify", "label": "validation"}],
+            "injected_openings": ["<task-notification"],
+            "claims": [r"start\s+(TASK-\d+)"],
+            "completion_skill": "completing-tasks",
+            "completion_call": r"deliver\b",
         }
 
     def test_with_no_file_it_reports_the_defaults(

@@ -701,6 +701,8 @@ class SessionHealth(_Api):
     agent_s: float
     operator_wait_s: float
     idle_s: float
+    steps_before_edit: int | None
+    complete: bool
 
 
 class SliceHealth(_Api):
@@ -729,6 +731,8 @@ class SliceHealth(_Api):
     active_s: float
     operator_wait_s: float
     idle_s: float
+    steps_before_edit: int | None
+    complete: bool
 
 
 class Sessions(_Api):

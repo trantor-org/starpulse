@@ -19,12 +19,18 @@ class Signal:
 
     `kind` is `start`, `prompt` (a human's, `name` its slash command), `request` (one model call), `tool` (a tool
     result, `ok` its success), `decision` (a tool permission, `ok` accepted, `detail` its source), `skill`,
-    `compaction` (`name` its trigger), `interrupt` or `branch` (`name` the ref a shell switched to). `origin` is
+    `compaction` (`name` its trigger), `reply` (a text answer), `interrupt`, `branch` (`name` the ref a shell
+    switched to), `claim` (`name` the task a command or a `Skill` call named) or `deliver` (a shell command that
+    matched the instance's completion call). `origin` is
     `main`, `side` (a subagent) or `auxiliary` (a compaction's own call). `key` is unique to the record, so a
     replayed export gives the same signals. A `tool` signal carries the `activities` the call performed, in order, as
     a closed vocabulary with no arguments, and the `reads` and `writes` it named, as the export gave them. `agent` is
     the subagent that made a `request` or `tool` step, empty for the main thread. `captured` is False for a harness the
     steps-per-completion ledger does not cover yet (Codex): its rows are kept and left out of every ranking.
+
+    `turn` is the export's `prompt.id`, the one user prompt every event it caused shares; empty where the harness
+    names none. A `prompt` signal's `detail` is its label, `human` or `injected` (empty when the export carried no
+    prompt text to read it from); the text itself is never a field.
     """
 
     harness: str
@@ -52,3 +58,4 @@ class Signal:
     activities: tuple[str, ...] = ()
     reads: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
+    turn: str = ""

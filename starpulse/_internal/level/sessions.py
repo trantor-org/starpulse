@@ -4,24 +4,31 @@
 so a recorded export gives numbers that can be worked out by hand. A session is one harness's session id; it yields one
 row per task it worked, in the order it reached them.
 
-The task a signal belongs to is the one the export's launch branch names under the board's `TaskKeys`, until a `branch`
-signal (a shell's `git switch` or `git checkout`) names another task. A switch to a ref that names no task leaves the
-task as it was, so `git checkout -- file` or a trip back to `main` does not drop a session's work from its slice. A
-session whose branch names no task is a row with `task` None, counted in session health and in no slice.
+The task a signal belongs to is the one the export's launch branch names under the board's `TaskKeys`, until a `claim`
+signal (a command or a `Skill` call the `[analytics]` `claims` patterns matched) or a `branch` signal (a shell's `git
+switch` or `git checkout`) names another task. A switch to a ref that names no task leaves the task as it was, so `git
+checkout -- file` or a trip back to `main` does not drop a session's work from its slice. A session that no branch or
+claim ties to a task is a row with `task` None, counted in session health and in no slice.
 
-Time is the gaps between a session's consecutive signals, each given to the row of the later signal:
+A turn is every signal that shares a `prompt.id`; its end is its last signal, whichever order the exports arrived in.
+A signal with no id (Codex, rows stored before ids were kept) belongs to the turn of the prompt before it. Time is read
+from the events' own durations and from the turns' edges, never from the gaps between signals:
 
-- `operator_wait_s`: the gap that ends at a human prompt other than the session's first.
-- `idle_s`: any other gap longer than `IDLE_S`, a wait the export cannot name (a background task, a permission prompt).
-- `agent_s`: every other gap.
+- `agent_s`: the summed `seconds` of the session's model requests (subagents' included) and tool results.
+- `operator_wait_s`: from the end of the turn before to a human prompt other than the session's first; a prompt typed
+  while the turn before still worked waits for nothing.
+- `idle_s`: the same span before an `injected` prompt, a wait for something other than the operator (a background
+  task, a scheduler).
 
-The exports mark neither a turn's end nor a pending background task, so a wait for a background task is `agent_s` up to
-`IDLE_S` and `idle_s` beyond it.
-
-`operator_prompts` are the human prompts after a session's first; its first starts the work. `interrupts` are the interrupted turns Codex exports. `interventions` of a slice are its operator prompts plus interrupts, and it is
-`escalated` when a model or effort changed between a session's main-thread requests. A slice is `clean` when one
-session did its work with no intervention and no escalation; whether it settled in Review or Done is the board's fact,
-which the reader joins.
+A prompt is `injected` when its label says so and `human` otherwise, so a Codex prompt, which is unlabelled, is human.
+`operator_prompts` are the human prompts after a task's claim: after the claim signal that brought the session to the
+task, or after the session's first prompt for the task it launched on. `interrupts` are the turns Claude Code started
+and never closed with a reply (one still running counts until its reply lands) and the interrupted turns Codex
+exports. `steps_before_edit` is the model requests before the task's first successful file write, None until it has
+one. `complete` is a session that loaded the `[analytics]` `completion_skill` and then ran the completion call for the
+task. `interventions` of a slice are its operator prompts plus interrupts, and it is `escalated` when a model or effort
+changed between a session's main-thread requests. A slice is `clean` when one session did its work with no
+intervention and no escalation; whether it settled in Review or Done is the board's fact, which the reader joins.
 """
 
 from __future__ import annotations
@@ -30,13 +37,14 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator
 from typing import Any
 
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.level.signals import CODEX, Signal
 from starpulse.contracts.adapters import TaskKeys
 
-__all__ = ["IDLE_S", "attributed", "grouped", "session_health", "session_kind", "slice_health"]
+__all__ = ["attributed", "grouped", "session_health", "session_kind", "slice_health"]
 
-#: A gap in a session's signals longer than this is idle time, not the agent's.
-IDLE_S = 600.0
+#: Tools whose successful result is a file written: the work on a task has begun.
+_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 _TOKENS = ("input", "output", "cache_read", "cache_write", "reasoning")
 #: `originator` values of Codex's interactive front ends; `codex_exec` is its headless one.
 _CODEX_INTERACTIVE = {"codex-tui", "codex_cli_rs"}
@@ -86,6 +94,8 @@ def _empty(s: Signal, task: str | None, kind: str) -> dict[str, Any]:
         "agent_s": 0.0,
         "operator_wait_s": 0.0,
         "idle_s": 0.0,
+        "steps_before_edit": None,
+        "complete": False,
     }
 
 
@@ -141,37 +151,81 @@ def attributed(ordered: list[Signal], keys: TaskKeys | None) -> Iterator[tuple[s
     """Each signal of one session, oldest first, with the task it belongs to (see the module docstring)."""
     task = keys.for_branch(ordered[0].branch) if keys else None
     for s in ordered:
-        if s.kind == "branch" and keys and (named := keys.for_branch(s.name)) is not None:
+        if s.kind == "claim" and keys and keys.matches(s.name):
+            task = s.name
+        elif s.kind == "branch" and keys and (named := keys.for_branch(s.name)) is not None:
             task = named
         yield task, s
 
 
-def session_health(found: Iterable[Signal], keys: TaskKeys | None) -> list[dict[str, Any]]:
+def _turn_ids(ordered: list[Signal]) -> list[str]:
+    """The turn each signal of one session belongs to: its own `prompt.id`, else the turn its last prompt opened."""
+    current = ""
+    ids = []
+    for s in ordered:
+        if s.kind == "prompt":
+            current = s.turn or s.key
+        ids.append(s.turn or current)
+    return ids
+
+
+def session_health(
+    found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
+) -> list[dict[str, Any]]:
     """One row per (session, task) of the sessions `found` holds, oldest first; see the module docstring."""
+    completion = analytics.completion_skill if analytics else ""
     rows: list[dict[str, Any]] = []
     for ordered in grouped(found):
         kind = session_kind(ordered)
+        ids = _turn_ids(ordered)
+        ends: dict[str, float] = {}
+        for turn, s in zip(ids, ordered, strict=True):
+            ends[turn] = max(ends.get(turn, s.time), s.time)
         row: dict[str, Any] | None = None
         by_task: dict[str | None, dict[str, Any]] = {}
         last: dict[str, dict[str, str]] = defaultdict(dict)
+        armed: set[str | None] = set()  # tasks whose human prompts now count as the operator's steering
+        loaded: set[str | None] = set()  # tasks that loaded the completion skill
+        steps: dict[str | None, int] = defaultdict(int)  # requests before a task's first edit
+        open_turns: dict[str, dict[str, Any]] = {}  # a Claude Code turn's row until a reply closes it
         prompts = 0
-        before = ordered[0].time
-        for task, s in attributed(ordered, keys):
+        previous: str | None = None
+        for at, (task, s) in enumerate(attributed(ordered, keys)):
             if row is None or row["task"] != task:
                 row = by_task.get(task) or by_task.setdefault(task, _empty(s, task, kind))
-            gap, before = s.time - before, s.time
+            if s.kind in {"claim", "branch"} and task is not None and task != previous:
+                armed.add(task)
+            previous = task
             if s.kind == "prompt":
                 prompts += 1
                 row["prompts"] += 1
-                row["operator_prompts"] += int(prompts > 1)
-            if s.kind == "prompt" and prompts > 1:
-                row["operator_wait_s"] += gap
-            elif gap > IDLE_S:
-                row["idle_s"] += gap
-            else:
-                row["agent_s"] += gap
+                injected = s.detail == "injected"
+                if prompts > 1:
+                    gap = max(s.time - ends[ids[at - 1]], 0.0)
+                    row["idle_s" if injected else "operator_wait_s"] += gap
+                if not injected and task in armed:
+                    row["operator_prompts"] += 1
+                if prompts == 1:
+                    armed.add(task)
+                if s.turn:
+                    open_turns[s.turn] = row
+            elif s.kind == "reply":
+                open_turns.pop(s.turn, None)
+            elif s.kind in {"request", "tool"}:
+                row["agent_s"] += s.seconds
+                if row["steps_before_edit"] is None:
+                    if s.kind == "request" and s.origin in {"main", "side"}:
+                        steps[task] += 1
+                    elif s.kind == "tool" and s.ok and s.name in _EDITS:
+                        row["steps_before_edit"] = steps[task]
+            elif s.kind == "skill" and completion and s.name == completion:
+                loaded.add(task)
+            elif s.kind == "deliver" and task in loaded:
+                row["complete"] = True
             row["last_at"] = s.time
             _note(row, s, last[task or ""])
+        for opened in open_turns.values():
+            opened["interrupts"] += 1
         rows += by_task.values()
     return sorted(rows, key=lambda r: (r["first_at"], r["harness"], r["session"]))
 
@@ -212,6 +266,11 @@ def slice_health(sessions: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
                 "interventions": operator_prompts + interrupts,
                 "compactions": sum(sum(row["compactions"].values()) for row in rows),
                 "skills": dict(skills),
+                "complete": any(row["complete"] for row in rows),
+                "steps_before_edit": next(
+                    (r["steps_before_edit"] for r in sorted(rows, key=lambda r: r["first_at"]) if r["steps_before_edit"] is not None),
+                    None,
+                ),
                 "escalated": changes > 0,
                 "clean": count == 1 and operator_prompts + interrupts == 0 and changes == 0,
                 "tokens": {name: tokens[name] for name in _TOKENS},

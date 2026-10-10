@@ -476,7 +476,11 @@ def health_response(
 
 
 def sessions_response(
-    telemetry: TelemetryLog | None, query: dict[str, list[str]], keys: TaskKeys | None, now: float
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    now: float,
+    analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/sessions`: session and slice health of the signals from the last
     `hours` (default 168) as of `now`. An instance that receives no harness telemetry is 501, a log that cannot be
@@ -491,7 +495,7 @@ def sessions_response(
     except Exception as exc:  # the event log's database is unreachable
         logger.warning("sessions: telemetry unreadable: %s", exc)
         return _error("the telemetry log cannot be read"), 503
-    rows = session_health(found, keys)
+    rows = session_health(found, keys, analytics)
     body = {"now": now, "window_s": window * 3600, "sessions": rows, "slices": slice_health(rows)}
     return encode("sessions", body), 200
 
@@ -1100,7 +1104,7 @@ def request_handler(
             elif url.path == "/api/analytics/health":
                 self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
             elif url.path == "/api/analytics/sessions":
-                self._send(*sessions_response(telemetry, parse_qs(url.query), feed.keys, clock()))
+                self._send(*sessions_response(telemetry, parse_qs(url.query), feed.keys, clock(), analytics))
             elif url.path == "/api/analytics/missed-loads":
                 self._send(
                     *missed_loads_response(

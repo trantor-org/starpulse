@@ -50,6 +50,27 @@ label = "validation"
     )
 
 
+def test_a_table_declares_how_a_session_is_read_for_its_turns_claims_and_completion(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        r"""
+[analytics]
+injected_openings = ["<task-notification", "[board-autopilot]"]
+claims = ['backlog_task\.py\s+start\s+(TASK-\d+)', '^\s*(TASK-\d+)\s*$']
+completion_skill = "completing-tasks"
+completion_call = 'backlog_task\.py\s+deliver\b'
+""",
+    )
+
+    analytics = load(path).analytics
+
+    assert analytics.injected_openings == ("<task-notification", "[board-autopilot]")
+    assert [c.pattern for c in analytics.claims] == [r"backlog_task\.py\s+start\s+(TASK-\d+)", r"^\s*(TASK-\d+)\s*$"]
+    assert analytics.completion_skill == "completing-tasks"
+    assert analytics.completion_call is not None
+    assert analytics.completion_call.search("bin/backlog_task.py deliver --task 1")
+
+
 @pytest.mark.parametrize(
     ("table", "refusal"),
     [
@@ -64,6 +85,11 @@ label = "validation"
             "[[analytics.skill_loads]]\nskill = 'x'\ntitle = '('",
             "analytics.skill_loads[0]: title is not a regular expression",
         ),
+        ('[analytics]\ninjected_openings = [1]', "analytics: injected_openings must be a list of text"),
+        ('[analytics]\nclaims = ["("]', "analytics: claims[0] is not a regular expression"),
+        ('[analytics]\nclaims = ["TASK-\\\\d+"]', "analytics: claims[0] needs a group that captures the task key"),
+        ("[analytics]\ncompletion_skill = 1", "analytics: completion_skill must be text"),
+        ('[analytics]\ncompletion_call = "("', "analytics: completion_call is not a regular expression"),
         (
             "[[analytics.skill_loads]]\nskill = 'x'\nlabel = 'l'\nwhen = 1",
             "analytics.skill_loads[0]: unknown key(s) when",

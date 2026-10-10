@@ -4867,6 +4867,9 @@
           },
           "type": "object"
         },
+        "complete": {
+          "type": "boolean"
+        },
         "cost_usd": {
           "anyOf": [
             {
@@ -4948,6 +4951,16 @@
           },
           "type": "object"
         },
+        "steps_before_edit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "task": {
           "anyOf": [
             {
@@ -5000,7 +5013,9 @@
         "cost_usd",
         "agent_s",
         "operator_wait_s",
-        "idle_s"
+        "idle_s",
+        "steps_before_edit",
+        "complete"
       ],
       "title": "SessionHealth",
       "type": "object"
@@ -5124,6 +5139,9 @@
         "compactions": {
           "type": "integer"
         },
+        "complete": {
+          "type": "boolean"
+        },
         "cost_usd": {
           "anyOf": [
             {
@@ -5194,6 +5212,16 @@
         "steps": {
           "type": "integer"
         },
+        "steps_before_edit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "task": {
           "type": "string"
         },
@@ -5227,7 +5255,9 @@
         "cost_usd",
         "active_s",
         "operator_wait_s",
-        "idle_s"
+        "idle_s",
+        "steps_before_edit",
+        "complete"
       ],
       "title": "SliceHealth",
       "type": "object"

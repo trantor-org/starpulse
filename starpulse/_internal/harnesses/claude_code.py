@@ -12,6 +12,10 @@ moves the session through the machine's `bindings`:
 With `--redactor MODULE:FUNCTION`, each shell command's text is also kept on its tool signal, passed through that
 function with every heredoc body replaced by its length and SHA-256; without one no command text is kept.
 
+What a session's events say about its own work is read against the `[analytics]` table of that config: a prompt's
+opening labels it `human` or `injected` (the text is read once and never stored), and a shell command or a `Skill`
+call's arguments that match a `claims` pattern attributes the steps after it to that task.
+
 Events are appended to the event log in the database `--config` names (default `starpulse.toml` in the working
 directory), the store `starpulse serve` reads.
 
@@ -34,6 +38,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from starpulse._internal.config.config import discover, load
 from starpulse._internal.harnesses.harness import HARNESS
 from starpulse._internal.harnesses.otlp import TOOL_RESULT, LogEvent, receiver
 from starpulse._internal.harnesses.telemetry import TelemetryLog, redactor, signals
@@ -124,6 +129,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
 
     try:
         log = open_event_log(args.config)
+        analytics = load(discover(args.config)).analytics
     except (OSError, ValueError) as exc:
         parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
 
@@ -136,7 +142,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     print(f"claude code adapter on {args.host}:{args.port}", flush=True)
     ThreadingHTTPServer(
         (args.host, args.port),
-        handler(ClaudeCodeAdapter(keys), publisher(log), lambda payload: telemetry.publish(signals(payload, redact))),
+        handler(
+            ClaudeCodeAdapter(keys),
+            publisher(log),
+            lambda payload: telemetry.publish(signals(payload, redact, analytics=analytics, keys=keys)),
+        ),
     ).serve_forever()
 
 
