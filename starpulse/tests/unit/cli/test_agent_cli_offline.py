@@ -144,6 +144,7 @@ class TestConfigCheck:
             },
             "release": None,
             "analytics": {"roots": [], "stop_activities": [], "lifecycle_skills": [], "skill_loads": []},
+            "search": {"embeddings_url": None, "model": None, "token_env": None},
         }
 
     def test_a_declared_analytics_table_shows_as_lists_and_pattern_text(

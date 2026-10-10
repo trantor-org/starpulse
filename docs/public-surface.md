@@ -27,7 +27,8 @@ internal and can change in any release.
   (see [Connect sources](sources.md#find-missed-skill-loads-and-recurring-work)).
 - The config file's keys, among them each `[[triggers]]` table's `on`, `start` and `when` ([Triggers](serving.md#triggers)),
   the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills` and each `[[analytics.skill_loads]]`'s
-  `skill`, `activities`, `title` and `label` ([Config file](serving.md#config-file)),
+  `skill`, `activities`, `title` and `label`, and the `[search]` table's optional `embeddings_url`, `model` and
+  `token_env` ([Config file](serving.md#config-file)),
   and the machine YAML with its JSON Schema (`machine.schema.json`).
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
