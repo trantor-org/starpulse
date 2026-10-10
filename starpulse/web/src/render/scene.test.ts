@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BOARD_GROW, build, Drawn, SUN_R, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
 import { ledgerLevel, type Level } from "./levels";
-import { merge, Moves } from "./sky";
+import { merge, midnight, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
 import type { Cue, Dag, LedgerRow, Machine, Snapshot } from "../api";
 
@@ -179,14 +179,15 @@ describe("a starting or terminal Board state", () => {
     expect([board.galaxies.new.n, board.galaxies.new.today, board.galaxies.done.n, board.galaxies.done.today]).toEqual([2, 2, 4, 3]);
     expect([sun.sun!.n, sun.sun!.today, sun.tasks.map((k) => k.id)]).toEqual([2, 2, []]);
   });
-  it("keeps a task on a terminal state for a day after it entered it, and one the server gave no time for", () => {
-    const sky = today(), now = 200_000;
+  it("keeps a task on a terminal state until local midnight after it entered it, and one the server gave no time for", () => {
+    // local noon: 13 hours back is yesterday, inside a rolling day
+    const sky = today(), now = midnight(new Date(2026, 9, 10)) + 12 * 3600;
     sky.S.now = now;
     sky.S.flows.board.agents.push(
-      { id: "PROJ-6", title: "PROJ-6", state: "done", model: "", entered: now - 25 * 3600 },
-      { id: "PROJ-8", title: "PROJ-8", state: "done", model: "", entered: now - 3600 },
+      { id: "PROJ-6", title: "PROJ-6", state: "done", model: "", entered: now - 13 * 3600 },
+      { id: "PROJ-8", title: "PROJ-8", state: "done", model: "", entered: now - 11 * 3600 },
       { id: "PROJ-9", title: "PROJ-9", state: "done", model: "" },
-      { id: "PROJ-10", title: "PROJ-10", state: "review", model: "", entered: now - 25 * 3600 },
+      { id: "PROJ-10", title: "PROJ-10", state: "review", model: "", entered: now - 13 * 3600 },
     );
     const board = build(sky, { kind: "board" }), sun = build(sky, { kind: "state", id: "done" });
     const on = (id: string) => board.tasks.filter((k) => k.host === board.galaxies[id]).map((k) => k.id).sort();

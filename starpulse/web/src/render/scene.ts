@@ -720,7 +720,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const mx = (Math.min(...bx) + Math.max(...bx)) / 2, my = (Math.min(...by) + Math.max(...by)) / 2;
     const spanX = Math.max(...bx) - Math.min(...bx) || 1, spanY = Math.max(...by) - Math.min(...by) || 1;
     const byState: Record<string, RawAgent[]> = {};
-    // a starting state orbits no task, as each is drawn where it went; a terminal state orbits those that entered it in the last day and the day's
+    // a starting state orbits no task, as each is drawn where it went; a terminal state orbits those that entered it since local midnight and the day's
     // arrivals there not already in it
     const initial = new Set(states.filter((s) => s.initial).map((s) => s.id)), final = new Set(states.filter((s) => s.final).map((s) => s.id));
     board.agents.forEach((a) => initial.has(a.state) || stale(S, a) || (byState[a.state] ||= []).push(a));
