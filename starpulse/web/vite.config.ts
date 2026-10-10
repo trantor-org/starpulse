@@ -23,6 +23,8 @@ export default defineConfig(({ mode }) => {
     server: { proxy: { "/api": "http://127.0.0.1:8766" } },
     // The stylesheet is read for real so a test can hold its scrolling rules (`src/shared/scroll.test.ts`).
     // A cold CI runner transforms every module on the first test of a file, which can pass the 5 s default.
-    test: { environment: "node", testTimeout: 15_000, css: { include: /style\.css/ } },
+    // Test files share four worker threads, each file in its own VM context: 46 CPU-seconds a run against 99 for a process per file on
+    // every core. A context's globals are jsdom's own, so `src/testSetup.ts` adds the User Timing calls jsdom lacks.
+    test: { pool: "vmThreads", maxWorkers: 4, setupFiles: ["src/testSetup.ts"], environment: "node", testTimeout: 15_000, css: { include: /style\.css/ } },
   };
 });
