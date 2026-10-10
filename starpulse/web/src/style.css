@@ -30,6 +30,11 @@
 :root { --rail: 250px; --nav: 250px;
   /* The Admin font size as a factor (AdminStore sets it on <html>): every font size below is its design size times --fs. */
   --fs: 1; }
+/* A phone cannot hold both 250px rails beside a canvas: collapse them so the canvas takes the viewport. */
+@media (max-width: 900px) {
+  :root { --nav: 0px; --rail: 0px; }
+  #nav, #rail { display: none; }
+}
 /* One page, never scrolled: the canvas left of the rail is the whole view. */
 html, body { margin: 0; height: 100%; overflow: hidden; background: radial-gradient(ellipse at 40% 30%, var(--bg1) 0%, var(--bg0) 70%); color: var(--ink); font-family: Inter, system-ui, sans-serif; }
 /* One pointer everywhere: nothing the page draws changes the cursor, whether a link, a button, a text field, a draggable card or the canvas. */
