@@ -25,6 +25,7 @@ def test_no_block_resolves_every_default_but_the_starter(tmp_path: Path) -> None
         assert autopilot.unsized_points == 3
         assert autopilot.review_lane == "review"
         assert autopilot.idle_minutes == 30
+        assert autopilot.state_dir is None  # the switch and the ledger sit beside the config
         assert set(autopilot.limits) == set(DIMENSIONS) == {"cpu", "memory", "sessions", "review"}
         assert all(limit > 0 for limit in autopilot.limits.values())
     assert callable(LocalProbe())  # the local CPU and memory probe is the sampler's default
@@ -39,6 +40,7 @@ lane = "ready"
 review_lane = "qa"
 unsized_points = 5
 idle_minutes = 10
+state_dir = "starpulse-state"
 
 [autopilot.tier_weights]
 standard = 3
@@ -55,6 +57,7 @@ review = 30
     assert autopilot.review_lane == "qa"
     assert autopilot.unsized_points == 5
     assert autopilot.idle_minutes == 10
+    assert autopilot.state_dir == "starpulse-state"
     assert autopilot.tier_weights == {"fast": 1, "standard": 3, "deep": 4}
     assert autopilot.limits["sessions"] == 4 and autopilot.limits["review"] == 30
     assert autopilot.limits["cpu"] == Autopilot().limits["cpu"]  # a limit left out keeps its default
@@ -73,6 +76,8 @@ review = 30
         ("[autopilot]\nidle_minutes = 'soon'\n", "idle_minutes"),
         ("[autopilot]\nlane = ''\n", "lane"),
         ("[autopilot]\nreview_lane = 3\n", "review_lane"),
+        ("[autopilot]\nstate_dir = ''\n", "state_dir"),
+        ("[autopilot]\nstate_dir = 3\n", "state_dir"),
         ("autopilot = 3\n", "autopilot"),
     ],
 )

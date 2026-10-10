@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 
@@ -18,14 +19,19 @@ from starpulse.contracts.adapters import StartFailedError
 _TIMEOUT_S = 75.0
 
 
-def starter(url: str | None) -> Callable[[str], str] | None:
-    """Start a task's session at the service `url` names and return the session's URL; None without an address."""
+def starter(url: str | None, by: str | None = None) -> Callable[[str], str] | None:
+    """Start a task's session at the service `url` names and return the session's URL; None without an address.
+
+    With `by`, each request names who starts the session (`?by=autopilot`), so the service can brief an unattended
+    session differently from one an operator opened; an operator's start carries no marker.
+    """
     if url is None:
         return None
     base = url.rstrip("/")
+    query = f"?{urllib.parse.urlencode({'by': by})}" if by else ""
 
     def start(task: str) -> str:
-        request = urllib.request.Request(f"{base}/start/{task}", method="POST")
+        request = urllib.request.Request(f"{base}/start/{task}{query}", method="POST")
         try:
             with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:
                 session = json.load(response).get("url")

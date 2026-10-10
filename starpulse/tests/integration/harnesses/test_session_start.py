@@ -55,7 +55,16 @@ def test_a_started_session_answers_its_url() -> None:
     with _service(200, json.dumps({"task": "TASK-D7", "url": "https://claude.ai/code/session_01"})) as (url, asked):
         assert _starter(url)("TASK-D7") == "https://claude.ai/code/session_01"
 
-    assert asked == ["/start/TASK-D7"]
+    assert asked == ["/start/TASK-D7"]  # an operator's start carries no marker
+
+
+def test_a_start_by_the_autopilot_says_so_in_the_request_the_service_reads() -> None:
+    with _service(200, json.dumps({"task": "TASK-D7", "url": "https://claude.ai/code/session_01"})) as (url, asked):
+        start = starter(url, by="autopilot")
+        assert start is not None
+        assert start("TASK-D7") == "https://claude.ai/code/session_01"
+
+    assert asked == ["/start/TASK-D7?by=autopilot"]
 
 
 @pytest.mark.parametrize(

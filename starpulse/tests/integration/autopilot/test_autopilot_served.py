@@ -110,7 +110,7 @@ def test_a_task_moved_into_the_eligible_lane_is_started_within_one_sampler_perio
 
             _until(lambda: asked, "the start")
             assert time.monotonic() - moved < PERIOD  # by the move's event: the loop's timer is the sampler period
-            assert asked == ["/start/task-1"]
+            assert asked == ["/start/task-1?by=autopilot"]  # the service can tell this from an operator's Start
 
 
 def test_a_board_with_no_autopilot_block_and_no_start_service_starts_the_task_in_tmux(
@@ -132,3 +132,19 @@ def test_a_board_with_no_autopilot_block_and_no_start_service_starts_the_task_in
         rf"new-session -d -s starpulse-task-1 -c {re.escape(str(tmp_path))} claude --remote-control task-1 Start task-1\n",
         record.read_text(),
     )
+
+
+def test_a_state_dir_holds_the_switch_and_the_run_ledger_instead_of_the_config_directory(tmp_path: Path) -> None:
+    state = tmp_path / "starpulse-state"  # not created beforehand: the server makes it
+    with _start_service() as (url, asked):
+        _task(tmp_path, "Done")
+        config = f'session_start_url = "{url}"\n[autopilot]\nstate_dir = "starpulse-state"\n'
+        with _served(tmp_path, config) as (feed, _):
+            _until(lambda: feed.task("task-1"), "the board's read of task-1")
+            _task(tmp_path, "To Do")
+            _until(lambda: asked, "the start")
+            _task(tmp_path, "Done")  # the run's task leaves the lane: its run is recorded
+            _until((state / "starpulse-autopilot-runs.jsonl").exists, "the ledger line")
+
+    assert json.loads((state / "starpulse-autopilot.json").read_text()) == {"enabled": True}
+    assert sorted(path.name for path in tmp_path.glob("starpulse-autopilot*")) == []  # nothing beside the config

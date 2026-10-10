@@ -144,6 +144,7 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # review_lane = "review"  # the lane whose tasks' points are the review load
 # unsized_points = 3      # the points a task with no `size-N` label counts as, a whole number of 1 or more
 # idle_minutes = 30       # minutes a started session may sit idle with its task still open before it is settled
+# state_dir = "state"     # where the switch and the run ledger live, relative to this file; unset: beside it
 # [autopilot.tier_weights]  # what a point costs on each agent tier; a tier left out keeps its weight
 # fast = 1
 # standard = 2
@@ -214,7 +215,8 @@ is malformed, names an instance that is not configured or is push-only, or names
 ## Autopilot
 
 The autopilot is a switch, a capacity reading, an admission rule and a loop that acts on the rule. The switch is persisted in
-`starpulse-autopilot.json` beside the config file (in the working directory with none), so it survives a restart, and it starts off.
+`starpulse-autopilot.json` beside the config file (in the working directory with none), or in `[autopilot] state_dir`
+when that names a directory (relative to the config file; `serve` creates it), so it survives a restart, and it starts off.
 
 `GET /api/autopilot` answers any address:
 
@@ -279,7 +281,7 @@ a pure function of the open tasks, the sampler's readings, the `[autopilot]` pol
   `StarPulse autopilot: <task> admitted|refused (<dimension> full) p_goal=<p> predictor=<score> shadow_rank=<n> enforced_rank=<n>`.
   Ranks number the admitted tasks from 1; a refused task has none.
 
-The run ledger, `starpulse-autopilot-runs.jsonl` beside the switch, holds one JSON line per finished run: its task, tier,
+The run ledger, `starpulse-autopilot-runs.jsonl` beside the switch (in `state_dir` when set), holds one JSON line per finished run: its task, tier,
 points, outcome, duration in seconds and the peak demand it drew on each dimension.
 
 ### Dispatch
@@ -297,7 +299,8 @@ do not fit together are never both started in one pass. A run holds its capacity
 A start that fails (`StartFailedError`) is logged and skipped until the next pass. A start that succeeds comments
 `Autopilot started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
 
-A session starts through `session_start_url` when the config sets it. With none, the built-in starter runs
+A session starts through `session_start_url` when the config sets it; the loop's request is `POST <url>/start/<task>?by=autopilot`,
+so the service can brief an unattended session unlike one an operator opened (an operator's start has no `by`). With none, the built-in starter runs
 `tmux new-session -d -s starpulse-<task> -c <config directory> claude --remote-control <task> "Start <task>"` and needs
 `tmux` and `claude` on `PATH`, so a board with no `[autopilot]` table and no `session_start_url` starts a task out of the
 box. `POST /api/start/<task>` is unchanged and uses only `session_start_url`.
