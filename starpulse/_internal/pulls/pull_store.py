@@ -6,12 +6,15 @@ open. `isRequired` takes the PR's number, so a required check can only be read t
 inside a listing; a PR the listing shows that the store lacks, or holds in another state, costs one more request, for
 itself alone. A check finishing does not change a PR's `updatedAt`, so the open PRs are asked for on every refresh; a
 merged or closed PR whose saved record is final is never asked for again (a merged one without its `mergeSha`
-is not final yet). A repository holding more open PRs than one
+is not final yet). No request reads more than `_BATCH` PRs: the rest go in further requests, and each batch of
+newly seen PRs is saved as it lands, so a request GitHub refuses or times out on is not repeated with the ones
+already read. A repository holding more open PRs than one
 listing page (`_PAGE`) is read for the first page only, and says so.
 """
 
 from __future__ import annotations
 
+import itertools
 import logging
 import queue
 import threading
@@ -29,6 +32,9 @@ logger = logging.getLogger(__name__)
 _PAGE = 100
 #: Merged rows still lacking a merge commit that one refresh reads again, to bound its query cost.
 _BACKFILL = 25
+#: Pull requests one query reads. GitHub refuses a query of over 500,000 nodes, about 200 selections, charges for one
+#: it times out on, and logs no cost for either.
+_BATCH = 25
 #: A required check's result, by the `conclusion` of a check run or the `state` of a commit status.
 _PASSED = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 _RUNNING = {"IN_PROGRESS", "QUEUED", "WAITING", "PENDING", "REQUESTED", "EXPECTED"}
@@ -139,23 +145,27 @@ def refresh_repository(
         number for number, record in saved.items() if record["state"] == "MERGED" and not record["mergeSha"]
     )
     held = sorted([number for number, record in saved.items() if record["state"] == "OPEN"] + backfill[:_BACKFILL])
-    answer = graphql(repo, _query(held, listing=True))
+    answer = graphql(repo, _query(held[:_BATCH], listing=True))
     if answer["open"]["pageInfo"]["hasNextPage"]:
         logger.warning("pull requests: %s has more than %d open PRs; the rest are not read", repo, _PAGE)
-    nodes = {number: answer[f"p{number}"] for number in held}
-    unseen = sorted(
-        {
-            item["number"]
-            for item in answer["open"]["nodes"] + answer["recent"]["nodes"]
-            if item["number"] not in nodes
-            and saved.get(item["number"], {}).get("state") != item["state"]
-            and (item["state"] == "OPEN" or cursor is None or item["updatedAt"] > cursor)
-        }
-        | {number for number in linked if number not in nodes and not saved.get(number, {}).get("detail")}
-    )
-    if unseen:
-        answer = graphql(repo, _query(unseen, listing=False))
-        nodes |= {number: answer[f"p{number}"] for number in unseen}
+    listed = {item["number"]: item for item in answer["open"]["nodes"] + answer["recent"]["nodes"]}
+    unseen = {
+        number
+        for number, item in listed.items()
+        if number not in held
+        and saved.get(number, {}).get("state") != item["state"]
+        and (item["state"] == "OPEN" or cursor is None or item["updatedAt"] > cursor)
+    } | {number for number in linked if number not in held and not saved.get(number, {}).get("detail")}
+    nodes = {number: answer[f"p{number}"] for number in held[:_BATCH]}
+    for batch in itertools.batched(held[_BATCH:], _BATCH):
+        answer = graphql(repo, _query(batch, listing=False))
+        nodes |= {number: answer[f"p{number}"] for number in batch}
+    # Oldest first and each batch saved as it lands, the held ones last: the cursor is the newest saved `updatedAt`,
+    # so a batch that fails is still past it on the next refresh, which asks only for what is left.
+    oldest_first = sorted(unseen, key=lambda number: (number not in listed, listed.get(number, {}).get("updatedAt")))
+    for batch in itertools.batched(oldest_first, _BATCH):
+        answer = graphql(repo, _query(batch, listing=False))
+        store.save(_record(repo, answer[f"p{number}"], now) for number in batch if answer[f"p{number}"])
     store.save(_record(repo, node, now) for node in nodes.values() if node)
 
 
