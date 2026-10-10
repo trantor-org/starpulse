@@ -243,3 +243,28 @@ def test_a_signals_key_is_stable_across_a_replay_and_differs_across_a_resumed_pr
 
     assert first[0].key == replay[0].key
     assert first[0].key != resumed[0].key
+
+
+def test_a_tool_result_carries_the_activities_and_paths_its_input_names() -> None:
+    def tool(seq: int, name: str, **tool_input: str) -> dict[str, Any]:
+        return claude("tool_result", seq, tool_name=name, success="true", tool_input=json.dumps(tool_input))
+
+    found = signals(
+        export(
+            tool(1, "Bash", command="git -C /r status && make test"),
+            tool(2, "Read", file_path="/r/a.py"),
+            tool(3, "Edit", file_path="/r/b.py"),
+        )
+    )
+
+    assert [(s.kind, s.activities, s.reads, s.writes) for s in found] == [
+        ("tool", ("git status", "make test"), (), ()),
+        ("tool", ("Read",), ("/r/a.py",), ()),
+        ("tool", ("Edit",), (), ("/r/b.py",)),
+    ]
+
+
+def test_a_codex_tool_result_without_input_is_its_tool_name_and_names_no_path() -> None:
+    (found,) = signals(export(codex("codex.tool_result", tool_name="exec_command", call_id="a", success="true")))
+
+    assert (found.activities, found.reads, found.writes) == (("exec_command",), (), ())

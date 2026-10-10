@@ -143,6 +143,32 @@ class TestConfigCheck:
                 "limits": {"cpu": 80, "memory": 80, "sessions": 2, "review": 20},
             },
             "release": None,
+            "analytics": {"roots": [], "stop_activities": [], "lifecycle_skills": [], "skill_loads": []},
+        }
+
+    def test_a_declared_analytics_table_shows_as_lists_and_pattern_text(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        file = tmp_path / "starpulse.toml"
+        file.write_text(
+            "[analytics]\n"
+            'roots = ["/r"]\n'
+            'stop_activities = ["Bash", "Read"]\n'
+            'lifecycle_skills = ["starting-tasks"]\n'
+            "[[analytics.skill_loads]]\n"
+            'skill = "verifying-claims"\n'
+            'title = "^verify"\n'
+            'label = "validation"\n'
+        )
+
+        code, document = _run(capsys, ["config", "check", "--config", str(file)])
+
+        assert code == 0
+        assert document["config"]["analytics"] == {
+            "roots": ["/r"],
+            "stop_activities": ["Bash", "Read"],
+            "lifecycle_skills": ["starting-tasks"],
+            "skill_loads": [{"skill": "verifying-claims", "activities": [], "title": "^verify", "label": "validation"}],
         }
 
     def test_with_no_file_it_reports_the_defaults(

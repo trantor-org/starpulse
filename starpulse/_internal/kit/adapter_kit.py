@@ -74,6 +74,7 @@ from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.config.history_window import HistoryWindow
 from starpulse._internal.eventlog.history import History, HistoryStore
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import TelemetryLog
 
 __all__ = [
@@ -381,6 +382,7 @@ def serve(
     telemetry: TelemetryLog | None = None,
     complete: TaskCompleter | None = None,
     search: SearchIndex | None = None,
+    analytics: Analytics | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -419,6 +421,7 @@ def serve(
         telemetry=telemetry,
         complete=complete,
         search=search,
+        analytics=analytics,
     )
     server = StarPulseServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

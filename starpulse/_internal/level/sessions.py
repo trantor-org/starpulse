@@ -27,13 +27,13 @@ which the reader joins.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from starpulse._internal.level.signals import CODEX, Signal
 from starpulse.contracts.adapters import TaskKeys
 
-__all__ = ["IDLE_S", "session_health", "slice_health"]
+__all__ = ["IDLE_S", "attributed", "grouped", "session_health", "session_kind", "slice_health"]
 
 #: A gap in a session's signals longer than this is idle time, not the agent's.
 IDLE_S = 600.0
@@ -42,7 +42,8 @@ _TOKENS = ("input", "output", "cache_read", "cache_write", "reasoning")
 _CODEX_INTERACTIVE = {"codex-tui", "codex_cli_rs"}
 
 
-def _kind(session: list[Signal]) -> str:
+def session_kind(session: list[Signal]) -> str:
+    """`interactive`, `headless` or `unknown`: how the session was driven, from its first signals that say."""
     for s in session:
         if s.kind == "start" and s.harness == CODEX:
             return (
@@ -128,23 +129,34 @@ def _note(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
         row["interrupts"] += 1
 
 
-def session_health(found: Iterable[Signal], keys: TaskKeys | None) -> list[dict[str, Any]]:
-    """One row per (session, task) of the sessions `found` holds, oldest first; see the module docstring."""
+def grouped(found: Iterable[Signal]) -> list[list[Signal]]:
+    """The signals `found` as one list per harness session, each oldest first."""
     sessions: dict[tuple[str, str], list[Signal]] = defaultdict(list)
     for s in found:
         sessions[s.harness, s.session].append(s)
+    return [sorted(group, key=lambda s: s.time) for group in sessions.values()]
+
+
+def attributed(ordered: list[Signal], keys: TaskKeys | None) -> Iterator[tuple[str | None, Signal]]:
+    """Each signal of one session, oldest first, with the task it belongs to (see the module docstring)."""
+    task = keys.for_branch(ordered[0].branch) if keys else None
+    for s in ordered:
+        if s.kind == "branch" and keys and (named := keys.for_branch(s.name)) is not None:
+            task = named
+        yield task, s
+
+
+def session_health(found: Iterable[Signal], keys: TaskKeys | None) -> list[dict[str, Any]]:
+    """One row per (session, task) of the sessions `found` holds, oldest first; see the module docstring."""
     rows: list[dict[str, Any]] = []
-    for ordered in (sorted(group, key=lambda s: s.time) for group in sessions.values()):
-        kind = _kind(ordered)
-        task = keys.for_branch(ordered[0].branch) if keys else None
+    for ordered in grouped(found):
+        kind = session_kind(ordered)
         row: dict[str, Any] | None = None
         by_task: dict[str | None, dict[str, Any]] = {}
         last: dict[str, dict[str, str]] = defaultdict(dict)
         prompts = 0
         before = ordered[0].time
-        for s in ordered:
-            if s.kind == "branch" and keys and (named := keys.for_branch(s.name)) is not None:
-                task = named
+        for task, s in attributed(ordered, keys):
             if row is None or row["task"] != task:
                 row = by_task.get(task) or by_task.setdefault(task, _empty(s, task, kind))
             gap, before = s.time - before, s.time

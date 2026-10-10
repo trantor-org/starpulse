@@ -25,6 +25,7 @@ from dataclasses import asdict, fields
 from typing import Any
 
 from starpulse._internal.eventlog.event_log import EventLog, Tail
+from starpulse._internal.harnesses.activity import SHELLS, activities, paths
 from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
 from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal
 
@@ -32,8 +33,6 @@ __all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "signals"]
 
 #: Where Codex runs its main agent; a tool result from any other agent path is a subagent's.
 _MAIN_AGENT = {"", "/root"}
-#: The tools that run a shell command, whose input may switch the branch.
-_SHELLS = {"Bash", "exec_command", "shell", "local_shell"}
 #: `git switch` or `git checkout`, its flags, then the ref it names (never a `--` pathspec).
 _SWITCH = re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?(?:switch|checkout)\s+((?:-[\w-]+\s+)*)([^\s;&|<>-][^\s;&|<>]*)")
 
@@ -60,17 +59,32 @@ def _cost(value: Any) -> float | None:
         return None
 
 
-def _command(attributes: dict[str, Any]) -> str:
-    """The shell command a tool call ran: Claude Code's `tool_input` or Codex's `arguments`."""
+def _input(attributes: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """A tool call's input as the export gave it: Claude Code's `tool_input` or Codex's `arguments`, parsed when it is
+    a JSON object, and its raw text."""
     for key in ("tool_input", "arguments"):
-        try:
-            parsed = json.loads(str(attributes.get(key)))
-        except ValueError:
+        if (raw := attributes.get(key)) is None:
             continue
-        command = parsed.get("command") or parsed.get("cmd") if isinstance(parsed, dict) else None
-        if isinstance(command, str):
-            return command
-    return ""
+        try:
+            parsed = json.loads(str(raw))
+        except ValueError:
+            return {}, str(raw)
+        return (parsed if isinstance(parsed, dict) else {}), str(raw)
+    return {}, ""
+
+
+def _command(tool_input: dict[str, Any]) -> str:
+    """The shell command a tool call ran."""
+    command = tool_input.get("command") or tool_input.get("cmd")
+    return command if isinstance(command, str) else ""
+
+
+def _call(attributes: dict[str, Any]) -> dict[str, Any]:
+    """What a tool result's input says the call did: its activities and the paths it read and wrote."""
+    tool = str(attributes.get("tool_name") or "")
+    tool_input, raw = _input(attributes)
+    reads, writes = paths(tool, tool_input, raw)
+    return {"activities": tuple(activities(tool, tool_input)), "reads": tuple(reads), "writes": tuple(writes)}
 
 
 def _claude_origin(query_source: str) -> str:
@@ -110,6 +124,7 @@ def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
             "name": str(a.get("tool_name") or ""),
             "ok": _flag(a.get("success")),
             "seconds": _seconds(a.get("duration_ms")),
+            **_call(a),
         }
     elif name == "skill_activated":
         yield {"kind": "skill", "name": str(a.get("skill.name") or "")}
@@ -149,6 +164,7 @@ def _codex(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
             "ok": _flag(a.get("success")),
             "origin": origin,
             "seconds": _seconds(a.get("duration_ms")),
+            **_call(a),
         }
     elif name == "codex.skill_invocation":
         yield {"kind": "skill", "name": str(a.get("skill.name") or "")}
@@ -177,12 +193,19 @@ def signals(payload: dict[str, Any]) -> list[Signal]:
         key = f"{harness}:{session}:{name}:{identity}:{a.get('event.timestamp')}"
         for fields in read(name, a):
             found.append(Signal(harness, session, time=at, key=key, branch=branch, **fields))
-        if str(a.get("tool_name")) in _SHELLS and (switch := _SWITCH.search(_command(a))):
+        if str(a.get("tool_name")) in SHELLS and (switch := _SWITCH.search(_command(_input(a)[0]))):
             found.append(Signal(harness, session, "branch", at, f"{key}:branch", branch, name=switch[2]))
     return found
 
 
 _FIELDS = {f.name for f in fields(Signal)}
+_LISTS = ("activities", "reads", "writes")
+
+
+def _signal(stored: dict[str, Any]) -> Signal:
+    """A signal as the event log stored it, whose tuples came back as lists."""
+    kept = {k: v for k, v in stored.items() if k in _FIELDS}
+    return Signal(**{k: tuple(v) if k in _LISTS else v for k, v in kept.items()})
 
 
 class TelemetryLog:
@@ -214,7 +237,7 @@ class TelemetryLog:
         """The held signals from `since` on; raises when the database cannot be read."""
         with self._lock:
             while entries := self._tail.poll():
-                self._held += [Signal(**{k: v for k, v in entry.fields.items() if k in _FIELDS}) for entry in entries]
+                self._held += [_signal(entry.fields) for entry in entries]
                 if len(entries) < self._tail.batch:
                     break
             if self._held:

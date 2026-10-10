@@ -352,6 +352,39 @@
       "title": "Capabilities",
       "type": "object"
     },
+    "CaseRef": {
+      "additionalProperties": false,
+      "description": "One session's work on one task (`task` None: a branch that names none).",
+      "properties": {
+        "harness": {
+          "type": "string"
+        },
+        "last_at": {
+          "type": "number"
+        },
+        "session": {
+          "type": "string"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "harness",
+        "session",
+        "task",
+        "last_at"
+      ],
+      "title": "CaseRef",
+      "type": "object"
+    },
     "ChainState": {
       "additionalProperties": false,
       "properties": {
@@ -426,6 +459,101 @@
         "at"
       ],
       "title": "ClaimDelta",
+      "type": "object"
+    },
+    "ClusterMedoid": {
+      "additionalProperties": false,
+      "description": "The case nearest every other by normalized LCS distance between traces, and the cluster's usual spread.",
+      "properties": {
+        "case": {
+          "$ref": "#/$defs/CaseRef"
+        },
+        "median_distance": {
+          "type": "number"
+        },
+        "trace": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "case",
+        "median_distance",
+        "trace"
+      ],
+      "title": "ClusterMedoid",
+      "type": "object"
+    },
+    "ClusterMissed": {
+      "additionalProperties": false,
+      "properties": {
+        "missed": {
+          "type": "integer"
+        },
+        "performed": {
+          "type": "integer"
+        },
+        "skill": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "performed",
+        "missed"
+      ],
+      "title": "ClusterMissed",
+      "type": "object"
+    },
+    "ClusterOutlier": {
+      "additionalProperties": false,
+      "description": "A case far from the medoid: `deletions` are the medoid's activities it lacks, `insertions` its own extra.",
+      "properties": {
+        "case": {
+          "$ref": "#/$defs/CaseRef"
+        },
+        "deletions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "distance": {
+          "type": "number"
+        },
+        "insertions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "case",
+        "distance",
+        "deletions",
+        "insertions"
+      ],
+      "title": "ClusterOutlier",
+      "type": "object"
+    },
+    "ClusterSkill": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "type": "integer"
+        },
+        "skill": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "cases"
+      ],
+      "title": "ClusterSkill",
       "type": "object"
     },
     "CompleteRequest": {
@@ -3586,6 +3714,61 @@
       "title": "Milestones",
       "type": "object"
     },
+    "MissedLoads": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/missed-loads`: per declared skill, the cases that ran its trigger without loading it.",
+      "properties": {
+        "now": {
+          "type": "number"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/MissedSkill"
+          },
+          "type": "array"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "skills"
+      ],
+      "title": "MissedLoads",
+      "type": "object"
+    },
+    "MissedSkill": {
+      "additionalProperties": false,
+      "description": "A declared skill: the cases that performed what should load it, and those that did not load it.",
+      "properties": {
+        "listed": {
+          "description": "The `list` most recent missed cases, newest first.",
+          "items": {
+            "$ref": "#/$defs/CaseRef"
+          },
+          "type": "array"
+        },
+        "missed": {
+          "type": "integer"
+        },
+        "performed": {
+          "type": "integer"
+        },
+        "skill": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "performed",
+        "missed",
+        "listed"
+      ],
+      "title": "MissedSkill",
+      "type": "object"
+    },
     "Move": {
       "additionalProperties": false,
       "description": "The verdict on moving a task to one column: allowed, or guarded by a declared rule.",
@@ -4654,7 +4837,7 @@
     },
     "Settled": {
       "additionalProperties": false,
-      "description": "A task that left the Board's lanes for good: where it settled, when, and the title, assignee and milestone it settled with.",
+      "description": "A task that left the Board's lanes for good: where it settled, when, and the title, assignee, milestone and labels it settled with.",
       "properties": {
         "at": {
           "anyOf": [
@@ -4675,6 +4858,13 @@
               "type": "null"
             }
           ]
+        },
+        "labels": {
+          "description": "The labels it settled with.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "milestone": {
           "default": "",
@@ -5485,6 +5675,162 @@
       "title": "TokenCounts",
       "type": "object"
     },
+    "TraceCluster": {
+      "additionalProperties": false,
+      "description": "Cases that did the same distinctive work, and the skills that covered it.",
+      "properties": {
+        "cases": {
+          "type": "integer"
+        },
+        "descriptors": {
+          "description": "The features with the most weight across the cases: `a:` activity, `r:` area read, `w:` area written.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "first_at": {
+          "type": "number"
+        },
+        "key": {
+          "description": "A stable id: the digest of the sorted descriptors.",
+          "type": "string"
+        },
+        "kinds": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "last_at": {
+          "type": "number"
+        },
+        "medoid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClusterMedoid"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null unless `outliers` was asked for."
+        },
+        "missed_loads": {
+          "items": {
+            "$ref": "#/$defs/ClusterMissed"
+          },
+          "type": "array"
+        },
+        "outliers": {
+          "items": {
+            "$ref": "#/$defs/ClusterOutlier"
+          },
+          "type": "array"
+        },
+        "sample_sessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sample_tasks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessions": {
+          "type": "integer"
+        },
+        "skills": {
+          "description": "The three most loaded skills, less the lifecycle skills.",
+          "items": {
+            "$ref": "#/$defs/ClusterSkill"
+          },
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "titles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "uncovered": {
+          "description": "Cases that loaded no skill beyond the lifecycle skills.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "sessions",
+        "cases",
+        "tasks",
+        "first_at",
+        "last_at",
+        "kinds",
+        "descriptors",
+        "skills",
+        "uncovered",
+        "sample_sessions",
+        "sample_tasks",
+        "titles",
+        "missed_loads",
+        "medoid",
+        "outliers"
+      ],
+      "title": "TraceCluster",
+      "type": "object"
+    },
+    "TraceClusters": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/trace-clusters`: recurring work, ranked by distinct sessions.",
+      "properties": {
+        "cases": {
+          "description": "Cases with a trace in the window.",
+          "type": "integer"
+        },
+        "clustered": {
+          "description": "Cases that joined a cluster, whatever its size.",
+          "type": "integer"
+        },
+        "clusters": {
+          "items": {
+            "$ref": "#/$defs/TraceCluster"
+          },
+          "type": "array"
+        },
+        "min_sessions": {
+          "type": "integer"
+        },
+        "now": {
+          "type": "number"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "threshold",
+        "min_sessions",
+        "cases",
+        "clustered",
+        "clusters"
+      ],
+      "title": "TraceClusters",
+      "type": "object"
+    },
     "TrailStep": {
       "additionalProperties": false,
       "properties": {
@@ -6032,6 +6378,9 @@
     "milestones": {
       "$ref": "#/$defs/Milestones"
     },
+    "missedLoads": {
+      "$ref": "#/$defs/MissedLoads"
+    },
     "pulls": {
       "$ref": "#/$defs/Pulls"
     },
@@ -6105,6 +6454,9 @@
     "taskRecord": {
       "$ref": "#/$defs/TaskRecord"
     },
+    "traceClusters": {
+      "$ref": "#/$defs/TraceClusters"
+    },
     "trajectories": {
       "$ref": "#/$defs/Trajectories"
     },
@@ -6126,6 +6478,8 @@
     "searchResults",
     "health",
     "sessions",
+    "missedLoads",
+    "traceClusters",
     "level",
     "trajectories",
     "whatIf",

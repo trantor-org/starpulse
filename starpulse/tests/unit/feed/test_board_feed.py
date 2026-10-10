@@ -302,7 +302,17 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
         [],
         {},
         {},
-        {"PROJ-1": {"state": "completed", "at": None, "created": None, "title": "t", "model": "", "milestone": ""}},
+        {
+            "PROJ-1": {
+                "state": "completed",
+                "at": None,
+                "created": None,
+                "title": "t",
+                "model": "",
+                "milestone": "",
+                "labels": [],
+            }
+        },
         None,
     )
     assert body["boardUrl"] == "http://tracker.example.test:6421"
@@ -443,6 +453,7 @@ def test_a_history_that_cannot_be_read_dates_a_replayed_lane_by_the_clock_and_st
 
 
 def test_a_task_carries_when_it_was_created_and_a_settled_one_when_as_whom_and_in_which_milestone_it_settled() -> None:
+    # A settled task keeps its labels too: an analytic that asks what a finished task was for reads them here.
     feed = BoardFeed()
     feed.put(BoardTask(id="PROJ-1", team="demo", title="open one", lane="ready", created_at=100.0))
     _, changes = feed.subscribe()
@@ -455,13 +466,22 @@ def test_a_task_carries_when_it_was_created_and_a_settled_one_when_as_whom_and_i
             lane="done",
             assignee="opus",
             milestone="m-7",
+            labels=["validation"],
             settled="archived",
             created_at=50.0,
             settled_at=200.0,
         )
     )
 
-    entry = {"state": "archived", "at": 200.0, "created": 50.0, "title": "done one", "model": "opus", "milestone": "m-7"}
+    entry = {
+        "state": "archived",
+        "at": 200.0,
+        "created": 50.0,
+        "title": "done one",
+        "model": "opus",
+        "milestone": "m-7",
+        "labels": ["validation"],
+    }
     assert _agents(feed)[0]["created"] == 100.0
     assert feed.snapshot()["settled"] == {"PROJ-2": entry}
     assert changes.get_nowait() == ("task", {"id": "PROJ-2", "agent": None, "settled": entry})
@@ -1062,3 +1082,14 @@ def test_the_open_tasks_and_a_machines_tasks_can_be_read_without_a_snapshot() ->
     assert [t["state"] for t in feed.machine_tasks("in-progress")] == ["worktree_ready"]
     assert feed.machine_tasks("authoring-skills") == []  # drawn, nothing placed
     assert feed.machine_tasks("not-a-machine") == []
+
+
+def test_every_task_open_or_settled_is_named_by_its_title_and_labels() -> None:
+    feed = BoardFeed()
+    feed.put(BoardTask(id="PROJ-1", team="demo", title="open one", lane="ready", labels=["a"]))
+    feed.put(BoardTask(id="PROJ-2", team="demo", title="done one", lane="done", labels=["validation"], settled="completed"))
+
+    assert feed.titled() == {
+        "PROJ-1": {"title": "open one", "labels": ["a"]},
+        "PROJ-2": {"title": "done one", "labels": ["validation"]},
+    }

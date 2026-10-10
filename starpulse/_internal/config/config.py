@@ -33,6 +33,7 @@ from starpulse._internal.config.adapter_types import module_name
 from starpulse._internal.config.autopilot import Autopilot, AutopilotError, parse_autopilot
 from starpulse._internal.config.level import Level, LevelError, parse_level
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
+from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
 from starpulse._internal.config.triggers import Trigger, TriggerError, parse_triggers
 
 #: The board adapter type a config without a `[board]` table names.
@@ -60,6 +61,7 @@ _KEYS = {
     "autopilot",
     "release",
     "triggers",
+    "analytics",
 }
 _OIDC_KEYS = {
     "issuer",
@@ -439,6 +441,8 @@ class Config:
     """The policy the autopilot runs under (`[autopilot]`); every key is optional, so no block is the defaults."""
     triggers: tuple[Trigger, ...] = ()
     """The runs to start when a board event arrives (`[[triggers]]`); none: no event starts a run."""
+    analytics: Analytics = field(default_factory=Analytics)
+    """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
     release: Release | None = None
     """The `[release]` table: None releases no task, so a config without it leaves release to whoever does it today."""
 
@@ -460,6 +464,14 @@ def _autopilot(raw: object) -> Autopilot:
     try:
         return parse_autopilot(raw)
     except AutopilotError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _analytics(raw: object) -> Analytics:
+    """The `[analytics]` table, or the empty one when the config has none; a refusal is a `ConfigError`."""
+    try:
+        return parse_analytics(raw)
+    except AnalyticsError as exc:
         raise ConfigError(str(exc)) from exc
 
 
@@ -600,5 +612,6 @@ def load(path: Path | None) -> Config:
         ci=_ci(raw),
         autopilot=_autopilot(raw.get("autopilot")),
         triggers=_triggers(raw.get("triggers"), runs),
+        analytics=_analytics(raw.get("analytics")),
         release=_release(raw, repos),
     )

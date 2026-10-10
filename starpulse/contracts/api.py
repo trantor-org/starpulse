@@ -138,7 +138,7 @@ class RawAgent(_Api):
 
 
 class Settled(_Api):
-    """A task that left the Board's lanes for good: where it settled, when, and the title, assignee and milestone it settled with."""
+    """A task that left the Board's lanes for good: where it settled, when, and the title, assignee, milestone and labels it settled with."""
 
     state: str
     at: float | None
@@ -146,6 +146,7 @@ class Settled(_Api):
     title: str
     model: str
     milestone: str = Field(default="", description="The milestone it settled in; empty when it had none.")
+    labels: list[str] = Field(default_factory=list, description="The labels it settled with.")
 
 
 class Tie(_Api):
@@ -726,6 +727,93 @@ class Sessions(_Api):
     window_s: float
     sessions: list[SessionHealth]
     slices: list[SliceHealth]
+
+
+class CaseRef(_Api):
+    """One session's work on one task (`task` None: a branch that names none)."""
+
+    harness: str
+    session: str
+    task: str | None
+    last_at: float
+
+
+class MissedSkill(_Api):
+    """A declared skill: the cases that performed what should load it, and those that did not load it."""
+
+    skill: str
+    performed: int
+    missed: int
+    listed: list[CaseRef] = Field(description="The `list` most recent missed cases, newest first.")
+
+
+class MissedLoads(_Api):
+    """`GET /api/analytics/missed-loads`: per declared skill, the cases that ran its trigger without loading it."""
+
+    now: float
+    window_s: float
+    skills: list[MissedSkill]
+
+
+class ClusterSkill(_Api):
+    skill: str
+    cases: int
+
+
+class ClusterMissed(_Api):
+    skill: str
+    performed: int
+    missed: int
+
+
+class ClusterMedoid(_Api):
+    """The case nearest every other by normalized LCS distance between traces, and the cluster's usual spread."""
+
+    case: CaseRef
+    median_distance: float
+    trace: list[str]
+
+
+class ClusterOutlier(_Api):
+    """A case far from the medoid: `deletions` are the medoid's activities it lacks, `insertions` its own extra."""
+
+    case: CaseRef
+    distance: float
+    deletions: list[str]
+    insertions: list[str]
+
+
+class TraceCluster(_Api):
+    """Cases that did the same distinctive work, and the skills that covered it."""
+
+    key: str = Field(description="A stable id: the digest of the sorted descriptors.")
+    sessions: int
+    cases: int
+    tasks: list[str]
+    first_at: float
+    last_at: float
+    kinds: dict[str, int]
+    descriptors: list[str] = Field(description="The features with the most weight across the cases: `a:` activity, `r:` area read, `w:` area written.")
+    skills: list[ClusterSkill] = Field(description="The three most loaded skills, less the lifecycle skills.")
+    uncovered: int = Field(description="Cases that loaded no skill beyond the lifecycle skills.")
+    sample_sessions: list[str]
+    sample_tasks: list[str]
+    titles: list[str]
+    missed_loads: list[ClusterMissed]
+    medoid: ClusterMedoid | None = Field(description="Null unless `outliers` was asked for.")
+    outliers: list[ClusterOutlier]
+
+
+class TraceClusters(_Api):
+    """`GET /api/analytics/trace-clusters`: recurring work, ranked by distinct sessions."""
+
+    now: float
+    window_s: float
+    threshold: float
+    min_sessions: int
+    cases: int = Field(description="Cases with a trace in the window.")
+    clustered: int = Field(description="Cases that joined a cluster, whatever its size.")
+    clusters: list[TraceCluster]
 
 
 class LevelTerminal(_Api):
@@ -1418,6 +1506,8 @@ RESPONSES: dict[str, Any] = {
     "/api/machines": Machines,
     "/api/analytics/health": Health,
     "/api/analytics/sessions": Sessions,
+    "/api/analytics/missed-loads": MissedLoads,
+    "/api/analytics/trace-clusters": TraceClusters,
     "/api/level": Level,
     "/api/level/trajectories": Trajectories,
     "/api/level/what-if": WhatIf,
@@ -1469,6 +1559,8 @@ BODIES: dict[str, Any] = {
     "search": SearchResults | ApiError,
     "health": Health | ApiError,
     "sessions": Sessions | ApiError,
+    "missed_loads": MissedLoads | ApiError,
+    "trace_clusters": TraceClusters | ApiError,
     "level": Level | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
     "what_if": WhatIf | ApiError | WindowTooLong,
@@ -1533,6 +1625,8 @@ class ApiContract(_Api):
     searchResults: SearchResults
     health: Health
     sessions: Sessions
+    missedLoads: MissedLoads
+    traceClusters: TraceClusters
     level: Level
     trajectories: Trajectories
     whatIf: WhatIf

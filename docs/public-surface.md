@@ -21,7 +21,12 @@ internal and can change in any release.
 - `GET /api/analytics/sessions` and its body in `api.schema.json`: session and slice health from those exports (see
   [Connect sources](sources.md#measure-session-and-slice-health)).
 - `starpulse search QUERY` and its route `GET /api/search?q=`: the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
+- `GET /api/analytics/missed-loads` and `GET /api/analytics/trace-clusters` and their bodies in `api.schema.json`:
+  the skills a session did not load for work that should have loaded them, and the work that recurs across sessions
+  (see [Connect sources](sources.md#find-missed-skill-loads-and-recurring-work)).
 - The config file's keys, among them each `[[triggers]]` table's `on`, `start` and `when` ([Triggers](serving.md#triggers)),
+  the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills` and each `[[analytics.skill_loads]]`'s
+  `skill`, `activities`, `title` and `label` ([Config file](serving.md#config-file)),
   and the machine YAML with its JSON Schema (`machine.schema.json`).
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
