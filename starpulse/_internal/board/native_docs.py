@@ -18,7 +18,7 @@ from typing import Any
 
 import yaml
 
-from starpulse._internal.board.seam import DocArchiver, DocCreator, DocEditor, DocLister, DocReader, Written
+from starpulse._internal.board.seam import DocArchiver, DocCreator, DocEditor, DocLister, DocReader, DocRestorer, Written
 
 _TYPES = ("specification", "guide", "readme", "other")
 _CREATE = {"type", "folder", "body"}
@@ -40,10 +40,10 @@ def _parts(text: str) -> tuple[str, str] | None:
     return text[4 : end + 1], text[end + 5 :]
 
 
-def _files(root: Path) -> list[tuple[Path, str, dict, str]]:
-    """Each open doc's file with its front matter lines, parsed front matter and body, by ascending number."""
+def _files(root: Path, folder: str = "docs") -> list[tuple[Path, str, dict, str]]:
+    """Each doc's file under `folder` with its front matter lines, parsed front matter and body, by ascending number."""
     found = []
-    for path in (root / "docs").rglob("doc-*.md"):
+    for path in (root / folder).rglob("doc-*.md"):
         try:
             parts = _parts(path.read_text())
         except OSError:
@@ -59,8 +59,8 @@ def _files(root: Path) -> list[tuple[Path, str, dict, str]]:
     return sorted(found, key=lambda file: int(re.sub(r"\D", "", str(file[2]["id"])) or 0))
 
 
-def _find(root: Path, doc: str) -> tuple[Path, str, dict, str] | None:
-    return next((file for file in _files(root) if str(file[2]["id"]).strip() == doc), None)
+def _find(root: Path, doc: str, folder: str = "docs") -> tuple[Path, str, dict, str] | None:
+    return next((file for file in _files(root, folder) if str(file[2]["id"]).strip() == doc), None)
 
 
 def _record(root: Path, path: Path, frontmatter: dict) -> dict[str, Any]:
@@ -226,3 +226,27 @@ def archiver(root: Path) -> DocArchiver:
         return Written(True, f"Archived doc {doc}")
 
     return archive
+
+
+def restorer(root: Path) -> DocRestorer:
+    """A board writer that returns an archived doc's file to the folder it names under `docs/`, unchanged."""
+
+    def restore(doc: str, folder: str = "", /) -> Written:
+        if folder and not (isinstance(folder, str) and _FOLDER.fullmatch(folder)):
+            return Written(False, "folder must be a path of plain names under docs/")
+        if (open_doc := _find(root, doc)) is not None:
+            return Written(False, f"{doc} is already on the board at {open_doc[0]}")
+        if (found := _find(root, doc, "archive/docs")) is None:
+            return Written(False, f"{doc} has no archived doc file in {root / 'archive' / 'docs'}")
+        target = root / "docs" / folder / found[0].name
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.link(found[0], target)  # never replaces a file already there
+            found[0].unlink()
+        except FileExistsError:
+            return Written(False, f"{doc}: {target} already exists")
+        except OSError as error:
+            return Written(False, f"{found[0]}: {error}")
+        return Written(True, f"Restored doc {doc}")
+
+    return restore

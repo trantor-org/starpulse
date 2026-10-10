@@ -9,7 +9,8 @@ directory. The `Board` says:
   keys it recognizes),
 - and optionally a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may
   list the `writers` the machine declares per event), an `assign` for assignee changes, a `read`, `edit` and `archive` for the full task record and guarded edits and
-  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `complete(task)` that
+  archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `restore(task)` that
+  returns an archived task's file to the board's tasks unchanged (`POST /api/restore`), a `complete(task)` that
   moves a Done task out of the lanes (the native board's to `completed/`, where `read` and `edit` still find it), a `create(title, details)` that
   makes a task in the board's starting lane with the details the page filled (description, priority, labels,
   milestone, assignee, dependencies, acceptance criteria) and answers with its id (`POST /api/tasks`;
@@ -18,8 +19,8 @@ directory. The `Board` says:
   `archive_milestone(id)` (`GET /api/milestones`, `GET /api/milestones/<id>`, `POST /api/milestones`,
   `POST /api/milestones/edit` and `POST /api/milestones/archive`; the writes answer only the loopback and private
   network, and a board that sets none answers 404), and doc records the same way: `docs()` (without bodies),
-  `read_doc(id)`, `create_doc(title, details)`, `edit_doc(id, changes)` and `archive_doc(id)` (`/api/docs`,
-  `/api/docs/<id>`, `/api/docs/edit` and `/api/docs/archive`). `serve` records every machine event (task- and run-keyed) and each Board lane change it
+  `read_doc(id)`, `create_doc(title, details)`, `edit_doc(id, changes)` and `archive_doc(id)` and `restore_doc(id, folder)` (`/api/docs`,
+  `/api/docs/<id>`, `/api/docs/edit`, `/api/docs/archive` and `/api/docs/restore`). `serve` records every machine event (task- and run-keyed) and each Board lane change it
   places into StarPulse's own store (`starpulse_machine_events`, `starpulse_lane_changes`), and the page reads that
   store: a `Board` has no history of its own. In the same transaction the store folds each of them into
   summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
@@ -41,7 +42,8 @@ directory. The `Board` says:
 `starpulse._internal.board.native`, the default, keeps tasks as Markdown files under `.starpulse/board/` and writes moves,
 assignee changes and new tasks to them in Python, reads a task's full record (priority, description, acceptance
 criteria, plan, notes and definition of done) back for the task view, applies an edit to a task's file in one write,
-and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments.
+and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments; a restore moves that
+file back to `tasks/` unchanged and never replaces a file there.
 Every task write is one rename of a whole file: an edit applies all its changes and every comment it carries (one text
 or a list, in order) at once, and a create also sets any further field an edit sets (`status`, `type`, `references`,
 `documentation`, `definitionOfDone`, `plan`, `notes`) in the same write, refusing the whole create on a field it cannot
@@ -83,7 +85,8 @@ subfolder of `docs/` such as `specs/` is part of the doc's path and stays throug
 with `<>:"/\|?*` read as a space, `'(),` dropped and runs of space made `-`, its case kept. A new doc takes the next
 number past every file in `docs/` and `archive/docs/`; an update rewrites only the front matter lines it changes (and
 `updated_date`) and the body it is given, renames the file when the title changes, and writes nothing when it
-changes nothing; an archive moves the file to `archive/docs/`.
+changes nothing; an archive moves the file to `archive/docs/`, and a restore moves it back unchanged into the folder it
+names under `docs/` (`docs/` itself by default), never replacing a file there.
 The native board's task `edit` writes every field of Backlog.md's task file and only the one it is given: the front
 matter's `title`, `type`, `status` (spelled as the board's lane), `priority`, `milestone`, assignee (`profile`),
 `labels`, `dependencies`, `references`, `documentation` and `modifiedFiles` (an empty one of the last three leaves its

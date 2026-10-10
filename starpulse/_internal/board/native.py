@@ -30,6 +30,7 @@ from starpulse._internal.board.seam import (
     TaskCreator,
     TaskEditor,
     TaskReader,
+    TaskRestorer,
     Written,
 )
 from starpulse._internal.board.upstream_backlog import (
@@ -82,9 +83,10 @@ def _create(root: Path, project: str) -> None:
         )
 
 
-def _find(root: Path, task: str) -> Path | None:
-    """The file under `tasks/`, or `completed/` once it is completed, whose front matter holds `id: <task>`."""
-    for folder in ("tasks", "completed"):
+def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed")) -> Path | None:
+    """The file under `tasks/`, or `completed/` once it is completed, whose front matter holds `id: <task>`; `folders`
+    names where else to look."""
+    for folder in folders:
         for path in sorted((root / folder).glob("*.md")):
             try:
                 frontmatter, _ = _split(path.read_text())
@@ -447,6 +449,30 @@ def _archiver(root: Path, guard: _Guard = _Guard()) -> TaskArchiver:
     return archive
 
 
+def _restorer(root: Path) -> TaskRestorer:
+    """A board writer that returns an archived task's file, unchanged, to `tasks/` under its own name.
+
+    The task is refused while its number is open or completed, and when the name is taken: the file is linked into
+    place, so a file another writer put there first is never replaced."""
+
+    def restore(task: str, /) -> Written:
+        if _find(root, task) is not None:
+            return Written(False, f"{task} is already on the board")
+        if (path := _find(root, task, ("archive/tasks",))) is None:
+            return Written(False, f"{task} has no archived task file in {root / 'archive' / 'tasks'}")
+        target = root / "tasks" / path.name
+        try:
+            os.link(path, target)
+            path.unlink()
+        except FileExistsError:
+            return Written(False, f"{task}: {target} already exists")
+        except OSError as error:
+            return Written(False, f"{path}: {error}")
+        return Written(True, f"Restored task {task}")
+
+    return restore
+
+
 def _holder(body: str, session: str) -> str:
     """`body` with `**Holder:** <session>` appended to its notes, which the board reads the holder from."""
     return _append_notes(body, f"**Holder:** {session}")
@@ -591,12 +617,14 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "evaluate": evaluate,
             "edit": _editor(root, config.statuses, guard),
             "archive": _archiver(root, guard),
+            "restore": _restorer(root),
             "complete": _completer(root),
             "docs": native_docs.lister(root),
             "read_doc": native_docs.reader(root),
             "create_doc": native_docs.creator(root),
             "edit_doc": native_docs.editor(root),
             "archive_doc": native_docs.archiver(root),
+            "restore_doc": native_docs.restorer(root),
             "milestones": native_milestones.lister(root),
             "read_milestone": native_milestones.reader(root),
             "create_milestone": native_milestones.creator(root),

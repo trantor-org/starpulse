@@ -1286,6 +1286,12 @@ class ArchiveRequest(_Api):
     reason: str | None = None
 
 
+class RestoreRequest(_Api):
+    """`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged."""
+
+    task: str
+
+
 class CompleteRequest(_Api):
     """`POST /api/complete`: move the Done task `task` into the board's completed tasks."""
 
@@ -1348,6 +1354,14 @@ class DocArchiveRequest(_Api):
     """`POST /api/docs/archive`: archive `doc`."""
 
     doc: str
+
+
+class DocRestoreRequest(_Api):
+    """`POST /api/docs/restore`: return the archived doc `doc` to `folder` under the board's docs (the docs folder
+    itself when absent), unchanged."""
+
+    doc: str
+    folder: str | None = None
 
 
 class WindowRequest(_Api):
@@ -1436,6 +1450,10 @@ class Archived(_Api):
     task: str
 
 
+class Restored(_Api):
+    task: str
+
+
 class Completed(_Api):
     task: str
 
@@ -1467,6 +1485,10 @@ class DocEdited(_Api):
 
 
 class DocArchived(_Api):
+    doc: str
+
+
+class DocRestored(_Api):
     doc: str
 
 
@@ -1532,6 +1554,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/start": StartRequest,
     "/api/edit": EditRequest,
     "/api/archive": ArchiveRequest,
+    "/api/restore": RestoreRequest,
     "/api/complete": CompleteRequest,
     "/api/tasks": CreateRequest,
     "/api/milestones": MilestoneCreateRequest,
@@ -1540,6 +1563,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/docs": DocCreateRequest,
     "/api/docs/edit": DocEditRequest,
     "/api/docs/archive": DocArchiveRequest,
+    "/api/docs/restore": DocRestoreRequest,
     "/api/history-window": WindowRequest,
     "/api/forwarding": ForwardingRequest,
     "/api/autopilot": AutopilotRequest,
@@ -1574,6 +1598,7 @@ BODIES: dict[str, Any] = {
     "start": Started | SkillRefusal | ApiError,
     "edit": Edited | StaleEdit | SkillRefusal | ApiError,
     "archive": Archived | SkillRefusal | ApiError,
+    "restore": Restored | SkillRefusal | ApiError,
     "complete": Completed | SkillRefusal | ApiError,
     "create": Created | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,
@@ -1586,6 +1611,7 @@ BODIES: dict[str, Any] = {
     "doc_create": DocCreated | SkillRefusal | ApiError,
     "doc_edit": DocEdited | SkillRefusal | ApiError,
     "doc_archive": DocArchived | SkillRefusal | ApiError,
+    "doc_restore": DocRestored | SkillRefusal | ApiError,
     "run": RunStarted | ApiError,
     "ingest": Accepted | ApiError,
     "forward": ForwardAccepted | ApiError,
@@ -1646,6 +1672,7 @@ class ApiContract(_Api):
         | StartRequest
         | EditRequest
         | ArchiveRequest
+        | RestoreRequest
         | CompleteRequest
         | CreateRequest
         | MilestoneCreateRequest
@@ -1654,6 +1681,7 @@ class ApiContract(_Api):
         | DocCreateRequest
         | DocEditRequest
         | DocArchiveRequest
+        | DocRestoreRequest
         | WindowRequest
         | ForwardingRequest
         | AutopilotRequest
@@ -1664,6 +1692,7 @@ class ApiContract(_Api):
         Moved
         | Edited
         | Archived
+        | Restored
         | Completed
         | Created
         | MilestoneCreated
@@ -1672,6 +1701,7 @@ class ApiContract(_Api):
         | DocCreated
         | DocEdited
         | DocArchived
+        | DocRestored
         | Started
         | RunStarted
         | Accepted

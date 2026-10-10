@@ -1,4 +1,4 @@
-"""Doc records on the native board: Backlog.md's `docs/**/doc-N - slug.md` files, read, created, updated and archived."""
+"""Doc records on the native board: Backlog.md's `docs/**/doc-N - slug.md` files, read, created, updated, archived and restored."""
 
 import json
 import shutil
@@ -216,6 +216,71 @@ def test_native_doc_archive_moves_the_file_under_archive_docs_and_off_the_list(s
     assert built.create_doc("Next", {}).output == "doc-85"
 
 
+ARCHIVED = "doc-84 - Nightly-infrastructure-audit-—-2026-10-04.md"
+
+
+@pytest.mark.parametrize(
+    ("args", "folder"),
+    [(("doc-84",), ""), (("doc-84", ""), ""), (("doc-84", "specs"), "specs"), (("doc-84", "guides/old"), "guides/old")],
+    ids=["default", "blank", "specs", "nested"],
+)
+def test_native_doc_restore_returns_the_archived_file_unchanged_under_the_folder_named(
+    served: tuple[Board, Path], args: tuple[str, ...], folder: str
+) -> None:
+    built, docs = served
+    before = (docs / REAL).read_bytes()
+    assert built.archive_doc is not None
+    assert built.restore_doc is not None
+    assert built.archive_doc("doc-84").ok
+
+    assert built.restore_doc(*args).ok
+
+    assert (docs / folder / ARCHIVED).read_bytes() == before
+    assert not (docs.parent / "archive" / "docs" / ARCHIVED).exists()
+    assert built.read_doc is not None
+    record = built.read_doc("doc-84")
+    assert record is not None
+    assert record["path"] == (Path(folder) / ARCHIVED).as_posix()
+
+
+@pytest.mark.parametrize(
+    ("put", "folder"),
+    [
+        (f"specs/{ARCHIVED}", "specs"),  # the destination file exists
+        (f"guides/{ARCHIVED}", "specs"),  # the id is open in another folder
+        (None, "../outside"),
+        (None, "/etc"),
+        (None, "a//b"),
+    ],
+    ids=["destination-exists", "id-open-elsewhere", "leaves-docs", "absolute", "empty-segment"],
+)
+def test_native_doc_restore_is_refused_and_writes_nothing(served: tuple[Board, Path], put: str | None, folder: str) -> None:
+    built, docs = served
+    assert built.archive_doc is not None
+    assert built.restore_doc is not None
+    archived = docs.parent / "archive" / "docs" / ARCHIVED
+    assert built.archive_doc("doc-84").ok
+    held = archived.read_bytes()
+    if put is not None:
+        (docs / put).parent.mkdir(parents=True, exist_ok=True)
+        (docs / put).write_bytes(b"---\nid: doc-84\ntitle: Open\n---\n" if put.startswith("guides") else b"active\n")
+
+    assert not built.restore_doc("doc-84", folder).ok
+
+    assert archived.read_bytes() == held
+    assert _names(docs) == ([put] if put else [])
+
+
+def test_native_doc_restore_of_a_doc_that_is_not_archived_is_refused(served: tuple[Board, Path]) -> None:
+    built, docs = served
+    assert built.restore_doc is not None
+
+    assert not built.restore_doc("doc-9").ok
+    assert not built.restore_doc("doc-84", "specs").ok  # open, not archived
+
+    assert _names(docs) == [REAL]
+
+
 def _call(server: ThreadingHTTPServer, route: str, body: dict | None = None) -> tuple[int, Any]:
     request = urllib.request.Request(
         url(server, route),
@@ -260,9 +325,33 @@ def test_native_doc_routes_list_show_create_update_and_archive_over_http(
     assert (docs.parent / "archive" / "docs" / "doc-85 - Next.md").is_file()
 
 
+def test_native_doc_restore_route_answers_the_doc_and_the_writers_refusal(
+    served: tuple[Board, Path], tmp_path: Path
+) -> None:
+    built, docs = served
+    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+        archived = _call(server, "/api/docs/archive", {"doc": "doc-84"})
+        restored = _call(server, "/api/docs/restore", {"doc": "doc-84", "folder": "specs"})
+        again = _call(server, "/api/docs/restore", {"doc": "doc-84", "folder": "specs"})
+        no_doc = _call(server, "/api/docs/restore", {"folder": "specs"})
+        bad_folder = _call(server, "/api/docs/restore", {"doc": "doc-84", "folder": 3})
+        with pytest.raises(urllib.error.HTTPError) as read:
+            urllib.request.urlopen(url(server, "/api/docs/restore"), timeout=5)
+
+    assert (archived[0], restored) == (200, (200, {"doc": "doc-84"}))
+    assert again[0] == 409
+    assert "doc-84" in again[1]["error"]
+    assert (no_doc[0], bad_folder[0], read.value.code) == (400, 400, 405)
+    assert (docs / "specs" / ARCHIVED).is_file()
+
+
 @pytest.mark.parametrize(
     ("route", "body"),
-    [("/api/docs", {"title": "x"}), ("/api/docs/edit", {"doc": "doc-1", "changes": {"title": "y"}})],
+    [
+        ("/api/docs", {"title": "x"}),
+        ("/api/docs/edit", {"doc": "doc-1", "changes": {"title": "y"}}),
+        ("/api/docs/restore", {"doc": "doc-1"}),
+    ],
 )
 def test_native_doc_routes_on_a_board_without_docs_are_404(tmp_path: Path, route: str, body: dict) -> None:
     with serve(tmp_path, BoardFeed()) as server:
@@ -336,6 +425,20 @@ def test_native_doc_cli_lists_creates_updates_and_archives(
     assert archived == (0, {"doc": "doc-85"})
     assert (gone[0], gone[1]["code"]) == (4, "not_found")
     assert (docs.parent / "archive" / "docs" / "doc-85 - Later.md").is_file()
+
+
+def test_native_doc_cli_restores_an_archived_doc_into_the_folder_named(
+    served: tuple[Board, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    built, docs = served
+    with serve(tmp_path, BoardFeed(), milestones=built) as server:
+        archived = _verb(capsys, server, "doc", "archive", "doc-84")
+        restored = _verb(capsys, server, "doc", "restore", "doc-84", "--folder", "specs")
+        again = _verb(capsys, server, "doc", "restore", "doc-84")
+
+    assert (archived, restored) == ((0, {"doc": "doc-84"}), (0, {"doc": "doc-84"}))
+    assert (again[0], again[1]["code"]) == (1, "refused")
+    assert (docs / "specs" / ARCHIVED).is_file()
 
 
 def test_native_doc_cli_update_with_nothing_to_change_is_a_usage_error(
