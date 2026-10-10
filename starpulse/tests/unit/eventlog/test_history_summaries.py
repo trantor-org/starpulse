@@ -253,6 +253,67 @@ def test_the_start_up_pass_leaves_summaries_that_already_exist_alone(store: Hist
     assert _snapshot(store) == tampered
 
 
+def _with_lint_loop(machines: dict) -> dict:
+    """The machines with `in-progress` taking LINT_GREEN as a loop from `checkpointed`, as TASK-3849 edited it."""
+    machine = machines["in-progress"]
+    loop = {"source": "checkpointed", "target": "checkpointed", "event": "LINT_GREEN"}
+    return machines | {"in-progress": machine | {"transitions": [*machine["transitions"], loop]}}
+
+
+def _checkpointed_then_lint_green(store: HistoryStore) -> None:
+    _event(store, "e1", "WORKTREE_READY", 10.0)
+    _event(store, "e2", "AC_CHECKPOINTED", 20.0)
+    _event(store, "e3", "LINT_GREEN", 30.0)
+
+
+def test_opening_a_store_with_an_edited_machine_folds_its_rows_under_the_edited_machine(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _checkpointed_then_lint_green(first)
+    assert [row[4] for row in _cases(first)] == ["lint_green"]
+
+    reopened = HistoryStore(url, _with_lint_loop(MACHINES))
+
+    assert reopened.summary_differences() == []
+    assert [row[4] for row in _cases(reopened)] == ["checkpointed"]
+
+
+def test_opening_a_store_whose_machines_are_unchanged_rebuilds_nothing(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _fill(first)
+    with first.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
+    tampered = _snapshot(first)
+
+    assert _snapshot(HistoryStore(url, MACHINES)) == tampered
+
+
+def test_an_edit_that_changes_no_placement_rebuilds_nothing(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _fill(first)
+    with first.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
+    tampered = _snapshot(first)
+    machine = MACHINES["in-progress"]
+    renamed = {**machine, "name": "Renamed", "states": [{**s, "name": s["name"].upper()} for s in machine["states"]]}
+
+    assert _snapshot(HistoryStore(url, MACHINES | {"in-progress": renamed})) == tampered
+
+
+def test_opening_a_store_that_predates_the_machine_record_rebuilds_once(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    _fill(first)
+    recorded = _snapshot(first)
+    with first.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_step_summaries SET steps = steps + 5"))
+        db.execute(text("DELETE FROM starpulse_summary_basis"))
+
+    assert _snapshot(HistoryStore(url, MACHINES)) == recorded
+
+
 def test_the_consistency_check_names_each_summary_that_differs_from_the_raw_rows(store: HistoryStore) -> None:
     _fill(store)
     with store.engine.begin() as db:
