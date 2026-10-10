@@ -9,6 +9,7 @@ the Board (`answers`, `restore`), so a restart asks GitHub for none of them agai
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import subprocess
@@ -26,6 +27,8 @@ _GH_TIMEOUT_S = 30
 #: `compare` statuses meaning the pointer's commit is, or descends from, the compared merge.
 _CONTAINS = {"ahead", "identical"}
 _COMMIT_ID = re.compile(r"[0-9a-f]{40}")
+#: What `_api` answers for a path GitHub has none of; no `jq` output holds a NUL, so it is never a pointer.
+_MISSING = "\0missing"
 
 
 class Pins(Protocol):
@@ -98,7 +101,8 @@ def contained(sha: str, merged_at: str, history: Mapping | None) -> bool | None:
 
 
 class GitHub:
-    """The pointer and containment reads `link` needs, through `gh`; an answer is kept, an unreadable one is not."""
+    """The pointer and containment reads `link` needs, through `gh`; an answer is kept, an unreadable one is not.
+    A path GitHub answers 404 for is an answer, None: a commit that pins nothing there never will."""
 
     def __init__(self) -> None:
         self._pointers: dict[tuple[str, str, str], str | None] = {}
@@ -106,8 +110,10 @@ class GitHub:
 
     def pointer(self, repo: str, sha: str, path: str) -> str | None:
         key = (repo, sha, path)
-        if key not in self._pointers and (found := _api(f"repos/{repo}/contents/{path}?ref={sha}", ".sha")):
-            self._pointers[key] = found
+        if key not in self._pointers:
+            found = _api(f"repos/{repo}/contents/{path}?ref={sha}", ".sha", missing=_MISSING)
+            if found:
+                self._pointers[key] = None if found == _MISSING else found
         return self._pointers.get(key)
 
     def reaches(self, repo: str, sha: str, pointer: str) -> bool:
@@ -134,8 +140,9 @@ class GitHub:
                 self._reaches.setdefault((repo, sha, pointer), bool(contained))
 
 
-def _api(endpoint: str, jq: str) -> str | None:
-    """`jq` of the endpoint's answer, None when `gh` fails (it prints the error body to stdout) or prints nothing."""
+def _api(endpoint: str, jq: str, missing: str | None = None) -> str | None:
+    """`jq` of the endpoint's answer, None when `gh` fails (it prints the error body to stdout) or prints nothing;
+    `missing` when the failure is GitHub's 404, which is an answer and not a read to try again."""
     try:
         result = subprocess.run(
             ["gh", "api", endpoint, "--jq", jq], capture_output=True, text=True, timeout=_GH_TIMEOUT_S
@@ -143,4 +150,15 @@ def _api(endpoint: str, jq: str) -> str | None:
     except (OSError, subprocess.SubprocessError) as exc:
         logger.warning("pin bumps: %s", exc)
         return None
-    return (result.stdout.strip() or None) if result.returncode == 0 else None
+    if result.returncode == 0:
+        return result.stdout.strip() or None
+    return missing if _not_found(result.stdout) else None
+
+
+def _not_found(body: str) -> bool:
+    """Whether `body` is GitHub's 404 error answer."""
+    try:
+        answer = json.loads(body)
+    except ValueError:
+        return False
+    return isinstance(answer, dict) and answer.get("status") == "404"

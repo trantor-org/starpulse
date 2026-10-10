@@ -90,12 +90,12 @@ class Gh:
     """A `gh api` stand-in: each endpoint's answer, and the endpoints asked."""
 
     def __init__(self, answers: dict[str, str]) -> None:
-        self.answers, self.asked = answers, []
+        self.answers, self.asked, self.failure = answers, [], ""
 
     def __call__(self, command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         self.asked.append(command[2])
         answer = self.answers.get(command[2], "")
-        return subprocess.CompletedProcess(command, 0 if answer else 1, answer, "")
+        return subprocess.CompletedProcess(command, 0 if answer else 1, answer or self.failure, "")
 
 
 def test_the_pointer_a_parent_merge_pins_is_read_once_and_remembered(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -116,18 +116,58 @@ def test_an_unreadable_pointer_is_asked_again_rather_than_remembered(monkeypatch
     assert len(gh.asked) == 2
 
 
-def test_a_gh_that_fails_with_an_error_body_answers_nothing_rather_than_the_body(
+NOT_FOUND = '{"message":"Not Found","status":"404"}'
+
+
+def failing(body: str) -> Gh:
+    """A `gh api` that exits 1 printing `body`, as `gh` prints an error answer to stdout."""
+    gh = Gh({})
+    gh.failure = body
+    return gh
+
+
+def test_a_path_github_answers_not_found_is_kept_and_saved_rather_than_asked_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def not_found(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(command, 1, '{"message":"Not Found","status":"404"}', "gh: Not Found")
-
-    monkeypatch.setattr(subprocess, "run", not_found)
+    gh = failing(NOT_FOUND)
+    monkeypatch.setattr(subprocess, "run", gh)
     github = GitHub()
 
-    assert github.pointer("trantor-org/trantor", "p1", "skills") is None
+    assert [github.pointer("trantor-org/unraid", "p1", "skills") for _ in range(2)] == [None, None]
+    assert len(gh.asked) == 1
+    assert github.answers()["pointers"] == [["trantor-org/unraid", "p1", "skills", None]]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"message":"API rate limit exceeded for user ID 1.","status":"403"}',
+        '{"message":"Server Error","status":"500"}',
+        "upstream connect error",
+        '["Not Found", "404"]',
+        "",
+    ],
+)
+def test_a_pointer_read_that_fails_without_a_not_found_answer_is_asked_again(
+    monkeypatch: pytest.MonkeyPatch, body: str
+) -> None:
+    gh = failing(body)
+    monkeypatch.setattr(subprocess, "run", gh)
+    github = GitHub()
+
+    assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(2)] == [None, None]
+    assert len(gh.asked) == 2
+    assert github.answers()["pointers"] == []
+
+
+def test_a_compare_that_fails_with_an_error_body_answers_not_contained_and_keeps_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(subprocess, "run", failing(NOT_FOUND))
+    github = GitHub()
+
     assert github.reaches("trantor-org/skills", CHILD_SHA, NEW_POINTER) is False
-    assert github.answers() == {"pointers": [], "reaches": []}
+    assert github.answers()["reaches"] == []
 
 
 def test_a_saved_pointer_that_is_not_a_commit_is_dropped_on_restore_so_the_next_read_settles_it() -> None:
