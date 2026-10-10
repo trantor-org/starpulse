@@ -120,14 +120,22 @@ describe("the hangar names, placed round the ring", () => {
 });
 
 describe("the hangar names beside the Board's paths", () => {
+  // the Board in the demo's tiers
+  const tiered = () => liveSky({}, {}, [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]]);
+  const crossed = (sc: Scene, h: Hub) => sc.bEdges.filter((e) => e.p0 && sample(e as Curve, 200).some((p) => p.x > h.box[0] && p.x < h.box[2] && p.y > h.box[1] && p.y < h.box[3])).map((e) => `${e.source}>${e.target}`);
+
   it("keep every name off the paths where a side of its DAGs is clear of them", () => {
-    // the Board in the demo's tiers on a 2560x1440 screen, where each hangar has a spot clear of every path at each text size
-    const ctx = liveSky({}, {}, [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]]);
-    const sc = build(ctx, { kind: "board" }), u = 1 / fitLevel(sc, 2560, 1440).k;
+    // on a 2560x1440 screen each hangar has a spot clear of every path within a quarter turn, at each text size
+    const ctx = tiered(), sc = build(ctx, { kind: "board" }), u = 1 / fitLevel(sc, 2560, 1440).k;
     for (const ts of [1, 1.25, 1.5])
-      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).hubs)
-        for (const e of sc.bEdges)
-          for (const p of sample(e as Curve, 200)) expect(p.x > h.box[0] && p.x < h.box[2] && p.y > h.box[1] && p.y < h.box[3], `${h.state} name on ${e.source}>${e.target} at ${ts}`).toBe(false);
+      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).hubs) expect(crossed(sc, h), `${h.state} name at ${ts}`).toEqual([]);
+  });
+
+  it("turn a hangar past a quarter turn when every nearer spot for its name is under a path", () => {
+    // on a 1920x1080 screen Ready's paths to In Progress run under every spot within a quarter turn of its DAG's transition
+    const ctx = tiered(), sc = build(ctx, { kind: "board" }), u = 1 / fitLevel(sc, 1920, 1080).k;
+    for (const ts of [1, 1.25, 1.5])
+      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).hubs) expect(crossed(sc, h), `${h.state} name at ${ts}`).toEqual([]);
   });
 });
 
