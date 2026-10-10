@@ -1,5 +1,6 @@
 """Doc records on the native board: Backlog.md's `docs/**/doc-N - slug.md` files, read, created, updated, archived and restored."""
 
+import importlib
 import json
 import shutil
 import urllib.error
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from pydantic import TypeAdapter
 
 from starpulse._internal.board import native, native_docs
@@ -72,6 +74,51 @@ def test_native_doc_list_is_by_ascending_number_across_folders_and_skips_the_arc
 
     assert built.docs is not None
     assert [record["id"] for record in built.docs()] == ["doc-9", "doc-84"]
+
+
+def _write_docs(docs: Path) -> None:
+    (docs / "doc-9 - nine.md").write_text("---\nid: doc-9\ntitle: Nine\ntype: other\n---\nnine\n")
+
+
+def test_native_doc_records_are_the_same_under_libyaml_and_the_pure_python_loader(
+    served: tuple[Board, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, docs = served
+    _write_docs(docs)
+    assert built.docs is not None
+    assert built.read_doc is not None
+    fast = (built.docs(), built.read_doc("doc-9"), built.read_doc("doc-84"))
+
+    monkeypatch.setattr(native_docs, "_FrontmatterLoader", yaml.SafeLoader)
+
+    assert (built.docs(), built.read_doc("doc-9"), built.read_doc("doc-84")) == fast
+
+
+@pytest.mark.skipif(not yaml.__with_libyaml__, reason="this PyYAML build has no libyaml")
+def test_native_doc_front_matter_is_parsed_by_libyaml_when_the_build_has_it(
+    served: tuple[Board, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, _ = served
+    loaders: list[type] = []
+    load = yaml.load
+
+    def spy(stream: str, Loader: type) -> object:  # noqa: N803 - PyYAML's keyword
+        loaders.append(Loader)
+        return load(stream, Loader=Loader)
+
+    monkeypatch.setattr(yaml, "load", spy)
+
+    assert built.docs is not None
+    assert [record["id"] for record in built.docs()] == ["doc-84"]
+    assert loaders == [yaml.CSafeLoader]
+
+
+def test_native_doc_front_matter_falls_back_to_safe_loader_without_libyaml(monkeypatch: pytest.MonkeyPatch) -> None:
+    with monkeypatch.context() as patch:
+        patch.delattr(yaml, "CSafeLoader", raising=False)
+        reloaded = importlib.reload(native_docs)
+        assert reloaded._FrontmatterLoader is yaml.SafeLoader
+    importlib.reload(native_docs)
 
 
 def test_native_doc_read_answers_one_record_with_its_body_or_none(served: tuple[Board, Path]) -> None:
