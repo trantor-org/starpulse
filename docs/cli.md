@@ -255,7 +255,9 @@ minute, one GraphQL query per repository: every open pull request, plus any othe
 `updatedAt` the store holds for that repository. A merged or closed record is final and is never read again, except a merged one saved without its `mergeSha`
 (stored before the store read the merge commit), which is re-read on every refresh until it has one. An open
 pull request is re-read on every refresh even when its `updatedAt` is unchanged, because a check finishing does not
-bump it. A pull request the store has not seen yet costs one follow-up query, so a cold store costs two. The
+bump it. A query reads at most 25 pull requests, so pull requests the store has not seen yet, or open ones beyond the
+first 25, cost one follow-up query per 25; each batch of newly seen ones is saved as it lands, so a query GitHub
+refuses or times out on does not repeat the batches already read. The
 repositories are those of open tasks' pull request links, the `[[repos]]` entries under a linked owner, and those
 already stored. Each query's `rateLimit` cost is logged (`pull requests: <repo> query cost N, remaining N, resets T`).
 A repository with more than 100 open pull requests is read for the first 100, with a warning.

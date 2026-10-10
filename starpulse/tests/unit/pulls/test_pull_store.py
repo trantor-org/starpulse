@@ -628,3 +628,46 @@ def test_a_merged_pr_is_recorded_with_its_merge_commit_and_time_and_an_open_one_
     open_pull, merged = store.find()
     assert (open_pull["mergedAt"], open_pull["mergeSha"]) == (None, None)
     assert (merged["mergedAt"], merged["mergeSha"]) == ("2026-10-07T12:30:00Z", f"{2:040x}"[::-1])
+
+
+def _asked(query: str) -> list[int]:
+    return [int(number) for number in re.findall(r"p(\d+): pullRequest", query)]
+
+
+def test_no_query_asks_for_more_pull_requests_than_one_batch_however_many_are_open_or_unseen(store: PullStore) -> None:
+    github = Github()
+    for number in range(1, 61):
+        github.add(number, state="OPEN" if number % 2 else "MERGED")
+
+    refresh_repository(REPO, store, 100.0, github)  # cold: all 60 are unseen
+    assert max(len(_asked(query)) for query in github.queries) == 25, "GitHub refuses a query of too many nodes"
+    assert len(store.find()) == 60
+
+    github.queries.clear()
+    refresh_repository(REPO, store, 160.0, github)  # warm: the 30 open ones are held
+    assert [len(_asked(query)) for query in github.queries] == [25, 5]
+    assert sum("open: pullRequests" in query for query in github.queries) == 1
+
+
+def test_a_batch_that_fails_keeps_the_earlier_batches_saved_and_the_next_refresh_asks_only_for_the_rest(
+    store: PullStore,
+) -> None:
+    github = Github()
+    for number in range(1, 61):  # 60 is the oldest, so the batches run 60 down to 1
+        github.add(number, state="MERGED", merged_at=OLD, updated=f"2026-10-07T12:{60 - number:02d}:00Z")
+    failing = iter([False, False, True])
+
+    def flaky(repo: str, query: str) -> dict:
+        if next(failing, False):
+            raise GhUnavailableError("gh: HTTP 504")
+        return github(repo, query)
+
+    with pytest.raises(GhUnavailableError):
+        refresh_repository(REPO, store, 100.0, flaky)
+    assert sorted(pull["number"] for pull in store.find()) == list(range(36, 61))
+
+    github.queries.clear()
+    refresh_repository(REPO, store, 160.0, github)
+
+    assert sorted(number for query in github.queries for number in _asked(query)) == list(range(1, 36))
+    assert len(store.find()) == 60
