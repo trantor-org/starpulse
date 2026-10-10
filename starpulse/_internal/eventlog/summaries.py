@@ -12,6 +12,11 @@ Three summaries follow the raw rows, updated in the transaction that writes one:
   it, the count kept at zero once the last leaves. A read of how many tasks have finished, of where the history begins
   or of who reported does not count their stays.
 
+`starpulse_summary_basis` holds the fingerprint of the machines the summaries were folded under (`Summariser.fingerprint`:
+what places an event, not a label), so a store that opens under an edited machine rebuilds them: a rebuild happens
+when the summaries are empty, when that fingerprint differs from the machines the store opened with (or none was
+kept, as in a store that predates it), and after a repair or an import of lane history.
+
 Rows are folded in the order the store recorded them, not by their time, so a late event counts as a step of zero
 length and leaves its case where the latest recorded event put it. An event the store cannot attribute is not
 summarised: one of a machine the page does not draw, one with neither a task nor a run, or a lane the Board machine
@@ -21,6 +26,8 @@ which `HistoryStore.summary_differences` compares them with.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -103,6 +110,12 @@ lanes = Table(
     PrimaryKeyConstraint("source", "lane"),
 )
 SUMMARY_TABLES = (step_summaries, cases, lane_intervals, lanes)
+#: The machines' fingerprint the summaries were folded under: one row, written with the rebuild that folds them.
+summary_basis = Table(
+    "starpulse_summary_basis",
+    metadata,
+    Column("fingerprint", String, primary_key=True),
+)
 
 #: A case: the machine, the source that reported it, `task` or `run`, and its id.
 Key = tuple[str, str, str, str]
@@ -147,6 +160,20 @@ class Summariser:
         self._tables = transitions(machines)
         board = machines.get(BOARD)
         self._lanes = {key: s["id"] for s in board["states"] for key in (s["name"], s["id"])} if board else {}
+
+    def fingerprint(self) -> str:
+        """A digest of what places an event or lane change: each drawn machine's initial and final states and moves,
+        and the Board's lanes. An edit that moves no task (a label, a position) leaves it as it was."""
+        placed = {
+            name: {
+                "initial": table.initial,
+                "finals": sorted(table.finals),
+                "moves": {event: {src: sorted(to) for src, to in by.items()} for event, by in table.moves.items()},
+            }
+            for name, table in self._tables.items()
+        }
+        basis = json.dumps([placed, self._lanes], sort_keys=True)
+        return hashlib.sha256(basis.encode()).hexdigest()
 
     def event_key(self, machine: str, task: str | None, run: str | None, event_id: str) -> Key | None:
         """The case a machine event belongs to, or None when it has none or its machine is not drawn."""

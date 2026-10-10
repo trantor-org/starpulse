@@ -33,6 +33,7 @@ from sqlalchemy import (
     create_engine,
     delete,
     func,
+    insert,
     select,
     text,
     update,
@@ -60,6 +61,7 @@ from starpulse._internal.eventlog.summaries import (
     lanes,
     read_case,
     source,
+    summary_basis,
     write_lane,
     write_step,
 )
@@ -384,28 +386,32 @@ class HistoryStore:
             return len(_held_ids(db, ids) - held)
 
     def build_summaries(self) -> None:
-        """Build the summaries from the raw rows when they are empty: the start-up pass for a store that predates them.
+        """Build the summaries from the raw rows when they are empty or were folded under other machines: the start-up
+        pass for a store that predates them or opens under an edited machine.
 
-        Summaries that hold any row are left as they are, so a second call changes nothing, except that lane counts a
-        store lacks (its intervals predate them) are counted from the intervals; `rebuild_summaries` replaces them
-        and `summary_differences` says whether they match the raw rows.
+        Summaries that hold rows under the machines this store opened with are left as they are, so a second call
+        changes nothing, except that lane counts a store lacks (its intervals predate them) are counted from the
+        intervals; `rebuild_summaries` replaces them and `summary_differences` says whether they match the raw rows.
         """
         with self.engine.begin() as db:
             held = {table: db.execute(select(table).limit(1)).first() is not None for table in SUMMARY_TABLES}
             if held[lane_intervals] and not held[lanes]:
                 count_lanes(db)
-        if not any(held.values()):
+            folded_under = db.execute(select(summary_basis.c.fingerprint)).scalar()
+        if folded_under != self._summariser.fingerprint() or not any(held.values()):
             self.rebuild_summaries()
 
     def rebuild_summaries(self) -> None:
-        """Replace the summaries with ones folded from the raw rows, in one transaction.
+        """Replace the summaries with ones folded from the raw rows under the machines this store holds, in one
+        transaction.
 
         Nothing may record while it runs: a row written meanwhile is missing from them.
         """
         with self.engine.begin() as db:
-            for table in SUMMARY_TABLES:
+            for table in (*SUMMARY_TABLES, summary_basis):
                 db.execute(delete(table))
             self._folded(db).write(db)
+            db.execute(insert(summary_basis).values(fingerprint=self._summariser.fingerprint()))
 
     def summary_differences(self) -> list[str]:
         """Each way the summaries differ from the ones folded from the raw rows, one line each; none when they match."""
