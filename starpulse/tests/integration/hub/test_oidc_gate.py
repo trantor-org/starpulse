@@ -7,12 +7,10 @@ from __future__ import annotations
 
 import json
 import re
-import socket
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Iterator
-from contextlib import closing
 from dataclasses import dataclass
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -86,33 +84,13 @@ class Hub:
         return call(url(self.server, path), method, headers, data)
 
 
-def _free_port() -> int:
-    with closing(socket.socket()) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
 @pytest.fixture
 def hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
-    port = _free_port()
-    redirect_uri = f"http://127.0.0.1:{port}/auth/callback"
-    settings = OidcSettings(
-        issuer=issuer,
-        client_id="starpulse-hub",
-        client_secret_env="HUB_SECRET",
-        redirect_uri=redirect_uri,
-        allowed_groups=ALLOWED,
-    )
+    # The server binds port 0 and the gate is built once that port is known: a port picked and released first can be
+    # taken by a parallel worker before the server binds it.
+    gates: list[Gate] = []
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
     now = [1_000_000.0]
-    gate = Gate(
-        settings,
-        client_secret="hub-secret",
-        engine_token=ENGINE_TOKEN,
-        reader_token=READER_TOKEN,
-        routes={PROBE: ENGINE},
-        clock=lambda: now[0],
-    )
     feed = BoardFeed(machines=MACHINES)
     insights = Insights(InsightStore(f"sqlite:///{tmp_path / 'history.sqlite'}"), feed)
     store = HistoryStore(f"sqlite:///{tmp_path / 'level.sqlite'}", MACHINES)
@@ -124,12 +102,29 @@ def hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
         history=store,
         clock=lambda: NOW,
         level=LEVEL,
-        gate=gate,
+        gate=lambda handler: gates[0](handler),
         ingest=Ingest({"cron": INSTANCE_TOKEN}, log),
         forward=ForwardIngest({"laptop": FORWARD_TOKEN}, log),
         insights=insights,
-        port=port,
     ) as running:
+        redirect_uri = f"http://127.0.0.1:{running.server_port}/auth/callback"
+        settings = OidcSettings(
+            issuer=issuer,
+            client_id="starpulse-hub",
+            client_secret_env="HUB_SECRET",
+            redirect_uri=redirect_uri,
+            allowed_groups=ALLOWED,
+        )
+        gates.append(
+            Gate(
+                settings,
+                client_secret="hub-secret",
+                engine_token=ENGINE_TOKEN,
+                reader_token=READER_TOKEN,
+                routes={PROBE: ENGINE},
+                clock=lambda: now[0],
+            )
+        )
         yield Hub(running, issuer, log, redirect_uri, now)
 
 
