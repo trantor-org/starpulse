@@ -30,6 +30,20 @@ def test_the_preview_board_draws_a_real_workspaces_eight_lanes_in_order() -> Non
     assert board["mainLine"] == ["new", "ready", "in_progress", "review"]
 
 
+def test_the_preview_board_declares_the_tiers_the_star_map_draws_it_in() -> None:
+    board = _machines()["board"]
+
+    assert board["tiers"] == [
+        ["new"],
+        ["ready", "waiting"],
+        ["needs_attention"],
+        ["in_progress"],
+        ["review"],
+        ["done", "archived"],
+    ]
+    assert sorted(state for tier in board["tiers"] for state in tier) == sorted(LANES)
+
+
 def test_in_progress_opens_the_delivery_machine_and_at_least_three_more_lifecycle_machines() -> None:
     machines = _machines()
 

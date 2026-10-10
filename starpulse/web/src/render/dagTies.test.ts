@@ -3,7 +3,7 @@ import { boardTies, hangarLevel, nameLines, nameOf, obstacles, over, tieLedger, 
 import { BOARD, startPath, tree } from "./levels";
 import { crumbs } from "../features/level/Crumb";
 import { backStep } from "../shared/nav";
-import { build, type Scene } from "./scene";
+import { build, sample, type Curve, type Scene } from "./scene";
 import { fitLevel } from "./zoom";
 import { merge, Moves, PULSE, TRAVEL, type Move } from "./sky";
 import type { Cue, Dag, Machine, Snapshot } from "../api";
@@ -43,11 +43,11 @@ const launched = (writer: string): Machine => ({
   mainLine: ["open", "closed"],
   writers: { CLOSE: [{ actor: writer, trigger: "dagu" }] },
 });
-const liveSky = (status: Record<string, Dag["status"]> = {}, sub: Record<string, string> = {}) => {
+const liveSky = (status: Record<string, Dag["status"]> = {}, sub: Record<string, string> = {}, tiers?: string[][]) => {
   const names = [...Object.keys(WRITES), ...CUES.map((c) => c.dag), ...LAUNCH_ONLY, ...UNTIED];
   const snap: Snapshot = {
     graphs: ["board"],
-    flows: [{ name: "board", agents: [], machine: { ...machine, launches: { ...machine.launches, ...Object.fromEntries(Object.keys(sub).map((d) => [d, { skill: "investigating", flow: sub[d] }])) } } }, ...new Set(Object.values(sub))].map((f) => (typeof f === "string" ? { name: f, agents: [], machine: launched(Object.keys(sub).find((d) => sub[d] === f)!) } : f)),
+    flows: [{ name: "board", agents: [], machine: { ...machine, tiers, launches: { ...machine.launches, ...Object.fromEntries(Object.keys(sub).map((d) => [d, { skill: "investigating", flow: sub[d] }])) } } }, ...new Set(Object.values(sub))].map((f) => (typeof f === "string" ? { name: f, agents: [], machine: launched(Object.keys(sub).find((d) => sub[d] === f)!) } : f)),
     dags: names.map((n) => dag(n, status[n])),
     domains: [], cues: CUES, settled: {}, error: null, now: 1000,
   };
@@ -56,7 +56,7 @@ const liveSky = (status: Record<string, Dag["status"]> = {}, sub: Record<string,
   return { S, moves, W: 1920, H: 1080, T: 1000 };
 };
 /** World units a screen pixel at the Board's fit, as the renderer reads it. */
-const unitOf = (sc: Scene) => 1 / Math.max(fitLevel(sc, 1920, 1080).k, sc.unit ? 1 / sc.unit : 0);
+const unitOf = (sc: Scene) => 1 / fitLevel(sc, 1920, 1080).k;
 
 describe("the tied DAGs of the Board level", () => {
   const ctx = liveSky(), sc = build(ctx, { kind: "board" }), ties = boardTies(sc, ctx.S, unitOf(sc));
@@ -91,14 +91,17 @@ describe("the hangar names, placed round the ring", () => {
   const ctx = liveSky(), sc = build(ctx, { kind: "board" }), u = unitOf(sc);
 
   for (const ts of [1, 1.25, 1.5]) {
-    const ties = boardTies(sc, ctx.S, u, ts);
+    // the renderer draws every name at the page's text size times the Board's own type scale
+    const ties = boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1));
 
-    it(`keep every name box clear of state names, moon labels and other orbiters at ${ts * 100}% text`, () => {
+    it(`keep every name box clear of moon labels and other orbiters at ${ts * 100}% text`, () => {
       expect(ties.hubs.length).toBeGreaterThan(0);
       for (const h of ties.hubs) {
         const others = ties.hubs.filter((x) => x !== h);
-        // every state's disc and name, every moon and its label, and the other hangars' name boxes and orbiters:
-        const keep = obstacles(sc, others, u, ts);
+        // every moon and its label, and the other hangars' name boxes and orbiters. A state's disc and name (each state's first two boxes) are
+        // left out: the Board's fixed footprints reserve no room for a hangar's chain, a gap TASK-3839 accepts, so a hangar beside a tightly
+        // packed neighbour may touch it
+        const keep = obstacles(sc, others, u, ts).slice(2 * Object.keys(sc.galaxies).length);
         for (const k of keep) expect(over([...h.box, 1], k), `${h.state} at ${ts}`).toBe(0);
       }
     });
@@ -114,6 +117,26 @@ describe("the hangar names, placed round the ring", () => {
       }
     });
   }
+});
+
+describe("the hangar names beside the Board's paths", () => {
+  // the Board in the demo's tiers
+  const tiered = () => liveSky({}, {}, [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]]);
+  const crossed = (sc: Scene, h: Hub) => sc.bEdges.filter((e) => e.p0 && sample(e as Curve, 200).some((p) => p.x > h.box[0] && p.x < h.box[2] && p.y > h.box[1] && p.y < h.box[3])).map((e) => `${e.source}>${e.target}`);
+
+  it("keep every name off the paths where a side of its DAGs is clear of them", () => {
+    // on a 2560x1440 screen each hangar has a spot clear of every path within a quarter turn, at each text size
+    const ctx = tiered(), sc = build(ctx, { kind: "board" }), u = 1 / fitLevel(sc, 2560, 1440).k;
+    for (const ts of [1, 1.25, 1.5])
+      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).hubs) expect(crossed(sc, h), `${h.state} name at ${ts}`).toEqual([]);
+  });
+
+  it("turn a hangar past a quarter turn when every nearer spot for its name is under a path", () => {
+    // on a 1920x1080 screen Ready's paths to In Progress run under every spot within a quarter turn of its DAG's transition
+    const ctx = tiered(), sc = build(ctx, { kind: "board" }), u = 1 / fitLevel(sc, 1920, 1080).k;
+    for (const ts of [1, 1.25, 1.5])
+      for (const h of boardTies(sc, ctx.S, u, ts * (sc.labelScale ?? 1)).hubs) expect(crossed(sc, h), `${h.state} name at ${ts}`).toEqual([]);
+  });
 });
 
 describe("a hangar's name", () => {

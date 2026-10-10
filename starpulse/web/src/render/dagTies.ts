@@ -5,7 +5,7 @@
 //   cue   — a Board event cues the DAG (the snapshot's `cues`)
 import { pathLedger, type Fold } from "./levels";
 import type { Source } from "../features/level/ledger";
-import { bez, type BEdge, type Pt, type Scene } from "./scene";
+import { bez, sample, type BEdge, type Curve, type Pt, type Scene } from "./scene";
 import { PULSE, TRAVEL, type Move, type Sky } from "./sky";
 
 export type TieKind = "write" | "cue";
@@ -126,7 +126,9 @@ export function boardTies(sc: Scene, sky: Sky, u: number, ts = 1): Ties {
   const byState = new Map<string, Orbiter[]>();
   for (const t of all.filter((t) => t.primary)) byState.set(t.primary!.state, [...(byState.get(t.primary!.state) ?? []), t]);
   const hubs: Hub[] = [];
-  for (const [state, os] of byState) hubs.push(place(sc, state, os, hubs, u, ts));
+  // the Board's paths as points 4 px apart, which a hangar's name keeps off
+  const paths = sc.bEdges.flatMap((e) => (e.p0 && e.c && e.p1 ? sample(e as Curve, Math.ceil((Math.hypot(e.c.x - e.p0.x, e.c.y - e.p0.y) + Math.hypot(e.p1.x - e.c.x, e.p1.y - e.c.y)) / (4 * u))) : []));
+  for (const [state, os] of byState) hubs.push(place(sc, state, os, hubs, u, ts, paths));
   return { hubs, u, ts };
 }
 
@@ -181,8 +183,9 @@ export function obstacles(sc: Scene, placed: Hub[], u: number, ts: number, state
 }
 
 /** A state's DAGs orbit it just outside its ring, each turned toward the transition it docks by and spread so no two touch, clear of every name
- *  the ring crosses; then the hangar's name goes beside them, and the group turns round the ring (up to 90°) until the name fits. */
-function place(sc: Scene, state: string, orbs: Orbiter[], placed: Hub[], u: number, ts: number): Hub {
+ *  the ring crosses; then the hangar's name goes beside them, off the Board's `paths`, and the group turns round the ring (up to 90°) until the
+ *  name fits, or up to 180° to the nearest spot off every path when a path crosses each nearer one. */
+function place(sc: Scene, state: string, orbs: Orbiter[], placed: Hub[], u: number, ts: number, paths: Pt[]): Hub {
   const g = sc.galaxies[state], gs = Object.values(sc.galaxies), R0 = Math.max(g.R, g.visR), name = widest(orbs), tall = (nameLines(orbs).length - 1) * 13 * u * ts;
   const c: Pt = { x: g.x, y: g.y }, orbit = Math.max(R0, g.moonR) + 16 * u;
   const bare = obstacles(sc, placed, u, ts);
@@ -220,10 +223,11 @@ function place(sc: Scene, state: string, orbs: Orbiter[], placed: Hub[], u: numb
     if (pass < 5) spread();
   }
   // the name right beside its orbiters, past them on the far side from the state first, then any other side of them; where no side has room,
-  // the group turns a little round the ring (6° at a time, up to 90°) until one does, so the name never drifts off its DAGs
-  const base = orbs.map((t) => t.a), g8 = 9 * u;
-  let pick: { s: number; as: number[]; lab: Pt; align: CanvasTextAlign; box: Hub["box"] } | null = null;
-  for (let k = 0; k <= 15 && pick?.s !== 0; k++)
+  // the group turns a little round the ring (6° at a time, up to 90°) until one does, so the name never drifts off its DAGs; a name still
+  // under a path there turns on (up to 180°) to the first better spot that is off every path
+  const base = orbs.map((t) => t.a), g8 = 9 * u, g3 = 3 * u;
+  let pick: { s: number; lines: number; as: number[]; lab: Pt; align: CanvasTextAlign; box: Hub["box"] } | null = null;
+  for (let k = 0; k <= 30 && pick?.s !== 0 && (k <= 15 || pick!.lines > 0); k++)
     for (const sg of k ? [-1, 1] : [1]) {
       const as = base.map((a) => a + (sg * k * 6 * Math.PI) / 180);
       if (k && !as.every(free)) continue;
@@ -234,8 +238,10 @@ function place(sc: Scene, state: string, orbs: Orbiter[], placed: Hub[], u: numb
       const out = outward(mx - c.x, my - c.y);
       for (const dir of [out, "right", "left", "down", "up"].filter((d, i, l) => l.indexOf(d) === i) as Dir[]) {
         const [lab, align] = at[dir], box = boxOf(lab, align, name, u, ts, tall);
-        const s = [...bare, ...own].reduce((n, o) => n + over([...box, 1], o), 0) + (box[0] < x0 || box[2] > x1 ? 1e9 : 0);
-        if (!pick || s < pick.s) pick = { s, as, lab, align, box };
+        // a point of a path under the name counts as the 4 px of a 6 px line it stands for
+        const lines = paths.filter((p) => p.x > box[0] - g3 && p.x < box[2] + g3 && p.y > box[1] - g3 && p.y < box[3] + g3).length * 24 * u * u;
+        const s = [...bare, ...own].reduce((n, o) => n + over([...box, 1], o), 0) + lines + (box[0] < x0 || box[2] > x1 ? 1e9 : 0);
+        if (!pick || (s < pick.s && (k <= 15 || lines === 0))) pick = { s, lines, as, lab, align, box };
         if (s === 0) break;
       }
       if (pick?.s === 0) break;

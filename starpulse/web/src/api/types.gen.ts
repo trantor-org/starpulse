@@ -1032,6 +1032,10 @@ export interface Machine {
    * The flows that open under this machine's states; the board's first is its In Progress delivery machine.
    */
   subflows?: SubFlow[] | null;
+  /**
+   * Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's states stacked in its cell; a state no tier names takes a tier of its own after them, and with none the Board draws its own columns.
+   */
+  tiers?: string[][] | null;
   transitions: Transition[];
   /**
    * Only the board machine: its writers per event.
