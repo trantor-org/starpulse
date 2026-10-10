@@ -6,8 +6,9 @@ from datetime import datetime
 
 import pytest
 
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, signals
-from starpulse._internal.level.sessions import IDLE_S, session_health, slice_health
+from starpulse._internal.level.sessions import session_health, slice_health
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES, recorded
 
@@ -45,7 +46,8 @@ def test_a_recorded_claude_code_session_is_one_row_for_the_task_its_branch_names
         0,
     )
     assert row["rejections"] == {} and row["compactions"] == {} and row["skills"] == {}
-    assert row["agent_s"] == pytest.approx(59.956)
+    # the three model requests (56.155 + 1.778 + 1.577) and the two commands (0.097 + 0.032), not the export's span
+    assert row["agent_s"] == pytest.approx(59.639)
     assert (row["operator_wait_s"], row["idle_s"]) == (0, 0)
 
 
@@ -67,7 +69,8 @@ def test_a_recorded_codex_session_has_no_task_and_its_effort_is_known_from_its_s
         ["medium"],
         0,
     )
-    assert row["agent_s"] == pytest.approx(32.905)
+    # Codex exports no request duration, so its agent seconds are its two commands' (0.784 + 1.657) alone
+    assert row["agent_s"] == pytest.approx(2.441)
 
 
 def test_the_recorded_older_export_counts_its_skill_and_its_two_turns() -> None:
@@ -83,11 +86,11 @@ def test_the_recorded_older_export_counts_its_skill_and_its_two_turns() -> None:
 def test_a_git_switch_to_a_task_branch_retargets_the_rows_that_follow_it() -> None:
     found = [
         sig("prompt", 0, branch="main"),
-        sig("request", 5, branch="main", model="m"),
+        sig("request", 5, branch="main", model="m", seconds=5),
         sig("branch", 6, branch="main", name="claude/task-7-x"),
-        sig("request", 10, branch="main", model="m"),
+        sig("request", 10, branch="main", model="m", seconds=4),
         sig("branch", 11, branch="main", name="main"),
-        sig("request", 15, branch="main", model="m"),
+        sig("request", 15, branch="main", model="m", seconds=6),
     ]
 
     rows = session_health(found, KEYS)
@@ -105,19 +108,19 @@ def test_a_launch_branch_names_the_task_until_a_switch_names_another() -> None:
     assert [(r["task"], r["requests"]) for r in session_health(found, KEYS)] == [("TASK-1", 0), ("TASK-2", 1)]
 
 
-def test_time_is_the_agents_unless_a_human_prompt_ends_it_or_it_idles() -> None:
+def test_time_is_the_summed_durations_and_the_wait_before_a_human_prompt_never_the_silence_inside_a_turn() -> None:
     found = [
         sig("prompt", 0),
-        sig("tool", 30),
-        sig("request", 60),
+        sig("tool", 30, seconds=10),
+        sig("request", 60, seconds=20),
         sig("prompt", 360),  # the operator took 300 s to answer
-        sig("request", 380),
-        sig("tool", 380 + IDLE_S + 1),  # nothing happened for longer than a turn waits on its own
+        sig("request", 380, seconds=20),
+        sig("tool", 2000, seconds=5),  # a long silence inside a turn is the model's or a tool's, never idle
     ]
 
     row = only(session_health(found, KEYS))
 
-    assert (row["agent_s"], row["operator_wait_s"], row["idle_s"]) == (60 + 20, 300, IDLE_S + 1)
+    assert (row["agent_s"], row["operator_wait_s"], row["idle_s"]) == (10 + 20 + 20 + 5, 300, 0)
     assert (row["prompts"], row["operator_prompts"]) == (2, 1)
 
 
@@ -177,14 +180,14 @@ def test_a_session_with_no_keys_has_no_task() -> None:
 def test_a_slice_adds_up_the_sessions_that_worked_its_task() -> None:
     a = [
         sig("prompt", 0, session="a", branch="claude/task-4-x"),
-        sig("request", 60, session="a", model="m", effort="low", input=10, output=5, cost=0.5),
+        sig("request", 60, session="a", model="m", effort="low", input=10, output=5, cost=0.5, seconds=60),
         sig("compaction", 61, session="a", name="auto"),
     ]
     b = [
         sig("prompt", 0, session="b", harness=CODEX, branch="claude/task-4-x"),
         sig("prompt", 30, session="b", harness=CODEX, branch="claude/task-4-x"),
         sig("interrupt", 31, session="b", harness=CODEX, branch="claude/task-4-x"),
-        sig("request", 60, session="b", harness=CODEX, model="n", effort="high", input=1, output=2, cost=None),
+        sig("request", 60, session="b", harness=CODEX, model="n", effort="high", input=1, output=2, cost=None, seconds=31),
         sig("decision", 61, session="b", harness=CODEX, name="x", ok=False, detail="hook", branch="claude/task-4-x"),
     ]
     other = [sig("prompt", 0, session="c", branch="claude/task-5-y")]
@@ -198,7 +201,7 @@ def test_a_slice_adds_up_the_sessions_that_worked_its_task() -> None:
     assert (four["models"], four["efforts"]) == (["m", "n"], ["low", "high"])
     assert four["tokens"] == {"input": 11, "output": 7, "cache_read": 0, "cache_write": 0, "reasoning": 0}
     assert four["cost_usd"] == 0.5
-    assert (four["active_s"], four["operator_wait_s"]) == (61 + 31, 30)
+    assert (four["active_s"], four["operator_wait_s"]) == (60 + 31, 30)
 
 
 def test_a_slice_of_one_quiet_session_is_clean_and_a_taskless_session_is_no_slice() -> None:
@@ -220,3 +223,107 @@ def test_a_slice_whose_model_changed_in_one_session_is_escalated() -> None:
     (found_slice,) = slice_health(session_health(found, KEYS))
 
     assert (found_slice["escalated"], found_slice["clean"]) == (True, False)
+
+
+def by_task(rows: list[dict], field: str) -> dict[tuple[str, str | None], object]:
+    return {(r["session"], r["task"]): r[field] for r in rows}
+
+
+def test_each_step_belongs_to_the_task_whose_claim_precedes_it_and_a_session_with_no_claim_has_none() -> None:
+    claimed = [
+        sig("prompt", 0, turn="p1"),
+        sig("request", 5, model="m"),
+        sig("claim", 6, name="TASK-1"),
+        sig("request", 10, model="m"),
+        sig("request", 12, model="m"),
+        sig("claim", 20, name="TASK-2"),
+        sig("request", 25, model="m"),
+    ]
+    unclaimed = [sig("prompt", 0, session="n", turn="q1"), sig("request", 3, session="n", model="m")]
+
+    rows = session_health(claimed + unclaimed, KEYS)
+
+    assert by_task(rows, "requests") == {("s", None): 1, ("s", "TASK-1"): 2, ("s", "TASK-2"): 1, ("n", None): 1}
+
+
+def test_agent_seconds_are_the_summed_api_and_tool_durations_and_a_twenty_minute_prompt_gap_is_the_operators() -> None:
+    found = [
+        sig("prompt", 0, turn="p1", detail="human"),
+        sig("request", 40, turn="p1", seconds=30.0),
+        sig("tool", 41, turn="p1", seconds=1.5),
+        sig("request", 60, turn="p1", seconds=15.0),
+        sig("reply", 61, turn="p1"),
+        sig("prompt", 61 + 1200, turn="p2", detail="human"),
+        sig("request", 1270, turn="p2", seconds=8.0),
+        sig("reply", 1271, turn="p2"),
+    ]
+
+    row = only(session_health(found, KEYS))
+
+    assert row["agent_s"] == 30.0 + 1.5 + 15.0 + 8.0
+    assert (row["operator_wait_s"], row["idle_s"]) == (1200, 0)
+
+
+def test_a_prompt_typed_while_the_last_turn_still_worked_waits_for_nothing_and_an_injected_one_idles() -> None:
+    found = [
+        sig("prompt", 0, turn="p1", detail="human"),
+        sig("request", 30, turn="p1", seconds=30.0),
+        sig("prompt", 50, turn="p2", detail="human"),  # typed while p1 still ran
+        sig("tool", 90, turn="p1", seconds=5.0),
+        sig("reply", 91, turn="p2"),
+        sig("prompt", 191, turn="p3", detail="injected"),  # a background task's notice, 100 s after the last turn
+        sig("reply", 192, turn="p3"),
+    ]
+
+    row = only(session_health(found, KEYS))
+
+    assert (row["operator_wait_s"], row["idle_s"]) == (0, 100)
+
+
+def test_a_turn_with_no_closing_reply_is_an_interrupt_and_a_loaded_skill_then_a_deliver_is_complete() -> None:
+    analytics = Analytics(completion_skill="completing-tasks")
+    found = [
+        sig("prompt", 0, turn="p1", detail="human"),
+        sig("reply", 5, turn="p1"),
+        sig("prompt", 10, turn="p2", detail="human"),  # the operator stopped it: no reply
+        sig("prompt", 20, turn="p3", detail="human"),
+        sig("skill", 21, turn="p3", name="completing-tasks"),
+        sig("deliver", 22, turn="p3"),
+        sig("reply", 23, turn="p3"),
+    ]
+    delivered_without_the_skill = [sig("prompt", 0, session="d", turn="q"), sig("deliver", 1, session="d", turn="q")]
+
+    rows = session_health(found + delivered_without_the_skill, KEYS, analytics)
+
+    assert by_task(rows, "interrupts") == {("s", None): 1, ("d", None): 1}
+    assert by_task(rows, "complete") == {("s", None): True, ("d", None): False}
+
+
+def test_a_codex_prompt_with_no_reply_is_not_an_interrupt() -> None:
+    found = [sig("prompt", 0, harness=CODEX), sig("request", 5, harness=CODEX, model="m")]
+
+    assert only(session_health(found, KEYS))["interrupts"] == 0
+
+
+def test_human_prompts_after_a_claim_and_the_steps_before_the_first_edit_are_counted() -> None:
+    found = [
+        sig("prompt", 0, turn="p1", detail="human"),  # "start TASK-9": before the claim
+        sig("claim", 3, name="TASK-9", turn="p1"),
+        sig("request", 4, model="m", turn="p1"),
+        sig("request", 5, model="m", origin="side", agent="Explore", turn="p1"),
+        sig("tool", 6, name="Read", turn="p1"),
+        sig("request", 7, model="m", turn="p1"),
+        sig("tool", 8, name="Edit", turn="p1"),
+        sig("request", 9, model="m", turn="p1"),
+        sig("reply", 10, turn="p1"),
+        sig("prompt", 20, turn="p2", detail="human"),
+        sig("prompt", 21, turn="p3", detail="injected"),
+        sig("prompt", 22, turn="p4", detail="human"),
+    ]
+
+    row = by_task(session_health(found, KEYS), "operator_prompts")
+    rows = {r["task"]: r for r in session_health(found, KEYS)}
+
+    assert (rows["TASK-9"]["operator_prompts"], rows["TASK-9"]["steps_before_edit"]) == (2, 3)
+    assert rows[None]["operator_prompts"] == 0 and rows[None]["steps_before_edit"] is None
+    assert row == {("s", None): 0, ("s", "TASK-9"): 2}

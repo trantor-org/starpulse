@@ -11,7 +11,7 @@ input is read only for the `git switch` or `git checkout` ref it names, which is
 
 | harness | records read |
 |---|---|
-| Claude Code | `user_prompt`, `api_request`, `tool_decision`, `tool_result`, `skill_activated`, `compaction` |
+| Claude Code | `user_prompt`, `api_request`, `tool_decision`, `tool_result`, `skill_activated`, `assistant_response`, `compaction` |
 | Codex | `codex.conversation_starts`, `codex.user_prompt`, `codex.sse_event` (`response.completed`), `codex.tool_decision`, `codex.tool_result`, `codex.skill_invocation`, `codex.turn_cost` (an interrupted turn) |
 """
 
@@ -26,10 +26,12 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, fields
 from typing import Any
 
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths
 from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
 from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal
+from starpulse.contracts.adapters import TaskKeys
 
 __all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "redactor", "signals"]
 
@@ -91,6 +93,15 @@ def _call(attributes: dict[str, Any]) -> dict[str, Any]:
     return {"activities": tuple(activities(tool, tool_input)), "reads": tuple(reads), "writes": tuple(writes)}
 
 
+def _label(text: Any, injected: tuple[str, ...]) -> str:
+    """`injected` for a prompt whose opening is one of `injected`, `human` for any other, empty when the export
+    carried no text (prompt logging off, or the exporter's `<REDACTED>`). Only the label leaves this function."""
+    opening = str(text or "").lstrip()
+    if not opening or opening == "<REDACTED>":
+        return ""
+    return "injected" if opening.startswith(injected) else "human"
+
+
 def _claude_origin(query_source: str) -> str:
     if query_source == "compact":
         return "auxiliary"
@@ -134,6 +145,8 @@ def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
         }
     elif name == "skill_activated":
         yield {"kind": "skill", "name": str(a.get("skill.name") or "")}
+    elif name == "assistant_response":
+        yield {"kind": "reply"}
     elif name == "compaction":
         yield {"kind": "compaction", "name": str(a.get("trigger") or "")}
 
@@ -200,6 +213,25 @@ def redactor(setting: str) -> Callable[[str], str]:
     return found
 
 
+def _named_text(attributes: dict[str, Any]) -> str:
+    """The text of a Claude Code tool result that may name a task or deliver one: a shell command, or the arguments
+    of a `Skill` call. Read for a match and dropped; only the task key a claim matched is ever kept."""
+    tool = str(attributes.get("tool_name") or "")
+    tool_input = _input(attributes)[0]
+    if tool in SHELLS:
+        return _command(tool_input)
+    args = tool_input.get("args") if tool == "Skill" else None
+    return args if isinstance(args, str) else ""
+
+
+def _claimed(text: str, reading: Analytics, keys: TaskKeys | None) -> str | None:
+    """The task the first matching claim pattern names in `text`, when the board's key scheme calls it a task."""
+    for pattern in reading.claims if keys else ():
+        if (match := pattern.search(text)) and keys.matches(match[1]):
+            return match[1]
+    return None
+
+
 def _stored_command(attributes: dict[str, Any], redact: Callable[[str], str] | None) -> str:
     """A shell call's command as it may be kept: heredoc bodies as length and hash, the rest through `redact`.
 
@@ -214,10 +246,17 @@ def _stored_command(attributes: dict[str, Any], redact: Callable[[str], str] | N
         return ""
 
 
-def signals(payload: dict[str, Any], redact: Callable[[str], str] | None = None) -> list[Signal]:
+def signals(
+    payload: dict[str, Any],
+    redact: Callable[[str], str] | None = None,
+    *,
+    analytics: Analytics | None = None,
+    keys: TaskKeys | None = None,
+) -> list[Signal]:
     """The signals in an OTLP logs payload, in the order it carries them; records of events not read are skipped.
 
     A Claude Code shell result keeps its command, passed through `redact`; with none, no command is kept."""
+    reading = analytics or Analytics()
     found: list[Signal] = []
     for resource_branch, record in _records(payload):
         a = _attributes(record)
@@ -229,11 +268,16 @@ def signals(payload: dict[str, Any], redact: Callable[[str], str] | None = None)
         branch = resource_branch or (str(a.get(BRANCH)) if a.get(BRANCH) else None)
         identity = a.get("event.sequence") if harness == CLAUDE_CODE else a.get("call_id")
         key = f"{harness}:{session}:{name}:{identity}:{a.get('event.timestamp')}"
+        turn = str(a.get("prompt.id") or "") if harness == CLAUDE_CODE else ""
         for fields in read(name, a):
             if fields["kind"] == "tool" and harness == CLAUDE_CODE:
                 fields = {**fields, "command": _stored_command(a, redact)}
+            elif fields["kind"] == "prompt" and harness == CLAUDE_CODE:
+                fields = {**fields, "detail": _label(a.get("prompt"), reading.injected_openings)}
             found.append(
-                Signal(harness, session, time=at, key=key, branch=branch, captured=harness == CLAUDE_CODE, **fields)
+                Signal(
+                    harness, session, time=at, key=key, branch=branch, captured=harness == CLAUDE_CODE, turn=turn, **fields
+                )
             )
         if str(a.get("tool_name")) in SHELLS and (switch := _SWITCH.search(_command(_input(a)[0]))):
             found.append(
@@ -246,8 +290,14 @@ def signals(payload: dict[str, Any], redact: Callable[[str], str] | None = None)
                     branch,
                     name=switch[2],
                     captured=harness == CLAUDE_CODE,
+                    turn=turn,
                 )
             )
+        if harness == CLAUDE_CODE and name == "tool_result" and (text := _named_text(a)):
+            if (task := _claimed(text, reading, keys)) is not None:
+                found.append(Signal(harness, session, "claim", at, f"{key}:claim", branch, name=task, turn=turn))
+            if reading.completion_call and str(a.get("tool_name")) in SHELLS and reading.completion_call.search(text):
+                found.append(Signal(harness, session, "deliver", at, f"{key}:deliver", branch, turn=turn))
     return found
 
 

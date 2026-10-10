@@ -38,25 +38,40 @@ exporter = { otlp-http = { endpoint = "http://127.0.0.1:4319/v1/logs", protocol 
 
 A session is one harness session id; it has one row per task it worked, found from the branch the export names
 (`vcs.ref.head.name`, which Codex's export does not carry, so its sessions have no task until a shell `git switch` or
-`git checkout` in them names one). The body is `{now, window_s, sessions, slices}`:
+`git checkout` in them names one), or a command or `Skill` call that matches an `[analytics]` `claims` pattern claims
+one. Every step after a claim belongs to the claimed task, until the next claim or switch. The body is
+`{now, window_s, sessions, slices}`:
 
 - A `sessions` row is `{harness, session, task, kind, first_at, last_at, prompts, operator_prompts, requests,
   side_requests, tool_calls, tool_failures, tools, rejections, skills, compactions, interrupts, models, efforts,
-  model_changes, effort_changes, tokens, cost_usd, agent_s, operator_wait_s, idle_s}`. `kind` is `headless`,
-  `interactive` or `unknown`. `operator_prompts` are the human prompts after the first; `requests` are the main
-  thread's model calls and `side_requests` a subagent's. `rejections` counts rejected tool decisions by their source
+  model_changes, effort_changes, tokens, cost_usd, agent_s, operator_wait_s, idle_s, steps_before_edit, complete}`.
+  `kind` is `headless`, `interactive` or `unknown`. `operator_prompts` are the human prompts after the task's claim
+  (after the session's first prompt for the task it launched on); `requests` are the main thread's model calls and
+  `side_requests` a subagent's. `steps_before_edit` is the model requests before the task's first successful `Edit`,
+  `Write`, `MultiEdit` or `NotebookEdit`, null until it has one. `complete` is true for a session that loaded the
+  `completion_skill` and then ran a shell command matching `completion_call`. `rejections` counts rejected tool decisions by their source
   and `compactions` by trigger. `tokens` is `{input, output, cache_read, cache_write, reasoning}`, with Codex's cached
   tokens taken out of its input; `cost_usd` is null for a session whose harness exports no cost.
 - A `slices` entry adds up the sessions that worked one task: `sessions`, `steps`, `operator_prompts`, `interrupts`,
   `interventions` (operator prompts plus interrupts), `escalated` (a model or effort changed between main-thread
-  requests) and `clean` (one session, no intervention, not escalated), with the same tokens, cost and time sums.
+  requests) and `clean` (one session, no intervention, not escalated), with the same tokens, cost and time sums, and
+  `complete` and `steps_before_edit` of its sessions (the earliest that has one).
   Whether the task then settled in Review or Done is the board's fact, which the reader joins.
-- Time is the gap between a session's consecutive signals, `operator_wait_s` where a human prompt ends it, `idle_s`
-  where it is longer than ten minutes, and `agent_s` otherwise. An export marks no turn end and no pending background
-  task, so a wait for one is `agent_s` up to ten minutes.
+- A turn is the signals that share a Claude Code `prompt.id`; its end is its last signal. A prompt is labelled
+  `injected` when its opening matches an `injected_openings` prefix and `human` otherwise; the label is kept and the
+  prompt's text never is. Codex exports no `prompt.id`, so a Codex prompt's turn is the signals up to the next
+  prompt, and its prompts are all `human`.
+- Time comes from the events' own durations, not from the gaps between them. `agent_s` is the sum of the model
+  requests' and tool results' durations (a subagent's included). `operator_wait_s` is the time from the end of the turn
+  before to a human prompt (never the session's first), `idle_s` the same before an injected prompt, a wait for a
+  background task or scheduler. A prompt typed while the turn before still worked waits for nothing. Codex exports no
+  request duration, so its `agent_s` is its tool results' alone.
+- An `interrupt` is a Claude Code turn with a `prompt.id` and no closing reply: a turn still running counts until its
+  reply lands. Codex has no reply signal, so only the interrupts it exports count for it.
 
-What an export cannot say is absent rather than guessed: Claude Code exports no user interrupt, Codex exports an
-interrupted turn only in `codex.turn_cost`, which it sends only with an API key, and Codex has no compaction event.
+What an export cannot say is absent rather than guessed: Claude Code exports no user interrupt, so one is read from
+a turn that never replied, Codex exports an interrupted turn only in `codex.turn_cost`, which it sends only with an API
+key, and Codex has no compaction event.
 Signals are kept in the event log's `telemetry:signals` stream, a private stream that is no contract and changes
 without notice, pruned by `event_log_retention_days` like any row, so a window longer than the retention reads only
 what remains. A server with no such stream is 501, a window that is no

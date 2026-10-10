@@ -1414,6 +1414,7 @@ export interface SessionHealth {
   compactions: {
     [k: string]: number;
   };
+  complete: boolean;
   cost_usd: number | null;
   effort_changes: number;
   efforts: string[];
@@ -1437,6 +1438,7 @@ export interface SessionHealth {
   skills: {
     [k: string]: number;
   };
+  steps_before_edit: number | null;
   task: string | null;
   tokens: TokenCounts;
   tool_calls: number;
@@ -1459,6 +1461,7 @@ export interface SliceHealth {
   active_s: number;
   clean: boolean;
   compactions: number;
+  complete: boolean;
   cost_usd: number | null;
   efforts: string[];
   escalated: boolean;
@@ -1478,6 +1481,7 @@ export interface SliceHealth {
     [k: string]: number;
   };
   steps: number;
+  steps_before_edit: number | null;
   task: string;
   tokens: TokenCounts;
   tool_calls: number;

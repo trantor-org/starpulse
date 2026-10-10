@@ -175,6 +175,10 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # skill = "verifying-claims"
 # title = "^(validate|verify|check)"                       # a regular expression over the task's title, case-insensitive
 # label = "validation"                                     # a label the task carries
+# injected_openings = ["<task-notification"]               # a prompt opening with one is labelled `injected`, any other `human`
+# claims = ['backlog_task\.py\s+start\s+(TASK-\d+)']        # group 1 is the task a command or `Skill` args claims
+# completion_skill = "completing-tasks"                    # with `completion_call`, marks a session's task complete
+# completion_call = 'backlog_task\.py\s+deliver\b'          # a shell command run after that skill loaded
 
 # Optional: rank search by meaning as well as by words (see `search` in docs/cli.md). `embeddings_url` is an
 # OpenAI-compatible embeddings endpoint, local or cloud; with it unset, search is lexical and nothing calls out.

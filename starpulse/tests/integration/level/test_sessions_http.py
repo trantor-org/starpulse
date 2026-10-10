@@ -11,9 +11,10 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
+from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog, signals
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
@@ -125,3 +126,32 @@ def test_an_instance_that_receives_no_telemetry_cannot_report_session_health(tmp
         status, body = _get(server)
 
     assert (status, "telemetry" in body["error"]) == (501, True)
+
+
+def test_a_session_that_loaded_the_completion_skill_then_delivered_is_complete_by_the_servers_analytics(
+    tmp_path: Path, telemetry: TelemetryLog
+) -> None:
+    def at(kind: str, offset: float, **fields: object) -> Signal:
+        return Signal("claude-code", "done", kind, NOW - 3600 + offset, f"done:{kind}:{offset}", **fields)  # type: ignore[arg-type]
+
+    telemetry.publish(
+        [
+            at("prompt", 0, branch="claude/task-8-x", turn="p1", detail="human"),
+            at("request", 1, branch="claude/task-8-x", turn="p1", model="m", seconds=1),
+            at("tool", 2, branch="claude/task-8-x", turn="p1", name="Edit", ok=True, seconds=0.5),
+            at("skill", 3, branch="claude/task-8-x", turn="p1", name="completing-tasks"),
+            at("deliver", 4, branch="claude/task-8-x", turn="p1"),
+            at("reply", 5, branch="claude/task-8-x", turn="p1"),
+        ]
+    )
+    declared = Analytics(completion_skill="completing-tasks")
+
+    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, analytics=declared, clock=lambda: NOW) as live:
+        _, body = _get(live, "?hours=24")
+    with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as bare:
+        _, undeclared = _get(bare, "?hours=24")
+
+    (row,) = body["sessions"]
+    assert (row["task"], row["complete"], row["steps_before_edit"], row["interrupts"]) == ("TASK-8", True, 1, 0)
+    assert body["slices"][0]["complete"] is True
+    assert undeclared["sessions"][0]["complete"] is False

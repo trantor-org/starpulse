@@ -15,7 +15,9 @@ from typing import Any
 
 import pytest
 
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, redactor, signals
+from starpulse.contracts.adapters import TaskKeys
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
 CLAUDE_SESSION = "11111111-1111-4111-8111-111111111111"
@@ -79,7 +81,9 @@ def test_a_recorded_claude_code_export_reads_as_prompt_decisions_tools_and_reque
         ("tool", "Bash"),
         ("request", ""),
         ("request", ""),
+        ("reply", ""),
     ]
+    assert {s.turn for s in found} == {"e7578d9d-bde9-4f39-845c-6c3cec6764e9"}
     assert {(s.harness, s.session, s.branch) for s in found} == {(CLAUDE_CODE, CLAUDE_SESSION, "claude/task-1-capture")}
     request = found[3]
     assert (request.model, request.effort, request.origin) == ("claude-sonnet-5-5", "medium", "main")
@@ -265,6 +269,95 @@ def test_a_tool_result_carries_the_activities_and_paths_its_input_names() -> Non
         ("tool", ("Read",), ("/r/a.py",), ()),
         ("tool", ("Edit",), (), ("/r/b.py",)),
     ]
+
+
+def test_a_claude_code_step_carries_its_prompt_id_as_its_turn_and_a_reply_is_a_signal() -> None:
+    turn = {"prompt.id": "p1"}
+    found = signals(
+        export(
+            claude("user_prompt", 1, **turn),
+            claude("api_request", 2, model="m", **turn),
+            claude("assistant_response", 3, **turn),
+            claude("assistant_response", 4, **{"prompt.id": "p2"}),
+            codex("codex.user_prompt"),
+        )
+    )
+
+    assert [(s.kind, s.turn) for s in found] == [
+        ("prompt", "p1"),
+        ("request", "p1"),
+        ("reply", "p1"),
+        ("reply", "p2"),
+        ("prompt", ""),
+    ]
+
+
+def test_a_prompt_is_labelled_by_its_opening_and_its_text_is_kept_nowhere() -> None:
+    sentinel = "SENTINEL-7f3a91"
+    found = signals(
+        export(
+            claude("user_prompt", 1, prompt=f"please fix {sentinel}"),
+            claude("user_prompt", 2, prompt=f"  <task-notification>{sentinel}</task-notification>"),
+            claude("user_prompt", 3, prompt="<REDACTED>"),
+            claude("user_prompt", 4),
+        ),
+        analytics=Analytics(injected_openings=("<task-notification",)),
+    )
+
+    assert [s.detail for s in found] == ["human", "injected", "", ""]
+    assert sentinel not in repr(found)
+
+
+KEYS = TaskKeys(key=re.compile(r"TASK-\d+"), branch=re.compile(r"(?:[\w.-]+/)*task-(\d+)"), key_format="TASK-{}")
+
+
+def _call(seq: int, name: str, **tool_input: str) -> dict[str, Any]:
+    return claude("tool_result", seq, tool_name=name, success="true", tool_input=json.dumps(tool_input))
+
+
+def test_a_command_or_a_skill_call_that_names_a_task_is_a_claim_and_only_the_key_is_kept() -> None:
+    analytics = Analytics(
+        claims=(re.compile(r"backlog_task\.py\s+start\s+(TASK-\d+)"), re.compile(r"^\s*(TASK-\d+)\s*$")),
+    )
+    found = signals(
+        export(
+            _call(1, "Bash", command="bin/backlog_task.py start TASK-12 --submodule starpulse"),
+            _call(2, "Skill", skill="starting-tasks", args="TASK-13"),
+            _call(3, "Bash", command="bin/backlog_task.py view TASK-14"),
+            _call(4, "Skill", skill="starting-tasks", args="TASK-15 and then some prose"),
+            _call(5, "Read", file_path="TASK-16"),
+        ),
+        analytics=analytics,
+        keys=KEYS,
+    )
+
+    claims = [s for s in found if s.kind == "claim"]
+    assert [s.name for s in claims] == ["TASK-12", "TASK-13"]
+    assert len({s.key for s in found}) == len(found)
+    assert not any("starpulse" in repr(s) for s in claims)
+
+
+def test_a_capture_that_is_no_task_key_of_the_board_is_not_a_claim() -> None:
+    analytics = Analytics(claims=(re.compile(r"start\s+(\S+)"),))
+
+    found = signals(export(_call(1, "Bash", command="make start now")), analytics=analytics, keys=KEYS)
+
+    assert [s.kind for s in found] == ["tool"]
+
+
+def test_a_shell_command_matching_the_completion_call_is_a_deliver_signal() -> None:
+    analytics = Analytics(completion_call=re.compile(r"backlog_task\.py\s+deliver\b"))
+
+    found = signals(
+        export(
+            _call(1, "Bash", command="bin/backlog_task.py deliver --task TASK-1"),
+            _call(2, "Bash", command="bin/backlog_task.py view TASK-1"),
+        ),
+        analytics=analytics,
+        keys=KEYS,
+    )
+
+    assert [s.kind for s in found] == ["tool", "deliver", "tool"]
 
 
 def test_a_codex_tool_result_without_input_is_its_tool_name_and_names_no_path() -> None:

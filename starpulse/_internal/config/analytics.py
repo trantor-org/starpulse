@@ -11,6 +11,17 @@ StarPulse reads missed skill loads and trace clusters from the harness exports (
 - `[[analytics.skill_loads]]`: per `skill`, what should load it: any of `activities` (globs over an activity's name),
   a task whose title matches `title` (a regular expression, case-insensitive) or one carrying `label`. A case that
   ran a trigger without activating the skill is a missed load; a skill with no declaration is never reported.
+
+What a session's own events say about its work is read against four more keys, so the package names no instance's
+tasks or skills (`GET /api/analytics/sessions`):
+
+- `injected_openings`: prefixes of a prompt's text. A prompt that opens with one is labelled `injected` (a harness
+  or scheduler wrote it), any other `human`; the label is stored and the text never is.
+- `claims`: regular expressions run over each shell command and each `Skill` call's arguments. Group 1 is a task
+  key; a match under the board's key scheme says the session now works that task, and every step after it is the
+  task's until another claim.
+- `completion_skill` and `completion_call`: a task is complete in a session that loaded the skill and ran a shell
+  command matching the call.
 """
 
 from __future__ import annotations
@@ -21,7 +32,16 @@ from dataclasses import dataclass, field
 
 __all__ = ["Analytics", "AnalyticsError", "SkillLoad", "parse_analytics"]
 
-_KEYS = {"roots", "stop_activities", "lifecycle_skills", "skill_loads"}
+_KEYS = {
+    "roots",
+    "stop_activities",
+    "lifecycle_skills",
+    "skill_loads",
+    "injected_openings",
+    "claims",
+    "completion_skill",
+    "completion_call",
+}
 _LOAD_KEYS = {"skill", "activities", "title", "label"}
 
 
@@ -50,6 +70,14 @@ class Analytics:
     """Skills every task's delivery loads, left out of what a cluster's cases loaded."""
     skill_loads: tuple[SkillLoad, ...] = field(default_factory=tuple)
     """What should load each declared skill."""
+    injected_openings: tuple[str, ...] = ()
+    """Prefixes that label a prompt `injected`; none: every prompt is `human`."""
+    claims: tuple[re.Pattern[str], ...] = ()
+    """Patterns whose group 1 is the task a shell command or a `Skill` call's arguments claims; none: no claims."""
+    completion_skill: str = ""
+    """The skill whose load, with a `completion_call`, marks a session's task complete."""
+    completion_call: re.Pattern[str] | None = None
+    """The shell command that, after `completion_skill` loaded, marks the task complete."""
 
 
 def _texts(raw: Mapping[str, object], key: str) -> tuple[str, ...]:
@@ -82,6 +110,26 @@ def _load(raw: object, at: int) -> SkillLoad:
     return SkillLoad(skill, activities, pattern, label)
 
 
+def _pattern(value: object, who: str) -> re.Pattern[str]:
+    if not isinstance(value, str) or not value:
+        raise AnalyticsError(f"analytics: {who} must be a regular expression")
+    try:
+        return re.compile(value)
+    except re.error as exc:
+        raise AnalyticsError(f"analytics: {who} is not a regular expression: {exc}") from exc
+
+
+def _claims(raw: Mapping[str, object]) -> tuple[re.Pattern[str], ...]:
+    found = raw.get("claims", [])
+    if not isinstance(found, list):
+        raise AnalyticsError("analytics: claims must be a list of text")
+    patterns = tuple(_pattern(value, f"claims[{at}]") for at, value in enumerate(found))
+    for at, pattern in enumerate(patterns):
+        if pattern.groups < 1:
+            raise AnalyticsError(f"analytics: claims[{at}] needs a group that captures the task key")
+    return patterns
+
+
 def parse_analytics(raw: object) -> Analytics:
     """The `[analytics]` table, or the empty one for `None`; each refusal names the key to fix."""
     if raw is None:
@@ -96,9 +144,17 @@ def parse_analytics(raw: object) -> Analytics:
     loads = raw.get("skill_loads", [])
     if not isinstance(loads, list):
         raise AnalyticsError("analytics: skill_loads must be a list of [[analytics.skill_loads]] tables")
+    skill = raw.get("completion_skill", "")
+    if not isinstance(skill, str):
+        raise AnalyticsError("analytics: completion_skill must be text")
+    call = raw.get("completion_call")
     return Analytics(
         roots,
         frozenset(_texts(raw, "stop_activities")),
         frozenset(_texts(raw, "lifecycle_skills")),
         tuple(_load(table, at) for at, table in enumerate(loads)),
+        _texts(raw, "injected_openings"),
+        _claims(raw),
+        skill,
+        None if call is None else _pattern(call, "completion_call"),
     )
