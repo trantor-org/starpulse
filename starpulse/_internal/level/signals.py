@@ -21,7 +21,8 @@ class Signal:
     result, `ok` its success), `decision` (a tool permission, `ok` accepted, `detail` its source), `skill`,
     `compaction` (`name` its trigger), `interrupt` or `branch` (`name` the ref a shell switched to). `origin` is
     `main`, `side` (a subagent) or `auxiliary` (a compaction's own call). `key` is unique to the record, so a
-    replayed export gives the same signals.
+    replayed export gives the same signals. A `tool` signal carries the `activities` the call performed, in order, as
+    a closed vocabulary with no arguments, and the `reads` and `writes` it named, as the export gave them.
     """
 
     harness: str
@@ -43,3 +44,6 @@ class Signal:
     cache_write: int = 0
     reasoning: int = 0
     cost: float | None = None
+    activities: tuple[str, ...] = ()
+    reads: tuple[str, ...] = ()
+    writes: tuple[str, ...] = ()

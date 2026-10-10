@@ -8,7 +8,10 @@ agent's accident, not an adversary.
 The Claude Code receiver publishes which session moved, on which event and when; prompt, reply and tool text is
 neither stored nor forwarded. For session health it also keeps, per Claude Code and Codex event, only counts, durations,
 token counts, a model, effort, tool, skill or decision name, the branch, and the ref a shell `git switch` or
-`git checkout` names; it never reads a prompt, a reply, a tool's output or an account field. Forwarding to a hub
+`git checkout` names, and for each tool call the activity it performed (a leading command name such as `git status`
+or `ssh root@unraid`, never its arguments) and the file path a file tool read or wrote; it never reads a prompt, a
+reply, a tool's output or an account field. These stay in the instance's own event log, and only a path under a
+configured `[analytics]` root, cut to its first two components, is ever served. Forwarding to a hub
 keeps `actor` and `assignee` at home unless the instance opts in.
 A hub refuses to start without an `[oidc]` table. See [Run a hub](hub.md)
 before exposing one.

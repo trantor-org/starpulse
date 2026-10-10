@@ -87,7 +87,8 @@ def task_agent(task: BoardTask) -> dict:
 
 
 def settled_entry(task: BoardTask) -> dict | None:
-    """Where a settled task settled, when, and the title, assignee and milestone it settled with; None for an open task."""
+    """Where a settled task settled, when, and the title, assignee, milestone and labels it settled with; None for an
+    open task."""
     if not task.settled:
         return None
     return {
@@ -97,6 +98,7 @@ def settled_entry(task: BoardTask) -> dict | None:
         "title": task.title,
         "model": task.assignee,
         "milestone": task.milestone,
+        "labels": list(task.labels),
     }
 
 
@@ -709,6 +711,14 @@ class BoardFeed:
         """Every open Board task as the page draws it, read under the lock so a caller walks a list no placement changes."""
         with self._lock:
             return list(self._open.values())
+
+    def titled(self) -> dict[str, dict]:
+        """Every Board task's `title` and `labels`, open or settled, by id; a settled task saved before its labels
+        were kept has none."""
+        with self._lock:
+            named = {task_id: {"title": s["title"], "labels": s.get("labels", [])} for task_id, s in self._settled.items()}
+            named.update({task_id: {"title": a["title"], "labels": a["labels"]} for task_id, a in self._open.items()})
+            return named
 
     def machine_tasks(self, flow: str) -> list[dict]:
         """Every task as `flow`'s machine last placed it; none for a machine the feed does not draw."""

@@ -150,6 +150,21 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # `waiting` and `ready` lanes, else `serve` refuses to start.
 # [release]
 # settle = "pin-bump"  # optional: a dependency citing a pull request in a [[repos]] repository settles only when the parent's pin bump has merged
+
+# Optional: what harness telemetry is read against for missed skill loads and trace clusters (see Find missed skill
+# loads and recurring work in docs/sources.md). Every key is optional; with no table nothing is declared, and no
+# path is an area.
+# [analytics]
+# roots = ["/srv/repo", "/srv/repo/.claude/worktrees/*"]  # absolute checkouts a path is cut to an area under; `*` is one component
+# stop_activities = ["Bash", "exec_command"]               # activities that say how a session ran, never a cluster's descriptors
+# lifecycle_skills = ["starting-tasks", "completing-tasks"] # skills every task loads, left out of a cluster's skills
+# [[analytics.skill_loads]]                                # what should load a skill: any of these
+# skill = "operating-unraid"
+# activities = ["ssh root@unraid"]                         # globs over an activity's name
+# [[analytics.skill_loads]]
+# skill = "verifying-claims"
+# title = "^(validate|verify|check)"                       # a regular expression over the task's title, case-insensitive
+# label = "validation"                                     # a label the task carries
 ```
 
 ## Triggers

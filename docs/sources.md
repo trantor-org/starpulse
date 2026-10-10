@@ -62,6 +62,51 @@ without notice, pruned by `event_log_retention_days` like any row, so a window l
 what remains. A server with no such stream is 501, a window that is no
 positive number 400.
 
+## Find missed skill loads and recurring work
+
+The same signals say what each session did, not only how long it took. A tool call is lifted to *activities* with no
+argument, so work recurs across sessions: a non-shell tool is its bare name; a shell call is each statement's leading
+command, as `git status`, `gh pr view`, `make test`, `bin/<script>`, `ssh <user@host>`, `shell_read`, `shell_search`,
+its binary name or `shell_other`. An export that carries no command (`OTEL_LOG_TOOL_DETAILS` off) leaves a shell call
+as its tool name. The path a file tool read or wrote is kept raw and cut at read time to an *area*, its first two
+components below an `[analytics]` root. A *case* is one session's work on one task, as under session health; a session's
+work before any branch names a task is a case with no task.
+
+`GET /api/analytics/missed-loads[?hours=N&skill=NAME&list=N]` reports, per skill declared in `[analytics]`, the cases
+of the window (168 hours by default) that ran its trigger and those of them that did so without activating it. The body
+is `{now, window_s, skills}`; a `skills` entry is `{skill, performed, missed, listed}`, `listed` the `list` (5 by
+default, 0 or more) most recent missed cases as `{harness, session, task, last_at}`. A case performs a trigger by an
+activity matching one of its globs, or, with tool calls, a task title matching its `title` or carrying its `label`
+(from the board's open and settled tasks).
+
+`GET /api/analytics/trace-clusters[?hours=N&threshold=D&min_sessions=N&outliers=N&new_hours=N]` groups the window's
+cases that made a tool call by what they did. Each case is a set of its activities (not a `stop_activities` one) and
+areas, weighted TF-IDF (a feature in under `5` cases or in over a tenth of them says nothing) and normalized; cases
+merge by average-linkage on cosine distance while the nearest pair is under `threshold` (0.8 by default, up to 2). A
+cluster keeps only if it has `min_sessions` (5 by default, 1 or more) distinct sessions. `new_hours` keeps only the
+clusters whose oldest case is that recent; clustering still runs over the whole window. The body is `{now, window_s,
+threshold, min_sessions, cases, clustered, clusters}`, and a cluster is:
+
+- `key`: the first 12 hex digits of the SHA-1 of its sorted `descriptors`, so it holds while those hold.
+- `descriptors`: its six heaviest features, as `a:<activity>`, `r:<area>` or `w:<area>`.
+- `sessions`, `cases`, `tasks`, `first_at`, `last_at`, `kinds` (cases by `headless`, `interactive`, `unknown`),
+  `sample_sessions`, `sample_tasks` (5 each) and the three `titles` most of its cases carry.
+- `skills`: the three skills its cases activated most, as `{skill, cases}`, without `lifecycle_skills`; `uncovered`
+  counts the cases that activated none of them.
+- `missed_loads`: the declared skills whose trigger some of its cases ran without activating, as `{skill, performed,
+  missed}`.
+- With `outliers=N`, `medoid` and the `N` furthest `outliers`; otherwise `medoid` is null and `outliers` is empty. The
+  medoid is `{case, median_distance, trace}`: the case with the least total normalized edit distance to the others over
+  its activity order, the median of its distances to them, and its trace (`stop_activities` dropped, adjacent repeats
+  collapsed). An outlier is `{case, distance, deletions, insertions}`: its distance from the medoid, the medoid's
+  activities it lacks and its own that the medoid lacks.
+
+What a cluster *is for*, and what to do about one, is the reader's: the server computes no label and keeps no verdict.
+A cluster's `key` is not continuous with one a different implementation computed from the same sessions, because the
+order that breaks a tie between equal weights may differ.
+
+Both answer 501 with no telemetry stream, 503 when it cannot be read, and 400 for a number out of range.
+
 ## Report runs from any scheduler
 
 ```sh

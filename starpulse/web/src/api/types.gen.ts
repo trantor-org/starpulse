@@ -43,6 +43,7 @@ export interface ApiContract {
   merges: Merges;
   milestoneShown: MilestoneShown;
   milestones: Milestones;
+  missedLoads: MissedLoads;
   pulls: Pulls;
   requests: (
     | MoveRequest
@@ -67,6 +68,7 @@ export interface ApiContract {
   sessions: Sessions;
   snapshot: Snapshot;
   taskRecord: TaskRecord;
+  traceClusters: TraceClusters;
   trajectories: Trajectories;
   whatIf: WhatIf;
   windowState: WindowState;
@@ -325,11 +327,15 @@ export interface TrailStep {
   state: string;
 }
 /**
- * A task that left the Board's lanes for good: where it settled, when, and the title, assignee and milestone it settled with.
+ * A task that left the Board's lanes for good: where it settled, when, and the title, assignee, milestone and labels it settled with.
  */
 export interface Settled {
   at: number | null;
   created: number | null;
+  /**
+   * The labels it settled with.
+   */
+  labels?: string[];
   /**
    * The milestone it settled in; empty when it had none.
    */
@@ -1087,6 +1093,35 @@ export interface Milestones {
   milestones: MilestoneRecord[];
 }
 /**
+ * `GET /api/analytics/missed-loads`: per declared skill, the cases that ran its trigger without loading it.
+ */
+export interface MissedLoads {
+  now: number;
+  skills: MissedSkill[];
+  window_s: number;
+}
+/**
+ * A declared skill: the cases that performed what should load it, and those that did not load it.
+ */
+export interface MissedSkill {
+  /**
+   * The `list` most recent missed cases, newest first.
+   */
+  listed: CaseRef[];
+  missed: number;
+  performed: number;
+  skill: string;
+}
+/**
+ * One session's work on one task (`task` None: a branch that names none).
+ */
+export interface CaseRef {
+  harness: string;
+  last_at: number;
+  session: string;
+  task: string | null;
+}
+/**
  * `GET /api/pulls`: the stored pull requests matching every filter given, by repository then number.
  */
 export interface Pulls {
@@ -1521,6 +1556,88 @@ export interface TaskRecord {
     [k: string]: unknown;
   };
   task: string;
+}
+/**
+ * `GET /api/analytics/trace-clusters`: recurring work, ranked by distinct sessions.
+ */
+export interface TraceClusters {
+  /**
+   * Cases with a trace in the window.
+   */
+  cases: number;
+  /**
+   * Cases that joined a cluster, whatever its size.
+   */
+  clustered: number;
+  clusters: TraceCluster[];
+  min_sessions: number;
+  now: number;
+  threshold: number;
+  window_s: number;
+}
+/**
+ * Cases that did the same distinctive work, and the skills that covered it.
+ */
+export interface TraceCluster {
+  cases: number;
+  /**
+   * The features with the most weight across the cases: `a:` activity, `r:` area read, `w:` area written.
+   */
+  descriptors: string[];
+  first_at: number;
+  /**
+   * A stable id: the digest of the sorted descriptors.
+   */
+  key: string;
+  kinds: {
+    [k: string]: number;
+  };
+  last_at: number;
+  /**
+   * Null unless `outliers` was asked for.
+   */
+  medoid: ClusterMedoid | null;
+  missed_loads: ClusterMissed[];
+  outliers: ClusterOutlier[];
+  sample_sessions: string[];
+  sample_tasks: string[];
+  sessions: number;
+  /**
+   * The three most loaded skills, less the lifecycle skills.
+   */
+  skills: ClusterSkill[];
+  tasks: string[];
+  titles: string[];
+  /**
+   * Cases that loaded no skill beyond the lifecycle skills.
+   */
+  uncovered: number;
+}
+/**
+ * The case nearest every other by normalized LCS distance between traces, and the cluster's usual spread.
+ */
+export interface ClusterMedoid {
+  case: CaseRef;
+  median_distance: number;
+  trace: string[];
+}
+export interface ClusterMissed {
+  missed: number;
+  performed: number;
+  skill: string;
+}
+/**
+ * A case far from the medoid: `deletions` are the medoid's activities it lacks, `insertions` its own extra.
+ */
+export interface ClusterOutlier {
+  case: CaseRef;
+  deletions: string[];
+  distance: number;
+  insertions: string[];
+}
+export interface ClusterSkill {
+  cases: number;
+  skill: string;
 }
 /**
  * `GET /api/level/trajectories`: the paths of the runs that ended in a terminal over a window.

@@ -74,6 +74,7 @@ import dataclasses
 import functools
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -949,6 +950,15 @@ def _import_mermaid(args: argparse.Namespace, environ: Mapping[str, str]) -> dic
         raise CliError("refused", f"{args.source}: {exc}") from exc
 
 
+def _plain(value: object) -> Any:
+    """What JSON cannot hold, as text: a set as its sorted members, a regular expression as its pattern."""
+    if isinstance(value, (set, frozenset)):
+        return sorted(value)
+    if isinstance(value, re.Pattern):
+        return value.pattern
+    return str(value)
+
+
 def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The config as it would run, every default filled in; `ok` is false, and the exit code 1, when it would not."""
     path = args.config or (Path("starpulse.toml") if Path("starpulse.toml").is_file() else None)
@@ -959,7 +969,7 @@ def _config_check(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
         return {**checked, "ok": False, "unknown_keys": list(exc.unknown_keys), "errors": [str(exc)]}
     except (OSError, ValueError) as exc:  # a file that is missing or not TOML
         return {**checked, "ok": False, "errors": [f"{path}: {exc}"]}
-    effective = json.loads(json.dumps(dataclasses.asdict(config), default=str))
+    effective = json.loads(json.dumps(dataclasses.asdict(config), default=_plain))
     return {**checked, "ok": True, "config": effective}
 
 
