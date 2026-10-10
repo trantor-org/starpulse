@@ -1153,12 +1153,40 @@ class AutopilotDimension(_Api):
     limit: float
 
 
+class AutopilotSession(_Api):
+    """A session the autopilot started whose task is still running: the strip's Sessions menu draws one row of it."""
+
+    task: str
+    title: str
+    model: str = Field(description="The task's agent profile, empty when it has none.")
+    started: float = Field(description="When the loop started the session, in epoch seconds.")
+    url: str = Field(description="The session's address, as `start` answered it.")
+
+
+class AutopilotNext(_Api):
+    """The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on."""
+
+    task: str
+    title: str
+    verdict: Literal["starting", "waits"]
+    reason: str = Field(
+        description="`goes next`, or the first dimension the task overfits, which the strip shows after `waits:`."
+    )
+
+
 class AutopilotStatus(_Api):
-    """Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample."""
+    """Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.
+
+    `inFlight` and `next` are served only by a server that runs a dispatch loop; without one they are absent.
+    """
 
     enabled: bool
     sampledAt: float | None
     dimensions: list[AutopilotDimension]
+    inFlight: list[AutopilotSession] = Field(
+        default_factory=list, description="The sessions the loop started and has not finished, oldest first."
+    )
+    next: AutopilotNext | None = Field(default=None, description="Null when no task in the eligible lane is workable.")
 
 
 class ForwardingStatus(_Api):
