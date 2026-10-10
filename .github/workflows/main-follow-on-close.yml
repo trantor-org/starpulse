@@ -26,8 +26,9 @@ jobs:
     name: Submit main-follow to Dagu
     # A fork's pull request never reaches the self-hosted runner.
     if: github.event.pull_request.head.repo.full_name == github.repository
-    # The general pool, never the single apply-on-merge runner a merge's apply holds.
-    runs-on: [self-hosted, ai-vm-1]
+    # The merge-event lane, shared only with trantor's push submit: the jobs a merge creates
+    # sit on the general pool and can never hold it.
+    runs-on: [self-hosted, merge-event]
     timeout-minutes: 5
     steps:
       - name: Submit

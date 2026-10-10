@@ -123,14 +123,15 @@ def test_trantor_tests_of_this_package_gate_the_green_dispatch():
     assert "trantor-contract" in job("ci.yml", "dispatch")["needs"]
 
 
-def test_main_follow_submit_runs_on_ai_vm_1_and_never_for_a_fork():
+def test_main_follow_submit_runs_on_the_merge_event_lane_and_never_for_a_fork():
     """The submit reaches trantor's Dagu from the host, and this repository is public: a fork's close must not run it.
 
     The file is read from the base branch under `pull_request_target`, so a fork cannot edit the condition away.
+    The merge-event lane is one runner no CI job targets, so the close never queues behind the same merge's jobs.
     """
     document = yaml.safe_load((WORKFLOWS / "main-follow-on-close.yml").read_text())
     follow = document["jobs"]["follow"]
 
     assert document[True] == {"pull_request_target": {"types": ["closed"]}}
-    assert follow["runs-on"] == ["self-hosted", "ai-vm-1"]
+    assert follow["runs-on"] == ["self-hosted", "merge-event"]
     assert follow["if"] == "github.event.pull_request.head.repo.full_name == github.repository"
