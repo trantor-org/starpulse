@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import gzip
+import http.server
 import importlib.util
 import sys
+import threading
+import time
 from pathlib import Path
 
 _BENCH = Path(__file__).resolve().parents[1] / "bench"
@@ -52,3 +56,51 @@ def test_a_run_inside_the_budget_passes():
 
 def test_the_discovery_reads_are_not_judged():
     assert load.over_budget({load.DISCOVERY: 900.0}, {load.DISCOVERY: 2}) == []
+
+
+def test_viewers_arriving_together_discover_once():
+    made, started = [], threading.Barrier(5)
+
+    def make() -> str:
+        made.append(1)
+        time.sleep(0.05)  # the first viewer is still discovering when the rest arrive
+        return "paths"
+
+    once, got = load.Once(threading.Lock()), []
+
+    def viewer() -> None:
+        started.wait()
+        got.append(once.get(make))
+
+    viewers = [threading.Thread(target=viewer) for _ in range(5)]
+    for thread in viewers:
+        thread.start()
+    for thread in viewers:
+        thread.join()
+    assert (len(made), got) == (1, ["paths"] * 5)
+
+
+def test_the_snapshot_body_is_read_compressed_as_the_server_sent_it():
+    packed = gzip.compress(b"x" * 100_000)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = packed if "gzip" in self.headers.get("accept-encoding", "") else b"x" * 100_000
+            self.send_response(200 if self.path == "/api/events/body/abc" else 404)
+            self.send_header("content-encoding", "gzip")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        port = server.server_address[1]
+        assert load.compressed_body("127.0.0.1", port, "/api/events/body/abc") == (200, len(packed))
+        assert load.compressed_body("127.0.0.1", port, "/api/events/body/gone")[0] == 404
+    finally:
+        server.shutdown()
+        server.server_close()

@@ -177,8 +177,11 @@ uv run --group bench locust -f bench/load.py --host http://127.0.0.1:8766
 
 `page_latency.py` times one viewer; this times the same budget under a crowd. Each Locust user is one open page: it
 holds `/api/events?snapshot=ref` open, reads the snapshot body its first event names, then reads a random `/api` route
-from `page_latency.py`'s `READS` every 0.5 to 2 seconds. Each viewer first probes every route once (the `discovery`
-row, not judged) and skips one that does not answer 200, as the seeded server's milestones and docs do not. `-u` is
+from `page_latency.py`'s `READS` every 0.5 to 2 seconds. The first viewer probes every route once (the `discovery`
+row, not judged) and skips one that does not answer 200, as the seeded server's milestones and docs do not; the
+viewers that spawn meanwhile wait for its answer. The body row (`/api/events/body/<id>`) asks for gzip and leaves the
+body compressed: a viewer's browser inflates it on the viewer's machine, and inflating a crowd's bodies in Locust's
+one process timed that process, not the server. `-u` is
 the crowd, `-r` how many join a second, `-t` the run; without `--headless` Locust serves its web UI on port 8089 and
 charts the crowd live. `--what-if FROM TO` is `page_latency.py`'s (`in_progress review` on `ci/seeded_server.py`).
 
