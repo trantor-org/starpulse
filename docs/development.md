@@ -26,7 +26,7 @@ the hub, then the command line), `adapters`, `level`, `feed` and `ci`, `eventlog
 The top level holds only the public modules the [Public surface](public-surface.md#public-surface) lists, each a facade over its feature.
 `pnpm --dir starpulse/web run check` typechecks, lints, tests and builds the page.
 The page's `web/src` is organized by feature: `api/` (types, `apiFetch`, the event stream), `features/<name>/` (a view with its
-pure model and colocated tests), `render/` (the canvas), `shared/` and `demo/`. ESLint's `no-restricted-imports` holds a feature
+pure model and colocated tests), `render/` (the canvas), `shared/` and `demo/`. oxlint's `no-restricted-imports` (`.oxlintrc.json`) holds a feature
 to `api/`, `render/`, `shared/` and its own folder, so a feature never reaches into another's.
 Every `/api` body is a pydantic model in `starpulse/contracts/api.py`, and the server builds each response through it.
 The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts.api`
