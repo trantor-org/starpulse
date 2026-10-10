@@ -174,11 +174,18 @@ export function withLedgers(sky: Sky, snap: Snapshot): Sky {
   return { ...sky, ledgers: snap.ledgers ?? {}, mergeStrip: snap.mergeStrip ?? null, mergePins: snap.mergePins ?? [] };
 }
 
+/** How long a task stays on a terminal Board state after it entered it, seconds; the board keeps finished tasks for days, the page shows the last day. */
+export const DONE_WINDOW = 24 * 3600;
+
+/** Whether `a` has left the page: it entered a terminal Board state over `DONE_WINDOW` before the sky's time. A task the server gave no time for stays. */
+export const stale = (sky: Pick<Sky, "board" | "now">, a: RawAgent): boolean =>
+  !!a.entered && sky.now - a.entered > DONE_WINDOW && !!sky.board.machine.states.find((s) => s.id === a.state)?.final;
+
 /** A Board state's count: a starting state's is the day's arrivals alone, as it is a concept no task stays in; any other's is the tasks in it,
- * and on a terminal state the day's arrivals there not already in it. */
+ * and on a terminal state those that entered it in the last day and the day's arrivals there not already in it. */
 export function stateCount(sky: Sky, sid: string): number {
   if (sky.board.machine.states.find((s) => s.id === sid)?.initial) return sky.today[sid]?.length ?? 0;
-  const here = new Set(sky.board.agents.filter((a) => a.state === sid).map((a) => a.id));
+  const here = new Set(sky.board.agents.filter((a) => a.state === sid && !stale(sky, a)).map((a) => a.id));
   return here.size + (sky.today[sid] ?? []).filter((t) => !here.has(t.id)).length;
 }
 

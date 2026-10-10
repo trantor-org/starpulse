@@ -11,7 +11,7 @@ import { shownRows, type Paging } from "../features/level/machinePaging";
 import { rankRows } from "../features/level/machineRows";
 import { ledgerOf, type Ledger, type Tie } from "../features/level/ledger";
 import type { Viewport } from "../features/level/ledgerScroll";
-import { countText, daily, HOUR, hosted, stateCount, type Move, type Moves, type Sky } from "./sky";
+import { countText, daily, HOUR, hosted, stale, stateCount, type Move, type Moves, type Sky } from "./sky";
 import { pinsOf } from "../features/level/ledgerPins";
 import type { Dag, DagStep, RawAgent, Transition, Writer } from "../api";
 
@@ -720,9 +720,10 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const mx = (Math.min(...bx) + Math.max(...bx)) / 2, my = (Math.min(...by) + Math.max(...by)) / 2;
     const spanX = Math.max(...bx) - Math.min(...bx) || 1, spanY = Math.max(...by) - Math.min(...by) || 1;
     const byState: Record<string, RawAgent[]> = {};
-    // a starting state orbits no task, as each is drawn where it went; a terminal state also orbits the day's arrivals there not already in it
+    // a starting state orbits no task, as each is drawn where it went; a terminal state orbits those that entered it in the last day and the day's
+    // arrivals there not already in it
     const initial = new Set(states.filter((s) => s.initial).map((s) => s.id)), final = new Set(states.filter((s) => s.final).map((s) => s.id));
-    board.agents.forEach((a) => initial.has(a.state) || (byState[a.state] ||= []).push(a));
+    board.agents.forEach((a) => initial.has(a.state) || stale(S, a) || (byState[a.state] ||= []).push(a));
     for (const [sid, list] of Object.entries(S.today)) if (final.has(sid)) (byState[sid] ||= []).push(...list.filter((t) => !byState[sid]?.some((a) => a.id === t.id)));
     // A task orbits the deepest body this level draws that it is in: the sub-state its latest session holds (a CHILD entry, pr_opened while a PR
     // is open), else the moon of the machine it works when that is not its state's primary, else its state.
@@ -970,7 +971,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     const subs = (SUBS[sid] || []).filter((f) => S.flows[f]), bevOf = (id: string) => EVENTS.filter((e) => e.flow === "board" && e.task === id);
     // a task in the state or passing through it is drawn once, and on a terminal state a day's arrival there only when it is neither; a starting
     // state draws none
-    const st = board.machine.states.find((s) => s.id === sid), here = st?.initial ? [] : board.agents.filter((a) => a.state === sid || bevOf(a.id).some((e) => e.from === sid || e.to === sid));
+    const st = board.machine.states.find((s) => s.id === sid), here = st?.initial ? [] : board.agents.filter((a) => (a.state === sid && !stale(S, a)) || bevOf(a.id).some((e) => e.from === sid || e.to === sid));
     const today = S.today[sid] ?? [], list = [...here, ...(st?.final ? today.filter((t) => !here.some((a) => a.id === t.id)) : [])];
     scene.h = subs.length ? 1300 : 820;
     scene.w = Math.max(subs.length ? 1800 : 1000, Math.round((scene.h * W) / H));
