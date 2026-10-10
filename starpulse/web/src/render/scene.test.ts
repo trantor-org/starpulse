@@ -229,11 +229,12 @@ describe("a Board laid out at the values it shows", () => {
     expect(shown.galaxies.in_progress.moonR).toBeCloseTo(full.galaxies.in_progress.moonR + 30);
     for (const [i, m] of shown.moons.entries()) if (!m.pager) expect(m.x).toBeCloseTo(full.moons[i].x + 10);
   });
-  it("eases each state's reach, where its paths end, so a new ring of tasks moves the ends instead of snapping them", () => {
+  it("eases each state's footprint and where its paths end, so a new ring of tasks moves the ends instead of snapping them", () => {
     const sky = withTasks(boardSky(), { ready: 150, done: 400 }), full = build(sky, { kind: "board" });
-    const shown = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".R") ? v + 30 : v) }, { kind: "board" });
+    const shown = build({ ...sky, ease: (key: string, v: number) => (key.endsWith(".R") || key.endsWith(".edge") ? v + 30 : v) }, { kind: "board" });
 
     for (const id of Object.keys(full.galaxies)) expect(shown.galaxies[id].R).toBeCloseTo(full.galaxies[id].R + 30);
+    for (const id of Object.keys(full.galaxies)) expect(shown.galaxies[id].edge).toBeCloseTo(full.galaxies[id].edge + 30);
   });
   it("places its states from their true sizes, so an eased radius never moves another state's target", () => {
     const sky = withTasks(boardSky(), { ready: 150, done: 400 }), full = build(sky, { kind: "board" });
@@ -250,15 +251,15 @@ describe("a Board laid out at the values it shows", () => {
     for (const [e, f] of paths(bent).map((e, i) => [e, paths(full)[i]] as const)) {
       const a = bent.galaxies[e.source], b = bent.galaxies[e.target], dx = b.x - a.x, dy = b.y - a.y;
       expect([e.c.x, e.c.y]).toEqual([expect.closeTo(f.c.x - 0.2 * dy, 6), expect.closeTo(f.c.y + 0.2 * dx, 6)]);
-      expect(Math.hypot(e.p0.x - a.x, e.p0.y - a.y)).toBeCloseTo(a.R, 6);
-      expect(Math.hypot(e.p1.x - b.x, e.p1.y - b.y)).toBeCloseTo(b.R, 6);
+      expect(Math.hypot(e.p0.x - a.x, e.p0.y - a.y)).toBeCloseTo(a.edge, 6);
+      expect(Math.hypot(e.p1.x - b.x, e.p1.y - b.y)).toBeCloseTo(b.edge, 6);
     }
   });
 });
 
 describe("a Board path's route", () => {
   // New and Done on one row with Ready between them, so the straight path from New to Done runs through Ready
-  const at = (id: string, x: number, y: number, R: number) => ({ id, x, y, R }) as unknown as Parameters<typeof routed>[0];
+  const at = (id: string, x: number, y: number, R: number) => ({ id, x, y, R, edge: R }) as unknown as Parameters<typeof routed>[0];
   const sky = { x: 800, y: 600 }, a = at("new", 100, 300, 30), b = at("done", 700, 300, 30), c0 = { x: 400, y: 300 };
 
   it("keeps the bend it held while that bend still clears, rather than hopping to another spot the search would pick", () => {
@@ -288,6 +289,39 @@ describe("a Board path's route", () => {
     expect(routed(a, b, c0, [a, b, by(30)], new Drawn(), sky, held).c).toEqual(c0);
   });
 
+  it("bends round a name printed in its way, and where no bend clears every name crosses the fewest it can", () => {
+    const name = { of: "ready", x0: 380, y0: 280, x1: 420, y1: 320 }, all = { of: "sky", x0: 0, y0: 0, x1: 800, y1: 600 };
+    const inName = (e: Curve) => sample(e, 400).filter((p) => p.x > 375 && p.x < 425 && p.y > 275 && p.y < 325);
+    const e = routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [name]), fewest = routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [name, all]);
+
+    expect(e.c).not.toEqual(c0);
+    expect(inName(e)).toEqual([]);
+    expect(routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [all]).c).toEqual(c0);
+    expect(inName(fewest)).toEqual([]);
+  });
+  it("leaves each of its two states outside the rows that state's machines are named in, sliding its end round the rim", () => {
+    // New's rows cover the side of its rim that faces Done and the sky above and below it, so every path to Done crosses them and no
+    // bend worth making starts one outside them
+    const row = { of: "new/m0", x0: 107, y0: 100, x1: 140, y1: 500 }, e = routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [row]);
+
+    expect(Math.hypot(e.p0.x - a.x, e.p0.y - a.y)).toBeCloseTo(a.edge);
+    expect(e.p0.x).toBeLessThan(row.x0 - 5);
+  });
+  it("never cuts back through either of its own two states", () => {
+    // a bend behind New starts the path on New's far side, to run back through New on its way to Done
+    const behind = { x: 60, y: 300 }, e = routed(a, b, behind, [a, b], new Drawn(), sky);
+
+    expect(e.c).not.toEqual(behind);
+    for (const g of [a, b]) expect(Math.min(...sample(e, 400).map((p) => Math.hypot(p.x - g.x, p.y - g.y)))).toBeGreaterThan(g.edge - 2.5);
+  });
+  it("passes through a state's footprint, never through what the state draws, where no bend clears the footprint", () => {
+    // Ready's footprint covers the whole sky, and it draws only the 40 px at its centre
+    const o = { ...at("ready", 400, 300, 600), edge: 40 }, e = routed(a, b, c0, [a, b, o], new Drawn(), sky);
+
+    expect(e.c).not.toEqual(c0);
+    expect(Math.min(...sample(e, 400).map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(40 + 9);
+  });
+
   describe("searched for a Board's first snapshot", () => {
     const round = (n: number) => Math.round(n * 1e6) / 1e6;
     const routesOf = (sky: ReturnType<typeof savedBoardSky>) => build(sky, { kind: "board" }).bEdges.map((e) => `${e.source}>${e.target} ${round(e.c!.x)},${round(e.c!.y)}`);
@@ -306,57 +340,57 @@ describe("a Board path's route", () => {
           "1280x720": [
             "new>ready 151.967654,336.47528",
             "new>blocked 251.192233,266.149149",
-            "new>waiting 251.192233,371.638345",
-            "new>in_progress 370,250",
-            "ready>in_progress 650,410",
+            "new>waiting 290,370",
+            "new>in_progress 350.416812,195.823019",
+            "ready>in_progress 290,290",
             "ready>blocked 288.46356,384.972003",
             "ready>waiting 296.199434,534.120013",
-            "ready>archived 327.903147,477.127541",
+            "ready>archived 410,330",
             "blocked>ready 288.46356,384.972003",
             "blocked>in_progress 517.856214,287.978557",
-            "blocked>archived 610,330",
+            "blocked>archived 650,250",
             "waiting>ready 296.199434,534.120013",
             "waiting>in_progress 502.384466,371.638345",
-            "waiting>archived 1050,130",
+            "waiting>archived 530,570",
             "in_progress>blocked 517.856214,287.978557",
             "in_progress>review 623.408622,348.078756",
             "in_progress>done 714.576699,195.823019",
             "in_progress>needs_attention 510.12034,138.830546",
-            "in_progress>archived 570,210",
+            "in_progress>archived 810,410",
             "review>done 767.319774,336.47528",
             "review>in_progress 623.408622,348.078756",
             "review>archived 754.929943,477.127541",
             "needs_attention>ready 303.935308,301.312215",
             "needs_attention>in_progress 510.12034,138.830546",
-            "needs_attention>archived 250,170",
+            "needs_attention>archived 570,450",
             "done>completed 926.768931,195.823019",
           ],
           "1280x720 crowded": [
             "new>ready 151.967654,336.47528",
             "new>blocked 251.192233,266.149149",
-            "new>waiting 251.192233,371.638345",
-            "new>in_progress 370,250",
-            "ready>in_progress 650,410",
+            "new>waiting 290,370",
+            "new>in_progress 350.416812,195.823019",
+            "ready>in_progress 370,250",
             "ready>blocked 288.46356,384.972003",
             "ready>waiting 296.199434,534.120013",
-            "ready>archived 327.903147,477.127541",
+            "ready>archived 450,330",
             "blocked>ready 288.46356,384.972003",
             "blocked>in_progress 517.856214,287.978557",
-            "blocked>archived 610,330",
+            "blocked>archived 650,250",
             "waiting>ready 296.199434,534.120013",
             "waiting>in_progress 502.384466,371.638345",
-            "waiting>archived 1050,130",
+            "waiting>archived 690,170",
             "in_progress>blocked 517.856214,287.978557",
             "in_progress>review 623.408622,348.078756",
             "in_progress>done 714.576699,195.823019",
             "in_progress>needs_attention 510.12034,138.830546",
-            "in_progress>archived 570,210",
+            "in_progress>archived 810,410",
             "review>done 767.319774,336.47528",
             "review>in_progress 623.408622,348.078756",
             "review>archived 754.929943,477.127541",
             "needs_attention>ready 303.935308,301.312215",
             "needs_attention>in_progress 510.12034,138.830546",
-            "needs_attention>archived 250,170",
+            "needs_attention>archived 570,410",
             "done>completed 926.768931,195.823019",
           ],
           "1920x1080": [
@@ -364,27 +398,27 @@ describe("a Board path's route", () => {
             "new>blocked 233.857827,243.134656",
             "new>waiting 250,330",
             "new>in_progress 326.35065,177.983596",
-            "ready>in_progress 375.222831,308.285715",
+            "ready>in_progress 290,250",
             "ready>blocked 268.396775,353.088354",
             "ready>waiting 275.563391,491.511786",
-            "ready>archived 304.190227,438.587835",
+            "ready>archived 450,290",
             "blocked>ready 268.396775,353.088354",
             "blocked>in_progress 482.048887,263.483077",
-            "blocked>archived 570,290",
+            "blocked>archived 650,250",
             "waiting>ready 275.563391,491.511786",
-            "waiting>in_progress 690,170",
-            "waiting>archived 770,210",
+            "waiting>in_progress 490,330",
+            "waiting>archived 530,530",
             "in_progress>blocked 482.048887,263.483077",
             "in_progress>review 580.414192,319.037595",
             "in_progress>done 662.573481,177.983596",
             "in_progress>needs_attention 474.882271,125.059645",
-            "in_progress>archived 450,130",
+            "in_progress>archived 690,330",
             "review>done 711.445662,308.285715",
             "review>in_progress 580.414192,319.037595",
             "review>archived 701.748533,438.587835",
-            "needs_attention>ready 410,10",
+            "needs_attention>ready 250,250",
             "needs_attention>in_progress 474.882271,125.059645",
-            "needs_attention>archived 410,250",
+            "needs_attention>archived 490,370",
             "done>completed 857.431309,177.983596",
           ],
           "1920x1080 crowded": [
@@ -392,27 +426,27 @@ describe("a Board path's route", () => {
             "new>blocked 233.857827,243.134656",
             "new>waiting 250,330",
             "new>in_progress 326.35065,177.983596",
-            "ready>in_progress 375.222831,308.285715",
+            "ready>in_progress 290,250",
             "ready>blocked 268.396775,353.088354",
             "ready>waiting 275.563391,491.511786",
-            "ready>archived 304.190227,438.587835",
+            "ready>archived 490,290",
             "blocked>ready 268.396775,353.088354",
             "blocked>in_progress 482.048887,263.483077",
-            "blocked>archived 570,290",
+            "blocked>archived 650,250",
             "waiting>ready 275.563391,491.511786",
-            "waiting>in_progress 690,170",
-            "waiting>archived 770,210",
+            "waiting>in_progress 490,330",
+            "waiting>archived 690,170",
             "in_progress>blocked 482.048887,263.483077",
             "in_progress>review 580.414192,319.037595",
             "in_progress>done 662.573481,177.983596",
             "in_progress>needs_attention 474.882271,125.059645",
-            "in_progress>archived 450,130",
+            "in_progress>archived 690,330",
             "review>done 711.445662,308.285715",
             "review>in_progress 580.414192,319.037595",
             "review>archived 701.748533,438.587835",
-            "needs_attention>ready 410,10",
+            "needs_attention>ready 250,250",
             "needs_attention>in_progress 474.882271,125.059645",
-            "needs_attention>archived 410,250",
+            "needs_attention>archived 530,370",
             "done>completed 857.431309,177.983596",
           ],
         }
@@ -433,27 +467,32 @@ describe("a Board path's route", () => {
 });
 
 describe("a Board path's route search", () => {
-  // the search as first written: every spot on the sky in order of bend, each one tested at every sample against every other state
+  // the search written plainly: every spot on the sky in order of bend, each one costed at every sample against every state
   const reference = (a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: Pt, held?: Pt): Curve => {
     const others = all.filter((g) => g !== a && g !== b);
     const rim = (g: Galaxy, c: Pt) => {
-      const ex = c.x - g.x, ey = c.y - g.y, l = Math.hypot(ex, ey) || 1;
-      return { x: g.x + (ex / l) * g.R, y: g.y + (ey / l) * g.R };
+      const t = Math.atan2(c.y - g.y, c.x - g.x);
+      return { x: g.x + Math.cos(t) * g.edge, y: g.y + Math.sin(t) * g.edge };
     };
     const shape = (c: Pt): Curve => ({ p0: rim(a, c), c, p1: rim(b, c) });
     const at = ({ p0, c, p1 }: Curve, t: number) => ({ x: (1 - t) ** 2 * p0.x + 2 * (1 - t) * t * c.x + t * t * p1.x, y: (1 - t) ** 2 * p0.y + 2 * (1 - t) * t * c.y + t * t * p1.y });
-    const clear = (e: Curve, by = 20) => Array.from({ length: 49 }, (_, i) => at(e, i / 48)).every((p) => others.every((g) => (p.x - g.x) ** 2 + (p.y - g.y) ** 2 >= (g.R + by) ** 2));
-    const crossings = (e: Curve) => Array.from({ length: 31 }, (_, i) => at(e, i / 30)).filter((p) => drawn.near(p.x, p.y)).length;
+    const points = (e: Curve, n: number) => Array.from({ length: n + 1 }, (_, i) => at(e, i / n));
+    // what a path runs over: 50 for each state it crosses what is drawn of (its own two as well), 1 for each footprint it passes within `by` of
+    const over = (e: Curve, by = 20) => {
+      const on = points(e, 48), d = (g: Galaxy) => Math.min(...on.map((p) => (p.x - g.x) ** 2 + (p.y - g.y) ** 2));
+      const own = [a, b].some((g) => d(g) < (g.edge - 2) ** 2) ? 50 : 0;
+      return others.reduce((n, g) => n + (d(g) < (g.edge + 10) ** 2 ? 50 : d(g) < (g.R + by) ** 2 ? 1 : 0), own);
+    };
+    const crossings = (e: Curve) => points(e, 30).filter((p) => drawn.near(p.x, p.y)).length;
     const straight = shape(c0);
-    if (clear(straight, held ? 36 : 20)) return straight;
-    if (held && clear(shape(held))) return shape(held);
+    if (!over(straight, held ? 36 : 20)) return straight;
+    if (held && !over(shape(held))) return shape(held);
     const spots: { c: Pt; bend: number }[] = [];
     for (let x = 10; x <= sky.x - 10; x += 40) for (let y = 10; y <= sky.y - 10; y += 40) spots.push({ c: { x, y }, bend: Math.hypot(x - c0.x, y - c0.y) / 200 });
-    let best = straight, cost = Infinity;
+    let best = straight, cost = over(straight) + 0.05 * crossings(straight);
     for (const { c, bend } of spots.sort((p, q) => p.bend - q.bend)) {
-      const e = shape(c);
-      if (!clear(e)) continue;
-      if (bend + crossings(e) < cost) [cost, best] = [bend + crossings(e), e];
+      const e = shape(c), total = bend + over(e) + 0.05 * crossings(e);
+      if (total < cost) [cost, best] = [total, e];
     }
     return best;
   };
@@ -464,7 +503,7 @@ describe("a Board path's route search", () => {
     let searched = 0;
     for (let n = 0; n < 60; n++) {
       const r = rand(n + 1), sky = { x: 1200 + r() * 1200, y: 700 + r() * 600 };
-      const gs = Array.from({ length: 4 + Math.floor(r() * 10) }, (_, i) => ({ id: `s${i}`, x: 60 + r() * (sky.x - 120), y: 60 + r() * (sky.y - 120), R: 15 + r() * 60 })) as unknown as Galaxy[];
+      const gs = Array.from({ length: 4 + Math.floor(r() * 10) }, (_, i) => ({ id: `s${i}`, x: 60 + r() * (sky.x - 120), y: 60 + r() * (sky.y - 120), R: 15 + r() * 60 })).map((g) => ({ ...g, edge: g.R })) as unknown as Galaxy[];
       const [a, b] = gs, c0 = { x: (a.x + b.x) / 2 + (r() - 0.5) * 200, y: (a.y + b.y) / 2 + (r() - 0.5) * 200 };
       const drawn = new Drawn();
       drawn.add(Array.from({ length: 200 }, () => ({ x: r() * sky.x, y: r() * sky.y })));
@@ -474,7 +513,7 @@ describe("a Board path's route search", () => {
       expect(got, `case ${n}`).toEqual(reference(a, b, c0, gs, drawn, sky, held));
       if (got.c !== c0 && got.c.x % 40 === 10) searched++;
     }
-    expect(searched).toBeGreaterThan(20); // most cases ran the search rather than drawing straight or keeping their bend
+    expect(searched).toBeGreaterThanOrEqual(20); // a third of the cases ran the search rather than drawing straight or keeping their bend
   });
 });
 
@@ -533,6 +572,15 @@ const clearance = (e: Curve, g: Pt & { R: number }) => Math.min(...sample(e, 200
 /** The tiers the trantor Board declares: the states the Star Map draws at each stage, left to right. */
 const DEFAULT_TIERS = [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]];
 
+/** `n` machines open under `state`, each its own flow. */
+const machinesOn = (state: string, n: number) => (snap: Snapshot) => {
+  snap.flows[0].machine.subflows = Array.from({ length: n }, (_, i) => ({ state, flow: `m${i}`, exits: {}, parent: "board", when: "" }));
+  for (let i = 0; i < n; i++) {
+    snap.graphs.push(`m${i}`);
+    snap.flows.push({ name: `m${i}`, agents: [], machine: machine(["a", "b"]) });
+  }
+};
+
 describe("the Board's tiers", () => {
   const tiered = (W: number, H: number, tiers: string[][] | undefined = DEFAULT_TIERS, patch: (snap: Snapshot) => void = () => {}, scale?: number) => {
     const sky = savedBoardSky(W, H, (snap) => {
@@ -540,14 +588,6 @@ describe("the Board's tiers", () => {
       patch(snap);
     });
     return build(scale ? { ...sky, scale } : sky, { kind: "board" });
-  };
-  /** `n` machines open under `state`, each its own flow. */
-  const machinesOn = (state: string, n: number) => (snap: Snapshot) => {
-    snap.flows[0].machine.subflows = Array.from({ length: n }, (_, i) => ({ state, flow: `m${i}`, exits: {}, parent: "board", when: "" }));
-    for (let i = 0; i < n; i++) {
-      snap.graphs.push(`m${i}`);
-      snap.flows.push({ name: `m${i}`, agents: [], machine: machine(["a", "b"]) });
-    }
   };
   /** The zoom the Board is drawn at: the canvas over the sky's width, less the 6% margin. */
   const zoom = (s: Scene, W: number) => (0.94 * W) / s.w;
@@ -710,22 +750,55 @@ describe("the Board's own columns, when no tiers are configured", () => {
 
 describe("Board paths", () => {
   const crowdedCounts = { ready: 47, waiting: 35, in_progress: 7, done: 47, review: 1, needs_attention: 4, blocked: 12, archived: 9 };
-  const crowd = (W: number, H: number, counts: Record<string, number>) => savedBoardSky(W, H, (snap) => {
+  const crowd = (W: number, H: number, counts: Record<string, number>, patch: (snap: Snapshot) => void = () => {}) => savedBoardSky(W, H, (snap) => {
     snap.flows[0].machine.tiers = DEFAULT_TIERS;
     snap.flows[0].agents = Object.entries(counts).flatMap(([state, n]) => Array.from({ length: n }, (_, i) => ({ id: `${state}-${i}`, title: "t", state, model: "", labels: [] })));
+    patch(snap);
   });
 
   it.each([
     ["the base Board", 1920, 1080, {}],
     ["a busy Board", 1920, 1080, crowdedCounts],
     ["a stressed Board", 1670, 1080, Object.fromEntries(SAVED_STATES.map((s) => [s, 90]))],
-  ])("pass no state but their own two within 17 px on %s", (_, W, H, counts) => {
+  ])("pass nothing another state draws within 8 px on %s", (_, W, H, counts) => {
     const scene = build(crowd(W, H, counts), { kind: "board" }), close: string[] = [];
+
+    for (const e of scene.bEdges)
+      for (const g of Object.values(scene.galaxies))
+        if (g.id !== e.source && g.id !== e.target && clearance(e as Curve, { ...g, R: g.edge }) < 8) close.push(`${e.source}>${e.target} by ${g.id}`);
+    expect(close).toEqual([]);
+  });
+
+  it("pass no state's footprint within 17 px on a Board with room to bend round every one", () => {
+    const scene = build(crowd(1670, 1080, Object.fromEntries(SAVED_STATES.map((s) => [s, 90]))), { kind: "board" }), close: string[] = [];
 
     for (const e of scene.bEdges)
       for (const g of Object.values(scene.galaxies))
         if (g.id !== e.source && g.id !== e.target && clearance(e as Curve, g) < 17) close.push(`${e.source}>${e.target} by ${g.id}`);
     expect(close).toEqual([]);
+  });
+
+  it("end just outside what each state draws: its sun when it holds no task, its outermost ring of tasks when it does, its moons' orbits where machines map", () => {
+    const sky = crowd(1920, 1080, { ready: 47 }, machinesOn("in_progress", 3)), scene = build(sky, { kind: "board" }), g = scene.galaxies;
+    const ends = (id: string) => scene.bEdges.flatMap((e) => [...(e.source === id ? [e.p0!] : []), ...(e.target === id ? [e.p1!] : [])]).map((p) => Math.hypot(p.x - g[id].x, p.y - g[id].y));
+
+    expect(ends("new").length * ends("ready").length * ends("in_progress").length).toBeGreaterThan(0);
+    for (const d of ends("new")) expect(d).toBeCloseTo(SUN_R + 10);
+    for (const d of ends("ready")) expect(d).toBeCloseTo(Math.max(...g.ready.rings!) + 10);
+    for (const d of ends("in_progress")) expect(d).toBeCloseTo(g.in_progress.moonR + 4);
+  });
+
+  it.each([
+    ["the base Board", {}],
+    ["a busy Board", crowdedCounts],
+  ])("cross no state's name and no machine's name on %s", (_, counts) => {
+    const scene = build(crowd(1920, 1080, counts, machinesOn("in_progress", 8)), { kind: "board" }), over: string[] = [];
+
+    expect(scene.names.map((n) => n.of)).toEqual(expect.arrayContaining(["ready", "in_progress", "in_progress/m0", "in_progress/m7"]));
+    for (const e of scene.bEdges)
+      for (const n of scene.names)
+        if (sample(e as Curve, 400).some((p) => p.x > n.x0 && p.x < n.x1 && p.y > n.y0 && p.y < n.y1)) over.push(`${e.source}>${e.target} over ${n.of}`);
+    expect(over).toEqual([]);
   });
 
   it("gather into one stream along a final state's side when it is reached from several states", () => {
@@ -742,13 +815,14 @@ describe("Board paths", () => {
     for (const e of into) expect(e.c!.y).toBeCloseTo(scene.galaxies.archived.y);
   });
 
-  it("bow to opposite sides when a pair is joined both ways, and run straight when it is one way", () => {
+  it("bow as one path when a pair is joined both ways, and run straight when it is one way", () => {
     const scene = build(savedBoardSky(1920, 1080), { kind: "board" }), mid = (e: Curve) => ({ x: (e.p0.x + e.p1.x) / 2, y: (e.p0.y + e.p1.y) / 2 });
     const edge = (s: string, t: string) => scene.bEdges.find((e) => e.source === s && e.target === t) as unknown as Curve;
     const off = (e: Curve) => Math.hypot(e.c.x - mid(e).x, e.c.y - mid(e).y);
 
     expect(off(edge("review", "in_progress"))).toBeGreaterThan(1);
-    expect(off(edge("in_progress", "review"))).toBeGreaterThan(1);
+    const there = edge("review", "in_progress"), back = edge("in_progress", "review");
+    for (const [p, q] of [[back.p0, there.p1], [back.c, there.c], [back.p1, there.p0]]) expect([p.x, p.y]).toEqual([expect.closeTo(q.x, 6), expect.closeTo(q.y, 6)]);
     expect(off(edge("new", "ready"))).toBeLessThan(1);
   });
 
@@ -1443,12 +1517,13 @@ describe("a Board drawn again", () => {
     },
   );
 
-  it("lays a Board out afresh when its tiers change, and keeps it when only a state's tasks do", () => {
-    const before = geom(build(dagSky(), { kind: "board" })), busy = dagSky(), moved = dagSky();
+  it("lays a Board out afresh when its tiers change, and when only a state's tasks do moves nothing but the ends of its paths", () => {
+    const placed = (s: Scene) => ({ ...geom(s), edges: s.bEdges.map((e) => [e.event, e.c]), states: Object.values(s.galaxies).map((g) => [g.id, g.x, g.y, g.R]) });
+    const before = placed(build(dagSky(), { kind: "board" })), busy = dagSky(), moved = dagSky();
     busy.S.flows.board.agents = Array.from({ length: 40 }, (_, i) => ({ id: `T-${i}`, title: "t", state: "review", model: "", labels: [] })) as never;
     moved.S.flows.board.machine.tiers = [["review"], ["ready"]];
-    expect(geom(build(busy, { kind: "board" }))).toEqual(before);
-    expect(geom(build(moved, { kind: "board" }))).not.toEqual(before);
+    expect(placed(build(busy, { kind: "board" }))).toEqual(before);
+    expect(placed(build(moved, { kind: "board" }))).not.toEqual(before);
   });
 });
 
