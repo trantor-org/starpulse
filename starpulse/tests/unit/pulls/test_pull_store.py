@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -49,8 +49,11 @@ class Github:
         merged_at: str | None = None,
         files: tuple[str, ...] = (),
         behind: int | None = None,
+        branch: str = "claude/task-7-thing",
+        author: str | None = "coderabbitai",
     ) -> None:
-        """A PR; `checks` maps each required check to its conclusion, or to IN_PROGRESS while it runs."""
+        """A PR; `checks` maps each required check to its conclusion, or to IN_PROGRESS while it runs. Each of its
+        `threads` (resolved or not) opens with a comment by `author`, None for a deleted account."""
         self.pulls[number] = {
             "state": state,
             "updated": updated,
@@ -60,6 +63,8 @@ class Github:
             "merged_at": merged_at,
             "files": files,
             "behind": behind,
+            "branch": branch,
+            "author": author,
         }
 
     def _node(self, number: int) -> dict:
@@ -80,6 +85,7 @@ class Github:
             "isDraft": False,
             "mergeable": "MERGEABLE",
             "baseRefName": "main",
+            "headRefName": pull["branch"],
             "headRefOid": f"{number:040x}",
             "body": pull["body"],
             "updatedAt": pull["updated"],
@@ -91,7 +97,16 @@ class Github:
             "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": contexts}}}}]},
             "ciCommits": {"nodes": [{"commit": {"oid": f"{number:040x}", "checkSuites": {"nodes": [SUITE]}}}]},
             "timelineItems": {"nodes": []},
-            "reviewThreads": {"nodes": [{"isResolved": resolved} for resolved in pull["threads"]]},
+            "reviewThreads": {
+                "nodes": [
+                    {
+                        "id": f"PRRT_{number}_{index}",
+                        "isResolved": resolved,
+                        "comments": {"nodes": [{"author": {"login": pull["author"]} if pull["author"] else None}]},
+                    }
+                    for index, resolved in enumerate(pull["threads"])
+                ]
+            },
         }
 
     def __call__(self, repo: str, query: str) -> dict:
@@ -142,6 +157,56 @@ def _stored(repo: str, number: int) -> dict:
 @pytest.fixture
 def store(tmp_path: Path) -> PullStore:
     return PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
+
+
+def test_a_record_names_each_unresolved_thread_by_id_and_first_comment_author_and_the_head_branch(
+    store: PullStore,
+) -> None:
+    github = Github()
+    github.add(1, threads=(False, True, False), author="adinballew", branch="claude/task-4087-serve")
+
+    refresh_repository(REPO, store, 100.0, github)
+
+    [pull] = store.find()
+    assert pull["unresolvedThreads"] == [
+        {"id": "PRRT_1_0", "author": "adinballew"},
+        {"id": "PRRT_1_2", "author": "adinballew"},
+    ]
+    assert pull["threads"] == 2
+    assert pull["headRefName"] == "claude/task-4087-serve"
+    asked = " ".join(github.queries)
+    assert "headRefName" in asked and "comments(first: 1)" in asked
+
+
+def test_a_thread_whose_first_comment_has_no_author_is_recorded_with_a_null_author(store: PullStore) -> None:
+    github = Github()
+    github.add(1, threads=(False,), author=None)
+
+    refresh_repository(REPO, store, 100.0, github)
+
+    assert [pull["unresolvedThreads"] for pull in store.find()] == [[{"id": "PRRT_1_0", "author": None}]]
+
+
+def test_a_record_saved_without_threads_or_branch_is_served_with_both_null(store: PullStore) -> None:
+    """A record an older refresh wrote: a reader must see it cannot name the threads, not that it has none."""
+    store.save([_stored(REPO, 1)])
+
+    [pull] = store.find()
+    assert (pull["unresolvedThreads"], pull["headRefName"]) == (None, None)
+
+
+def test_a_table_an_earlier_version_created_gains_the_thread_and_branch_columns(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
+    PullStore(engine)
+    with engine.begin() as db:
+        for column in ("head_ref", "unresolved"):
+            db.execute(text(f"ALTER TABLE starpulse_pull_requests DROP COLUMN {column}"))
+
+    store = PullStore(engine)
+    store.save([_stored(REPO, 1) | {"headRefName": "claude/task-7-thing", "unresolvedThreads": []}])
+
+    [pull] = store.find()
+    assert (pull["headRefName"], pull["unresolvedThreads"]) == ("claude/task-7-thing", [])
 
 
 def test_a_refresh_sends_one_query_for_the_repository_and_none_for_a_final_record(store: PullStore) -> None:
@@ -282,6 +347,10 @@ def test_a_record_carries_the_facts_pr_status_prints(store: PullStore) -> None:
             "checks": "pass",
             "requiredChecks": [{"name": "lint", "result": "pass"}],
             "threads": 2,
+            "unresolvedThreads": [
+                {"id": f"PRRT_4_{index}", "author": "coderabbitai"} for index in (1, 2)
+            ],
+            "headRefName": "claude/task-7-thing",
             "updatedAt": OLD,
             "mergedAt": None,
             "mergeSha": None,

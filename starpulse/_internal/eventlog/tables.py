@@ -128,6 +128,8 @@ pull_requests = Table(
     Column("merge_sha", String),
     Column("fetched_at", Float, nullable=False),
     Column("detail", JSON, nullable=True),
+    Column("head_ref", String),
+    Column("unresolved", JSON),
     PrimaryKeyConstraint("repo", "number"),
     Index("ix_starpulse_pull_requests_state", "state", "repo"),
 )

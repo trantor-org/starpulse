@@ -50,7 +50,9 @@ GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_con
                    open ones every time, a merged or closed one until it is final, a merged one also until it has its mergeSha), those matching every filter
                    given, by repository then number, each {repo, number, state (OPEN, MERGED, CLOSED), isDraft,
                    mergeable, baseRefName, headRefOid, body, checks (pass, failing, pending, none: the required
-                   checks at the head commit), requiredChecks [{name, result}], threads (unresolved), updatedAt,
+                   checks at the head commit), requiredChecks [{name, result}], threads (unresolved), headRefName
+                   (the head branch), unresolvedThreads [{id, author}] (each unresolved thread's id and its first
+                   comment's author login, null for a deleted account; the first 100 threads), updatedAt,
                    mergedAt and mergeSha (ISO 8601 UTC merge time and merge commit; null until merged, and for a
                    merge stored before they were kept), and fetchedAt (epoch seconds this record was read)}. A `number` that is not an integer, or a `state`
                    that is none of those, is 400

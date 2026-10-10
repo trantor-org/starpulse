@@ -265,7 +265,10 @@ A repository with more than 100 open pull requests is read for the first 100, wi
 `GET /api/pulls[?repo=owner/name][&number=N][&state=OPEN|MERGED|CLOSED][&body_contains=text]` serves the store,
 `{pulls: [...]}`, ordered by repository then number. Each record holds `repo`, `number`, `state`, `isDraft`,
 `mergeable`, `baseRefName`, `headRefOid`, `body`, `checks` (`pass`, `failing`, `pending` or `none`), `requiredChecks`
-(`{name, result}`), `threads` (open review threads), `updatedAt` and `fetchedAt` (epoch seconds of the read). A `number` that is not an
+(`{name, result}`), `threads` (open review threads), `headRefName` (the head branch), `unresolvedThreads`
+(`{id, author}`: each open thread's id and its first comment's author login, `null` for a deleted account, among the
+first 100 threads), `updatedAt` and `fetchedAt` (epoch seconds of the read). `headRefName` and `unresolvedThreads` are
+`null` for a record saved before they were kept; its reader asks GitHub. A `number` that is not an
 integer or an unknown `state` answers 400.
 
 `GET /metrics` serves Prometheus text: `starpulse_pull_store_age_seconds{repo="owner/name"}`, the seconds since the newest
