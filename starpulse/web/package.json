@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build && vite build --mode one-file",
     "gen:types": "json2ts -i ../api.schema.json -o src/api/types.gen.ts --bannerComment \"/* Generated from starpulse/api.schema.json by pnpm run gen:types; edit starpulse/contracts/api.py, not this file. */\"",
-    "typecheck": "tsc6 --noEmit -p .",
+    "typecheck": "tsc --noEmit -p .",
     "lint": "oxlint . --deny-warnings --report-unused-disable-directives",
     "test": "vitest run",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build"
@@ -25,7 +25,7 @@
     "jsdom": "^30.1.2",
     "json-schema-to-typescript": "^16.0.0",
     "oxlint": "^1.87.0",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vitest": "^5.0.2"
   }
