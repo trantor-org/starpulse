@@ -2,8 +2,9 @@ name: Follow main on pull request close
 
 # Enqueues trantor's `main-follow` Dagu DAG on ai-vm-1 when a pull request in this
 # repository closes, merged or not, so a task whose PR closed moves to Done in seconds
-# instead of waiting for the five-minute schedule. The same file sits in trantor-org/trantor,
-# starpulse, unraid and skills. Rationale: trantor's
+# instead of waiting for the five-minute schedule. trantor, unraid and skills call trantor's
+# reusable main-follow-submit.yml instead; this repository is public, and a public repository
+# cannot call a private repository's workflow, so it keeps the full file. Rationale: trantor's
 # docs/adr/local-main-follows-the-merge-event.md
 #
 # `pull_request_target`, not `pull_request`: the workflow file is read from the base
