@@ -62,6 +62,20 @@ without notice, pruned by `event_log_retention_days` like any row, so a window l
 what remains. A server with no such stream is 501, a window that is no
 positive number 400.
 
+One signal is one step of the record the steps-per-clean-completion ledger counts: a `request` is one model call, with
+its model, effort, duration and the four token counts, and a `compaction` names its trigger. Two fields say whose step
+it was and whether to count it, and a third holds a command:
+
+- `agent`: the subagent that made a `request` or `tool` step, from the export's `agent.name` or, for Claude Code, its
+  `query_source` when that names a subagent; Codex's `agent_name` on a tool result. Empty for the main thread. A
+  subagent's steps carry the parent's session id, so they count toward the task that spawned it.
+- `captured`: false for every Codex signal, which the ledger does not cover yet, so a ranking leaves it out. A signal
+  stored before the field existed reads as captured only when its harness is Claude Code.
+- `command`: a Claude Code shell result's command, empty otherwise. It is kept only when the adapter runs with
+  `--redactor MODULE:FUNCTION`: the function filters the text, a heredoc body is replaced by
+  `[heredoc length=<bytes> sha256=<hex>]` before the function sees it, and a function that raises keeps no command. No
+  exit status is stored, because the export carries none; `ok` is the result's `success` and `seconds` its duration.
+
 ## Find missed skill loads and recurring work
 
 The same signals say what each session did, not only how long it took. A tool call is lifted to *activities* with no

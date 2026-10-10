@@ -68,3 +68,13 @@ def test_a_signal_a_newer_producer_wrote_with_a_field_this_version_lacks_is_stil
     log.append(TelemetryLog.STREAM, {**asdict(signal(1, 100.0)), "from_the_future": 1}, event_id="k1")
 
     assert [s.key for s in TelemetryLog(log).read()] == ["k1"]
+
+
+def test_a_codex_signal_stored_before_the_uncaptured_mark_existed_reads_as_uncaptured(tmp_path: Path) -> None:
+    log = log_at(tmp_path)
+    old = {k: v for k, v in asdict(signal(1, 100.0)).items() if k not in {"captured", "agent"}}
+    log.append(TelemetryLog.STREAM, {**old, "harness": "codex"}, event_id="k1")
+
+    (read,) = TelemetryLog(log).read()
+
+    assert read.captured is False
