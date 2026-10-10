@@ -2,7 +2,9 @@
 and answers the HTTP status and JSON body.
 
 `starpulse._internal.server.server` routes a request here after its write guard (`write_refusal`: 415 for a body that is not JSON, 403 for
-another site's origin) and dispatches to these; the read responses, the stream and the assembly stay there. The routes:
+another site's origin) and dispatches to these; the read responses, the stream and the assembly stay there. A write
+that names a task the feed has not placed waits up to `REPLAY_WAIT_S` for a replay in progress, then answers 503, which
+a client sends again, never 404 for a task the replay has yet to reach. The routes:
 
 POST /api/run/<instance>/<workflow>
                    start a run-safe workflow through its instance's optional `start`: {runId}, or {error}
@@ -146,6 +148,27 @@ _CREATE_KINDS = {
 _EDIT_LOCK = threading.Lock()
 #: The lanes Start session moves a task out of: the spec's start question, never Review's send-back.
 _STARTABLE = frozenset({"ready", "waiting", "needs_attention"})
+#: How long a task write waits, in seconds, for a restarted instance's replay to place its task before it answers 503.
+REPLAY_WAIT_S = 5.0
+
+
+def _held(feed: BoardFeed, task: str) -> dict | None:
+    """The open task `task` as the feed holds it, waiting up to `REPLAY_WAIT_S` for a replay that has not placed it.
+
+    A restarted instance serves before it has read its stream, when a task it holds is absent only because the replay
+    has not reached it; the wait ends at the replay, and a feed that is not replaying answers at once.
+    """
+    if (agent := feed.task(task)) is None and feed.wait_replayed(REPLAY_WAIT_S):
+        agent = feed.task(task)
+    return agent
+
+
+def _not_held(feed: BoardFeed, task: str) -> tuple[int, dict[str, str]]:
+    """The refusal for a task `_held` did not find: 503, which a client sends again, while the replay has not ended,
+    else 404."""
+    if feed.wait_replayed(0):
+        return 404, {"error": f"{task} is not on the board"}
+    return 503, {"error": f"{task} is not on the board yet: the board is replaying its feed, retry"}
 
 
 def _on_lan(source: str) -> bool:
@@ -251,8 +274,8 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
         return 400, {
             "error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor" and a "session" (strings)'
         }
-    if (agent := feed.task(task)) is None:
-        return 404, {"error": f"{task} is not on the board"}
+    if (agent := _held(feed, task)) is None:
+        return _not_held(feed, task)
     if column not in agent["moves"]:
         return 409, {"error": f"{task} cannot move from {agent['state']} to {column}"}
     if not (move := Move.model_validate(agent["moves"][column])).permits(actor):
@@ -274,8 +297,8 @@ def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[in
     """
     if read is None:
         return 404, {"error": "this board cannot read a task's full record"}
-    if feed.task(task) is None:
-        return 404, {"error": f"{task} is not on the board"}
+    if _held(feed, task) is None:
+        return _not_held(feed, task)
     if (record := read(task)) is None:
         return 404, {"error": f"{task} has no record to read"}
     return 200, {"task": task, "record": record}
@@ -317,8 +340,8 @@ def edit_task(
         return 400, _BAD_ACTOR
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
-    if feed.task(task) is None:
-        return 404, {"error": f"{task} is not on the board"}
+    if _held(feed, task) is None:
+        return _not_held(feed, task)
     with _EDIT_LOCK:
         if (current := read(task)) is None:
             return 404, {"error": f"{task} has no record to read"}
@@ -368,8 +391,8 @@ def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver
         return 400, _BAD_ACTOR
     if archive is None:
         return 404, {"error": "this board does not archive tasks"}
-    if feed.task(task) is None:
-        return 404, {"error": f"{task} is not on the board"}
+    if _held(feed, task) is None:
+        return _not_held(feed, task)
     written = archive(task, reason, **named)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
@@ -391,8 +414,8 @@ def complete_task(source: str, raw: bytes, feed: BoardFeed, complete: TaskComple
         return 400, {"error": 'a complete needs {"task": "TASK-N"}'}
     if complete is None:
         return 404, {"error": "this board does not complete tasks"}
-    if feed.task(task) is None:
-        return 404, {"error": f"{task} is not on the board"}
+    if _held(feed, task) is None:
+        return _not_held(feed, task)
     written = complete(task)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
@@ -692,8 +715,8 @@ def start_task(
         return 400, _BAD_ACTOR
     if start_session is None:
         return 404, {"error": "no session-start service is configured (session_start_url)"}
-    if (agent := feed.task(task)) is None:
-        return 404, {"error": f"{task} is not on the board"}
+    if (agent := _held(feed, task)) is None:
+        return _not_held(feed, task)
     if agent["state"] not in _STARTABLE:
         return 409, {
             "error": f"{task} is in {agent['state']}: a session starts only a ready, waiting or needs_attention task"

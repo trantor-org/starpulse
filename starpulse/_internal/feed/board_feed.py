@@ -745,10 +745,10 @@ class BoardFeed:
         with self._lock:
             self._awaiting = True
 
-    def wait_replayed(self) -> None:
-        """Block until the stream has been read up to where it stood at the start; at once for a feed that reads none."""
-        if self._awaiting:
-            self.ready.wait()
+    def wait_replayed(self, timeout: float | None = None) -> bool:
+        """Block until the stream has been read up to where it stood at the start, or `timeout` seconds pass, and say
+        whether it has; at once for a feed that reads none."""
+        return self.ready.wait(timeout) if self._awaiting else True
 
     def runs(self, instance: str) -> InstanceRuns:
         """Where the runs adapter instance `instance` publishes its workflows."""
