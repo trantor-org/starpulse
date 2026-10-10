@@ -96,7 +96,8 @@ The native board's task `edit` writes every field of Backlog.md's task file and 
 matter's `title`, `type`, `status` (spelled as the board's lane), `priority`, `milestone`, assignee (`profile`),
 `labels`, `dependencies`, `references`, `documentation` and `modifiedFiles` (an empty one of the last three leaves its
 key out), and the body's description, plan, notes, final summary, acceptance criteria and definition of done (an item
-with its `n` keeps it, one without takes the next). `appendNotes` adds a line to the end of the notes, a non-blank
+with its `n` keeps it, one without takes the next after the highest `n` given, so a list given without numbers is
+numbered from 1). `appendNotes` adds a line to the end of the notes, a non-blank
 `comment` adds a comment, and `read` returns the comments as `{created, text}`, which an edit cannot set. `complete(task)`
 refuses a task that is not Done and moves one that is to `completed/`.
 `starpulse._internal.board.upstream_backlog` is the reference adapter for a tracker with its own

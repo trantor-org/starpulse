@@ -475,6 +475,10 @@ _TASK_EDIT_FIELDS = {
     "notes": "notes",
     "final_summary": "finalSummary",
 }
+#: The checklists `task edit` changes: each record field's flag key (`--ac`, `--reword-ac`, ...) and the name a refusal gives it.
+_CHECKLISTS = {"acceptanceCriteria": ("ac", "Acceptance Criteria"), "definitionOfDone": ("dod", "Definition of Done")}
+#: A checklist's flag destinations, as `{}` stands for its key: add, reword, remove, check and uncheck.
+_CHECKLIST_DESTS = ("{}", "reword_{}", "remove_{}", "check_{}", "uncheck_{}")
 
 
 def _task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -506,20 +510,73 @@ def _task_edit_call(
     """
     base = server_url(args.server, environ)
     if base_record is None:
-        path = f"/api/task/{urllib.parse.quote(args.task, safe='')}"
-        status, reply = _get(base, path)
-        current = _record_call(base, path, status, reply, missing=_TASK_MISSING)["record"]
+        current = _read_record(args, environ)
         base_record = {field: current.get(field) for field in changes}
     body = {"task": args.task, "base": base_record, "changes": changes, "comment": comment}
     status, reply = _post(base, "/api/edit", body)
     return _record_call(base, "/api/edit", status, reply, missing=_TASK_MISSING)["changed"]
 
 
+def _read_record(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The task `args.task` as the board's reader gives it."""
+    base, path = server_url(args.server, environ), f"/api/task/{urllib.parse.quote(args.task, safe='')}"
+    status, reply = _get(base, path)
+    return _record_call(base, path, status, reply, missing=_TASK_MISSING)["record"]
+
+
+def _checklist_flags(args: argparse.Namespace, key: str) -> tuple[list[Any], ...]:
+    """The values given to a checklist's add, reword, remove, check and uncheck flags, each `[]` when not given."""
+    return tuple(getattr(args, dest.format(key)) or [] for dest in _CHECKLIST_DESTS)
+
+
+def _checklist_after(args: argparse.Namespace, field: str, items: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    """The checklist `field` after the flags given, or None when it has none.
+
+    A flag names an item by the number the task shows before this edit. A removal sends the whole list without numbers, so
+    the board writes it numbered from 1; any other edit sends the numbers, which the board keeps.
+    """
+    key, name = _CHECKLISTS[field]
+    add, reword, remove, check, uncheck = _checklist_flags(args, key)
+    if not (add or reword or remove or check or uncheck):
+        return None
+    reworded = {}
+    for value in reword:
+        number, colon, wording = value.partition(":")
+        if not (colon and number.strip().isdigit()):
+            raise CliError("usage", f"--reword-{key} takes N:TEXT, as 2:The new wording")
+        reworded[int(number)] = wording
+    present = {item["n"] for item in items}
+    if absent := [number for number in (*reworded, *remove, *check, *uncheck) if number not in present]:
+        raise CliError("refused", f"{args.task} has no {name} item #{absent[0]}")
+    kept = [
+        {
+            "n": item["n"],
+            "text": reworded.get(item["n"], item["text"]),
+            "checked": (item["checked"] or item["n"] in check) and item["n"] not in uncheck,
+        }
+        for item in items
+        if item["n"] not in remove
+    ]
+    after = [*kept, *({"text": text, "checked": False} for text in add)]
+    return [{k: v for k, v in item.items() if k != "n"} for item in after] if remove else after
+
+
 def _task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     changes = {field: getattr(args, flag) for flag, field in _TASK_EDIT_FIELDS.items() if getattr(args, flag) is not None}
-    if not changes:
-        flags = ", ".join(f"--{flag.replace('_', '-')}" for flag in _TASK_EDIT_FIELDS)
-        raise CliError("usage", f"name what to change: {flags}")
+    if args.append_notes:
+        changes["appendNotes"] = "\n".join(args.append_notes)
+    checklists = [field for field, (key, _) in _CHECKLISTS.items() if any(_checklist_flags(args, key))]
+    if not changes and not checklists:
+        flags = (
+            *(f"--{flag.replace('_', '-')}" for flag in _TASK_EDIT_FIELDS),
+            "--append-notes",
+            *(
+                f"--{dest.format(key).replace('_', '-')}"
+                for key, _ in _CHECKLISTS.values()
+                for dest in _CHECKLIST_DESTS
+            ),
+        )
+        raise CliError("usage", f"name what to change: {', '.join(flags)}")
     base_record = None
     if args.base is not None:
         try:
@@ -528,6 +585,12 @@ def _task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str
             base_record = None
         if not isinstance(base_record, dict):
             raise CliError("usage", '--base must be a JSON object of the values read, as {"title": "..."}')
+    if checklists:
+        record = _read_record(args, environ)  # the items are edited as read, so the same read is the edit's base
+        for field in checklists:
+            changes[field] = _checklist_after(args, field, record[field])
+        read = {field: record.get(field) for field in changes if field != "appendNotes"}
+        base_record = {**read, **(base_record or {})}
     return {"task": args.task, "changed": _task_edit_call(args, environ, changes, base_record, args.comment)}
 
 
@@ -558,9 +621,7 @@ def _task_checkpoint_ac(args: argparse.Namespace, environ: Mapping[str, str]) ->
     evidence = args.evidence.strip()
     if not evidence:
         raise CliError("usage", "evidence is required to check an Acceptance Criterion")
-    base, path = server_url(args.server, environ), f"/api/task/{urllib.parse.quote(args.task, safe='')}"
-    status, reply = _get(base, path)
-    criteria = _record_call(base, path, status, reply, missing=_TASK_MISSING)["record"].get("acceptanceCriteria") or []
+    criteria = _read_record(args, environ).get("acceptanceCriteria") or []
     if args.criterion not in {item["n"] for item in criteria}:
         raise CliError("refused", f"{args.task} has no Acceptance Criteria item #{args.criterion}")
     checked = [{**item, "checked": True} if item["n"] == args.criterion else item for item in criteria]
@@ -1182,6 +1243,32 @@ def _parser() -> argparse.ArgumentParser:
     edit.add_argument("--plan", help="the Implementation Plan section")
     edit.add_argument("--notes", help="the Implementation Notes section")
     edit.add_argument("--final-summary", dest="final_summary", help="the Final Summary section")
+    edit.add_argument(
+        "--append-notes",
+        action="append",
+        dest="append_notes",
+        help="a line to add to the end of the Implementation Notes, leaving what is there as written; repeat for several",
+    )
+    for key, item in (("ac", "Acceptance Criterion"), ("dod", "Definition of Done item")):
+        article = "an" if item[0] in "AEIOU" else "a"
+        edit.add_argument(
+            f"--{key}", action="append", help=f"{article} {item} to add, unchecked; repeat for several, in order"
+        )
+        edit.add_argument(
+            f"--reword-{key}",
+            action="append",
+            metavar="N:TEXT",
+            help=f"the new wording of {item} #N, as `2:The new wording`; repeat for several",
+        )
+        for verb, does in (("remove", "removes"), ("check", "checks"), ("uncheck", "unchecks")):
+            edit.add_argument(
+                f"--{verb}-{key}",
+                action="append",
+                type=int,
+                metavar="N",
+                help=f"the number of the {item} it {does}{', renumbering the rest from 1' if verb == 'remove' else ''}; "
+                "repeat for several",
+            )
     edit.add_argument("--comment", default="", help="a comment to append to the task with the edit")
     edit.add_argument(
         "--base",
