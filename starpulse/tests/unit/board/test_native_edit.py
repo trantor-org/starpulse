@@ -134,6 +134,25 @@ def test_an_edit_changes_the_front_matter_and_sections_of_the_task_file_in_one_w
     assert "Reworked." in text
 
 
+def test_a_comment_rides_on_the_title_the_task_already_has_and_lands_in_the_file(
+    served: tuple[Board, BoardFeed, Path],
+) -> None:
+    built, feed, base = served
+    record = _opened(built, feed)
+
+    status, body = edit_task(
+        LAN,
+        _raw(task="task-5", base=record, changes={"title": record["title"]}, comment="A carried comment."),
+        feed,
+        built.read,
+        built.edit,
+    )
+
+    assert (status, body["changed"]) == (200, [])
+    frontmatter, text = _split(_file(base).read_text())
+    assert frontmatter["title"] == record["title"] and "A carried comment." in text
+
+
 def test_an_edit_rewords_adds_removes_and_checks_criteria(served: tuple[Board, BoardFeed, Path]) -> None:
     built, feed, _ = served
     record = _opened(built, feed)

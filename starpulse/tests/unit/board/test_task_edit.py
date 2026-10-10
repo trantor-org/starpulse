@@ -134,6 +134,20 @@ def test_a_change_the_task_already_holds_writes_nothing(file: _File) -> None:
     assert file.sent == []
 
 
+def test_a_comment_beside_a_change_the_task_already_holds_is_still_written(file: _File) -> None:
+    body = {"task": "PROJ-3", "base": {"title": RECORD["title"]}, "changes": {"title": RECORD["title"]}, "comment": "why"}
+
+    assert _edit(file, body) == (200, {"task": "PROJ-3", "changed": []})
+    assert file.sent == [("PROJ-3", {}, "why")]
+
+
+def test_a_blank_comment_beside_a_change_the_task_already_holds_writes_nothing(file: _File) -> None:
+    body = {"task": "PROJ-3", "base": {"title": RECORD["title"]}, "changes": {"title": RECORD["title"]}, "comment": " "}
+
+    assert _edit(file, body) == (200, {"task": "PROJ-3", "changed": []})
+    assert file.sent == []
+
+
 def test_a_writer_refusal_writes_nothing_and_answers_with_its_reason_and_skill(file: _File) -> None:
     file.refusal = Written(False, "refusing to edit PROJ-3: ... Run the `authoring-tests` skill", "authoring-tests")
 

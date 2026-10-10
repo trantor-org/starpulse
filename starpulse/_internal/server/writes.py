@@ -295,7 +295,9 @@ def edit_task(
     changed field's current value differs, naming those fields with their current values, so another writer's
     change is never overwritten; fields the edit does not touch may differ. The writer refuses a whole edit or
     writes all of it, and its refusal carries the skill that satisfies it. `changes` may also hold `appendNotes`, text
-    added to the end of the notes as they are when the write lands: it needs no base and is reported as `notes`.
+    added to the end of the notes as they are when the write lands: it needs no base and is reported as `notes`. A
+    non-blank `comment` is written even when every change already holds, which reports no changed field: a client
+    that can only name a field to comment on sends the one it leaves as it is.
     """
     if not _on_lan(source):
         return 403, {"error": "Editing a task answers only loopback and private network (RFC 1918) browsers"}
@@ -336,7 +338,7 @@ def edit_task(
         todo = {field: value for field, value in fields.items() if value != current[field]}
         if _APPEND_NOTES in changes:
             todo[_APPEND_NOTES] = changes[_APPEND_NOTES]
-        if not todo:
+        if not todo and not comment.strip():
             return 200, {"task": task, "changed": []}
         written = edit(task, todo, comment, **named)
     if not written.ok:
