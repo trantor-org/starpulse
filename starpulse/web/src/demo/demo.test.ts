@@ -333,13 +333,13 @@ describe("the demo server", () => {
 
   it("records the lane change of every card its walk moves", () => {
     const s = new DemoServer(fixture(), () => 40);
-    const before = s.snapshot.flows[0].agents.map((a) => a.state);
+    const before = new Map(s.snapshot.flows[0].agents.map((a) => [a.id, a.state]));
 
     for (let i = 0; i < 20; i++) s.step();
 
     for (const a of s.snapshot.flows[0].agents) {
       const path = s.lanes[a.id] ?? [];
-      if (a.state !== before[s.snapshot.flows[0].agents.indexOf(a)]) expect(path.at(-1)?.to).toBe(a.state);
+      if (a.state !== before.get(a.id)) expect(path.at(-1)?.to).toBe(a.state); // by id: a settled card leaves the list and shifts the rest
     }
   });
 
