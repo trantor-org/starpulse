@@ -292,18 +292,15 @@ SEED_LANES = ("Ready", "Waiting", "In Progress", "Review", "Needs attention", "D
 #: How long before the capture each seeded task created that day was created, by its index in `SEED`.
 SEED_CREATED = {0: 900, 1: 2400}
 #: The seeded tasks settled that day: where each settled, how long before the capture, and its assignee.
-SEED_SETTLED = [
-    ("completed", 1200, "@agent-standard-high"),
-    ("completed", 3000, "@agent-deep-high"),
-    ("completed", 5400, "@agent-fast-low"),
-    ("archived", 4200, ""),
-]
+SEED_SETTLED = [("archived", 4200, "")]
 #: How far back a settled task is still the day's; a capture keeps no older one.
 DAY_S = 86400
 #: How many more tasks fill each lane of a Board machine that draws its own main line, so the demo has a working
 #: team's scale; the day's settled tasks it adds, by where they settled.
-FILL = {"new": 40, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "needs_attention": 3, "done": 8}
-FILL_SETTLED = {"completed": 9, "archived": 2}
+FILL = {"new": 40, "ready": 35, "waiting": 55, "in_progress": 5, "review": 4, "needs_attention": 3, "done": 20}
+FILL_SETTLED = {"archived": 2}
+#: Every how many filled Done tasks one entered Done over a day before the capture, which the page no longer draws.
+DONE_STALE_EVERY = 6
 PROFILES = ("@agent-standard-high", "@agent-fast-low", "@agent-deep-high", "")
 SIZES = ("size-1", "size-2", "size-3", "size-5", "size-8")
 KINDS = ("kind-feature", "kind-bug", "kind-execute")
@@ -318,7 +315,8 @@ FILL_PULLS = {
 
 def _fill(line: list[str], start: int, now: float) -> list[tuple]:
     """`FILL`'s tasks for each lane of `line`, as `SEED` rows numbered from `start`, each with when it was created
-    that day or None: all of New was filed that morning, since the New lane counts only the day's; a Waiting task
+    that day or None and, for Done, when it entered the lane: all of New was filed that morning, since the New lane
+    counts only the day's; Done entries spread over the day, every `DONE_STALE_EVERY`th a day older; a Waiting task
     waits on the Ready one filled alongside it, every fourth on the Waiting task before it, so the Kanban folds
     stacks."""
     rows, first = [], {}
@@ -335,7 +333,11 @@ def _fill(line: list[str], start: int, now: float) -> list[tuple]:
             pull = (*FILL_PULLS[lane], j % 3) if lane in FILL_PULLS else None
             model = "" if lane == "new" else PROFILES[k % len(PROFILES)]
             created = now - 500 * (j + 1) if lane == "new" else None
-            rows.append((lane, f"m-{k % 4 + 1}" if k % 3 else "", labels, after, model, pull, created))
+            entered = now - 2100 * (j + 1) - (DAY_S if j % DONE_STALE_EVERY == DONE_STALE_EVERY - 1 else 0)
+            rows.append(
+                (lane, f"m-{k % 4 + 1}" if k % 3 else "", labels, after, model, pull, created)
+                + ((entered,) if lane == "done" else ())
+            )
     return rows
 
 
@@ -356,11 +358,12 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
     rows += _fill(list(line), len(rows), now)
     ids = [f"seed-{i}" for i in range(len(rows))]
     agents, pulls = [], {}
-    for i, (state, milestone, labels, after, model, pull, created) in enumerate(rows):
+    for i, (state, milestone, labels, after, model, pull, created, *entered) in enumerate(rows):
         agents.append(
             {"id": ids[i], "state": state, "model": model, "milestone": milestone, "labels": labels}
             | ({"dependencies": [ids[after]]} if after is not None else {})
             | ({"created": created} if created is not None else {})
+            | ({"entered": entered[0]} if entered else {})
             | _workable(i, state, after, now)
         )
         if pull:
@@ -380,7 +383,7 @@ def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
                 "at": now - 2100 * (i + 1),
                 "created": None,
                 "title": "",
-                "model": PROFILES[i % len(PROFILES)] if state == "completed" else "",
+                "model": "",
             }
             for i, (state, _) in enumerate(more)
         }

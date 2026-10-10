@@ -44,7 +44,7 @@ the preview itself gets one UI-preview comment from
 scrubbed demo, built by [`ci/ui_preview.py`](../ci/ui_preview.py) against the demo config
 [`ci/preview.toml`](../ci/preview.toml), with the demos published to `trantor-org/starpulse-demo` under `pr-<N>/`
 while the pull request is open. That config draws a fictional workspace at a working team's scale: the Board adapter
-[`ci/demo_workspace.py`](../ci/demo_workspace.py) serves a nine-lane Board whose In Progress opens a delivery machine and
+[`ci/demo_workspace.py`](../ci/demo_workspace.py) serves an eight-lane Board whose In Progress opens a delivery machine and
 the lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse._internal.cli.demo` fills it with
 synthetic tasks, sessions, runs and pools. Each changed sub-mockup, a `design/<dir>/index.html` layered over a scrubbed page
 capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request. A push to `main`

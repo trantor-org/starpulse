@@ -74,10 +74,10 @@ url = "http://127.0.0.1:9"
 # UI preview is unchanged.
 [level]
 machine = "board"
-goal = "completed"
+goal = "done"
 gates = ["review"]
 terminals = [
-  { id = "completed", role = "goal" },
+  { id = "done", role = "goal" },
   { id = "archived", role = "abandoned" },
 ]
 

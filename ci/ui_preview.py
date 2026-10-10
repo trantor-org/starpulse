@@ -104,7 +104,7 @@ MARKER = "<!-- starpulse:ui-preview -->"
 _CAVEATS = {
     FLOW_VIEW: (
         "Rendered from the scrubbed demo `starpulse._internal.cli.demo` builds off a server running `ci/preview.toml`: "
-        "the synthetic workspace in `ci/workspace` (a nine-lane board, its lifecycle machines and five DAG domains) "
+        "the synthetic workspace in `ci/workspace` (an eight-lane board, its lifecycle machines and five DAG domains) "
         "filled with synthetic tasks, sessions and runs, and no real board or runs adapter behind it."
     ),
     MOCKUP: "Rendered from the scrubbed demo `starpulse._internal.cli.demo --mockup design` builds from the saved mockup data.",
