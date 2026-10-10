@@ -353,7 +353,7 @@ def _workable(i: int, state: str, after: int | None, now: float) -> dict:
 
 def _seed(now: float, line: list[str] = ()) -> tuple[list[dict], dict, dict]:
     """`SEED` as a live Board's tasks, the pull requests the server would have read for them, and the day's settled
-    tasks; with the Board machine's main `line`, `_fill`'s tasks and `FILL_SETTLED` too."""
+    tasks; with the Board machine's lanes as `line`, `_fill`'s tasks and `FILL_SETTLED` too."""
     rows = [(*row, now - SEED_CREATED[i] if i in SEED_CREATED else None) for i, row in enumerate(SEED)]
     rows += _fill(list(line), len(rows), now)
     ids = [f"seed-{i}" for i in range(len(rows))]
@@ -407,8 +407,10 @@ def scrub(live: dict) -> dict:
     board = [a for f in live["flows"] if f["name"] == "board" for a in f["agents"]]
     pulls, settled = live.get("pulls", {}), live.get("settled", {})
     if not board:
-        # a Board machine whose main line already has every seeded lane is drawn as it is, and filled at its scale
-        line = next((f["machine"].get("mainLine", []) for f in live["flows"] if f["name"] == "board"), [])
+        # a Board machine that draws a main line and already has every seeded lane is drawn as it is, and filled at
+        # its scale
+        machine = next((f["machine"] for f in live["flows"] if f["name"] == "board"), {})
+        line = [s["id"] for s in machine.get("states", [])] if machine.get("mainLine") else []
         keep = {row[0] for row in SEED} <= set(line)
         board, pulls, settled = _seed(live["now"], line if keep else [])
         if not keep:

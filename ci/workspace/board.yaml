@@ -14,12 +14,16 @@ events:
     - {from: new, to: ready}
   CREATE_WAITING:
     - {from: new, to: waiting}
+  CREATE_IN_PROGRESS:
+    - {from: new, to: in_progress}
   CLAIM:
     - {from: ready, to: in_progress}
   WAIT_ON_DEPS:
     - {from: ready, to: waiting}
   PARK:
     - {from: in_progress, to: waiting}
+  START_WAITING:
+    - {from: waiting, to: in_progress}
   DEPS_DONE:
     - {from: waiting, to: ready}
   PR_READY:
@@ -27,13 +31,17 @@ events:
   SEND_BACK:
     - {from: review, to: in_progress}
   DEFER:
-    - {from: [ready, in_progress, review], to: needs_attention}
+    - {from: in_progress, to: needs_attention}
   RETURN_READY:
-    - {from: needs_attention, to: ready}
+    - {from: [needs_attention, in_progress], to: ready}
+  RESUME:
+    - {from: needs_attention, to: in_progress}
+  FINALIZE:
+    - {from: in_progress, to: done}
   MERGED:
     - {from: review, to: done}
   ARCHIVE:
-    - {from: [new, ready, waiting, needs_attention], to: archived}
+    - {from: [ready, waiting, in_progress, review, needs_attention], to: archived}
 writers:
   CREATE_READY:
     - {actor: agent, trigger: "tracker create"}
@@ -47,6 +55,14 @@ writers:
     - {actor: dagu/dependency-promotion, trigger: "hold a task on an open dependency"}
   PARK:
     - {actor: agent, trigger: "tracker park"}
+  START_WAITING:
+    - {actor: operator, trigger: "start a waiting task"}
+  CREATE_IN_PROGRESS:
+    - {actor: agent, trigger: "tracker create --start"}
+  RESUME:
+    - {actor: operator, trigger: "answer the blocker and resume"}
+  FINALIZE:
+    - {actor: agent, trigger: "tracker finalize"}
   DEPS_DONE:
     - {actor: dagu/dependency-promotion, trigger: "promote a task whose dependencies are done"}
   PR_READY:

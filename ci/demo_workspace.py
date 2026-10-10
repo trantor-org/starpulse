@@ -18,8 +18,8 @@ from starpulse._internal.machines.machine_definition import load_machine, refuse
 from starpulse._internal.machines.snapshot import Qualify, describe
 
 WORKSPACE = Path(__file__).with_name("workspace")
-#: The Board's main line: every lane a task passes on its way to Done, Archived left out.
-MAIN_LINE = ["new", "ready", "waiting", "in_progress", "review", "needs_attention", "done"]
+#: The Board's main line, the lanes drawn on its axis; Waiting, Needs Attention and the final states sit off it.
+MAIN_LINE = ["new", "ready", "in_progress", "review"]
 #: Each machine that opens under another's state: (parent, state, flow, when).
 SUBFLOWS = [("board", "in_progress", "delivery", ""), ("delivery", "pr_opened", "review-triage", "a PR is open")]
 

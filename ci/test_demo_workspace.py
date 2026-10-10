@@ -27,7 +27,7 @@ def test_the_preview_board_draws_a_real_workspaces_eight_lanes_in_order() -> Non
     board = _machines()["board"]
 
     assert [s["id"] for s in board["states"]] == LANES
-    assert board["mainLine"] == LANES[:7]
+    assert board["mainLine"] == ["new", "ready", "in_progress", "review"]
 
 
 def test_in_progress_opens_the_delivery_machine_and_at_least_three_more_lifecycle_machines() -> None:
