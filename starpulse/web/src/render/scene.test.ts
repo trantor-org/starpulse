@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_GROW, build, Drawn, SUN_R, routed, clip, curveDist, MIN_PAGE, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
+import { build, Drawn, pickRows, SUN_R, routed, clip, curveDist, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
 import { ledgerLevel, type Level } from "./levels";
 import { merge, midnight, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
@@ -268,16 +268,17 @@ describe("a Board path's route", () => {
     expect(routed(a, b, c0, [a, b, o], new Drawn(), sky, held).c).toEqual(held);
   });
   it("is held from one Board to the next through the bends the renderer keeps, each in the frame of its two states", () => {
-    // Ready → Done runs along the main line through In progress and Review, so it bends round them
+    // Ready → Done runs down the one tier through In progress and Review, so it bends round them
     const sky = withTasks(boardSky(), { ready: 150, done: 400 }), routes = new Map<string, Pt>();
+    sky.S.flows.board.machine.tiers = [["ready", "in_progress", "review", "done"]];
     sky.S.flows.board.machine.transitions.push({ source: "ready", target: "done", event: "SKIP" });
     build({ ...sky, routes }, { kind: "board" });
     expect(routes.size).toBeGreaterThan(0);
 
-    const [k, h] = [...routes][0], nudged = new Map([[k, { x: h.x + 0.01, y: h.y }]]), [source, target] = k.split(">");
+    const [k, h] = [...routes][0], nudged = new Map([[k, { x: h.x, y: h.y + 0.01 }]]), [source, target] = k.split(">");
     const scene = build({ ...sky, routes: nudged }, { kind: "board" }), e = scene.bEdges.find((x) => x.source === source && x.target === target)!;
     const A = scene.galaxies[source], B = scene.galaxies[target], dx = B.x - A.x, dy = B.y - A.y;
-    expect([e.c!.x, e.c!.y]).toEqual([expect.closeTo(A.x + (h.x + 0.01) * dx - h.y * dy, 6), expect.closeTo(A.y + (h.x + 0.01) * dy + h.y * dx, 6)]);
+    expect([e.c!.x, e.c!.y]).toEqual([expect.closeTo(A.x + h.x * dx - (h.y + 0.01) * dy, 6), expect.closeTo(A.y + h.x * dy + (h.y + 0.01) * dx, 6)]);
   });
   it("straightens a bent path only once the straight path clears by a margin, so a state's size crossing the line never flips it back and forth", () => {
     const held = { x: 400, y: 120 }, by = (gap: number) => at("ready", 400, 300 + 40 + 20 + gap, 40);
@@ -303,116 +304,116 @@ describe("a Board path's route", () => {
       expect(routes).toMatchInlineSnapshot(`
         {
           "1280x720": [
-            "new>ready 346,540.5",
-            "new>blocked 476,416.686747",
-            "new>waiting 476,664.313253",
-            "new>in_progress 690,690",
-            "ready>in_progress 736,540.5",
-            "ready>blocked 578.761084,388.086747",
-            "ready>waiting 578.761084,692.913253",
-            "ready>archived 890,890",
-            "blocked>ready 578.761084,388.086747",
-            "blocked>in_progress 838.761084,445.286747",
-            "blocked>archived 892,943.5",
-            "waiting>ready 578.761084,692.913253",
-            "waiting>in_progress 866,664.313253",
-            "waiting>archived 892,943.5",
-            "in_progress>blocked 838.761084,445.286747",
-            "in_progress>review 1126,569.1",
-            "in_progress>done 1250,410",
-            "in_progress>needs_attention 909.582265,313.798795",
-            "in_progress>archived 1113,943.5",
-            "review>done 1386,540.5",
-            "review>in_progress 1126,569.1",
-            "review>archived 1334,943.5",
-            "needs_attention>ready 606,342.398795",
-            "needs_attention>in_progress 909.582265,313.798795",
-            "needs_attention>archived 1530,570",
-            "done>completed 1646,339",
+            "new>ready 151.967654,336.47528",
+            "new>blocked 251.192233,266.149149",
+            "new>waiting 251.192233,371.638345",
+            "new>in_progress 370,250",
+            "ready>in_progress 650,410",
+            "ready>blocked 288.46356,384.972003",
+            "ready>waiting 296.199434,534.120013",
+            "ready>archived 327.903147,477.127541",
+            "blocked>ready 288.46356,384.972003",
+            "blocked>in_progress 517.856214,287.978557",
+            "blocked>archived 610,330",
+            "waiting>ready 296.199434,534.120013",
+            "waiting>in_progress 502.384466,371.638345",
+            "waiting>archived 1050,130",
+            "in_progress>blocked 517.856214,287.978557",
+            "in_progress>review 623.408622,348.078756",
+            "in_progress>done 714.576699,195.823019",
+            "in_progress>needs_attention 510.12034,138.830546",
+            "in_progress>archived 570,210",
+            "review>done 767.319774,336.47528",
+            "review>in_progress 623.408622,348.078756",
+            "review>archived 754.929943,477.127541",
+            "needs_attention>ready 303.935308,301.312215",
+            "needs_attention>in_progress 510.12034,138.830546",
+            "needs_attention>archived 250,170",
+            "done>completed 926.768931,195.823019",
           ],
           "1280x720 crowded": [
-            "new>ready 346,540.5",
-            "new>blocked 476,416.686747",
-            "new>waiting 476,664.313253",
-            "new>in_progress 410,130",
-            "ready>in_progress 736,540.5",
-            "ready>blocked 578.761084,388.086747",
-            "ready>waiting 578.761084,692.913253",
-            "ready>archived 690,730",
-            "blocked>ready 578.761084,388.086747",
-            "blocked>in_progress 838.761084,445.286747",
-            "blocked>archived 892,943.5",
-            "waiting>ready 578.761084,692.913253",
-            "waiting>in_progress 866,664.313253",
-            "waiting>archived 892,943.5",
-            "in_progress>blocked 838.761084,445.286747",
-            "in_progress>review 1126,569.1",
-            "in_progress>done 1250,410",
-            "in_progress>needs_attention 909.582265,313.798795",
-            "in_progress>archived 1113,943.5",
-            "review>done 1386,540.5",
-            "review>in_progress 1126,569.1",
-            "review>archived 1334,943.5",
-            "needs_attention>ready 606,342.398795",
-            "needs_attention>in_progress 909.582265,313.798795",
-            "needs_attention>archived 1690,210",
-            "done>completed 1646,339",
+            "new>ready 151.967654,336.47528",
+            "new>blocked 251.192233,266.149149",
+            "new>waiting 251.192233,371.638345",
+            "new>in_progress 370,250",
+            "ready>in_progress 650,410",
+            "ready>blocked 288.46356,384.972003",
+            "ready>waiting 296.199434,534.120013",
+            "ready>archived 327.903147,477.127541",
+            "blocked>ready 288.46356,384.972003",
+            "blocked>in_progress 517.856214,287.978557",
+            "blocked>archived 610,330",
+            "waiting>ready 296.199434,534.120013",
+            "waiting>in_progress 502.384466,371.638345",
+            "waiting>archived 1050,130",
+            "in_progress>blocked 517.856214,287.978557",
+            "in_progress>review 623.408622,348.078756",
+            "in_progress>done 714.576699,195.823019",
+            "in_progress>needs_attention 510.12034,138.830546",
+            "in_progress>archived 570,210",
+            "review>done 767.319774,336.47528",
+            "review>in_progress 623.408622,348.078756",
+            "review>archived 754.929943,477.127541",
+            "needs_attention>ready 303.935308,301.312215",
+            "needs_attention>in_progress 510.12034,138.830546",
+            "needs_attention>archived 250,170",
+            "done>completed 926.768931,195.823019",
           ],
           "1920x1080": [
-            "new>ready 283.5,505",
-            "new>blocked 413.5,381.186747",
-            "new>waiting 413.5,628.813253",
-            "new>in_progress 570,370",
-            "ready>in_progress 673.5,505",
-            "ready>blocked 516.261084,352.586747",
-            "ready>waiting 516.261084,657.413253",
-            "ready>archived 450,970",
-            "blocked>ready 516.261084,352.586747",
-            "blocked>in_progress 776.261084,409.786747",
-            "blocked>archived 829.5,908",
-            "waiting>ready 516.261084,657.413253",
-            "waiting>in_progress 803.5,628.813253",
-            "waiting>archived 829.5,908",
-            "in_progress>blocked 776.261084,409.786747",
-            "in_progress>review 1063.5,533.6",
-            "in_progress>done 1210,370",
-            "in_progress>needs_attention 847.082265,278.298795",
-            "in_progress>archived 1050.5,908",
-            "review>done 1323.5,505",
-            "review>in_progress 1063.5,533.6",
-            "review>archived 1271.5,908",
-            "needs_attention>ready 543.5,306.898795",
-            "needs_attention>in_progress 847.082265,278.298795",
-            "needs_attention>archived 850,450",
-            "done>completed 1583.5,303.5",
+            "new>ready 141.365004,308.285715",
+            "new>blocked 233.857827,243.134656",
+            "new>waiting 250,330",
+            "new>in_progress 326.35065,177.983596",
+            "ready>in_progress 375.222831,308.285715",
+            "ready>blocked 268.396775,353.088354",
+            "ready>waiting 275.563391,491.511786",
+            "ready>archived 304.190227,438.587835",
+            "blocked>ready 268.396775,353.088354",
+            "blocked>in_progress 482.048887,263.483077",
+            "blocked>archived 570,290",
+            "waiting>ready 275.563391,491.511786",
+            "waiting>in_progress 690,170",
+            "waiting>archived 770,210",
+            "in_progress>blocked 482.048887,263.483077",
+            "in_progress>review 580.414192,319.037595",
+            "in_progress>done 662.573481,177.983596",
+            "in_progress>needs_attention 474.882271,125.059645",
+            "in_progress>archived 450,130",
+            "review>done 711.445662,308.285715",
+            "review>in_progress 580.414192,319.037595",
+            "review>archived 701.748533,438.587835",
+            "needs_attention>ready 410,10",
+            "needs_attention>in_progress 474.882271,125.059645",
+            "needs_attention>archived 410,250",
+            "done>completed 857.431309,177.983596",
           ],
           "1920x1080 crowded": [
-            "new>ready 283.5,505",
-            "new>blocked 413.5,381.186747",
-            "new>waiting 413.5,628.813253",
-            "new>in_progress 290,890",
-            "ready>in_progress 673.5,505",
-            "ready>blocked 516.261084,352.586747",
-            "ready>waiting 516.261084,657.413253",
-            "ready>archived 690,690",
-            "blocked>ready 516.261084,352.586747",
-            "blocked>in_progress 776.261084,409.786747",
-            "blocked>archived 829.5,908",
-            "waiting>ready 516.261084,657.413253",
-            "waiting>in_progress 803.5,628.813253",
-            "waiting>archived 829.5,908",
-            "in_progress>blocked 776.261084,409.786747",
-            "in_progress>review 1063.5,533.6",
-            "in_progress>done 1210,370",
-            "in_progress>needs_attention 847.082265,278.298795",
-            "in_progress>archived 1050.5,908",
-            "review>done 1323.5,505",
-            "review>in_progress 1063.5,533.6",
-            "review>archived 1271.5,908",
-            "needs_attention>ready 543.5,306.898795",
-            "needs_attention>in_progress 847.082265,278.298795",
-            "needs_attention>archived 1690,250",
-            "done>completed 1583.5,303.5",
+            "new>ready 141.365004,308.285715",
+            "new>blocked 233.857827,243.134656",
+            "new>waiting 250,330",
+            "new>in_progress 326.35065,177.983596",
+            "ready>in_progress 375.222831,308.285715",
+            "ready>blocked 268.396775,353.088354",
+            "ready>waiting 275.563391,491.511786",
+            "ready>archived 304.190227,438.587835",
+            "blocked>ready 268.396775,353.088354",
+            "blocked>in_progress 482.048887,263.483077",
+            "blocked>archived 570,290",
+            "waiting>ready 275.563391,491.511786",
+            "waiting>in_progress 690,170",
+            "waiting>archived 770,210",
+            "in_progress>blocked 482.048887,263.483077",
+            "in_progress>review 580.414192,319.037595",
+            "in_progress>done 662.573481,177.983596",
+            "in_progress>needs_attention 474.882271,125.059645",
+            "in_progress>archived 450,130",
+            "review>done 711.445662,308.285715",
+            "review>in_progress 580.414192,319.037595",
+            "review>archived 701.748533,438.587835",
+            "needs_attention>ready 410,10",
+            "needs_attention>in_progress 474.882271,125.059645",
+            "needs_attention>archived 410,250",
+            "done>completed 857.431309,177.983596",
           ],
         }
       `);
@@ -529,38 +530,169 @@ const savedBoardSky = (W: number, H: number, patch: (snap: Snapshot) => void = (
 /** The distance from a point to the nearest sample of a path. */
 const clearance = (e: Curve, g: Pt & { R: number }) => Math.min(...sample(e, 200).map((q) => Math.hypot(q.x - g.x, q.y - g.y))) - g.R;
 
-describe("the Board layout", () => {
+/** The tiers the trantor Board declares: the states the Star Map draws at each stage, left to right. */
+const DEFAULT_TIERS = [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]];
+
+describe("the Board's tiers", () => {
+  const tiered = (W: number, H: number, tiers: string[][] | undefined = DEFAULT_TIERS, patch: (snap: Snapshot) => void = () => {}, scale?: number) => {
+    const sky = savedBoardSky(W, H, (snap) => {
+      if (tiers) snap.flows[0].machine.tiers = tiers;
+      patch(snap);
+    });
+    return build(scale ? { ...sky, scale } : sky, { kind: "board" });
+  };
+  /** `n` machines open under `state`, each its own flow. */
+  const machinesOn = (state: string, n: number) => (snap: Snapshot) => {
+    snap.flows[0].machine.subflows = Array.from({ length: n }, (_, i) => ({ state, flow: `m${i}`, exits: {}, parent: "board", when: "" }));
+    for (let i = 0; i < n; i++) {
+      snap.graphs.push(`m${i}`);
+      snap.flows.push({ name: `m${i}`, agents: [], machine: machine(["a", "b"]) });
+    }
+  };
+  /** The zoom the Board is drawn at: the canvas over the sky's width, less the 6% margin. */
+  const zoom = (s: Scene, W: number) => (0.94 * W) / s.w;
+
+  it("lays the states out left to right in tier order, a tier's states stacked in one cell", () => {
+    const g = tiered(1920, 1080).galaxies;
+    const heads = ["new", "ready", "needs_attention", "in_progress", "review", "done"];
+
+    heads.slice(1).forEach((id, i) => expect(g[id].x).toBeGreaterThan(g[heads[i]].x));
+    expect(g.waiting.x).toBeCloseTo(g.ready.x);
+    expect(g.waiting.y).not.toBeCloseTo(g.ready.y);
+    expect(g.archived.x).toBeCloseTo(g.done.x);
+    expect(g.archived.y).not.toBeCloseTo(g.done.y);
+  });
+
+  it("gives a state no tier names a tier of its own after them, in the machine's order", () => {
+    const g = tiered(1920, 1080).galaxies;
+
+    expect(g.blocked.x).toBeGreaterThan(g.done.x);
+    expect(g.completed.x).toBeGreaterThan(g.blocked.x);
+  });
+
+  it("falls back to the Board's own columns with no tiers, every state placed", () => {
+    const g = tiered(1920, 1080, undefined).galaxies;
+
+    expect(Object.keys(g).sort()).toEqual([...SAVED_STATES].sort());
+    for (const s of Object.values(g)) expect([Number.isFinite(s.x), Number.isFinite(s.y)]).toEqual([true, true]);
+    expect(g.new.x).toBeLessThan(g.in_progress.x);
+    expect(g.in_progress.x).toBeLessThan(g.done.x);
+  });
+
+  it("keeps the tiers in one row on a wide canvas and wraps them on a tall one", () => {
+    const leftToRight = (g: ReturnType<typeof tiered>["galaxies"]) => ["new", "ready", "needs_attention", "in_progress", "review", "done"].every((id, i, ids) => !i || g[id].x > g[ids[i - 1]].x);
+
+    expect(leftToRight(tiered(3440, 1440).galaxies)).toBe(true);
+    expect(leftToRight(tiered(700, 1400).galaxies)).toBe(false);
+  });
+
+  it("tucks a run of single-state tiers above and below the row, each sun right of the last by at least the larger ring", () => {
+    const g = tiered(1920, 1080).galaxies, run = ["needs_attention", "in_progress", "review"];
+
+    expect(Math.sign(g.in_progress.y - g.needs_attention.y)).toBe(Math.sign(g.in_progress.y - g.review.y));
+    expect(g.needs_attention.y).not.toBeCloseTo(g.in_progress.y);
+    run.slice(1).forEach((id, i) => expect(g[id].x - g[run[i]].x).toBeGreaterThanOrEqual(Math.max(g[id].R, g[run[i]].R) - 1e-6));
+    const all = Object.values(g);
+    for (const a of all) for (const b of all) if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(a.R + b.R - 1e-6);
+  });
+
+  it("draws a state at one footprint and sun, busy or empty", () => {
+    const busy = tiered(1920, 1080, DEFAULT_TIERS, (snap) => {
+      snap.flows[0].agents = Array.from({ length: 64 }, (_, i) => ({ id: `ready-${i}`, title: "t", state: "ready", model: "", labels: [] }));
+    }).galaxies;
+
+    expect([busy.ready.R, busy.ready.r, busy.ready.moonR]).toEqual([busy.review.R, busy.review.r, busy.review.moonR]);
+    expect(busy.ready.n).toBe(64);
+  });
+
+  it("draws the same footprint with eight machines as with none under it, and pages the ninth", () => {
+    const none = tiered(1920, 1080).galaxies, eight = tiered(1920, 1080, DEFAULT_TIERS, machinesOn("review", 8)), nine = tiered(1920, 1080, DEFAULT_TIERS, machinesOn("review", 9));
+    const on = (s: Scene) => s.moons.filter((m) => m.parent.id === "review");
+
+    expect(on(eight).filter((m) => !m.pager)).toHaveLength(8);
+    expect(on(eight).some((m) => m.pager)).toBe(false);
+    expect(on(nine).filter((m) => !m.pager)).toHaveLength(8);
+    expect(on(nine).some((m) => m.pager)).toBe(true);
+    expect(nine.galaxies.review.R).toBeCloseTo(eight.galaxies.review.R);
+    expect(none.review.R).toBeLessThan(eight.galaxies.review.R);
+  });
+
+  it("keeps today's sun-to-dot ratio and caps the zoom at 16 on a Board that would otherwise grow past it", () => {
+    const small = tiered(3440, 1440, [["new"], ["done"]], (snap) => {
+      snap.flows[0].machine.states = snap.flows[0].machine.states.filter((s) => ["new", "done"].includes(s.id));
+      snap.flows[0].machine.transitions = [];
+      snap.flows[0].machine.mainLine = ["new", "done"];
+    });
+
+    for (const s of Object.values(tiered(1920, 1080).galaxies)) expect(s.r).toBe(SUN_R);
+    expect(zoom(small, 3440)).toBeLessThanOrEqual(16 + 1e-6);
+  });
+
+  it("scales state names to 0.45 of the sun's screen radius, between 12 and 20 px", () => {
+    // every state opens into machines, as the live Board's busiest states do: the fullest footprint the Board lays out
+    const px = (W: number, H: number) => {
+      const s = tiered(W, H, DEFAULT_TIERS, (snap) => {
+        const ids = DEFAULT_TIERS.flat();
+        snap.flows[0].machine.subflows = ids.map((state) => ({ state, flow: `m-${state}`, exits: {}, parent: "board", when: "" }));
+        for (const state of ids) {
+          snap.graphs.push(`m-${state}`);
+          snap.flows.push({ name: `m-${state}`, agents: [], machine: machine(["a", "b"]) });
+        }
+      });
+      return { label: s.labelScale! * 13, sun: SUN_R * zoom(s, W) };
+    };
+    const small = px(1366, 768), mid = px(1920, 1080), big = px(3840, 2160);
+
+    expect(small.label).toBeCloseTo(12);
+    expect(mid.label).toBeCloseTo(0.45 * mid.sun);
+    expect(mid.label).toBeGreaterThan(12);
+    expect(mid.label).toBeLessThan(20);
+    expect(big.label).toBeCloseTo(20);
+  });
+
+  it("wraps to another row only where that draws the sun more than 5% larger", () => {
+    // the zoom each row count reaches, one row first
+    expect(pickRows([1, 1.05, 1.04])).toBe(1);
+    expect(pickRows([1, 1.0501])).toBe(2);
+    expect(pickRows([1, 1.04, 1.06])).toBe(3);
+    expect(pickRows([1, 1.04, 1.07, 1.09])).toBe(3);
+    expect(pickRows([1])).toBe(1);
+  });
+
+  it("makes room for larger names at a larger Admin text size, never shrinking the sun's footprint", () => {
+    const at = (scale: number) => tiered(1366, 768, DEFAULT_TIERS, () => {}, scale);
+
+    expect(zoom(at(150), 1366)).toBeLessThanOrEqual(zoom(at(100), 1366) + 1e-9);
+  });
+});
+
+describe("the Board's own columns, when no tiers are configured", () => {
   const MAIN = ["new", "ready", "in_progress", "review", "done"];
   const placed = (W = 1920, H = 1080) => build(savedBoardSky(W, H), { kind: "board" }).galaxies;
 
-  it("sits the main line on one axis in the order the snapshot declares", () => {
+  it("runs the main line left to right in the order the snapshot declares", () => {
     const g = placed();
 
-    expect(new Set(MAIN.map((id) => g[id].y)).size).toBe(1);
     MAIN.slice(1).forEach((id, i) => expect(g[id].x).toBeGreaterThan(g[MAIN[i]].x));
   });
 
-  it("takes each other open state's slot just before the latest main-line state it connects to, alternating above and below the axis", () => {
-    const g = placed(), axis = g.new.y, before = ["blocked", "waiting", "needs_attention"];
+  it("stacks each other open state in the column just before the latest main-line state it connects to", () => {
+    const g = placed(), before = ["blocked", "waiting", "needs_attention"];
 
     before.forEach((id) => {
       expect(g[id].x).toBeCloseTo(g.blocked.x);
       expect(g[id].x).toBeGreaterThan(g.ready.x);
       expect(g[id].x).toBeLessThan(g.in_progress.x);
     });
-    expect([g.blocked.y < axis, g.waiting.y > axis, g.needs_attention.y < axis]).toEqual([true, true, true]);
-    expect(g.needs_attention.y).toBeLessThan(g.blocked.y);
+    expect(new Set(before.map((id) => Math.round(g[id].y))).size).toBe(before.length);
   });
 
-  it("puts final states one slot past the axis, one above it and one below, and closes the empty slots", () => {
-    const g = placed(), gap = (a: string, b: string) => g[b].x - g[a].x;
+  it("stacks the final states in one column past the main line", () => {
+    const g = placed();
 
     expect(g.completed.x).toBeCloseTo(g.archived.x);
     expect(g.completed.x).toBeGreaterThan(g.done.x);
-    expect([g.completed.y < g.new.y, g.archived.y > g.new.y]).toEqual([true, true]);
-    // slots 1, 5 and 7 hold nothing, so Ready sits one slot after New and the slot before Review is Review's own neighbour
-    expect(gap("new", "ready")).toBeCloseTo(gap("ready", "blocked"));
-    expect(gap("in_progress", "review")).toBeCloseTo(gap("review", "done"));
+    expect(g.completed.y).not.toBeCloseTo(g.archived.y);
   });
 
   it("places a Board it has never seen by the same rule, with no coordinates of its own", () => {
@@ -579,6 +711,7 @@ describe("the Board layout", () => {
 describe("Board paths", () => {
   const crowdedCounts = { ready: 47, waiting: 35, in_progress: 7, done: 47, review: 1, needs_attention: 4, blocked: 12, archived: 9 };
   const crowd = (W: number, H: number, counts: Record<string, number>) => savedBoardSky(W, H, (snap) => {
+    snap.flows[0].machine.tiers = DEFAULT_TIERS;
     snap.flows[0].agents = Object.entries(counts).flatMap(([state, n]) => Array.from({ length: n }, (_, i) => ({ id: `${state}-${i}`, title: "t", state, model: "", labels: [] })));
   });
 
@@ -596,12 +729,13 @@ describe("Board paths", () => {
   });
 
   it("gather into one stream along a final state's side when it is reached from several states", () => {
-    // New, Ready and Done on the axis; Archived is reached from all three, with nothing in their way
+    // New, Ready and Done stacked in one tier, Archived alone in the next, reached from all three with nothing in their way
     const sky = savedBoardSky(1920, 1080, (snap) => {
       const m = snap.flows[0].machine;
       m.states = ["new", "ready", "done", "archived"].map((id, i) => ({ id, name: id, initial: i === 0, final: id === "archived" }));
       m.transitions = [["new", "ready"], ["ready", "done"], ["new", "archived"], ["ready", "archived"], ["done", "archived"]].map(([source, target]) => ({ source, target, event: `${source}_${target}` }));
       m.mainLine = ["new", "ready", "done"];
+      m.tiers = [["new", "ready", "done"], ["archived"]];
     }), scene = build(sky, { kind: "board" }), into = scene.bEdges.filter((e) => e.target === "archived");
 
     expect(into).toHaveLength(3);
@@ -637,7 +771,8 @@ describe("Board paths", () => {
 describe("the room between Board states", () => {
   const apart = (scene: ReturnType<typeof build>) => {
     const gs = Object.values(scene.galaxies), short: string[] = [];
-    for (const a of gs) for (const b of gs) if (a.x < b.x && Math.abs(a.y - b.y) < a.R + b.R + 40 && b.x - b.R - (a.x + a.R) < 40 - 1e-6) short.push(`${a.id}/${b.id}`);
+    const px = scene.w / (0.94 * 1920);
+    for (const a of gs) for (const b of gs) if (a.x < b.x && Math.abs(a.y - b.y) < a.R + b.R + 16 * px && b.x - b.R - (a.x + a.R) < 16 * px - 1e-6) short.push(`${a.id}/${b.id}`);
     return short;
   };
   const busy = (patch: (snap: Snapshot) => void = () => {}) => savedBoardSky(1920, 1080, (snap) => {
@@ -645,7 +780,7 @@ describe("the room between Board states", () => {
     patch(snap);
   });
 
-  it("holds 40 px between a state's tasks and the next state beside it", () => {
+  it("holds 16 px between a state's tasks and the next state beside it", () => {
     expect(apart(build(busy(), { kind: "board" }))).toEqual([]);
   });
 
@@ -878,17 +1013,16 @@ describe("the Board's lifecycle moons", () => {
         const rows = moonsOf(scene).filter((m) => side(scene, m) === sd).sort((a, b) => a.y - b.y);
         rows.forEach((m, i) => {
           expect(Math.hypot(m.x - g.x, m.y - g.y)).toBeCloseTo(g.moonR);
-          if (i) expect(m.y - rows[i - 1].y).toBeGreaterThanOrEqual((rowOf(m) + rowOf(rows[i - 1])) / 2);
+          if (i) expect(m.y - rows[i - 1].y).toBeGreaterThanOrEqual((rowOf(m) + rowOf(rows[i - 1])) / 2 - 1e-9);
         });
       }
     }
   });
 
-  it("grows the ring and state to the fullest page instead of all twenty machines", () => {
+  it("holds the ring and state at one size, whether the state opens into two machines or twenty", () => {
     const base = board(2).galaxies.in_progress, stress = board(20).galaxies.in_progress;
 
-    expect(stress.moonR).toBeGreaterThan(base.moonR);
-    expect(stress.R).toBeGreaterThan(base.R);
+    expect([stress.moonR, stress.R, stress.reach]).toEqual([base.moonR, base.R, base.reach]);
   });
 
   it("chains a machine's sub-states outward from its moon on its row, and names the chain beside the machine", () => {
@@ -933,8 +1067,8 @@ describe("the Board's lifecycle moons", () => {
     });
 
     expect(second.moons.map((m) => m.name)).not.toEqual(first.moons.map((m) => m.name));
-    expect(first.moons.filter((m) => m.pager).map((m) => m.name)).toEqual(["‹ 2/2", "2/2 ›"]);
-    expect(second.moons.filter((m) => m.pager).map((m) => m.name)).toEqual(["‹ 1/2", "1/2 ›"]);
+    expect(first.moons.filter((m) => m.pager).map((m) => m.name)).toEqual(["‹ 3/3", "2/3 ›"]);
+    expect(second.moons.filter((m) => m.pager).map((m) => m.name)).toEqual(["‹ 1/3", "3/3 ›"]);
     expect(at(second)).toEqual(at(first));
   });
 
@@ -951,14 +1085,14 @@ describe("the Board's lifecycle moons", () => {
   });
 
   it("makes each row as tall as a busy pager's orbit, as it does a machine's", () => {
-    // on page two the forward node, which wins the tie, stands in for skill-00 to skill-11, which seventy-three tasks work between them
+    // on page two the back node stands in for skill-00 to skill-06, which forty-three tasks work between them
     const scene = build({ ...moonSky(20, 1920, 1080, { busy: 72 }), pages: { in_progress: 1 } }, { kind: "board" });
-    const g = scene.galaxies.in_progress, pager = scene.moons.find((m) => m.pager?.d === 1)!;
+    const g = scene.galaxies.in_progress, pager = scene.moons.find((m) => m.pager?.d === -1)!;
 
     const right = moonsOf(scene).filter((m) => m.x > g.x).sort((a, b) => a.y - b.y);
 
-    expect(pager.n).toBe(73);
-    expect(pager.R).toBeGreaterThan(Math.max(...moonsOf(scene).map((m) => m.R)));
+    expect(pager.n).toBe(43);
+    expect(pager.R).toBeLessThanOrEqual(Math.max(...moonsOf(scene).map((m) => m.R)));
     right.forEach((m, i) => { if (i) expect(m.y - right[i - 1].y).toBeGreaterThanOrEqual(2 * pager.R + 6 - 1e-9); });
   });
 });
@@ -1309,10 +1443,12 @@ describe("a Board drawn again", () => {
     },
   );
 
-  it("lays a Board out afresh when a state's room changes", () => {
-    const before = geom(build(dagSky(), { kind: "board" })), busy = dagSky();
+  it("lays a Board out afresh when its tiers change, and keeps it when only a state's tasks do", () => {
+    const before = geom(build(dagSky(), { kind: "board" })), busy = dagSky(), moved = dagSky();
     busy.S.flows.board.agents = Array.from({ length: 40 }, (_, i) => ({ id: `T-${i}`, title: "t", state: "review", model: "", labels: [] })) as never;
-    expect(geom(build(busy, { kind: "board" }))).not.toEqual(before);
+    moved.S.flows.board.machine.tiers = [["review"], ["ready"]];
+    expect(geom(build(busy, { kind: "board" }))).toEqual(before);
+    expect(geom(build(moved, { kind: "board" }))).not.toEqual(before);
   });
 });
 
@@ -1340,7 +1476,7 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
     snap.graphs.push(...flows.map((f) => f.name));
   });
   const boxes = (scene: Scene, W: number) => {
-    const F = scene.unit ?? scene.w / (0.94 * W), at = (id: string) => ({ x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, id });
+    const F = ((scene.labelScale ?? 1) * scene.w) / (0.94 * W), at = (id: string) => ({ x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, id });
     const out = Object.fromEntries(Object.keys(scene.galaxies).map((id) => [id, at(id)])), grow = (id: string, x0: number, x1: number, y0: number, y1: number) => {
       const b = out[id];
       b.x0 = Math.min(b.x0, x0); b.x1 = Math.max(b.x1, x1); b.y0 = Math.min(b.y0, y0); b.y1 = Math.max(b.y1, y1);
@@ -1354,9 +1490,10 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
     return Object.values(out);
   };
 
-  it.each([[12, 1920], [20, 1920], [12, 1420], [20, 1420]])("holds 40 px between one state's tasks, moons and moon names and the next state's, at %i machines a state on a %i px canvas", (n, W) => {
+  it.each([[12, 1920], [20, 1920], [12, 1420], [20, 1420]])("holds 16 px between one state's tasks, moons and moon names and the next state's, at %i machines a state on a %i px canvas", (n, W) => {
     const scene = build(everyState(n, 4, W, 1080, ALL), { kind: "board" }), bs = boxes(scene, W), short: string[] = [];
-    for (const a of bs) for (const b of bs) if (a.id < b.id && Math.max(b.x0 - a.x1, a.x0 - b.x1, b.y0 - a.y1, a.y0 - b.y1) < 40 - 1e-6) short.push(`${a.id}/${b.id}`);
+    const px = (16 * scene.w) / (0.94 * W);
+    for (const a of bs) for (const b of bs) if (a.id < b.id && Math.max(b.x0 - a.x1, a.x0 - b.x1, b.y0 - a.y1, a.y0 - b.y1) < px - 1e-6) short.push(`${a.id}/${b.id}`);
 
     expect(short).toEqual([]);
   });
@@ -1370,7 +1507,7 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
 
   /** Every state's disc, name and count line and moon rows, each as a box. */
   const labels = (scene: Scene, W: number) => {
-    const F = scene.unit ?? scene.w / (0.94 * W), out: { o: string; x0: number; x1: number; y0: number; y1: number }[] = [];
+    const F = ((scene.labelScale ?? 1) * scene.w) / (0.94 * W), out: { o: string; x0: number; x1: number; y0: number; y1: number }[] = [];
     const add = (o: string, x: number, hw: number, y0: number, y1: number) => out.push({ o, x0: x - hw, x1: x + hw, y0, y1 });
     for (const g of Object.values(scene.galaxies)) {
       const sub = `${g.n}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`;
@@ -1389,39 +1526,6 @@ describe("a Board whose every open state opens into lifecycle machines", () => {
     bs.forEach((a, i) => bs.slice(i + 1).forEach((b) => { if (a.o !== b.o && a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) hit.push(`${a.o}/${b.o}`); }));
 
     expect(hit).toEqual([]);
-  });
-
-  const shownOf = (scene: Scene) => ALL.map((id) => scene.moons.filter((m) => m.parent.id === id && !m.pager).length - 1);
-
-  it.each([[1920], [1420]])("pages no state below MIN_PAGE machines, however wide the Board, on a %i px canvas", (W) => {
-    const scene = build(everyState(12, 4, W, 1080, ALL), { kind: "board" });
-
-    expect(Math.min(...shownOf(scene))).toBeGreaterThanOrEqual(MIN_PAGE);
-  });
-
-  it("cuts moon names to NAME_MAX only once pages of MIN_PAGE still leave the sky past BOARD_GROW times its base", () => {
-    const scene = build(everyState(12, 4, 1420, 1080, ALL), { kind: "board" });
-
-    expect([scene.clipped, new Set(shownOf(scene))]).toEqual([true, new Set([MIN_PAGE])]);
-  });
-
-  it("zooms out past BOARD_GROW times its base: the names and rows keep the size they had there while the sky grows", () => {
-    const wide = build(everyState(12, 4, 1420, 1080, ALL), { kind: "board" }), fits = build(everyState(12, 4, 1920, 1080, ["in_progress"]), { kind: "board" });
-
-    expect([wide.unit, wide.w > BOARD_GROW * 1860, fits.unit]).toEqual([(BOARD_GROW * 1860) / (0.94 * 1420), true, undefined]);
-  });
-
-  it("keeps moon names whole on a Board that fits", () => {
-    const scene = build(everyState(12, 4, 1920, 1080, ["in_progress"]), { kind: "board" });
-
-    expect([scene.clipped ?? false, scene.moons.filter((m) => m.pager)]).toEqual([false, []]);
-  });
-
-
-  it("pages each state to its own size, keeping names whole, when pages of MIN_PAGE or more fit the sky", () => {
-    const scene = build(everyState(12, 4, 1420, 1080, ALL, true), { kind: "board" }), shown = shownOf(scene);
-
-    expect([scene.clipped, scene.w <= BOARD_GROW * 1860, Math.min(...shown) >= MIN_PAGE, Math.max(...shown) > Math.min(...shown)]).toEqual([false, true, true, true]);
   });
 });
 

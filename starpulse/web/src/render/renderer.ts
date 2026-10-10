@@ -95,7 +95,7 @@ export interface Probe {
   /** The level's fit zoom. */
   fit: number;
   /** Board only: each state's screen disc. */
-  states: { id: string; x: number; y: number; r: number }[];
+  states: { id: string; x: number; y: number; r: number; sun?: number }[];
 }
 
 export interface Renderer {
@@ -169,7 +169,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // The frame's drawing: the primitives read the zoom, clock, type scale and hover as they run, and the machine ledger draws from the state below.
   const dc: DrawCtx = {
-    cx, get K() { return K; }, get ZS() { return ZS; }, get clock() { return clock; }, get scale() { return prefs().scale; }, get hover() { return hover; },
+    cx, get K() { return K; }, get ZS() { return ZS; }, get clock() { return clock; }, get scale() { return prefs().scale * (scene?.labelScale ?? 1); }, get hover() { return hover; },
   };
   const pen = drawing(dc);
   const { nameWidth, text, labPx, label, circle, dot, arrow, badge, pill } = pen;
@@ -1044,7 +1044,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function ties(): Ties | null {
     const sc = scene;
     if (!sc || !S || level().kind !== "board") return null;
-    const u = 1 / Math.max(fit.k, sc.unit ? 1 / sc.unit : 0), ts = prefs().scale / 100;
+    const u = 1 / fit.k, ts = (prefs().scale / 100) * (sc.labelScale ?? 1);
     let t = tieCache.get(sc);
     if (!t || t.u !== u || t.ts !== ts) tieCache.set(sc, (t = boardTies(sc, S, u, ts)));
     return t;
@@ -1246,7 +1246,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function drawScene(k: number, x: number, y: number) {
     const dpr = devicePixelRatio || 1;
     cx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
-    K = scene!.unit ? Math.max(k, 1 / scene!.unit) : k; // a zoomed-out Board draws its names at the size it laid them out at
+    K = k;
     ZS = Math.max(1, k / fit.k);
     if (scene!.top) return mled.drawTop();
     foldDrawing.drawFold();
@@ -1371,7 +1371,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
           ...(l.kind === "machine" ? sc.machineTasks.filter((t) => t._x !== undefined).map((t) => at(t.id, { x: t._x!, y: t._y! }, "panel")) : []),
         ];
     const board = l.kind === "board";
-    const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k })) : [];
+    const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k, sun: g.r * view.k })) : [];
     return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states };
   };
 

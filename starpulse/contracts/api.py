@@ -96,6 +96,12 @@ class Machine(_Api):
     mainLine: list[str] | None = Field(
         default=None, description="Only the board machine: the state ids along its axis, in order (New to Done)."
     )
+    tiers: list[list[str]] | None = Field(
+        default=None,
+        description="Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's "
+        "states stacked in its cell; a state no tier names takes a tier of its own after them, and with none the "
+        "Board draws its own columns.",
+    )
 
 
 class TrailStep(_Api):

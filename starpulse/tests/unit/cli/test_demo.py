@@ -505,6 +505,8 @@ def test_scrub_draws_every_kanban_lane_with_a_card_when_the_capture_board_is_the
     assert lanes == ["ready", "waiting", "in_progress", "review", "needs_attention", "done"]
     assert {a["state"] for a in board["agents"]} == set(lanes)
     assert board["machine"]["mainLine"] == lanes
+    # the Star Map draws the seeded lanes in the tiers a Board declares: the unworked states stacked, then each working stage
+    assert board["machine"]["tiers"] == [["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done"]]
 
 
 def test_scrub_keeps_the_machine_of_a_capture_that_has_its_own_board() -> None:
