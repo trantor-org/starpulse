@@ -428,6 +428,33 @@
       "title": "ClaimDelta",
       "type": "object"
     },
+    "CompleteRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/complete`: move the Done task `task` into the board's completed tasks.",
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "CompleteRequest",
+      "type": "object"
+    },
+    "Completed": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "Completed",
+      "type": "object"
+    },
     "ContractCheck": {
       "additionalProperties": false,
       "description": "One check of the contract between the config and the machines' DAG cues.",
@@ -5824,6 +5851,9 @@
             "$ref": "#/$defs/Archived"
           },
           {
+            "$ref": "#/$defs/Completed"
+          },
+          {
             "$ref": "#/$defs/Created"
           },
           {
@@ -5968,6 +5998,9 @@
           },
           {
             "$ref": "#/$defs/ArchiveRequest"
+          },
+          {
+            "$ref": "#/$defs/CompleteRequest"
           },
           {
             "$ref": "#/$defs/CreateRequest"

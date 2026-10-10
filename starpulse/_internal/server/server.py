@@ -176,6 +176,7 @@ from starpulse._internal.board.seam import (
     Board,
     MoveWriter,
     TaskArchiver,
+    TaskCompleter,
     TaskCreator,
     TaskEditor,
     TaskReader,
@@ -203,6 +204,7 @@ from starpulse._internal.server.writes import (
     archive_doc,
     archive_milestone,
     archive_task,
+    complete_task,
     create_doc,
     create_milestone,
     create_task,
@@ -282,6 +284,7 @@ _TASK = "/api/task/"
 _SNAPSHOT_BODY = "/api/events/body/"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
+_COMPLETE = "/api/complete"
 _TASKS = "/api/tasks"
 _MILESTONES = "/api/milestones"
 _MILESTONE_EDIT = "/api/milestones/edit"
@@ -302,6 +305,7 @@ _WRITES = {
     _START: "start",
     _EDIT: "edit",
     _ARCHIVE: "archive",
+    _COMPLETE: "complete",
     _TASKS: "create",
     _MILESTONES: "milestone_create",
     _MILESTONE_EDIT: "milestone_edit",
@@ -553,6 +557,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     read: TaskReader | None
     edit: TaskEditor | None
     archive: TaskArchiver | None
+    complete: TaskCompleter | None
     create: TaskCreator | None
     ingest: Ingest | None
     insights: Insights | None
@@ -604,7 +609,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             path.startswith(_RUN)
             or _is_rerun(path)
             or path
-            in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, _INGEST, _FORWARD, _INSIGHTS, *_MILESTONE_WRITES, *_DOC_WRITES}
+            in {_MOVE, _START, _EDIT, _ARCHIVE, _COMPLETE, _TASKS, _INGEST, _FORWARD, _INSIGHTS, *_MILESTONE_WRITES, *_DOC_WRITES}
         ):
             self.send_response(405)
             self.send_header("Allow", "POST")  # pragma: no mutate: names are case-insensitive
@@ -623,13 +628,13 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
         if (
-            path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}
+            path in {_MOVE, _START, _EDIT, _ARCHIVE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}
             or path.startswith(_RUN)
             or _is_rerun(path)
         ) and self._refused_write():
             return
         kind = _WRITES.get(path, "run")
-        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}:
+        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
             if path == _MOVE:
@@ -638,6 +643,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = edit_task(self.client_address[0], raw, self.feed, self.read, self.edit)
             elif path == _ARCHIVE:
                 status, body = archive_task(self.client_address[0], raw, self.feed, self.archive)
+            elif path == _COMPLETE:
+                status, body = complete_task(self.client_address[0], raw, self.feed, self.complete)
             elif path == _TASKS:
                 status, body = create_task(self.client_address[0], raw, self.create)
             elif path == _MILESTONES:
@@ -797,6 +804,7 @@ def request_handler(
     milestones: Board | None = None,
     pulls: PullStore | None = None,
     telemetry: TelemetryLog | None = None,
+    complete: TaskCompleter | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
     snapshots = SnapshotCache(feed)
@@ -818,6 +826,7 @@ def request_handler(
             self.read = read
             self.edit = edit
             self.archive = archive
+            self.complete = complete
             self.create = create
             self.ingest = ingest
             self.insights = insights
@@ -1387,6 +1396,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         board.edit,
         board.archive,
         board.create,
+        complete=board.complete,
         ingest=Ingest(instance_tokens, log) if instance_tokens else None,
         gate=gate,
         forward=ForwardIngest(source_tokens, log, aggregates_only=config.aggregates_only) if source_tokens else None,

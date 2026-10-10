@@ -237,6 +237,20 @@ priority: high
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Draw it.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+
+<!-- AC:BEGIN -->
+- [ ] #1 It draws
+- [ ] #2 It scales
+<!-- AC:END -->
+"""
+
+SHIPPED_FILE = """---
+id: task-2
+title: Ship the board
+status: Done
+---
 """
 
 
@@ -245,12 +259,13 @@ def _task_file(tmp_path: Path, task_id: str = "task-1") -> Path:
     return next((tmp_path / ".starpulse" / "board" / "tasks").glob(f"{task_id} - *.md"))
 
 
-@pytest.fixture
-def tasked(tmp_path: Path) -> Iterator[str]:
-    """A server whose native board holds `task-1`, read, edited, created and assigned through its own writers."""
+@contextmanager
+def _native_server(tmp_path: Path, *files: tuple[str, str]) -> Iterator[str]:
+    """A server whose native board holds `task-1` and each `(name, text)` file, written through its own writers."""
     board = native.board({}, tmp_path)
     root = tmp_path / ".starpulse" / "board"
-    (root / "tasks" / "task-1 - Draw the board.md").write_text(TASK_FILE)
+    for name, text in (("task-1 - Draw the board.md", TASK_FILE), *files):
+        (root / "tasks" / name).write_text(text)
     feed = BoardFeed(machines=MACHINES)
     UpstreamBacklog(root, feed.put).scan()
     with _serve(
@@ -260,9 +275,26 @@ def tasked(tmp_path: Path) -> Iterator[str]:
         assign=board.assign,
         read=board.read,
         edit=board.edit,
+        archive=board.archive,
+        complete=board.complete,
         create=board.create,
     ) as server:
         yield _url(server, "")
+
+
+@pytest.fixture
+def tasked(tmp_path: Path) -> Iterator[str]:
+    """A server whose native board holds `task-1`, read, edited, created, assigned, archived and completed through its
+    own writers."""
+    with _native_server(tmp_path) as url:
+        yield url
+
+
+@pytest.fixture
+def shipped(tmp_path: Path) -> Iterator[str]:
+    """The `tasked` server with a Done `task-2` as well."""
+    with _native_server(tmp_path, ("task-2 - Ship the board.md", SHIPPED_FILE)) as url:
+        yield url
 
 
 @pytest.fixture(autouse=True)
@@ -722,6 +754,84 @@ def test_task_edit_on_a_board_that_cannot_edit_exits_3_and_says_so(bare: str, ca
     assert (code, doc["code"]) == (3, "unavailable")
 
 
+def test_task_archive_moves_the_task_out_of_its_lane_and_records_the_reason(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "archive", "task-1", "--reason", "superseded", "--server", tasked])
+
+    assert (code, doc) == (0, {"task": "task-1"})
+    board = tmp_path / ".starpulse" / "board"
+    assert not list((board / "tasks").glob("task-1 - *.md"))
+    assert "Archived: superseded" in next((board / "archive" / "tasks").glob("task-1 - *.md")).read_text()
+
+
+def test_task_archive_without_a_reason_records_none(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "archive", "task-1", "--server", tasked])
+
+    assert (code, doc) == (0, {"task": "task-1"})
+    archived = next((tmp_path / ".starpulse" / "board" / "archive" / "tasks").glob("task-1 - *.md"))
+    assert "Archived:" not in archived.read_text()
+
+
+def test_task_complete_moves_a_done_task_to_the_completed_tasks(
+    shipped: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "complete", "task-2", "--server", shipped])
+
+    assert (code, doc) == (0, {"task": "task-2"})
+    board = tmp_path / ".starpulse" / "board"
+    assert not list((board / "tasks").glob("task-2 - *.md"))
+    assert list((board / "completed").glob("task-2 - *.md"))
+
+
+def test_task_complete_of_a_task_that_is_not_done_is_refused_and_moves_nothing(
+    shipped: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "complete", "task-1", "--server", shipped])
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "not Done" in doc["error"]
+    assert _task_file(tmp_path).exists()
+    assert not (tmp_path / ".starpulse" / "board" / "completed").exists()
+
+
+def test_task_checkpoint_ac_checks_one_criterion_and_records_its_evidence(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "checkpoint-ac", "task-1", "2", "pytest exits 0", "--server", tasked])
+
+    assert (code, doc) == (0, {"task": "task-1", "criterion": 2, "changed": ["acceptanceCriteria"]})
+    written = _task_file(tmp_path).read_text()
+    assert "- [ ] #1 It draws\n- [x] #2 It scales" in written
+    assert "Verified AC #2: pytest exits 0" in written
+
+
+def test_task_checkpoint_ac_of_a_criterion_the_task_lacks_is_refused_and_writes_nothing(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _task_file(tmp_path).read_text()
+
+    code, doc = _run(capsys, ["task", "checkpoint-ac", "task-1", "3", "pytest exits 0", "--server", tasked])
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "#3" in doc["error"]
+    assert _task_file(tmp_path).read_text() == before
+
+
+def test_task_checkpoint_ac_without_evidence_is_a_usage_error_and_writes_nothing(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _task_file(tmp_path).read_text()
+
+    code, doc = _run(capsys, ["task", "checkpoint-ac", "task-1", "1", "  ", "--server", tasked])
+
+    assert (code, doc["code"]) == (2, "usage")
+    assert "evidence" in doc["error"]
+    assert _task_file(tmp_path).read_text() == before
+
+
 def test_no_verb_is_a_usage_error_as_json(capsys: pytest.CaptureFixture[str]) -> None:
     code, doc = _run(capsys, [])
 
@@ -761,6 +871,9 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task create",
         "task edit",
         "task assign",
+        "task archive",
+        "task complete",
+        "task checkpoint-ac",
         "machine list",
         "machine show",
         "machine validate",
@@ -1403,6 +1516,21 @@ CASES = {
     ("task assign", 2): ["task", "assign", "task-1"],
     ("task assign", 3): ["task", "assign", "task-1", "@agent-fast-low", "--server", "{down}"],
     ("task assign", 4): ["task", "assign", "task-99", "@agent-fast-low", "--server", "{tasked}"],
+    ("task archive", 0): ["task", "archive", "task-1", "--reason", "superseded", "--server", "{tasked}"],
+    ("task archive", 1): ["task", "archive", "task-1", "--server", "{readonly}"],
+    ("task archive", 2): ["task", "archive"],
+    ("task archive", 3): ["task", "archive", "task-1", "--server", "{down}"],
+    ("task archive", 4): ["task", "archive", "task-99", "--server", "{tasked}"],
+    ("task complete", 0): ["task", "complete", "task-2", "--server", "{shipped}"],
+    ("task complete", 1): ["task", "complete", "task-1", "--server", "{shipped}"],
+    ("task complete", 2): ["task", "complete"],
+    ("task complete", 3): ["task", "complete", "task-2", "--server", "{down}"],
+    ("task complete", 4): ["task", "complete", "task-99", "--server", "{shipped}"],
+    ("task checkpoint-ac", 0): ["task", "checkpoint-ac", "task-1", "1", "it draws", "--server", "{tasked}"],
+    ("task checkpoint-ac", 1): ["task", "checkpoint-ac", "task-1", "9", "it draws", "--server", "{tasked}"],
+    ("task checkpoint-ac", 2): ["task", "checkpoint-ac", "task-1", "1"],
+    ("task checkpoint-ac", 3): ["task", "checkpoint-ac", "task-1", "1", "it draws", "--server", "{down}"],
+    ("task checkpoint-ac", 4): ["task", "checkpoint-ac", "task-99", "1", "it draws", "--server", "{tasked}"],
     ("machine list", 0): ["machine", "list", "--server", "{server}"],
     ("machine list", 2): ["machine", "list", "--nope"],
     ("machine list", 3): ["machine", "list", "--server", "{down}"],
@@ -1536,6 +1664,7 @@ SERVERS = {
     "forbidden": "forbidden",
     "milestoned": "milestoned",
     "tasked": "tasked",
+    "shipped": "shipped",
     "readonly": "readonly",
 }
 

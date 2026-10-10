@@ -25,6 +25,9 @@ POST /api/edit     {task, base, changes, comment[, actor]}: one write of every c
                    the writer's refusal and its skill; 403 outside loopback and RFC 1918. A GET answers 405
 POST /api/archive  {task, reason[, actor]}: archive a task from any lane through the board's `archive`; refusals as for
                    an edit
+POST /api/complete {task}: move a Done task into the board's completed tasks through its `complete`; refusals
+                   as for an edit (409 for a task that is not Done), 404 when the board does not complete or the task is
+                   not on it
 POST /api/tasks    {title, description, priority, labels, milestone, assignee, dependencies, acceptanceCriteria[,
                    actor]}: create
                    a task in the board's starting lane through the board's `create`, and answer 201 {task}
@@ -81,6 +84,7 @@ from starpulse._internal.board.seam import (
     OPERATOR,
     MoveWriter,
     TaskArchiver,
+    TaskCompleter,
     TaskCreator,
     TaskEditor,
     TaskReader,
@@ -336,6 +340,29 @@ def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver
     if feed.task(task) is None:
         return 404, {"error": f"{task} is not on the board"}
     written = archive(task, reason, **named)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task}
+
+
+def complete_task(source: str, raw: bytes, feed: BoardFeed, complete: TaskCompleter | None) -> tuple[int, dict[str, Any]]:
+    """Complete the Done task `raw` names through `complete`, for a browser at `source`: the HTTP status and JSON body.
+
+    The board's writer refuses a task that is not Done, which answers 409 with the writer's reason and skill.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Completing a task answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        task = json.loads(raw)["task"]
+    except ValueError, TypeError, KeyError:
+        task = None
+    if not isinstance(task, str):
+        return 400, {"error": 'a complete needs {"task": "TASK-N"}'}
+    if complete is None:
+        return 404, {"error": "this board does not complete tasks"}
+    if feed.task(task) is None:
+        return 404, {"error": f"{task} is not on the board"}
+    written = complete(task)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}

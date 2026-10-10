@@ -8,6 +8,7 @@ export interface ApiContract {
     | Moved
     | Edited
     | Archived
+    | Completed
     | Created
     | MilestoneCreated
     | MilestoneEdited
@@ -48,6 +49,7 @@ export interface ApiContract {
     | StartRequest
     | EditRequest
     | ArchiveRequest
+    | CompleteRequest
     | CreateRequest
     | MilestoneCreateRequest
     | MilestoneEditRequest
@@ -78,6 +80,9 @@ export interface Edited {
   task: string;
 }
 export interface Archived {
+  task: string;
+}
+export interface Completed {
   task: string;
 }
 export interface Created {
@@ -1144,6 +1149,12 @@ export interface EditRequest {
  */
 export interface ArchiveRequest {
   reason?: string | null;
+  task: string;
+}
+/**
+ * `POST /api/complete`: move the Done task `task` into the board's completed tasks.
+ */
+export interface CompleteRequest {
   task: string;
 }
 /**
