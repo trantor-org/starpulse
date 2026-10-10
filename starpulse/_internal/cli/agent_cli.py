@@ -491,6 +491,11 @@ def _task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
         "labels": args.label,
         "dependencies": args.dependency,
         "acceptanceCriteria": args.ac,
+        "status": args.status,
+        "type": args.type,
+        "references": args.reference,
+        "documentation": args.documentation,
+        "definitionOfDone": args.dod,
     }
     status, reply = _post(base, path, {"title": args.title, **{k: v for k, v in given.items() if v is not None}})
     return {"task": _record_call(base, path, status, reply, ok=(201,))["task"]}
@@ -1208,7 +1213,7 @@ def _parser() -> argparse.ArgumentParser:
     create = leaf(
         task_verbs,
         "create",
-        "open a task in the board's first lane and return its new id",
+        "open a task, whole, in one write, in the board's first lane or the one --status names, and return its new id",
         _task_create,
         ("task",),
         (0, 1, 2, 3),
@@ -1221,6 +1226,11 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument("--label", action="append", help="a label; repeat for several")
     create.add_argument("--dependency", action="append", help="a task it depends on; repeat for several")
     create.add_argument("--ac", action="append", help="an Acceptance Criterion; repeat for several, in order")
+    create.add_argument("--status", help="the lane to open it in, else the board's first (`Waiting`)")
+    create.add_argument("--type", help="the task's type (`bug`)")
+    create.add_argument("--reference", action="append", help="a reference; repeat for several")
+    create.add_argument("--documentation", action="append", help="a documentation link; repeat for several")
+    create.add_argument("--dod", action="append", help="a Definition of Done item; repeat for several, in order")
     edit = leaf(
         task_verbs,
         "edit",
