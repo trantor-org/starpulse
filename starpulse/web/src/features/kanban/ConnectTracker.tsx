@@ -114,12 +114,17 @@ export function TrackerModal({ hint, close }: { hint?: string | null; close: () 
   );
 }
 
-export function ConnectTracker({ hint }: { hint?: string | null }) {
+/** The Admin view's Tracker card: which tracker the board is drawn from, and the setup steps for connecting another. */
+export function TrackerCard({ hint }: { hint?: string | null }) {
   const [open, setOpen] = useState(false);
   return (
-    <span className="trackerw">
-      <button className="tbtn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Connect a tracker</button>
+    <section className="card">
+      <h2>Tracker <span className="c">where the board's tasks come from</span></h2>
+      <div className="row">
+        <div><div className="lb">Board source</div><div className="hint">{hint ? "A tracker was found beside this board" : "StarPulse's own Markdown board until you connect another"}</div></div>
+        <div><button type="button" className="btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Connect a tracker</button></div>
+      </div>
       {open && <TrackerModal hint={hint} close={() => setOpen(false)} />}
-    </span>
+    </section>
   );
 }

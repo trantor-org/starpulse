@@ -2,14 +2,14 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ConnectTracker } from "./ConnectTracker";
+import { TrackerCard } from "./ConnectTracker";
 
 const COMMAND = "starpulse connect backlog --path backlog";
 const FOUND = `Found a Backlog.md project at /work/backlog/config.yml; StarPulse is showing its own board. To show that project instead, run: ${COMMAND}`;
 
 let host: HTMLDivElement, root: Root;
 const writeText = vi.fn();
-const draw = async (hint: string | null = null) => { await act(async () => root.render(<ConnectTracker hint={hint} />)); };
+const draw = async (hint: string | null = null) => { await act(async () => root.render(<TrackerCard hint={hint} />)); };
 const q = <T extends Element>(sel: string) => host.querySelector<T>(sel)!;
 const all = (sel: string) => [...host.querySelectorAll<HTMLElement>(sel)];
 const click = (el: Element) => act(async () => { (el as HTMLElement).click(); });
@@ -31,11 +31,19 @@ afterEach(() => {
 });
 
 describe("Connect a tracker", () => {
-  it("is a button until it is opened", async () => {
+  it("is a button on the Admin view's Tracker card until it is opened", async () => {
     await draw();
 
+    expect(q("h2").textContent).toContain("Tracker");
     expect(host.textContent).toContain("Connect a tracker");
+    expect(host.textContent).toContain("StarPulse's own Markdown board");
     expect(host.querySelector("[role=dialog]")).toBeNull();
+  });
+
+  it("says a tracker was found beside the board when the server hints at one", async () => {
+    await draw(FOUND);
+
+    expect(host.textContent).toContain("A tracker was found beside this board");
   });
 
   it("lists the native board, Backlog.md and Jira, each collapsed, with its badge, and no GitHub", async () => {

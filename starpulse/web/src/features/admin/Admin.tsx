@@ -106,8 +106,11 @@ function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" |
   );
 }
 
-/** `forwarding` draws the Forwarding card in the settings column: the card is its own feature, so App hands it in with the clock it is to show. */
-export function Admin({ store, window: historyWindow, forwarding }: { store: AdminStore; window: HistoryWindowStore; forwarding: (clock: ClockMode) => ReactNode }) {
+/**
+ * `tracker` and `forwarding` draw the Tracker and Forwarding cards in the settings column: each card is its own feature, so App hands them in,
+ * `forwarding` with the clock it is to show.
+ */
+export function Admin({ store, window: historyWindow, forwarding, tracker }: { store: AdminStore; window: HistoryWindowStore; forwarding: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
   return (
     <div id="admin">
@@ -148,6 +151,7 @@ export function Admin({ store, window: historyWindow, forwarding }: { store: Adm
             <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>
           </section>
           <ServerCard store={historyWindow} clock={clock} />
+          {tracker}
           {forwarding(clock)}
         </div>
         <Preview scale={scale} compact={density === "compact"} />

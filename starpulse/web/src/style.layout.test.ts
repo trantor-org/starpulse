@@ -87,3 +87,10 @@ describe("the DAGs view at rest", () => {
     ]);
   });
 });
+
+describe("the Kanban's autopilot strip", () => {
+  it("sets the next pick and the paused count against the meters, so the strip's spare width trails them and the switch and meters hold their places", () => {
+    expect(rule("#kb .ap .nx")).toContain("text-align: left");
+    expect(rule("#kb .ap .paused")).toContain("text-align: left");
+  });
+});

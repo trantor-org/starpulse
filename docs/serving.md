@@ -7,7 +7,7 @@ names one): a `config.yml`
 holding the project name (that directory's name, the team its tasks are in), the lanes (To Do, In Progress, Done) and an empty `tasks/` directory, one Markdown file per task. The
 Kanban view starts with no tasks: **New task**, at the top right beside the task count, opens a form for its title, description, priority, labels,
 milestone, assignee, dependencies and acceptance criteria and adds it to the first column, and
-**Connect a tracker** opens a modal with one collapsible row per tracker (the native board, Backlog.md, Jira), each expanding to
+the Admin view's **Tracker** card has **Connect a tracker**, which opens a modal with one collapsible row per tracker (the native board, Backlog.md, Jira), each expanding to
 numbered setup steps whose commands copy with one click (see [Connect a tracker](#connect-a-tracker)). If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
 line naming it and the `starpulse connect backlog` command that shows it instead; the page's
 snapshot carries the same line as `hint`, and Connect a tracker shows it with the command as a copyable block. StarPulse keeps its event log and history in
@@ -204,6 +204,13 @@ answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhe
 
 The sampler reads every 60 seconds. The first sample is a baseline; after it, a dimension going from below its limit
 to at or over it, or back, logs one `StarPulse autopilot: <dimension> is full|free (<use> of <limit>)` line.
+
+The Kanban view's filters row shows it as a strip directly left of the task count: the switch, a meter per dimension
+(amber from 80% of its limit, red past it), a **Next** pick whose color says whether it starts or waits, and
+**Paused · N running** with the meters dimmed while the switch is off. A click on the switch sends the `PUT` with no dialog, and a
+refusal shows its reason under the strip. The Sessions meter opens the sessions in flight when the server lists them; the
+strip reads `inFlight` and `next` from the same body when it carries them, and shows no pick and an empty list without them. The
+strip re-reads every 5 seconds while the Kanban view shows. A server with no autopilot (404) shows **Autopilot unavailable**.
 
 ### Admission
 

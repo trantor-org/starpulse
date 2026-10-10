@@ -125,6 +125,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/archive": (server, _path, _query, init) => server.archive(String(init?.body ?? "{}")),
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
   "/api/forwarding": (server, _path, _query, init) => server.forwarding(init?.method ?? "GET", String(init?.body ?? "")),
+  "/api/autopilot": (server, _path, _query, init) => server.autopilot(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
   "/api/merges": (server, _path, query) => json(server.mergesBefore(query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
   "/api/runs": (server, path, _query, init) => {
@@ -148,6 +149,13 @@ const HANDLERS: Record<string, Handler> = {
 
 /** The hub a demo page pretends to forward to: `refused` answers an opt-in 403 (a hub that keeps no names), `down` never answers, `none` is an instance with no `[forward]` block. */
 export type ForwardDemo = "refused" | "down" | "none";
+/**
+ * The autopilot a demo page pretends to run: `off` is paused, `over` a host past its RAM limit, `empty` a queue with nothing eligible,
+ * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no autopilot.
+ */
+export type AutopilotDemo = "off" | "over" | "empty" | "refused" | "down";
+/** The limits the demo's capacity strip holds its stand-in host under, in the units the server samples. */
+const PILOT = { cpu: 80, memory: 85, sessions: 4, review: 24 };
 /** The fields `adapters.runs.forwarded.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
 const CONTRACT = {
   "machine:events": ["machine", "event", "task", "run", "actor", "assignee", "time"],
@@ -193,11 +201,13 @@ export class DemoServer {
   private reruns: number[] = [];
   private forcing = new Set<string>();
   private optIn = false;
+  private admitting: boolean;
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private merges: ReturnType<typeof setInterval> | undefined;
 
-  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private forward?: ForwardDemo, private failingEvaluator = false) {
+  constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private forward?: ForwardDemo, private failingEvaluator = false, private pilot?: AutopilotDemo) {
+    this.admitting = pilot !== "off";
     const { history, ...snap } = structuredClone(fixture);
     // the fixture's times are kept as ages, so what settled an hour before the capture settled an hour before the page opened
     const age = clock() - snap.now;
@@ -428,6 +438,42 @@ export class DemoServer {
     });
   }
 
+  /**
+   * `/api/autopilot` as starpulse._internal.server.writes.autopilot answers it, with the sessions in flight and the next pick the
+   * strip also draws: the Board's In Progress cards are the sessions and its first unblocked Ready card is the pick.
+   */
+  autopilot(method: string, raw: string): Response {
+    if (this.pilot === "down") return json({ error: "This server has no autopilot." }, 404);
+    if (method === "PUT") {
+      if (this.pilot === "refused") return json({ error: "Autopilot changes are taken only from loopback or a private address; this demo is neither." }, 403);
+      let sent: unknown;
+      try { sent = (JSON.parse(raw) as { enabled?: unknown }).enabled; } catch { sent = undefined; }
+      if (typeof sent !== "boolean") return json({ error: 'the autopilot takes {"enabled": true} or {"enabled": false}' }, 400);
+      this.admitting = sent;
+    } else if (method !== "GET") return json({ error: `${method} is not served here` }, 405);
+    const at = this.clock();
+    const cards = this.snapshot.flows.find((f) => f.name === "board")?.agents ?? [];
+    // a demo board holds far more In Progress cards than a host admits: the listing stands in for two sessions, or the limit when over
+    const inFlight = cards.filter((a) => a.state === "in_progress").slice(0, this.pilot === "over" ? PILOT.sessions : 2).map((a, i) => ({
+      task: a.id,
+      title: a.title ?? a.id,
+      model: a.model || "sonnet · high",
+      started: at - (14 + 23 * i) * 60,
+      url: `#demo-session-${a.id.replace(/\D/g, "").padStart(4, "0")}`, // a fragment: the public demo names no real host
+    }));
+    const over = this.pilot === "over";
+    const use = { cpu: over ? 74 : 41, memory: over ? 91 : 58, sessions: inFlight.length, review: 13 };
+    const pick = this.pilot === "empty" ? undefined : cards.find((a) => a.state === "ready" && !a.dependencies?.length);
+    const waits = use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= PILOT.sessions ? `Sessions ${use.sessions}/${PILOT.sessions}` : "";
+    return json({
+      enabled: this.admitting,
+      sampledAt: at,
+      dimensions: (Object.keys(PILOT) as (keyof typeof PILOT)[]).map((name) => ({ name, use: use[name], limit: PILOT[name] })),
+      inFlight,
+      next: this.admitting && pick ? { task: pick.id, title: pick.title ?? pick.id, verdict: waits ? "waits" : "starting", reason: waits } : null,
+    });
+  }
+
   fetch(input: string, init?: RequestInit): Promise<Response> {
     const [path, search = ""] = input.split("?", 2); // no URL(): a base address would be a host in the public file
     const route = Object.keys(ROUTES).find((r) => path === r || path.startsWith(`${r}/`));
@@ -494,6 +540,7 @@ export const demoServer = (): DemoServer | null => {
   const query = new URLSearchParams(globalThis.location?.search ?? "");
   const refuseEdits = query.get("edit") === "refuse";
   const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
+  const autopilot = (["off", "over", "empty", "refused", "down"] as const).find((state) => state === query.get("autopilot"));
   const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
-  return fixture ? (server ??= new DemoServer(many ? padMachines(fixture, many) : fixture, undefined, refuseEdits, forward, query.get("evaluator") === "error")) : null;
+  return fixture ? (server ??= new DemoServer(many ? padMachines(fixture, many) : fixture, undefined, refuseEdits, forward, query.get("evaluator") === "error", autopilot)) : null;
 };
