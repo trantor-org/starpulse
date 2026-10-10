@@ -1320,12 +1320,14 @@ def start_autopilot(
         return json.loads(body)["chain"] if status == 200 else {}
 
     initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
+    state_dir = base / (config.autopilot.state_dir or "")
+    state_dir.mkdir(parents=True, exist_ok=True)
     runtime = build_autopilot(
         config.autopilot,
-        base / TOGGLE_FILE,
+        state_dir / TOGGLE_FILE,
         feed,
         probe,
-        start=starter(config.session_start_url) or builtin_starter(base),
+        start=starter(config.session_start_url, by="autopilot") or builtin_starter(base),
         settle=settle,
         claim=claim,
         chain=_cached(read_chain, _CHAIN_TTL_S),

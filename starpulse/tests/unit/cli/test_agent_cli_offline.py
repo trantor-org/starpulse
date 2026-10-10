@@ -140,6 +140,7 @@ class TestConfigCheck:
                 "review_lane": "review",
                 "unsized_points": 3,
                 "idle_minutes": 30,
+                "state_dir": None,
                 "tier_weights": {"fast": 1, "standard": 2, "deep": 4},
                 "limits": {"cpu": 80, "memory": 80, "sessions": 2, "review": 20},
             },
