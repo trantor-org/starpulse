@@ -27,6 +27,9 @@ another slice, such as a Docker container, can still starve it: the run reads it
 and after, and a run whose scope waited for CPU over ``STARVED_SHARE`` of its time is marked STARVED and exits 2, a
 measure of the host and not of the page, neither a pass nor a failure.
 
+``--judge KIND`` (repeatable) judges only the rows of that kind (see ``KINDS``): the others print, marked ``not judged``,
+and never fail the run. The untimed-request check still applies.
+
 ``--cpu-throttle N`` slows the page's CPU N times (Chrome's ``Emulation.setCPUThrottlingRate``) once the board has
 painted for the first time, so the interactions after it are timed on a slower machine than the bench's: a click that
 waits behind steady-state stream work reads N times longer, where a click that does its own work in 10 ms reads 10 N.
@@ -90,6 +93,7 @@ READS: dict[str, str] = {
     "/api/docs": "/api/docs",
     "/api/docs/<id>": "/api/docs/{doc}",
     "/api/forwarding": "/api/forwarding",
+    "/api/autopilot": "/api/autopilot",
     "/api/history-window": "/api/history-window",
     "/api/events/body/<id>": "/api/events/body/{snapshot}",
 }
@@ -98,15 +102,22 @@ READS: dict[str, str] = {
 _ID_ROUTES = ("/api/task/", "/api/milestones/", "/api/docs/", "/api/insights/", "/api/events/body/")
 
 
+#: What a row times, for `--judge`: a read route (`request`), the event stream's connect to its first snapshot
+#: (`connect`), a stream event's arrival to the page's paint (`stream`), an input to the frame that shows its result
+#: (`interaction`), and a frame's or task's work (`frame`).
+KINDS = ("request", "connect", "stream", "interaction", "frame")
+
+
 @dataclass
 class Row:
-    """One surface: its samples in ms and the p95 it must stay under."""
+    """One surface: its samples in ms and the p95 it must stay under; `judged` is False for a row that only prints."""
 
     name: str
     kind: str
     budget: float
     samples: list[float] = field(default_factory=list)
     note: str = ""
+    judged: bool = True
 
     @property
     def p50(self) -> float | None:
@@ -119,7 +130,7 @@ class Row:
     @property
     def over(self) -> bool:
         p95 = self.p95
-        return p95 is not None and p95 > self.budget
+        return self.judged and p95 is not None and p95 > self.budget
 
 
 def percentile(samples: Sequence[float], pct: float) -> float | None:
@@ -337,7 +348,7 @@ def first_snapshot(base: str, path: str) -> str | None:
 
 def time_stream(base: str, samples: int) -> Row:
     """Connect to the event stream and time its first `snapshot` event to the end of its data."""
-    row = Row("/api/events", "stream", BUDGET_MS, note="connect to first snapshot")
+    row = Row("/api/events", "connect", BUDGET_MS, note="connect to first snapshot")
     parts = urllib.parse.urlsplit(base)
     for _ in range(samples):
         conn = http.client.HTTPConnection(parts.hostname or "127.0.0.1", parts.port or 80, timeout=60)
@@ -649,6 +660,13 @@ def main(argv: list[str] | None = None) -> int:
         metavar="N",
         help="slow the page's CPU N times after its first paint (Chrome's CPU throttling rate); 1 leaves it as it is",
     )
+    parser.add_argument(
+        "--judge",
+        action="append",
+        choices=KINDS,
+        default=[],
+        help="judge only the rows of this kind (repeatable); the rest are printed, never fail the run (default: all)",
+    )
     parser.add_argument("--json", type=argparse.FileType("w"), help="also write the rows here")
     parser.add_argument(
         "--viewer",
@@ -671,6 +689,9 @@ def main(argv: list[str] | None = None) -> int:
         runs.append(run)
     rows = median_run(runs)
     apply_ceilings(rows, args.ceiling)
+    for row in rows:
+        if args.judge and row.kind not in args.judge:
+            row.judged, row.note = False, f"{row.note}; not judged".strip("; ")
     timed = [r.name for r in rows] + ["/api/events"]
     missing = untimed(requested, timed)
     after = scope_pressure() if before is not None else None

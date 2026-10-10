@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -223,8 +225,71 @@ def test_the_cpu_throttle_reaches_the_page_timing(monkeypatch):
     seen: list[float] = []
     monkeypatch.setattr(pl, "Client", lambda base: None)
     monkeypatch.setattr(pl, "time_reads", lambda client, samples, what_if=None: [])
-    monkeypatch.setattr(pl, "time_stream", lambda base, samples: pl.Row("/api/events", "stream", 50.0))
+    monkeypatch.setattr(pl, "time_stream", lambda base, samples: pl.Row("/api/events", "connect", 50.0))
     monkeypatch.setattr(pl, "time_page", lambda *args: seen.append(args[-1]) or [])
     pl.main(["http://h"])
     pl.main(["http://h", "--cpu-throttle", "4"])
     assert seen == [1.0, 4.0]
+
+
+def _stub_run(monkeypatch, rows):
+    """`main` against canned rows: the request rows from `time_reads`, the page rows from `time_page`."""
+    monkeypatch.setattr(pl, "Client", lambda base: None)
+    monkeypatch.setattr(
+        pl, "time_reads", lambda client, samples, what_if=None: [r for r in rows if r.kind == "request"]
+    )
+    monkeypatch.setattr(pl, "time_stream", lambda base, samples: pl.Row("/api/events", "connect", 50.0, [1.0]))
+    monkeypatch.setattr(pl, "time_page", lambda *args: [r for r in rows if r.kind != "request"])
+
+
+def test_a_row_of_a_kind_not_judged_is_printed_and_never_fails_the_run(monkeypatch, capsys):
+    paint = pl.Row("first paint of the board", "interaction", 50.0, [900.0])
+    _stub_run(monkeypatch, [pl.Row("/api/snapshot", "request", 50.0, [4.0]), paint])
+
+    assert pl.main(["http://h"]) == 1
+    capsys.readouterr()
+    assert pl.main(["http://h", "--judge", "request", "--judge", "stream"]) == 0
+    printed = next(line for line in capsys.readouterr().out.splitlines() if "first paint" in line)
+    assert "not judged" in printed
+    assert "OVER" not in printed
+
+
+def test_a_judged_kind_still_fails_the_run_when_a_row_of_it_is_over(monkeypatch):
+    slow = pl.Row("/api/snapshot", "request", 50.0, [99.0])
+    _stub_run(monkeypatch, [slow, pl.Row("first paint of the board", "interaction", 50.0, [900.0])])
+
+    assert pl.main(["http://h", "--judge", "request"]) == 1
+
+
+def test_a_kind_the_harness_does_not_time_is_refused(capsys):
+    with pytest.raises(SystemExit):
+        pl.main(["http://h", "--judge", "reqeust"])
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_the_connect_row_is_a_kind_of_its_own_so_judging_streams_leaves_it_out():
+    class Snapshot(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("content-type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(b"event: snapshot\ndata: {}\n\n")
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Snapshot)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        row = pl.time_stream(f"http://127.0.0.1:{server.server_port}", 1)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert (row.name, row.kind, len(row.samples)) == ("/api/events", "connect", 1)
+
+
+def test_the_autopilot_strip_the_live_page_reads_is_a_timed_surface():
+    timed = [*pl.READS, "/api/events"]
+
+    assert pl.untimed(["http://h/api/autopilot"], timed) == []

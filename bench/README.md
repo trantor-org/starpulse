@@ -130,6 +130,9 @@ server's level must have seen a task leave.
 `--ceiling "ROW=MS"` holds a row with a known overrun to MS instead of 50: the row still fails past it and its note
 says it is over the budget until its fix lands. The gate holds the first paint of the board at 120 ms (79 ms p95 on a
 quiet slot) until the page work in TASK-3334 to TASK-3337 cuts it; drop the flag then.
+`--judge KIND` (repeatable; `request`, `connect`, `stream`, `interaction`, `frame`) judges only the rows of those kinds:
+the rest print with a `not judged` note and never fail the run, for a host whose CPU cannot hold the page's paint and
+interaction rows but can hold its routes and stream deliveries. An untimed request still fails the run.
 
 ## Latency gate
 
