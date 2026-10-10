@@ -48,6 +48,11 @@ Every task write is one rename of a whole file: an edit applies all its changes 
 or a list, in order) at once, and a create also sets any further field an edit sets (`status`, `type`, `references`,
 `documentation`, `definitionOfDone`, `plan`, `notes`) in the same write, refusing the whole create on a field it cannot
 set. Each write stamps `updated_date`, and a create `created_date`, in UTC as `YYYY-MM-DD HH:MM`.
+With `[board] task_file_name` set to `slug`, a create writes `task-<n>-<slug>.md` in place of the default `title` form,
+`task-<n> - <Title>.md`: the slug is the title in lowercase letters and digits joined by hyphens, cut at a word to at
+most 19 characters with a trailing `YYYY-MM-DD` kept past the cut, and `untitled` for a title with neither. A value
+other than `title` or `slug` is a startup error. The setting names only files a create writes; an existing file keeps
+its name, and every later write to a task reuses its file.
 With `[board] validate` set to `module:function`, the board imports that function when it loads (a name that resolves
 to no function is a startup error) and calls it before every task write with the file's path, its text before the write
 (`None` for a create) and the text about to be written. A returned string refuses the write: the writer answers with it
