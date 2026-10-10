@@ -131,6 +131,18 @@ def test_a_starved_run_is_marked_and_not_counted_as_a_pass_or_a_failure():
     assert "STARVED" not in pl.table([fast], [], waited=pl.STARVED_SHARE)
 
 
+def test_a_run_that_waited_as_the_measured_stalling_runs_did_is_starved_and_a_quiet_hosts_run_is_not():
+    fast = pl.Row("a", "request", 50.0, [1.0])
+    assert pl.verdict([fast], [], waited=0.0011) == 0  # the most a run waited at load1 9-20, its modal p95 under 50 ms
+    assert pl.verdict([fast], [], waited=0.0048) == pl.STARVED  # the least a run with 250-434 ms modal stalls waited
+
+
+def test_the_starved_mark_prints_shares_under_one_percent():
+    fast = pl.Row("a", "request", 50.0, [1.0])
+    mark = pl.table([fast], [], waited=0.0048).splitlines()[-1]
+    assert mark.startswith("STARVED: the viewer scope waited for CPU 0.48% of the run, over 0.25%;")
+
+
 def test_the_viewer_enters_its_scope_once(monkeypatch):
     execs: list[list[str]] = []
     monkeypatch.delenv(pl.VIEWER_ENV, raising=False)
