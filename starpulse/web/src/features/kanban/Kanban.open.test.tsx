@@ -8,7 +8,7 @@ import type { KanbanTask } from "./kanban";
 import { MoveStore } from "./move";
 import { StartStore, startLane } from "./start";
 import { TaskView } from "./TaskView";
-import { PRE_DRAW_REST_MS, type TaskRecord } from "./taskView";
+import { PRE_DRAW_REST_MS, RecordCache, type TaskRecord } from "./taskView";
 
 // every card asks startLane while it draws, so its calls count the cards a render drew
 vi.mock("./start", async (actual) => {
@@ -80,6 +80,26 @@ describe("opening a task's modal", () => {
     await settle();
     expect(dialog()?.getAttribute("aria-busy")).toBe("false");
     expect(fetched).toEqual(["/api/autopilot", "/api/task/TASK-2"]);
+  });
+
+  it("draws a record that landed after the modal rendered but before its effect ran, instead of staying busy for good", async () => {
+    // the read ahead lands between the modal's render (which saw no record) and its effect (which sees one): a click or a
+    // pre-draw under load puts a macrotask between the two
+    const rendered = vi.mocked(TaskView).mock.calls.length;
+    const fresh = vi.spyOn(RecordCache.prototype, "fresh").mockImplementation(() => ({
+      at: Date.now(),
+      read: Promise.resolve(record),
+      get got() { return vi.mocked(TaskView).mock.calls.length > rendered ? record : undefined; },
+    }));
+    try {
+      act(() => cardOf("TASK-2").click());
+      await settle();
+
+      expect(dialog()?.getAttribute("aria-busy")).toBe("false");
+      expect(dialog()?.textContent).toContain("the full record's notes");
+    } finally {
+      fresh.mockRestore();
+    }
   });
 
   it("shows a failed record read, with a retry that draws the record, instead of staying busy", async () => {

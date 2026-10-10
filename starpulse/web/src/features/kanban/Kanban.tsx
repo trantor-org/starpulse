@@ -294,10 +294,10 @@ function Modal({ task, tasks, records, stack, names, marks, now, profiles, miles
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (!attempt && held?.got) return;
     let current = true;
-    // a read ahead that fails is read once more rather than shown
-    void (!attempt && held && held.got === undefined ? held.read.then((r) => r ?? fetchRecord(task.id)) : fetchRecord(task.id)).then((r) => {
+    // the read ahead is awaited even once it has landed, since it may have landed after this render initialized `record`;
+    // one that failed is read once more rather than shown
+    void (!attempt && held ? held.read.then((r) => r ?? fetchRecord(task.id)) : fetchRecord(task.id)).then((r) => {
       if (!current) return;
       setRecord(r);
       setFailed(!r);
