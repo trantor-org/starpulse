@@ -69,3 +69,16 @@ def test_trantor_tests_of_this_package_gate_the_green_dispatch():
     assert checkouts[1]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
     assert "make test-changed FILES=starpulse CI=1" in runs
     assert "trantor-contract" in job("ci.yml", "dispatch")["needs"]
+
+
+def test_main_follow_submit_runs_on_ai_vm_1_and_never_for_a_fork():
+    """The submit reaches trantor's Dagu from the host, and this repository is public: a fork's close must not run it.
+
+    The file is read from the base branch under `pull_request_target`, so a fork cannot edit the condition away.
+    """
+    document = yaml.safe_load((WORKFLOWS / "main-follow-on-close.yml").read_text())
+    follow = document["jobs"]["follow"]
+
+    assert document[True] == {"pull_request_target": {"types": ["closed"]}}
+    assert follow["runs-on"] == ["self-hosted", "ai-vm-1"]
+    assert follow["if"] == "github.event.pull_request.head.repo.full_name == github.repository"

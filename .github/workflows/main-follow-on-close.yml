@@ -1,0 +1,45 @@
+name: Follow main on pull request close
+
+# Enqueues trantor's `main-follow` Dagu DAG on ai-vm-1 when a pull request in this
+# repository closes, merged or not, so a task whose PR closed moves to Done in seconds
+# instead of waiting for the five-minute schedule. The same file sits in trantor-org/trantor,
+# starpulse, unraid and skills. Rationale: trantor's
+# docs/adr/local-main-follows-the-merge-event.md
+#
+# `pull_request_target`, not `pull_request`: the workflow file is read from the base
+# branch, so a fork's pull request cannot rewrite this job or its condition and then run
+# on the self-hosted runner. The job checks out nothing and passes the event's numbers
+# and SHAs through env, never into the script text.
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+
+# No concurrency group: the run ID is unique per close, a rerun of one close names the
+# same Dagu run, and Dagu's own max_active_runs serializes the runs. The submit returns
+# once the run exists, so it holds the runner for seconds.
+jobs:
+  follow:
+    name: Submit main-follow to Dagu
+    # A fork's pull request never reaches the self-hosted runner.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    # The general pool, never the single apply-on-merge runner a merge's apply holds.
+    runs-on: [self-hosted, ai-vm-1]
+    timeout-minutes: 5
+    steps:
+      - name: Submit
+        env:
+          BEFORE: ${{ github.event.pull_request.base.sha }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY: ${{ github.repository }}
+          DELIVERY: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+          TRANTOR_NOTIFY: "1"
+        run: |
+          /home/adinb/trantor/.venv/bin/python /home/adinb/trantor/bin/dagu_event.py submit \
+            --dag main-follow --repository "$REPOSITORY" --before "$BEFORE" --after "$AFTER" \
+            --delivery "$DELIVERY" --run-attempt "$RUN_ATTEMPT" \
+            --pull-request "$PULL_REQUEST" --no-observe
