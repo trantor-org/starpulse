@@ -432,6 +432,53 @@ describe("the demo server", () => {
     expect((await none.fetch("/api/forwarding", optIn)).status).toBe(404);
   });
 
+  it("answers /api/autopilot with the board's sessions in flight and the pick the loop would admit next", async () => {
+    const s = new DemoServer(fixture(), () => 1000);
+
+    const status = await body(s.fetch("/api/autopilot"));
+
+    expect(status).toMatchObject({ enabled: true, sampledAt: 1000 });
+    expect(status.dimensions.map((d: { name: string }) => d.name)).toEqual(["cpu", "memory", "sessions", "review"]);
+    expect(status.dimensions.find((d: { name: string }) => d.name === "sessions")).toMatchObject({ use: 1, limit: 4 });
+    expect(status.inFlight).toMatchObject([{ task: "DEMO-1", title: "DEMO-1" }]);
+    expect(status.next).toMatchObject({ task: "DEMO-2", verdict: "starting" });
+  });
+
+  it("flips the autopilot switch with a PUT, names no pick while it is off, and refuses a non-boolean", async () => {
+    const s = new DemoServer(fixture(), () => 1000);
+    const put = (enabled: unknown) => s.fetch("/api/autopilot", { method: "PUT", body: JSON.stringify({ enabled }) });
+
+    const off = await body(put(false));
+    const bad = await put("no");
+
+    expect(off).toMatchObject({ enabled: false, next: null });
+    expect(off.inFlight).toHaveLength(1);
+    expect(bad.status).toBe(400);
+    expect(await body(s.fetch("/api/autopilot"))).toMatchObject({ enabled: false });
+  });
+
+  it("can stand in for a paused autopilot, a host over its limit, an empty queue, a refused switch and a server with no autopilot", async () => {
+    const mode = (m: "off" | "over" | "empty" | "refused" | "down") => new DemoServer(fixture(), () => 1000, false, undefined, false, m);
+    const turnOff = { method: "PUT", body: JSON.stringify({ enabled: false }) };
+
+    expect(await body(mode("off").fetch("/api/autopilot"))).toMatchObject({ enabled: false });
+    const over = await body(mode("over").fetch("/api/autopilot"));
+    expect(over.next).toMatchObject({ task: "DEMO-2", verdict: "waits", reason: "RAM 91/85%" });
+    expect(await body(mode("empty").fetch("/api/autopilot"))).toMatchObject({ enabled: true, next: null });
+    const refused = mode("refused");
+    expect((await refused.fetch("/api/autopilot", turnOff)).status).toBe(403);
+    expect(await body(refused.fetch("/api/autopilot"))).toMatchObject({ enabled: true });
+    const down = await mode("down").fetch("/api/autopilot");
+    expect(down.status).toBe(404);
+    expect((await down.json()).error).toContain("no autopilot");
+  });
+
+  it("names its stand-in sessions without a host, which the demo publisher refuses in a public page", async () => {
+    const listed = await new DemoServer(fixture(), () => 1000).fetch("/api/autopilot").then((r) => r.json());
+
+    expect(JSON.stringify(listed)).not.toMatch(/https?:\/\//);
+  });
+
   it("creates a task in the first lane, as the served board does, and says so in its snapshot", async () => {
     const s = new DemoServer(fixture());
     const reply = await s.fetch("/api/tasks", { method: "POST", body: JSON.stringify({ title: "Write the docs" }) });

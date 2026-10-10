@@ -63,14 +63,14 @@ describe("opening a task's modal", () => {
   it("reads the record while the pointer rests on the card, so the click draws the full record without another request", async () => {
     hover(cardOf("TASK-1"));
     await settle();
-    expect(fetched).toEqual(["/api/task/TASK-1"]);
+    expect(fetched).toEqual(["/api/autopilot", "/api/task/TASK-1"]);
 
     act(() => cardOf("TASK-1").click());
 
     expect(dialog()?.textContent).toContain("the full record's notes");
     expect(dialog()?.getAttribute("aria-busy")).toBe("false");
     await settle();
-    expect(fetched).toEqual(["/api/task/TASK-1"]);
+    expect(fetched).toEqual(["/api/autopilot", "/api/task/TASK-1"]);
   });
 
   it("marks the modal busy until a record no hover read ahead arrives", async () => {
@@ -79,7 +79,7 @@ describe("opening a task's modal", () => {
     expect(dialog()?.getAttribute("aria-busy")).toBe("true");
     await settle();
     expect(dialog()?.getAttribute("aria-busy")).toBe("false");
-    expect(fetched).toEqual(["/api/task/TASK-2"]);
+    expect(fetched).toEqual(["/api/autopilot", "/api/task/TASK-2"]);
   });
 
   it("shows a failed record read, with a retry that draws the record, instead of staying busy", async () => {
@@ -97,7 +97,7 @@ describe("opening a task's modal", () => {
     expect(dialog()?.getAttribute("aria-busy")).toBe("false");
     expect(dialog()?.querySelector("[role=alert]")).toBeNull();
     expect(dialog()?.textContent).toContain("the full record's notes");
-    expect(fetched).toEqual(["/api/task/TASK-2", "/api/task/TASK-2"]);
+    expect(fetched).toEqual(["/api/autopilot", "/api/task/TASK-2", "/api/task/TASK-2"]);
   });
 
   it("reads the record again when the read ahead of the click failed, rather than showing that failure", async () => {
@@ -110,7 +110,7 @@ describe("opening a task's modal", () => {
     expect(dialog()?.querySelector("[role=alert]")).toBeNull();
     expect(dialog()?.getAttribute("aria-busy")).toBe("false");
     expect(dialog()?.textContent).toContain("the full record's notes");
-    expect(fetched).toEqual(["/api/task/TASK-1", "/api/task/TASK-1"]);
+    expect(fetched).toEqual(["/api/autopilot", "/api/task/TASK-1", "/api/task/TASK-1"]);
   });
 
   it("reads the record again when the read ahead fails after the modal was drawn ahead, rather than showing that failure", async () => {
@@ -130,7 +130,7 @@ describe("opening a task's modal", () => {
     expect(dialog()?.querySelector("[role=alert]")).toBeNull();
     expect(dialog()?.getAttribute("aria-busy")).toBe("false");
     expect(dialog()?.textContent).toContain("the full record's notes");
-    expect(fetched).toEqual(["/api/task/TASK-1", "/api/task/TASK-1"]);
+    expect(fetched).toEqual(["/api/autopilot", "/api/task/TASK-1", "/api/task/TASK-1"]);
   });
 
   it("draws a rested card's modal hidden and inert, so the click shows that same dialog instead of building one", async () => {
@@ -181,7 +181,7 @@ describe("opening a task's modal", () => {
     await act(async () => { land({ ok: true, json: async () => ({ record }) }); for (let i = 0; i < 5; i++) await Promise.resolve(); });
     expect(drawn?.getAttribute("aria-busy")).toBe("false");
     expect(drawn?.textContent).toContain("the full record's notes");
-    expect(fetched).toEqual(["/api/task/TASK-1"]);
+    expect(fetched).toEqual(["/api/autopilot", "/api/task/TASK-1"]);
   });
 
   it("draws no modal for a pointer that passes over a card without resting, and drops the hidden one when the pointer leaves", async () => {
