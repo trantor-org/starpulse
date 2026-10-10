@@ -109,6 +109,14 @@ Backlog.md, Jira) is searched the same way, and kept current as each task is pla
 task placed again unchanged, as every task is on a restart, writes nothing. A hub keeps none, since individual task
 text stays on the instance, and a SQLite built without FTS5 serves none: the route answers 404 and the verb exits 3.
 
+The `[search]` table's `embeddings_url` is optional ([Config file](serving.md#config-file)). Unset, ranking is the
+lexical order above and nothing calls out. Set, `serve` sends each task's text to that OpenAI-compatible endpoint in
+the background and keeps one vector per task and `model`; a query is then embedded once and its lexical hits (up to
+the 50 best) are ordered by half their bm25 score, relative to the best hit's, and half the cosine similarity of
+their vector to the query's, so `score` is that blend. A task whose vector is not stored yet counts as no similarity.
+A query still needs every word to match: the vectors re-rank hits, they do not add any. An endpoint that does not
+answer leaves the lexical order and is retried every minute.
+
 `analytics health` reads `GET /api/analytics/health[?hours=N][&stuck_hours=N]` (a window of 168 hours and a stuck
 threshold of 24 by default), the Board's flow health from the history's lane changes. `states` lists each Board state
 with `wip`, the tasks in it now, and for a state that is not final the `visits`, `mean_s` and `max_s` of the stays that

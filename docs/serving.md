@@ -165,6 +165,13 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # skill = "verifying-claims"
 # title = "^(validate|verify|check)"                       # a regular expression over the task's title, case-insensitive
 # label = "validation"                                     # a label the task carries
+
+# Optional: rank search by meaning as well as by words (see `search` in docs/cli.md). `embeddings_url` is an
+# OpenAI-compatible embeddings endpoint, local or cloud; with it unset, search is lexical and nothing calls out.
+# [search]
+# embeddings_url = "http://localhost:8080/v1/embeddings"  # optional: POSTed `{model, input}`, answered with `data[].embedding`
+# model = "nomic-embed-text"                             # required with embeddings_url: the model the endpoint is asked for
+# token_env = "EMBEDDINGS_TOKEN"                         # optional: the environment variable holding the endpoint's bearer token
 ```
 
 ## Triggers

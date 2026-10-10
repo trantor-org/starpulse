@@ -34,6 +34,7 @@ from starpulse._internal.config.autopilot import Autopilot, AutopilotError, pars
 from starpulse._internal.config.level import Level, LevelError, parse_level
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
 from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
+from starpulse._internal.config.search import Search, SearchError, parse_search
 from starpulse._internal.config.triggers import Trigger, TriggerError, parse_triggers
 
 #: The board adapter type a config without a `[board]` table names.
@@ -62,6 +63,7 @@ _KEYS = {
     "release",
     "triggers",
     "analytics",
+    "search",
 }
 _OIDC_KEYS = {
     "issuer",
@@ -445,6 +447,8 @@ class Config:
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
     release: Release | None = None
     """The `[release]` table: None releases no task, so a config without it leaves release to whoever does it today."""
+    search: Search = field(default_factory=Search)
+    """The optional embeddings service that ranks search by meaning (`[search]`); no table: search is lexical only."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -472,6 +476,14 @@ def _analytics(raw: object) -> Analytics:
     try:
         return parse_analytics(raw)
     except AnalyticsError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _search(raw: object) -> Search:
+    """The `[search]` table, or the lexical-only one when the config has none; a refusal is a `ConfigError`."""
+    try:
+        return parse_search(raw)
+    except SearchError as exc:
         raise ConfigError(str(exc)) from exc
 
 
@@ -614,4 +626,5 @@ def load(path: Path | None) -> Config:
         triggers=_triggers(raw.get("triggers"), runs),
         analytics=_analytics(raw.get("analytics")),
         release=_release(raw, repos),
+        search=_search(raw.get("search")),
     )

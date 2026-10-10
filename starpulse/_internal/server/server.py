@@ -1527,9 +1527,13 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
             daemon=True,
         ).start()
     # the instance indexes its board for search; a hub holds no individual's task text, so it keeps no index
-    search = None if args.hub else SearchIndex.open(log.engine)
+    search = None if args.hub else SearchIndex.open(log.engine, config.search)
     if search is not None:
         feed.index_tasks(search)
+        if config.search.embeddings_url:  # vectors catch up off the feed's path; with no endpoint nothing runs
+            threading.Thread(
+                target=search.keep_embedding, args=(threading.Event(),), name="search-embeddings", daemon=True
+            ).start()
     board.start(feed, f"flow-view-{args.port}", log)
     # a move the feed applied but never recorded (a restart between the two) is put in the history once the replay is read
     threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
