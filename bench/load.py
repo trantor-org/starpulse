@@ -16,9 +16,12 @@ whole run, so the user count is also the number of concurrent streams.
 
 from __future__ import annotations
 
+import http.client
 import random
 import time
-from collections.abc import Iterable, Iterator, Mapping
+import urllib.parse
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import AbstractContextManager
 
 from page_latency import BUDGET_MS, READS, WHAT_IF, fill, ids_of, ref_key
 
@@ -59,13 +62,38 @@ def over_budget(p95s: Mapping[str, float], failures: Mapping[str, int], budget: 
     return reasons
 
 
+class Once[T]:
+    """A value the first caller makes; a caller arriving while it is being made waits for it instead of making it too.
+    Viewers spawn while the first is still discovering, and each one that discovered again parsed the whole snapshot in
+    this process during the ramp, which the stream rows then timed."""
+
+    def __init__(self, lock: AbstractContextManager) -> None:
+        self._lock, self._made, self._value = lock, False, None
+
+    def get(self, make: Callable[[], T]) -> T:
+        with self._lock:
+            if not self._made:
+                self._value, self._made = make(), True
+        return self._value  # type: ignore[return-value]
+
+
+def compressed_body(host: str, port: int, path: str) -> tuple[int, int]:
+    """`path`'s status and the bytes it sent, asked for gzip and left compressed. A viewer's browser inflates the body
+    on the viewer's machine; inflating a crowd's worth here would time this process, not the server."""
+    conn = http.client.HTTPConnection(host, port, timeout=60)
+    try:
+        conn.request("GET", path, headers={"accept-encoding": "gzip"})
+        response = conn.getresponse()
+        return response.status, len(response.read())
+    finally:
+        conn.close()
+
+
 # Everything below needs Locust (the bench group); the rules above carry the tests.
 
 try:
-    import http.client
-    import urllib.parse
-
     import gevent
+    import gevent.lock
     from locust import HttpUser, between, task
     from locust import events as locust_events
 except ImportError:
@@ -92,11 +120,10 @@ else:
         """One open StarPulse page: a held event stream and the reads a viewer's clicks make."""
 
         wait_time = between(0.5, 2)
-        paths: dict[str, str] | None = None
+        paths: Once[dict[str, str]] = Once(gevent.lock.BoundedSemaphore())
 
         def on_start(self) -> None:
-            if Viewer.paths is None:
-                Viewer.paths = self._paths()
+            self.routes = Viewer.paths.get(self._paths)
             self.stream = gevent.spawn(self._watch)
 
         def on_stop(self) -> None:
@@ -125,7 +152,8 @@ else:
         def _watch(self) -> None:
             """Hold the stream open, as the page does, timing connect to the end of its first snapshot."""
             parts = urllib.parse.urlsplit(self.host)
-            conn = http.client.HTTPConnection(parts.hostname or "127.0.0.1", parts.port or 80, timeout=60)
+            address = parts.hostname or "127.0.0.1", parts.port or 80
+            conn = http.client.HTTPConnection(*address, timeout=60)
             start, first = time.perf_counter(), True
             try:
                 conn.request("GET", "/api/events?snapshot=ref", headers={"accept": "text/event-stream"})
@@ -133,21 +161,34 @@ else:
                 for event, data in events(iter(response.fp.readline, b"")):
                     if first and event == "snapshot":
                         first = False
-                        self._fire((time.perf_counter() - start) * 1000, None)
+                        self._fire(FIRST_SNAPSHOT, start, None)
                         if key := ref_key(data):
-                            self.client.get(f"/api/events/body/{key}", name=BODY)
+                            self._body(*address, f"/api/events/body/{key}")
             except (http.client.HTTPException, OSError) as error:
                 if first:
-                    self._fire((time.perf_counter() - start) * 1000, error)
+                    self._fire(FIRST_SNAPSHOT, start, error)
             finally:
                 conn.close()
 
-        def _fire(self, ms: float, error: BaseException | None) -> None:
+        def _body(self, host: str, port: int, path: str) -> None:
+            start, error = time.perf_counter(), None
+            try:
+                status, _ = compressed_body(host, port, path)
+                error = None if status == 200 else http.client.HTTPException(f"{path} answered {status}")
+            except (http.client.HTTPException, OSError) as failed:
+                error = failed
+            self._fire(BODY, start, error)
+
+        def _fire(self, name: str, start: float, error: BaseException | None) -> None:
             self.environment.events.request.fire(
-                request_type="SSE", name=FIRST_SNAPSHOT, response_time=ms, response_length=0, exception=error
+                request_type="SSE" if name == FIRST_SNAPSHOT else "GET",
+                name=name,
+                response_time=(time.perf_counter() - start) * 1000,
+                response_length=0,
+                exception=error,
             )
 
         @task
         def read(self) -> None:
-            name, path = random.choice(list((self.paths or {}).items()))
+            name, path = random.choice(list(self.routes.items()))
             self.client.get(path, name=name, headers={"accept": "application/json"})
