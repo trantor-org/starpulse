@@ -11,7 +11,7 @@ from starpulse._internal.cli.demo import scrub
 
 PREVIEW = Path(__file__).with_name("preview.toml")
 NOW = 1_790_000_000.0
-LANES = ["new", "ready", "waiting", "in_progress", "review", "needs_attention", "done", "completed", "archived"]
+LANES = ["new", "ready", "waiting", "in_progress", "review", "needs_attention", "done", "archived"]
 
 
 def _workflows() -> list[str]:
@@ -23,11 +23,11 @@ def _machines() -> dict[str, dict]:
     return demo_workspace.board({"type": "demo_workspace"}, PREVIEW.parent).machines(lambda n: n, _workflows())
 
 
-def test_the_preview_board_draws_a_real_workspaces_nine_lanes_in_order() -> None:
+def test_the_preview_board_draws_a_real_workspaces_eight_lanes_in_order() -> None:
     board = _machines()["board"]
 
     assert [s["id"] for s in board["states"]] == LANES
-    assert board["mainLine"] == LANES[:7]
+    assert board["mainLine"] == ["new", "ready", "in_progress", "review"]
 
 
 def test_in_progress_opens_the_delivery_machine_and_at_least_three_more_lifecycle_machines() -> None:
@@ -83,14 +83,21 @@ def _flows(demo: dict) -> dict[str, dict]:
     return {f["name"]: f for f in demo["flows"]}
 
 
-def test_the_demo_keeps_the_nine_lanes_and_fills_them_at_a_real_workspaces_scale() -> None:
+def test_the_demo_keeps_the_eight_lanes_and_fills_them_at_a_real_workspaces_scale() -> None:
     demo = scrub(_capture())
     board = _flows(demo)["board"]
 
     assert [s["id"] for s in board["machine"]["states"]] == LANES
     assert len(board["agents"]) >= 100
     assert {a["state"] for a in board["agents"]} == set(LANES[:7])
-    assert {e["state"] for e in demo["settled"].values()} == {"completed", "archived"}
+    assert {e["state"] for e in demo["settled"].values()} == {"archived"}
+
+
+def test_the_demo_holds_done_tasks_older_than_a_day_so_the_page_shows_only_the_last_day() -> None:
+    done = [a for a in _flows(scrub(_capture()))["board"]["agents"] if a["state"] == "done"]
+
+    old = [a for a in done if "entered" in a and a["entered"] < NOW - 86400]
+    assert old and len(done) - len(old) >= 10
 
 
 def test_the_demo_files_new_tasks_that_morning_so_the_new_lane_counts_them() -> None:

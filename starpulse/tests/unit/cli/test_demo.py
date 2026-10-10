@@ -367,7 +367,7 @@ def test_scrub_seeds_the_days_arrivals_with_the_board_it_seeds() -> None:
     demo = scrub(live)
 
     settled, created = demo["settled"].values(), [a["created"] for a in demo["flows"][0]["agents"] if "created" in a]
-    assert {e["state"] for e in settled} == {"completed", "archived"}
+    assert {e["state"] for e in settled} == {"archived"}
     assert all(now - 7200 < e["at"] <= now and e["title"] in TITLES for e in settled)
     assert created and all(now - 7200 < at <= now for at in created)
 

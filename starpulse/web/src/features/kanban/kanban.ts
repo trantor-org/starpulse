@@ -1,5 +1,5 @@
 // The Kanban view's model: the Board's open tasks laid out as columns of milestone buckets. Pure, so the view only draws it.
-import type { Sky } from "../../render/sky";
+import { DONE_WINDOW, type Sky } from "../../render/sky";
 import type { TaskRecord } from "./taskView";
 import type { Option } from "../../shared/ChoiceMenu";
 import type { Move, Pull, TrailStep } from "../../api";
@@ -7,8 +7,6 @@ import type { Move, Pull, TrailStep } from "../../api";
 /** The Board states drawn as columns, in order. New is the creation pseudo-state and Completed and Archived have left the lanes. */
 export const COLUMNS = ["ready", "waiting", "in_progress", "review", "needs_attention", "done"];
 
-/** How long a task stays in the Done column after it entered it, seconds; the board keeps Done tasks for days, the column shows the last day. */
-export const DONE_WINDOW = 24 * 3600;
 
 /** The tasks a column may draw: every task, except a Done one that entered over a day before `now`. A Done task the snapshot gave no time for (`entered` 0) is drawn. */
 export const recent = (tasks: KanbanTask[], now: number): KanbanTask[] => tasks.filter((t) => t.lane !== "done" || !t.entered || now - t.entered <= DONE_WINDOW);

@@ -4,7 +4,7 @@
 table and draws none. The gate (`bench/page_latency.py`, run nightly by trantor's whole-repo gate) needs every route and page
 surface to answer something, so this serves the preview workspace with the real request handler and the built page,
 and seeds what `starpulse serve` would hold after a month at a working team's scale: a Kanban of open tasks, the
-lane history behind each, and the completed runs the level reads. It writes nothing outside its directory.
+lane history behind each, and the finished runs the level reads. It writes nothing outside its directory.
 
     uv run python -m ci.seeded_server --port 8766 --dir .tmp/gate
 
@@ -31,10 +31,10 @@ import starpulse
 PREVIEW = Path(__file__).with_name("preview.toml")
 STATIC = Path(starpulse.__file__).parent / "static"
 DAY = 86400.0
-#: Each open lane and how many tasks sit in it; the settled `completed` runs come on top of these.
-OPEN = {"new": 4, "ready": 20, "waiting": 12, "in_progress": 18, "review": 16, "needs_attention": 4, "done": 10}
-#: How many tasks have completed, which the level reads as ended runs.
-COMPLETED = 80
+#: Each lane short of Done and how many tasks sit in it; the finished runs come on top of these.
+OPEN = {"new": 4, "ready": 20, "waiting": 12, "in_progress": 18, "review": 16, "needs_attention": 4}
+#: How many tasks are in Done, which the level reads as ended runs.
+DONE = 90
 #: The lanes a task walks to reach each lane, the order the Board machine allows.
 ROUTES = {
     "new": ["new"],
@@ -44,13 +44,12 @@ ROUTES = {
     "review": ["new", "ready", "in_progress", "review"],
     "needs_attention": ["new", "ready", "in_progress", "needs_attention"],
     "done": ["new", "ready", "in_progress", "review", "done"],
-    "completed": ["new", "ready", "in_progress", "review", "done", "completed"],
 }
-#: The detours a third of the completed tasks each take: deferred and returned, or sent back from Review. The level's
+#: The detours a third of the Done tasks each take: deferred and returned, or sent back from Review. The level's
 #: what-if needs a state with more than one observed exit, and a send-back is what a working team's runs show.
 DETOURS = {
-    1: ["new", "ready", "in_progress", "needs_attention", "ready", "in_progress", "review", "done", "completed"],
-    2: ["new", "ready", "in_progress", "review", "in_progress", "review", "done", "completed"],
+    1: ["new", "ready", "in_progress", "needs_attention", "ready", "in_progress", "review", "done"],
+    2: ["new", "ready", "in_progress", "review", "in_progress", "review", "done"],
 }
 
 
@@ -58,7 +57,7 @@ def lanes() -> Iterator[str]:
     """The final lane of each seeded task, open lanes first, in the order the ids are numbered."""
     for lane, count in OPEN.items():
         yield from [lane] * count
-    yield from ["completed"] * COMPLETED
+    yield from ["done"] * DONE
 
 
 def steps(final: str, index: int, now: float) -> list[tuple[str, float]]:
@@ -67,8 +66,8 @@ def steps(final: str, index: int, now: float) -> list[tuple[str, float]]:
     Tasks are numbered oldest first, spread over a month, and every step is a few hours after the last, so a task
     still in a lane has waited there a while and the level has aging to read.
     """
-    route = DETOURS.get(index % 3, ROUTES[final]) if final == "completed" else ROUTES[final]
-    start = now - 30 * DAY + index * (29 * DAY / sum(OPEN.values(), COMPLETED))
+    route = DETOURS.get(index % 3, ROUTES[final]) if final == "done" else ROUTES[final]
+    start = now - 30 * DAY + index * (29 * DAY / sum(OPEN.values(), DONE))
     return [(lane, start + n * 5 * 3600.0) for n, lane in enumerate(route)]
 
 
@@ -111,17 +110,14 @@ def seed(feed: BoardFeed, store: HistoryStore, now: float) -> dict[str, dict]:
     records: dict[str, dict] = {}
     for index, (task_id, (final, path)) in enumerate(paths.items()):
         entered = path[-1][1]
-        settled = final == "completed"
         feed.put(
             BoardTask(
                 id=task_id,
                 title=f"Demo task {index}",
                 team="demo",
-                lane="done" if settled else final,
+                lane=final,
                 dependencies=(f"DEMO-{index - 1}",) if final == "waiting" else (),
-                settled="completed" if settled else None,
                 created_at=path[0][1],
-                settled_at=entered if settled else None,
                 observed_at=entered,
             )
         )

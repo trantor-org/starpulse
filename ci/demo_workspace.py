@@ -1,6 +1,6 @@
 """The UI preview's synthetic workspace, the Board adapter `ci/preview.toml` names as `ci.demo_workspace`.
 
-It draws what a working team's StarPulse draws, from the machine files in `ci/workspace`: a nine-lane Board whose In
+It draws what a working team's StarPulse draws, from the machine files in `ci/workspace`: an eight-lane Board whose In
 Progress opens a delivery machine (and, under that machine's open pull request, a review triage), and the lifecycle
 machines of the other skills an agent session runs. It places no task: `starpulse._internal.cli.demo` seeds the tasks, sessions and
 runs at a real workspace's scale onto this structure, so nothing a real tracker holds is behind the public demo.
@@ -18,8 +18,8 @@ from starpulse._internal.machines.machine_definition import load_machine, refuse
 from starpulse._internal.machines.snapshot import Qualify, describe
 
 WORKSPACE = Path(__file__).with_name("workspace")
-#: The Board's main line: every lane a task passes on its way to Done, the settled lanes after it left out.
-MAIN_LINE = ["new", "ready", "waiting", "in_progress", "review", "needs_attention", "done"]
+#: The Board's main line, the lanes drawn on its axis; Waiting, Needs Attention and the final states sit off it.
+MAIN_LINE = ["new", "ready", "in_progress", "review"]
 #: Each machine that opens under another's state: (parent, state, flow, when).
 SUBFLOWS = [("board", "in_progress", "delivery", ""), ("delivery", "pr_opened", "review-triage", "a PR is open")]
 
