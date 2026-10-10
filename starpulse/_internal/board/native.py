@@ -54,8 +54,19 @@ DEFAULT_PATH = ".starpulse/board"
 #: The `[board]` settings this adapter reads: `path` is the board's directory, `machine` a machine file for the Board,
 #: relative to the config, `criteria` the command that evaluates a task's Start Criteria (`{id}` is the task's id),
 #: `validate` the `module:function` that may refuse a task write before it lands, `rules` the record-level rules every
-#: task write must satisfy (`starpulse._internal.board.rules`).
-_SETTINGS = {"type", "path", "interval", "machine", "criteria", "validate", "rules"}
+#: task write must satisfy (`starpulse._internal.board.rules`), `task_file_name` the form of the name a created task's
+#: file is written under (`_FILE_NAMES`).
+_SETTINGS = {"type", "path", "interval", "machine", "criteria", "validate", "rules", "task_file_name"}
+#: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
+#: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
+_FILE_NAMES = ("title", "slug")
+_SLUG_MAX = 19
+#: A trailing ISO date survives the cap, uncounted: it tells one run of a recurring task from the next.
+_SLUG_DATE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
+#: Function words a capped slug does not end on: `task-1-re-fit-the` says no more than `task-1-re-fit`.
+_SLUG_STOPWORDS = frozenset(
+    {"a", "an", "and", "at", "by", "for", "from", "in", "into", "of", "on", "onto", "or", "the", "to", "with"}
+)
 #: A task write's check: the file's path, its text before (None for a create) and the text about to be written; it
 #: returns why the write is refused, or None to let it land.
 Validate = Callable[[Path, "str | None", str], "str | None"]
@@ -529,8 +540,32 @@ def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) ->
     return text
 
 
-def _creator(root: Path, config: BacklogConfig, guard: _Guard = _Guard()) -> TaskCreator:
-    """A board writer that makes a task file with the next id, `<id> - <title as a slug>.md`, in one write.
+def _slug(title: str) -> str:
+    """`title` as a lowercase, hyphen-only slug of at most `_SLUG_MAX` characters, cut at a word and past any trailing date."""
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    dated = _SLUG_DATE.search(slug)
+    date = slug[dated.start() :] if dated else ""
+    if dated:
+        slug = slug[: dated.start()]
+    if len(slug) > _SLUG_MAX:
+        head = slug[:_SLUG_MAX]
+        boundary = head.rfind("-")
+        words = (head[:boundary] if boundary > 0 else head).strip("-").split("-")
+        while len(words) > 1 and words[-1] in _SLUG_STOPWORDS:
+            words.pop()
+        slug = "-".join(words)
+    return f"{slug}{date}".strip("-") or "untitled"
+
+
+def _file_name(task: str, title: str, form: str) -> str:
+    """The name of the file a task created as `title` is written under, in the `form` of `_FILE_NAMES`."""
+    if form == "slug":
+        return f"{task}-{_slug(title)}.md"
+    return f"{task} - {re.sub(r'[^\w-]+', '-', title).strip('-')[:60].strip('-') or 'Task'}.md"
+
+
+def _creator(root: Path, config: BacklogConfig, guard: _Guard = _Guard(), file_name: str = "title") -> TaskCreator:
+    """A board writer that makes a task file with the next id, named in the `file_name` form, in one write.
 
     It starts in the first lane; any detail beyond the ones the page fills (a `status`, `type`, `references`,
     `documentation`, `definitionOfDone`, `plan`, `notes` or other field `edit` sets) is set as `edit` sets it, so a
@@ -542,8 +577,7 @@ def _creator(root: Path, config: BacklogConfig, guard: _Guard = _Guard()) -> Tas
     def create(title: str, details: Mapping[str, Any], /, actor: str = OPERATOR) -> Written:
         with lock:
             task = _next_id(root, config.prefix)
-            slug = re.sub(r"[^\w-]+", "-", title).strip("-")[:60].strip("-") or "Task"
-            path = root / "tasks" / f"{task} - {slug}.md"
+            path = root / "tasks" / _file_name(task, title, file_name)
             frontmatter, body = _split(_new_task(task, title, config.statuses[0], details))
             rest = {field: value for field, value in details.items() if field not in _NEW_TASK_DETAILS}
             try:
@@ -567,6 +601,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     """
     if unknown := sorted(settings.keys() - _SETTINGS):
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
+    file_name = str(settings.get("task_file_name", _FILE_NAMES[0]))
+    if file_name not in _FILE_NAMES:
+        raise ValueError(f"board: task_file_name {file_name!r} is not one of {', '.join(sorted(_FILE_NAMES))}")
     root = base / str(settings.get("path", DEFAULT_PATH))
     _create(root, base.resolve().name)
     evaluate = criteria.evaluator(settings.get("criteria"), base)
@@ -586,7 +623,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         lambda config: {
             "writer": _writer(root, config.statuses, guard),
             "assign": assign,
-            "create": _creator(root, config, guard),
+            "create": _creator(root, config, guard, file_name),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
             "edit": _editor(root, config.statuses, guard),
