@@ -219,7 +219,13 @@ The autopilot is a switch, a capacity reading, an admission rule and a loop that
 `GET /api/autopilot` answers any address:
 
 ```json
-{"enabled": false, "sampledAt": 1788307200.5, "dimensions": [{"name": "cpu", "use": 35.0, "limit": 80.0}]}
+{
+  "enabled": false,
+  "sampledAt": 1788307200.5,
+  "dimensions": [{"name": "cpu", "use": 35.0, "limit": 80.0}],
+  "inFlight": [{"task": "TASK-1", "title": "First", "model": "@agent-standard-high", "started": 1788307000.0, "url": "https://claude.ai/code/session_01"}],
+  "next": {"task": "TASK-2", "title": "Second", "verdict": "waits", "reason": "cpu"}
+}
 ```
 
 `dimensions` lists `cpu`, `memory`, `sessions` and `review` in that order, each as its use against its limit.
@@ -228,6 +234,15 @@ The autopilot is a switch, a capacity reading, an admission rule and a loop that
 - `cpu` and `memory` are the host's busy share and used share, in percent, read from `/proc`.
 - `sessions` counts the tasks with an active harness session.
 - `review` sums the `size-N` labels of the tasks in `review_lane`; a task without one counts `unsized_points`.
+
+`inFlight` and `next` come from the dispatch loop, so a server that runs none leaves both out.
+
+- `inFlight` lists the sessions the loop started whose tasks are still running, oldest first, each with its task, title,
+  agent profile, start time in epoch seconds and session address (`url`); it is `[]` when none runs.
+- `next` is what the next pass would do, whatever the switch says: the task `decide` ranks first among those that fit, with
+  `verdict` `starting` and `reason` `goes next`; when none fits, the top-ranked task with `verdict` `waits` and the first
+  dimension it overfits as `reason`. It is `null` before the first sample or with no workable task in the eligible lane.
+  Reading it logs no decision.
 
 `PUT /api/autopilot` with `{"enabled": true}` or `{"enabled": false}` sets the switch and answers the same body. It
 answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhere, and like every write it needs
@@ -294,8 +309,9 @@ why, and is never started again. A board with no editor, or no `needs_attention`
 refusal and retries on the next sampler period. The sampler period (60 seconds) is the only timer; it finishes and settles
 runs and never admits.
 
-The runs in flight are held in memory. A restart forgets them: a session started before it still counts toward capacity
-once the harness sees it, but the loop neither settles nor records it.
+The runs in flight are held in memory, and are what `GET /api/autopilot` lists as `inFlight`. A restart forgets them: a
+session started before it still counts toward capacity once the harness sees it, but the loop neither lists, settles nor
+records it.
 
 ## Release
 

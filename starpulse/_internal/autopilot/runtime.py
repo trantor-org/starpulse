@@ -41,13 +41,21 @@ class Runtime:
             self.loop.wake()
 
     def status(self) -> dict[str, Any]:
-        """Whether admission is on, when capacity was last sampled, and each dimension's use against its limit."""
+        """Whether admission is on, when capacity was last sampled, and each dimension's use against its limit.
+
+        With a dispatch loop it also lists the sessions in flight and the next pick (null when none); without one the
+        server has neither to say, so the keys are absent.
+        """
         readings, at = self.sampler.readings()
-        return {
+        body: dict[str, Any] = {
             "enabled": self.toggle.get(),
             "sampledAt": at,
             "dimensions": [{"name": r.name, "use": r.use, "limit": r.limit} for r in readings],
         }
+        if self.loop is not None:
+            body["inFlight"] = self.loop.in_flight()
+            body["next"] = self.loop.next_pick()
+        return body
 
 
 def log_crossing(crossing: Crossing) -> None:

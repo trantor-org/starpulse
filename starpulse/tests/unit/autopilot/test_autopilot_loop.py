@@ -282,3 +282,71 @@ def test_a_claim_comment_the_board_refuses_leaves_the_session_started(rig: Rig) 
 
     assert rig.loop.tick() == ["T-1"]
     assert rig.started == ["T-1"]
+
+
+def test_in_flight_lists_each_started_session_with_its_task_model_start_and_address(rig: Rig) -> None:
+    assert rig.loop.in_flight() == []  # nothing runs
+
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.after(2)
+
+    assert rig.loop.in_flight() == [
+        {"task": "T-1", "title": "T-1", "model": PROFILE, "started": START, "url": "https://claude.ai/code/T-1"}
+    ]
+
+
+def test_a_run_that_finished_is_no_longer_in_flight(rig: Rig) -> None:
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.put("T-1", lane="review")
+    rig.loop.tick()
+
+    assert rig.loop.in_flight() == []
+
+
+def test_next_pick_is_the_task_admission_would_start_with_its_reason(rig: Rig) -> None:
+    rig.put("T-1")
+    rig.put("T-2")
+    rig.put("T-3", lane="to_do", deps=("T-2",))  # T-2 heads the longer chain, so it ranks first
+    rig.sampler.sample()
+
+    assert rig.loop.next_pick() == {"task": "T-2", "title": "T-2", "verdict": "starting", "reason": "goes next"}
+
+
+def test_next_pick_names_the_top_ranked_task_and_the_dimension_it_waits_on_when_nothing_fits(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"cpu": 10})  # the host sits at 5 and a size-8 task draws 16
+    rig.put("T-1")
+    rig.put("T-2")
+    rig.put("T-3", lane="to_do", deps=("T-2",))
+    rig.sampler.sample()
+
+    assert rig.loop.next_pick() == {"task": "T-2", "title": "T-2", "verdict": "waits", "reason": "cpu"}
+
+
+def test_next_pick_counts_a_started_run_it_will_not_pick_again(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"cpu": 25})  # one size-8 task fits: T-1 starts and takes what T-2 needs
+    rig.put("T-1")
+    rig.put("T-2")
+    assert rig.loop.tick() == ["T-1"]  # the board still shows it Ready
+
+    assert rig.loop.next_pick() == {"task": "T-2", "title": "T-2", "verdict": "waits", "reason": "cpu"}
+
+
+def test_next_pick_is_none_without_a_reading_or_a_workable_task(rig: Rig) -> None:
+    rig.put("T-1")
+    assert rig.loop.next_pick() is None  # capacity has not been sampled yet
+
+    rig.sampler.sample()
+    rig.put("T-1", lane="to_do")
+    assert rig.loop.next_pick() is None
+
+
+def test_reading_the_next_pick_logs_no_decision(rig: Rig, caplog: pytest.LogCaptureFixture) -> None:
+    rig.put("T-1")
+    rig.sampler.sample()
+
+    with caplog.at_level("INFO"):
+        rig.loop.next_pick()
+
+    assert caplog.records == []

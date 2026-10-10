@@ -113,13 +113,14 @@ def decide(
     *,
     predictor: Callable[[str], float] | None = None,
     shadow: bool = True,
+    log: bool = True,
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
     `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. `chain` is the
     trajectory analytics' chain (`trajectory_analytics(...)["chain"]`); a lane with no row, as in a board with no history,
     gives P(goal) 1. With `shadow` on, the predictor's score and P(goal) rank only the shadow order; off, that order is
-    enforced.
+    enforced. Each decision is logged unless `log` is off, as for a read that only looks.
     """
     depths = _depths(tasks)
     limits = {reading.name: reading.limit for reading in readings}
@@ -144,7 +145,7 @@ def decide(
     enforced_rank = {d.task: rank for rank, d in enumerate(enforced, 1)}
     ranked = [replace(d, shadow_rank=shadow_rank[d.task], enforced_rank=enforced_rank[d.task]) for d in enforced]
     refused = sorted((d for d in decisions if not d.admitted), key=lambda d: (-d.depth, d.task))
-    for decision in [*ranked, *refused]:
+    for decision in [*ranked, *refused] if log else ():
         logger.info(
             "StarPulse autopilot: %s %s p_goal=%.2f predictor=%s shadow_rank=%s enforced_rank=%s",
             decision.task,

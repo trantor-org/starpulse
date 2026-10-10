@@ -216,6 +216,37 @@
       "title": "AutopilotDimension",
       "type": "object"
     },
+    "AutopilotNext": {
+      "additionalProperties": false,
+      "description": "The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.",
+      "properties": {
+        "reason": {
+          "description": "`goes next`, or the first dimension the task overfits, which the strip shows after `waits:`.",
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "starting",
+            "waits"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "title",
+        "verdict",
+        "reason"
+      ],
+      "title": "AutopilotNext",
+      "type": "object"
+    },
     "AutopilotRequest": {
       "additionalProperties": false,
       "description": "`PUT /api/autopilot`: whether the autopilot admits tasks.",
@@ -230,9 +261,42 @@
       "title": "AutopilotRequest",
       "type": "object"
     },
+    "AutopilotSession": {
+      "additionalProperties": false,
+      "description": "A session the autopilot started whose task is still running: the strip's Sessions menu draws one row of it.",
+      "properties": {
+        "model": {
+          "description": "The task's agent profile, empty when it has none.",
+          "type": "string"
+        },
+        "started": {
+          "description": "When the loop started the session, in epoch seconds.",
+          "type": "number"
+        },
+        "task": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "description": "The session's address, as `start` answered it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "title",
+        "model",
+        "started",
+        "url"
+      ],
+      "title": "AutopilotSession",
+      "type": "object"
+    },
     "AutopilotStatus": {
       "additionalProperties": false,
-      "description": "Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.",
+      "description": "Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.\n\n`inFlight` and `next` are served only by a server that runs a dispatch loop; without one they are absent.",
       "properties": {
         "dimensions": {
           "items": {
@@ -242,6 +306,25 @@
         },
         "enabled": {
           "type": "boolean"
+        },
+        "inFlight": {
+          "description": "The sessions the loop started and has not finished, oldest first.",
+          "items": {
+            "$ref": "#/$defs/AutopilotSession"
+          },
+          "type": "array"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AutopilotNext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Null when no task in the eligible lane is workable."
         },
         "sampledAt": {
           "anyOf": [

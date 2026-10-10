@@ -14,6 +14,7 @@ import pytest
 
 from starpulse._internal.autopilot.runtime import Runtime, build
 from starpulse._internal.autopilot.sampler import Crossing
+from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
@@ -21,6 +22,7 @@ from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.writes import autopilot
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse.contracts.adapters import BoardTask, MachineEvent
+from starpulse.contracts.api import AutopilotStatus
 from starpulse.tests.machines import MACHINES
 
 HOST = {"cpu": 35.0, "memory": 60.0}
@@ -121,6 +123,64 @@ def test_a_put_that_is_not_json_is_a_400(tmp_path: Path) -> None:
 
 def test_an_instance_without_a_runtime_has_no_autopilot_route(tmp_path: Path) -> None:
     assert autopilot("127.0.0.1", "GET", b"", None)[0] == 404
+
+
+def _looping(tmp_path: Path) -> Runtime:
+    """A runtime with a dispatch loop over one Ready task and a quiet host, already sampled."""
+    feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    feed.put(
+        BoardTask(
+            id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], assignee="@agent-standard-high"
+        )
+    )
+    runtime = build(
+        Autopilot(lane="ready"),
+        tmp_path / "starpulse-autopilot.json",
+        feed,
+        probe=lambda: {"cpu": 5.0, "memory": 5.0},
+        clock=lambda: 1000.0,
+        start=lambda task: f"https://claude.ai/code/{task}",
+        settle=lambda task, reason: Written(True, task),
+        lane="ready",
+    )
+    runtime.sampler.sample()
+    return runtime
+
+
+def test_a_get_with_a_loop_names_the_next_pick_and_lists_no_session_before_any_starts(tmp_path: Path) -> None:
+    status, body = autopilot("127.0.0.1", "GET", b"", _looping(tmp_path))
+
+    assert status == 200
+    assert body["inFlight"] == []
+    assert body["next"] == {"task": "T-4", "title": "Serve it", "verdict": "starting", "reason": "goes next"}
+
+
+def test_a_get_with_a_loop_lists_each_started_session_and_no_pick_once_nothing_is_left(tmp_path: Path) -> None:
+    runtime = _looping(tmp_path)
+    runtime.set_enabled(True)
+    assert runtime.loop is not None and runtime.loop.tick() == ["T-4"]
+
+    body = autopilot("127.0.0.1", "GET", b"", runtime)[1]
+
+    assert body["inFlight"] == [
+        {
+            "task": "T-4",
+            "title": "Serve it",
+            "model": "@agent-standard-high",
+            "started": 1000.0,
+            "url": "https://claude.ai/code/T-4",
+        }
+    ]
+    assert body["next"] is None
+
+
+def test_every_body_the_route_serves_is_one_the_contract_names(tmp_path: Path) -> None:
+    looping = _looping(tmp_path)
+    looping.set_enabled(True)
+    assert looping.loop is not None and looping.loop.tick() == ["T-4"]
+
+    for runtime in (_runtime(tmp_path), _looping(tmp_path), looping):  # no loop; a pick; a session and no pick
+        AutopilotStatus.model_validate(autopilot("127.0.0.1", "GET", b"", runtime)[1])
 
 
 @pytest.fixture

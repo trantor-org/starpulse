@@ -28,7 +28,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from starpulse._internal.autopilot.admission import decide, tier_of
+from starpulse._internal.autopilot.admission import Decision, decide, tier_of
 from starpulse._internal.autopilot.inputs import points
 from starpulse._internal.autopilot.ledger import Ledger, RunRecord
 from starpulse._internal.autopilot.sampler import PERIOD, Reading, Sampler
@@ -49,8 +49,9 @@ _HOST = ("cpu", "memory")
 
 @dataclass
 class _Run:
-    """One started session: what it was admitted at, the host's load when it began, and the most it has drawn."""
+    """One started session: its address, what it was admitted at, the host's load when it began and the most it has drawn."""
 
+    session: str
     tier: str
     points: int
     started_at: float
@@ -150,6 +151,25 @@ class Loop:
             self._events = None
             self._feed.unsubscribe(events)
 
+    def in_flight(self) -> list[dict[str, Any]]:
+        """The sessions this loop started whose tasks are still running, oldest first, for `GET /api/autopilot`.
+
+        Read from another thread than the loop's: `list(...)` takes one snapshot of the runs a tick may be changing.
+        """
+        sessions = []
+        for task, run in list(self._running.items()):
+            agent = self._feed.task(task)
+            sessions.append(
+                {
+                    "task": task,
+                    "title": agent["title"] if agent else task,
+                    "model": (agent["model"] if agent else None) or "",
+                    "started": run.started_at,
+                    "url": run.session,
+                }
+            )
+        return sessions
+
     def _safely(self, tick: Callable[..., object], **kwargs: Any) -> None:
         try:
             tick(**kwargs)
@@ -227,15 +247,41 @@ class Loop:
         if not written.ok:
             logger.warning("StarPulse autopilot: cannot comment the session of %s: %s", task, written.output)
 
+    def _decide(
+        self, readings: list[Reading], skipped: set[str], log: bool = True
+    ) -> tuple[list[dict[str, Any]], list[Decision]]:
+        """The open tasks with the running and `skipped` ones unworkable, and `decide`'s verdict on them over `readings`."""
+        tasks = [
+            {**agent, "workable": False} if agent["id"] in self._running or agent["id"] in skipped else agent
+            for agent in self._feed.open_tasks()
+        ]
+        return tasks, decide(tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log)
+
+    def next_pick(self) -> dict[str, Any] | None:
+        """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.
+
+        Read for `GET /api/autopilot`, so it decides over the sampler's last reading without sampling and logs nothing;
+        None before the first sample or with no workable task in the eligible lane. It does not depend on the switch.
+        """
+        if not self._sampler.readings()[0]:
+            return None
+        tasks, decisions = self._decide(self._readings(), set(), log=False)
+        if not decisions:
+            return None
+        top = decisions[0]  # the admitted in enforced order come first, then the refused by depth
+        agent = next(a for a in tasks if a["id"] == top.task)
+        return {
+            "task": top.task,
+            "title": agent["title"],
+            "verdict": "starting" if top.admitted else "waits",
+            "reason": "goes next" if top.admitted else top.blocked_by,
+        }
+
     def _admit(self, now: float) -> list[str]:
         started: list[str] = []
         skipped: set[str] = set()  # a start that failed this pass, tried again on the next wake
         while readings := self._readings():
-            tasks = [
-                {**agent, "workable": False} if agent["id"] in self._running or agent["id"] in skipped else agent
-                for agent in self._feed.open_tasks()
-            ]
-            decisions = decide(tasks, self._lane, readings, self._policy, self._chain(), self._ledger)
+            tasks, decisions = self._decide(readings, skipped)
             if (picked := next((d for d in decisions if d.admitted), None)) is None:
                 break
             agent = next(a for a in tasks if a["id"] == picked.task)
@@ -246,7 +292,12 @@ class Loop:
                 skipped.add(picked.task)
                 continue
             self._running[picked.task] = _Run(
-                tier_of(agent), points(agent["labels"], self._policy.unsized_points), now, picked.demand, self._use()
+                session,
+                tier_of(agent),
+                points(agent["labels"], self._policy.unsized_points),
+                now,
+                picked.demand,
+                self._use(),
             )
             started.append(picked.task)
             logger.info("StarPulse autopilot: started %s at %s", picked.task, session)

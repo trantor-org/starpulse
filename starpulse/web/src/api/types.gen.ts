@@ -176,10 +176,20 @@ export interface WindowTooLong {
 }
 /**
  * Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.
+ *
+ * `inFlight` and `next` are served only by a server that runs a dispatch loop; without one they are absent.
  */
 export interface AutopilotStatus {
   dimensions: AutopilotDimension[];
   enabled: boolean;
+  /**
+   * The sessions the loop started and has not finished, oldest first.
+   */
+  inFlight?: AutopilotSession[];
+  /**
+   * Null when no task in the eligible lane is workable.
+   */
+  next?: AutopilotNext | null;
   sampledAt: number | null;
 }
 /**
@@ -189,6 +199,37 @@ export interface AutopilotDimension {
   limit: number;
   name: "cpu" | "memory" | "sessions" | "review";
   use: number;
+}
+/**
+ * A session the autopilot started whose task is still running: the strip's Sessions menu draws one row of it.
+ */
+export interface AutopilotSession {
+  /**
+   * The task's agent profile, empty when it has none.
+   */
+  model: string;
+  /**
+   * When the loop started the session, in epoch seconds.
+   */
+  started: number;
+  task: string;
+  title: string;
+  /**
+   * The session's address, as `start` answered it.
+   */
+  url: string;
+}
+/**
+ * The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.
+ */
+export interface AutopilotNext {
+  /**
+   * `goes next`, or the first dimension the task overfits, which the strip shows after `waits:`.
+   */
+  reason: string;
+  task: string;
+  title: string;
+  verdict: "starting" | "waits";
 }
 /**
  * The contract checks `starpulse doctor` runs; `ok` is false when any fails.
