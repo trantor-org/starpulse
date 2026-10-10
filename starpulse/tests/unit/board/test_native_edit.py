@@ -1,11 +1,15 @@
 """Editing, archiving and restoring a task on the native board: the board's `edit`, `archive` and `restore`, `POST /api/edit`, `POST /api/archive` and `POST /api/restore` over them."""
 
 import json
+from http.server import ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from starpulse._internal.board.seam import Board
+from starpulse._internal.cli import agent_cli as cli
+from starpulse._internal.kit.adapter_kit import serve
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog, _split
 from starpulse._internal.server.server import assemble
 from starpulse._internal.server import writes
@@ -38,8 +42,16 @@ Draw it.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 It draws
-- [ ] #2 It scrolls
+- [x] #2 It scrolls
+- [ ] #3 It zooms
 <!-- AC:END -->
+
+## Definition of Done
+<!-- DOD:BEGIN -->
+- [ ] #1 Docs updated
+- [x] #2 Tests pass
+- [ ] #3 Lint clean
+<!-- DOD:END -->
 
 ## Implementation Notes
 
@@ -289,3 +301,77 @@ def test_the_restore_route_refuses_a_non_lan_caller_and_a_malformed_body(
 
 def test_the_restore_route_on_a_board_that_does_not_restore_is_404() -> None:
     assert writes.restore_task(LAN, _raw(task="task-5"), None)[0] == 404
+
+
+def _edit_verb(
+    capsys: pytest.CaptureFixture[str], server: ThreadingHTTPServer, *flags: str
+) -> tuple[int, dict[str, Any]]:
+    code = cli.main(["task", "edit", "task-5", *flags, "--server", f"http://127.0.0.1:{server.server_port}"], {})
+    out = capsys.readouterr()
+    assert out.err == ""
+    return code, json.loads(out.out)
+
+
+def test_task_edit_flags_add_reword_remove_check_and_uncheck_items_of_both_checklists_and_renumber(
+    served: tuple[Board, BoardFeed, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    built, feed, base = served
+
+    with serve(tmp_path, feed, read=built.read, edit=built.edit) as server:
+        code, doc = _edit_verb(
+            capsys,
+            server,
+            *("--remove-ac", "1", "--uncheck-ac", "2", "--reword-ac", "3:It zooms smoothly: fast", "--check-ac", "3"),
+            *("--ac", "It pans"),
+            *("--remove-dod", "1", "--uncheck-dod", "2", "--reword-dod", "3:Lint passes", "--check-dod", "3"),
+            *("--dod", "Changelog written"),
+        )
+
+    assert (code, doc["task"], sorted(doc["changed"])) == (0, "task-5", ["acceptanceCriteria", "definitionOfDone"])
+    assert _split(_file(base).read_text())[1] == _split(FILE)[1].replace(
+        "- [x] #1 It draws\n- [x] #2 It scrolls\n- [ ] #3 It zooms\n",
+        "- [ ] #1 It scrolls\n- [x] #2 It zooms smoothly: fast\n- [ ] #3 It pans\n",
+    ).replace(
+        "- [ ] #1 Docs updated\n- [x] #2 Tests pass\n- [ ] #3 Lint clean\n",
+        "- [ ] #1 Tests pass\n- [x] #2 Lint passes\n- [ ] #3 Changelog written\n",
+    )
+
+
+def test_task_edit_append_notes_adds_lines_after_the_notes_and_rewrites_nothing_before_them(
+    served: tuple[Board, BoardFeed, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    built, feed, base = served
+
+    with serve(tmp_path, feed, read=built.read, edit=built.edit) as server:
+        code, doc = _edit_verb(capsys, server, "--append-notes", "Second note.", "--append-notes", "Third note.")
+
+    assert (code, doc) == (0, {"task": "task-5", "changed": ["notes"]})
+    assert _split(_file(base).read_text())[1] == _split(FILE)[1].replace(
+        "kept in the file\n<!-- SECTION:NOTES:END -->",
+        "kept in the file\nSecond note.\nThird note.\n<!-- SECTION:NOTES:END -->",
+    )
+
+
+def test_task_edit_naming_an_item_the_task_lacks_is_refused_and_writes_nothing(
+    served: tuple[Board, BoardFeed, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    built, feed, base = served
+
+    with serve(tmp_path, feed, read=built.read, edit=built.edit) as server:
+        code, doc = _edit_verb(capsys, server, "--title", "Mine", "--check-dod", "9")
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert "no Definition of Done item #9" in doc["error"]
+    assert _file(base).read_text() == FILE
+
+
+def test_task_edit_reword_without_a_number_and_colon_is_a_usage_error(
+    served: tuple[Board, BoardFeed, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    built, feed, _ = served
+
+    with serve(tmp_path, feed, read=built.read, edit=built.edit) as server:
+        code, doc = _edit_verb(capsys, server, "--reword-ac", "It zooms")
+
+    assert (code, doc["code"]) == (2, "usage")
+    assert "N:TEXT" in doc["error"]

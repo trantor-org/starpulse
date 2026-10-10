@@ -268,6 +268,10 @@ def task_record(feed: BoardFeed, read: TaskReader | None, task: str) -> tuple[in
     return 200, {"task": task, "record": record}
 
 
+#: The edit change that adds a line to the task's notes rather than setting a record field.
+_APPEND_NOTES = "appendNotes"
+
+
 def edit_task(
     source: str, raw: bytes, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
 ) -> tuple[int, dict[str, Any]]:
@@ -277,7 +281,8 @@ def edit_task(
     `base` holds the value each changed field had when the page read the task. The edit is refused 409 when any
     changed field's current value differs, naming those fields with their current values, so another writer's
     change is never overwritten; fields the edit does not touch may differ. The writer refuses a whole edit or
-    writes all of it, and its refusal carries the skill that satisfies it.
+    writes all of it, and its refusal carries the skill that satisfies it. `changes` may also hold `appendNotes`, text
+    added to the end of the notes as they are when the write lands: it needs no base and is reported as `notes`.
     """
     if not _on_lan(source):
         return 403, {"error": "Editing a task answers only loopback and private network (RFC 1918) browsers"}
@@ -302,23 +307,29 @@ def edit_task(
     with _EDIT_LOCK:
         if (current := read(task)) is None:
             return 404, {"error": f"{task} has no record to read"}
-        for field in changes:
+        # `appendNotes` is no record field: it adds to the notes as they are now, so it has no base to go stale
+        fields = {field: value for field, value in changes.items() if field != _APPEND_NOTES}
+        for field in fields:
             if field not in current:
                 return 400, {"error": f"{field} is not an editable field of {task}"}
             if field not in base:
                 return 400, {"error": f"the edit has no base for {field}"}
-        if stale := [field for field in changes if current[field] != base[field]]:
+        if stale := [field for field in fields if current[field] != base[field]]:
             return 409, {
                 "error": f"{task} changed since it was opened: {', '.join(stale)}",
                 "stale": stale,
                 "current": {field: current[field] for field in stale},
             }
-        if not (todo := {field: value for field, value in changes.items() if value != current[field]}):
+        todo = {field: value for field, value in fields.items() if value != current[field]}
+        if _APPEND_NOTES in changes:
+            todo[_APPEND_NOTES] = changes[_APPEND_NOTES]
+        if not todo:
             return 200, {"task": task, "changed": []}
         written = edit(task, todo, comment, **named)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
-    return 200, {"task": task, "changed": list(todo)}
+    changed = ("notes" if field == _APPEND_NOTES else field for field in todo)
+    return 200, {"task": task, "changed": list(dict.fromkeys(changed))}
 
 
 def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver | None) -> tuple[int, dict[str, Any]]:

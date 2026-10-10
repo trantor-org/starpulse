@@ -8,7 +8,9 @@ internal and can change in any release.
 - The `starpulse` command line: its verbs, their JSON output and their exit codes ([each verb](cli.md)). The task write
   verbs are `task create TITLE [--description --priority --milestone --assignee --label --dependency --ac]`, which
   returns `{task}`; `task edit TASK [--title --type --priority --milestone --label --dependency --reference
-  --documentation --modified-file --description --plan --notes --final-summary --comment --base]`, which returns
+  --documentation --modified-file --description --plan --notes --append-notes --final-summary --ac --reword-ac
+  --remove-ac --check-ac --uncheck-ac --dod --reword-dod --remove-dod --check-dod --uncheck-dod --comment --base]`,
+  which returns
   `{task, changed}` and is refused whole (exit 1) when a field it changes is stale against its base;
   `task assign TASK ASSIGNEE`, which returns `{task, assignee, changed}`; `task archive TASK [--reason]`, which returns
   `{task}`; `task restore TASK`, which returns `{task}` and is refused (exit 1) for a task that is open, not archived or

@@ -351,7 +351,8 @@ def _set_text(body: str, field: str, value: Any) -> str:
 
 
 def _set_items(task: str, body: str, field: str, value: Any) -> str:
-    """`body` with the checklist `field` set to `value`: an item with a number keeps it and one without takes the next."""
+    """`body` with the checklist `field` set to `value`: an item with a number keeps it and one without takes the next
+    after the highest number given, so a list given without numbers is numbered from 1."""
     marker, heading, pattern = _CHECKLISTS[field]
     if not isinstance(value, list) or not all(
         isinstance(item, dict)
@@ -364,7 +365,7 @@ def _set_items(task: str, body: str, field: str, value: Any) -> str:
     known = {item["n"] for item in _items(pattern, body)}
     if unknown := [item["n"] for item in value if "n" in item and item["n"] not in known]:
         raise ValueError(f"{task} has no {heading} item #{unknown[0]}")
-    following = max(known, default=0)
+    following = max((item["n"] for item in value if "n" in item), default=0)
     lines = []
     for item in value:
         if "n" not in item:
