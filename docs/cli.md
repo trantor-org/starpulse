@@ -269,6 +269,9 @@ integer or an unknown `state` answers 400.
 `GET /metrics` serves Prometheus text: `starpulse_pull_store_age_seconds{repo="owner/name"}`, the seconds since the newest
 record of each repository holding an open pull request was read. The refresh reads those every minute, so a value past a
 few minutes means the refresh stopped; a repository with none open is left out, because nothing rewrites it.
+The same route carries the server process's own gauges, `process_resident_memory_bytes`, `process_threads`,
+`process_open_fds` and `process_start_time_seconds`; the last changes on every restart, so a growth rule can tell one
+process lifetime from the next. A host with no `/proc` serves none of them.
 
 `waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
 merged state, open review threads and commits behind `main` the server last read when it has them.
