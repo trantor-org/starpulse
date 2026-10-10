@@ -13,7 +13,7 @@ const pct = (d: Dimension) => `${Math.min(100, (d.used / d.limit) * 100)}%`;
 function Meter({ d, children }: { d: Dimension; children?: ReactNode }) {
   return (
     <div className={`dm ${level(d)}`} title={d.detail}>
-      <div className="r"><span>{d.label}</span><b>{d.used}/{d.limit}{d.unit}</b></div>
+      <div className="r"><span>{d.label}</span><b>{Math.round(d.used)}/{d.limit}{d.unit}</b></div>
       <div className="m"><i style={{ width: pct(d) }} /></div>
       {children}
     </div>

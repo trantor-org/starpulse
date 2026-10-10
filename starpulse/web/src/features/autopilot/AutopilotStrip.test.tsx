@@ -63,6 +63,14 @@ describe("the autopilot strip", () => {
     expect(host.querySelector(".ap.off")).toBeNull();
   });
 
+  it("prints a fractional use as a whole number, and still fills its bar to the fraction", async () => {
+    await draw({ dimensions: dims({ cpu: 76.07209997714222, memory: 37.84587044556782 }) });
+
+    const meters = [...host.querySelectorAll(".dm")].map((m) => m.querySelector(".r")?.textContent);
+    expect(meters.slice(0, 2)).toEqual(["CPU76/80%", "RAM38/85%"]);
+    expect(parseFloat(q<HTMLElement>(".dm .m i")!.style.width)).toBeCloseTo(95.09, 2);
+  });
+
   it("turns a meter amber from 80% of its limit and red past it", async () => {
     await draw({ dimensions: dims({ cpu: 66, memory: 91 }) });
 
