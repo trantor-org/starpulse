@@ -4201,7 +4201,7 @@
     },
     "PullRecord": {
       "additionalProperties": false,
-      "description": "One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).",
+      "description": "One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).\n\n`headRefName` and `unresolvedThreads` (the first 100 threads) are null for a record saved before they were kept.",
       "properties": {
         "baseRefName": {
           "type": "string"
@@ -4220,6 +4220,16 @@
         },
         "fetchedAt": {
           "type": "number"
+        },
+        "headRefName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "headRefOid": {
           "type": "string"
@@ -4273,6 +4283,19 @@
         "threads": {
           "type": "integer"
         },
+        "unresolvedThreads": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PullThread"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "string"
         }
@@ -4289,12 +4312,39 @@
         "checks",
         "requiredChecks",
         "threads",
+        "unresolvedThreads",
+        "headRefName",
         "updatedAt",
         "mergedAt",
         "mergeSha",
         "fetchedAt"
       ],
       "title": "PullRecord",
+      "type": "object"
+    },
+    "PullThread": {
+      "additionalProperties": false,
+      "description": "An unresolved review thread: its id and the login of its first comment's author, null for a deleted account.",
+      "properties": {
+        "author": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "author"
+      ],
+      "title": "PullThread",
       "type": "object"
     },
     "Pulls": {

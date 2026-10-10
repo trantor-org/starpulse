@@ -28,6 +28,8 @@ _FIELDS = {
     "merge_sha": "mergeSha",
     "fetched_at": "fetchedAt",
 }
+#: The names of columns an older refresh did not fill: a record may lack them, and is served with them null.
+_LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads"}
 
 
 AGE_METRIC = "starpulse_pull_store_age_seconds"
@@ -43,8 +45,15 @@ class PullStore:
         self.rev = 0
         create_tables(engine, [pull_requests])
         present = {column["name"] for column in inspect(engine).get_columns(pull_requests.name)}
-        added = {"detail": "JSON", "merged_at": "VARCHAR", "merge_sha": "VARCHAR"}
-        with engine.begin() as db:  # a table an earlier version created: the hub's migrations 0010 and 0011 add these
+        added = {
+            "detail": "JSON",
+            "merged_at": "VARCHAR",
+            "merge_sha": "VARCHAR",
+            "head_ref": "VARCHAR",
+            "unresolved": "JSON",
+        }
+        # a table an earlier version created: the hub's migrations 0010, 0011 and 0013 add these
+        with engine.begin() as db:
             for column, kind in added.items():
                 if column not in present:
                     db.execute(text(f"ALTER TABLE {pull_requests.name} ADD COLUMN {column} {kind}"))
@@ -53,7 +62,11 @@ class PullStore:
         """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository
         and number."""
         rows = [
-            {**{column: record[name] for column, name in _FIELDS.items()}, "detail": record.get("detail")}
+            {
+                **{column: record[name] for column, name in _FIELDS.items()},
+                **{column: record.get(name) for column, name in _LATER.items()},
+                "detail": record.get("detail"),
+            }
             for record in records
         ]
         if not rows:
@@ -106,6 +119,7 @@ class PullStore:
             query = query.where(pull_requests.c.body.contains(body_contains, autoescape=True))
         with self._engine.connect() as db:
             return [
-                {name: row[column] for column, name in _FIELDS.items()} | ({"detail": row["detail"]} if detailed else {})
+                {name: row[column] for column, name in (_FIELDS | _LATER).items()}
+                | ({"detail": row["detail"]} if detailed else {})
                 for row in db.execute(query).mappings()
             ]

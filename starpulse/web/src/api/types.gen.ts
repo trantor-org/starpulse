@@ -1180,12 +1180,15 @@ export interface Pulls {
 }
 /**
  * One pull request the PR store read from GitHub, as of `fetchedAt` (epoch seconds).
+ *
+ * `headRefName` and `unresolvedThreads` (the first 100 threads) are null for a record saved before they were kept.
  */
 export interface PullRecord {
   baseRefName: string;
   body: string;
   checks: "pass" | "failing" | "pending" | "none";
   fetchedAt: number;
+  headRefName: string | null;
   headRefOid: string;
   isDraft: boolean;
   mergeSha: string | null;
@@ -1196,11 +1199,19 @@ export interface PullRecord {
   requiredChecks: RequiredCheck[];
   state: "OPEN" | "MERGED" | "CLOSED";
   threads: number;
+  unresolvedThreads: PullThread[] | null;
   updatedAt: string;
 }
 export interface RequiredCheck {
   name: string;
   result: "pass" | "failing" | "pending";
+}
+/**
+ * An unresolved review thread: its id and the login of its first comment's author, null for a deleted account.
+ */
+export interface PullThread {
+  author: string | null;
+  id: string;
 }
 /**
  * `POST /api/move`: move `task` to the column `to`.

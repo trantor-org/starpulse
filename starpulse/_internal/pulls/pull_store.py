@@ -32,8 +32,9 @@ logger = logging.getLogger(__name__)
 _PAGE = 100
 #: Merged rows still lacking a merge commit that one refresh reads again, to bound its query cost.
 _BACKFILL = 25
-#: Pull requests one query reads. GitHub refuses a query of over 500,000 nodes, about 200 selections, charges for one
-#: it times out on, and logs no cost for either.
+#: Pull requests one query reads. GitHub refuses a query of over 500,000 nodes, about 190 selections (one reads
+#: about 2,600: 2,100 of check suites, 100 each of files, timeline items, contexts, threads and their first
+#: comments), charges for one it times out on, and logs no cost for either.
 _BATCH = 25
 #: A required check's result, by the `conclusion` of a check run or the `state` of a commit status.
 _PASSED = {"SUCCESS", "NEUTRAL", "SKIPPED"}
@@ -49,7 +50,7 @@ def _selection(number: int) -> str:
     """The alias reading PR `number`: its facts, its required checks at the head commit and its review threads."""
     return f"""
   p{number}: pullRequest(number: {number}) {{
-    number state isDraft mergeable baseRefName headRefOid body updatedAt createdAt mergedAt
+    number state isDraft mergeable baseRefName headRefName headRefOid body updatedAt createdAt mergedAt
     mergeCommit {{ oid }}
     files(first: 100) {{ nodes {{ path }} }}
     headRef {{ compare(headRef: "main") {{ aheadBy }} }}
@@ -63,7 +64,7 @@ def _selection(number: int) -> str:
       ... on CheckRun {{ name status conclusion isRequired(pullRequestNumber: {number}) }}
       ... on StatusContext {{ context state isRequired(pullRequestNumber: {number}) }}
     }} }} }} }} }} }}
-    reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
+    reviewThreads(first: 100) {{ nodes {{ id isResolved comments(first: 1) {{ nodes {{ author {{ login }} }} }} }} }}
   }}"""
 
 
@@ -92,6 +93,11 @@ def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
         for check in rollup["contexts"]["nodes"]
         if check.get("isRequired")
     ]
+    unresolved = [
+        {"id": thread["id"], "author": ((thread["comments"]["nodes"] or [{}])[0].get("author") or {}).get("login")}
+        for thread in node["reviewThreads"]["nodes"]
+        if not thread["isResolved"]
+    ]
     results = {check["result"] for check in required}
     checks = next((name for name in ("failing", "pending", "pass") if name in results), "none")
     return {
@@ -105,7 +111,9 @@ def _record(repo: str, node: dict, now: float) -> dict[str, Any]:
         "body": node["body"] or "",
         "checks": checks,
         "requiredChecks": required,
-        "threads": sum(not thread["isResolved"] for thread in node["reviewThreads"]["nodes"]),
+        "threads": len(unresolved),
+        "unresolvedThreads": unresolved,
+        "headRefName": node["headRefName"],
         "updatedAt": node["updatedAt"],
         "mergedAt": node["mergedAt"],
         "mergeSha": (node["mergeCommit"] or {}).get("oid"),
