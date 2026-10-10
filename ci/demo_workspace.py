@@ -20,6 +20,9 @@ from starpulse._internal.machines.snapshot import Qualify, describe
 WORKSPACE = Path(__file__).with_name("workspace")
 #: The Board's main line, the lanes drawn on its axis; Waiting, Needs Attention and the final states sit off it.
 MAIN_LINE = ["new", "ready", "in_progress", "review"]
+#: The tiers the Star Map draws the Board's states in, left to right, as a working team's board declares them: each stage in
+#: a cell of its own, the unworked Ready and Waiting and the final Done and Archived stacked.
+TIERS = [["new"], ["ready", "waiting"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]]
 #: Each machine that opens under another's state: (parent, state, flow, when).
 SUBFLOWS = [("board", "in_progress", "delivery", ""), ("delivery", "pr_opened", "review-triage", "a PR is open")]
 
@@ -40,6 +43,7 @@ def _drawn(workflows: Collection[str]) -> tuple[dict[str, dict], list[dict]]:
             body["subflows"] = links
         if name == "board":
             body["mainLine"] = MAIN_LINE
+            body["tiers"] = TIERS
             body["dagActors"] = sorted({w["actor"] for ws in body.get("writers", {}).values() for w in ws})
             for cue in compiled.cues:
                 state = next(t["target"] for t in body["transitions"] if t["event"] == cue.event)
