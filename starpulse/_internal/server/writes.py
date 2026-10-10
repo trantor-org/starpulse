@@ -119,15 +119,28 @@ _LAN = (
 )
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
-#: The details a create takes besides its title, as one text value or a list of them.
-_CREATE_TEXT = ("description", "priority", "milestone", "assignee")
-_CREATE_LISTS = ("labels", "dependencies", "acceptanceCriteria")
+#: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
+#: single write: a second write to finish a task is refused as not on the board until the next scan places the card.
+_CREATE_TEXT = ("description", "priority", "milestone", "assignee", "status", "type")
+_CREATE_LISTS = (
+    "labels",
+    "dependencies",
+    "acceptanceCriteria",
+    "references",
+    "documentation",
+    "definitionOfDone",
+)
+#: The lists whose every item must be nonblank, rather than dropped when blank.
+_CREATE_NONBLANK = ("acceptanceCriteria", "definitionOfDone")
 _PRIORITIES = frozenset({"high", "medium", "low"})
 _CREATE_KINDS = {
     "priority": "high, medium or low",
     "labels": "a list of text",
     "dependencies": "a list of text",
     "acceptanceCriteria": "a list of nonblank text",
+    "references": "a list of text",
+    "documentation": "a list of text",
+    "definitionOfDone": "a list of nonblank text",
 }
 #: Saves hold this from reading a task's current record to writing, so two browsers saving one task cannot both pass the stale check.
 _EDIT_LOCK = threading.Lock()
@@ -419,7 +432,7 @@ def _create_details(body: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
         elif field in _CREATE_LISTS:
             ok = isinstance(value, list) and all(isinstance(item, str) for item in value)
             value = [item.strip() for item in value if item.strip()] if ok else value
-            ok = ok and (field != "acceptanceCriteria" or len(value) == len(body[field]))
+            ok = ok and (field not in _CREATE_NONBLANK or len(value) == len(body[field]))
         else:
             return (
                 {},
@@ -429,14 +442,16 @@ def _create_details(body: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
             ok, value = value.lower() in _PRIORITIES, value.lower()
         if not ok:
             return {}, f"{field} must be {_CREATE_KINDS.get(field, 'text')}"
+        if field == "definitionOfDone":
+            value = [{"text": item, "checked": False} for item in value]
         if value:
             details[field] = value
     return details, ""
 
 
 def create_task(source: str, raw: bytes, create: TaskCreator | None) -> tuple[int, dict[str, Any]]:
-    """Create the task `raw` names in the board's starting lane through `create`, for a browser at `source`: the HTTP
-    status and JSON body, which holds the new task's id.
+    """Create the task `raw` names, in the lane its `status` names or else the board's starting lane, through `create`,
+    for a browser at `source`: the HTTP status and JSON body, which holds the new task's id.
 
     The card appears in its column when the board adapter next reports the task, not on this answer.
     """

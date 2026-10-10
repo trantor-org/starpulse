@@ -12,7 +12,7 @@ from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog, _split
 from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse._internal.server.server import assemble
-from starpulse._internal.server.writes import create_task
+from starpulse._internal.server.writes import create_task, task_record
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
@@ -136,6 +136,31 @@ def test_a_create_writes_every_detail_as_backlog_markdown_and_the_next_scan_read
         "dependencies": ["task-1"],
         "description": "Explain the three lanes.\nThen the toolbar.",
     }
+
+
+def test_a_create_that_names_a_status_type_and_documentation_lands_whole_in_one_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The create is the only write, so a task is never on the board without them: the card is not placed until the
+    next scan, and a second write sent in that window is refused as not on the board (TASK-4066)."""
+    built, feed = _serving(tmp_path, monkeypatch)
+    assert built.create is not None
+    details = {
+        "status": "In Progress",
+        "type": "bug",
+        "references": ["docs/a.md"],
+        "documentation": ["docs/b.md"],
+        "definitionOfDone": ["Gates pass", "PR is green"],
+    }
+
+    created = create_task("127.0.0.1", _raw(title="Whole", **details), built.create)
+
+    assert created == (201, {"task": "task-1"})
+    frontmatter, body = _split((_tasks(tmp_path) / "task-1 - Whole.md").read_text())
+    assert (frontmatter["status"], frontmatter["type"]) == ("In Progress", "bug")
+    assert (frontmatter["references"], frontmatter["documentation"]) == (["docs/a.md"], ["docs/b.md"])
+    assert "- [ ] #1 Gates pass\n- [ ] #2 PR is green\n" in body
+    assert task_record(feed, built.read, "task-1")[0] == 404  # the window: not scanned yet
 
 
 @pytest.mark.parametrize(

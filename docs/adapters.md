@@ -12,8 +12,9 @@ directory. The `Board` says:
   archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `restore(task)` that
   returns an archived task's file to the board's tasks unchanged (`POST /api/restore`), a `complete(task)` that
   moves a Done task out of the lanes (the native board's to `completed/`, where `read` and `edit` still find it), a `create(title, details)` that
-  makes a task in the board's starting lane with the details the page filled (description, priority, labels,
-  milestone, assignee, dependencies, acceptance criteria) and answers with its id (`POST /api/tasks`;
+  makes a task whole, in one write, in the board's starting lane or the lane a `status` detail names, with the
+  details the page filled (description, priority, labels, milestone, assignee, dependencies, acceptance
+  criteria, type, references, documentation, Definition of Done) and answers with its id (`POST /api/tasks`;
   `capabilities.create`), and optionally milestone records: `milestones()`, `read_milestone(id)`,
   `create_milestone(title, details)` (answering with the new id), `edit_milestone(id, changes)` and
   `archive_milestone(id)` (`GET /api/milestones`, `GET /api/milestones/<id>`, `POST /api/milestones`,

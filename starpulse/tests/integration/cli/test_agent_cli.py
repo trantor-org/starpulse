@@ -710,6 +710,22 @@ def test_task_create_writes_a_task_with_the_details_given_and_reports_its_id(
     assert "- [ ] #1 It rotates\n- [ ] #2 It logs" in written
 
 
+def test_task_create_takes_the_status_type_references_and_definition_of_done_in_the_one_write(
+    tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["task", "create", "Rotate", "--status", "In Progress", "--type", "bug", "--reference", "docs/a.md"]
+    argv += ["--documentation", "docs/b.md", "--dod", "Gates pass", "--dod", "PR is green", "--server", tasked]
+
+    code, doc = _run(capsys, argv)
+
+    assert (code, doc) == (0, {"task": "task-2"})
+    written = _task_file(tmp_path, "task-2").read_text()
+    assert "status: In Progress" in written
+    assert "type: bug" in written
+    assert "- docs/a.md" in written and "- docs/b.md" in written
+    assert "- [ ] #1 Gates pass\n- [ ] #2 PR is green" in written
+
+
 def test_task_create_with_a_priority_the_board_does_not_know_is_refused_and_writes_nothing(
     tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
