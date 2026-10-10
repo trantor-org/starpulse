@@ -9,6 +9,9 @@ moves the session through the machine's `bindings`:
 
     python -m starpulse.claude_code [--host ADDR] [--port 4318] [--config FILE] [--key RE --branch RE --key-format FMT]
 
+With `--redactor MODULE:FUNCTION`, each shell command's text is also kept on its tool signal, passed through that
+function with every heredoc body replaced by its length and SHA-256; without one no command text is kept.
+
 Events are appended to the event log in the database `--config` names (default `starpulse.toml` in the working
 directory), the store `starpulse serve` reads.
 
@@ -33,7 +36,7 @@ from pathlib import Path
 
 from starpulse._internal.harnesses.harness import HARNESS
 from starpulse._internal.harnesses.otlp import TOOL_RESULT, LogEvent, receiver
-from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
+from starpulse._internal.harnesses.telemetry import TelemetryLog, redactor, signals
 from starpulse.contracts.adapters import TaskKeys
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog.event_log import EventLog
@@ -111,6 +114,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         "--branch", default=r"(?i)(?:refs/heads/)?(?:[\w.-]+/)*task-(\d+)", help="group 1 names the key"
     )
     parser.add_argument("--key-format", default="TASK-{}", help="wraps the branch's group 1 into the key")
+    parser.add_argument(
+        "--redactor",
+        metavar="MODULE:FUNCTION",
+        help="the filter a shell command's text passes through before it is stored; without one none is stored",
+    )
     args = parser.parse_args(argv)
     keys = TaskKeys(key=re.compile(args.key), branch=re.compile(args.branch), key_format=args.key_format)
 
@@ -119,11 +127,16 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     except (OSError, ValueError) as exc:
         parser.error(f"{args.config or 'starpulse.toml'}: {exc}")
 
+    try:
+        redact = redactor(args.redactor) if args.redactor else None
+    except ValueError as exc:
+        parser.error(str(exc))
+
     telemetry = TelemetryLog(log)
     print(f"claude code adapter on {args.host}:{args.port}", flush=True)
     ThreadingHTTPServer(
         (args.host, args.port),
-        handler(ClaudeCodeAdapter(keys), publisher(log), lambda payload: telemetry.publish(signals(payload))),
+        handler(ClaudeCodeAdapter(keys), publisher(log), lambda payload: telemetry.publish(signals(payload, redact))),
     ).serve_forever()
 
 

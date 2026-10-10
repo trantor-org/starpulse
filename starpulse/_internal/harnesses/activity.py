@@ -17,11 +17,12 @@ name (a model once named a tool with a shell pipeline) is `tool_other`.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-__all__ = ["SHELLS", "activities", "paths"]
+__all__ = ["SHELLS", "activities", "elide_heredocs", "paths"]
 
 #: The tools that run a shell command, whose input is a command line.
 SHELLS = frozenset({"Bash", "exec_command", "shell", "local_shell"})
@@ -31,7 +32,12 @@ SHELL_SEARCH = "shell_search"
 SHELL_OTHER = "shell_other"
 TOOL_OTHER = "tool_other"
 
-_HEREDOC_BODY = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?^\s*\2$", re.DOTALL | re.MULTILINE)
+# A heredoc: its `<<TAG` line, its body, and the line that ends it (the end of the command when unterminated, which
+# a shell accepts).
+_HEREDOC = re.compile(
+    r"(?P<head><<-?[ \t]*(?P<quote>['\"]?)(?P<tag>\w+)(?P=quote)[^\n]*\n)(?P<body>.*?)(?P<end>^[ \t]*(?P=tag)[ \t]*$|\Z)",
+    re.DOTALL | re.MULTILINE,
+)
 # A shell word (quoted runs, escapes and command substitutions glued into one), a redirect, or an operator that ends a
 # statement or starts a pipe. Regex, not shlex: shlex reads every character in Python.
 _TOKEN = re.compile(
@@ -80,8 +86,18 @@ def activities(tool: str, tool_input: Mapping[str, Any]) -> list[str]:
     return list(_shell(command)) if command else [tool]
 
 
+def elide_heredocs(command: str) -> str:
+    """`command` with each heredoc body replaced by its length in bytes and its SHA-256, so the body is never kept."""
+
+    def mark(found: re.Match[str]) -> str:
+        body = found["body"].encode()
+        return f"{found['head']}[heredoc length={len(body)} sha256={hashlib.sha256(body).hexdigest()}]\n{found['end']}"
+
+    return _HEREDOC.sub(mark, command)
+
+
 def _shell(command: str) -> Iterator[str]:
-    run = _HEREDOC_BODY.sub("", command).replace("\\\n", " ")
+    run = _HEREDOC.sub("", command).replace("\\\n", " ")
     for statement in _statements(run):
         if (activity := _statement(statement)) is not None:
             yield activity

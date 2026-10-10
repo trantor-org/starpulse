@@ -17,7 +17,9 @@ input is read only for the `git switch` or `git checkout` ref it names, which is
 
 from __future__ import annotations
 
+import importlib
 import json
+import logging
 import re
 import threading
 from collections.abc import Callable, Iterable, Iterator
@@ -25,11 +27,13 @@ from dataclasses import asdict, fields
 from typing import Any
 
 from starpulse._internal.eventlog.event_log import EventLog, Tail
-from starpulse._internal.harnesses.activity import SHELLS, activities, paths
+from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths
 from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
 from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal
 
-__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "signals"]
+__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "redactor", "signals"]
+
+log = logging.getLogger(__name__)
 
 #: Where Codex runs its main agent; a tool result from any other agent path is a subagent's.
 _MAIN_AGENT = {"", "/root"}
@@ -98,11 +102,13 @@ def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
         yield {"kind": "prompt", "name": str(a.get("command_name") or "")}
     elif name == "api_request":
         source = str(a.get("query_source") or "")
+        origin = _claude_origin(source)
         yield {
             "kind": "request",
             "model": str(a.get("model") or ""),
             "effort": str(a.get("effort") or ""),
-            "origin": _claude_origin(source),
+            "origin": origin,
+            "agent": str(a.get("agent.name") or (source if origin == "side" else "")),
             "detail": source,
             "seconds": _seconds(a.get("duration_ms")),
             "input": _number(a.get("input_tokens")),
@@ -157,12 +163,14 @@ def _codex(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
             "detail": str(a.get("source") or ""),
         }
     elif name == "codex.tool_result":
-        origin = "main" if str(a.get("agent_name") or "") in _MAIN_AGENT else "side"
+        agent = str(a.get("agent_name") or "")
+        main = agent in _MAIN_AGENT
         yield {
             "kind": "tool",
             "name": str(a.get("tool_name") or ""),
             "ok": _flag(a.get("success")),
-            "origin": origin,
+            "origin": "main" if main else "side",
+            "agent": "" if main else agent,
             "seconds": _seconds(a.get("duration_ms")),
             **_call(a),
         }
@@ -178,8 +186,38 @@ def _identity(attributes: dict[str, Any]) -> tuple[str, str, Callable[[str, dict
     return CLAUDE_CODE, str(attributes.get("session.id") or ""), _claude
 
 
-def signals(payload: dict[str, Any]) -> list[Signal]:
-    """The signals in an OTLP logs payload, in the order it carries them; records of events not read are skipped."""
+def redactor(setting: str) -> Callable[[str], str]:
+    """The filter a `module:function` setting names, which a stored shell command passes through."""
+    module, _, name = setting.partition(":")
+    if not module or not name:
+        raise ValueError(f"redactor {setting!r}: expected module:function")
+    try:
+        found = getattr(importlib.import_module(module), name, None)
+    except ImportError as error:
+        raise ValueError(f"redactor {setting!r}: {error}") from error
+    if not callable(found):
+        raise ValueError(f"redactor {setting!r} names no function (expected module:function)")
+    return found
+
+
+def _stored_command(attributes: dict[str, Any], redact: Callable[[str], str] | None) -> str:
+    """A shell call's command as it may be kept: heredoc bodies as length and hash, the rest through `redact`.
+
+    Empty without a redactor, for a tool that is not a shell, or when `redact` fails: a command is kept only once the
+    filter has seen it."""
+    if redact is None or str(attributes.get("tool_name")) not in SHELLS:
+        return ""
+    try:
+        return redact(elide_heredocs(_command(_input(attributes)[0])))
+    except Exception:
+        log.exception("command redactor failed; the command is not stored")
+        return ""
+
+
+def signals(payload: dict[str, Any], redact: Callable[[str], str] | None = None) -> list[Signal]:
+    """The signals in an OTLP logs payload, in the order it carries them; records of events not read are skipped.
+
+    A Claude Code shell result keeps its command, passed through `redact`; with none, no command is kept."""
     found: list[Signal] = []
     for resource_branch, record in _records(payload):
         a = _attributes(record)
@@ -192,9 +230,24 @@ def signals(payload: dict[str, Any]) -> list[Signal]:
         identity = a.get("event.sequence") if harness == CLAUDE_CODE else a.get("call_id")
         key = f"{harness}:{session}:{name}:{identity}:{a.get('event.timestamp')}"
         for fields in read(name, a):
-            found.append(Signal(harness, session, time=at, key=key, branch=branch, **fields))
+            if fields["kind"] == "tool" and harness == CLAUDE_CODE:
+                fields = {**fields, "command": _stored_command(a, redact)}
+            found.append(
+                Signal(harness, session, time=at, key=key, branch=branch, captured=harness == CLAUDE_CODE, **fields)
+            )
         if str(a.get("tool_name")) in SHELLS and (switch := _SWITCH.search(_command(_input(a)[0]))):
-            found.append(Signal(harness, session, "branch", at, f"{key}:branch", branch, name=switch[2]))
+            found.append(
+                Signal(
+                    harness,
+                    session,
+                    "branch",
+                    at,
+                    f"{key}:branch",
+                    branch,
+                    name=switch[2],
+                    captured=harness == CLAUDE_CODE,
+                )
+            )
     return found
 
 
@@ -205,6 +258,7 @@ _LISTS = ("activities", "reads", "writes")
 def _signal(stored: dict[str, Any]) -> Signal:
     """A signal as the event log stored it, whose tuples came back as lists."""
     kept = {k: v for k, v in stored.items() if k in _FIELDS}
+    kept.setdefault("captured", kept.get("harness") == CLAUDE_CODE)  # rows stored before the mark was kept
     return Signal(**{k: tuple(v) if k in _LISTS else v for k, v in kept.items()})
 
 

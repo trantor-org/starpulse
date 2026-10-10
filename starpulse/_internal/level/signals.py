@@ -22,7 +22,9 @@ class Signal:
     `compaction` (`name` its trigger), `interrupt` or `branch` (`name` the ref a shell switched to). `origin` is
     `main`, `side` (a subagent) or `auxiliary` (a compaction's own call). `key` is unique to the record, so a
     replayed export gives the same signals. A `tool` signal carries the `activities` the call performed, in order, as
-    a closed vocabulary with no arguments, and the `reads` and `writes` it named, as the export gave them.
+    a closed vocabulary with no arguments, and the `reads` and `writes` it named, as the export gave them. `agent` is
+    the subagent that made a `request` or `tool` step, empty for the main thread. `captured` is False for a harness the
+    steps-per-completion ledger does not cover yet (Codex): its rows are kept and left out of every ranking.
     """
 
     harness: str
@@ -36,6 +38,9 @@ class Signal:
     effort: str = ""
     ok: bool = True
     origin: str = "main"
+    agent: str = ""
+    command: str = ""
+    captured: bool = True
     detail: str = ""
     seconds: float = 0.0
     input: int = 0

@@ -5,14 +5,17 @@ and tool-output text; the events no recording holds (a compaction, a Codex skill
 built from the attribute names the harnesses document.
 """
 
+import hashlib
 import json
+import re
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, signals
+from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, redactor, signals
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
 CLAUDE_SESSION = "11111111-1111-4111-8111-111111111111"
@@ -268,3 +271,148 @@ def test_a_codex_tool_result_without_input_is_its_tool_name_and_names_no_path() 
     (found,) = signals(export(codex("codex.tool_result", tool_name="exec_command", call_id="a", success="true")))
 
     assert (found.activities, found.reads, found.writes) == (("exec_command",), (), ())
+
+
+def test_a_batch_is_one_step_per_api_request_with_its_tokens_and_duration_and_one_compaction_per_trigger() -> None:
+    found = signals(
+        export(
+            claude(
+                "api_request",
+                1,
+                model="m",
+                input_tokens=11,
+                output_tokens=22,
+                cache_read_tokens=33,
+                cache_creation_tokens=44,
+                duration_ms=1500,
+            ),
+            claude("tool_decision", 2, decision="accept", source="config", tool_name="Bash"),
+            claude("compaction", 3, trigger="auto"),
+            claude("api_request", 4, model="m", input_tokens=1, output_tokens=2, duration_ms=250),
+        )
+    )
+
+    steps = [s for s in found if s.kind == "request"]
+    assert [(s.input, s.output, s.cache_read, s.cache_write, s.seconds) for s in steps] == [
+        (11, 22, 33, 44, 1.5),
+        (1, 2, 0, 0, 0.25),
+    ]
+    assert [(s.kind, s.name) for s in found if s.kind in {"compaction", "decision"}] == [
+        ("decision", "Bash"),
+        ("compaction", "auto"),
+    ]
+
+
+def test_a_codex_signal_is_marked_uncaptured_and_a_claude_code_signal_captured() -> None:
+    codex_found = recorded("codex/otlp.ndjson")
+    claude_found = recorded("claude_code/otlp.ndjson")
+
+    assert {s.captured for s in codex_found} == {False}
+    assert {s.captured for s in claude_found} == {True}
+
+
+def test_a_subagents_steps_are_stored_under_the_parent_session_with_the_agent_name_and_a_failed_tool_is_not_ok() -> (
+    None
+):
+    found = signals(
+        export(
+            claude("api_request", 1, model="m", query_source="repl_main_thread"),
+            claude("api_request", 2, model="m", query_source="code-reviewer"),
+            claude("api_request", 3, model="m", query_source="code-reviewer"),
+            claude("api_request", 4, model="m", **{"query_source": "Explore", "agent.name": "explorer-1"}),
+            claude("tool_result", 5, tool_name="Bash", success="false", duration_ms=40),
+        )
+    )
+
+    requests = [s for s in found if s.kind == "request"]
+    assert {s.session for s in found} == {"s1"}
+    assert [(s.origin, s.agent) for s in requests] == [
+        ("main", ""),
+        ("side", "code-reviewer"),
+        ("side", "code-reviewer"),
+        ("side", "explorer-1"),
+    ]
+    (tool,) = [s for s in found if s.kind == "tool"]
+    assert (tool.ok, tool.seconds) == (False, 0.04)
+
+
+def test_a_codex_tool_result_names_the_subagent_that_ran_it() -> None:
+    (main, side) = signals(
+        export(
+            codex("codex.tool_result", tool_name="exec_command", call_id="a", success="true", agent_name="/root"),
+            codex("codex.tool_result", tool_name="exec_command", call_id="b", success="true", agent_name="/root/w1"),
+        )
+    )
+
+    assert (main.agent, side.agent) == ("", "/root/w1")
+
+
+TOKEN = "ghp_" + "aB3dE5gH7jK9mN1pQ3sT5vW7yZ9bD1fH3jK5"  # the shape of a GitHub token, not a credential
+
+
+def scrub(text: str) -> str:
+    return re.sub(r"ghp_\w{36}", "[secret]", text)
+
+
+def shell(command: str, tool: str = "Bash", seq: int = 1) -> dict[str, Any]:
+    return claude("tool_result", seq, tool_name=tool, success="true", tool_input=json.dumps({"command": command}))
+
+
+def test_a_shell_command_is_stored_with_its_token_filtered_and_its_heredoc_body_as_length_and_hash() -> None:
+    body = f"note with {TOKEN}\nsecond line\n"
+    command = f"gh api -H 'Authorization: token {TOKEN}' /user && cat <<'EOF' > notes.md\n{body}EOF\nmake test"
+
+    (tool,) = signals(export(shell(command)), scrub)
+
+    assert TOKEN not in repr(asdict(tool))
+    assert "second line" not in repr(asdict(tool))
+    assert tool.command == (
+        "gh api -H 'Authorization: token [secret]' /user && cat <<'EOF' > notes.md\n"
+        f"[heredoc length={len(body.encode())} sha256={hashlib.sha256(body.encode()).hexdigest()}]\n"
+        "EOF\nmake test"
+    )
+
+
+def test_an_unterminated_heredoc_is_still_stored_as_length_and_hash() -> None:
+    (tool,) = signals(export(shell("cat <<EOF\nsecret body\nno terminator")), scrub)
+
+    assert "secret body" not in tool.command
+    assert "length=" in tool.command
+    assert tool.activities == ("shell_read",)
+
+
+def test_no_command_is_stored_without_a_redactor_or_when_the_redactor_fails_or_for_a_tool_that_is_not_a_shell() -> None:
+    def broken(text: str) -> str:
+        raise RuntimeError(text)
+
+    (none,) = signals(export(shell("make test")))
+    (failed,) = signals(export(shell(f"echo {TOKEN}")), broken)
+    (read,) = signals(export(shell("make test", tool="Read")), scrub)
+
+    assert (none.command, failed.command, read.command) == ("", "", "")
+    assert none.activities == ("make test",)
+
+
+def test_a_codex_command_is_not_stored() -> None:
+    (found,) = signals(
+        export(
+            codex(
+                "codex.tool_result",
+                tool_name="exec_command",
+                call_id="a",
+                success="true",
+                arguments=json.dumps({"cmd": "make test"}),
+            )
+        ),
+        scrub,
+    )
+
+    assert found.command == ""
+
+
+def test_a_redactor_is_named_as_module_and_function() -> None:
+    assert redactor("json:dumps")("x") == '"x"'
+    with pytest.raises(ValueError, match="module:function"):
+        redactor("json")
+    with pytest.raises(ValueError, match="no_such_module_here"):
+        redactor("no_such_module_here:f")
