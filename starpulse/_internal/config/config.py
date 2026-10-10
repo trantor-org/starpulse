@@ -64,6 +64,7 @@ _KEYS = {
     "triggers",
     "analytics",
     "search",
+    "refresh_token_env",
 }
 _OIDC_KEYS = {
     "issuer",
@@ -340,6 +341,12 @@ def _repos(raw: object) -> tuple[Repo, ...]:
     return repos
 
 
+def _refresh_token_env(raw: object) -> str | None:
+    if raw is not None and not (isinstance(raw, str) and _ENV_NAME.fullmatch(raw)):
+        raise ConfigError("refresh_token_env must be the name of an environment variable")
+    return raw
+
+
 def _token_env(raw: object, who: str) -> str:
     if not (isinstance(raw, str) and _ENV_NAME.fullmatch(raw)):
         raise ConfigError(f"{who} token_env must be the name of an environment variable")
@@ -443,6 +450,8 @@ class Config:
     """The policy the autopilot runs under (`[autopilot]`); every key is optional, so no block is the defaults."""
     triggers: tuple[Trigger, ...] = ()
     """The runs to start when a board event arrives (`[[triggers]]`); none: no event starts a run."""
+    refresh_token_env: str | None = None
+    """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
     release: Release | None = None
@@ -627,4 +636,5 @@ def load(path: Path | None) -> Config:
         analytics=_analytics(raw.get("analytics")),
         release=_release(raw, repos),
         search=_search(raw.get("search")),
+        refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
     )

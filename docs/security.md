@@ -5,6 +5,10 @@ only on a network you trust. A write is refused unless it is a JSON request with
 another site cannot write through your browser. `/api/move` is unauthenticated on the LAN: machine `writers` stop an
 agent's accident, not an adversary.
 
+`POST /api/pulls/refresh` is the exception: with `refresh_token_env` set it takes a bearer token and refuses a missing or
+wrong one (401) and a repository the instance does not track (403). It only brings forward one read of a pull request the
+instance already tracks, so the token guards GitHub's rate budget, not data.
+
 The Claude Code receiver publishes which session moved, on which event and when; prompt, reply and tool text is
 neither stored nor forwarded. For session health it also keeps, per Claude Code and Codex event, only counts, durations,
 token counts, a model, effort, tool, skill or decision name, the branch, and the ref a shell `git switch` or

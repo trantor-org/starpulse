@@ -96,6 +96,14 @@ type = "native"
 # [ci]
 # states = ["in_progress", "review"]
 
+# Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
+# `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's
+# thread reads that pull request alone (one single-PR GraphQL read, no listing) and publishes it as a refresh does; the
+# minute's refresh stays the fallback. 202 queued; 401 for a missing or wrong token; 403 for a repository this instance does not
+# track; 400 for any other body. The value is the name of an environment variable, never the token; unset, or with no `gh`
+# on the PATH, the route answers 404, and a named variable that is empty stops `serve`.
+# refresh_token_env = "STARPULSE_REFRESH_TOKEN"
+
 # One instance of a runs adapter, a module under `starpulse` or the dotted path of one an installed package provides
 # (it offers `start(url)` and `follow(url, runs, log)`, and optionally `rerun(url)` and `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads); its workflows are drawn as `<name>/<workflow>`.
 [[runs]]

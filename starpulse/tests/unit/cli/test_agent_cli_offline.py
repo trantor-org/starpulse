@@ -130,6 +130,7 @@ class TestConfigCheck:
             "forward": None,
             "sources": [],
             "aggregates_only": False,
+            "refresh_token_env": None,
             "event_log_retention_days": 7,
             "event_log_archive_dir": "starpulse-archive",
             "ci": [],

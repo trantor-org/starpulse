@@ -498,7 +498,7 @@ def test_run_forever_projects_the_saved_store_before_the_first_read(
         raise KeyboardInterrupt
 
     store.save([{**_stored("acme/old", 1), "state": "MERGED"}])
-    monkeypatch.setattr("starpulse._internal.pulls.pull_store.time.sleep", sleep)
+    monkeypatch.setattr(PullSync, "_idle", lambda _self, seconds: sleep(seconds))
 
     with pytest.raises(KeyboardInterrupt):
         PullSync(store, BoardFeed(), (), graphql, lambda: 100.0, lambda: calls.append("project")).run_forever(1.0)
@@ -540,12 +540,35 @@ def test_an_error_reading_one_repository_does_not_stop_the_others_or_end_run_for
         if len(sleeps) == 2:
             raise KeyboardInterrupt  # ends the loop the test is watching
 
-    monkeypatch.setattr("starpulse._internal.pulls.pull_store.time.sleep", sleep)
+    monkeypatch.setattr(PullSync, "_idle", lambda _self, seconds: sleep(seconds))
 
     with pytest.raises(KeyboardInterrupt):
         PullSync(store, BoardFeed(), (), graphql, lambda: 100.0).run_forever(1.0)
 
     assert asked == ["acme/a", "acme/b", "acme/a", "acme/b"]
+
+
+def test_a_refresh_request_reads_that_pr_alone_and_publishes_its_merge_without_the_next_refresh(
+    store: PullStore,
+) -> None:
+    github = Github()
+    github.add(1)
+    github.add(2)
+    refresh_repository(REPO, store, 100.0, github)
+    github.add(1, state="MERGED", updated=NEW, merged_at=NEW)
+    github.queries.clear()
+    projected: list[str] = []
+    sync = PullSync(store, BoardFeed(), (), github, lambda: 160.0, lambda: projected.append("project"))
+
+    assert sync.request(REPO, 1) is True
+    sync.serve_requests()
+
+    (query,) = github.queries
+    assert "p1: pullRequest(number: 1)" in query
+    assert "pullRequest(number: 2)" not in query
+    assert "open: pullRequests" not in query
+    assert {pull["number"]: pull["state"] for pull in store.find()} == {1: "MERGED", 2: "OPEN"}
+    assert projected == ["project"]
 
 
 def _record(repo: str, number: int, state: str, fetched: float) -> dict:
