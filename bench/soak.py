@@ -19,6 +19,10 @@ Run it from the repository root with ``uv run --group bench python bench/soak.py
 The server's process is found again at every sample from the URL's port on this host, so a restart shows as a new pid;
 ``--pid`` pins one, and a server on another host reports the page's resources only. A sample or probe that fails (a
 restart overlapping it) is a failure of the run; three in a row end it.
+
+With no URL the run starts ``ci/seeded_server.py`` itself, on a free port in a scratch directory, and feeds it a
+replayed event stream for the whole hold at ``--replay-multiple`` times the live rate (``bench/README.md``). Its pid is
+the one every sample carries, and it is ended on the way out.
 """
 
 from __future__ import annotations
@@ -28,10 +32,13 @@ import contextlib
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
+import threading
 import time
 import urllib.parse
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,6 +57,16 @@ PROBE_SAMPLES = 3
 MAX_ERRORS = 3
 #: A trend needs a first and a last third with a couple of samples each.
 MIN_SAMPLES = 6
+#: Events the live instance's event log takes a day: 14,497 in the 24 hours to 2026-10-10 09:30 MST and 11,075 a day over
+#: the 7 before (1,312 and 1,249 of them lane changes). The tab is sent the changes these make.
+LIVE_EVENTS_PER_DAY = 14_500
+#: The default replay, a multiple of that rate: a 4 hour hold passes 24 / 4 days' worth, about a day of events.
+REPLAY_MULTIPLE = 6.0
+#: Seconds the seeded server has to seed its board and name its port.
+STARTUP_S = 120
+#: The lanes the seeded board's what-if reads, spelled as its lane ids.
+SEEDED_WHAT_IF = ("in_progress", "review")
+REPO = Path(__file__).resolve().parents[1]
 
 #: Per sampled metric: the rise of its floor, as a share of its first floor or in its own unit if that is more, that is
 #: still noise. The heap and RSS grow while a page warms up; frames per second only grow when a loop is started twice.
@@ -173,6 +190,85 @@ def listening_pid(port: int) -> int | None:
     return None
 
 
+def replay_rate(multiple: float) -> float:
+    """Events a second for `multiple` times the live rate."""
+    return multiple * LIVE_EVENTS_PER_DAY / 86400
+
+
+@dataclass
+class SeededServer:
+    """The seeded server this run started: where it answers, its process and what it was fed."""
+
+    base: str
+    proc: subprocess.Popen
+    scratch: Path
+    replayed: int = 0
+
+    @property
+    def pid(self) -> int:
+        return self.proc.pid
+
+    def failure(self) -> str | None:
+        """Why the server is gone, or None while it runs: a soak of a server that died has nothing to judge."""
+        code = self.proc.poll()
+        return None if code is None else f"the seeded server exited with status {code}"
+
+
+def _port_line(proc: subprocess.Popen) -> str:
+    """The URL the seeded server names on its first line, once it has seeded its board."""
+    assert proc.stdout is not None
+    watchdog = threading.Timer(STARTUP_S, proc.kill)
+    watchdog.start()
+    try:
+        line = proc.stdout.readline()
+    finally:
+        watchdog.cancel()
+    if not (match := re.fullmatch(r"seeded StarPulse on :(\d+)\n", line)):
+        raise RuntimeError(f"the seeded server did not name its port in {STARTUP_S} s (exit {proc.poll()}): {line!r}")
+    return f"http://127.0.0.1:{match[1]}"
+
+
+def _stop(proc: subprocess.Popen) -> int:
+    """End the server and return how many events it replayed, as it reports on its way out."""
+    if proc.poll() is None:
+        proc.terminate()
+    try:
+        out, _ = proc.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out, _ = proc.communicate()
+    match = re.search(r"replayed (\d+) events", out or "")
+    return int(match[1]) if match else 0
+
+
+def require_built_page() -> None:
+    """Refuse a seeded run before it starts when the page it would draw is not built, as a fresh checkout's is not."""
+    if not (REPO / "starpulse" / "static" / "index.html").is_file():
+        raise RuntimeError(
+            "the page is not built, so the seeded server has nothing to serve: "
+            "pnpm --dir starpulse/web install --frozen-lockfile && pnpm --dir starpulse/web run build"
+        )
+
+
+@contextlib.contextmanager
+def seeded(multiple: float) -> Iterator[SeededServer]:
+    """Run `ci/seeded_server.py` on a free port in a scratch directory, replaying `multiple` times the live rate.
+
+    The server is this run's own child, so its process is the one sampled and no other run shares its state. It is
+    ended, and its directory removed, on the way out.
+    """
+    with tempfile.TemporaryDirectory(prefix="starpulse-soak-") as scratch:
+        command = [sys.executable, "-m", "ci.seeded_server", "--port", "0", "--dir", scratch]
+        command += ["--replay-rate", str(replay_rate(multiple))]
+        proc = subprocess.Popen(command, cwd=REPO, stdout=subprocess.PIPE, text=True)
+        server = SeededServer("", proc, Path(scratch))
+        try:
+            server.base = _port_line(proc)
+            yield server
+        finally:
+            server.replayed = _stop(proc)
+
+
 class Target(Protocol):
     def sample(self) -> dict: ...
 
@@ -201,9 +297,11 @@ def run(
     next_sample = next_probe = 0.0
     while in_a_row < MAX_ERRORS:
         t = clock() - start
+        # a probe first, so the first sample is of a page that has visited the views a probe visits: sampled before them
+        # its floor sits under every later one and reads as a rise
         for kind, due, call in (
-            ("sample", t >= next_sample, target.sample),
             ("probe", t >= next_probe < duration, target.probe),
+            ("sample", t >= next_sample, target.sample),
         ):
             if not due:
                 continue
@@ -252,10 +350,17 @@ def finish(report: dict, out: Path) -> int:
 class Page:
     """The live page in one Chrome tab, and the server process beside it."""
 
-    def __init__(self, base: str, channel: str, pinned_pid: int | None) -> None:
+    def __init__(
+        self,
+        base: str,
+        channel: str,
+        pinned_pid: int | None,
+        what_if: Sequence[str] = pl.WHAT_IF,
+        ceilings: Sequence[str] = (),
+    ) -> None:
         from playwright.sync_api import sync_playwright  # noqa: PLC0415 - the bench group only
 
-        self.base, self.pinned_pid = base, pinned_pid
+        self.base, self.pinned_pid, self.what_if, self.ceilings = base, pinned_pid, what_if, ceilings
         self.port = urllib.parse.urlsplit(base).port or 80
         self.client = pl.Client(base)
         self._pw = sync_playwright().start()
@@ -301,7 +406,7 @@ class Page:
 
     def probe(self) -> list[Row]:
         self.page.keyboard.press("Escape")  # a modal an earlier probe failed to close
-        rows = [r for r in pl.time_reads(self.client, PROBE_SAMPLES) if r.samples]
+        rows = [r for r in pl.time_reads(self.client, PROBE_SAMPLES, self.what_if) if r.samples]
         rows.append(pl.time_stream(self.base, PROBE_SAMPLES))
         modal = Row("open a task's modal", "interaction", pl.BUDGET_MS, note="click to the frame after its record")
         self.page.evaluate(pl._CLICK, pl._nav("Kanban"))  # noqa: SLF001
@@ -314,6 +419,7 @@ class Page:
             self.page.keyboard.press("Escape")
             self.page.wait_for_function(pl._SHOWN_GONE, timeout=10_000)  # noqa: SLF001
         rows.append(modal)
+        pl.apply_ceilings(rows, self.ceilings)
         if self.home:
             self.page.evaluate(pl._CLICK, pl._nav(self.home))  # noqa: SLF001
         print(
@@ -328,26 +434,64 @@ class Page:
         self._pw.stop()
 
 
+def hold(base: str, args: argparse.Namespace, pid: int | None, what_if: Sequence[str]) -> dict:
+    """Open the page at `base` in a tab and hold it for the run's duration."""
+    page = Page(base, args.channel, pid, what_if, args.ceiling)
+    try:
+        return run(
+            page, parse_duration(args.duration), parse_duration(args.interval), parse_duration(args.sample_every)
+        )
+    finally:
+        page.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("url", help="the StarPulse page, such as http://127.0.0.1:8766")
+    parser.add_argument(
+        "url",
+        nargs="?",
+        help="the StarPulse page, such as http://127.0.0.1:8766; omit it to hold a seeded server this run starts",
+    )
     parser.add_argument("--duration", default="24h", help="how long to hold the page: seconds, 90m or 24h")
     parser.add_argument("--interval", default="10m", help="between budget probes")
     parser.add_argument("--sample-every", default="5m", help="between resource samples")
     parser.add_argument("--channel", default="chrome", help="the Playwright browser channel to drive")
     parser.add_argument("--pid", type=int, help="the server's process; default is the one listening on the URL's port")
+    parser.add_argument(
+        "--replay-multiple",
+        type=float,
+        help=f"seeded server only: events replayed as a multiple of the live rate (default {REPLAY_MULTIPLE:g}, "
+        "about a day of events through a 4 hour hold)",
+    )
+    parser.add_argument(
+        "--ceiling",
+        action="append",
+        default=[],
+        metavar="ROW=MS",
+        help="hold a probe row to MS instead of 50, as page_latency.py does, for a host whose hardware cannot hold "
+        "it; the report names each. Repeat for more rows",
+    )
     parser.add_argument("--report", type=Path, required=True, help="write the JSON report here")
     args = parser.parse_args(argv)
-    base = args.url.rstrip("/")
+    if args.url and args.replay_multiple is not None:
+        parser.error("--replay-multiple feeds the seeded server; omit the URL to run one")
+    if not args.url and args.pid:
+        parser.error("--pid names a server this run did not start; omit it for the seeded server")
     started = datetime.now(UTC).isoformat(timespec="seconds")
-    page = Page(base, args.channel, args.pid)
-    try:
-        report = run(
-            page, parse_duration(args.duration), parse_duration(args.interval), parse_duration(args.sample_every)
-        )
-    finally:
-        page.close()
-    return finish({"url": base, "started": started, **report}, args.report)
+    if args.url:
+        base = args.url.rstrip("/")
+        report = hold(base, args, args.pid, pl.WHAT_IF)
+        return finish({"url": base, "started": started, "ceilings": args.ceiling, **report}, args.report)
+    multiple = REPLAY_MULTIPLE if args.replay_multiple is None else args.replay_multiple
+    require_built_page()
+    with seeded(multiple) as server:
+        report = hold(server.base, args, server.pid, SEEDED_WHAT_IF)
+        if gone := server.failure():
+            report["failures"].append(gone)
+    replay = {"multiple": multiple, "events_per_s": replay_rate(multiple), "events": server.replayed}
+    return finish(
+        {"url": server.base, "started": started, "ceilings": args.ceiling, "replay": replay, **report}, args.report
+    )
 
 
 if __name__ == "__main__":

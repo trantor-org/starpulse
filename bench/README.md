@@ -11,7 +11,7 @@ it with many viewers at once. They are not part of the installed package and the
 | `ic_event_log.py` | concurrent fail-open appends to an instance's SQLite WAL log while a reader polls by cursor, at 10 thousand and 1 million rows | a scratch file path |
 | `flow_reads.py` | the p95 of flow health, the level and its trajectories over a SQLite store of 10 thousand, 1 million and 10 million lane changes, read from the summaries the store keeps on write | a scratch directory with room for about 6 GB |
 | `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
-| `soak.py` | one idle tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files | a running StarPulse and Google Chrome |
+| `soak.py` | one tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files; against a running StarPulse, or a seeded one it starts and feeds events | Google Chrome, a built page for the seeded server, or a running StarPulse |
 | `load.py` | a Locust crowd of viewers, each holding the event stream open and reading the `/api` routes: per-route p50, p95 and p99 and the stream's first snapshot, against 50 ms | a running StarPulse |
 
 Run them from the repository root after `uv sync`; `page_latency.py`, `soak.py` and `load.py` also need `uv sync --group bench`.
@@ -170,6 +170,38 @@ upward: the lowest value of the run's last third sits above the lowest of its fi
 third by more than the metric's allowance (`ALLOWANCE` in the script). The lowest value ignores the sawtooth of
 garbage collection and still catches a leak, which lifts it. A run under six samples is reported but not judged for
 trends. `--report` holds every probe, sample, trend and failure as JSON.
+
+A probe runs before the sample due at the same moment, so the first sample is of a page that has visited the views a
+probe visits; sampled before them, its floor sits under every later one and reads as a rise.
+
+### Seeded server
+
+```sh
+pnpm --dir starpulse/web install --frozen-lockfile && pnpm --dir starpulse/web run build   # once: the server serves the built page
+uv run --group bench python bench/soak.py --duration 4h --report .tmp/soak.json
+uv run --group bench python bench/soak.py --duration 100s --interval 30s --sample-every 15s --report .tmp/soak.json
+```
+
+Without a URL the soak starts `ci/seeded_server.py` itself: on a free port, in a scratch directory it removes on the
+way out, as its own child. The server is the process the samples read `/proc` for, so every sample carries the one pid
+for the whole run, and a server that exits is a failure of the run. The tab, the probes, the samples and the trend rule
+are the ones above. A static seeded board sends the tab nothing, so the server also replays an event stream: it moves
+the seeded tasks that are In Progress or in Review to the other lane, one `task` event on every open stream a move,
+until the run ends.
+
+- `--replay-multiple N`: the replay rate as a multiple of the live rate (default 6). Seeded server only.
+- `--ceiling "ROW=MS"`: hold a probe row to MS instead of 50, as `page_latency.py --ceiling` does, and name it in the
+  report's `ceilings`. For a host whose hardware cannot hold a row: ai-vm-1's Xeon opens a task's modal in 50 to 300 ms
+  under its usual load. The default holds every row to the budget, which is what the Tower runner's hold is judged by.
+- A URL selects a running server and takes `--pid`; `--replay-multiple` is refused with one, and `--pid` without one.
+
+**Replay rate.** The live instance's event log took 14,497 events in the 24 hours to 2026-10-10 09:30 MST, 1,312 of
+them lane changes, and 11,075 a day over the 7 days before. `LIVE_EVENTS_PER_DAY` in `soak.py` is 14,500, about 0.17
+events a second. The default is 6 times that, 1.007 events a second, because a 4 hour hold is a sixth of a day: 14,500
+events pass through the tab, a day of the live instance's. A longer hold at the default replays proportionally more
+(24 hours is 6 days), and `--replay-multiple 1` is the live rate. The replay is a stream of lane moves; it does not
+replay pull request, workflow or Ledger changes, so those payloads are not exercised. The report's `replay` holds the
+multiple, its events a second and the events the server sent (a 100 second run sent 103).
 
 ## Load
 
