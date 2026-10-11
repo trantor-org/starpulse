@@ -6,7 +6,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: The StarPulse release you installed, or the commit you ran from.
+      description: Paste the StarPulse version shown by `starpulse doctor`.
     validations:
       required: true
   - type: textarea
