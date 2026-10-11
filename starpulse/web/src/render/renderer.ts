@@ -49,8 +49,9 @@ import { tickAt } from "../features/level/machineStrip";
 import { heldBy, sessionsOf, traceSteps } from "../features/level/machineTrace";
 import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, retired, viewOf, viewSearch } from "../shared/nav";
 import { boardDraw } from "./boardDraw";
-import { LEDGER_PALETTE, foldDraw } from "./foldDraw";
-import { machineLedger, type Rail } from "./machineLedgerDraw";
+import { loadFold, loadMachineLedger, prefetchBoardExtras, type FoldDrawing, type MachineLedgerDrawing } from "./lazyBoardExtras";
+import { LEDGER_PALETTE } from "./ledgerPalette";
+import type { Rail } from "./machineLedgerDraw";
 import { staged } from "./staged";
 import { whenShown } from "./shown";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
@@ -176,11 +177,23 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   const pen = drawing(dc);
   const { nameWidth, text, labPx, label, circle, dot, arrow, badge, pill } = pen;
-  const mled = machineLedger(dc, pen, {
+  let mled: MachineLedgerDrawing | null = null;
+  let foldDrawing: FoldDrawing | null = null;
+  let extrasCancel: (() => void) | null = null;
+  let ensureFold: () => FoldDrawing | null = () => null;
+  const mledIO = {
     get S() { return S; }, get scene() { return scene; }, get FW() { return FW; }, get H() { return H; }, get T() { return T; }, get hotEdge() { return hotEdge; },
     events: () => EVENTS(), hhmm, get scrollPos() { return scrollPos; }, get pg() { return pg; }, get pickedRow() { return pickedRow; }, get lpin() { return lpin; },
     get railHover() { return railHover; }, get thumbDrag() { return !!thumbDrag; }, get glow() { return glow; }, set glow(g) { glow = g; },
-  });
+  };
+  const ensureMled = (): MachineLedgerDrawing | null => {
+    if (mled) return mled;
+    void loadMachineLedger().then((mod) => {
+      if (!mled) mled = mod.machineLedger(dc, pen, mledIO);
+      loop.wake();
+    });
+    return null;
+  };
 
   // A self-contained demo page: its embedded snapshot already holds every flow, and its address is not the server's.
   const fixture = embedded() !== null;
@@ -348,9 +361,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     if (trans || !scene) return;
-    const grid = foldDrawing.ledgerPort();
-    if (grid) {
-      foldDrawing.scroll = wheelScroll(foldDrawing.scroll, grid, e, view.k);
+    const fold = scene.fold ? ensureFold() : null, grid = fold?.ledgerPort();
+    if (fold && grid) {
+      fold.scroll = wheelScroll(fold.scroll, grid, e, view.k);
       return;
     }
     if (scene.top) {
@@ -368,8 +381,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   };
   const onDown = (e: MouseEvent) => {
     if (e.button !== 0) return;
-    if (foldDrawing.ledgerGrid() && inBox(foldDrawing.scrollHits.thumb, worldAt(e.offsetX, e.offsetY))) {
-      foldDrawing.scroll = dragStart(foldDrawing.scroll, e.clientY);
+    const fold = scene?.fold ? ensureFold() : null;
+    if (fold?.ledgerGrid() && inBox(fold.scrollHits.thumb, worldAt(e.offsetX, e.offsetY))) {
+      fold.scroll = dragStart(fold.scroll, e.clientY);
       return;
     }
     if (scene?.top && !trans && railHit(e.offsetX - view.x, e.offsetY)?.kind === "thumb") {
@@ -383,22 +397,25 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       thumbDrag = null;
       return;
     }
-    if (foldDrawing.scroll.drag) foldDrawing.scroll = { ...foldDrawing.scroll, drag: null };
+    const fold = foldDrawing;
+    if (fold?.scroll.drag) fold.scroll = { ...fold.scroll, drag: null };
     else if (drag && !drag.moved && e.target === cv) {
-      const grid = foldDrawing.ledgerPort();
-      if (grid && inBox(foldDrawing.scrollHits.chip, worldAt(e.offsetX, e.offsetY))) foldDrawing.scroll = keyScroll(foldDrawing.scroll, grid, "Home") ?? foldDrawing.scroll;
+      const grid = fold?.ledgerPort();
+      if (fold && grid && inBox(fold.scrollHits.chip, worldAt(e.offsetX, e.offsetY))) fold.scroll = keyScroll(fold.scroll, grid, "Home") ?? fold.scroll;
       else click(e.offsetX, e.offsetY);
     }
     drag = null;
   };
   const onMove = (e: MouseEvent) => {
-    if (thumbDrag && mled.thumb && scene?.top) {
-      scrollGoal = scrollPos = dragTo(mled.thumb, thumbDrag.g0, e.clientY - thumbDrag.y, scene.top.max);
+    const led = mled;
+    if (thumbDrag && led?.thumb && scene?.top) {
+      scrollGoal = scrollPos = dragTo(led.thumb, thumbDrag.g0, e.clientY - thumbDrag.y, scene.top.max);
       return;
     }
-    if (foldDrawing.scroll.drag) {
-      const grid = foldDrawing.ledgerPort();
-      if (grid) foldDrawing.scroll = dragMove(foldDrawing.scroll, grid, e.clientY, view.k, labPx(24));
+    const fold = foldDrawing;
+    if (fold?.scroll.drag) {
+      const grid = fold.ledgerPort();
+      if (grid) fold.scroll = dragMove(fold.scroll, grid, e.clientY, view.k, labPx(24));
       return;
     }
     if (drag) {
@@ -420,10 +437,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onKey = (e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement) return void (e.key === "Escape" && closePanel());
     if (away) return;
-    const grid = foldDrawing.ledgerPort(), next = grid && !e.ctrlKey && !e.metaKey && !e.altKey ? keyScroll(foldDrawing.scroll, grid, e.key) : null;
-    if (next) {
+    const fold = scene?.fold ? ensureFold() : null, grid = fold?.ledgerPort(), next = fold && grid && !e.ctrlKey && !e.metaKey && !e.altKey ? keyScroll(fold.scroll, grid, e.key) : null;
+    if (next && fold) {
       e.preventDefault();
-      foldDrawing.scroll = next;
+      fold.scroll = next;
       return;
     }
     if (scene?.top && !trans && scrollBy({ key: e.key })) return void e.preventDefault();
@@ -697,10 +714,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const px = (n: number) => n / view.k;
   /** What the machine across a level's top is under (x, y): a task, a state or a flow line, each sized to grow with the text. */
   function hitTop(sc: Scene, x: number, y: number): Hover | null {
+    const led = ensureMled();
+    if (!led) return null;
     const { gs } = ledgerSizes(prefs().scale), top = sc.top!;
-    for (const t of mled.tasks) if (Math.hypot(t.x - x, t.y - y) < 11) return { kind: "ltask", o: t.o };
+    for (const t of led.tasks) if (Math.hypot(t.x - x, t.y - y) < 11) return { kind: "ltask", o: t.o };
     if (y >= top.laneTop && y < top.laneBottom && x > top.metaX - 10 && x < top.x1 + 20) {
-      const d = mled.lane.find((q) => y >= q.y && y < q.y + q.row.h);
+      const d = led.lane.find((q) => y >= q.y && y < q.y + q.row.h);
       if (!d) return null;
       const n = d.row.nodes.find((q) => Math.hypot(q.x - x, d.y + d.row.c + q.oy - y) < q.r + 4 * gs);
       return n ? { kind: "rstate", o: n } : { kind: "row", o: d.row };
@@ -712,7 +731,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function hit(x: number, y: number): Hover | null {
     const sc = scene!, near = (o: Pt, r: number) => Math.hypot(o.x - x, o.y - y) < r;
     if (sc.top) return hitTop(sc, x, y);
-    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px, foldDrawing.ledgerShown()) : null;
+    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px, ensureFold()?.ledgerShown() ?? []) : null;
     if (mine) return mine;
     for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < Math.max(4, px(7))) return { kind: "mtask", o: s };
     for (const t of sc.tasks) if (!t.gone && near(t, Math.max(t.big ? 7 : 5, px(7)))) return { kind: "task", o: t };
@@ -799,7 +818,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let doctor: DoctorBox | null = null;
   const heldRows = () => {
     const led = scene?.fold?.ledger, held = led ? S?.ledgers[led.event] ?? [] : [];
-    const rows = held.length && held === foldDrawing.scrollHeld ? foldDrawing.scroll.rows : held, extra = S?.mergePins ?? [];
+    const fold = foldDrawing, rows = held.length && fold && held === fold.scrollHeld ? fold.scroll.rows : held, extra = S?.mergePins ?? [];
     if (!extra.length) return rows;
     const have = new Set(rows.map((r) => r.key)), more = extra.filter((r) => !have.has(r.key));
     return more.length ? [...rows, ...more] : rows;
@@ -997,7 +1016,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function openLedgerTask(o: LTask) {
     const sky = S!, all = sessionsOf(sky.flows, o.flow, o.agent);
     pinLedger({ flow: o.flow, id: o.agent.id, task: o.agent.task ?? null, label: o.agent.task || o.agent.title || o.agent.id, machines: all.map((b) => b.machine) });
-    const top = scene!.top!, steps = traceSteps(sky.flows, all, top.flow, mled.ledgerHas);
+    const top = scene!.top!, steps = traceSteps(sky.flows, all, top.flow, ensureMled()?.ledgerHas ?? (() => false));
     const colOf = (m: string) => {
       const init = sky.flows[m]?.machine.states.find((s) => s.initial)?.id ?? sky.flows[m]?.machine.states[0]?.id;
       return (m === top.flow ? scene!.mStates[init ?? ""]?.color : top.rows.find((r) => r.name === m)?.nodes.find((n) => n.id === init)?.color) ?? RAMP[2];
@@ -1078,10 +1097,18 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     get S() { return S; }, get scene() { return scene; }, get T() { return T; }, moves, get liveTasks() { return liveTasks; }, get hotEdge() { return hotEdge; },
     events: () => EVENTS(), moving, sized, sourceOf, ties, heldRows, focused,
   });
-  const foldDrawing = foldDraw(dc, pen, {
+  const foldIO = {
     get S() { return S; }, get scene() { return scene; }, get T() { return T; }, get onFold() { return !trans && level().kind === "fold"; }, moves, get hotEdge() { return hotEdge; },
     contract, rerunStore, hhmm, prefs, heldRows, focused, openRow, wake: () => loop.wake(), get doctor() { return doctor; }, set doctor(v) { doctor = v; },
-  });
+  };
+  ensureFold = (): FoldDrawing | null => {
+    if (foldDrawing) return foldDrawing;
+    void loadFold().then((mod) => {
+      if (!foldDrawing) foldDrawing = mod.foldDraw(dc, pen, foldIO);
+      loop.wake();
+    });
+    return null;
+  };
   /** Where the traced task sits now, or null when this level does not draw it. */
   function bodyOf(s: Subject): (Pt & { model: string }) | null {
     const sc = scene!;
@@ -1206,12 +1233,14 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let railHover: Rail | null = null, railMoving = false;
   /** What the rail is under (x, y) of the ledger: the back-to-newest chip, the thumb, a tick of the strip or the footer. */
   function railHit(x: number, y: number): Rail | null {
-    const r = mled.railBox, within = (b: { x0: number; y0: number; x1: number; y1: number } | null) => !!b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
     if (!scene?.top) return null;
+    const led = ensureMled();
+    if (!led) return null;
+    const r = led.railBox, within = (b: { x0: number; y0: number; x1: number; y1: number } | null) => !!b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
     if (within(r.chip)) return { kind: "chip" };
-    if (mled.thumb && Math.abs(x - r.thumbX) < 8 && y > r.laneTop + mled.thumb.y0 && y < r.laneTop + mled.thumb.y1) return { kind: "thumb" };
+    if (led.thumb && Math.abs(x - r.thumbX) < 8 && y > r.laneTop + led.thumb.y0 && y < r.laneTop + led.thumb.y1) return { kind: "thumb" };
     if (y >= r.stripT) {
-      const t = x < r.sx0 - 4 || x > r.sx1 + 4 ? null : tickAt(mled.ticks, x);
+      const t = x < r.sx0 - 4 || x > r.sx1 + 4 ? null : tickAt(led.ticks, x);
       return t ? { kind: "tick", tick: t } : null;
     }
     return within(r.foot) ? { kind: "foot" } : null;
@@ -1273,8 +1302,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     cx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
     K = k;
     ZS = Math.max(1, k / fit.k);
-    if (scene!.top) return mled.drawTop();
-    foldDrawing.drawFold();
+    if (scene!.top) return void ensureMled()?.drawTop();
+    if (scene!.fold) ensureFold()?.drawFold();
     boardDrawing.drawGalaxies();
     boardDrawing.drawMoons();
     boardDrawing.drawBoardEdges();
@@ -1353,6 +1382,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (scene && !trans && onDrawn && !shown1) {
       shown1 = true;
       onDrawn();
+      extrasCancel ??= prefetchBoardExtras();
     }
     if (now - tick > 250) {
       tick = now;
@@ -1360,7 +1390,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     }
   };
   /** Something still needs the next frame: a move or DAG run in flight, a fly-to, a level transition, or a body easing to a new size. */
-  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || mled.sliding || foldDrawing.scrolling() || railMoving);
+  const busy = () => !away && !!S && (animating({ now: T, moves: EVENTS(), dags: S.dags, flying: !!anim, transitioning: !!trans }) || grown.growing() || !!mled?.sliding || !!foldDrawing?.scrolling() || railMoving);
   /** The loop settled: the feed and moving list get their last write, and the next wake starts the ambient clock afresh. */
   const settle = () => {
     last = 0;
@@ -1423,6 +1453,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     },
     stop() {
       stopped = true;
+      extrasCancel?.();
+      extrasCancel = null;
       publishLater.cancel();
       loop.stop();
       stream?.close();

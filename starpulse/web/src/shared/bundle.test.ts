@@ -26,6 +26,11 @@ const LAZY_DEMO = [
   "demo/demoMachines.ts",
   "demo/demoCriteria.ts",
 ];
+/** Fold and machine-ledger drawing load after the Board's first paint; none belongs to the sync first-paint chunks. */
+const LAZY_BOARD_EXTRAS = [
+  "render/foldDraw.ts",
+  "render/machineLedgerDraw.ts",
+];
 
 const root = new URL("../..", import.meta.url).pathname;
 const vite = join(root, "node_modules/.bin/vite");
@@ -80,6 +85,15 @@ describe("the built page", () => {
     const sync = chunks(served).filter((c) => c.name === entry || preloads.includes(c.name));
     const sources = sync.flatMap((c) => c.sources);
     expect(LAZY_DEMO.filter((v) => holds(sources, v))).toEqual([]);
+  });
+
+  it("keeps fold and machine-ledger drawing out of the sync first-paint chunks", () => {
+    const html = readFileSync(join(served, "index.html"), "utf8");
+    const entry = /<script type="module"[^>]*src="\/assets\/([^"]+)"/.exec(html)![1];
+    const preloads = [...html.matchAll(/modulepreload[^>]*href="\/assets\/([^"]+)"/g)].map((m) => m[1]);
+    const sync = chunks(served).filter((c) => c.name === entry || preloads.includes(c.name));
+    const sources = sync.flatMap((c) => c.sources);
+    expect(LAZY_BOARD_EXTRAS.filter((v) => holds(sources, v))).toEqual([]);
   });
 
   it("still ships every view, each in a chunk the page loads on demand", () => {
