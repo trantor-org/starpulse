@@ -85,7 +85,7 @@ def test_the_recorded_older_export_counts_its_skill_and_its_two_turns() -> None:
     assert (row["prompts"], row["operator_prompts"], row["skills"]) == (2, 1, {"hello": 1})
 
 
-def test_a_git_switch_to_a_task_branch_retargets_the_rows_that_follow_it() -> None:
+def test_a_git_switch_to_a_task_branch_names_the_session_before_it_and_a_trip_back_to_main_drops_nothing() -> None:
     found = [
         sig("prompt", 0, branch="main"),
         sig("request", 5, branch="main", model="m", seconds=5),
@@ -97,7 +97,20 @@ def test_a_git_switch_to_a_task_branch_retargets_the_rows_that_follow_it() -> No
 
     rows = session_health(found, KEYS)
 
-    assert [(r["task"], r["requests"], r["agent_s"]) for r in rows] == [(None, 1, 5), ("TASK-7", 2, 10)]
+    assert [(r["task"], r["requests"], r["agent_s"]) for r in rows] == [("TASK-7", 3, 15)]
+
+
+def test_signals_before_the_first_claim_of_a_session_on_a_taskless_branch_belong_to_the_claimed_task() -> None:
+    found = [
+        sig("prompt", 0, branch="main", turn="p1", detail="human"),
+        sig("request", 5, branch="main", model="m", seconds=5, turn="p1"),
+        sig("claim", 6, branch="main", name="TASK-3", turn="p1"),
+        sig("request", 10, branch="main", model="m", seconds=4, turn="p1"),
+    ]
+
+    row = only(session_health(found, KEYS))
+
+    assert (row["task"], row["prompts"], row["requests"], row["agent_s"]) == ("TASK-3", 1, 2, 9)
 
 
 def test_a_launch_branch_names_the_task_until_a_switch_names_another() -> None:
@@ -231,7 +244,7 @@ def by_task(rows: list[dict], field: str) -> dict[tuple[str, str | None], object
     return {(r["session"], r["task"]): r[field] for r in rows}
 
 
-def test_each_step_belongs_to_the_task_whose_claim_precedes_it_and_a_session_with_no_claim_has_none() -> None:
+def test_a_first_claim_covers_the_steps_before_it_a_later_one_only_those_after_and_no_claim_leaves_none() -> None:
     claimed = [
         sig("prompt", 0, turn="p1"),
         sig("request", 5, model="m"),
@@ -245,7 +258,7 @@ def test_each_step_belongs_to_the_task_whose_claim_precedes_it_and_a_session_wit
 
     rows = session_health(claimed + unclaimed, KEYS)
 
-    assert by_task(rows, "requests") == {("s", None): 1, ("s", "TASK-1"): 2, ("s", "TASK-2"): 1, ("n", None): 1}
+    assert by_task(rows, "requests") == {("s", "TASK-1"): 3, ("s", "TASK-2"): 1, ("n", None): 1}
 
 
 START_CLAIMS = Analytics(claims=(re.compile(r"board_task\.py\s+start\s+(TASK-\d+)"),))
@@ -366,9 +379,7 @@ def test_human_prompts_after_a_claim_and_the_steps_before_the_first_edit_are_cou
         sig("prompt", 22, turn="p4", detail="human"),
     ]
 
-    row = by_task(session_health(found, KEYS), "operator_prompts")
     rows = {r["task"]: r for r in session_health(found, KEYS)}
 
+    assert list(rows) == ["TASK-9"]
     assert (rows["TASK-9"]["operator_prompts"], rows["TASK-9"]["steps_before_edit"]) == (2, 3)
-    assert rows[None]["operator_prompts"] == 0 and rows[None]["steps_before_edit"] is None
-    assert row == {("s", None): 0, ("s", "TASK-9"): 2}

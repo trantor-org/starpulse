@@ -39,14 +39,15 @@ exporter = { otlp-http = { endpoint = "http://127.0.0.1:4319/v1/logs", protocol 
 A session is one harness session id; it has one row per task it worked, found from the branch the export names
 (`vcs.ref.head.name`, which Codex's export does not carry, so its sessions have no task until a shell `git switch` or
 `git checkout` in them names one), or a command or `Skill` call that matches an `[analytics]` `claims` pattern claims
-one. Every step after a claim belongs to the claimed task, until the next claim or switch. The body is
+one. Every step after a claim belongs to the claimed task, until the next claim or switch, and the steps before a
+session's first claim or task-naming switch, when its launch branch names no task, belong to that first task. The body is
 `{now, window_s, sessions, slices}`:
 
 - A `sessions` row is `{harness, session, task, kind, first_at, last_at, prompts, operator_prompts, requests,
   side_requests, tool_calls, tool_failures, tools, rejections, skills, compactions, interrupts, models, efforts,
   model_changes, effort_changes, tokens, cost_usd, agent_s, operator_wait_s, idle_s, steps_before_edit, complete}`.
   `kind` is `headless`, `interactive` or `unknown`. `operator_prompts` are the human prompts after the task's claim
-  (after the session's first prompt for the task it launched on); `requests` are the main thread's model calls and
+  (after the session's first prompt for the task it launched on or first claimed); `requests` are the main thread's model calls and
   `side_requests` a subagent's. `steps_before_edit` is the model requests before the task's first successful `Edit`,
   `Write`, `MultiEdit` or `NotebookEdit`, null until it has one. `complete` is true for a session that loaded the
   `completion_skill` and then ran a shell command matching `completion_call`. `rejections` counts rejected tool decisions by their source
@@ -118,8 +119,8 @@ argument, so work recurs across sessions: a non-shell tool is its bare name; a s
 command, as `git status`, `gh pr view`, `make test`, `bin/<script>`, `ssh <user@host>`, `shell_read`, `shell_search`,
 its binary name or `shell_other`. An export that carries no command (`OTEL_LOG_TOOL_DETAILS` off) leaves a shell call
 as its tool name. The path a file tool read or wrote is kept raw and cut at read time to an *area*, its first two
-components below an `[analytics]` root. A *case* is one session's work on one task, as under session health; a session's
-work before any branch names a task is a case with no task.
+components below an `[analytics]` root. A *case* is one session's work on one task, as under session health; a session
+that no branch or claim ever ties to a task is a case with no task.
 
 `GET /api/analytics/missed-loads[?hours=N&skill=NAME&list=N]` reports, per skill declared in `[analytics]`, the cases
 of the window (168 hours by default) that ran its trigger and those of them that did so without activating it. The body
