@@ -20,7 +20,13 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import DEFAULT_FILE, HistoryStore
 
 _CLIENT_MODULE = "re" + "dis"
-_ENV_DROPPED = (f"{_CLIENT_MODULE.upper()}_URL", f"{_CLIENT_MODULE.upper()}_PASSWORD", "DATABASE_URI")
+_ENV_DROPPED = (
+    f"{_CLIENT_MODULE.upper()}_URL",
+    f"{_CLIENT_MODULE.upper()}_PASSWORD",
+    "DATABASE_URI",
+    "LISTEN_FDS",  # a socket-activated test run must not hand its own sockets to the servers it starts
+    "LISTEN_PID",
+)
 
 # The `build` stub writes and removes the checkout's shared static directory, so under pytest-xdist these tests share
 # one worker (`--dist loadgroup`): another worker's teardown would delete the page out from under a running server.
@@ -283,3 +289,75 @@ def test_a_trigger_whose_adapter_cannot_start_a_run_stops_the_server_naming_the_
 
     assert started.returncode == 1
     assert "no adapter can start a run of: fake/reconcile" in started.stderr
+
+
+def _serve_command(port: int, config: Path) -> list[str]:
+    return [sys.executable, "-m", "starpulse._internal.server.server", "--port", str(port), "--config", str(config)]
+
+
+def _await_page(proc: subprocess.Popen, port: int) -> None:
+    deadline = time.monotonic() + 30
+    while True:
+        assert proc.poll() is None, "the server exited before serving"
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as resp:
+                assert resp.status == 200
+                return
+        except OSError:
+            assert time.monotonic() < deadline, f"the page never came up on :{port}"
+            time.sleep(0.2)
+
+
+@pytest.mark.usefixtures("build")
+def test_serve_answers_on_the_listening_socket_the_service_manager_passes_in_and_binds_no_port_of_its_own(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "starpulse.toml"
+    config.write_text("")
+    named = _free_port()  # what --port says; the server must leave it closed
+    with closing(socket.socket()) as passed:
+        passed.bind(("127.0.0.1", 0))
+        passed.listen(16)
+        fd = passed.fileno()
+        # sd_listen_fds: the socket is fd 3 and LISTEN_PID is the server's own pid, which `exec` keeps
+        activate = (
+            "import os, sys; os.dup2(int(sys.argv[1]), 3); "
+            "os.environ.update(LISTEN_PID=str(os.getpid()), LISTEN_FDS='1'); os.execv(sys.argv[2], sys.argv[2:])"
+        )
+        proc = subprocess.Popen(
+            [sys.executable, "-c", activate, str(fd), *_serve_command(named, config)], env=_env(), pass_fds=(fd,)
+        )
+        try:
+            _await_page(proc, passed.getsockname()[1])
+            with pytest.raises(OSError), closing(socket.create_connection(("127.0.0.1", named), timeout=2)):
+                pass
+        finally:
+            proc.terminate()
+            proc.wait(timeout=30)
+
+
+@pytest.mark.usefixtures("build")
+@pytest.mark.parametrize(
+    "listen",
+    [{}, {"LISTEN_FDS": "1", "LISTEN_PID": "1"}],
+    ids=["no socket passed", "socket passed to another process"],
+)
+def test_serve_binds_host_and_port_unless_a_socket_is_passed_to_this_process(
+    tmp_path: Path, listen: dict[str, str]
+) -> None:
+    config = tmp_path / "starpulse.toml"
+    config.write_text("")
+    port = _free_port()
+    proc = subprocess.Popen(_serve_command(port, config), env=_env(**listen))
+    try:
+        _await_page(proc, port)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=30)
+
+
+def test_serve_refuses_to_pick_one_of_several_passed_sockets() -> None:
+    environ = {"LISTEN_FDS": "2", "LISTEN_PID": str(os.getpid())}
+
+    with pytest.raises(ValueError, match="2 sockets"):
+        server.inherited_socket(environ)
