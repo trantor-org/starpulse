@@ -98,7 +98,8 @@ type = "native"
 
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
 # `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's
-# thread reads that pull request alone (one single-PR GraphQL read, no listing) and publishes it as a refresh does; the
+# thread reads that pull request alone (one single-PR GraphQL read, no listing) and publishes it as a refresh does; one
+# asked for during a refresh is read after the repository in hand, ahead of that refresh's projection. The
 # minute's refresh stays the fallback. 202 queued; 401 for a missing or wrong token; 403 for a repository this instance does not
 # track; 400 for any other body. The value is the name of an environment variable, never the token; unset, or with no `gh`
 # on the PATH, the route answers 404, and a named variable that is empty stops `serve`.
@@ -343,7 +344,8 @@ refused without one). A dependency task that cites a pull request in such a repo
 A pull request the store does not hold, or holds open, holds the dependent, the fail-closed direction. A closed, unmerged
 one never reaches the pin and is ignored. The bump is looked for among the store's merged pull requests, so one no task
 cites still settles the dependency, while one older than the store's records is not found and holds it. The pointer and
-containment reads are the memoized `gh` calls the pull request projection makes.
+containment reads are the memoized `gh` calls the pull request projection makes; a path a merge does not pin (GitHub's
+404) is a remembered answer too, so only a read `gh` could not make is asked again.
 
 ## Event log archive
 
