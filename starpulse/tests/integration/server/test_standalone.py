@@ -368,8 +368,7 @@ def test_serve_on_a_port_something_holds_names_the_port_and_the_flag_and_starts_
 
     assert ran.returncode == 1
     assert ran.stdout == ""  # no "StarPulse on :PORT" for a server that never bound
-    assert f"127.0.0.1:{port}" in ran.stderr
-    assert "--port" in ran.stderr
+    assert ran.stderr == f"cannot listen on 127.0.0.1:{port}: Address already in use; pass --port to serve elsewhere\n"
     assert "Traceback" not in ran.stderr
     assert not (tmp_path / DEFAULT_FILE).exists()  # refused before the history, the board or any worker started
     assert not (tmp_path / ".starpulse").exists()

@@ -20,8 +20,9 @@ start, run, history window) is refused unless it is a JSON request (`Content-Typ
 `Origin`, as a script or `curl` does, or names this server's own, so a web page on another site cannot write through your browser.
 
 `starpulse serve --port 8800 --hours 24` changes the port and how far back a task's latest move counts toward
-where it is drawn (6 hours by default). Serve binds its address before it starts anything: when another process holds the
-port, it exits 1 with one line naming `--host:--port` and saying to pass `--port`, and prints no startup line.
+where it is drawn (6 hours by default). Serve binds its address once the config is accepted and before it creates the board, opens the history or starts a
+worker: when another process holds the port, it exits 1 with one line naming `--host:--port` and saying to pass `--port`,
+and prints no startup line.
 The Admin page's Server card overrides that window for everyone
 viewing, and `starpulse-settings.json` beside the config keeps the override across restarts.
 
