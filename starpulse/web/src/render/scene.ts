@@ -535,8 +535,9 @@ const meets = (a: number, b: number, c: number, a2: number, b2: number, c2: numb
  * sky; each spot costs its bend from `c0` and what its path runs over, counted as the bend it is worth to avoid: NAMED for a name, SKIM
  * for a state's footprint, THROUGH for what a state draws (twice that at its centre), and CROSS for each point of it on a path already drawn. The cheapest spot
  * wins, so a path that can clear everything takes the least bend that does, and one that cannot runs over the least it can. `sky` bounds
- * the control point. `held` is the bend the path took last, which it keeps while that stays out of every name and CLEAR - NAME_CLEAR from
- * every other footprint.
+ * the path; its control point stays on it unless every such spot still runs through a state's body, when it may lie beyond any edge, up to the
+ * sky's own size past it, as far as the path itself stays on the sky. `held` is the bend the path took last, which it keeps while that stays
+ * out of every name and CLEAR - NAME_CLEAR from every other footprint.
  */
 export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: Pt, held?: Pt, names: NameBox[] = []): Curve {
   const others = all.filter((g) => g !== a && g !== b), from = rimOf(a, rowsOf(a, names)), to = rimOf(b, rowsOf(b, names));
@@ -590,26 +591,47 @@ export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn
   // the spots are tried nearest first, equals in sky order, until the next is further than the best costs. That is a few dozen in for most
   // paths, so the search takes the spots a band of bend at a time (each band twice as wide as the last, so a spot is measured once more at
   // most) and sorts only the band it reaches
-  const lattice = (extent: number) => Math.floor((extent - 20) / 40), reach = Math.hypot(Math.max(c0.x - 10, sky.x - 10 - c0.x), Math.max(c0.y - 10, sky.y - 10 - c0.y)) / 200;
+  /** Whether a spot is on the sky: a path bowed to one is the nearest the search looks. */
+  const fit = (c: Pt) => c.x >= 10 && c.y >= 10 && c.x <= sky.x - 10 && c.y <= sky.y - 10;
+  /** Whether the path stays on the sky (or where its own two ends already are): the far points of its bow, where it turns, are inside. */
+  const onSky = ({ p0, c, p1 }: Curve) => {
+    const span = (u0: number, uc: number, u1: number) => {
+      const d = u0 - 2 * uc + u1, t = d ? (u0 - uc) / d : -1, mid = t > 0 && t < 1 ? (1 - t) ** 2 * u0 + 2 * t * (1 - t) * uc + t * t * u1 : u0;
+      return [Math.min(u0, u1, mid), Math.max(u0, u1, mid)];
+    };
+    const [x0, x1] = span(p0.x, c.x, p1.x), [y0, y1] = span(p0.y, c.y, p1.y);
+    return x0 >= Math.min(10, p0.x, p1.x) && x1 <= Math.max(sky.x, p0.x, p1.x) && y0 >= Math.min(10, p0.y, p1.y) && y1 <= Math.max(sky.y, p0.y, p1.y);
+  };
   let best = straight, cost = over(straight) + CROSS * crossings(straight, Infinity);
-  for (let lo = 0, hi = 0.5; lo < cost && lo <= reach; lo = hi, hi *= 2) {
-    const band: { c: Pt; bend: number }[] = [], r = hi * 200;
-    // the lattice columns and rows within r of c0, one more each side than the arithmetic needs
-    const kx = [Math.max(0, Math.ceil((c0.x - r - 10) / 40) - 1), Math.min(lattice(sky.x), Math.floor((c0.x + r - 10) / 40) + 1)];
-    const ky = [Math.max(0, Math.ceil((c0.y - r - 10) / 40) - 1), Math.min(lattice(sky.y), Math.floor((c0.y + r - 10) / 40) + 1)];
-    for (let i = kx[0]; i <= kx[1]; i++)
-      for (let j = ky[0]; j <= ky[1]; j++) {
-        const x = 10 + 40 * i, y = 10 + 40 * j, bend = Math.hypot(x - c0.x, y - c0.y) / 200;
-        if (bend >= lo && bend < hi) band.push({ c: { x, y }, bend });
+  /** The spots of the lattice between `lo` and `hi` that `take` keeps, cheapest-bend first, over the best so far. */
+  const search = (lo: Pt, hi: Pt, take: (c: Pt) => boolean) => {
+    const cols = [Math.ceil((lo.x - 10) / 40), Math.floor((hi.x - 10) / 40)], rows = [Math.ceil((lo.y - 10) / 40), Math.floor((hi.y - 10) / 40)];
+    const reach = Math.hypot(Math.max(c0.x - lo.x, hi.x - c0.x), Math.max(c0.y - lo.y, hi.y - c0.y)) / 200;
+    for (let near = 0, far = 0.5; near < cost && near <= reach; near = far, far *= 2) {
+      const band: { c: Pt; bend: number }[] = [], r = far * 200;
+      // the lattice columns and rows within r of c0, one more each side than the arithmetic needs
+      const kx = [Math.max(cols[0], Math.ceil((c0.x - r - 10) / 40) - 1), Math.min(cols[1], Math.floor((c0.x + r - 10) / 40) + 1)];
+      const ky = [Math.max(rows[0], Math.ceil((c0.y - r - 10) / 40) - 1), Math.min(rows[1], Math.floor((c0.y + r - 10) / 40) + 1)];
+      for (let i = kx[0]; i <= kx[1]; i++)
+        for (let j = ky[0]; j <= ky[1]; j++) {
+          const c = { x: 10 + 40 * i, y: 10 + 40 * j }, bend = Math.hypot(c.x - c0.x, c.y - c0.y) / 200;
+          if (bend >= near && bend < far && take(c)) band.push({ c, bend });
+        }
+      for (const { c, bend } of band.sort((p, q) => p.bend - q.bend)) {
+        if (bend >= cost) break;
+        const e = shape(c);
+        if (!fit(c) && !onSky(e)) continue;
+        const base = bend + over(e, CLEAR, cost - bend);
+        if (base >= cost) continue;
+        const total = base + CROSS * crossings(e, (cost - base) / CROSS);
+        if (total < cost) [cost, best] = [total, e];
       }
-    for (const { c, bend } of band.sort((p, q) => p.bend - q.bend)) {
-      if (bend >= cost) break;
-      const e = shape(c), base = bend + over(e, CLEAR, cost - bend);
-      if (base >= cost) continue;
-      const total = base + CROSS * crossings(e, (cost - base) / CROSS);
-      if (total < cost) [cost, best] = [total, e];
     }
-  }
+  };
+  search({ x: 10, y: 10 }, { x: sky.x - 10, y: sky.y - 10 }, fit);
+  // a path that still runs through what a state draws may bow beyond the sky, as far out as the sky is wide and tall on every side, where
+  // the path itself stays on it: a bend there clears what none on the sky can
+  if (cost >= THROUGH) search({ x: -sky.x, y: -sky.y }, { x: sky.x * 2, y: sky.y * 2 }, (c) => !fit(c));
   return best;
 }
 /** The points of the paths drawn so far, bucketed in 10 px cells so a point checks only the nine cells round it for one within 10 px. */

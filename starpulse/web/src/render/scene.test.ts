@@ -336,11 +336,59 @@ describe("a Board path's route", () => {
     expect(e.c).not.toEqual(c0);
     expect(Math.min(...sample(e, 400).map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(40 + 9);
   });
-  it("runs through what a state draws as shallowly as it can, where every bend in the sky does", () => {
-    // Ready draws a disc wider than the sky is tall, so no bend clears it; the straight path runs through its centre, a bend only through its rim
-    const o = { ...at("ready", 400, 300, 500), edge: 250 }, e = routed(a, b, c0, [a, b, o], new Drawn(), sky);
+  it("runs through what a state draws as shallowly as it can, where every path on the sky does", () => {
+    // Ready draws a disc wider than the sky is tall, so no path on the sky clears it; the straight path runs through its centre, a bend only through its rim
+    const o = { ...at("ready", 400, 300, 500), edge: 400 }, e = routed(a, b, c0, [a, b, o], new Drawn(), sky);
 
     expect(Math.min(...sample(e, 400).map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(100);
+  });
+  it("bows its control point below the sky when the path itself stays on it and clears what a bend inside the sky cannot", () => {
+    // Ready draws a disc half again the sky's height: a control point inside the sky bows the path only 150 px from its centre, one 900 px
+    // down bows it to the sky's edge
+    const o = { ...at("ready", 400, 300, 600), edge: 200 }, e = routed(a, b, c0, [a, b, o], new Drawn(), sky), s = sample(e, 400);
+
+    expect(Math.min(...s.map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(200 + 9);
+    expect(Math.max(...s.map((p) => p.y))).toBeLessThanOrEqual(sky.y + 0.5);
+  });
+
+  it("bows its control point above the sky when the path itself stays on it and clears what a bend inside the sky cannot", () => {
+    // Ready draws a disc low on the sky: a control point on the sky bows the path no higher than its top edge, one above the sky clears it
+    const o = { ...at("ready", 400, 500, 400), edge: 250 }, l = at("new", 100, 500, 30), r = at("done", 700, 500, 30);
+    const e = routed(l, r, c0, [l, r, o], new Drawn(), sky), s = sample(e, 400);
+
+    expect(e.c.y).toBeLessThan(10);
+    expect(Math.min(...s.map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(250 + 9);
+    expect(Math.min(...s.map((p) => p.y))).toBeGreaterThanOrEqual(10 - 0.5);
+  });
+
+  it("keeps a path that a bend on the sky already clears on the sky", () => {
+    const o = { ...at("ready", 400, 300, 30), edge: 60 }, e = routed(a, b, c0, [a, b, o], new Drawn(), sky);
+
+    expect(e.c.x).toBeGreaterThanOrEqual(10);
+    expect(e.c.y).toBeGreaterThanOrEqual(10);
+    expect(e.c.x).toBeLessThanOrEqual(sky.x - 10);
+    expect(e.c.y).toBeLessThanOrEqual(sky.y - 10);
+  });
+
+  it("runs a reopened Waiting and Done pair around the states between them on a wide window, where no bend on the sky does", () => {
+    // the Board's states as the live Board lays them out at 3440x1080 and at 2304x900: one band of In Progress and Review between the pair
+    const wide = (spec: [string, number, number, number, number][]) => spec.map(([id, x, y, R, edge]) => ({ ...at(id, x, y, R), edge }));
+    const boards: [string, ReturnType<typeof wide>, Pt, Pt][] = [
+      ["3440x1080", wide([["new", 119, 310, 78, 44], ["ready", 358, 179, 78, 70], ["waiting", 358, 441, 78, 82], ["in_progress", 822, 458, 131, 109],
+        ["review", 1367, 161, 131, 109], ["needs_attention", 596, 179, 78, 44], ["done", 1758, 179, 78, 82], ["archived", 1758, 441, 78, 58]]),
+        { x: 1029, y: 156 }, { x: 1877, y: 549 }],
+      ["2304x900", wide([["new", 87, 321, 78, 44], ["ready", 262, 186, 78, 70], ["waiting", 262, 456, 78, 82], ["in_progress", 611, 473, 131, 109],
+        ["review", 1119, 168, 131, 109], ["needs_attention", 437, 186, 78, 44], ["done", 1460, 186, 78, 82], ["archived", 1460, 456, 78, 58]]),
+        { x: 832, y: 189 }, { x: 1547, y: 564 }],
+    ];
+    const inside = boards.map(([name, gs, start, bounds]) => {
+      const [from, to] = [gs.find((g) => g.id === "waiting")!, gs.find((g) => g.id === "done")!];
+      const e = routed(from, to, start, gs, new Drawn(), bounds), s = sample(e, 200);
+      return [name, gs.filter((g) => g !== from && g !== to && s.some((p) => Math.hypot(p.x - g.x, p.y - g.y) < g.edge)).map((g) => g.id),
+        s.every((p) => p.x >= 10 - 0.5 && p.y >= 10 - 0.5 && p.x <= bounds.x + 0.5 && p.y <= bounds.y + 0.5)];
+    });
+
+    expect(inside).toEqual([["3440x1080", [], true], ["2304x900", [], true]]);
   });
 
   describe("searched for a Board's first snapshot", () => {
