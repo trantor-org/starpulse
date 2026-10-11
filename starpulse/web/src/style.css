@@ -972,3 +972,41 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #kb .ap .ap-ref { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; margin: 0; width: 320px; white-space: normal; border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); border-radius: 7px; }
 #kb .ap.down { justify-content: flex-end; font-size: calc(11px * var(--fs)); color: var(--fail-text); }
 @media (prefers-reduced-motion: reduce) { #kb .ap .dm .m i, #kb .ap .dims { transition: none; } #kb .ap .nx.starting b { animation: none; } }
+
+/* Phone width. Under 900px the navigator and the rail are gone, so a bar along the bottom edge switches views, and its More opens the
+   page's own navigator as a sheet. The bar, its scrim and the sheet's close button are not drawn above 900px; every rule that changes
+   how a view draws sits inside the query, so the page above it is as it was. */
+#pnav, #pn-scrim, #nav .pn-x { display: none; }
+@media (max-width: 900px) {
+  :root { --pm: 12px; --pnav: calc(38px + 16px * var(--fs)); }
+  :is(#kb, #dg, #admin) { left: var(--pm); right: var(--pm); bottom: var(--pnav); }
+  #og { bottom: var(--pnav); }
+  :is(#kb, #dg, #admin) header { height: auto; min-height: 52px; flex-wrap: wrap; gap: 2px 12px; padding: 8px 0; box-sizing: border-box; }
+  :is(#kb, #nav, #dg) .menu { min-width: min(240px, calc(100vw - 2 * var(--pm))); max-width: calc(100vw - 2 * var(--pm)); }
+  /* the Star Map's detail panel takes the side margins, starts below the breadcrumb and ends above the bar */
+  #panel { --pt: calc(24px + 16px * var(--fs)); top: var(--pt); left: var(--pm); right: var(--pm); width: auto; max-height: calc(100% - var(--pt) - var(--pnav) - var(--pm)); }
+
+  /* The navigator: the real one, opened as a sheet over the view. The scrim under it closes it, as do its ✕, Escape and choosing a view or a search hit. */
+  #nav.sheet { display: flex; z-index: 40; --nav: min(86vw, 320px); background: var(--bg0); box-shadow: 12px 0 40px color-mix(in srgb, var(--shadow) 60%, transparent); }
+  #pn-scrim { display: block; position: fixed; inset: 0; z-index: 39; background: color-mix(in srgb, var(--scrim) 62%, transparent); }
+  #nav.sheet .pn-x { all: unset; display: block; position: absolute; top: 14px; right: 12px; padding: 4px 8px; color: var(--muted); font-size: calc(14px * var(--fs)); }
+  #nav.sheet .pn-x:is(:hover, :focus-visible) { color: var(--ink); }
+  #nav.sheet .head { padding-right: 34px; }
+
+  /* The bar: every view one tap away along the bottom edge; More opens the sheet for search, the status line and the view's own outline. */
+  #pnav { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); position: fixed; z-index: 2; left: 0; right: 0; bottom: 0; height: var(--pnav); box-sizing: border-box;
+    background: color-mix(in srgb, var(--glass) 94%, transparent); border-top: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); }
+  #pnav button { all: unset; position: relative; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0;
+    font-size: calc(9px * var(--fs)); color: var(--muted); }
+  #pnav button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #pnav button:is(:hover, :focus-visible) { color: var(--ink-3); }
+  #pnav button:focus-visible { outline: 1px solid var(--agent); outline-offset: -3px; }
+  #pnav button.on { color: var(--ink); background: linear-gradient(180deg, color-mix(in srgb, var(--agent) 18%, transparent), transparent); box-shadow: inset 0 2px 0 var(--agent); }
+  #pnav svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  #pnav svg.kb { fill: currentColor; stroke: none; }
+  #pnav svg.dg circle { fill: currentColor; stroke: none; }
+  #pnav .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--run); }
+  #pnav .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  #pnav .dot.off { background: var(--fail); }
+  #pnav .more .dot { position: absolute; top: 9px; left: calc(50% + 9px); }
+}

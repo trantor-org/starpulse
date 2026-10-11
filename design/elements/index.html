@@ -50,6 +50,7 @@ figcaption code { font: 10.5px "JetBrains Mono", ui-monospace, monospace; color:
 #kb .card { max-width: 300px; }
 #kb .filters { height: auto; flex-wrap: wrap; max-width: 760px; margin: 0; }
 #nav .head { width: auto; }
+iframe.phone { display: block; width: 390px; max-width: 100%; border: 0; border-radius: 8px; outline: 1px solid color-mix(in srgb, var(--slate) 13%, transparent); }
 </style>
 </head>
 <body>
@@ -219,6 +220,19 @@ figcaption code { font: 10.5px "JetBrains Mono", ui-monospace, monospace; color:
         </div>
       </figure>
     </div>
+  </div>
+
+  <h2>Phone-width bar</h2>
+  <p class="lede">At 900 px and narrower the navigator is hidden and a bar along the bottom edge switches views; its More opens the navigator as a sheet. The bar's rules sit under the stylesheet's <code>max-width: 900px</code> query, so each specimen is a 390 px frame of its own, filled by <code>elements.js</code> with this page's stylesheet. The bar is <code>calc(38px + 16px * var(--fs))</code> tall: 54 px at 100% text, 62 px at 150%.</p>
+  <div class="specimens">
+    <figure>
+      <figcaption><b>View bar, 100% text</b><code>#pnav</code>, one <code>button</code> per view and <code>.more</code>; <code>button.on</code> marks the view showing and <code>.dot</code> on More is the connection.</figcaption>
+      <iframe class="phone" data-fs="1" title="View bar at 100% text"></iframe>
+    </figure>
+    <figure>
+      <figcaption><b>View bar, 150% text</b>The Flow button drawn too, as when the server has a level above the Board.</figcaption>
+      <iframe class="phone" data-fs="1.5" data-flow title="View bar at 150% text"></iframe>
+    </figure>
   </div>
 
   <h2>Star Map bodies</h2>
