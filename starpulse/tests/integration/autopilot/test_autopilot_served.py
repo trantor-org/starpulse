@@ -111,7 +111,7 @@ def test_a_task_moved_into_the_eligible_lane_is_started_within_one_sampler_perio
 
             _until(lambda: asked, "the start")
             assert time.monotonic() - moved < PERIOD  # by the move's event: the loop's timer is the sampler period
-            assert asked == ["/start/task-1?by=autopilot"]  # the service can tell this from an operator's Start
+            assert asked == ["/start/task-1?harness=claude&mode=interactive&by=autopilot"]
 
 
 def test_a_board_with_no_autopilot_block_and_no_start_service_starts_the_task_in_tmux(
