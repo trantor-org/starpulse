@@ -46,6 +46,24 @@ and records them.
 uvx starpulse serve   # then open http://localhost:8766
 ```
 
+The board starts empty.
+
+### Working with AI agents
+
+An agent works the board through the `starpulse` CLI, every verb printing JSON ([Agent CLI](https://github.com/trantor-org/starpulse/blob/main/docs/cli.md)). `uvx starpulse skills install --claude --codex` copies the bundled skills into the project. For any other agent, add a section to `AGENTS.md` or `CLAUDE.md`:
+
+```md
+## Tasks
+
+This project tracks work on a StarPulse board. Run `uvx starpulse help --agent` for every verb, its
+arguments and exit codes. Read the board with `uvx starpulse board` and open a task with
+`uvx starpulse task create "<title>"`.
+```
+
+### Working without AI agents
+
+The same verbs work typed by hand, and **New task** on the Kanban adds a task from the page. Both write the same board.
+
 ## Views
 
 | Kanban | Orbit | Workflow runs |

@@ -1496,7 +1496,10 @@ def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
     # a stopped unit leaves through the save below, as Ctrl-C does
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
-        server.serve_forever()
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
     finally:
         feed.save()
 
@@ -1571,7 +1574,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         listening = inherited_socket(os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    port = args.port if listening is None else listening.getsockname()[1]
     try:
         instance_tokens = ingest_tokens(config.runs, os.environ)
         source_tokens = ingest_tokens(config.sources, os.environ)
@@ -1612,6 +1614,14 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     run_safe = [name for name in config.qualified_run_safe() if name.partition("/")[0] in starts]
     if unstartable := sorted({t.start for t in config.triggers if t.start.partition("/")[0] not in starts}):
         parser.exit(1, f"triggers start workflows no adapter can start a run of: {', '.join(unstartable)}\n")
+    if listening is None:  # bound once the config is accepted and before the board, the history or a worker starts
+        try:
+            listening = socket.create_server((args.host, args.port), backlog=StarPulseServer.request_queue_size)
+        except OSError as exc:
+            # the errno's own text: `create_server` appends the address the line already names
+            reason = os.strerror(exc.errno) if exc.errno and exc.errno > 0 else exc.strerror
+            parser.exit(1, f"cannot listen on {args.host}:{args.port}: {reason}; pass --port to serve elsewhere\n")
+    port = listening.getsockname()[1]
     try:
         board, feed = assemble(config, base, args.hours * 3600, run_safe)
     except ValueError as exc:

@@ -41,6 +41,27 @@ afterEach(() => {
 });
 
 describe("the page's first tree", () => {
+  it("tells a first-time user how to create a task when the board is empty", () => {
+    act(() => root.render(<App />));
+    act(() => held.store!.set({ tree: { states: ["To Do", "In Progress", "Done"], subs: {}, children: {} }, capabilities: { edit: true, archive: true, create: true } }));
+    frame();
+
+    const hint = host.querySelector('[aria-label="Get started"]')?.textContent ?? "";
+    expect(hint).toContain("uvx starpulse task create");
+    expect(hint).toContain("agent"); // an agent usually drives the CLI, and a person may: by hand, or the Kanban's New task
+    expect(hint).toContain("you can too");
+    expect(hint).toContain("New task");
+  });
+
+  it("offers no create command on an empty board that cannot create a task", () => {
+    act(() => root.render(<App />));
+    // a Backlog.md or Jira board: `task create` is refused and the Kanban draws no New task
+    act(() => held.store!.set({ tree: { states: ["To Do", "In Progress", "Done"], subs: {}, children: {} }, capabilities: { edit: true, archive: true, create: false } }));
+    frame();
+
+    expect(mounted('[aria-label="Get started"]')).toBe(false);
+  });
+
   it("mounts the navigator and the rail after the board-drawn mark, and keeps their frames so the canvas is sized the same", () => {
     act(() => root.render(<App />));
     act(() => held.store!.set({ tree: { states: ["ready"], subs: {}, children: {} } }));

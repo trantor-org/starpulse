@@ -356,6 +356,24 @@ def test_serve_binds_host_and_port_unless_a_socket_is_passed_to_this_process(
         proc.wait(timeout=30)
 
 
+@pytest.mark.usefixtures("build")
+def test_serve_on_a_port_something_holds_names_the_port_and_the_flag_and_starts_nothing(tmp_path: Path) -> None:
+    config = tmp_path / "starpulse.toml"
+    config.write_text("")
+    with closing(socket.socket()) as holder:
+        holder.bind(("127.0.0.1", 0))
+        holder.listen(1)
+        port = holder.getsockname()[1]
+        ran = subprocess.run(_serve_command(port, config), env=_env(), capture_output=True, text=True, timeout=60)
+
+    assert ran.returncode == 1
+    assert ran.stdout == ""  # no "StarPulse on :PORT" for a server that never bound
+    assert ran.stderr == f"cannot listen on 127.0.0.1:{port}: Address already in use; pass --port to serve elsewhere\n"
+    assert "Traceback" not in ran.stderr
+    assert not (tmp_path / DEFAULT_FILE).exists()  # refused before the history, the board or any worker started
+    assert not (tmp_path / ".starpulse").exists()
+
+
 def test_serve_refuses_to_pick_one_of_several_passed_sockets() -> None:
     environ = {"LISTEN_FDS": "2", "LISTEN_PID": str(os.getpid())}
 
