@@ -33,6 +33,10 @@ const LAZY_BOARD_EXTRAS = [
   "features/kanban/kanban.ts",
   "features/dags/dags.ts",
   "features/level/ledgerPanel.ts",
+  "features/level/machineRows.ts",
+  "features/level/machineLedger.ts",
+  "features/level/machineLanes.ts",
+  "features/level/machineChain.ts",
 ];
 
 const root = new URL("../..", import.meta.url).pathname;
