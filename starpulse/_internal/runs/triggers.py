@@ -1,9 +1,10 @@
 """Start a declared run for each board event a `[[triggers]]` table matches.
 
 One reader tails the streams the triggers name under one cursor, which the history store keeps (`CURSOR`), so a
-restart resumes after the last entry handled and a trigger first started reads only what arrives after it. Each
-entry is matched against every trigger of its stream and starts that trigger's workflow through the runs adapter's
-`start`, at most once per entry id.
+restart resumes after the last entry handled and a trigger first started reads only what arrives after it: the log's
+head once the Board has been replayed, because the lane entries a replay writes are the Board being rebuilt, not
+events, and start no run. Each entry is matched against every trigger of its stream and starts that trigger's
+workflow through the runs adapter's `start`, at most once per entry id.
 
 Delivery is at-least-once: a start whose cursor save then fails is read again, which the seen ids absorb, but a crash
 between a start and its cursor save repeats that one start after the restart. A start the adapter refuses
@@ -52,15 +53,22 @@ def run_triggers(
     stop: threading.Event,
     *,
     interval: float = DEFAULT_POLL_INTERVAL,
+    replayed: Callable[[float], bool] | None = None,
 ) -> None:
     """Start the workflow of each trigger an entry of the log matches, until `stop`.
 
     `starts` maps a runs instance's name to its adapter's `start`. A store with no cursor takes its place at the
-    log's head, so what the log retains from before is not replayed into runs.
+    log's head, so what the log retains from before is not replayed into runs. `replayed(timeout)` blocks up to
+    `timeout` seconds and says whether the Board's replay has ended (`BoardFeed.wait_replayed`); the head is taken
+    after it, so the lane entries the replay writes lie behind the cursor. A store with a cursor resumes after it
+    at once: what arrived while the server was down is read.
     """
     while not stop.is_set():
         try:
             if (after := store.cursor(CURSOR)) is None:
+                while replayed is not None and not replayed(interval):
+                    if stop.is_set():
+                        return
                 after = log.head() or 0
                 store.save_cursor(CURSOR, after)
             break

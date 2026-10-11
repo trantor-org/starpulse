@@ -1619,6 +1619,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         threading.Thread(
             target=run_triggers,
             args=(config.triggers, starts, store, log, threading.Event()),
+            kwargs={"replayed": feed.wait_replayed},
             name="board-triggers",
             daemon=True,
         ).start()
