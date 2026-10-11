@@ -30,7 +30,7 @@ from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths
 from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
-from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal
+from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed
 from starpulse.contracts.adapters import TaskKeys
 
 __all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "redactor", "signals"]
@@ -224,14 +224,6 @@ def _named_text(attributes: dict[str, Any]) -> str:
     return args if isinstance(args, str) else ""
 
 
-def _claimed(text: str, reading: Analytics, keys: TaskKeys | None) -> str | None:
-    """The task the first matching claim pattern names in `text`, when the board's key scheme calls it a task."""
-    for pattern in reading.claims if keys else ():
-        if (match := pattern.search(text)) and keys.matches(match[1]):
-            return match[1]
-    return None
-
-
 def _stored_command(attributes: dict[str, Any], redact: Callable[[str], str] | None) -> str:
     """A shell call's command as it may be kept: heredoc bodies as length and hash, the rest through `redact`.
 
@@ -294,8 +286,8 @@ def signals(
                 )
             )
         if harness == CLAUDE_CODE and name == "tool_result" and (text := _named_text(a)):
-            if (task := _claimed(text, reading, keys)) is not None:
-                found.append(Signal(harness, session, "claim", at, f"{key}:claim", branch, name=task, turn=turn))
+            if (task := claimed(text, reading.claims, keys)) is not None:
+                found.append(Signal(harness, session, "claim", at, claim_key(key), branch, name=task, turn=turn))
             if reading.completion_call and str(a.get("tool_name")) in SHELLS and reading.completion_call.search(text):
                 found.append(Signal(harness, session, "deliver", at, f"{key}:deliver", branch, turn=turn))
     return found

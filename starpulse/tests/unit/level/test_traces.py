@@ -4,7 +4,7 @@ import re
 
 from starpulse._internal.config.analytics import SkillLoad
 from starpulse._internal.level.traces import Case, Missed, cases, missed_loads
-from starpulse.tests.unit.level.test_sessions import KEYS, T0, sig
+from starpulse.tests.unit.level.test_sessions import KEYS, START_CLAIMS, T0, sig
 
 ROOTS = ["/r", "/r/.claude/worktrees/*"]
 
@@ -86,3 +86,11 @@ def test_a_case_that_ran_a_triggers_work_without_loading_its_skill_is_missed() -
         ["c"],
     )
     assert isinstance(unraid, Missed) and isinstance(unraid.performed[0], Case)
+
+
+def test_a_stored_command_the_claims_match_moves_the_calls_after_it_to_its_task() -> None:
+    found = [tool(1, "Read"), tool(2, "Bash", command="bin/board_task.py start TASK-9"), tool(3, "Edit")]
+
+    rows = cases(found, KEYS, analytics=START_CLAIMS)
+
+    assert [(c.task, c.tool_calls) for c in rows] == [(None, 2), ("TASK-9", 1)]

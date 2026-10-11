@@ -22,6 +22,7 @@ from bisect import bisect_right
 from collections.abc import Iterable
 from typing import Any
 
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.level.sessions import attributed, grouped
 from starpulse._internal.level.signals import Signal
 from starpulse.contracts.adapters import TaskKeys
@@ -49,10 +50,12 @@ def _step(task: str | None, s: Signal) -> dict[str, Any]:
     }
 
 
-def session_steps(found: Iterable[Signal], keys: TaskKeys | None) -> list[dict[str, Any]]:
+def session_steps(
+    found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
+) -> list[dict[str, Any]]:
     """One row per model request of the sessions `found` holds, oldest first; see the module docstring."""
     rows: list[dict[str, Any]] = []
-    for ordered in grouped(found):
+    for ordered in grouped(found, keys, analytics):
         steps: list[dict[str, Any]] = []
         starts: list[float] = []
         calls: list[Signal] = []

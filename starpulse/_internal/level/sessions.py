@@ -10,6 +10,12 @@ switch` or `git checkout`) names another task. A switch to a ref that names no t
 checkout -- file` or a trip back to `main` does not drop a session's work from its slice. A session that no branch or
 claim ties to a task is a row with `task` None, counted in session health and in no slice.
 
+A shell command's claim is read twice, so a change to `claims` reaches rows stored before it: the export is matched at
+ingest, which stores a `claim` signal, and `grouped` matches each stored shell command against the current patterns,
+adding the claim a stored command names when the same tool result has no stored claim row (one claim per tool result).
+A `Skill` call's claim is ingest-only: its arguments are never stored, so a claim pattern added later reaches only the
+calls exported after it, and a stored command is matched as stored, after redaction.
+
 A turn is every signal that shares a `prompt.id`; its end is its last signal, whichever order the exports arrived in.
 A signal with no id (Codex, rows stored before ids were kept) belongs to the turn of the prompt before it. Time is read
 from the events' own durations and from the turns' edges, never from the gaps between signals:
@@ -33,12 +39,13 @@ intervention and no escalation; whether it settled in Review or Done is the boar
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.level.signals import CODEX, Signal
+from starpulse._internal.level.signals import CODEX, Signal, claim_key, claimed
 from starpulse.contracts.adapters import TaskKeys
 
 __all__ = ["attributed", "grouped", "session_health", "session_kind", "slice_health"]
@@ -139,12 +146,33 @@ def _note(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
         row["interrupts"] += 1
 
 
-def grouped(found: Iterable[Signal]) -> list[list[Signal]]:
-    """The signals `found` as one list per harness session, each oldest first."""
+def _read_time_claims(ordered: list[Signal], claims: Sequence[re.Pattern[str]], keys: TaskKeys) -> list[Signal]:
+    """`ordered` with a `claim` after each shell result whose stored command names a task and that has no stored claim
+    row, as ingest would have minted it."""
+    stored = {s.key for s in ordered if s.kind == "claim"}
+    with_claims: list[Signal] = []
+    for s in ordered:
+        with_claims.append(s)
+        if s.kind == "tool" and s.command and claim_key(s.key) not in stored:
+            if (task := claimed(s.command, claims, keys)) is not None:
+                with_claims.append(
+                    Signal(s.harness, s.session, "claim", s.time, claim_key(s.key), s.branch, name=task, turn=s.turn)
+                )
+    return with_claims
+
+
+def grouped(
+    found: Iterable[Signal], keys: TaskKeys | None = None, analytics: Analytics | None = None
+) -> list[list[Signal]]:
+    """The signals `found` as one list per harness session, each oldest first. With `keys` and `analytics`, a stored
+    shell command the current `claims` match is also a claim (see the module docstring)."""
     sessions: dict[tuple[str, str], list[Signal]] = defaultdict(list)
     for s in found:
         sessions[s.harness, s.session].append(s)
-    return [sorted(group, key=lambda s: s.time) for group in sessions.values()]
+    ordered = [sorted(group, key=lambda s: s.time) for group in sessions.values()]
+    if keys is None or analytics is None or not analytics.claims:
+        return ordered
+    return [_read_time_claims(group, analytics.claims, keys) for group in ordered]
 
 
 def attributed(ordered: list[Signal], keys: TaskKeys | None) -> Iterator[tuple[str | None, Signal]]:
@@ -175,7 +203,7 @@ def session_health(
     """One row per (session, task) of the sessions `found` holds, oldest first; see the module docstring."""
     completion = analytics.completion_skill if analytics else ""
     rows: list[dict[str, Any]] = []
-    for ordered in grouped(found):
+    for ordered in grouped(found, keys, analytics):
         kind = session_kind(ordered)
         ids = _turn_ids(ordered)
         ends: dict[str, float] = {}

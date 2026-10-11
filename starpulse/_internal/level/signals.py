@@ -5,9 +5,13 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
-__all__ = ["CLAUDE_CODE", "CODEX", "Signal"]
+from starpulse.contracts.task_keys import TaskKeys
+
+__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "claim_key", "claimed"]
 
 CLAUDE_CODE = "claude-code"
 CODEX = "codex"
@@ -59,3 +63,18 @@ class Signal:
     reads: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
     turn: str = ""
+
+
+def claim_key(tool_key: str) -> str:
+    """The `key` of the `claim` a tool result's signal `tool_key` yields, so a claim minted at ingest and one derived
+    from the stored command at read time are one record."""
+    return f"{tool_key}:claim"
+
+
+def claimed(text: str, claims: Iterable[re.Pattern[str]], keys: TaskKeys | None) -> str | None:
+    """The task the first matching claim pattern of `claims` names in `text`, when the board's key scheme calls it a
+    task."""
+    for pattern in claims if keys else ():
+        if (match := pattern.search(text)) and keys.matches(match[1]):
+            return match[1]
+    return None

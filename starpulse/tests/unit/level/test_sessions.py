@@ -2,13 +2,15 @@
 
 import json
 import re
+from dataclasses import replace
 from datetime import datetime
 
 import pytest
 
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, signals
-from starpulse._internal.level.sessions import session_health, slice_health
+from starpulse._internal.level.sessions import grouped, session_health, slice_health
+from starpulse._internal.level.signals import claim_key
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES, recorded
 
@@ -244,6 +246,49 @@ def test_each_step_belongs_to_the_task_whose_claim_precedes_it_and_a_session_wit
     rows = session_health(claimed + unclaimed, KEYS)
 
     assert by_task(rows, "requests") == {("s", None): 1, ("s", "TASK-1"): 2, ("s", "TASK-2"): 1, ("n", None): 1}
+
+
+START_CLAIMS = Analytics(claims=(re.compile(r"board_task\.py\s+start\s+(TASK-\d+)"),))
+
+
+def test_a_stored_shell_command_the_claims_match_attributes_the_work_after_it_with_no_claim_row() -> None:
+    found = [
+        sig("prompt", 0, turn="p1", detail="human"),
+        sig("request", 1, model="m"),
+        sig("tool", 2, name="Bash", command="bin/board_task.py start TASK-7"),
+        sig("request", 3, model="m"),
+        sig("request", 4, model="m"),
+    ]
+
+    rows = session_health(found, KEYS, START_CLAIMS)
+
+    # the claiming command itself is the last step of the work before it, as a stored claim row would leave it
+    assert by_task(rows, "requests") == {("s", None): 1, ("s", "TASK-7"): 2}
+    assert by_task(rows, "tool_calls") == {("s", None): 1, ("s", "TASK-7"): 0}
+
+
+def test_a_tool_result_with_a_stored_claim_row_and_a_matching_command_is_one_claim() -> None:
+    tool = sig("tool", 2, name="Bash", command="bin/board_task.py start TASK-7")
+    stored = replace(sig("claim", 2, name="TASK-7"), key=claim_key(tool.key))
+    unstored = sig("tool", 5, name="Bash", command="bin/board_task.py start TASK-8")
+    found = [sig("request", 1, model="m"), tool, stored, sig("request", 3, model="m"), unstored]
+
+    [ordered] = grouped(found, KEYS, START_CLAIMS)
+
+    assert [(s.name, s.key) for s in ordered if s.kind == "claim"] == [
+        ("TASK-7", claim_key(tool.key)),
+        ("TASK-8", claim_key(unstored.key)),
+    ]
+
+
+def test_without_a_claims_pattern_or_a_task_key_scheme_a_stored_command_claims_nothing() -> None:
+    found = [sig("tool", 2, name="Bash", command="bin/board_task.py start TASK-7")]
+
+    assert [s.kind for [ordered] in [grouped(found, KEYS, Analytics())] for s in ordered] == ["tool"]
+    assert [s.kind for [ordered] in [grouped(found, None, START_CLAIMS)] for s in ordered] == ["tool"]
+    # a command naming something the board's scheme does not call a task is no claim
+    other = [sig("tool", 2, name="Bash", command="bin/board_task.py start NOTE-7")]
+    assert [s.kind for [ordered] in [grouped(other, KEYS, Analytics(claims=(re.compile(r"start\s+(\S+)"),)))] for s in ordered] == ["tool"]
 
 
 def test_agent_seconds_are_the_summed_api_and_tool_durations_and_a_twenty_minute_prompt_gap_is_the_operators() -> None:
