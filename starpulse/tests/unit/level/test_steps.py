@@ -182,11 +182,16 @@ def test_a_codex_step_is_kept_and_marked_not_captured() -> None:
     assert (second["skill"], second["tokens"]["output"], third["skill"]) == ("alpha", 3, "alpha")
 
 
-def test_a_command_stored_before_the_claims_were_declared_moves_the_steps_after_it_to_its_task() -> None:
+def test_a_command_stored_before_the_claims_were_declared_gives_the_session_its_task() -> None:
     found = signals(
         export(
             request(1, "2026-10-09T10:00:01.000Z"),
-            result(2, "2026-10-09T10:00:02.000Z", "Bash", tool_input=json.dumps({"command": "bin/board_task.py start TASK-9"})),
+            result(
+                2,
+                "2026-10-09T10:00:02.000Z",
+                "Bash",
+                tool_input=json.dumps({"command": "bin/board_task.py start TASK-9"}),
+            ),
             request(3, "2026-10-09T10:00:05.000Z"),
         ),
         lambda command: command,
@@ -194,4 +199,4 @@ def test_a_command_stored_before_the_claims_were_declared_moves_the_steps_after_
     claims = Analytics(claims=(re.compile(r"board_task\.py\s+start\s+(TASK-\d+)"),))
 
     assert [s["task"] for s in session_steps(found, KEYS)] == [None, None]
-    assert [s["task"] for s in session_steps(found, KEYS, claims)] == [None, "TASK-9"]
+    assert [s["task"] for s in session_steps(found, KEYS, claims)] == ["TASK-9", "TASK-9"]

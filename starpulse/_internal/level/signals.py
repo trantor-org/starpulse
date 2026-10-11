@@ -73,8 +73,10 @@ def claim_key(tool_key: str) -> str:
 
 def claimed(text: str, claims: Iterable[re.Pattern[str]], keys: TaskKeys | None) -> str | None:
     """The task the first matching claim pattern of `claims` names in `text`, when the board's key scheme calls it a
-    task."""
+    task. A capture that differs from the board's key only by case (`task-12`) names the key in upper case."""
     for pattern in claims if keys else ():
-        if (match := pattern.search(text)) and keys.matches(match[1]):
-            return match[1]
+        if match := pattern.search(text):
+            for spelling in (match[1], match[1].upper()):
+                if keys.matches(spelling):
+                    return spelling
     return None

@@ -19,7 +19,7 @@ tasks or skills (`GET /api/analytics/sessions`):
   or scheduler wrote it), any other `human`; the label is stored and the text never is.
 - `claims`: regular expressions run over each shell command and each `Skill` call's arguments. Group 1 is a task
   key; a match under the board's key scheme says the session now works that task, and every step after it is the
-  task's until another claim.
+  task's until another claim. A key that differs from the board's only by case names the board's spelling.
 - `completion_skill` and `completion_call`: a task is complete in a session that loaded the skill and ran a shell
   command matching the call.
 """
