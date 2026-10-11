@@ -10,7 +10,7 @@
 // The snapshot comes as `ref <path>` and its body is fetched at once, so the browser reads it off its main thread.
 (function () {
   var early = (window.__earlyStream = { src: new EventSource("/api/events?snapshot=ref"), events: [], bodies: {} });
-  ["snapshot", "task", "move", "dags", "pulls", "ledgers", "claim"].forEach(function (type) {
+  ["snapshot", "build", "restarting", "task", "move", "dags", "pulls", "ledgers", "claim"].forEach(function (type) {
     early.src.addEventListener(type, function (e) {
       if (early.adopted) return;
       early.events.push({ type: type, data: e.data });

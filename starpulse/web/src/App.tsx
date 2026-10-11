@@ -233,7 +233,7 @@ function NavigatorBody({ hud, view, activeView, slot, outlineSlot, choose, hasLe
     <>
       <section className="head">
         <h1>StarPulse</h1>
-        <div className="sub"><span className={`dot ${hud.live}`} />{hud.stats}</div>
+        <div className="sub"><span className={`dot ${hud.live}`} />{hud.note || hud.stats}</div>
       </section>
       <section className="views">
         <h3>Views</h3>

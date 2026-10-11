@@ -94,3 +94,14 @@ describe("the Kanban's autopilot strip", () => {
     expect(rule("#kb .ap .paused")).toContain("text-align: left");
   });
 });
+
+describe("the status dot", () => {
+  it("pulses while the stream is down and coming back, and holds still under reduced motion", () => {
+    expect(rule("#nav .dot.wait")).toContain("animation: ap-go");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{ #nav \.dot\.wait \{ animation: none; \} \}/);
+  });
+
+  it("glows red once the stream is lost, as it glows green when live", () => {
+    expect(css).toMatch(/#nav \.dot\.off \{[^}]*box-shadow: 0 0 8px var\(--fail\)/);
+  });
+});

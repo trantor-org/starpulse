@@ -481,9 +481,24 @@ class InsightDelta(_Api):
     finding: Finding | None
 
 
+class BuildEvent(_Api):
+    """The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,
+    which names every chunk it loads by its digest. A page that holds another build than the one it is named is out of date."""
+
+    id: str
+
+
+class RestartingEvent(_Api):
+    """The server was told to stop and will not answer after this: sent to every open stream before it exits."""
+
+    at: float  #: when the server announced it, in epoch seconds
+
+
 #: Each `/api/events` event name and the model of its `data`.
 EVENTS: dict[str, type[BaseModel]] = {
     "snapshot": Snapshot,
+    "build": BuildEvent,
+    "restarting": RestartingEvent,
     "task": TaskDelta,
     "move": MoveDelta,
     "dags": DagsDelta,
@@ -1722,6 +1737,8 @@ class ApiContract(_Api):
     events: list[
         TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta
     ]
+    build: BuildEvent
+    restarting: RestartingEvent
     merges: Merges
     machines: Machines
     laneHistory: LaneHistory

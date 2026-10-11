@@ -147,7 +147,7 @@ def _raw_event(resp) -> tuple[str, str]:
     while line := resp.readline().decode():
         if line.startswith("event: "):
             name = line.removeprefix("event: ").strip()
-        elif line.startswith("data: "):
+        elif line.startswith("data: ") and name != "build":  # the page build each connect names, not a change
             return name, line.removeprefix("data: ").rstrip("\n")
     raise AssertionError("the stream ended")
 
