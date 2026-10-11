@@ -337,6 +337,14 @@ def test_a_command_or_a_skill_call_that_names_a_task_is_a_claim_and_only_the_key
     assert not any("starpulse" in repr(s) for s in claims)
 
 
+def test_a_claim_spelled_in_lower_case_is_attributed_to_the_boards_canonical_key() -> None:
+    analytics = Analytics(claims=(re.compile(r"board_task\.py\s+start\s+(TASK-\d+)", re.IGNORECASE),))
+
+    found = signals(export(_call(1, "Bash", command="bin/board_task.py start task-12")), analytics=analytics, keys=KEYS)
+
+    assert [s.name for s in found if s.kind == "claim"] == ["TASK-12"]
+
+
 def test_a_capture_that_is_no_task_key_of_the_board_is_not_a_claim() -> None:
     analytics = Analytics(claims=(re.compile(r"start\s+(\S+)"),))
 
