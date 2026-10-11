@@ -99,8 +99,9 @@ class Machine(_Api):
     tiers: list[list[str]] | None = Field(
         default=None,
         description="Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's "
-        "states stacked in its cell; a state no tier names takes a tier of its own after them, and with none the "
-        "Board draws its own columns.",
+        "states stacked in its cell; a state no tier names is drawn with the tier at the mean of the tiers its "
+        "transitions join it to, stacked in it or in a tier of its own after it, else in a tier of its own after the "
+        "last, and with none the Board draws its own columns.",
     )
 
 

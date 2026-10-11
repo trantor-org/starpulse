@@ -43,3 +43,45 @@ export function padMachines(snap: Snapshot, n: number): Snapshot {
     machineStrip: { entries },
   };
 }
+
+const TIERS_14 = [["new"], ["triage"], ["ready", "waiting", "blocked"], ["needs_attention"], ["in_progress"], ["qa"], ["staging"], ["review"], ["approved"], ["done", "archived", "completed"]];
+const PATHS_14 = `new>triage triage>ready ready>in_progress in_progress>qa qa>staging staging>review review>approved approved>done done>completed
+  ready>waiting waiting>ready ready>blocked blocked>ready in_progress>waiting waiting>in_progress in_progress>needs_attention needs_attention>ready
+  needs_attention>in_progress qa>in_progress review>in_progress staging>qa review>done review>archived done>archived ready>archived new>ready
+  new>in_progress triage>blocked blocked>needs_attention approved>archived qa>needs_attention waiting>archived completed>archived`.split(/\s+/).map((p) => p.split(">"));
+
+/** `snap` with its Board reshaped for a Star Map review (`?demo&board=`): `no-archived` and `no-attention` take that state out, `unlisted` adds one no tier names joined to Ready and In Progress, `fourteen` draws fourteen states over thirty-three paths. Any other value leaves it alone. */
+export function shapeBoard(snap: Snapshot, variant: string | null): Snapshot {
+  const at = snap.flows.findIndex((f) => f.name === "board");
+  if (at < 0) return snap;
+  const { machine, agents } = snap.flows[at], out = (...gone: string[]) => ({
+    machine: {
+      ...machine,
+      states: machine.states.filter((s) => !gone.includes(s.id)),
+      transitions: machine.transitions.filter((t) => !gone.includes(t.source) && !gone.includes(t.target)),
+      mainLine: machine.mainLine?.filter((id) => !gone.includes(id)),
+    },
+    agents: agents.filter((a) => !gone.includes(a.state)),
+  });
+  const shaped: Partial<Pick<FlowSnapshot, "machine" | "agents">> | null =
+    variant === "no-archived" ? out("archived")
+    : variant === "no-attention" ? out("needs_attention")
+    : variant === "unlisted" ? {
+      machine: {
+        ...machine,
+        states: [...machine.states, { id: "held", name: "Held", initial: false, final: false }],
+        transitions: [...machine.transitions, { source: "ready", target: "held", event: "ready_held" }, { source: "held", target: "in_progress", event: "held_in_progress" }],
+      },
+    }
+    : variant === "fourteen" ? {
+      machine: {
+        ...machine,
+        states: TIERS_14.flat().map((id, i) => ({ id, name: id, initial: i === 0, final: ["archived", "completed"].includes(id) })),
+        transitions: PATHS_14.map(([source, target]) => ({ source, target, event: `${source}_${target}` })),
+        mainLine: ["new", "triage", "ready", "in_progress", "qa", "staging", "review", "approved", "done"],
+        tiers: TIERS_14,
+      },
+    }
+    : null;
+  return shaped ? { ...snap, flows: snap.flows.map((f, i) => (i === at ? { ...f, ...shaped } : f)) } : snap;
+}

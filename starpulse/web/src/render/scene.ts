@@ -535,7 +535,8 @@ const meets = (a: number, b: number, c: number, a2: number, b2: number, c2: numb
  * sky; each spot costs its bend from `c0` and what its path runs over, counted as the bend it is worth to avoid: NAMED for a name, SKIM
  * for a state's footprint, THROUGH for what a state draws, and CROSS for each point of it on a path already drawn. The cheapest spot
  * wins, so a path that can clear everything takes the least bend that does, and one that cannot runs over the least it can. `sky` bounds
- * the control point. `held` is the bend the path took last, which it keeps while that still clears.
+ * the control point. `held` is the bend the path took last, which it keeps while that stays out of every name and CLEAR - NAME_CLEAR from
+ * every other footprint.
  */
 export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: Pt, held?: Pt, names: NameBox[] = []): Curve {
   const others = all.filter((g) => g !== a && g !== b), from = rimOf(a, rowsOf(a, names)), to = rimOf(b, rowsOf(b, names));
@@ -579,11 +580,11 @@ export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn
     }
     return n;
   };
-  // a bent path keeps its bend while it clears, and straightens only once the straight path clears by HOLD more, so a state growing and
-  // shrinking across the line never flips it back and forth
+  // a bent path straightens only once the straight path clears by HOLD more, and keeps its bend while that clears by NAME_CLEAR less than a
+  // new bend must, so a count gaining a digit or a ring of tasks filling beside the path never hops it to another spot and back
   const straight = shape(c0);
   if (!over(straight, held ? CLEAR + HOLD : CLEAR)) return straight;
-  if (held && !over(shape(held))) return shape(held);
+  if (held && !over(shape(held), CLEAR - NAME_CLEAR)) return shape(held);
   // the spots are tried nearest first, equals in sky order, until the next is further than the best costs. That is a few dozen in for most
   // paths, so the search takes the spots a band of bend at a time (each band twice as wide as the last, so a spot is measured once more at
   // most) and sorts only the band it reaches
@@ -831,39 +832,99 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       return { r: SUN_R, R: foot.R, band: foot.band, rows: fs.length ? rows : null, ms, pg, here, on, at };
     };
     // The grid: the Board's tiers are its cells, in order, in `rows` lines of them wrapping left to right, a tier's states stacked top to
-    // bottom in its cell. The tiers are the board machine's configured `tiers` (the states drawn at each stage, left to right), a state none
-    // names taking a tier of its own after them; with none configured, the Board's own columns (the states it draws at one place across). A
-    // cell is as wide as its widest state's footprint and a line as tall as its tallest cell, like a CSS grid's auto tracks, and the room left
-    // over is shared evenly between the cells across and the lines down.
-    const ids = new Set(states.map((st) => st.id)), conf = board.machine.tiers;
+    // bottom in its cell. The tiers are the board machine's configured `tiers` (the states drawn at each stage, left to right); with none
+    // configured, the Board's own columns (the states it draws at one place across). A state no tier names is drawn with the tier at the mean
+    // of those its paths join it to, or in a tier of its own after the last when none does. A cell is as wide as its widest state's footprint
+    // and a line as tall as its tallest cell, like a CSS grid's auto tracks, and the room left over is shared evenly between the cells across
+    // and the lines down.
+    const ids = new Set(states.map((st) => st.id)), conf = board.machine.tiers?.length ? board.machine.tiers : null;
     const across = [...new Set(states.map((st) => BP[st.id][0]))].sort((a, b) => a - b);
-    const cols = conf?.length
-      ? [...conf.map((t) => t.filter((id) => ids.has(id))).filter((t) => t.length), ...states.filter((st) => !conf.flat().includes(st.id)).map((st) => [st.id])]
-      : across.map((x) => states.map((st) => st.id).filter((id) => BP[id][0] === x).sort((a, b) => BP[a][1] - BP[b][1]));
+    const tierOf = new Map<string, number>();
+    conf?.forEach((t, i) => t.forEach((id) => ids.has(id) && !tierOf.has(id) && tierOf.set(id, i)));
+    // An unnamed state its paths join to named ones takes the tier at the mean of theirs: stacked in it, or in a tier of its own after it,
+    // whichever draws the sun larger; one no path joins takes a tier of its own after the last.
+    const pull = new Map<string, number>(), loose: string[] = [];
+    for (const st of conf ? states.filter((q) => !tierOf.has(q.id)) : []) {
+      const joined = transitions.flatMap((t) => [t.source === st.id ? tierOf.get(t.target) : undefined, t.target === st.id ? tierOf.get(t.source) : undefined]).filter((i) => i !== undefined);
+      if (joined.length) pull.set(st.id, Math.round(joined.reduce((t, i) => t + i, 0) / joined.length));
+      else loose.push(st.id);
+    }
     const ix = new Map(states.map((st, i) => [st.id, i]));
+    const declared = conf ?? across.map((x) => states.map((st) => st.id).filter((id) => BP[id][0] === x).sort((a, b) => BP[a][1] - BP[b][1]));
+    const lone = (i: number) => declared[i]?.length === 1;
+    // A state's slot is where its tier names it, so it keeps its place when a state it is stacked with is absent: the tier holds the slot empty.
+    // A tier of one state beside another such tier takes the high or low slot its id's character codes give, so it stays put whichever tiers
+    // come or go; with no such tier beside it, it sits mid-height. A state no tier names takes the slots after its tier's.
+    type Slot = { i: number; at: number; n: number; of: number };
+    const grid = (stack: boolean) => {
+      const into = new Map<number, string[]>(), after = new Map<number, string[]>();
+      const last = (declared.length || 1) - 1;
+      for (const [id, k] of pull) (stack ? into : after).set(k, [...((stack ? into : after).get(k) ?? []), id]);
+      if (loose.length) after.set(last, [...(after.get(last) ?? []), ...loose]);
+      const slot = new Map<string, Slot>(), cols: string[][] = [];
+      declared.forEach((t, i) => {
+        const guests = into.get(i) ?? [];
+        cols.push([...t, ...guests].filter((id) => ids.has(id)));
+        t.forEach((id, at) => ids.has(id) && !slot.has(id) && slot.set(id, { i, at, n: t.length, of: t.length + guests.length }));
+        guests.forEach((id, j) => slot.set(id, { i, at: t.length + j, n: t.length, of: t.length + guests.length }));
+        for (const id of after.get(i) ?? []) {
+          cols.push([id]);
+          slot.set(id, { i: i + 0.5, at: 0, n: 1, of: 1 });
+        }
+      });
+      return { cols: cols.filter((t) => t.length), slot };
+    };
+    type Grid = ReturnType<typeof grid>;
+    // with no tiers configured, the Board's own columns alternate along a run of single-state ones, each by its place in the run
+    const runSide = new Map<string, number>();
+    let run = 0;
+    declared.forEach((t, i) => {
+      run = lone(i) && (lone(i - 1) || lone(i + 1)) ? run + 1 : 0;
+      if (run) runSide.set(t[0], (run - 1) % 2);
+    });
+    const sideOf = (g: Grid, id: string) => {
+      const { i } = g.slot.get(id)!, beside = Number.isInteger(i) ? [i - 1, i + 1] : [Math.floor(i), Math.ceil(i)];
+      if (!conf) return runSide.get(id) ?? -1;
+      return beside.some(lone) ? [...id].reduce((t, ch) => t + ch.charCodeAt(0), 0) % 2 : -1;
+    };
     // what a state's cell takes either side of its centre: its footprint, at least half its name's width, and above it the room for that name
     const NAME_ROOM = 34;
-    // a run of single-state tiers alternates up and down, each in the slot it would take stacked with its twin, so its moon names tuck above or
+    // a tier's states stacked in the slots it names them in, a tier of one state in the high or low of two, so its moon names tuck above or
     // below its neighbour's; a tier's sun stays right of the last one's, by at least the larger of their rings
-    const gridLay = (es: { l: number; r: number; t: number; b: number }[], rows: number, sw: number, sh: number, gap: number) => {
-      const per = Math.ceil(cols.length / rows), xs = states.map(() => 0), ys = states.map(() => 0);
+    const gridLay = (grid: Grid, es: { l: number; r: number; t: number; b: number }[], rows: number, sw: number, sh: number, gap: number) => {
+      const { cols, slot } = grid, per = Math.ceil(cols.length / rows), xs = states.map(() => 0), ys = states.map(() => 0);
       const lines = Array.from({ length: rows }, (_, j) => cols.slice(j * per, (j + 1) * per)).filter((l) => l.length);
       const e = (id: string) => es[ix.get(id)!], sum = (v: number[]) => v.reduce((t, x) => t + x, 0);
-      const uh = (u: string[]) => sum(u.map((id) => e(id).t + e(id).b + gap));
+      const hOf = (id: string) => e(id).t + e(id).b + gap;
+      // the ids whose footprints a tier's slots take, an empty slot the tier's tallest: a tier's room is the same with a state absent
+      const slotsOf = (u: string[]) => {
+        const { n } = slot.get(u[0])!, total = Math.max(...u.map((id) => slot.get(id)!.of)), one = n === 1 && total === 1;
+        const host = u.filter((id) => slot.get(id)!.at < n), side = n === 1 && host.length ? sideOf(grid, host[0]) : -1;
+        const own = new Map<number, string>();
+        host.forEach((id) => own.set(n > 1 ? slot.get(id)!.at : Math.max(side, 0), id));
+        let next = 0;
+        for (const id of u.filter((q) => slot.get(q)!.at >= n)) {
+          while (own.has(next)) next++;
+          own.set(next, id);
+        }
+        const tall = u.reduce((a, id) => (hOf(id) > hOf(a) ? id : a));
+        return { own, slots: one && side < 0 ? [u[0]] : Array.from({ length: Math.max(2, total) }, (_, i) => own.get(i) ?? tall), one };
+      };
+      const uh = (u: string[]) => {
+        const t = slotsOf(u);
+        return sum((t.one ? [u[0]] : t.slots).map(hOf));
+      };
       const lh = lines.map((l) => Math.max(...l.map(uh))), fy = (sh - sum(lh)) / lines.length;
       const at = (id: string) => ix.get(id)!, up = (id: string) => ys[at(id)] - e(id).t - gap / 2, dn = (id: string) => ys[at(id)] + e(id).b + gap / 2;
       let y0 = 0, ok = fy >= 0;
       lines.forEach((l, j) => {
         const band = lh[j] + fy;
-        let run = 0;
-        l.forEach((u, c) => {
-          const single = (v?: string[]) => v?.length === 1;
-          run = single(u) && (single(l[c - 1]) || single(l[c + 1])) ? run + 1 : 0;
-          const twin = run ? [u[0], u[0]] : u, free = (band - uh(twin)) / (twin.length + 1);
+        l.forEach((u) => {
+          const { own, slots } = slotsOf(u), free = (band - sum(slots.map(hOf))) / (slots.length + 1);
           let y = y0 + free;
-          twin.forEach((id, n) => {
-            if (!run || n === (run - 1) % 2) ys[at(id)] = y + gap / 2 + e(id).t;
-            y += e(id).t + e(id).b + gap + free;
+          slots.forEach((id, n) => {
+            if (own.get(n) === id) ys[at(id)] = y + gap / 2 + e(id).t;
+            y += hOf(id) + free;
           });
         });
         // left to right: each tier as far left as its states clear every state placed before them that they share height with
@@ -888,7 +949,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     };
     // The Board laid out at zoom `k` in `rows` lines: the sky is the canvas over `k`, and the layout holds when no two cells meet and every
     // line fits
-    const lay = (k: number, rows: number) => {
+    const lay = (grid: Grid, k: number, rows: number) => {
       const ls = labelScale(k);
       F = (ls * ((ctx.scale ?? 100) / 100)) / k;
       const sized = Object.fromEntries(states.map((st) => [st.id, radius(st)])), sw = (0.94 * W) / k, sh = (0.94 * H) / k, gap = 16 / k;
@@ -897,7 +958,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         const s = sized[st.id], half = textW(stateName(st.id), 13 * F) / 2;
         return { l: Math.max(half, s.rows?.reach[1] ?? s.R), r: Math.max(half, s.rows?.reach[0] ?? s.R), t: s.R + NAME_ROOM * F, b: s.R };
       });
-      const g = gridLay(es, rows, sw, sh, gap);
+      const g = gridLay(grid, es, rows, sw, sh, gap);
       const ps = states.map((st, i) => ({ id: st.id, R: sized[st.id].R, x: g.xs[i], y: g.ys[i] }));
       const box = (i: number) => [ps[i].x - es[i].l - gap / 2, ps[i].y - es[i].t - gap / 2, ps[i].x + es[i].r + gap / 2, ps[i].y + es[i].b + gap / 2];
       // every state, its name above and its rings and moons round it lie inside the sky, as well as clear of each other
@@ -910,17 +971,22 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       return { ok, sized, ps, sw, sh, ls };
     };
     // the largest zoom, up to ZOOM_MAX, at which `rows` lines hold the Board
-    const zoom = (rows: number) => {
+    const zoom = (grid: Grid, rows: number) => {
       let lo = 0.05, hi = ZOOM_MAX;
       for (let i = 0; i < 30; i++) {
         const m = (lo + hi) / 2;
-        if (lay(m, rows).ok) lo = m;
+        if (lay(grid, m, rows).ok) lo = m;
         else hi = m;
       }
       return lo;
     };
-    const zooms = cols.map((_, i) => zoom(i + 1)), rows = pickRows(zooms), k = zooms[rows - 1];
-    const L = lay(k, rows);
+    const best = (pull.size ? [grid(true), grid(false)] : [grid(false)])
+      .map((g) => {
+        const zooms = g.cols.map((_, i) => zoom(g, i + 1)), rows = pickRows(zooms);
+        return { g, rows, k: zooms[rows - 1] };
+      })
+      .reduce((a, b) => (b.k > a.k + 1e-9 ? b : a));
+    const rows = best.rows, L = lay(best.g, best.k, rows);
     // each state's place and the sky's width ease toward the layout's targets, so a state changing size moves its neighbours and the fit smoothly
     for (const p of L.ps) {
       p.x = ease(`${p.id}.x`, p.x);

@@ -288,6 +288,21 @@ describe("a Board path's route", () => {
     expect(routed(a, b, c0, [a, b, by(4)], new Drawn(), sky, held).c).toEqual(held);
     expect(routed(a, b, c0, [a, b, by(30)], new Drawn(), sky, held).c).toEqual(c0);
   });
+  it("keeps the bend it held while a name widening toward it stays off the path, so a count gaining a digit never hops it to another spot", () => {
+    const name = { of: "ready", x0: 380, y0: 280, x1: 420, y1: 320 }, first = routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [name]);
+    const gap = Math.min(...sample(first, 400).map((p) => Math.hypot(Math.max(name.x0 - p.x, 0, p.x - name.x1), Math.max(name.y0 - p.y, 0, p.y - name.y1))));
+    const wider = (by: number) => [{ of: "ready", x0: name.x0 - by, y0: name.y0 - by, x1: name.x1 + by, y1: name.y1 + by }];
+
+    expect(routed(a, b, c0, [a, b], new Drawn(), sky, first.c, wider(gap - 1)).c).toEqual(first.c);
+    expect(routed(a, b, c0, [a, b], new Drawn(), sky, first.c, wider(gap + 2)).c).not.toEqual(first.c);
+  });
+  it("keeps the bend it held while a state growing toward it leaves three quarters of its clearance, so a ring of tasks filling never hops it", () => {
+    const o = (R: number) => at("ready", 400, 300, R), first = routed(a, b, c0, [a, b, o(40)], new Drawn(), sky);
+    const room = Math.min(...sample(first, 400).map((p) => Math.hypot(p.x - 400, p.y - 300))) - 40;
+
+    expect(routed(a, b, c0, [a, b, o(40 + room - 16)], new Drawn(), sky, first.c).c).toEqual(first.c);
+    expect(routed(a, b, c0, [a, b, o(40 + room - 12)], new Drawn(), sky, first.c).c).not.toEqual(first.c);
+  });
 
   it("bends round a name printed in its way, and where no bend clears every name crosses the fewest it can", () => {
     const name = { of: "ready", x0: 380, y0: 280, x1: 420, y1: 320 }, all = { of: "sky", x0: 0, y0: 0, x1: 800, y1: 600 };
@@ -486,7 +501,7 @@ describe("a Board path's route search", () => {
     const crossings = (e: Curve) => points(e, 30).filter((p) => drawn.near(p.x, p.y)).length;
     const straight = shape(c0);
     if (!over(straight, held ? 36 : 20)) return straight;
-    if (held && !over(shape(held))) return shape(held);
+    if (held && !over(shape(held), 15)) return shape(held);
     const spots: { c: Pt; bend: number }[] = [];
     for (let x = 10; x <= sky.x - 10; x += 40) for (let y = 10; y <= sky.y - 10; y += 40) spots.push({ c: { x, y }, bend: Math.hypot(x - c0.x, y - c0.y) / 200 });
     let best = straight, cost = over(straight) + 0.05 * crossings(straight);
@@ -603,11 +618,37 @@ describe("the Board's tiers", () => {
     expect(g.archived.y).not.toBeCloseTo(g.done.y);
   });
 
-  it("gives a state no tier names a tier of its own after them, in the machine's order", () => {
-    const g = tiered(1920, 1080).galaxies;
+  describe("a state no tier names", () => {
+    /** The Board with states of no tier, joined to the others by `paths` as source>target pairs. */
+    const joined = (extra: string[], paths: string[]) =>
+      tiered(1920, 1080, DEFAULT_TIERS, (snap) => {
+        const m = snap.flows[0].machine;
+        m.states = [...m.states, ...extra.map((id) => ({ id, name: id, initial: false, final: false }))];
+        m.transitions = [...m.transitions, ...paths.map((p) => ({ source: p.split(">")[0], target: p.split(">")[1], event: p }))];
+      }).galaxies;
 
-    expect(g.blocked.x).toBeGreaterThan(g.done.x);
-    expect(g.completed.x).toBeGreaterThan(g.blocked.x);
+    it("takes a tier of its own after them, in the machine's order, when no path joins it to a state a tier names", () => {
+      const g = joined(["held", "parked"], []);
+
+      expect(g.held.x).toBeGreaterThan(g.done.x);
+      expect(g.parked.x).toBeGreaterThan(g.held.x);
+    });
+
+    // stacked in the tier at the mean of the tiers its paths join it to, or in a tier of its own right after it: whichever draws the sun larger
+    it("is drawn in or beside the tier at the mean of the tiers its paths join, between two tiers when they are shared evenly", () => {
+      const g = joined(["held"], ["ready>held", "held>in_progress"]);
+
+      expect(g.held.x).toBeGreaterThan(g.ready.x);
+      expect(g.held.x).toBeLessThan(g.in_progress.x);
+    });
+
+    it("is drawn nearer the tier it shares the most paths with, and not after the last tier", () => {
+      const g = joined(["held"], ["ready>held", "held>in_progress", "in_progress>held", "review>held"]);
+
+      expect(Math.abs(g.held.x - g.in_progress.x)).toBeLessThan(Math.abs(g.held.x - g.ready.x));
+      expect(g.held.x).toBeGreaterThanOrEqual(g.in_progress.x);
+      expect(g.held.x).toBeLessThan(g.done.x);
+    });
   });
 
   it("falls back to the Board's own columns with no tiers, every state placed", () => {
@@ -634,6 +675,49 @@ describe("the Board's tiers", () => {
     run.slice(1).forEach((id, i) => expect(g[id].x - g[run[i]].x).toBeGreaterThanOrEqual(Math.max(g[id].R, g[run[i]].R) - 1e-6));
     const all = Object.values(g);
     for (const a of all) for (const b of all) if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(a.R + b.R - 1e-6);
+  });
+
+  describe("a state's side of the row", () => {
+    /** Which side of the row's midline a state sits on: -1 high, 1 low, 0 on it. */
+    const sideOf = (s: Scene, id: string) => {
+      const d = s.galaxies[id].y - s.h / 2;
+      return Math.abs(d) < 1 ? 0 : Math.sign(d);
+    };
+    /** The Board without these states and the paths that touch them, its tiers left as declared. */
+    const without = (...ids: string[]) => (snap: Snapshot) => {
+      const m = snap.flows[0].machine;
+      m.states = m.states.filter((s) => !ids.includes(s.id));
+      m.transitions = m.transitions.filter((t) => !ids.includes(t.source) && !ids.includes(t.target));
+      m.mainLine = m.mainLine?.filter((id) => !ids.includes(id));
+    };
+    const sides = (s: Scene) => Object.fromEntries(DEFAULT_TIERS.flat().filter((id) => s.galaxies[id]).map((id) => [id, sideOf(s, id)]));
+    const held = (s: Scene, full: Scene) => {
+      const was = sides(full), now = sides(s);
+      return Object.fromEntries(Object.keys(now).map((id) => [id, [now[id], was[id]]]));
+    };
+    const same = (pairs: Record<string, number[]>) => Object.fromEntries(Object.entries(pairs).map(([id, [a]]) => [id, [a, a]]));
+
+    it("keeps every state on its side when the Needs Attention state is removed", () => {
+      const full = tiered(1920, 1080), pairs = held(tiered(1920, 1080, DEFAULT_TIERS, without("needs_attention")), full);
+
+      expect(Object.keys(pairs)).not.toContain("needs_attention");
+      expect(pairs).toEqual(same(pairs));
+    });
+
+    it("keeps every state on its side when the Archived state is removed", () => {
+      const full = tiered(1920, 1080), pairs = held(tiered(1920, 1080, DEFAULT_TIERS, without("archived")), full);
+
+      expect(Object.keys(pairs)).toContain("done");
+      expect(pairs).toEqual(same(pairs));
+    });
+
+    it("keeps every state on its side when a tier is added mid-row", () => {
+      const added = [["new"], ["ready", "waiting"], ["blocked"], ["needs_attention"], ["in_progress"], ["review"], ["done", "archived"]];
+      const full = tiered(1920, 1080), pairs = held(tiered(1920, 1080, added), full);
+
+      expect(Object.keys(pairs)).toContain("in_progress");
+      expect(pairs).toEqual(same(pairs));
+    });
   });
 
   it("draws a state at one footprint and sun, busy or empty", () => {
@@ -697,6 +781,23 @@ describe("the Board's tiers", () => {
     expect(pickRows([1, 1.04, 1.06])).toBe(3);
     expect(pickRows([1, 1.04, 1.07, 1.09])).toBe(3);
     expect(pickRows([1])).toBe(1);
+  });
+
+  it.each([
+    [1366, 768, [52.484, 52.484, 51.38]],
+    [1920, 1080, [75.184, 75.184, 75.184]],
+    [2560, 1440, [101.407, 101.407, 101.407]],
+    [3440, 1440, [132.62, 129.77, 126.92]],
+  ] as const)("draws the demo's eight states at the sun size TASK-3839 set, within a pixel, at %i x %i", (W, H, suns) => {
+    // the demo's eight states; the sizes are the zoom the layout drew before the tiers were steadied, at 100, 125 and 150% text
+    const eight = (snap: Snapshot) => {
+      const m = snap.flows[0].machine, gone = ["blocked", "completed"];
+      m.states = m.states.filter((q) => !gone.includes(q.id));
+      m.transitions = m.transitions.filter((t) => !gone.includes(t.source) && !gone.includes(t.target));
+    };
+    const drawn = [100, 125, 150].map((scale) => SUN_R * zoom(tiered(W, H, DEFAULT_TIERS, eight, scale), W));
+
+    drawn.forEach((r, i) => expect(Math.abs(r - suns[i])).toBeLessThanOrEqual(1));
   });
 
   it("makes room for larger names at a larger Admin text size, never shrinking the sun's footprint", () => {
@@ -799,6 +900,34 @@ describe("Board paths", () => {
       for (const n of scene.names)
         if (sample(e as Curve, 400).some((p) => p.x > n.x0 && p.x < n.x1 && p.y > n.y0 && p.y < n.y1)) over.push(`${e.source}>${e.target} over ${n.of}`);
     expect(over).toEqual([]);
+  });
+
+  describe("on a Board of fourteen states and thirty-three paths", () => {
+    const TIERS = [["new"], ["triage"], ["ready", "waiting", "blocked"], ["needs_attention"], ["in_progress"], ["qa"], ["staging"], ["review"], ["approved"], ["done", "archived", "completed"]];
+    const PATHS = `new>triage triage>ready ready>in_progress in_progress>qa qa>staging staging>review review>approved approved>done done>completed
+      ready>waiting waiting>ready ready>blocked blocked>ready in_progress>waiting waiting>in_progress in_progress>needs_attention needs_attention>ready
+      needs_attention>in_progress qa>in_progress review>in_progress staging>qa review>done review>archived done>archived ready>archived new>ready
+      new>in_progress triage>blocked blocked>needs_attention approved>archived qa>needs_attention waiting>archived completed>archived`.split(/\s+/).map((p) => p.split(">"));
+    const board = (scale: number) => {
+      const sky = savedBoardSky(1920, 1080, (snap) => {
+        const m = snap.flows[0].machine;
+        m.states = TIERS.flat().map((id, i) => ({ id, name: id, initial: i === 0, final: ["archived", "completed"].includes(id) }));
+        m.transitions = PATHS.map(([source, target]) => ({ source, target, event: `${source}_${target}` }));
+        m.mainLine = ["new", "triage", "ready", "in_progress", "qa", "staging", "review", "approved", "done"];
+        m.tiers = TIERS;
+      });
+      return build({ ...sky, scale }, { kind: "board" });
+    };
+
+    it.each([100, 125, 150])("runs no path over a state's name or count at %i% text", (scale) => {
+      const scene = board(scale), over: string[] = [];
+
+      expect(scene.bEdges).toHaveLength(33);
+      for (const e of scene.bEdges)
+        for (const n of scene.names)
+          if (sample(e as Curve, 400).some((p) => p.x > n.x0 && p.x < n.x1 && p.y > n.y0 && p.y < n.y1)) over.push(`${e.source}>${e.target} over ${n.of}`);
+      expect(over).toEqual([]);
+    });
   });
 
   it("gather into one stream along a final state's side when it is reached from several states", () => {
