@@ -45,7 +45,8 @@ class _Decoded:
                 self.pending = rest
                 if not frame.startswith(b": ping"):
                     name, _, data = frame.decode().partition("\ndata: ")
-                    return name.removeprefix("event: "), json.loads(data)
+                    if name != "event: build":  # the page build each connect names, not a change
+                        return name.removeprefix("event: "), json.loads(data)
                 continue
             chunk = self.resp.read1(65536)
             assert chunk, "the stream ended"

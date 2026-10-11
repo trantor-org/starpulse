@@ -362,6 +362,20 @@
       "title": "Bottleneck",
       "type": "object"
     },
+    "BuildEvent": {
+      "additionalProperties": false,
+      "description": "The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,\nwhich names every chunk it loads by its digest. A page that holds another build than the one it is named is out of date.",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "BuildEvent",
+      "type": "object"
+    },
     "Calibration": {
       "additionalProperties": false,
       "description": "The forecast scored on the latest fifth of the ended runs against a chain fitted on the others.",
@@ -4644,6 +4658,20 @@
       "title": "RequiredCheck",
       "type": "object"
     },
+    "RestartingEvent": {
+      "additionalProperties": false,
+      "description": "The server was told to stop and will not answer after this: sent to every open stream before it exits.",
+      "properties": {
+        "at": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "at"
+      ],
+      "title": "RestartingEvent",
+      "type": "object"
+    },
     "RestoreRequest": {
       "additionalProperties": false,
       "description": "`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged.",
@@ -6666,6 +6694,9 @@
     "autopilotStatus": {
       "$ref": "#/$defs/AutopilotStatus"
     },
+    "build": {
+      "$ref": "#/$defs/BuildEvent"
+    },
     "contractReport": {
       "$ref": "#/$defs/ContractReport"
     },
@@ -6806,6 +6837,9 @@
       },
       "type": "array"
     },
+    "restarting": {
+      "$ref": "#/$defs/RestartingEvent"
+    },
     "searchResults": {
       "$ref": "#/$defs/SearchResults"
     },
@@ -6837,6 +6871,8 @@
   "required": [
     "snapshot",
     "events",
+    "build",
+    "restarting",
     "merges",
     "machines",
     "laneHistory",

@@ -178,7 +178,7 @@ def test_a_change_is_encoded_once_however_many_pages_are_streaming(tmp_path: Pat
 
     assert [name for name, _ in seen] == ["dags", "dags"]
     assert seen[0][1] == seen[1][1]
-    assert encoded == ["dags"]
+    assert [name for name in encoded if name != "build"] == ["dags"]  # a build's event is made once per build, not per change
 
 
 def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
@@ -187,7 +187,7 @@ def test_an_idle_event_stream_sends_a_comment_so_a_dead_page_is_noticed(
     monkeypatch.setattr("starpulse._internal.server.server._PING_S", 0.05)
     with _serve(tmp_path) as server:
         with urllib.request.urlopen(_url(server, "/api/events"), timeout=5) as resp:
-            lines = [resp.readline() for _ in range(5)]
+            lines = [resp.readline() for _ in range(8)]  # the snapshot and the build take six
 
     assert b": ping\n" in lines
 

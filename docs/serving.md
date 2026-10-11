@@ -41,6 +41,42 @@ The adopted socket's backlog and options stay as the manager set them, `--host` 
 startup line and the board's instance name (`flow-view-<port>`) name the socket's port. A `.socket` unit's
 `ListenStream=` sets that address; `Accept=no` (the default) hands the server the listening socket itself.
 
+### What the page shows when the server restarts
+
+The page keeps its last Board on screen while the connection is down and says why in the navigator's header, where the dot
+and the `live · <time> MST` line sit. The note replaces that line until the connection is live again; `<time>` is the
+clock time of the last data the page drew.
+
+| State | Dot | Note | When |
+| --- | --- | --- | --- |
+| Live | green | `live · HH:MM MST` | The stream is open. |
+| Restarting | amber, pulsing | `restarting · HH:MM MST` | The server sent `restarting` before it exited. |
+| Retrying | amber, pulsing | `retrying · HH:MM MST` | The stream dropped with no announcement. |
+| Offline | red | `offline · HH:MM MST` | The stream has been down for 20 s, from the drop or the announcement. It keeps retrying. |
+| New build | green | `updating when idle` | The server runs a page build other than the one loaded. |
+
+The dot does not pulse under `prefers-reduced-motion`.
+
+The page reconnects at once after a drop, then waits 250 ms, 500 ms, 1 s, 2 s and 3 s between tries and keeps trying at 3 s.
+Each connect replaces the page's Board with a fresh snapshot.
+
+Two events on `/api/events` carry what the page needs:
+
+- `build` ({id}): the page build the server is serving, the first 12 hex digits of the SHA-256 of `static/index.html`
+  (whose asset names carry each bundle's hash, so a rebuilt page has a new id). It follows the `snapshot` on every connect.
+  The first build a page's first connection names is the build it was loaded from; a later connection that names another
+  makes the page show `updating when idle`.
+- `restarting` ({at}): sent to every open stream when the server receives `SIGTERM`, before it exits, after it has
+  waited up to one second in all for the open streams to write the frame. The server then saves the Board and stops.
+
+A page that holds a new build reloads itself once nobody is using it: no task view, dialog or menu open, no field focused,
+and no pointer, key or wheel input for 30 s. A tab in the background reloads at once. It reloads once per build: the page
+records the build it reloaded for in `sessionStorage` (`starpulse.reloadedFor`), so a build that still differs after the
+reload does not reload it again.
+
+A demo page plays these states with `?link=`: `restart`, `update` (a restart that ships a new build) and `drop` play from
+live; `restarting`, `retrying`, `offline` and `updating` hold one state.
+
 ## Config file
 
 `starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read

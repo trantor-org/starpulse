@@ -441,13 +441,14 @@ def url(server: ThreadingHTTPServer, path: str) -> str:
     return f"http://127.0.0.1:{server.server_port}{path}"
 
 
-def next_event(resp: HTTPResponse) -> tuple[str, dict]:
-    """The next named event on the stream, skipping its keep-alive comments."""
+def next_event(resp: HTTPResponse, *, connection: bool = False) -> tuple[str, dict]:
+    """The next named event on the stream, skipping its keep-alive comments and, unless `connection` is set, the `build`
+    each connect names after its snapshot: that is the page's, not a change to what it draws."""
     name = ""
     while line := resp.readline().decode():
         if line.startswith("event: "):
             name = line.removeprefix("event: ").strip()
-        elif line.startswith("data: "):
+        elif line.startswith("data: ") and (connection or name != "build"):
             return name, json.loads(line.removeprefix("data: "))
     raise AssertionError("the stream ended")
 

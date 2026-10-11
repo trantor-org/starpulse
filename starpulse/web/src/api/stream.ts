@@ -2,12 +2,17 @@
 
 import { demoServer, type DemoServer } from "../demo/demo";
 import type { Delta, LedgerRow, Snapshot } from ".";
+import { playLink } from "../demo/linkDemo";
 import { keep } from "./same";
 
 export { embedded } from "../demo/demo";
 
-/** How long after the browser gives a connection up before the page opens a fresh one. */
-export const RETRY_MS = 3000;
+/** The longest the page waits before it reopens a connection that has not opened since it dropped. */
+export const RETRY_CAP_MS = 3000;
+/** How long a connection stays down before the page calls it lost; it goes on retrying. */
+export const LOST_MS = 20_000;
+/** The wait before the `attempt`th reopen of a dropped connection: none for the first, then 250 ms doubling to the cap. */
+export const retryWait = (attempt: number) => (attempt === 0 ? 0 : Math.min(RETRY_CAP_MS, 250 * 2 ** (attempt - 1)));
 /** The stream, asking for each snapshot as `ref <path>`: a browser reads a long event on its main thread, a fetched body off it. */
 const EVENTS = "/api/events?snapshot=ref";
 const OPEN = 1;
@@ -82,17 +87,24 @@ function takeEarly(): EarlyStream | null {
   return early;
 }
 
+/** What the connection is doing: up, down after the server announced a restart, down with no announcement, or down for LOST_MS. */
+export type Link = "live" | "restarting" | "retrying" | "offline";
+
 export interface StreamHandlers {
   /** The sky as it stands: each connect's snapshot, then that snapshot folded with every delta after it, `kind` naming that delta. */
   snapshot(sky: Snapshot, kind?: Delta["kind"]): void;
   /** Whether the connection is up. */
   live(on: boolean): void;
+  /** What the connection is doing, each time that changes: `restarting` from the server's announcement, even while the connection is still open. */
+  link?(state: Link): void;
+  /** The server named a page build other than the one the page holds, once per such build. */
+  build?(id: string): void;
 }
 
 /**
- * One EventSource on /api/events, or on a self-contained demo page its DemoServer, followed with no connection at all. The browser retries a dropped connection on
- * its own and the server opens each with a fresh snapshot, so a reconnect
- * resyncs; when the browser gives a connection up the page opens a new one.
+ * One EventSource on /api/events, or on a self-contained demo page its DemoServer, followed with no connection at all. The server opens
+ * each connection with a fresh snapshot, so a reconnect resyncs. A browser waits seconds before it retries a source of its own, so the
+ * page closes a dropped connection and opens a new one at once, then after 250 ms, 500 ms and so on up to RETRY_CAP_MS.
  */
 export function openStream(
   handlers: StreamHandlers,
@@ -102,11 +114,14 @@ export function openStream(
 ): { close(): void } {
   if (demo) {
     handlers.live(true);
+    handlers.link?.("live");
+    const stopLink = playLink(handlers, new URLSearchParams(globalThis.location?.search ?? "").get("link"), LOST_MS);
     handlers.snapshot(demo.snapshot);
     const off = demo.subscribe(handlers.snapshot);
     demo.start();
     return {
       close() {
+        stopLink();
         off();
         demo.stop();
       },
@@ -149,13 +164,40 @@ export function openStream(
     fold({ kind, ...JSON.parse(body) });
   };
 
+  let showing: Link | null = null;
+  const show = (state: Link) => {
+    if (state === showing) return;
+    showing = state;
+    handlers.link?.(state);
+  };
+  /** The connection opened, as far as the server's page build and restart go: the next drop starts over. */
+  let attempts = 0;
+  let announced = false;
+  let lost: ReturnType<typeof setTimeout> | undefined;
+  const goesLost = () => void (lost ??= setTimeout(() => show("offline"), LOST_MS));
+  const up = () => {
+    clearTimeout(lost);
+    lost = undefined;
+    attempts = 0;
+    announced = false;
+    show("live");
+    handlers.live(true);
+  };
+  const drop = () => {
+    handlers.live(false);
+    if (showing !== "offline") show(announced ? "restarting" : "retrying");
+    goesLost();
+    clearTimeout(timer);
+    if (!stopped) timer = setTimeout(() => connect(), retryWait(attempts++));
+  };
+  /** The page build the page's own first connection named, which the page was loaded from. */
+  let own: string | null = null;
+  let told: string | null = null;
+
   const connect = (adopt: EarlyStream | null = null) => {
     const src = adopt?.src ?? open(EVENTS);
     source = src;
     waiting = null;
-    const reopen = () => {
-      if (!stopped) timer = setTimeout(() => connect(), RETRY_MS);
-    };
     src.addEventListener("snapshot", (e) => {
       const data = (e as MessageEvent<string>).data;
       if (!data.startsWith("ref ")) return take(JSON.parse(data) as Snapshot);
@@ -175,8 +217,7 @@ export function openStream(
             if (waiting !== mine) return;
             waiting = null;
             src.close(); // the server holds no body by that name now: a fresh connection sends a fresh snapshot
-            handlers.live(false);
-            reopen();
+            drop();
           },
         );
     });
@@ -192,17 +233,27 @@ export function openStream(
     src.addEventListener("claim", later((e) =>
       fold({ kind: "claim", ...JSON.parse((e as MessageEvent<string>).data) }),
     ));
-    src.onopen = () => handlers.live(true);
+    src.addEventListener("restarting", () => {
+      announced = true;
+      show("restarting");
+      goesLost();
+    });
+    src.addEventListener("build", (e) => {
+      const id = (JSON.parse((e as MessageEvent<string>).data) as { id: string }).id;
+      if (own === null) own = id;
+      else if (id !== own && id !== told) handlers.build?.((told = id));
+    });
+    src.onopen = up;
     src.onerror = () => {
-      handlers.live(false);
-      if (src.readyState === CLOSED) reopen();
+      src.close(); // not the browser's own retry, which waits seconds
+      drop();
     };
     if (!adopt) return;
     // what the connection did before the page listened: the events in order through the listeners just added, then its open or its end
     adopt.adopted = true;
     for (const { type, data } of adopt.events) src.dispatchEvent(new MessageEvent(type, { data }));
     adopt.events.length = 0;
-    if (src.readyState === OPEN) handlers.live(true);
+    if (src.readyState === OPEN) up();
     else if (src.readyState === CLOSED) src.onerror?.(new Event("error"));
   };
 
@@ -211,6 +262,7 @@ export function openStream(
     close() {
       stopped = true;
       clearTimeout(timer);
+      clearTimeout(lost);
       source?.close();
     },
   };

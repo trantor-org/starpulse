@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoServer } from "../demo/demo";
-import { RETRY_MS, applyDelta, openStream } from "./stream";
+import { applyDelta, openStream } from "./stream";
 import type { ActiveRun, Dag, Delta, LedgerRow, Pool, RawAgent, Snapshot } from ".";
 
 const agent = (id: string, state: string): RawAgent => ({ id, title: id, state, model: "" });
@@ -272,12 +272,12 @@ describe("openStream", () => {
       expect(lives).toEqual([]);
     });
 
-    it("opens a fresh connection once the browser gave it up, as it would its own", () => {
+    it("opens a fresh connection at once when it was already given up, as it would its own", () => {
       const pending = early(2, []);
       openStream(handlers, open, null, pending);
       expect(FakeSource.made).toEqual([]);
 
-      vi.advanceTimersByTime(RETRY_MS);
+      vi.advanceTimersByTime(0);
 
       expect(FakeSource.made.map((f) => f.url)).toEqual([EVENTS]);
     });
@@ -301,6 +301,24 @@ describe("openStream", () => {
     expect(lives).toEqual([true]);
     expect(seen.slice(0, 2).map(ids)).toEqual([["TASK-D1:to_do"], ["TASK-D1:done"]]);
     expect([walked, seen.length]).toEqual([3, 3]); // the snapshot, the move, one walk step; nothing once closed
+  });
+
+  it("plays the connection state a demo page's address names, until the stream is closed", () => {
+    vi.stubGlobal("location", { search: "?link=restart" });
+    const links: string[] = [];
+    const machine = {
+      states: ["new", "to_do"].map((id) => ({ id, name: id, initial: id === "new", final: false })),
+      transitions: [{ source: "new", target: "to_do", event: "START" }],
+    };
+    const server = new DemoServer(board([agent("TASK-D1", "to_do")], { flows: [{ name: "board", machine, agents: [agent("TASK-D1", "to_do")] }] }));
+    const stream = openStream({ ...handlers, link: (state) => void links.push(state) }, open, server);
+
+    vi.advanceTimersByTime(2_000);
+    stream.close();
+    vi.advanceTimersByTime(60_000);
+    vi.unstubAllGlobals();
+
+    expect(links).toEqual(["live", "live", "restarting"]); // the demo's own live, then the played scenario's start and its restart
   });
 
   it("hands over the Board folded with each delta that follows", () => {
@@ -440,7 +458,7 @@ describe("openStream", () => {
       first.dispatchEvent({ type: "snapshot", data: `ref ${BODY}` });
       reads[0].settle(false);
       await flush();
-      vi.advanceTimersByTime(RETRY_MS);
+      vi.advanceTimersByTime(0);
 
       expect([first.readyState, lives, FakeSource.made.length, seen]).toEqual([2, [false], 2, []]);
     });
@@ -463,15 +481,17 @@ describe("openStream", () => {
     expect(lives).toEqual([true, false]);
   });
 
-  it("lets the browser retry a dropped connection and resyncs from the snapshot the server sends on it", () => {
+  it("reopens a dropped connection itself, not waiting for the browser's retry, and resyncs from the snapshot the server sends on it", () => {
     openStream(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do")]));
+    const first = last();
 
-    last().onerror?.(); // readyState stays CONNECTING: the browser reconnects the same source
-    vi.advanceTimersByTime(RETRY_MS * 2);
+    first.onerror?.(); // readyState stays CONNECTING: left alone, the browser would wait seconds before it reconnected
+    vi.advanceTimersByTime(0);
     last().send("snapshot", board([agent("PROJ-1", "done")]));
 
-    expect(FakeSource.made).toHaveLength(1);
+    expect(first.readyState).toBe(2);
+    expect(FakeSource.made).toHaveLength(2);
     expect(seen.map(ids)).toEqual([["PROJ-1:to_do"], ["PROJ-1:done"]]);
   });
 
@@ -479,7 +499,8 @@ describe("openStream", () => {
     openStream(handlers, open);
     last().send("snapshot", board([agent("PROJ-1", "to_do"), agent("PROJ-2", "review")]));
 
-    last().onerror?.(); // the server restarted: the browser reconnects the same source
+    last().onerror?.(); // the server restarted
+    vi.advanceTimersByTime(0);
     last().send("snapshot", board([], { reading: true, error: "board: reading q:tasks" }));
     last().send("move", { flow: "board", id: "PROJ-9", agent: agent("PROJ-9", "x") });
     last().send("dags", { dags: [], error: "board: reading q:tasks" });
@@ -501,8 +522,7 @@ describe("openStream", () => {
     last().readyState = 2;
 
     last().onerror?.();
-    expect(FakeSource.made).toHaveLength(1);
-    vi.advanceTimersByTime(RETRY_MS);
+    vi.advanceTimersByTime(0);
 
     expect(FakeSource.made).toHaveLength(2);
   });
@@ -514,7 +534,7 @@ describe("openStream", () => {
     first.onerror?.();
 
     stream.close();
-    vi.advanceTimersByTime(RETRY_MS * 2);
+    vi.advanceTimersByTime(6000);
 
     expect(FakeSource.made).toHaveLength(1);
     expect(first.readyState).toBe(2);
@@ -526,6 +546,158 @@ describe("openStream", () => {
     stream.close();
 
     expect(last().readyState).toBe(2);
+  });
+
+  describe("what the connection is doing", () => {
+    const links: string[] = [];
+    const builds: string[] = [];
+    const watching = { ...handlers, link: (state: string) => void links.push(state), build: (id: string) => void builds.push(id) };
+    /** Drop the connection, then let the page's own reopen run at the end of its wait. */
+    const dropAndWait = (ms: number) => {
+      last().onerror?.();
+      vi.advanceTimersByTime(ms);
+    };
+
+    beforeEach(() => {
+      links.length = 0;
+      builds.length = 0;
+    });
+
+    it("is live once the connection opens", () => {
+      openStream(watching, open);
+
+      last().onopen?.();
+
+      expect(links).toEqual(["live"]);
+    });
+
+    it("says restarting from the server's announcement, while the connection is still open, and through the drop that follows", () => {
+      openStream(watching, open);
+      last().onopen?.();
+
+      last().send("restarting", {});
+      expect(links).toEqual(["live", "restarting"]);
+      expect(lives).toEqual([true]);
+
+      dropAndWait(0);
+
+      expect(links).toEqual(["live", "restarting"]);
+      expect(lives).toEqual([true, false]);
+    });
+
+    it("says retrying for a drop the server did not announce", () => {
+      openStream(watching, open);
+      last().onopen?.();
+
+      last().onerror?.();
+
+      expect(links).toEqual(["live", "retrying"]);
+    });
+
+    it("says offline once the connection has been down for 20 s, and keeps retrying", () => {
+      openStream(watching, open);
+      last().onopen?.();
+      last().onerror?.();
+
+      vi.advanceTimersByTime(19_999);
+      expect(links).toEqual(["live", "retrying"]);
+      vi.advanceTimersByTime(1);
+
+      expect(links).toEqual(["live", "retrying", "offline"]);
+      const attempts = FakeSource.made.length;
+      last().onerror?.(); // the retry that failed: another follows, and the line keeps saying offline
+      vi.advanceTimersByTime(3000);
+      expect(FakeSource.made.length).toBeGreaterThan(attempts);
+      expect(links).toEqual(["live", "retrying", "offline"]);
+    });
+
+    it("counts the 20 s from when the server announced the restart", () => {
+      openStream(watching, open);
+      last().onopen?.();
+      last().send("restarting", {});
+      vi.advanceTimersByTime(15_000);
+      last().onerror?.();
+
+      vi.advanceTimersByTime(4_999);
+      expect(links).toEqual(["live", "restarting"]);
+      vi.advanceTimersByTime(1);
+
+      expect(links).toEqual(["live", "restarting", "offline"]);
+    });
+
+    it("reconnects at once after a drop, on a connection of its own, and says live when that one opens", () => {
+      openStream(watching, open);
+      const first = last();
+      first.onopen?.();
+
+      first.onerror?.();
+      vi.advanceTimersByTime(0);
+
+      expect(first.readyState).toBe(2);
+      expect(FakeSource.made).toHaveLength(2);
+      last().onopen?.();
+      expect(links).toEqual(["live", "retrying", "live"]);
+    });
+
+    it("backs off while the server stays away, never waiting more than 3 s", () => {
+      openStream(watching, open);
+      const waits: number[] = [];
+
+      for (const wait of [0, 250, 500, 1000, 2000, 3000, 3000]) {
+        const made = FakeSource.made.length;
+        last().onerror?.();
+        if (wait > 0) vi.advanceTimersByTime(wait - 1);
+        waits.push(FakeSource.made.length - made);
+        vi.advanceTimersByTime(1);
+        waits.push(FakeSource.made.length - made);
+      }
+
+      // before the wait ends no connection is made, once it has ended exactly one is (at 0 ms there is no "before")
+      expect(waits).toEqual([0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]);
+    });
+
+    it("starts over at once after a connection that opened", () => {
+      openStream(watching, open);
+      dropAndWait(0);
+      dropAndWait(250);
+      last().onopen?.();
+
+      const made = FakeSource.made.length;
+      last().onerror?.();
+      vi.advanceTimersByTime(0);
+
+      expect(FakeSource.made).toHaveLength(made + 1);
+    });
+
+    it("reports a build other than the page's own once, and says nothing for the build it already holds", () => {
+      openStream(watching, open);
+      last().send("build", { id: "aaa" });
+      expect(builds).toEqual([]);
+
+      dropAndWait(0);
+      last().send("build", { id: "aaa" });
+      expect(builds).toEqual([]);
+
+      dropAndWait(250);
+      last().send("build", { id: "bbb" });
+      dropAndWait(500);
+      last().send("build", { id: "bbb" });
+
+      expect(builds).toEqual(["bbb"]);
+    });
+
+    it("takes the build the connection index.html opened named as the page's own", () => {
+      const early = new FakeSource(EVENTS);
+      early.readyState = 1;
+      FakeSource.made = [];
+
+      openStream(watching, open, null, { src: early as unknown as EventSource, events: [{ type: "build", data: JSON.stringify({ id: "aaa" }) }] });
+      early.onerror?.();
+      vi.advanceTimersByTime(0);
+      last().send("build", { id: "bbb" });
+
+      expect(builds).toEqual(["bbb"]);
+    });
   });
 });
 

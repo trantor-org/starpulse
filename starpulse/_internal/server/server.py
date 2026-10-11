@@ -26,7 +26,10 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    `dags` delta ({dags, pools, error}) per runs change, a `pulls` delta ({pulls}) per
                    change to a task's pull requests and a `claim` delta ({task, reason, at}) per
                    refused agent claim the board adapter reports, an `insight` delta ({id, finding}) per finding
-                   an engine posts or retracts (`finding` null), with a `: ping` comment every 15 s.
+                   an engine posts or retracts (`finding` null), with a `: ping` comment every 15 s. A `build` event
+                   ({id}: the first 12 hex digits of the SHA-256 of `static/index.html`) follows the `snapshot` on every
+                   connect, so a page can tell it is not running the server's build; `restarting` ({at}) goes to every
+                   open stream on `SIGTERM`, before the process exits.
                    `pulls` maps each open task that cites a pull request to [{number, url, checks
                    (pass, failing, pending, none), merged, merge_sha, merged_at (null until merged), threads (unresolved), behind_main (commits main holds that the head lacks; null once the head branch is gone), stale}], read from
                    GitHub through `gh` once a minute and held between reads; a failed read keeps the
@@ -161,6 +164,7 @@ from __future__ import annotations
 import argparse
 import functools
 import gzip
+import hashlib
 import io
 import json
 import logging
@@ -772,6 +776,29 @@ _KEPT = "public, max-age=31536000, immutable"
 _TEXT = (".html", ".js", ".mjs", ".css", ".svg", ".json", ".map")
 
 
+@functools.lru_cache(maxsize=4)
+def _build_id(path: str, mtime_ns: int) -> str:
+    """The digest of the built page's `index.html`, which names every chunk it loads by that chunk's digest: it changes
+    exactly when the page a browser would load does. `mtime_ns` keys a rebuilt file afresh."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
+
+
+@functools.lru_cache(maxsize=4)
+def _build_text(build: str) -> str:
+    """The `build` event's data for one build id, made once: each connect sends it, and the `_EventText` cache of the
+    Board's large events must not be spent on it."""
+    return event("build", {"id": build})
+
+
+def page_build(static: Path) -> str | None:
+    """The id of the page build `static` holds, or None while it holds none."""
+    index = static / "index.html"
+    try:
+        return _build_id(str(index), index.stat().st_mtime_ns)
+    except OSError:
+        return None
+
+
 @functools.lru_cache(maxsize=64)
 def _gzipped(path: str, mtime_ns: int) -> bytes:
     """A static file gzipped once per build: `mtime_ns` keys a rebuilt file afresh."""
@@ -1213,13 +1240,20 @@ def request_handler(
                     self._write = self._write_plain
                 self.end_headers()
                 self._frame("snapshot", f"ref {_SNAPSHOT_BODY}{served.key}" if by_ref else served.body.decode())
+                if (build := page_build(static)) is not None:
+                    self._frame("build", _build_text(build))  # a page holding another build than this one is out of date
                 for change in missed:
                     self._event(*change)
                 while True:
                     try:
-                        self._event(*changes.get(timeout=_PING_S))
+                        change = changes.get(timeout=_PING_S)
                     except queue.Empty:
                         self._write(b": ping\n\n")  # a closed page fails this write, which ends the stream
+                        continue
+                    try:
+                        self._event(*change)
+                    finally:
+                        changes.task_done()  # `feed.announce` waits for the marks of what it queued
             except OSError:
                 pass
             except ValidationError:
@@ -1492,7 +1526,8 @@ class _EventText:
 
 
 def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
-    """Serve until Ctrl-C or `SIGTERM`, then save the Board the feed keeps, so the next start resumes from it."""
+    """Serve until Ctrl-C or `SIGTERM`, then tell every open stream the server is restarting and save the Board the feed
+    keeps, so the next start resumes from it."""
     # a stopped unit leaves through the save below, as Ctrl-C does
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
@@ -1501,6 +1536,7 @@ def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
         except KeyboardInterrupt:
             pass
     finally:
+        feed.announce("restarting", {"at": time.time()})  # each page says "restarting" rather than shows a failure while the process is away
         feed.save()
 
 

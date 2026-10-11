@@ -30,6 +30,7 @@ export interface ApiContract {
     | WindowTooLong
   )[];
   autopilotStatus: AutopilotStatus;
+  build: BuildEvent;
   contractReport: ContractReport;
   docShown: DocShown;
   docs: Docs;
@@ -68,6 +69,7 @@ export interface ApiContract {
     | RunEventRequest
     | ForwardRequest
   )[];
+  restarting: RestartingEvent;
   searchResults: SearchResults;
   sessionSteps: SessionSteps;
   sessions: Sessions;
@@ -231,6 +233,13 @@ export interface AutopilotNext {
   task: string;
   title: string;
   verdict: "starting" | "waits";
+}
+/**
+ * The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,
+ * which names every chunk it loads by its digest. A page that holds another build than the one it is named is out of date.
+ */
+export interface BuildEvent {
+  id: string;
 }
 /**
  * The contract checks `starpulse doctor` runs; `ok` is false when any fails.
@@ -1380,6 +1389,12 @@ export interface ForwardedEvent {
     [k: string]: unknown;
   };
   stream: string;
+}
+/**
+ * The server was told to stop and will not answer after this: sent to every open stream before it exits.
+ */
+export interface RestartingEvent {
+  at: number;
 }
 /**
  * `GET /api/search?q=&limit=`: the tasks holding every word of `q`, best match first.

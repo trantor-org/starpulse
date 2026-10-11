@@ -30,7 +30,10 @@ export interface BoardState {
 }
 export interface HudState {
   stats: string;
-  live: "" | "on" | "off";
+  /** The dot: green live, amber pulsing while the stream is down and coming back, red once it is lost. */
+  live: "" | "on" | "wait" | "off";
+  /** What the connection is doing while it is not plainly live, shown in place of `stats`. */
+  note?: string;
   /** The level the page shows. */
   path: Path;
   tree: Tree | null;

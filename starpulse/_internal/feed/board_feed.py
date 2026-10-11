@@ -247,6 +247,8 @@ class BoardFeed:
         self._evaluate: Callable[[str, str], list[dict]] = criteria.unevaluated
         self._criteria_store: CriteriaStore | None = None
         self._subscribers: list[queue.Queue] = []
+        #: The queues of the pages streaming `/api/events` (a subset of `_subscribers`), which `announce` reaches.
+        self._streams: list[queue.Queue] = []
         self._awaiting = False  # pragma: no mutate — None is falsy too
         self._expected: tuple[int, int] | None = None
         self._seen = (0, 0)
@@ -1036,11 +1038,29 @@ class BoardFeed:
                 return None
             subscriber: queue.Queue = queue.Queue()
             self._subscribers.append(subscriber)
+            self._streams.append(subscriber)
             return missed, subscriber
 
     def unsubscribe(self, subscriber: queue.Queue) -> None:
         with self._lock:
             self._subscribers.remove(subscriber)
+            if subscriber in self._streams:
+                self._streams.remove(subscriber)
+
+    def announce(self, kind: str, data: dict, wait_s: float = 1.0) -> None:
+        """Give every open stream one event outside the sent log, and wait up to `wait_s` for each stream to have
+        written it. A page that connects afterwards never sees it: it is about the process, not the Board.
+
+        A stream marks each item it took off its queue with `task_done`; the wait is for those marks.
+        """
+        with self._lock:
+            streams = list(self._streams)
+        for stream in streams:
+            stream.put((kind, data))
+        deadline = time.monotonic() + wait_s
+        for stream in streams:
+            while stream.unfinished_tasks and time.monotonic() < deadline:
+                time.sleep(0.005)
 
     def snapshot(self) -> dict[str, Any]:
         """What the page draws: every machine with its tasks, the workflow declarations, the workflows and their pools."""

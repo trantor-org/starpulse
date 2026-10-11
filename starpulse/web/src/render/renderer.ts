@@ -26,7 +26,9 @@ import {
 } from "./scene";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
 import { kanbanTasks, type KanbanTask } from "../features/kanban/kanban";
-import { embedded, openStream } from "../api/stream";
+import { reloadWhenIdle } from "../api/reload";
+import { embedded, openStream, type Link } from "../api/stream";
+import { UPDATING, linkHud } from "./connection";
 import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
 import { sizes } from "./grow";
@@ -166,6 +168,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const relay = whenShown(() => layout(true)), publishLater = staged();
   // The stream the page reads its snapshot and every change after it from.
   let stream: { close(): void } | null = null, last = 0;
+  /** The clock time of the last data drawn, a note's "as of"; whether a newer page build is waiting for the page to be idle; and the wait's cancel. */
+  let lastAt: string | null = null, updating = false, cancelReload: (() => void) | null = null;
 
   // The frame's drawing: the primitives read the zoom, clock, type scale and hover as they run, and the machine ledger draws from the state below.
   const dc: DrawCtx = {
@@ -427,7 +431,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       stream?.close();
       stream = null;
       moves.resync(Date.now() / 1000);
-    } else stream ??= openStream({ snapshot: onSnapshot, live: onLive });
+    } else stream ??= openStream(connection);
   };
 
   // ---- data: every machine's tasks and the runs instances' workflows, pushed by the stream ----
@@ -444,8 +448,19 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   function onLive(on: boolean) {
     if (!on) moves.resync(Date.now() / 1000); // the reconnect's snapshot places what the drop missed, as a returning tab's does
-    hud.set({ live: on ? "on" : "off" });
   }
+  /** The dot and its note follow what the stream says it is doing; a note keeps the time of the last data drawn, which the Board still shows. */
+  function onLink(link: Link) {
+    hud.set(linkHud(link, lastAt, updating));
+  }
+  /** The server runs a page build other than the one loaded: the dot says so and the page reloads once nobody is using it. */
+  function onBuild(id: string) {
+    updating = true;
+    cancelReload?.();
+    cancelReload = reloadWhenIdle(id);
+    hud.set({ note: UPDATING });
+  }
+  const connection = { snapshot: onSnapshot, live: onLive, link: onLink, build: onBuild };
   const demoTick = () => {
     if (stopped || !snap) return;
     apply(demoStep(snap));
@@ -507,6 +522,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function compose(): Partial<HudState> {
     const sky = S!, board = sky.board;
     const at = stamp(sky.now, prefs().clock);
+    lastAt = hhmm(sky.now);
     const next: Partial<HudState> = {
       path,
       tree: sky.tree,
@@ -1393,7 +1409,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       loop.wake();
       // the first layout measures label widths and the first frame draws them: both wait for the page's fonts, which index.html preloads
       void loadFonts().then(() => {
-        if (!stopped) stream = openStream({ snapshot: onSnapshot, live: onLive });
+        if (!stopped) stream = openStream(connection);
       });
       fanTimer = window.setInterval(paintFan, 1000);
     },
@@ -1402,6 +1418,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       publishLater.cancel();
       loop.stop();
       stream?.close();
+      cancelReload?.();
       clearTimeout(timer);
       clearInterval(timer);
       clearInterval(fanTimer);
