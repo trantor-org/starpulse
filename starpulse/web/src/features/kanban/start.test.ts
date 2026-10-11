@@ -63,7 +63,7 @@ describe("the start question", () => {
     starts.pick({ tier: "deep" });
 
     expect(starts.key("1")).toBe(true);
-    expect(post).toHaveBeenCalledWith("TASK-D1", "@agent-deep-high");
+    expect(post).toHaveBeenCalledWith("TASK-D1", "@agent-deep-high", "claude");
     expect(starts.get().asking).toBeNull();
 
     starts.ask(task("TASK-D2", "waiting"), "drop");
@@ -221,19 +221,22 @@ describe("a started card", () => {
 });
 
 describe("the requests", () => {
-  it("POSTs the task and its assignee to /api/start and reads the session and when the start began", async () => {
+  it("POSTs the task, assignee and harness to /api/start and reads the session and when the start began", async () => {
     const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({ task: "TASK-D1", url: SESSION, at: 1000 }))));
 
-    expect(await postStart("TASK-D1", "@agent-deep-high", fetcher)).toEqual({ ok: true, url: SESSION, at: 1000 });
-    expect(fetcher).toHaveBeenCalledWith("/api/start", { method: "POST", body: JSON.stringify({ task: "TASK-D1", assignee: "@agent-deep-high" }) });
+    expect(await postStart("TASK-D1", "@agent-deep-high", "claude", fetcher)).toEqual({ ok: true, url: SESSION, at: 1000 });
+    expect(fetcher).toHaveBeenCalledWith("/api/start", {
+      method: "POST",
+      body: JSON.stringify({ task: "TASK-D1", assignee: "@agent-deep-high", harness: "claude" }),
+    });
   });
 
   it("reads a refused or failed start's reason, and an unreachable server as one", async () => {
     const refused = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({ error: "tmux failed" }), { status: 502 })));
     const down = vi.fn<typeof fetch>(() => Promise.reject(new Error("offline")));
 
-    expect(await postStart("TASK-D1", "@a", refused)).toEqual({ ok: false, reason: "tmux failed" });
-    expect(await postStart("TASK-D1", "@a", down)).toEqual({ ok: false, reason: "the start did not reach the server" });
+    expect(await postStart("TASK-D1", "@a", "claude", refused)).toEqual({ ok: false, reason: "tmux failed" });
+    expect(await postStart("TASK-D1", "@a", "claude", down)).toEqual({ ok: false, reason: "the start did not reach the server" });
   });
 
   it("reads the harnesses, and none when the server cannot say", async () => {

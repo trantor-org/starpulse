@@ -821,7 +821,8 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     window: HistoryWindow
     writer: MoveWriter
     assign: AssigneeWriter
-    start_session: Callable[[str], str] | None
+    start_session: Callable[..., str] | None
+    harnesses: Harnesses | None
     read: TaskReader | None
     edit: TaskEditor | None
     archive: TaskArchiver | None
@@ -948,7 +949,9 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             elif path == _DOC_RESTORE:
                 status, body = restore_doc(self.client_address[0], raw, self.milestones)
             else:
-                status, body = start_task(self.client_address[0], raw, self.feed, self.assign, self.start_session)
+                status, body = start_task(
+                    self.client_address[0], raw, self.feed, self.assign, self.start_session, self.harnesses
+                )
         elif path == _INGEST and self.ingest is not None:
             status, body = self._pushed(self.ingest, MAX_BODY)
         elif path == _FORWARD and self.forward is not None:
@@ -1076,7 +1079,7 @@ def request_handler(
     writer: MoveWriter = _no_writer,
     harnesses: Harnesses | None = None,
     assign: AssigneeWriter = _no_writer,
-    start_session: Callable[[str], str] | None = None,
+    start_session: Callable[..., str] | None = None,
     read: TaskReader | None = None,
     edit: TaskEditor | None = None,
     archive: TaskArchiver | None = None,
@@ -1100,7 +1103,8 @@ def request_handler(
     analytics: Analytics | None = None,
     pull_refresh: PullRefresh | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
-    harnesses_body = encode("harnesses", (harnesses or Harnesses((), {})).as_json())
+    configured = harnesses or Harnesses((), {})
+    harnesses_body = encode("harnesses", configured.as_json())
     snapshots = SnapshotCache(feed)
     pull_reads = _PullReads(pulls)
     snapshot_bodies = _SnapshotBodies()
@@ -1117,6 +1121,7 @@ def request_handler(
             self.writer = writer
             self.assign = assign
             self.start_session = start_session
+            self.harnesses = configured
             self.read = read
             self.edit = edit
             self.archive = archive

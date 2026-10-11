@@ -362,19 +362,19 @@ def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_pat
 
 def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_answers_json(tmp_path: Path) -> None:
     assigned: list[tuple[str, str]] = []
-    started: list[str] = []
+    started: list[tuple[str, str, str]] = []
 
     def assign(task: str, assignee: str) -> Written:
         assigned.append((task, assignee))
         return Written(True, "ok")
 
-    def start_session(task: str) -> str:
-        started.append(task)
+    def start_session(task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
+        started.append((task, harness, mode))
         return "https://claude.ai/code/session_01"
 
     feed = BoardFeed()
     feed.put(task("PROJ-3", "Ready"))
-    body = json.dumps({"task": "PROJ-3", "assignee": "@agent-deep-high"}).encode()
+    body = json.dumps({"task": "PROJ-3", "assignee": "@agent-deep-high", "harness": "claude"}).encode()
     with _serve(tmp_path, feed, assign=assign, start_session=start_session) as server:
         request = urllib.request.Request(_url(server, "/api/start"), data=body, headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(request, timeout=5) as resp:
@@ -387,7 +387,7 @@ def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_
         "task": "PROJ-3",
         "url": "https://claude.ai/code/session_01",
     }
-    assert (assigned, started) == ([("PROJ-3", "@agent-deep-high")], ["PROJ-3"])
+    assert (assigned, started) == ([("PROJ-3", "@agent-deep-high")], [("PROJ-3", "claude", "interactive")])
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
 
 

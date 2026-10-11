@@ -44,7 +44,7 @@ def _service(status: int, body: str | bytes, delay: float = 0.0) -> Iterator[tup
         server.server_close()
 
 
-def _starter(url: str) -> Callable[[str], str]:
+def _starter(url: str) -> Callable[..., str]:
     """The starter for a configured address, which is never None."""
     start = starter(url)
     assert start is not None
@@ -55,7 +55,14 @@ def test_a_started_session_answers_its_url() -> None:
     with _service(200, json.dumps({"task": "TASK-D7", "url": "https://claude.ai/code/session_01"})) as (url, asked):
         assert _starter(url)("TASK-D7") == "https://claude.ai/code/session_01"
 
-    assert asked == ["/start/TASK-D7"]  # an operator's start carries no marker
+    assert asked == ["/start/TASK-D7?harness=claude&mode=interactive"]  # operator: no by, defaults
+
+
+def test_a_start_names_harness_and_mode_in_the_query_the_service_reads() -> None:
+    with _service(200, json.dumps({"task": "TASK-D7", "url": "https://claude.ai/code/session_01"})) as (url, asked):
+        assert _starter(url)("TASK-D7", harness="cursor", mode="headless") == "https://claude.ai/code/session_01"
+
+    assert asked == ["/start/TASK-D7?harness=cursor&mode=headless"]
 
 
 def test_a_start_by_the_autopilot_says_so_in_the_request_the_service_reads() -> None:
@@ -64,7 +71,7 @@ def test_a_start_by_the_autopilot_says_so_in_the_request_the_service_reads() -> 
         assert start is not None
         assert start("TASK-D7") == "https://claude.ai/code/session_01"
 
-    assert asked == ["/start/TASK-D7?by=autopilot"]
+    assert asked == ["/start/TASK-D7?harness=claude&mode=interactive&by=autopilot"]
 
 
 @pytest.mark.parametrize(
@@ -100,7 +107,7 @@ def test_an_address_ending_in_a_slash_keeps_its_path_and_drops_only_that_slash()
     with _service(200, json.dumps({"url": "https://claude.ai/code/session_01"})) as (url, asked):
         _starter(f"{url}/relay/X/")("TASK-D7")
 
-    assert asked == ["/relay/X/start/TASK-D7"]
+    assert asked == ["/relay/X/start/TASK-D7?harness=claude&mode=interactive"]
 
 
 def _no_answer(url: str) -> str:

@@ -25,7 +25,7 @@ export interface Pick {
 }
 /** The server's answer to a start: the session and when the start began (epoch seconds, the server's clock), or why it failed. */
 export type StartReply = { ok: true; url: string; at: number } | { ok: false; reason: string };
-export type PostStart = (task: string, assignee: string) => Promise<StartReply>;
+export type PostStart = (task: string, assignee: string, harness: string) => Promise<StartReply>;
 /** Each task's latest refused claim, as the snapshot and `claim` deltas carry it. */
 export type Claims = Record<string, { reason: string; at: number }>;
 
@@ -182,7 +182,7 @@ export class StartStore {
     if (!asking) return;
     const { id, lane: from } = asking.task;
     this.set({ asking: null, failed: without(this.state.failed, id), claiming: { ...this.state.claiming, [id]: { from, phase: "starting", url: "", at: null } } });
-    const reply = await this.post(id, profileOf(asking.pick));
+    const reply = await this.post(id, profileOf(asking.pick), asking.pick.harness);
     if (!this.state.claiming[id]) return; // the stream already reported the claim
     if (!reply.ok) {
       this.set({ claiming: without(this.state.claiming, id), failed: { ...this.state.failed, [id]: { from, reason: reply.reason, url: "", refused: false } } });
@@ -222,10 +222,15 @@ export class StartStore {
 }
 
 /** POST the start to the server, which saves a changed assignee and asks the session-start service for the session. */
-export async function postStart(task: string, assignee: string, fetcher: typeof apiFetch = apiFetch): Promise<StartReply> {
+export async function postStart(
+  task: string,
+  assignee: string,
+  harness: string,
+  fetcher: typeof apiFetch = apiFetch,
+): Promise<StartReply> {
   let response: Response;
   try {
-    response = await fetcher("/api/start", { method: "POST", body: JSON.stringify({ task, assignee }) });
+    response = await fetcher("/api/start", { method: "POST", body: JSON.stringify({ task, assignee, harness }) });
   } catch {
     return { ok: false, reason: "the start did not reach the server" };
   }

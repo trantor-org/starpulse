@@ -366,11 +366,13 @@ do not fit together are never both started in one pass. A run holds its capacity
 A start that fails (`StartFailedError`) is logged and skipped until the next pass. A start that succeeds comments
 `Autopilot started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
 
-A session starts through `session_start_url` when the config sets it; the loop's request is `POST <url>/start/<task>?by=autopilot`,
-so the service can brief an unattended session unlike one an operator opened (an operator's start has no `by`). With none, the built-in starter runs
+A session starts through `session_start_url` when the config sets it; the loop's request is
+`POST <url>/start/<task>?harness=claude&mode=interactive&by=autopilot`, so the service can brief an unattended session
+unlike one an operator opened (an operator's start has no `by`, and the page's `POST /api/start` body names `harness` with
+`mode` defaulting to `interactive`). With none, the built-in starter runs
 `tmux new-session -d -s starpulse-<task> -c <config directory> claude --remote-control <task> "Start <task>"` and needs
 `tmux` and `claude` on `PATH`, so a board with no `[autopilot]` table and no `session_start_url` starts a task out of the
-box. `POST /api/start/<task>` is unchanged and uses only `session_start_url`.
+box. Autopilot stays Claude-only; the built-in starter ignores `harness` and `mode`.
 
 When a run's task leaves the eligible lane and `in_progress`, the loop writes its outcome (the lane it went to), duration and
 peak to the ledger. A started session that has been idle longer than `idle_minutes` (the harness's last active event, or

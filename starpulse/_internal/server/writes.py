@@ -57,7 +57,8 @@ POST /api/docs, /api/docs/edit, /api/docs/archive, /api/docs/restore
                    through the board's `create_doc`, `edit_doc`, `archive_doc` and `restore_doc`; 400 for a malformed body or
                    detail, 403 outside loopback and RFC 1918, 404 for a board without the writer or a doc that is not open,
                    409 for the writer's refusal. A GET answers 405. These routes read the same Board as the milestone routes
-POST /api/start    {task, assignee[, actor]}: start a task's session at `session_start_url` (see Start in the README)
+POST /api/start    {task, assignee, harness[, mode, actor]}: start a task's session at `session_start_url` on
+                   `harness` (`mode` defaults to `interactive`; see Start in the README)
 GET /api/forwarding
                    what this instance's forwarder would send the hub next, as the Admin view lists it: {configured,
                    url, optIn, names, refused, lastSent, problem, next, more, contract}. `next` holds the first entries
@@ -97,6 +98,7 @@ from starpulse._internal.board.seam import (
     TaskRestorer,
 )
 from starpulse._internal.autopilot.runtime import Runtime
+from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.hub.forward import Forwarder
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -104,6 +106,9 @@ from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.eventlog.history import HistoryStore
 
 logger = logging.getLogger(__name__)
+
+#: Modes `POST /api/start` accepts; `interactive` is the Start-session default.
+_START_MODES = frozenset({"interactive", "headless"})
 
 #: Who may press Run now, loopback and the RFC 1918 ranges as (octets, prefix): the page is never
 #: exposed to the internet, so a LAN browser needs no token (the React/Vite ADR).
@@ -692,29 +697,42 @@ def start_task(
     raw: bytes,
     feed: BoardFeed,
     assign: AssigneeWriter,
-    start_session: Callable[[str], str] | None,
+    start_session: Callable[..., str] | None,
+    harnesses: Harnesses | None = None,
     clock: Callable[[], float] = time.time,
 ) -> tuple[int, dict[str, Any]]:
-    """Start a session for the task `raw` names, on the assignee it names, for a browser at `source`: the HTTP status
-    and JSON body.
+    """Start a session for the task `raw` names, on the assignee and harness it names, for a browser at `source`: the
+    HTTP status and JSON body.
 
     A changed assignee is saved through the guarded writer first, since the session-start service reads the
-    profile from the task. `at` is when the start began, so the page applies only a refused claim made after it.
+    profile from the task. `harness` selects which configured harness opens the session; `mode` defaults to
+    `interactive`. `at` is when the start began, so the page applies only a refused claim made after it.
     """
     if not _on_lan(source):
         return 403, {"error": "Starting a session answers only loopback and private network (RFC 1918) browsers"}
     try:
         request = json.loads(raw)
         task, assignee = request["task"], request["assignee"]
+        harness = request.get("harness", "claude")
+        mode = request.get("mode", "interactive")
         named = _named_actor(request)
     except ValueError, TypeError, KeyError:
-        task = assignee = named = None
+        task = assignee = harness = mode = named = None
     if not isinstance(task, str) or not isinstance(assignee, str):
         return 400, {"error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>"}'}
+    if not isinstance(harness, str) or not harness:
+        return 400, {"error": 'harness must be a non-empty name from agent-harnesses.toml'}
+    if not isinstance(mode, str) or mode not in _START_MODES:
+        return 400, {"error": 'mode must be "interactive" or "headless"'}
     if named is None:
         return 400, _BAD_ACTOR
     if start_session is None:
         return 404, {"error": "no session-start service is configured (session_start_url)"}
+    if harnesses is not None and harnesses.harnesses:
+        if (chosen := harnesses.harnesses.get(harness)) is None:
+            return 409, {"error": f"{harness} is not a configured harness"}
+        if not chosen.sessions:
+            return 409, {"error": chosen.reason or f"{harness} cannot start a session"}
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
     if agent["state"] not in _STARTABLE:
@@ -725,7 +743,11 @@ def start_task(
     if assignee != agent["model"] and not (written := assign(task, assignee, **named)).ok:
         return 409, {"error": written.output, "skill": written.skill}
     try:
-        return 200, {"task": task, "url": start_session(task), "at": at}
+        try:
+            session = start_session(task, harness=harness, mode=mode)
+        except TypeError:
+            session = start_session(task)  # a one-arg starter from before harness/mode
+        return 200, {"task": task, "url": session, "at": at}
     except StartFailedError as exc:
         return 502, {"error": str(exc)}
 

@@ -1237,10 +1237,12 @@ export interface MoveRequest {
   to: string;
 }
 /**
- * `POST /api/start`: start a session for `task` on `assignee`.
+ * `POST /api/start`: start a session for `task` on `assignee`; `harness` defaults to `claude`.
  */
 export interface StartRequest {
   assignee: string;
+  harness?: string | null;
+  mode?: string | null;
   task: string;
 }
 /**

@@ -425,7 +425,7 @@ class Config:
     database_url: str | None = None
     """The history store's SQLAlchemy URL; None keeps it in a SQLite file beside the config."""
     session_start_url: str | None = None
-    """The session-start service a started task is sent to (`POST <url>/start/TASK-N`); none: nothing can be started."""
+    """The session-start service a started task is sent to (`POST <url>/start/TASK-N?harness=&mode=`); none: nothing can be started."""
     level: Level | None = None
     """The `[level]` flow graph above the Board; none when the config has no such table."""
     hub_retention_days: int = 14
