@@ -8,6 +8,9 @@ description: Writes and checks the lifecycle machine YAML that StarPulse draws a
 A machine is a YAML file, by convention under `.starpulse/machines/`; `[board] machine` in `starpulse.toml` names the
 Board's. The file is the source of truth: a `.mmd` diagram is generated from it, never the reverse. The file holds
 data only: no expressions or code, so never write a condition as a script.
+A native or Backlog.md board draws every other file in that directory as a flow of its own, named by its file stem, unless
+a state opens it with `flow:`. A file may also declare `tiers`, `main_line`, `rests`, `subflows` and `launches`, which
+change how the page draws it; `docs/cli.md` describes each.
 
 ## Write the machine
 

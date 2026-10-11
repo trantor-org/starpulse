@@ -218,6 +218,15 @@ failed run stays pinned until a forced rerun) or `next` (it clears on the DAG's 
 cued run has not started that long after it shows `overdue` on the Ledger. The cued event must reach
 exactly one state, beside which the page draws the cue; a file with no block has no cues.
 
+`native` and `upstream_backlog` boards load every machine file under `.starpulse/machines/` beside the Board's, not only
+the one `[board] machine` names: each file no other opens with a state's `flow:` is a flow named by its file stem, drawn
+with the same writer check as the Board's (`refuse_unlisted` against the configured workflows). A file may declare how
+the page draws it: `tiers` (state ids per stage), `main_line` (the Board's axis; its lanes in order when absent) and
+`rests` (states drawn final though an event leaves them); `subflows` (`{state, flow, exits, when}`, `flow` a sibling's
+file stem and `exits` mapping each of its final states to the event of this machine that leaves `state`); and
+`launches` (per workflow, `{skill, flow}`, `flow` a sibling's stem or absent). The Board is also drawn with every
+writer and the `dagActors` among them. A state, event or flow a declaration names that does not exist is refused.
+
 A move may also name the mover's session: `POST /api/move` takes `{task, to, actor, session}`, and `starpulse task move`
 sends `--session`, else `STARPULSE_SESSION`. A move that names one calls the writer with it as a fourth argument,
 `writer(task, status, actor, session)`; one that names none calls it with three, so a writer written before sessions
