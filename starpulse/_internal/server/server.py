@@ -515,7 +515,11 @@ def sessions_response(
 
 
 def steps_response(
-    telemetry: TelemetryLog | None, query: dict[str, list[str]], keys: TaskKeys | None, now: float
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    now: float,
+    analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/steps`: every model request of the signals from the last `hours`
     (default 168) as of `now`. An instance that receives no harness telemetry is 501, a log that cannot be read 503."""
@@ -529,7 +533,7 @@ def steps_response(
     except Exception as exc:  # the event log's database is unreachable
         logger.warning("steps: telemetry unreadable: %s", exc)
         return _error("the telemetry log cannot be read"), 503
-    return encode("session_steps", {"now": now, "window_s": window * 3600, "steps": session_steps(found, keys)}), 200
+    return encode("session_steps", {"now": now, "window_s": window * 3600, "steps": session_steps(found, keys, analytics)}), 200
 
 
 #: What `/api/analytics/missed-loads` lists per skill, and `/api/analytics/trace-clusters` samples per cluster.
@@ -568,7 +572,7 @@ def _telemetry_cases(
     except Exception as exc:  # the event log's database is unreachable
         logger.warning("analytics: telemetry unreadable: %s", exc)
         return _error("the telemetry log cannot be read"), 503
-    return trace_cases(found, keys, roots=analytics.roots, tasks=titled())
+    return trace_cases(found, keys, roots=analytics.roots, tasks=titled(), analytics=analytics)
 
 
 def missed_loads_response(
@@ -1161,7 +1165,7 @@ def request_handler(
             elif url.path == "/api/analytics/sessions":
                 self._send(*sessions_response(telemetry, parse_qs(url.query), feed.keys, clock(), analytics))
             elif url.path == "/api/analytics/steps":
-                self._send(*steps_response(telemetry, parse_qs(url.query), feed.keys, clock()))
+                self._send(*steps_response(telemetry, parse_qs(url.query), feed.keys, clock(), analytics))
             elif url.path == "/api/analytics/missed-loads":
                 self._send(
                     *missed_loads_response(

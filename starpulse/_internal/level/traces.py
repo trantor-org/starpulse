@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from typing import Any
 
-from starpulse._internal.config.analytics import SkillLoad
+from starpulse._internal.config.analytics import Analytics, SkillLoad
 from starpulse._internal.level.sessions import attributed, grouped, session_kind
 from starpulse._internal.level.signals import Signal
 from starpulse.contracts.adapters import TaskKeys
@@ -77,12 +77,14 @@ def cases(
     *,
     roots: Sequence[str] = (),
     tasks: Mapping[str, Mapping[str, Any]] | None = None,
+    analytics: Analytics | None = None,
 ) -> list[Case]:
     """One case per (session, task) of `found`, oldest first. `tasks` maps a task key to its board entry, whose `title`
-    and `labels` a case carries; `roots` are the checkouts whose paths become areas."""
+    and `labels` a case carries; `roots` are the checkouts whose paths become areas;
+    `analytics` supplies the `claims` a stored shell command is read against."""
     patterns = _roots(roots)
     built: list[Case] = []
-    for ordered in grouped(found):
+    for ordered in grouped(found, keys, analytics):
         kind = session_kind(ordered)
         by_task: dict[str | None, dict[str, Any]] = {}
         for task, s in attributed(ordered, keys):
