@@ -14,7 +14,7 @@ from starpulse._internal.hub.forward import OPT_IN_FILE, OptIn, build, project, 
 from starpulse._internal.config.config import Config, Forward
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
-from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.eventlog.history import HistoryStore, open_event_log
 
 MACHINE_ENTRY = {
     "machine": "board",
@@ -62,41 +62,58 @@ def test_a_run_event_keeps_its_contract_fields_and_leaves_the_local_instance_beh
     assert sent == {k: v for k, v in RUN_ENTRY.items() if k != "instance"}
 
 
+def _opt_in(tmp_path: Path) -> OptIn:
+    return OptIn(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"), tmp_path / OPT_IN_FILE)
+
+
 def test_a_new_instance_is_opted_out(tmp_path: Path) -> None:
-    assert OptIn(tmp_path / "starpulse-forward.json").get() is False
+    assert _opt_in(tmp_path).get() is False
 
 
 def test_opting_in_and_out_is_read_at_once_by_every_reader(tmp_path: Path) -> None:
-    path = tmp_path / "starpulse-forward.json"
-    reader = OptIn(path)
+    reader = _opt_in(tmp_path)
 
-    OptIn(path).set(True)
+    _opt_in(tmp_path).set(True)
     assert reader.get() is True
-    OptIn(path).set(False)
+    _opt_in(tmp_path).set(False)
     assert reader.get() is False
+
+
+def test_an_opt_in_file_from_before_the_store_is_imported_once(tmp_path: Path) -> None:
+    (tmp_path / OPT_IN_FILE).write_text(json.dumps({"opt_in": True}))
+
+    assert _opt_in(tmp_path).get() is True
+
+    _opt_in(tmp_path).set(False)
+    (tmp_path / OPT_IN_FILE).write_text(json.dumps({"opt_in": True}))
+    assert _opt_in(tmp_path).get() is False  # the row wins; the file is not read again
 
 
 @pytest.mark.parametrize("text", ["", "not json", "[]", '{"opt_in": "yes"}', '{"opt_in": 1}', "{}"])
 def test_a_file_that_does_not_say_true_leaves_the_instance_opted_out(tmp_path: Path, text: str) -> None:
-    path = tmp_path / "starpulse-forward.json"
-    path.write_text(text)
+    (tmp_path / OPT_IN_FILE).write_text(text)
 
-    assert OptIn(path).get() is False
-
-
-def test_the_file_holds_one_opt_in_flag(tmp_path: Path) -> None:
-    path = tmp_path / "starpulse-forward.json"
-
-    OptIn(path).set(True)
-
-    assert json.loads(path.read_text()) == {"opt_in": True}
+    assert _opt_in(tmp_path).get() is False
 
 
-def test_the_forward_command_opts_in_and_out_through_the_file_beside_the_config(
+def test_the_opt_in_is_one_row_in_the_store_not_a_file(tmp_path: Path) -> None:
+    _opt_in(tmp_path).set(True)
+
+    assert EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}").setting("forward.opt_in") is True
+    assert not (tmp_path / OPT_IN_FILE).exists()
+
+
+def _toml(tmp_path: Path) -> Path:
+    config = tmp_path / "starpulse.toml"
+    config.write_text(f'database_url = "sqlite:///{tmp_path / "history.sqlite"}"\n')
+    return config
+
+
+def test_the_forward_command_opts_in_and_out_through_the_store_the_config_names(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    config = tmp_path / "starpulse.toml"
-    flag = OptIn(tmp_path / OPT_IN_FILE)
+    config = _toml(tmp_path)
+    flag = _opt_in(tmp_path)
 
     assert forward.main(["opt-in", "--config", str(config)]) == 0
     assert flag.get() is True
@@ -116,7 +133,7 @@ def test_the_forward_command_without_a_config_flag_uses_the_working_directory(
 
     assert forward.main(["opt-in"]) == 0
 
-    assert OptIn(tmp_path / OPT_IN_FILE).get() is True
+    assert OptIn(open_event_log(), tmp_path / OPT_IN_FILE).get() is True
 
 
 def test_the_forward_command_refuses_an_unknown_action(tmp_path: Path) -> None:

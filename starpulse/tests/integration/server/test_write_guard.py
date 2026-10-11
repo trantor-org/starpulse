@@ -18,7 +18,8 @@ from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse.contracts.adapters import Move
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.feed.history_window import HistoryWindow
+from starpulse._internal.eventlog.event_log import EventLog
 
 _FOREIGN = "https://evil.example"
 #: Every route that writes, as (method, path, body): a refused request must reach none of their writers.
@@ -63,7 +64,9 @@ def _recording(tmp_path: Path) -> Iterator[tuple[ThreadingHTTPServer, list[str],
 
     feed = BoardFeed()
     feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True)}))
-    window = HistoryWindow(feed, 6, tmp_path / "starpulse-settings.json")
+    window = HistoryWindow(
+        feed, 6, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"), tmp_path / "starpulse-settings.json"
+    )
     with _serve(
         tmp_path,
         feed,

@@ -24,7 +24,7 @@ where it is drawn (6 hours by default). Serve binds its address once the config 
 worker: when another process holds the port, it exits 1 with one line naming `--host:--port` and saying to pass `--port`,
 and prints no startup line.
 The Admin page's Server card overrides that window for everyone
-viewing, and `starpulse-settings.json` beside the config keeps the override across restarts.
+viewing, and the `history.hours` row of the history store's `starpulse_settings` table keeps the override across restarts.
 
 ### Serve on a socket the service manager passes in
 
@@ -202,7 +202,7 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # review_lane = "review"  # the lane whose tasks' points are the review load
 # unsized_points = 3      # the points a task with no `size-N` label counts as, a whole number of 1 or more
 # idle_minutes = 30       # minutes a started session may sit idle with its task still open before it is settled
-# state_dir = "state"     # where the switch and the run ledger live, relative to this file; unset: beside it
+# state_dir = "state"     # where the run ledger lives, relative to this file; unset: beside it
 # [autopilot.tier_weights]  # what a point costs on each agent tier; a tier left out keeps its weight
 # fast = 1
 # standard = 2
@@ -280,8 +280,10 @@ is malformed, names an instance that is not configured or is push-only, or names
 ## Autopilot
 
 The autopilot is a switch, a capacity reading, an admission rule and a loop that acts on the rule. The switch is persisted in
-`starpulse-autopilot.json` beside the config file (in the working directory with none), or in `[autopilot] state_dir`
-when that names a directory (relative to the config file; `serve` creates it), so it survives a restart, and it starts off.
+the `autopilot.enabled` row of the history store's `starpulse_settings` table, so it survives a restart, and it starts off. A missing row,
+an unreadable store or a malformed value reads as off. `[autopilot] state_dir` (relative to the config file; `serve` creates it) holds the
+run ledger. An older `starpulse-autopilot.json` beside the config or in `state_dir` is imported once on first read, keeping its modification
+time as the row's `updated_at`, then renamed to `starpulse-autopilot.json.imported`.
 
 `GET /api/autopilot` answers any address:
 
@@ -346,7 +348,7 @@ a pure function of the open tasks, the sampler's readings, the `[autopilot]` pol
   `StarPulse autopilot: <task> admitted|refused (<dimension> full) p_goal=<p> predictor=<score> shadow_rank=<n> enforced_rank=<n>`.
   Ranks number the admitted tasks from 1; a refused task has none.
 
-The run ledger, `starpulse-autopilot-runs.jsonl` beside the switch (in `state_dir` when set), holds one JSON line per finished run: its task, tier,
+The run ledger, `starpulse-autopilot-runs.jsonl` in `state_dir` when set, else beside the config, holds one JSON line per finished run: its task, tier,
 points, outcome, duration in seconds and the peak demand it drew on each dimension.
 
 ### Dispatch

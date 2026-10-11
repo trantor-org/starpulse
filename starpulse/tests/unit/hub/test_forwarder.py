@@ -42,7 +42,7 @@ class Rig:
         self.url = f"sqlite:///{tmp_path / 'ic.sqlite'}"
         self.log = EventLog(self.url)
         self.store = HistoryStore(self.url, {})
-        self.opt_in = OptIn(tmp_path / "starpulse-forward.json")
+        self.opt_in = OptIn(self.log, tmp_path / "starpulse-forward.json")
         self.hub = FakeHub()
 
     def forwarder(self, *, batch: int = 50, url: str = URL) -> Forwarder:

@@ -1,29 +1,28 @@
-"""The autopilot's on/off switch: a file beside the config, so a restart keeps it and flipping it needs no config edit."""
+"""The autopilot's on/off switch: a row in the history store, so a restart keeps it and flipping it needs no config edit."""
 
-import json
-import os
 from pathlib import Path
 
-#: Where the switch lives, in the directory of the `--config` file (the working directory without one).
+from starpulse._internal.eventlog import operator_settings
+from starpulse._internal.eventlog.event_log import EventLog
+
+#: The switch's file before it moved into the store; a file by this name in `state_dir` is imported once.
 TOGGLE_FILE = "starpulse-autopilot.json"
+KEY = "autopilot.enabled"
 
 
 class Toggle:
-    """Whether the autopilot admits tasks: the flag in `path`, off unless the file says `true`.
+    """Whether the autopilot admits tasks: the flag in the store, off unless it says `true`.
 
-    A missing or unreadable file leaves it off, so a fresh install admits nothing until the operator turns it on.
+    A missing or unreadable setting leaves it off, so a fresh install admits nothing until the operator turns it on.
+    `legacy` is the switch's old file, imported when the store holds no row.
     """
 
-    def __init__(self, path: Path) -> None:
-        self.path = path
+    def __init__(self, log: EventLog, legacy: Path) -> None:
+        self.log = log
+        self.legacy = legacy
 
     def get(self) -> bool:
-        try:
-            return json.loads(self.path.read_text())["enabled"] is True
-        except OSError, ValueError, KeyError, TypeError:
-            return False
+        return operator_settings.read(self.log, KEY, self.legacy, "enabled") is True
 
     def set(self, value: bool) -> None:
-        scratch = self.path.with_name(f"{self.path.name}.tmp")
-        scratch.write_text(json.dumps({"enabled": value}))
-        os.replace(scratch, self.path)  # a reader sees the old file or the new one, never half of one
+        operator_settings.write(self.log, KEY, value, self.legacy)

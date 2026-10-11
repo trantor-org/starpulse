@@ -34,7 +34,15 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse._internal.eventlog.tables import board_state, day_rollups, events, gaps, metadata, source_instances
+from starpulse._internal.eventlog.tables import (
+    board_state,
+    day_rollups,
+    events,
+    gaps,
+    metadata,
+    settings,
+    source_instances,
+)
 
 __all__ = ["Entry", "EventLog", "Tail"]
 
@@ -100,7 +108,7 @@ class EventLog:
                     self._engine = _create_engine(self.url)
                 if self._engine.dialect.name == "sqlite":
                     event.listen(self._engine, "connect", _sqlite_pragmas)
-                create_tables(self._engine, [events, gaps, board_state, source_instances])
+                create_tables(self._engine, [events, gaps, board_state, source_instances, settings])
                 self._ready = True
             assert self._engine is not None
             return self._engine
@@ -135,6 +143,35 @@ class EventLog:
         error, since an operator asked for it."""
         with self.engine.begin() as db:
             return db.execute(delete(source_instances).where(source_instances.c.source == source)).rowcount > 0
+
+    def setting(self, key: str) -> Any | None:
+        """The value kept under `key`, or None when no row holds one. Raises on a database error, so a caller that
+        must fail closed decides what an unreadable setting means."""
+        with self.engine.connect() as db:
+            return db.execute(select(settings.c.value).where(settings.c.key == key)).scalar()
+
+    def set_setting(self, key: str, value: Any, *, updated_at: float | None = None) -> None:
+        """Keep `value` under `key`, replacing what was there, stamped now or at `updated_at`. Raises on a database
+        error."""
+        engine = self.engine
+        now = time.time() if updated_at is None else updated_at
+        upsert = _dialect(engine).insert(settings).values(key=key, value=value, updated_at=now)
+        with engine.begin() as db:
+            db.execute(
+                upsert.on_conflict_do_update(
+                    index_elements=[settings.c.key], set_={"value": value, "updated_at": now}
+                )
+            )
+
+    def setting_updated_at(self, key: str) -> float | None:
+        """The epoch second `key` was last written, or None when no row holds it. Raises on a database error."""
+        with self.engine.connect() as db:
+            return db.execute(select(settings.c.updated_at).where(settings.c.key == key)).scalar()
+
+    def delete_setting(self, key: str) -> None:
+        """Drop `key`'s row, so the setting reads as its default again. Raises on a database error."""
+        with self.engine.begin() as db:
+            db.execute(delete(settings).where(settings.c.key == key))
 
     def append(self, stream: str, fields: Mapping[str, Any], *, event_id: str | None = None) -> int | None:
         """Append one event and return its cursor, or None when it was not appended; never raises.

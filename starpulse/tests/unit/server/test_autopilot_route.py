@@ -16,6 +16,7 @@ from starpulse._internal.autopilot.runtime import Runtime, build
 from starpulse._internal.autopilot.sampler import Crossing
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.kit.adapter_kit import serve, url
@@ -40,7 +41,8 @@ def _feed() -> BoardFeed:
 def _runtime(tmp_path: Path, feed: BoardFeed | None = None, crossings: list[Crossing] | None = None) -> Runtime:
     return build(
         Autopilot(),
-        tmp_path / "starpulse-autopilot.json",
+        tmp_path,
+        EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
         feed or _feed(),
         probe=lambda: HOST,
         on_crossing=(crossings if crossings is not None else []).append,
@@ -135,7 +137,8 @@ def _looping(tmp_path: Path) -> Runtime:
     )
     runtime = build(
         Autopilot(lane="ready"),
-        tmp_path / "starpulse-autopilot.json",
+        tmp_path,
+        EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
         feed,
         probe=lambda: {"cpu": 5.0, "memory": 5.0},
         clock=lambda: 1000.0,

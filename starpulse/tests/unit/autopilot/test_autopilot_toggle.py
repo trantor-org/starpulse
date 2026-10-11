@@ -1,30 +1,51 @@
-"""The autopilot's switch is a file beside the config, so it survives a restart and needs no config edit."""
+"""The autopilot's switch is kept in the history store, so it survives a restart and needs no config edit."""
 
+import json
 from pathlib import Path
 
 import pytest
 
-from starpulse._internal.autopilot.toggle import Toggle
+from starpulse._internal.autopilot.toggle import TOGGLE_FILE, Toggle
+from starpulse._internal.eventlog.event_log import EventLog
+
+
+def _toggle(tmp_path: Path) -> Toggle:
+    return Toggle(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"), tmp_path / TOGGLE_FILE)
 
 
 def test_the_autopilot_starts_off(tmp_path: Path) -> None:
-    assert Toggle(tmp_path / "starpulse-autopilot.json").get() is False
+    assert _toggle(tmp_path).get() is False
 
 
 def test_the_switch_persists_across_a_restart(tmp_path: Path) -> None:
-    path = tmp_path / "starpulse-autopilot.json"
-    Toggle(path).set(True)
+    _toggle(tmp_path).set(True)
 
-    assert Toggle(path).get() is True  # a new instance is a restarted server
+    assert _toggle(tmp_path).get() is True  # a new instance is a restarted server
 
-    Toggle(path).set(False)
+    _toggle(tmp_path).set(False)
 
-    assert Toggle(path).get() is False
+    assert _toggle(tmp_path).get() is False
+
+
+def test_the_switch_is_a_row_in_the_store_not_a_file(tmp_path: Path) -> None:
+    _toggle(tmp_path).set(True)
+
+    assert EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}").setting("autopilot.enabled") is True
+    assert list(tmp_path.glob("starpulse-autopilot*")) == []
+
+
+def test_a_switch_file_from_before_the_store_is_imported_once(tmp_path: Path) -> None:
+    (tmp_path / TOGGLE_FILE).write_text(json.dumps({"enabled": True}))
+
+    assert _toggle(tmp_path).get() is True
+
+    _toggle(tmp_path).set(False)
+    (tmp_path / TOGGLE_FILE).write_text(json.dumps({"enabled": True}))
+    assert _toggle(tmp_path).get() is False  # the row wins; the file is not read again
 
 
 @pytest.mark.parametrize("text", ["", "not json", "[]", '{"enabled": "yes"}', '{"enabled": 1}', "{}"])
-def test_a_file_that_does_not_say_true_leaves_it_off(tmp_path: Path, text: str) -> None:
-    path = tmp_path / "starpulse-autopilot.json"
-    path.write_text(text)
+def test_a_switch_file_that_does_not_say_true_leaves_it_off(tmp_path: Path, text: str) -> None:
+    (tmp_path / TOGGLE_FILE).write_text(text)
 
-    assert Toggle(path).get() is False
+    assert _toggle(tmp_path).get() is False
