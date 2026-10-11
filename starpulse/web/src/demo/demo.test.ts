@@ -564,7 +564,7 @@ describe("the demo server", () => {
     const s = new DemoServer(fixture());
     const fetcher = (url: string, init?: RequestInit) => s.fetch(url, init);
 
-    expect(await postStart("DEMO-1", "@agent-standard-high", fetcher)).toEqual({ ok: false, reason: ROUTES["/api/start"] });
+    expect(await postStart("DEMO-1", "@agent-standard-high", "claude", fetcher)).toEqual({ ok: false, reason: ROUTES["/api/start"] });
     expect(await fetchHarnesses(fetcher)).toEqual(NO_HARNESSES);
   });
 });

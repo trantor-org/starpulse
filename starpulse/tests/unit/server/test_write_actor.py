@@ -50,7 +50,7 @@ def _create(source: str, raw: bytes, feed: BoardFeed, writer: _Writer) -> tuple[
 
 
 def _start(source: str, raw: bytes, feed: BoardFeed, writer: _Writer) -> tuple[int, dict[str, Any]]:
-    return start_task(source, raw, feed, writer, lambda _: "http://session.test/1")
+    return start_task(source, raw, feed, writer, lambda task, **_: "http://session.test/1")
 
 
 #: Each write route, a body that lands and the positional arguments its writer is called with.
@@ -62,7 +62,11 @@ ROUTES = {
     ),
     "archive": (_archive, {"task": "PROJ-3", "reason": "obsolete"}, ("PROJ-3", "obsolete")),
     "create": (_create, {"title": "New task"}, ("New task", {})),
-    "start": (_start, {"task": "PROJ-3", "assignee": "@agent-deep-high"}, ("PROJ-3", "@agent-deep-high")),
+    "start": (
+        _start,
+        {"task": "PROJ-3", "assignee": "@agent-deep-high", "harness": "claude"},
+        ("PROJ-3", "@agent-deep-high"),
+    ),
 }
 
 

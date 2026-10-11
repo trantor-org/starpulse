@@ -1,6 +1,6 @@
 """The session-start service the Kanban view's Start session reaches: `POST <url>/start/TASK-N`.
 
-The service opens a Remote Control session on the task's assignee profile and
+The service opens a session on the task's assignee profile for the named harness and mode, and
 answers `{"task", "url"}` once the session has its bridge, waiting up to a minute for it; a 502 or 504 says why
 it could not. Its address is the config's `session_start_url`.
 """
@@ -19,18 +19,22 @@ from starpulse.contracts.adapters import StartFailedError
 _TIMEOUT_S = 75.0
 
 
-def starter(url: str | None, by: str | None = None) -> Callable[[str], str] | None:
+def starter(url: str | None, by: str | None = None) -> Callable[..., str] | None:
     """Start a task's session at the service `url` names and return the session's URL; None without an address.
 
     With `by`, each request names who starts the session (`?by=autopilot`), so the service can brief an unattended
-    session differently from one an operator opened; an operator's start carries no marker.
+    session differently from one an operator opened. Every start names `harness` and `mode` (default `interactive`)
+    so the service can dispatch; an operator's start carries no `by` marker.
     """
     if url is None:
         return None
     base = url.rstrip("/")
-    query = f"?{urllib.parse.urlencode({'by': by})}" if by else ""
 
-    def start(task: str) -> str:
+    def start(task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
+        params: dict[str, str] = {"harness": harness, "mode": mode}
+        if by:
+            params["by"] = by
+        query = f"?{urllib.parse.urlencode(params)}"
         request = urllib.request.Request(f"{base}/start/{task}{query}", method="POST")
         try:
             with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:

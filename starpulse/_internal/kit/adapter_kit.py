@@ -363,7 +363,7 @@ def serve(
     writer: MoveWriter | None = None,
     harnesses: Harnesses | None = None,
     assign: AssigneeWriter | None = None,
-    start_session: Callable[[str], str] | None = None,
+    start_session: Callable[..., str] | None = None,
     window: HistoryWindow | None = None,
     read: TaskReader | None = None,
     edit: TaskEditor | None = None,

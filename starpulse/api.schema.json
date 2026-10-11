@@ -5726,10 +5726,24 @@
     },
     "StartRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/start`: start a session for `task` on `assignee`.",
+      "description": "`POST /api/start`: start a session for `task` on `assignee` with the named `harness`.",
       "properties": {
         "assignee": {
           "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "task": {
           "type": "string"
@@ -5737,7 +5751,8 @@
       },
       "required": [
         "task",
-        "assignee"
+        "assignee",
+        "harness"
       ],
       "title": "StartRequest",
       "type": "object"

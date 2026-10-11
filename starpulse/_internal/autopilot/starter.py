@@ -23,13 +23,15 @@ def builtin_starter(
     cwd: Path,
     run: Callable[..., Any] = subprocess.run,
     which: Callable[[str], str | None] = shutil.which,
-) -> Callable[[str], str]:
+) -> Callable[..., str]:
     """Start a task's session in a detached tmux session started in `cwd` and answer `tmux:<session name>`.
 
     A missing `tmux` or `claude`, or a tmux that exits non-zero, raises `StartFailedError` naming the cause.
+    Autopilot stays Claude-only: `harness` and `mode` are accepted so the seam matches `session_start_url` and ignored.
     """
 
-    def start(task: str) -> str:
+    def start(task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
+        _ = harness, mode
         if missing := next((name for name in _BINARIES if which(name) is None), None):
             raise StartFailedError(f"the built-in starter needs {missing} on PATH")
         name = f"starpulse-{task}"

@@ -20,7 +20,7 @@ from starpulse._internal.server.writes import move_task, rerun_dag, run_dag, sta
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.config import CommitKeys, Config, RunsInstance, load
-from starpulse._internal.config.harnesses import load_harnesses
+from starpulse._internal.config.harnesses import Harness, Harnesses, Tier, load_harnesses
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.tables import events
 from starpulse.tests.machines import MACHINES
@@ -381,17 +381,25 @@ def test_a_move_naming_a_non_text_actor_is_a_bad_request() -> None:
 
 STARTED_AT = 1_790_000_000.0
 SESSION = "https://claude.ai/code/session_01"
+_TIER = Tier("sonnet", ("high",))
+_HARNESSES = Harnesses(
+    ("standard",),
+    {
+        "claude": Harness("claude", "Claude Code", True, None, {"standard": _TIER}),
+        "cursor": Harness("cursor", "Cursor", False, "Cursor session start is not wired yet", {"standard": _TIER}),
+    },
+)
 
 
 class _Sessions:
-    """A stubbed session-start service: records each task it is asked to start, answers a URL or fails."""
+    """A stubbed session-start service: records each start it is asked for, answers a URL or fails."""
 
     def __init__(self, failure: str | None = None) -> None:
         self.failure = failure
-        self.started: list[str] = []
+        self.started: list[tuple[str, str | None, str | None]] = []
 
-    def __call__(self, task: str) -> str:
-        self.started.append(task)
+    def __call__(self, task: str, *, harness: str | None = None, mode: str | None = None) -> str:
+        self.started.append((task, harness, mode))
         if self.failure:
             raise StartFailedError(self.failure)
         return SESSION
@@ -403,33 +411,71 @@ def _start(
     sessions: _Sessions | None = None,
     source: str = LAN,
     feed: BoardFeed | None = None,
+    harnesses: Harnesses | None = _HARNESSES,
 ):
     raw = body if isinstance(body, bytes) else json.dumps(body).encode()
     if feed is None:
         feed = BoardFeed()
         feed.put(task("PROJ-3", "Ready", assignee="@agent-standard-high"))
-    return start_task(source, raw, feed, assign or _Writer(), sessions, clock=lambda: STARTED_AT)
+    return start_task(
+        source, raw, feed, assign or _Writer(), sessions, harnesses=harnesses, clock=lambda: STARTED_AT
+    )
 
 
 def test_a_start_with_a_changed_assignee_saves_it_then_starts_the_session() -> None:
     assign, sessions = _Writer(), _Sessions()
 
-    status, body = _start({"task": "PROJ-3", "assignee": "@agent-deep-high"}, assign, sessions)
+    status, body = _start({"task": "PROJ-3", "assignee": "@agent-deep-high", "harness": "claude"}, assign, sessions)
 
     assert (status, body) == (200, {"task": "PROJ-3", "url": SESSION, "at": STARTED_AT})
     assert assign.sent == [("PROJ-3", "@agent-deep-high")]
-    assert sessions.started == ["PROJ-3"]
+    assert sessions.started == [("PROJ-3", "claude", "interactive")]
+
+
+def test_a_start_forwards_harness_and_defaults_mode_to_interactive() -> None:
+    sessions = _Sessions()
+
+    status, _ = _start({"task": "PROJ-3", "assignee": "@agent-standard-high", "harness": "claude"}, sessions=sessions)
+
+    assert status == 200
+    assert sessions.started == [("PROJ-3", "claude", "interactive")]
+
+
+def test_a_start_forwards_an_explicit_mode() -> None:
+    sessions = _Sessions()
+
+    assert _start(
+        {"task": "PROJ-3", "assignee": "@agent-standard-high", "harness": "claude", "mode": "headless"},
+        sessions=sessions,
+    )[0] == 200
+    assert sessions.started == [("PROJ-3", "claude", "headless")]
+
+
+def test_an_unknown_or_sessionless_harness_is_refused_with_its_reason() -> None:
+    sessions = _Sessions()
+
+    assert _start({"task": "PROJ-3", "assignee": "@a", "harness": "nope"}, sessions=sessions) == (
+        409,
+        {"error": "nope is not a configured harness"},
+    )
+    assert _start({"task": "PROJ-3", "assignee": "@a", "harness": "cursor"}, sessions=sessions) == (
+        409,
+        {"error": "Cursor session start is not wired yet"},
+    )
+    assert sessions.started == []
 
 
 def test_a_start_with_the_assignee_the_task_already_has_writes_nothing() -> None:
     assign, sessions = _Writer(), _Sessions()
 
-    assert _start({"task": "PROJ-3", "assignee": "@agent-standard-high"}, assign, sessions)[0] == 200
-    assert (assign.sent, sessions.started) == ([], ["PROJ-3"])
+    assert _start({"task": "PROJ-3", "assignee": "@agent-standard-high", "harness": "claude"}, assign, sessions)[0] == 200
+    assert (assign.sent, sessions.started) == ([], [("PROJ-3", "claude", "interactive")])
 
 
 def test_a_session_that_fails_to_start_answers_502_with_the_services_reason() -> None:
-    status, body = _start({"task": "PROJ-3", "assignee": "@agent-standard-high"}, sessions=_Sessions("tmux failed"))
+    status, body = _start(
+        {"task": "PROJ-3", "assignee": "@agent-standard-high", "harness": "claude"}, sessions=_Sessions("tmux failed")
+    )
 
     assert (status, body) == (502, {"error": "tmux failed"})
 
@@ -437,7 +483,7 @@ def test_a_session_that_fails_to_start_answers_502_with_the_services_reason() ->
 def test_an_assignee_the_writer_refuses_starts_no_session() -> None:
     assign, sessions = _Writer(Written(False, "refusing to assign PROJ-3")), _Sessions()
 
-    status, body = _start({"task": "PROJ-3", "assignee": "@agent-nope"}, assign, sessions)
+    status, body = _start({"task": "PROJ-3", "assignee": "@agent-nope", "harness": "claude"}, assign, sessions)
 
     assert (status, body) == (409, {"error": "refusing to assign PROJ-3", "skill": ""})
     assert sessions.started == []
@@ -446,28 +492,42 @@ def test_an_assignee_the_writer_refuses_starts_no_session() -> None:
 def test_without_a_session_start_service_nothing_is_started() -> None:
     assign = _Writer()
 
-    status, body = _start({"task": "PROJ-3", "assignee": "@agent-deep-high"}, assign, None)
+    status, body = _start({"task": "PROJ-3", "assignee": "@agent-deep-high", "harness": "claude"}, assign, None)
 
     assert (status, body) == (404, {"error": "no session-start service is configured (session_start_url)"})
     assert assign.sent == []
 
 
 @pytest.mark.parametrize(
-    "raw", [b"", b"not json", b"[]", b'{"task": "PROJ-3"}', b'{"assignee": "@a"}', b'{"task": 3, "assignee": "@a"}']
+    "raw",
+    [
+        b"",
+        b"not json",
+        b"[]",
+        b'{"task": "PROJ-3"}',
+        b'{"assignee": "@a"}',
+        b'{"task": 3, "assignee": "@a", "harness": "claude"}',
+        b'{"task": "PROJ-3", "assignee": "@a"}',
+        b'{"task": "PROJ-3", "assignee": "@a", "harness": 1}',
+    ],
 )
-def test_a_body_that_does_not_name_a_task_and_an_assignee_is_a_bad_request(raw: bytes) -> None:
+def test_a_body_that_does_not_name_a_task_an_assignee_and_a_harness_is_a_bad_request(raw: bytes) -> None:
     sessions = _Sessions()
 
     status, body = _start(raw, sessions=sessions)
 
     assert (status, sessions.started) == (400, [])
-    assert body == {"error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>"}'}
+    assert body == {
+        "error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>", "harness": "<name>"}'
+    }
 
 
 def test_a_start_from_outside_the_lan_is_refused() -> None:
     sessions = _Sessions()
 
-    status, body = _start({"task": "PROJ-3", "assignee": "@a"}, sessions=sessions, source="203.0.113.5")
+    status, body = _start(
+        {"task": "PROJ-3", "assignee": "@a", "harness": "claude"}, sessions=sessions, source="203.0.113.5"
+    )
 
     assert (status, sessions.started) == (403, [])
     assert body == {"error": "Starting a session answers only loopback and private network (RFC 1918) browsers"}
@@ -478,16 +538,15 @@ def test_a_task_off_the_board_or_outside_ready_waiting_and_needs_attention_start
     feed.put(task("PROJ-5", "Review"))
     sessions = _Sessions()
 
-    assert _start({"task": "PROJ-99", "assignee": "@a"}, sessions=sessions, feed=feed) == (
+    assert _start({"task": "PROJ-99", "assignee": "@a", "harness": "claude"}, sessions=sessions, feed=feed) == (
         404,
         {"error": "PROJ-99 is not on the board"},
     )
-    assert _start({"task": "PROJ-5", "assignee": "@a"}, sessions=sessions, feed=feed) == (
+    assert _start({"task": "PROJ-5", "assignee": "@a", "harness": "claude"}, sessions=sessions, feed=feed) == (
         409,
         {"error": "PROJ-5 is in review: a session starts only a ready, waiting or needs_attention task"},
     )
     assert sessions.started == []
-
 
 def test_a_server_built_without_a_board_writer_refuses_every_move() -> None:
     assert _no_writer("PROJ-3", "Review") == Written(False, "no board writer is configured", unavailable=True)
