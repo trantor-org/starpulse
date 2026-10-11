@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import threading
 import time
 import urllib.error
@@ -19,10 +18,11 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from starpulse._internal.runs.forwarded import FIELDS, PERSON, project
-from starpulse._internal.eventlog import lane_events
+from starpulse._internal.config.config import discover
+from starpulse._internal.eventlog import lane_events, operator_settings
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import open_event_log
+from starpulse._internal.runs.forwarded import FIELDS, PERSON, project
 
 if TYPE_CHECKING:
     from starpulse._internal.config.config import Config, Forward
@@ -36,30 +36,28 @@ PREVIEW = 10
 __all__ = ["FIELDS", "OPT_IN_FILE", "PERSON", "PREVIEW", "Forwarder", "OptIn", "build", "main", "post", "project", "start"]
 
 
-#: Where the opt-in lives, in the directory of the `--config` file (the working directory without one).
+#: The opt-in's file before it moved into the store; a file by this name beside the config is imported once.
 OPT_IN_FILE = "starpulse-forward.json"
+KEY = "forward.opt_in"
 
 
 class OptIn:
-    """Whether this instance lets a person's name leave: the flag in `path`, off unless the file says `true`.
+    """Whether this instance lets a person's name leave: the flag in the history store, off unless it says `true`.
 
-    It is a file, not config, so flipping it needs no restart and no hub: the forwarder reads it before every batch,
-    and a file that is missing or unreadable leaves the instance opted out.
+    It is a setting, not config, so flipping it needs no restart and no hub: the forwarder reads it before every batch,
+    and one that is missing or unreadable leaves the instance opted out. `legacy` is the flag's old file, imported
+    when the store holds no row.
     """
 
-    def __init__(self, path: Path) -> None:
-        self.path = path
+    def __init__(self, log: EventLog, legacy: Path) -> None:
+        self.log = log
+        self.legacy = legacy
 
     def get(self) -> bool:
-        try:
-            return json.loads(self.path.read_text())["opt_in"] is True
-        except OSError, ValueError, KeyError, TypeError:
-            return False
+        return operator_settings.read(self.log, KEY, self.legacy, "opt_in") is True
 
     def set(self, value: bool) -> None:
-        scratch = self.path.with_name(f"{self.path.name}.tmp")
-        scratch.write_text(json.dumps({"opt_in": value}))
-        os.replace(scratch, self.path)  # a reader sees the old file or the new one, never half of one
+        operator_settings.write(self.log, KEY, value, self.legacy)
 
 
 #: How long one POST to the hub may take, and how long the forwarder rests when it has caught up.
@@ -242,8 +240,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     """`starpulse forward opt-in|opt-out|status|rebind`: set or show whether a person's name may leave this instance,
     or, on a hub, let another instance send under a source's token.
 
-    The opt-in flag is `OPT_IN_FILE` in the directory of `--config` (the working directory without one), where the
-    running server's forwarder reads it before every batch, so the change needs no restart and no hub. `rebind
+    The opt-in flag is a row in the store `--config` names (the working directory's `starpulse.toml` or the defaults
+    without one), where the running server's forwarder reads it before every batch, so the change needs no restart and
+    no hub. `rebind
     SOURCE` runs against the hub's own config: it drops the instance the hub bound SOURCE's token to, so the next
     batch under that token, from any instance, binds it again. It exits 1 for a source that held no binding.
     """
@@ -254,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("action", choices=("opt-in", "opt-out", "status", "rebind"))
     parser.add_argument("source", nargs="?", help="rebind: the `[[sources]]` name whose binding to drop")
     parser.add_argument(
-        "--config", type=Path, help="the TOML config the server runs with; the flag is stored beside it"
+        "--config", type=Path, help="the TOML config the server runs with; the flag is stored in the history store it names"
     )
     args = parser.parse_args(argv)
     if args.action == "rebind":
@@ -269,10 +268,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if held else 1
     if args.source:
         parser.error(f"{args.action} takes no source")
-    flag = OptIn((args.config.parent if args.config else Path.cwd()) / OPT_IN_FILE)
+    config = discover(args.config)
+    flag = OptIn(open_event_log(config), (config.parent if config else Path.cwd()) / OPT_IN_FILE)
     if args.action != "status":
         flag.set(args.action == "opt-in")
-    print(f"{flag.path}: {'opted in' if flag.get() else 'opted out'}")
+    print(f"forward: {'opted in' if flag.get() else 'opted out'}")
     return 0
 
 
@@ -281,7 +281,7 @@ def build(
 ) -> Forwarder | None:
     """The forwarder `[forward]` configures; None without one.
 
-    `base` is the config's directory, where the opt-in file lives. Raises `ValueError` for `[forward]` on a hub, which
+    `base` is the config's directory, where an opt-in file from before the store is imported from. Raises `ValueError` for `[forward]` on a hub, which
     is an IC's setting, and for a `token_env` that names an unset variable.
     """
     if config.forward is None:
@@ -290,7 +290,7 @@ def build(
         raise ValueError("[forward] sends an IC's events to a hub; a hub does not forward")
     if not (token := environ.get(config.forward.token_env)):
         raise ValueError(f"[forward]: {config.forward.token_env} is not set")
-    return Forwarder(log, store, config.forward, token, OptIn(base / OPT_IN_FILE))
+    return Forwarder(log, store, config.forward, token, OptIn(log, base / OPT_IN_FILE))
 
 
 def start(forwarder: Forwarder, stop: threading.Event) -> threading.Thread:

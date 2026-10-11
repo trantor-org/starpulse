@@ -26,7 +26,6 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
-from starpulse._internal.autopilot.toggle import TOGGLE_FILE
 from starpulse._internal.board import native
 from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.server.server import StarPulseServer, assemble, request_handler
@@ -35,6 +34,7 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.config.config import load
 from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
 
 import starpulse
@@ -167,12 +167,13 @@ def native_board(directory: Path) -> Board:
     return board
 
 
-def autopilot(directory: Path, feed: BoardFeed, policy: Autopilot) -> Runtime:
+def autopilot(directory: Path, log: EventLog, feed: BoardFeed, policy: Autopilot) -> Runtime:
     """The autopilot `GET /api/autopilot` reads, with its loop built over a starter that starts nothing, one capacity
     sample taken and no thread running: the route reads the last sample and the loop's next pick, as a served one does."""
     runtime = build_autopilot(
         policy,
-        directory / TOGGLE_FILE,
+        directory,
+        log,
         feed,
         lambda: HOST,
         start=lambda task: "",
@@ -190,9 +191,10 @@ def build(
     directory.mkdir(parents=True, exist_ok=True)
     config = load(PREVIEW)
     _, feed = assemble(config, PREVIEW.parent, None, [])
-    store = HistoryStore(f"sqlite:///{directory / 'history.sqlite'}", feed.machines)
+    log = EventLog(f"sqlite:///{directory / 'history.sqlite'}")
+    store = HistoryStore(log.url, feed.machines)
     records, tasks = seed(feed, store, time.time() if now is None else now)
-    window = HistoryWindow(feed, 24 * 7, directory / "starpulse-settings.json")
+    window = HistoryWindow(feed, 24 * 7, log, directory / "starpulse-settings.json")
     handler = request_handler(
         feed,
         STATIC,
@@ -202,7 +204,7 @@ def build(
         window,
         read=lambda task: records.get(task),
         level=config.level,
-        autopilot=autopilot(directory, feed, config.autopilot),
+        autopilot=autopilot(directory, log, feed, config.autopilot),
         milestones=native_board(directory),
     )
     return StarPulseServer(("127.0.0.1", port), handler), feed, tasks

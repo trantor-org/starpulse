@@ -272,7 +272,6 @@ from starpulse._internal.config.config import Config, ConfigError, RunsInstance,
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
 from starpulse._internal.autopilot.starter import builtin_starter
-from starpulse._internal.autopilot.toggle import TOGGLE_FILE
 from starpulse._internal.config.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events
@@ -1366,6 +1365,7 @@ def start_autopilot(
     feed: BoardFeed,
     board: Board,
     history: History,
+    log: EventLog,
     level: Level | None,
     stop: threading.Event,
     probe: Callable[[], Mapping[str, float]] | None = None,
@@ -1396,7 +1396,8 @@ def start_autopilot(
     state_dir.mkdir(parents=True, exist_ok=True)
     runtime = build_autopilot(
         config.autopilot,
-        state_dir / TOGGLE_FILE,
+        state_dir,
+        log,
         feed,
         probe,
         start=starter(config.session_start_url, by="autopilot") or builtin_starter(base),
@@ -1671,7 +1672,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     url = database_url(config.database_url, base)
     log = EventLog(url)
     keep_event_log(log, config, base, hub=args.hub, stop=threading.Event())
-    window = HistoryWindow(feed, args.hours, base / SETTINGS_FILE)
+    window = HistoryWindow(feed, args.hours, log, base / SETTINGS_FILE)
     # the history dates the lanes the board adapter replays, so it is open before the adapter starts
     store = history_store(config, base, feed.machines)
     feed.date_lanes(store.lane_path)
@@ -1766,7 +1767,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         forward.start(forwarder, forwarding)
     announce(port, feed.snapshot()["hint"])
     autopilot_runtime = start_autopilot(
-        config, base, feed, board, store, config.level if args.hub else None, threading.Event()
+        config, base, feed, board, store, log, config.level if args.hub else None, threading.Event()
     )
     handler = request_handler(
         feed,

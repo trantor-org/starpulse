@@ -61,13 +61,14 @@ class Kit:
     def __init__(self, tmp_path: Path, hub_log: EventLog, hub_url: str) -> None:
         self.config = tmp_path / "starpulse.toml"
         self.ic_url = f"sqlite:///{tmp_path / 'ic.sqlite'}"
+        self.config.write_text(f'database_url = "{self.ic_url}"\n')  # the store `forward opt-in` writes to
         self.ic_log = EventLog(self.ic_url)
         self.hub_log = hub_log
         self.feed = BoardFeed(clock=lambda: 1.0)
         self.feed.record_lanes(HistoryStore(self.ic_url, {}), self.ic_log)
         self.forward = Forward(hub_url, "HUB_TOKEN", 3)
         self.wire = Wire()
-        self.opt_in = OptIn(tmp_path / OPT_IN_FILE)
+        self.opt_in = OptIn(self.ic_log, tmp_path / OPT_IN_FILE)
 
     def move(self, task: str) -> None:
         """A real lane change: the Board feed places the task and appends the entry beside the history's row."""

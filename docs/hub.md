@@ -230,7 +230,8 @@ batch = 50                   # events per request, 1 to 200
   stays home.
 - **Names stay home by default.** `actor` and `assignee` leave only while the instance is opted in. Run
   `starpulse forward opt-in`, `opt-out` or `status` (`--config` as for `serve`); the flag is
-  `starpulse-forward.json` beside the config. The forwarder reads it before every batch, so an opt-out applies at the
+  the `forward.opt_in` row of the history store's `starpulse_settings` table (the command opens the config's store and exits non-zero when
+  there is no config). An older `starpulse-forward.json` beside the config is imported once, then renamed `.imported`. The forwarder reads it before every batch, so an opt-out applies at the
   next send with no restart and no call to the hub, even while the hub is unreachable. A batch that failed while
   opted in is rebuilt from the log, so it goes out without names after an opt-out. A hub with `aggregates_only`
   answers an opt-in 403, and the forwarder sends that batch, and the ones after it, without names until the instance

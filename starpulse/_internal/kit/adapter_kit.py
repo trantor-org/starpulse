@@ -73,6 +73,7 @@ from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.config.config import Config
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import History, HistoryStore
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pulls import PullStore
@@ -401,7 +402,10 @@ def serve(
         starts or {},
         run_safe,
         history or HistoryStore("sqlite://", feed.machines if feed else {}),
-        window or HistoryWindow(served, 6, tmp_path / "starpulse-settings.json"),
+        window
+        or HistoryWindow(
+            served, 6, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"), tmp_path / "starpulse-settings.json"
+        ),
         writer or _no_writer,
         harnesses,
         assign or _no_writer,

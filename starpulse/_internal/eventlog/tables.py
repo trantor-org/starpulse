@@ -74,6 +74,17 @@ source_instances = Table(
     Column("bound_at", Float, nullable=False),
 )
 
+#: An operator setting the instance keeps across restarts: the autopilot switch, the forwarder opt-in and the Admin
+#: history-window override. One row per key, with the epoch second it was last written; a missing row means the
+#: setting's default.
+settings = Table(
+    "starpulse_settings",
+    metadata,
+    Column("key", String, primary_key=True),
+    Column("value", JSON, nullable=False),
+    Column("updated_at", Float, nullable=False),
+)
+
 #: What a hub keeps of a day after its raw events are dropped (`hub.enforce_retention`): per team, machine and state,
 #: how many tasks or runs entered the state that UTC day (`entries`), how many of those had not left it when the day was
 #: rolled up (`open_entries`), and the seconds the others stayed. A hub writes it; an IC instance never does.

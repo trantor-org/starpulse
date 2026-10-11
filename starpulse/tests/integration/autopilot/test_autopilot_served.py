@@ -83,9 +83,10 @@ def _served(base: Path, config_text: str = "") -> Iterator[tuple[BoardFeed, Runt
     config = load(path)
     board, feed = assemble(config, base, None, ())
     history = history_store(config, base, feed.machines)
-    board.start(feed, "test", EventLog(f"sqlite:///{base / 'events.sqlite'}"))
+    log = EventLog(f"sqlite:///{base / 'events.sqlite'}")
+    board.start(feed, "test", log)
     stop = threading.Event()
-    runtime = start_autopilot(config, base, feed, board, history, None, stop, probe=lambda: IDLE_HOST)
+    runtime = start_autopilot(config, base, feed, board, history, log, None, stop, probe=lambda: IDLE_HOST)
     try:
         runtime.set_enabled(True)
         yield feed, runtime
@@ -146,5 +147,6 @@ def test_a_state_dir_holds_the_switch_and_the_run_ledger_instead_of_the_config_d
             _task(tmp_path, "Done")  # the run's task leaves the lane: its run is recorded
             _until((state / "starpulse-autopilot-runs.jsonl").exists, "the ledger line")
 
-    assert json.loads((state / "starpulse-autopilot.json").read_text()) == {"enabled": True}
+    assert EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").setting("autopilot.enabled") is True
+    assert not (state / "starpulse-autopilot.json").exists()  # the switch is a row in the store, not a file
     assert sorted(path.name for path in tmp_path.glob("starpulse-autopilot*")) == []  # nothing beside the config

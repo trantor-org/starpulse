@@ -15,6 +15,7 @@ from starpulse._internal.autopilot.sampler import Sampler
 from starpulse._internal.autopilot.toggle import Toggle
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
@@ -47,7 +48,7 @@ class Rig:
             clock=lambda: self.now,
         )
         self.ledger = Ledger(tmp_path / "runs.jsonl")
-        self.toggle = Toggle(tmp_path / "toggle.json")
+        self.toggle = Toggle(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"), tmp_path / "toggle.json")
         self.toggle.set(True)
         self.started: list[str] = []
         self.settled: list[tuple[str, str]] = []

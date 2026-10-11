@@ -19,9 +19,10 @@ from starpulse._internal.autopilot.ledger import LEDGER_FILE, Ledger
 from starpulse._internal.autopilot.loop import Loop
 from starpulse._internal.autopilot.probe import LocalProbe
 from starpulse._internal.autopilot.sampler import Crossing, Sampler
-from starpulse._internal.autopilot.toggle import Toggle
+from starpulse._internal.autopilot.toggle import TOGGLE_FILE, Toggle
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS
 
@@ -65,7 +66,8 @@ def log_crossing(crossing: Crossing) -> None:
 
 def build(
     policy: Autopilot,
-    toggle_path: Path,
+    state_dir: Path,
+    log: EventLog,
     feed: BoardFeed,
     probe: Callable[[], Mapping[str, float]] | None = None,
     on_crossing: Callable[[Crossing], object] = log_crossing,
@@ -77,7 +79,7 @@ def build(
     chain: Callable[[], Mapping[str, Mapping[str, Any]]] = dict,
     lane: str = "",
 ) -> Runtime:
-    """The switch kept in `toggle_path` and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
+    """The switch kept in `log`'s store (a file in `state_dir` from before it moved there is imported once) and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
 
     With `start` and `settle` it also builds the dispatch loop over them, admitting from `lane` and keeping its run ledger
     beside the switch; a capacity crossing then wakes it. Without them there is only the switch and the sampler.
@@ -97,14 +99,14 @@ def build(
         on_crossing=crossed,
         clock=clock,
     )
-    toggle = Toggle(toggle_path)
+    toggle = Toggle(log, state_dir / TOGGLE_FILE)
     if start is not None and settle is not None:
         loop = Loop(
             feed=feed,
             policy=policy,
             toggle=toggle,
             sampler=sampler,
-            ledger=Ledger(toggle_path.with_name(LEDGER_FILE)),
+            ledger=Ledger(state_dir / LEDGER_FILE),
             start=start,
             settle=settle,
             chain=chain,

@@ -13,6 +13,7 @@ from starpulse._internal.server.writes import history_window
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.feed.test_machine_tasks import _entry
 from starpulse.tests.unit.server.test_server import _ip
@@ -20,9 +21,13 @@ from starpulse.tests.unit.server.test_server import _ip
 REFUSED = "history window must be between 1 and 72 hours; got {}"
 
 
+def _log(tmp_path: Path) -> EventLog:
+    return EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
+
+
 def _window(tmp_path: Path, hours: float = 6) -> tuple[BoardFeed, HistoryWindow]:
     feed = BoardFeed(hours * 3600, machines=MACHINES)
-    return feed, HistoryWindow(feed, hours, tmp_path / "starpulse-settings.json")
+    return feed, HistoryWindow(feed, hours, _log(tmp_path), tmp_path / "starpulse-settings.json")
 
 
 def _drawn(feed: BoardFeed) -> list[str]:
@@ -52,7 +57,8 @@ def test_a_valid_put_persists_and_changes_the_window_the_feed_draws_with(tmp_pat
 
     assert (status, body) == (200, {"hours": 24, "default": 6, "overridden": True})
     assert _drawn(feed) == ["PROJ-1", "PROJ-2"]
-    assert json.loads((tmp_path / "starpulse-settings.json").read_text()) == {"history_hours": 24}
+    assert _log(tmp_path).setting("history.hours") == 24
+    assert not (tmp_path / "starpulse-settings.json").exists()
 
 
 def test_the_window_is_exactly_the_hours_set_counted_in_seconds(tmp_path: Path) -> None:
@@ -88,7 +94,7 @@ def test_an_hours_outside_one_to_seventy_two_or_not_a_number_is_refused_and_the_
 
     assert (status, body) == (400, {"error": REFUSED.format(hours)})
     assert history_window("127.0.0.1", "GET", b"", window)[1]["hours"] == 6
-    assert not (tmp_path / "starpulse-settings.json").exists()
+    assert _log(tmp_path).setting("history.hours") is None
 
 
 @pytest.mark.parametrize("hours", [1, 72, 1.5])
@@ -120,7 +126,7 @@ def test_the_override_survives_a_restart_and_reset_returns_to_the_declared_hours
         200,
         {"hours": 6, "default": 6, "overridden": False},
     )
-    assert not (tmp_path / "starpulse-settings.json").exists()
+    assert _log(tmp_path).setting("history.hours") is None
     assert history_window("127.0.0.1", "GET", b"", _window(tmp_path, 6)[1])[1]["overridden"] is False
 
 
@@ -149,6 +155,16 @@ def test_a_settings_file_that_cannot_be_read_as_a_valid_window_leaves_the_declar
     _, window = _window(tmp_path, 6)
 
     assert history_window("127.0.0.1", "GET", b"", window)[1] == {"hours": 6, "default": 6, "overridden": False}
+
+
+def test_an_override_file_from_before_the_store_is_imported_once(tmp_path: Path) -> None:
+    (tmp_path / "starpulse-settings.json").write_text('{"history_hours": 24}')
+
+    _, window = _window(tmp_path, 6)
+
+    assert history_window("127.0.0.1", "GET", b"", window)[1] == {"hours": 24, "default": 6, "overridden": True}
+    assert _log(tmp_path).setting("history.hours") == 24
+    assert not (tmp_path / "starpulse-settings.json").exists()
 
 
 #: A public (RFC 5737) address, the first one past 172.16/12, and a documentation IPv6 address.

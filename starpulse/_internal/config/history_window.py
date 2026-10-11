@@ -1,15 +1,17 @@
-"""The settings StarPulse Admin writes to the server: a declared default, an override kept beside the config, and Reset."""
+"""The settings StarPulse Admin writes to the server: a declared default, an override kept in the history store, and Reset."""
 
-import json
-import os
 import threading
 from pathlib import Path
 from typing import Any, Protocol, TypeGuard
 
+from starpulse._internal.eventlog import operator_settings
+from starpulse._internal.eventlog.event_log import EventLog
+
 #: The history window Admin may set, in hours.
 MIN_HOURS, MAX_HOURS = 1, 72
-#: Where the override lives, in the directory of the `--config` file (the working directory without one).
+#: The override's file before it moved into the store; a file by this name beside the config is imported once.
 SETTINGS_FILE = "starpulse-settings.json"
+KEY = "history.hours"
 
 
 def _valid(hours: object) -> TypeGuard[float]:
@@ -25,23 +27,22 @@ class _Feed(Protocol):
 class HistoryWindow:
     """How far back a task's latest move counts: the declared `--hours`, or the override Admin wrote over it.
 
-    The override is read from `path` at construction, so it survives a restart; a file that is missing, unreadable
-    or holds a value outside the range leaves the declared hours. Every change reaches `feed` at once.
+    The override is read from the store at construction, so it survives a restart; one that is missing, unreadable or
+    outside the range leaves the declared hours. `path` is the old settings file, imported when the store holds no
+    row. Every change reaches `feed` at once.
     """
 
-    def __init__(self, feed: _Feed, declared_hours: float, path: Path) -> None:
+    def __init__(self, feed: _Feed, declared_hours: float, log: EventLog, path: Path) -> None:
         self._feed = feed
         self._declared = declared_hours
+        self._log = log
         self._path = path
         self._lock = threading.Lock()
         self._override = self._read()
         self._apply()
 
     def _read(self) -> float | None:
-        try:
-            hours = json.loads(self._path.read_text())["history_hours"]
-        except OSError, ValueError, KeyError, TypeError:
-            return None
+        hours = operator_settings.read(self._log, KEY, self._path, "history_hours")
         return hours if _valid(hours) else None
 
     def _apply(self) -> None:
@@ -61,15 +62,13 @@ class HistoryWindow:
         if not _valid(hours):
             raise ValueError(f"history window must be between {MIN_HOURS} and {MAX_HOURS} hours; got {hours}")
         with self._lock:
-            scratch = self._path.with_name(f"{self._path.name}.tmp")
-            scratch.write_text(json.dumps({"history_hours": hours}))
-            os.replace(scratch, self._path)  # a restart reads the old file or the new one, never half of one
+            operator_settings.write(self._log, KEY, hours, self._path)
             self._override = hours
             self._apply()
 
     def reset(self) -> None:
         """Delete the override: the window returns to the declared hours."""
         with self._lock:
-            self._path.unlink(missing_ok=True)
+            operator_settings.clear(self._log, KEY, self._path)
             self._override = None
             self._apply()

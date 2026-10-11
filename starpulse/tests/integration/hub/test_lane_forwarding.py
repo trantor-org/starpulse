@@ -55,7 +55,7 @@ class Site:
         self.feed = BoardFeed(machines=machines, clock=self.clock)
         self.feed.record_lanes(self.ic_store, self.ic_log)
         self.ingest = ForwardIngest({"ana": TOKEN}, self.hub_log)
-        self.opt_in = OptIn(tmp_path / OPT_IN_FILE)
+        self.opt_in = OptIn(self.ic_log, tmp_path / OPT_IN_FILE)
         self.bodies: list[dict[str, Any]] = []
 
     def move(self, task: str, lane: str, *, at: float, assignee: str = "") -> None:
