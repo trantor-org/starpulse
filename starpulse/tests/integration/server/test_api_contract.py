@@ -60,7 +60,7 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
     for i, (name, at, _old, new) in enumerate(ROWS):
         store.record_lane(f"{'a' if name in 'AB' else 'b'}/{i}", name, new, at)
     store.record_lane("l0", "T-1", "In Progress", NOW - 3600)
-    runtime = build(Autopilot(), tmp_path / "autopilot.json", feed, probe=lambda: {"cpu": 10.0, "memory": 20.0})
+    runtime = build(Autopilot(), tmp_path, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"), feed, probe=lambda: {"cpu": 10.0, "memory": 20.0})
     runtime.sampler.sample()
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines():
