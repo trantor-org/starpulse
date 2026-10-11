@@ -1355,11 +1355,11 @@ class MoveRequest(_Api):
 
 
 class StartRequest(_Api):
-    """`POST /api/start`: start a session for `task` on `assignee` with the named `harness`."""
+    """`POST /api/start`: start a session for `task` on `assignee`; `harness` defaults to `claude`."""
 
     task: str
     assignee: str
-    harness: str
+    harness: str | None = None
     mode: str | None = None
 
 

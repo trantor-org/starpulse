@@ -712,15 +712,16 @@ def start_task(
         return 403, {"error": "Starting a session answers only loopback and private network (RFC 1918) browsers"}
     try:
         request = json.loads(raw)
-        task, assignee, harness = request["task"], request["assignee"], request["harness"]
+        task, assignee = request["task"], request["assignee"]
+        harness = request.get("harness", "claude")
         mode = request.get("mode", "interactive")
         named = _named_actor(request)
     except ValueError, TypeError, KeyError:
         task = assignee = harness = mode = named = None
-    if not isinstance(task, str) or not isinstance(assignee, str) or not isinstance(harness, str):
-        return 400, {
-            "error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>", "harness": "<name>"}'
-        }
+    if not isinstance(task, str) or not isinstance(assignee, str):
+        return 400, {"error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>"}'}
+    if not isinstance(harness, str) or not harness:
+        return 400, {"error": 'harness must be a non-empty name from agent-harnesses.toml'}
     if not isinstance(mode, str) or mode not in _START_MODES:
         return 400, {"error": 'mode must be "interactive" or "headless"'}
     if named is None:
@@ -742,7 +743,11 @@ def start_task(
     if assignee != agent["model"] and not (written := assign(task, assignee, **named)).ok:
         return 409, {"error": written.output, "skill": written.skill}
     try:
-        return 200, {"task": task, "url": start_session(task, harness=harness, mode=mode), "at": at}
+        try:
+            session = start_session(task, harness=harness, mode=mode)
+        except TypeError:
+            session = start_session(task)  # a one-arg starter from before harness/mode
+        return 200, {"task": task, "url": session, "at": at}
     except StartFailedError as exc:
         return 502, {"error": str(exc)}
 

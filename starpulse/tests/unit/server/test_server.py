@@ -507,19 +507,33 @@ def test_without_a_session_start_service_nothing_is_started() -> None:
         b'{"task": "PROJ-3"}',
         b'{"assignee": "@a"}',
         b'{"task": 3, "assignee": "@a", "harness": "claude"}',
-        b'{"task": "PROJ-3", "assignee": "@a"}',
-        b'{"task": "PROJ-3", "assignee": "@a", "harness": 1}',
     ],
 )
-def test_a_body_that_does_not_name_a_task_an_assignee_and_a_harness_is_a_bad_request(raw: bytes) -> None:
+def test_a_body_that_does_not_name_a_task_and_an_assignee_is_a_bad_request(raw: bytes) -> None:
     sessions = _Sessions()
 
     status, body = _start(raw, sessions=sessions)
 
     assert (status, sessions.started) == (400, [])
-    assert body == {
-        "error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>", "harness": "<name>"}'
-    }
+    assert body == {"error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>"}'}
+
+
+def test_a_start_without_harness_defaults_to_claude() -> None:
+    sessions = _Sessions()
+
+    assert _start({"task": "PROJ-3", "assignee": "@agent-standard-high"}, sessions=sessions)[0] == 200
+    assert sessions.started == [("PROJ-3", "claude", "interactive")]
+
+
+def test_a_non_text_harness_is_a_bad_request() -> None:
+    sessions = _Sessions()
+
+    status, body = _start(
+        {"task": "PROJ-3", "assignee": "@agent-standard-high", "harness": 1}, sessions=sessions
+    )
+
+    assert (status, sessions.started) == (400, [])
+    assert body == {"error": "harness must be a non-empty name from agent-harnesses.toml"}
 
 
 def test_a_start_from_outside_the_lan_is_refused() -> None:
