@@ -210,12 +210,8 @@
   }
 
   // ---- the simulated board writer ----
-  const RESOLUTION = ["agent-resolvable", "needs-human"];
   function writerUpdate(before, after) {
     return new Promise((resolve) => setTimeout(() => {
-      if (!RESOLUTION.some((l) => after.labels.includes(l))) {
-        return resolve({ ok: false, field: "labels", reason: `refusing to update ${after.id}: it carries neither \`agent-resolvable\` nor \`needs-human\`. Keep one resolution label.`, skill: "starting-tasks" });
-      }
       for (const d of after.dependencies) {
         if (d === after.id) return resolve({ ok: false, field: "deps", reason: `refusing to update ${after.id}: a task cannot depend on itself.` });
         const r = record(d);
@@ -379,7 +375,6 @@
 
       const profiles = [["", "unassigned"], ...PROFILES.map((p) => [p, p])];
       if (base.assignee && !PROFILES.includes(base.assignee)) profiles.push([base.assignee, base.assignee]);
-      const nh = (v) => (v === "needs-human" ? "nh" : "");
       const row = (key, name, control) => h("tr", { "data-key": key }, h("td", {}, name), h("td", {}, control));
       const reactRows = [...modal.querySelectorAll(":scope > table tr")].filter((tr) => tr.cells.length > 1 && !OWN_ROWS.includes(tr.cells[0].textContent.trim()));
       const rmoves = [...modal.querySelectorAll(":scope > .moves button")];
@@ -590,7 +585,7 @@
     const pickTask = () => {
       const as = agents();
       if (preset.open === "pr") return as.find((a) => a.state === "in_progress" && (fixture().pulls || {})[a.id]);
-      return as.find((a) => a.state === preset.open && a.labels.includes("agent-resolvable")) || as.find((a) => a.state === preset.open);
+      return as.find((a) => a.state === preset.open);
     };
     const t = pickTask();
     if (!t) return;

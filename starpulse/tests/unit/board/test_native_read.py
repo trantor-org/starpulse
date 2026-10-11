@@ -21,7 +21,7 @@ assignee:
   - '@agent-standard-high'
 labels:
   - ui
-  - needs-human
+  - adr-needed
 milestone: m-1
 dependencies:
   - task-2
@@ -107,7 +107,7 @@ def test_a_task_file_reads_as_every_field_the_task_view_draws(tmp_path: Path, mo
         "status": "In Progress",
         "profile": "@agent-standard-high",
         "priority": "high",
-        "labels": ["ui", "needs-human"],
+        "labels": ["ui", "adr-needed"],
         "milestone": "m-1",
         "dependencies": ["task-2"],
         "references": [],

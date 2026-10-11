@@ -233,7 +233,7 @@ body.kanban #feed { font-size: calc(10.5px * var(--fs)); }
     const p = t.prs[0];
     const pr = p ? `<span class="pr ${checksClass(p)}" title="${p.merged ? "merged" : `checks ${p.checks}`}"><i></i>#${p.number}</span>` : "";
     const mach = t.live ? `<div class="mach"><span class="p"></span><b>${esc(t.live.machine)}</b><span class="s">· ${esc(t.live.state.replace(/_/g, " "))}</span><span class="ago">${ago(NOW - t.live.at)}</span></div>` : "";
-    const labs = t.labels.map((l) => `<span title="${esc(l)}" class="lab${l === "needs-human" ? " nh" : /^size-/.test(l) ? " sz" : ""}">${esc(/^size-/.test(l) ? `${l.slice(5)}pt` : l)}</span>`).join("");
+    const labs = t.labels.map((l) => `<span title="${esc(l)}" class="lab${/^size-/.test(l) ? " sz" : ""}">${esc(/^size-/.test(l) ? `${l.slice(5)}pt` : l)}</span>`).join("");
     const cross = stacking ? crossOf(t).map((d) => `<button class="xm" data-open="${esc(d.id)}" title="Waits on ${esc(d.id)} in ${esc(d.milestone || "No milestone")} (Waiting): open it">↗ ${nw(d.milestone || "no milestone")} · ${nw(d.id)}</button>`).join("") : "";
     const sk = stackCount ? `<span class="sk${lane === "done" ? " dn" : ""}" title="${stackCount} ${lane === "done" ? "Done task" : "Waiting task"}${stackCount === 1 ? "" : "s"} ${lane === "done" ? "this one's chain finished first" : "stacked under this one"}; hover to unstack">${STACK_ICON}${stackCount}</span>` : "";
     const od = openDeps(t).length;
@@ -268,7 +268,7 @@ body.kanban #feed { font-size: calc(10.5px * var(--fs)); }
     const opts = { holds: 0 };
     const colHtml = cols.map((col) => {
       const inChain = chainFn ? col.buckets.flatMap((b) => b.tasks).filter((t) => ["holds", "waits"].includes(chainFn(t.id))).length : 0;
-      const strip = col.id === "waiting" ? `<div class="heldby"><span class="k" title="The tasks every Waiting chain ends at">Held by</span>${held.slice(0, 3).map(({ task, holds }) => `<button class="hb${task.labels.includes("needs-human") ? " nh" : ""}" data-open="${esc(task.id)}" data-hover="${esc(task.id)}" title="${esc(task.title)} · holds ${holds}">${esc(task.id)}<b>⛓${holds}</b></button>`).join("")}${held.length > 3 ? `<span class="more">+${held.length - 3} more</span>` : ""}</div>` : "";
+      const strip = col.id === "waiting" ? `<div class="heldby"><span class="k" title="The tasks every Waiting chain ends at">Held by</span>${held.slice(0, 3).map(({ task, holds }) => `<button class="hb${task.lane === "needs_attention" ? " nh" : ""}" data-open="${esc(task.id)}" data-hover="${esc(task.id)}" title="${esc(task.title)} · holds ${holds}">${esc(task.id)}<b>⛓${holds}</b></button>`).join("")}${held.length > 3 ? `<span class="more">+${held.length - 3} more</span>` : ""}</div>` : "";
       const body = col.buckets.length ? col.buckets.map((b) => {
         let inner;
         if (STACKED.has(col.id) && stacking) inner = stacksOf(b.tasks, col.id).map((s) => stackHtml(s, col.id)).join("");

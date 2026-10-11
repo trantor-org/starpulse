@@ -10,7 +10,7 @@ labels:
   - frigate
   - local-model
   - unraid
-  - needs-human
+  - adr-needed
   - kind-execute
   - size-5
 dependencies: []

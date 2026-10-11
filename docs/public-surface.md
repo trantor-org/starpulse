@@ -84,13 +84,13 @@ A rule is a table of:
 | `skill` | the skill that satisfies the rule, carried with the refusal (optional) |
 | `unless_actor` | actors the rule does not judge: `operator`, `agent` or `<instance>/<workflow>` as a machine's `writers` spell them (optional) |
 
-A primitive is a one-key table naming its kind (`require = { label = { contains = "needs-human" } }`); the table gives
+A primitive is a one-key table naming its kind (`require = { label = { contains = "adr-needed" } }`); the table gives
 the value under that key:
 
 | Primitive | Value under the key | Holds when |
 |---|---|---|
 | `field` | `{ field = "references", matches = "/pull/\\d+$", in = [...], min = 1 }` | a scalar or list front matter field has at least `min` (default 1) items that match the pattern and are in the set; one of `matches`, `in` or `min` is required |
-| `label` | `{ contains = "needs-human" }` or `{ prefix = "size-", in = [1, 2, 3, 5, 8] }` | the task has the label, or has a label with the prefix and every such label is the prefix and a value of `in` |
+| `label` | `{ contains = "adr-needed" }` or `{ prefix = "size-", in = [1, 2, 3, 5, 8] }` | the task has the label, or has a label with the prefix and every such label is the prefix and a value of `in` |
 | `section` | `{ heading = "Needs attention", nonempty = true }` or `{ heading = "Needs attention", not_matching = "\\bTASK-\\d+\\b", except_self = true }` | the body has a `## <heading>` section (up to the next `##`); with `nonempty` it is not blank; with `not_matching` its text, an absent section's counting as empty, does not match, `except_self` first dropping the task's own id |
 | `dependencies` | `{ all_in = ["Done"] }` | every task in `dependencies` is in one of the named states; a dependency with no task file is in none, and no dependencies holds |
 | `checklist` | `{ sections = ["acceptance_criteria", "definition_of_done"], all_checked = true }` | every item of the named lists is checked; an empty or absent list holds |

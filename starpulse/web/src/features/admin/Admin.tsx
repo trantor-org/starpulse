@@ -52,7 +52,7 @@ function Preview({ scale, compact }: { scale: number; compact: boolean }) {
         <div className={compact ? "pvcard compact" : "pvcard"}>
           <div className="top"><span className="id">DEMO-101</span><span className="pr"><i />#2094</span></div>
           <div className="t">Sample card: how a title reads at this size</div>
-          {!compact && <div className="foot2"><span className="lab">feature</span><span className="lab">size-3</span><span className="lab">needs-human</span></div>}
+          {!compact && <div className="foot2"><span className="lab">feature</span><span className="lab">size-3</span><span className="lab">adr-needed</span></div>}
         </div>
       </div>
     </section>

@@ -495,7 +495,7 @@ def test_scrub_seeds_a_board_when_the_capture_has_none() -> None:
         "created": live["now"] - 900,
         "workable_since": live["now"] - 900,
     }
-    assert board[3]["dependencies"] == ["DEMO-1"] and board[3]["labels"] == ["size-5", "needs-human"]
+    assert board[3]["dependencies"] == ["DEMO-1"] and board[3]["labels"] == ["size-5"]
     assert demo["pulls"]["DEMO-9"] == [
         {"number": 108, "url": "#", "checks": "pass", "merged": False, "threads": 2, "behind_main": 6, "stale": False}
     ]
@@ -778,7 +778,7 @@ def _board() -> dict:
         "title": SECRET,
         "lane": "waiting",
         "milestone": "m-7",
-        "labels": ["vm-only", "kind-execute", "needs-human"],
+        "labels": ["vm-only", "kind-execute", "adr-needed"],
         "assignee": "@agent-deep-high",
         "dependencies": ["PROJ-3000"],
         "prs": [
@@ -799,7 +799,7 @@ def test_scrub_board_renames_like_the_mockup_board_and_numbers_the_rest_on() -> 
     task, blocker = demo["tasks"]
     assert (task["id"], blocker["id"], task["dependencies"]) == ("DEMO-2", "DEMO-3", ["DEMO-3"])
     assert task["title"] in TITLES and blocker["title"] in TITLES
-    assert task["labels"] == ["kind-execute", "needs-human"]
+    assert task["labels"] == ["kind-execute", "adr-needed"]
     assert task["prs"] == [{"number": 1, "checks": "pass", "merged": False, "threads": 1, "behind_main": 4}]
     assert (task["assignee"], blocker["assignee"]) == ("@agent-deep-high", "")
     assert {k: task[k] for k in ("lane", "milestone", "live", "moves", "entered")} == {
@@ -1064,3 +1064,15 @@ def test_every_snapshot_key_is_rewritten_by_scrub_or_passed_through_on_purpose()
 
     unscrubbed = {k for k in Snapshot.model_fields if k in demo and demo[k] == live.get(k)} - PASSED_THROUGH
     assert not unscrubbed, f"scrub() passes {sorted(unscrubbed)} through as captured: rewrite, drop or allowlist them"
+
+
+def test_scrub_walks_an_earlier_unmerged_pull_as_merged_so_the_ci_machine_reopens_it() -> None:
+    live = _live()
+    live["flows"].append({"name": "ci", "machine": CI_MACHINES["ci"], "agents": []})
+    pull = {"number": 1, "url": "#", "checks": "failing", "merged": False, "threads": 0, "behind_main": 0, "stale": False}
+    live["pulls"] = {"PROJ-2201": [pull, {**pull, "number": 2, "checks": "pending"}]}
+
+    flows = scrub(live)["flows"]
+
+    ci = next(a for f in flows if f["name"] == "ci" for a in f["agents"] if a["task"] == "DEMO-1")
+    assert [s["event"] for s in ci["trail"]].count("PR_OPENED") == 2 and ci["state"] == "running"

@@ -355,7 +355,7 @@ window.SNAP = {
      "DEFER": [
       {
        "actor": "agent",
-       "trigger": "bin/backlog_task.py park --needs-human"
+       "trigger": "bin/backlog_task.py park --operator"
       },
       {
        "actor": "board-autopilot",
@@ -413,7 +413,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -432,7 +431,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-63",
       "size-3"
      ],
@@ -450,7 +448,6 @@ window.SNAP = {
      "model": "@agent-sonnet-medium",
      "labels": [
       "adr-needed",
-      "agent-resolvable",
       "kind-execute",
       "size-2"
      ],
@@ -465,7 +462,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -481,7 +477,6 @@ window.SNAP = {
      "model": "@agent-sonnet-high",
      "labels": [
       "kind-diagnose",
-      "needs-human",
       "size-2"
      ],
      "dependencies": [
@@ -495,7 +490,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -510,7 +504,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -525,7 +518,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "board",
       "kind-execute",
       "size-3"
@@ -541,7 +533,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "ci",
       "dagu",
       "kind-diagnose",
@@ -561,7 +552,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-67",
       "size-3"
      ],
@@ -581,7 +571,6 @@ window.SNAP = {
      "labels": [
       "board",
       "kind-execute",
-      "needs-human",
       "size-3"
      ],
      "dependencies": [],
@@ -594,7 +583,6 @@ window.SNAP = {
      "model": "@agent-sonnet-high",
      "labels": [
       "adr-needed",
-      "agent-resolvable",
       "kind-execute",
       "size-8"
      ],
@@ -609,7 +597,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-2"
      ],
@@ -624,7 +611,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-diagnose",
       "size-2"
      ],
@@ -641,7 +627,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "adr-needed",
-      "agent-resolvable",
       "kind-decide",
       "size-3"
      ],
@@ -655,7 +640,6 @@ window.SNAP = {
      "model": "@agent-sonnet-high",
      "labels": [
       "adr-needed",
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -668,7 +652,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "board",
       "kind-execute",
       "size-2"
@@ -684,7 +667,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3",
       "testing"
@@ -703,7 +685,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3",
       "testing"
@@ -721,7 +702,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-2",
       "skills"
      ],
@@ -745,7 +725,6 @@ window.SNAP = {
       "frigate",
       "kind-execute",
       "local-model",
-      "needs-human",
       "size-5",
       "nas"
      ],
@@ -759,7 +738,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -772,7 +750,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -785,7 +762,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -798,7 +774,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -811,7 +786,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -824,7 +798,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -837,7 +810,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -850,7 +822,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -863,7 +834,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -876,7 +846,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -889,7 +858,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -902,7 +870,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -915,7 +882,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -928,7 +894,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -941,7 +906,6 @@ window.SNAP = {
      "model": "@agent-sonnet-high",
      "labels": [
       "kind-execute",
-      "needs-human",
       "size-3"
      ],
      "dependencies": [
@@ -957,7 +921,6 @@ window.SNAP = {
      "model": "@agent-sonnet-medium",
      "labels": [
       "kind-execute",
-      "needs-human",
       "size-2",
       "validation"
      ],
@@ -974,7 +937,6 @@ window.SNAP = {
      "labels": [
       "agent-profile",
       "kind-execute",
-      "needs-human",
       "size-2"
      ],
      "dependencies": [
@@ -992,7 +954,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-2",
       "validation"
@@ -1006,7 +967,6 @@ window.SNAP = {
      "state": "ready",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "evaluation",
       "kind-execute",
       "size-3",
@@ -1025,7 +985,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "host-a",
       "disk",
       "kind-execute",
@@ -1041,7 +1000,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-26",
       "size-3"
      ],
@@ -1059,7 +1017,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-2",
       "size-3"
      ],
@@ -1082,7 +1039,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-35",
       "size-3"
      ],
@@ -1120,7 +1076,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-39",
       "size-3"
      ],
@@ -1136,7 +1091,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-42",
       "size-3"
      ],
@@ -1153,7 +1107,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-44",
       "size-3"
      ],
@@ -1182,7 +1135,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-47",
       "size-3"
      ],
@@ -1202,7 +1154,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-49",
       "size-3"
      ],
@@ -1222,7 +1173,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-52",
       "size-3"
      ],
@@ -1240,7 +1190,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-53",
       "size-3"
      ],
@@ -1269,7 +1218,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-55",
       "size-3"
      ],
@@ -1293,7 +1241,6 @@ window.SNAP = {
      "labels": [
       "adr-needed",
       "kind-diagnose",
-      "needs-human",
       "size-1"
      ],
      "dependencies": [
@@ -1307,7 +1254,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-mechanical",
       "size-1"
      ],
@@ -1321,7 +1267,6 @@ window.SNAP = {
      "model": "@agent-sonnet-high",
      "labels": [
       "kind-execute",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -1335,7 +1280,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1350,7 +1294,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1365,7 +1308,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1380,7 +1322,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1395,7 +1336,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1410,7 +1350,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1425,7 +1364,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1440,7 +1378,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1455,7 +1392,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1470,7 +1406,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1485,7 +1420,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1500,7 +1434,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1515,7 +1448,6 @@ window.SNAP = {
      "labels": [
       "evaluation",
       "kind-execute",
-      "needs-human",
       "size-5",
       "skills"
      ],
@@ -1529,7 +1461,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-57",
       "size-3"
      ],
@@ -1552,7 +1483,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "enrichment",
       "kind-execute",
       "rag",
@@ -1568,7 +1498,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "enrichment",
       "kind-execute",
       "rag",
@@ -1586,7 +1515,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-41",
       "size-3"
      ],
@@ -1601,7 +1529,6 @@ window.SNAP = {
      "labels": [
       "adr-needed",
       "kind-diagnose",
-      "needs-human",
       "size-2"
      ],
      "dependencies": [],
@@ -1619,7 +1546,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-58",
       "size-3"
      ],
@@ -1654,7 +1580,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-5"
      ],
      "dependencies": [],
@@ -1666,7 +1591,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-2",
       "validation"
@@ -1682,7 +1606,6 @@ window.SNAP = {
      "labels": [
       "adr-needed",
       "kind-decide",
-      "needs-human",
       "size-3"
      ],
      "dependencies": [
@@ -1698,7 +1621,6 @@ window.SNAP = {
      "model": "@agent-sonnet-medium",
      "labels": [
       "kind-execute",
-      "needs-human",
       "size-2"
      ],
      "dependencies": [
@@ -1719,7 +1641,6 @@ window.SNAP = {
      "labels": [
       "adr-needed",
       "kind-decide",
-      "needs-human",
       "retrospective",
       "size-3"
      ],
@@ -1732,7 +1653,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "retrospective",
       "size-2"
@@ -1749,7 +1669,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-62",
       "size-3"
      ],
@@ -1770,7 +1689,6 @@ window.SNAP = {
      "state": "ready",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-2"
      ],
@@ -1786,7 +1704,6 @@ window.SNAP = {
      "state": "ready",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -1802,7 +1719,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-64",
       "size-3"
      ],
@@ -1829,7 +1745,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-1"
      ],
@@ -1844,7 +1759,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-opus-medium",
      "labels": [
-      "agent-resolvable",
       "kind-decide",
       "size-5"
      ],
@@ -1859,7 +1773,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -1880,7 +1793,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -1895,7 +1807,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-1"
      ],
@@ -1911,7 +1822,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -1928,7 +1838,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -1944,7 +1853,6 @@ window.SNAP = {
      "model": "@agent-sonnet-medium",
      "labels": [
       "kind-execute",
-      "needs-human",
       "size-2"
      ],
      "dependencies": [],
@@ -1956,7 +1864,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-1"
      ],
@@ -1972,7 +1879,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-65",
       "size-3"
      ],
@@ -1994,7 +1900,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -2009,7 +1914,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-2"
      ],
@@ -2024,7 +1928,6 @@ window.SNAP = {
      "state": "ready",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-2"
      ],
@@ -2040,7 +1943,6 @@ window.SNAP = {
      "model": "@agent-sonnet-high",
      "labels": [
       "kind-diagnose",
-      "needs-human",
       "size-2"
      ],
      "dependencies": [],
@@ -2052,7 +1954,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -2065,7 +1966,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-opus-medium",
      "labels": [
-      "agent-resolvable",
       "kind-decide",
       "size-5"
      ],
@@ -2080,7 +1980,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-opus-medium",
      "labels": [
-      "agent-resolvable",
       "kind-decide",
       "size-3"
      ],
@@ -2096,7 +1995,6 @@ window.SNAP = {
      "model": "@agent-sonnet-medium",
      "labels": [
       "kind-mechanical",
-      "needs-human",
       "size-1"
      ],
      "dependencies": [],
@@ -2110,7 +2008,6 @@ window.SNAP = {
      "labels": [
       "adr-needed",
       "kind-execute",
-      "needs-human",
       "size-3"
      ],
      "dependencies": [],
@@ -2122,7 +2019,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -2137,7 +2033,6 @@ window.SNAP = {
      "state": "review",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -2153,7 +2048,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -2168,7 +2062,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-opus-medium",
      "labels": [
-      "agent-resolvable",
       "kind-decide",
       "size-5"
      ],
@@ -2184,7 +2077,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-68",
       "size-3"
      ],
@@ -2203,7 +2095,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -2218,7 +2109,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -2233,7 +2123,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-mechanical",
       "size-1"
      ],
@@ -2248,7 +2137,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-mechanical",
       "size-3"
      ],
@@ -2263,7 +2151,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-2"
      ],
@@ -2280,7 +2167,6 @@ window.SNAP = {
      "state": "done",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "config-drift-auto",
       "kind-diagnose",
       "size-3"
@@ -2296,7 +2182,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5",
       "testing"
@@ -2310,7 +2195,6 @@ window.SNAP = {
      "state": "review",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -2325,7 +2209,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -2339,7 +2222,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-69",
       "size-3"
      ],
@@ -2363,7 +2245,6 @@ window.SNAP = {
      "state": "review",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -2378,7 +2259,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -2391,7 +2271,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -2404,7 +2283,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-3"
      ],
@@ -2417,7 +2295,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -2430,7 +2307,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -2443,7 +2319,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-execute",
       "size-5"
      ],
@@ -2456,7 +2331,6 @@ window.SNAP = {
      "state": "in_progress",
      "model": "@agent-sonnet-medium",
      "labels": [
-      "agent-resolvable",
       "kind-mechanical",
       "size-2"
      ],
@@ -2469,7 +2343,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-diagnose",
       "size-2"
      ],
@@ -2484,7 +2357,6 @@ window.SNAP = {
      "state": "waiting",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "kind-diagnose",
       "size-1"
      ],
@@ -2499,7 +2371,6 @@ window.SNAP = {
      "state": "ready",
      "model": "@agent-sonnet-high",
      "labels": [
-      "agent-resolvable",
       "ci",
       "dagu",
       "kind-diagnose",
@@ -2517,7 +2388,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "retro-m-70",
       "size-3"
      ],
@@ -2533,7 +2403,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "adr-needed",
-      "agent-resolvable",
       "kind-decide",
       "size-3"
      ],
@@ -2549,7 +2418,6 @@ window.SNAP = {
      "model": "@agent-opus-medium",
      "labels": [
       "kind-decide",
-      "needs-human",
       "size-3"
      ],
      "dependencies": [],
@@ -9135,7 +9003,7 @@ window.SNAP = {
   "DEFER": [
    {
     "actor": "agent",
-    "trigger": "bin/backlog_task.py park --needs-human"
+    "trigger": "bin/backlog_task.py park --operator"
    },
    {
     "actor": "board-autopilot",

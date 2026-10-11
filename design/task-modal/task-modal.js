@@ -380,7 +380,7 @@
     kids.push(section("details", "Details", null, h("div", { class: ed ? "tm-ed" : "" }, h("table", { class: "tm-props" }, h("tbody", null,
       h("tr", null, h("td", null, "profile"), h("td", null, sel("profile", ["", "@agent-light-low", "@agent-standard-medium", "@agent-standard-high", "@agent-deep-medium", "@agent-deep-high"]))),
       h("tr", null, h("td", null, "priority"), h("td", null, sel("priority", ["", ...PRIORITIES]))),
-      h("tr", null, h("td", null, "labels"), h("td", null, h("span", { class: "chips" }, r.labels.map((l) => h("span", { class: `chip${l === "needs-human" ? " nh" : ""}` }, l))))),
+      h("tr", null, h("td", null, "labels"), h("td", null, h("span", { class: "chips" }, r.labels.map((l) => h("span", { class: `chip${""}` }, l))))),
       h("tr", null, h("td", null, "milestone"), h("td", null, sel("milestone", ["", r.milestone, "m-2", "m-3"].filter((v, i, a) => a.indexOf(v) === i)))),
       h("tr", null, h("td", null, "created"), h("td", null, h("span", { class: "k" }, `${ago(now - r.created)} ago`))))), ed && edBar()), { rail: true, edit: true }));
     return h("div", { class: "tm-col tm-rail" }, kids);

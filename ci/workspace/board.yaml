@@ -77,7 +77,7 @@ writers:
   SEND_BACK:
     - {actor: operator, trigger: "request changes"}
   DEFER:
-    - {actor: agent, trigger: "tracker park --needs-human"}
+    - {actor: agent, trigger: "tracker park --operator"}
   RETURN_READY:
     - {actor: operator, trigger: "answer the blocker"}
   MERGED:

@@ -107,7 +107,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
   cross?: KanbanTask[]; onCross?: (id: string) => void; now: number; marks: Marks; names: Record<string, string>; compact?: boolean; onOpen: () => void; onPress?: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPlay?: () => void; onHover?: (on: boolean) => void; dismiss: () => void; dismissStart?: () => void; style?: CSSProperties;
 }) {
-  const labels = task.labels.filter((l) => !/^kind-|^agent-resolvable$/.test(l)).slice(0, 3);
+  const labels = task.labels.filter((l) => !/^kind-/.test(l)).slice(0, 3);
   const live = task.live, claim = marks.claim;
   const playing = onPlay && !claim && startLane(task);
   const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
@@ -141,7 +141,7 @@ export function Card({ task, holds = 0, chain, stacked = 0, under = false, links
       {!compact && (
         <div className="foot">
           {labels.map((l) => (
-            <span key={l} title={l} className={`lab${l === "needs-human" ? " nh" : /^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
+            <span key={l} title={l} className={`lab${/^size-/.test(l) ? " sz" : ""}`}>{/^size-/.test(l) ? `${l.slice(5)}pt` : l}</span>
           ))}
           {badge}
           {holds > 0 && <span className="holds" title={`holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>⛓{holds}</span>}
@@ -270,7 +270,7 @@ export function HeldBy({ holders: held, open, hover }: {
     <div className="heldby">
       <span className="k" title="The tasks every Waiting chain ends at; finishing one releases the Waiting tasks it holds">Held by</span>
       {held.slice(0, 3).map(({ task, holds }) => (
-        <button key={task.id} className={`hb${task.labels.includes("needs-human") ? " nh" : ""}`} onClick={() => open(task.id)}
+        <button key={task.id} className={`hb${task.lane === "needs_attention" ? " nh" : ""}`} onClick={() => open(task.id)}
           onPointerEnter={hover && (() => hover(task.id))} onPointerLeave={hover && (() => hover(null))}
           title={`${task.title} · ${task.lane.replace(/_/g, " ")} · holds ${holds} Waiting task${holds === 1 ? "" : "s"}`}>
           {task.id}<b>⛓{holds}</b>
