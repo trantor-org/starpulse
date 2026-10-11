@@ -1496,7 +1496,10 @@ def serve_until_stopped(server: ThreadingHTTPServer, feed: BoardFeed) -> None:
     # a stopped unit leaves through the save below, as Ctrl-C does
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
-        server.serve_forever()
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
     finally:
         feed.save()
 
@@ -1571,7 +1574,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         listening = inherited_socket(os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    port = args.port if listening is None else listening.getsockname()[1]
+    if listening is None:  # bound before anything starts, so a taken port stops serve before it announces or runs
+        try:
+            listening = socket.create_server((args.host, args.port), backlog=StarPulseServer.request_queue_size)
+        except OSError as exc:
+            parser.exit(1, f"cannot listen on {args.host}:{args.port}: {exc.strerror}; pass --port to serve elsewhere\n")
+    port = listening.getsockname()[1]
     try:
         instance_tokens = ingest_tokens(config.runs, os.environ)
         source_tokens = ingest_tokens(config.sources, os.environ)

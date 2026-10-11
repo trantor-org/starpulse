@@ -146,6 +146,13 @@ export function App() {
       <Navigator shell={shell} hud={hud} view={view} activeView={activeView} slot={setSearchSlot} outlineSlot={setOutlineSlot} choose={choose} hasLevel={view === "graph" || (level.kind !== "none" && level.kind !== "loading")} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
+      {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && (
+        <section id="first-run" aria-label="Get started">
+          <strong>No tasks yet.</strong> Create one:
+          <code>uvx starpulse task create "My first task"</code>
+          <span>An agent usually runs the CLI; you can too, or use New task on the Kanban.</span>
+        </section>
+      )}
       {/* views warm in this order, the Kanban first: it is the one most often opened */}
       <Kept name="kanban" on={view === "kanban"} warm={drawn}>
         <Suspense fallback={null}>

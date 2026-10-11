@@ -239,6 +239,13 @@ class _Server:
         raise AssertionError("SIGTERM did not stop the server")
 
 
+class _InterruptedServer:
+    """A server stopped from its controlling terminal."""
+
+    def serve_forever(self) -> None:
+        raise KeyboardInterrupt
+
+
 def test_a_stopped_server_saves_the_board_before_it_exits() -> None:
     store = _Store()
     feed = _feed_with_tasks()
@@ -250,6 +257,24 @@ def test_a_stopped_server_saves_the_board_before_it_exits() -> None:
     finally:
         signal.signal(signal.SIGTERM, before)
 
+    assert store.saved[STREAM][0] == "7-0"
+
+
+def test_ctrl_c_stops_cleanly_and_saves_the_board() -> None:
+    store = _Store()
+    feed = _feed_with_tasks()
+    feed.resume(store, STREAM, lambda cursor: False)
+    before = signal.getsignal(signal.SIGTERM)
+    interrupted = False
+    try:
+        try:
+            serve_until_stopped(_InterruptedServer(), feed)  # type: ignore[arg-type]
+        except KeyboardInterrupt:
+            interrupted = True
+    finally:
+        signal.signal(signal.SIGTERM, before)
+
+    assert interrupted is False
     assert store.saved[STREAM][0] == "7-0"
 
 

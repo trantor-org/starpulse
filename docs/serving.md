@@ -8,7 +8,10 @@ holding the project name (that directory's name, the team its tasks are in), the
 Kanban view starts with no tasks: **New task**, at the top right beside the task count, opens a form for its title, description, priority, labels,
 milestone, assignee, dependencies and acceptance criteria and adds it to the first column, and
 the Admin view's **Tracker** card has **Connect a tracker**, which opens a modal with one collapsible row per tracker (the native board, Backlog.md, Jira), each expanding to
-numbered setup steps whose commands copy with one click (see [Connect a tracker](#connect-a-tracker)). If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
+numbered setup steps whose commands copy with one click (see [Connect a tracker](#connect-a-tracker)). The `starpulse` verbs, `task create`
+among them, are written for an agent to run ([the Agent CLI](cli.md)) and work the same typed by hand; the page and the verbs write the
+same board. While the board has no tasks the Star Map says so under the breadcrumb, naming `uvx starpulse task create "My first task"`
+and **New task** as the two ways to add one. If the directory has a Backlog.md project (`backlog/config.yml`), serve prints one
 line naming it and the `starpulse connect backlog` command that shows it instead; the page's
 snapshot carries the same line as `hint`, and Connect a tracker shows it with the command as a copyable block. StarPulse keeps its event log and history in
 `starpulse-history.sqlite` beside its config file, or in the working directory without one. The page has no sign-in and listens on this machine only (`127.0.0.1`): `--host 0.0.0.0` widens it to
@@ -17,7 +20,9 @@ start, run, history window) is refused unless it is a JSON request (`Content-Typ
 `Origin`, as a script or `curl` does, or names this server's own, so a web page on another site cannot write through your browser.
 
 `starpulse serve --port 8800 --hours 24` changes the port and how far back a task's latest move counts toward
-where it is drawn (6 hours by default). The Admin page's Server card overrides that window for everyone
+where it is drawn (6 hours by default). Serve binds its address before it starts anything: when another process holds the
+port, it exits 1 with one line naming `--host:--port` and saying to pass `--port`, and prints no startup line.
+The Admin page's Server card overrides that window for everyone
 viewing, and `starpulse-settings.json` beside the config keeps the override across restarts.
 
 ### Serve on a socket the service manager passes in
