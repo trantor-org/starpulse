@@ -107,8 +107,23 @@ def _launch(transport: Transport, dag: str, body: dict) -> str:
 
 
 def starter(transport: Transport) -> Callable[[str], str]:
-    """The adapter's start capability: asks Dagu to start a DAG and returns the run's id."""
-    return lambda dag: _launch(transport, dag, {})
+    """The adapter's start capability: asks Dagu to start a DAG and returns the run's id.
+
+    Dagu's `/start` hands a run to a worker without consulting `maxActiveRuns` (only its queue enforces it) or the
+    body's `singleton`, so a burst of starts runs them all at once. The start is refused with `StartFailedError`
+    while the DAG's running and queued runs have reached that limit; the caller drops it, as it does any refusal.
+    The check and the start run under one lock, so starts racing in this process (the trigger reader and a Run now)
+    cannot both find room.
+    """
+    lock = threading.Lock()
+
+    def start(dag: str) -> str:
+        with lock:
+            if (limit := _active_run_limit_reached(transport, dag)) is not None:
+                raise StartFailedError(f"{dag} is at its active run limit ({limit})")
+            return _launch(transport, dag, {})
+
+    return start
 
 
 #: What Dagu reads as one `NAME=value` word, with no quoting, substitution or splitting to get wrong.
@@ -170,6 +185,30 @@ def _kind(step: dict) -> str | None:
 _RUNNING, _QUEUED = 1, 5
 #: How far back `/dag-runs` looks for runs still in flight; without a `fromDate` it starts at UTC midnight.
 _IN_FLIGHT_LOOKBACK = 7 * 86400
+#: How far back a start looks for the DAG's active runs. It reads on every trigger entry, and Dagu answers a week's
+#: window about four times slower than a day's; a run older than this is not seen, so its DAG starts again.
+_START_LOOKBACK = 86400
+
+
+def _active_run_limit_reached(transport: Transport, dag: str) -> int | None:
+    """The DAG's `maxActiveRuns` when its running and queued runs have reached it, else None.
+
+    A limit or a count Dagu does not answer reads as not reached: the start goes ahead rather than being held back
+    on a guess, and a DAG with no positive limit is never held back.
+    """
+    name = urllib.parse.quote(dag)
+    status, detail = transport("GET", f"/dags/{name}", None)
+    limit = detail.get("dag", {}).get("maxActiveRuns")
+    if status != 200 or not isinstance(limit, int) or limit < 1:
+        return None
+    since = int(time.time()) - _START_LOOKBACK
+    active = 0
+    for state in (_RUNNING, _QUEUED):
+        status, listed = transport("GET", f"/dag-runs?name={name}&status={state}&fromDate={since}", None)
+        if status != 200:
+            return None
+        active += len(listed.get("dagRuns", []))
+    return limit if active >= limit else None
 
 
 def pools(base_url: str) -> list[dict]:

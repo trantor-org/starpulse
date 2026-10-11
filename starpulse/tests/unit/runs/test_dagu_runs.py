@@ -8,6 +8,7 @@ import re
 import threading
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 
@@ -665,7 +666,8 @@ def test_the_adapters_start_capability_is_the_starter_over_the_instances_url(mon
     monkeypatch.setattr("starpulse._internal.runs.dagu.connect", connect)
 
     assert start("http://dagu.test:8085")("healthcheck") == "run-9"
-    assert sent == [("http://dagu.test:8085", "/dags/healthcheck/start")]
+    assert {url for url, _ in sent} == {"http://dagu.test:8085"}
+    assert sent[-1][1] == "/dags/healthcheck/start"
 
 
 @pytest.fixture
@@ -770,7 +772,129 @@ def test_the_starter_asks_dagu_to_start_the_dag_and_returns_the_run_id() -> None
         return 200, {"dagRunId": "run-1"}
 
     assert starter(transport)("healthcheck") == "run-1"
-    assert sent == [("POST", "/dags/healthcheck/start", {})]
+    assert [call for call in sent if call[0] == "POST"] == [("POST", "/dags/healthcheck/start", {})]
+
+
+class _LimitedDagu:
+    """A Dagu transport that, like Dagu 2.18's distributed `/start`, never checks `maxActiveRuns` itself.
+
+    It reports the DAG's limit on the detail read and its running runs on the status-filtered listing, and every
+    `/start` it is sent becomes a running run until `finish` ends it.
+    """
+
+    def __init__(self, limit: int | None, *, queued: int = 0) -> None:
+        self.limit = limit
+        self.running: list[str] = []
+        self.queued = [f"queued-{n}" for n in range(queued)]
+        self.starts = 0
+
+    def finish(self) -> None:
+        self.running.clear()
+
+    def __call__(self, method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        if method == "POST":
+            self.starts += 1
+            self.running.append(f"run-{self.starts}")
+            return 200, {"dagRunId": self.running[-1]}
+        if path.startswith("/dag-runs?"):
+            runs = {"1": self.running, "5": self.queued}[re.search(r"status=(\d)", path).group(1)]
+            return 200, {"dagRuns": [{"name": "healthcheck", "dagRunId": run} for run in runs]}
+        return 200, {"dag": {} if self.limit is None else {"maxActiveRuns": self.limit}}
+
+
+def _burst(dagu_: _LimitedDagu, times: int) -> int:
+    """How many of `times` starts Dagu accepted, the rest refused with `StartFailedError`."""
+    begin = starter(dagu_)
+    accepted = 0
+    for _ in range(times):
+        try:
+            begin("healthcheck")
+        except StartFailedError:
+            continue
+        accepted += 1
+    return accepted
+
+
+def test_a_burst_of_starts_runs_the_dag_once_while_it_is_at_its_active_run_limit() -> None:
+    dagu_ = _LimitedDagu(limit=1)
+
+    assert _burst(dagu_, 20) == 1
+    assert dagu_.starts == 1
+
+
+def test_starts_racing_in_threads_still_run_the_dag_once() -> None:
+    # Dagu lists a run only once its start was answered, so a check that can interleave with another start lets both through.
+    class Slow(_LimitedDagu):
+        def __call__(self, method: str, path: str, body: dict | None) -> tuple[int, dict]:
+            if method == "GET" and path.startswith("/dag-runs?"):
+                time.sleep(0.01)
+            return super().__call__(method, path, body)
+
+    dagu_ = Slow(limit=1)
+    begin = starter(dagu_)  # one capability per instance, as the server holds it
+
+    def attempt(_: int) -> int:
+        try:
+            begin("healthcheck")
+        except StartFailedError:
+            return 0
+        return 1
+
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        accepted = sum(pool.map(attempt, range(20)))
+
+    assert accepted == 1
+    assert dagu_.starts == 1
+
+
+def test_the_dag_starts_again_once_its_run_has_ended() -> None:
+    dagu_ = _LimitedDagu(limit=1)
+    _burst(dagu_, 20)
+
+    dagu_.finish()
+
+    assert _burst(dagu_, 20) == 1
+    assert dagu_.starts == 2
+
+
+def test_a_start_is_refused_with_the_dag_and_its_limit_named() -> None:
+    dagu_ = _LimitedDagu(limit=1)
+    starter(dagu_)("healthcheck")
+
+    with pytest.raises(StartFailedError, match=re.escape("healthcheck is at its active run limit (1)")):
+        starter(dagu_)("healthcheck")
+
+
+def test_a_queued_run_counts_against_the_limit_with_the_running_ones() -> None:
+    dagu_ = _LimitedDagu(limit=2, queued=1)
+
+    assert _burst(dagu_, 5) == 1
+
+
+def test_a_dag_with_room_under_its_limit_starts_every_one_of_them_up_to_it() -> None:
+    dagu_ = _LimitedDagu(limit=3)
+
+    assert _burst(dagu_, 10) == 3
+
+
+@pytest.mark.parametrize("limit", [None, 0, -1])
+def test_a_dag_with_no_positive_limit_is_never_held_back(limit: int | None) -> None:
+    dagu_ = _LimitedDagu(limit=limit)
+
+    assert _burst(dagu_, 5) == 5
+
+
+def test_a_start_goes_ahead_when_dagu_cannot_say_how_many_runs_are_active() -> None:
+    posted: list[str] = []
+
+    def transport(method: str, path: str, body: dict | None) -> tuple[int, dict]:
+        if method == "POST":
+            posted.append(path)
+            return 200, {"dagRunId": "run-1"}
+        return 503, {}
+
+    assert starter(transport)("healthcheck") == "run-1"
+    assert posted == ["/dags/healthcheck/start"]
 
 
 @pytest.mark.parametrize(
