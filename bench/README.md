@@ -105,7 +105,8 @@ to 0.11% and opened every modal on time, and runs that waited 0.48% and up stall
 
 `--cpu-throttle N` slows the page's CPU N times once the board has painted (Chrome's `Emulation.setCPUThrottlingRate`), so
 a view switch, a stream event and a modal are timed on a machine N times slower than the bench's, as a viewer's laptop
-draws them. The first-paint row stays unthrottled. Pair it with `--viewer`:
+draws them. The first-paint row stays unthrottled, and its samples start after one discarded navigation so Chromium's
+process start is not counted as the page. Pair it with `--viewer`:
 
 ```sh
 uv run --group bench python bench/page_latency.py http://127.0.0.1:8766 --assets .tmp/page-build --viewer --cpu-throttle 4

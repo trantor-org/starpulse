@@ -500,6 +500,9 @@ def time_page(
             BUDGET_MS,
             note="navigation to the frame that draws the board (starpulse:board-drawn)",
         )
+        # Chromium's first navigation after launch pays browser/process start, not the page; discard it.
+        page.goto(base, wait_until="domcontentloaded")
+        page.wait_for_function("window.__sp && window.__sp.firstPaint !== null", timeout=60_000)
         for _ in range(max(1, samples // 4)):
             page.goto(base, wait_until="domcontentloaded")
             page.wait_for_function("window.__sp && window.__sp.firstPaint !== null", timeout=60_000)
