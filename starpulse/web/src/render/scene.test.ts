@@ -1,12 +1,9 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { build, Drawn, pickRows, SUN_R, routed, clip, curveDist, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
 import { ledgerLevel, type Level } from "./levels";
 import { merge, midnight, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
 import type { Cue, Dag, LedgerRow, Machine, Snapshot } from "../api";
-import { loadMachineUi } from "./lazyMachineUi";
-
-beforeAll(() => loadMachineUi());
 
 const dag = (name: string, steps: [string, string[]][] = []): Dag => ({
   name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "",

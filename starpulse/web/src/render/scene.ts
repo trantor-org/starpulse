@@ -3,10 +3,12 @@
 // DAGs as step-graph glyphs beside them, a state's lifecycle system as planets
 // round its machine, one machine's states, the DAGs level, and a fold of DAGs over the Board path they write.
 import { topOf, type Fold, type Level } from "./levels";
-import type { LedgerTop } from "../features/level/machineLedger";
-import type { LaneNode, LaneRow } from "../features/level/machineLanes";
-import type { Paging } from "../features/level/machinePaging";
-import { loadMachineUi, machineUi } from "./lazyMachineUi";
+import { ledgerTop, sizes as ledgerSizes, type LedgerTop } from "../features/level/machineLedger";
+import { nestsOf } from "../features/level/machineChain";
+import { laneRows, type LaneNode, type LaneRow } from "../features/level/machineLanes";
+import { laneContent } from "../features/level/machineScroll";
+import { shownRows, type Paging } from "../features/level/machinePaging";
+import { rankRows } from "../features/level/machineRows";
 import { ledgerOf, type Ledger, type Tie } from "../features/level/ledger";
 import type { Viewport } from "../features/level/ledgerScroll";
 import { countText, daily, HOUR, hosted, stale, stateCount, type Move, type Moves, type Sky } from "./sky";
@@ -1285,10 +1287,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
     return n;
   };
   function buildTop(name: string, like?: string) {
-    const flow = S.flows[name], mods = machineUi();
+    const flow = S.flows[name];
     if (!flow) return;
-    if (!mods) { void loadMachineUi(); return; }
-    const { ledgerTop, sizes: ledgerSizes, nestsOf, laneRows, laneContent, shownRows, rankRows } = mods;
     const agents = hosted(S, name, ctx.host), tasks = tasksOf({ agents });
     const frame = { W, H, scale: ctx.scale ?? 100, measure: ctx.measure ?? ((t: string, px: number) => t.length * (px * 0.56 + 0.6)), ...ctx.chrome };
     // a machine opened from a row stands as tall as the machine it was opened from

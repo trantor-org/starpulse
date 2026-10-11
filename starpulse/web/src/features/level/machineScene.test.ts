@@ -1,13 +1,10 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { build } from "../../render/scene";
-import { loadMachineUi } from "../../render/lazyMachineUi";
 import { merge, Moves } from "../../render/sky";
 import { paging, reveal } from "./machinePaging";
 import { revealGoal, windowOf } from "./machineScroll";
 import { stripScale, tickAt, ticks } from "./machineStrip";
 import type { FlowSnapshot, Machine, Snapshot } from "../../api";
-
-beforeAll(() => loadMachineUi());
 
 const NOW = 1_800_000_000;
 const machine = (...ids: string[]): Machine => ({ states: ids.map((id, i) => ({ id, name: id, initial: !i, final: i === ids.length - 1 })), transitions: ids.slice(1).map((t, i) => ({ source: ids[i], target: t, event: t })) });

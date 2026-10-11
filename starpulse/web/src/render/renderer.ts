@@ -44,9 +44,10 @@ import { esc, fanList, queueCell, startRun, taskLink, taskPanel } from "./panels
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
 import { ADMIN_DEFAULTS, type AdminPrefs } from "../features/admin/adminPrefs";
 import { clockHm, stamp } from "../shared/clock";
-import type { Paging } from "../features/level/machinePaging";
-import type { ScrollInput } from "../features/level/machineScroll";
-import { loadMachineUi, machineUi } from "./lazyMachineUi";
+import { sizes as ledgerSizes } from "../features/level/machineLedger";
+import { firstOpened, rowMeta } from "../features/level/machineRows";
+import { asked, arrived as pageArrived, failed, nextQuery, paging, reveal, RETRY, wantNext, type Paging } from "../features/level/machinePaging";
+import { dragTo, inputGoal, revealGoal, type ScrollInput } from "../features/level/machineScroll";
 import { tickAt } from "../features/level/machineStrip";
 import { heldBy, sessionsOf, traceSteps } from "../features/level/machineTrace";
 import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, retired, viewOf, viewSearch } from "../shared/nav";
@@ -253,15 +254,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const was = fit;
     laidScale = prefs().scale;
     const mp = S.machinePage;
-    if (mp?.open && pg?.top !== mp.open) { const m = machineUi(); if (m) pg = m.paging(mp, (n) => S!.flows[n]?.last ?? 0); else void loadMachineUi(); } // the snapshot names the first page; the pages loaded after it are kept across snapshots
+    if (mp?.open && pg?.top !== mp.open) pg = paging(mp, (n) => S!.flows[n]?.last ?? 0); // the snapshot names the first page; the pages loaded after it are kept across snapshots
     const held = scene?.top && (overRows() || lpin || pickedRow) ? scene.top.rows.map((r) => r.name) : undefined; // the pointer over the rows, a pinned path or a focused row holds their order
     // a pinned task narrows the rows to the machines it has a session in
     const only = lpin ? { task: lpin.label, machines: heldBy(S.flows, lpin.task, lpin.machines) } : undefined;
     scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held, paging: pg, only }, level());
-    if ((level().kind === "machine" || level().kind === "state") && !scene.top) {
-      void loadMachineUi().then(() => { if (!stopped) layout(keepView); });
-      return;
-    }
     if (scene.top) {
       scrollGoal = Math.min(scrollGoal, scene.top.max);
       scrollPos = Math.min(scrollPos, scene.top.max);
@@ -433,7 +430,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const onMove = (e: MouseEvent) => {
     const led = mled;
     if (thumbDrag && led?.thumb && scene?.top) {
-      scrollGoal = scrollPos = machineUi()!.dragTo(led.thumb, thumbDrag.g0, e.clientY - thumbDrag.y, scene.top.max);
+      scrollGoal = scrollPos = dragTo(led.thumb, thumbDrag.g0, e.clientY - thumbDrag.y, scene.top.max);
       return;
     }
     const fold = foldDrawing;
@@ -740,9 +737,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   const px = (n: number) => n / view.k;
   /** What the machine across a level's top is under (x, y): a task, a state or a flow line, each sized to grow with the text. */
   function hitTop(sc: Scene, x: number, y: number): Hover | null {
-    const led = ensureMled(), mui = machineUi();
-    if (!led || !mui) return null;
-    const { gs } = mui.sizes(prefs().scale), top = sc.top!;
+    const led = ensureMled();
+    if (!led) return null;
+    const { gs } = ledgerSizes(prefs().scale), top = sc.top!;
     for (const t of led.tasks) if (Math.hypot(t.x - x, t.y - y) < 11) return { kind: "ltask", o: t.o };
     if (y >= top.laneTop && y < top.laneBottom && x > top.metaX - 10 && x < top.x1 + 20) {
       const d = led.lane.find((q) => y >= q.y && y < q.y + q.row.h);
@@ -949,7 +946,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
           (oth.length ? `<br><span class="k">also on</span> ${oth.map((b) => `${esc(b.machine)} › ${esc(stName(b.machine, b.agent.state))}`).join(", ")}` : "") + `<div class="k">its path is traced in order · click to pin it</div>`;
       }
       case "row": {
-        const m = machineUi()!.rowMeta(sky.flows, h.o.name, scene!.top!.flow, T);
+        const m = rowMeta(sky.flows, h.o.name, scene!.top!.flow, T);
         return `<div class="k">${esc(m.tie.text)}</div><div class="n">${esc(h.o.name)}</div>${esc(m.sub)}<div class="k">${esc(m.status.text)}</div>`;
       }
       case "rstate": {
@@ -1057,7 +1054,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const rail = scene?.top ? railHit(fx - view.x, fy) : null;
     if (rail) return railClick(rail);
     if (h?.kind === "state" && scene?.top && h.o.flow === scene.top.flow && sky) {
-      const to = machineUi()!.firstOpened(sky.flows, scene.top.ranked, h.o.flow, h.o.id);
+      const to = firstOpened(sky.flows, scene.top.ranked, h.o.flow, h.o.id);
       if (to) revealRow(to); // a state of the top scrolls to the first machine it opens, and picks it out
       return to ? setFocus(to) : undefined;
     }
@@ -1275,7 +1272,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function scrollBy(input: ScrollInput): boolean {
     const top = scene?.top;
     if (!top) return false;
-    const to = machineUi()!.inputGoal(input, scrollGoal, { h: top.laneBottom - top.laneTop, fs: machineUi()!.sizes(prefs().scale).fs }, top.max);
+    const to = inputGoal(input, scrollGoal, { h: top.laneBottom - top.laneTop, fs: ledgerSizes(prefs().scale).fs }, top.max);
     if (to === null) return false;
     scrollGoal = to;
     return true;
@@ -1283,29 +1280,29 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** Scroll the machine's row to the middle of the lane, bringing in the older machines between it and the page held if it is not loaded. */
   function revealRow(name: string) {
     if (pg) {
-      pg = machineUi()!.reveal(pg, S!.flows[name]?.last ?? 0);
+      pg = reveal(pg, S!.flows[name]?.last ?? 0);
       layout(true);
     }
     const top = scene!.top!, i = top.rows.findIndex((r) => r.name === name);
-    if (i >= 0) scrollGoal = machineUi()!.revealGoal(top.rows, i, { h: top.laneBottom - top.laneTop, fs: machineUi()!.sizes(prefs().scale).fs }, top.max);
+    if (i >= 0) scrollGoal = revealGoal(top.rows, i, { h: top.laneBottom - top.laneTop, fs: ledgerSizes(prefs().scale).fs }, top.max);
     loop.wake();
   }
   /** The next 20 older machines: asked once for a footer in view, and again a few seconds after a failure. */
   function loadNext() {
     const p = pg;
     if (!p?.more || p.busy) return;
-    pg = machineUi()!.asked(p);
-    apiFetch(machineUi()!.nextQuery(p))
+    pg = asked(p);
+    apiFetch(nextQuery(p))
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((b: { machines: { name: string; last: number | null }[]; more: boolean }) => {
         if (pg?.top !== p.top) return;
-        pg = machineUi()!.arrived(pg, b.machines, b.more);
+        pg = pageArrived(pg, b.machines, b.more);
         layout(true);
         loop.wake();
       })
       .catch(() => {
-        if (pg?.top === p.top) pg = machineUi()!.failed(pg, Date.now() / 1000);
-        window.setTimeout(() => loop.wake(), machineUi()!.RETRY * 1000 + 100);
+        if (pg?.top === p.top) pg = failed(pg, Date.now() / 1000);
+        window.setTimeout(() => loop.wake(), RETRY * 1000 + 100);
       });
   }
   function railClick(r: Rail) {
@@ -1319,7 +1316,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const top = scene!.top!, d = scrollGoal - scrollPos;
     scrollPos = Math.abs(d) < 0.5 ? scrollGoal : scrollPos + d * 0.3;
     railMoving = scrollPos !== scrollGoal;
-    if (machineUi()!.wantNext(pg, top.more > 0 && top.laneTop + top.content - top.foot - scrollPos < top.laneBottom, T)) loadNext();
+    if (wantNext(pg, top.more > 0 && top.laneTop + top.content - top.foot - scrollPos < top.laneBottom, T)) loadNext();
   }
   let rowsHeld = false;
   const overRows = () => !!(mouse && scene?.top && mouse.oy > scene.top.laneTop && mouse.oy < scene.top.laneBottom);
@@ -1411,7 +1408,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       extrasCancel ??= prefetchBoardExtras();
       const afterPaint = () => {
         void loadLedgerPanel();
-        void loadMachineUi();
         void loadHudViews().then(() => { if (!stopped) publish(); });
       };
       if (typeof requestIdleCallback === "function") requestIdleCallback(afterPaint, { timeout: 2000 });
