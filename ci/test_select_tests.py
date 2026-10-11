@@ -134,6 +134,7 @@ def test_a_mapped_non_python_file_selects_the_tests_that_read_it(repo, path, tes
     "path",
     [
         "CONTRIBUTING.md",
+        "docs/development-loop.md",
         "docs/security.md",
         "LICENSE",
         ".github/ISSUE_TEMPLATE/bug.yml",

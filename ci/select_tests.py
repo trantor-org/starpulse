@@ -59,6 +59,7 @@ INERT = (
     "docs/adapters.md",
     "docs/cli.md",
     "docs/development.md",
+    "docs/development-loop.md",
     "docs/hub.md",
     "docs/security.md",
     "LICENSE",

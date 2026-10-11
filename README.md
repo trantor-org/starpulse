@@ -23,6 +23,7 @@
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/consumers.md">Consumers</a> ·
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/security.md">Security</a> ·
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/public-surface.md">Compatibility</a> ·
+  <a href="https://github.com/trantor-org/starpulse/blob/main/docs/development-loop.md">Development loop</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
