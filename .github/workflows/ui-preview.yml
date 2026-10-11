@@ -74,9 +74,11 @@ jobs:
         working-directory: starpulse/web
         run: pnpm install --frozen-lockfile && pnpm run build
 
-      # Writes to the public demo repository only.
+      # Writes to the public demo repository only. A missing App install on starpulse-demo must not leave this check
+      # FAILURE: wait_ci treats that as terminal even when the job has continue-on-error.
       - name: Mint demo repository token
         id: demo-token
+        continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
@@ -86,13 +88,15 @@ jobs:
           permission-contents: write
 
       - name: Publish main's live demo
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: >-
+          steps.demo-token.outcome == 'success' &&
+          github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           DEMO_TOKEN: ${{ steps.demo-token.outputs.token }}
         run: uv run python ci/ui_preview.py --main
 
       - name: Render and post the screenshots
-        if: github.event_name == 'pull_request'
+        if: steps.demo-token.outcome == 'success' && github.event_name == 'pull_request'
         env:
           # `gh pr comment --attach` is the only way to upload a screenshot into a comment, and it refuses an App or
           # Actions token ("unsupported authentication type"), so the comment is posted as RENOVATE_TOKEN's user, the
