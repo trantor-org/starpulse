@@ -1,7 +1,7 @@
 // @ts-expect-error Vitest runs this test in Node; production source stays browser-only.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { FACES, fontsReady, loadFonts } from "./fonts";
+import { BOARD_FACES, FACES, LATE_FACES, fontsReady, loadFonts } from "./fonts";
 
 const css = readFileSync(new URL("../style.css", import.meta.url), "utf8");
 
@@ -24,23 +24,31 @@ function fakeFonts(fail: string[] = []) {
   };
 }
 
-describe("the faces the canvas waits on", () => {
-  it("are the ones style.css declares, so the first frame measures and draws in the page's own fonts", () => {
+describe("the faces the page declares", () => {
+  it("split into the board's first-paint faces and the ones loaded after the board draws", () => {
     const declared = [...css.matchAll(/@font-face\s*{[^}]*font-family:\s*"([^"]+)"[^}]*font-weight:\s*(\d+)/g)].map(([, family, weight]) => `${weight} ${family}`);
     expect(declared.length).toBeGreaterThan(0);
-    expect(FACES.map((f) => f.replace(/ \d+px /, " ").replace(/"/g, "")).sort()).toEqual(declared.sort());
+    const named = (faces: readonly string[]) => faces.map((f) => f.replace(/ \d+px /, " ").replace(/"/g, "")).sort();
+    expect([...named(BOARD_FACES), ...named(LATE_FACES)].sort()).toEqual(declared.sort());
+    expect(named(FACES)).toEqual(declared.sort());
+  });
+
+  it("waits only on the Inter faces the canvas's first draw measures, not JetBrains or Inter 500", () => {
+    expect([...BOARD_FACES]).toEqual(["300 12px Inter", "400 12px Inter"]);
+    expect(LATE_FACES.some((f) => f.includes("JetBrains"))).toBe(true);
+    expect(LATE_FACES.some((f) => f.startsWith("500 "))).toBe(true);
   });
 });
 
 describe("fontsReady", () => {
-  it("stays pending until every face has loaded", async () => {
+  it("stays pending until every first-paint face has loaded, and does not ask for the late faces", async () => {
     const fonts = fakeFonts();
     const asked: string[] = [];
     const set = { load: (face: string) => (asked.push(face), fonts.set.load(face)) } as Pick<FontFaceSet, "load">;
     let done = false;
     const ready = fontsReady(set).then(() => (done = true));
     await Promise.resolve();
-    expect(asked).toEqual([...FACES]);
+    expect(asked).toEqual([...BOARD_FACES]);
     expect(done).toBe(false);
     fonts.release();
     await ready;
@@ -48,7 +56,7 @@ describe("fontsReady", () => {
   });
 
   it("settles when a face fails to load, so a missing font draws in the fallback rather than leaving the canvas blank", async () => {
-    const fonts = fakeFonts([FACES[0]]);
+    const fonts = fakeFonts([BOARD_FACES[0]]);
     const ready = fontsReady(fonts.set);
     fonts.release();
     await expect(ready).resolves.toBeUndefined();

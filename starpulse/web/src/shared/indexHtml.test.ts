@@ -21,18 +21,17 @@ describe("index.html's first paint", () => {
     expect(page).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
   });
 
-  it("preloads, from its own origin, each face the first frame draws", () => {
+  it("preloads, from its own origin, only the Inter faces the Board's first canvas draw measures", () => {
     const preloaded = links().filter((l) => l.rel === "preload" && l.as === "font");
     for (const l of preloaded) {
       expect(l.type).toBe("font/woff2");
       expect(l).toHaveProperty("crossorigin"); // a font fetch is anonymous-CORS, so a preload without it is fetched twice
       expect(l.href).not.toMatch(/^(https?:)?\/\//);
     }
+    // Inter 500 and JetBrains Mono load after starpulse:board-drawn (loadLateFonts), so they are not preloaded here
     expect(preloaded.map((l) => l.href?.split("/").pop()?.replace(/\.woff2$/, "")).sort()).toEqual([
       "inter-latin-300-normal",
       "inter-latin-400-normal",
-      "inter-latin-500-normal",
-      "jetbrains-mono-latin-400-normal",
     ]);
   });
 });
