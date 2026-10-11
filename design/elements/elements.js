@@ -173,5 +173,30 @@ function bodies() {
   });
 }
 
+/** The phone-width bar at 390 px. Its rules sit under the stylesheet's 900 px query, which this wide sheet never meets, so each frame
+ *  carries the page's stylesheet (the link, or the style a built copy inlines it as; the sheet's own layout block is the last style). */
+function phoneBars() {
+  const own = [...document.head.querySelectorAll("style")].at(-1);
+  const sheets = [...document.head.querySelectorAll('link[rel="stylesheet"], style')].filter((n) => n !== own).map((n) => n.outerHTML).join("");
+  const tab = (label, glyph, on) => `<button${on ? ' class="on" aria-current="page"' : ""}>${glyph}<span>${label}</span></button>`;
+  const g = (cls, size, view, body) => `<svg class="g ${cls}" width="${size}" height="${size}" viewBox="${view}" aria-hidden="true">${body}</svg>`;
+  const glyph = {
+    star: g("", 16, "0 0 24 24", '<circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/><ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" stroke-width="1.5"/><circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" stroke="none"/>'),
+    kanban: g("kb", 14, "0 0 12 12", '<rect x="1" y="1" width="2.5" height="10" rx=".6"/><rect x="4.75" y="1" width="2.5" height="7" rx=".6"/><rect x="8.5" y="1" width="2.5" height="4.5" rx=".6"/>'),
+    dags: g("dg", 14, "0 0 12 12", '<path d="M2 9.5 5 3.2 8.6 5.4 10.4 2"/><circle cx="2" cy="9.5" r="1.3"/><circle cx="5" cy="3.2" r="1.3"/><circle cx="8.6" cy="5.4" r="1.1"/><circle cx="10.4" cy="2" r=".9"/>'),
+    flow: g("", 14, "0 0 12 12", '<ellipse cx="6" cy="6" rx="5" ry="2.4"/><circle cx="6" cy="6" r="1.2"/>'),
+    admin: g("", 14, "0 0 12 12", '<circle cx="6" cy="6" r="1.8"/><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1"/>'),
+    more: g("", 16, "0 0 16 16", '<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>'),
+  };
+  for (const frame of document.querySelectorAll("iframe.phone")) {
+    const fs = Number(frame.dataset.fs);
+    frame.style.height = `${38 + 16 * fs}px`;
+    frame.srcdoc = `<!doctype html><html style="--fs: ${fs}"><head><meta charset="utf-8">${sheets}</head><body><nav id="pnav" aria-label="Views">` +
+      tab("Star Map", glyph.star) + tab("Kanban", glyph.kanban, true) + tab("DAGs", glyph.dags) + ("flow" in frame.dataset ? tab("Flow", glyph.flow) : "") + tab("Admin", glyph.admin) +
+      `<button class="more" aria-label="More">${glyph.more}<span>More</span><i class="dot on"></i></button></nav></body></html>`;
+  }
+}
+
 palette(document.getElementById("palette"));
 bodies();
+phoneBars();

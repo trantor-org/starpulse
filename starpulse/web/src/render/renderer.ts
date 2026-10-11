@@ -245,7 +245,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const dpr = devicePixelRatio || 1;
     ({ left: L, width: W } = canvasSpace(innerWidth, navW(), railW()));
     FW = W;
-    H = innerHeight;
+    // the view bar along the bottom edge at phone width is not canvas
+    H = innerHeight - (document.getElementById("pnav")?.offsetHeight ?? 0);
     cv.width = W * dpr;
     cv.height = H * dpr;
     cv.style.left = `${L}px`;
