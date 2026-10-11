@@ -6,9 +6,12 @@ row per task it worked, in the order it reached them.
 
 The task a signal belongs to is the one the export's launch branch names under the board's `TaskKeys`, until a `claim`
 signal (a command or a `Skill` call the `[analytics]` `claims` patterns matched) or a `branch` signal (a shell's `git
-switch` or `git checkout`) names another task. A switch to a ref that names no task leaves the task as it was, so `git
-checkout -- file` or a trip back to `main` does not drop a session's work from its slice. A session that no branch or
-claim ties to a task is a row with `task` None, counted in session health and in no slice.
+switch` or `git checkout`) names another task. A launch branch that names no task leaves the session's first signals
+with none to hold, so they belong to the first task a claim or a branch signal names: a session's work before its claim
+is that task's work, as the transcript-mined `session_signals` count it, and no `task` None row precedes it. A switch to
+a ref that names no task leaves the task as it was, so `git checkout -- file` or a trip back to `main` does not drop a
+session's work from its slice. A session that no branch or claim ties to a task is a row with `task` None, counted in
+session health and in no slice.
 
 A turn is every signal that shares a `prompt.id`; its end is its last signal, whichever order the exports arrived in.
 A signal with no id (Codex, rows stored before ids were kept) belongs to the turn of the prompt before it. Time is read
@@ -22,7 +25,7 @@ from the events' own durations and from the turns' edges, never from the gaps be
 
 A prompt is `injected` when its label says so and `human` otherwise, so a Codex prompt, which is unlabelled, is human.
 `operator_prompts` are the human prompts after a task's claim: after the claim signal that brought the session to the
-task, or after the session's first prompt for the task it launched on. `interrupts` are the turns Claude Code started
+task, or after the session's first prompt for the task it launched on or, on a task-less launch branch, claimed first. `interrupts` are the turns Claude Code started
 and never closed with a reply (one still running counts until its reply lands) and the interrupted turns Codex
 exports. `steps_before_edit` is the model requests before the task's first successful file write, None until it has
 one. `complete` is a session that loaded the `[analytics]` `completion_skill` and then ran the completion call for the
@@ -150,12 +153,17 @@ def grouped(found: Iterable[Signal]) -> list[list[Signal]]:
 def attributed(ordered: list[Signal], keys: TaskKeys | None) -> Iterator[tuple[str | None, Signal]]:
     """Each signal of one session, oldest first, with the task it belongs to (see the module docstring)."""
     task = keys.for_branch(ordered[0].branch) if keys else None
+    tasks: list[str | None] = []
     for s in ordered:
         if s.kind == "claim" and keys and keys.matches(s.name):
             task = s.name
         elif s.kind == "branch" and keys and (named := keys.for_branch(s.name)) is not None:
             task = named
-        yield task, s
+        tasks.append(task)
+    # A task, once named, is never unnamed, so the signals still None are those before the first naming signal.
+    first = next((t for t in tasks if t is not None), None)
+    for task, s in zip(tasks, ordered, strict=True):
+        yield task or first, s
 
 
 def _turn_ids(ordered: list[Signal]) -> list[str]:
