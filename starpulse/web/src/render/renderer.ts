@@ -13,7 +13,7 @@ import { RunEvents, type RunLine } from "../features/fanout/fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { DAG_COLOR, EXT, OFF, TRACE, drawing, ease, easeO, rgba, tierColor, type DrawCtx, type Hover, type LTask } from "./draw";
 import { animating, frameLoop, framePace } from "./idle";
-import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
+import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, topOf, type Level, type Path } from "./levels";
 import { optionalSteps } from "../features/level/ledger";
 import type { DoctorBox, PanelCtx } from "../features/level/ledgerPanel";
 type LedgerPanel = typeof import("../features/level/ledgerPanel");
@@ -258,7 +258,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     // a pinned task narrows the rows to the machines it has a session in
     const only = lpin ? { task: lpin.label, machines: heldBy(S.flows, lpin.task, lpin.machines) } : undefined;
     scene = build({ S, moves, W: FW, H, T, host: hostOf(path), pages, ease: sized, routes: bends, scale: laidScale, measure: nameWidth, chrome: chromeBoxes(), held, paging: pg, only }, level());
-    if ((level().kind === "machine" || level().kind === "state") && !scene.top) {
+    const lv = level();
+    if (!scene.top && (lv.kind === "machine" || (lv.kind === "state" && topOf(S!.subs, lv)))) {
       void loadMachineUi().then(() => { if (!stopped) layout(keepView); });
       return;
     }
