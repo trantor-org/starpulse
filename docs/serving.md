@@ -458,7 +458,8 @@ entry, coloured by the state it was entered from (amber for a workflow launch), 
 stretch, and a click on a tick scrolls to its row. A click on a state of the top scrolls to the first machine it
 opens and picks it out; Escape steps back from the card, then the picked row, then the scroll to newest. A click on a task pins it and narrows the rows and the strip to
 the machines it holds a session in (`N machines holding <task>`); closing its card restores every row. A demo page (`?demo`) takes `&many=N` to grow the machines under
-the In Progress one to N, enough to scroll.
+the In Progress one to N, enough to scroll, and `&board=no-archived`, `no-attention`, `unlisted` or `fourteen` to reshape the Board for a Star Map
+review: a state taken out, a state no tier names, or fourteen states over thirty-three paths.
 
 ## Connect a tracker
 

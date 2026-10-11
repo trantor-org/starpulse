@@ -4,7 +4,7 @@ import { demoLevel } from "./demoLevel";
 import { arriveMerge, demoContract, demoLedger, demoPins, demoStrip, scenarioOf } from "./demoLedger";
 import { PAGE } from "../features/level/ledgerScroll";
 import { MERGE_EVENT } from "../features/level/ledger";
-import { padMachines } from "./demoMachines";
+import { padMachines, shapeBoard } from "./demoMachines";
 import { rankRows } from "../features/level/machineRows";
 import { columnsOf } from "../features/kanban/kanban";
 import type { LaneStep } from "../features/level/trace";
@@ -542,5 +542,6 @@ export const demoServer = (): DemoServer | null => {
   const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
   const autopilot = (["off", "over", "empty", "refused", "down"] as const).find((state) => state === query.get("autopilot"));
   const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
-  return fixture ? (server ??= new DemoServer(many ? padMachines(fixture, many) : fixture, undefined, refuseEdits, forward, query.get("evaluator") === "error", autopilot)) : null;
+  const shaped = fixture ? shapeBoard(fixture, query.get("board")) : null; // `?board=no-archived|no-attention|unlisted|fourteen` reshapes the Board for a Star Map review
+  return shaped ? (server ??= new DemoServer(many ? padMachines(shaped, many) : shaped, undefined, refuseEdits, forward, query.get("evaluator") === "error", autopilot)) : null;
 };
