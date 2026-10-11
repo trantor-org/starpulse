@@ -288,6 +288,21 @@ describe("a Board path's route", () => {
     expect(routed(a, b, c0, [a, b, by(4)], new Drawn(), sky, held).c).toEqual(held);
     expect(routed(a, b, c0, [a, b, by(30)], new Drawn(), sky, held).c).toEqual(c0);
   });
+  it("keeps the bend it held while a name widening toward it stays off the path, so a count gaining a digit never hops it to another spot", () => {
+    const name = { of: "ready", x0: 380, y0: 280, x1: 420, y1: 320 }, first = routed(a, b, c0, [a, b], new Drawn(), sky, undefined, [name]);
+    const gap = Math.min(...sample(first, 400).map((p) => Math.hypot(Math.max(name.x0 - p.x, 0, p.x - name.x1), Math.max(name.y0 - p.y, 0, p.y - name.y1))));
+    const wider = (by: number) => [{ of: "ready", x0: name.x0 - by, y0: name.y0 - by, x1: name.x1 + by, y1: name.y1 + by }];
+
+    expect(routed(a, b, c0, [a, b], new Drawn(), sky, first.c, wider(gap - 1)).c).toEqual(first.c);
+    expect(routed(a, b, c0, [a, b], new Drawn(), sky, first.c, wider(gap + 2)).c).not.toEqual(first.c);
+  });
+  it("keeps the bend it held while a state growing toward it leaves three quarters of its clearance, so a ring of tasks filling never hops it", () => {
+    const o = (R: number) => at("ready", 400, 300, R), first = routed(a, b, c0, [a, b, o(40)], new Drawn(), sky);
+    const room = Math.min(...sample(first, 400).map((p) => Math.hypot(p.x - 400, p.y - 300))) - 40;
+
+    expect(routed(a, b, c0, [a, b, o(40 + room - 16)], new Drawn(), sky, first.c).c).toEqual(first.c);
+    expect(routed(a, b, c0, [a, b, o(40 + room - 12)], new Drawn(), sky, first.c).c).not.toEqual(first.c);
+  });
 
   it("bends round a name printed in its way, and where no bend clears every name crosses the fewest it can", () => {
     const name = { of: "ready", x0: 380, y0: 280, x1: 420, y1: 320 }, all = { of: "sky", x0: 0, y0: 0, x1: 800, y1: 600 };
@@ -486,7 +501,7 @@ describe("a Board path's route search", () => {
     const crossings = (e: Curve) => points(e, 30).filter((p) => drawn.near(p.x, p.y)).length;
     const straight = shape(c0);
     if (!over(straight, held ? 36 : 20)) return straight;
-    if (held && !over(shape(held))) return shape(held);
+    if (held && !over(shape(held), 15)) return shape(held);
     const spots: { c: Pt; bend: number }[] = [];
     for (let x = 10; x <= sky.x - 10; x += 40) for (let y = 10; y <= sky.y - 10; y += 40) spots.push({ c: { x, y }, bend: Math.hypot(x - c0.x, y - c0.y) / 200 });
     let best = straight, cost = over(straight) + 0.05 * crossings(straight);

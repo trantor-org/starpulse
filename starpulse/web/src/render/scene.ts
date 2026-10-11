@@ -535,7 +535,8 @@ const meets = (a: number, b: number, c: number, a2: number, b2: number, c2: numb
  * sky; each spot costs its bend from `c0` and what its path runs over, counted as the bend it is worth to avoid: NAMED for a name, SKIM
  * for a state's footprint, THROUGH for what a state draws, and CROSS for each point of it on a path already drawn. The cheapest spot
  * wins, so a path that can clear everything takes the least bend that does, and one that cannot runs over the least it can. `sky` bounds
- * the control point. `held` is the bend the path took last, which it keeps while that still clears.
+ * the control point. `held` is the bend the path took last, which it keeps while that stays out of every name and CLEAR - NAME_CLEAR from
+ * every other footprint.
  */
 export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn, sky: Pt, held?: Pt, names: NameBox[] = []): Curve {
   const others = all.filter((g) => g !== a && g !== b), from = rimOf(a, rowsOf(a, names)), to = rimOf(b, rowsOf(b, names));
@@ -579,11 +580,11 @@ export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn
     }
     return n;
   };
-  // a bent path keeps its bend while it clears, and straightens only once the straight path clears by HOLD more, so a state growing and
-  // shrinking across the line never flips it back and forth
+  // a bent path straightens only once the straight path clears by HOLD more, and keeps its bend while that clears by NAME_CLEAR less than a
+  // new bend must, so a count gaining a digit or a ring of tasks filling beside the path never hops it to another spot and back
   const straight = shape(c0);
   if (!over(straight, held ? CLEAR + HOLD : CLEAR)) return straight;
-  if (held && !over(shape(held))) return shape(held);
+  if (held && !over(shape(held), CLEAR - NAME_CLEAR)) return shape(held);
   // the spots are tried nearest first, equals in sky order, until the next is further than the best costs. That is a few dozen in for most
   // paths, so the search takes the spots a band of bend at a time (each band twice as wide as the last, so a spot is measured once more at
   // most) and sorts only the band it reaches
