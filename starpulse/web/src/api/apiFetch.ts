@@ -1,4 +1,4 @@
-import { demoServer } from "../demo/demo";
+import { demoServer } from "../demo/host";
 
 /** A write says it is JSON, body or none: starpulse._internal.server.server refuses any other, which a web page on another site cannot send without asking first. */
 const asJson = (init?: RequestInit): RequestInit | undefined => {

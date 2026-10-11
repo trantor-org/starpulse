@@ -8,7 +8,7 @@
 // zooms about the cursor between the level's fit and eight times it, and a drag
 // pans only while zoomed in. The path and each level's zoom are kept per browser.
 import { apiFetch } from "../api/apiFetch";
-import { demoLive, demoStep } from "../demo/demo";
+import { embedded } from "../demo/host";
 import { RunEvents, type RunLine } from "../features/fanout/fanout";
 import type { FeedLine, HudState, HudStore } from "./hud";
 import { DAG_COLOR, EXT, OFF, TRACE, drawing, ease, easeO, rgba, tierColor, type DrawCtx, type Hover, type LTask } from "./draw";
@@ -26,8 +26,7 @@ import {
 } from "./scene";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
 import { kanbanTasks, type KanbanTask } from "../features/kanban/kanban";
-import { reloadWhenIdle } from "../api/reload";
-import { embedded, openStream, type Link } from "../api/stream";
+import { openStream, type Link } from "../api/stream";
 import { UPDATING, linkHud } from "./connection";
 import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
@@ -185,6 +184,13 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // A self-contained demo page: its embedded snapshot already holds every flow, and its address is not the server's.
   const fixture = embedded() !== null;
+  // `?demo` and the embedded fixture load the walk helpers on demand; a served page never parses that tree for first paint.
+  let demoWalk: { live: (prev: Snapshot, next: Snapshot) => Snapshot; step: (prev: Snapshot) => Snapshot } | null = null;
+  if (demo || fixture) {
+    void import("../demo/demo").then((m) => {
+      demoWalk = { live: m.demoLive, step: m.demoStep };
+    });
+  }
   const level = (): Level => path[path.length - 1];
   const stateName = (id: string) => S?.board.machine.states.find((s) => s.id === id)?.name || id;
   const EVENTS = () => moves.events;
@@ -438,8 +444,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** Each connect's snapshot and every delta after it, drawn at once. */
   function onSnapshot(next: Snapshot, kind?: Delta["kind"]) {
     const first = !S;
-    if (demo && snap) {
-      snap = demoLive(snap, next);
+    if (demo && snap && demoWalk) {
+      snap = demoWalk.live(snap, next);
       return;
     }
     if (kind === "ledgers" && S) return void applyLedgers(next);
@@ -457,13 +463,15 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function onBuild(id: string) {
     updating = true;
     cancelReload?.();
-    cancelReload = reloadWhenIdle(id);
+    void import("../api/reload").then(({ reloadWhenIdle }) => {
+      if (!stopped && updating) cancelReload = reloadWhenIdle(id);
+    });
     hud.set({ note: UPDATING });
   }
   const connection = { snapshot: onSnapshot, live: onLive, link: onLink, build: onBuild };
   const demoTick = () => {
-    if (stopped || !snap) return;
-    apply(demoStep(snap));
+    if (stopped || !snap || !demoWalk) return;
+    apply(demoWalk.step(snap));
     timer = window.setTimeout(demoTick, 600 + Math.random() * 1200);
   };
   function apply(next: Snapshot) {
