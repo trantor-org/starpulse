@@ -91,6 +91,26 @@ it was and whether to count it, and a third holds a command:
   `[heredoc length=<bytes> sha256=<hex>]` before the function sees it, and a function that raises keeps no command. No
   exit status is stored, because the export carries none; `ok` is the result's `success` and `seconds` its duration.
 
+## Read each step of a session
+
+`GET /api/analytics/steps[?hours=N]` (168 hours by default) lists every model request of the window, oldest first, so a
+reader can charge tokens to the skill in force and the work done. The body is `{now, window_s, steps}`; a step is
+`{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, counts and names only:
+
+- `task` is the one the session's rows name for that request; `origin` is `main`, `side` (a subagent) or `auxiliary`.
+- `activities` and `keys` hold one entry per tool call the step made, in order: the activities the call performed (as
+  under [Find missed skill loads](#find-missed-skill-loads-and-recurring-work)) and its key, the shell command the
+  `--redactor` left, else the tool's name. A command is therefore present only after the configured filter.
+- `skill` is the skill most recently loaded in the session, counting a load the step itself made, and `none` before
+  any load. A session that began before the window reads `none` until its first load inside it.
+- `tokens` is `{input, output, cache_read, cache_write, reasoning}`; `captured` is false for every Codex step.
+
+The export's order cannot say which request issued a call, because Claude Code logs a request when its stream ends and
+starts a tool before then. A call belongs to the latest request that started (its time less its duration) at or before
+the call started, and one that started before every request of the window belongs to the first, so steps of
+subagents that overlap can take each other's calls. A server with no telemetry stream is 501 and a window that is no
+positive number 400. `starpulse analytics steps [--hours]` reads it.
+
 ## Find missed skill loads and recurring work
 
 The same signals say what each session did, not only how long it took. A tool call is lifted to *activities* with no

@@ -24,6 +24,9 @@ internal and can change in any release.
   exports.
 - `GET /api/analytics/sessions` and its body in `api.schema.json`: session and slice health from those exports (see
   [Connect sources](sources.md#measure-session-and-slice-health)).
+- `GET /api/analytics/steps` and its body in `api.schema.json`: one record per model request, with the skill in
+  force, the activities and keys of its tool calls and its tokens (see
+  [Connect sources](sources.md#read-each-step-of-a-session)), and `starpulse analytics steps [--hours]` that reads it.
 - `starpulse search QUERY` and its route `GET /api/search?q=`: the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
 - `GET /api/analytics/missed-loads` and `GET /api/analytics/trace-clusters` and their bodies in `api.schema.json`:
   the skills a session did not load for work that should have loaded them, and the work that recurs across sessions

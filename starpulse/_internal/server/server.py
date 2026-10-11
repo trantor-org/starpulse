@@ -93,6 +93,14 @@ GET /api/analytics/sessions[?hours=N]
                    rejections, tokens, cost and agent, operator-wait and idle seconds) and `slices` (per task, the
                    sessions that worked it with its interventions, `escalated` and `clean`). A `hours` that is no
                    positive number is 400, a server with no telemetry log 501 and one that cannot read it 503
+GET /api/analytics/steps[?hours=N]
+                   every model request of those exports over the last `hours`, default 168, oldest first, as
+                   `{now, window_s, steps}` (`steps.session_steps`): each step is `{harness, session, task, at,
+                   model, origin, skill, activities, keys, tokens, captured}`, `skill` the skill most recently
+                   loaded in its session counting the step's own (`none` before any), `activities` and `keys` one
+                   entry per call it made (a key is the redacted shell command, else the tool's name) and
+                   `captured` false for Codex. A `hours` that is no positive number is 400, a server with no
+                   telemetry log 501 and one that cannot read it 503
 GET /api/level[?hours=N]
                    the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
                    last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
@@ -244,6 +252,7 @@ from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_ana
 from starpulse._internal.level import analytics
 from starpulse._internal.level.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
 from starpulse._internal.level.sessions import session_health, slice_health
+from starpulse._internal.level.steps import session_steps
 from starpulse._internal.level.traces import Case, cases as trace_cases, missed_loads
 from starpulse.contracts.adapters import TaskKeys
 from starpulse._internal.cli import doctor
@@ -499,6 +508,24 @@ def sessions_response(
     rows = session_health(found, keys, analytics)
     body = {"now": now, "window_s": window * 3600, "sessions": rows, "slices": slice_health(rows)}
     return encode("sessions", body), 200
+
+
+def steps_response(
+    telemetry: TelemetryLog | None, query: dict[str, list[str]], keys: TaskKeys | None, now: float
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/steps`: every model request of the signals from the last `hours`
+    (default 168) as of `now`. An instance that receives no harness telemetry is 501, a log that cannot be read 503."""
+    window = _hours(query, "hours", _HEALTH_HOURS)
+    if window is None:
+        return _error("hours must be a positive number"), 400
+    if telemetry is None:
+        return _error("this instance receives no harness telemetry, so it cannot report session steps"), 501
+    try:
+        found = telemetry.read(now - window * 3600)
+    except Exception as exc:  # the event log's database is unreachable
+        logger.warning("steps: telemetry unreadable: %s", exc)
+        return _error("the telemetry log cannot be read"), 503
+    return encode("session_steps", {"now": now, "window_s": window * 3600, "steps": session_steps(found, keys)}), 200
 
 
 #: What `/api/analytics/missed-loads` lists per skill, and `/api/analytics/trace-clusters` samples per cluster.
@@ -1106,6 +1133,8 @@ def request_handler(
                 self._send(*health_response(history, parse_qs(url.query), feed.machines, clock()))
             elif url.path == "/api/analytics/sessions":
                 self._send(*sessions_response(telemetry, parse_qs(url.query), feed.keys, clock(), analytics))
+            elif url.path == "/api/analytics/steps":
+                self._send(*steps_response(telemetry, parse_qs(url.query), feed.keys, clock()))
             elif url.path == "/api/analytics/missed-loads":
                 self._send(
                     *missed_loads_response(

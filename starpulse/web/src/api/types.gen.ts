@@ -69,6 +69,7 @@ export interface ApiContract {
     | ForwardRequest
   )[];
   searchResults: SearchResults;
+  sessionSteps: SessionSteps;
   sessions: Sessions;
   snapshot: Snapshot;
   taskRecord: TaskRecord;
@@ -1398,6 +1399,52 @@ export interface SearchHit {
   title: string;
 }
 /**
+ * `GET /api/analytics/steps`: every model request of a window, oldest first.
+ */
+export interface SessionSteps {
+  now: number;
+  steps: SessionStep[];
+  window_s: number;
+}
+/**
+ * One model request of a harness session, with the skill in force when it ran and the calls it made.
+ */
+export interface SessionStep {
+  /**
+   * What each call it made performed, in order, with no arguments.
+   */
+  activities: string[];
+  /**
+   * When the request was logged, in epoch seconds.
+   */
+  at: number;
+  /**
+   * False for a harness the steps-per-completion ledger does not cover (Codex).
+   */
+  captured: boolean;
+  harness: string;
+  /**
+   * One per call: the shell command the instance's redactor left, else the tool's name.
+   */
+  keys: string[];
+  model: string;
+  origin: "main" | "side" | "auxiliary";
+  session: string;
+  /**
+   * The skill most recently loaded in the session, counting this step's own; `none` before any.
+   */
+  skill: string;
+  task: string | null;
+  tokens: TokenCounts;
+}
+export interface TokenCounts {
+  cache_read: number;
+  cache_write: number;
+  input: number;
+  output: number;
+  reasoning: number;
+}
+/**
  * `GET /api/analytics/sessions`: session and slice health over a window.
  */
 export interface Sessions {
@@ -1446,13 +1493,6 @@ export interface SessionHealth {
   tools: {
     [k: string]: number;
   };
-}
-export interface TokenCounts {
-  cache_read: number;
-  cache_write: number;
-  input: number;
-  output: number;
-  reasoning: number;
 }
 /**
  * What the sessions that worked one task did together.

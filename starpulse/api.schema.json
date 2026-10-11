@@ -5038,6 +5038,108 @@
       "title": "SessionHealth",
       "type": "object"
     },
+    "SessionStep": {
+      "additionalProperties": false,
+      "description": "One model request of a harness session, with the skill in force when it ran and the calls it made.",
+      "properties": {
+        "activities": {
+          "description": "What each call it made performed, in order, with no arguments.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "at": {
+          "description": "When the request was logged, in epoch seconds.",
+          "type": "number"
+        },
+        "captured": {
+          "description": "False for a harness the steps-per-completion ledger does not cover (Codex).",
+          "type": "boolean"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "keys": {
+          "description": "One per call: the shell command the instance's redactor left, else the tool's name.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "origin": {
+          "enum": [
+            "main",
+            "side",
+            "auxiliary"
+          ],
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        },
+        "skill": {
+          "description": "The skill most recently loaded in the session, counting this step's own; `none` before any.",
+          "type": "string"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "$ref": "#/$defs/TokenCounts"
+        }
+      },
+      "required": [
+        "harness",
+        "session",
+        "task",
+        "at",
+        "model",
+        "origin",
+        "skill",
+        "activities",
+        "keys",
+        "tokens",
+        "captured"
+      ],
+      "title": "SessionStep",
+      "type": "object"
+    },
+    "SessionSteps": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/steps`: every model request of a window, oldest first.",
+      "properties": {
+        "now": {
+          "type": "number"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/SessionStep"
+          },
+          "type": "array"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "steps"
+      ],
+      "title": "SessionSteps",
+      "type": "object"
+    },
     "Sessions": {
       "additionalProperties": false,
       "description": "`GET /api/analytics/sessions`: session and slice health over a window.",
@@ -6707,6 +6809,9 @@
     "searchResults": {
       "$ref": "#/$defs/SearchResults"
     },
+    "sessionSteps": {
+      "$ref": "#/$defs/SessionSteps"
+    },
     "sessions": {
       "$ref": "#/$defs/Sessions"
     },
@@ -6740,6 +6845,7 @@
     "searchResults",
     "health",
     "sessions",
+    "sessionSteps",
     "missedLoads",
     "traceClusters",
     "level",
