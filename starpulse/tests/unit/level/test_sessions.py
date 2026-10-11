@@ -202,7 +202,18 @@ def test_a_slice_adds_up_the_sessions_that_worked_its_task() -> None:
         sig("prompt", 0, session="b", harness=CODEX, branch="claude/task-4-x"),
         sig("prompt", 30, session="b", harness=CODEX, branch="claude/task-4-x"),
         sig("interrupt", 31, session="b", harness=CODEX, branch="claude/task-4-x"),
-        sig("request", 60, session="b", harness=CODEX, model="n", effort="high", input=1, output=2, cost=None, seconds=31),
+        sig(
+            "request",
+            60,
+            session="b",
+            harness=CODEX,
+            model="n",
+            effort="high",
+            input=1,
+            output=2,
+            cost=None,
+            seconds=31,
+        ),
         sig("decision", 61, session="b", harness=CODEX, name="x", ok=False, detail="hook", branch="claude/task-4-x"),
     ]
     other = [sig("prompt", 0, session="c", branch="claude/task-5-y")]
@@ -264,7 +275,7 @@ def test_a_first_claim_covers_the_steps_before_it_a_later_one_only_those_after_a
 START_CLAIMS = Analytics(claims=(re.compile(r"board_task\.py\s+start\s+(TASK-\d+)"),))
 
 
-def test_a_stored_shell_command_the_claims_match_attributes_the_work_after_it_with_no_claim_row() -> None:
+def test_a_stored_shell_command_the_claims_match_attributes_the_whole_session_to_its_task_with_no_claim_row() -> None:
     found = [
         sig("prompt", 0, turn="p1", detail="human"),
         sig("request", 1, model="m"),
@@ -275,9 +286,9 @@ def test_a_stored_shell_command_the_claims_match_attributes_the_work_after_it_wi
 
     rows = session_health(found, KEYS, START_CLAIMS)
 
-    # the claiming command itself is the last step of the work before it, as a stored claim row would leave it
-    assert by_task(rows, "requests") == {("s", None): 1, ("s", "TASK-7"): 2}
-    assert by_task(rows, "tool_calls") == {("s", None): 1, ("s", "TASK-7"): 0}
+    # the first claim covers the steps before it, as a stored claim row would
+    assert by_task(rows, "requests") == {("s", "TASK-7"): 3}
+    assert by_task(rows, "tool_calls") == {("s", "TASK-7"): 1}
 
 
 def test_a_tool_result_with_a_stored_claim_row_and_a_matching_command_is_one_claim() -> None:
@@ -301,7 +312,11 @@ def test_without_a_claims_pattern_or_a_task_key_scheme_a_stored_command_claims_n
     assert [s.kind for [ordered] in [grouped(found, None, START_CLAIMS)] for s in ordered] == ["tool"]
     # a command naming something the board's scheme does not call a task is no claim
     other = [sig("tool", 2, name="Bash", command="bin/board_task.py start NOTE-7")]
-    assert [s.kind for [ordered] in [grouped(other, KEYS, Analytics(claims=(re.compile(r"start\s+(\S+)"),)))] for s in ordered] == ["tool"]
+    assert [
+        s.kind
+        for [ordered] in [grouped(other, KEYS, Analytics(claims=(re.compile(r"start\s+(\S+)"),)))]
+        for s in ordered
+    ] == ["tool"]
 
 
 def test_agent_seconds_are_the_summed_api_and_tool_durations_and_a_twenty_minute_prompt_gap_is_the_operators() -> None:

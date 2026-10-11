@@ -88,9 +88,9 @@ def test_a_case_that_ran_a_triggers_work_without_loading_its_skill_is_missed() -
     assert isinstance(unraid, Missed) and isinstance(unraid.performed[0], Case)
 
 
-def test_a_stored_command_the_claims_match_moves_the_calls_after_it_to_its_task() -> None:
+def test_a_stored_command_the_claims_match_gives_the_session_its_calls_to_that_task() -> None:
     found = [tool(1, "Read"), tool(2, "Bash", command="bin/board_task.py start TASK-9"), tool(3, "Edit")]
 
     rows = cases(found, KEYS, analytics=START_CLAIMS)
 
-    assert [(c.task, c.tool_calls) for c in rows] == [(None, 2), ("TASK-9", 1)]
+    assert [(c.task, c.tool_calls) for c in rows] == [("TASK-9", 3)]
