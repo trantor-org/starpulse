@@ -640,6 +640,33 @@ def test_a_refresh_request_reads_that_pr_alone_and_publishes_its_merge_without_t
     assert projected == ["project"]
 
 
+def test_a_request_that_arrives_during_a_refresh_is_read_before_that_refresh_projects(store: PullStore) -> None:
+    github = Github()
+    github.add(1)
+    refresh_repository(REPO, store, 100.0, github)
+    github.add(1, state="MERGED", updated=NEW, merged_at=NEW)
+    github.queries.clear()
+    projected: list[str] = []
+
+    def graphql(repo: str, query: str) -> dict:
+        if "open: pullRequests" in query:
+            github.pulls[1]["state"] = "OPEN"  # the cycle's read still answers open, and the merge lands during it
+            answer = github(repo, query)
+            github.pulls[1]["state"] = "MERGED"
+            assert sync.request(REPO, 1) is True
+            return answer
+        return github(repo, query)
+
+    sync = PullSync(
+        store, BoardFeed(), (), graphql, lambda: 160.0, lambda: projected.append(store.find(number=1)[0]["state"])
+    )
+
+    sync.refresh()
+
+    assert projected == ["MERGED"]  # one projection, and it already holds the requested read
+    assert ["open: pullRequests" in query for query in github.queries] == [True, False]
+
+
 def _record(repo: str, number: int, state: str, fetched: float) -> dict:
     return {
         "repo": repo,

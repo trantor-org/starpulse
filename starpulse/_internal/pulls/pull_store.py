@@ -189,7 +189,8 @@ def refresh_pull(
 class PullSync:
     """Refreshes `store` from GitHub, one query per repository a minute, for every repository worth asking about, and
     after each read hands the Board its tasks' pull requests (`project`, `PullRequests.refresh`). A pull request
-    named to `request` is read alone on this same thread, between refreshes, as soon as it is asked for."""
+    named to `request` is read alone on this same thread as soon as it is asked for: between refreshes, and during
+    one after the repository being read, ahead of that refresh's projection."""
 
     def __init__(
         self,
@@ -228,7 +229,8 @@ class PullSync:
 
     def refresh(self) -> None:
         """Read every tracked repository once; one that cannot be read or parsed is logged and keeps its records.
-        Then project the Board's pull requests from the store."""
+        Then project the Board's pull requests from the store. A pull request asked for meanwhile is read after the
+        repository in hand, so this projection carries it."""
         linked = self._linked()
         for repo in self.tracked():
             try:
@@ -237,6 +239,7 @@ class PullSync:
                 logger.warning("pull requests: %s", exc)
             except Exception:  # one repository's bad answer must not end the refresh thread
                 logger.exception("pull requests: %s failed to refresh", repo)
+            self._read_requests()
         self.project()
 
     def request(self, repo: str, number: int) -> bool:
@@ -248,9 +251,9 @@ class PullSync:
         self._wake.set()
         return True
 
-    def serve_requests(self) -> None:
-        """Read each queued pull request alone, then project once; one that cannot be read is logged and left to the
-        next refresh."""
+    def _read_requests(self) -> bool:
+        """Read each queued pull request alone, and say whether any was queued; one that cannot be read is logged
+        and left to the next refresh."""
         served = False
         while True:
             try:
@@ -264,7 +267,11 @@ class PullSync:
                 logger.warning("pull requests: %s", exc)
             except Exception:  # one request's bad answer must not end the refresh thread
                 logger.exception("pull requests: %s#%d failed to refresh", repo, number)
-        if served:
+        return served
+
+    def serve_requests(self) -> None:
+        """Read each queued pull request alone, then project once."""
+        if self._read_requests():
             self.project()
 
     def _idle(self, seconds: float) -> None:  # pragma: no mutate block — timer loop
