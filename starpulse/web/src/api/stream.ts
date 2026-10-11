@@ -1,11 +1,11 @@
 // Every machine's tasks and the runs instances' workflows, pushed by /api/events: a snapshot on every connect, then one delta per change.
 
-import { demoServer, type DemoServer } from "../demo/demo";
-import type { Delta, LedgerRow, Snapshot } from ".";
+import { demoServer, type DemoServerHandle } from "../demo/host";
 import { playLink } from "../demo/linkDemo";
+import type { Delta, LedgerRow, Snapshot } from ".";
 import { keep } from "./same";
 
-export { embedded } from "../demo/demo";
+export { embedded } from "../demo/host";
 
 /** The longest the page waits before it reopens a connection that has not opened since it dropped. */
 export const RETRY_CAP_MS = 3000;
@@ -109,15 +109,16 @@ export interface StreamHandlers {
 export function openStream(
   handlers: StreamHandlers,
   open: (url: string) => EventSource = (url) => new EventSource(url),
-  demo: DemoServer | null = demoServer(),
+  demo: DemoServerHandle | null = demoServer(),
   early: EarlyStream | null = takeEarly(),
 ): { close(): void } {
   if (demo) {
     handlers.live(true);
     handlers.link?.("live");
     const stopLink = playLink(handlers, new URLSearchParams(globalThis.location?.search ?? "").get("link"), LOST_MS);
-    handlers.snapshot(demo.snapshot);
-    const off = demo.subscribe(handlers.snapshot);
+    const push = (snap: unknown) => handlers.snapshot(snap as Snapshot);
+    push(demo.snapshot);
+    const off = demo.subscribe(push);
     demo.start();
     return {
       close() {

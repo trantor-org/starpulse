@@ -18,6 +18,22 @@ const LAZY_VIEWS = [
   "features/forwarding/ForwardingCard.tsx",
   "features/orbit/OrbitCard.tsx",
 ];
+/** Demo modules a served page loads only for an embedded fixture or `?demo`; none belongs to the sync first-paint chunks. */
+const LAZY_DEMO = [
+  "demo/demo.ts",
+  "demo/demoLevel.ts",
+  "demo/demoLedger.ts",
+  "demo/demoMachines.ts",
+  "demo/demoCriteria.ts",
+];
+/** Fold and machine-ledger drawing load after the Board's first paint; none belongs to the sync first-paint chunks. */
+const LAZY_BOARD_EXTRAS = [
+  "render/foldDraw.ts",
+  "render/machineLedgerDraw.ts",
+  "features/kanban/kanban.ts",
+  "features/dags/dags.ts",
+  "features/level/ledgerPanel.ts",
+];
 
 const root = new URL("../..", import.meta.url).pathname;
 const vite = join(root, "node_modules/.bin/vite");
@@ -63,6 +79,24 @@ describe("the built page", () => {
     const main = chunks(served).find((c) => c.name === entry)!;
     expect(main.bytes).toBeLessThan(UNSPLIT_ENTRY_BYTES);
     expect(LAZY_VIEWS.filter((v) => holds(main.sources, v))).toEqual([]);
+  });
+
+  it("keeps the demo tree out of the sync first-paint chunks a served page evaluates before the board draws", () => {
+    const html = readFileSync(join(served, "index.html"), "utf8");
+    const entry = /<script type="module"[^>]*src="\/assets\/([^"]+)"/.exec(html)![1];
+    const preloads = [...html.matchAll(/modulepreload[^>]*href="\/assets\/([^"]+)"/g)].map((m) => m[1]);
+    const sync = chunks(served).filter((c) => c.name === entry || preloads.includes(c.name));
+    const sources = sync.flatMap((c) => c.sources);
+    expect(LAZY_DEMO.filter((v) => holds(sources, v))).toEqual([]);
+  });
+
+  it("keeps fold and machine-ledger drawing out of the sync first-paint chunks", () => {
+    const html = readFileSync(join(served, "index.html"), "utf8");
+    const entry = /<script type="module"[^>]*src="\/assets\/([^"]+)"/.exec(html)![1];
+    const preloads = [...html.matchAll(/modulepreload[^>]*href="\/assets\/([^"]+)"/g)].map((m) => m[1]);
+    const sync = chunks(served).filter((c) => c.name === entry || preloads.includes(c.name));
+    const sources = sync.flatMap((c) => c.sources);
+    expect(LAZY_BOARD_EXTRAS.filter((v) => holds(sources, v))).toEqual([]);
   });
 
   it("still ships every view, each in a chunk the page loads on demand", () => {

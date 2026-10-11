@@ -3,6 +3,7 @@
 // of its own, mounts after that frame and adopts what is held here.
 import { AdminStore } from "./features/admin/adminPrefs";
 import { HudStore } from "./render/hud";
+import { loadLateFonts } from "./render/fonts";
 import { renderer, type Renderer } from "./render/renderer";
 import { NO_BOARD_MS, markDrawn } from "./shared/boardMark";
 import { retired, viewOf } from "./shared/nav";
@@ -39,6 +40,7 @@ export function boot(mount: () => void): Booted {
   // the draw's own frame: the mark is the page's first paint, and the page mounts a frame behind it
   const drawn = () => {
     markDrawn();
+    void loadLateFonts(); // Inter 500 and JetBrains: chrome after the board, not on the critical path
     requestAnimationFrame(open);
   };
   const r = renderer(canvas, store, { tip, panel }, new URLSearchParams(location.search).has("demo"), admin.get, star ? drawn : undefined);
@@ -52,6 +54,7 @@ export function boot(mount: () => void): Booted {
       unsubscribe();
       requestAnimationFrame(() => {
         markDrawn();
+        void loadLateFonts();
         open();
       });
     });

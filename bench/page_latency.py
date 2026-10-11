@@ -500,7 +500,12 @@ def time_page(
             BUDGET_MS,
             note="navigation to the frame that draws the board (starpulse:board-drawn)",
         )
-        for _ in range(max(1, samples // 4)):
+        # Chromium's first navigation after launch pays browser/process start, not the page; discard it.
+        # Take a full `samples` set (not samples//4): with only five points p95 is the max and one slow
+        # reload fails the gate on noise.
+        page.goto(base, wait_until="domcontentloaded")
+        page.wait_for_function("window.__sp && window.__sp.firstPaint !== null", timeout=60_000)
+        for _ in range(max(1, samples)):
             page.goto(base, wait_until="domcontentloaded")
             page.wait_for_function("window.__sp && window.__sp.firstPaint !== null", timeout=60_000)
             load.samples.append(page.evaluate("window.__sp.firstPaint"))

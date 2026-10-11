@@ -3,7 +3,10 @@
 import { dur, markOf, shortApplied, statusLine, type Tie } from "./ledger";
 import { esc } from "../../render/panels";
 import type { GNode, LedgerView, Scene } from "../../render/scene";
-import type { ContractReport, LedgerRow, LedgerRun, RunStatus } from "../../api";
+import type { ContractReport, LedgerRow, LedgerRun } from "../../api";
+import { stepState, stepStates } from "./stepStates";
+
+export { stepStates } from "./stepStates";
 
 export interface PanelCtx {
   event: string;
@@ -63,8 +66,6 @@ export function rerunHtml(row: LedgerRow, ctx: PanelCtx): string {
   }).join("");
 }
 
-/** A step's state in a run; a template of one step takes the run's own. */
-const stepState = (run: LedgerRun, step: string, steps: readonly string[]): RunStatus => run.steps[step] ?? (steps.length === 1 ? run.status : "not_started");
 
 const pairing = (row: LedgerRow, run: LedgerRun) => {
   if (markOf(run) === "keyed") return `<div class="k">paired by commit: AFTER=${esc(sha7(row))}</div>`;
@@ -125,11 +126,6 @@ export function doctorTip(report: ContractReport): string {
 /** The merge a view is about: the hovered one, else the open one, else the newest merge of the main repository. */
 export const focusRow = (hovered: LedgerRow | null, selected: LedgerRow | null, rows: readonly LedgerRow[]): LedgerRow | undefined => hovered ?? selected ?? rows.find((r) => !cross(r));
 
-/** A merge's state for each step of a DAG's template, or null when it has no run of it. */
-export function stepStates(row: LedgerRow | undefined, dag: string, steps: readonly string[]): Record<string, RunStatus> | null {
-  const run = row?.runs[dag];
-  return run ? Object.fromEntries(steps.map((n) => [n, stepState(run, n, steps)])) : null;
-}
 
 /** One tied DAG's status line for a merge, coloured by its run's state. */
 function runRow(row: LedgerRow, tie: Tie, ctx: PanelCtx): string {

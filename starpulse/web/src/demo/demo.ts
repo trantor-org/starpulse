@@ -1,5 +1,6 @@
 // The demo: `?demo` walks random legal transitions in random flows so every section moves, and a self-contained
 // demo page (`starpulse._internal.cli.demo`) runs that walk inside a DemoServer that answers the page's /api requests itself.
+// A served page never loads this module on the first-paint path: `demo/host.ts` is what `apiFetch` and `openStream` read.
 import { demoLevel } from "./demoLevel";
 import { arriveMerge, demoContract, demoLedger, demoPins, demoStrip, scenarioOf } from "./demoLedger";
 import { PAGE } from "../features/level/ledgerScroll";
@@ -11,6 +12,9 @@ import type { LaneStep } from "../features/level/trace";
 import type { LedgerRow, Machine, RawAgent, Snapshot } from "../api";
 import { criteriaBlock, demoCriteria } from "./demoCriteria";
 import type { TaskRecord } from "../features/kanban/taskView";
+import { demoServer as installed, embedded, setDemoServer } from "./host";
+
+export { embedded } from "./host";
 
 let demoN = 0;
 /** Seconds between two merges landing on a demo page's Ledger. */
@@ -530,18 +534,26 @@ const demoRecord = (card: RawAgent, now: number, failing = false): TaskRecord =>
   };
 };
 
-/** The snapshot a self-contained demo page embeds as `window.__FLOW_FIXTURE__`, null on a served page. */
-export const embedded = (): DemoFixture | null => (globalThis as { __FLOW_FIXTURE__?: DemoFixture }).__FLOW_FIXTURE__ ?? null;
-
-let server: DemoServer | null = null;
-/** The page's one DemoServer when it embeds a fixture, else null: a served page asks starpulse._internal.server.server. */
-export const demoServer = (): DemoServer | null => {
-  const fixture = embedded();
+/**
+ * Builds the page's one DemoServer from the embedded fixture and registers it on the host, or returns the one already
+ * installed. A served page with no fixture leaves the host empty. Call before `boot` on an embedded page (and from tests
+ * that still call `demoServer()`).
+ */
+export function ensureDemoServer(): DemoServer | null {
+  const held = installed();
+  if (held) return held as DemoServer;
+  const fixture = embedded() as DemoFixture | null;
   const query = new URLSearchParams(globalThis.location?.search ?? "");
   const refuseEdits = query.get("edit") === "refuse";
   const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
   const autopilot = (["off", "over", "empty", "refused", "down"] as const).find((state) => state === query.get("autopilot"));
   const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
   const shaped = fixture ? shapeBoard(fixture, query.get("board")) : null; // `?board=no-archived|no-attention|unlisted|fourteen` reshapes the Board for a Star Map review
-  return shaped ? (server ??= new DemoServer(many ? padMachines(shaped, many) : shaped, undefined, refuseEdits, forward, query.get("evaluator") === "error", autopilot)) : null;
-};
+  if (!shaped) return null;
+  const server = new DemoServer(many ? padMachines(shaped, many) : shaped, undefined, refuseEdits, forward, query.get("evaluator") === "error", autopilot);
+  setDemoServer(server);
+  return server;
+}
+
+/** The page's one DemoServer when it embeds a fixture, else null: builds and registers it the first time. */
+export const demoServer = (): DemoServer | null => ensureDemoServer();

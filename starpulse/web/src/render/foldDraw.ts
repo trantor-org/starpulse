@@ -7,6 +7,7 @@ import { freshKeys, optionalSteps, statusLine } from "../features/level/ledger";
 import { bannerOf, type DoctorBox } from "../features/level/ledgerPanel";
 import { pinsOf, portOf, withPins, type Pins } from "../features/level/ledgerPins";
 import { AMBER, drawRows, CROSS, type Hits, type Ink } from "../features/level/ledgerRows";
+import { LEDGER_PALETTE } from "./ledgerPalette";
 import { begin, ease as easeScroll, fail, newScroll, place, receive, take, wantsPage, type Scroll } from "../features/level/ledgerScroll";
 import { fetchMerges } from "../features/level/ledgerPage";
 import { inView } from "../features/level/ledgerStrip";
@@ -17,8 +18,8 @@ import { ACT, DAG_COLOR, easeO, rgba, type Drawing, type DrawCtx } from "./draw"
 import { FLARE, RING, type Moves, type Sky } from "./sky";
 import { textW, type Scene, type Star } from "./scene";
 
-/** The Ledger's colours by run state: an overdue cue is drawn as a failure, and another repository's unapplied merge as waiting. */
-export const LEDGER_PALETTE: Record<string, string> = { ...DAG_COLOR, waiting: CROSS, overdue: DAG_COLOR.failed };
+/** Re-export: the palette lives in ledgerPalette.ts so the Board's first-paint chunk can name it without loading foldDraw. */
+export { LEDGER_PALETTE } from "./ledgerPalette";
 
 /** What the renderer owns and the fold's drawing reads as it draws, and the `doctor` box it records for the pointer; each is read when a frame draws, so the renderer's own state is never copied. */
 export interface FoldIO {
