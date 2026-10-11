@@ -46,11 +46,14 @@ __all__ = [
     "Writer",
     "field_matches",
     "load_machine",
+    "opened_by",
     "refuse_unlisted",
     "validate",
     "writers_of",
 ]
 
+#: The top-level keys that only change how the page draws a machine.
+DRAWING = ("tiers", "main_line", "rests", "subflows", "launches")
 SCHEMA = json.loads((Path(__file__).parents[2] / "machine.schema.json").read_text())
 _VALIDATOR = Draft202012Validator(SCHEMA)
 
@@ -108,11 +111,17 @@ class Compiled:
     bindings: Mapping[str, str]
     writers: Mapping[str, tuple[Writer, ...]]
     cues: tuple[Cue, ...] = ()
+    drawing: Mapping[str, Any] = field(default_factory=dict)
 
 
 def writers_of(machine: type[StateChart]) -> Mapping[str, tuple[Writer, ...]]:
     """The writers a compiled machine declares per event, `{}` for a machine written in Python."""
     return getattr(machine, "writers", {})
+
+
+def opened_by(path: Path) -> list[Path]:
+    """The machine files the machine file at `path` opens with a state's `flow:`."""
+    return [path.parent / state["flow"] for state in _read(path)["states"].values() if "flow" in state]
 
 
 def _schema_error(document: Any) -> ValidationError | None:
@@ -168,7 +177,8 @@ def compile_document(document: dict[str, Any], path: Path, registry: Registry = 
         raise MachineDefinitionError(f"{path}: {error}", path) from error
     setattr(machine, "writers", writers)
     setattr(machine, "source", document.get("source"))
-    return Compiled(document["name"], machine, bindings, writers, cues)
+    drawing = {key: document[key] for key in DRAWING if key in document}
+    return Compiled(document["name"], machine, bindings, writers, cues, drawing)
 
 
 def _read(path: Path) -> dict[str, Any]:

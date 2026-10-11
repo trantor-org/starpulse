@@ -28,6 +28,7 @@ try:  # libyaml's loader: the same safe schema and errors, a tenth of the pure-P
 except ImportError:
     from yaml import SafeLoader as _FrontmatterLoader
 
+from starpulse._internal.board import project_machines
 from starpulse._internal.board.seam import Board, MoveWriter, Written
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
 from starpulse.contracts.task_keys import TaskKeys
@@ -35,7 +36,7 @@ from starpulse.contracts.task_keys import TaskKeys
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.eventlog.event_log import EventLog
-    from starpulse._internal.machines.machine_definition import Writer
+    from starpulse._internal.machines.machine_definition import Compiled, Writer
     from starpulse._internal.machines.snapshot import Qualify
     from starpulse.contracts.adapters import BoardTask, Move
 
@@ -310,8 +311,8 @@ def cli_writer(root: Path, statuses: tuple[str, ...], command: list[str]) -> Mov
     return write
 
 
-def _machine(path: Path, config: BacklogConfig) -> tuple[dict, dict[str, tuple[Writer, ...]], list[dict]]:
-    """The Board machine a file declares, drawn, with its writers and its cues, each beside the lane its event reaches;
+def _machine(path: Path, config: BacklogConfig) -> tuple[Compiled, dict, list[dict]]:
+    """The Board machine a file declares, compiled and drawn, with its cues, each beside the lane its event reaches;
     refused unless its states are the project's lanes and each cued event reaches one."""
     from starpulse._internal.machines.machine_definition import load_machine  # noqa: PLC0415 - import cost, paid on first use
     from starpulse._internal.machines.snapshot import describe  # noqa: PLC0415 - import cost, paid on first use
@@ -326,7 +327,7 @@ def _machine(path: Path, config: BacklogConfig) -> tuple[dict, dict[str, tuple[W
         if len(lanes := {t["target"] for t in drawn["transitions"] if t["event"] == cue.event}) != 1:
             raise ValueError(f"board: machine {path} cues on event {cue.event}, which must reach exactly one lane")
         cues.append({**asdict(cue), "state": lanes.pop()})
-    return {**drawn, "mainLine": ids}, dict(compiled.writers), cues
+    return compiled, drawn, cues
 
 
 def project_board(
@@ -340,13 +341,19 @@ def project_board(
     interval = float(settings.get("interval", 2.0))
     config = read_config(root)
     require_project(root, config)
-    if "machine" in settings:
-        drawn, declared, cues = _machine(base / str(settings["machine"]), config)
+    board_file = base / str(settings["machine"]) if "machine" in settings else None
+    if board_file:
+        compiled, drawn, cues = _machine(board_file, config)
+        declared = compiled.writers
     else:
-        drawn, declared, cues = board_machine(config.statuses), {}, []
+        compiled, drawn, cues, declared = None, board_machine(config.statuses), [], {}
 
     def machines(qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
-        return {"board": drawn}
+        flows = {**({"board": compiled} if compiled else {}), **project_machines.load(base, board_file)}
+        drawn_flows = project_machines.draw(flows, qualify, workflows)
+        if compiled:
+            drawn_flows["board"].setdefault("mainLine", [lane_id(status) for status in config.statuses])
+        return {"board": drawn, **drawn_flows}
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         # Built here, not at load: a `Move` is an adapter model, and a board read never starts the poll.

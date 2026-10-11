@@ -48,6 +48,37 @@
       "type": "array",
       "minItems": 1,
       "items": {"$ref": "#/$defs/cue"}
+    },
+    "tiers": {
+      "description": "The state ids the Star Map draws at each stage, left to right; a tier's states stack in its cell.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}}
+    },
+    "main_line": {
+      "description": "The state ids along the machine's axis, in order. A Board file without one draws its lanes in order.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "rests": {
+      "description": "States drawn as where a lifecycle ends though the machine does not declare them final, because an event leaves them.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "subflows": {
+      "description": "Machines that open under one of this machine's states, each a sibling file named by its stem.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/subflow"}
+    },
+    "launches": {
+      "description": "Per launching workflow (its own name, or <instance>/<workflow>), the skill it starts and the sibling machine that skill draws.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/launch"}
     }
   },
   "$defs": {
@@ -95,6 +126,31 @@
           "pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_./-]+)?$"
         },
         "trigger": {"type": "string", "minLength": 1}
+      }
+    },
+    "subflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "flow", "exits"],
+      "properties": {
+        "state": {"$ref": "#/$defs/identifier"},
+        "flow": {"description": "The sibling machine file's stem.", "type": "string", "minLength": 1},
+        "exits": {
+          "description": "Per final state of the inner machine, the event of this machine that leaves the state.",
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}
+        },
+        "when": {"description": "What has to hold for the inner machine to run under the state.", "type": "string"}
+      }
+    },
+    "launch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skill"],
+      "properties": {
+        "skill": {"type": "string", "minLength": 1},
+        "flow": {"description": "The sibling machine file's stem; absent when the skill has no machine.", "type": "string", "minLength": 1}
       }
     },
     "cue": {
