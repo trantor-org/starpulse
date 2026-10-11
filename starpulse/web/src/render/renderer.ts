@@ -199,6 +199,9 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let extrasCancel: (() => void) | null = null;
   let ensureFold: () => FoldDrawing | null = () => null;
   const ensurePanel = () => { void loadLedgerPanel().then(() => loop.wake()); return ledgerPanel; };
+  /** Fonts the first layout measures; the stream opens without waiting so the snapshot can arrive while they load. */
+  let fontsReady = false;
+  let firstLayoutPending = false;
   const mledIO = {
     get S() { return S; }, get scene() { return scene; }, get FW() { return FW; }, get H() { return H; }, get T() { return T; }, get hotEdge() { return hotEdge; },
     events: () => EVENTS(), hhmm, get scrollPos() { return scrollPos; }, get pg() { return pg; }, get pickedRow() { return pickedRow; }, get lpin() { return lpin; },
@@ -525,13 +528,16 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       if (!fixture && retired(location.pathname, location.hash)) history.replaceState(null, "", "/" + viewSearch(location.search, viewOf(location.search), prefs().view));
       keep("fv.path", path);
     }
-    if (first) layout(false);
-    else relay.request();
     if (first) {
-      const named = levelParams(location.search).focus;
-      pickedRow = named && scene?.top?.rows.some((r) => r.name === named) ? named : null; // the address restores the row picked out, if this level still has it
-      syncUrl();
-    }
+      const finishFirst = () => {
+        layout(false);
+        const named = levelParams(location.search).focus;
+        pickedRow = named && scene?.top?.rows.some((r) => r.name === named) ? named : null; // the address restores the row picked out, if this level still has it
+        syncUrl();
+      };
+      if (fontsReady) finishFirst();
+      else firstLayoutPending = true;
+    } else relay.request();
     publish();
     paintFan();
     paintMerge();
@@ -1468,9 +1474,19 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       for (const [target, type] of wakers) target.addEventListener(type, wake);
       resize();
       loop.wake();
-      // the first layout measures label widths and the first frame draws them: both wait for the page's fonts, which index.html preloads
+      // Open the stream at once (index.html may already hold the snapshot); first layout still waits for the board faces.
+      stream = openStream(connection);
       void loadFonts().then(() => {
-        if (!stopped) stream = openStream(connection);
+        if (stopped) return;
+        fontsReady = true;
+        if (firstLayoutPending && S) {
+          firstLayoutPending = false;
+          layout(false);
+          const named = levelParams(location.search).focus;
+          pickedRow = named && scene?.top?.rows.some((r) => r.name === named) ? named : null;
+          syncUrl();
+          loop.wake();
+        }
       });
       fanTimer = window.setInterval(paintFan, 1000);
     },
