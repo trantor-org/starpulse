@@ -336,6 +336,12 @@ describe("a Board path's route", () => {
     expect(e.c).not.toEqual(c0);
     expect(Math.min(...sample(e, 400).map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(40 + 9);
   });
+  it("runs through what a state draws as shallowly as it can, where every bend in the sky does", () => {
+    // Ready draws a disc wider than the sky is tall, so no bend clears it; the straight path runs through its centre, a bend only through its rim
+    const o = { ...at("ready", 400, 300, 500), edge: 250 }, e = routed(a, b, c0, [a, b, o], new Drawn(), sky);
+
+    expect(Math.min(...sample(e, 400).map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(100);
+  });
 
   describe("searched for a Board's first snapshot", () => {
     const round = (n: number) => Math.round(n * 1e6) / 1e6;
@@ -492,11 +498,12 @@ describe("a Board path's route search", () => {
     const shape = (c: Pt): Curve => ({ p0: rim(a, c), c, p1: rim(b, c) });
     const at = ({ p0, c, p1 }: Curve, t: number) => ({ x: (1 - t) ** 2 * p0.x + 2 * (1 - t) * t * c.x + t * t * p1.x, y: (1 - t) ** 2 * p0.y + 2 * (1 - t) * t * c.y + t * t * p1.y });
     const points = (e: Curve, n: number) => Array.from({ length: n + 1 }, (_, i) => at(e, i / n));
-    // what a path runs over: 50 for each state it crosses what is drawn of (its own two as well), 1 for each footprint it passes within `by` of
+    // what a path runs over: 50 for each state it crosses what is drawn of (its own two as well), up to 100 at the state's centre, 1 for each
+    // footprint it passes within `by` of
     const over = (e: Curve, by = 20) => {
       const on = points(e, 48), d = (g: Galaxy) => Math.min(...on.map((p) => (p.x - g.x) ** 2 + (p.y - g.y) ** 2));
       const own = [a, b].some((g) => d(g) < (g.edge - 2) ** 2) ? 50 : 0;
-      return others.reduce((n, g) => n + (d(g) < (g.edge + 10) ** 2 ? 50 : d(g) < (g.R + by) ** 2 ? 1 : 0), own);
+      return others.reduce((n, g) => n + (d(g) < (g.edge + 10) ** 2 ? 50 * (2 - Math.sqrt(d(g)) / (g.edge + 10)) : d(g) < (g.R + by) ** 2 ? 1 : 0), own);
     };
     const crossings = (e: Curve) => points(e, 30).filter((p) => drawn.near(p.x, p.y)).length;
     const straight = shape(c0);

@@ -533,7 +533,7 @@ const meets = (a: number, b: number, c: number, a2: number, b2: number, c2: numb
  * A Board path between two states. It keeps CLEAR px from every other state's footprint, out of what its own two draw, and NAME_CLEAR
  * from the names in `names`, its own two states' included. Where the path from `c0` would not, its control point moves to a spot on the
  * sky; each spot costs its bend from `c0` and what its path runs over, counted as the bend it is worth to avoid: NAMED for a name, SKIM
- * for a state's footprint, THROUGH for what a state draws, and CROSS for each point of it on a path already drawn. The cheapest spot
+ * for a state's footprint, THROUGH for what a state draws (twice that at its centre), and CROSS for each point of it on a path already drawn. The cheapest spot
  * wins, so a path that can clear everything takes the least bend that does, and one that cannot runs over the least it can. `sky` bounds
  * the control point. `held` is the bend the path took last, which it keeps while that stays out of every name and CLEAR - NAME_CLEAR from
  * every other footprint.
@@ -551,7 +551,9 @@ export function routed(a: Galaxy, b: Galaxy, c0: Pt, all: Galaxy[], drawn: Drawn
     for (let i = 0; i <= 48; i++) {
       const t = i / 48, u = 1 - t, x = u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, y = u * u * p0.y + 2 * u * t * c.y + t * t * p1.y;
       for (let j = 0; j < near.length; j++) {
-        const g = near[j], d = (x - g.x) ** 2 + (y - g.y) ** 2, into = d < (g.edge + NEAR) ** 2 ? THROUGH : d < (g.R + by) ** 2 ? SKIM : 0;
+        const g = near[j], d = (x - g.x) ** 2 + (y - g.y) ** 2, reach = g.edge + NEAR;
+        // what a state draws costs more the nearer its centre the path runs, so a path that cannot clear it still takes the shallowest cut
+        const into = d < reach ** 2 ? THROUGH * (2 - Math.sqrt(d) / reach) : d < (g.R + by) ** 2 ? SKIM : 0;
         if (into > deep[j]) {
           n += into - deep[j];
           deep[j] = into;
