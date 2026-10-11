@@ -336,6 +336,60 @@ describe("a Board path's route", () => {
     expect(e.c).not.toEqual(c0);
     expect(Math.min(...sample(e, 400).map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(40 + 9);
   });
+  it("runs through what a state draws as shallowly as it can, where every path on the sky does", () => {
+    // Ready draws a disc wider than the sky is tall, so no path on the sky clears it; the straight path runs through its centre, a bend only through its rim
+    const o = { ...at("ready", 400, 300, 500), edge: 400 }, e = routed(a, b, c0, [a, b, o], new Drawn(), sky);
+
+    expect(Math.min(...sample(e, 400).map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(100);
+  });
+  it("bows its control point below the sky when the path itself stays on it and clears what a bend inside the sky cannot", () => {
+    // Ready draws a disc half again the sky's height: a control point inside the sky bows the path only 150 px from its centre, one 900 px
+    // down bows it to the sky's edge
+    const o = { ...at("ready", 400, 300, 600), edge: 200 }, e = routed(a, b, c0, [a, b, o], new Drawn(), sky), s = sample(e, 400);
+
+    expect(Math.min(...s.map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(200 + 9);
+    expect(Math.max(...s.map((p) => p.y))).toBeLessThanOrEqual(sky.y + 0.5);
+  });
+
+  it("bows its control point above the sky when the path itself stays on it and clears what a bend inside the sky cannot", () => {
+    // Ready draws a disc low on the sky: a control point on the sky bows the path no higher than its top edge, one above the sky clears it
+    const o = { ...at("ready", 400, 500, 400), edge: 250 }, l = at("new", 100, 500, 30), r = at("done", 700, 500, 30);
+    const e = routed(l, r, c0, [l, r, o], new Drawn(), sky), s = sample(e, 400);
+
+    expect(e.c.y).toBeLessThan(10);
+    expect(Math.min(...s.map((p) => Math.hypot(p.x - o.x, p.y - o.y)))).toBeGreaterThan(250 + 9);
+    expect(Math.min(...s.map((p) => p.y))).toBeGreaterThanOrEqual(10 - 0.5);
+  });
+
+  it("keeps a path that a bend on the sky already clears on the sky", () => {
+    const o = { ...at("ready", 400, 300, 30), edge: 60 }, e = routed(a, b, c0, [a, b, o], new Drawn(), sky);
+
+    expect(e.c.x).toBeGreaterThanOrEqual(10);
+    expect(e.c.y).toBeGreaterThanOrEqual(10);
+    expect(e.c.x).toBeLessThanOrEqual(sky.x - 10);
+    expect(e.c.y).toBeLessThanOrEqual(sky.y - 10);
+  });
+
+  it("runs a reopened Waiting and Done pair around the states between them on a wide window, where no bend on the sky does", () => {
+    // the Board's states as the live Board lays them out at 3440x1080 and at 2304x900: one band of In Progress and Review between the pair
+    const wide = (spec: [string, number, number, number, number][]) => spec.map(([id, x, y, R, edge]) => ({ ...at(id, x, y, R), edge }));
+    const boards: [string, ReturnType<typeof wide>, Pt, Pt][] = [
+      ["3440x1080", wide([["new", 119, 310, 78, 44], ["ready", 358, 179, 78, 70], ["waiting", 358, 441, 78, 82], ["in_progress", 822, 458, 131, 109],
+        ["review", 1367, 161, 131, 109], ["needs_attention", 596, 179, 78, 44], ["done", 1758, 179, 78, 82], ["archived", 1758, 441, 78, 58]]),
+        { x: 1029, y: 156 }, { x: 1877, y: 549 }],
+      ["2304x900", wide([["new", 87, 321, 78, 44], ["ready", 262, 186, 78, 70], ["waiting", 262, 456, 78, 82], ["in_progress", 611, 473, 131, 109],
+        ["review", 1119, 168, 131, 109], ["needs_attention", 437, 186, 78, 44], ["done", 1460, 186, 78, 82], ["archived", 1460, 456, 78, 58]]),
+        { x: 832, y: 189 }, { x: 1547, y: 564 }],
+    ];
+    const inside = boards.map(([name, gs, start, bounds]) => {
+      const [from, to] = [gs.find((g) => g.id === "waiting")!, gs.find((g) => g.id === "done")!];
+      const e = routed(from, to, start, gs, new Drawn(), bounds), s = sample(e, 200);
+      return [name, gs.filter((g) => g !== from && g !== to && s.some((p) => Math.hypot(p.x - g.x, p.y - g.y) < g.edge)).map((g) => g.id),
+        s.every((p) => p.x >= 10 - 0.5 && p.y >= 10 - 0.5 && p.x <= bounds.x + 0.5 && p.y <= bounds.y + 0.5)];
+    });
+
+    expect(inside).toEqual([["3440x1080", [], true], ["2304x900", [], true]]);
+  });
 
   describe("searched for a Board's first snapshot", () => {
     const round = (n: number) => Math.round(n * 1e6) / 1e6;
@@ -492,11 +546,12 @@ describe("a Board path's route search", () => {
     const shape = (c: Pt): Curve => ({ p0: rim(a, c), c, p1: rim(b, c) });
     const at = ({ p0, c, p1 }: Curve, t: number) => ({ x: (1 - t) ** 2 * p0.x + 2 * (1 - t) * t * c.x + t * t * p1.x, y: (1 - t) ** 2 * p0.y + 2 * (1 - t) * t * c.y + t * t * p1.y });
     const points = (e: Curve, n: number) => Array.from({ length: n + 1 }, (_, i) => at(e, i / n));
-    // what a path runs over: 50 for each state it crosses what is drawn of (its own two as well), 1 for each footprint it passes within `by` of
+    // what a path runs over: 50 for each state it crosses what is drawn of (its own two as well), up to 100 at the state's centre, 1 for each
+    // footprint it passes within `by` of
     const over = (e: Curve, by = 20) => {
       const on = points(e, 48), d = (g: Galaxy) => Math.min(...on.map((p) => (p.x - g.x) ** 2 + (p.y - g.y) ** 2));
       const own = [a, b].some((g) => d(g) < (g.edge - 2) ** 2) ? 50 : 0;
-      return others.reduce((n, g) => n + (d(g) < (g.edge + 10) ** 2 ? 50 : d(g) < (g.R + by) ** 2 ? 1 : 0), own);
+      return others.reduce((n, g) => n + (d(g) < (g.edge + 10) ** 2 ? 50 * (2 - Math.sqrt(d(g)) / (g.edge + 10)) : d(g) < (g.R + by) ** 2 ? 1 : 0), own);
     };
     const crossings = (e: Curve) => points(e, 30).filter((p) => drawn.near(p.x, p.y)).length;
     const straight = shape(c0);
@@ -953,6 +1008,35 @@ describe("Board paths", () => {
     const there = edge("review", "in_progress"), back = edge("in_progress", "review");
     for (const [p, q] of [[back.p0, there.p1], [back.c, there.c], [back.p1, there.p0]]) expect([p.x, p.y]).toEqual([expect.closeTo(q.x, 6), expect.closeTo(q.y, 6)]);
     expect(off(edge("new", "ready"))).toBeLessThan(1);
+  });
+
+  // New, Ready and Review stacked in one tier, Done alone in the next
+  const endBoard = (transitions: string[][]) => build(savedBoardSky(1920, 1080, (snap) => {
+    const m = snap.flows[0].machine;
+    m.states = ["new", "ready", "review", "done"].map((id, i) => ({ id, name: id, initial: i === 0, final: id === "done" }));
+    m.transitions = transitions.map(([source, target]) => ({ source, target, event: `${source}_${target}` }));
+    m.mainLine = ["new", "ready", "review"];
+    m.tiers = [["new", "ready", "review"], ["done"]];
+  }), { kind: "board" });
+  const mirrored = (a: Curve, b: Curve) => {
+    for (const [p, q] of [[b.p0, a.p1], [b.c, a.c], [b.p1, a.p0]]) expect([p.x, p.y]).toEqual([expect.closeTo(q.x, 6), expect.closeTo(q.y, 6)]);
+  };
+
+  it("draw a pair joined both ways as one control point in both directions when it bends round a state", () => {
+    const scene = endBoard([["new", "ready"], ["ready", "review"], ["new", "review"], ["review", "new"]]);
+    const there = scene.bEdges.find((e) => e.source === "new" && e.target === "review") as unknown as Curve, back = scene.bEdges.find((e) => e.source === "review" && e.target === "new") as unknown as Curve;
+
+    expect(clearance(there, scene.galaxies.ready)).toBeGreaterThanOrEqual(17);
+    mirrored(there, back);
+  });
+
+  it("keep a pair joined both ways into an end state off the stream that gathers its one-way paths", () => {
+    const scene = endBoard([["new", "ready"], ["ready", "review"], ["review", "done"], ["done", "review"], ["ready", "done"], ["new", "done"]]);
+    const edge = (s: string, t: string) => scene.bEdges.find((e) => e.source === s && e.target === t) as unknown as Curve, end = scene.galaxies.done.y;
+
+    for (const from of ["ready", "new"]) expect(edge(from, "done").c.y).toBeCloseTo(end);
+    expect(Math.abs(edge("review", "done").c.y - end)).toBeGreaterThan(10);
+    mirrored(edge("review", "done"), edge("done", "review"));
   });
 
   it("merge every event between two states into one path per direction, carrying each event's writers", () => {
