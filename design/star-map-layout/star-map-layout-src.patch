@@ -1,5 +1,5 @@
 diff --git a/starpulse/web/src/render/boardDraw.ts b/starpulse/web/src/render/boardDraw.ts
-index a0440cf..8f1f56f 100644
+index a0440cf..0fe65e9 100644
 --- a/starpulse/web/src/render/boardDraw.ts
 +++ b/starpulse/web/src/render/boardDraw.ts
 @@ -8,7 +8,7 @@ import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx
@@ -11,19 +11,22 @@ index a0440cf..8f1f56f 100644
  } from "./scene";
  import { FLARE, PULSE, RING, TRAVEL, countText, hosted, type Move, type Moves, type Sky } from "./sky";
  
-@@ -174,7 +174,9 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
+@@ -174,7 +174,12 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
        flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
        cx.beginPath();
        cx.moveTo(e.p0!.x, e.p0!.y);
 -      cx.quadraticCurveTo(e.c!.x, e.c!.y, e.p1!.x, e.p1!.y);
-+      const pts = (e.c as Pt & { pts?: Pt[] }).pts; // mockup: a layout library's path is a line of points
-+      if (pts) for (const p of pts) cx.lineTo(p.x, p.y);
++      const pts = (e.c as Pt & { pts?: Pt[] }).pts; // mockup: a layout library's path is a line of points, drawn as a curve through their midpoints
++      if (pts) {
++        for (let i = 1; i + 1 < pts.length; i++) cx.quadraticCurveTo(pts[i].x, pts[i].y, (pts[i].x + pts[i + 1].x) / 2, (pts[i].y + pts[i + 1].y) / 2);
++        cx.lineTo(e.p1!.x, e.p1!.y);
++      }
 +      else cx.quadraticCurveTo(e.c!.x, e.c!.y, e.p1!.x, e.p1!.y);
        cx.stroke();
        cx.setLineDash([]);
      }
 diff --git a/starpulse/web/src/render/renderer.ts b/starpulse/web/src/render/renderer.ts
-index 5666097..4514a4c 100644
+index 5666097..a18483b 100644
 --- a/starpulse/web/src/render/renderer.ts
 +++ b/starpulse/web/src/render/renderer.ts
 @@ -22,7 +22,7 @@ import { dragMove, dragStart, keyScroll, wheelScroll } from "../features/level/l
@@ -54,14 +57,14 @@ index 5666097..4514a4c 100644
 -    const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k, sun: g.r * view.k })) : [];
 -    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states };
 +    const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k, sun: g.r * view.k, edge: g.edge * view.k })) : [];
-+    const paths = board ? sc.bEdges.filter((e) => e.p0 && e.c && e.p1).map((e) => ({ source: e.source, target: e.target, pts: sample(e as Curve, 60).map((p) => toScreen(view, p)) })) : [];
++    const paths = board ? sc.bEdges.filter((e) => e.p0 && e.c && e.p1).map((e) => ({ source: e.source, target: e.target, pts: sample(e as Curve, "pts" in e.c! ? 240 : 60).map((p) => toScreen(view, p)) })) : [];
 +    const names = board ? sc.names.map((n) => ({ of: n.of, ...(([a, b]) => ({ x0: a.x, y0: a.y, x1: b.x, y1: b.y }))([toScreen(view, { x: n.x0, y: n.y0 }), toScreen(view, { x: n.x1, y: n.y1 })]) })) : [];
 +    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states, paths, names };
    };
  
    return {
 diff --git a/starpulse/web/src/render/scene.ts b/starpulse/web/src/render/scene.ts
-index d0f5bbc..db664ed 100644
+index d0f5bbc..e6d9346 100644
 --- a/starpulse/web/src/render/scene.ts
 +++ b/starpulse/web/src/render/scene.ts
 @@ -404,7 +404,22 @@ export interface Ctx {
@@ -102,7 +105,7 @@ index d0f5bbc..db664ed 100644
    for (let i = 1; i <= 40; i++) {
      const t = i / 40, u = 1 - t, qx = u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, qy = u * u * p0.y + 2 * u * t * c.y + t * t * p1.y;
      const dx = qx - px, dy = qy - py, L = dx * dx + dy * dy || 1, s = Math.max(0, Math.min(1, ((x - px) * dx + (y - py) * dy) / L));
-@@ -514,6 +537,70 @@ const rimOf = (g: Galaxy, rows: NameBox[] = []) => {
+@@ -514,6 +537,131 @@ const rimOf = (g: Galaxy, rows: NameBox[] = []) => {
      return p;
    };
  };
@@ -160,7 +163,68 @@ index d0f5bbc..db664ed 100644
 +    const A = alongLine(pts, L, d).p, r = Math.min(26, leg / 2, far(to, A) / 2), r2 = Math.min(60, far(to, A) / 2, all - d), N = alongLine(pts, L, d + r2);
 +    return [Q, ...arc(toward(to, Q, r), to, toward(to, A, r)), ...arc(toward(A, to, r2), A, N.p), ...pts.slice(N.i)];
 +  };
-+  return end(b, end(a, mid).reverse()).reverse();
++  return smoothed(end(b, end(a, mid).reverse()).reverse(), a, b, names, gs);
++}
++/**
++ * Mockup: a finished path redrawn as one curve. Its turning points are kept and the points between them dropped (Ramer-Douglas-Peucker),
++ * spaced no further than a span apart, and read as the control points of a B-spline with both ends held on the rims. Where that curve is
++ * further over a name or into a state than the path's own line goes, the path keeps its own line for a stretch either side and the rest
++ * stays wide. Of four tolerances, widest first, the first with such a curve stands; with none, they are tried again with the curve let
++ * 3.5 of the NAME_CLEAR in, and a path with none then keeps its own line.
++ */
++function smoothed(P: Pt[], a: Galaxy, b: Galaxy, names: NameBox[], gs: Galaxy[]): Pt[] {
++  const far = (p: Pt, q: Pt) => Math.hypot(q.x - p.x, q.y - p.y);
++  const off = (p: Pt, q: Pt, r: Pt) => {
++    const dx = q.x - p.x, dy = q.y - p.y, s = Math.max(0, Math.min(1, ((r.x - p.x) * dx + (r.y - p.y) * dy) / (dx * dx + dy * dy || 1)));
++    return Math.hypot(p.x + s * dx - r.x, p.y + s * dy - r.y);
++  };
++  const turns = (lo: number, hi: number, tol: number, out: number[]) => {
++    let at = -1, d = tol;
++    for (let i = lo + 1; i < hi; i++) if (off(P[lo], P[hi], P[i]) > d) [at, d] = [i, off(P[lo], P[hi], P[i])];
++    if (at < 0) return void out.push(hi);
++    turns(lo, at, tol, out);
++    turns(at, hi, tol, out);
++  };
++  // how far into each name's and state's room a point is: a name's box or a state's footprint and NAME_CLEAR round it
++  const into = (p: Pt): [string, number][] => [
++    ...names.map((n, i): [string, number] => [`name ${i}`, Math.min(p.x - n.x0, n.x1 - p.x, p.y - n.y0, n.y1 - p.y) + NAME_CLEAR]),
++    ...gs.map((o): [string, number] => [o.id, (o === a || o === b ? o.edge - 2 : Math.max(o.R, o.edge) + NAME_CLEAR) - far(p, o)]),
++  ].filter(([, d]) => d > 0) as [string, number][];
++  // how far into each the path's own line goes, which the curve may match and not pass
++  const own: Record<string, number> = {};
++  P.forEach((p, i) => {
++    const q = P[i - 1] ?? p, n = Math.ceil(far(q, p) / 5) || 1;
++    for (let j = 1; j <= n; j++) for (const [k, d] of into({ x: q.x + ((p.x - q.x) * j) / n, y: q.y + ((p.y - q.y) * j) / n })) own[k] = Math.max(own[k] ?? 0, d);
++  });
++  const L = lensOf(P), fine = [0];
++  turns(0, P.length - 1, 3, fine);
++  for (const room of [0, 3.5]) for (const [tol, span] of [[28, Infinity], [14, 180], [7, 100], [3, 50]]) {
++    const wide = [0], held: number[] = [], near = (i: number) => held.some((s) => Math.abs(L[i] - s) < 90);
++    turns(0, P.length - 1, tol, wide);
++    for (let pass = 0; pass < 4; pass++) {
++      // of the path's own turning points, those at least 14 on from the last one kept, so a held corner still rounds
++      const K = [...new Set([...wide, ...fine.filter(near)])].sort((x, y) => x - y).filter((k, i, all) => !i || wide.includes(k) || L[k] - L[all[i - 1]] > 14), C = [P[0]];
++      for (let i = 1; i < K.length; i++) {
++        const p = P[K[i - 1]], q = P[K[i]], n = Math.max(1, Math.ceil(far(p, q) / (near(K[i - 1]) || near(K[i]) ? 50 : span)));
++        for (let j = 1; j <= n; j++) C.push({ x: p.x + ((q.x - p.x) * j) / n, y: p.y + ((q.y - p.y) * j) / n });
++      }
++      const Q = [C[0], C[0], ...C, C[C.length - 1], C[C.length - 1]], out = [C[0]];
++      for (let i = 0; i + 3 < Q.length; i++) {
++        const per = Math.max(6, Math.ceil(far(Q[i + 1], Q[i + 2]) / 5));
++        for (let j = 1; j <= per; j++) {
++          const t = j / per, u = 1 - t, w0 = (u * u * u) / 6, w1 = (3 * t * t * t - 6 * t * t + 4) / 6, w2 = (-3 * t * t * t + 3 * t * t + 3 * t + 1) / 6, w3 = (t * t * t) / 6;
++          out.push({ x: w0 * Q[i].x + w1 * Q[i + 1].x + w2 * Q[i + 2].x + w3 * Q[i + 3].x, y: w0 * Q[i].y + w1 * Q[i + 1].y + w2 * Q[i + 2].y + w3 * Q[i + 3].y });
++        }
++      }
++      const bad = out.filter((p) => into(p).some(([k, d]) => d > Math.max((own[k] ?? 0) + 0.5, room)));
++      if (!bad.length) return out;
++      // hold the path's own line round each point of the curve that is over a name or through a state
++      const at = bad.map((p) => L[P.reduce((m, q, i) => (far(p, q) < far(p, P[m]) ? i : m), 0)]).filter((s, i, all) => all.findIndex((v) => Math.abs(v - s) < 30) === i && !held.some((h) => Math.abs(h - s) < 30));
++      if (!at.length) break;
++      held.push(...at);
++    }
++  }
++  return P;
 +}
 +/** Mockup: the layout a library gives the Board, set by the mockup's script: the zoom, each state's place and each pair's path, in sky units. */
 +interface LibLayout {
@@ -173,7 +237,7 @@ index d0f5bbc..db664ed 100644
  /** The rows a state's machines print their names in, of all the names on the Board. */
  const rowsOf = (g: Galaxy, names: NameBox[]) => names.filter((n) => n.of.startsWith(`${g.id}/`));
  /**
-@@ -919,12 +1006,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -919,12 +1067,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
        }
        return lo;
      };
@@ -192,7 +256,7 @@ index d0f5bbc..db664ed 100644
      }
      const w = ease("sky.w", L.sw);
      scene.w = w;
-@@ -1005,6 +1095,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+@@ -1005,6 +1156,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
          a.loops.push(...tr.events);
          continue;
        }

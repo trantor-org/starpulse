@@ -3,7 +3,8 @@
 // and its paths. This layer picks a board (shared.js), writes it over the capture's board machine, and hands the Board the layout one of
 // four libraries gave that board (layouts.js, computed by layouts.mjs): the library's places for the states, pinned to the configured
 // tiers left to right, and its route for each pair of states. The Board still draws everything: suns, rings, moons, names, tasks, and
-// the last leg of each path from the cell's edge to the state's rim. It runs before the page's module.
+// the last leg of each path from the cell's edge to the state's rim, and it redraws every path as one smooth curve that goes no further
+// over a name or into a state than the library's own line does. It runs before the page's module.
 //   ?lib=shipped|dagre|graphviz|elk|cola   who lays the Board out (shipped: the page's own placement and route search)
 //   ?board=base|third-in-tier|two-more-tiers|fourteen|unlisted|three   the board drawn
 //   ?off=<state>   the demo board with one state switched off (the chips set it)
@@ -56,7 +57,7 @@
       }
       const ox = ((0.94 * W) / k - L.w) / 2, oy = ((0.94 * H) / k - L.h) / 2, ps = {}, routes = {};
       board.states.forEach((s, i) => (ps[s.id] = { x: L.p[2 * i] + ox, y: L.p[2 * i + 1] + oy }));
-      for (const [a, b, kind, ...flat] of L.e) routes[`${a}>${b}`] = (kind[0] === "l" ? eased : (P) => P)(B.sample(kind[0], flat)).map((p) => ({ x: p.x + ox, y: p.y + oy }));
+      for (const [a, b, kind, ...flat] of L.e) routes[`${a}>${b}`] = B.sample(kind[0], flat).map((p) => ({ x: p.x + ox, y: p.y + oy }));
       memo = { at: `${W}x${H}`, out: { k, ps, routes } };
       return memo.out;
     };
@@ -71,19 +72,9 @@
     const dx = q.x - p.x, dy = q.y - p.y, l = dx * dx + dy * dy, t = l ? Math.max(0, Math.min(1, ((c.x - p.x) * dx + (c.y - p.y) * dy) / l)) : 0;
     return Math.hypot(p.x + t * dx - c.x, p.y + t * dy - c.y);
   };
-  // a library that answers with straight runs (WebCola) has each corner rounded, as a page drawing them would
-  const eased = (P, r = 40) => {
-    const out = [P[0]], toward = (p, q, d) => ({ x: p.x + ((q.x - p.x) * d) / (Math.hypot(q.x - p.x, q.y - p.y) || 1), y: p.y + ((q.y - p.y) * d) / (Math.hypot(q.x - p.x, q.y - p.y) || 1) });
-    for (let i = 1; i + 1 < P.length; i++) {
-      const d = Math.min(r, Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y) / 2, Math.hypot(P[i + 1].x - P[i].x, P[i + 1].y - P[i].y) / 2), p = toward(P[i], P[i - 1], d), q = toward(P[i], P[i + 1], d);
-      for (let j = 0; j <= 8; j++) {
-        const t = j / 8, u = 1 - t;
-        out.push({ x: u * u * p.x + 2 * u * t * P[i].x + t * t * q.x, y: u * u * p.y + 2 * u * t * P[i].y + t * t * q.y });
-      }
-    }
-    return [...out, P[P.length - 1]];
-  };
+  let last = null, lastAt = 0;
   window.__GRADE__ = () => {
+    if (last && performance.now() - lastAt < 400) return last; // measure.py asks every frame until the page is ready
     const pr = window.flowProbe?.();
     if (!pr?.ready || !pr.states?.length) return null;
     const st = Object.fromEntries(pr.states.map((s) => [s.id, s])), seen = new Set(), lines = [];
@@ -102,16 +93,22 @@
       if (pr.states.some((s) => s !== a && s !== b && l.pts.some((p, i) => i && near(l.pts[i - 1], p, s) < s.r - 1))) through++;
       if (pr.names.some((n) => l.pts.some((p) => p.x > n.x0 + 1 && p.x < n.x1 - 1 && p.y > n.y0 + 1 && p.y < n.y1 - 1))) named++;
     }
-    for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) {
-      const a = lines[i].pts, c = lines[j].pts;
-      let x = false;
-      for (let m = 1; m < a.length && !x; m++) for (let n = 1; n < c.length && !x; n++) x = hit(a[m - 1], a[m], c[n - 1], c[n]);
-      if (x) cross++;
-    }
+    // each path in runs of 16 pieces with the box round each run, so two paths are compared piece by piece only where their runs' boxes meet
+    const runs = lines.map((l) => {
+      const out = [];
+      for (let i = 0; i + 1 < l.pts.length; i += 16) {
+        const part = l.pts.slice(i, i + 17), xs = part.map((p) => p.x), ys = part.map((p) => p.y);
+        out.push({ part, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
+      }
+      return out;
+    });
+    const crosses = (A, C) => A.some((a) => C.some((c) => a.x0 <= c.x1 && c.x0 <= a.x1 && a.y0 <= c.y1 && c.y0 <= a.y1 && a.part.some((p, m) => m && c.part.some((r, n) => n && hit(a.part[m - 1], p, c.part[n - 1], r)))));
+    for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) if (crosses(runs[i], runs[j])) cross++;
     const ys = pr.states.map((s) => s.y), mid = (Math.min(...ys) + Math.max(...ys)) / 2, sun = 34 * pr.fit;
     const side = Object.fromEntries(pr.states.map((s) => [s.id, s.y < mid - sun / 2 ? "high" : s.y > mid + sun / 2 ? "low" : "mid"]));
     const xs = pr.states.flatMap((s) => [s.x - s.r, s.x + s.r]), box = { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...pr.states.map((s) => s.y + s.r)) - Math.min(...pr.states.map((s) => s.y - s.r)) };
-    return { lib, board: key, fs, canvas: pr.canvas, sun, states: pr.states.length, order, pairs: board ? B.pairsOf(board).length : 0, paths: lines.length, joined, through, named, cross, side, box };
+    lastAt = performance.now();
+    return last = { lib, board: key, fs, canvas: pr.canvas, sun, states: pr.states.length, order, pairs: board ? B.pairsOf(board).length : 0, paths: lines.length, joined, through, named, cross, side, box };
   };
 
   // the strip: one address per library, board and switched-off state

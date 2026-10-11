@@ -7,7 +7,8 @@ usage: pnpm --dir design/star-map-layout --ignore-workspace install
        PYTHONPATH=. python design/star-map-layout/build.py [--fixture PATH] [--server URL]
        git apply -R design/star-map-layout/star-map-layout-src.patch
 
-The patch lets a script hand the Board its states' places and its paths (`window.__LAYOUT__`, set by mock.js) and adds each path and
+The patch lets a script hand the Board its states' places and its paths (`window.__LAYOUT__`, set by mock.js), has the Board redraw
+each such path as one smooth curve that goes no further over a name or into a state than the library's own line, and adds each path and
 name to the page's probe; without that script the page draws as shipped, so one build serves the shipped Board and every library.
 `layouts.mjs` runs the four libraries (dagre, Graphviz dot, ELK Layered, WebCola) over each board in shared.js and writes layouts.js;
 the page reads those layouts and never loads a library, since two of the four bundles do not pass the public demo's scan.
