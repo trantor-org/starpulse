@@ -1,4 +1,4 @@
-// Mockup layer (TASK-2657): editing and archiving a task from the Kanban task modal, injected over a capture of the live page.
+// Mockup layer: editing and archiving a task from the Kanban task modal, injected over a capture of the live page.
 // The board writer is simulated, refusals included: a save is one `update` call, all or nothing; an archive is one `archive` call.
 (() => {
   const STATES = {
