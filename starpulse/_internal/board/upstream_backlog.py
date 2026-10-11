@@ -30,13 +30,14 @@ except ImportError:
 
 from starpulse._internal.board.seam import Board, MoveWriter, Written
 from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
+from starpulse.contracts.task_keys import TaskKeys
 
 if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.eventlog.event_log import EventLog
     from starpulse._internal.machines.machine_definition import Writer
     from starpulse._internal.machines.snapshot import Qualify
-    from starpulse.contracts.adapters import BoardTask, Move, TaskKeys
+    from starpulse.contracts.adapters import BoardTask, Move
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +95,6 @@ def require_project(root: Path, config: BacklogConfig) -> str:
 
 def upstream_keys(prefix: str = DEFAULT_PREFIX) -> TaskKeys:
     """Task keys `<prefix>-N` (and subtasks `<prefix>-N.M`) and the branches that name them, in any case."""
-    from starpulse.contracts.adapters import TaskKeys  # noqa: PLC0415 - import cost, paid on first use
-
     key = rf"{re.escape(prefix)}-\d+(?:\.\d+)*"
     return TaskKeys(
         key=re.compile(key, re.I),
@@ -345,13 +344,13 @@ def project_board(
         drawn, declared, cues = _machine(base / str(settings["machine"]), config)
     else:
         drawn, declared, cues = board_machine(config.statuses), {}, []
-    moves = board_moves(drawn, declared)
 
     def machines(qualify: Qualify, workflows: Collection[str]) -> dict[str, dict]:
         return {"board": drawn}
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
-        UpstreamBacklog(root, feed.put, moves, feed.retract).start(interval)
+        # Built here, not at load: a `Move` is an adapter model, and a board read never starts the poll.
+        UpstreamBacklog(root, feed.put, board_moves(drawn, declared), feed.retract).start(interval)
 
     return Board(
         machines=machines,

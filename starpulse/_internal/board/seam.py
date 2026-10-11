@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.eventlog.event_log import EventLog
     from starpulse._internal.machines.snapshot import Qualify
-    from starpulse.contracts.adapters import TaskKeys
+    from starpulse.contracts.task_keys import TaskKeys
 
 __all__ = [
     "DEFAULT_TYPE",
