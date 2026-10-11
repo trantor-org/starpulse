@@ -36,6 +36,7 @@ bench = [
 dev = [
     "import-linter>=2.15",
     "pytest>=9",
+    "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
 ]
 hub = [
@@ -102,6 +103,9 @@ layers = [
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
+# A test that never returns fails after this many seconds instead of holding the job: one spinning worker grows
+# by about 6.5 MB/s through log capture.
+timeout = 120
 testpaths = ["starpulse/tests", "ci"]
 # The UI preview script under `ci/` is imported by its module name.
 pythonpath = ["ci"]
