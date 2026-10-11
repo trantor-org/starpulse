@@ -11,10 +11,13 @@ from starpulse._internal.config.triggers import EVENTS, Trigger
 from starpulse._internal.eventlog import events, lane_events
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.runs.triggers import STREAMS, run_triggers
-from starpulse.contracts.adapters import StartFailedError
+from starpulse.contracts.adapters import BoardTask, StartFailedError
+from starpulse.tests.machines import MACHINES
 
 _DONE = Trigger("lane", "dagu/reconcile", {"lane": {"equals": "done"}})
+_REVIEW = Trigger("lane", "dagu/review", {"lane": {"equals": "review"}})
 _CURSOR = "triggers"
 
 
@@ -221,3 +224,55 @@ def test_a_start_the_adapter_refuses_is_dropped_and_the_next_event_still_starts(
     _stop(stop, thread)
 
     assert dagu.calls == ["reconcile", "reconcile"]
+
+
+def _replayed_board(
+    store: HistoryStore, log: EventLog, dagu: _Dagu, stop: threading.Event
+) -> tuple[BoardFeed, threading.Thread]:
+    """A board a `serve` on an empty store replays, with the trigger reader started as `serve` starts it: before the
+    adapter's stream is read, so the replay's lane entries land after the log's head at that moment."""
+    feed = BoardFeed(machines=MACHINES)
+    feed.record_lanes(store, log)
+    feed.await_stream()
+    feed.expect("3-0")
+    thread = threading.Thread(
+        target=run_triggers,
+        args=([_DONE, _REVIEW], {"dagu": dagu}, store, log, stop),
+        kwargs={"interval": 0.01, "replayed": feed.wait_replayed},
+        daemon=True,
+    )
+    thread.start()
+    feed.put(BoardTask(id="TASK-1", team="demo", title="shipped", lane="done", observed_at=50.0))
+    feed.put(BoardTask(id="TASK-2", team="demo", title="in review", lane="review", observed_at=60.0))
+    feed.put(BoardTask(id="TASK-3", team="demo", title="open", lane="in_progress", observed_at=70.0))
+    feed.seen("3-0")
+    assert feed.ready.is_set()
+    return feed, thread
+
+
+def test_a_board_replayed_into_an_empty_store_starts_no_run(
+    store: HistoryStore, log: EventLog, stop: threading.Event
+) -> None:
+    dagu = _Dagu()
+    _, thread = _replayed_board(store, log, dagu, stop)
+
+    after = _move(log, "TASK-9", "to_do", 300.0)  # matches no trigger: the reader has read past the replay at it
+    _passed(store, after)
+    _stop(stop, thread)
+
+    assert dagu.calls == []
+
+
+def test_a_lane_move_made_after_the_replay_still_starts_one_run(
+    store: HistoryStore, log: EventLog, stop: threading.Event
+) -> None:
+    dagu = _Dagu()
+    feed, thread = _replayed_board(store, log, dagu, stop)
+
+    feed.put(BoardTask(id="TASK-3", team="demo", title="open", lane="review", observed_at=200.0))
+    head = log.head()
+    assert head is not None
+    _passed(store, head)
+    _stop(stop, thread)
+
+    assert dagu.calls == ["review"]

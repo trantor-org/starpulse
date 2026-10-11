@@ -206,9 +206,12 @@ is malformed, names an instance that is not configured or is push-only, or names
 
 - **Where it starts reading.** A trigger first started takes its place at the head of the event log, so what the log
   retains from before is not replayed into runs. The reader keeps one cursor in the history store (`triggers`), so a
-  restart resumes after the last entry it handled and starts nothing that it handled before. A lane entry reaches the
-  log for a trigger as it does for a hub: on a store that holds no lane history, the first read of the board places
-  every task and each placement is a lane entry.
+  restart resumes after the last entry it handled and starts nothing that it handled before.
+- **A board replay starts no run.** On a store that holds no lane history, the first read of the board places every
+  task and each placement is a lane entry in the log, for the hub it is forwarded to. A reader with no cursor waits
+  until that replay has ended and takes the log's head after it, so none of those entries starts a run; a lane move
+  made after the replay starts one as usual. A store that holds a cursor resumes after it, so a move made while
+  `serve` was down starts its run at the next start.
 - **Once per entry.** An entry id starts a trigger's workflow at most once in a run of `serve`: an entry read again
   after a failed cursor save, or appended again under the same event id, starts nothing more. Delivery is
   at-least-once across a crash: one that falls between a start and its cursor save repeats that one start.
