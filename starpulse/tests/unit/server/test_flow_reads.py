@@ -94,6 +94,8 @@ def _health_rows(store: HistoryStore) -> int:
     return fetched[0]
 
 
+# 1000 recorded lane stays take about two minutes to seed, past the suite's per-test limit.
+@pytest.mark.timeout(300)
 def test_flow_health_fetches_no_more_rows_as_the_week_holds_more_lane_intervals(store: HistoryStore) -> None:
     few = _health_rows(store)
     _churn(store, 200)

@@ -14,6 +14,8 @@ integration cases; otherwise those cases are skipped. `uv sync --no-group hub` i
 instance runs, and the suite then skips the Postgres and hub cases.
 `uv run pytest -n 4 --dist loadgroup` spreads it over four pytest-xdist workers; `loadgroup` keeps the tests that
 share checkout state on one worker. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
+A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;
+a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
 CI runs only the tests a pull request or a push to main can reach (`ci/select_tests.py`); the full suite runs
 nightly and on a manual dispatch. CI's `ic` job imports every module an IC instance can load without the hub extras
 (`ci/ic_imports.py`) rather than running the suite a second time.

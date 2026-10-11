@@ -534,20 +534,30 @@ def rerun(url: str) -> Callable[[str, Mapping[str, str]], str]:
     return rerunner(connect(url))
 
 
-def _reconcile_forever(runs: DaguRuns) -> None:
-    """List Dagu every `RECONCILE_INTERVAL` seconds, so runs show with no `handler_on` hooks publishing them."""
+def _reconcile_forever(runs: DaguRuns, stop: threading.Event) -> None:
+    """List Dagu every `RECONCILE_INTERVAL` seconds until `stop`, so runs show with no `handler_on` hooks publishing them."""
     while True:
         runs.reconcile()
-        time.sleep(RECONCILE_INTERVAL)
+        if stop.wait(RECONCILE_INTERVAL):
+            return
 
 
-def follow(url: str, runs: RunsSink, log: EventLog, *, interval: float = DEFAULT_POLL_INTERVAL) -> None:
+def follow(
+    url: str,
+    runs: RunsSink,
+    log: EventLog,
+    *,
+    interval: float = DEFAULT_POLL_INTERVAL,
+    stop: threading.Event | None = None,
+) -> None:
     """Read the Dagu instance at `url` into `runs`: its listing, then the run entries the log retains and each new one.
 
     The listing comes first so an entry stamped before it, already in it, is dropped (`DaguRuns`); it repeats every
     `RECONCILE_INTERVAL` seconds, so runs show with no `handler_on` hooks publishing them. A sink with a `tied`
-    attribute (the workflows a Board event cues or that write one) also gets those workflows' recent runs.
+    attribute (the workflows a Board event cues or that write one) also gets those workflows' recent runs. Both
+    threads end when `stop` is set; the server passes none and they run for the process's life.
     """
+    stop = stop or threading.Event()
     tied = lambda: getattr(runs, "tied", frozenset())  # noqa: E731
     finished: dict = {}
     reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished), lambda: pools(url), tied=tied)
@@ -555,8 +565,8 @@ def follow(url: str, runs: RunsSink, log: EventLog, *, interval: float = DEFAULT
     def read() -> None:
         reader.reconcile()
         Tail(log, run_events.STREAM, interval=interval).run(
-            lambda entry: reader.handle_entry(str(entry.id), entry.fields), threading.Event()
+            lambda entry: reader.handle_entry(str(entry.id), entry.fields), stop
         )
 
     threading.Thread(target=read, name="dagu-runs", daemon=True).start()
-    threading.Thread(target=_reconcile_forever, args=(reader,), name="dagu-runs-reconcile", daemon=True).start()
+    threading.Thread(target=_reconcile_forever, args=(reader, stop), name="dagu-runs-reconcile", daemon=True).start()
