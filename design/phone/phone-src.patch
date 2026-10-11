@@ -1,0 +1,260 @@
+diff --git a/starpulse/web/src/App.tsx b/starpulse/web/src/App.tsx
+index 45dd63d..8b45233 100644
+--- a/starpulse/web/src/App.tsx
++++ b/starpulse/web/src/App.tsx
+@@ -2,7 +2,7 @@
+ // the right rail (recent moves on top, the legend at the bottom), and the
+ // tooltip and panel the renderer fills. The canvas is the renderer's; this reads
+ // what it publishes and asks it to move.
+-import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
++import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+ import { NO_STARMAP_FILTERS, STARMAP_PREFS_KEY, useFilters } from "./shared/viewPrefs";
+ import { AdminStore } from "./features/admin/adminPrefs";
+ import { ForwardingStore } from "./features/forwarding/forwarding";
+@@ -183,7 +183,46 @@ function Navigator({ shell, ...props }: { shell: boolean } & Parameters<typeof N
+   const nav = useRef<HTMLElement>(null);
+   // a scrolling Matches list stands its rows aside, so those passing under a still pointer light nothing on the canvas
+   useScrollRest(nav, ".matches");
+-  return <aside id="nav" ref={nav}>{shell && <NavigatorBody {...props} />}</aside>;
++  // phone width (mockup): the navigator is hidden until the bar's More, or the corner button, opens it as a sheet over the view
++  const [sheet, setSheet] = useState(false);
++  const shut = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => { setSheet(false); fn(...a); };
++  useEffect(() => {
++    if (!sheet) return;
++    const key = (e: KeyboardEvent) => e.key === "Escape" && setSheet(false);
++    addEventListener("keydown", key);
++    return () => removeEventListener("keydown", key);
++  }, [sheet]);
++  // the Star Map's canvas ends above the bar: it fits again once the bar is drawn and whenever the text size resizes it
++  const bar = useRef<HTMLElement>(null);
++  useEffect(() => {
++    const ro = new ResizeObserver(() => dispatchEvent(new Event("resize")));
++    ro.observe(bar.current!);
++    return () => ro.disconnect();
++  }, []);
++  const { view, activeView, choose, open, hasLevel, hud } = props;
++  const tab = (v: ViewName, label: string, glyph: ReactNode) => (
++    <button className={view === v ? "on" : undefined} aria-current={view === v ? "page" : undefined} title={label}
++      onClick={() => (v === "constellation" && activeView.current === v ? open(BOARD) : choose(v))}>{glyph}<span>{label}</span></button>
++  );
++  const bars = <svg className="g" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" /></svg>;
++  return (
++    <>
++      <aside id="nav" ref={nav} className={sheet ? "sheet" : undefined}>
++        {shell && <NavigatorBody {...props} choose={shut(choose)} open={shut(open)} selectTask={shut(props.selectTask)} />}
++        <button className="pn-x" aria-label="Close the navigator" onClick={() => setSheet(false)}>✕</button>
++      </aside>
++      {sheet && <div id="pn-scrim" onClick={() => setSheet(false)} />}
++      <button id="pnavb" aria-label="Open the navigator" aria-expanded={sheet} onClick={() => setSheet(true)}>{bars}<i className={`dot ${hud.live}`} /></button>
++      <nav id="pnav" ref={bar} aria-label="Views">
++        {tab("constellation", "Star Map", <svg className="g" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none" /><ellipse cx="12" cy="12" rx="10.6" ry="3.9" transform="rotate(-28 12 12)" strokeWidth="1.5" /><circle cx="20.6" cy="3.6" r="1.1" fill="currentColor" stroke="none" /></svg>)}
++        {tab("kanban", "Kanban", <svg className="g kb" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="2.5" height="10" rx=".6" /><rect x="4.75" y="1" width="2.5" height="7" rx=".6" /><rect x="8.5" y="1" width="2.5" height="4.5" rx=".6" /></svg>)}
++        {tab("dags", "DAGs", <svg className="g dg" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 9.5 5 3.2 8.6 5.4 10.4 2" /><circle cx="2" cy="9.5" r="1.3" /><circle cx="5" cy="3.2" r="1.3" /><circle cx="8.6" cy="5.4" r="1.1" /><circle cx="10.4" cy="2" r=".9" /></svg>)}
++        {hasLevel && tab("graph", "Flow", <svg className="g" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><ellipse cx="6" cy="6" rx="5" ry="2.4" /><circle cx="6" cy="6" r="1.2" /></svg>)}
++        {tab("admin", "Admin", <svg className="g" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.8" /><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1" /></svg>)}
++        <button className="more" aria-label="More: search, status and the rest of the navigator" aria-expanded={sheet} onClick={() => setSheet(true)}>{bars}<span>More</span><i className={`dot ${hud.live}`} /></button>
++      </nav>
++    </>
++  );
+ }
+ 
+ function NavigatorBody({ hud, view, activeView, slot, outlineSlot, choose, hasLevel, open, spot, selectTask }: {
+diff --git a/starpulse/web/src/features/kanban/Kanban.tsx b/starpulse/web/src/features/kanban/Kanban.tsx
+index a5f5886..09dd7a1 100644
+--- a/starpulse/web/src/features/kanban/Kanban.tsx
++++ b/starpulse/web/src/features/kanban/Kanban.tsx
+@@ -739,6 +739,9 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
+   );
+   const outline = useMemo(() => milestoneOutline(cards, hud.settled), [cards, hud.settled]);
++  // phone width (mockup): the lane showing; In Progress first, as the lane a phone is most often opened to check
++  const [phoneLane, setPhoneLane] = useState<string>(() => (window as { __PHONE_LANE__?: string }).__PHONE_LANE__ ?? "in_progress");
++  const shownLane = view.columns.some((c) => c.id === phoneLane) ? phoneLane : view.columns[0]?.id;
+   return (
+     <main id="kb" className={compact ? "compact" : undefined}>
+       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
+@@ -796,15 +799,23 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
+           </span>
+         </div>
+       </div>
++      {/* phone width (mockup): one lane shows at a time, picked on this strip (or, stacked, on a lane's own header) */}
++      <div className="lanes" role="tablist" aria-label="Lanes">
++        {view.columns.map((col) => (
++          <button key={col.id} role="tab" data-lane={col.id} aria-selected={col.id === shownLane} title={col.name} onClick={() => setPhoneLane(col.id)}>
++            <span className="g" /><span className="c">{col.count}</span><span className="nm">{col.name}</span>
++          </button>
++        ))}
++      </div>
+       <div id="cols" ref={columns} data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
+         {view.columns.map((col) => {
+           let row = 0;
+           const target = lift?.kinds[col.id];
+           const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
+-          const colCls = ["col", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
++          const colCls = ["col", col.id === shownLane && "on", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
+           return (
+             <section key={col.id} className={colCls} data-lane={col.id}>
+-              <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
++              <h2 onClick={() => setPhoneLane(col.id)}><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>
+                 {inChain > 0 && <span className="cc" title={`${inChain} of this column's tasks are in the hovered task's chain`}>⛓{inChain}</span>}
+                 {target && target.kind !== "here" && (
+                   <span className="hint">{target.kind === "ok" ? "drop" : target.kind === "guard" ? `guarded · ${target.skill || "refused"}` : "no transition"}</span>
+diff --git a/starpulse/web/src/main.tsx b/starpulse/web/src/main.tsx
+index 7133849..007e908 100644
+--- a/starpulse/web/src/main.tsx
++++ b/starpulse/web/src/main.tsx
+@@ -4,4 +4,5 @@ import { loadFonts } from "./render/fonts";
+ 
+ void loadFonts();
+ // the Board draws from this chunk; the React page (navigator, rail, the other views) is a chunk that mounts after that frame
+-boot(() => void import("./mount"));
++// the mockup's review frame (design/phone/mock.js) holds two copies of the page in iframes and is not itself one
++if (!(globalThis as { __COMPARE__?: boolean }).__COMPARE__) boot(() => void import("./mount"));
+diff --git a/starpulse/web/src/render/renderer.ts b/starpulse/web/src/render/renderer.ts
+index 5666097..2b676c0 100644
+--- a/starpulse/web/src/render/renderer.ts
++++ b/starpulse/web/src/render/renderer.ts
+@@ -245,7 +245,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+     const dpr = devicePixelRatio || 1;
+     ({ left: L, width: W } = canvasSpace(innerWidth, navW(), railW()));
+     FW = W;
+-    H = innerHeight;
++    // phone width (mockup): the view bar along the bottom edge is not canvas
++    H = innerHeight - (document.getElementById("pnav")?.offsetHeight ?? 0);
+     cv.width = W * dpr;
+     cv.height = H * dpr;
+     cv.style.left = `${L}px`;
+diff --git a/starpulse/web/src/style.css b/starpulse/web/src/style.css
+index 16eba12..22bd61f 100644
+--- a/starpulse/web/src/style.css
++++ b/starpulse/web/src/style.css
+@@ -968,3 +968,129 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
+ #kb .ap .ap-ref { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; margin: 0; width: 320px; white-space: normal; border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); border-radius: 7px; }
+ #kb .ap.down { justify-content: flex-end; font-size: calc(11px * var(--fs)); color: var(--fail-text); }
+ @media (prefers-reduced-motion: reduce) { #kb .ap .dm .m i, #kb .ap .dims { transition: none; } #kb .ap .nx.starting b { animation: none; } }
++
++/* Phone width (mockup). Under 900px the navigator and the rail are gone, so nothing switched views, and the Kanban's
++   six lanes, the DAGs' six columns and the Admin's two-column rows were laid out for a wide page. The mockup's switches sit on
++   <html>: data-phone turns the phone layout on, data-pnav picks the navigator (bar, drawer, overlay) and data-pkb the Kanban
++   (tabs, stack). The built slice drops the switches and keeps the approved branch of each. */
++#pnav, #pnavb, #pn-scrim, #nav .pn-x, #kb .lanes { display: none; }
++@media (max-width: 900px) {
++  html[data-phone] { --pm: 12px; --pnav: 0px; }
++  html[data-phone] :is(#kb, #dg, #admin) { left: var(--pm); right: var(--pm); bottom: var(--pnav); }
++  html[data-phone] #og { bottom: var(--pnav); }
++  html[data-phone] :is(#kb, #dg, #admin) header { height: auto; min-height: 52px; flex-wrap: wrap; gap: 2px 12px; padding: 8px 0; box-sizing: border-box; }
++
++  /* The navigator: the real one, opened as a sheet over the view. The scrim under it closes it, as do its ✕, Escape and choosing a view or a search hit. */
++  html[data-phone] #nav.sheet { display: flex; z-index: 40; --nav: min(86vw, 320px); background: var(--bg0); box-shadow: 12px 0 40px color-mix(in srgb, var(--shadow) 60%, transparent); }
++  html[data-phone][data-pnav=overlay] #nav.sheet { --nav: 100vw; border-right: 0; }
++  html[data-phone] #pn-scrim { display: block; position: fixed; inset: 0; z-index: 39; background: color-mix(in srgb, var(--scrim) 62%, transparent); }
++  html[data-phone] #nav.sheet .pn-x { all: unset; display: block; position: absolute; top: 14px; right: 12px; padding: 4px 8px; color: var(--muted); font-size: calc(14px * var(--fs)); }
++  html[data-phone] #nav.sheet .pn-x:is(:hover, :focus-visible) { color: var(--ink); }
++  html[data-phone] #nav.sheet .head { padding-right: 34px; }
++  html[data-phone] :is(#pnav, #pnavb) .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--run); }
++  html[data-phone] :is(#pnav, #pnavb) .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
++  html[data-phone] :is(#pnav, #pnavb) .dot.off { background: var(--fail); }
++  html[data-phone] :is(#pnav, #pnavb) svg { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
++  html[data-phone] #pnav svg.kb { fill: currentColor; stroke: none; }
++  html[data-phone] #pnav svg.dg circle { fill: currentColor; stroke: none; }
++
++  /* bar: every view one tap away along the bottom edge; More opens the sheet for search, the status line and the view's own outline */
++  html[data-phone][data-pnav=bar] { --pnav: calc(38px + 16px * var(--fs)); }
++  html[data-phone][data-pnav=bar] #pnav { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); position: fixed; z-index: 2; left: 0; right: 0; bottom: 0; height: var(--pnav); box-sizing: border-box;
++    background: color-mix(in srgb, var(--glass) 94%, transparent); border-top: 1px solid color-mix(in srgb, var(--slate) 10%, transparent); }
++  html[data-phone] #pnav button { all: unset; position: relative; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0;
++    font-size: calc(9px * var(--fs)); color: var(--muted); }
++  html[data-phone] #pnav button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  html[data-phone] #pnav button svg { width: 17px; height: 17px; flex: none; }
++  html[data-phone] #pnav button:is(:hover, :focus-visible) { color: var(--ink-3); }
++  html[data-phone] #pnav button:focus-visible { outline: 1px solid var(--agent); outline-offset: -3px; }
++  html[data-phone] #pnav button.on { color: var(--ink); background: linear-gradient(180deg, color-mix(in srgb, var(--agent) 18%, transparent), transparent); box-shadow: inset 0 2px 0 var(--agent); }
++  html[data-phone] #pnav .more .dot { position: absolute; top: 9px; left: calc(50% + 9px); }
++
++  /* drawer and overlay: one corner button opens the sheet; the view's header and the crumb start right of it */
++  html[data-phone]:is([data-pnav=drawer], [data-pnav=overlay]) #pnavb { all: unset; display: flex; align-items: center; justify-content: center; position: fixed; z-index: 4; top: 8px; left: 8px; width: 36px; height: 36px; border-radius: 8px;
++    color: var(--slate); background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); }
++  html[data-phone] #pnavb:is(:hover, :focus-visible) { color: var(--ink); border-color: color-mix(in srgb, var(--slate) 40%, transparent); }
++  html[data-phone] #pnavb .dot { position: absolute; top: 5px; right: 5px; }
++  html[data-phone]:has(#kbm, #tkm) #pnavb { display: none; }
++  html[data-phone]:is([data-pnav=drawer], [data-pnav=overlay]) :is(#kb, #dg, #admin) header { padding-left: 44px; }
++  html[data-phone]:is([data-pnav=drawer], [data-pnav=overlay]) #crumb { left: 58px; }
++  html[data-phone]:is([data-pnav=drawer], [data-pnav=overlay]) #og .og-head { left: 58px; }
++
++  /* Kanban: one lane at a time. The toolbar's right-hand group takes its own lines; the autopilot strip wraps instead of holding one static width. */
++  html[data-phone] #kb .filters .rt { width: 100%; margin-left: 0; justify-content: flex-start; gap: 6px 12px; }
++  html[data-phone] #kb .ap { width: 100%; flex-wrap: wrap; gap: 6px 12px; padding: 6px 0; border-inline: 0; border-block: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
++  html[data-phone] #kb .ap :is(.nx, .paused) { flex: 1 1 100%; }
++  html[data-phone] #kb .ap .dims { flex: 1 1 100%; flex-wrap: wrap; gap: 6px 12px; }
++  html[data-phone] #kb .ap .dm { flex: 1 1 auto; }
++  html[data-phone] #kb .ap + .shown { margin-left: 0; width: auto; }
++  html[data-phone] #kb .rt .nt { width: auto; margin-left: auto; }
++  html[data-phone] #kb .ap :is(.ap-ses, .ap-ref) { left: 0; right: 0; min-width: 0; width: auto; }
++  html[data-phone] :is(#kb, #nav, #dg) .menu { min-width: min(240px, calc(100vw - 2 * var(--pm))); max-width: calc(100vw - 2 * var(--pm)); }
++  html[data-phone] #kb #cols { grid-template-columns: minmax(0, 1fr); gap: 6px; padding-bottom: var(--pm); }
++  html[data-phone] #kb .lanes button { --c: var(--slate); }
++  html[data-phone] #kb :is(.lanes button, .col)[data-lane=ready] { --c: var(--ready); } html[data-phone] #kb :is(.lanes button, .col)[data-lane=in_progress] { --c: var(--run); }
++  html[data-phone] #kb :is(.lanes button, .col)[data-lane=review] { --c: var(--agent); } html[data-phone] #kb :is(.lanes button, .col)[data-lane=needs_attention] { --c: var(--fail); }
++  html[data-phone] #kb :is(.lanes button, .col)[data-lane=done] { --c: var(--ok); }
++
++  /* tabs: a strip of the lanes, each its ring and count; the lane showing keeps its own header, so its name is always spelled out */
++  html[data-phone][data-pkb=tabs] #kb .lanes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; flex: none; margin-bottom: 8px; }
++  html[data-phone] #kb .lanes button { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 34px; padding: 4px 2px; border-radius: 6px;
++    border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--slate); font-variant-numeric: tabular-nums; }
++  html[data-phone] #kb .lanes button .g { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--c); box-sizing: border-box; }
++  html[data-phone] #kb .lanes button .nm { display: none; }
++  html[data-phone] #kb .lanes button[aria-selected=true] { border-color: color-mix(in srgb, var(--agent) 60%, transparent); background: color-mix(in srgb, var(--agent) 10%, transparent); color: var(--ink); }
++  html[data-phone] #kb .lanes button[aria-selected=true] .g { background: var(--c); }
++  html[data-phone] #kb .lanes button:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
++  html[data-phone][data-pkb=tabs] #kb .col:not(.on) { display: none; }
++
++  /* stack: every lane's header stays in a column; the one tapped opens and takes the room that is left */
++  html[data-phone][data-pkb=stack] #kb #cols { display: flex; flex-direction: column; }
++  html[data-phone][data-pkb=stack] #kb .col { flex: none; }
++  html[data-phone][data-pkb=stack] #kb .col.on { flex: 1 1 0; }
++  html[data-phone][data-pkb=stack] #kb .col:not(.on) > :not(h2) { display: none; }
++  html[data-phone][data-pkb=stack] #kb .col h2 { padding: 9px 12px 8px; }
++  html[data-phone][data-pkb=stack] #kb .col:not(.on) h2 { border-bottom: 0; }
++  html[data-phone][data-pkb=stack] #kb .col h2 .c { margin-left: auto; }
++  html[data-phone] #kb .col h2 .g { border-color: var(--c, currentColor); }
++
++  /* the task and DAG modals fill the phone, above the bar */
++  html[data-phone] #kbm .modal.tv, html[data-phone] #kbm .modal.tv.dgm { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border-inline: 0; }
++  html[data-phone] #kbm .modal:not(.tv), html[data-phone] #tkm .modal { width: calc(100vw - 2 * var(--pm)); max-width: none; }
++  html[data-phone] #kbm :is(.tvhead, .tvcol) { padding-inline: 14px; }
++  /* a DAG's chart keeps the size its step names are read at and scrolls inside its own box; scaled to 390 px its names were 4 px tall */
++  html[data-phone] #kbm .dgm .tvhead { padding: 14px 44px 12px 14px; }
++  html[data-phone] #kbm .dgm .tvbody { padding: 14px; }
++  html[data-phone] #kbm .dgm .chart { overflow-x: auto; padding-bottom: 8px; }
++  html[data-phone] #kbm .dgm .chart svg { max-width: none; }
++  html[data-phone] #kbm .dgm .tierow { flex-wrap: wrap; gap: 4px 10px; }
++  html[data-phone] #kbm .dgm .tierow .tie { max-width: 100%; }
++  html[data-phone] #kbm .dgm .tierow .lgnote { margin-left: 0; white-space: normal; }
++  html[data-phone] #kbm .dgm .tvfoot { padding-inline: 14px; }
++
++  /* DAGs: a row is two lines, the DAG and its last run over its steps, pool and board tie; the column header has nothing left to name */
++  html[data-phone] #dg .fw:has(#dgq) { flex: 1 1 100%; }
++  html[data-phone] #dg .fw #dgq { width: 100%; box-sizing: border-box; }
++  html[data-phone] #dg .thead { display: none; }
++  html[data-phone] #dg .trow { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; padding-block: 8px; contain-intrinsic-size: auto calc(40px + 24px * var(--fs)); }
++  html[data-phone] #dg .trow::before { content: ""; order: 2; flex: 0 0 100%; height: 5px; }
++  html[data-phone] #dg .trow > :is(.orb, .nm, .last) { order: 1; }
++  /* a name and a last run too long to share the line take one each, neither cut short */
++  html[data-phone] #dg .trow > .nm { flex: 0 1 auto; max-width: calc(100% - 14px - 10px); }
++  html[data-phone] #dg .trow > .last { flex: 0 1 auto; margin-left: auto; }
++  /* the steps keep a width they can be read at; a pool and a tie too wide to sit beside them take the next line */
++  html[data-phone] #dg .trow > :is(svg.dstrip, .pool, .pool + span) { order: 3; }
++  html[data-phone] #dg .trow > svg.dstrip { flex: 1 1 calc(96px * var(--fs)); min-width: calc(96px * var(--fs)); width: auto; }
++  html[data-phone] #dg .trow > .pool { flex: 0 1 auto; }
++  html[data-phone] #dg .trow > .pool + span { flex: 0 1 auto; margin-left: auto; display: flex; max-width: 100%; }
++  html[data-phone] #dg .trow > .pool + span:has(> .none) { display: none; }
++  html[data-phone] #dg .trow > .play.edge + *, html[data-phone] #dg .trow > span:empty { display: none; }
++  html[data-phone] .dtoast { max-width: 100%; }
++
++  /* Admin: a setting's name and hint sit over its control */
++  html[data-phone] #admin .row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
++  html[data-phone] #admin .seg { max-width: 100%; flex-wrap: wrap; }
++  html[data-phone] #admin .card h2 { flex-wrap: wrap; gap: 2px 10px; }
++  html[data-phone] #admin :is(.card h2, .row, .foot, .pv) { padding-inline: 12px; }
++  html[data-phone] #admin .grid { padding-bottom: var(--pm); }
++}
