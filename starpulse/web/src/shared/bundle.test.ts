@@ -30,6 +30,8 @@ const LAZY_DEMO = [
 const LAZY_BOARD_EXTRAS = [
   "render/foldDraw.ts",
   "render/machineLedgerDraw.ts",
+  "features/kanban/kanban.ts",
+  "features/dags/dags.ts",
 ];
 
 const root = new URL("../..", import.meta.url).pathname;

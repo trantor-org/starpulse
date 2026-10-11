@@ -25,14 +25,13 @@ import {
   RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
 } from "./scene";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
-import { kanbanTasks, type KanbanTask } from "../features/kanban/kanban";
+import type { KanbanTask } from "../features/kanban/kanban";
 import { openStream, type Link } from "../api/stream";
 import { UPDATING, linkHud } from "./connection";
 import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
 import { sizes } from "./grow";
 import { draws, hostRun, laneRun, layout as traceLayout, machineRun, sessionRings, subjectOf, traceCard, traceTable, type Place, type Run, type Subject } from "../features/level/trace";
-import { dagData } from "../features/dags/dags";
 import { boardTies, hangarLevel, tieLedger, type Ties } from "./dagTies";
 import { hubTip, tieTip } from "./dagTieTips";
 import type { Dag, Delta, LedgerRow, Machine, RawAgent, Snapshot, Writer } from "../api";
@@ -56,6 +55,20 @@ import { staged } from "./staged";
 import { whenShown } from "./shown";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 import { loadFonts } from "./fonts";
+
+/** Kanban and DAGs HUD fields load after the Board's first paint; React mounts only then. */
+type DagDataFn = (typeof import("../features/dags/dags"))["dagData"];
+type KanbanTasksFn = (typeof import("../features/kanban/kanban"))["kanbanTasks"];
+let dagData: DagDataFn | null = null;
+let kanbanTasks: KanbanTasksFn | null = null;
+let hudViewsP: Promise<void> | undefined;
+const loadHudViews = (): Promise<void> => (hudViewsP ??= Promise.all([
+  import("../features/dags/dags"),
+  import("../features/kanban/kanban"),
+]).then(([d, k]) => {
+  dagData = d.dagData;
+  kanbanTasks = k.kanbanTasks;
+}));
 
 const finished = (iso: string) => (iso ? Date.parse(iso) / 1000 : NaN);
 
@@ -556,9 +569,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       counts: Object.fromEntries(Object.values(sky.flows).map((f) => [f.name, f.agents.length])),
       hostCounts: Object.fromEntries(Object.entries(sky.tree.subs).flatMap(([state, flows]) => flows.map((f) => [`${state}/${f}`, hosted(sky, f, state).length]))),
       dags: sky.dags.map((d) => d.name),
-      dagData: dagData(sky),
+      ...(dagData && kanbanTasks ? { dagData: dagData(sky), cards: kanbanTasks(sky) } : {}),
       pools: sky.pools,
-      cards: kanbanTasks(sky),
       settled: Object.values(sky.settled),
       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
       claims: sky.claims,
@@ -1383,6 +1395,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       shown1 = true;
       onDrawn();
       extrasCancel ??= prefetchBoardExtras();
+      void loadHudViews().then(() => { if (!stopped) publish(); });
     }
     if (now - tick > 250) {
       tick = now;

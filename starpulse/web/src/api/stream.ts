@@ -1,8 +1,8 @@
 // Every machine's tasks and the runs instances' workflows, pushed by /api/events: a snapshot on every connect, then one delta per change.
 
 import { demoServer, type DemoServerHandle } from "../demo/host";
-import type { Delta, LedgerRow, Snapshot } from ".";
 import { playLink } from "../demo/linkDemo";
+import type { Delta, LedgerRow, Snapshot } from ".";
 import { keep } from "./same";
 
 export { embedded } from "../demo/host";
