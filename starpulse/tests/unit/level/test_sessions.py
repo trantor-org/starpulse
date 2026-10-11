@@ -12,7 +12,7 @@ from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, CODEX, Signal, 
 from starpulse._internal.level.sessions import grouped, session_health, slice_health
 from starpulse._internal.level.signals import claim_key
 from starpulse.contracts.adapters import TaskKeys
-from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES, recorded
+from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES, claude, export, recorded
 
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),
@@ -184,6 +184,24 @@ def test_a_sessions_kind_is_headless_for_an_sdk_request_and_interactive_for_the_
     rows = session_health(headless + interactive + unknown, KEYS)
 
     assert {r["session"]: r["kind"] for r in rows} == {"a": "headless", "b": "interactive", "c": "unknown"}
+
+
+def test_a_main_thread_request_under_a_custom_output_style_is_counted_as_a_main_request_not_a_side_one() -> None:
+    sources = ["repl_main_thread:outputStyle:custom", "generate_session_title", "compact"]
+    found = signals(export(*(claude("api_request", n, model="m", query_source=q) for n, q in enumerate(sources))))
+
+    row = only(session_health(found, KEYS))
+
+    assert (row["requests"], row["side_requests"]) == (1, 1)
+
+
+def test_a_sessions_kind_is_interactive_for_a_main_thread_request_under_a_custom_output_style() -> None:
+    styled = [sig("request", 1, detail="repl_main_thread:outputStyle:custom")]
+    other = [sig("request", 1, session="b", detail="repl_main_threads")]
+
+    rows = session_health(styled + other, KEYS)
+
+    assert {r["session"]: r["kind"] for r in rows} == {"s": "interactive", "b": "unknown"}
 
 
 def test_a_session_with_no_keys_has_no_task() -> None:

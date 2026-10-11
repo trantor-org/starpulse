@@ -48,7 +48,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.level.signals import CODEX, Signal, claim_key, claimed
+from starpulse._internal.level.signals import CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
 
 __all__ = ["attributed", "grouped", "session_health", "session_kind", "slice_health"]
@@ -71,8 +71,9 @@ def session_kind(session: list[Signal]) -> str:
                 if s.detail in _CODEX_INTERACTIVE
                 else "unknown"
             )
-        if s.kind == "request" and s.detail in {"sdk", "repl_main_thread"}:
-            return "headless" if s.detail == "sdk" else "interactive"
+        source = main_thread_source(s.detail)
+        if s.kind == "request" and source in {"sdk", "repl_main_thread"}:
+            return "headless" if source == "sdk" else "interactive"
     return "unknown"
 
 
