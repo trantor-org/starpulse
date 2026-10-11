@@ -31,6 +31,7 @@ starpulse analytics trajectories --hours 48      # variants, outliers, expected 
 starpulse analytics gates --task PROJ-45         # which gates a run can bypass, with the path that skips each
 starpulse analytics forecast --task PROJ-45      # where a run still going is likely to end, and in how many days
 starpulse analytics what-if --from review --to in_progress --p 0.1  # the change in the goal and days
+starpulse analytics steps --hours 24             # one row per model request: skill in force, activities, keys, tokens
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
@@ -95,6 +96,7 @@ lists exactly the verbs there are.
 | `analytics gates` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `gates` and `runs`, below; `--task` keeps one run and exits 4 when it ended nowhere in the window; refusals as `analytics level` |
 | `analytics forecast` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `forecast` and `calibration`, below; `--task` keeps one run and exits 4 when it has no run still going; refusals as `analytics level` |
 | `analytics what-if` | `--from`, `--to`, `--p`, `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `from`, `to`, `p`, `was`, `n`, `start`, `p_goal`, `expected_days` and `chain`, below; a what-if the chain cannot answer exits 1; refusals as `analytics level` |
+| `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number exits 1 and a server that receives no telemetry exits 3 |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
@@ -195,6 +197,12 @@ shares of the rest. `p_goal` and `expected_days` are `{before, after, change}` f
 began in, and `chain` is the changed chain per state. A state no ended run left (a terminal `to` needs none), `to` the
 same as `from`, a `p` outside 0 to 1, a transition that is its state's only exit, or a chain that would never finish is
 400 (exit 1).
+
+`analytics steps` reads `GET /api/analytics/steps[?hours=N]` (168 hours by default): one row per model request of the
+window, oldest first, that [Connect sources](sources.md#read-each-step-of-a-session) defines. `skill` is the skill
+most recently loaded in the session, `none` before any load; `activities` and `keys` hold one entry per tool call
+the step made, a key being the command the server's redactor left, else the tool's name; `tokens` is
+`{input, output, cache_read, cache_write, reasoning}`.
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}` with `actor` `operator` when

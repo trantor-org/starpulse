@@ -36,6 +36,7 @@ ROUTES = (
     "/api/pulls",
     "/api/analytics/health",
     "/api/analytics/sessions",
+    "/api/analytics/steps",
     "/api/analytics/missed-loads",
     "/api/analytics/trace-clusters?outliers=2",
     "/api/harnesses",

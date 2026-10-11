@@ -750,6 +750,32 @@ class Sessions(_Api):
     slices: list[SliceHealth]
 
 
+class SessionStep(_Api):
+    """One model request of a harness session, with the skill in force when it ran and the calls it made."""
+
+    harness: str
+    session: str
+    task: str | None
+    at: float = Field(description="When the request was logged, in epoch seconds.")
+    model: str
+    origin: Literal["main", "side", "auxiliary"]
+    skill: str = Field(description="The skill most recently loaded in the session, counting this step's own; `none` before any.")
+    activities: list[str] = Field(description="What each call it made performed, in order, with no arguments.")
+    keys: list[str] = Field(
+        description="One per call: the shell command the instance's redactor left, else the tool's name."
+    )
+    tokens: TokenCounts
+    captured: bool = Field(description="False for a harness the steps-per-completion ledger does not cover (Codex).")
+
+
+class SessionSteps(_Api):
+    """`GET /api/analytics/steps`: every model request of a window, oldest first."""
+
+    now: float
+    window_s: float
+    steps: list[SessionStep]
+
+
 class CaseRef(_Api):
     """One session's work on one task (`task` None: a branch that names none)."""
 
@@ -1578,6 +1604,7 @@ RESPONSES: dict[str, Any] = {
     "/api/machines": Machines,
     "/api/analytics/health": Health,
     "/api/analytics/sessions": Sessions,
+    "/api/analytics/steps": SessionSteps,
     "/api/analytics/missed-loads": MissedLoads,
     "/api/analytics/trace-clusters": TraceClusters,
     "/api/level": Level,
@@ -1633,6 +1660,7 @@ BODIES: dict[str, Any] = {
     "search": SearchResults | ApiError,
     "health": Health | ApiError,
     "sessions": Sessions | ApiError,
+    "session_steps": SessionSteps | ApiError,
     "missed_loads": MissedLoads | ApiError,
     "trace_clusters": TraceClusters | ApiError,
     "level": Level | ApiError | WindowTooLong,
@@ -1701,6 +1729,7 @@ class ApiContract(_Api):
     searchResults: SearchResults
     health: Health
     sessions: Sessions
+    sessionSteps: SessionSteps
     missedLoads: MissedLoads
     traceClusters: TraceClusters
     level: Level

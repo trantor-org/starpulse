@@ -8,6 +8,7 @@ import string
 import threading
 import time
 import urllib.request
+from datetime import datetime
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,9 +32,13 @@ from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.cli import doctor
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.search import SearchIndex
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
+from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.hosts import FakeHost
 from starpulse.tests.machines import MACHINES
+from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 from starpulse.tests.unit.level.test_analytics import NOW, ROWS, H
 
 VALID_MACHINE = Path(__file__).parent.parent.parent.parent / "machines" / "harness.yaml"
@@ -201,6 +206,27 @@ def leveled(tmp_path: Path) -> Iterator[str]:
     for i, (task_id, at, _old, new) in enumerate(ROWS):
         store.record_lane(f"{'a' if task_id in 'AB' else 'b'}/{i}", task_id, new, at)
     with _serve(tmp_path, BoardFeed(machines=MACHINES), history=store, clock=lambda: NOW, level=level) as server:
+        yield _url(server, "")
+
+
+#: An hour after the recorded Claude Code export the `stepped` server holds.
+STEPS_NOW = datetime.fromisoformat("2026-10-09T22:30:00+00:00").timestamp()
+
+
+@pytest.fixture
+def stepped(tmp_path: Path) -> Iterator[str]:
+    """A server that received one recorded Claude Code export of three model requests, the clock an hour after it."""
+    keys = TaskKeys(
+        key=re.compile(r"TASK-\d+"),
+        branch=re.compile(r"(?:refs/heads/)?(?:[\w.-]+/)*task-(\d+)", re.IGNORECASE),
+        key_format="TASK-{}",
+    )
+    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines():
+        telemetry.publish(signals(json.loads(line)))
+    with _serve(
+        tmp_path, BoardFeed(machines=MACHINES, keys=keys), telemetry=telemetry, clock=lambda: STEPS_NOW
+    ) as server:
         yield _url(server, "")
 
 
@@ -1002,6 +1028,7 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "analytics gates",
         "analytics forecast",
         "analytics what-if",
+        "analytics steps",
         "config check",
         "demo",
         "doctor",
@@ -1133,6 +1160,34 @@ def test_analytics_health_refuses_a_window_the_server_refuses(base: str, capsys:
     code, doc = _run(capsys, ["analytics", "health", "--hours", "0", "--server", base])
 
     assert (code, doc["code"], "positive number" in doc["error"]) == (1, "refused", True)
+
+
+def test_analytics_steps_lists_each_model_request_with_its_skill_activities_keys_and_tokens(
+    stepped: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["analytics", "steps", "--hours", "24", "--server", stepped])
+
+    assert code == 0
+    assert (doc["now"], doc["window_s"]) == (STEPS_NOW, 24 * 3600)
+    assert [(s["harness"], s["task"], s["skill"], s["captured"]) for s in doc["steps"]] == [
+        ("claude-code", "TASK-1", "none", True)
+    ] * 3
+    assert [s["keys"] for s in doc["steps"]] == [["Bash"], ["Bash"], []]
+    assert set(doc["steps"][0]["tokens"]) == {"input", "output", "cache_read", "cache_write", "reasoning"}
+
+
+def test_analytics_steps_refuses_a_window_the_server_refuses(stepped: str, capsys: pytest.CaptureFixture[str]) -> None:
+    code, doc = _run(capsys, ["analytics", "steps", "--hours", "0", "--server", stepped])
+
+    assert (code, doc["code"], "positive number" in doc["error"]) == (1, "refused", True)
+
+
+def test_analytics_steps_of_a_server_that_receives_no_telemetry_is_unavailable(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["analytics", "steps", "--server", base])
+
+    assert (code, doc["code"], "telemetry" in doc["error"]) == (3, "unavailable", True)
 
 
 def test_analytics_level_serves_the_levels_flow_numbers_and_orbit_shares_as_the_server_computes_them(
@@ -1560,6 +1615,10 @@ CASES = {
     ("analytics health", 1): ["analytics", "health", "--hours", "0", "--server", "{server}"],
     ("analytics health", 2): ["analytics", "health", "--hours", "soon"],
     ("analytics health", 3): ["analytics", "health", "--server", "{down}"],
+    ("analytics steps", 0): ["analytics", "steps", "--hours", "24", "--server", "{stepped}"],
+    ("analytics steps", 1): ["analytics", "steps", "--hours", "0", "--server", "{stepped}"],
+    ("analytics steps", 2): ["analytics", "steps", "--hours", "soon"],
+    ("analytics steps", 3): ["analytics", "steps", "--server", "{down}"],
     ("analytics level", 0): ["analytics", "level", "--hours", "48", "--server", "{leveled}"],
     ("analytics level", 1): ["analytics", "level", "--hours", "91", "--server", "{leveled}"],
     ("analytics level", 2): ["analytics", "level", "--hours", "soon"],
@@ -1775,6 +1834,7 @@ def _case_files(root: Path) -> Path:
 SERVERS = {
     "server": "base",
     "leveled": "leveled",
+    "stepped": "stepped",
     "movable": "movable",
     "bare": "bare",
     "runnable": "runnable",

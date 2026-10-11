@@ -176,6 +176,7 @@ _WHAT_IF_KEYS = (
     "chain",
 )
 _HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
+_STEP_KEYS = ("now", "window_s", "steps")
 _TASK_KEYS = (
     "id",
     "title",
@@ -956,6 +957,12 @@ def _forecast(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     return document
 
 
+def _steps(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """One row per model request over `--hours`, as `/api/analytics/steps` answers: the skill in force, the activities
+    and keys of the calls it made, and its tokens. A server that receives no telemetry is `unavailable`."""
+    return _level_read(args, environ, "/api/analytics/steps", _STEP_KEYS)
+
+
 def _what_if(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The change in the chance of the goal and the expected days when one transition has probability `--p`."""
     params = {"from": args.origin, "to": args.to, "p": args.p}
@@ -1604,6 +1611,16 @@ def _parser() -> argparse.ArgumentParser:
         type=float,
         help="the window of ended runs the chain is fitted on, in hours; past the history it is refused (default 168)",
     )
+    steps = leaf(
+        analytics_verbs,
+        "steps",
+        "one row per model request: harness, session, task, time, model, the skill in force (`none` before any load), "
+        "the activities and keys of the tool calls it made, and its tokens",
+        _steps,
+        _STEP_KEYS,
+        (0, 1, 2, 3),
+    )
+    steps.add_argument("--hours", type=float, help="the window to read, in hours (default: the server's, 168)")
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(
