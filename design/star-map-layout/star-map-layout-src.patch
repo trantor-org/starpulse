@@ -1,0 +1,210 @@
+diff --git a/starpulse/web/src/render/boardDraw.ts b/starpulse/web/src/render/boardDraw.ts
+index a0440cf..8f1f56f 100644
+--- a/starpulse/web/src/render/boardDraw.ts
++++ b/starpulse/web/src/render/boardDraw.ts
+@@ -8,7 +8,7 @@ import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx
+ import { nameLines, touches, type Hub, type Ties } from "./dagTies";
+ import {
+   BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
+-  type BEdge, type Curve, type GNode, type MEdge, type MState, type Planet, type Scene,
++  type BEdge, type Curve, type GNode, type MEdge, type MState, type Planet, type Pt, type Scene,
+ } from "./scene";
+ import { FLARE, PULSE, RING, TRAVEL, countText, hosted, type Move, type Moves, type Sky } from "./sky";
+ 
+@@ -174,7 +174,9 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
+       flowLine({ ...e.p0!, color: col }, { ...e.p1!, color: sc.galaxies[e.target].color }, lit ? 0.95 : (e.events.every((v) => v === "ARCHIVE") ? 0.1 : 0.2) + heat * 0.55, heat + (lit ? 0.8 : 0));
+       cx.beginPath();
+       cx.moveTo(e.p0!.x, e.p0!.y);
+-      cx.quadraticCurveTo(e.c!.x, e.c!.y, e.p1!.x, e.p1!.y);
++      const pts = (e.c as Pt & { pts?: Pt[] }).pts; // mockup: a layout library's path is a line of points
++      if (pts) for (const p of pts) cx.lineTo(p.x, p.y);
++      else cx.quadraticCurveTo(e.c!.x, e.c!.y, e.p1!.x, e.p1!.y);
+       cx.stroke();
+       cx.setLineDash([]);
+     }
+diff --git a/starpulse/web/src/render/renderer.ts b/starpulse/web/src/render/renderer.ts
+index 5666097..4514a4c 100644
+--- a/starpulse/web/src/render/renderer.ts
++++ b/starpulse/web/src/render/renderer.ts
+@@ -22,7 +22,7 @@ import { dragMove, dragStart, keyScroll, wheelScroll } from "../features/level/l
+ import { RerunStore } from "../features/level/rerun";
+ import { spotIn, type Target } from "../features/level/search";
+ import {
+-  RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
++  RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, sample, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
+ } from "./scene";
+ import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
+ import { kanbanTasks, type KanbanTask } from "../features/kanban/kanban";
+@@ -95,7 +95,10 @@ export interface Probe {
+   /** The level's fit zoom. */
+   fit: number;
+   /** Board only: each state's screen disc. */
+-  states: { id: string; x: number; y: number; r: number; sun?: number }[];
++  states: { id: string; x: number; y: number; r: number; sun?: number; edge?: number }[];
++  /** Mockup, Board only: each path sampled and each name's box, on screen, for measure.py. */
++  paths?: { source: string; target: string; pts: Pt[] }[];
++  names?: { of: string; x0: number; y0: number; x1: number; y1: number }[];
+ }
+ 
+ export interface Renderer {
+@@ -1371,8 +1374,10 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
+           ...(l.kind === "machine" ? sc.machineTasks.filter((t) => t._x !== undefined).map((t) => at(t.id, { x: t._x!, y: t._y! }, "panel")) : []),
+         ];
+     const board = l.kind === "board";
+-    const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k, sun: g.r * view.k })) : [];
+-    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states };
++    const states = board ? Object.values(sc.galaxies).map((g) => ({ id: g.id, ...toScreen(view, g), r: g.R * view.k, sun: g.r * view.k, edge: g.edge * view.k })) : [];
++    const paths = board ? sc.bEdges.filter((e) => e.p0 && e.c && e.p1).map((e) => ({ source: e.source, target: e.target, pts: sample(e as Curve, 60).map((p) => toScreen(view, p)) })) : [];
++    const names = board ? sc.names.map((n) => ({ of: n.of, ...(([a, b]) => ({ x0: a.x, y0: a.y, x1: b.x, y1: b.y }))([toScreen(view, { x: n.x0, y: n.y0 }), toScreen(view, { x: n.x1, y: n.y1 })]) })) : [];
++    return { path: pathKey(path), ready: !trans && !anim, canvas, panel: open, centre: toScreen(view, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), zoomed: zoomedIn(view, fit), targets, fit: fit.k, states, paths, names };
+   };
+ 
+   return {
+diff --git a/starpulse/web/src/render/scene.ts b/starpulse/web/src/render/scene.ts
+index d0f5bbc..db664ed 100644
+--- a/starpulse/web/src/render/scene.ts
++++ b/starpulse/web/src/render/scene.ts
+@@ -404,7 +404,22 @@ export interface Ctx {
+   only?: { task: string; machines: readonly string[] };
+ }
+ 
++/** Mockup: a path a layout library routed, carried on its curve's control point, so everything that reads the curve follows it. */
++type Poly = Pt & { pts?: Pt[]; len?: number[] };
++const lensOf = (P: Pt[]) => P.reduce<number[]>((a, p, i) => (a.push(i ? a[i - 1] + Math.hypot(p.x - P[i - 1].x, p.y - P[i - 1].y) : 0), a), []);
++/** The point a length `d` along a line of points, and the first point past it. */
++const alongLine = (P: Pt[], L: number[], d: number) => {
++  let i = 1;
++  while (i < L.length - 1 && L[i] < d) i++;
++  const s = Math.max(0, Math.min(1, (d - L[i - 1]) / (L[i] - L[i - 1] || 1)));
++  return { p: { x: P[i - 1].x + (P[i].x - P[i - 1].x) * s, y: P[i - 1].y + (P[i].y - P[i - 1].y) * s }, i };
++};
+ export const bez = (p0: Pt, c: Pt, p1: Pt, t: number): Pt => {
++  const q = c as Poly;
++  if (q.pts) {
++    const L = (q.len ||= lensOf(q.pts));
++    return alongLine(q.pts, L, Math.max(0, Math.min(1, t)) * L[L.length - 1]).p;
++  }
+   const u = 1 - t;
+   return { x: u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, y: u * u * p0.y + 2 * u * t * c.y + t * t * p1.y };
+ };
+@@ -416,6 +431,14 @@ export const sample = (e: Curve, n = 26) => Array.from({ length: n + 1 }, (_, i)
+ /** The distance from a point to a curve, measured to 40 straight pieces of it. Hover runs it on every path each frame, so it allocates nothing. */
+ export const curveDist = ({ p0, c, p1 }: Curve, x: number, y: number) => {
+   let d = Infinity, px = p0.x, py = p0.y;
++  const P = (c as Poly).pts;
++  if (P) {
++    for (let i = 1; i < P.length; i++) {
++      const a = P[i - 1], dx = P[i].x - a.x, dy = P[i].y - a.y, s = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1)));
++      d = Math.min(d, Math.hypot(a.x + s * dx - x, a.y + s * dy - y));
++    }
++    return d;
++  }
+   for (let i = 1; i <= 40; i++) {
+     const t = i / 40, u = 1 - t, qx = u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, qy = u * u * p0.y + 2 * u * t * c.y + t * t * p1.y;
+     const dx = qx - px, dy = qy - py, L = dx * dx + dy * dy || 1, s = Math.max(0, Math.min(1, ((x - px) * dx + (y - py) * dy) / L));
+@@ -514,6 +537,70 @@ const rimOf = (g: Galaxy, rows: NameBox[] = []) => {
+     return p;
+   };
+ };
++/**
++ * Mockup: a layout library's path between two states' cells, finished as the Board finishes its own. The library routes between the
++ * rectangles it was given; the Board owns the last leg at each end, from the cell's edge to the state's rim, entering where that leg
++ * crosses none of the state's names, with the corner where the two meet rounded.
++ */
++function finished(a: Galaxy, b: Galaxy, mid: Pt[], names: NameBox[], room: number, gs: Galaxy[]): Pt[] {
++  const cuts = (p: Pt, q: Pt, set: NameBox[]) => set.some((n) => {
++    for (let i = 0; i <= 16; i++) {
++      const x = p.x + ((q.x - p.x) * i) / 16, y = p.y + ((q.y - p.y) * i) / 16;
++      if (x > n.x0 - NAME_CLEAR && x < n.x1 + NAME_CLEAR && y > n.y0 - NAME_CLEAR && y < n.y1 + NAME_CLEAR) return true;
++    }
++    return false;
++  });
++  const far = (p: Pt, q: Pt) => Math.hypot(q.x - p.x, q.y - p.y);
++  const toward = (p: Pt, q: Pt, d: number) => ({ x: p.x + ((q.x - p.x) * d) / (far(p, q) || 1), y: p.y + ((q.y - p.y) * d) / (far(p, q) || 1) });
++  const arc = (p: Pt, c: Pt, q: Pt) => Array.from({ length: 9 }, (_, i) => {
++    const t = i / 8, u = 1 - t;
++    return { x: u * u * p.x + 2 * u * t * c.x + t * t * q.x, y: u * u * p.y + 2 * u * t * c.y + t * t * q.y };
++  });
++  const end = (g: Galaxy, pts: Pt[]) => {
++    const own = names.filter((n) => n.of === g.id || n.of.startsWith(`${g.id}/`)), rim = rimOf(g, own), E = pts[0];
++    const L = lensOf(pts), all = L[L.length - 1];
++    if (all < 2) return [rim(E), ...pts];
++    // the path enters at a point round the state's cell whose leg to the rim is over none of the state's names, by a straight line from
++    // further back along itself: of those over no name and through no other state, the pair that turns the path least
++    const title = own.find((n) => n.of === g.id), w = Math.max(...g.reach, title ? (title.x1 - title.x0) / 2 : 0), x0 = g.x - w, y0 = title ? title.y0 : g.y - g.R - room, h = g.y + g.R - y0;
++    const round: Pt[] = [];
++    for (let x = 0; x < 2 * w; x += 8) round.push({ x: x0 + x, y: y0 });
++    for (let y = 0; y < h; y += 8) round.push({ x: x0 + 2 * w, y: y0 + y });
++    for (let x = 0; x < 2 * w; x += 8) round.push({ x: x0 + 2 * w - x, y: y0 + h });
++    for (let y = 0; y < h; y += 8) round.push({ x: x0, y: y0 + h - y });
++    const from = round.reduce((m, p, i) => (far(p, E) < far(round[m], E) ? i : m), 0);
++    const turn = (p: Pt, q: Pt, r: Pt) => Math.abs(Math.atan2((q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x), (q.x - p.x) * (r.x - q.x) + (q.y - p.y) * (r.y - q.y)));
++    const blocked = (p: Pt, q: Pt) => cuts(p, q, names) || gs.some((o) => o !== a && o !== b && curveDist({ p0: p, c: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }, p1: q }, o.x, o.y) < o.edge + 6);
++    let to = E, d = 0, least = cuts(E, rim(E), names) ? Infinity : 0;
++    for (let i = 0; least && i <= round.length / 2; i++)
++      for (const p of i ? [round[(from + i) % round.length], round[(from - i + round.length) % round.length]] : [round[from]]) {
++        const Q = rim(p);
++        if (cuts(p, Q, own)) continue;
++        for (const m of [0.15, 0.3, 0.45, 0.6, 0.75, 0.9]) {
++          const back = Math.max(Math.min(60, all / 2), m * all), A = alongLine(pts, L, back).p, N = alongLine(pts, L, Math.min(all, back + 20)).p;
++          const cost = (blocked(A, p) ? 1e3 : 0) + (cuts(p, Q, names) ? 1e3 : 0) + (curveDist({ p0: A, c: { x: (A.x + p.x) / 2, y: (A.y + p.y) / 2 }, p1: p }, g.x, g.y) < g.edge ? 1e4 : 0) + turn(Q, p, A) + (back < all - 1 ? turn(p, A, N) : 0) + i * 0.004;
++          if (cost < least) [to, d, least] = [p, back, cost];
++        }
++      }
++    const Q = rim(to), leg = far(to, Q);
++    if (leg < 1) return [Q, ...pts];
++    if (!d) {
++      const r = Math.min(26, leg / 2, all / 3), A = alongLine(pts, L, r);
++      return [Q, ...arc(toward(to, Q, r), to, A.p), ...pts.slice(A.i)];
++    }
++    const A = alongLine(pts, L, d).p, r = Math.min(26, leg / 2, far(to, A) / 2), r2 = Math.min(60, far(to, A) / 2, all - d), N = alongLine(pts, L, d + r2);
++    return [Q, ...arc(toward(to, Q, r), to, toward(to, A, r)), ...arc(toward(A, to, r2), A, N.p), ...pts.slice(N.i)];
++  };
++  return end(b, end(a, mid).reverse()).reverse();
++}
++/** Mockup: the layout a library gives the Board, set by the mockup's script: the zoom, each state's place and each pair's path, in sky units. */
++interface LibLayout {
++  k: number;
++  ps: Record<string, Pt>;
++  routes: Record<string, Pt[]>;
++}
++const libLayout = (q: { W: number; H: number; F: (k: number) => number; kmax: number }) =>
++  (globalThis as { __LAYOUT__?: (q: { W: number; H: number; F: (k: number) => number; kmax: number }) => LibLayout | null }).__LAYOUT__?.(q) ?? null;
+ /** The rows a state's machines print their names in, of all the names on the Board. */
+ const rowsOf = (g: Galaxy, names: NameBox[]) => names.filter((n) => n.of.startsWith(`${g.id}/`));
+ /**
+@@ -919,12 +1006,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+       }
+       return lo;
+     };
+-    const zooms = cols.map((_, i) => zoom(i + 1)), rows = pickRows(zooms), k = zooms[rows - 1];
++    // mockup: a layout library's places and paths stand in for the Board's own
++    const X = libLayout({ W, H, F: (q) => (labelScale(q) * ((ctx.scale ?? 100) / 100)) / q, kmax: ZOOM_MAX });
++    const zooms = X ? [X.k] : cols.map((_, i) => zoom(i + 1)), rows = X ? 1 : pickRows(zooms), k = zooms[rows - 1];
+     const L = lay(k, rows);
+     // each state's place and the sky's width ease toward the layout's targets, so a state changing size moves its neighbours and the fit smoothly
+     for (const p of L.ps) {
+-      p.x = ease(`${p.id}.x`, p.x);
+-      p.y = ease(`${p.id}.y`, p.y);
++      if (X) Object.assign(p, X.ps[p.id]);
++      p.x = X ? p.x : ease(`${p.id}.x`, p.x);
++      p.y = X ? p.y : ease(`${p.id}.y`, p.y);
+     }
+     const w = ease("sky.w", L.sw);
+     scene.w = w;
+@@ -1005,6 +1095,15 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
+         a.loops.push(...tr.events);
+         continue;
+       }
++      if (X) {
++        // a pair joined both ways is one path, finished from the same end whichever way it is read
++        const on = X.routes[`${tr.source}>${tr.target}`], back = X.routes[`${tr.target}>${tr.source}`];
++        if (on || back) {
++          const pts = on ? finished(a, b, on, scene.names, NAME_ROOM * F, gs) : finished(b, a, back, scene.names, NAME_ROOM * F, gs).reverse(), len = lensOf(pts), m = alongLine(pts, len, len[len.length - 1] / 2).p, p0 = pts[0], p1 = pts[pts.length - 1];
++          scene.bEdges.push({ ...tr, p0, c: Object.assign({ x: 2 * m.x - (p0.x + p1.x) / 2, y: 2 * m.y - (p0.y + p1.y) / 2 }, { pts, len }), p1 });
++        }
++        continue;
++      }
+       const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy), both = transitions.some((t) => t.source === tr.target && t.target === tr.source);
+       const side = both ? (tr.source < tr.target ? 1 : -1) * 0.11 : 0;
+       const gathers = b.final && new Set(transitions.filter((t) => t.target === b.id && t.source !== b.id).map((t) => t.source)).size > 1;
