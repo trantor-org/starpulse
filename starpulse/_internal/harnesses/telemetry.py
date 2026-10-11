@@ -30,7 +30,7 @@ from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths
 from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
-from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed
+from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
 
 __all__ = ["CLAUDE_CODE", "CODEX", "Signal", "TelemetryLog", "redactor", "signals"]
@@ -105,7 +105,7 @@ def _label(text: Any, injected: tuple[str, ...]) -> str:
 def _claude_origin(query_source: str) -> str:
     if query_source == "compact":
         return "auxiliary"
-    return "main" if query_source in {"", "repl_main_thread", "sdk"} else "side"
+    return "main" if main_thread_source(query_source) in {"", "repl_main_thread", "sdk"} else "side"
 
 
 def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:

@@ -99,6 +99,9 @@ reader can charge tokens to the skill in force and the work done. The body is `{
 `{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, counts and names only:
 
 - `task` is the one the session's rows name for that request; `origin` is `main`, `side` (a subagent) or `auxiliary`.
+  For Claude Code a request's `query_source` of `""`, `sdk`, `repl_main_thread` or `repl_main_thread:` plus any suffix
+  (`repl_main_thread:outputStyle:custom`, which the main thread carries under a custom output style) is `main`;
+  `compact` is `auxiliary`; every other source stays `side`.
 - `activities` and `keys` hold one entry per tool call the step made, in order: the activities the call performed (as
   under [Find missed skill loads](#find-missed-skill-loads-and-recurring-work)) and its key, the shell command the
   `--redactor` left, else the tool's name. A command is therefore present only after the configured filter.

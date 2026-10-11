@@ -174,7 +174,15 @@ def test_a_rejected_tool_decision_is_not_ok_and_names_its_source() -> None:
 
 @pytest.mark.parametrize(
     ("query_source", "origin"),
-    [("repl_main_thread", "main"), ("sdk", "main"), ("compact", "auxiliary"), ("code-reviewer", "side")],
+    [
+        ("repl_main_thread", "main"),
+        ("repl_main_thread:outputStyle:custom", "main"),
+        ("sdk", "main"),
+        ("compact", "auxiliary"),
+        ("code-reviewer", "side"),
+        ("generate_session_title", "side"),
+        ("repl_main_threads", "side"),
+    ],
 )
 def test_a_claude_request_is_main_thread_auxiliary_or_a_subagents(query_source: str, origin: str) -> None:
     (found,) = signals(export(claude("api_request", 6, model="m", query_source=query_source)))

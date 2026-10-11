@@ -11,10 +11,17 @@ from dataclasses import dataclass
 
 from starpulse.contracts.task_keys import TaskKeys
 
-__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "claim_key", "claimed"]
+__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "claim_key", "claimed", "main_thread_source"]
 
 CLAUDE_CODE = "claude-code"
 CODEX = "codex"
+_MAIN_THREAD = "repl_main_thread"
+
+
+def main_thread_source(query_source: str) -> str:
+    """`repl_main_thread` for that source or one Claude Code suffixes with `:` (`repl_main_thread:outputStyle:custom`
+    under a custom output style); any other source unchanged."""
+    return _MAIN_THREAD if query_source.startswith(_MAIN_THREAD + ":") else query_source
 
 
 @dataclass(frozen=True)
