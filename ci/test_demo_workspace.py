@@ -44,6 +44,14 @@ def test_the_preview_board_declares_the_tiers_the_star_map_draws_it_in() -> None
     assert sorted(state for tier in board["tiers"] for state in tier) == sorted(LANES)
 
 
+def test_the_preview_board_reopens_done_to_every_open_lane_and_still_draws_done_as_an_end() -> None:
+    board = _machines()["board"]
+    reopened = {t["target"] for t in board["transitions"] if t["source"] == "done"}
+
+    assert reopened == {"ready", "waiting", "in_progress", "review", "needs_attention"}
+    assert {s["id"]: s.get("final", False) for s in board["states"]}["done"] is True
+
+
 def test_in_progress_opens_the_delivery_machine_and_at_least_three_more_lifecycle_machines() -> None:
     machines = _machines()
 

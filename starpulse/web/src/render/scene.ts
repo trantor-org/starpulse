@@ -1057,8 +1057,8 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       scene.names.push({ of: `${g.id}/${m.name}`, x0: left ? g.x - g.reach[1] : m.x - m.r!, y0: m.y - tall, x1: left ? m.x + m.r! : g.x + g.reach[0], y1: m.y + tall });
     }
     // One path per ordered pair of states, carrying every event between them. A pair joined both ways bows to one side, its two paths drawn
-    // as one, and a one-way path runs straight. A final state reached from several states (Archived) gathers its paths into one stream along
-    // its side of the Board. Then any path that would pass another state or cross a name bends away until it clears (routed).
+    // as one, and a one-way path runs straight. A final state reached from several states (Archived) gathers its one-way paths into one
+    // stream along its side of the Board; a pair joined both ways into it keeps its shared line. Then any path that would pass another state or cross a name bends away until it clears (routed).
     const pairs = merged(transitions, S.writers);
     const routeKey = JSON.stringify([w, hb, gs.map((g) => [g.id, g.x, g.y, g.R, g.edge, g.final]), scene.names, pairs.map((t) => [t.source, t.target]), [...routes]]);
     const reuse = last.routes.key === routeKey, curves: (Curve | null)[] = [];
@@ -1073,7 +1073,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
       }
       const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy), both = transitions.some((t) => t.source === tr.target && t.target === tr.source);
       const side = both ? (tr.source < tr.target ? 1 : -1) * 0.11 : 0;
-      const gathers = b.final && new Set(transitions.filter((t) => t.target === b.id && t.source !== b.id).map((t) => t.source)).size > 1;
+      const gathers = b.final && !both && new Set(transitions.filter((t) => t.target === b.id && t.source !== b.id).map((t) => t.source)).size > 1;
       const c0 = gathers ? { x: a.x + dx * 0.15, y: b.y } : { x: (a.x + b.x) / 2 - (dy / L) * L * side, y: (a.y + b.y) / 2 + (dx / L) * L * side };
       // a bend is kept in the frame of its two states (u along a→b, v across it), so a held route moves with them
       const k = `${tr.source}>${tr.target}`, h = routes.get(k), held = h && { x: a.x + h.x * dx - h.y * dy, y: a.y + h.x * dy + h.y * dx };

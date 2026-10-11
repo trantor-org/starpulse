@@ -42,6 +42,10 @@ def _drawn(workflows: Collection[str]) -> tuple[dict[str, dict], list[dict]]:
         ]:
             body["subflows"] = links
         if name == "board":
+            # Done reopens, so the file declares it open; the page still draws it as the end of a task's lifecycle
+            for state in body["states"]:
+                if state["id"] == "done":
+                    state["final"] = True
             body["mainLine"] = MAIN_LINE
             body["tiers"] = TIERS
             body["dagActors"] = sorted({w["actor"] for ws in body.get("writers", {}).values() for w in ws})

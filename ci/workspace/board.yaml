@@ -7,7 +7,8 @@ states:
   in_progress: {}
   review: {}
   needs_attention: {}
-  done: {final: true}
+  # Done reopens (REOPEN), so the machine declares it open; the preview draws it as an end (`ci/demo_workspace.py`).
+  done: {}
   archived: {final: true}
 events:
   CREATE_READY:
@@ -42,6 +43,12 @@ events:
     - {from: review, to: done}
   ARCHIVE:
     - {from: [ready, waiting, in_progress, review, needs_attention], to: archived}
+  REOPEN:
+    - {from: done, to: ready}
+    - {from: done, to: waiting}
+    - {from: done, to: in_progress}
+    - {from: done, to: review}
+    - {from: done, to: needs_attention}
 writers:
   CREATE_READY:
     - {actor: agent, trigger: "tracker create"}
@@ -77,6 +84,8 @@ writers:
     - {actor: operator, trigger: "merge the pull request"}
   ARCHIVE:
     - {actor: operator, trigger: "archive"}
+  REOPEN:
+    - {actor: operator, trigger: "reopen a done task"}
 cues:
   - {event: MERGED, dag: dagu/merge-apply, on: "each merge to main", resolves: next}
   - {event: MERGED, dag: dagu/index-refresh, on: "each merge to main", resolves: next}

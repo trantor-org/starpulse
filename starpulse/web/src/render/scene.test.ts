@@ -955,6 +955,35 @@ describe("Board paths", () => {
     expect(off(edge("new", "ready"))).toBeLessThan(1);
   });
 
+  // New, Ready and Review stacked in one tier, Done alone in the next
+  const endBoard = (transitions: string[][]) => build(savedBoardSky(1920, 1080, (snap) => {
+    const m = snap.flows[0].machine;
+    m.states = ["new", "ready", "review", "done"].map((id, i) => ({ id, name: id, initial: i === 0, final: id === "done" }));
+    m.transitions = transitions.map(([source, target]) => ({ source, target, event: `${source}_${target}` }));
+    m.mainLine = ["new", "ready", "review"];
+    m.tiers = [["new", "ready", "review"], ["done"]];
+  }), { kind: "board" });
+  const mirrored = (a: Curve, b: Curve) => {
+    for (const [p, q] of [[b.p0, a.p1], [b.c, a.c], [b.p1, a.p0]]) expect([p.x, p.y]).toEqual([expect.closeTo(q.x, 6), expect.closeTo(q.y, 6)]);
+  };
+
+  it("draw a pair joined both ways as one control point in both directions when it bends round a state", () => {
+    const scene = endBoard([["new", "ready"], ["ready", "review"], ["new", "review"], ["review", "new"]]);
+    const there = scene.bEdges.find((e) => e.source === "new" && e.target === "review") as unknown as Curve, back = scene.bEdges.find((e) => e.source === "review" && e.target === "new") as unknown as Curve;
+
+    expect(clearance(there, scene.galaxies.ready)).toBeGreaterThanOrEqual(17);
+    mirrored(there, back);
+  });
+
+  it("keep a pair joined both ways into an end state off the stream that gathers its one-way paths", () => {
+    const scene = endBoard([["new", "ready"], ["ready", "review"], ["review", "done"], ["done", "review"], ["ready", "done"], ["new", "done"]]);
+    const edge = (s: string, t: string) => scene.bEdges.find((e) => e.source === s && e.target === t) as unknown as Curve, end = scene.galaxies.done.y;
+
+    for (const from of ["ready", "new"]) expect(edge(from, "done").c.y).toBeCloseTo(end);
+    expect(Math.abs(edge("review", "done").c.y - end)).toBeGreaterThan(10);
+    mirrored(edge("review", "done"), edge("done", "review"));
+  });
+
   it("merge every event between two states into one path per direction, carrying each event's writers", () => {
     const sky = savedBoardSky(1920, 1080, (snap) => {
       const m = snap.flows[0].machine;
