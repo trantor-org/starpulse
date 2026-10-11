@@ -1,4 +1,5 @@
-"""`import starpulse.board` is a board read's entry point, so it builds neither the state machine nor the adapter models."""
+"""`import starpulse.board` and a native board load are a board read's entry point, so they build neither the state machine
+nor the adapter models."""
 
 import os
 import subprocess
@@ -30,3 +31,16 @@ def _loaded_after(code: str) -> set[str]:
 def test_importing_the_board_loads_no_machine_definition_or_adapter_models() -> None:
     assert _loaded_after("import starpulse.board") == set()
 
+
+def test_loading_a_native_board_loads_no_adapter_models(tmp_path: Path) -> None:
+    root = tmp_path / "board"
+    root.mkdir()
+    (root / "config.yml").write_text("project_name: demo\nstatuses: [To Do, Done]\ntask_prefix: task\n")
+    code = (
+        "from pathlib import Path\n"
+        "import starpulse.board\n"
+        f"board = starpulse.board.load('native', {{'path': 'board'}}, Path({str(tmp_path)!r}))\n"
+        "assert board.keys is not None and board.keys.matches('task-3')\n"
+    )
+
+    assert _loaded_after(code) == set()

@@ -11,12 +11,12 @@ Each model is also published as a JSON Schema under `schemas/`, regenerated with
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from starpulse.contracts.task_keys import TaskKeys
 
 __all__ = [
     "CONTRACTS",
@@ -46,27 +46,6 @@ __all__ = [
 
 class StartFailedError(Exception):
     """A runs adapter's start capability could not start the workflow; its message is the reason shown to the operator."""
-
-
-@dataclass(frozen=True)
-class TaskKeys:
-    """How one adapter names its tasks, and which branch belongs to which task."""
-
-    #: Matches a whole task key, e.g. `PROJ-45` or `ENG-123`.
-    key: re.Pattern[str]
-    #: Matches a branch name, bare or under `refs/heads/`; group 1 is the key, or what `key_format` wraps into it.
-    branch: re.Pattern[str]
-    #: Wraps group 1 of `branch` into the key: `PROJ-{}` turns the `45` of `feature/proj-45-x` into `PROJ-45`.
-    key_format: str = "{}"
-
-    def matches(self, task: str) -> bool:
-        """Whether `task` is a whole key of this scheme."""
-        return self.key.fullmatch(task) is not None
-
-    def for_branch(self, ref: str | None) -> str | None:
-        """The task key a branch names, or None for a branch that names no task."""
-        match = self.branch.match(ref) if ref else None
-        return self.key_format.format(match[1]) if match else None
 
 
 class _Contract(BaseModel):
