@@ -161,6 +161,7 @@ import os
 import queue
 import shutil
 import signal
+import socket
 import sys
 import threading
 import time
@@ -1395,11 +1396,45 @@ class _PullReads:
         return held[1], held[2]
 
 
+#: The first file descriptor a service manager passes (`sd_listen_fds(3)`): 0, 1 and 2 are stdio.
+_LISTEN_FDS_START = 3
+
+
+def inherited_socket(environ: Mapping[str, str]) -> socket.socket | None:
+    """The listening socket the service manager passed in, or `None` to bind `--host` and `--port`.
+
+    The `sd_listen_fds` protocol: `LISTEN_PID` names this process and `LISTEN_FDS` counts the sockets, from fd 3. A
+    socket passed to another process, as a child of the unit's would see, is not ours.
+    """
+    if environ.get("LISTEN_PID") != str(os.getpid()):
+        return None
+    count = int(environ.get("LISTEN_FDS", "0"))
+    if count > 1:
+        raise ValueError(f"the service manager passed {count} sockets; serve takes one")
+    if count < 1:
+        return None
+    os.set_inheritable(_LISTEN_FDS_START, False)  # the unit's other processes must not keep it open
+    return socket.socket(fileno=_LISTEN_FDS_START)
+
+
 class StarPulseServer(ThreadingHTTPServer):
     """The view's HTTP server, with a listen backlog a crowd of pages connecting at once fits in: the stock 5 drops the
-    rest's SYNs, and each waits out a 1 s retransmit before its first byte."""
+    rest's SYNs, and each waits out a 1 s retransmit before its first byte.
+
+    Given `listening`, it serves on that socket as passed, its backlog and options untouched, and binds nothing.
+    """
 
     request_queue_size = 128
+
+    def __init__(
+        self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], listening: socket.socket | None = None
+    ) -> None:
+        super().__init__(address, handler, bind_and_activate=listening is None)
+        if listening is not None:
+            self.socket.close()  # the one the base class made for a bind that will not happen
+            self.socket = listening
+            self.server_address = listening.getsockname()
+            self.server_name, self.server_port = self.server_address[:2]
 
 
 class _EventText:
@@ -1504,6 +1539,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     args = parser.parse_args(argv)
     config = _config(parser, args.config)
     try:
+        listening = inherited_socket(os.environ)
+    except ValueError as exc:
+        parser.exit(1, f"{exc}\n")
+    port = args.port if listening is None else listening.getsockname()[1]
+    try:
         instance_tokens = ingest_tokens(config.runs, os.environ)
         source_tokens = ingest_tokens(config.sources, os.environ)
     except ValueError as exc:
@@ -1585,7 +1625,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
             threading.Thread(
                 target=search.keep_embedding, args=(threading.Event(),), name="search-embeddings", daemon=True
             ).start()
-    board.start(feed, f"flow-view-{args.port}", log)
+    board.start(feed, f"flow-view-{port}", log)
     # a move the feed applied but never recorded (a restart between the two) is put in the history once the replay is read
     threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
     tasks = MachineTasks(feed, board.keys)
@@ -1645,7 +1685,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         insights = Insights(store, feed)
     if forwarder is not None:
         forward.start(forwarder, forwarding)
-    announce(args.port, feed.snapshot()["hint"])
+    announce(port, feed.snapshot()["hint"])
     autopilot_runtime = start_autopilot(
         config, base, feed, board, store, config.level if args.hub else None, threading.Event()
     )
@@ -1682,7 +1722,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         analytics=config.analytics,
         pull_refresh=pull_refresh,
     )
-    serve_until_stopped(StarPulseServer((args.host, args.port), handler), feed)
+    serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)
 
 
 if __name__ == "__main__":

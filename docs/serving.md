@@ -20,6 +20,21 @@ start, run, history window) is refused unless it is a JSON request (`Content-Typ
 where it is drawn (6 hours by default). The Admin page's Server card overrides that window for everyone
 viewing, and `starpulse-settings.json` beside the config keeps the override across restarts.
 
+### Serve on a socket the service manager passes in
+
+Under systemd socket activation, `starpulse serve` adopts the listening socket the manager holds instead of binding
+`--host` and `--port`, so connections made while the server restarts queue on that socket rather than being refused.
+It follows the `sd_listen_fds` protocol and reads two environment variables:
+
+- `LISTEN_PID`: the socket is for this process only when it equals the server's own pid. A value naming another
+  process, or none, binds `--host` and `--port` as before.
+- `LISTEN_FDS`: how many sockets follow, from file descriptor 3. `1` is adopted; more than one stops the server with an
+  error, since it serves one address.
+
+The adopted socket's backlog and options stay as the manager set them, `--host` and `--port` are ignored, and the
+startup line and the board's instance name (`flow-view-<port>`) name the socket's port. A `.socket` unit's
+`ListenStream=` sets that address; `Accept=no` (the default) hands the server the listening socket itself.
+
 ## Config file
 
 `starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read
