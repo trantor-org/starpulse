@@ -33,7 +33,7 @@ from starpulse.contracts.adapters import BoardTask
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.config.config import load
-from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
 

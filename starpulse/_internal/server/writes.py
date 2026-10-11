@@ -100,7 +100,7 @@ from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.hub.forward import Forwarder
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.eventlog.history import HistoryStore
 
 logger = logging.getLogger(__name__)

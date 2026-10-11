@@ -272,7 +272,7 @@ from starpulse._internal.config.config import Config, ConfigError, RunsInstance,
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
 from starpulse._internal.autopilot.starter import builtin_starter
-from starpulse._internal.config.history_window import SETTINGS_FILE, HistoryWindow
+from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events
 from starpulse._internal.eventlog.event_log import EventLog, prune_forever

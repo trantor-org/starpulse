@@ -18,7 +18,7 @@ from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse.contracts.adapters import Move
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.eventlog.event_log import EventLog
 
 _FOREIGN = "https://evil.example"

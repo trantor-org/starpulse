@@ -72,7 +72,7 @@ from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.config.config import Config
 from starpulse._internal.config.harnesses import Harnesses
-from starpulse._internal.config.history_window import HistoryWindow
+from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import History, HistoryStore
 from starpulse._internal.pulls.pull_refresh import PullRefresh
