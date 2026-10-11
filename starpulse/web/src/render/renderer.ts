@@ -15,7 +15,11 @@ import { DAG_COLOR, EXT, OFF, TRACE, drawing, ease, easeO, rgba, tierColor, type
 import { animating, frameLoop, framePace } from "./idle";
 import { BOARD, hostOf, pathKey, pathLedger, pathTo, startPath, taskKicker, topFlow, type Level, type Path } from "./levels";
 import { optionalSteps } from "../features/level/ledger";
-import { doctorTip, focusRow, junctionTip, ledgerHit, mergePanel, mergeTip, stepTip, type DoctorBox, type PanelCtx } from "../features/level/ledgerPanel";
+import type { DoctorBox, PanelCtx } from "../features/level/ledgerPanel";
+type LedgerPanel = typeof import("../features/level/ledgerPanel");
+let ledgerPanel: LedgerPanel | null = null;
+let ledgerPanelP: Promise<LedgerPanel> | undefined;
+const loadLedgerPanel = (): Promise<LedgerPanel> => (ledgerPanelP ??= import("../features/level/ledgerPanel").then((m) => (ledgerPanel = m)));
 import { createContract } from "../features/level/contract";
 import { type Hits } from "../features/level/ledgerRows";
 import { dragMove, dragStart, keyScroll, wheelScroll } from "../features/level/ledgerScroll";
@@ -194,6 +198,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let foldDrawing: FoldDrawing | null = null;
   let extrasCancel: (() => void) | null = null;
   let ensureFold: () => FoldDrawing | null = () => null;
+  const ensurePanel = () => { void loadLedgerPanel().then(() => loop.wake()); return ledgerPanel; };
   const mledIO = {
     get S() { return S; }, get scene() { return scene; }, get FW() { return FW; }, get H() { return H; }, get T() { return T; }, get hotEdge() { return hotEdge; },
     events: () => EVENTS(), hhmm, get scrollPos() { return scrollPos; }, get pg() { return pg; }, get pickedRow() { return pickedRow; }, get lpin() { return lpin; },
@@ -743,7 +748,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   function hit(x: number, y: number): Hover | null {
     const sc = scene!, near = (o: Pt, r: number) => Math.hypot(o.x - x, o.y - y) < r;
     if (sc.top) return hitTop(sc, x, y);
-    const mine = scene?.fold ? ledgerHit(scene, doctor, x, y, px, ensureFold()?.ledgerShown() ?? []) : null;
+    const mine = scene?.fold ? (ensurePanel()?.ledgerHit(scene, doctor, x, y, px, ensureFold()?.ledgerShown() ?? []) ?? null) : null;
     if (mine) return mine;
     for (const s of sc.machineTasks) if (s._x !== undefined && Math.hypot(s._x - x, s._y! - y) < Math.max(4, px(7))) return { kind: "mtask", o: s };
     for (const t of sc.tasks) if (!t.gone && near(t, Math.max(t.big ? 7 : 5, px(7)))) return { kind: "task", o: t };
@@ -847,12 +852,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   /** The row whose panel is open, if one is. */
   const openRow = () => (mergeSel && panel.classList.contains("open") ? heldRows().find((r) => r.key === mergeSel) ?? null : null);
   /** The merge the Ledger's templates are coloured by: the hovered row, else the open one, else the newest. */
-  const focused = () => focusRow(hover?.kind === "lrow" ? hover.o : null, openRow(), heldRows());
+  const focused = () => ensurePanel()?.focusRow(hover?.kind === "lrow" ? hover.o : null, openRow(), heldRows());
   const starOfStep = (n: GNode) => Object.values(scene!.stars).find((s) => s.glyph.nodes.includes(n));
   /** The merge panel's force-rerun buttons post to the rerun route; the store repaints the panel with the run's refusal. */
   const wireRerun = () => panel.querySelectorAll<HTMLElement>("[data-rerun]").forEach((b) => void (b.onclick = () => void rerunStore.run(b.dataset.rerun!, T)));
   function openMerge(row: LedgerRow) {
-    panel.innerHTML = mergePanel(row, panelCtx());
+    panel.innerHTML = ensurePanel()?.mergePanel(row, panelCtx()) ?? "";
     wireRerun();
     openPanel();
     mergeSel = row.key;
@@ -862,7 +867,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const row = openRow();
     if (!row || !scene?.fold?.ledger) return;
     const top = panel.scrollTop;
-    panel.innerHTML = mergePanel(row, panelCtx());
+    panel.innerHTML = ensurePanel()?.mergePanel(row, panelCtx()) ?? "";
     panel.querySelector<HTMLElement>(".x")!.onclick = () => closePanel();
     wireRerun();
     panel.scrollTop = top;
@@ -918,15 +923,15 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
         return `<div class="k">declared contract · click for the DAG</div><div class="n">${esc(o.dag)}: ${o.role === "writer" ? "writes" : "cued by"} ${esc(scene!.fold!.ledger!.event)}</div><pre>${yaml.map(esc).join("\n")}</pre>${o.resolves ? `<div class="k">a failed run clears ${o.resolves === "forced" ? "only on a green forced rerun" : "on the DAG's next green run"}</div>` : ""}`;
       }
       case "lrow":
-        return mergeTip(h.o, panelCtx());
+        return ensurePanel()?.mergeTip(h.o, panelCtx()) ?? "";
       case "lstep": {
-        const star = starOfStep(h.o);
-        return star ? stepTip(star.name, h.o.name, star.steps.find((st) => st.name === h.o.name)?.depends ?? [], focused(), panelCtx()) : "";
+        const star = starOfStep(h.o), p = ensurePanel();
+        return star && p ? p.stepTip(star.name, h.o.name, star.steps.find((st) => st.name === h.o.name)?.depends ?? [], focused(), panelCtx()) : "";
       }
       case "ljunction":
-        return junctionTip(heldRows(), panelCtx());
+        return ensurePanel()?.junctionTip(heldRows(), panelCtx()) ?? "";
       case "ldoctor":
-        return doctorTip(h.o);
+        return ensurePanel()?.doctorTip(h.o) ?? "";
       case "link":
         return `<div class="k">machine path · ${esc(h.o.from)} → ${esc(h.o.to)}</div><div class="n">${h.o.back ? "the task returns from the skill" : "a task opens this skill"}</div>`;
       case "ltask": {
@@ -1395,7 +1400,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       shown1 = true;
       onDrawn();
       extrasCancel ??= prefetchBoardExtras();
-      void loadHudViews().then(() => { if (!stopped) publish(); });
+      const afterPaint = () => {
+        void loadLedgerPanel();
+        void loadHudViews().then(() => { if (!stopped) publish(); });
+      };
+      if (typeof requestIdleCallback === "function") requestIdleCallback(afterPaint, { timeout: 2000 });
+      else setTimeout(afterPaint, 0);
     }
     if (now - tick > 250) {
       tick = now;

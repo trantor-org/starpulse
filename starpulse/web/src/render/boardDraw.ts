@@ -3,7 +3,7 @@
 // and from what the renderer owns (`BoardIO`, read as it draws); the renderer calls each in its frame order (`drawScene`).
 import type { LedgerRow } from "../api";
 import { fanBadge, stepStatus } from "../features/fanout/fanout";
-import { stepStates } from "../features/level/ledgerPanel";
+import { stepStates } from "../features/level/stepStates";
 import { ACT, DAG_COLOR, EXT, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
 import { nameLines, touches, type Hub, type Ties } from "./dagTies";
 import {
