@@ -95,6 +95,7 @@ def _empty(s: Signal, task: str | None, kind: str) -> dict[str, Any]:
         "tool_failures": 0,
         "tools": {},
         "rejections": {},
+        "gates": {},
         "skills": {},
         "compactions": {},
         "interrupts": 0,
@@ -148,6 +149,7 @@ def _note(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
         _count(row, "tools", s.name)
     elif s.kind == "decision" and not s.ok:
         _count(row, "rejections", s.detail or "unknown")
+        _count(row, "gates", f"{s.detail or 'unknown'}:{s.name or 'unknown'}")
     elif s.kind == "skill":
         _count(row, "skills", s.name)
     elif s.kind == "compaction":

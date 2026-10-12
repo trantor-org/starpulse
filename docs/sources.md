@@ -44,7 +44,7 @@ session's first claim or task-naming switch, when its launch branch names no tas
 `{now, window_s, sessions, slices}`:
 
 - A `sessions` row is `{harness, session, task, kind, first_at, last_at, prompts, operator_prompts, requests,
-  side_requests, tool_calls, tool_failures, tools, rejections, skills, compactions, interrupts, models, efforts,
+  side_requests, tool_calls, tool_failures, tools, rejections, gates, skills, compactions, interrupts, models, efforts,
   main_model, main_effort, model_changes, effort_changes, tokens, cost_usd, agent_s, operator_wait_s, idle_s, steps_before_edit, complete}`.
   `models` and `efforts` list every value seen, side requests included; `main_model` and `main_effort` are the first
   ones the main thread reported (null until it reports one), the session's profile.
@@ -52,8 +52,9 @@ session's first claim or task-naming switch, when its launch branch names no tas
   (after the session's first prompt for the task it launched on or first claimed); `requests` are the main thread's model calls and
   `side_requests` a subagent's. `steps_before_edit` is the model requests before the task's first successful `Edit`,
   `Write`, `MultiEdit` or `NotebookEdit`, null until it has one. `complete` is true for a session that loaded the
-  `completion_skill` and then ran a shell command matching `completion_call`. `rejections` counts rejected tool decisions by their source
-  and `compactions` by trigger. `tokens` is `{input, output, cache_read, cache_write, reasoning}`, with Codex's cached
+  `completion_skill` and then ran a shell command matching `completion_call`. `rejections` counts rejected tool decisions by their source,
+  `gates` the same rejections by `<source>:<tool>` (`hook:Bash`, `user:Edit`; the export names no hook script, so a
+  hook's gate is the tool it refused), and `compactions` by trigger. `tokens` is `{input, output, cache_read, cache_write, reasoning}`, with Codex's cached
   tokens taken out of its input; `cost_usd` is null for a session whose harness exports no cost.
 - A `slices` entry adds up the sessions that worked one task: `sessions`, `steps`, `operator_prompts`, `interrupts`,
   `interventions` (operator prompts plus interrupts), `escalated` (a model or effort changed between main-thread
