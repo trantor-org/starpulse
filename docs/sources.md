@@ -45,7 +45,9 @@ session's first claim or task-naming switch, when its launch branch names no tas
 
 - A `sessions` row is `{harness, session, task, kind, first_at, last_at, prompts, operator_prompts, requests,
   side_requests, tool_calls, tool_failures, tools, rejections, skills, compactions, interrupts, models, efforts,
-  model_changes, effort_changes, tokens, cost_usd, agent_s, operator_wait_s, idle_s, steps_before_edit, complete}`.
+  main_model, main_effort, model_changes, effort_changes, tokens, cost_usd, agent_s, operator_wait_s, idle_s, steps_before_edit, complete}`.
+  `models` and `efforts` list every value seen, side requests included; `main_model` and `main_effort` are the first
+  ones the main thread reported (null until it reports one), the session's profile.
   `kind` is `headless`, `interactive` or `unknown`. `operator_prompts` are the human prompts after the task's claim
   (after the session's first prompt for the task it launched on or first claimed); `requests` are the main thread's model calls and
   `side_requests` a subagent's. `steps_before_edit` is the model requests before the task's first successful `Edit`,

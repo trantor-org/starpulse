@@ -1490,6 +1490,8 @@ export interface SessionHealth {
   interrupts: number;
   kind: "headless" | "interactive" | "unknown";
   last_at: number;
+  main_effort: string | null;
+  main_model: string | null;
   model_changes: number;
   models: string[];
   operator_prompts: number;

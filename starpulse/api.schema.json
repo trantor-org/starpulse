@@ -4958,6 +4958,26 @@
         "last_at": {
           "type": "number"
         },
+        "main_effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "main_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "model_changes": {
           "type": "integer"
         },
@@ -5053,6 +5073,8 @@
         "interrupts",
         "models",
         "efforts",
+        "main_model",
+        "main_effort",
         "model_changes",
         "effort_changes",
         "tokens",
