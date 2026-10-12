@@ -137,7 +137,7 @@ def build(
             policy=policy,
             toggle=toggle,
             sampler=sampler,
-            ledger=Ledger(state_dir / LEDGER_FILE),
+            ledger=Ledger(log, state_dir / LEDGER_FILE),
             start=start,
             settle=settle,
             chain=chain,

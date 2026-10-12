@@ -85,6 +85,24 @@ settings = Table(
     Column("updated_at", Float, nullable=False),
 )
 
+#: The autopilot's run ledger: one row per finished run, the labelled data admission learns demand from. `peak` is the
+#: demand the run drew per capacity dimension; `recorded_at` is the epoch second the run was recorded (a run imported
+#: from the old JSONL file carries that file's modification time). Event-log pruning never touches it.
+autopilot_runs = Table(
+    "starpulse_autopilot_runs",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("task", String, nullable=False),
+    Column("tier", String, nullable=False),
+    Column("points", Integer, nullable=False),
+    Column("outcome", String, nullable=False),
+    Column("duration_s", Float, nullable=False),
+    Column("peak", JSON, nullable=False),
+    Column("recorded_at", Float, nullable=False),
+    Index("ix_starpulse_autopilot_runs_tier_points", "tier", "points"),
+    sqlite_autoincrement=True,
+)
+
 #: What a hub keeps of a day after its raw events are dropped (`hub.enforce_retention`): per team, machine and state,
 #: how many tasks or runs entered the state that UTC day (`entries`), how many of those had not left it when the day was
 #: rolled up (`open_entries`), and the seconds the others stayed. A hub writes it; an IC instance never does.

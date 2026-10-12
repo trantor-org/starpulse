@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from starpulse._internal.autopilot.ledger import Ledger
 from starpulse._internal.autopilot.loop import Loop
@@ -47,8 +48,9 @@ class Rig:
             on_crossing=lambda crossing: None,
             clock=lambda: self.now,
         )
-        self.ledger = Ledger(tmp_path / "runs.jsonl")
-        self.toggle = Toggle(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"), tmp_path / "toggle.json")
+        log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
+        self.ledger = Ledger(log, tmp_path / "runs.jsonl")
+        self.toggle = Toggle(log, tmp_path / "toggle.json")
         self.toggle.set(True)
         self.started: list[str] = []
         self.settled: list[tuple[str, str]] = []
@@ -189,6 +191,24 @@ def test_a_finished_run_is_recorded_with_its_outcome_duration_and_peak(rig: Rig)
     [run] = rig.ledger.runs("T-1")
     assert (run.outcome, run.tier, run.points, run.duration_s) == ("review", "standard", 8, 900.0)
     assert run.peak == {"cpu": 30.0, "memory": 15.0, "sessions": 1, "review": 8}
+
+
+def test_a_run_the_store_cannot_record_is_logged_and_the_loop_carries_on(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def refuse(run: object) -> None:
+        raise OperationalError("INSERT", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(rig.ledger, "record", refuse)
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.put("T-1", lane="in_progress")
+    rig.session("T-1")
+    rig.put("T-1", lane="review")
+
+    rig.loop.tick()
+
+    assert "cannot record the run of T-1" in caplog.text
 
 
 def test_a_session_idle_past_the_limit_with_its_task_open_is_settled_once_with_a_reason(rig: Rig) -> None:

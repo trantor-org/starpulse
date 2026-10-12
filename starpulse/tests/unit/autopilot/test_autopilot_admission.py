@@ -10,6 +10,7 @@ from starpulse._internal.autopilot.admission import MIN_RUNS, decide, demand
 from starpulse._internal.autopilot.ledger import Ledger, RunRecord
 from starpulse._internal.autopilot.sampler import Reading
 from starpulse._internal.config.autopilot import DIMENSIONS, Autopilot
+from starpulse._internal.eventlog.event_log import EventLog
 
 POLICY = Autopilot(lane="ready")  # limits: cpu 80, memory 80, sessions 2, review 20; weights fast 1, standard 2, deep 4
 
@@ -39,7 +40,7 @@ def _readings(policy: Autopilot = POLICY, **use: float) -> list[Reading]:
 
 @pytest.fixture
 def ledger(tmp_path: Path) -> Ledger:
-    return Ledger(tmp_path / "runs.jsonl")
+    return Ledger(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"), tmp_path / "runs.jsonl")
 
 
 def test_demand_starts_from_the_points_times_the_tier_weight(ledger: Ledger) -> None:

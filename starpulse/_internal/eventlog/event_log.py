@@ -35,6 +35,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from starpulse._internal.eventlog.tables import (
+    autopilot_runs,
     board_state,
     day_rollups,
     events,
@@ -108,7 +109,7 @@ class EventLog:
                     self._engine = _create_engine(self.url)
                 if self._engine.dialect.name == "sqlite":
                     event.listen(self._engine, "connect", _sqlite_pragmas)
-                create_tables(self._engine, [events, gaps, board_state, source_instances, settings])
+                create_tables(self._engine, [events, gaps, board_state, source_instances, settings, autopilot_runs])
                 self._ready = True
             assert self._engine is not None
             return self._engine

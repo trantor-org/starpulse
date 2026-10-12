@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.autopilot.ledger import LEDGER_FILE, Ledger
 from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.autopilot.sampler import PERIOD
 from starpulse._internal.config.config import load
@@ -135,7 +136,7 @@ def test_a_board_with_no_autopilot_block_and_no_start_service_starts_the_task_in
     )
 
 
-def test_a_state_dir_holds_the_switch_and_the_run_ledger_instead_of_the_config_directory(tmp_path: Path) -> None:
+def test_the_switch_and_the_run_ledger_are_kept_in_the_store_not_in_files_beside_the_config(tmp_path: Path) -> None:
     state = tmp_path / "starpulse-state"  # not created beforehand: the server makes it
     with _start_service() as (url, asked):
         _task(tmp_path, "Done")
@@ -145,8 +146,11 @@ def test_a_state_dir_holds_the_switch_and_the_run_ledger_instead_of_the_config_d
             _task(tmp_path, "To Do")
             _until(lambda: asked, "the start")
             _task(tmp_path, "Done")  # the run's task leaves the lane: its run is recorded
-            _until((state / "starpulse-autopilot-runs.jsonl").exists, "the ledger line")
+            store = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+            ledger = Ledger(store, state / LEDGER_FILE)
+            _until(lambda: ledger.runs("task-1"), "the run's row in the store")
 
     assert EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}").setting("autopilot.enabled") is True
+    assert not (state / LEDGER_FILE).exists()  # the ledger is a table in the store, not a file
     assert not (state / "starpulse-autopilot.json").exists()  # the switch is a row in the store, not a file
     assert sorted(path.name for path in tmp_path.glob("starpulse-autopilot*")) == []  # nothing beside the config
