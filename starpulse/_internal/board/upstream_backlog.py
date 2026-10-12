@@ -103,8 +103,13 @@ def upstream_keys(prefix: str = DEFAULT_PREFIX) -> TaskKeys:
     )
 
 
-def board_moves(machine: dict, writers: Mapping[str, tuple[Writer, ...]] = {}) -> dict[str, dict[str, Move]]:
+def board_moves(
+    machine: dict, writers: Mapping[str, tuple[Writer, ...]] = {}, lanes: Collection[str] | None = None
+) -> dict[str, dict[str, Move]]:
     """The move verdicts out of each lane of a Board machine, by lane and then by the lane reached.
+
+    A machine state that is not among `lanes` (a creation or archive state) is neither left nor reached; `None`
+    counts every state as a lane.
 
     A move's writers are the actors the YAML declares for the events that make it; when any of those events
     declares none, anyone may make the move.
@@ -113,7 +118,7 @@ def board_moves(machine: dict, writers: Mapping[str, tuple[Writer, ...]] = {}) -
 
     events: dict[tuple[str, str], list[str]] = {}
     for t in machine["transitions"]:
-        if t["source"] != t["target"]:
+        if t["source"] != t["target"] and (lanes is None or {t["source"], t["target"]} <= set(lanes)):
             events.setdefault((t["source"], t["target"]), []).append(t["event"])
     moves: dict[str, dict[str, Move]] = {}
     for (source, target), names in events.items():
@@ -313,18 +318,20 @@ def cli_writer(root: Path, statuses: tuple[str, ...], command: list[str]) -> Mov
 
 def _machine(path: Path, config: BacklogConfig) -> tuple[Compiled, dict, list[dict]]:
     """The Board machine a file declares, compiled and drawn, with its cues, each beside the lane its event reaches;
-    refused unless its states are the project's lanes and each cued event reaches one."""
+    refused unless every lane is a state, every other state is initial or final, and each cued event reaches a lane."""
     from starpulse._internal.machines.machine_definition import load_machine  # noqa: PLC0415 - import cost, paid on first use
     from starpulse._internal.machines.snapshot import describe  # noqa: PLC0415 - import cost, paid on first use
 
     compiled = load_machine(path)
     drawn = describe(compiled.machine)
     ids = [lane_id(status) for status in config.statuses]
-    if mismatch := sorted(set(ids) ^ {state["id"] for state in drawn["states"]}):
+    states = {state["id"]: state for state in drawn["states"]}
+    extra = {i for i, state in states.items() if i not in ids and not (state["initial"] or state["final"])}
+    if mismatch := sorted(extra | (set(ids) - set(states))):
         raise ValueError(f"board: machine {path} and the project's statuses disagree on lanes {mismatch}")
     cues = []
     for cue in compiled.cues:
-        if len(lanes := {t["target"] for t in drawn["transitions"] if t["event"] == cue.event}) != 1:
+        if len(lanes := {t["target"] for t in drawn["transitions"] if t["event"] == cue.event} & set(ids)) != 1:
             raise ValueError(f"board: machine {path} cues on event {cue.event}, which must reach exactly one lane")
         cues.append({**asdict(cue), "state": lanes.pop()})
     return compiled, drawn, cues
@@ -342,6 +349,7 @@ def project_board(
     config = read_config(root)
     require_project(root, config)
     board_file = base / str(settings["machine"]) if "machine" in settings else None
+    lane_ids = [lane_id(status) for status in config.statuses]
     if board_file:
         compiled, drawn, cues = _machine(board_file, config)
         declared = compiled.writers
@@ -357,7 +365,7 @@ def project_board(
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         # Built here, not at load: a `Move` is an adapter model, and a board read never starts the poll.
-        UpstreamBacklog(root, feed.put, board_moves(drawn, declared), feed.retract).start(interval)
+        UpstreamBacklog(root, feed.put, board_moves(drawn, declared, lane_ids), feed.retract).start(interval)
 
     return Board(
         machines=machines,

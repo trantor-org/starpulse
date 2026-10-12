@@ -99,6 +99,83 @@ def test_serving_in_an_empty_directory_creates_the_default_lanes_and_an_empty_ta
     assert harness["name"] == "harness"
 
 
+_WITH_CREATION_AND_ARCHIVE = """\
+name: board
+states:
+  new: {initial: true}
+  to_do: {}
+  in_progress: {}
+  done: {}
+  archived: {final: true}
+events:
+  CREATE: [{from: new, to: to_do}]
+  CLAIM: [{from: to_do, to: in_progress}]
+  to_done: [{from: in_progress, to: done}]
+  ARCHIVE: [{from: [to_do, in_progress, done], to: archived}]
+cues:
+  - {event: to_done, dag: dagu/apply-on-merge, on: push to main, resolves: forced}
+"""
+
+
+def served_with_machine(
+    base: Path, machine: str, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> BoardFeed:
+    """A native board holding `task-1` in To Do whose `board.yaml` is `machine`, served from `starpulse.toml`."""
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: self.scan())
+    (base / "board.yaml").write_text(machine)
+    (base / "starpulse.toml").write_text('[board]\ntype = "native"\nmachine = "board.yaml"\n')
+    native_root(base).mkdir(parents=True)
+    (native_root(base) / "config.yml").write_text(
+        yaml.safe_dump({"project_name": "demo", "statuses": LANES, "task_prefix": "task"})
+    )
+    write_task(base, "task-1", "To Do")
+    built, feed = assemble(load(base / "starpulse.toml"), base, None, ())
+    built.start(feed, "test", EventLog(f"sqlite:///{tmp_path_factory.mktemp('log') / 'events.sqlite'}"))
+    return feed
+
+
+def test_a_machine_may_declare_an_initial_and_a_final_state_that_are_not_lanes(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed = served_with_machine(tmp_path, _WITH_CREATION_AND_ARCHIVE, tmp_path_factory, monkeypatch)
+
+    flow = feed.snapshot()["flows"][0]
+    assert [state["id"] for state in flow["machine"]["states"]] == ["new", "to_do", "in_progress", "done", "archived"]
+    assert flow["agents"][0]["moves"] == {"in_progress": {"allowed": True, "reason": "", "skill": "", "writers": ()}}
+
+
+def test_a_machine_state_that_is_neither_a_lane_nor_initial_nor_final_is_still_refused(tmp_path: Path) -> None:
+    (tmp_path / "board.yaml").write_text(
+        _WITH_CREATION_AND_ARCHIVE.replace("  done: {}\n", "  done: {}\n  limbo: {}\n").replace(
+            "events:\n", "events:\n  LOSE: [{from: to_do, to: limbo}, {from: limbo, to: to_do}]\n"
+        )
+    )
+    native_root(tmp_path).mkdir(parents=True)
+    (native_root(tmp_path) / "config.yml").write_text(
+        yaml.safe_dump({"project_name": "demo", "statuses": LANES, "task_prefix": "task"})
+    )
+
+    with pytest.raises(ValueError, match=r"disagree on lanes \['limbo'\]"):
+        board({"machine": "board.yaml"}, tmp_path)
+
+
+def test_a_cue_beside_a_machine_with_non_lane_states_reaches_the_snapshot(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed = served_with_machine(tmp_path, _WITH_CREATION_AND_ARCHIVE, tmp_path_factory, monkeypatch)
+
+    assert feed.snapshot()["cues"] == [
+        {
+            "event": "to_done",
+            "dag": "dagu/apply-on-merge",
+            "on": "push to main",
+            "resolves": "forced",
+            "grace": 300,
+            "state": "done",
+        }
+    ]
+
+
 def test_serving_again_leaves_a_board_the_user_edited_as_it_is(tmp_path: Path) -> None:
     native_root(tmp_path).mkdir(parents=True)
     (native_root(tmp_path) / "config.yml").write_text("project_name: demo\nstatuses: [Open, Shut]\ntask_prefix: bug\n")
@@ -120,7 +197,9 @@ def test_a_move_the_machine_allows_rewrites_the_status_in_the_task_file(tmp_path
     assert written.ok
     after = path.read_text()
     assert re.search(r"^updated_date: '?\d{4}-\d\d-\d\d \d\d:\d\d'?\n", after, re.M)
-    assert re.sub(r"^updated_date: .*\n", "", after, flags=re.M) == before.replace("status: In Progress", "status: Done")
+    assert re.sub(r"^updated_date: .*\n", "", after, flags=re.M) == before.replace(
+        "status: In Progress", "status: Done"
+    )
     assert [(task.id, task.lane) for task in scanned(tmp_path)] == [("task-1", "done")]
 
 
