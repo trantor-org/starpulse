@@ -289,7 +289,7 @@ The same marketplace serves `starpulse-board` (`plugins/starpulse-board/`, `/plu
 it runs `starpulse board --holder <session id>` when a session starts, after each tool call and after each turn, so a
 task claimed mid-turn shows before the turn ends. It draws the tasks that session holds above the prompt with a Hide
 button, and adds `/board` to list them with their titles. It reads only the `starpulse` CLI, retrying
-`~/.local/bin/starpulse` when the one on `PATH` fails, so it shows nothing when no server answers (`$STARPULSE_URL`,
+`~/.local/bin/starpulse` when the one on `PATH` fails or is missing, so it shows nothing when no server answers (`$STARPULSE_URL`,
 else `http://localhost:8766`).
 
 ## The pull-request store

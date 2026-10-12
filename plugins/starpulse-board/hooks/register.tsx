@@ -12,15 +12,17 @@ const held = async ($: Engine): Promise<HeldTask[] | null> => {
   try {
     const session = await $.session.id()
     const args = ['board', '--holder', session]
-    let { exitCode, stdout } = await $.process.run(['starpulse', ...args])
-    if (exitCode !== 0) {
+    // A start failure counts as a failed run: a non-login PATH (a Desktop SSH session's) lacks ~/.local/bin.
+    const run = (argv0: string) => $.process.run([argv0, ...args]).catch(() => null)
+    let ran = await run('starpulse')
+    if (ran?.exitCode !== 0) {
       // A virtualenv on PATH can hold a starpulse older than --holder; the user-wide install is current.
-      ;({ exitCode, stdout } = await $.process.run([`${await $.env.get('HOME')}/.local/bin/starpulse`, ...args]))
+      ran = await run(`${await $.env.get('HOME')}/.local/bin/starpulse`)
     }
-    if (exitCode !== 0) {
+    if (ran?.exitCode !== 0) {
       return null
     }
-    const board = JSON.parse(stdout) as Board
+    const board = JSON.parse(ran.stdout) as Board
 
     return board.columns.flatMap(c => c.tasks.map(t => ({ id: t.id, title: t.title, column: c.name })))
   } catch {
