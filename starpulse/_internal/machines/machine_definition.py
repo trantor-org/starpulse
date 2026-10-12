@@ -284,10 +284,22 @@ def field_matches(when: Mapping[str, Mapping[str, Any]], fields: Mapping[str, An
 
 
 def _field_match(when: Mapping[str, Mapping[str, Any]]) -> Callable[..., bool]:
+    """A matcher named for the fields it reads, which the library labels the guard by: `{ready: {equals: true}}`
+    reads `ready`, any other match `kind == push`, `branch in [main, dev]`, `sha exists` or `sha missing`."""
+
     def matches(**fields: Any) -> bool:
         return field_matches(when, fields)
 
+    matches.__name__ = matches.__qualname__ = " and ".join(_label(name, match) for name, match in when.items())
     return matches
+
+
+def _label(name: str, match: Mapping[str, Any]) -> str:
+    if "exists" in match:
+        return f"{name} {'exists' if match['exists'] else 'missing'}"
+    if "equals" in match:
+        return name if match["equals"] is True else f"{name} == {match['equals']}"
+    return f"{name} in [{', '.join(map(str, match['in']))}]"
 
 
 def _holds(match: Mapping[str, Any], present: bool, value: Any) -> bool:
