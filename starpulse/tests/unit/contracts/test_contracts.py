@@ -225,3 +225,10 @@ def test_a_board_task_carries_its_acceptance_criteria_and_notes_and_is_without_t
 
     assert (bare.acceptance_criteria, bare.notes) == ((), "")
     assert (full.acceptance_criteria, full.notes) == (("It draws", "It scrolls"), "n")
+
+
+def test_a_board_task_from_an_adapter_that_predates_criteria_state_still_validates() -> None:
+    old = BoardTask.model_validate({"id": "PROJ-1", "title": "t", "team": "demo", "lane": "ready"})
+
+    assert (old.acceptance_checked, old.pause_reason) == ((), "")
+    assert {"acceptance_checked", "pause_reason"}.isdisjoint(contracts.SCHEMAS["board"]["required"])

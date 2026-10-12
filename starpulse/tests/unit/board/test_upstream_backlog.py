@@ -236,6 +236,42 @@ def test_a_marker_outside_the_notes_section_is_not_a_holder(tmp_path: Path) -> N
     assert [t.holder for t in scanned(tmp_path)] == [""]
 
 
+_CRITERIA_TWO_OF_FOUR = (
+    "<!-- SECTION:DESCRIPTION:BEGIN -->\nWhy\n<!-- SECTION:DESCRIPTION:END -->\n\n## Acceptance Criteria\n\n"
+    "<!-- AC:BEGIN -->\n- [x] #1 first\n- [ ] #2 second\n- [X] #3 third\n- [ ] #4 fourth\n<!-- AC:END -->"
+)
+
+
+def test_a_task_carries_which_of_its_criteria_are_checked_in_file_order(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    write_task(tmp_path, "tasks", "task-1", "To Do", body=_CRITERIA_TWO_OF_FOUR)
+
+    [task] = scanned(tmp_path)
+
+    assert task.acceptance_criteria == ("first", "second", "third", "fourth")
+    assert task.acceptance_checked == (True, False, True, False)
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "reason"),
+    [
+        ("Doing", "Why\n\n## Needs attention\n\nRestart the server.\nThen rerun deliver.", ""),
+        ("Needs attention", "Why\n\n## Needs attention\n\nRestart the server.\nThen rerun deliver.", "Restart the server."),
+        ("Needs attention", "Why\n\n## Needs attention\n\n\n  Pick one.  \n\n## Other\n\nelse", "Pick one."),
+        ("Needs attention", "Why, with no reason section", ""),
+    ],
+    ids=["a task not paused", "the first line of the section", "trimmed, before the next heading", "no section"],
+)
+def test_a_needs_attention_task_carries_the_first_line_of_its_reason_section(
+    tmp_path: Path, status: str, body: str, reason: str
+) -> None:
+    write_config(tmp_path, statuses=("To Do", "Doing", "Needs attention"))
+    description = f"<!-- SECTION:DESCRIPTION:BEGIN -->\n{body}\n<!-- SECTION:DESCRIPTION:END -->"
+    write_task(tmp_path, "tasks", "task-1", status, body=description)
+
+    assert [t.pause_reason for t in scanned(tmp_path)] == [reason]
+
+
 def test_a_task_with_no_assignee_labels_or_description_has_the_contract_defaults(tmp_path: Path) -> None:
     write_config(tmp_path)
     write_task(tmp_path, "tasks", "task-1", "To Do", body="")

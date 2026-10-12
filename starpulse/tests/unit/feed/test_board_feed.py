@@ -322,6 +322,30 @@ def test_the_board_snapshot_has_the_shape_the_page_reads() -> None:
 PROJ = TaskKeys(key=re.compile(r"PROJ-\d+"), branch=re.compile(r"feature/(PROJ-\d+)"))
 
 
+def test_an_agent_pairs_each_criterion_with_its_tick_and_leaves_one_past_the_ticks_unchecked() -> None:
+    feed = BoardFeed(keys=PROJ, clock=lambda: 7.0)
+
+    feed.put(
+        BoardTask(
+            id="PROJ-1",
+            team="demo",
+            title="t",
+            lane="needs_attention",
+            acceptance_criteria=("a", "b", "c"),
+            acceptance_checked=(True, False),
+            pause_reason="Pick one",
+        )
+    )
+
+    [agent] = _agents(feed)
+    assert agent["criteria"] == [
+        {"text": "a", "checked": True},
+        {"text": "b", "checked": False},
+        {"text": "c", "checked": False},
+    ]
+    assert agent["pause_reason"] == "Pick one"
+
+
 def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
     feed = BoardFeed(keys=PROJ, clock=lambda: 7.0)
     _, changes = feed.subscribe()
@@ -353,6 +377,8 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "dependencies": ["PROJ-0"],
             "prs": [PR],
             "description": "Draw it.",
+            "criteria": [],
+            "pause_reason": "",
             "moves": {},  # an adapter that writes no verdicts offers no guarded column
             "entered": 7.0,
             "created": None,  # an adapter that does not say when a task was created

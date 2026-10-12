@@ -178,6 +178,21 @@
       "title": "Acceptance Criteria",
       "type": "array"
     },
+    "acceptance_checked": {
+      "default": [],
+      "description": "Whether each criterion in `acceptance_criteria` is checked, in the same order; a criterion past the end of this list is unchecked, so an adapter that keeps no checked state leaves it empty.",
+      "items": {
+        "type": "boolean"
+      },
+      "title": "Acceptance Checked",
+      "type": "array"
+    },
+    "pause_reason": {
+      "default": "",
+      "description": "Why a paused task waits for a person, the first line of the reason its board records; empty when the task is not paused or the board keeps none.",
+      "title": "Pause Reason",
+      "type": "string"
+    },
     "notes": {
       "default": "",
       "description": "The task's running notes, searched with the title and description; empty when the board keeps none.",

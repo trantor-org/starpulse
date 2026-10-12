@@ -198,6 +198,8 @@ _TASK_KEYS = (
     "labels",
     "dependencies",
     "waiting_on",
+    "criteria",
+    "pause_reason",
     "prs",
     "moves",
     "description",
@@ -328,6 +330,8 @@ def _task(agent: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
         "labels": agent["labels"],
         "dependencies": agent["dependencies"],
         "waiting_on": [dependency for dependency in agent["dependencies"] if dependency not in done],
+        "criteria": agent.get("criteria", []),
+        "pause_reason": agent.get("pause_reason", ""),
         "prs": [pulls.get(url, {"url": url}) for url in agent["prs"]],
         "moves": _agent_moves(agent),
     }

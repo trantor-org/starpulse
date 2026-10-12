@@ -417,6 +417,10 @@ export interface RawAgent {
    */
   created?: number | null;
   /**
+   * A Board task's acceptance criteria in file order; absent off the Board.
+   */
+  criteria?: TaskCriterion[] | null;
+  /**
    * A task's dependencies, as task ids.
    */
   dependencies?: string[] | null;
@@ -446,6 +450,10 @@ export interface RawAgent {
     [k: string]: Move;
   } | null;
   /**
+   * Why a paused Board task waits for a person; empty when it is not paused, absent off the Board.
+   */
+  pause_reason?: string | null;
+  /**
    * The Board lane the task left on its last move; absent before it has moved.
    */
   previous?: string | null;
@@ -469,6 +477,13 @@ export interface RawAgent {
    * Since when a workable Board task has been, epoch seconds.
    */
   workable_since?: number | null;
+}
+/**
+ * One acceptance criterion of a Board task and whether it is checked.
+ */
+export interface TaskCriterion {
+  checked: boolean;
+  text: string;
 }
 /**
  * The verdict on moving a task to one column: allowed, or guarded by a declared rule.
