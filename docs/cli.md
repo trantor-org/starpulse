@@ -287,10 +287,15 @@ Claude Code can load the same skills as a plugin instead of copies: the reposito
 a `directory` marketplace pointing at a local checkout, serves them as `starpulse:<skill>`, read in place.
 The same marketplace serves `starpulse-board` (`plugins/starpulse-board/`, `/plugin install starpulse-board@starpulse`):
 it runs `starpulse board --holder <session id>` when a session starts, after each tool call and after each turn, so a
-task claimed mid-turn shows before the turn ends. It draws the tasks that session holds above the prompt with a Hide
-button, and adds `/board` to list them with their titles. It reads only the `starpulse` CLI, retrying
-`~/.local/bin/starpulse` when the one on `PATH` fails or is missing, so it shows nothing when no server answers (`$STARPULSE_URL`,
-else `http://localhost:8766`).
+task claimed mid-turn shows before the turn ends. It draws each task that session holds as one row above the prompt in
+StarPulse's palette: lane dot, ID, the title (or the reason a Needs attention task waits on the operator, or what a
+Waiting task waits on), a bar of checked acceptance criteria with `k/n`, the lane, and the PR with its check state. A
+server that serves no checked state draws the criteria count without a bar. Details opens a pane with the criteria
+ticked off, the holder and the PR; ✕ hides the rows until Show task or `/board`. The Claude Desktop (SSH) row is one
+`Svg` and the terminal row is Ink text. The `Svg` pulses the lane dot of an In Progress task and a running check, and
+stops under the system's reduced-motion setting; the terminal row does not animate. `/board` lists the tasks with
+their titles. It reads only the `starpulse` CLI, retrying `~/.local/bin/starpulse` when the one on `PATH` fails or is missing, so it
+shows nothing when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
 
 ## The pull-request store
 
