@@ -96,7 +96,7 @@ lists exactly the verbs there are.
 | `analytics gates` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `gates` and `runs`, below; `--task` keeps one run and exits 4 when it ended nowhere in the window; refusals as `analytics level` |
 | `analytics forecast` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `forecast` and `calibration`, below; `--task` keeps one run and exits 4 when it has no run still going; refusals as `analytics level` |
 | `analytics what-if` | `--from`, `--to`, `--p`, `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `from`, `to`, `p`, `was`, `n`, `start`, `p_goal`, `expected_days` and `chain`, below; a what-if the chain cannot answer exits 1; refusals as `analytics level` |
-| `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number exits 1 and a server that receives no telemetry exits 3 |
+| `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number or is longer than the telemetry history exits 1 and a server that receives no telemetry exits 3 |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
@@ -198,7 +198,8 @@ began in, and `chain` is the changed chain per state. A state no ended run left 
 same as `from`, a `p` outside 0 to 1, a transition that is its state's only exit, or a chain that would never finish is
 400 (exit 1).
 
-`analytics steps` reads `GET /api/analytics/steps[?hours=N]` (168 hours by default): one row per model request of the
+`analytics steps` reads `GET /api/analytics/steps[?hours=N]` (168 hours by default, 400 with `history_s` for a window
+longer than the telemetry history, as `analytics level` is): one row per model request of the
 window, oldest first, that [Connect sources](sources.md#read-each-step-of-a-session) defines. `skill` is the skill
 most recently loaded in the session, `none` before any load; `activities` and `keys` hold one entry per tool call
 the step made, a key being the command the server's redactor left, else the tool's name; `tokens` is

@@ -96,7 +96,7 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
 
 
 def test_a_skills_trigger_run_without_loading_it_is_a_missed_load(server: ThreadingHTTPServer) -> None:
-    status, body = _get(server, "/api/analytics/missed-loads?hours=24")
+    status, body = _get(server, "/api/analytics/missed-loads?hours=1")
 
     assert status == 200
     skills = {s["skill"]: s for s in body["skills"]}
@@ -104,18 +104,18 @@ def test_a_skills_trigger_run_without_loading_it_is_a_missed_load(server: Thread
     assert {c["task"] for c in skills["operating-unraid"]["listed"]} == {f"TASK-{n}" for n in range(7, 12)}
     # a title or a label names a task shape; both settled tasks were worked, and neither loaded the skill
     assert (skills["verifying-claims"]["performed"], skills["verifying-claims"]["missed"]) == (2, 2)
-    assert (body["now"], body["window_s"]) == (NOW, 24 * 3600)
+    assert (body["now"], body["window_s"]) == (NOW, 3600)
 
 
 def test_missed_loads_can_be_narrowed_to_a_skill_and_a_list_length(server: ThreadingHTTPServer) -> None:
-    _, body = _get(server, "/api/analytics/missed-loads?skill=operating-unraid&list=2")
+    _, body = _get(server, "/api/analytics/missed-loads?skill=operating-unraid&list=2&hours=1")
 
     (found,) = body["skills"]
     assert (found["skill"], found["missed"], len(found["listed"])) == ("operating-unraid", 5, 2)
 
 
 def test_recurring_work_is_a_trace_cluster_with_its_skills_and_what_it_missed(server: ThreadingHTTPServer) -> None:
-    status, body = _get(server, "/api/analytics/trace-clusters?hours=24&min_sessions=5")
+    status, body = _get(server, "/api/analytics/trace-clusters?hours=1&min_sessions=5")
 
     assert status == 200
     assert (body["cases"], body["clustered"]) == (60, 12)
@@ -129,7 +129,7 @@ def test_recurring_work_is_a_trace_cluster_with_its_skills_and_what_it_missed(se
 
 
 def test_outliers_name_the_medoid_and_each_cases_edits_from_it(server: ThreadingHTTPServer) -> None:
-    _, body = _get(server, "/api/analytics/trace-clusters?outliers=2")
+    _, body = _get(server, "/api/analytics/trace-clusters?outliers=2&hours=1")
 
     unraid = body["clusters"][1]
     assert unraid["medoid"]["trace"] == ["git status", "gh pr view", "Read", "ssh root@unraid"]
@@ -137,7 +137,7 @@ def test_outliers_name_the_medoid_and_each_cases_edits_from_it(server: Threading
 
 
 def test_min_sessions_leaves_out_the_smaller_clusters(server: ThreadingHTTPServer) -> None:
-    _, body = _get(server, "/api/analytics/trace-clusters?min_sessions=7")
+    _, body = _get(server, "/api/analytics/trace-clusters?min_sessions=7&hours=1")
 
     assert body["clusters"] == []
 
@@ -158,3 +158,14 @@ def test_an_instance_that_receives_no_telemetry_cannot_report_them(tmp_path: Pat
         status, body = _get(server, path)
 
     assert (status, "telemetry" in body["error"]) == (501, True)
+
+
+@pytest.mark.parametrize("path", ["/api/analytics/missed-loads", "/api/analytics/trace-clusters"])
+def test_a_window_longer_than_the_telemetry_history_is_refused_with_the_history_s_and_a_shorter_one_is_answered(
+    server: ThreadingHTTPServer, path: str
+) -> None:
+    status, refused = _get(server, f"{path}?hours=24")
+    shorter_status, history = _get(server, f"{path}?hours=0.5")
+
+    assert (status, 3000 < refused["history_s"] < 4 * 3600, "longer than the history" in refused["error"]) == (400, True, True)
+    assert (shorter_status, history["window_s"]) == (200, 1800)

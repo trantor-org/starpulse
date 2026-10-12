@@ -1527,7 +1527,7 @@ class StaleEdit(ApiError):
 
 
 class WindowTooLong(ApiError):
-    """A level window longer than the history, with the history's length."""
+    """A level or telemetry window longer than its history, with the history's length."""
 
     history_s: float
 
@@ -1680,10 +1680,10 @@ BODIES: dict[str, Any] = {
     "pulls": Pulls | ApiError,
     "search": SearchResults | ApiError,
     "health": Health | ApiError,
-    "sessions": Sessions | ApiError,
-    "session_steps": SessionSteps | ApiError,
-    "missed_loads": MissedLoads | ApiError,
-    "trace_clusters": TraceClusters | ApiError,
+    "sessions": Sessions | ApiError | WindowTooLong,
+    "session_steps": SessionSteps | ApiError | WindowTooLong,
+    "missed_loads": MissedLoads | ApiError | WindowTooLong,
+    "trace_clusters": TraceClusters | ApiError | WindowTooLong,
     "level": Level | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
     "what_if": WhatIf | ApiError | WindowTooLong,

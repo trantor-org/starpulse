@@ -95,15 +95,17 @@ GET /api/analytics/sessions[?hours=N]
                    `sessions` (one row per harness session and task, with its prompts, requests, tools,
                    rejections, tokens, cost and agent, operator-wait and idle seconds) and `slices` (per task, the
                    sessions that worked it with its interventions, `escalated` and `clean`). A `hours` that is no
-                   positive number is 400, a server with no telemetry log 501 and one that cannot read it 503
+                   positive number is 400, as is one longer than the telemetry history (the oldest signal held),
+                   with `history_s` its length; a server with no telemetry log is 501 and one that cannot read it 503
 GET /api/analytics/steps[?hours=N]
                    every model request of those exports over the last `hours`, default 168, oldest first, as
                    `{now, window_s, steps}` (`steps.session_steps`): each step is `{harness, session, task, at,
                    model, origin, skill, activities, keys, tokens, captured}`, `skill` the skill most recently
                    loaded in its session counting the step's own (`none` before any), `activities` and `keys` one
                    entry per call it made (a key is the redacted shell command, else the tool's name) and
-                   `captured` false for Codex. A `hours` that is no positive number is 400, a server with no
-                   telemetry log 501 and one that cannot read it 503
+                   `captured` false for Codex. A `hours` that is no positive number is 400, as is one longer than the
+                   telemetry history, with `history_s` its length; a server with no telemetry log is 501 and one
+                   that cannot read it 503
 GET /api/level[?hours=N]
                    the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
                    last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
@@ -289,7 +291,7 @@ from starpulse._internal.eventlog.history import (
 )
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.config.analytics import Analytics
-from starpulse._internal.harnesses.telemetry import TelemetryLog
+from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog
 
 logger = logging.getLogger(__name__)
 _HERE = Path(__file__).parents[2]
@@ -488,6 +490,24 @@ def health_response(
     return encode("health", health), 200
 
 
+def _held_signals(
+    telemetry: TelemetryLog, window: float, kind: str, now: float, label: str
+) -> list[Signal] | tuple[bytes, int]:
+    """The signals from the last `window` hours as of `now`, or the 503 response for a log that cannot be read.
+
+    The oldest signal the log holds is where its history begins: a window that starts before it is 400 with the
+    history's length (`history_s`), never answered with its missing hours as empty, as `level_response` refuses one."""
+    try:
+        held = telemetry.read()
+    except Exception as exc:  # the event log's database is unreachable
+        logger.warning("%s: telemetry unreadable: %s", label, exc)
+        return _error("the telemetry log cannot be read"), 503
+    history = now - min((s.time for s in held), default=now)
+    if window * 3600 > history:
+        return encode(kind, {"error": str(WindowPastHistory(window * 3600, history)), "history_s": history}), 400
+    return [s for s in held if s.time >= now - window * 3600]
+
+
 def sessions_response(
     telemetry: TelemetryLog | None,
     query: dict[str, list[str]],
@@ -497,17 +517,15 @@ def sessions_response(
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/sessions`: session and slice health of the signals from the last
     `hours` (default 168) as of `now`. An instance that receives no harness telemetry is 501, a log that cannot be
-    read 503."""
+    read 503, and a window longer than the telemetry history 400 with `history_s` its length."""
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot report session health"), 501
-    try:
-        found = telemetry.read(now - window * 3600)
-    except Exception as exc:  # the event log's database is unreachable
-        logger.warning("sessions: telemetry unreadable: %s", exc)
-        return _error("the telemetry log cannot be read"), 503
+    found = _held_signals(telemetry, window, "sessions", now, "sessions")
+    if isinstance(found, tuple):
+        return found
     rows = session_health(found, keys, analytics)
     body = {"now": now, "window_s": window * 3600, "sessions": rows, "slices": slice_health(rows)}
     return encode("sessions", body), 200
@@ -521,17 +539,16 @@ def steps_response(
     analytics: Analytics | None = None,
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/steps`: every model request of the signals from the last `hours`
-    (default 168) as of `now`. An instance that receives no harness telemetry is 501, a log that cannot be read 503."""
+    (default 168) as of `now`. An instance that receives no harness telemetry is 501, a log that cannot be read 503,
+    and a window longer than the telemetry history 400 with `history_s` its length."""
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot report session steps"), 501
-    try:
-        found = telemetry.read(now - window * 3600)
-    except Exception as exc:  # the event log's database is unreachable
-        logger.warning("steps: telemetry unreadable: %s", exc)
-        return _error("the telemetry log cannot be read"), 503
+    found = _held_signals(telemetry, window, "session_steps", now, "steps")
+    if isinstance(found, tuple):
+        return found
     return encode("session_steps", {"now": now, "window_s": window * 3600, "steps": session_steps(found, keys, analytics)}), 200
 
 
@@ -562,15 +579,15 @@ def _telemetry_cases(
     titled: Callable[[], Mapping[str, Mapping[str, Any]]],
     analytics: Analytics,
     now: float,
+    kind: str,
 ) -> list[Case] | tuple[bytes, int]:
-    """The cases of the signals from the last `window` hours, or the 501 or 503 response for a log that has none."""
+    """The cases of the signals from the last `window` hours, or the 501, 503 or (a window longer than the history)
+    400 response for a log that has none."""
     if telemetry is None:
         return _error("this instance receives no harness telemetry, so it cannot read what its sessions did"), 501
-    try:
-        found = telemetry.read(now - window * 3600)
-    except Exception as exc:  # the event log's database is unreachable
-        logger.warning("analytics: telemetry unreadable: %s", exc)
-        return _error("the telemetry log cannot be read"), 503
+    found = _held_signals(telemetry, window, kind, now, "analytics")
+    if isinstance(found, tuple):
+        return found
     return trace_cases(found, keys, roots=analytics.roots, tasks=titled(), analytics=analytics)
 
 
@@ -584,11 +601,11 @@ def missed_loads_response(
 ) -> tuple[bytes, int]:
     """The body and status for `/api/analytics/missed-loads`: per declared skill (or the one named by `skill`), the
     cases of the last `hours` (default 168) that ran its trigger and those that did so without loading it, the `list`
-    (default 5) newest of the latter listed."""
+    (default 5) newest of the latter listed. A window longer than the telemetry history is 400 with `history_s`."""
     window, listed = _hours(query, "hours", _HEALTH_HOURS), _whole(query, "list", _LISTED)
     if window is None or listed is None:
         return _error("hours must be a positive number and list a whole number"), 400
-    found = _telemetry_cases(telemetry, window, keys, titled, analytics, now)
+    found = _telemetry_cases(telemetry, window, keys, titled, analytics, now, "missed_loads")
     if isinstance(found, tuple):
         return found
     wanted = query.get("skill", [""])[0]
@@ -666,7 +683,8 @@ def trace_clusters_response(
     """The body and status for `/api/analytics/trace-clusters`: the trace clusters of the cases of the last `hours`
     (default 168) with `min_sessions` (default 5) or more distinct sessions, cut at cosine distance `threshold`
     (default 0.8, up to 2). `outliers` N adds each cluster's medoid and its N furthest cases; `new_hours` keeps only the
-    clusters whose oldest case is that recent, clustering still running over every case in the window."""
+    clusters whose oldest case is that recent, clustering still running over every case in the window. A window longer than the telemetry history is 400 with
+    `history_s`."""
     window = _hours(query, "hours", _HEALTH_HOURS)
     new = _hours(query, "new_hours", 1) if "new_hours" in query else math.inf
     threshold = _hours(query, "threshold", _CLUSTER_THRESHOLD)
@@ -679,7 +697,7 @@ def trace_clusters_response(
             ),
             400,
         )
-    found = _telemetry_cases(telemetry, window, keys, titled, analytics, now)
+    found = _telemetry_cases(telemetry, window, keys, titled, analytics, now, "trace_clusters")
     if isinstance(found, tuple):
         return found
     clusters = trace_clusters(found, stop=analytics.stop_activities, threshold=threshold)
