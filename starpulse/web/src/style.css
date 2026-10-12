@@ -544,7 +544,8 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 /* Drag and moves, from the approved mockup: a press that travels lifts the card, legal columns light and the rest dim,
    an allowed drop lands at once with a spinner until the writer confirms, a refusal stays on the card. */
 body.dragging, body.dragging * { user-select: none; }
-#kb .card { touch-action: none; }
+/* Phones take no drag (Kanban.tsx PHONE), so a finger on a card must still pan the lane. */
+@media (min-width: 901px) { #kb .card { touch-action: none; } }
 #kb .card.ghost { opacity: .25; border-style: dashed; }
 #kb .card.bad { border-color: var(--fail); box-shadow: 0 0 0 1px var(--fail), 0 0 18px color-mix(in srgb, var(--fail) 25%, transparent); animation: kb-shake .65s; }
 #kb .card.saving::after { content: ""; position: absolute; right: 8px; bottom: 8px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--run); border-top-color: transparent; animation: kb-spin .8s linear infinite; }

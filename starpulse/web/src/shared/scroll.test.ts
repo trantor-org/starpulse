@@ -28,6 +28,11 @@ describe("the page's scrolling boxes", () => {
     expect(rule.sel).not.toContain("#feed");
   });
 
+  it("let a finger on a Kanban card pan the lane at phone width, where a card takes no drag", () => {
+    expect(css.match(/touch-action\s*:\s*none/g)).toHaveLength(1);
+    expect(css).toContain("@media (min-width: 901px) { #kb .card { touch-action: none; } }");
+  });
+
   it("wrap a Kanban card's head and its pull request chip in a narrow lane rather than clip them", () => {
     for (const sel of ["#kb .card .top", "#kb .pr"]) {
       const r = rules.find((x) => x.sel === sel);
