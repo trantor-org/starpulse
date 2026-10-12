@@ -589,7 +589,7 @@ describe("a Board path's route search", () => {
 
 describe("a Board with DAGs in its snapshot", () => {
   const loaded = () => {
-    const sky = boardSky({ writes: { alpha: ["CLAIM"], beta: ["CLAIM", "MERGED"] }, cues: [cue("graph-refresh", "MERGED", "done")], launches: ["pr-launcher"], free: { Ops: ["free-a", "free-b"] } });
+    const sky = boardSky({ writes: { alpha: ["CLAIM"], beta: ["CLAIM", "MERGED"] }, cues: [cue("healthcheck", "MERGED", "done")], launches: ["pr-launcher"], free: { Ops: ["free-a", "free-b"] } });
     sky.S.writers.REVIEW = [{ actor: "operator", trigger: "ui" }];
     return sky;
   };

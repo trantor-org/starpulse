@@ -122,6 +122,6 @@ describe("a tied-DAG hangar's label", () => {
   it("is the name alone, whichever of its DAGs run or failed", () => {
     expect(nameLines(orbs("main-follow"))).toEqual(["main-follow"]);
     expect(nameLines(orbs("board-autopilot"))).toEqual(["board-", "autopilot"]);
-    expect(nameLines(orbs("graph-refresh", "apply-on-merge"))).toEqual(["2 DAGs"]);
+    expect(nameLines(orbs("healthcheck", "apply-on-merge"))).toEqual(["2 DAGs"]);
   });
 });

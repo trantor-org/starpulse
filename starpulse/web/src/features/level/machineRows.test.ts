@@ -58,7 +58,7 @@ describe("a row's meta column", () => {
     flow("authoring-skills", { ties: [tie("declared", "in-progress", "worktree_ready", null, null, "a skill changes")], nested: ["running-skill-evals"], states: ["drafted", "tested"] }),
     flow("running-skill-evals", { parent: "authoring-skills", ties: [tie("observed", "authoring-skills", "tested", 4)], last: NOW - 120 }),
     flow("triaging-cr-reviews", { ties: [tie("observed", "in-progress", "pr_opened", 7), tie("observed", "in-progress", "start", 2)] }),
-    flow("graph-refresh", { ties: [tie("dag", null, null, null, "graph-refresh"), tie("dag", null, null, null, "apply-on-merge")] }),
+    flow("healthcheck", { ties: [tie("dag", null, null, null, "healthcheck"), tie("dag", null, null, null, "apply-on-merge")] }),
     flow("lonely", {}),
   );
   flows["in-progress"] = flow("in-progress", { parent: null, states });
@@ -76,7 +76,7 @@ describe("a row's meta column", () => {
     expect(meta("running-skill-evals", "authoring-skills").tie.text).toBe("from Tested · ×4");
   });
   it("names a DAG launch with a star and every DAG, and no state", () => {
-    expect(meta("graph-refresh").tie).toEqual({ text: "✦ graph-refresh, apply-on-merge", machine: null, state: null, kind: "dag" });
+    expect(meta("healthcheck").tie).toEqual({ text: "✦ healthcheck, apply-on-merge", machine: null, state: null, kind: "dag" });
   });
   it("says so when nothing ties a machine in", () => {
     expect(meta("lonely").tie).toMatchObject({ text: "no tie this hour", kind: "none" });

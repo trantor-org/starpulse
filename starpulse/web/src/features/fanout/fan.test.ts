@@ -132,7 +132,7 @@ describe("queueRow", () => {
 
   it("reports the pool's running count against its cap, the DAG's share only when the pool is shared", () => {
     const own = dag(Array.from({ length: 5 }, (_, i) => run(`r${i}`, "lint")));
-    const shared = dag([run("r1", "lint")], { name: "graph-refresh", pool: "dagu/default" });
+    const shared = dag([run("r1", "lint")], { name: "healthcheck", pool: "dagu/default" });
 
     expect(queueRow(own, pools)).toMatchObject({ pool: "deliver", running: 5, cap: 32, mine: 5, full: false });
     expect(queueRow(shared, pools)).toMatchObject({ pool: "default", running: 2, cap: 2, queued: 1, mine: 1, full: true });

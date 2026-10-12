@@ -23,7 +23,7 @@ const WRITES: Record<string, string[]> = {
 };
 const CUES: Cue[] = [
   { dag: "dagu/apply-on-merge", event: "MERGED", on: "each merge", resolves: "forced", state: "done" },
-  { dag: "dagu/graph-refresh", event: "MERGED", on: "each merge", resolves: "next", state: "done" },
+  { dag: "dagu/healthcheck", event: "MERGED", on: "each merge", resolves: "next", state: "done" },
 ];
 const LAUNCH_ONLY = ["dagu/nightly-audit", "dagu/weekly-code-audit"], UNTIED = ["dagu/orphan-report"];
 
@@ -68,7 +68,7 @@ describe("the tied DAGs of the Board level", () => {
     expect(hubOf("waiting")?.orbs.map((o) => o.dag)).toEqual(["dagu/board-dependency-reconciliation"]);
     expect(hubOf("review")?.orbs.map((o) => o.dag)).toEqual(["dagu/main-follow"]);
     // a cue belongs to the state its event lands in, beside the DAG that writes that state's transition
-    expect(hubOf("done")?.orbs.map((o) => o.dag).sort()).toEqual(["dagu/apply-on-merge", "dagu/backlog-sweep", "dagu/graph-refresh"]);
+    expect(hubOf("done")?.orbs.map((o) => o.dag).sort()).toEqual(["dagu/apply-on-merge", "dagu/backlog-sweep", "dagu/healthcheck"]);
     expect(ties.hubs).toHaveLength(4);
   });
 
@@ -172,11 +172,11 @@ describe("the comet a tied DAG's Board transition runs", () => {
   });
 
   it("runs the comet for the DAG that wrote the move and the DAGs the event cues", () => {
-    expect(dags(1001)).toEqual(["dagu/apply-on-merge:cue", "dagu/graph-refresh:cue", "dagu/main-follow:write"]);
+    expect(dags(1001)).toEqual(["dagu/apply-on-merge:cue", "dagu/healthcheck:cue", "dagu/main-follow:write"]);
   });
 
   it("leaves a writer that did not run out, and still wakes the cued DAGs", () => {
-    expect(dags(1001, [merged], (d) => d !== "dagu/main-follow")).toEqual(["dagu/apply-on-merge:cue", "dagu/graph-refresh:cue"]);
+    expect(dags(1001, [merged], (d) => d !== "dagu/main-follow")).toEqual(["dagu/apply-on-merge:cue", "dagu/healthcheck:cue"]);
   });
 
   it("starts at the move and ends once the comet has landed and its ring has faded", () => {
