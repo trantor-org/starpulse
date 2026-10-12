@@ -61,3 +61,24 @@ def test_apply_patch_writes_the_files_its_headers_name() -> None:
 def test_a_shell_call_and_a_pathless_tool_name_no_path() -> None:
     assert paths("Bash", {"command": "cat /r/a.py"}, "") == ([], [])
     assert paths("Read", {}, "") == ([], [])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # A quote that never closes runs to the end of the command, so its SQL and Python are one argument.
+        'psql -c "select 1\nFROM t\nWHERE x AS y"',
+        'psql -c "select DISTINCT a\nfrom t',
+        "python3 -c 'import json\nfrom os import path",
+        # A loop's `break` and `continue` are syntax, like `done`.
+        "for f in a b; do break; done",
+        "while true; do continue; done",
+    ],
+)
+def test_sql_python_and_shell_syntax_are_not_activities(command: str) -> None:
+    assert shell(command) in ([], ["psql"], ["shell_other"])
+    assert not {"from", "FROM", "AS", "DISTINCT", "break", "continue", "import"} & set(shell(command))
+
+
+def test_a_loop_body_keeps_its_commands_past_break() -> None:
+    assert shell("for f in a b; do make test; break; done") == ["make test"]
