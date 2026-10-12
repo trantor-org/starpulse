@@ -111,7 +111,12 @@ the machine from the project's own statuses (any lane reaches any other, unless 
 whose states are those lanes and whose `writers` reserve a move to an actor, such as `operator`), and writes moves
 with the `backlog` CLI, answering a failed write with the CLI's output. Its first scan is the feed's replay, as a
 stream adapter's read up to its start is: the feed builds the Ledger once, after the scan has placed every file, and a
-task write that meets the scan waits for it, so a restart serves the whole board in seconds. An adapter with a writer subclasses
+task write that meets the scan waits for it, so even a full scan serves the whole board in seconds. The native board
+also keeps itself saved: the feed saves its Board with each scanned file's fingerprint (modification time and size)
+and task, and a restart resumes that Board and re-reads only the files added, changed or removed since, so unchanged
+files are never read again. The save is keyed by a hash of the projection code, the project's `config.yml` and the
+machine file; a change to any of them, or a save that cannot be read, starts from a full scan instead.
+An adapter with a writer subclasses
 `BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
 the machine leaves to the operator is refused to the agent. A board kit also declares `teams`, the team key the
 adapter derives for each task it produces, and asserts each record carries it. `starpulse._internal.board.jira` reads a Jira project and has no writer. It imports the named workflow from the site's

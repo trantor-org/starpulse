@@ -255,6 +255,9 @@ class BoardFeed:
         self._seen = (0, 0)
         self._saved = (0, 0)
         self._store: tuple[BoardStore, str] | None = None
+        #: What the board adapter keeps of its own beside the Board, saved and resumed with it (`keep_source`).
+        self._kept: dict = {}
+        self._kept_saved = self._kept
         self._lane_rows: Callable[..., list[LaneRow]] | None = None
         #: Set once the stream has been read up to the last entry it held when the feed started.
         self.ready = threading.Event()
@@ -353,13 +356,15 @@ class BoardFeed:
             return None
         cursor, state = saved
         try:
-            seen, open_, settled, assignees, pulls, answers = (
+            seen, open_, settled, assignees, pulls, answers, cited, source = (
                 stream_id(cursor),
                 dict(state["open"]),
                 dict(state["settled"]),
                 dict(state["assignees"]),
                 dict(state.get("pulls", {})),  # a Board saved before pull requests were kept has none
                 dict(state.get("pull_answers", {})),
+                dict(state.get("cited", {})),
+                dict(state.get("source", {})),
             )
             if not all(isinstance(entry, dict) for entry in settled.values()):
                 raise TypeError("a settled task saved before settled entries carried their time")
@@ -369,6 +374,10 @@ class BoardFeed:
         with self._lock:
             self._open, self._settled, self._assignees, self._seen, self._saved = open_, settled, assignees, seen, seen
             self._pulls, self._pull_answers = pulls, answers
+            self._cited, self._kept, self._kept_saved = cited, source, source
+            self._gated = {
+                t for t, agent in open_.items() if agent["state"] == WAITING and criteria.authored(agent["description"])
+            }
             self._dependents = {}  # the saved Board keeps no reverse links; `_link` needs them for the next change
             for task_id, agent in open_.items():
                 self._link(task_id, (), agent["dependencies"])
@@ -382,27 +391,40 @@ class BoardFeed:
             return
         store, stream = self._store
         with self._lock:
-            if self._seen == self._saved and not self._pulls_unsaved:
+            if self._seen == self._saved and not self._pulls_unsaved and self._kept is self._kept_saved:
                 return
-            seen = self._seen
+            seen, source = self._seen, self._kept
             state = {
                 "open": dict(self._open),
                 "settled": dict(self._settled),
                 "assignees": dict(self._assignees),
                 "pulls": dict(self._pulls),
                 "pull_answers": dict(self._pull_answers),
+                "cited": dict(self._cited),
+                "source": source,
             }
         try:
             store.save_board_state(stream, "-".join(map(str, seen)), state)
         except Exception as exc:  # the store is down; the Board still draws and the next save retries
             logger.warning("StarPulse: cannot save the Board of %s: %s", stream, exc)
             return
-        self._saved, self._pulls_unsaved = seen, False
+        self._saved, self._pulls_unsaved, self._kept_saved = seen, False, source
 
     def pull_answers(self) -> dict:
         """What the pull request reader last handed `set_pulls`, as saved; empty when nothing was."""
         with self._lock:
             return dict(self._pull_answers)
+
+    def keep_source(self, source: dict) -> None:
+        """Keep `source`, what the board adapter needs beside the Board to resume it, to save with the Board it now
+        holds: a native board's file fingerprints, noted after the scan that placed them."""
+        with self._lock:
+            self._kept = source
+
+    def source(self) -> dict:
+        """What the adapter last kept (`keep_source`), or what `resume` restored; empty when neither happened."""
+        with self._lock:
+            return self._kept
 
     def keep_saved(self, stop: threading.Event, interval: float = SAVE_INTERVAL) -> None:
         """Save every `interval` seconds, and once more when `stop` is set."""
