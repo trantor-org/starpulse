@@ -268,8 +268,8 @@ a `directory` marketplace pointing at a local checkout, serves them as `starpuls
 
 ## The pull-request store
 
-With `gh` available, `serve` keeps a store of pull requests (table `starpulse_pull_requests`) and refreshes it every
-minute, one GraphQL query per repository: every open pull request, plus any other pull request updated since the newest
+With `gh` available and the config's `pull_requests` not false, `serve` keeps a store of pull requests (table
+`starpulse_pull_requests`) and refreshes it every minute, one GraphQL query per repository: every open pull request, plus any other pull request updated since the newest
 `updatedAt` the store holds for that repository. A merged or closed record is final and is never read again, except a merged one saved without its `mergeSha`
 (stored before the store read the merge commit), which is re-read on every refresh until it has one. An open
 pull request is re-read on every refresh even when its `updatedAt` is unchanged, because a check finishing does not

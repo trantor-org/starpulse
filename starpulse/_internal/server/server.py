@@ -1727,7 +1727,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     pulls = PullStore(log.engine)
     pull_refresh = None
     pins = GitHub()  # one memo of the pointer reads for the pull request projection and the release of dependents
-    if shutil.which("gh"):  # without the GitHub CLI there is no source, and a task simply carries no PR state
+    # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
+    if config.pull_requests and shutil.which("gh"):
         pull_requests = PullRequests(
             feed, pulls, repos=config.repos, pins=pins, trail=CiTrail(log) if config.ci else None
         )

@@ -65,6 +65,7 @@ _KEYS = {
     "analytics",
     "search",
     "refresh_token_env",
+    "pull_requests",
 }
 _OIDC_KEYS = {
     "issuer",
@@ -389,10 +390,11 @@ def _source(raw: object) -> Source:
     return Source(name, _token_env(raw["token_env"], f"source {name}:"))
 
 
-def _aggregates_only(raw: object) -> bool:
-    if not isinstance(raw, bool):
-        raise ConfigError("aggregates_only must be true or false")
-    return raw
+def _flag(raw: dict, key: str, default: bool) -> bool:
+    value = raw.get(key, default)
+    if not isinstance(value, bool):
+        raise ConfigError(f"{key} must be true or false")
+    return value
 
 
 def _sources(raw: object) -> tuple[Source, ...]:
@@ -452,6 +454,8 @@ class Config:
     """The runs to start when a board event arrives (`[[triggers]]`); none: no event starts a run."""
     refresh_token_env: str | None = None
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
+    pull_requests: bool = True
+    """`serve` keeps the pull request store, refreshing it from GitHub every minute; false: no store, so an instance beside another that reads the same repositories spends none of the GitHub budget on a store no one reads."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
     release: Release | None = None
@@ -626,7 +630,7 @@ def load(path: Path | None) -> Config:
         oidc,
         _forward(raw.get("forward")),
         _sources(raw.get("sources", [])),
-        _aggregates_only(raw.get("aggregates_only", False)),
+        _flag(raw, "aggregates_only", False),
         event_log_retention_days=log_retention,
         event_log_archive_dir=_archive_dir(raw.get("event_log_archive_dir", "starpulse-archive")),
         repos=repos,
@@ -637,4 +641,5 @@ def load(path: Path | None) -> Config:
         release=_release(raw, repos),
         search=_search(raw.get("search")),
         refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
+        pull_requests=_flag(raw, "pull_requests", True),
     )

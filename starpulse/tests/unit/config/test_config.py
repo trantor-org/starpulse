@@ -230,7 +230,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, autopilot, board, ci, database_url, event_log_archive_dir, event_log_retention_days, "
-        "forward, harnesses_file, hub_retention_days, level, mode, oidc, refresh_token_env, release, repos, runs, search, session_start_url, sources, tracker_url, triggers"
+        "forward, harnesses_file, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, search, session_start_url, sources, tracker_url, triggers"
     )
 
 
@@ -529,6 +529,12 @@ def test_the_pull_request_refresh_credential_is_the_name_of_an_environment_varia
     assert _refusal(tmp_path, 'refresh_token_env = "not a name"\n') == (
         "refresh_token_env must be the name of an environment variable"
     )
+
+
+def test_an_instance_keeps_a_pull_request_store_unless_configured_off(tmp_path: Path) -> None:
+    assert load(None).pull_requests is True
+    assert load(_write(tmp_path, "pull_requests = false\n")).pull_requests is False
+    assert _refusal(tmp_path, 'pull_requests = "no"\n') == "pull_requests must be true or false"
 
 
 def test_a_hub_takes_names_unless_it_is_configured_for_aggregates_only(tmp_path: Path) -> None:
