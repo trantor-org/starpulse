@@ -113,3 +113,24 @@ describe("the Admin page at phone width", () => {
     expect(phone).toMatch(/#admin \.fw-next li \{[^}]*overflow-wrap: anywhere/);
   });
 });
+
+describe("the Kanban Start session dialog at phone width", () => {
+  const phone = css.slice(css.lastIndexOf("@media (max-width: 900px)"));
+
+  it("takes the page's side margins and lets its answers wrap onto a second row, so none ends past the screen", () => {
+    expect(phone).toMatch(/#kbm \.modal\.ask \{[^}]*width: calc\(100vw - 2 \* var\(--pm\)\)/);
+    expect(phone).toMatch(/#kbm \.ask \.afoot \{[^}]*flex-wrap: wrap/);
+  });
+
+  it("tightens its padding, grid gap and choice buttons and lifts the 80vh cap, so the label/value grid and every answer fit the screen at the largest text size", () => {
+    expect(phone).toMatch(/#kbm \.modal\.ask \{[^}]*max-height: calc\(100dvh - 2 \* var\(--pm\)\)/);
+    expect(phone).toMatch(/#kbm \.ask \.opt \{[^}]*column-gap: 10px/);
+    expect(phone).toMatch(/#kbm \.ask \.seg button \{[^}]*padding: 2px 9px/);
+    expect(rule("#kbm .ask .opt")).toContain("grid-template-columns: max-content minmax(0, 1fr)");
+  });
+
+  it("keeps the desktop dialog as it was: 560px, its answers on one row", () => {
+    expect(rule("#kbm .modal.ask")).toContain("width: min(560px, calc(100vw - 40px))");
+    expect(rule("#kbm .ask .afoot")).not.toContain("flex-wrap");
+  });
+});
