@@ -714,12 +714,13 @@ class BoardFeed:
             self._publish("claim", {"task": task, "reason": reason, "at": at})
 
     def task(self, task_id: str) -> dict | None:
-        """The open Board task as the page draws it, or None when the Board holds no open task by that id.
+        """The open Board task as the page draws it, or None when the Board holds no open task by that id, spelled as
+        the board or its key scheme spells it.
 
         It takes no lock, so opening a task never waits on the feed: one dict read is atomic, and a placed task's
         entry is replaced, never changed in place.
         """
-        return self._open.get(task_id)
+        return self._open.get(task_id) or self._open.get(self._keys.canonical(task_id) if self._keys else task_id)
 
     def cited(self, task_id: str) -> list[str]:
         """The pull request links the task cites, open or settled; none for a task the Board does not hold."""

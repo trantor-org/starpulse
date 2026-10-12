@@ -110,8 +110,8 @@ def _create(root: Path, project: str) -> None:
 
 
 def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed")) -> Path | None:
-    """The file under `tasks/`, or `completed/` once it is completed, whose front matter holds `id: <task>`; `folders`
-    names where else to look.
+    """The file under `tasks/`, or `completed/` once it is completed, whose front matter holds `id: <task>` in any case;
+    `folders` names where else to look.
 
     A file named for the id is checked first; any other is parsed only when its raw front matter has an `id:` line
     spelling the id, so a lookup parses the file it returns rather than every file on the board.
@@ -129,7 +129,7 @@ def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed
             if prefilter and not spelled.search(_front_matter(text)):
                 continue
             frontmatter, _ = _split(text)
-            if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip() == task:
+            if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip().casefold() == task.casefold():
                 return path
     return None
 
@@ -148,8 +148,8 @@ def _front_matter(text: str) -> str:
 
 
 def _id_line(task: str) -> re.Pattern[str]:
-    """A front matter line that spells `task` as the `id:`, quoted or not."""
-    return re.compile(rf"^id:[ \t]*[\"']?{re.escape(task)}[\"']?[ \t]*$", re.M)
+    """A front matter line that spells `task` as the `id:`, quoted or not, in any case."""
+    return re.compile(rf"^id:[ \t]*[\"']?{re.escape(task)}[\"']?[ \t]*$", re.M | re.I)
 
 
 def _state_of(root: Path) -> Callable[[str], str | None]:
@@ -631,7 +631,7 @@ def _slug(title: str) -> str:
 def _file_name(task: str, title: str, form: str) -> str:
     """The name of the file a task created as `title` is written under, in the `form` of `_FILE_NAMES`."""
     if form == "slug":
-        return f"{task}-{_slug(title)}.md"
+        return f"{task.lower()}-{_slug(title)}.md"
     return f"{task} - {re.sub(r'[^\w-]+', '-', title).strip('-')[:60].strip('-') or 'Task'}.md"
 
 

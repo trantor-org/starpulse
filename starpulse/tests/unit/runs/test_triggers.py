@@ -258,6 +258,7 @@ def _replayed_board(
     feed.put(BoardTask(id="TASK-3", team="demo", title="open", lane="in_progress", observed_at=70.0))
     feed.seen("3-0")
     assert feed.ready.is_set()
+    _until(lambda: store.cursor(_CURSOR) is not None)  # the reader has taken the head: a move now lies after it
     return feed, thread
 
 
