@@ -288,6 +288,15 @@ def test_scrub_keeps_when_each_board_task_entered_its_lane_so_the_demo_orders_it
     assert [a.get("entered") for a in board] == [30.0, None]
 
 
+def test_scrub_drops_the_session_holding_each_board_task() -> None:
+    live = _live()
+    live["flows"][0]["agents"] = [{"id": "PROJ-1", "title": SECRET, "state": "in_progress", "holder": "session-1"}]
+
+    demo = scrub(live)
+
+    assert "session-1" not in json.dumps(demo)
+
+
 def test_scrub_keeps_since_when_each_board_task_has_been_workable_so_the_demo_draws_the_leaderboard() -> None:
     live = _live()
     live["flows"][0]["agents"] = [

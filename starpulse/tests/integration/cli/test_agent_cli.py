@@ -103,7 +103,7 @@ def base(tmp_path: Path) -> Iterator[str]:
         task("PROJ-2", "Ready", milestone="m-2", labels=("api", "cli"), assignee="@agent-b", references=(UNREAD_PULL,))
     )
     feed.put(task("PROJ-3", "Done", settled="completed"))
-    feed.put(task("PROJ-4", "In Progress", milestone="m-2", labels=("api",), assignee="@agent-a"))
+    feed.put(task("PROJ-4", "In Progress", milestone="m-2", labels=("api",), assignee="@agent-a", holder="session-1"))
     feed.put(task("PROJ-5", "Ready"))
     pull = {
         "number": 5,
@@ -479,6 +479,7 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         "title": "Title of PROJ-1",
         "lane": "to_do",
         "assignee": "@agent-a",
+        "holder": "",
         "milestone": "m-1",
         "labels": ["cli"],
         "dependencies": ["PROJ-2", "PROJ-3"],
@@ -510,6 +511,8 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         (["--label", "cli"], ["PROJ-1", "PROJ-2"]),
         (["--assignee", "@agent-a"], ["PROJ-1", "PROJ-4"]),
         (["--milestone", "m-2", "--label", "api", "--assignee", "@agent-a"], ["PROJ-4"]),
+        (["--holder", "session-1"], ["PROJ-4"]),
+        (["--holder", "session-2"], []),
         (["--milestone", "m-9"], []),
     ],
 )
@@ -520,6 +523,13 @@ def test_the_board_keeps_only_the_tasks_every_filter_matches(
 
     assert code == 0
     assert [t["id"] for c in doc["columns"] for t in c["tasks"]] == expected
+
+
+def test_each_task_names_the_session_holding_it(base: str, capsys: pytest.CaptureFixture[str]) -> None:
+    _, doc = _run(capsys, ["board", "--server", base])
+
+    held = {t["id"]: t["holder"] for c in doc["columns"] for t in c["tasks"]}
+    assert held == {"PROJ-1": "", "PROJ-2": "", "PROJ-4": "session-1", "PROJ-5": ""}
 
 
 def test_a_state_filter_leaves_only_that_column(base: str, capsys: pytest.CaptureFixture[str]) -> None:
@@ -575,6 +585,7 @@ def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys:
         "title": "",
         "lane": "completed",
         "assignee": "",
+        "holder": "",
         "milestone": "",
         "labels": [],
         "dependencies": [],
@@ -979,7 +990,7 @@ def test_the_manifest_lists_each_verbs_arguments_outputs_and_exit_codes(capsys: 
     }
     board = next(v for v in doc["verbs"] if v["verb"] == "board")
     flags = {flag for arg in board["arguments"] for flag in arg["flags"]}
-    assert {"--state", "--milestone", "--label", "--assignee", "--server"} <= flags
+    assert {"--state", "--milestone", "--label", "--assignee", "--holder", "--server"} <= flags
     assert board["exit_codes"] == [0, 2, 3]
     assert "columns" in board["outputs"]
     show = next(v for v in doc["verbs"] if v["verb"] == "task show")
@@ -2013,7 +2024,9 @@ def test_every_skill_is_a_directory_named_in_its_front_matter_with_a_description
 def test_the_claude_plugin_marketplace_serves_the_bundled_skills() -> None:
     root = skill_install.SOURCE.parents[1]
     marketplace = json.loads((root / ".claude-plugin/marketplace.json").read_text())
-    [plugin] = marketplace["plugins"]
+    plugins = {plugin["name"]: plugin for plugin in marketplace["plugins"]}
+    assert plugins["starpulse-board"]["source"] == "./plugins/starpulse-board"
+    plugin = plugins["starpulse"]
     manifest = json.loads((root / plugin["source"] / ".claude-plugin/plugin.json").read_text())
     assert manifest["name"] == plugin["name"]
     assert [(root / plugin["source"] / p).resolve() for p in manifest["skills"]] == [skill_install.SOURCE.resolve()]

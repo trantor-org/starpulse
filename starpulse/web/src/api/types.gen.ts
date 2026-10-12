@@ -325,6 +325,10 @@ export interface RawAgent {
    * When a Board task entered its lane, epoch seconds; absent when the server holds no time for it.
    */
   entered?: number | null;
+  /**
+   * The session that last claimed a Board task; empty when none has, absent off the Board.
+   */
+  holder?: string | null;
   id: string;
   labels?: string[] | null;
   /**

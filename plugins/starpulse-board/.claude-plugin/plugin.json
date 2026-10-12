@@ -1,0 +1,9 @@
+{
+  "name": "starpulse-board",
+  "version": "0.1.0",
+  "description": "Shows the Board tasks this Claude Code session holds above the prompt, and /board to list them",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "trantor-org"
+  }
+}
