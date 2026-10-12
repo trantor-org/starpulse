@@ -960,9 +960,10 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 #admin .ap .nx.none { color: var(--agent-text); font-size: calc(11px * var(--fs)); }
 @keyframes ap-go { 50% { opacity: .45; } }
 #admin .ap .ap-ses { min-width: 0; }
-#admin .ap .ap-ses a { box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding: 4px 6px; margin: 0 -6px; border-radius: 5px; color: var(--ink-3); text-decoration: none; font-size: calc(12px * var(--fs)); }
+#admin .ap .ap-ses a { box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 10px; padding: 4px 6px; margin: 0 -6px; border-radius: 5px; color: var(--ink-3); text-decoration: none; font-size: calc(12px * var(--fs)); }
 #admin .ap .ap-ses a:hover, #admin .ap .ap-ses a:focus-visible { background: color-mix(in srgb, var(--agent) 15%, transparent); color: var(--ink); outline: none; }
-#admin .ap .ap-ses .id { color: var(--agent-text); } #admin .ap .ap-ses .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } #admin .ap .ap-ses .md { color: var(--muted); white-space: nowrap; }
+#admin .ap .ap-ses .id { color: var(--agent-text); white-space: nowrap; } #admin .ap .ap-ses .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#admin .ap .ap-ses .md { grid-column: 1 / -1; color: var(--muted); font-size: calc(11px * var(--fs)); }
 #admin .ap .ap-ses .none { color: var(--dim); font-size: calc(11px * var(--fs)); }
 @media (prefers-reduced-motion: reduce) { #admin .ap .dm .m i, #admin .ap .dims { transition: none; } #admin .ap .nx.starting .why { animation: none; } }
 

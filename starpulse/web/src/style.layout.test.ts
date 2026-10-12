@@ -94,6 +94,11 @@ describe("the Admin view's Autopilot card", () => {
     expect(rule("#admin .ap .dims")).toContain("repeat(2, minmax(0, 1fr))");
     expect(css).not.toContain("#kb .ap");
   });
+
+  it("sets each session in flight on two lines, its model and age under its task and title, so a larger text size keeps the title", () => {
+    expect(rule("#admin .ap .ap-ses a")).toContain("grid-template-columns: auto minmax(0, 1fr)");
+    expect(rule("#admin .ap .ap-ses .md")).toContain("grid-column: 1 / -1");
+  });
 });
 
 describe("the status dot", () => {
