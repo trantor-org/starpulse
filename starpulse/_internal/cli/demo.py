@@ -28,7 +28,7 @@ from starpulse._internal.machines.transitions import board_machine
 #: The page built as one script (`vite build --mode one-file`): a demo is one file, with no server to fetch a lazy chunk from.
 STATIC = Path(__file__).parents[2] / "static" / "one-file"
 #: Board labels that say what kind of work a task is and nothing about it.
-LABELS = re.compile(r"^(kind-[a-z]+|size-\d+|agent-resolvable|needs-human|adr-needed|bug|feature)$")
+LABELS = re.compile(r"^(kind-[a-z]+|size-\d+|adr-needed|bug|feature)$")
 #: The mockup data keys `scrub_mockup` knows how to clean; any other key is refused rather than passed through.
 MOCKUP_KEYS = {"now", "dags", "writers", "launches", "cues", "domains", "descriptions", "flows"}
 #: The saved Board keys `scrub_board` knows how to clean, refused the same way.
@@ -256,14 +256,14 @@ SEED = [
     ("ready", "m-2", ["size-2", "kind-feature"], None, "@agent-fast-low", None),
     ("ready", "m-2", ["size-3"], None, "", None),
     ("ready", "", ["kind-bug"], None, "@agent-standard-high", None),
-    ("waiting", "m-2", ["size-5", "needs-human"], 0, "", None),
+    ("waiting", "m-2", ["size-5"], 0, "", None),
     ("waiting", "m-1", ["size-3"], 4, "@agent-standard-high", None),
     ("in_progress", "m-2", ["size-5", "kind-feature"], None, "@agent-deep-high", ("pending", False, 0)),
     ("in_progress", "m-1", ["size-2"], None, "@agent-standard-high", None),
     ("in_progress", "", ["kind-bug"], None, "@agent-fast-low", ("failing", False, 0)),
     ("review", "m-2", ["size-3", "kind-feature"], None, "@agent-standard-high", ("pass", False, 2)),
     ("review", "m-1", ["size-1"], None, "@agent-fast-low", ("pass", False, 0)),
-    ("needs_attention", "m-1", ["size-5", "needs-human"], None, "", ("failing", False, 1)),
+    ("needs_attention", "m-1", ["size-5"], None, "", ("failing", False, 1)),
     ("done", "m-2", ["size-2"], None, "@agent-fast-low", ("pass", True, 0)),
     ("done", "m-1", ["size-3", "kind-feature"], None, "@agent-deep-high", ("pass", True, 0)),
     ("done", "", ["size-1"], None, "@agent-standard-high", ("pass", True, 0)),
@@ -330,9 +330,7 @@ def _fill(line: list[str], start: int, now: float) -> list[tuple]:
             after = None
             if lane == "waiting":
                 after = k - 1 if j % 4 == 3 else first.get("ready", 0) + j % max(FILL.get("ready", 1), 1)
-            labels = [SIZES[k % len(SIZES)], KINDS[k % len(KINDS)]] + (
-                ["needs-human"] if lane == "needs_attention" else []
-            )
+            labels = [SIZES[k % len(SIZES)], KINDS[k % len(KINDS)]]
             pull = (*FILL_PULLS[lane], j % 3) if lane in FILL_PULLS else None
             model = "" if lane == "new" else PROFILES[k % len(PROFILES)]
             created = now - 500 * (j + 1) if lane == "new" else None
