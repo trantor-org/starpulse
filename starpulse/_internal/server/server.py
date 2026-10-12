@@ -107,6 +107,19 @@ GET /api/analytics/steps[?hours=N]
                    `captured` false for Codex. A `hours` that is no positive number is 400, as is one longer than the
                    telemetry history, with `history_s` its length; a server with no telemetry log is 501 and one
                    that cannot read it 503
+GET /api/analytics/transitions[?hours=N]
+                   the cost of each skill in force within each kind and size, from the steps of those exports over
+                   the last `hours`, default 168, as `{now, window_s, transitions}` (`cells.transition_cost`): each is
+                   `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`,
+                   a subagent's steps counted to the task that spawned it. The kind and size are the task's
+                   `kind-*` and `size-*` labels; a step of a task without both is in no row. Refusals as
+                   `/api/analytics/steps`
+GET /api/analytics/cells[?hours=N]
+                   the median steps per clean completion of each kind and size over the last `hours`, default 168,
+                   as `{now, window_s, cells}` (`cells.cell_report`): each is `{kind, size, n, completions,
+                   clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, medians
+                   over the latest fifth of the cell's `n` clean completions by end time. A cell under 5 clean
+                   completions is not listed. Refusals as `/api/analytics/steps`
 GET /api/level[?hours=N]
                    the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
                    last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
@@ -258,6 +271,7 @@ from starpulse._internal.machines.snapshot import qualifier
 from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_analytics, what_if
 from starpulse._internal.level import analytics
 from starpulse._internal.level.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
+from starpulse._internal.level.cells import cell_report, transition_cost
 from starpulse._internal.level.sessions import session_health, slice_health
 from starpulse._internal.level.steps import session_steps
 from starpulse._internal.level.traces import Case, cases as trace_cases, missed_loads
@@ -551,6 +565,61 @@ def steps_response(
     if isinstance(found, tuple):
         return found
     return encode("session_steps", {"now": now, "window_s": window * 3600, "steps": session_steps(found, keys, analytics)}), 200
+
+
+def _kind_size_response(
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    now: float,
+    label: str,
+    report: Callable[[list[Signal]], list[dict[str, Any]]],
+) -> tuple[bytes, int]:
+    """The body and status for a report by kind and size of the signals from the last `hours` (default 168) as of
+    `now`, keyed `label`: `{now, window_s, <label>: report(signals)}`. An instance that receives no harness telemetry
+    is 501, a log that cannot be read 503, and a window longer than the telemetry history 400 with `history_s`."""
+    window = _hours(query, "hours", _HEALTH_HOURS)
+    if window is None:
+        return _error("hours must be a positive number"), 400
+    if telemetry is None:
+        return _error(f"this instance receives no harness telemetry, so it cannot report {label}"), 501
+    found = _held_signals(telemetry, window, label, now, label)
+    if isinstance(found, tuple):
+        return found
+    return encode(label, {"now": now, "window_s": window * 3600, label: report(found)}), 200
+
+
+def transitions_response(
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    now: float,
+    analytics: Analytics | None = None,
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/transitions`: the cost of each skill within each kind and size
+    (`cells.transition_cost`) over the last `hours`; refusals as `steps_response`."""
+    return _kind_size_response(
+        telemetry, query, now, "transitions", lambda found: transition_cost(found, keys, titled(), analytics)
+    )
+
+
+def cells_response(
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    now: float,
+    analytics: Analytics | None = None,
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/cells`: the median steps per clean completion of each kind and size
+    (`cells.cell_report`) over the last `hours`; refusals as `steps_response`."""
+    return _kind_size_response(
+        telemetry,
+        query,
+        now,
+        "cells",
+        lambda found: cell_report(slice_health(session_health(found, keys, analytics)), titled()),
+    )
 
 
 #: What `/api/analytics/missed-loads` lists per skill, and `/api/analytics/trace-clusters` samples per cluster.
@@ -1196,6 +1265,12 @@ def request_handler(
                 self._send(*sessions_response(telemetry, parse_qs(url.query), feed.keys, clock(), analytics))
             elif url.path == "/api/analytics/steps":
                 self._send(*steps_response(telemetry, parse_qs(url.query), feed.keys, clock(), analytics))
+            elif url.path == "/api/analytics/transitions":
+                self._send(
+                    *transitions_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics)
+                )
+            elif url.path == "/api/analytics/cells":
+                self._send(*cells_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
             elif url.path == "/api/analytics/missed-loads":
                 self._send(
                     *missed_loads_response(

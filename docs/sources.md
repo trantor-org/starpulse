@@ -124,6 +124,46 @@ the call started, and one that started before every request of the window belong
 subagents that overlap can take each other's calls. A server with no telemetry stream is 501 and a window that is no
 positive number 400. `starpulse analytics steps [--hours]` reads it.
 
+## Price each transition and report each cell
+
+`GET /api/analytics/transitions[?hours=N]` and `GET /api/analytics/cells[?hours=N]` (168 hours by default) fold the same
+steps by the kind and size of the task they worked, which the board's `kind-<kind>` and `size-<n>` labels give. A
+task missing either label is in neither report, a Codex step (`captured` false) is in neither, and a window that is no
+positive number is 400, one longer than the telemetry history 400 with `history_s`, a server with no telemetry log 501
+and one that cannot read it 503, as for steps. `starpulse analytics transitions|cells [--hours]` read them.
+
+`transitions` is `{now, window_s, transitions}`, one row per kind, size and skill in force (the transition), by that
+order. Its columns:
+
+- `kind`, `size`, `skill`: the cell and the skill in force on the steps, `none` before any load.
+- `tasks`, `steps`: the tasks the row's steps worked and the model requests among them. A subagent's requests carry
+  its parent's session, so they count toward the task that spawned it; `side_steps` is their share. A compaction's own
+  call is no step.
+- `wasted_steps`, `wasted_rate`: steps with a call that failed, was refused by a guard or hook, or repeats the shell
+  command of the call before it in the session, and their share of `steps`. A refusal names only its source (hook
+  gate names are not exported), and a call with no stored command (the adapter ran with no `--redactor`) cannot repeat.
+- `agent_s`: the seconds of the steps' requests and tool calls, hooks not included.
+- `peak_context`: the most input, cache-read and cache-write tokens one request held.
+
+Blind spot: a skill is in force from its load to the next, so a stretch no skill governs is charged to the skill
+before it, and the transition is the skill, not a machine edge.
+
+`cells` is `{now, window_s, cells}`: the median agent steps per clean completion of each kind and size, by kind then
+size. A completion is a task slice that loaded the completion skill and ran the completion call (`complete` under
+session health), and it is *clean* when one session did it with no operator prompt, interrupt or model or effort
+change. A cell with fewer than 5 clean completions is not listed. The medians are over its `holdout`, the latest fifth
+of the clean completions by the end of their last session, rounded up, so a median is never read from the tasks a
+change was tuned on. Its columns:
+
+- `kind`, `size`; `n` clean completions and `completions` of any kind; `clean_rate`, their ratio.
+- `median_steps`: main and subagent requests of the holdout's tasks.
+- `median_operator_prompts`: human prompts after the task's claim, the steering count.
+- `median_steps_before_edit`: model requests before the task's first successful file write; null when no holdout task
+  made one.
+
+Blind spot: a cell can improve because its tasks got easier, so read `n`, `clean_rate` and the two medians beside
+`median_steps`. A cell with a few tasks has a median of one or two.
+
 ## Find missed skill loads and recurring work
 
 The same signals say what each session did, not only how long it took. A tool call is lifted to *activities* with no

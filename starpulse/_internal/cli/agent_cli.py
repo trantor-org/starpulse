@@ -33,6 +33,8 @@
     starpulse analytics gates --task PROJ-45
     starpulse analytics forecast --task PROJ-45
     starpulse analytics what-if --from review --to in_progress --p 0.1
+    starpulse analytics transitions --hours 168
+    starpulse analytics cells --hours 720
     starpulse doctor
     starpulse skills install --claude --codex
     starpulse help --agent
@@ -177,6 +179,8 @@ _WHAT_IF_KEYS = (
 )
 _HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stuck", "warnings")
 _STEP_KEYS = ("now", "window_s", "steps")
+_TRANSITION_KEYS = ("now", "window_s", "transitions")
+_CELL_KEYS = ("now", "window_s", "cells")
 _TASK_KEYS = (
     "id",
     "title",
@@ -967,6 +971,19 @@ def _steps(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
     return _level_read(args, environ, "/api/analytics/steps", _STEP_KEYS)
 
 
+def _transitions(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The cost of each skill in force within each kind and size over `--hours`, as `/api/analytics/transitions`
+    answers. A window longer than the telemetry history is `refused`; a server that receives no telemetry is
+    `unavailable`."""
+    return _level_read(args, environ, "/api/analytics/transitions", _TRANSITION_KEYS)
+
+
+def _cells(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The median steps per clean completion of each kind and size over `--hours`, as `/api/analytics/cells`
+    answers; refusals as `analytics transitions`."""
+    return _level_read(args, environ, "/api/analytics/cells", _CELL_KEYS)
+
+
 def _what_if(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The change in the chance of the goal and the expected days when one transition has probability `--p`."""
     params = {"from": args.origin, "to": args.to, "p": args.p}
@@ -1630,6 +1647,27 @@ def _parser() -> argparse.ArgumentParser:
         type=float,
         help="the window to read, in hours; past the telemetry history it is refused (default 168)",
     )
+    for verb, summary, run, answer in (
+        (
+            "transitions",
+            "the cost of each skill in force within each kind and size: steps (a subagent's counted to its task), "
+            "wasted-step rate, agent seconds and peak context",
+            _transitions,
+            _TRANSITION_KEYS,
+        ),
+        (
+            "cells",
+            "the median steps per clean completion of each kind and size over the latest fifth of its clean "
+            "completions, with n, clean rate, median human prompts mid-task and median steps before the first edit",
+            _cells,
+            _CELL_KEYS,
+        ),
+    ):
+        leaf(analytics_verbs, verb, summary, run, answer, (0, 1, 2, 3)).add_argument(
+            "--hours",
+            type=float,
+            help="the window to read, in hours; past the telemetry history it is refused (default 168)",
+        )
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(
