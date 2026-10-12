@@ -79,6 +79,27 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(text).toBe('PROJ-1 [In Progress] Add the verbs\nPROJ-2 [Review] Rotate the secret')
   })
 
+  test(`no starpulse on PATH falls back to ~/.local/bin and draws the band (${surface})`, async ($, on) => {
+    const argv0: string[] = []
+    on('ui.render', ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
+    on('session.id', () => ({ value: SESSION }))
+    on('env.get', () => ({ value: '/home/me' }))
+    on('process.run', ($, e) => {
+      argv0.push(e.argv[0])
+      if (e.argv[0] === 'starpulse') {
+        throw new Error('ENOENT: Executable not found in $PATH: "starpulse"')
+      }
+      return answer(0, BOARD)
+    })
+
+    const { text } = await $.command.run(RUN)
+    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'AbovePrompt', props: PROPS })
+
+    expect(argv0).toEqual(['starpulse', '/home/me/.local/bin/starpulse'])
+    expect(text).toBe('PROJ-1 [In Progress] Add the verbs\nPROJ-2 [Review] Rotate the secret')
+    expect(await ui.find({ text: 'Tasks: PROJ-1 In Progress · PROJ-2 Review ' })).toBeDefined()
+  })
+
   test(`Hide takes the band down until /board (${surface})`, async ($, on) => {
     on('ui.render', ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
     on('session.id', () => ({ value: SESSION }))
