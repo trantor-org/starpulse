@@ -846,6 +846,83 @@ class Cells(_Api):
     cells: list[Cell]
 
 
+class FlowEdge(_Api):
+    """One directly-follows edge of a transition's graph."""
+
+    kind: str
+    size: int
+    skill: str = Field(description="The skill in force: the transition.")
+    source: str = Field(description="An activity, or `[start]`.")
+    target: str = Field(description="The activity that directly follows it, or `[end]`.")
+    runs: int = Field(description="Runs (tasks) the edge occurred in.")
+    count: int = Field(description="Occurrences of the edge.")
+    share: float = Field(description="Of the occurrences that leave `source`.")
+    cut: bool = Field(description="`source` is a judgement cut: the agent chose there.")
+
+
+class FlowGraph(_Api):
+    """`GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out."""
+
+    now: float
+    window_s: float
+    graph: list[FlowEdge]
+
+
+class SubStage(_Api):
+    """One stage mined at the judgement cuts of the stretches no skill governs, this week and the week before."""
+
+    kind: str
+    size: int
+    stage: str = Field(description="The cut that opens the stage, `[start]` for the first.")
+    runs: int = Field(description="Runs the stage occurred in over the window; 0 when it did not occur.")
+    median_activities: float | None
+    previous_runs: int = Field(description="Runs it occurred in over the window before.")
+    previous_median_activities: float | None
+    stability: float | None = Field(
+        description="Of the cell: stages in both windows over stages in either; None when a window mined none."
+    )
+
+
+class SubStages(_Api):
+    """`GET /api/analytics/stages`: sub-stages and their stability from one window to the one before."""
+
+    now: float
+    window_s: float
+    stages: list[SubStage]
+
+
+class RunRef(_Api):
+    task: str
+    steps: int = Field(description="Model requests, a subagent's included.")
+
+
+class ActivityCount(_Api):
+    activity: str
+    count: int
+
+
+class RunDiff(_Api):
+    """One transition's reference run against its slowest clean run."""
+
+    kind: str
+    size: int
+    skill: str
+    runs: int = Field(description="Clean completions of the transition.")
+    conformant: int = Field(description="Of `runs`, those that conform to the skill's machine.")
+    reference: RunRef = Field(description="The fewest-step conformant clean run.")
+    slow: RunRef = Field(description="The most-step clean run.")
+    slow_only: list[ActivityCount] = Field(description="Activities the slow run made more often than the reference.")
+    reference_only: list[ActivityCount] = Field(description="Activities the reference made more often than the slow run.")
+
+
+class RunDiffs(_Api):
+    """`GET /api/analytics/diff`: a transition with under 5 clean runs, or none that conforms, reports nothing."""
+
+    now: float
+    window_s: float
+    diff: list[RunDiff]
+
+
 class CaseRef(_Api):
     """One session's work on one task (`task` None: a branch that names none)."""
 
@@ -1682,6 +1759,9 @@ RESPONSES: dict[str, Any] = {
     "/api/analytics/steps": SessionSteps,
     "/api/analytics/transitions": Transitions,
     "/api/analytics/cells": Cells,
+    "/api/analytics/graph": FlowGraph,
+    "/api/analytics/stages": SubStages,
+    "/api/analytics/diff": RunDiffs,
     "/api/analytics/missed-loads": MissedLoads,
     "/api/analytics/trace-clusters": TraceClusters,
     "/api/level": Level,
@@ -1740,6 +1820,9 @@ BODIES: dict[str, Any] = {
     "session_steps": SessionSteps | ApiError | WindowTooLong,
     "transitions": Transitions | ApiError | WindowTooLong,
     "cells": Cells | ApiError | WindowTooLong,
+    "graph": FlowGraph | ApiError | WindowTooLong,
+    "stages": SubStages | ApiError | WindowTooLong,
+    "diff": RunDiffs | ApiError | WindowTooLong,
     "missed_loads": MissedLoads | ApiError | WindowTooLong,
     "trace_clusters": TraceClusters | ApiError | WindowTooLong,
     "level": Level | ApiError | WindowTooLong,
@@ -1869,6 +1952,9 @@ class ApiContract(_Api):
     sessionSteps: SessionSteps
     transitions: Transitions
     cells: Cells
+    graph: FlowGraph
+    stages: SubStages
+    diff: RunDiffs
     missedLoads: MissedLoads
     traceClusters: TraceClusters
     level: Level

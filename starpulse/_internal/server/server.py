@@ -120,6 +120,22 @@ GET /api/analytics/cells[?hours=N]
                    clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, medians
                    over the latest fifth of the cell's `n` clean completions by end time. A cell under 5 clean
                    completions is not listed. Refusals as `/api/analytics/steps`
+GET /api/analytics/graph[?hours=N]
+                   the branching directly-follows graph of each skill's transition within each kind and size, from
+                   the steps of those exports over the last `hours`, default 168, as `{now, window_s, graph}`
+                   (`flow.directly_follows`): each is `{kind, size, skill, source, target, runs, count, share, cut}`,
+                   an edge between two activities (`[start]` and `[end]` bound a run) that is `cut` when its source is
+                   a judgement cut. Refusals as `/api/analytics/steps`
+GET /api/analytics/stages[?hours=N]
+                   the sub-stages mined at the judgement cuts of the stretches no skill governs, over the last `hours`
+                   and the `hours` before them, as `{now, window_s, stages}` (`flow.sub_stages`): each is `{kind,
+                   size, stage, runs, median_activities, previous_runs, previous_median_activities, stability}`.
+                   The history must hold twice `hours`, else 400 as for steps. Refusals as `/api/analytics/steps`
+GET /api/analytics/diff[?hours=N]
+                   each transition's reference run against its slowest clean run over the last `hours`, default 168,
+                   as `{now, window_s, diff}` (`flow.fast_slow_diff`): each is `{kind, size, skill, runs, conformant,
+                   reference, slow, slow_only, reference_only}`. A transition with under 5 clean runs, or none that
+                   conforms to its skill's machine, is not listed. Refusals as `/api/analytics/steps`
 GET /api/level[?hours=N]
                    the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
                    last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
@@ -273,6 +289,7 @@ from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_ana
 from starpulse._internal.level import analytics
 from starpulse._internal.level.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
 from starpulse._internal.level.cells import cell_report, transition_cost
+from starpulse._internal.level.flow import directly_follows, fast_slow_diff, sub_stages
 from starpulse._internal.level.sessions import session_health, slice_health
 from starpulse._internal.level.steps import session_steps
 from starpulse._internal.level.traces import Case, cases as trace_cases, missed_loads
@@ -576,20 +593,22 @@ def _kind_size_response(
     query: dict[str, list[str]],
     now: float,
     label: str,
-    report: Callable[[list[Signal]], list[dict[str, Any]]],
+    report: Callable[[list[Signal], float], list[dict[str, Any]]],
+    span: int = 1,
 ) -> tuple[bytes, int]:
-    """The body and status for a report by kind and size of the signals from the last `hours` (default 168) as of
-    `now`, keyed `label`: `{now, window_s, <label>: report(signals)}`. An instance that receives no harness telemetry
-    is 501, a log that cannot be read 503, and a window longer than the telemetry history 400 with `history_s`."""
+    """The body and status for a report by kind and size of the signals from the last `span` x `hours` (default 168
+    each) as of `now`, keyed `label`: `{now, window_s, <label>: report(signals, since)}`, `since` the start of the
+    last `hours`. An instance that receives no harness telemetry is 501, a log that cannot be read 503, and a window
+    longer than the telemetry history 400 with `history_s`."""
     window = _hours(query, "hours", _HEALTH_HOURS)
     if window is None:
         return _error("hours must be a positive number"), 400
     if telemetry is None:
         return _error(f"this instance receives no harness telemetry, so it cannot report {label}"), 501
-    found = _held_signals(telemetry, window, label, now, label)
+    found = _held_signals(telemetry, window * span, label, now, label)
     if isinstance(found, tuple):
         return found
-    return encode(label, {"now": now, "window_s": window * 3600, label: report(found)}), 200
+    return encode(label, {"now": now, "window_s": window * 3600, label: report(found, now - window * 3600)}), 200
 
 
 def transitions_response(
@@ -603,7 +622,7 @@ def transitions_response(
     """The body and status for `/api/analytics/transitions`: the cost of each skill within each kind and size
     (`cells.transition_cost`) over the last `hours`; refusals as `steps_response`."""
     return _kind_size_response(
-        telemetry, query, now, "transitions", lambda found: transition_cost(found, keys, titled(), analytics)
+        telemetry, query, now, "transitions", lambda found, _: transition_cost(found, keys, titled(), analytics)
     )
 
 
@@ -622,7 +641,57 @@ def cells_response(
         query,
         now,
         "cells",
-        lambda found: cell_report(slice_health(session_health(found, keys, analytics)), titled()),
+        lambda found, _: cell_report(slice_health(session_health(found, keys, analytics)), titled()),
+    )
+
+
+def graph_response(
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    now: float,
+    analytics: Analytics | None = None,
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/graph`: the branching directly-follows graph of each transition
+    (`flow.directly_follows`) over the last `hours`; refusals as `steps_response`."""
+    return _kind_size_response(
+        telemetry, query, now, "graph", lambda found, _: directly_follows(found, keys, titled(), analytics)
+    )
+
+
+def stages_response(
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    now: float,
+    analytics: Analytics | None = None,
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/stages`: the sub-stages mined from the last `hours` against the
+    `hours` before them (`flow.sub_stages`), so the history must hold twice the window; refusals as `steps_response`."""
+    return _kind_size_response(
+        telemetry,
+        query,
+        now,
+        "stages",
+        lambda found, since: sub_stages(found, keys, titled(), analytics, since=since),
+        span=2,
+    )
+
+
+def diff_response(
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    now: float,
+    analytics: Analytics | None = None,
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/diff`: each transition's reference run against its slowest clean run
+    (`flow.fast_slow_diff`) over the last `hours`; refusals as `steps_response`."""
+    return _kind_size_response(
+        telemetry, query, now, "diff", lambda found, _: fast_slow_diff(found, keys, titled(), analytics)
     )
 
 
@@ -1285,6 +1354,12 @@ def request_handler(
                 )
             elif url.path == "/api/analytics/cells":
                 self._send(*cells_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
+            elif url.path == "/api/analytics/graph":
+                self._send(*graph_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
+            elif url.path == "/api/analytics/stages":
+                self._send(*stages_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
+            elif url.path == "/api/analytics/diff":
+                self._send(*diff_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
             elif url.path == "/api/analytics/missed-loads":
                 self._send(
                     *missed_loads_response(

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.analytics import Analytics, SkillLoad
+from starpulse._internal.config.analytics import Analytics, MachineStage, SkillLoad, SkillMachine
 from starpulse._internal.config.config import ConfigError, load
 
 
@@ -73,6 +73,32 @@ completion_call = 'backlog_task\.py\s+deliver\b'
     assert analytics.completion_call.search("bin/backlog_task.py deliver --task 1")
 
 
+def test_a_table_declares_the_stages_a_run_reaches_in_order_to_conform_to_a_skills_machine(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+[[analytics.skill_machines]]
+skill = "developing-test-first"
+stages = [
+  { name = "RED", activities = ["pytest", "make test*"], ok = false },
+  { name = "GREEN", activities = ["pytest", "make test*"], ok = true },
+  { name = "REFACTOR", activities = ["make lint"] },
+]
+""",
+    )
+
+    assert load(path).analytics.skill_machines == (
+        SkillMachine(
+            "developing-test-first",
+            (
+                MachineStage("RED", frozenset({"pytest", "make test*"}), ok=False),
+                MachineStage("GREEN", frozenset({"pytest", "make test*"}), ok=True),
+                MachineStage("REFACTOR", frozenset({"make lint"})),
+            ),
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     ("table", "refusal"),
     [
@@ -93,6 +119,24 @@ completion_call = 'backlog_task\.py\s+deliver\b'
         ('[analytics]\nclaims = ["TASK-\\\\d+"]', "analytics: claims[0] needs a group that captures the task key"),
         ("[analytics]\ncompletion_skill = 1", "analytics: completion_skill must be text"),
         ('[analytics]\ncompletion_call = "("', "analytics: completion_call is not a regular expression"),
+        ("[[analytics.skill_machines]]\nstages = []", "analytics.skill_machines[0] needs skill"),
+        ("[[analytics.skill_machines]]\nskill = 'x'", "analytics.skill_machines[0]: needs stages"),
+        (
+            "[[analytics.skill_machines]]\nskill = 'x'\nstages = [{ activities = ['a'] }]",
+            "analytics.skill_machines[0].stages[0] needs name",
+        ),
+        (
+            "[[analytics.skill_machines]]\nskill = 'x'\nstages = [{ name = 'n' }]",
+            "analytics.skill_machines[0].stages[0]: needs activities",
+        ),
+        (
+            "[[analytics.skill_machines]]\nskill = 'x'\nstages = [{ name = 'n', activities = ['a'], ok = 'no' }]",
+            "analytics.skill_machines[0].stages[0]: ok must be true or false",
+        ),
+        (
+            "[[analytics.skill_machines]]\nskill = 'x'\nstages = [{ name = 'n', activities = ['a'], when = 1 }]",
+            "analytics.skill_machines[0].stages[0]: unknown key(s) when",
+        ),
         (
             "[[analytics.skill_loads]]\nskill = 'x'\nlabel = 'l'\nwhen = 1",
             "analytics.skill_loads[0]: unknown key(s) when",

@@ -86,6 +86,23 @@
       "title": "ActiveRun",
       "type": "object"
     },
+    "ActivityCount": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity",
+        "count"
+      ],
+      "title": "ActivityCount",
+      "type": "object"
+    },
     "AgingRun": {
       "additionalProperties": false,
       "properties": {
@@ -1691,6 +1708,84 @@
         }
       },
       "title": "FindingScope",
+      "type": "object"
+    },
+    "FlowEdge": {
+      "additionalProperties": false,
+      "description": "One directly-follows edge of a transition's graph.",
+      "properties": {
+        "count": {
+          "description": "Occurrences of the edge.",
+          "type": "integer"
+        },
+        "cut": {
+          "description": "`source` is a judgement cut: the agent chose there.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "runs": {
+          "description": "Runs (tasks) the edge occurred in.",
+          "type": "integer"
+        },
+        "share": {
+          "description": "Of the occurrences that leave `source`.",
+          "type": "number"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "skill": {
+          "description": "The skill in force: the transition.",
+          "type": "string"
+        },
+        "source": {
+          "description": "An activity, or `[start]`.",
+          "type": "string"
+        },
+        "target": {
+          "description": "The activity that directly follows it, or `[end]`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "size",
+        "skill",
+        "source",
+        "target",
+        "runs",
+        "count",
+        "share",
+        "cut"
+      ],
+      "title": "FlowEdge",
+      "type": "object"
+    },
+    "FlowGraph": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.",
+      "properties": {
+        "graph": {
+          "items": {
+            "$ref": "#/$defs/FlowEdge"
+          },
+          "type": "array"
+        },
+        "now": {
+          "type": "number"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "graph"
+      ],
+      "title": "FlowGraph",
       "type": "object"
     },
     "FlowSnapshot": {
@@ -4795,6 +4890,89 @@
       "title": "Restored",
       "type": "object"
     },
+    "RunDiff": {
+      "additionalProperties": false,
+      "description": "One transition's reference run against its slowest clean run.",
+      "properties": {
+        "conformant": {
+          "description": "Of `runs`, those that conform to the skill's machine.",
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/RunRef",
+          "description": "The fewest-step conformant clean run."
+        },
+        "reference_only": {
+          "description": "Activities the reference made more often than the slow run.",
+          "items": {
+            "$ref": "#/$defs/ActivityCount"
+          },
+          "type": "array"
+        },
+        "runs": {
+          "description": "Clean completions of the transition.",
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "skill": {
+          "type": "string"
+        },
+        "slow": {
+          "$ref": "#/$defs/RunRef",
+          "description": "The most-step clean run."
+        },
+        "slow_only": {
+          "description": "Activities the slow run made more often than the reference.",
+          "items": {
+            "$ref": "#/$defs/ActivityCount"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "size",
+        "skill",
+        "runs",
+        "conformant",
+        "reference",
+        "slow",
+        "slow_only",
+        "reference_only"
+      ],
+      "title": "RunDiff",
+      "type": "object"
+    },
+    "RunDiffs": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/diff`: a transition with under 5 clean runs, or none that conforms, reports nothing.",
+      "properties": {
+        "diff": {
+          "items": {
+            "$ref": "#/$defs/RunDiff"
+          },
+          "type": "array"
+        },
+        "now": {
+          "type": "number"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "diff"
+      ],
+      "title": "RunDiffs",
+      "type": "object"
+    },
     "RunEventRequest": {
       "additionalProperties": false,
       "description": "`POST /api/runs/events`: one workflow phase a producer reports.",
@@ -4930,6 +5108,24 @@
         "days"
       ],
       "title": "RunLoop",
+      "type": "object"
+    },
+    "RunRef": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "description": "Model requests, a subagent's included.",
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "steps"
+      ],
+      "title": "RunRef",
       "type": "object"
     },
     "RunStarted": {
@@ -6050,6 +6246,98 @@
       "title": "SubFlow",
       "type": "object"
     },
+    "SubStage": {
+      "additionalProperties": false,
+      "description": "One stage mined at the judgement cuts of the stretches no skill governs, this week and the week before.",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "median_activities": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "previous_median_activities": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "previous_runs": {
+          "description": "Runs it occurred in over the window before.",
+          "type": "integer"
+        },
+        "runs": {
+          "description": "Runs the stage occurred in over the window; 0 when it did not occur.",
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "stability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Of the cell: stages in both windows over stages in either; None when a window mined none."
+        },
+        "stage": {
+          "description": "The cut that opens the stage, `[start]` for the first.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "size",
+        "stage",
+        "runs",
+        "median_activities",
+        "previous_runs",
+        "previous_median_activities",
+        "stability"
+      ],
+      "title": "SubStage",
+      "type": "object"
+    },
+    "SubStages": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/stages`: sub-stages and their stability from one window to the one before.",
+      "properties": {
+        "now": {
+          "type": "number"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/SubStage"
+          },
+          "type": "array"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "stages"
+      ],
+      "title": "SubStages",
+      "type": "object"
+    },
     "TaskDelta": {
       "additionalProperties": false,
       "description": "A Board task that moved (`agent` null once it left the lanes).",
@@ -6933,6 +7221,9 @@
     "contractReport": {
       "$ref": "#/$defs/ContractReport"
     },
+    "diff": {
+      "$ref": "#/$defs/RunDiffs"
+    },
     "docShown": {
       "$ref": "#/$defs/DocShown"
     },
@@ -6975,6 +7266,9 @@
     },
     "forwardingUnconfigured": {
       "$ref": "#/$defs/ForwardingUnconfigured"
+    },
+    "graph": {
+      "$ref": "#/$defs/FlowGraph"
     },
     "harnesses": {
       "$ref": "#/$defs/Harnesses"
@@ -7088,6 +7382,9 @@
     "snapshot": {
       "$ref": "#/$defs/Snapshot"
     },
+    "stages": {
+      "$ref": "#/$defs/SubStages"
+    },
     "taskRecord": {
       "$ref": "#/$defs/TaskRecord"
     },
@@ -7123,6 +7420,9 @@
     "sessionSteps",
     "transitions",
     "cells",
+    "graph",
+    "stages",
+    "diff",
     "missedLoads",
     "traceClusters",
     "level",

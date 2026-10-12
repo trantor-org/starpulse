@@ -35,6 +35,9 @@
     starpulse analytics what-if --from review --to in_progress --p 0.1
     starpulse analytics transitions --hours 168
     starpulse analytics cells --hours 720
+    starpulse analytics graph --hours 168
+    starpulse analytics stages --hours 168
+    starpulse analytics diff --hours 168
     starpulse doctor
     starpulse skills install --claude --codex
     starpulse help --agent
@@ -182,6 +185,9 @@ _HEALTH_KEYS = ("now", "window_s", "stuck_after_s", "states", "throughput", "stu
 _STEP_KEYS = ("now", "window_s", "steps")
 _TRANSITION_KEYS = ("now", "window_s", "transitions")
 _CELL_KEYS = ("now", "window_s", "cells")
+_GRAPH_KEYS = ("now", "window_s", "graph")
+_STAGE_KEYS = ("now", "window_s", "stages")
+_DIFF_KEYS = ("now", "window_s", "diff")
 _TASK_KEYS = (
     "id",
     "title",
@@ -991,6 +997,24 @@ def _cells(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
     return _level_read(args, environ, "/api/analytics/cells", _CELL_KEYS)
 
 
+def _graph(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The branching directly-follows graph of each skill's transition within each kind and size over `--hours`, as
+    `/api/analytics/graph` answers; refusals as `analytics transitions`."""
+    return _level_read(args, environ, "/api/analytics/graph", _GRAPH_KEYS)
+
+
+def _stages(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """The sub-stages mined from the stretches no skill governs over `--hours` against the `--hours` before, as
+    `/api/analytics/stages` answers; refusals as `analytics transitions`."""
+    return _level_read(args, environ, "/api/analytics/stages", _STAGE_KEYS)
+
+
+def _diff(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    """Each transition's reference run against its slowest clean run over `--hours`, as `/api/analytics/diff`
+    answers; refusals as `analytics transitions`."""
+    return _level_read(args, environ, "/api/analytics/diff", _DIFF_KEYS)
+
+
 def _what_if(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The change in the chance of the goal and the expected days when one transition has probability `--p`."""
     params = {"from": args.origin, "to": args.to, "p": args.p}
@@ -1668,6 +1692,27 @@ def _parser() -> argparse.ArgumentParser:
             "completions, with n, clean rate, median human prompts mid-task and median steps before the first edit",
             _cells,
             _CELL_KEYS,
+        ),
+        (
+            "graph",
+            "the branching directly-follows graph of each skill's transition within each kind and size: each activity "
+            "edge with its run count, the edges leaving a judgement cut marked",
+            _graph,
+            _GRAPH_KEYS,
+        ),
+        (
+            "stages",
+            "the sub-stages mined at the judgement cuts of the stretches no skill governs, with their runs and median "
+            "length this window and the one before and how stable the stages are from one to the other",
+            _stages,
+            _STAGE_KEYS,
+        ),
+        (
+            "diff",
+            "each transition's reference run (the fewest-step clean completion that conforms to its machine, from at "
+            "least 5) against its slowest clean run: the activities the slow run made that the reference did not",
+            _diff,
+            _DIFF_KEYS,
         ),
     ):
         leaf(analytics_verbs, verb, summary, run, answer, (0, 1, 2, 3)).add_argument(

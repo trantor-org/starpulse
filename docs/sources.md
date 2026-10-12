@@ -164,6 +164,61 @@ change was tuned on. Its columns:
 Blind spot: a cell can improve because its tasks got easier, so read `n`, `clean_rate` and the two medians beside
 `median_steps`. A cell with a few tasks has a median of one or two.
 
+## Graph a transition's activities and diff a fast run against a slow one
+
+`GET /api/analytics/graph`, `/stages` and `/diff` (`?hours=N`, 168 by default) read the same steps by the kind and size
+of the task they worked, with the refusals and exclusions of the transition and cell reports: a task missing its
+`kind-<kind>` or `size-<n>` label and a Codex step are in none. A *run* is one task's steps under one skill in force,
+and its activities are those the main thread's steps made in order, less the `[analytics]` `stop_activities`; a
+subagent's steps run beside the main thread, so they add edges that never happened and are left out of the activities
+(they count in a run's steps). `starpulse analytics graph|stages|diff [--hours]` read them.
+
+`graph` is `{now, window_s, graph}`, one row per edge, by kind, size, skill, source, then target:
+
+- `kind`, `size`, `skill`: the transition.
+- `source`, `target`: two activities, the second directly after the first in a run; `[start]` and `[end]` bound a run.
+- `runs`, `count`, `share`: the tasks the edge occurred in, its occurrences and their share of those that leave `source`.
+- `cut`: `source` is a *judgement cut*. An activity is one when at least 5 runs went through it and its commonest
+  successor takes no more than 80% of the occurrences that leave it: the agent chose there. Every edge leaving a cut
+  is marked; an activity with one way on is a deterministic stretch.
+
+Blind spot: a cut is a place where runs differ, not proof that the difference needed judgement; a branch on a failed
+test and one on a taste are both cuts. An activity is the closed vocabulary of a tool call, with no arguments, so two
+runs of `make test` on different targets are one edge.
+
+`stages` is `{now, window_s, stages}`. A stretch no machine models is a run under no skill (`none`), and one of at
+least 20 activities is *long*. A kind x size cell with at least 5 long runs is split at its judgement cuts (the graph's,
+over the long runs only): a stage ends with the cut that closes it and the next stage opens with that cut, the first
+with `[start]`. One row per kind, size and stage, by that order:
+
+- `stage`: the activity that opens the stage, `[start]` for the first.
+- `runs`, `median_activities`: the tasks the stage occurred in over the window and the median activities it held; 0
+  and null when it did not occur.
+- `previous_runs`, `previous_median_activities`: the same over the `hours` before the window.
+- `stability`: of the cell, the stages in both windows over the stages in either, 1 when the cuts did not move; null
+  when a window mined none. A stage with `runs` 0 or `previous_runs` 0 is one that appeared or went.
+
+The history must hold twice `hours`, else the read is 400 with `history_s`. No machine edge is added from a stage: it
+is a name for a stretch of one window's runs and can move with the mining, which `stability` is there to show.
+
+`diff` is `{now, window_s, diff}`, one row per transition of a kind and size, by that order, with the skill `none`
+left out. Its group is the transition's runs of tasks that completed clean (`cells`). A group under 5 reports
+nothing. Its columns:
+
+- `runs`, `conformant`: the group's size and how many of its runs conform to the skill's machine.
+- `reference`: `{task, steps}` of the conformant run with the fewest steps (a subagent's included).
+- `slow`: `{task, steps}` of the run with the most steps, conformant or not.
+- `slow_only`, `reference_only`: `{activity, count}` of what the slow run made more often than the reference and the
+  reverse, by count then activity.
+
+A run *conforms* when its tool calls, oldest first, reach in order the stages of its skill's
+`[[analytics.skill_machines]]` entry ([Config file](serving.md#config-file)); a skill with no entry has every run
+conform. The reference is therefore never a run that skipped a stage, such as RED, however few steps it took, and a
+transition whose clean group has no conforming run reports nothing.
+
+Blind spot: the diff compares activity counts of two runs, not their order, and one reference is one run's way, not
+the best way. The stages an instance declares are its reading of the skill's steps; StarPulse does not derive them.
+
 ## Find missed skill loads and recurring work
 
 The same signals say what each session did, not only how long it took. A tool call is lifted to *activities* with no

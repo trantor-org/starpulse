@@ -24,6 +24,10 @@ tasks or skills (`GET /api/analytics/sessions`):
   task's until another claim. A key that differs from the board's only by case names the board's spelling.
 - `completion_skill` and `completion_call`: a task is complete in a session that loaded the skill and ran a shell
   command matching the call.
+
+A run under a skill conforms to its machine (`GET /api/analytics/diff`) when it reaches the stages of its
+`[[analytics.skill_machines]]` entry in order: each stage is a tool call whose activity matches a glob of `activities`
+and, when `ok` is set, that succeeded or failed. A skill with no entry has every run conform.
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-__all__ = ["Analytics", "AnalyticsError", "SkillLoad", "parse_analytics"]
+__all__ = ["Analytics", "AnalyticsError", "MachineStage", "SkillLoad", "SkillMachine", "parse_analytics"]
 
 _KEYS = {
     "roots",
@@ -44,8 +48,11 @@ _KEYS = {
     "claims",
     "completion_skill",
     "completion_call",
+    "skill_machines",
 }
 _LOAD_KEYS = {"skill", "activities", "title", "label"}
+_MACHINE_KEYS = {"skill", "stages"}
+_STAGE_KEYS = {"name", "activities", "ok"}
 
 
 class AnalyticsError(ValueError):
@@ -61,6 +68,24 @@ class SkillLoad:
     activities: frozenset[str] = frozenset()
     title: re.Pattern[str] | None = None
     label: str | None = None
+
+
+@dataclass(frozen=True)
+class MachineStage:
+    """One required stage of a skill's machine: a tool call of any activity matching a glob of `activities`, and when
+    `ok` is set, one that succeeded (`True`) or failed (`False`)."""
+
+    name: str
+    activities: frozenset[str]
+    ok: bool | None = None
+
+
+@dataclass(frozen=True)
+class SkillMachine:
+    """The stages a run under `skill` must reach, in this order, to conform to the skill's machine."""
+
+    skill: str
+    stages: tuple[MachineStage, ...]
 
 
 @dataclass(frozen=True)
@@ -83,6 +108,8 @@ class Analytics:
     """The skill whose load, with a `completion_call`, marks a session's task complete."""
     completion_call: re.Pattern[str] | None = None
     """The shell command that, after `completion_skill` loaded, marks the task complete."""
+    skill_machines: tuple[SkillMachine, ...] = ()
+    """Per skill, the stages a run reaches in order to conform; a skill with none declared has every run conform."""
 
 
 def _texts(raw: Mapping[str, object], key: str) -> tuple[str, ...]:
@@ -113,6 +140,37 @@ def _load(raw: object, at: int) -> SkillLoad:
         except re.error as exc:
             raise AnalyticsError(f"{who}: title is not a regular expression: {exc}") from exc
     return SkillLoad(skill, activities, pattern, label)
+
+
+def _table(raw: object, who: str, known: set[str], name: str) -> dict[str, object]:
+    if not isinstance(raw, dict):
+        raise AnalyticsError(f"{who} must be a {name} table")
+    if unknown := sorted(raw.keys() - known):
+        raise AnalyticsError(f"{who}: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(known))}")
+    return raw
+
+
+def _stage(raw: object, who: str) -> MachineStage:
+    table = _table(raw, who, _STAGE_KEYS, "stage")
+    if not isinstance(name := table.get("name"), str) or not name:
+        raise AnalyticsError(f"{who} needs name")
+    activities = frozenset(_texts(table, "activities"))
+    if not activities:
+        raise AnalyticsError(f"{who}: needs activities")
+    if (ok := table.get("ok")) is not None and not isinstance(ok, bool):
+        raise AnalyticsError(f"{who}: ok must be true or false")
+    return MachineStage(name, activities, ok)
+
+
+def _machine(raw: object, at: int) -> SkillMachine:
+    who = f"analytics.skill_machines[{at}]"
+    table = _table(raw, who, _MACHINE_KEYS, "[[analytics.skill_machines]]")
+    if not isinstance(skill := table.get("skill"), str) or not skill:
+        raise AnalyticsError(f"{who} needs skill")
+    stages = table.get("stages")
+    if not isinstance(stages, list) or not stages:
+        raise AnalyticsError(f"{who}: needs stages")
+    return SkillMachine(skill, tuple(_stage(stage, f"{who}.stages[{n}]") for n, stage in enumerate(stages)))
 
 
 def _pattern(value: object, who: str) -> re.Pattern[str]:
@@ -153,6 +211,9 @@ def parse_analytics(raw: object) -> Analytics:
     if not isinstance(skill, str):
         raise AnalyticsError("analytics: completion_skill must be text")
     call = raw.get("completion_call")
+    machines = raw.get("skill_machines", [])
+    if not isinstance(machines, list):
+        raise AnalyticsError("analytics: skill_machines must be a list of [[analytics.skill_machines]] tables")
     return Analytics(
         roots=roots,
         stop_activities=frozenset(_texts(raw, "stop_activities")),
@@ -163,4 +224,5 @@ def parse_analytics(raw: object) -> Analytics:
         claims=_claims(raw),
         completion_skill=skill,
         completion_call=None if call is None else _pattern(call, "completion_call"),
+        skill_machines=tuple(_machine(table, at) for at, table in enumerate(machines)),
     )
