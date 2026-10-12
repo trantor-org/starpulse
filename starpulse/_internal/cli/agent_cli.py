@@ -96,6 +96,7 @@ from starpulse._internal.machines import mermaid_import
 from starpulse._internal.machines.machine_definition import MachineDefinitionError, Registry, load_machine
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import ConfigError, load
+from starpulse._internal.feed.board_feed import DONE
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
@@ -307,8 +308,10 @@ def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _task(agent: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
-    """A Board task as a verb reports it. It waits on each dependency that has not completed."""
+    """A Board task as a verb reports it. It waits on each dependency neither completed nor in the `done` lane."""
     pulls = {pull["url"]: pull for pull in snapshot["pulls"].get(agent["id"], [])}
+    done = {task["id"] for task in _board_flow(snapshot)["agents"] if task["state"] == DONE}
+    done |= {task_id for task_id, entry in snapshot["settled"].items() if entry["state"] == "completed"}
     return {
         "id": agent["id"],
         "title": agent["title"],
@@ -318,7 +321,7 @@ def _task(agent: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
         "milestone": agent["milestone"],
         "labels": agent["labels"],
         "dependencies": agent["dependencies"],
-        "waiting_on": [d for d in agent["dependencies"] if (snapshot["settled"].get(d) or {}).get("state") != "completed"],
+        "waiting_on": [dependency for dependency in agent["dependencies"] if dependency not in done],
         "prs": [pulls.get(url, {"url": url}) for url in agent["prs"]],
         "moves": _agent_moves(agent),
     }

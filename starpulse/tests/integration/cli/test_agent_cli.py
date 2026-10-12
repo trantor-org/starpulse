@@ -576,6 +576,28 @@ def test_task_show_gives_the_lane_dependencies_what_it_waits_on_prs_and_moves(
     assert doc["moves"]["in_progress"] == {"allowed": False, "reason": "claim it first", "skill": "starting-tasks"}
 
 
+def test_waiting_on_drops_a_dependency_in_the_done_lane_and_keeps_one_in_progress() -> None:
+    """A board that keeps Done tasks open in its `done` lane settles them there, not in `settled`."""
+
+    def agent(task_id: str, state: str, dependencies: list[str]) -> dict[str, Any]:
+        return {
+            "id": task_id,
+            "title": "",
+            "state": state,
+            "model": "",
+            "milestone": "",
+            "labels": [],
+            "dependencies": dependencies,
+            "prs": [],
+            "moves": {},
+        }
+
+    board = [agent("PROJ-1", "waiting", ["PROJ-2", "PROJ-3"]), agent("PROJ-2", "done", []), agent("PROJ-3", "in_progress", [])]
+    snapshot = {"pulls": {}, "settled": {}, "flows": [{"name": "board", "agents": board}]}
+
+    assert cli._task(board[0], snapshot)["waiting_on"] == ["PROJ-3"]
+
+
 def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys: pytest.CaptureFixture[str]) -> None:
     code, doc = _run(capsys, ["task", "show", "PROJ-3", "--server", base])
 

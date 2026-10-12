@@ -313,8 +313,9 @@ process's own gauges, `process_resident_memory_bytes`, `process_threads`,
 `process_open_fds` and `process_start_time_seconds`; the last changes on every restart, so a growth rule can tell one
 process lifetime from the next. A host with no `/proc` serves none of them.
 
-`waiting_on` is the dependencies not yet completed. `prs` are the task's pull request links, each with the checks,
-merged state, open review threads and commits behind `main` the server last read when it has them.
+`waiting_on` is the dependencies neither in the `done` lane nor settled as completed. `prs` are the task's pull
+request links, each with the checks, merged state, open review threads and commits behind `main` the server last read
+when it has them.
 
 ## Importing a board's history
 
