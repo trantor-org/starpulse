@@ -214,7 +214,8 @@ nothing. Its columns:
 A run *conforms* when its tool calls, oldest first, reach in order the stages of its skill's
 `[[analytics.skill_machines]]` entry ([Config file](serving.md#config-file)); a skill with no entry has every run
 conform. The reference is therefore never a run that skipped a stage, such as RED, however few steps it took, and a
-transition whose clean group has no conforming run reports nothing.
+transition whose clean group has no conforming run is listed with `conformant` 0, `reference` null and
+`reference_only` empty, so the skipped stage shows.
 
 Blind spot: the diff compares activity counts of two runs, not their order, and one reference is one run's way, not
 the best way. The stages an instance declares are its reading of the skill's steps; StarPulse does not derive them.

@@ -4958,8 +4958,15 @@
           "type": "string"
         },
         "reference": {
-          "$ref": "#/$defs/RunRef",
-          "description": "The fewest-step conformant clean run."
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The fewest-step conformant clean run; None when `conformant` is 0."
         },
         "reference_only": {
           "description": "Activities the reference made more often than the slow run.",
@@ -5006,7 +5013,7 @@
     },
     "RunDiffs": {
       "additionalProperties": false,
-      "description": "`GET /api/analytics/diff`: a transition with under 5 clean runs, or none that conforms, reports nothing.",
+      "description": "`GET /api/analytics/diff`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.",
       "properties": {
         "diff": {
           "items": {

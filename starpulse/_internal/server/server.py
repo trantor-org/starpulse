@@ -134,8 +134,9 @@ GET /api/analytics/stages[?hours=N]
 GET /api/analytics/diff[?hours=N]
                    each transition's reference run against its slowest clean run over the last `hours`, default 168,
                    as `{now, window_s, diff}` (`flow.fast_slow_diff`): each is `{kind, size, skill, runs, conformant,
-                   reference, slow, slow_only, reference_only}`. A transition with under 5 clean runs, or none that
-                   conforms to its skill's machine, is not listed. Refusals as `/api/analytics/steps`
+                   reference, slow, slow_only, reference_only}`. A transition with under 5 clean runs is not listed;
+                   one with none that conforms to its skill's machine is, with `conformant` 0, `reference` null and
+                   `reference_only` empty. Refusals as `/api/analytics/steps`
 GET /api/level[?hours=N]
                    the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
                    last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's

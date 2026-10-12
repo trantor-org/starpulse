@@ -155,3 +155,28 @@ def test_the_reference_is_the_fastest_conformant_clean_run_of_five_and_never_one
             "reference_only": [],
         }
     ]
+
+
+def test_a_group_of_five_with_no_conformant_run_is_listed_with_conformant_zero_and_no_reference() -> None:
+    machine = Analytics(
+        completion_skill="completing-tasks", stop_activities=frozenset({"Skill"}), skill_machines=(TEST_FIRST,)
+    )
+    group = [completed(n, *["read"] * (n - 1), "edit", "test") for n in range(1, 6)]  # every one skipped RED
+    tasks = {f"TASK-{n}": EXECUTE_8 for n in range(1, 6)}
+
+    rows = fast_slow_diff([s for runs in group for s in runs], KEYS, tasks, machine)
+    rows = [r for r in rows if r["skill"] == "work"]
+
+    assert rows == [
+        {
+            "kind": "execute",
+            "size": 8,
+            "skill": "work",
+            "runs": 5,
+            "conformant": 0,
+            "reference": None,
+            "slow": {"task": "TASK-5", "steps": 6},
+            "slow_only": [{"activity": "read", "count": 4}, {"activity": "edit", "count": 1}, {"activity": "test", "count": 1}],
+            "reference_only": [],
+        }
+    ]
