@@ -173,7 +173,7 @@ export interface StaleEdit {
   stale: string[];
 }
 /**
- * A level window longer than the history, with the history's length.
+ * A level or telemetry window longer than its history, with the history's length.
  */
 export interface WindowTooLong {
   error: string;

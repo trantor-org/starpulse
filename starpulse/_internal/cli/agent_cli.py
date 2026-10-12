@@ -959,7 +959,8 @@ def _forecast(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
 def _steps(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """One row per model request over `--hours`, as `/api/analytics/steps` answers: the skill in force, the activities
-    and keys of the calls it made, and its tokens. A server that receives no telemetry is `unavailable`."""
+    and keys of the calls it made, and its tokens. A window longer than the telemetry history is `refused`; a server
+    that receives no telemetry is `unavailable`."""
     return _level_read(args, environ, "/api/analytics/steps", _STEP_KEYS)
 
 
@@ -1620,7 +1621,11 @@ def _parser() -> argparse.ArgumentParser:
         _STEP_KEYS,
         (0, 1, 2, 3),
     )
-    steps.add_argument("--hours", type=float, help="the window to read, in hours (default: the server's, 168)")
+    steps.add_argument(
+        "--hours",
+        type=float,
+        help="the window to read, in hours; past the telemetry history it is refused (default 168)",
+    )
     config = verbs.add_parser("config", description="the config file", help="the config file")
     config_verbs = config.add_subparsers(dest="verb", required=True, metavar="verb")
     config_check = leaf(

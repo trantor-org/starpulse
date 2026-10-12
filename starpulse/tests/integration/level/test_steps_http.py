@@ -47,10 +47,10 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
 
 
 def test_every_model_request_of_both_harnesses_is_a_step_oldest_first(server: ThreadingHTTPServer) -> None:
-    status, body = _get(server, "?hours=24")
+    status, body = _get(server, "?hours=1.06")
 
     assert status == 200
-    assert (body["now"], body["window_s"]) == (NOW, 24 * 3600)
+    assert (body["now"], body["window_s"]) == (NOW, 1.06 * 3600)
     steps = body["steps"]
     assert [(s["harness"], s["task"], s["captured"]) for s in steps] == [
         *[("claude-code", "TASK-1", True)] * 3,
@@ -69,11 +69,15 @@ def test_every_model_request_of_both_harnesses_is_a_step_oldest_first(server: Th
     assert [(s["activities"], s["keys"]) for s in steps[:3]] == [([], ["Bash"]), ([], ["Bash"]), ([], [])]
 
 
-def test_the_window_defaults_to_a_week_and_leaves_out_what_happened_before_it(server: ThreadingHTTPServer) -> None:
-    _, week = _get(server)
+def test_the_window_defaults_to_a_week_which_a_short_history_refuses_and_leaves_out_what_happened_before_it(
+    server: ThreadingHTTPServer,
+) -> None:
+    week_status, week = _get(server)
     _, minutes = _get(server, "?hours=0.01")
+    _, inside = _get(server, "?hours=1.06")
 
-    assert (week["window_s"], len(week["steps"]), minutes["steps"]) == (168 * 3600, 6, [])
+    assert (week_status, "168 hours" in week["error"]) == (400, True)
+    assert (len(inside["steps"]), minutes["steps"]) == (6, [])
 
 
 @pytest.mark.parametrize("query", ["?hours=0", "?hours=-1", "?hours=soon", "?hours=nan", "?hours=inf"])
@@ -88,3 +92,13 @@ def test_an_instance_that_receives_no_telemetry_cannot_report_steps(tmp_path: Pa
         status, body = _get(server)
 
     assert (status, "telemetry" in body["error"]) == (501, True)
+
+
+def test_a_window_longer_than_the_telemetry_history_is_refused_with_the_history_s_and_a_shorter_one_is_answered(
+    server: ThreadingHTTPServer,
+) -> None:
+    status, refused = _get(server, "?hours=24")
+    _, history = _get(server, "?hours=0.5")
+
+    assert (status, 3000 < refused["history_s"] < 4 * 3600, "longer than the history" in refused["error"]) == (400, True, True)
+    assert history["window_s"] == 1800

@@ -56,7 +56,7 @@ def server(tmp_path: Path, telemetry: TelemetryLog) -> Iterator[ThreadingHTTPSer
 
 
 def test_both_harnesses_sessions_are_served_with_the_slice_their_branch_names(server: ThreadingHTTPServer) -> None:
-    status, body = _get(server, "?hours=24")
+    status, body = _get(server, "?hours=1.06")
 
     assert status == 200
     assert {(s["harness"], s["task"], s["kind"]) for s in body["sessions"]} == {
@@ -65,21 +65,23 @@ def test_both_harnesses_sessions_are_served_with_the_slice_their_branch_names(se
     }
     (slice_,) = body["slices"]
     assert (slice_["task"], slice_["sessions"], slice_["steps"], slice_["clean"]) == ("TASK-1", 1, 3, True)
-    assert (body["now"], body["window_s"]) == (NOW, 24 * 3600)
+    assert (body["now"], body["window_s"]) == (NOW, 1.06 * 3600)
 
 
-def test_the_window_defaults_to_a_week_and_leaves_out_what_happened_before_it(server: ThreadingHTTPServer) -> None:
-    _, week = _get(server)
+def test_the_window_defaults_to_a_week_which_a_short_history_refuses_and_leaves_out_what_happened_before_it(
+    server: ThreadingHTTPServer,
+) -> None:
+    week_status, week = _get(server)
     _, minutes = _get(server, "?hours=0.01")
 
-    assert week["window_s"] == 168 * 3600
-    assert (len(week["sessions"]), minutes["sessions"], minutes["slices"]) == (2, [], [])
+    assert (week_status, "168 hours" in week["error"]) == (400, True)
+    assert (minutes["sessions"], minutes["slices"]) == ([], [])
 
 
 def test_a_signal_published_after_the_view_was_first_read_shows_in_the_next_read(
     server: ThreadingHTTPServer, telemetry: TelemetryLog
 ) -> None:
-    before = len(_get(server)[1]["sessions"])
+    before = len(_get(server, "?hours=1.06")[1]["sessions"])
     payload = {
         "resourceLogs": [
             {
@@ -104,14 +106,14 @@ def test_a_signal_published_after_the_view_was_first_read_shows_in_the_next_read
 
     telemetry.publish(signals(payload))
 
-    assert len(_get(server)[1]["sessions"]) == before + 1
+    assert len(_get(server, "?hours=1.06")[1]["sessions"]) == before + 1
 
 
 def test_republishing_an_export_does_not_count_it_twice(server: ThreadingHTTPServer, telemetry: TelemetryLog) -> None:
-    before = _get(server)[1]
+    before = _get(server, "?hours=1.06")[1]
     publish_recorded(telemetry)
 
-    assert _get(server)[1]["slices"] == before["slices"]
+    assert _get(server, "?hours=1.06")[1]["slices"] == before["slices"]
 
 
 @pytest.mark.parametrize("query", ["?hours=0", "?hours=-1", "?hours=soon", "?hours=nan", "?hours=inf"])
@@ -147,11 +149,21 @@ def test_a_session_that_loaded_the_completion_skill_then_delivered_is_complete_b
     declared = Analytics(completion_skill="completing-tasks")
 
     with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, analytics=declared, clock=lambda: NOW) as live:
-        _, body = _get(live, "?hours=24")
+        _, body = _get(live, "?hours=1")
     with serve(tmp_path, BoardFeed(machines=MACHINES, keys=KEYS), telemetry=telemetry, clock=lambda: NOW) as bare:
-        _, undeclared = _get(bare, "?hours=24")
+        _, undeclared = _get(bare, "?hours=1")
 
     (row,) = body["sessions"]
     assert (row["task"], row["complete"], row["steps_before_edit"], row["interrupts"]) == ("TASK-8", True, 1, 0)
     assert body["slices"][0]["complete"] is True
     assert undeclared["sessions"][0]["complete"] is False
+
+
+def test_a_window_longer_than_the_telemetry_history_is_refused_with_the_history_s_and_a_shorter_one_is_answered(
+    server: ThreadingHTTPServer,
+) -> None:
+    status, refused = _get(server, "?hours=24")
+    shorter_status, history = _get(server, "?hours=0.5")
+
+    assert (status, 3000 < refused["history_s"] < 4 * 3600, "longer than the history" in refused["error"]) == (400, True, True)
+    assert (shorter_status, history["window_s"]) == (200, 1800)

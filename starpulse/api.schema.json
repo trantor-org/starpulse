@@ -6599,7 +6599,7 @@
     },
     "WindowTooLong": {
       "additionalProperties": false,
-      "description": "A level window longer than the history, with the history's length.",
+      "description": "A level or telemetry window longer than its history, with the history's length.",
       "properties": {
         "error": {
           "type": "string"

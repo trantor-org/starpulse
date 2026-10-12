@@ -126,7 +126,7 @@ components below an `[analytics]` root. A *case* is one session's work on one ta
 that no branch or claim ever ties to a task is a case with no task.
 
 `GET /api/analytics/missed-loads[?hours=N&skill=NAME&list=N]` reports, per skill declared in `[analytics]`, the cases
-of the window (168 hours by default) that ran its trigger and those of them that did so without activating it. The body
+of the window (168 hours by default; a window longer than the telemetry history is 400 with `history_s`, as on every telemetry route) that ran its trigger and those of them that did so without activating it. The body
 is `{now, window_s, skills}`; a `skills` entry is `{skill, performed, missed, listed}`, `listed` the `list` (5 by
 default, 0 or more) most recent missed cases as `{harness, session, task, last_at}`. A case performs a trigger by an
 activity matching one of its globs, or, with tool calls, a task title matching its `title` or carrying its `label`

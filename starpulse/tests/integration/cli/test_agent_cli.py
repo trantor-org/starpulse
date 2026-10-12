@@ -1165,15 +1165,23 @@ def test_analytics_health_refuses_a_window_the_server_refuses(base: str, capsys:
 def test_analytics_steps_lists_each_model_request_with_its_skill_activities_keys_and_tokens(
     stepped: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code, doc = _run(capsys, ["analytics", "steps", "--hours", "24", "--server", stepped])
+    code, doc = _run(capsys, ["analytics", "steps", "--hours", "1.06", "--server", stepped])
 
     assert code == 0
-    assert (doc["now"], doc["window_s"]) == (STEPS_NOW, 24 * 3600)
+    assert (doc["now"], doc["window_s"]) == (STEPS_NOW, 1.06 * 3600)
     assert [(s["harness"], s["task"], s["skill"], s["captured"]) for s in doc["steps"]] == [
         ("claude-code", "TASK-1", "none", True)
     ] * 3
     assert [s["keys"] for s in doc["steps"]] == [["Bash"], ["Bash"], []]
     assert set(doc["steps"][0]["tokens"]) == {"input", "output", "cache_read", "cache_write", "reasoning"}
+
+
+def test_analytics_steps_refuses_a_window_longer_than_the_telemetry_history(
+    stepped: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["analytics", "steps", "--hours", "24", "--server", stepped])
+
+    assert (code, doc["code"], "longer than the history" in doc["error"]) == (1, "refused", True)
 
 
 def test_analytics_steps_refuses_a_window_the_server_refuses(stepped: str, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1615,7 +1623,7 @@ CASES = {
     ("analytics health", 1): ["analytics", "health", "--hours", "0", "--server", "{server}"],
     ("analytics health", 2): ["analytics", "health", "--hours", "soon"],
     ("analytics health", 3): ["analytics", "health", "--server", "{down}"],
-    ("analytics steps", 0): ["analytics", "steps", "--hours", "24", "--server", "{stepped}"],
+    ("analytics steps", 0): ["analytics", "steps", "--hours", "1.06", "--server", "{stepped}"],
     ("analytics steps", 1): ["analytics", "steps", "--hours", "0", "--server", "{stepped}"],
     ("analytics steps", 2): ["analytics", "steps", "--hours", "soon"],
     ("analytics steps", 3): ["analytics", "steps", "--server", "{down}"],

@@ -4,6 +4,7 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
+from dataclasses import replace
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -14,13 +15,13 @@ from sqlalchemy import create_engine
 from starpulse._internal.autopilot.runtime import build
 from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.kit.adapter_kit import serve, task, url
-from starpulse.contracts.api import RESPONSES
+from starpulse.contracts.api import BODIES, RESPONSES
 from starpulse._internal.config.level import Level, Orbit, Terminal
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.eventlog.history import HistoryStore
-from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
+from starpulse._internal.harnesses.telemetry import Signal, TelemetryLog, signals
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
 from starpulse.tests.unit.level.test_analytics import NOW, ROWS
@@ -35,10 +36,10 @@ ROUTES = (
     "/api/history?task=T-1&flow=in-progress",
     "/api/pulls",
     "/api/analytics/health",
-    "/api/analytics/sessions",
-    "/api/analytics/steps",
-    "/api/analytics/missed-loads",
-    "/api/analytics/trace-clusters?outliers=2",
+    "/api/analytics/sessions?hours=1",
+    "/api/analytics/steps?hours=1",
+    "/api/analytics/missed-loads?hours=1",
+    "/api/analytics/trace-clusters?outliers=2&hours=1",
     "/api/harnesses",
     "/api/history-window",
     "/api/forwarding",
@@ -63,8 +64,12 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
     runtime = build(Autopilot(), tmp_path, EventLog(f"sqlite:///{tmp_path / 'settings.sqlite'}"), feed, probe=lambda: {"cpu": 10.0, "memory": 20.0})
     runtime.sampler.sample()
     telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
-    for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines():
-        telemetry.publish(signals(json.loads(line)))
+    recorded = [
+        sg for line in (FIXTURES / "claude_code" / "otlp.ndjson").read_text().splitlines() for sg in signals(json.loads(line))
+    ]
+    shift = max(sg.time for sg in recorded) - (NOW - 60)  # the exports ended a minute before the clock
+    telemetry.publish([replace(sg, time=sg.time - shift) for sg in recorded])
+    telemetry.publish([Signal("claude-code", "anchor", "prompt", NOW - 7200, "anchor:prompt")])  # a history of two hours
     search = SearchIndex.open(create_engine(f"sqlite:///{tmp_path / 'search.sqlite'}"))
     assert search is not None
     search.index(task("T-1", "In Progress"))
@@ -100,6 +105,23 @@ def _validate(server: ThreadingHTTPServer, route: str) -> None:
 @pytest.mark.parametrize("route", ROUTES)
 def test_api_contract_get_route_body_validates_against_its_model(server: ThreadingHTTPServer, route: str) -> None:
     _validate(server, route)
+
+
+@pytest.mark.parametrize(
+    ("path", "kind"),
+    [("sessions", "sessions"), ("steps", "session_steps"), ("missed-loads", "missed_loads"), ("trace-clusters", "trace_clusters")],
+)
+def test_api_contract_a_telemetry_window_longer_than_the_history_validates_against_its_body_model(
+    server: ThreadingHTTPServer, path: str, kind: str
+) -> None:
+    route = f"/api/analytics/{path}?hours=3"
+
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        urllib.request.urlopen(url(server, route), timeout=5)
+
+    body = json.loads(refused.value.read())
+    assert (refused.value.code, body["history_s"]) == (400, 7200)
+    TypeAdapter(BODIES[kind]).validate_python(body)
 
 
 @pytest.mark.parametrize("route", ["/api/snapshot", "/api/merges"])
