@@ -2,17 +2,19 @@
 
 An agent is named by tier and effort (`@agent-standard-high`), never by model, so a page or a tracker stays
 harness-agnostic. This file says, per harness, whether it can start a session, the model each tier runs on it and
-which tiers take an effort. Callers that start a session resolve a profile here; the server hands the page `as_json()`.
+which tiers take an effort, and optionally the SSH host and folder a Claude Desktop session opens on. Callers that start a
+session resolve a profile here; the server hands the page `as_json()`.
 """
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-__all__ = ["Harness", "HarnessError", "Harnesses", "Tier", "load_harnesses"]
+__all__ = ["Desktop", "Harness", "HarnessError", "Harnesses", "Tier", "load_harnesses"]
 
 
 class HarnessError(ValueError):
@@ -27,6 +29,14 @@ class Tier:
 
 
 @dataclass(frozen=True)
+class Desktop:
+    """Where a Claude Desktop SSH session opens: `user@address` and the folder on that host."""
+
+    host: str
+    folder: str
+
+
+@dataclass(frozen=True)
 class Harness:
     name: str
     label: str
@@ -35,6 +45,8 @@ class Harness:
     reason: str | None
     """Why it cannot, when `sessions` is false."""
     tiers: dict[str, Tier]
+    desktop: Desktop | None = None
+    """The Desktop SSH host and folder, when the harness names one and its address variable is set."""
 
     def profiles(self) -> dict[str, tuple[str, str | None]]:
         """Each `@agent-<tier>[-<effort>]` profile and the `(model, effort)` it runs on this harness."""
@@ -61,6 +73,7 @@ class Harnesses:
                     "sessions": h.sessions,
                     "reason": h.reason,
                     "tiers": {n: {"model": t.model, "efforts": list(t.efforts)} for n, t in h.tiers.items()},
+                    "desktop": {"host": h.desktop.host, "folder": h.desktop.folder} if h.desktop else None,
                 }
                 for h in self.harnesses.values()
             ],
@@ -70,6 +83,18 @@ class Harnesses:
 def _names(value: object) -> tuple[str, ...] | None:
     ok = isinstance(value, list) and all(isinstance(item, str) and item for item in value)
     return tuple(value) if ok else None  # pyright: ignore[reportArgumentType]
+
+
+def _desktop(name: str, raw: dict[str, Any]) -> Desktop | None:
+    """The `desktop` table's host and folder. The address is read from the variable `host_env` names, so the file holds
+    no address; an unset variable offers no Desktop session."""
+    host_env, folder = raw.get("host_env"), raw.get("folder")
+    if not host_env or not folder:
+        raise HarnessError(f"harness {name} desktop needs host_env and folder")
+    if not (address := os.environ.get(host_env, "")):
+        return None
+    user = raw.get("user")
+    return Desktop(f"{user}@{address}" if user else address, folder)
 
 
 def _harness(name: str, raw: dict[str, Any], tiers: tuple[str, ...]) -> Harness:
@@ -89,7 +114,8 @@ def _harness(name: str, raw: dict[str, Any], tiers: tuple[str, ...]) -> Harness:
         if efforts is None:
             raise HarnessError(f"harness {name} tier {tier} efforts must be a list of names")
         parsed[tier] = Tier(spec["model"], efforts)
-    return Harness(name, raw.get("label", name), bool(sessions), reason, parsed)
+    desktop = _desktop(name, raw["desktop"]) if "desktop" in raw else None
+    return Harness(name, raw.get("label", name), bool(sessions), reason, parsed, desktop)
 
 
 def load_harnesses(path: Path) -> Harnesses:
