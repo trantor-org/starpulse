@@ -833,7 +833,7 @@ function layoutLevel(ctx: Ctx, l: Level): Scene {
         const band = FOOT.task1, R = band + 6;
         return { moonR: band, R, reach: [R, R] as [number, number], band };
       }
-      const rowH = Math.max(16 * F, 2 * FOOT.moon + 6), moonR = Math.max(FOOT.task1 + 10 + FOOT.moon, (rowH * (MOONS / 2 + 1)) / 2);
+      const rowH = Math.max(12 * F, 2 * FOOT.moon + 6), moonR = Math.max(FOOT.task1 + 10 + FOOT.moon, (rowH * (MOONS / 2 + 1)) / 2);
       const side = moonR + FOOT.moon + 8 + 2 * FOOT.sub + 10 + textW("x".repeat(NAME_MAX), 10.5) * F;
       return { moonR, R: moonR + 8 + FOOT.moon, reach: [side, side] as [number, number], band: moonR - FOOT.moon - 10 };
     };

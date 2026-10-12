@@ -855,6 +855,53 @@ describe("the Board's tiers", () => {
     drawn.forEach((r, i) => expect(Math.abs(r - suns[i])).toBeLessThanOrEqual(1));
   });
 
+  describe("with machines open under In Progress and Review, on a 1366 x 768 window whose side rails leave an 866 x 768 canvas (TASK-4243)", () => {
+    const TIERS_14 = [["new"], ["triage"], ["ready", "waiting", "blocked"], ["needs_attention"], ["in_progress"], ["qa"], ["staging"], ["review"], ["approved"], ["done", "archived", "completed"]];
+    const PATHS_14 = `new>triage triage>ready ready>in_progress in_progress>qa qa>staging staging>review review>approved approved>done done>completed
+      ready>waiting waiting>ready ready>blocked blocked>ready in_progress>waiting waiting>in_progress in_progress>needs_attention needs_attention>ready
+      needs_attention>in_progress qa>in_progress review>in_progress staging>qa review>done review>archived done>archived ready>archived new>ready
+      new>in_progress triage>blocked blocked>needs_attention approved>archived qa>needs_attention waiting>archived completed>archived`.split(/\s+/).map((p) => p.split(">"));
+    /** The demo's `?board=fourteen` states and paths. */
+    const fourteen = (snap: Snapshot) => {
+      const m = snap.flows[0].machine;
+      m.states = TIERS_14.flat().map((id, i) => ({ id, name: id, initial: i === 0, final: ["archived", "completed"].includes(id) }));
+      m.transitions = PATHS_14.map(([source, target]) => ({ source, target, event: `${source}_${target}` }));
+      m.mainLine = ["new", "triage", "ready", "in_progress", "qa", "staging", "review", "approved", "done"];
+      m.tiers = TIERS_14;
+    };
+    /** The demo's eight states, as the TASK-3839 table drew them. */
+    const eight = (snap: Snapshot) => {
+      const m = snap.flows[0].machine, gone = ["blocked", "completed"];
+      m.states = m.states.filter((q) => !gone.includes(q.id));
+      m.transitions = m.transitions.filter((t) => !gone.includes(t.source) && !gone.includes(t.target));
+    };
+    /** Two machines under each of In Progress and Review: the two states that draw a moon ring. */
+    const rings = (snap: Snapshot) => {
+      const m = snap.flows[0].machine;
+      m.subflows = ["in_progress", "review"].flatMap((state) => [0, 1].map((i) => ({ state, flow: `${state}-${i}`, exits: {}, parent: "board", when: "" })));
+      for (const { flow } of m.subflows) {
+        snap.graphs.push(flow);
+        snap.flows.push({ name: flow, agents: [], machine: machine(["a", "b"]) });
+      }
+    };
+    const suns = (shape: (snap: Snapshot) => void, tiers?: string[][]) =>
+      [100, 125, 150].map((scale) => SUN_R * zoom(tiered(866, 768, tiers, (snap) => { shape(snap); rings(snap); }, scale), 866));
+
+    it("draws the fourteen states' suns at 12 px or more at 150% text, the 100% and 125% sizes unchanged", () => {
+      const [a, b, c] = suns(fourteen, TIERS_14);
+
+      expect(c).toBeGreaterThanOrEqual(12);
+      expect(Math.abs(a - 15.9)).toBeLessThanOrEqual(0.1);
+      expect(Math.abs(b - 14.2)).toBeLessThanOrEqual(0.1);
+    });
+
+    it("draws the eight states' suns at the TASK-3839 table's sizes, within 0.1 px, at 100, 125 and 150% text", () => {
+      const drawn = suns(eight, DEFAULT_TIERS);
+
+      [21.3, 19.4, 17.7].forEach((want, i) => expect(Math.abs(drawn[i] - want)).toBeLessThanOrEqual(0.1));
+    });
+  });
+
   it("makes room for larger names at a larger Admin text size, never shrinking the sun's footprint", () => {
     const at = (scale: number) => tiered(1366, 768, DEFAULT_TIERS, () => {}, scale);
 
