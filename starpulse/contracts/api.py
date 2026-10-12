@@ -1364,8 +1364,18 @@ class AutopilotNext(_Api):
     title: str
     verdict: Literal["starting", "waits"]
     reason: str = Field(
-        description="`goes next`, or the first dimension the task overfits, which the strip shows after `waits:`."
+        description="`goes next`, `quiet hours` while the quiet hours hold admission, or the first dimension the task "
+        "overfits, which the strip shows after `waits:`."
     )
+
+
+class QuietHours(_Api):
+    """A daily window in which the autopilot admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before
+    `start` runs past midnight."""
+
+    start: str
+    end: str
+    timezone: str = Field(description="The IANA zone the window's times are read in, such as America/Phoenix.")
 
 
 class AutopilotStatus(_Api):
@@ -1375,6 +1385,7 @@ class AutopilotStatus(_Api):
     """
 
     enabled: bool
+    quietHours: QuietHours | None = Field(default=None, description="Null when no window holds admission back.")
     sampledAt: float | None
     dimensions: list[AutopilotDimension]
     inFlight: list[AutopilotSession] = Field(
@@ -1604,9 +1615,10 @@ class ForwardingRequest(_Api):
 
 
 class AutopilotRequest(_Api):
-    """`PUT /api/autopilot`: whether the autopilot admits tasks."""
+    """`PUT /api/autopilot`: whether the autopilot admits tasks, its quiet hours (null clears them), or both."""
 
-    enabled: bool
+    enabled: bool | None = None
+    quietHours: QuietHours | None = None
 
 
 class RunEventRequest(_Api):

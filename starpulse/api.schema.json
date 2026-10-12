@@ -238,7 +238,7 @@
       "description": "The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.",
       "properties": {
         "reason": {
-          "description": "`goes next`, or the first dimension the task overfits, which the strip shows after `waits:`.",
+          "description": "`goes next`, `quiet hours` while the quiet hours hold admission, or the first dimension the task overfits, which the strip shows after `waits:`.",
           "type": "string"
         },
         "task": {
@@ -266,15 +266,31 @@
     },
     "AutopilotRequest": {
       "additionalProperties": false,
-      "description": "`PUT /api/autopilot`: whether the autopilot admits tasks.",
+      "description": "`PUT /api/autopilot`: whether the autopilot admits tasks, its quiet hours (null clears them), or both.",
       "properties": {
         "enabled": {
-          "type": "boolean"
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quietHours": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuietHours"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
-      "required": [
-        "enabled"
-      ],
       "title": "AutopilotRequest",
       "type": "object"
     },
@@ -342,6 +358,18 @@
           ],
           "default": null,
           "description": "Null when no task in the eligible lane is workable."
+        },
+        "quietHours": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuietHours"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Null when no window holds admission back."
         },
         "sampledAt": {
           "anyOf": [
@@ -4596,6 +4624,29 @@
         "pulls"
       ],
       "title": "PullsDelta",
+      "type": "object"
+    },
+    "QuietHours": {
+      "additionalProperties": false,
+      "description": "A daily window in which the autopilot admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before\n`start` runs past midnight.",
+      "properties": {
+        "end": {
+          "type": "string"
+        },
+        "start": {
+          "type": "string"
+        },
+        "timezone": {
+          "description": "The IANA zone the window's times are read in, such as America/Phoenix.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "timezone"
+      ],
+      "title": "QuietHours",
       "type": "object"
     },
     "RawAgent": {

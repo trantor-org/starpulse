@@ -30,4 +30,17 @@ describe("the Admin view", () => {
     const card = [...host.querySelectorAll("#admin .card")].find((c) => c.querySelector("h2")?.textContent?.startsWith("Tracker"));
     expect(card?.textContent).toContain("Connect a tracker");
   });
+
+  it("draws autopilot's quiet hours in the Server card, on and in the window's zone", async () => {
+    const status = { enabled: true, quietHours: { start: "22:00", end: "07:00", timezone: "America/Phoenix" }, sampledAt: null, dimensions: [] };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (String(url).endsWith("/api/autopilot") ? new Response(JSON.stringify(status)) : new Response("{}", { status: 503 }))));
+
+    await act(async () => root.render(<AdminPage store={new AdminStore()} window={new HistoryWindowStore()} forwarding={new ForwardingStore()} hint={null} />));
+
+    const sw = host.querySelector<HTMLButtonElement>('[aria-label="Autopilot quiet hours"]');
+    expect(sw?.getAttribute("aria-checked")).toBe("true");
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Quiet hours start"]')?.value).toBe("22:00");
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Quiet hours end"]')?.value).toBe("07:00");
+    expect(host.textContent).toContain("Times in America/Phoenix");
+  });
 });

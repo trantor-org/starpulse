@@ -63,6 +63,7 @@ def test_a_get_reports_every_dimensions_use_and_limit_and_that_the_autopilot_is_
     assert status == 200
     assert body == {
         "enabled": False,
+        "quietHours": None,
         "sampledAt": 1000.0,
         "dimensions": [
             {"name": "cpu", "use": 35.0, "limit": 80},
@@ -76,7 +77,7 @@ def test_a_get_reports_every_dimensions_use_and_limit_and_that_the_autopilot_is_
 def test_a_get_before_the_first_sample_has_no_readings(tmp_path: Path) -> None:
     assert autopilot("127.0.0.1", "GET", b"", _runtime(tmp_path)) == (
         200,
-        {"enabled": False, "sampledAt": None, "dimensions": []},
+        {"enabled": False, "quietHours": None, "sampledAt": None, "dimensions": []},
     )
 
 
@@ -182,8 +183,73 @@ def test_every_body_the_route_serves_is_one_the_contract_names(tmp_path: Path) -
     looping.set_enabled(True)
     assert looping.loop is not None and looping.loop.tick() == ["T-4"]
 
-    for runtime in (_runtime(tmp_path), _looping(tmp_path), looping):  # no loop; a pick; a session and no pick
+    quiet = _runtime(tmp_path)
+    quiet.set_quiet_hours(QUIET)
+    for runtime in (_runtime(tmp_path), _looping(tmp_path), looping, quiet):  # no loop; a pick; a session; quiet hours
         AutopilotStatus.model_validate(autopilot("127.0.0.1", "GET", b"", runtime)[1])
+
+
+# The runtimes' clock reads 1000.0: 00:16:40 UTC, inside this window.
+QUIET = {"start": "00:00", "end": "01:00", "timezone": "UTC"}
+
+
+def test_a_put_sets_the_quiet_hours_a_restart_keeps_them_and_null_clears_them(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    assert _put(runtime, {"quietHours": QUIET}) == (200, {**autopilot("127.0.0.1", "GET", b"", runtime)[1]})
+    assert autopilot("127.0.0.1", "GET", b"", _runtime(tmp_path))[1]["quietHours"] == QUIET  # a restarted server
+    assert runtime.toggle.get() is False  # setting the window leaves the switch alone
+
+    assert _put(runtime, {"quietHours": None})[1]["quietHours"] is None
+    assert autopilot("127.0.0.1", "GET", b"", _runtime(tmp_path))[1]["quietHours"] is None
+
+
+@pytest.mark.parametrize(
+    ("window", "names"),
+    [
+        ({"start": "22:00", "end": "07:00"}, "timezone"),
+        ({"start": "25:00", "end": "07:00", "timezone": "UTC"}, "start"),
+        ({"start": "22:00", "end": "dawn", "timezone": "UTC"}, "end"),
+        ({"start": "22:00", "end": "22:00", "timezone": "UTC"}, "differ"),
+        ({"start": "22:00", "end": "07:00", "timezone": "Mars/Base"}, "timezone"),
+        ("22:00-07:00", "start"),
+    ],
+)
+def test_a_quiet_hours_window_that_cannot_be_read_is_a_400_naming_it_and_changes_nothing(
+    tmp_path: Path, window: object, names: str
+) -> None:
+    runtime = _runtime(tmp_path)
+
+    status, body = _put(runtime, {"quietHours": window})
+
+    assert status == 400 and names in body["error"]
+    assert runtime.quiet_hours.get() is None
+
+
+def test_a_quiet_hours_put_from_outside_the_private_network_is_refused(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    assert _put(runtime, {"quietHours": QUIET}, "203.0.113.9")[0] == 403
+    assert runtime.quiet_hours.get() is None
+
+
+def test_inside_quiet_hours_the_loop_admits_nothing_and_the_next_pick_waits_for_them(tmp_path: Path) -> None:
+    runtime = _looping(tmp_path)
+    runtime.set_enabled(True)
+    _put(runtime, {"quietHours": QUIET})
+    assert runtime.loop is not None
+
+    assert runtime.loop.tick() == []
+    assert autopilot("127.0.0.1", "GET", b"", runtime)[1]["next"] == {
+        "task": "T-4",
+        "title": "Serve it",
+        "verdict": "waits",
+        "reason": "quiet hours",
+    }
+
+    _put(runtime, {"quietHours": None})
+
+    assert runtime.loop.tick() == ["T-4"]
 
 
 @pytest.fixture

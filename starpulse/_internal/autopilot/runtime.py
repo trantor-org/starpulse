@@ -18,6 +18,7 @@ from starpulse._internal.autopilot.inputs import review_points, sessions_in_flig
 from starpulse._internal.autopilot.ledger import LEDGER_FILE, Ledger
 from starpulse._internal.autopilot.loop import Loop
 from starpulse._internal.autopilot.probe import LocalProbe
+from starpulse._internal.autopilot.quiet_hours import QuietHoursSetting
 from starpulse._internal.autopilot.sampler import Crossing, Sampler
 from starpulse._internal.autopilot.toggle import TOGGLE_FILE, Toggle
 from starpulse._internal.board.seam import Written
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 class Runtime:
     toggle: Toggle
     sampler: Sampler
+    quiet_hours: QuietHoursSetting
     loop: Loop | None = None
     _push_status: Callable[[], None] | None = None
 
@@ -40,6 +42,14 @@ class Runtime:
         """Set the switch; turning it on wakes the loop, which admits what capacity allows without waiting for an event."""
         self.toggle.set(value)
         if value and self.loop is not None:
+            self.loop.wake()
+        self.push_status()
+
+    def set_quiet_hours(self, raw: object) -> None:
+        """Keep the window (None clears it); a window `parse` refuses raises ValueError. The loop wakes, since a window
+        that no longer covers now may let a task in."""
+        self.quiet_hours.set(raw)
+        if self.loop is not None:
             self.loop.wake()
         self.push_status()
 
@@ -52,6 +62,7 @@ class Runtime:
         readings, at = self.sampler.readings()
         body: dict[str, Any] = {
             "enabled": self.toggle.get(),
+            "quietHours": self.quiet_hours.state(),
             "sampledAt": at,
             "dimensions": [{"name": r.name, "use": r.use, "limit": r.limit} for r in readings],
         }
@@ -131,6 +142,7 @@ def build(
         clock=clock,
     )
     toggle = Toggle(log, state_dir / TOGGLE_FILE)
+    quiet_hours = QuietHoursSetting(log)
     if start is not None and settle is not None:
         loop = Loop(
             feed=feed,
@@ -144,5 +156,6 @@ def build(
             lane=lane,
             claim=claim,
             clock=clock,
+            quiet_hours=quiet_hours.get,
         )
-    return Runtime(toggle, sampler, loop)
+    return Runtime(toggle, sampler, quiet_hours, loop)

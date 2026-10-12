@@ -659,6 +659,7 @@ body.dragging, body.dragging * { user-select: none; }
 #admin .hours input { box-sizing: border-box; width: 70px; height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 20%, transparent); background: color-mix(in srgb, var(--field) 70%, transparent);
   color: var(--ink); font: inherit; font-size: calc(12px * var(--fs)); outline: none; font-variant-numeric: tabular-nums; }
 #admin .hours input:focus { border-color: var(--agent); }
+#admin .hours input[type=time] { width: auto; color-scheme: dark; } #admin .hours input:disabled { opacity: .45; }
 #admin .chips { display: flex; gap: 4px; } #admin .chips button { all: unset; padding: 1px 7px; border-radius: 4px; background: color-mix(in srgb, var(--slate) 10%, transparent); font-size: calc(10.5px * var(--fs)); color: var(--slate); }
 #admin .chips button:hover { color: var(--ink); } #admin .chips button:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
 #admin .refusal { margin-top: 8px; padding: 8px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); background: color-mix(in srgb, var(--fail-bg) 60%, transparent); color: var(--fail-hi); font-size: calc(11px * var(--fs)); line-height: 1.5; }

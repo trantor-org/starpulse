@@ -14,6 +14,7 @@ from starpulse._internal.autopilot.loop import Loop
 from starpulse._internal.autopilot.sampler import Sampler
 from starpulse._internal.autopilot.toggle import Toggle
 from starpulse._internal.board.seam import Written
+from starpulse._internal.autopilot.quiet_hours import QuietHours
 from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -33,7 +34,9 @@ class Rig:
     the board writer's change would reach it.
     """
 
-    def __init__(self, tmp_path: Path, limits: Mapping[str, float] | None = None, **policy: Any) -> None:
+    def __init__(
+        self, tmp_path: Path, limits: Mapping[str, float] | None = None, quiet: QuietHours | None = None, **policy: Any
+    ) -> None:
         self.now = START
         self.host = {"cpu": 5.0, "memory": 5.0}
         self.feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
@@ -68,6 +71,7 @@ class Rig:
             lane="ready",
             claim=self._claim,
             clock=lambda: self.now,
+            quiet_hours=lambda: quiet,
         )
 
     def _claim(self, task: str, text: str) -> Written:
@@ -382,3 +386,47 @@ def test_reading_the_next_pick_logs_no_decision(rig: Rig, caplog: pytest.LogCapt
         rig.loop.next_pick()
 
     assert caplog.records == []
+
+
+# The rig's clock starts at 10_000 s, 02:46:40 UTC on 1 January 1970, inside this window; 3_600 s is 01:00, outside it.
+QUIET = QuietHours("02:00", "04:00", "UTC")
+BEFORE_QUIET = 3_600.0
+
+
+def test_nothing_is_admitted_inside_quiet_hours_and_a_session_in_flight_is_untouched(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, quiet=QUIET)
+    rig.now = BEFORE_QUIET
+    rig.put("T-1")
+    assert rig.loop.tick() == ["T-1"]  # outside the window an eligible task is admitted
+
+    rig.now = START
+    rig.session("T-1")
+    rig.put("T-2")
+
+    assert rig.loop.tick() == [] and rig.started == ["T-1"]
+    assert [session["task"] for session in rig.loop.in_flight()] == ["T-1"]
+
+    rig.now = START + 2 * 3600  # 04:46, past the window's end
+    rig.session("T-1")
+
+    assert rig.loop.tick() == ["T-2"]
+
+
+def test_an_idle_session_is_still_settled_inside_quiet_hours(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, quiet=QUIET)
+    rig.now = BEFORE_QUIET
+    rig.put("T-1")
+    rig.loop.tick()
+
+    rig.now = START  # inside the window and past idle_minutes: only admission stops
+    rig.loop.tick()
+
+    assert [task for task, _ in rig.settled] == ["T-1"]
+
+
+def test_next_pick_names_quiet_hours_as_why_the_top_task_waits(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, quiet=QUIET)
+    rig.put("T-1")
+    rig.sampler.sample()
+
+    assert rig.loop.next_pick() == {"task": "T-1", "title": "T-1", "verdict": "waits", "reason": "quiet hours"}

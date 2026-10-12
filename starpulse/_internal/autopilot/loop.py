@@ -8,7 +8,7 @@ status of a sample that leaves room for a task admission turned away. Each wake 
    lane it went to, its duration and its resource peak);
 2. a session idle past `idle_minutes` with its task still open is settled to Needs attention once, with a reason, and is
    never started again;
-3. while the switch is on, `decide` ranks the Ready tasks and the loop starts the first admitted, then decides again over
+3. while the switch is on and the clock is outside the quiet hours, `decide` ranks the Ready tasks and the loop starts the first admitted, then decides again over
    readings that carry that run's demand, until none is admitted.
 
 A run holds its capacity from its start until its task leaves In Progress. While the harness has not yet seen its session
@@ -32,6 +32,7 @@ from typing import Any
 from starpulse._internal.autopilot.admission import Decision, decide, tier_of
 from starpulse._internal.autopilot.inputs import points
 from starpulse._internal.autopilot.ledger import Ledger, RunRecord
+from starpulse._internal.autopilot.quiet_hours import QuietHours
 from starpulse._internal.autopilot.sampler import PERIOD, Reading, Sampler
 from starpulse._internal.autopilot.toggle import Toggle
 from starpulse._internal.board.seam import Written
@@ -66,8 +67,8 @@ class Loop:
 
     `start` takes a task id and answers the session's address, raising `StartFailedError` when it cannot; `settle` moves a
     task to Needs attention with the reason and says whether it did; `chain` is the trajectory chain `decide` ranks on.
-    `lane` is the eligible lane, `claim` comments a started session's address on its task, and `clock` is the loop's
-    notion of now.
+    `lane` is the eligible lane, `claim` comments a started session's address on its task, `clock` is the loop's notion
+    of now, and `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds.
     """
 
     def __init__(
@@ -84,6 +85,7 @@ class Loop:
         lane: str,
         claim: Callable[[str, str], Written] | None = None,
         clock: Callable[[], float] = time.time,
+        quiet_hours: Callable[[], QuietHours | None] = lambda: None,
     ) -> None:
         self._feed = feed
         self._policy = policy
@@ -96,6 +98,7 @@ class Loop:
         self._lane = lane
         self._claim = claim
         self._clock = clock
+        self._quiet_hours = quiet_hours
         self._running: dict[str, _Run] = {}
         self._events: queue.Queue | None = None
         self._sampled_at: float | None = None  # the sample of the last `autopilot` status the loop was offered
@@ -129,7 +132,7 @@ class Loop:
         self._observe()
         self._finish(now)
         self._reap(now)
-        if not admit or not self._toggle.get():
+        if not admit or not self._toggle.get() or self._quiet(now):
             return []
         return self._admit(now)
 
@@ -177,6 +180,11 @@ class Loop:
                 }
             )
         return sessions
+
+    def _quiet(self, now: float) -> bool:
+        """Whether `now` is inside the quiet hours, when the loop admits nothing and finishes and settles runs as ever."""
+        quiet = self._quiet_hours()
+        return quiet is not None and quiet.contains(now)
 
     def _safely(self, tick: Callable[..., object], **kwargs: Any) -> None:
         try:
@@ -269,7 +277,8 @@ class Loop:
         """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.
 
         Read for `GET /api/autopilot`, so it decides over the sampler's last reading without sampling and logs nothing;
-        None before the first sample or with no workable task in the eligible lane. It does not depend on the switch.
+        None before the first sample or with no workable task in the eligible lane. It does not depend on the switch; inside
+        quiet hours the top task waits for them, whatever room the host has.
         """
         if not self._sampler.readings()[0]:
             return None
@@ -278,11 +287,12 @@ class Loop:
             return None
         top = decisions[0]  # the admitted in enforced order come first, then the refused by depth
         agent = next(a for a in tasks if a["id"] == top.task)
+        waits = not top.admitted or self._quiet(self._clock())
         return {
             "task": top.task,
             "title": agent["title"],
-            "verdict": "starting" if top.admitted else "waits",
-            "reason": "goes next" if top.admitted else top.blocked_by,
+            "verdict": "waits" if waits else "starting",
+            "reason": top.blocked_by if not top.admitted else "quiet hours" if waits else "goes next",
         }
 
     def _admit(self, now: float) -> list[str]:
