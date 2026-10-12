@@ -101,6 +101,11 @@ event_log_retention_days = 7   # the default
 # this file unless absolute. A `serve --hub` prunes no rows and writes no archive.
 event_log_archive_dir = "starpulse-archive"   # the default
 
+# The seconds a `GET /api/pulls` read may take, from accept to the last byte written, before `serve` logs a `slow_read`
+# line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer
+# and wrote it, and `in_flight`, the `/api/pulls` reads running when it began. No other route is timed. Above 0.
+slow_read_seconds = 1   # the default
+
 # The board adapter: a module under `starpulse`, or the dotted path of one an installed package provides.
 # The rest of the table is that adapter's settings.
 # With no [board] table the view draws its own Markdown board, `type = "native"`:

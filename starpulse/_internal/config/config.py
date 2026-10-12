@@ -37,6 +37,9 @@ from starpulse._internal.config.analytics import Analytics, AnalyticsError, pars
 from starpulse._internal.config.search import Search, SearchError, parse_search
 from starpulse._internal.config.triggers import Trigger, TriggerError, parse_triggers
 
+#: The default of `slow_read_seconds`.
+SLOW_READ_S = 1.0
+
 #: The board adapter type a config without a `[board]` table names.
 DEFAULT_TYPE = "native"
 
@@ -66,6 +69,7 @@ _KEYS = {
     "search",
     "refresh_token_env",
     "pull_requests",
+    "slow_read_seconds",
 }
 _OIDC_KEYS = {
     "issuer",
@@ -456,6 +460,8 @@ class Config:
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
     pull_requests: bool = True
     """`serve` keeps the pull request store, refreshing it from GitHub every minute; false: no store, so an instance beside another that reads the same repositories spends none of the GitHub budget on a store no one reads."""
+    slow_read_seconds: float = SLOW_READ_S
+    """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
     release: Release | None = None
@@ -564,6 +570,13 @@ def _retention(value: object, key: str) -> int:
     return value
 
 
+def _slow_read(value: object) -> float:
+    """The seconds a read takes to be logged as slow; a number above zero."""
+    if not isinstance(value, int | float) or isinstance(value, bool) or not value > 0:
+        raise ConfigError("slow_read_seconds must be a number of seconds above 0")
+    return float(value)
+
+
 def _archive_dir(value: object) -> str:
     """The directory `event_log_archive_dir` names; text, not empty."""
     if not isinstance(value, str) or not value:
@@ -642,4 +655,5 @@ def load(path: Path | None) -> Config:
         search=_search(raw.get("search")),
         refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
         pull_requests=_flag(raw, "pull_requests", True),
+        slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),
     )

@@ -53,6 +53,7 @@ from starpulse._internal.runs.ingest import ForwardIngest, Ingest
 from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.server.server import assemble as _assemble
+from starpulse._internal.config.config import SLOW_READ_S
 from starpulse._internal.server.server import StarPulseServer, request_handler
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import (
@@ -388,6 +389,7 @@ def serve(
     search: SearchIndex | None = None,
     analytics: Analytics | None = None,
     pull_refresh: PullRefresh | None = None,
+    slow_read_s: float = SLOW_READ_S,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -432,6 +434,7 @@ def serve(
         search=search,
         analytics=analytics,
         pull_refresh=pull_refresh,
+        slow_read_s=slow_read_s,
     )
     server = StarPulseServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

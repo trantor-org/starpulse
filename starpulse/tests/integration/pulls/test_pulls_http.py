@@ -1,6 +1,9 @@
 """GET /api/pulls against StarPulse's own store: the pull requests it read from GitHub, filtered and dated."""
 
 import json
+import logging
+import re
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -143,3 +146,47 @@ def test_metrics_serves_the_server_process_gauges_with_or_without_a_pull_store(t
     assert int(samples["process_threads"]) > 0
     assert int(samples["process_open_fds"]) > 0
     assert float(samples["process_start_time_seconds"]) > 1_700_000_000
+
+
+def _slow_reads(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if "slow_read" in r.getMessage()]
+
+
+def _slow_store(tmp_path: Path, seconds: float) -> PullStore:
+    store = PullStore(create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}"))
+    store.save([_pull("acme/widgets", 1, "OPEN", "Session: aaa-111", 100.0)])
+    find = store.find
+
+    def slow_find(*args: object, **kwargs: object) -> list[dict]:
+        time.sleep(seconds)
+        return find(*args, **kwargs)
+
+    store.find = slow_find  # type: ignore[method-assign]
+    return store
+
+
+def test_slow_read_logs_one_line_with_the_query_and_each_phase_in_seconds(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=_slow_store(tmp_path, 0.2), slow_read_s=0.1) as server:
+        _get(server, "?repo=acme/widgets")
+
+    (line,) = _slow_reads(caplog)
+    assert "query=repo=acme/widgets" in line
+    fields = dict(re.findall(r"(queue_s|compute_s|write_s|in_flight)=([0-9.]+)", line))
+    assert float(fields["compute_s"]) >= 0.2
+    assert set(fields) == {"queue_s", "compute_s", "write_s", "in_flight"}
+    assert fields["in_flight"] == "1"
+
+
+def test_slow_read_logs_nothing_for_a_fast_read_or_a_slow_read_of_another_route(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=_slow_store(tmp_path, 0.0), slow_read_s=60.0) as server:
+        _get(server, "")
+    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=_slow_store(tmp_path, 0.0), slow_read_s=0.0) as server:
+        urllib.request.urlopen(url(server, "/metrics"), timeout=5).read()
+
+    assert _slow_reads(caplog) == []
