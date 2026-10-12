@@ -287,13 +287,17 @@ class UpstreamBacklog:
             moves={} if settled else dict(self._moves.get(lane, {})),
         )
 
-    def start(self, interval: float = 2.0) -> threading.Thread:  # pragma: no mutate block — polling thread plumbing
-        """Scan now and then every `interval` seconds on a daemon thread, and return it."""
+    def start(
+        self, interval: float = 2.0, scanned: Callable[[], None] = lambda: None
+    ) -> threading.Thread:  # pragma: no mutate block — polling thread plumbing
+        """Scan now and then every `interval` seconds on a daemon thread, and return it; `scanned` runs once, after the first scan."""
 
         def run() -> None:
+            self.scan()
+            scanned()
             while True:
-                self.scan()
                 time.sleep(interval)
+                self.scan()
 
         thread = threading.Thread(target=run, name="upstream-backlog", daemon=True)
         thread.start()
@@ -376,7 +380,12 @@ def project_board(
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         # Built here, not at load: a `Move` is an adapter model, and a board read never starts the poll.
-        UpstreamBacklog(root, feed.put, board_moves(drawn, declared, lane_ids), feed.retract).start(interval)
+        # The first scan is the feed's replay: it places every file, the Ledger is built once at its end rather than
+        # once per task, and a write meeting it waits for the task it places.
+        feed.await_stream()
+        UpstreamBacklog(root, feed.put, board_moves(drawn, declared, lane_ids), feed.retract).start(
+            interval, scanned=lambda: feed.expect("0-0")
+        )
 
     return Board(
         machines=machines,

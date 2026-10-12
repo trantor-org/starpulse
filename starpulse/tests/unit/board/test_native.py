@@ -121,7 +121,7 @@ def served_with_machine(
     base: Path, machine: str, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> BoardFeed:
     """A native board holding `task-1` in To Do whose `board.yaml` is `machine`, served from `starpulse.toml`."""
-    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: self.scan())
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
     (base / "board.yaml").write_text(machine)
     (base / "starpulse.toml").write_text('[board]\ntype = "native"\nmachine = "board.yaml"\n')
     native_root(base).mkdir(parents=True)
@@ -217,7 +217,7 @@ def test_a_move_the_machine_leaves_to_the_operator_is_refused_to_an_agent_with_i
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path, built = project(tmp_path)
-    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: self.scan())
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
     feed = BoardFeed(machines=built.machines(lambda name: name, ()), keys=built.keys)
     built.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
 
