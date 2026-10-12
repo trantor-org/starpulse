@@ -258,6 +258,8 @@ class BoardFeed:
         self._lane_rows: Callable[..., list[LaneRow]] | None = None
         #: Set once the stream has been read up to the last entry it held when the feed started.
         self.ready = threading.Event()
+        #: The log's head when the feed turned ready, i.e. where the replay's lane entries end (`replay_head`).
+        self._replay_head: int | None = None
         #: The whole Ledger as last built, which every page request reads (`_refresh_ledgers`); with no pull, run or
         #: lane history yet it holds only the empty events, so its window does not matter.
         self._ledger_full = self._ledger({}, {}, 0.0)
@@ -306,9 +308,23 @@ class BoardFeed:
         with self._lock:
             if self.ready.is_set():
                 return
+            self._replay_head = self._log_head()
             self.ready.set()
             # the replay published no step, so a page connected through it is handed the Board it built in one piece
             self._publish("snapshot", self.snapshot())
+
+    def _log_head(self) -> int | None:
+        if self._lane_log is None:
+            return None
+        try:
+            return self._lane_log.head()
+        except Exception as exc:  # the log is down; a reader falls back to its own head
+            logger.warning("StarPulse: cannot read the lane log head: %s", exc)
+            return None
+
+    def replay_head(self) -> int | None:
+        """The lane log's head at the moment the replay ended, None before then or without a readable log."""
+        return self._replay_head
 
     def _replaying(self) -> bool:
         return self._awaiting and not self.ready.is_set()

@@ -1829,7 +1829,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         threading.Thread(
             target=run_triggers,
             args=(config.triggers, starts, store, log, threading.Event()),
-            kwargs={"replayed": feed.wait_replayed},
+            kwargs={"replayed": feed.wait_replayed, "replay_head": feed.replay_head},
             name="board-triggers",
             daemon=True,
         ).start()
