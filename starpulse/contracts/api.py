@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 
@@ -1723,10 +1724,66 @@ _ADAPTERS: dict[int, TypeAdapter[Any]] = {}
 def encode(kind: str, data: Any) -> bytes:
     """The JSON bytes of `data` as the route `kind` may send it, raising `ValidationError` for a body no model of
     `BODIES[kind]` accepts; the page reads only fields a model names."""
-    annotation = BODIES[kind]
-    if (adapter := _ADAPTERS.get(id(annotation))) is None:  # built once: building one costs more than a small body
-        adapter = _ADAPTERS[id(annotation)] = TypeAdapter(annotation)
+    adapter = _adapter(BODIES[kind])  # built once: building one costs more than a small body
     return adapter.dump_json(adapter.validate_python(data), by_alias=True, exclude_unset=True)
+
+
+def _adapter(annotation: Any) -> TypeAdapter[Any]:
+    if (adapter := _ADAPTERS.get(id(annotation))) is None:
+        adapter = _ADAPTERS[id(annotation)] = TypeAdapter(annotation)
+    return adapter
+
+
+_Held = dict[int, tuple[Any, bytes]]
+
+
+def _dump_all(items: Iterable[Any], annotation: Any, held: _Held, kept: _Held) -> list[bytes]:
+    """The JSON of each of `items`: the one `held` has for the object, else made now. Each is recorded in `kept`."""
+    adapter = _adapter(annotation)
+    dumps = []
+    for item in items:
+        kept[id(item)] = entry = held.get(id(item)) or (
+            item,
+            adapter.dump_json(adapter.validate_python(item), by_alias=True, exclude_unset=True),
+        )
+        dumps.append(entry[1])
+    return dumps
+
+
+def encode_snapshot(data: Any, held: _Held) -> bytes:
+    """`encode("snapshot", data)`, with the JSON of each board task and ledger row kept in `held` between calls.
+
+    `held` maps `id(object)` to the object and its JSON: the feed replaces a task or a row it changes rather than
+    editing it, so one met again encodes the same, and one no longer listed is forgotten. Those are most of the
+    snapshot, so a build after one change validates and dumps only what changed and the rest of the document.
+    """
+    flows = data["flows"]
+    ledgers = data.get("ledgers")
+    if not flows or flows[0]["name"] != "board":
+        return encode("snapshot", data)
+    kept: _Held = {}
+    rows = {event: _dump_all(found, LedgerRow, held, kept) for event, found in (ledgers or {}).items()}
+    tasks = _dump_all(flows[0]["agents"], RawAgent, held, kept)
+    held.clear()
+    held.update(kept)
+    drawn = {**data, "flows": [{**flows[0], "agents": []}, *flows[1:]]}
+    if ledgers:
+        drawn["ledgers"] = {}
+    body = encode("snapshot", drawn)
+    try:
+        if ledgers:
+            named = (json.dumps(event, ensure_ascii=False).encode() for event in rows)
+            events = b",".join(b"%s:[%s]" % (name, b",".join(dumps)) for name, dumps in zip(named, rows.values()))
+            body = _splice(body, b'"ledgers":{}', b'"ledgers":{%s}' % events)
+        return _splice(body, b'"agents":[]', b'"agents":[%s]' % b",".join(tasks), after=b'"flows":[{"name":"board"')
+    except ValueError:  # the document is not drawn as it was: encode it whole
+        return encode("snapshot", data)
+
+
+def _splice(body: bytes, marker: bytes, drawn: bytes, after: bytes = b"") -> bytes:
+    """`body` with the first `marker` past the first `after` replaced by `drawn`; ValueError when either is absent."""
+    at = body.index(marker, body.index(after))
+    return body[:at] + drawn + body[at + len(marker) :]
 
 
 def event(name: str, data: Any) -> str:

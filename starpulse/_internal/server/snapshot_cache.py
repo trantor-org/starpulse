@@ -1,9 +1,10 @@
 """The encoded snapshot, held between changes.
 
-Encoding the snapshot costs about 100 ms of the interpreter, which every other request thread waits out, so the server
-encodes it once per change to the feed instead of once per request. A background thread rebuilds it shortly after a
-change, so a page that connects finds it current; a request that finds it out of date builds it itself, once however
-many ask at the same time, so what is served always includes every change made before the request.
+Encoding the snapshot costs about 100 ms of the interpreter, which every other request thread waits out, and gzipping
+it tens of ms more, so the server does both once per change to the feed instead of once per request, and encodes only
+the board tasks that changed. A background thread rebuilds it shortly after a change, so a page that connects finds it
+current; a request that finds it out of date builds it itself, once however many ask at the same time, so what is
+served always includes every change made before the request.
 """
 
 import hashlib
@@ -12,10 +13,11 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
-from starpulse.contracts.api import encode
+from starpulse.contracts.api import encode_snapshot
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.server.compression import Encoded
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +35,14 @@ class Served(NamedTuple):
     #: The publish count the snapshot was taken at.
     sent: int
     at: float
-    body: bytes
+    #: The body with its gzip, made when it was built so no request compresses it.
+    encoded: Encoded
     #: The body's digest, which names it at `/api/events/body/<key>`.
     key: str
+
+    @property
+    def body(self) -> bytes:
+        return self.encoded.body
 
 
 class SnapshotCache:
@@ -53,7 +60,9 @@ class SnapshotCache:
         self._held: Served | None = None
         self._building = threading.Lock()
         self._thread: threading.Thread | None = None
-        self._kept: OrderedDict[str, bytes] = OrderedDict()
+        self._kept: OrderedDict[str, Encoded] = OrderedDict()
+        #: Each board task's JSON, kept between builds so one that changed is the only one encoded afresh.
+        self._tasks: dict[int, tuple[Any, bytes]] = {}
 
     def _current(self, held: Served | None) -> bool:
         return held is not None and held.rev == self._feed.rev and self._clock() - held.at < self._ttl_s
@@ -67,14 +76,14 @@ class SnapshotCache:
             if self._current(held := self._held):
                 return held  # type: ignore[return-value]
             rev, sent, snapshot = self._feed.snapshot_at()
-            body = encode("snapshot", snapshot)
-            self._held = held = Served(rev, sent, self._clock(), body, hashlib.sha1(body).hexdigest())
-            self._kept[held.key] = body
+            encoded = Encoded.of(encode_snapshot(snapshot, self._tasks))
+            self._held = held = Served(rev, sent, self._clock(), encoded, hashlib.sha1(encoded.body).hexdigest())
+            self._kept[held.key] = encoded
             while len(self._kept) > KEPT:
                 self._kept.popitem(last=False)
             return held
 
-    def body(self, key: str) -> bytes | None:
+    def body(self, key: str) -> Encoded | None:
         """The snapshot `key` names, while it is one of the last few built."""
         return self._kept.get(key)
 

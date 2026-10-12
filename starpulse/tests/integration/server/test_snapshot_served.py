@@ -1,5 +1,6 @@
 """How the server serves the snapshot: encoded once per change, never once per request."""
 
+import gzip
 import threading
 import time
 import urllib.error
@@ -10,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.feed import snapshot_cache
+from starpulse._internal.server import snapshot_cache
 from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
@@ -113,16 +114,16 @@ def test_a_page_connecting_during_a_rebuild_is_not_held_up_by_it(tmp_path: Path,
     feed.put(task("PROJ-1", "To Do"))
     release = threading.Event()
     building = threading.Event()
-    real = snapshot_cache.encode
+    real = snapshot_cache.encode_snapshot
     stalled = False
 
-    def slow(kind: str, data: dict) -> bytes:
+    def slow(data: dict, held: dict) -> bytes:
         if stalled:
             building.set()
             release.wait(10)
-        return real(kind, data)
+        return real(data, held)
 
-    monkeypatch.setattr(snapshot_cache, "encode", slow)
+    monkeypatch.setattr(snapshot_cache, "encode_snapshot", slow)
     with _serve(tmp_path, feed) as server:
         _get(server)  # held, current
         stalled = True
@@ -178,3 +179,30 @@ def test_a_snapshot_body_the_server_does_not_hold_is_not_found(tmp_path: Path) -
         with pytest.raises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(_url(server, "/api/events/body/" + "0" * 40), timeout=5)
     assert refused.value.code == 404
+
+
+def test_a_snapshot_is_gzipped_when_built_not_by_the_request_that_reads_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-1", description="x" * 100_000))  # over the size gzip is worth
+    compressions: list[int] = []
+    real = gzip.compress
+
+    def counting(data: bytes, *args: object, **kwargs: object) -> bytes:
+        compressions.append(len(data))
+        return real(data, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(gzip, "compress", counting)
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/events?snapshot=ref"), timeout=5) as resp:
+            _, ref = _raw_event(resp)  # a page connecting builds the snapshot and reads none of it
+        built = len(compressions)
+        gzipped = urllib.request.Request(_url(server, "/api/snapshot"), headers={"Accept-Encoding": "gzip"})
+        body = urllib.request.Request(_url(server, ref.removeprefix("ref ")), headers={"Accept-Encoding": "gzip"})
+        for request in (gzipped, gzipped, body):
+            with urllib.request.urlopen(request, timeout=5) as resp:
+                assert resp.headers["Content-Encoding"] == "gzip"
+
+    assert built == 1
+    assert len(compressions) == built
