@@ -94,7 +94,7 @@ GET /api/analytics/sessions[?hours=N]
                    session and slice health from the harness OTLP exports the Claude Code receiver recorded
                    (`sessions.session_health`, `sessions.slice_health`) over the last `hours`, default 168:
                    `sessions` (one row per harness session and task, with its prompts, requests, tools,
-                   rejections, tokens, cost and agent, operator-wait and idle seconds) and `slices` (per task, the
+                   rejections and gates, tokens, cost and agent, operator-wait and idle seconds) and `slices` (per task, the
                    sessions that worked it with its interventions, `escalated` and `clean`). A `hours` that is no
                    positive number is 400, as is one longer than the telemetry history (the oldest signal held),
                    with `history_s` its length; a server with no telemetry log is 501 and one that cannot read it 503

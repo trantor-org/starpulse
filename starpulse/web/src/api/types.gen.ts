@@ -1485,6 +1485,9 @@ export interface SessionHealth {
   effort_changes: number;
   efforts: string[];
   first_at: number;
+  gates: {
+    [k: string]: number;
+  };
   harness: string;
   idle_s: number;
   interrupts: number;

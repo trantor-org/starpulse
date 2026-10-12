@@ -185,6 +185,22 @@ def test_rejections_compactions_skills_and_interrupts_are_counted_by_their_name(
     assert (row["skills"], row["interrupts"]) == ({"a": 2}, 1)
 
 
+def test_a_rejection_is_also_counted_by_the_gate_that_refused_it_as_source_and_tool() -> None:
+    found = [
+        sig("decision", 1, name="Bash", ok=False, detail="hook"),
+        sig("decision", 2, name="Edit", ok=False, detail="hook"),
+        sig("decision", 3, name="Bash", ok=False, detail="hook"),
+        sig("decision", 4, name="Bash", ok=False, detail="user"),
+        sig("decision", 5, name="Bash", ok=False, detail=""),
+        sig("decision", 6, name="Bash", ok=True, detail="hook"),
+    ]
+
+    row = only(session_health(found, KEYS))
+
+    assert row["gates"] == {"hook:Bash": 2, "hook:Edit": 1, "user:Bash": 1, "unknown:Bash": 1}
+    assert sum(row["gates"].values()) == sum(row["rejections"].values())
+
+
 def test_a_sessions_kind_is_headless_for_an_sdk_request_and_interactive_for_the_main_thread() -> None:
     headless = [sig("request", 1, session="a", detail="sdk")]
     interactive = [sig("request", 1, session="b", detail="repl_main_thread")]

@@ -712,6 +712,7 @@ class SessionHealth(_Api):
     tool_failures: int
     tools: dict[str, int]
     rejections: dict[str, int]
+    gates: dict[str, int]
     skills: dict[str, int]
     compactions: dict[str, int]
     interrupts: int

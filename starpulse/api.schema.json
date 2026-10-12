@@ -4938,6 +4938,12 @@
         "first_at": {
           "type": "number"
         },
+        "gates": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
         "harness": {
           "type": "string"
         },
@@ -5068,6 +5074,7 @@
         "tool_failures",
         "tools",
         "rejections",
+        "gates",
         "skills",
         "compactions",
         "interrupts",
