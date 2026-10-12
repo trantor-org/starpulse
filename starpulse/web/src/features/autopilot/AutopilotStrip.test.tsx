@@ -182,7 +182,7 @@ describe("the autopilot strip", () => {
     expect(q('[role="switch"]')).toBeNull();
   });
 
-  it("reads again on an interval while its view shows, and stops when it unmounts", async () => {
+  it("reads again on an interval while Autopilot is on and its view shows, and stops when it unmounts", async () => {
     vi.useFakeTimers();
     await draw();
     const reads = () => fetcher.mock.calls.filter(([, init]) => !init?.method).length;
@@ -195,5 +195,30 @@ describe("the autopilot strip", () => {
     root = createRoot(host);
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
     expect(reads()).toBe(2);
+  });
+
+  it("reads once when Autopilot is off, then adds no further GET on the refresh interval", async () => {
+    vi.useFakeTimers();
+    await draw({ enabled: false });
+    const reads = () => fetcher.mock.calls.filter(([, init]) => !init?.method).length;
+    expect(reads()).toBe(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(reads()).toBe(1);
+  });
+
+  it("resumes interval GETs when Autopilot turns on after being off", async () => {
+    vi.useFakeTimers();
+    await draw({ enabled: false });
+    const reads = () => fetcher.mock.calls.filter(([, init]) => !init?.method).length;
+    expect(reads()).toBe(1);
+
+    await act(async () => q<HTMLButtonElement>('[role="switch"]')!.click());
+    await settle();
+    expect(q('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
+    const afterOn = reads();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(reads()).toBe(afterOn + 1);
   });
 });
