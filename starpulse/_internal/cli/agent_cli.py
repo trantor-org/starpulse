@@ -1139,12 +1139,12 @@ def _manifest(parser: argparse.ArgumentParser) -> dict[str, Any]:
 def _parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="starpulse",
-        description="StarPulse: the flow view of workflows and tasks. These verbs read a running server as JSON.",
+        description="StarPulse: workflows and tasks. These verbs read a running server as JSON.",
         epilog="`starpulse serve` runs the server, `starpulse emit` pushes a workflow run and `starpulse forward` sets the hub opt-in, `starpulse connect` sets up a tracker and `starpulse import-history` adds earlier lane changes to the store; each has its own --help.",
     )
     verbs = parser.add_subparsers(dest="command", required=True, metavar="command")
     # Listed so `--help` shows how to start the server; `__main__` hands these words to their own parsers before this one.
-    verbs.add_parser("serve", help="run the flow view's server", add_help=False)
+    verbs.add_parser("serve", help="run StarPulse's server", add_help=False)
     verbs.add_parser("emit", help="push a workflow run onto the runs stream", add_help=False)
     verbs.add_parser("forward", help="let a person's name leave this instance for the hub, or stop it", add_help=False)
     verbs.add_parser("connect", help="set up a native, Backlog.md or Jira board in starpulse.toml", add_help=False)

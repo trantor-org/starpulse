@@ -4,10 +4,10 @@
 design mockup and element sheet (`design/**`) or this preview. A push that changed no such path since the commit the
 comment was rendered from leaves the comment and demos as they are. It builds each changed surface's scrubbed
 one-file demo with `starpulse._internal.cli.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
-inlined, screenshots the demos (of the flow view, only the views the change can reach), publishes them to the `gh-pages` branch GitHub Pages serves
+inlined, screenshots the demos (of StarPulse, only the views the change can reach), publishes them to the `gh-pages` branch GitHub Pages serves
 for this public repository while the pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
 touches the same paths runs it with `--main`, which republishes every demo as `main/`, the live demo and the screenshots the README
-links. The flow view is rendered against `ci/preview.toml`, a demo config naming no real board or runs adapter.
+links. StarPulse is rendered against `ci/preview.toml`, a demo config naming no real board or runs adapter.
 """
 
 from __future__ import annotations
@@ -30,15 +30,15 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-FLOW_VIEW = "flow-view"
+STARPULSE = "starpulse"
 MOCKUP = "design-mockup"
 ELEMENTS = "element-sheet"
 #: The design directory the element sheet owns; it is a surface of its own, not a sub-mockup, so its stylesheet link is inlined.
 ELEMENTS_DIR = "elements"
 #: The paths whose change renders each surface; the workflow's `paths` filter is their union.
 SURFACE_GLOBS = {
-    # the demo's scrub decides what the flow view's demo can draw
-    FLOW_VIEW: (
+    # the demo's scrub decides what StarPulse's demo can draw
+    STARPULSE: (
         "starpulse/web/**",
         "starpulse/_internal/cli/demo.py",
         # of ci/, only what shapes the render: this script and the demo config, adapter and workspace it draws
@@ -57,18 +57,18 @@ PREVIEW_CONFIG = "ci/preview.toml"
 DESIGN = "design"
 #: Each surface's screenshots: a name and the query string the demo file opens with.
 PAGES = {
-    FLOW_VIEW: {
-        "flow-view-star-map": "",
-        "flow-view-kanban": "?view=kanban",
-        "flow-view-orbit": "?view=graph",
-        "flow-view-dags": "?view=dags",
+    STARPULSE: {
+        "starpulse-star-map": "",
+        "starpulse-kanban": "?view=kanban",
+        "starpulse-orbit": "?view=graph",
+        "starpulse-dags": "?view=dags",
     },
     MOCKUP: {"design-mockup": ""},
     ELEMENTS: {"element-sheet": ""},
 }
 _FEATURES = ("starpulse", "web", "src", "features")
-#: The feature folder that draws one flow-view page alone: a feature imports shared code and its own folder, never another's.
-VIEW_DIRS = {"kanban": "flow-view-kanban", "orbit": "flow-view-orbit", "dags": "flow-view-dags"}
+#: The feature folder that draws one starpulse page alone: a feature imports shared code and its own folder, never another's.
+VIEW_DIRS = {"kanban": "starpulse-kanban", "orbit": "starpulse-orbit", "dags": "starpulse-dags"}
 
 
 def _matches(path: str, glob: str) -> bool:
@@ -82,16 +82,16 @@ def surfaces(changed: Iterable[str]) -> list[str]:
 
 
 def pages(surface: str, changed: Iterable[str]) -> dict[str, str]:
-    """The screenshots `surface` takes for a change: every page, or for the flow view only the views `VIEW_DIRS` says
+    """The screenshots `surface` takes for a change: every page, or for StarPulse only the views `VIEW_DIRS` says
     own every changed page path. A path outside those folders may draw on any view, so it shoots them all."""
-    if surface != FLOW_VIEW:
+    if surface != STARPULSE:
         return PAGES[surface]
     views = set()
-    for parts in (PurePosixPath(f).parts for f in changed if any(_matches(f, g) for g in SURFACE_GLOBS[FLOW_VIEW])):
+    for parts in (PurePosixPath(f).parts for f in changed if any(_matches(f, g) for g in SURFACE_GLOBS[STARPULSE])):
         if parts[:4] != _FEATURES or len(parts) < 6 or parts[4] not in VIEW_DIRS:
-            return PAGES[FLOW_VIEW]
+            return PAGES[STARPULSE]
         views.add(VIEW_DIRS[parts[4]])
-    return {name: query for name, query in PAGES[FLOW_VIEW].items() if name in views}
+    return {name: query for name, query in PAGES[STARPULSE].items() if name in views}
 
 
 def demo_name(surface: str) -> str:
@@ -128,7 +128,7 @@ def sub_mockup(directory: Path) -> str:
 MARKER = "<!-- starpulse:ui-preview -->"
 
 _CAVEATS = {
-    FLOW_VIEW: (
+    STARPULSE: (
         "Rendered from the scrubbed demo `starpulse._internal.cli.demo` builds off a server running `ci/preview.toml`: "
         "the synthetic workspace in `ci/workspace` (an eight-lane board, its lifecycle machines and five DAG domains) "
         "filled with synthetic tasks, sessions and runs, and no real board or runs adapter behind it."
@@ -359,7 +359,7 @@ def unpublish_demos(gh: Callable[..., str], folder: str) -> None:
 
 _PLAYWRIGHT_CLI = ("pnpm", "dlx", "@playwright/cli@0.1.22")
 _VIEWPORT = (1600, 1000)
-#: How long a page gets to draw after it opens; the flow view's machines settle within a few seconds.
+#: How long a page gets to draw after it opens; StarPulse's machines settle within a few seconds.
 _SETTLE_MS = 10000
 
 
@@ -400,7 +400,7 @@ def _wait_ready(url: str, seconds: float) -> None:  # pragma: no cover — proce
 
 
 @contextmanager
-def _flow_view() -> Iterator[int]:  # pragma: no cover — process boundary
+def _starpulse() -> Iterator[int]:  # pragma: no cover — process boundary
     """A server on `PREVIEW_CONFIG`, using its isolated preview database."""
     port = _free_port()
     env = {k: v for k, v in os.environ.items() if k != "DATABASE_URI"}
@@ -418,9 +418,9 @@ def _flow_view() -> Iterator[int]:  # pragma: no cover — process boundary
 def _build_demos(names: Sequence[str], out: Path) -> list[Path]:  # pragma: no cover — process boundary
     out.mkdir(parents=True, exist_ok=True)
     built = []
-    if demo_name(FLOW_VIEW) in names:
-        with _flow_view() as port:
-            target = out / demo_name(FLOW_VIEW)
+    if demo_name(STARPULSE) in names:
+        with _starpulse() as port:
+            target = out / demo_name(STARPULSE)
             _run(sys.executable, "-m", "starpulse._internal.cli.demo", "--server", f"http://127.0.0.1:{port}", "--out", str(target))
             built.append(target)
     if demo_name(MOCKUP) in names:
@@ -511,8 +511,8 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
         built = _build_demos([demo_name(s) for s in SURFACE_GLOBS], args.out / "demo")
         with _serve(args.out / "demo") as port:  # the README shows these
             shots = [
-                _shoot(f"http://127.0.0.1:{port}/{demo_name(FLOW_VIEW)}{query}", args.out / "demo" / f"{name}.png")
-                for name, query in PAGES[FLOW_VIEW].items()
+                _shoot(f"http://127.0.0.1:{port}/{demo_name(STARPULSE)}{query}", args.out / "demo" / f"{name}.png")
+                for name, query in PAGES[STARPULSE].items()
             ]
         print(*publish_demos(_demo_gh, MAIN_FOLDER, built + shots, args.out / "requests"), sep="\n")
         return 0

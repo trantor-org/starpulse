@@ -1,4 +1,4 @@
-"""The task key an adapter declares: its pattern, its branch mapping, and the flow view placing by it."""
+"""The task key an adapter declares: its pattern, its branch mapping, and StarPulse placing by it."""
 
 import json
 import re
@@ -48,7 +48,7 @@ def test_a_branch_maps_to_its_task_key_through_the_scheme_format() -> None:
     assert [PROJ.for_branch(ref) for ref in ("main", "feature/other", "", None)] == [None] * 4
 
 
-def test_the_flow_view_places_a_task_whose_key_the_adapter_declared() -> None:
+def test_starpulse_places_a_task_whose_key_the_adapter_declared() -> None:
     feed = BoardFeed(machines=MACHINES)
     tasks = MachineTasks(feed, keys=PROJ)
 

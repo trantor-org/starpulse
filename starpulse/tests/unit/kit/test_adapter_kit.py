@@ -203,8 +203,8 @@ def test_the_placement_check_alone_fails_a_record_the_view_drops_for_its_key() -
     board = adapter(BoardAdapterKit, [{**TASK, "id": "OPS-1"}])
     machine = adapter(MachineEventsAdapterKit, [{**EVENT, "task": "OPS-1"}])
 
-    assert failing(getattr(board, "test_the_flow_view_places_every_task_in_its_lane_or_as_settled"))
-    assert failing(getattr(machine, "test_the_flow_view_places_every_task_an_event_moved"))
+    assert failing(getattr(board, "test_starpulse_places_every_task_in_its_lane_or_as_settled"))
+    assert failing(getattr(machine, "test_starpulse_places_every_task_an_event_moved"))
 
 
 @pytest.mark.parametrize("status", ["not_started", "queued", "running", "succeeded", "failed", "aborted", "skipped"])

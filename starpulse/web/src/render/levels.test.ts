@@ -189,6 +189,6 @@ describe("machines entered from the top, each a level of its own", () => {
   });
 
   it("reads `open=` on a demo page, whose address is a file under a folder, not a graph name", () => {
-    expect(startPath("/starpulse-demo/pr-1/flow-view.html", "", null, D, { open: "scan" })).toEqual(down("audit", "scan"));
+    expect(startPath("/starpulse-demo/pr-1/starpulse.html", "", null, D, { open: "scan" })).toEqual(down("audit", "scan"));
   });
 });

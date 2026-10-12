@@ -12,7 +12,7 @@ from ui_preview import (
     DEMO_BRANCH,
     DEMO_REPO,
     ELEMENTS,
-    FLOW_VIEW,
+    STARPULSE,
     MAIN_FOLDER,
     MARKER,
     MOCKUP,
@@ -46,18 +46,18 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.mark.parametrize(
     ("changed", "expected"),
     [
-        (["starpulse/web/src/App.tsx"], [FLOW_VIEW]),
-        (["ci/preview.toml"], [FLOW_VIEW]),
-        (["ci/ui_preview.py"], [FLOW_VIEW]),
-        (["ci/demo_workspace.py"], [FLOW_VIEW]),
-        (["ci/workspace/board.yaml"], [FLOW_VIEW]),
+        (["starpulse/web/src/App.tsx"], [STARPULSE]),
+        (["ci/preview.toml"], [STARPULSE]),
+        (["ci/ui_preview.py"], [STARPULSE]),
+        (["ci/demo_workspace.py"], [STARPULSE]),
+        (["ci/workspace/board.yaml"], [STARPULSE]),
         (["ci/select_tests.py", "ci/test_ui_preview.py", "ci/seeded_server.py"], []),
-        ([".github/workflows/ui-preview.yml"], [FLOW_VIEW]),
-        (["starpulse/_internal/cli/demo.py"], [FLOW_VIEW]),
+        ([".github/workflows/ui-preview.yml"], [STARPULSE]),
+        (["starpulse/_internal/cli/demo.py"], [STARPULSE]),
         (["design/hub/index.html"], [MOCKUP]),
         (["design/elements/index.html"], [MOCKUP, ELEMENTS]),
-        (["starpulse/web/src/style.css"], [FLOW_VIEW, ELEMENTS]),
-        (["design/data.js", "starpulse/web/src/features/kanban/Kanban.tsx"], [FLOW_VIEW, MOCKUP]),
+        (["starpulse/web/src/style.css"], [STARPULSE, ELEMENTS]),
+        (["design/data.js", "starpulse/web/src/features/kanban/Kanban.tsx"], [STARPULSE, MOCKUP]),
         (["starpulse/_internal/server/server.py", "README.md", "starpulse/tests/unit/cli/test_demo.py", ".github/workflows/ci.yml"], []),
     ],
 )
@@ -73,23 +73,23 @@ ORBIT = "starpulse/web/src/features/orbit/orbitDraw.ts"
 @pytest.mark.parametrize(
     ("changed", "expected"),
     [
-        ([KANBAN], ["flow-view-kanban"]),
-        ([DAGS], ["flow-view-dags"]),
-        ([ORBIT], ["flow-view-orbit"]),
-        ([DAGS, KANBAN, "README.md", "design/data.js"], ["flow-view-kanban", "flow-view-dags"]),
+        ([KANBAN], ["starpulse-kanban"]),
+        ([DAGS], ["starpulse-dags"]),
+        ([ORBIT], ["starpulse-orbit"]),
+        ([DAGS, KANBAN, "README.md", "design/data.js"], ["starpulse-kanban", "starpulse-dags"]),
         # anything the three view folders do not own may draw on every view
-        ([KANBAN, "starpulse/web/src/App.tsx"], list(PAGES[FLOW_VIEW])),
-        ([KANBAN, "starpulse/web/src/features/level/ledger.ts"], list(PAGES[FLOW_VIEW])),
-        (["starpulse/web/src/features/kanban"], list(PAGES[FLOW_VIEW])),
-        (["ci/preview.toml"], list(PAGES[FLOW_VIEW])),
+        ([KANBAN, "starpulse/web/src/App.tsx"], list(PAGES[STARPULSE])),
+        ([KANBAN, "starpulse/web/src/features/level/ledger.ts"], list(PAGES[STARPULSE])),
+        (["starpulse/web/src/features/kanban"], list(PAGES[STARPULSE])),
+        (["ci/preview.toml"], list(PAGES[STARPULSE])),
     ],
 )
-def test_the_flow_view_shoots_only_the_views_whose_folder_holds_every_changed_page_path(changed: list[str], expected: list[str]) -> None:
-    assert list(pages(FLOW_VIEW, changed)) == expected
+def test_starpulse_shoots_only_the_views_whose_folder_holds_every_changed_page_path(changed: list[str], expected: list[str]) -> None:
+    assert list(pages(STARPULSE, changed)) == expected
 
 
 def test_a_view_keeps_the_query_it_opens_with_and_other_surfaces_keep_every_page() -> None:
-    assert pages(FLOW_VIEW, [KANBAN]) == {"flow-view-kanban": "?view=kanban"}
+    assert pages(STARPULSE, [KANBAN]) == {"starpulse-kanban": "?view=kanban"}
     assert pages(MOCKUP, [KANBAN]) == PAGES[MOCKUP]
 
 
@@ -193,7 +193,7 @@ def test_the_shipped_element_sheet_builds_a_demo_that_leaks_nothing() -> None:
 
 
 SHOTS = {
-    FLOW_VIEW: [Path("shots/flow-view-star-map.png"), Path("shots/flow-view-kanban.png")],
+    STARPULSE: [Path("shots/starpulse-star-map.png"), Path("shots/starpulse-kanban.png")],
     MOCKUP: [Path("shots/design-mockup.png")],
 }
 
@@ -206,7 +206,7 @@ def test_comment_embeds_every_screenshot_under_its_surface() -> None:
     body = comment_body(SHOTS, run_url="https://x/run/1", sha="abcdef1234567")
     flow, mock = body.split(f"### {MOCKUP}")
     assert flow.count("![") == 2
-    assert "![flow-view-kanban](./shots/flow-view-kanban.png)" in flow
+    assert "![starpulse-kanban](./shots/starpulse-kanban.png)" in flow
     assert "![design-mockup](./shots/design-mockup.png)" in mock
 
 
@@ -302,8 +302,8 @@ def test_rerender_never_touches_a_comment_that_is_not_its_own() -> None:
 
 
 def test_note_links_each_demo_in_the_prs_own_folder() -> None:
-    note = demo_note(7, ["flow-view.html"])
-    assert "(https://trantor-org.github.io/starpulse/pr-7/flow-view.html)" in note
+    note = demo_note(7, ["starpulse.html"])
+    assert "(https://trantor-org.github.io/starpulse/pr-7/starpulse.html)" in note
     assert demo_note(7, []) == ""
 
 
@@ -346,20 +346,20 @@ class DemoGh:
 
 
 def test_publish_writes_each_demo_and_drops_one_the_pr_no_longer_builds(tmp_path: Path) -> None:
-    built = tmp_path / "flow-view.html"
+    built = tmp_path / "starpulse.html"
     built.write_text("<html>")
     folder = "pr-7"
-    gh = DemoGh({f"{folder}/flow-view.html": "old", f"{folder}/design-mockup.html": "gone", "main/flow-view.html": "m"})
+    gh = DemoGh({f"{folder}/starpulse.html": "old", f"{folder}/design-mockup.html": "gone", "main/starpulse.html": "m"})
 
     urls = publish_demos(gh, folder, [built], tmp_path / "scratch")
 
-    assert urls == [f"https://trantor-org.github.io/starpulse/{folder}/flow-view.html"]
+    assert urls == [f"https://trantor-org.github.io/starpulse/{folder}/starpulse.html"]
     assert gh.writes == [
         (
             "PUT",
-            f"{folder}/flow-view.html",
+            f"{folder}/starpulse.html",
             {
-                "message": f"Publish {folder}/flow-view.html",
+                "message": f"Publish {folder}/starpulse.html",
                 "content": base64.b64encode(b"<html>").decode(),
                 "branch": DEMO_BRANCH,
                 "sha": "old",
@@ -382,14 +382,14 @@ def test_unpublish_deletes_only_this_prs_folder() -> None:
 
 
 def test_publishing_to_a_repository_without_the_pages_branch_creates_it_first(tmp_path: Path) -> None:
-    built = tmp_path / "flow-view.html"
+    built = tmp_path / "starpulse.html"
     built.write_text("<html>")
     gh = DemoGh({}, branch=False)
 
     publish_demos(gh, MAIN_FOLDER, [built], tmp_path / "scratch")
 
     assert gh.created == ["git/trees", "git/commits", "git/refs"]
-    assert [(method, route) for method, route, _ in gh.writes] == [("PUT", "main/flow-view.html")]
+    assert [(method, route) for method, route, _ in gh.writes] == [("PUT", "main/starpulse.html")]
 
 
 def test_unpublish_with_no_pages_branch_has_nothing_to_delete() -> None:
@@ -401,28 +401,28 @@ def test_unpublish_with_no_pages_branch_has_nothing_to_delete() -> None:
 
 
 def test_publishing_main_replaces_mains_demos_and_leaves_every_pr_folder(tmp_path: Path) -> None:
-    built = tmp_path / "flow-view.html"
+    built = tmp_path / "starpulse.html"
     built.write_text("<html>")
-    gh = DemoGh({"main/flow-view.html": "old", "main/gone.html": "g", "pr-7/flow-view.html": "p"})
+    gh = DemoGh({"main/starpulse.html": "old", "main/gone.html": "g", "pr-7/starpulse.html": "p"})
 
     urls = publish_demos(gh, MAIN_FOLDER, [built], tmp_path / "scratch")
 
-    assert urls == ["https://trantor-org.github.io/starpulse/main/flow-view.html"]
+    assert urls == ["https://trantor-org.github.io/starpulse/main/starpulse.html"]
     assert [(method, route) for method, route, _ in gh.writes] == [
-        ("PUT", "main/flow-view.html"),
+        ("PUT", "main/starpulse.html"),
         ("DELETE", "main/gone.html"),
     ]
 
 
 def test_publishing_main_carries_its_screenshots_without_leak_scanning_image_bytes(tmp_path: Path) -> None:
-    page, shot = tmp_path / "flow-view.html", tmp_path / "flow-view-kanban.png"
+    page, shot = tmp_path / "starpulse.html", tmp_path / "starpulse-kanban.png"
     page.write_text("<html>")
     shot.write_bytes(b"\x89PNG TASK-12 /home/x")
     gh = DemoGh({})
 
     publish_demos(gh, MAIN_FOLDER, [page, shot], tmp_path / "scratch")
 
-    assert [route for _, route, _ in gh.writes] == ["main/flow-view.html", "main/flow-view-kanban.png"]
+    assert [route for _, route, _ in gh.writes] == ["main/starpulse.html", "main/starpulse-kanban.png"]
 
 
 @pytest.mark.parametrize(
@@ -453,7 +453,7 @@ def test_a_scrubbed_demo_carries_no_leak() -> None:
 
 
 def test_publish_refuses_every_demo_when_one_leaks(tmp_path: Path) -> None:
-    clean, leaky = tmp_path / "flow-view.html", tmp_path / "design-mockup.html"
+    clean, leaky = tmp_path / "starpulse.html", tmp_path / "design-mockup.html"
     clean.write_text("<html>")
     leaky.write_text("<html>TASK-9</html>")
     gh = DemoGh({})
@@ -468,7 +468,7 @@ def test_scan_run_fails_on_a_leaking_demo_and_passes_a_clean_or_absent_one(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["--scan", str(tmp_path / "absent")]) == 0
-    (tmp_path / "flow-view.html").write_text("<html>DEMO-1</html>")
+    (tmp_path / "starpulse.html").write_text("<html>DEMO-1</html>")
     assert main(["--scan", str(tmp_path)]) == 0
     (tmp_path / "design-mockup.html").write_text("<html>TASK-9</html>")
     assert main(["--scan", str(tmp_path)]) == 1
@@ -476,6 +476,6 @@ def test_scan_run_fails_on_a_leaking_demo_and_passes_a_clean_or_absent_one(
 
 
 def test_scan_demos_passes_a_clean_demo(tmp_path: Path) -> None:
-    clean = tmp_path / "flow-view.html"
+    clean = tmp_path / "starpulse.html"
     clean.write_text("<html>DEMO-1</html>")
     scan_demos([clean])
