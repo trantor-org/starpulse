@@ -11,6 +11,8 @@ from __future__ import annotations
 import importlib
 import os
 import re
+import shutil
+import tempfile
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -83,15 +85,28 @@ _NOTES_SECTION = "\n## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{}\
 
 
 def _create(root: Path, project: str) -> None:
-    """Make an empty board in `root` when it is absent: the project it belongs to, the default lanes and a `tasks/` directory, nothing else."""
-    if not root.exists():
-        (root / "tasks").mkdir(parents=True)
-        (root / "config.yml").write_text(
+    """Make an empty board in `root` when it is absent: the project it belongs to, the default lanes and a `tasks/` directory, nothing else.
+
+    The board is built beside `root` and renamed into place, so a caller that finds `root` finds it whole; of concurrent first callers one rename lands and the rest discard their copy.
+    """
+    if root.exists():
+        return
+    root.parent.mkdir(parents=True, exist_ok=True)
+    built = Path(tempfile.mkdtemp(prefix=f".{root.name}-", dir=root.parent))
+    try:
+        (built / "tasks").mkdir()
+        (built / "config.yml").write_text(
             yaml.safe_dump(
                 {"project_name": project, "statuses": list(DEFAULT_STATUSES), "task_prefix": DEFAULT_PREFIX},
                 sort_keys=False,
             )
         )
+        built.rename(root)
+    except OSError:
+        if not root.exists():
+            raise
+    finally:
+        shutil.rmtree(built, ignore_errors=True)
 
 
 def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed")) -> Path | None:
