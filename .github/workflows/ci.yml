@@ -115,6 +115,8 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - env:
           PYTHONPATH: .trantor/lib
+          # git_cli.list_timeout reads this; unset is the fail-sentinel 0 and times out ls-files immediately
+          GIT_CLI_LIST_TIMEOUT: "60"
         run: >-
           uv run --no-project --python 3.14 --with pyyaml
           python ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py
