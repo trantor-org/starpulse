@@ -2,6 +2,7 @@
 
 import json
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -20,6 +21,7 @@ from starpulse._internal.board.upstream_backlog import (
     read_config,
     upstream_keys,
 )
+from starpulse._internal.board import upstream_backlog
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask, Move
@@ -590,6 +592,90 @@ def test_the_first_scan_is_the_feeds_replay_and_the_feed_is_ready_once_it_has_pl
         if thread.name == "upstream-backlog":
             thread.join(timeout=5)
             assert not thread.is_alive(), "the polling thread outlived its test"
+
+
+def _restarted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[BoardFeed, list[str]]:
+    """A server start over `tmp_path`'s board and log: the feed once ready, and the task files its first scan read."""
+    read: list[str] = []
+    parse = UpstreamBacklog._task
+    monkeypatch.setattr(
+        UpstreamBacklog, "_task", lambda self, path, *a: (read.append(path.name), parse(self, path, *a))[1]
+    )
+    feed = BoardFeed()
+    # one scan per start: the poll that follows it sleeps past the test
+    board({"interval": "3600"}, tmp_path).start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'log.sqlite'}"))
+    assert feed.ready.wait(timeout=5)
+    return feed, read
+
+
+def _lanes(feed: BoardFeed) -> dict[str, str]:
+    return {task["id"]: task["state"] for task in feed.open_tasks()}
+
+
+def test_a_restart_over_unchanged_task_files_resumes_the_saved_board_without_reading_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # what a placement derives beside the task comes back too: the pull requests it cites, the criteria it waits on
+    root = tmp_path / "backlog"
+    write_config(root, (*STATUSES, "Waiting"))
+    pull = "https://github.com/acme/demo/pull/7"
+    write_task(root, "tasks", "task-1", "Review", references=f"[{pull}]")
+    write_task(root, "completed", "task-2", "Done", references=f"[{pull}]")
+    gate = "## Start Criteria\n```yaml\nstart_criteria:\n  - id: soak\n    kind: prom\n    expr: up\n    equals: 1\n```"
+    section = f"<!-- SECTION:DESCRIPTION:BEGIN -->\n{gate}\n<!-- SECTION:DESCRIPTION:END -->"
+    write_task(root, "tasks", "task-3", "Waiting", body=section)
+    first, read = _restarted(tmp_path, monkeypatch)
+    assert len(read) == 3
+    first.save()  # as `serve` does on its way out
+
+    resumed, read = _restarted(tmp_path, monkeypatch)
+
+    assert read == []
+    assert _lanes(resumed) == _lanes(first) == {"task-1": "review", "task-3": "waiting"}
+    assert resumed.cited("task-1") == resumed.cited("task-2") == [pull]
+    assert resumed._gated == first._gated == {"task-3"}
+
+
+def test_a_task_file_added_edited_or_removed_while_the_server_was_down_is_placed_on_the_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "backlog"
+    write_config(root)
+    write_task(root, "tasks", "task-1", "To Do")
+    gone = write_task(root, "tasks", "task-2", "To Do")
+    kept = write_task(root, "tasks", "task-3", "To Do")
+    first, _ = _restarted(tmp_path, monkeypatch)
+    first.save()
+    edited = write_task(root, "tasks", "task-1", "Review")
+    gone.unlink()
+    added = write_task(root, "tasks", "task-4", "Doing")
+
+    resumed, read = _restarted(tmp_path, monkeypatch)
+
+    assert sorted(read) == sorted([edited.name, added.name])
+    assert kept.name not in read
+    assert _lanes(resumed) == {"task-1": "review", "task-3": "to_do", "task-4": "doing"}
+
+
+@pytest.mark.parametrize("saved", ["other code", "unreadable"])
+def test_a_saved_board_from_other_code_or_one_that_cannot_be_read_is_replaced_by_a_full_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, saved: str
+) -> None:
+    write_config(tmp_path / "backlog")
+    for task_id in ("task-1", "task-2"):
+        write_task(tmp_path / "backlog", "tasks", task_id, "To Do")
+    first, _ = _restarted(tmp_path, monkeypatch)
+    first.save()
+    if saved == "other code":
+        monkeypatch.setattr(upstream_backlog, "_PROJECTION", (*upstream_backlog._PROJECTION, "json"))
+    else:
+        with sqlite3.connect(tmp_path / "log.sqlite") as db:
+            assert db.execute("UPDATE starpulse_board_state SET state = '{\"open\": 1}'").rowcount == 1
+
+    resumed, read = _restarted(tmp_path, monkeypatch)
+
+    assert sorted(read) == ["task-1 - Title of task-1.md", "task-2 - Title of task-2.md"]
+    assert _lanes(resumed) == {"task-1": "to_do", "task-2": "to_do"}
 
 
 def test_a_board_setting_the_adapter_does_not_read_is_refused_beside_the_known_ones(tmp_path: Path) -> None:

@@ -9,6 +9,9 @@ dependency, so it runs from the files alone. It is the `[board] type = "upstream
 
 from __future__ import annotations
 
+import hashlib
+import importlib
+import inspect
 import logging
 import re
 import shlex
@@ -41,6 +44,10 @@ if TYPE_CHECKING:
     from starpulse.contracts.adapters import BoardTask, Move
 
 logger = logging.getLogger(__name__)
+
+#: The modules whose code turns a task file into what the feed saves: changing any of them, like changing the project's
+#: config or machine, starts the next run from a full scan rather than from the Board an older one saved.
+_PROJECTION = (__name__, "starpulse._internal.feed.board_feed", "starpulse.contracts.adapters")
 
 DEFAULT_PREFIX = "task"
 #: Where a task file sits decides whether it is in a lane or has left them; subtasks are ids like `task-1.1`.
@@ -220,7 +227,11 @@ class UpstreamBacklog:
         put: Callable[[BoardTask], None],
         moves: Mapping[str, Mapping[str, Move]] | None = None,
         retract: Callable[[str], None] = lambda _task: None,
+        files: Mapping[str, list] | None = None,
+        kept: Callable[[dict[str, list]], None] = lambda _files: None,
     ) -> None:
+        """`files` are the fingerprints a saved Board was placed from (`files`), so the first scan reads only the files
+        changed since; `kept` is handed them after each scan that placed or retracted a task."""
         self.root = root
         self.config = read_config(root)
         self._team = require_project(root, self.config)
@@ -230,10 +241,23 @@ class UpstreamBacklog:
         self._lanes = {lane_id(status) for status in self.config.statuses}
         self._seen: dict[Path, tuple[int, int]] = {}
         self._ids: dict[Path, str] = {}
+        self._kept = kept
+        for name, (mtime_ns, size, task_id) in (files or {}).items():
+            self._seen[root / name] = (mtime_ns, size)
+            if task_id:
+                self._ids[root / name] = task_id
+
+    def files(self) -> dict[str, list]:
+        """Each file scanned, by its path under the project, with its fingerprint and the task it holds (or None)."""
+        return {
+            str(path.relative_to(self.root)): [*fingerprint, self._ids.get(path)]
+            for path, fingerprint in self._seen.items()
+        }
 
     def scan(self) -> None:
         """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone."""
         present: set[Path] = set()
+        changed = False
         for folder, settled in _FOLDERS:
             for path in sorted((self.root / folder).glob("*.md")):
                 present.add(path)
@@ -245,18 +269,23 @@ class UpstreamBacklog:
                     text = path.read_text()
                 except OSError:
                     continue  # moved or removed while scanning; the next scan sees where it went
-                self._seen[path] = fingerprint
                 task = self._task(path, text, settled)
                 if task is None:
                     self._ids.pop(path, None)
                 else:
                     self._ids[path] = task.id
                     self._put(task)
+                # noted once placed, so fingerprints kept mid-scan never claim a task the Board does not hold yet
+                self._seen[path], changed = fingerprint, True
         for gone in self._seen.keys() - present:
-            del self._seen[gone]
             # a file moved between folders is back under its id; only an id no file holds is retracted
-            if (task_id := self._ids.pop(gone, None)) and task_id not in self._ids.values():
+            task_id = self._ids.pop(gone, None)
+            if task_id and task_id not in self._ids.values():
                 self._retract(task_id)
+            del self._seen[gone]
+            changed = True
+        if changed:
+            self._kept(self.files())
 
     def _task(self, path: Path, text: str, settled: Literal["completed", "archived"] | None) -> BoardTask | None:
         frontmatter, body = _split(text)
@@ -394,10 +423,16 @@ def project_board(
         # Built here, not at load: a `Move` is an adapter model, and a board read never starts the poll.
         # The first scan is the feed's replay: it places every file, the Ledger is built once at its end rather than
         # once per task, and a write meeting it waits for the task it places.
+        # A restart resumes the Board the last run saved and re-reads only the files changed since it.
         feed.await_stream()
-        UpstreamBacklog(root, feed.put, board_moves(drawn, declared, lane_ids), feed.retract).start(
-            interval, scanned=lambda: feed.expect("0-0")
-        )
+        files = None
+        if feed.resume(log, _state_key(root, board_file), lambda _cursor: True) is not None:
+            files = feed.source().get("files")
+        moves = board_moves(drawn, declared, lane_ids)
+        UpstreamBacklog(
+            root, feed.put, moves, feed.retract, files=files, kept=lambda scanned: feed.keep_source({"files": scanned})
+        ).start(interval, scanned=lambda: feed.expect("0-0"))
+        threading.Thread(target=feed.keep_saved, args=(threading.Event(),), name="board-state", daemon=True).start()
 
     return Board(
         machines=machines,
@@ -407,6 +442,18 @@ def project_board(
         source=str(root),
         **writers(config),
     )
+
+
+def _state_key(root: Path, machine: Path | None) -> str:
+    """The key a native board's Board is saved under: the project and a hash of the code, config and machine that
+    project its tasks, so a change to any of them starts the next run from a full scan."""
+    digest = hashlib.sha256()
+    for name in _PROJECTION:
+        digest.update(inspect.getsource(importlib.import_module(name)).encode())
+    for path in (root / "config.yml", machine):
+        if path is not None and path.is_file():
+            digest.update(path.read_bytes())
+    return f"native:{root.resolve()}@{digest.hexdigest()[:12]}"
 
 
 def board(settings: Mapping[str, Any], base: Path) -> Board:
