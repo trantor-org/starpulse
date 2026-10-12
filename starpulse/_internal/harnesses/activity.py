@@ -61,7 +61,6 @@ _NOT_WORK = frozenset(
     {"cd", "for", "case", "select", "done", "fi", "esac", "}"}
     | {"echo", "printf", "sleep", "true", "false", ":", "export", "set", "unset"}
 )
-_PATCH_FILE = re.compile(r"\*\*\* (?:Add|Update|Delete) File: ([^\n\\\"'`]+)")
 _READ_TOOLS = {"Read": "file_path", "Grep": "path", "Glob": "path"}
 _WRITE_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"}
 _READS = frozenset({"cat", "head", "tail", "nl", "bat", "less", "more", "wc", "sed"})
@@ -180,11 +179,8 @@ def _statement(argv: list[str]) -> str | None:
     return binary if _COMMAND.match(binary) else SHELL_OTHER
 
 
-def paths(tool: str, tool_input: Mapping[str, Any], raw: str) -> tuple[list[str], list[str]]:
-    """The paths one tool call reads and writes, as the call named them: a file tool's path argument, or the file
-    headers of an `apply_patch` in `raw`, the call's input as the export carries it."""
-    if tool == "apply_patch":
-        return [], [path.strip() for path in _PATCH_FILE.findall(raw)]
+def paths(tool: str, tool_input: Mapping[str, Any]) -> tuple[list[str], list[str]]:
+    """The paths one tool call reads and writes, as the call named them: a file tool's path argument."""
     if (key := _READ_TOOLS.get(tool)) and isinstance(path := tool_input.get(key), str):
         return [path], []
     if (key := _WRITE_TOOLS.get(tool)) and isinstance(path := tool_input.get(key), str):

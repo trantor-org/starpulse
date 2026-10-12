@@ -46,18 +46,12 @@ def test_a_shell_call_is_each_statements_leading_command(command: str, expected:
 
 
 def test_a_file_tool_names_the_path_it_reads_or_writes() -> None:
-    assert paths("Read", {"file_path": "/r/a.py"}, "") == (["/r/a.py"], [])
-    assert paths("Grep", {"pattern": "x", "path": "/r/lib"}, "") == (["/r/lib"], [])
-    assert paths("Edit", {"file_path": "/r/b.py"}, "") == ([], ["/r/b.py"])
-    assert paths("NotebookEdit", {"notebook_path": "/r/n.ipynb"}, "") == ([], ["/r/n.ipynb"])
-
-
-def test_apply_patch_writes_the_files_its_headers_name() -> None:
-    patch = "*** Begin Patch\n*** Update File: lib/a.py\n@@\n-x\n*** Add File: docs/b.md\n*** End Patch"
-
-    assert paths("apply_patch", {}, patch) == ([], ["lib/a.py", "docs/b.md"])
+    assert paths("Read", {"file_path": "/r/a.py"}) == (["/r/a.py"], [])
+    assert paths("Grep", {"pattern": "x", "path": "/r/lib"}) == (["/r/lib"], [])
+    assert paths("Edit", {"file_path": "/r/b.py"}) == ([], ["/r/b.py"])
+    assert paths("NotebookEdit", {"notebook_path": "/r/n.ipynb"}) == ([], ["/r/n.ipynb"])
 
 
 def test_a_shell_call_and_a_pathless_tool_name_no_path() -> None:
-    assert paths("Bash", {"command": "cat /r/a.py"}, "") == ([], [])
-    assert paths("Read", {}, "") == ([], [])
+    assert paths("Bash", {"command": "cat /r/a.py"}) == ([], [])
+    assert paths("Read", {}) == ([], [])
