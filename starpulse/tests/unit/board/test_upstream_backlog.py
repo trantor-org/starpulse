@@ -132,8 +132,8 @@ def test_the_prefix_sets_the_task_keys() -> None:
         False,
     ]
     assert keys.for_branch("feature/PROJ-12-add-x") == "PROJ-12"
-    assert keys.for_branch("feature/proj-12-add-x") == "proj-12"
-    assert upstream_keys("proj").for_branch("feature/PROJ-12") == "PROJ-12"
+    assert keys.for_branch("feature/proj-12-add-x") == "PROJ-12"
+    assert upstream_keys("proj").for_branch("feature/PROJ-12") == "proj-12"
 
 
 def test_the_board_machine_has_a_lane_per_configured_status_that_any_status_reaches() -> None:

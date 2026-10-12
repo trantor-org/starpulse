@@ -95,12 +95,21 @@ def require_project(root: Path, config: BacklogConfig) -> str:
 
 
 def upstream_keys(prefix: str = DEFAULT_PREFIX) -> TaskKeys:
-    """Task keys `<prefix>-N` (and subtasks `<prefix>-N.M`) and the branches that name them, in any case."""
-    key = rf"{re.escape(prefix)}-\d+(?:\.\d+)*"
+    """Task keys `<prefix>-N` (and subtasks `<prefix>-N.M`) and the branches that name them, read in any case and
+    named in the case of `prefix`."""
+    number = r"\d+(?:\.\d+)*"
+    head = re.escape(prefix)
     return TaskKeys(
-        key=re.compile(key, re.I),
-        branch=re.compile(rf"(?:refs/heads/)?(?:[^/]+/)*?({key})(?=$|[-_/])", re.I),
+        key=re.compile(rf"{head}-{number}", re.I),
+        branch=re.compile(rf"(?:refs/heads/)?(?:[^/]+/)*?{head}-({number})(?=$|[-_/])", re.I),
+        key_format=prefix.replace("{", "{{").replace("}", "}}") + "-{}",
     )
+
+
+def canonical_key(prefix: str, key: str) -> str:
+    """`key` with its prefix spelled as the configured `prefix` is (`task-45` is `TASK-45` for `TASK`); a key of another prefix is as written."""
+    head, dash, rest = key.partition("-")
+    return f"{prefix}-{rest}" if dash and head.casefold() == prefix.casefold() else key
 
 
 def board_moves(
@@ -247,6 +256,7 @@ class UpstreamBacklog:
         task_id, title, status = (str(frontmatter.get(k) or "").strip() for k in ("id", "title", "status"))
         if not (task_id and title and status):
             return None
+        task_id = canonical_key(self.config.prefix, task_id)
         lane = lane_id(status)
         if lane not in self._lanes and settled is None:
             logger.warning(
@@ -256,12 +266,13 @@ class UpstreamBacklog:
         from starpulse.contracts.adapters import BoardTask  # noqa: PLC0415 - import cost, paid on first use
 
         assignees = _strings(frontmatter.get("assignee"))
+        dependencies = _strings(frontmatter.get("dependencies"))
         return BoardTask(
             id=task_id,
             title=title,
             team=self._team,
             lane=lane,
-            dependencies=_strings(frontmatter.get("dependencies")),
+            dependencies=tuple(canonical_key(self.config.prefix, key) for key in dependencies),
             references=_strings(frontmatter.get("references")),
             settled=settled,
             created_at=_when(frontmatter.get("created_date")),

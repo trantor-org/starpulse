@@ -14,7 +14,7 @@ from starpulse._internal.feed.search import SearchIndex
 from starpulse.tests.integration.board.test_jira import project, recorded_site, serve
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "native_board"
-_STATUSES = 'project_name: "demo"\nstatuses: ["Waiting", "Done"]\ntask_prefix: "task"\n'
+_STATUSES = 'project_name: "demo"\nstatuses: ["Waiting", "Done"]\ntask_prefix: "TASK"\n'
 
 #: Sets up one board's root over the recorded task files, as Backlog.md itself wrote them, and returns it with its machines.
 Place = Callable[[Path], tuple[Path, dict]]

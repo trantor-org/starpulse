@@ -2087,3 +2087,20 @@ def test_every_verb_and_flag_a_bundled_skill_names_is_in_the_manifest(capsys: py
     )  # the skills do name verbs; a regex that matched nothing would pass vacuously
     assert {"machine validate", "machine import mermaid"} <= set(named["authoring-starpulse-machines"])
     assert {"doctor", "config check"} <= set(named["writing-starpulse-adapters"])
+
+
+@pytest.mark.parametrize("task", ["proj-1", "PROJ-1", "Proj-1"])
+def test_canonical_task_key_is_answered_whichever_case_task_show_is_asked_in(
+    task: str, base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "show", task, "--server", base])
+
+    assert (code, doc["id"]) == (0, "PROJ-1")
+
+
+def test_canonical_task_key_is_answered_for_a_settled_task_in_either_case(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "show", "proj-3", "--server", base])
+
+    assert (code, doc["id"]) == (0, "PROJ-3")

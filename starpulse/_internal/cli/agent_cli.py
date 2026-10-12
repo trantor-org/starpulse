@@ -357,13 +357,17 @@ def _board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
 
 def _show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     snapshot = _snapshot(args, environ)
-    agents = {agent["id"]: agent for agent in _board_flow(snapshot)["agents"]}
-    if (agent := agents.get(args.task)) is None:
-        if (settled := snapshot["settled"].get(args.task)) is None:
+    wanted = args.task.casefold()
+    agents = {agent["id"].casefold(): agent for agent in _board_flow(snapshot)["agents"]}
+    if (agent := agents.get(wanted)) is None:
+        settled_id, settled = next(
+            ((key, value) for key, value in snapshot["settled"].items() if key.casefold() == wanted), (None, None)
+        )
+        if settled is None:
             raise CliError("not_found", f"{args.task} is not on the board")
         # A settled task has left the lanes, and the snapshot keeps only where it settled.
         agent = {
-            "id": args.task,
+            "id": settled_id,
             "title": "",
             "state": settled["state"],
             "model": "",

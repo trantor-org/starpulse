@@ -413,11 +413,14 @@ def machines_response(feed: BoardFeed, query: dict[str, list[str]]) -> tuple[byt
     return encode("machines", found), 200
 
 
-def history_response(history: History, query: dict[str, list[str]], flows: Collection[str]) -> tuple[bytes, int]:
+def history_response(
+    history: History, query: dict[str, list[str]], flows: Collection[str], keys: TaskKeys | None = None
+) -> tuple[bytes, int]:
     """The body and status for `/api/history`: a task's lane path, or with `flow` its path on that machine.
 
-    `flows` are the machines the page draws."""
+    `flows` are the machines the page draws; a task is looked up under the spelling `keys` gives it."""
     task, flow = (query.get(key, [""])[0] for key in ("task", "flow"))
+    task = keys.canonical(task) if keys else task
     if not task:
         return _error("history needs ?task=TASK-N"), 400
     if flow and flow not in flows:
@@ -1257,7 +1260,7 @@ def request_handler(
             elif url.path == "/api/machines":
                 self._send(*machines_response(feed, parse_qs(url.query)))
             elif url.path == "/api/history":
-                self._send(*history_response(history, parse_qs(url.query), flows))
+                self._send(*history_response(history, parse_qs(url.query), flows, feed.keys))
             elif url.path == "/api/pulls":
                 with slow_reads.watch(url.query, self.queued_s) as timing:
                     body, status = pull_reads(url.query)
