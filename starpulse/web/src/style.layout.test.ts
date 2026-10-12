@@ -88,10 +88,15 @@ describe("the DAGs view at rest", () => {
   });
 });
 
-describe("the Kanban's autopilot strip", () => {
-  it("sets the next pick and the paused count against the meters, so the strip's spare width trails them and the switch and meters hold their places", () => {
-    expect(rule("#kb .ap .nx")).toContain("text-align: left");
-    expect(rule("#kb .ap .paused")).toContain("text-align: left");
+describe("the Admin view's Autopilot card", () => {
+  it("wraps the next pick's reason under a long title and sets its meters two to a row, so a larger text size grows the card instead of clipping it", () => {
+    expect(rule("#admin .ap .nx")).toContain("flex-wrap: wrap");
+    expect(rule("#admin .ap .dims")).toContain("repeat(2, minmax(0, 1fr))");
+    expect(css).not.toContain("#kb .ap");
+  });
+
+  it("dims the meters and the count in flight while paused", () => {
+    expect(rule("#admin .ap.off :is(.dims, .inflight)")).toContain("opacity: .45");
   });
 });
 

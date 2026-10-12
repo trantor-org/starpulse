@@ -308,6 +308,7 @@ time as the row's `updated_at`, then renamed to `starpulse-autopilot.json.import
 ```json
 {
   "enabled": false,
+  "quietHours": {"start": "22:00", "end": "07:00", "timezone": "America/Phoenix"},
   "sampledAt": 1788307200.5,
   "dimensions": [{"name": "cpu", "use": 35.0, "limit": 80.0}],
   "inFlight": [{"task": "TASK-1", "title": "First", "model": "@agent-standard-high", "started": 1788307000.0, "url": "https://claude.ai/code/session_01"}],
@@ -315,6 +316,7 @@ time as the row's `updated_at`, then renamed to `starpulse-autopilot.json.import
 }
 ```
 
+`quietHours` is the daily window in which the loop admits nothing, or `null` for none (see Quiet hours below).
 `dimensions` lists `cpu`, `memory`, `sessions` and `review` in that order, each as its use against its limit.
 `sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
 
@@ -328,22 +330,37 @@ time as the row's `updated_at`, then renamed to `starpulse-autopilot.json.import
   agent profile, start time in epoch seconds and session address (`url`); it is `[]` when none runs.
 - `next` is what the next pass would do, whatever the switch says: the task `decide` ranks first among those that fit, with
   `verdict` `starting` and `reason` `goes next`; when none fits, the top-ranked task with `verdict` `waits` and the first
-  dimension it overfits as `reason`. It is `null` before the first sample or with no workable task in the eligible lane.
+  dimension it overfits as `reason`. Inside the quiet hours the top-ranked task `waits` with `reason` `quiet hours`,
+  whatever room the host has. It is `null` before the first sample or with no workable task in the eligible lane.
   Reading it logs no decision.
 
-`PUT /api/autopilot` with `{"enabled": true}` or `{"enabled": false}` sets the switch and answers the same body. It
-answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhere, and like every write it needs
+`PUT /api/autopilot` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
+`{"quietHours": {"start": "HH:MM", "end": "HH:MM", "timezone": "<IANA zone>"}}` or `{"quietHours": null}` sets or clears
+the quiet hours; a body may carry both. It answers the same body as the `GET`, and a body with anything wrong is a 400
+that changes nothing. It answers only loopback and private-network (RFC 1918) addresses, with 403 elsewhere, and like every write it needs
 `Content-Type: application/json`. A `serve` that runs no autopilot, an adapter-kit server, answers 404.
 
 The sampler reads every 60 seconds. The first sample is a baseline; after it, a dimension going from below its limit
 to at or over it, or back, logs one `StarPulse autopilot: <dimension> is full|free (<use> of <limit>)` line.
 
-The Kanban view's filters row shows it as a strip directly left of the task count: the switch, a meter per dimension
-(amber from 80% of its limit, red past it), a **Next** pick whose color says whether it starts or waits, and
-**Paused · N running** with the meters dimmed while the switch is off. A click on the switch sends the `PUT` with no dialog, and a
-refusal shows its reason under the strip. The Sessions meter opens the sessions in flight when the server lists them; the
-strip reads `inFlight` and `next` from the same body when it carries them, and shows no pick and an empty list without them. The
-strip re-reads every 5 seconds while the Kanban view shows. A server with no autopilot (404) shows **Autopilot unavailable**.
+StarPulse Admin's Autopilot card shows it: the switch with **On** or **Paused**, a meter per dimension (amber from
+80% of its limit, red past it, dimmed while the switch is off), the next pick as text (its task, title and `starting`
+in green or `waits: <reason>` in yellow, or **Nothing eligible**), the count of sessions in flight (the Sessions
+dimension's use, or the length of `inFlight` without it), and the quiet hours row. A click on the switch sends the
+`PUT` with no dialog, and a refusal shows its reason under the switch. The card reads `next` from the same body when it
+carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `autopilot`
+event after. A server with no autopilot (404) shows the card with its reason and no controls. The Kanban draws no
+autopilot control.
+
+### Quiet hours
+
+The quiet hours are a daily window, from `start` up to but not including `end` on `timezone`'s wall clock, in which the
+loop admits nothing; an `end` before the `start` runs past midnight. Sessions already running continue, and the loop
+still finishes and settles them: only admission stops, as with the switch off. The window is the `autopilot.quiet_hours`
+row of `starpulse_settings`, so it survives a restart; no row, or one that cannot be read, is no window. Setting it wakes
+the loop, so a window that no longer covers now admits at once. There is no config key: the operator sets it from
+StarPulse Admin, whose Autopilot card has a **Quiet hours** row (a switch, start and end times, and Save) that
+sends the browser's own zone with the times.
 
 ### Admission
 

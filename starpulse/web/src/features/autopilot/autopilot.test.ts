@@ -33,8 +33,8 @@ function server(opts: { down?: boolean; body?: unknown; status?: number } = {}) 
   });
 }
 
-describe("the autopilot strip's store", () => {
-  it("reads the switch and each dimension's use against its limit, with the label and unit the strip draws", async () => {
+describe("the Autopilot card's store", () => {
+  it("reads the switch and each dimension's use against its limit, with the label and unit the card draws", async () => {
     const store = new AutopilotStore(server());
 
     await store.load();
@@ -67,7 +67,7 @@ describe("the autopilot strip's store", () => {
     expect(store.get().current).toMatchObject({ inFlight: IN_FLIGHT, next: NEXT });
   });
 
-  it("reads a dimension the strip has no label for under its own name", async () => {
+  it("reads a dimension the card has no label for under its own name", async () => {
     const store = new AutopilotStore(server({ body: { ...STATUS, dimensions: [{ name: "gpu", use: 1, limit: 2 }] } }));
 
     await store.load();

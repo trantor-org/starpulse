@@ -473,6 +473,19 @@ describe("the demo server", () => {
     expect((await down.json()).error).toContain("no autopilot");
   });
 
+  it("keeps quiet hours with a PUT and, in its quiet state, holds the pick for them", async () => {
+    const s = new DemoServer(fixture(), () => 1000);
+    const put = (quietHours: unknown) => s.fetch("/api/autopilot", { method: "PUT", body: JSON.stringify({ quietHours }) });
+    const night = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
+
+    expect(await body(s.fetch("/api/autopilot"))).toMatchObject({ quietHours: null });
+    expect(await body(put(night))).toMatchObject({ enabled: true, quietHours: night });
+    expect(await body(put(null))).toMatchObject({ quietHours: null });
+    expect((await put({ start: "22:00", end: "22:00", timezone: "UTC" })).status).toBe(400);
+    const quiet = await body(new DemoServer(fixture(), () => 1000, false, undefined, false, "quiet").fetch("/api/autopilot"));
+    expect(quiet).toMatchObject({ quietHours: { start: "22:00", end: "07:00" }, next: { verdict: "waits", reason: "quiet hours" } });
+  });
+
   it("keeps a crowded board's sessions under the limit by default and at it when the host is over", async () => {
     const crowded = (): DemoFixture => {
       const f = fixture();

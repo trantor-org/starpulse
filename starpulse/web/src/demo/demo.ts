@@ -155,9 +155,11 @@ const HANDLERS: Record<string, Handler> = {
 export type ForwardDemo = "refused" | "down" | "none";
 /**
  * The autopilot a demo page pretends to run: `off` is paused, `over` a host past its RAM limit, `empty` a queue with nothing eligible,
- * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no autopilot.
+ * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no autopilot, `quiet` inside its quiet hours.
  */
-export type AutopilotDemo = "off" | "over" | "empty" | "refused" | "down";
+export type AutopilotDemo = "off" | "over" | "empty" | "refused" | "down" | "quiet";
+/** The quiet hours the `quiet` demo holds admission in; the demo treats any window it keeps as holding now. */
+const NIGHT = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
 /** The limits the demo's capacity strip holds its stand-in host under, in the units the server samples. */
 const PILOT = { cpu: 80, memory: 85, sessions: 4, review: 24 };
 /** The fields `adapters.runs.forwarded.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
@@ -206,12 +208,14 @@ export class DemoServer {
   private forcing = new Set<string>();
   private optIn = false;
   private admitting: boolean;
+  private quietHours: typeof NIGHT | null;
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private merges: ReturnType<typeof setInterval> | undefined;
 
   constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private forward?: ForwardDemo, private failingEvaluator = false, private pilot?: AutopilotDemo) {
     this.admitting = pilot !== "off";
+    this.quietHours = pilot === "quiet" ? NIGHT : null;
     const { history, ...snap } = structuredClone(fixture);
     // the fixture's times are kept as ages, so what settled an hour before the capture settled an hour before the page opened
     const age = clock() - snap.now;
@@ -450,10 +454,14 @@ export class DemoServer {
     if (this.pilot === "down") return json({ error: "This server has no autopilot." }, 404);
     if (method === "PUT") {
       if (this.pilot === "refused") return json({ error: "Autopilot changes are taken only from loopback or a private address; this demo is neither." }, 403);
-      let sent: unknown;
-      try { sent = (JSON.parse(raw) as { enabled?: unknown }).enabled; } catch { sent = undefined; }
-      if (typeof sent !== "boolean") return json({ error: 'the autopilot takes {"enabled": true} or {"enabled": false}' }, 400);
-      this.admitting = sent;
+      let sent: { enabled?: unknown; quietHours?: unknown } = {};
+      try { sent = JSON.parse(raw) as typeof sent; } catch { /* refused below */ }
+      const usage = 'the autopilot takes {"enabled": true|false} and/or {"quietHours": {"start", "end", "timezone"}|null}';
+      const window = sent?.quietHours as typeof NIGHT | null | undefined;
+      if (!sent || (sent.enabled === undefined && window === undefined) || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
+      if (window && window.start === window.end) return json({ error: "quiet hours start and end must differ" }, 400);
+      if (typeof sent.enabled === "boolean") this.admitting = sent.enabled;
+      if (window !== undefined) this.quietHours = window;
     } else if (method !== "GET") return json({ error: `${method} is not served here` }, 405);
     const at = this.clock();
     const cards = this.snapshot.flows.find((f) => f.name === "board")?.agents ?? [];
@@ -468,9 +476,10 @@ export class DemoServer {
     const over = this.pilot === "over";
     const use = { cpu: over ? 74 : 41, memory: over ? 91 : 58, sessions: inFlight.length, review: 13 };
     const pick = this.pilot === "empty" ? undefined : cards.find((a) => a.state === "ready" && !a.dependencies?.length);
-    const waits = use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= PILOT.sessions ? `Sessions ${use.sessions}/${PILOT.sessions}` : "";
+    const waits = this.quietHours ? "quiet hours" : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= PILOT.sessions ? `Sessions ${use.sessions}/${PILOT.sessions}` : "";
     return json({
       enabled: this.admitting,
+      quietHours: this.quietHours,
       sampledAt: at,
       dimensions: (Object.keys(PILOT) as (keyof typeof PILOT)[]).map((name) => ({ name, use: use[name], limit: PILOT[name] })),
       inFlight,
@@ -546,7 +555,7 @@ export function ensureDemoServer(): DemoServer | null {
   const query = new URLSearchParams(globalThis.location?.search ?? "");
   const refuseEdits = query.get("edit") === "refuse";
   const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
-  const autopilot = (["off", "over", "empty", "refused", "down"] as const).find((state) => state === query.get("autopilot"));
+  const autopilot = (["off", "over", "empty", "refused", "down", "quiet"] as const).find((state) => state === query.get("autopilot"));
   const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
   const shaped = fixture ? shapeBoard(fixture, query.get("board")) : null; // `?board=no-archived|no-attention|unlisted|fourteen` reshapes the Board for a Star Map review
   if (!shaped) return null;

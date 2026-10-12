@@ -1,11 +1,11 @@
-// The Kanban's autopilot strip: the global switch and what the admission loop sees, read from /api/autopilot.
-// Off stops admission only: sessions already running keep running, and the strip says how many.
+// The Admin view's Autopilot card: the global switch and what the admission loop sees, read from /api/autopilot.
+// Off stops admission only: sessions already running keep running, and the card says how many.
 import { apiFetch } from "../../api/apiFetch";
 import type { AutopilotDimension, AutopilotStatus } from "../../api";
 
 export const ROUTE = "/api/autopilot";
 
-/** One capacity dimension as the strip draws it: what is in use against the limit admission holds it under. `detail` is the meter's tooltip. */
+/** One capacity dimension as the card draws it: what is in use against the limit admission holds it under. `detail` is the meter's tooltip. */
 export interface Dimension {
   name: string;
   label: string;
@@ -95,7 +95,7 @@ function pick(raw: unknown): NextPick | null {
   };
 }
 
-/** The strip's state from an answer, or null when the answer is not an autopilot status. `inFlight` and `next` are additive: absent is fine, present must hold. */
+/** The card's state from an answer, or null when the answer is not an autopilot status. `inFlight` and `next` are additive: absent is fine, present must hold. */
 function parse(body: unknown): AutopilotState | null {
   const status = body as Partial<AutopilotStatus> & { inFlight?: unknown; next?: unknown };
   if (!isRecord(body) || typeof status.enabled !== "boolean" || !Array.isArray(status.dimensions)) return null;
@@ -137,7 +137,7 @@ async function ask(fetcher: typeof apiFetch, init: RequestInit | undefined, unre
 /** Stores that take `/api/events` `autopilot` bodies; the renderer pushes each one. */
 const streamListeners = new Set<(body: unknown) => void>();
 
-/** Hand an `autopilot` stream event to every open strip store. */
+/** Hand an `autopilot` stream event to every open card store. */
 export function pushAutopilotStatus(body: unknown): void {
   for (const fn of streamListeners) fn(body);
 }
@@ -149,7 +149,7 @@ export class AutopilotStore {
     streamListeners.add(this.accept);
   }
 
-  /** Drop the stream listener when the strip unmounts with this store. */
+  /** Drop the stream listener when the card unmounts with this store. */
   dispose(): void {
     streamListeners.delete(this.accept);
   }
@@ -170,7 +170,7 @@ export class AutopilotStore {
     if (state) this.set({ current: state, unavailable: "" });
   };
 
-  /** Read the status once (connect sync); one that cannot be read leaves the last reading on the strip. */
+  /** Read the status once (connect sync); one that cannot be read leaves the last reading on the card. */
   async load(): Promise<void> {
     const answer = await ask(this.fetcher, undefined, "the server did not answer");
     if (answer.ok) this.set({ current: answer.state, unavailable: "" });

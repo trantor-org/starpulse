@@ -8,8 +8,6 @@ import { ArchiveDialog } from "./ArchiveConfirm";
 import { useViewActive } from "../../shared/Kept";
 import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 import { ago } from "../../shared/clock";
-import { AutopilotStore } from "../autopilot/autopilot";
-import { AutopilotStrip } from "../autopilot/AutopilotStrip";
 import type { HudState } from "../../render/hud";
 import {
   CLOSED, applySuggestion, applyTaskRecord, assigneeOptions, chainOf, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, recent, show, showAll,
@@ -493,7 +491,6 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const [openTask] = useState(() => new OpenTask(linkedTask(location.search)));
   const setOpen = openTask.set;
   const [records] = useState(() => new RecordCache());
-  const [autopilot] = useState(() => new AutopilotStore());
   // the card the pointer rests on, and the timer that draws its modal hidden once it has rested; the record read on hover
   // fills that modal when it lands, so a slow server delays the record, never the drawing
   const resting = useRef<{ id: string | null; timer?: ReturnType<typeof setTimeout> }>({ id: null });
@@ -796,7 +793,6 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           </div>
         )}
         <div className="rt">
-          <AutopilotStrip store={autopilot} now={now} openTask={setOpen} />
           <span className="shown">{view.shown} of {view.total} tasks</span>
           <span className="nt">
             <NewTaskAction capabilities={hud.capabilities} lane={hud.names[lanes[0]] ?? lanes[0]}

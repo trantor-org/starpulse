@@ -200,6 +200,10 @@ export interface AutopilotStatus {
    * Null when no task in the eligible lane is workable.
    */
   next?: AutopilotNext | null;
+  /**
+   * Null when no window holds admission back.
+   */
+  quietHours?: QuietHours | null;
   sampledAt: number | null;
 }
 /**
@@ -234,12 +238,24 @@ export interface AutopilotSession {
  */
 export interface AutopilotNext {
   /**
-   * `goes next`, or the first dimension the task overfits, which the strip shows after `waits:`.
+   * `goes next`, `quiet hours` while the quiet hours hold admission, or the first dimension the task overfits, which the strip shows after `waits:`.
    */
   reason: string;
   task: string;
   title: string;
   verdict: "starting" | "waits";
+}
+/**
+ * A daily window in which the autopilot admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before
+ * `start` runs past midnight.
+ */
+export interface QuietHours {
+  end: string;
+  start: string;
+  /**
+   * The IANA zone the window's times are read in, such as America/Phoenix.
+   */
+  timezone: string;
 }
 /**
  * The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,
@@ -1535,10 +1551,11 @@ export interface ForwardingRequest {
   opt_in: boolean;
 }
 /**
- * `PUT /api/autopilot`: whether the autopilot admits tasks.
+ * `PUT /api/autopilot`: whether the autopilot admits tasks, its quiet hours (null clears them), or both.
  */
 export interface AutopilotRequest {
-  enabled: boolean;
+  enabled?: boolean | null;
+  quietHours?: QuietHours | null;
 }
 /**
  * `POST /api/runs/events`: one workflow phase a producer reports.
