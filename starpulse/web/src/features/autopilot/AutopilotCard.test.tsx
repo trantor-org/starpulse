@@ -38,7 +38,7 @@ async function draw(body: Record<string, unknown> = {}, opts: { put?: () => Prom
   });
   const store = new AutopilotStore(fetcher);
   const quiet = new QuietHoursStore(fetcher, () => "America/Phoenix");
-  await act(async () => root.render(<AutopilotCard store={store} quiet={quiet} clock="24" now={NOW} />));
+  await act(async () => root.render(<AutopilotCard store={store} quiet={quiet} clock="24" />));
   await settle();
   return store;
 }
@@ -110,7 +110,7 @@ describe("the Admin view's Autopilot card", () => {
     const rows = [...host.querySelectorAll(".ap-ses a")];
     expect(rows.map((r) => r.querySelector(".id")?.textContent)).toEqual(["TASK-11", "TASK-12"]);
     expect(rows[0].getAttribute("href")).toBe("#demo-session-0011");
-    expect(rows[0].textContent).toContain("opus · high");
+    expect(rows[0].querySelector(".md")?.textContent).toBe("opus · high · 14m");
   });
 
   it("says no session is running when the list is empty, and that the server does not list them when it serves none", async () => {

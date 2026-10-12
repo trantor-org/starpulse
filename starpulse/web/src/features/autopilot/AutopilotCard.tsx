@@ -18,15 +18,15 @@ function Meter({ d }: { d: Dimension }) {
   );
 }
 
-/** The sessions in flight, each linking to its session; `sessions` is null while the server does not list them. */
-function Sessions({ sessions, now }: { sessions: InFlight[] | null; now: number }) {
+/** The sessions in flight, each linking to its session, aged at the status's sample time; `sessions` is null while the server does not list them. */
+function Sessions({ sessions, at }: { sessions: InFlight[] | null; at: number | null }) {
   return (
     <div className="ap-ses">
       {sessions === null && <div className="none">The server does not list its sessions yet.</div>}
       {sessions?.length === 0 && <div className="none">No autopilot session is running.</div>}
       {sessions?.map((s) => (
         <a key={s.task} href={s.url} target="_blank" rel="noreferrer">
-          <span className="id">{s.task}</span><span className="tt">{s.title}</span><span className="md">{s.model} · {ago(now - s.started)}</span>
+          <span className="id">{s.task}</span><span className="tt">{s.title}</span><span className="md">{s.model}{at !== null && ` · ${ago(at - s.started)}`}</span>
         </a>
       ))}
     </div>
@@ -76,7 +76,7 @@ function QuietRow({ store, clock }: { store: QuietHoursStore; clock: "24" | "12"
   );
 }
 
-export function AutopilotCard({ store, quiet, clock, now = Date.now() / 1000 }: { store: AutopilotStore; quiet: QuietHoursStore; clock: "24" | "12"; now?: number }) {
+export function AutopilotCard({ store, quiet, clock }: { store: AutopilotStore; quiet: QuietHoursStore; clock: "24" | "12" }) {
   const { current, phase, unavailable } = useSyncExternalStore(store.subscribe, store.get);
   const active = useViewActive();
   useEffect(() => {
@@ -92,7 +92,7 @@ export function AutopilotCard({ store, quiet, clock, now = Date.now() / 1000 }: 
       </section>
     );
   }
-  const { on, dimensions, inFlight, next } = current;
+  const { on, sampledAt, dimensions, inFlight, next } = current;
   const running = dimensions.find((d) => d.name === "sessions")?.used ?? inFlight?.length ?? 0;
   return (
     <section className={`card ap${on ? "" : " off"}`}>
@@ -122,7 +122,7 @@ export function AutopilotCard({ store, quiet, clock, now = Date.now() / 1000 }: 
       </div>
       <div className="row">
         <div><div className="lb">In flight</div><div className="hint">Autopilot's sessions running now</div></div>
-        <Sessions sessions={inFlight} now={now} />
+        <Sessions sessions={inFlight} at={sampledAt} />
       </div>
       <QuietRow store={quiet} clock={clock} />
     </section>
