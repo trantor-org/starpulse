@@ -613,12 +613,19 @@ CI_SCRIPTS = {
         "CHECKS_PASSED",
         "MERGED",
     ],
+    ("none", True): ["PUSHED", "CHECKS_PASSED", "MERGED"],
     ("pass", False): ["PUSHED", "CHECKS_FAILED", "PUSHED", "CHECKS_PASSED"],
     ("failing", False): ["PUSHED", "CHECKS_FAILED", "RERUN", "CHECKS_FAILED"],
     ("pending", False): ["PUSHED"],
 }
 #: The seconds between two CI steps of a seeded pull request.
 CI_STEP_S = 420
+
+
+def _ci_script(checks: str, merged: bool) -> list[str]:
+    """The CI events of a pull request standing at `checks` and `merged`: the table's, else a merged one merges as a
+    passing one does and an unmerged one only pushes."""
+    return CI_SCRIPTS.get((checks, merged)) or (CI_SCRIPTS[("pass", True)] if merged else ["PUSHED"])
 
 
 def _seed_ci(flows: list[dict], titles: dict[str, str], pulls: dict[str, list[dict]], now: float) -> None:
@@ -633,7 +640,11 @@ def _seed_ci(flows: list[dict], titles: dict[str, str], pulls: dict[str, list[di
     after = {(t["source"], t["event"]): t["target"] for t in machine["transitions"]}
     flow["agents"] = []
     for i, (task, mine) in enumerate(pulls.items()):
-        events = [e for p in mine for e in ("PR_OPENED", *CI_SCRIPTS.get((p["checks"], p["merged"]), ["PUSHED"]))]
+        # the machine opens a task's next pull request only from `merged`, so a pull request with a successor merged
+        last = len(mine) - 1
+        events = [
+            e for n, p in enumerate(mine) for e in ("PR_OPENED", *_ci_script(p["checks"], p["merged"] or n < last))
+        ]
         state, trail = initial, []
         for k, event in enumerate(events):
             state = initial if k == 0 else after[(state, event)]
