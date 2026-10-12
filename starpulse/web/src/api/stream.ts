@@ -2,7 +2,7 @@
 
 import { demoServer, type DemoServerHandle } from "../demo/host";
 import { playLink } from "../demo/linkDemo";
-import type { Delta, LedgerRow, Snapshot } from ".";
+import type { AutopilotStatus, Delta, LedgerRow, Snapshot } from ".";
 import { keep } from "./same";
 
 export { embedded } from "../demo/host";
@@ -99,6 +99,8 @@ export interface StreamHandlers {
   link?(state: Link): void;
   /** The server named a page build other than the one the page holds, once per such build. */
   build?(id: string): void;
+  /** Autopilot capacity and next pick: not part of the snapshot; the Kanban strip applies each body. */
+  autopilot?(status: AutopilotStatus): void;
 }
 
 /**
@@ -234,6 +236,9 @@ export function openStream(
     src.addEventListener("claim", later((e) =>
       fold({ kind: "claim", ...JSON.parse((e as MessageEvent<string>).data) }),
     ));
+    src.addEventListener("autopilot", later((e) => {
+      handlers.autopilot?.(JSON.parse((e as MessageEvent<string>).data) as AutopilotStatus);
+    }));
     src.addEventListener("restarting", () => {
       announced = true;
       show("restarting");

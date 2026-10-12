@@ -1411,6 +1411,7 @@ def start_autopilot(
         chain=_cached(read_chain, _CHAIN_TTL_S),
         lane=config.autopilot.eligible_lane(initial),
     )
+    runtime.wire_status(feed.publish)
     threading.Thread(target=runtime.sampler.run_forever, args=(stop,), name="autopilot-sampler", daemon=True).start()
     if runtime.loop is not None:
         threading.Thread(target=runtime.loop.run_forever, args=(stop,), name="autopilot-loop", daemon=True).start()

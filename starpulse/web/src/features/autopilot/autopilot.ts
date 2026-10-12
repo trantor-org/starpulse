@@ -134,10 +134,25 @@ async function ask(fetcher: typeof apiFetch, init: RequestInit | undefined, unre
   return { ok: false, reason: error || `the server answered ${response.status}` };
 }
 
+/** Stores that take `/api/events` `autopilot` bodies; the renderer pushes each one. */
+const streamListeners = new Set<(body: unknown) => void>();
+
+/** Hand an `autopilot` stream event to every open strip store. */
+export function pushAutopilotStatus(body: unknown): void {
+  for (const fn of streamListeners) fn(body);
+}
+
 export class AutopilotStore {
   private view: AutopilotView = { current: null, phase: { kind: "idle" }, unavailable: "" };
   private listeners = new Set<() => void>();
-  constructor(private fetcher: typeof apiFetch = apiFetch) {}
+  constructor(private fetcher: typeof apiFetch = apiFetch) {
+    streamListeners.add(this.accept);
+  }
+
+  /** Drop the stream listener when the strip unmounts with this store. */
+  dispose(): void {
+    streamListeners.delete(this.accept);
+  }
 
   get = () => this.view;
   subscribe = (fn: () => void) => {
@@ -149,7 +164,13 @@ export class AutopilotStore {
     for (const fn of this.listeners) fn();
   }
 
-  /** Read the status; one that cannot be read leaves the last reading on the strip. */
+  /** Apply a status body from the stream; a shape the store refuses leaves the last reading. */
+  accept = (body: unknown): void => {
+    const state = parse(body);
+    if (state) this.set({ current: state, unavailable: "" });
+  };
+
+  /** Read the status once (connect sync); one that cannot be read leaves the last reading on the strip. */
   async load(): Promise<void> {
     const answer = await ask(this.fetcher, undefined, "the server did not answer");
     if (answer.ok) this.set({ current: answer.state, unavailable: "" });

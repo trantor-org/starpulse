@@ -31,6 +31,7 @@ import {
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
 import type { KanbanTask } from "../features/kanban/kanban";
 import { openStream, type Link } from "../api/stream";
+import { pushAutopilotStatus } from "../features/autopilot/autopilot";
 import { UPDATING, linkHud } from "./connection";
 import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
@@ -503,7 +504,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     });
     hud.set({ note: UPDATING });
   }
-  const connection = { snapshot: onSnapshot, live: onLive, link: onLink, build: onBuild };
+  const connection = { snapshot: onSnapshot, live: onLive, link: onLink, build: onBuild, autopilot: pushAutopilotStatus };
   const demoTick = () => {
     if (stopped || !snap || !demoWalk) return;
     apply(demoWalk.step(snap));

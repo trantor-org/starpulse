@@ -6751,6 +6751,9 @@
           },
           {
             "$ref": "#/$defs/InsightDelta"
+          },
+          {
+            "$ref": "#/$defs/AutopilotStatus"
           }
         ]
       },

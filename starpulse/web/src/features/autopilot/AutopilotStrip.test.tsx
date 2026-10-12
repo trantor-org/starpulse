@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutopilotStrip } from "./AutopilotStrip";
-import { AutopilotStore } from "./autopilot";
+import { AutopilotStore, pushAutopilotStatus } from "./autopilot";
 
 const NOW = 10_000;
 const dims = (over: Record<string, number> = {}) =>
@@ -182,43 +182,19 @@ describe("the autopilot strip", () => {
     expect(q('[role="switch"]')).toBeNull();
   });
 
-  it("reads again on an interval while Autopilot is on and its view shows, and stops when it unmounts", async () => {
+  it("reads once when the view opens, adds no GET on a timer, and takes a stream status without fetching", async () => {
     vi.useFakeTimers();
     await draw();
     const reads = () => fetcher.mock.calls.filter(([, init]) => !init?.method).length;
     expect(reads()).toBe(1);
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(reads()).toBe(2);
-
-    act(() => root.unmount());
-    root = createRoot(host);
-    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
-    expect(reads()).toBe(2);
-  });
-
-  it("reads once when Autopilot is off, then adds no further GET on the refresh interval", async () => {
-    vi.useFakeTimers();
-    await draw({ enabled: false });
-    const reads = () => fetcher.mock.calls.filter(([, init]) => !init?.method).length;
-    expect(reads()).toBe(1);
-
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
     expect(reads()).toBe(1);
-  });
 
-  it("resumes interval GETs when Autopilot turns on after being off", async () => {
-    vi.useFakeTimers();
-    await draw({ enabled: false });
-    const reads = () => fetcher.mock.calls.filter(([, init]) => !init?.method).length;
+    await act(async () => {
+      pushAutopilotStatus({ sampledAt: NOW, dimensions: dims({ cpu: 10 }), inFlight: SESSIONS, next: null, enabled: true });
+    });
     expect(reads()).toBe(1);
-
-    await act(async () => q<HTMLButtonElement>('[role="switch"]')!.click());
-    await settle();
-    expect(q('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
-    const afterOn = reads();
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(reads()).toBe(afterOn + 1);
+    expect(q(".nx.none")?.textContent).toBe("Next · nothing eligible");
   });
 });

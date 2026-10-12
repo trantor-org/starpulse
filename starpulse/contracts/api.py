@@ -1252,6 +1252,9 @@ class AutopilotStatus(_Api):
     next: AutopilotNext | None = Field(default=None, description="Null when no task in the eligible lane is workable.")
 
 
+EVENTS["autopilot"] = AutopilotStatus
+
+
 class ForwardingStatus(_Api):
     """What the forwarder would send next, and why."""
 
@@ -1737,7 +1740,7 @@ class ApiContract(_Api):
 
     snapshot: Snapshot
     events: list[
-        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta
+        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta | AutopilotStatus
     ]
     build: BuildEvent
     restarting: RestartingEvent

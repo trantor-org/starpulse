@@ -1000,6 +1000,10 @@ class BoardFeed:
             return f"board: reading {self._source}"
         return "; ".join(f"{instance}: {error}" for instance, error in self._runs_errors.items()) or None
 
+    def publish(self, kind: str, data: dict) -> None:
+        """Put `kind`/`data` on every stream subscriber (and the reconnect log), as an adapter's own `_publish` does."""
+        self._publish(kind, data)
+
     def _publish(self, kind: str, data: dict) -> None:
         with self._lock:
             self._rev += 1
