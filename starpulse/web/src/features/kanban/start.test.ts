@@ -21,6 +21,10 @@ const HARNESSES: Harnesses = {
     { name: "codex", label: "Codex", sessions: false, reason: "Remote Control is Claude's", tiers: { standard: { model: "gpt-5", efforts: ["medium", "high"] } } },
   ],
 };
+const DESKTOP: Harnesses = {
+  ...HARNESSES,
+  harnesses: HARNESSES.harnesses.map((h) => (h.name === "claude" ? { ...h, desktop: { host: "adinb@192.0.2.7", folder: "/home/adinb/trantor" } } : h)),
+};
 const SESSION = "https://claude.ai/code/session_01";
 
 /** A session-start the test settles by hand, so the card can be read while the start is in flight. */
@@ -107,6 +111,32 @@ describe("the start question", () => {
     starts.ask(task("TASK-D1", "ready"), "play");
 
     expect([starts.get().harnesses, starts.canStart()]).toEqual([HARNESSES, true]);
+  });
+
+  it("key 3 opens a Claude Desktop SSH session on the served host and folder, prefilled to start the task, and posts no start", () => {
+    const { writer, moves, post } = stores();
+    const open = vi.fn<(url: string) => void>();
+    const starts = new StartStore(post, moves, DESKTOP, open);
+    starts.ask(task("TASK-D1", "ready"), "play");
+
+    expect(starts.canDesktop()).toBe(true);
+    expect(starts.key("3")).toBe(true);
+    expect(open).toHaveBeenCalledWith("claude://code/new?ssh_host=adinb%40192.0.2.7&ssh_folder=%2Fhome%2Fadinb%2Ftrantor&q=Start%20TASK-D1");
+    expect(post).not.toHaveBeenCalled();
+    expect(writer).not.toHaveBeenCalled();
+    expect([starts.get().asking, starts.get().claiming]).toEqual([null, {}]);
+  });
+
+  it("offers no Desktop session when the harness names no Desktop SSH host", () => {
+    const { moves, post } = stores();
+    const open = vi.fn<(url: string) => void>();
+    const starts = new StartStore(post, moves, HARNESSES, open);
+    starts.ask(task("TASK-D1", "ready"), "play");
+
+    expect(starts.canDesktop()).toBe(false);
+    expect(starts.key("3")).toBe(false);
+    expect(open).not.toHaveBeenCalled();
+    expect(starts.get().asking).not.toBeNull();
   });
 
   it("is not asked for a card already waiting for its claim", () => {

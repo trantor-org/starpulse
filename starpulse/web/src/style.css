@@ -505,9 +505,9 @@ aside h3 { margin: 0 0 8px; font-size: calc(10px * var(--fs)); font-weight: 500;
 #kbm .tv .archbtn { all: unset; padding: 4px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .archbtn:hover, #kbm .tv .archbtn:focus-visible { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 #kbm .tv .changed { color: var(--agent); font-size: calc(10.5px * var(--fs)); }
-#kbm .tv .cancelbtn, #kbm .tv .savebtn, #kbm .ask .afoot .manual, #kbm .ask .afoot .cancel { all: unset; padding: 4px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 28%, transparent); color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
+#kbm .tv .cancelbtn, #kbm .tv .savebtn, #kbm .ask .afoot .manual, #kbm .ask .afoot .desktopbtn, #kbm .ask .afoot .cancel { all: unset; padding: 4px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--slate) 28%, transparent); color: var(--ink-2); font-size: calc(11.5px * var(--fs)); }
 #kbm .tv .savebtn { border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok-text); }
-#kbm .tv .cancelbtn:hover, #kbm .tv .savebtn:hover, #kbm .ask .afoot .manual:hover, #kbm .ask .afoot .cancel:hover, #kbm .ask .afoot .manual:focus-visible, #kbm .ask .afoot .cancel:focus-visible { background: color-mix(in srgb, var(--slate) 12%, transparent); }
+#kbm .tv .cancelbtn:hover, #kbm .tv .savebtn:hover, #kbm .ask .afoot .manual:hover, #kbm .ask .afoot .desktopbtn:hover, #kbm .ask .afoot .cancel:hover, #kbm .ask .afoot .manual:focus-visible, #kbm .ask .afoot .desktopbtn:focus-visible, #kbm .ask .afoot .cancel:focus-visible { background: color-mix(in srgb, var(--slate) 12%, transparent); }
 #kbm .tv .savebtn:disabled { opacity: .4; }
 #kbm .tv kbd { margin-left: 4px; color: var(--dim); font: calc(9px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; }
 #kbm .tv .editrefusal { padding: 8px 10px; border-radius: 7px; font-size: calc(11px * var(--fs)); }
@@ -615,7 +615,9 @@ body.dragging, body.dragging * { user-select: none; }
 /* the three answers on one row, as the confirmation box's: the quiet way out on the left, the default on the right */
 #kbm .ask .afoot { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
 #kbm .ask .afoot .sp { margin-left: auto; }
-#kbm .ask .afoot :is(.cancel, .manual, .startbtn) { display: inline-flex; align-items: center; }
+#kbm .ask .afoot :is(.cancel, .manual, .desktopbtn, .startbtn) { display: inline-flex; align-items: center; white-space: nowrap; }
+/* Desktop (SSH) makes four answers, which need 516px at 100% text and 670px at 150%: the dialog grows with the text size to keep them on one row. */
+@media (min-width: 901px) { #kbm .modal.ask:has(.desktopbtn) { width: min(calc(270px + 310px * var(--fs)), calc(100vw - 40px)); } }
 #kbm .ask .startbtn:disabled { opacity: .4; }
 @media (prefers-reduced-motion: reduce) { #kb .card.claiming::after { animation: none; } }
 

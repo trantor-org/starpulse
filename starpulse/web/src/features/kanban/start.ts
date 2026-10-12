@@ -12,6 +12,8 @@ export interface Harness {
   sessions: boolean;
   reason: string;
   tiers: Record<string, { model: string; efforts: string[] }>;
+  /** The SSH host (`user@address`) and folder a Claude Desktop session opens on; absent when none is configured. */
+  desktop?: { host: string; folder: string } | null;
 }
 export interface Harnesses {
   tiers: string[];
@@ -100,6 +102,10 @@ export function runsOn(pick: Pick, h: Harnesses): string {
   return `runs ${model}${pick.effort ? ` at ${pick.effort} effort` : ""} on ${harness?.label ?? pick.harness}`;
 }
 
+/** Claude Desktop's new-session link on `desktop`'s SSH host and folder, its prompt prefilled (never sent) to start `task`. */
+const desktopLink = (task: string, desktop: { host: string; folder: string }) =>
+  `claude://code/new?ssh_host=${encodeURIComponent(desktop.host)}&ssh_folder=${encodeURIComponent(desktop.folder)}&q=${encodeURIComponent(`Start ${task}`)}`;
+
 /** A card waiting for its claim stays put: the session is already working it. */
 export const canDrag = (id: string, state: StartState) => !state.claiming[id];
 
@@ -115,7 +121,12 @@ export class StartStore {
   private state: StartState;
   private claims: Claims = {};
   private listeners = new Set<() => void>();
-  constructor(private post: PostStart, private moves: MoveStore, harnesses: Harnesses = NO_HARNESSES) {
+  constructor(
+    private post: PostStart,
+    private moves: MoveStore,
+    harnesses: Harnesses = NO_HARNESSES,
+    private open: (url: string) => void = (url) => window.location.assign(url),
+  ) {
     this.state = { harnesses, asking: null, claiming: {}, failed: {} };
   }
 
@@ -151,13 +162,22 @@ export class StartStore {
     return !!asking && harnessOf(asking.pick.harness, this.state.harnesses)?.sessions === true;
   }
 
-  /** The question's keys: 1 starts a session, 2 works it manually, Escape returns the card. True when the key answered the question. */
+  /** Whether the pick's harness names a Claude Desktop SSH host to open the session on. */
+  canDesktop(): boolean {
+    const asking = this.state.asking;
+    return !!asking && !!harnessOf(asking.pick.harness, this.state.harnesses)?.desktop;
+  }
+
+  /** The question's keys: 1 starts a session, 2 works it manually, 3 opens it in Claude Desktop, Escape returns the card. True when the key answered the question. */
   key(key: string): boolean {
     const asking = this.state.asking;
     if (!asking) return false;
     if (key === "1") {
       if (!this.canStart()) return false;
       void this.start();
+    } else if (key === "3") {
+      if (!this.canDesktop()) return false;
+      this.desktop();
     } else if (key === "2") this.manual();
     else if (key === "Escape") this.cancel();
     else return false;
@@ -174,6 +194,16 @@ export class StartStore {
     if (!asking) return;
     this.set({ asking: null });
     void this.moves.drop(asking.task, ACTIVE);
+  }
+
+  /** Open the task in a Claude Desktop SSH session: Desktop asks to connect and prefills the prompt, and that session's own claim moves
+   *  the card, so nothing is posted and the card stays in its lane. */
+  desktop() {
+    const asking = this.state.asking;
+    const desktop = asking && harnessOf(asking.pick.harness, this.state.harnesses)?.desktop;
+    if (!asking || !desktop) return;
+    this.set({ asking: null });
+    this.open(desktopLink(asking.task.id, desktop));
   }
 
   /** Start a session on the pick: the card goes to In progress at once and waits there for the agent's claim. */
