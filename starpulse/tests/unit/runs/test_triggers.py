@@ -227,7 +227,11 @@ def test_a_start_the_adapter_refuses_is_dropped_and_the_next_event_still_starts(
 
 
 def _replayed_board(
-    store: HistoryStore, log: EventLog, dagu: _Dagu, stop: threading.Event
+    store: HistoryStore,
+    log: EventLog,
+    dagu: _Dagu,
+    stop: threading.Event,
+    after_replay: Callable[[], None] | None = None,
 ) -> tuple[BoardFeed, threading.Thread]:
     """A board a `serve` on an empty store replays, with the trigger reader started as `serve` starts it: before the
     adapter's stream is read, so the replay's lane entries land after the log's head at that moment."""
@@ -235,10 +239,17 @@ def _replayed_board(
     feed.record_lanes(store, log)
     feed.await_stream()
     feed.expect("3-0")
+
+    def replayed(timeout: float) -> bool:
+        done = feed.wait_replayed(timeout)
+        if done and after_replay is not None:
+            after_replay()  # a move lands between the replay's end and this reader's wake
+        return done
+
     thread = threading.Thread(
         target=run_triggers,
         args=([_DONE, _REVIEW], {"dagu": dagu}, store, log, stop),
-        kwargs={"interval": 0.01, "replayed": feed.wait_replayed},
+        kwargs={"interval": 0.01, "replayed": replayed, "replay_head": feed.replay_head},
         daemon=True,
     )
     thread.start()
@@ -273,6 +284,20 @@ def test_a_lane_move_made_after_the_replay_still_starts_one_run(
     head = log.head()
     assert head is not None
     _passed(store, head)
+    _stop(stop, thread)
+
+    assert dagu.calls == ["review"]
+
+
+def test_a_lane_move_appended_between_the_replay_end_and_the_reader_waking_starts_one_run(
+    store: HistoryStore, log: EventLog, stop: threading.Event
+) -> None:
+    dagu = _Dagu()
+    moved: list[int] = []
+    _, thread = _replayed_board(store, log, dagu, stop, lambda: moved.append(_move(log, "TASK-3", "review", 200.0)))
+
+    _until(lambda: bool(moved))
+    _passed(store, moved[0])
     _stop(stop, thread)
 
     assert dagu.calls == ["review"]
