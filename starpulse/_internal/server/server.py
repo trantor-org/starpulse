@@ -220,7 +220,7 @@ from starpulse._internal.hub import forward
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.server.process_metrics import process_gauges
 from starpulse._internal.hub.forward import Forwarder
-from starpulse._internal.feed.snapshot_cache import KEPT, SnapshotCache
+from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse._internal.server.writes import (
     autopilot,
     OPERATOR,
@@ -1125,7 +1125,6 @@ def request_handler(
     harnesses_body = encode("harnesses", configured.as_json())
     snapshots = SnapshotCache(feed)
     pull_reads = _PullReads(pulls)
-    snapshot_bodies = _SnapshotBodies()
     event_text = _EventText()
     flows = feed.machines.keys()
 
@@ -1164,7 +1163,7 @@ def request_handler(
                 self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
             elif url.path == "/api/snapshot":
                 served = snapshots.get()
-                self._send(snapshot_bodies(served.key, served.body))
+                self._send(served.encoded)
             elif url.path == "/api/merges":
                 self._send(*merges_response(feed, parse_qs(url.query)))
             elif url.path == "/api/doctor":
@@ -1242,7 +1241,7 @@ def request_handler(
             body = snapshots.body(key)
             if body is None:
                 return self._send(encode("error", {"error": f"no snapshot {key} is held"}), 404)
-            self._send(snapshot_bodies(key, body), cache="max-age=3600, immutable")
+            self._send(body, cache="max-age=3600, immutable")
 
         def _stream_events(self, by_ref: bool = False) -> None:
             """Hold the connection open: the Board's snapshot, then each change as it happens. `by_ref` sends the snapshot
@@ -1442,24 +1441,6 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
     Opening it puts every StarPulse table, the event log's included, on that database.
     """
     return HistoryStore(database_url(config.database_url, base), machines)
-
-
-class _SnapshotBodies:
-    """Each snapshot body with its gzip, by the key that names it: gzip of the ~1.5 MB snapshot takes tens of ms, so the
-    first page to read a snapshot compresses it and the rest are sent that."""
-
-    def __init__(self, keep: int = KEPT) -> None:
-        self._keep = keep
-        self._held: OrderedDict[str, Encoded] = OrderedDict()
-        self._lock = threading.Lock()
-
-    def __call__(self, key: str, body: bytes) -> Encoded:
-        with self._lock:
-            if (held := self._held.get(key)) is None:
-                held = self._held[key] = Encoded.of(body)
-                while len(self._held) > self._keep:
-                    self._held.popitem(last=False)
-            return held
 
 
 class _PullReads:
