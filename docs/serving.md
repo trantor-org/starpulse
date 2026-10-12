@@ -374,8 +374,9 @@ While the switch is on, the loop calls `decide` and starts the admitted tasks. I
 - a harness session stops, or a started task changes;
 - the switch turns on;
 - the sampler's reading of a dimension crosses its limit;
-- a sample leaves room for a task admission turned away: a task's demand can fit a dimension's headroom without the
-  dimension ever having reached its limit, so a crossing alone would leave it waiting.
+- the feed's `autopilot` status event of a new sample says the next pick would start: a task's demand can fit a
+  dimension's headroom without the dimension ever having reached its limit, so a crossing alone would leave it waiting.
+  The loop reads that event from the feed it already subscribes to (the stream `/api/events` serves), once per sample.
 
 Each pass starts the first admitted task, then decides again over readings that carry that task's demand, so two tasks that
 do not fit together are never both started in one pass. A run holds its capacity from its start until its task leaves

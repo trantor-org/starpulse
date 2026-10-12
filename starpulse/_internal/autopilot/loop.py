@@ -1,8 +1,8 @@
 """The autopilot loop: admits Ready tasks into sessions as capacity allows, records each run and settles a stuck one.
 
 It wakes on events, never on a dispatch timer: a task entering the eligible lane (or becoming workable there), a
-session stopping, the toggle turning on, a capacity dimension crossing its limit and a sample that leaves room for a task
-admission turned away (`wake`). Each wake is one `tick`:
+session stopping, the toggle turning on, a capacity dimension crossing its limit (`wake`) and the feed's `autopilot`
+status of a sample that leaves room for a task admission turned away. Each wake is one `tick`:
 
 1. a run whose task left the eligible lane and In Progress is finished and written to the ledger (its outcome is the
    lane it went to, its duration and its resource peak);
@@ -98,12 +98,19 @@ class Loop:
         self._clock = clock
         self._running: dict[str, _Run] = {}
         self._events: queue.Queue | None = None
+        self._sampled_at: float | None = None  # the sample of the last `autopilot` status the loop was offered
 
     def wants(self, kind: str, data: Mapping[str, Any]) -> bool:
         """Whether a feed event (or a `wake`) can free or fill capacity: a task entering the eligible lane, a running task's
-        own change, or a harness session stopping. Every tool use is a harness move too, so only a stop counts."""
+        own change, a harness session stopping, or the `autopilot` status of a new sample whose next pick would start.
+        Every tool use is a harness move too, so only a stop counts. A tick publishes its status too, over the sample it
+        ticked on, so a status wakes the loop once per sample: a start that keeps failing waits for the next sample."""
         if kind == "wake":
             return True
+        if kind == "autopilot":
+            fresh = data["sampledAt"] != self._sampled_at
+            self._sampled_at = data["sampledAt"]
+            return fresh and data["enabled"] and (data.get("next") or {}).get("verdict") == "starting"
         if kind == "task":
             agent = data["agent"]
             return data["id"] in self._running or (agent is not None and agent["state"] == self._lane)
@@ -115,12 +122,6 @@ class Loop:
         """Run a tick on the loop's thread: the toggle turned on, or a capacity dimension crossed its limit."""
         if self._events is not None:
             self._events.put(("wake", {}))
-
-    def sampled(self) -> None:
-        """Wake the loop when a sample leaves room for a task admission turned away: a demand fits a headroom without any
-        dimension crossing its limit, so a crossing alone would leave the task waiting on a quiet board."""
-        if self._toggle.get() and (pick := self.next_pick()) is not None and pick["verdict"] == "starting":
-            self.wake()
 
     def tick(self, admit: bool = True) -> list[str]:
         """Finish and settle runs, then (with `admit` and the switch on) start every task capacity allows; the ids started."""

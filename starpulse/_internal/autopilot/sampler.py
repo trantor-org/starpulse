@@ -45,7 +45,7 @@ class Crossing:
 
 class Sampler:
     """Samples `probe` (CPU and memory percent), `sessions` (autopilot sessions in flight) and `review` (review-lane
-    points) against `limits`, and tells `on_crossing` each dimension whose fullness changed and `on_sample` each pass.
+    points) against `limits`, and tells `on_crossing` each dimension whose fullness changed.
 
     `sample` runs on the sampler's thread and `readings` on the server's, so the latest pass is swapped in whole.
     """
@@ -58,14 +58,12 @@ class Sampler:
         review: Callable[[], float],
         on_crossing: Callable[[Crossing], object],
         clock: Callable[[], float],
-        on_sample: Callable[[], object] | None = None,
     ) -> None:
         self._limits = limits
         self._probe = probe
         self._uses = {"sessions": sessions, "review": review}
         self._on_crossing = on_crossing
         self._clock = clock
-        self._on_sample = on_sample
         self._latest: tuple[list[Reading], float | None] = ([], None)
 
     def readings(self) -> tuple[list[Reading], float | None]:
@@ -89,11 +87,6 @@ class Sampler:
                     self._on_crossing(Crossing(reading.name, reading.use, reading.limit, reading.full))
                 except Exception:  # a listener's bug must not stop the sampler or hide the next crossing
                     logger.exception("StarPulse: an autopilot capacity listener failed")
-        if self._on_sample is not None:
-            try:
-                self._on_sample()
-            except Exception:  # a listener's bug must not stop the sampler
-                logger.exception("StarPulse: an autopilot sample listener failed")
 
     def run_forever(self, stop: threading.Event, interval: float = PERIOD) -> None:
         """Sample now and then every `interval` seconds until `stop` is set."""

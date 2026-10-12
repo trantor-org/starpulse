@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -272,12 +271,24 @@ def test_a_timer_wake_finishes_and_settles_but_starts_nothing(rig: Rig) -> None:
         ("move", {"flow": "in-progress", "id": "T-1", "agent": {"state": "stopped"}}, False),
         ("claim", {"task": "T-1"}, False),
         ("wake", {}, True),  # the toggle turning on, or a sampler crossing
+        ("autopilot", {"sampledAt": 1.0, "enabled": True, "next": {"verdict": "starting"}}, True),  # a sample leaves room
+        ("autopilot", {"sampledAt": 1.0, "enabled": True, "next": {"verdict": "waits"}}, False),
+        ("autopilot", {"sampledAt": 1.0, "enabled": True, "next": None}, False),
+        ("autopilot", {"sampledAt": 1.0, "enabled": False, "next": {"verdict": "starting"}}, False),
     ],
 )
 def test_only_the_events_that_can_free_or_fill_capacity_wake_the_loop(
     rig: Rig, kind: str, data: Mapping[str, Any], wakes: bool
 ) -> None:
     assert rig.loop.wants(kind, data) is wakes
+
+
+def test_a_status_of_a_sample_already_seen_does_not_wake_the_loop_again(rig: Rig) -> None:
+    status = {"sampledAt": 1.0, "enabled": True, "next": {"verdict": "starting"}}
+
+    assert rig.loop.wants("autopilot", status)
+    assert not rig.loop.wants("autopilot", status)  # a tick's own status push carries the sample it ticked on
+    assert rig.loop.wants("autopilot", {**status, "sampledAt": 2.0})
 
 
 def test_a_running_tasks_own_change_wakes_the_loop(rig: Rig) -> None:
