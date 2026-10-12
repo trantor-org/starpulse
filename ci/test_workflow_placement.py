@@ -135,3 +135,20 @@ def test_main_follow_submit_runs_on_the_merge_event_lane_and_never_for_a_fork():
     assert document[True] == {"pull_request_target": {"types": ["closed"]}}
     assert follow["runs-on"] == ["self-hosted", "merge-event"]
     assert follow["if"] == "github.event.pull_request.head.repo.full_name == github.repository"
+
+
+def test_merged_pull_request_dispatch_runs_on_the_merge_event_lane():
+    assert job("dispatch-merged.yml", "dispatch")["runs-on"] == ["self-hosted", "merge-event"]
+
+
+def test_merged_pull_request_dispatch_skips_unmerged_and_fork_pull_requests():
+    condition = job("dispatch-merged.yml", "dispatch")["if"]
+    assert "merged == true" in condition
+    assert "head.repo.full_name == github.repository" in condition
+
+
+def test_merged_pull_request_dispatch_sends_only_after_the_tree_check_passes():
+    steps = job("dispatch-merged.yml", "dispatch")["steps"]
+    send = next(step for step in steps if step["name"] == "Dispatch the merged SHA")
+    assert steps.index(send) > next(i for i, step in enumerate(steps) if step.get("id") == "tested")
+    assert send["if"] == "steps.tested.outputs.tested == 'true'"
