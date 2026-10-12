@@ -8,6 +8,9 @@ on:
   push:
     tags: ["v*"]
   pull_request:
+  # The merge queue's candidate needs `build`, a required check; it soaks and publishes nothing.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
     inputs:
       duration:
@@ -53,7 +56,7 @@ jobs:
   # farm slots, the hardware the budget is judged on (ai-vm-1's Xeon cannot hold it). The soak's exit status is the
   # job's, so a page over budget or leaking publishes nothing: both publishing jobs need it.
   soak:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
     needs: build
     runs-on: [self-hosted, validate, tower]
     # The 4 h hold, plus the page's build and the seeded server's start.
