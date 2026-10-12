@@ -26,6 +26,8 @@ from the events' own durations and from the turns' edges, never from the gaps be
 - `agent_s`: the summed `seconds` of the session's model requests (subagents' included) and tool results.
 - `operator_wait_s`: from the end of the turn before to a human prompt other than the session's first; a prompt typed
   while the turn before still worked waits for nothing.
+  An `[analytics]` `operator_tools` result (a question the operator answers, a plan they approve) is no prompt but
+  is the same wait: the span from the last signal before it, other than its own tool decision, to the tool's start.
 - `idle_s`: the same span before an `injected` prompt, a wait for something other than the operator (a background
   task, a scheduler).
 
@@ -206,11 +208,20 @@ def _turn_ids(ordered: list[Signal]) -> list[str]:
     return ids
 
 
+def _asked_since(ordered: list[Signal], at: int) -> float:
+    """The time of the last signal before `ordered[at]`, passing over the decision to run the same tool."""
+    before = at - 1
+    while before > 0 and ordered[before].kind == "decision" and ordered[before].name == ordered[at].name:
+        before -= 1
+    return ordered[before].time
+
+
 def session_health(
     found: Iterable[Signal], keys: TaskKeys | None, analytics: Analytics | None = None
 ) -> list[dict[str, Any]]:
     """One row per (session, task) of the sessions `found` holds, oldest first; see the module docstring."""
     completion = analytics.completion_skill if analytics else ""
+    operator_tools = analytics.operator_tools if analytics else frozenset()
     rows: list[dict[str, Any]] = []
     for ordered in grouped(found, keys, analytics):
         kind = session_kind(ordered)
@@ -250,6 +261,8 @@ def session_health(
                 open_turns.pop(s.turn, None)
             elif s.kind in {"request", "tool"}:
                 row["agent_s"] += s.seconds
+                if s.kind == "tool" and s.name in operator_tools and at:
+                    row["operator_wait_s"] += max(s.time - s.seconds - _asked_since(ordered, at), 0.0)
                 if row["steps_before_edit"] is None:
                     if s.kind == "request" and s.origin in {"main", "side"}:
                         steps[task] += 1

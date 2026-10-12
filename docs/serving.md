@@ -234,6 +234,7 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # title = "^(validate|verify|check)"                       # a regular expression over the task's title, case-insensitive
 # label = "validation"                                     # a label the task carries
 # injected_openings = ["<task-notification"]               # a prompt opening with one is labelled `injected`, any other `human`
+# operator_tools = ["AskUserQuestion", "ExitPlanMode"]    # tools whose result is the operator's answer: the silence before one is their wait
 # claims = ['backlog_task\.py\s+start\s+(TASK-\d+)']        # group 1 is the task a command or `Skill` args claims
 # completion_skill = "completing-tasks"                    # with `completion_call`, marks a session's task complete
 # completion_call = 'backlog_task\.py\s+deliver\b'          # a shell command run after that skill loaded

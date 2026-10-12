@@ -56,6 +56,7 @@ def test_a_table_declares_how_a_session_is_read_for_its_turns_claims_and_complet
         r"""
 [analytics]
 injected_openings = ["<task-notification", "[board-autopilot]"]
+operator_tools = ["AskUserQuestion", "ExitPlanMode"]
 claims = ['backlog_task\.py\s+start\s+(TASK-\d+)', '^\s*(TASK-\d+)\s*$']
 completion_skill = "completing-tasks"
 completion_call = 'backlog_task\.py\s+deliver\b'
@@ -65,6 +66,7 @@ completion_call = 'backlog_task\.py\s+deliver\b'
     analytics = load(path).analytics
 
     assert analytics.injected_openings == ("<task-notification", "[board-autopilot]")
+    assert analytics.operator_tools == frozenset({"AskUserQuestion", "ExitPlanMode"})
     assert [c.pattern for c in analytics.claims] == [r"backlog_task\.py\s+start\s+(TASK-\d+)", r"^\s*(TASK-\d+)\s*$"]
     assert analytics.completion_skill == "completing-tasks"
     assert analytics.completion_call is not None
@@ -86,6 +88,7 @@ completion_call = 'backlog_task\.py\s+deliver\b'
             "analytics.skill_loads[0]: title is not a regular expression",
         ),
         ('[analytics]\ninjected_openings = [1]', "analytics: injected_openings must be a list of text"),
+        ('[analytics]\noperator_tools = "a"', "analytics: operator_tools must be a list of text"),
         ('[analytics]\nclaims = ["("]', "analytics: claims[0] is not a regular expression"),
         ('[analytics]\nclaims = ["TASK-\\\\d+"]', "analytics: claims[0] needs a group that captures the task key"),
         ("[analytics]\ncompletion_skill = 1", "analytics: completion_skill must be text"),

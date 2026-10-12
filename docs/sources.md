@@ -65,7 +65,9 @@ session's first claim or task-naming switch, when its launch branch names no tas
 - Time comes from the events' own durations, not from the gaps between them. `agent_s` is the sum of the model
   requests' and tool results' durations (a subagent's included). `operator_wait_s` is the time from the end of the turn
   before to a human prompt (never the session's first), `idle_s` the same before an injected prompt, a wait for a
-  background task or scheduler. A prompt typed while the turn before still worked waits for nothing. Codex exports no
+  background task or scheduler. A prompt typed while the turn before still worked waits for nothing. A result of an
+  `operator_tools` tool (a question answered, a plan approved) is no prompt but charges the silence before it to
+  `operator_wait_s`: from the last signal before it, other than that tool's own decision, to the tool's start. Codex exports no
   request duration, so its `agent_s` is its tool results' alone.
 - An `interrupt` is a Claude Code turn with a `prompt.id` and no closing reply: a turn still running counts until its
   reply lands. Codex has no reply signal, so only the interrupts it exports count for it.

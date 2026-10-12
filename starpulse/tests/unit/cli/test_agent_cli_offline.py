@@ -151,6 +151,7 @@ class TestConfigCheck:
                 "lifecycle_skills": [],
                 "skill_loads": [],
                 "injected_openings": [],
+                "operator_tools": [],
                 "claims": [],
                 "completion_skill": "",
                 "completion_call": None,
@@ -168,6 +169,7 @@ class TestConfigCheck:
             'stop_activities = ["Bash", "Read"]\n'
             'lifecycle_skills = ["starting-tasks"]\n'
             'injected_openings = ["<task-notification"]\n'
+            'operator_tools = ["ExitPlanMode", "AskUserQuestion"]\n'
             "claims = ['start\\s+(TASK-\\d+)']\n"
             'completion_skill = "completing-tasks"\n'
             "completion_call = 'deliver\\b'\n"
@@ -186,6 +188,7 @@ class TestConfigCheck:
             "lifecycle_skills": ["starting-tasks"],
             "skill_loads": [{"skill": "verifying-claims", "activities": [], "title": "^verify", "label": "validation"}],
             "injected_openings": ["<task-notification"],
+            "operator_tools": ["AskUserQuestion", "ExitPlanMode"],
             "claims": [r"start\s+(TASK-\d+)"],
             "completion_skill": "completing-tasks",
             "completion_call": r"deliver\b",

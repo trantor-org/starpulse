@@ -371,6 +371,47 @@ def test_a_prompt_typed_while_the_last_turn_still_worked_waits_for_nothing_and_a
     assert (row["operator_wait_s"], row["idle_s"]) == (0, 100)
 
 
+ASKS = Analytics(operator_tools=frozenset({"AskUserQuestion"}))
+
+
+def _asked(*, tool: str = "AskUserQuestion", source: str = "user_temporary") -> list[Signal]:
+    """A turn whose last request ends at 40 s, then the operator answers a question 1575 s later."""
+    return [
+        sig("prompt", 0, turn="p1", detail="human"),
+        sig("request", 40, turn="p1", seconds=30.0),
+        sig("decision", 1615, turn="p1", name=tool, ok=True, detail=source),
+        sig("tool", 1615.02, turn="p1", name=tool, seconds=0.004),
+        sig("request", 1620, turn="p1", seconds=4.0),
+        sig("reply", 1621, turn="p1"),
+    ]
+
+
+def test_the_silence_before_an_operator_tool_result_is_the_operators_wait_and_not_agent_time() -> None:
+    row = only(session_health(_asked(), KEYS, ASKS))
+
+    assert row["operator_wait_s"] == pytest.approx(1615.02 - 0.004 - 40)
+    assert row["agent_s"] == pytest.approx(30.0 + 0.004 + 4.0)
+    assert row["idle_s"] == 0
+
+
+def test_a_question_answered_by_a_hook_waits_for_nothing_and_a_tool_the_config_does_not_name_is_not_a_question() -> None:
+    answered = _asked(source="hook")
+    answered[2] = replace(answered[2], time=answered[1].time + 1)  # a hook answers at once
+    answered[3] = replace(answered[3], time=answered[1].time + 1.02)
+
+    assert only(session_health(answered, KEYS, ASKS))["operator_wait_s"] < 1.1
+    assert only(session_health(_asked(tool="Bash"), KEYS, ASKS))["operator_wait_s"] == 0
+    assert only(session_health(_asked(), KEYS))["operator_wait_s"] == 0
+
+
+def test_the_wait_before_a_question_and_the_prompt_after_it_are_each_charged_once() -> None:
+    found = [*_asked(), sig("prompt", 1621 + 300, turn="p2", detail="human"), sig("reply", 1923, turn="p2")]
+
+    row = only(session_health(found, KEYS, ASKS))
+
+    assert row["operator_wait_s"] == pytest.approx(1615.02 - 0.004 - 40 + 300)
+
+
 def test_a_turn_with_no_closing_reply_is_an_interrupt_and_a_loaded_skill_then_a_deliver_is_complete() -> None:
     analytics = Analytics(completion_skill="completing-tasks")
     found = [

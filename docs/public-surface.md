@@ -41,7 +41,7 @@ internal and can change in any release.
   as before. The Star Map draws one row unless a second row makes the sun more than 5% larger, and keeps each state's
   footprint the same whatever it holds.
 - The config file's keys, among them each `[[triggers]]` table's `on`, `start` and `when` ([Triggers](serving.md#triggers)),
-  the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills`, `injected_openings`, `claims`,
+  the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills`, `injected_openings`, `operator_tools`, `claims`,
   `completion_skill`, `completion_call` and each `[[analytics.skill_loads]]`'s
   `skill`, `activities`, `title` and `label`, and the `[search]` table's optional `embeddings_url`, `model` and
   `token_env` ([Config file](serving.md#config-file)),
