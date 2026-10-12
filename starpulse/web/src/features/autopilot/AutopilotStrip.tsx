@@ -1,11 +1,11 @@
 // The Kanban toolbar's autopilot strip: the global switch, each capacity dimension's use against its limit, the sessions in flight and the
-// next pick with why it goes or waits. Off stops admission only, so the strip dims and counts the sessions still running.
+// next pick with why it goes or waits. Off stops admission and the timed status refresh; the strip dims and counts the sessions still running from its last read.
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ago } from "../../shared/clock";
 import { useViewActive } from "../../shared/Kept";
 import { level, type AutopilotStore, type Dimension, type InFlight, type NextPick } from "./autopilot";
 
-/** The sampler emits on a headroom crossing; the strip also re-reads on this interval so its meters move with the host. */
+/** While Autopilot is on, re-read so meters move with the host; the sampler also emits on a headroom crossing. */
 const REFRESH_MS = 5000;
 
 const pct = (d: Dimension) => `${Math.min(100, (d.used / d.limit) * 100)}%`;
@@ -47,14 +47,18 @@ export function AutopilotStrip({ store, now, openTask }: { store: AutopilotStore
   const { current, phase, unavailable } = useSyncExternalStore(store.subscribe, store.get);
   const [menu, setMenu] = useState(false);
   const active = useViewActive();
+  const on = current?.on ?? false;
   useEffect(() => {
     if (!active) return;
     void store.load();
+  }, [store, active]);
+  useEffect(() => {
+    if (!active || !on) return;
     const refresh = setInterval(() => void store.load(), REFRESH_MS);
     return () => clearInterval(refresh);
-  }, [store, active]);
+  }, [store, active, on]);
   if (!current) return unavailable ? <span className="ap down" title={unavailable}>Autopilot unavailable</span> : null;
-  const { on, dimensions, inFlight, next } = current;
+  const { dimensions, inFlight, next } = current;
   const running = dimensions.find((d) => d.name === "sessions")?.used ?? inFlight?.length ?? 0;
   return (
     <div className={`ap${on ? "" : " off"}`}>
