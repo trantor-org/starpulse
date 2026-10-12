@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -74,8 +75,10 @@ def test_release_soak_runs_on_tower_after_the_build_and_gates_both_publishing_jo
 
 
 def test_release_soak_runs_for_a_tag_or_a_dispatch_and_publishing_only_for_a_tag_push():
-    """A pull request never takes a Tower slot for hours, and a dispatch on a tag's ref publishes nothing."""
-    assert job("release.yml", "soak")["if"] == "github.event_name != 'pull_request'"
+    """A pull request or a merge-queue candidate never takes a Tower slot for hours, and a dispatch on a tag's ref publishes nothing."""
+    assert job("release.yml", "soak")["if"] == (
+        "github.event_name != 'pull_request' && github.event_name != 'merge_group'"
+    )
     assert job("release.yml", "github-release")["if"] == "github.event_name == 'push'"
     assert job("release.yml", "pypi")["if"] == "github.event_name == 'push'"
 
@@ -152,3 +155,73 @@ def test_merged_pull_request_dispatch_sends_only_after_the_tree_check_passes():
     send = next(step for step in steps if step["name"] == "Dispatch the merged SHA")
     assert steps.index(send) > next(i for i, step in enumerate(steps) if step.get("id") == "tested")
     assert send["if"] == "steps.tested.outputs.tested == 'true'"
+
+
+#: The ruleset's required checks (trantor's infrastructure/github/starpulse.tf), by the workflow that reports each.
+REQUIRED_CHECKS = [
+    ("ci.yml", "python"),
+    ("ci.yml", "web"),
+    ("ci.yml", "api-types"),
+    ("ci.yml", "tier-policy"),
+    ("ci.yml", "trantor-contract"),
+    ("release.yml", "build"),
+]
+
+
+@pytest.mark.parametrize(("workflow", "name"), REQUIRED_CHECKS)
+def test_every_required_check_reports_on_a_merge_queue_candidate(workflow, name):
+    """The merge queue waits for each required check on the candidate; one that never reports fails the entry."""
+    document = yaml.safe_load((WORKFLOWS / workflow).read_text())
+    assert document[True]["merge_group"] == {"types": ["checks_requested"]}
+    assert "merge_group" not in job(workflow, name).get("if", "")
+
+
+@pytest.mark.parametrize(
+    ("workflow", "name"),
+    [("ci.yml", "dispatch"), ("release.yml", "soak"), ("release.yml", "github-release"), ("release.yml", "pypi")],
+)
+def test_a_merge_queue_candidate_dispatches_soaks_and_publishes_nothing(workflow, name):
+    """The candidate is not on main yet: dispatching it pins a SHA trantor cannot fetch, and a soak holds Tower for hours."""
+    condition = job(workflow, name)["if"]
+    assert "github.event_name == 'push'" in condition or "github.event_name != 'merge_group'" in condition
+
+
+def run_tree_check(tmp_path, *, parent, base, pr_runs, queue_runs):
+    """Run dispatch-merged.yml's tree check against a stub `gh` and return what it wrote to GITHUB_OUTPUT."""
+    step = next(s for s in job("dispatch-merged.yml", "dispatch")["steps"] if s.get("id") == "tested")
+    stub = tmp_path / "gh"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'case "$2" in\n'
+        f'  */commits/*) echo "{parent}" ;;\n'
+        f'  *event=pull_request*) echo "{pr_runs}" ;;\n'
+        f'  *event=merge_group*) echo "{queue_runs}" ;;\n'
+        '  *) echo "unexpected gh call: $*" >&2; exit 1 ;;\n'
+        "esac\n"
+    )
+    stub.chmod(0o755)
+    output = tmp_path / "output"
+    output.write_text("")
+    env = {
+        "PATH": f"{tmp_path}:/usr/bin:/bin",
+        "GITHUB_OUTPUT": str(output),
+        "REPOSITORY": "trantor-org/starpulse",
+        "MERGE_SHA": "m" * 40,
+        "BASE_SHA": base,
+        "HEAD_SHA": "h" * 40,
+    }
+    subprocess.run(["bash", "-e", "-c", step["run"]], env=env, check=True, capture_output=True, text=True)
+    return output.read_text()
+
+
+def test_merged_pull_request_dispatch_sends_a_queue_merge_its_green_candidate_tested(tmp_path):
+    """A queue merge's base is stale, but the green merge_group run on the merge commit tested exactly that tree."""
+    assert run_tree_check(tmp_path, parent="p" * 40, base="b" * 40, pr_runs=0, queue_runs=1) == "tested=true\n"
+
+
+def test_merged_pull_request_dispatch_leaves_a_stale_base_with_no_green_candidate_to_the_push_run(tmp_path):
+    assert run_tree_check(tmp_path, parent="p" * 40, base="b" * 40, pr_runs=1, queue_runs=0) == ""
+
+
+def test_merged_pull_request_dispatch_still_sends_a_current_base_its_pull_request_run_tested(tmp_path):
+    assert run_tree_check(tmp_path, parent="b" * 40, base="b" * 40, pr_runs=1, queue_runs=0) == "tested=true\n"

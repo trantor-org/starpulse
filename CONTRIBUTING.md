@@ -18,12 +18,16 @@ collaborator, say so in an issue.
 - The `python`, `web`, `api-types` and `build` checks must pass before it merges. `uv run pytest` and
   `pnpm --dir starpulse/web run check` run the first two locally; [docs/development.md](docs/development.md) sets them up and says
   how to regenerate the API schema and types that `api-types` compares.
-- The maintainer squash-merges it. Its title becomes the commit on `main` and the line in the next release's
+- The maintainer adds it to the merge queue. The queue squashes it onto `main` plus every pull request ahead of it,
+  reruns the required checks on that candidate, and merges only a green one, so a pull request never needs
+  rebasing to stay current. Its title becomes the commit on `main` and the line in the next release's
   notes, so write the title for someone who uses StarPulse.
 - Nobody pushes to `main` directly, force-pushes it or deletes it.
 - After a merge, the `dispatch` job in `ci.yml` runs once `python`, `web` and `api-types` pass on `main`. It sends trantor a
   `starpulse-green` `repository_dispatch` whose `sha` is the tested commit, and trantor's `starpulse-bump` workflow
-  opens one pull request pinned to that commit. Pull requests and red runs send nothing. The job mints the
+  opens one pull request pinned to that commit. Pull requests and red runs send nothing. A
+  merge whose pull-request or merge-queue run already tested the merged tree is sent at merge time by
+  `dispatch-merged.yml` instead. The job mints the
   workspace App token from the `WORKSPACE_APP_CLIENT_ID` and `WORKSPACE_APP_PRIVATE_KEY` secrets.
 
 ## License

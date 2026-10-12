@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue's candidate: every required check reports on it, or the queue fails the entry.
+  merge_group:
+    types: [checks_requested]
   # The full suite runs nightly, not per change: a pull request or a push runs only the tests its files can reach.
   schedule:
     - cron: "17 9 * * *" # 02:17 MST, after trantor's 01:17 whole-repo gate
@@ -28,9 +31,9 @@ jobs:
       - run: uv run --no-sync lint-imports
       # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
       - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
-      # A pull request or a push to main runs only the tests its changed files can reach (ci/select_tests.py); the
+      # A pull request, a merge-queue candidate or a push to main runs only the tests its changed files can reach (ci/select_tests.py); the
       # nightly schedule and a manual dispatch run all.
-      - if: github.event_name == 'pull_request' || github.event_name == 'push'
+      - if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push'
         run: git diff --name-only HEAD^1 HEAD | uv run --no-sync python ci/select_tests.py >> "$GITHUB_ENV"
       # Postgres-backed integration cases use the runner's Docker; SQLite cases need no container runtime.
       - if: env.PYTEST_SKIP != 'true'
