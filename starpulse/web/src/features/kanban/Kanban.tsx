@@ -469,6 +469,8 @@ function ModalHost({ store, cards, draw }: { store: OpenTask; cards: KanbanTask[
 
 /** Pixels a press travels before it lifts the card instead of opening it. */
 const LIFT_PX = 5;
+/** The phone layout: one lane shows at a time and a card moves from its task view, so a pointer drag on a card scrolls the lane instead. */
+const PHONE = "(max-width: 900px)";
 
 /**
  * The Kanban view. `spot` is the task a Recent line is hovered for: its card lights as a hovered card does and its column scrolls to it,
@@ -666,7 +668,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   }, [lift]);
 
   const begin = (t: KanbanTask) => (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest(".refusal")) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest(".refusal") || window.matchMedia?.(PHONE).matches) return;
     const box = e.currentTarget.getBoundingClientRect();
     const p: Press = { task: t, kinds: targets(t, lanes), x: e.clientX, y: e.clientY, dx: e.clientX - box.left, dy: e.clientY - box.top, w: box.width, lifted: false };
     press.current = p;
@@ -739,6 +741,9 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
   );
   const outline = useMemo(() => milestoneOutline(cards, hud.settled), [cards, hud.settled]);
+  // phone width: the lane showing, In Progress first as the lane a phone is most often opened to check, else the board's first
+  const [phoneLane, setPhoneLane] = useState("in_progress");
+  const shownLane = view.columns.some((c) => c.id === phoneLane) ? phoneLane : view.columns[0]?.id;
   return (
     <main id="kb" className={compact ? "compact" : undefined}>
       <header><span className="title">Kanban</span><span className="count">{view.open} open · {view.done} done</span></header>
@@ -796,12 +801,19 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           </span>
         </div>
       </div>
+      <div className="lanes" role="tablist" aria-label="Lanes">
+        {view.columns.map((col) => (
+          <button key={col.id} role="tab" data-lane={col.id} aria-selected={col.id === shownLane} title={col.name} onClick={() => setPhoneLane(col.id)}>
+            <span className="g" /><span className="c">{col.count}</span><span className="nm">{col.name}</span>
+          </button>
+        ))}
+      </div>
       <div id="cols" ref={columns} data-warm-parts="" style={{ "--cols": view.columns.length } as CSSProperties}>
         {view.columns.map((col) => {
           let row = 0;
           const target = lift?.kinds[col.id];
           const inChain = chain ? col.buckets.flatMap((b) => b.tasks).filter((t) => chain(t.id) === "holds" || chain(t.id) === "waits").length : 0;
-          const colCls = ["col", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
+          const colCls = ["col", col.id === shownLane && "on", target && target.kind !== "here" && target.kind, lift?.over === col.id && target?.kind !== "here" && "over"].filter(Boolean).join(" ");
           return (
             <section key={col.id} className={colCls} data-lane={col.id}>
               <h2><span className="g" /><span className="nm" title={col.name}>{col.name}</span><span className="c">{col.count}</span>

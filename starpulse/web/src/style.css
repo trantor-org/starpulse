@@ -978,7 +978,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
 /* Phone width. Under 900px the navigator and the rail are gone, so a bar along the bottom edge switches views, and its More opens the
    page's own navigator as a sheet. The bar, its scrim and the sheet's close button are not drawn above 900px; every rule that changes
    how a view draws sits inside the query, so the page above it is as it was. */
-#pnav, #pn-scrim, #nav .pn-x { display: none; }
+#pnav, #pn-scrim, #nav .pn-x, #kb .lanes { display: none; }
 @media (max-width: 900px) {
   :root { --pm: 12px; --pnav: calc(38px + 16px * var(--fs)); }
   :is(#kb, #dg, #admin) { left: var(--pm); right: var(--pm); bottom: var(--pnav); }
@@ -1011,4 +1011,38 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #pnav .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
   #pnav .dot.off { background: var(--fail); }
   #pnav .more .dot { position: absolute; top: 9px; left: calc(50% + 9px); }
+
+  /* Kanban: one lane at a time. The toolbar's right-hand group takes its own lines; the autopilot strip wraps instead of holding one static width. */
+  #kb .filters .rt { width: 100%; margin-left: 0; justify-content: flex-start; gap: 6px 12px; }
+  #kb .ap { width: 100%; flex-wrap: wrap; gap: 6px 12px; padding: 6px 0; border-inline: 0; border-block: 1px solid color-mix(in srgb, var(--slate) 12%, transparent); }
+  #kb .ap :is(.nx, .paused) { flex: 1 1 100%; }
+  #kb .ap .dims { flex: 1 1 100%; flex-wrap: wrap; gap: 6px 12px; }
+  #kb .ap .dm { flex: 1 1 auto; }
+  #kb .ap + .shown { margin-left: 0; width: auto; }
+  #kb .rt .nt { width: auto; margin-left: auto; }
+  #kb .ap :is(.ap-ses, .ap-ref) { left: 0; right: 0; min-width: 0; width: auto; }
+  #kb #cols { grid-template-columns: minmax(0, 1fr); gap: 6px; padding-bottom: var(--pm); }
+  #kb :is(.lanes button, .col)[data-lane=ready] { --c: var(--ready); } #kb :is(.lanes button, .col)[data-lane=in_progress] { --c: var(--run); }
+  #kb :is(.lanes button, .col)[data-lane=review] { --c: var(--agent); } #kb :is(.lanes button, .col)[data-lane=needs_attention] { --c: var(--fail); }
+  #kb :is(.lanes button, .col)[data-lane=done] { --c: var(--ok); }
+  #kb .col h2 .g { border-color: var(--c, currentColor); }
+
+  /* the strip: each lane's ring and count; the lane showing keeps its own header, so its name is always spelled out */
+  #kb .lanes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; flex: none; margin-bottom: 8px; }
+  #kb .lanes button { all: unset; --c: var(--slate); box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 34px; padding: 4px 2px; border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); font-size: calc(11.5px * var(--fs)); color: var(--slate); font-variant-numeric: tabular-nums; }
+  #kb .lanes button .g { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--c); box-sizing: border-box; }
+  #kb .lanes button .nm { display: none; }
+  #kb .lanes button[aria-selected=true] { border-color: color-mix(in srgb, var(--agent) 60%, transparent); background: color-mix(in srgb, var(--agent) 10%, transparent); color: var(--ink); }
+  #kb .lanes button[aria-selected=true] .g { background: var(--c); }
+  #kb .lanes button:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
+  #kb .col:not(.on) { display: none; }
+
+  /* the task view fills the phone and covers the bar; a DAG's view is the DAGs slice's */
+  #kbm .modal.tv:not(.dgm) { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border-inline: 0; }
+  #kbm .modal.tv:not(.dgm) :is(.tvhead, .tvcol) { padding-inline: 14px; }
+  /* the Move to menu is how a card changes lane here: it hangs from the whole header, so it stays inside the viewport wherever the actions wrap to */
+  #kbm .modal.tv:not(.dgm) .tvhead { position: relative; }
+  #kbm .modal.tv:not(.dgm) .tvhead .mv { position: static; }
+  #kbm .modal.tv:not(.dgm) .tvhead .mvmenu { left: 14px; right: 14px; min-width: 0; }
 }

@@ -175,9 +175,13 @@ function bodies() {
 
 /** The phone-width bar at 390 px. Its rules sit under the stylesheet's 900 px query, which this wide sheet never meets, so each frame
  *  carries the page's stylesheet (the link, or the style a built copy inlines it as; the sheet's own layout block is the last style). */
-function phoneBars() {
+function phoneSheets() {
   const own = [...document.head.querySelectorAll("style")].at(-1);
-  const sheets = [...document.head.querySelectorAll('link[rel="stylesheet"], style')].filter((n) => n !== own).map((n) => n.outerHTML).join("");
+  return [...document.head.querySelectorAll('link[rel="stylesheet"], style')].filter((n) => n !== own).map((n) => n.outerHTML).join("");
+}
+
+function phoneBars() {
+  const sheets = phoneSheets();
   const tab = (label, glyph, on) => `<button${on ? ' class="on" aria-current="page"' : ""}>${glyph}<span>${label}</span></button>`;
   const g = (cls, size, view, body) => `<svg class="g ${cls}" width="${size}" height="${size}" viewBox="${view}" aria-hidden="true">${body}</svg>`;
   const glyph = {
@@ -188,7 +192,7 @@ function phoneBars() {
     admin: g("", 14, "0 0 12 12", '<circle cx="6" cy="6" r="1.8"/><path d="M6 .9v1.6M6 9.5v1.6M.9 6h1.6M9.5 6h1.6M2.4 2.4l1.1 1.1M8.5 8.5l1.1 1.1M2.4 9.6l1.1-1.1M8.5 3.5l1.1-1.1"/>'),
     more: g("", 16, "0 0 16 16", '<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>'),
   };
-  for (const frame of document.querySelectorAll("iframe.phone")) {
+  for (const frame of document.querySelectorAll("iframe.phone:not(.strip)")) {
     const fs = Number(frame.dataset.fs);
     frame.style.height = `${38 + 16 * fs}px`;
     frame.srcdoc = `<!doctype html><html style="--fs: ${fs}"><head><meta charset="utf-8">${sheets}</head><body><nav id="pnav" aria-label="Views">` +
@@ -197,6 +201,20 @@ function phoneBars() {
   }
 }
 
+/** The Kanban's lane strip at 390 px, under the same 900 px query: one tab per lane with its ring and count, the selected lane filled. */
+function laneStrips() {
+  const sheets = phoneSheets();
+  const lanes = [["ready", 12], ["waiting", 3], ["in_progress", 4], ["review", 1], ["needs_attention", 0], ["done", 128]];
+  for (const frame of document.querySelectorAll("iframe.strip")) {
+    const fs = Number(frame.dataset.fs);
+    frame.style.height = `${26 + 22 * fs}px`;
+    frame.srcdoc = `<!doctype html><html style="--fs: ${fs}"><head><meta charset="utf-8">${sheets}</head><body><div id="kb" style="position: static"><div class="lanes" role="tablist" aria-label="Lanes">` +
+      lanes.map(([id, n]) => `<button role="tab" data-lane="${id}" aria-selected="${id === "in_progress"}"><span class="g"></span><span class="c">${n}</span><span class="nm"></span></button>`).join("") +
+      "</div></div></body></html>";
+  }
+}
+
 palette(document.getElementById("palette"));
 bodies();
 phoneBars();
+laneStrips();
