@@ -1,4 +1,4 @@
-# The YAML twin of backlog_lifecycle.pull_request.PullRequest.
+# The YAML twin of board_client.pull_request.PullRequest.
 name: pull_request
 states:
   start: {initial: true}

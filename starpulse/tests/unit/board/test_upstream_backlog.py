@@ -490,7 +490,7 @@ def test_the_adapter_module_pulls_in_neither_the_legacy_client_nor_the_projectio
     client = "re" + "dis"
     code = (
         "import sys, starpulse._internal.board.upstream_backlog;"
-        f"bad = [m for m in ({client!r}, 'event_stream', 'backlog_projection', 'backlog_lifecycle') if m in sys.modules];"
+        f"bad = [m for m in ({client!r}, 'event_stream', 'backlog_projection', 'board_client') if m in sys.modules];"
         "sys.exit(','.join(bad) or 0)"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False, timeout=60)
