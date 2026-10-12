@@ -11,7 +11,7 @@ input is read only for the `git switch` or `git checkout` ref it names, which is
 
 | harness | records read |
 |---|---|
-| Claude Code | `user_prompt`, `api_request`, `tool_decision`, `tool_result`, `skill_activated`, `assistant_response`, `compaction` |
+| Claude Code | `user_prompt`, `api_request`, `tool_decision`, `tool_result`, `hook_execution_complete` (inside a turn), `skill_activated`, `assistant_response`, `compaction` |
 | Codex | `codex.conversation_starts`, `codex.user_prompt`, `codex.sse_event` (`response.completed`), `codex.tool_decision`, `codex.tool_result`, `codex.skill_invocation`, `codex.turn_cost` (an interrupted turn) |
 """
 
@@ -143,6 +143,8 @@ def _claude(name: str, a: dict[str, Any]) -> Iterator[dict[str, Any]]:
             "seconds": _seconds(a.get("duration_ms")),
             **_call(a),
         }
+    elif name == "hook_execution_complete" and a.get("prompt.id"):
+        yield {"kind": "hook", "name": str(a.get("hook_name") or ""), "seconds": _seconds(a.get("total_duration_ms"))}
     elif name == "skill_activated":
         yield {"kind": "skill", "name": str(a.get("skill.name") or "")}
     elif name == "assistant_response":

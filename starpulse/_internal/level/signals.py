@@ -30,7 +30,7 @@ class Signal:
 
     `kind` is `start`, `prompt` (a human's, `name` its slash command), `request` (one model call), `tool` (a tool
     result, `ok` its success), `decision` (a tool permission, `ok` accepted, `detail` its source), `skill`,
-    `compaction` (`name` its trigger), `reply` (a text answer), `interrupt`, `branch` (`name` the ref a shell
+    `hook` (a hook run inside a turn, `name` its event and matcher, `seconds` its total duration), `compaction` (`name` its trigger), `reply` (a text answer), `interrupt`, `branch` (`name` the ref a shell
     switched to), `claim` (`name` the task a command or a `Skill` call named) or `deliver` (a shell command that
     matched the instance's completion call). `origin` is
     `main`, `side` (a subagent) or `auxiliary` (a compaction's own call). `key` is unique to the record, so a

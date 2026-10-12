@@ -300,6 +300,22 @@ def test_a_claude_code_step_carries_its_prompt_id_as_its_turn_and_a_reply_is_a_s
     ]
 
 
+def test_a_hook_run_in_a_turn_is_a_signal_of_its_duration_and_an_unfinished_or_turnless_one_is_none() -> None:
+    found = signals(
+        export(
+            claude("hook_execution_start", 1, **{"prompt.id": "p1", "hook_name": "PreToolUse:Bash"}),
+            claude(
+                "hook_execution_complete",
+                2,
+                **{"prompt.id": "p1", "hook_name": "PreToolUse:Bash", "total_duration_ms": "1536"},
+            ),
+            claude("hook_execution_complete", 3, hook_name="SessionStart:startup", total_duration_ms="900"),
+        )
+    )
+
+    assert [(s.kind, s.name, s.seconds, s.turn) for s in found] == [("hook", "PreToolUse:Bash", 1.536, "p1")]
+
+
 def test_a_prompt_is_labelled_by_its_opening_and_its_text_is_kept_nowhere() -> None:
     sentinel = "SENTINEL-7f3a91"
     found = signals(

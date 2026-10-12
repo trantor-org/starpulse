@@ -362,6 +362,19 @@ def test_without_a_claims_pattern_or_a_task_key_scheme_a_stored_command_claims_n
     ] == ["tool"]
 
 
+def test_a_hooks_run_time_inside_a_turn_is_agent_time() -> None:
+    found = [
+        sig("prompt", 0, turn="p1", detail="human"),
+        sig("request", 10, turn="p1", seconds=8.0),
+        sig("hook", 12, turn="p1", seconds=1.5, name="PreToolUse:Bash"),
+        sig("tool", 13, turn="p1", seconds=0.5),
+        sig("hook", 15, turn="p1", seconds=1.5, name="PostToolUse:Bash"),
+        sig("reply", 20, turn="p1"),
+    ]
+
+    assert only(session_health(found, KEYS))["agent_s"] == 8.0 + 1.5 + 0.5 + 1.5
+
+
 def test_agent_seconds_are_the_summed_api_and_tool_durations_and_a_twenty_minute_prompt_gap_is_the_operators() -> None:
     found = [
         sig("prompt", 0, turn="p1", detail="human"),

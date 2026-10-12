@@ -23,7 +23,7 @@ A turn is every signal that shares a `prompt.id`; its end is its last signal, wh
 A signal with no id (Codex, rows stored before ids were kept) belongs to the turn of the prompt before it. Time is read
 from the events' own durations and from the turns' edges, never from the gaps between signals:
 
-- `agent_s`: the summed `seconds` of the session's model requests (subagents' included) and tool results.
+- `agent_s`: the summed `seconds` of the session's model requests (subagents' included), tool results and the hooks that ran inside a turn.
 - `operator_wait_s`: from the end of the turn before to a human prompt other than the session's first; a prompt typed
   while the turn before still worked waits for nothing.
   An `[analytics]` `operator_tools` result (a question the operator answers, a plan they approve) is no prompt but
@@ -265,7 +265,7 @@ def session_health(
                     open_turns[s.turn] = row
             elif s.kind == "reply":
                 open_turns.pop(s.turn, None)
-            elif s.kind in {"request", "tool"}:
+            elif s.kind in {"request", "tool", "hook"}:
                 row["agent_s"] += s.seconds
                 if s.kind == "tool" and s.name in operator_tools and at:
                     row["operator_wait_s"] += max(s.time - s.seconds - _asked_since(ordered, at), 0.0)
