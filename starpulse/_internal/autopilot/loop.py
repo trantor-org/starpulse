@@ -1,7 +1,8 @@
 """The autopilot loop: admits Ready tasks into sessions as capacity allows, records each run and settles a stuck one.
 
 It wakes on events, never on a dispatch timer: a task entering the eligible lane (or becoming workable there), a
-session stopping, the toggle turning on and a capacity dimension crossing its limit (`wake`). Each wake is one `tick`:
+session stopping, the toggle turning on, a capacity dimension crossing its limit and a sample that leaves room for a task
+admission turned away (`wake`). Each wake is one `tick`:
 
 1. a run whose task left the eligible lane and In Progress is finished and written to the ledger (its outcome is the
    lane it went to, its duration and its resource peak);
@@ -114,6 +115,12 @@ class Loop:
         """Run a tick on the loop's thread: the toggle turned on, or a capacity dimension crossed its limit."""
         if self._events is not None:
             self._events.put(("wake", {}))
+
+    def sampled(self) -> None:
+        """Wake the loop when a sample leaves room for a task admission turned away: a demand fits a headroom without any
+        dimension crossing its limit, so a crossing alone would leave the task waiting on a quiet board."""
+        if self._toggle.get() and (pick := self.next_pick()) is not None and pick["verdict"] == "starting":
+            self.wake()
 
     def tick(self, admit: bool = True) -> list[str]:
         """Finish and settle runs, then (with `admit` and the switch on) start every task capacity allows; the ids started."""
