@@ -60,7 +60,7 @@ import { whenShown } from "./shown";
 import { fitLevel, refitView, toScreen, wheelFactor, zoomAbout, zoomedIn, type View } from "./zoom";
 import { loadFonts } from "./fonts";
 
-/** Kanban and DAGs HUD fields load after the Board's first paint; React mounts only then. */
+/** Kanban and DAGs HUD fields load on the first snapshot (and again after first paint if that path runs first). */
 type DagDataFn = (typeof import("../features/dags/dags"))["dagData"];
 type KanbanTasksFn = (typeof import("../features/kanban/kanban"))["kanbanTasks"];
 let dagData: DagDataFn | null = null;
@@ -531,6 +531,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       const named = levelParams(location.search).focus;
       pickedRow = named && scene?.top?.rows.some((r) => r.name === named) ? named : null; // the address restores the row picked out, if this level still has it
       syncUrl();
+      // Away-first open (Kanban/DAGs) never paints the canvas, so HUD cards/dagData cannot wait on first paint.
+      void loadHudViews().then(() => { if (!stopped) publish(); });
     }
     publish();
     paintFan();
