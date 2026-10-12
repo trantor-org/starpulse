@@ -34,7 +34,9 @@ export interface ApiContract {
   contractReport: ContractReport;
   docShown: DocShown;
   docs: Docs;
-  events: (TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta)[];
+  events: (
+    TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | LedgersDelta | InsightDelta | AutopilotStatus
+  )[];
   forwardingStatus: ForwardingStatus;
   forwardingUnconfigured: ForwardingUnconfigured;
   harnesses: Harnesses;

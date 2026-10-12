@@ -29,17 +29,19 @@ from starpulse._internal.harnesses.harness import HARNESS
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass
 class Runtime:
     toggle: Toggle
     sampler: Sampler
     loop: Loop | None = None
+    _push_status: Callable[[], None] | None = None
 
     def set_enabled(self, value: bool) -> None:
         """Set the switch; turning it on wakes the loop, which admits what capacity allows without waiting for an event."""
         self.toggle.set(value)
         if value and self.loop is not None:
             self.loop.wake()
+        self.push_status()
 
     def status(self) -> dict[str, Any]:
         """Whether admission is on, when capacity was last sampled, and each dimension's use against its limit.
@@ -57,6 +59,35 @@ class Runtime:
             body["inFlight"] = self.loop.in_flight()
             body["next"] = self.loop.next_pick()
         return body
+
+    def push_status(self) -> None:
+        """Tell the page stream the status now, when a `wire_status` publisher is bound."""
+        if self._push_status is not None:
+            self._push_status()
+
+    def wire_status(self, publish: Callable[[str, dict[str, Any]], None]) -> None:
+        """Push `status()` as an `autopilot` feed event after each sample, switch change and loop tick."""
+
+        def push() -> None:
+            publish("autopilot", self.status())
+
+        self._push_status = push
+        sample = self.sampler.sample
+
+        def sampled() -> None:
+            sample()
+            push()
+
+        self.sampler.sample = sampled  # type: ignore[method-assign]
+        if self.loop is not None:
+            tick = self.loop.tick
+
+            def ticked(*args: Any, **kwargs: Any) -> list[str]:
+                started = tick(*args, **kwargs)
+                push()
+                return started
+
+            self.loop.tick = ticked  # type: ignore[method-assign]
 
 
 def log_crossing(crossing: Crossing) -> None:
