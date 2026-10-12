@@ -265,6 +265,12 @@ def test_the_board_draws_the_imported_machine_and_feeds_the_projects_tasks(monke
         def retract(self, task: str) -> None:
             raise AssertionError(task)
 
+        def await_stream(self) -> None:
+            pass
+
+        def expect(self, last_id: str) -> None:
+            pass
+
     with serve(recorded_site()) as url:
         built = board({**BOARD, "url": url, "interval": 3600}, Path("."))
         built.start(Feed(), "test", None)  # type: ignore[arg-type]
