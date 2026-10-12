@@ -24,6 +24,9 @@ export const dagData = (sky: Sky): DagData => ({
   now: sky.now,
 });
 
+/** The height a row not yet drawn holds in the list, margin included: one 40px line wide, two lines at phone width, where both lines grow with the text scale `fs`. */
+export const rowEstimate = (phone: boolean, fs: number) => 7 + (phone ? Math.round(26 + 32 * fs) : 40);
+
 export type Phase = "running" | "queued" | "failed" | "idle" | "ok";
 /** The Status menu's choices; a queued DAG counts as running. */
 export const PHASES: [Exclude<Phase, "queued">, string][] = [["running", "Running"], ["failed", "Failing"], ["idle", "Not run"], ["ok", "Healthy"]];
