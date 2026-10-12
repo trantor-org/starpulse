@@ -29,8 +29,8 @@ const CONTRACT = {
   aom: "# board machine YAML\ncues:\n  - event: MERGED\n    dag: dagu/apply-on-merge\n    on: push to main\n    resolves: forced",
   gr: "# board machine YAML\ncues:\n  - event: MERGED\n    dag: dagu/graph-refresh\n    on: push to main\n    resolves: next",
 };
-const RUNS_TOML = KEYED ? '# flow-view.toml\n[[runs]]\nname = "dagu"\n[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"'
-  : '# flow-view.toml\n[[runs]]\nname = "dagu"\n# no [runs.commit]: runs pair by time';
+const RUNS_TOML = KEYED ? '# starpulse.toml\n[[runs]]\nname = "dagu"\n[runs.commit]\nafter = "AFTER"\nbefore = "BEFORE"\nforce = "FORCE"'
+  : '# starpulse.toml\n[[runs]]\nname = "dagu"\n# no [runs.commit]: runs pair by time';
 const SCOL = (st) => (st === "skipped" ? SKIP : st === "waiting" ? CROSS : DAG_COLOR[st] || "#94a3b8");
 
 // ---- simulated merges ----
@@ -50,7 +50,7 @@ for (const k of KS) { const steps = dagBy[NM[k]].steps, by = Object.fromEntries(
 const CHAIN = ["apply_migrations", "apply_images", "apply_deploy", "apply_systemd", "push_dashboards"].filter((n) => STEPS.aom.includes(n));
 const BRANCH = STEPS.aom.filter((n) => DEPTH.aom[n] === 2 && !CHAIN.includes(n)), ALWAYS = STEPS.aom.filter((n) => !CHAIN.includes(n) && !BRANCH.includes(n));
 const FAILS = CHAIN.includes("apply_deploy") ? "apply_deploy" : CHAIN.at(-1), GRFAIL = STEPS.gr.reduce((a, n) => (DEPTH.gr[n] >= DEPTH.gr[a] ? n : a));
-const PIN = { skills: BRANCH.filter((n) => n.startsWith("apply_skills")), "backlog.md": BRANCH.filter((n) => n === "apply_board"), starpulse: BRANCH.filter((n) => n === "apply_flow_view") };
+const PIN = { skills: BRANCH.filter((n) => n.startsWith("apply_skills")), "backlog.md": BRANCH.filter((n) => n === "apply_board"), starpulse: BRANCH.filter((n) => n === "apply_starpulse") };
 // classify picks what a merge applies from the paths it changed; the deploy chain runs as one
 function pickApplied(chain) { const s = new Set(ALWAYS); if (chain || rn() < 0.3) CHAIN.forEach((n) => s.add(n));
   BRANCH.forEach((n) => rn() < 0.22 && s.add(n)); if (s.size === ALWAYS.length) s.add(BRANCH[Math.floor(rn() * BRANCH.length)]); return s; }

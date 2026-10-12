@@ -20,7 +20,7 @@ from starpulse._internal.config.harnesses import HarnessError
 
 
 def _write(tmp_path: Path, text: str) -> Path:
-    path = tmp_path / "flow-view.toml"
+    path = tmp_path / "starpulse.toml"
     path.write_text(text)
     return path
 
@@ -364,7 +364,7 @@ issuer = "https://id.example.test/realm"
 client_id = "starpulse-hub"
 client_secret_env = "HUB_OIDC_SECRET"
 redirect_uri = "https://hub.example.test/auth/callback"
-allowed_groups = ["flow-viewers", "ops"]
+allowed_groups = ["starpulse-viewers", "ops"]
 """
 
 
@@ -376,7 +376,7 @@ def test_an_oidc_table_names_the_issuer_the_client_and_the_allowed_groups(tmp_pa
         client_id="starpulse-hub",
         client_secret_env="HUB_OIDC_SECRET",
         redirect_uri="https://hub.example.test/auth/callback",
-        allowed_groups=("flow-viewers", "ops"),
+        allowed_groups=("starpulse-viewers", "ops"),
     )
     assert (config.oidc.groups_claim, config.oidc.scopes, config.oidc.engine_token_env) == (
         "groups",
@@ -418,7 +418,7 @@ def test_a_config_without_an_oidc_table_has_none() -> None:
         ('client_id = "starpulse-hub"\n', "oidc: client_id is required"),
         ('client_secret_env = "HUB_OIDC_SECRET"\n', "oidc: client_secret_env is required"),
         ('redirect_uri = "https://hub.example.test/auth/callback"\n', "oidc: redirect_uri is required"),
-        ('allowed_groups = ["flow-viewers", "ops"]\n', "oidc: allowed_groups must name at least one group"),
+        ('allowed_groups = ["starpulse-viewers", "ops"]\n', "oidc: allowed_groups must name at least one group"),
     ],
 )
 def test_an_oidc_table_missing_a_required_key_is_refused(tmp_path: Path, edit: str, message: str) -> None:
@@ -429,17 +429,17 @@ def test_an_oidc_table_missing_a_required_key_is_refused(tmp_path: Path, edit: s
     ("old", "new", "message"),
     [
         (
-            'allowed_groups = ["flow-viewers", "ops"]',
+            'allowed_groups = ["starpulse-viewers", "ops"]',
             "allowed_groups = []",
             "oidc: allowed_groups must name at least one group",
         ),
         (
-            'allowed_groups = ["flow-viewers", "ops"]',
+            'allowed_groups = ["starpulse-viewers", "ops"]',
             'allowed_groups = "ops"',
             "oidc: allowed_groups must name at least one group",
         ),
         (
-            'allowed_groups = ["flow-viewers", "ops"]',
+            'allowed_groups = ["starpulse-viewers", "ops"]',
             'allowed_groups = [""]',
             "oidc: allowed_groups must name at least one group",
         ),

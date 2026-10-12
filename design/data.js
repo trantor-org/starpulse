@@ -7979,7 +7979,7 @@ window.SNAP = {
      "kind": null
     },
     {
-     "name": "apply_flow_view",
+     "name": "apply_starpulse",
      "depends": [
       "classify"
      ],
@@ -8025,7 +8025,7 @@ window.SNAP = {
       "apply_nas",
       "apply_rulesets",
       "apply_board",
-      "apply_flow_view",
+      "apply_starpulse",
       "apply_session_start",
       "apply_skills_claude",
       "apply_skills_codex",

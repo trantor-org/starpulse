@@ -38,7 +38,7 @@ It follows the `sd_listen_fds` protocol and reads two environment variables:
   error, since it serves one address.
 
 The adopted socket's backlog and options stay as the manager set them, `--host` and `--port` are ignored, and the
-startup line and the board's instance name (`flow-view-<port>`) name the socket's port. A `.socket` unit's
+startup line and the board's instance name (`starpulse-<port>`) name the socket's port. A `.socket` unit's
 `ListenStream=` sets that address; `Accept=no` (the default) hands the server the listening socket itself.
 
 ### What the page shows when the server restarts

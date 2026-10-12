@@ -200,7 +200,7 @@
           <div><div class="hours"><input id="ad-hours" inputmode="decimal" value="${server.hours}" aria-label="History window in hours"> hours
             <div class="chips">${[1, 6, 24, 72].map((h) => `<button type="button" data-h="${h}">${h}h</button>`).join("")}</div>
             <button type="button" class="btn go" id="ad-save" disabled>Save</button></div>
-            <div class="hint">Default ${server.declared} h, declared in flow-view.service. <a href="#" id="ad-hreset" style="color:#c4b5fd">Reset to default</a></div>
+            <div class="hint">Default ${server.declared} h, declared in starpulse.service. <a href="#" id="ad-hreset" style="color:#c4b5fd">Reset to default</a></div>
             <div id="ad-hmsg"></div></div></div>
       </section>
     </div>

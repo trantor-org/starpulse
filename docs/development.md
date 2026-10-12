@@ -55,7 +55,7 @@ capture, is published beside the demos as `mockup-<dir>.html` with its scripts i
 feature folder (`features/kanban`, `features/dags` or `features/orbit`) screenshots that view alone; any other page path screenshots all four.
 A push that changed none of those paths since the commit the comment names leaves the comment and the demos untouched, and of `ci/` only
 the preview script, its config, the demo adapter and `ci/workspace/` start a run. A push to `main`
-that touches the same paths republishes both demos under `main/`, the [live demo](https://trantor-org.github.io/starpulse/main/flow-view.html), with a screenshot of each flow-view view that the README shows.
+that touches the same paths republishes both demos under `main/`, the [live demo](https://trantor-org.github.io/starpulse/main/starpulse.html), with a screenshot of each starpulse view that the README shows.
 
 ## Flow read scaling
 

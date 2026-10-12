@@ -126,7 +126,7 @@ function valid(t: Tree, path: Path): boolean {
  * row is entered from, else reopens the path this browser last showed, else the Board.
  */
 export function startPath(pathname: string, hash: string, cached: Path | null, t: Tree, at: { open?: string | null; focus?: string | null } = {}): Path {
-  // a demo page's address is a file under a folder (`/pr-9/flow-view.html`), never a retired per-graph one
+  // a demo page's address is a file under a folder (`/pr-9/starpulse.html`), never a retired per-graph one
   const name = /^\/flow\/([^/]+)$/.exec(pathname)?.[1] ?? (pathname === "/" || pathname.endsWith(".html") ? /^#sec-(.+)$/.exec(hash)?.[1] : pathname.slice(1));
   if (name) return pathTo(t, decodeURIComponent(name)) ?? BOARD;
   const named = at.open ? pathTo(t, at.open) : at.focus ? pathTo(t, at.focus)?.slice(0, -1) : null;

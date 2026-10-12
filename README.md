@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://trantor-org.github.io/starpulse/main/flow-view.html"><img src="https://trantor-org.github.io/starpulse/main/flow-view-star-map.png" alt="StarPulse's star map: tasks, workflow runs and agents moving live" width="900"></a>
+  <a href="https://trantor-org.github.io/starpulse/main/starpulse.html"><img src="https://trantor-org.github.io/starpulse/main/starpulse-star-map.png" alt="StarPulse's star map: tasks, workflow runs and agents moving live" width="900"></a>
 </p>
 
 <h1 align="center">StarPulse</h1>
@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://trantor-org.github.io/starpulse/main/flow-view.html">Live demo</a> ·
+  <a href="https://trantor-org.github.io/starpulse/main/starpulse.html">Live demo</a> ·
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/serving.md">Configure</a> ·
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/sources.md">Sources</a> ·
   <a href="https://github.com/trantor-org/starpulse/blob/main/docs/cli.md">Agent CLI</a> ·
@@ -68,7 +68,7 @@ The same verbs work typed by hand, and **New task** on the Kanban adds a task fr
 
 | Kanban | Orbit | Workflow runs |
 |---|---|---|
-| <img src="https://trantor-org.github.io/starpulse/main/flow-view-kanban.png" alt="Kanban view"> | <img src="https://trantor-org.github.io/starpulse/main/flow-view-orbit.png" alt="Orbit view"> | <img src="https://trantor-org.github.io/starpulse/main/flow-view-dags.png" alt="Workflow runs view"> |
+| <img src="https://trantor-org.github.io/starpulse/main/starpulse-kanban.png" alt="Kanban view"> | <img src="https://trantor-org.github.io/starpulse/main/starpulse-orbit.png" alt="Orbit view"> | <img src="https://trantor-org.github.io/starpulse/main/starpulse-dags.png" alt="Workflow runs view"> |
 
 Reads tasks from its own Markdown board, Backlog.md or Jira; runs from Dagu, GitHub Actions or systemd; agents from Claude Code and Copilot.
 

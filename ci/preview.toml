@@ -1,4 +1,4 @@
-# The demo config the UI preview renders the flow view against (ci/ui_preview.py). It names no real board or runs
+# The demo config the UI preview renders StarPulse against (ci/ui_preview.py). It names no real board or runs
 # system: the board is the synthetic workspace in `ci/demo_workspace.py` (its machines in `ci/workspace`), the one runs
 # instance points at a closed port, and the domains give the DAG layer a working team's job layout to draw.
 # `starpulse._internal.cli.demo` then seeds every task, session and run.

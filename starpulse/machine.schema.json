@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Flow view machine definition",
+  "title": "StarPulse machine definition",
   "description": "A lifecycle machine declared under .starpulse/machines/. Guards are field matches on the triggering event or the name of a guard an adapter registers in Python; config holds no expressions or code.",
   "type": "object",
   "additionalProperties": false,

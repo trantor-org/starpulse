@@ -185,7 +185,7 @@ class BoardAdapterKit(_AdapterKit):
         (status, reply), calls = self._move("agent", permitted=False)
         assert (status, calls) == (409, []), reply
 
-    def test_the_flow_view_places_every_task_in_its_lane_or_as_settled(self) -> None:
+    def test_starpulse_places_every_task_in_its_lane_or_as_settled(self) -> None:
         feed = BoardFeed(keys=self.keys, machines=self.machines)
         for task in self.records():
             feed.put(task)
@@ -212,11 +212,11 @@ class MachineEventsAdapterKit(_AdapterKit):
     def test_every_task_key_is_in_the_declared_scheme(self) -> None:
         assert [e.task for e in self.records() if e.task and not self.keys.matches(e.task)] == []
 
-    def test_every_event_names_a_machine_and_event_the_flow_view_draws(self) -> None:
+    def test_every_event_names_a_machine_and_event_starpulse_draws(self) -> None:
         drawn = {name: {t["event"] for t in machine["transitions"]} for name, machine in self.machines.items()}
         assert [(e.machine, e.event) for e in self.records() if e.event not in drawn.get(e.machine, ())] == []
 
-    def test_the_flow_view_places_every_task_an_event_moved(self) -> None:
+    def test_starpulse_places_every_task_an_event_moved(self) -> None:
         feed = BoardFeed(machines=self.machines)
         tasks = MachineTasks(feed, keys=self.keys, machines=self.machines)
         events = [e for e in self.records() if e.task]
@@ -261,7 +261,7 @@ class RunsAdapterKit(_AdapterKit):
         assert len(names) == len(set(names)), "a pool is reported twice"
         assert [dag.name for dag in self.records() if dag.pool and dag.pool not in names] == []
 
-    def test_the_flow_view_draws_every_dag_and_pool(self) -> None:
+    def test_starpulse_draws_every_dag_and_pool(self) -> None:
         feed = BoardFeed()
         dags, pools = self.produce(), self.produce_pools()
         feed.runs("kit").set_dags(dags, None, pools)
@@ -324,7 +324,7 @@ class InsightsEngineKit:
             assert feed.snapshot()["insights"] == [] and store.live(float("inf")) == []
 
 
-# The helpers below drive an adapter through the flow view's own server and feed.
+# The helpers below drive an adapter through StarPulse's own server and feed.
 
 _INSIGHTS = "/api/insights"
 
