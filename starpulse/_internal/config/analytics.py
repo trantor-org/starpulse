@@ -12,11 +12,13 @@ StarPulse reads missed skill loads and trace clusters from the harness exports (
   a task whose title matches `title` (a regular expression, case-insensitive) or one carrying `label`. A case that
   ran a trigger without activating the skill is a missed load; a skill with no declaration is never reported.
 
-What a session's own events say about its work is read against four more keys, so the package names no instance's
+What a session's own events say about its work is read against five more keys, so the package names no instance's
 tasks or skills (`GET /api/analytics/sessions`):
 
 - `injected_openings`: prefixes of a prompt's text. A prompt that opens with one is labelled `injected` (a harness
   or scheduler wrote it), any other `human`; the label is stored and the text never is.
+- `operator_tools`: tools whose result is an operator's answer, such as `AskUserQuestion` and `ExitPlanMode`. The
+  answer arrives as a tool result, not a prompt, so the silence before it is the operator's wait, not the agent's.
 - `claims`: regular expressions run over each shell command and each `Skill` call's arguments. Group 1 is a task
   key; a match under the board's key scheme says the session now works that task, and every step after it is the
   task's until another claim. A key that differs from the board's only by case names the board's spelling.
@@ -38,6 +40,7 @@ _KEYS = {
     "lifecycle_skills",
     "skill_loads",
     "injected_openings",
+    "operator_tools",
     "claims",
     "completion_skill",
     "completion_call",
@@ -72,6 +75,8 @@ class Analytics:
     """What should load each declared skill."""
     injected_openings: tuple[str, ...] = ()
     """Prefixes that label a prompt `injected`; none: every prompt is `human`."""
+    operator_tools: frozenset[str] = frozenset()
+    """Tools whose result is an operator's answer; the silence before one is the operator's wait. None: no tool waits."""
     claims: tuple[re.Pattern[str], ...] = ()
     """Patterns whose group 1 is the task a shell command or a `Skill` call's arguments claims; none: no claims."""
     completion_skill: str = ""
@@ -149,12 +154,13 @@ def parse_analytics(raw: object) -> Analytics:
         raise AnalyticsError("analytics: completion_skill must be text")
     call = raw.get("completion_call")
     return Analytics(
-        roots,
-        frozenset(_texts(raw, "stop_activities")),
-        frozenset(_texts(raw, "lifecycle_skills")),
-        tuple(_load(table, at) for at, table in enumerate(loads)),
-        _texts(raw, "injected_openings"),
-        _claims(raw),
-        skill,
-        None if call is None else _pattern(call, "completion_call"),
+        roots=roots,
+        stop_activities=frozenset(_texts(raw, "stop_activities")),
+        lifecycle_skills=frozenset(_texts(raw, "lifecycle_skills")),
+        skill_loads=tuple(_load(table, at) for at, table in enumerate(loads)),
+        injected_openings=_texts(raw, "injected_openings"),
+        operator_tools=frozenset(_texts(raw, "operator_tools")),
+        claims=_claims(raw),
+        completion_skill=skill,
+        completion_call=None if call is None else _pattern(call, "completion_call"),
     )
