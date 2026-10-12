@@ -209,6 +209,8 @@ class PullSync:
         self._project = project
         self._requests: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
         self._wake = threading.Event()
+        self._projection = threading.Event()
+        self._projecting = False
 
     def _linked(self) -> dict[str, set[int]]:
         """The numbers the open tasks' PR links name, by repository."""
@@ -283,17 +285,34 @@ class PullSync:
             self.serve_requests()
 
     def project(self) -> None:
-        """Hand the Board its tasks' pull requests from the store; a failure is logged, never ends the thread."""
+        """Hand the Board its tasks' pull requests from the store; a failure is logged, never ends the thread.
+        Once `run_forever` has started the projection thread this only asks it for a projection."""
+        if self._projecting:
+            self._projection.set()
+        else:
+            self._project_now()
+
+    def _project_now(self) -> None:
         if self._project:
             try:
                 self._project()
             except Exception:
                 logger.exception("pull requests: the Board's pull requests failed to project")
 
+    def _project_forever(self) -> None:  # pragma: no mutate block — timer loop
+        """Project whenever asked, asks made meanwhile coalescing into one run."""
+        while True:
+            self._projection.wait()
+            self._projection.clear()
+            self._project_now()
+
     def run_forever(self, interval_s: float = REFRESH_S) -> None:  # pragma: no mutate block — timer loop
         """Once the Board replay is done, so the first projection sees every task, project what the store already
-        holds, then refresh every `interval_s`."""
+        holds, then refresh every `interval_s`. Projection runs on its own thread: a cold pin memo makes it walk
+        hundreds of `gh` reads, and the refresh must not wait behind that."""
         self._feed.wait_replayed()
+        self._projecting = True
+        threading.Thread(target=self._project_forever, name="pull-project", daemon=True).start()
         self.project()
         while True:
             self.refresh()

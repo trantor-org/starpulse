@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -554,25 +555,30 @@ def test_a_sync_projects_the_boards_pull_requests_after_each_read_and_survives_a
     assert "failed to project" in caplog.text
 
 
-def test_run_forever_projects_the_saved_store_before_the_first_read(
+def test_a_projection_that_is_slow_on_a_cold_pin_memo_does_not_delay_the_first_read(
     store: PullStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[str] = []
+    read, projected, finished = threading.Event(), [], threading.Event()
 
     def graphql(repo: str, query: str) -> dict:
-        calls.append("read")
-        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}}
+        read.set()
+        return {"open": {"pageInfo": {"hasNextPage": False}, "nodes": []}, "recent": {"nodes": []}, "p1": None}
 
-    def sleep(seconds: float) -> None:
+    def project() -> None:
+        projected.append(read.wait(5))  # a pin walk that needs the first read to finish first
+        finished.set()
+
+    def stop(_self: PullSync, seconds: float) -> None:
         raise KeyboardInterrupt
 
     store.save([{**_stored("acme/old", 1), "state": "MERGED"}])
-    monkeypatch.setattr(PullSync, "_idle", lambda _self, seconds: sleep(seconds))
+    monkeypatch.setattr(PullSync, "_idle", stop)
 
     with pytest.raises(KeyboardInterrupt):
-        PullSync(store, BoardFeed(), (), graphql, lambda: 100.0, lambda: calls.append("project")).run_forever(1.0)
+        PullSync(store, BoardFeed(), (), graphql, lambda: 100.0, project).run_forever(1.0)
 
-    assert calls == ["project", "read", "project"]
+    assert finished.wait(10)
+    assert projected[0] is True  # the read ran while the first projection was still walking
 
 
 def test_a_pr_with_no_commits_is_recorded_with_an_empty_rollup_and_leaves_the_others_saved(store: PullStore) -> None:
