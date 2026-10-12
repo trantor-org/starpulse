@@ -11,7 +11,12 @@ type Board = { columns: { name: string; tasks: { id: string; title: string }[] }
 const held = async ($: Engine): Promise<HeldTask[] | null> => {
   try {
     const session = await $.session.id()
-    const { exitCode, stdout } = await $.process.run(['starpulse', 'board', '--holder', session])
+    const args = ['board', '--holder', session]
+    let { exitCode, stdout } = await $.process.run(['starpulse', ...args])
+    if (exitCode !== 0) {
+      // A virtualenv on PATH can hold a starpulse older than --holder; the user-wide install is current.
+      ;({ exitCode, stdout } = await $.process.run([`${await $.env.get('HOME')}/.local/bin/starpulse`, ...args]))
+    }
     if (exitCode !== 0) {
       return null
     }
@@ -30,6 +35,23 @@ const refresh = async ($: Engine) => {
   return found
 }
 
+// Refreshes without holding up the caller, one read at a time, rereading once if a call came in during it.
+let reading: Promise<unknown> | null = null
+let isStale = false
+const refreshSoon = ($: Engine) => {
+  if (reading) {
+    isStale = true
+    return
+  }
+  reading = refresh($).finally(() => {
+    reading = null
+    if (isStale) {
+      isStale = false
+      refreshSoon($)
+    }
+  })
+}
+
 const line = (found: HeldTask[]) => `Tasks: ${found.map(t => `${t.id} ${t.column}`).join(' · ')}`
 
 export const register: Register = on => {
@@ -43,6 +65,14 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const ran = await next(e)
     await refresh($)
+
+    return ran
+  })
+
+  // A session claims its task inside a turn, often its first and longest, so a tool call can change what it holds.
+  on('tool.call', async ($, e, next) => {
+    const ran = await next(e)
+    refreshSoon($)
 
     return ran
   })

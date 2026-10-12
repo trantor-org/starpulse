@@ -275,9 +275,11 @@ Claude Code can load the same skills as a plugin instead of copies: the reposito
 (`.claude-plugin/`), so `/plugin marketplace add trantor-org/starpulse` then `/plugin install starpulse@starpulse`, or
 a `directory` marketplace pointing at a local checkout, serves them as `starpulse:<skill>`, read in place.
 The same marketplace serves `starpulse-board` (`plugins/starpulse-board/`, `/plugin install starpulse-board@starpulse`):
-it runs `starpulse board --holder <session id>` when a session starts and after each turn, draws the tasks that session
-holds above the prompt with a Hide button, and adds `/board` to list them with their titles. It reads only the
-`starpulse` CLI, so it shows nothing when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
+it runs `starpulse board --holder <session id>` when a session starts, after each tool call and after each turn, so a
+task claimed mid-turn shows before the turn ends. It draws the tasks that session holds above the prompt with a Hide
+button, and adds `/board` to list them with their titles. It reads only the `starpulse` CLI, retrying
+`~/.local/bin/starpulse` when the one on `PATH` fails, so it shows nothing when no server answers (`$STARPULSE_URL`,
+else `http://localhost:8766`).
 
 ## The pull-request store
 
