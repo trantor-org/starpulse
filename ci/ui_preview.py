@@ -4,8 +4,8 @@
 design mockup and element sheet (`design/**`) or this preview. A push that changed no such path since the commit the
 comment was rendered from leaves the comment and demos as they are. It builds each changed surface's scrubbed
 one-file demo with `starpulse._internal.cli.demo`, and each changed sub-mockup (`design/<dir>/index.html`) as `mockup-<dir>.html` with its scripts
-inlined, screenshots the demos (of the flow view, only the views the change can reach), publishes them to the public
-`starpulse-demo` Pages repository while the pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
+inlined, screenshots the demos (of the flow view, only the views the change can reach), publishes them to the `gh-pages` branch GitHub Pages serves
+for this public repository while the pull request is open, and leaves one comment holding the screenshots and the demo links. A push to `main` that
 touches the same paths runs it with `--main`, which republishes every demo as `main/`, the live demo and the screenshots the README
 links. The flow view is rendered against `ci/preview.toml`, a demo config naming no real board or runs adapter.
 """
@@ -213,8 +213,10 @@ def publish(gh: Callable[..., str], repo: str, pr: int, body: Path, images: Sequ
     return next(c["html_url"] for c in earlier if c["id"] == old_id)
 
 
-#: The public GitHub Pages repository the demos are published to.
-DEMO_REPO = "trantor-org/starpulse-demo"
+#: The public repository whose GitHub Pages site serves the demos, from its `gh-pages` branch.
+DEMO_REPO = "trantor-org/starpulse"
+#: The branch GitHub Pages serves the demos from.
+DEMO_BRANCH = "gh-pages"
 #: The folder in it that always holds main's demos.
 MAIN_FOLDER = "main"
 #: The hosts a public demo may link to: XML namespaces, the mockup's web font and React's error decoder.
@@ -284,13 +286,37 @@ def scan_demos(files: Sequence[Path]) -> None:
 
 
 def _published(gh: Callable[..., str], folder: str) -> dict[str, str]:
-    tree = json.loads(gh("api", f"repos/{DEMO_REPO}/git/trees/main?recursive=1"))["tree"]
+    tree = json.loads(gh("api", f"repos/{DEMO_REPO}/git/trees/{DEMO_BRANCH}?recursive=1"))["tree"]
     return {t["path"]: t["sha"] for t in tree if t["path"].startswith(f"{folder}/")}
 
 
 def _delete(gh: Callable[..., str], path: str, sha: str) -> None:
     route = f"repos/{DEMO_REPO}/contents/{path}"
-    gh("api", "--method", "DELETE", route, "-f", f"message=Unpublish {path}", "-f", f"sha={sha}")
+    fields = (f"message=Unpublish {path}", f"sha={sha}", f"branch={DEMO_BRANCH}")
+    gh("api", "--method", "DELETE", route, *(arg for field in fields for arg in ("-f", field)))
+
+
+def _branch_exists(gh: Callable[..., str]) -> bool:
+    try:
+        gh("api", f"repos/{DEMO_REPO}/branches/{DEMO_BRANCH}")
+    except RuntimeError:
+        return False
+    return True
+
+
+def _create_branch(gh: Callable[..., str], scratch: Path) -> None:
+    """Create the Pages branch as a root commit holding only `.nojekyll`, so Pages serves the files as they are."""
+    scratch.mkdir(parents=True, exist_ok=True)
+
+    def post(route: str, body: dict[str, Any]) -> dict[str, Any]:
+        request = scratch / "branch.json"
+        request.write_text(json.dumps(body))
+        created = gh("api", "--method", "POST", f"repos/{DEMO_REPO}/git/{route}", "--input", request.as_posix())
+        return json.loads(created)
+
+    tree = post("trees", {"tree": [{"path": ".nojekyll", "mode": "100644", "type": "blob", "content": "\n"}]})["sha"]
+    commit = post("commits", {"message": "Create the Pages branch", "tree": tree, "parents": []})["sha"]
+    post("refs", {"ref": f"refs/heads/{DEMO_BRANCH}", "sha": commit})
 
 
 def publish_demos(gh: Callable[..., str], folder: str, files: Sequence[Path], scratch: Path) -> list[str]:
@@ -302,12 +328,14 @@ def publish_demos(gh: Callable[..., str], folder: str, files: Sequence[Path], sc
     `scratch`.
     """
     scan_demos([f for f in files if f.suffix == ".html"])
+    if not _branch_exists(gh):
+        _create_branch(gh, scratch)
     old = _published(gh, folder)
     scratch.mkdir(parents=True, exist_ok=True)
     paths = []
     for f in files:
         path = f"{folder}/{f.name}"
-        body = {"message": f"Publish {path}", "content": base64.b64encode(f.read_bytes()).decode()}
+        body = {"message": f"Publish {path}", "content": base64.b64encode(f.read_bytes()).decode(), "branch": DEMO_BRANCH}
         if path in old:
             body["sha"] = old[path]
         request = scratch / f"{f.name}.json"
@@ -320,7 +348,9 @@ def publish_demos(gh: Callable[..., str], folder: str, files: Sequence[Path], sc
 
 
 def unpublish_demos(gh: Callable[..., str], folder: str) -> None:
-    """Remove every file under `folder` from the Pages repository."""
+    """Remove every file under `folder` from the Pages branch; a repository without one has none."""
+    if not _branch_exists(gh):
+        return
     for path, sha in sorted(_published(gh, folder).items()):
         _delete(gh, path, sha)
 
@@ -345,7 +375,7 @@ def _gh(*args: str) -> str:  # pragma: no cover — process boundary
 
 
 def _demo_gh(*args: str) -> str:  # pragma: no cover — process boundary
-    """`gh` as the workspace App, whose token `DEMO_TOKEN` alone may write the demo repository."""
+    """`gh` as the run's own token, `DEMO_TOKEN`, which writes the Pages branch; the comment posts as another user."""
     return _run("gh", *args, env={**os.environ, "GH_TOKEN": os.environ["DEMO_TOKEN"]})
 
 

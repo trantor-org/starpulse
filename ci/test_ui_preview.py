@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 from ui_preview import (
+    DEMO_BRANCH,
     DEMO_REPO,
     ELEMENTS,
     FLOW_VIEW,
@@ -302,7 +303,7 @@ def test_rerender_never_touches_a_comment_that_is_not_its_own() -> None:
 
 def test_note_links_each_demo_in_the_prs_own_folder() -> None:
     note = demo_note(7, ["flow-view.html"])
-    assert "(https://trantor-org.github.io/starpulse-demo/pr-7/flow-view.html)" in note
+    assert "(https://trantor-org.github.io/starpulse/pr-7/flow-view.html)" in note
     assert demo_note(7, []) == ""
 
 
@@ -315,16 +316,28 @@ def test_pr_body_gains_one_demo_section_a_rerun_replaces_and_teardown_removes() 
 
 
 class DemoGh:
-    """`gh` as the demo repository sees it: its tree, and the writes made against it."""
+    """`gh` as the demo repository sees it: its Pages branch tree, and the writes made against it."""
 
-    def __init__(self, tree: dict[str, str]) -> None:
+    def __init__(self, tree: dict[str, str], *, branch: bool = True) -> None:
         self.tree = tree
+        self.branch = branch
+        self.created: list[str] = []
         self.writes: list[tuple[str, str, dict]] = []
 
     def __call__(self, *args: str) -> str:
-        if args == ("api", f"repos/{DEMO_REPO}/git/trees/main?recursive=1"):
+        if args == ("api", f"repos/{DEMO_REPO}/branches/{DEMO_BRANCH}"):
+            if not self.branch:
+                raise RuntimeError("Not Found")
+            return "{}"
+        if args == ("api", f"repos/{DEMO_REPO}/git/trees/{DEMO_BRANCH}?recursive=1"):
             return json.dumps({"tree": [{"path": p, "sha": s, "type": "blob"} for p, s in self.tree.items()]})
-        method, route = args[2], args[3].removeprefix(f"repos/{DEMO_REPO}/contents/")
+        method, route = args[2], args[3].removeprefix(f"repos/{DEMO_REPO}/")
+        if route.startswith("git/"):
+            self.created.append(route)
+            self.branch = self.branch or route == "git/refs"
+            # GitHub answers a created ref with its target under `object`, and a tree or commit with its own `sha`.
+            return json.dumps({"object": {"sha": "created"}} if route == "git/refs" else {"sha": "created"})
+        route = route.removeprefix("contents/")
         if method == "PUT":
             self.writes.append((method, route, json.loads(Path(args[5]).read_text())))
         else:
@@ -340,7 +353,7 @@ def test_publish_writes_each_demo_and_drops_one_the_pr_no_longer_builds(tmp_path
 
     urls = publish_demos(gh, folder, [built], tmp_path / "scratch")
 
-    assert urls == [f"https://trantor-org.github.io/starpulse-demo/{folder}/flow-view.html"]
+    assert urls == [f"https://trantor-org.github.io/starpulse/{folder}/flow-view.html"]
     assert gh.writes == [
         (
             "PUT",
@@ -348,13 +361,14 @@ def test_publish_writes_each_demo_and_drops_one_the_pr_no_longer_builds(tmp_path
             {
                 "message": f"Publish {folder}/flow-view.html",
                 "content": base64.b64encode(b"<html>").decode(),
+                "branch": DEMO_BRANCH,
                 "sha": "old",
             },
         ),
         (
             "DELETE",
             f"{folder}/design-mockup.html",
-            {"message": f"Unpublish {folder}/design-mockup.html", "sha": "gone"},
+            {"message": f"Unpublish {folder}/design-mockup.html", "sha": "gone", "branch": DEMO_BRANCH},
         ),
     ]
 
@@ -364,7 +378,26 @@ def test_unpublish_deletes_only_this_prs_folder() -> None:
 
     unpublish_demos(gh, "pr-7")
 
-    assert gh.writes == [("DELETE", "pr-7/a.html", {"message": "Unpublish pr-7/a.html", "sha": "a"})]
+    assert gh.writes == [("DELETE", "pr-7/a.html", {"message": "Unpublish pr-7/a.html", "sha": "a", "branch": DEMO_BRANCH})]
+
+
+def test_publishing_to_a_repository_without_the_pages_branch_creates_it_first(tmp_path: Path) -> None:
+    built = tmp_path / "flow-view.html"
+    built.write_text("<html>")
+    gh = DemoGh({}, branch=False)
+
+    publish_demos(gh, MAIN_FOLDER, [built], tmp_path / "scratch")
+
+    assert gh.created == ["git/trees", "git/commits", "git/refs"]
+    assert [(method, route) for method, route, _ in gh.writes] == [("PUT", "main/flow-view.html")]
+
+
+def test_unpublish_with_no_pages_branch_has_nothing_to_delete() -> None:
+    gh = DemoGh({}, branch=False)
+
+    unpublish_demos(gh, "pr-7")
+
+    assert gh.writes == [] and gh.created == []
 
 
 def test_publishing_main_replaces_mains_demos_and_leaves_every_pr_folder(tmp_path: Path) -> None:
@@ -374,7 +407,7 @@ def test_publishing_main_replaces_mains_demos_and_leaves_every_pr_folder(tmp_pat
 
     urls = publish_demos(gh, MAIN_FOLDER, [built], tmp_path / "scratch")
 
-    assert urls == ["https://trantor-org.github.io/starpulse-demo/main/flow-view.html"]
+    assert urls == ["https://trantor-org.github.io/starpulse/main/flow-view.html"]
     assert [(method, route) for method, route, _ in gh.writes] == [
         ("PUT", "main/flow-view.html"),
         ("DELETE", "main/gone.html"),

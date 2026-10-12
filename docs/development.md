@@ -46,7 +46,7 @@ mockup.html` writes it as one scrubbed file. A pull request that changes the pag
 the preview itself gets one UI-preview comment from
 [`.github/workflows/ui-preview.yml`](../.github/workflows/ui-preview.yml): screenshots of each changed surface's
 scrubbed demo, built by [`ci/ui_preview.py`](../ci/ui_preview.py) against the demo config
-[`ci/preview.toml`](../ci/preview.toml), with the demos published to `trantor-org/starpulse-demo` under `pr-<N>/`
+[`ci/preview.toml`](../ci/preview.toml), with the demos published to the `gh-pages` branch of `trantor-org/starpulse`, which GitHub Pages serves, under `pr-<N>/`
 while the pull request is open. That config draws a fictional workspace at a working team's scale: the Board adapter
 [`ci/demo_workspace.py`](../ci/demo_workspace.py) serves an eight-lane Board whose In Progress opens a delivery machine and
 the lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse._internal.cli.demo` fills it with
@@ -55,7 +55,7 @@ capture, is published beside the demos as `mockup-<dir>.html` with its scripts i
 feature folder (`features/kanban`, `features/dags` or `features/orbit`) screenshots that view alone; any other page path screenshots all four.
 A push that changed none of those paths since the commit the comment names leaves the comment and the demos untouched, and of `ci/` only
 the preview script, its config, the demo adapter and `ci/workspace/` start a run. A push to `main`
-that touches the same paths republishes both demos under `main/`, the [live demo](https://trantor-org.github.io/starpulse-demo/main/flow-view.html), with a screenshot of each flow-view view that the README shows.
+that touches the same paths republishes both demos under `main/`, the [live demo](https://trantor-org.github.io/starpulse/main/flow-view.html), with a screenshot of each flow-view view that the README shows.
 
 ## Flow read scaling
 
