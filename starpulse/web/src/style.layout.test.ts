@@ -95,9 +95,8 @@ describe("the Admin view's Autopilot card", () => {
     expect(css).not.toContain("#kb .ap");
   });
 
-  it("sets each session in flight on two lines, its model and age under its task and title, so a larger text size keeps the title", () => {
-    expect(rule("#admin .ap .ap-ses a")).toContain("grid-template-columns: auto minmax(0, 1fr)");
-    expect(rule("#admin .ap .ap-ses .md")).toContain("grid-column: 1 / -1");
+  it("dims the meters and the count in flight while paused", () => {
+    expect(rule("#admin .ap.off :is(.dims, .inflight)")).toContain("opacity: .45");
   });
 });
 

@@ -1,11 +1,11 @@
 // The Admin view's Autopilot card: the global switch, each capacity dimension's use against its limit, the next pick as text with why it
-// goes or waits, the sessions in flight and the quiet hours. Status arrives on /api/events; one GET syncs on view open. Off stops
+// goes or waits, the count of sessions in flight and the quiet hours. Status arrives on /api/events; one GET syncs on view open. Off stops
 // admission; the card dims and counts the sessions still running from its last reading.
 import { useEffect, useSyncExternalStore } from "react";
-import { ago, clockHm } from "../../shared/clock";
+import { clockHm } from "../../shared/clock";
 import { useViewActive } from "../../shared/Kept";
 import type { QuietHoursStore } from "../admin/quietHours";
-import { level, type AutopilotStore, type Dimension, type InFlight, type NextPick } from "./autopilot";
+import { level, type AutopilotStore, type Dimension, type NextPick } from "./autopilot";
 
 const pct = (d: Dimension) => `${Math.min(100, (d.used / d.limit) * 100)}%`;
 
@@ -14,21 +14,6 @@ function Meter({ d }: { d: Dimension }) {
     <div className={`dm ${level(d)}`} title={d.detail}>
       <div className="r"><span>{d.label}</span><b>{Math.round(d.used)}/{d.limit}{d.unit}</b></div>
       <div className="m"><i style={{ width: pct(d) }} /></div>
-    </div>
-  );
-}
-
-/** The sessions in flight, each linking to its session, aged at the status's sample time; `sessions` is null while the server does not list them. */
-function Sessions({ sessions, at }: { sessions: InFlight[] | null; at: number | null }) {
-  return (
-    <div className="ap-ses">
-      {sessions === null && <div className="none">The server does not list its sessions yet.</div>}
-      {sessions?.length === 0 && <div className="none">No autopilot session is running.</div>}
-      {sessions?.map((s) => (
-        <a key={s.task} href={s.url} target="_blank" rel="noreferrer">
-          <span className="id">{s.task}</span><span className="tt">{s.title}</span><span className="md">{s.model}{at !== null && ` · ${ago(at - s.started)}`}</span>
-        </a>
-      ))}
     </div>
   );
 }
@@ -92,7 +77,7 @@ export function AutopilotCard({ store, quiet, clock }: { store: AutopilotStore; 
       </section>
     );
   }
-  const { on, sampledAt, dimensions, inFlight, next } = current;
+  const { on, dimensions, inFlight, next } = current;
   const running = dimensions.find((d) => d.name === "sessions")?.used ?? inFlight?.length ?? 0;
   return (
     <section className={`card ap${on ? "" : " off"}`}>
@@ -103,7 +88,7 @@ export function AutopilotCard({ store, quiet, clock }: { store: AutopilotStore; 
           <div className="hours">
             <button type="button" className="sw" role="switch" aria-checked={on} aria-label="Autopilot" disabled={phase.kind === "saving"}
               onClick={() => void store.setOn(!on)} />
-            <span className="state">{on ? `On · ${running} running` : `Paused · ${running} running`}</span>
+            <span className="state">{on ? "On" : "Paused"}</span>
           </div>
           {phase.kind === "refused" && (
             <div className="refusal" role="alert">
@@ -122,7 +107,7 @@ export function AutopilotCard({ store, quiet, clock }: { store: AutopilotStore; 
       </div>
       <div className="row">
         <div><div className="lb">In flight</div><div className="hint">Autopilot's sessions running now</div></div>
-        <Sessions sessions={inFlight} at={sampledAt} />
+        <div className="inflight">{running} running</div>
       </div>
       <QuietRow store={quiet} clock={clock} />
     </section>

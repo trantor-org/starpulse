@@ -60,6 +60,7 @@ describe("the Admin view's Autopilot card", () => {
 
     expect(q("h2")?.textContent).toContain("Autopilot");
     expect(q(SWITCH)?.getAttribute("aria-checked")).toBe("true");
+    expect(q(".state")?.textContent).toBe("On");
     const meters = [...host.querySelectorAll(".dm")].map((m) => m.querySelector(".r")?.textContent);
     expect(meters).toEqual(["CPU41/80%", "RAM58/85%", "Sessions2/4", "Review13/24 pts"]);
     expect(q(".ap.off")).toBeNull();
@@ -104,23 +105,17 @@ describe("the Admin view's Autopilot card", () => {
     expect(q(".nx.none")?.textContent).toBe("Nothing eligible");
   });
 
-  it("lists the sessions in flight with their links, model and age", async () => {
+  it("counts the sessions in flight from the Sessions dimension, with no list of them", async () => {
     await draw();
 
-    const rows = [...host.querySelectorAll(".ap-ses a")];
-    expect(rows.map((r) => r.querySelector(".id")?.textContent)).toEqual(["TASK-11", "TASK-12"]);
-    expect(rows[0].getAttribute("href")).toBe("#demo-session-0011");
-    expect(rows[0].querySelector(".md")?.textContent).toBe("opus · high · 14m");
+    expect(q(".inflight")?.textContent).toBe("2 running");
+    expect(host.querySelector(".ap-ses, .inflight a")).toBeNull();
   });
 
-  it("says no session is running when the list is empty, and that the server does not list them when it serves none", async () => {
-    await draw({ dimensions: dims({ sessions: 0 }), inFlight: [] });
-    expect(q(".ap-ses .none")?.textContent).toBe("No autopilot session is running.");
+  it("counts the listed sessions when the server serves no Sessions dimension", async () => {
+    await draw({ dimensions: dims().filter((d) => d.name !== "sessions") });
 
-    act(() => root.unmount());
-    root = createRoot(host);
-    await draw({ inFlight: undefined });
-    expect(q(".ap-ses .none")?.textContent).toContain("does not list");
+    expect(q(".inflight")?.textContent).toBe("2 running");
   });
 
   it("reads paused with the count of sessions still running, dims the meters and starts nothing", async () => {
@@ -128,7 +123,8 @@ describe("the Admin view's Autopilot card", () => {
 
     expect(q(SWITCH)?.getAttribute("aria-checked")).toBe("false");
     expect(q(".ap.off")).not.toBeNull();
-    expect(q(".state")?.textContent).toBe("Paused · 3 running");
+    expect(q(".state")?.textContent).toBe("Paused");
+    expect(q(".inflight")?.textContent).toBe("3 running");
     expect(q(".nx")?.textContent).toBe("Paused: nothing starts");
   });
 

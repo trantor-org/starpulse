@@ -343,12 +343,12 @@ that changes nothing. It answers only loopback and private-network (RFC 1918) ad
 The sampler reads every 60 seconds. The first sample is a baseline; after it, a dimension going from below its limit
 to at or over it, or back, logs one `StarPulse autopilot: <dimension> is full|free (<use> of <limit>)` line.
 
-StarPulse Admin's Autopilot card shows it: the switch with **On · N running** or **Paused · N running**, a meter per
-dimension (amber from 80% of its limit, red past it, dimmed while the switch is off), the next pick as text (its task,
-title and `starting` in green or `waits: <reason>` in yellow, or **Nothing eligible**), the sessions in flight each
-linking to its session, and the quiet hours row. A click on the switch sends the `PUT` with no dialog, and a refusal
-shows its reason under the switch. The card reads `inFlight` and `next` from the same body when it carries them, and
-shows no pick and an empty list without them. It reads once when Admin opens and follows the `/api/events` `autopilot`
+StarPulse Admin's Autopilot card shows it: the switch with **On** or **Paused**, a meter per dimension (amber from
+80% of its limit, red past it, dimmed while the switch is off), the next pick as text (its task, title and `starting`
+in green or `waits: <reason>` in yellow, or **Nothing eligible**), the count of sessions in flight (the Sessions
+dimension's use, or the length of `inFlight` without it), and the quiet hours row. A click on the switch sends the
+`PUT` with no dialog, and a refusal shows its reason under the switch. The card reads `next` from the same body when it
+carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `autopilot`
 event after. A server with no autopilot (404) shows the card with its reason and no controls. The Kanban draws no
 autopilot control.
 
