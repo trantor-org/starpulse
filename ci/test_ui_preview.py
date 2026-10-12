@@ -335,7 +335,8 @@ class DemoGh:
         if route.startswith("git/"):
             self.created.append(route)
             self.branch = self.branch or route == "git/refs"
-            return json.dumps({"sha": "created"})
+            # GitHub answers a created ref with its target under `object`, and a tree or commit with its own `sha`.
+            return json.dumps({"object": {"sha": "created"}} if route == "git/refs" else {"sha": "created"})
         route = route.removeprefix("contents/")
         if method == "PUT":
             self.writes.append((method, route, json.loads(Path(args[5]).read_text())))

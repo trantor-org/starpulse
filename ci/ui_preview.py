@@ -308,14 +308,14 @@ def _create_branch(gh: Callable[..., str], scratch: Path) -> None:
     """Create the Pages branch as a root commit holding only `.nojekyll`, so Pages serves the files as they are."""
     scratch.mkdir(parents=True, exist_ok=True)
 
-    def post(route: str, body: dict[str, Any]) -> str:
+    def post(route: str, body: dict[str, Any]) -> dict[str, Any]:
         request = scratch / "branch.json"
         request.write_text(json.dumps(body))
         created = gh("api", "--method", "POST", f"repos/{DEMO_REPO}/git/{route}", "--input", request.as_posix())
-        return json.loads(created)["sha"]
+        return json.loads(created)
 
-    tree = post("trees", {"tree": [{"path": ".nojekyll", "mode": "100644", "type": "blob", "content": "\n"}]})
-    commit = post("commits", {"message": "Create the Pages branch", "tree": tree, "parents": []})
+    tree = post("trees", {"tree": [{"path": ".nojekyll", "mode": "100644", "type": "blob", "content": "\n"}]})["sha"]
+    commit = post("commits", {"message": "Create the Pages branch", "tree": tree, "parents": []})["sha"]
     post("refs", {"ref": f"refs/heads/{DEMO_BRANCH}", "sha": commit})
 
 
