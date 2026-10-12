@@ -159,7 +159,7 @@ const ease = (u) => (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
 
 // ---- DAG constellations: grouped by domain, ordered by name, spread along a band ----
 const GROUPS = [
-  { id: "delivery", name: "Delivery & CI", dags: ["apply-on-merge", "coderabbit-usage-metrics", "cr-sweep", "deliver", "github-actions-queue-metrics", "github-rulesets-drift", "mutation-metrics", "setup-vm-apply", "unraid-apply-merged", "whole-repo-gate"] },
+  { id: "delivery", name: "Delivery & CI", dags: ["apply-on-merge", "coderabbit-usage-metrics", "cr-sweep", "deliver", "github-actions-queue-metrics", "github-rulesets-drift", "mutation-metrics", "setup-vm-apply", "nas-apply-merged", "whole-repo-gate"] },
   { id: "board", name: "Board", dags: ["backlog-sweep", "board-autopilot", "board-dependency-reconciliation", "drift-to-task", "main-follow", "phantom-deletes-to-task", "worktree-reap"] },
   { id: "agents", name: "Agent jobs & evals", dags: ["alert-investigation", "nightly-audit", "session-transcript-stats", "skill-conformance", "skill-eval", "skill-optimize", "trace-cluster-report", "weekly-code-audit"] },
   { id: "retrieval", name: "Retrieval & tags", dags: ["graph-refresh", "memory-reindex", "rag-audit-nominations", "rag-metrics", "semantic-tag-merges", "tag-analytics", "tag-optimizer", "tag-performers", "tag-signals"] },
@@ -888,7 +888,7 @@ function drawTele() { const g = scene.tg, hv = hover?.kind === "tnode" ? hover.o
     firingQ(evOf(e, src), q, (u) => comet(e.e.p0, e.e.c, e.e.p1, ease(u), 2.6, src ? src.col : ACT)); }
   replayTag(scene.w * 0.06, scene.box[3] - 16 / K); }
 // F: tasks joined by the files they touch, projected to a task graph and split into communities by weighted label propagation
-const MODULES = { trantor: ["bin", "hooks", "skills", "docs", "infra"], starpulse: ["design", "otlp", "api"], homelab: ["unraid", "proxmox"] };
+const MODULES = { trantor: ["bin", "hooks", "skills", "docs", "infra"], starpulse: ["design", "otlp", "api"], homelab: ["nas", "hypervisor"] };
 TRAJ.forEach((t, i) => { const mods = MODULES[t.f.repo], m = mods[Math.floor(hsh(i * 3 + 1) * mods.length)], n = 2 + Math.floor(hsh(i * 5 + 2) * 3);
   t.files = Array.from({ length: n }, (_, k) => `${t.f.repo}/${m}/f${Math.floor(hsh(i * 7 + k) * 6)}`); if (hsh(i * 11) < 0.3) t.files.push(`trantor/docs/f${Math.floor(hsh(i * 13) * 6)}`); t.module = `${t.f.repo}/${m}`; });
 function communities(runs) { const byFile = {}; runs.forEach((t, i) => t.files.forEach((f) => (byFile[f] ||= []).push(i))); const W2 = runs.map(() => new Map());

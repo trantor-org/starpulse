@@ -54,7 +54,7 @@ for the default week 60 times each. It prints the p95 in wall and CPU time with 
 exits 1 when the CPU p95 at any size is over 2x the first size's. `--scan N` also times the whole-table reads the
 summaries replaced, on the stores up to N events.
 
-Result (ai-vm-1, SQLite, 60 reads each; CPU time judges the 2x gate):
+Result (build host, SQLite, 60 reads each; CPU time judges the 2x gate):
 
 | Events | Health p95 (wall / CPU) | Level p95 (wall / CPU) | Trajectories p95 (wall / CPU) | Store |
 | ---: | --- | --- | --- | ---: |
@@ -193,11 +193,11 @@ until the run ends.
 
 - `--replay-multiple N`: the replay rate as a multiple of the live rate (default 6). Seeded server only.
 - `--ceiling "ROW=MS"`: hold a probe row to MS instead of 50, as `page_latency.py --ceiling` does, and name it in the
-  report's `ceilings`. For a host whose hardware cannot hold a row: ai-vm-1's Xeon opens a task's modal in 50 to 300 ms
-  under its usual load. The default holds every row to the budget, which is what the Tower runner's hold is judged by.
+  report's `ceilings`. For a host whose hardware cannot hold a row: the build host's Xeon opens a task's modal in 50 to 300 ms
+  under its usual load. The default holds every row to the budget, which is what the soak runner's hold is judged by.
 - A URL selects a running server and takes `--pid`; `--replay-multiple` is refused with one, and `--pid` without one.
 
-`.github/workflows/release.yml` runs this mode as its `soak` job on a `tower` runner: 4 hours on a `v*` tag, which the
+`.github/workflows/release.yml` runs this mode as its `soak` job on a self-hosted soak runner: 4 hours on a `v*` tag, which the
 GitHub Release and PyPI jobs both need, and any `duration` on a `workflow_dispatch`, which publishes nothing. The report
 uploads as the run's `soak-report` artifact.
 

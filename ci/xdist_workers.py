@@ -1,8 +1,8 @@
 """Print the pytest-xdist worker count a validate runner's memory limit can hold.
 
-An Unraid farm slot is capped at 4 GiB, and its cgroup also holds its own dockerd and the Postgres containers the
+A NAS farm slot is capped at 4 GiB, and its cgroup also holds its own dockerd and the Postgres containers the
 hub tests start; a worker OOM-killed there leaves xdist hanging until the job timeout. So a memory-limited runner gets
-one worker per 2 GiB. A runner with no cgroup memory limit shares ai-vm-1's cores with the rest of the pool and gets
+one worker per 2 GiB. A runner with no cgroup memory limit shares the build host's cores with the rest of the pool and gets
 MAX_WORKERS. trantor's `bin/ci_pytest_workers.py` applies the same rule to its own Validate job.
 """
 

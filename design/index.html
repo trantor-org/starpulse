@@ -164,7 +164,7 @@ const ease = (u) => (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
 
 // ---- DAG constellations: grouped by domain, ordered by name, spread along a band ----
 const GROUPS = [
-  { id: "delivery", name: "Delivery & CI", dags: ["apply-on-merge", "coderabbit-usage-metrics", "cr-sweep", "deliver", "github-actions-queue-metrics", "github-rulesets-drift", "mutation-metrics", "setup-vm-apply", "unraid-apply-merged", "whole-repo-gate"] },
+  { id: "delivery", name: "Delivery & CI", dags: ["apply-on-merge", "coderabbit-usage-metrics", "cr-sweep", "deliver", "github-actions-queue-metrics", "github-rulesets-drift", "mutation-metrics", "setup-vm-apply", "nas-apply-merged", "whole-repo-gate"] },
   { id: "board", name: "Board", dags: ["backlog-sweep", "board-autopilot", "board-dependency-reconciliation", "drift-to-task", "main-follow", "phantom-deletes-to-task", "worktree-reap"] },
   { id: "agents", name: "Agent jobs & evals", dags: ["alert-investigation", "nightly-audit", "session-transcript-stats", "skill-conformance", "skill-eval", "skill-optimize", "trace-cluster-report", "weekly-code-audit"] },
   { id: "retrieval", name: "Retrieval & tags", dags: ["graph-refresh", "memory-reindex", "rag-audit-nominations", "rag-metrics", "semantic-tag-merges", "tag-analytics", "tag-optimizer", "tag-performers", "tag-signals"] },

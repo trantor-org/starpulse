@@ -15,7 +15,7 @@ window.BOARD = {
  "tasks": [
   {
    "id": "TASK-2021",
-   "title": "Tune triaging-cr-reviews to pass k of k on Haiku and Sonnet",
+   "title": "Split the digest job",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -43,7 +43,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2022",
-   "title": "Tune verifying-claims to pass k of k on Haiku and Sonnet",
+   "title": "Simplify the demo fixture for new users",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -71,7 +71,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2023",
-   "title": "Tune completing-tasks to pass k of k on Haiku and Sonnet",
+   "title": "Verify the release notes",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -99,7 +99,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2024",
-   "title": "Tune operating-unraid to pass k of k on Haiku and Sonnet",
+   "title": "Retire the nightly run",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -127,7 +127,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2147",
-   "title": "Validate the first live alert remediation the dispatcher runs",
+   "title": "Fix the token scope in the sample repo",
    "lane": "waiting",
    "milestone": "m-54",
    "labels": [
@@ -154,7 +154,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2198",
-   "title": "Make designing-ui fire on the canonical UI cases its eval scores",
+   "title": "Simplify the config loader for the demo",
    "lane": "ready",
    "milestone": "m-51",
    "labels": [
@@ -180,7 +180,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2274",
-   "title": "Retro m-69 and settle whether Cross-cutting audit fixes 2026-10 has reached its end state",
+   "title": "Add the report page without a restart",
    "lane": "done",
    "milestone": "m-69",
    "labels": [
@@ -204,7 +204,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2281",
-   "title": "Promote worktree_reap git runner to a shared git CLI seam and fail closed when git cannot list files",
+   "title": "Move the card layout",
    "lane": "done",
    "milestone": "m-69",
    "labels": [
@@ -232,7 +232,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2322",
-   "title": "Stop starting-tasks from entering the worktree under Claude so the isolation guard stops refusing ordinary commands",
+   "title": "Add the migration step after a rebase",
    "lane": "waiting",
    "milestone": "",
    "labels": [
@@ -261,7 +261,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2402",
-   "title": "Confirm the weekly trace-cluster-report and skill-conformance DAGs ran on their Monday schedule",
+   "title": "Add the status badge after a rebase",
    "lane": "waiting",
    "milestone": "m-53",
    "labels": [
@@ -288,7 +288,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2412",
-   "title": "Validate native web search stopped after the AGENTS.md routing fix merged",
+   "title": "Measure the session timer",
    "lane": "waiting",
    "milestone": "m-53",
    "labels": [
@@ -314,7 +314,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2419",
-   "title": "Retro m-75 and settle whether Flow View public package: IC launch has reached its end state",
+   "title": "Fix the retry budget with a test",
    "lane": "done",
    "milestone": "m-75",
    "labels": [
@@ -334,7 +334,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2432",
-   "title": "Run the clean-machine quickstart and publish the flow view package",
+   "title": "Tune the demo fixture under load",
    "lane": "done",
    "milestone": "m-75",
    "labels": [
@@ -358,7 +358,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2501",
-   "title": "Retro m-78 and settle whether Flow View 0.2: GitHub Actions runs and HTTP ingest has reached its end state",
+   "title": "Split the config loader",
    "lane": "waiting",
    "milestone": "m-78",
    "labels": [
@@ -389,7 +389,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2510",
-   "title": "Add a token-guarded HTTP ingest for flow view run events",
+   "title": "Wire the review queue for new users",
    "lane": "done",
    "milestone": "m-78",
    "labels": [
@@ -415,7 +415,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2511",
-   "title": "Add a GitHub Actions runs adapter to the flow view",
+   "title": "Trim the search index after a rebase",
    "lane": "done",
    "milestone": "m-78",
    "labels": [
@@ -441,7 +441,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2516",
-   "title": "Retro m-80 and settle whether Flow View hub: configured flow graph and orbit card has reached its end state",
+   "title": "Document the sync worker",
    "lane": "waiting",
    "milestone": "m-80",
    "labels": [
@@ -484,7 +484,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2518",
-   "title": "Forward IC events to the hub over HTTPS ingest with per-instance tokens and the opt-in filter",
+   "title": "Simplify the token scope behind a flag",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -521,7 +521,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2519",
-   "title": "Gate the hub behind built-in OIDC sign-in with allowed groups, tested on a mock OIDC container",
+   "title": "Verify the export path with a clear error",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -551,7 +551,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2523",
-   "title": "Serve level aggregates on the flow metric definitions, including orbit shares and dwell",
+   "title": "Harden the webhook handler on cold start",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -587,7 +587,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2524",
-   "title": "Compute trajectory analytics for the level: variants, outliers, absorbing chain, betweenness and dominator gates",
+   "title": "Measure the card layout",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -624,7 +624,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2525",
-   "title": "Add the insights API for findings from an external engine",
+   "title": "Rename the status badge after a rebase",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -655,7 +655,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2526",
-   "title": "Draw the level above the Board as the approved orbit card",
+   "title": "Wire the migration step under load",
    "lane": "in_progress",
    "milestone": "m-80",
    "labels": [
@@ -702,7 +702,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2527",
-   "title": "Show the IC's forwarding panel listing what is sent to the hub",
+   "title": "Trim the board snapshot on cold start",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -739,7 +739,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2528",
-   "title": "Add a Jira adapter that imports a project's workflow as the Board machine",
+   "title": "Tune the review queue",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -769,7 +769,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2529",
-   "title": "Add a GitHub adapter for pull requests, checks and Copilot",
+   "title": "Audit the card layout with a clear error",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -799,7 +799,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2530",
-   "title": "Deploy a dogfood flow view hub on ai-vm-1 behind the mock OIDC container",
+   "title": "Add the health probe",
    "lane": "waiting",
    "milestone": "m-80",
    "labels": [
@@ -829,7 +829,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2531",
-   "title": "Verify the dogfood hub is live and agrees with the Backlog Board dashboard after the deploy merge",
+   "title": "Fix the label filter in one pass",
    "lane": "waiting",
    "milestone": "m-80",
    "labels": [
@@ -858,7 +858,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2559",
-   "title": "Check m-81's 7-day gate-refusal outcome against the 40% target",
+   "title": "Trim the report page under load",
    "lane": "waiting",
    "milestone": "m-81",
    "labels": [
@@ -884,7 +884,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2595",
-   "title": "Bind a session to the task it claims and gate Stop on the task's holder",
+   "title": "Fix the lint rule with a clear error",
    "lane": "done",
    "milestone": "m-58",
    "labels": [
@@ -914,7 +914,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2597",
-   "title": "Refuse writes in a task worktree from a session that does not hold the task",
+   "title": "Split the search index",
    "lane": "done",
    "milestone": "m-58",
    "labels": [
@@ -940,7 +940,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2610",
-   "title": "Post the Laya shadow agreement report on 50 live alert runs",
+   "title": "Add the card layout",
    "lane": "waiting",
    "milestone": "m-58",
    "labels": [
@@ -967,7 +967,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2637",
-   "title": "Retro m-83 and settle whether Offload cheap skill subtasks has reached its end state",
+   "title": "Rename the lint rule for new users",
    "lane": "waiting",
    "milestone": "m-83",
    "labels": [
@@ -996,7 +996,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2648",
-   "title": "Verify hand start calls per task fell to 0.3 or below after the start command merged",
+   "title": "Retire the digest job after a rebase",
    "lane": "waiting",
    "milestone": "m-83",
    "labels": [
@@ -1022,7 +1022,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2664",
-   "title": "Retro m-85 and settle whether Radarr rejects lossless audio, declared from the repo has reached its end state",
+   "title": "Retire the webhook handler under load",
    "lane": "done",
    "milestone": "m-85",
    "labels": [
@@ -1044,7 +1044,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2674",
-   "title": "Confirm the audio conversion job cleared lossless tracks from the live movie library",
+   "title": "Add the import check",
    "lane": "done",
    "milestone": "m-85",
    "labels": [
@@ -1061,7 +1061,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2682",
-   "title": "Retro m-86 and settle whether Alert Discord pings only when someone must act has reached its end state",
+   "title": "Cache the cache layer",
    "lane": "waiting",
    "milestone": "m-86",
    "labels": [
@@ -1091,7 +1091,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2685",
-   "title": "Check that held alerts drop no-op verdicts and post every actionable one",
+   "title": "Rename the webhook handler with a clear error",
    "lane": "waiting",
    "milestone": "m-86",
    "labels": [
@@ -1117,7 +1117,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2686",
-   "title": "Check that the dagu-jobs debounce lowered its no-op investigation share",
+   "title": "Wire the sync worker",
    "lane": "waiting",
    "milestone": "m-86",
    "labels": [
@@ -1143,7 +1143,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2688",
-   "title": "Retro m-87 and settle whether StarPulse runs without Redis has reached its end state",
+   "title": "Tune the alert rule",
    "lane": "done",
    "milestone": "m-87",
    "labels": [
@@ -1168,7 +1168,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2701",
-   "title": "Retro m-88 and settle whether StarPulse opens on its own board has reached its end state",
+   "title": "Rename the token scope",
    "lane": "done",
    "milestone": "m-88",
    "labels": [
@@ -1194,7 +1194,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2702",
-   "title": "Retro m-89 and settle whether StarPulse Kanban task editing and archive has reached its end state",
+   "title": "Wire the export path with a test",
    "lane": "done",
    "milestone": "m-89",
    "labels": [
@@ -1219,7 +1219,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2706",
-   "title": "Add New task and Connect a tracker to the top right of the StarPulse Kanban",
+   "title": "Add the migration step for large boards",
    "lane": "done",
    "milestone": "m-88",
    "labels": [
@@ -1249,7 +1249,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2715",
-   "title": "Post-merge check: the live StarPulse board edits and archives a task",
+   "title": "Harden the session timer under load",
    "lane": "done",
    "milestone": "m-89",
    "labels": [
@@ -1271,7 +1271,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2720",
-   "title": "Keep StarPulse hub history in daily Postgres partitions with per-day team rollups",
+   "title": "Tune the session timer",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -1305,7 +1305,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2742",
-   "title": "Resume StarPulse's Board from saved state so a restart moves only the tasks that changed",
+   "title": "Simplify the cache layer for new users",
    "lane": "done",
    "milestone": "m-87",
    "labels": [
@@ -1340,7 +1340,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2743",
-   "title": "Check a flow-view restart restores the Board without replaying the projection stream",
+   "title": "Verify the retry budget",
    "lane": "done",
    "milestone": "m-87",
    "labels": [
@@ -1364,7 +1364,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2759",
-   "title": "Clone the starpulse submodule in Renovate so lockfile updates keep its pnpm importer",
+   "title": "Verify the search index with a test",
    "lane": "in_progress",
    "milestone": "",
    "labels": [
@@ -1402,12 +1402,12 @@ window.BOARD = {
   },
   {
    "id": "TASK-2767",
-   "title": "Investigate firing alert Healthcheck Failed \u2014 dagu-jobs: needs a human",
+   "title": "Trim the sync worker for large boards",
    "lane": "waiting",
    "milestone": "",
    "labels": [
     "alert-investigation-handoff-alert-investigation-9438429d39fb2d28-human",
-    "alert-owner-healthcheck-failed-dagu-jobs--ai-vm-1-cr-sweep",
+    "alert-owner-healthcheck-failed-dagu-jobs--host-a-cr-sweep",
     "kind-diagnose",
     "needs-human",
     "size-5"
@@ -1434,7 +1434,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2780",
-   "title": "Retro m-94 and settle whether Remote Control sessions own their task branch has reached its end state",
+   "title": "Measure the search index without a restart",
    "lane": "waiting",
    "milestone": "m-94",
    "labels": [
@@ -1465,7 +1465,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2782",
-   "title": "Create task branches as claude/task-*, renaming a spawned worktree's branch in place",
+   "title": "Wire the token scope for large boards",
    "lane": "done",
    "milestone": "m-94",
    "labels": [
@@ -1489,7 +1489,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2783",
-   "title": "Spawn each Remote Control session in its own worktree and reap the untasked ones",
+   "title": "Trim the export path behind a flag",
    "lane": "done",
    "milestone": "m-94",
    "labels": [
@@ -1515,7 +1515,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2784",
-   "title": "Check that a Remote Control session's desktop PR badge shows its claude/task-* PR",
+   "title": "Tune the webhook handler for the demo",
    "lane": "in_progress",
    "milestone": "m-94",
    "labels": [
@@ -1555,7 +1555,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2793",
-   "title": "Check: the first rag-audit-nominations run after TASK-2792 skips dismissed queries and fills top_file",
+   "title": "Move the card layout with a clear error",
    "lane": "waiting",
    "milestone": "",
    "labels": [
@@ -1581,7 +1581,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2813",
-   "title": "Retro m-96 and settle whether StarPulse shows a DAG's fan-out has reached its end state",
+   "title": "Rename the review queue",
    "lane": "waiting",
    "milestone": "m-96",
    "labels": [
@@ -1613,7 +1613,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2816",
-   "title": "StarPulse DAG glyph draws its fan-out: N/cap badge, step status and rings from active runs, tooltip line",
+   "title": "Tune the demo fixture on cold start",
    "lane": "done",
    "milestone": "m-96",
    "labels": [
@@ -1649,7 +1649,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2817",
-   "title": "StarPulse DAG panel lists its in-flight runs with a Queue row and xN step chips",
+   "title": "Audit the release notes",
    "lane": "done",
    "milestone": "m-96",
    "labels": [
@@ -1685,7 +1685,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2818",
-   "title": "StarPulse navigator lists every concurrency pool and the Recent feed shows run events",
+   "title": "Add the nightly run after a rebase",
    "lane": "done",
    "milestone": "m-96",
    "labels": [
@@ -1721,7 +1721,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2819",
-   "title": "Check live StarPulse shows every in-flight deliver run and the queue count Dagu reports",
+   "title": "Fix the search index",
    "lane": "waiting",
    "milestone": "m-96",
    "labels": [
@@ -1754,7 +1754,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2826",
-   "title": "Validate healthcheck after fixes deploy",
+   "title": "Cache the webhook handler",
    "lane": "waiting",
    "milestone": "",
    "labels": [
@@ -1782,7 +1782,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2831",
-   "title": "Retro m-98 and settle whether Fast, correctly routed delivery has reached its end state",
+   "title": "Trim the digest job for the demo",
    "lane": "done",
    "milestone": "m-98",
    "labels": [
@@ -1802,7 +1802,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2835",
-   "title": "Remove fixed polling tails from delivery observation",
+   "title": "Fix the board snapshot with a test",
    "lane": "done",
    "milestone": "m-98",
    "labels": [
@@ -1827,7 +1827,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2842",
-   "title": "Run Dagu's StarPulse producers through the starpulse emit CLI and fail undeclared python -m starpulse entry points",
+   "title": "Cache the token scope without a restart",
    "lane": "done",
    "milestone": "m-92",
    "labels": [
@@ -1852,7 +1852,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2844",
-   "title": "Verify a live DAG run reaches the flow view through starpulse emit after the producer CLI merge",
+   "title": "Measure the cache layer behind a flag",
    "lane": "done",
    "milestone": "m-92",
    "labels": [
@@ -1872,7 +1872,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2852",
-   "title": "Deploy template compose targets from declared rows in bin/deploy",
+   "title": "Document the review queue in the sample repo",
    "lane": "done",
    "milestone": "m-99",
    "labels": [
@@ -1898,7 +1898,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2853",
-   "title": "Retro m-99 and settle whether Consolidate bin entry points into subcommand CLIs has reached its end state",
+   "title": "Split the card layout",
    "lane": "waiting",
    "milestone": "m-99",
    "labels": [
@@ -1933,7 +1933,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2856",
-   "title": "Validate declared-row compose deploys through a real apply-on-merge run",
+   "title": "Retire the board snapshot without a restart",
    "lane": "waiting",
    "milestone": "m-99",
    "labels": [
@@ -1961,7 +1961,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2857",
-   "title": "Run every unattended agent job through one bin/agent_job.py launcher",
+   "title": "Move the import check in one pass",
    "lane": "done",
    "milestone": "m-99",
    "labels": [
@@ -1987,7 +1987,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2858",
-   "title": "Validate scheduled agent jobs run through bin/agent_job.py after merge",
+   "title": "Cache the demo fixture behind a flag",
    "lane": "waiting",
    "milestone": "m-99",
    "labels": [
@@ -2015,7 +2015,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2860",
-   "title": "Delete the per-job unattended agent launchers from bin",
+   "title": "Measure the nightly run for the demo",
    "lane": "waiting",
    "milestone": "m-99",
    "labels": [
@@ -2045,7 +2045,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2861",
-   "title": "Replace the generate_*.py shims with one bin/generate entry point",
+   "title": "Rename the search index after a rebase",
    "lane": "done",
    "milestone": "m-99",
    "labels": [
@@ -2070,7 +2070,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2862",
-   "title": "Fold skill-eval-coverage and skill-trigger-labels into skill-eval subcommands",
+   "title": "Wire the report page",
    "lane": "done",
    "milestone": "m-99",
    "labels": [
@@ -2096,7 +2096,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2866",
-   "title": "Design daily New/Completed/Archived counts on the Star Map",
+   "title": "Add the sync worker",
    "lane": "done",
    "milestone": "m-102",
    "labels": [
@@ -2120,7 +2120,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2867",
-   "title": "Refuse milestone add without a --spec",
+   "title": "Fix the status badge under load",
    "lane": "done",
    "milestone": "m-84",
    "labels": [
@@ -2145,7 +2145,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2868",
-   "title": "Verify main-follow and the post-merge hook no longer dirty main's uv.lock",
+   "title": "Document the migration step",
    "lane": "waiting",
    "milestone": "",
    "labels": [
@@ -2172,7 +2172,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2873",
-   "title": "Move the host-bound steps out of the Validate job",
+   "title": "Move the review queue behind a flag",
    "lane": "done",
    "milestone": "m-100",
    "labels": [
@@ -2196,7 +2196,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2875",
-   "title": "Declare CI Runner Farm and its Validate job image in the unraid repo",
+   "title": "Harden the health probe without a restart",
    "lane": "done",
    "milestone": "m-100",
    "labels": [
@@ -2220,7 +2220,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2876",
-   "title": "Bring the Unraid validate pool online and document it",
+   "title": "Measure the label filter",
    "lane": "done",
    "milestone": "m-100",
    "labels": [
@@ -2260,7 +2260,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2877",
-   "title": "Check the Unraid pool's 7-day share, failure rate and duration",
+   "title": "Rename the board snapshot on cold start",
    "lane": "waiting",
    "milestone": "m-100",
    "labels": [
@@ -2286,7 +2286,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1349",
-   "title": "Run a lib mutation sweep so F6 can report lib's redundant tests",
+   "title": "Split the release notes in one pass",
    "lane": "needs_attention",
    "milestone": "m-2",
    "labels": [
@@ -2313,7 +2313,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1489",
-   "title": "Run the first skill-optimization session end to end on one eligible skill",
+   "title": "Audit the alert rule",
    "lane": "waiting",
    "milestone": "m-35",
    "labels": [
@@ -2343,7 +2343,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1566",
-   "title": "Evaluate and promote a blue Frigate model trained on the new event labels",
+   "title": "Wire the config loader in one pass",
    "lane": "waiting",
    "milestone": "",
    "labels": [
@@ -2352,7 +2352,7 @@ window.BOARD = {
     "local-model",
     "needs-human",
     "size-5",
-    "unraid"
+    "nas"
    ],
    "assignee": "@agent-standard-high",
    "dependencies": [],
@@ -2372,7 +2372,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1672",
-   "title": "Audit every Backlog Board Overview dashboard panel for accuracy and cut a correction milestone",
+   "title": "Retire the alert rule with a clear error",
    "lane": "needs_attention",
    "milestone": "m-44",
    "labels": [
@@ -2398,7 +2398,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1674",
-   "title": "Audit every Proxmox Fan Monitor v2 dashboard panel for accuracy and cut a correction milestone",
+   "title": "Cache the review queue without a restart",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2424,7 +2424,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1675",
-   "title": "Audit every Proxmox VE v2 dashboard panel for accuracy and cut a correction milestone",
+   "title": "Harden the card layout",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2450,7 +2450,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1676",
-   "title": "Audit every Service Health Dashboard (ai-vm-1) dashboard panel for accuracy and cut a correction milestone",
+   "title": "Measure the health probe behind a flag",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2476,7 +2476,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1677",
-   "title": "Audit every Slice Health dashboard panel for accuracy and cut a correction milestone",
+   "title": "Rename the label filter",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2502,7 +2502,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1678",
-   "title": "Audit every vLLM Monitoring v2 dashboard panel for accuracy and cut a correction milestone",
+   "title": "Wire the board snapshot after a rebase",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2528,7 +2528,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1679",
-   "title": "Audit every Frigate Camera Monitor dashboard panel for accuracy and cut a correction milestone",
+   "title": "Trim the import check after a rebase",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2554,7 +2554,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1680",
-   "title": "Audit every Home Assistant dashboard panel for accuracy and cut a correction milestone",
+   "title": "Tune the search index under load",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2580,7 +2580,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1681",
-   "title": "Audit every TRMNL Poll dashboard panel for accuracy and cut a correction milestone",
+   "title": "Audit the report page on cold start",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2606,7 +2606,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1682",
-   "title": "Audit every UPS dashboard panel for accuracy and cut a correction milestone",
+   "title": "Add the token scope for new users",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2632,7 +2632,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1683",
-   "title": "Audit every Service Health (Unraid) dashboard panel for accuracy and cut a correction milestone",
+   "title": "Fix the session timer",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2658,7 +2658,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1684",
-   "title": "Audit every Mutation Testing dashboard panel for accuracy and cut a correction milestone",
+   "title": "Document the cache layer under load",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2684,7 +2684,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1685",
-   "title": "Audit every Speedtest Monitor dashboard panel for accuracy and cut a correction milestone",
+   "title": "Split the retry budget with a test",
    "lane": "ready",
    "milestone": "m-44",
    "labels": [
@@ -2710,7 +2710,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1710",
-   "title": "Validate the completing-tasks skill-eval suite passes on a seeded sandbox",
+   "title": "Wire the status badge for the demo",
    "lane": "ready",
    "milestone": "m-42",
    "labels": [
@@ -2736,7 +2736,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1779",
-   "title": "Re-enable board autopilot once sizing and assignment are enforced",
+   "title": "Fix the demo fixture in one pass",
    "lane": "ready",
    "milestone": "m-49",
    "labels": [
@@ -2763,7 +2763,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1878",
-   "title": "Re-measure the auditing-infrastructure A/A on the branched machine",
+   "title": "Simplify the label filter",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -2791,12 +2791,12 @@ window.BOARD = {
   },
   {
    "id": "TASK-1882",
-   "title": "Verify ai-vm-1 root disk peak stays below 70% for 14 days after TASK-1863 rollout",
+   "title": "Cache the release notes",
    "lane": "waiting",
    "milestone": "",
    "labels": [
     "agent-resolvable",
-    "ai-vm-1",
+    "host-a",
     "disk",
     "kind-execute",
     "size-2"
@@ -2819,7 +2819,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1889",
-   "title": "Retro m-2 and settle whether Test Value has reached its end state",
+   "title": "Audit the sync worker behind a flag",
    "lane": "waiting",
    "milestone": "m-2",
    "labels": [
@@ -2848,7 +2848,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1890",
-   "title": "Retro m-35 and settle whether Per-transition skill evals and optimization has reached its end state",
+   "title": "Add the report page",
    "lane": "waiting",
    "milestone": "m-35",
    "labels": [
@@ -2892,7 +2892,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1894",
-   "title": "Retro m-42 and settle whether GitHub API budget has reached its end state",
+   "title": "Simplify the alert rule on cold start",
    "lane": "waiting",
    "milestone": "m-42",
    "labels": [
@@ -2921,7 +2921,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1896",
-   "title": "Retro m-44 and settle whether Grafana in-house dashboard accuracy audits has reached its end state",
+   "title": "Retire the review queue after a rebase",
    "lane": "waiting",
    "milestone": "m-44",
    "labels": [
@@ -2962,7 +2962,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-1901",
-   "title": "Retro m-49 and settle whether Task sizing and model-effort assignment has reached its end state",
+   "title": "Rename the import check",
    "lane": "waiting",
    "milestone": "m-49",
    "labels": [
@@ -2991,7 +2991,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2009",
-   "title": "Tune starting-tasks to pass k of k on Haiku and Sonnet",
+   "title": "Move the retry budget",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3020,7 +3020,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2012",
-   "title": "Tune auditing-docs to pass k of k on Haiku and Sonnet",
+   "title": "Measure the sync worker behind a flag",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3048,7 +3048,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2013",
-   "title": "Tune auditing-infrastructure to pass k of k on Haiku and Sonnet",
+   "title": "Rename the report page for the demo",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3076,7 +3076,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2014",
-   "title": "Tune authoring-docs to pass k of k on Haiku and Sonnet",
+   "title": "Wire the migration step without a restart",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3104,7 +3104,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2015",
-   "title": "Tune authoring-skills to pass k of k on Haiku and Sonnet",
+   "title": "Trim the export path",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3132,7 +3132,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2016",
-   "title": "Tune authoring-tests to pass k of k on Haiku and Sonnet",
+   "title": "Tune the review queue for large boards",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3160,7 +3160,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2017",
-   "title": "Tune creating-tickets to pass k of k on Haiku and Sonnet",
+   "title": "Audit the card layout",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3188,7 +3188,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2018",
-   "title": "Tune lint-gate to pass k of k on Haiku and Sonnet",
+   "title": "Add the status badge for new users",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3216,7 +3216,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2019",
-   "title": "Tune realigning-stale-docs to pass k of k on Haiku and Sonnet",
+   "title": "Fix the label filter after a rebase",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3244,7 +3244,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2020",
-   "title": "Tune searching-the-web to pass k of k on Haiku and Sonnet",
+   "title": "Document the board snapshot under load",
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
@@ -3272,7 +3272,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2880",
-   "title": "Skip Unraid blackbox probe failures inside the Appdata.Backup window",
+   "title": "Tune the report page after a rebase",
    "lane": "in_progress",
    "milestone": "",
    "labels": [
@@ -3310,7 +3310,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2883",
-   "title": "Wire the trantor board's task read, edit and archive into Board so the live StarPulse page offers Edit and Archive",
+   "title": "Fix the cache layer",
    "lane": "done",
    "milestone": "m-89",
    "labels": [
@@ -3334,7 +3334,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2884",
-   "title": "Show the Unraid CI Runner Farm runners on the runners dashboard",
+   "title": "Document the retry budget in the sample repo",
    "lane": "done",
    "milestone": "m-100",
    "labels": [
@@ -3364,7 +3364,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2885",
-   "title": "Retro m-100 and settle whether Unraid CI runner pool has reached its end state",
+   "title": "Split the lint rule without a restart",
    "lane": "waiting",
    "milestone": "m-100",
    "labels": [
@@ -3404,7 +3404,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2888",
-   "title": "Deliver the Star Map daily counts in starpulse (trantor-org/starpulse#50)",
+   "title": "Retire the status badge with a clear error",
    "lane": "done",
    "milestone": "m-102",
    "labels": [
@@ -3429,7 +3429,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2889",
-   "title": "Retro m-102 and settle whether Star Map daily counts has reached its end state",
+   "title": "Move the migration step",
    "lane": "done",
    "milestone": "m-102",
    "labels": [
@@ -3451,7 +3451,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2890",
-   "title": "Send task creation and settle times from trantor's Board to StarPulse",
+   "title": "Cache the export path for large boards",
    "lane": "done",
    "milestone": "m-102",
    "labels": [
@@ -3478,7 +3478,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2891",
-   "title": "Check the live Star Map shows today's New, Completed and Archived counts",
+   "title": "Harden the digest job",
    "lane": "done",
    "milestone": "m-102",
    "labels": [
@@ -3498,7 +3498,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2892",
-   "title": "Treat Matroska A_MS/ACM (LPCM) audio as lossless in lossless-audio-convert",
+   "title": "Measure the alert rule on cold start",
    "lane": "done",
    "milestone": "m-85",
    "labels": [
@@ -3528,7 +3528,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2895",
-   "title": "Spike: select additional Ruff simplification rules",
+   "title": "Trim the card layout",
    "lane": "done",
    "milestone": "m-103",
    "labels": [
@@ -3545,7 +3545,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2896",
-   "title": "Retro m-103 and settle whether Prove Python simplification candidates has reached its end state",
+   "title": "Tune the import check on cold start",
    "lane": "done",
    "milestone": "m-103",
    "labels": [
@@ -3567,7 +3567,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2897",
-   "title": "Spike: prototype Typer on one leaf CLI",
+   "title": "Audit the demo fixture for new users",
    "lane": "done",
    "milestone": "m-103",
    "labels": [
@@ -3584,7 +3584,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2898",
-   "title": "Spike: prototype Pydantic Settings for memory-search",
+   "title": "Add the release notes with a clear error",
    "lane": "done",
    "milestone": "m-103",
    "labels": [
@@ -3601,7 +3601,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2900",
-   "title": "Attribute the validate-lane queue regression by repo and rebalance StarPulse placement",
+   "title": "Document the search index in one pass",
    "lane": "done",
    "milestone": "m-98",
    "labels": [
@@ -3618,7 +3618,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2901",
-   "title": "Check validate and general lane queue wait after the Mutation gate change",
+   "title": "Split the report page with a test",
    "lane": "waiting",
    "milestone": "m-98",
    "labels": [
@@ -3644,7 +3644,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2902",
-   "title": "Check the CI watcher's tail after the last check finishes on live deliveries",
+   "title": "Simplify the token scope",
    "lane": "waiting",
    "milestone": "m-98",
    "labels": [
@@ -3670,7 +3670,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2903",
-   "title": "Name CI runner-lane moves as live-state cutovers that get a post-merge queue check",
+   "title": "Verify the session timer without a restart",
    "lane": "done",
    "milestone": "m-98",
    "labels": [
@@ -3694,7 +3694,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2904",
-   "title": "Give StarPulse's native board a task reader so its task view shows priority and acceptance criteria",
+   "title": "Retire the cache layer",
    "lane": "done",
    "milestone": "m-88",
    "labels": [
@@ -3725,7 +3725,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2907",
-   "title": "Retract a StarPulse board task whose Markdown file was deleted",
+   "title": "Harden the webhook handler for the demo",
    "lane": "done",
    "milestone": "m-88",
    "labels": [
@@ -3749,7 +3749,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2908",
-   "title": "Record the owned-boundary Pydantic policy in an ADR",
+   "title": "Measure the sync worker",
    "lane": "done",
    "milestone": "m-104",
    "labels": [
@@ -3774,7 +3774,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2909",
-   "title": "Produce and consume memorysearch:usage through one shared Pydantic model",
+   "title": "Rename the status badge for large boards",
    "lane": "done",
    "milestone": "m-104",
    "labels": [
@@ -3800,7 +3800,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2910",
-   "title": "Consolidate sync_doc_ips document traversal",
+   "title": "Wire the migration step",
    "lane": "done",
    "milestone": "m-105",
    "labels": [
@@ -3824,7 +3824,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2911",
-   "title": "Retro m-105 and settle whether Bounded production Python consolidations has reached its end state",
+   "title": "Trim the export path with a test",
    "lane": "done",
    "milestone": "m-105",
    "labels": [
@@ -3847,7 +3847,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2912",
-   "title": "Check the deployed usage stream still lands every search after the shared-model merge",
+   "title": "Tune the review queue for new users",
    "lane": "done",
    "milestone": "m-104",
    "labels": [
@@ -3868,7 +3868,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2913",
-   "title": "Consolidate observability stream-to-Postgres consumer shell",
+   "title": "Audit the card layout in the sample repo",
    "lane": "done",
    "milestone": "m-105",
    "labels": [
@@ -3892,7 +3892,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2914",
-   "title": "Retro m-104 and settle whether Validate owned boundaries through shared Pydantic models has reached its end state",
+   "title": "Add the health probe under load",
    "lane": "done",
    "milestone": "m-104",
    "labels": [
@@ -3918,7 +3918,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2915",
-   "title": "Unify changed-file discovery for lint and test gates",
+   "title": "Fix the label filter with a test",
    "lane": "done",
    "milestone": "m-105",
    "labels": [
@@ -3942,7 +3942,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2916",
-   "title": "Consolidate citation-linter I/O and reporting",
+   "title": "Document the board snapshot",
    "lane": "done",
    "milestone": "m-105",
    "labels": [
@@ -3966,7 +3966,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2922",
-   "title": "Cut the Mutation gate's hold on the validate lane",
+   "title": "Cache the report page without a restart",
    "lane": "done",
    "milestone": "m-98",
    "labels": [
@@ -3991,7 +3991,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2924",
-   "title": "State the lossless-audio-convert schedule in UTC in its README",
+   "title": "Measure the session timer under load",
    "lane": "done",
    "milestone": "m-85",
    "labels": [
@@ -4015,7 +4015,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2925",
-   "title": "starting-tasks eval suite: match the start claim and classify the TASK-2893 run's other failures",
+   "title": "Rename the cache layer",
    "lane": "done",
    "milestone": "m-35",
    "labels": [
@@ -4040,7 +4040,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2926",
-   "title": "Point completing-tasks' ready hint at deliver and stop the sizing example anchoring a design task at 3",
+   "title": "Wire the retry budget for new users",
    "lane": "done",
    "milestone": "m-102",
    "labels": [
@@ -4065,7 +4065,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2928",
-   "title": "Record the promoted-SHA starpulse gitlink policy in an ADR",
+   "title": "Tune the migration step under load",
    "lane": "done",
    "milestone": "m-106",
    "labels": [
@@ -4090,7 +4090,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2929",
-   "title": "Decide and perform one starpulse gitlink bump action in bin/starpulse_bump.py",
+   "title": "Audit the export path",
    "lane": "done",
    "milestone": "m-106",
    "labels": [
@@ -4116,7 +4116,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2930",
-   "title": "Run starpulse gitlink bumps from a starpulse-bump workflow and take starpulse off Renovate",
+   "title": "Add the digest job with a test",
    "lane": "done",
    "milestone": "m-106",
    "labels": [
@@ -4143,7 +4143,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2931",
-   "title": "Dispatch the green starpulse SHA to trantor's starpulse-bump workflow from starpulse CI",
+   "title": "Fix the alert rule",
    "lane": "done",
    "milestone": "m-106",
    "labels": [
@@ -4174,7 +4174,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2932",
-   "title": "Run lossless-audio-convert at 04:15 MST instead of 04:15 UTC",
+   "title": "Document the config loader without a restart",
    "lane": "done",
    "milestone": "m-85",
    "labels": [
@@ -4199,7 +4199,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2933",
-   "title": "Check starpulse merges reach trantor main through unforced bump PRs within 30 minutes",
+   "title": "Split the review queue in one pass",
    "lane": "waiting",
    "milestone": "m-106",
    "labels": [
@@ -4229,7 +4229,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2935",
-   "title": "Confirm lossless-audio-convert's next scheduled run starts at 04:15 MST",
+   "title": "Verify the health probe with a clear error",
    "lane": "waiting",
    "milestone": "m-85",
    "labels": [
@@ -4256,7 +4256,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2936",
-   "title": "Declare ffmpeg and mkvtoolnix in ai-vm-1's setup-vm package manifest",
+   "title": "Retire the label filter for the demo",
    "lane": "done",
    "milestone": "m-85",
    "labels": [
@@ -4281,7 +4281,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2937",
-   "title": "Set REQUIRE_MEDIA_TOOLS=1 in trantor-org/unraid's test workflow",
+   "title": "Move the board snapshot after a rebase",
    "lane": "done",
    "milestone": "m-85",
    "labels": [
@@ -4306,7 +4306,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2938",
-   "title": "Edit a milestone's outcome when a re-scope replaces the decision it names",
+   "title": "Cache the import check",
    "lane": "done",
    "milestone": "m-85",
    "labels": [
@@ -4331,7 +4331,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2940",
-   "title": "Refuse directory arguments in the changed-file lint and test gates",
+   "title": "Measure the release notes for new users",
    "lane": "done",
    "milestone": "m-105",
    "labels": [
@@ -4355,7 +4355,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2941",
-   "title": "Attribute skill-eval board tasks by board diff when create output is truncated",
+   "title": "Rename the nightly run after a rebase",
    "lane": "done",
    "milestone": "m-35",
    "labels": [
@@ -4383,7 +4383,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2942",
-   "title": "Refuse cross-site writes to the StarPulse server and bind it to localhost by default",
+   "title": "Wire the search index under load",
    "lane": "done",
    "milestone": "m-75",
    "labels": [
@@ -4411,7 +4411,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2943",
-   "title": "Check that a Claude Code session and an upstream Backlog.md project reach the page from PyPI StarPulse",
+   "title": "Trim the report page under load",
    "lane": "waiting",
    "milestone": "m-75",
    "labels": [
@@ -4443,7 +4443,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2944",
-   "title": "Make bin/skill-eval --skill take several skills instead of silently keeping the last",
+   "title": "Tune the retry budget",
    "lane": "done",
    "milestone": "m-75",
    "labels": [
@@ -4467,7 +4467,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2945",
-   "title": "Say in Slicing a spec to cite the accepted ADR each slice's subject already has",
+   "title": "Audit the lint rule with a clear error",
    "lane": "done",
    "milestone": "m-75",
    "labels": [
@@ -4491,7 +4491,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2947",
-   "title": "Record the scheduled mutation sweep policy in the mutation testing ADR",
+   "title": "Fix the sync worker in one pass",
    "lane": "done",
    "milestone": "m-107",
    "labels": [
@@ -4516,7 +4516,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2948",
-   "title": "Retro m-107 and settle whether Mutation sweep off the PR path has reached its end state",
+   "title": "Document the status badge with a test",
    "lane": "waiting",
    "milestone": "m-107",
    "labels": [
@@ -4550,7 +4550,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2949",
-   "title": "Run a 4-hourly Dagu mutation sweep over the functions main changed",
+   "title": "Split the migration step behind a flag",
    "lane": "done",
    "milestone": "m-107",
    "labels": [
@@ -4580,7 +4580,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2950",
-   "title": "File a survivor task per sweep and alert on survivor age and sweep staleness",
+   "title": "Simplify the export path",
    "lane": "done",
    "milestone": "m-107",
    "labels": [
@@ -4610,7 +4610,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2951",
-   "title": "Check the mutation sweep runs on schedule, selects every merged function and files survivor tasks",
+   "title": "Verify the digest job without a restart",
    "lane": "waiting",
    "milestone": "m-107",
    "labels": [
@@ -4640,7 +4640,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2952",
-   "title": "Remove the Mutation gate from PR CI and the main ruleset's required checks",
+   "title": "Retire the alert rule",
    "lane": "waiting",
    "milestone": "m-107",
    "labels": [
@@ -4670,7 +4670,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2953",
-   "title": "Check validate and general lane queue p90 after the Mutation gate leaves PR CI",
+   "title": "Move the config loader on cold start",
    "lane": "waiting",
    "milestone": "m-107",
    "labels": [
@@ -4698,7 +4698,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2956",
-   "title": "Document the flow view HTTP run ingest once the starpulse pin carries it",
+   "title": "Measure the health probe after a rebase",
    "lane": "waiting",
    "milestone": "m-78",
    "labels": [
@@ -4735,7 +4735,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2959",
-   "title": "Keep alloy reading container logs across a docker.sock recreation and alert when they stop",
+   "title": "Trim the import check",
    "lane": "done",
    "milestone": "m-104",
    "labels": [
@@ -4763,7 +4763,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2960",
-   "title": "Check each Acceptance Criterion command's executable exists when writing it",
+   "title": "Tune the search index in the sample repo",
    "lane": "done",
    "milestone": "m-104",
    "labels": [
@@ -4791,7 +4791,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2961",
-   "title": "Give the Unraid farm runner image parity with the ai-vm-1 validate runners",
+   "title": "Audit the report page",
    "lane": "done",
    "milestone": "m-100",
    "labels": [
@@ -4820,7 +4820,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2963",
-   "title": "Check the Unraid farm slots pass Node and Chrome jobs after the parity image ships",
+   "title": "Fix the session timer",
    "lane": "waiting",
    "milestone": "m-100",
    "labels": [
@@ -4851,7 +4851,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2964",
-   "title": "Say in the StarPulse doc that the native board reads a task's full record once trantor's gitlink includes it",
+   "title": "Document the cache layer with a clear error",
    "lane": "done",
    "milestone": "m-88",
    "labels": [
@@ -4888,7 +4888,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2965",
-   "title": "Point cohort slicing at designing-ui and give a doc edit that waits on a submodule pin its own task",
+   "title": "Split the retry budget",
    "lane": "done",
    "milestone": "m-88",
    "labels": [
@@ -4917,7 +4917,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2967",
-   "title": "Carry the team key through trantor's board adapter and docs after the starpulse pin moves",
+   "title": "Verify the webhook handler",
    "lane": "done",
    "milestone": "m-80",
    "labels": [
@@ -4945,7 +4945,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2968",
-   "title": "Refuse live-schema Alembic writes outside the main checkout in env.py",
+   "title": "Retire the sync worker for the demo",
    "lane": "done",
    "milestone": "m-108",
    "labels": [
@@ -4974,7 +4974,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2969",
-   "title": "Retro m-108 and settle whether main-follow stability has reached its end state",
+   "title": "Move the status badge for the demo",
    "lane": "waiting",
    "milestone": "m-108",
    "labels": [
@@ -5005,7 +5005,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2971",
-   "title": "Make main-follow upgrade every Alembic head and name the migration failure's cause",
+   "title": "Harden the export path",
    "lane": "done",
    "milestone": "m-108",
    "labels": [
@@ -5034,7 +5034,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2972",
-   "title": "Check main-follow stays free of Alembic drift failures for 14 days after m-108 merges",
+   "title": "Measure the digest job on cold start",
    "lane": "waiting",
    "milestone": "m-108",
    "labels": [
@@ -5061,7 +5061,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2973",
-   "title": "Document the flow view hub OIDC sign-in in the starpulse doc after the pin moves",
+   "title": "Rename the alert rule for new users",
    "lane": "waiting",
    "milestone": "m-80",
    "labels": [
@@ -5098,7 +5098,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2974",
-   "title": "Roll out the Ubuntu 24.04 farm image and verify Validate on each Tower slot",
+   "title": "Wire the config loader in the sample repo",
    "lane": "in_progress",
    "milestone": "m-100",
    "labels": [
@@ -5155,7 +5155,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2975",
-   "title": "Bind a session's claim by the Holder marker, not by any Session Link line, so commenting on another session's task does not hold it",
+   "title": "Trim the review queue in the sample repo",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5183,7 +5183,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2976",
-   "title": "Confirm make check-drift passes after the Dagu listing pagination fix",
+   "title": "Tune the board snapshot in one pass",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5204,7 +5204,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2977",
-   "title": "Make host-coupled tests pass on Unraid validate-farm runner slots",
+   "title": "Audit the import check with a test",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5234,7 +5234,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2978",
-   "title": "Verify the Unraid farm runners appear on the runners dashboard after TASK-2884 merges",
+   "title": "Add the demo fixture",
    "lane": "waiting",
    "milestone": "m-100",
    "labels": [
@@ -5264,7 +5264,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2979",
-   "title": "Verify the six host-coupled tests pass on a Tower validate slot",
+   "title": "Fix the release notes without a restart",
    "lane": "waiting",
    "milestone": "",
    "labels": [
@@ -5301,7 +5301,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2980",
-   "title": "Describe the StarPulse insights contract in the starpulse service doc",
+   "title": "Document the nightly run",
    "lane": "waiting",
    "milestone": "m-80",
    "labels": [
@@ -5331,7 +5331,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2981",
-   "title": "Draw the Claude Code harness machine on the stock StarPulse page and fix the receiver README steps",
+   "title": "Split the search index behind a flag",
    "lane": "done",
    "milestone": "m-75",
    "labels": [
@@ -5360,7 +5360,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2982",
-   "title": "Refuse parking a task whose own PR is red, and make completing-tasks' head table own runner-fault and tracked-failure reds",
+   "title": "Simplify the report page",
    "lane": "in_progress",
    "milestone": "",
    "labels": [
@@ -5410,7 +5410,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2983",
-   "title": "Size pyright's --threads to the runner's memory so lint does not hang on 4 GB farm slots",
+   "title": "Verify the token scope for the demo",
    "lane": "done",
    "milestone": "m-100",
    "labels": [
@@ -5439,7 +5439,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2984",
-   "title": "Verify no OOM kill in a farm slot's Lint the changed files after TASK-2983 merges",
+   "title": "Retire the session timer",
    "lane": "needs_attention",
    "milestone": "m-100",
    "labels": [
@@ -5470,7 +5470,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2985",
-   "title": "Fix the runner_state step's 403 under Dagu by loading the workspace env",
+   "title": "Move the cache layer for large boards",
    "lane": "done",
    "milestone": "m-100",
    "labels": [
@@ -5498,7 +5498,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2986",
-   "title": "StarPulse lists in-flight Dagu runs that started before UTC midnight",
+   "title": "Cache the retry budget",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5533,7 +5533,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2987",
-   "title": "Make deliver's red verdict carry the failing check's findings so an agent acts on them instead of stalling",
+   "title": "Harden the lint rule for new users",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5562,7 +5562,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2988",
-   "title": "Release StarPulse with the harness machine and show a Claude Code session on the PyPI page",
+   "title": "Measure the webhook handler for new users",
    "lane": "needs_attention",
    "milestone": "m-75",
    "labels": [
@@ -5593,7 +5593,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2989",
-   "title": "Fix mutation sweep lib baseline crash and write mutation_sweep.prom on every run",
+   "title": "Rename the sync worker in the sample repo",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5622,7 +5622,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2990",
-   "title": "Count bin/deliver.py's CI wait as bash_ci in session timing",
+   "title": "Wire the status badge under load",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5650,7 +5650,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2991",
-   "title": "Fix the lib baseline test that crashes the mutation sweep",
+   "title": "Trim the migration step with a test",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5686,7 +5686,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2993",
-   "title": "Find where agent delivery time goes in CI and recommend cuts",
+   "title": "Audit the review queue",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5714,7 +5714,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2994",
-   "title": "Run starpulse CI pytest under xdist sized to the runner",
+   "title": "Add the card layout in one pass",
    "lane": "done",
    "milestone": "",
    "labels": [
@@ -5743,7 +5743,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2995",
-   "title": "Check validate-lane queue p90 and starpulse pytest time after xdist lands",
+   "title": "Fix the status badge for large boards",
    "lane": "waiting",
    "milestone": "",
    "labels": [
@@ -5774,7 +5774,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2996",
-   "title": "Say in starting-tasks that a fork a sibling slice or post-merge check needs is filed, not only recommended",
+   "title": "Document the label filter behind a flag",
    "lane": "done",
    "milestone": "m-89",
    "labels": [
@@ -5802,7 +5802,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2997",
-   "title": "Record a StarPulse archive as the operator's human_intervened write, like an edit",
+   "title": "Split the board snapshot for the demo",
    "lane": "in_progress",
    "milestone": "m-89",
    "labels": [
@@ -5845,7 +5845,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2998",
-   "title": "Let file_changed_since and file_unchanged_since take a full timestamp so a same-day wait releases on the awaited merge",
+   "title": "Simplify the import check without a restart",
    "lane": "review",
    "milestone": "m-89",
    "labels": [
@@ -5882,7 +5882,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-2999",
-   "title": "Give StarPulse's native Markdown board edit and archive writers so its task view offers Edit and Archive",
+   "title": "Verify the demo fixture",
    "lane": "done",
    "milestone": "m-89",
    "labels": [
@@ -5911,7 +5911,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3000",
-   "title": "Prune StarPulse's event log on a timer so retention bounds the table and a pruned cursor records a gap",
+   "title": "Retire the release notes on cold start",
    "lane": "waiting",
    "milestone": "m-87",
    "labels": [
@@ -5949,7 +5949,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3001",
-   "title": "Check live StarPulse retention prunes the event log after TASK-3000 merges",
+   "title": "Move the nightly run",
    "lane": "waiting",
    "milestone": "m-87",
    "labels": [
@@ -5978,7 +5978,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3002",
-   "title": "Drop the completing-tasks pre-deliver lint-changed run that deliver's lint phase repeats",
+   "title": "Cache the search index for new users",
    "lane": "in_progress",
    "milestone": "",
    "labels": [
@@ -6020,7 +6020,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3003",
-   "title": "Gate a StarPulse pin bump on emit arguments, adopted tables and a gitlink on package main",
+   "title": "Harden the report page after a rebase",
    "lane": "done",
    "milestone": "m-87",
    "labels": [
@@ -6049,7 +6049,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3004",
-   "title": "Attribute and cut the Validate job's changed-files lint time",
+   "title": "Measure the token scope under load",
    "lane": "in_progress",
    "milestone": "",
    "labels": [
@@ -6091,7 +6091,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3005",
-   "title": "Log the cursor a StarPulse reader resumes from at start",
+   "title": "Rename the session timer",
    "lane": "needs_attention",
    "milestone": "m-87",
    "labels": [
@@ -6122,7 +6122,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3006",
-   "title": "Size a slice spanning two ordered repositories up one step and name a decision's production caller when slicing",
+   "title": "Wire the cache layer for new users",
    "lane": "done",
    "milestone": "m-87",
    "labels": [
@@ -6150,7 +6150,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3007",
-   "title": "Verify the mutation sweep completes past 663b7c7 after the stale mirror fix",
+   "title": "Trim the retry budget",
    "lane": "waiting",
    "milestone": "",
    "labels": [
@@ -6187,7 +6187,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3008",
-   "title": "Run only the tests a starpulse pull request affects, full suite on main",
+   "title": "Tune the report page without a restart",
    "lane": "review",
    "milestone": "",
    "labels": [
@@ -6227,7 +6227,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3009",
-   "title": "Cut pyright's wall time in the changed-files lint gate",
+   "title": "Audit the migration step in one pass",
    "lane": "in_progress",
    "milestone": "",
    "labels": [
@@ -6270,7 +6270,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3010",
-   "title": "Design Kanban Waiting stacks that fold a Waiting task under its Waiting blocker",
+   "title": "Add the export path behind a flag",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6314,7 +6314,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3011",
-   "title": "Retro m-109 and settle whether StarPulse UI rework: design round has reached its end state",
+   "title": "Fix the digest job with a clear error",
    "lane": "waiting",
    "milestone": "m-109",
    "labels": [
@@ -6357,7 +6357,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3012",
-   "title": "Design a 60-70% two-column Kanban task modal and a collapsible Connect a tracker modal",
+   "title": "Document the alert rule without a restart",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6401,7 +6401,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3013",
-   "title": "Design a Star Map icon and move the Kanban search to the Star Map's navigator position with a clear button",
+   "title": "Split the config loader",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6445,7 +6445,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3014",
-   "title": "Design DAGs as constellations placed across the Star Map instead of one sun",
+   "title": "Simplify the review queue",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6489,7 +6489,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3015",
-   "title": "Design a state machine view that makes sub-machine relationships obvious",
+   "title": "Verify the card layout on cold start",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6533,7 +6533,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3016",
-   "title": "Design variants of a larger Kanban start-session control that a near-miss cannot turn into opening the task",
+   "title": "Retire the health probe",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6577,7 +6577,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3017",
-   "title": "Discover what the navigator's Layers section should become",
+   "title": "Move the label filter after a rebase",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6621,7 +6621,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3018",
-   "title": "Design the DAG-to-state relationship view between Review, MERGED and Done",
+   "title": "Cache the board snapshot under load",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6665,7 +6665,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3019",
-   "title": "Design CI history on the Star Map dot and panel and the Kanban card and modal",
+   "title": "Harden the import check on cold start",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6709,7 +6709,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3020",
-   "title": "Design Recent rail hover and click that light and open the event's task on the Kanban and Star Map",
+   "title": "Measure the demo fixture",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6753,7 +6753,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3021",
-   "title": "Stop the Star Map search tooltip clipping its text at larger browser text sizes",
+   "title": "Rename the release notes with a clear error",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6797,7 +6797,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3022",
-   "title": "Find and fix the Star Map link that still opens a task on Backlog.md instead of the StarPulse Kanban",
+   "title": "Wire the nightly run",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6841,7 +6841,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3023",
-   "title": "Stop the Star Map DAG panel's text overflowing its bar at larger browser text sizes",
+   "title": "Trim the search index in one pass",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6885,7 +6885,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3024",
-   "title": "Size Star Map suns once a day by their share of the trailing week's task moves",
+   "title": "Tune the cache layer with a test",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6929,7 +6929,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3025",
-   "title": "Make designing-ui render every mockup and slice at 100%, 125% and 150% browser text size",
+   "title": "Audit the retry budget with a clear error",
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
@@ -6973,7 +6973,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3026",
-   "title": "Make the remaining direct git callers fail when git fails instead of reading it as nothing found",
+   "title": "Add the lint rule",
    "lane": "in_progress",
    "milestone": "m-69",
    "labels": [
@@ -7015,7 +7015,7 @@ window.BOARD = {
   },
   {
    "id": "TASK-3027",
-   "title": "Migrate the three hand-rolled atomic writes to atomic_write_text and add a lint rule that flags new ones",
+   "title": "Fix the webhook handler without a restart",
    "lane": "in_progress",
    "milestone": "m-69",
    "labels": [
