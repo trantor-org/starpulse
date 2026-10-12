@@ -11,8 +11,8 @@ each statement's leading command (the head of a pipeline, past env assignments a
 - the command's own name for any other command, or `shell_other` when it is not a name
 
 Shell keywords are syntax, not commands: `do make test` is `make test`, and a statement that is only a keyword
-(`done`, `for f in ...`) or an output-only builtin (`cd`, `echo`, `sleep`) takes no activity. A tool name that is not a
-name (a model once named a tool with a shell pipeline) is `tool_other`.
+(`done`, `for f in ...`) or an output-only builtin (`cd`, `echo`, `sleep`, `break`, `continue`) takes no activity. A
+tool name that is not a name (a model once named a tool with a shell pipeline) is `tool_other`.
 """
 
 from __future__ import annotations
@@ -39,11 +39,12 @@ _HEREDOC = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 # A shell word (quoted runs, escapes and command substitutions glued into one), a redirect, or an operator that ends a
-# statement or starts a pipe. Regex, not shlex: shlex reads every character in Python.
+# statement or starts a pipe. A quote that never closes runs to the end of the command, as in a shell, so the SQL or
+# Python inside it is one argument and not statements. Regex, not shlex: shlex reads every character in Python.
 _TOKEN = re.compile(
     r"""(?P<redirect>\d*(?:[<>]+|&>)&?-?\d*)"""
     r"""|(?P<op>&&|\|\||[;&|()\n])"""
-    r"""|(?P<word>(?:[^\s'"`\\;&|()<>$]+|'[^']*'|"(?:[^"\\]|\\.)*"|`[^`]*`|\\.|\$\((?:[^()]|\([^()]*\))*\)|\$)+)""",
+    r"""|(?P<word>(?:[^\s'"`\\;&|()<>$]+|'[^']*(?:'|\Z)|"(?:[^"\\]|\\.)*(?:"|\Z)|`[^`]*(?:`|\Z)|\\.|\$\((?:[^()]|\([^()]*\))*\)|\$)+)""",
     re.DOTALL,
 )
 _UNQUOTE = re.compile(r"""'([^']*)'|"((?:[^"\\]|\\.)*)"|\\(.)""", re.DOTALL)
@@ -58,7 +59,7 @@ _WRAPPERS = frozenset(
     | {"do", "then", "else", "elif", "if", "while", "until", "!", "{"}
 )
 _NOT_WORK = frozenset(
-    {"cd", "for", "case", "select", "done", "fi", "esac", "}"}
+    {"cd", "for", "case", "select", "done", "fi", "esac", "}", "break", "continue"}
     | {"echo", "printf", "sleep", "true", "false", ":", "export", "set", "unset"}
 )
 _PATCH_FILE = re.compile(r"\*\*\* (?:Add|Update|Delete) File: ([^\n\\\"'`]+)")
