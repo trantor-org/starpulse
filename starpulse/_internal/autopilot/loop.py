@@ -201,7 +201,7 @@ class Loop:
         record = RunRecord(task, run.tier, run.points, outcome, now - run.started_at, {**run.peak, "sessions": 1, "review": run.points})
         try:
             self._ledger.record(record)
-        except OSError:
+        except Exception:  # the store is a database: any failure to write must not stop the loop
             logger.exception("StarPulse autopilot: cannot record the run of %s", task)
 
     def _reap(self, now: float) -> None:

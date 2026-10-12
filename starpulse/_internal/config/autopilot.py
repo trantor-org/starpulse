@@ -35,7 +35,7 @@ class Autopilot:
     idle_minutes: float = 30
     """How long a session may sit with no event before its still-open task is settled to Needs attention."""
     state_dir: str | None = None
-    """Where the switch and the run ledger are kept, relative to the config's directory; none: beside the config."""
+    """Where the files the switch and the run ledger were kept in before the store are imported from, relative to the config's directory; none: beside the config."""
     tier_weights: Mapping[str, float] = field(default_factory=lambda: {"fast": 1, "standard": 2, "deep": 4})
     """What a point costs on each agent tier: a task's demand starts from its points times its tier's weight."""
     limits: Mapping[str, float] = field(
