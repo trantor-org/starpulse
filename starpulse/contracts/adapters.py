@@ -386,6 +386,11 @@ class LaneEvent(_Contract):
     assignee: str = Field(
         default="", description="Who or which agent model held the task; empty when unassigned, and a person's name."
     )
+    actor: str = Field(
+        default="",
+        description="Who made the move: `operator`, `agent` or `<instance>/<workflow>`; empty when no write of the "
+        "board's server made it.",
+    )
 
 
 #: Each contract's model, by the name its checked-in schema file carries.

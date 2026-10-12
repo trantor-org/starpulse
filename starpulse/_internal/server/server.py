@@ -1103,7 +1103,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
             elif path == _COMPLETE:
                 status, body = complete_task(self.client_address[0], raw, self.feed, self.complete)
             elif path == _TASKS:
-                status, body = create_task(self.client_address[0], raw, self.create)
+                status, body = create_task(self.client_address[0], raw, self.create, self.feed)
             elif path == _MILESTONES:
                 status, body = create_milestone(self.client_address[0], raw, self.milestones)
             elif path == _MILESTONE_EDIT:

@@ -96,6 +96,7 @@ from starpulse._internal.board.seam import (
     TaskEditor,
     TaskReader,
     TaskRestorer,
+    Written,
 )
 from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.config.harnesses import Harnesses
@@ -261,6 +262,19 @@ def _named_actor(request: Any) -> dict[str, str] | None:
     return {"actor": actor.strip()} if isinstance(actor, str) and actor.strip() else None
 
 
+def _written_by(feed: BoardFeed, task: str, actor: str, write: Callable[[], Written]) -> Written:
+    """Run `write` of `task` with `actor` noted on the feed, so the lane entry of the change it makes names the actor.
+
+    The note comes before the write because the board's poll can place the change the moment the file lands; a refused
+    write forgets it.
+    """
+    feed.note_actor(task, actor)
+    written = write()
+    if not written.ok:
+        feed.note_actor(task, None)
+    return written
+
+
 def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> tuple[int, dict[str, str]]:
     """Move a task to the column `raw` names, through `writer`, for a browser at `source`: the HTTP status and JSON body.
 
@@ -286,7 +300,9 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
     if not (move := Move.model_validate(agent["moves"][column])).permits(actor):
         return 409, {"error": move.for_actor(actor).reason, "skill": move.skill}
     status = column.replace("_", " ").title()
-    written = writer(task, status, actor, session) if session else writer(task, status, actor)
+    written = _written_by(
+        feed, task, actor, lambda: writer(task, status, actor, session) if session else writer(task, status, actor)
+    )
     if written.unavailable:
         return 501, {"error": written.output}
     if not written.ok:
@@ -368,7 +384,7 @@ def edit_task(
             todo[_APPEND_NOTES] = changes[_APPEND_NOTES]
         if not todo and not comment.strip():
             return 200, {"task": task, "changed": []}
-        written = edit(task, todo, comment, **named)
+        written = _written_by(feed, task, named.get("actor", OPERATOR), lambda: edit(task, todo, comment, **named))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     changed = ("notes" if field == _APPEND_NOTES else field for field in todo)
@@ -398,7 +414,7 @@ def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver
         return 404, {"error": "this board does not archive tasks"}
     if _held(feed, task) is None:
         return _not_held(feed, task)
-    written = archive(task, reason, **named)
+    written = _written_by(feed, task, named.get("actor", OPERATOR), lambda: archive(task, reason, **named))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
@@ -479,7 +495,9 @@ def _create_details(body: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
     return details, ""
 
 
-def create_task(source: str, raw: bytes, create: TaskCreator | None) -> tuple[int, dict[str, Any]]:
+def create_task(
+    source: str, raw: bytes, create: TaskCreator | None, feed: BoardFeed | None = None
+) -> tuple[int, dict[str, Any]]:
     """Create the task `raw` names, in the lane its `status` names or else the board's starting lane, through `create`,
     for a browser at `source`: the HTTP status and JSON body, which holds the new task's id.
 
@@ -505,6 +523,8 @@ def create_task(source: str, raw: bytes, create: TaskCreator | None) -> tuple[in
     written = create(title.strip(), details, **named)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
+    if feed is not None:  # the id is the writer's to choose, so the actor is noted once the task is made
+        feed.note_actor(written.output, named.get("actor", OPERATOR))
     return 201, {"task": written.output}
 
 
