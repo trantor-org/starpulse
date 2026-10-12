@@ -265,6 +265,24 @@ class TestCompiling:
         assert [str(guard) for guard in transition.cond] == ["ready", "!held"]
         assert (refused.is_terminated, accepted.is_terminated) == (False, True)
 
+    def test_a_when_guard_reads_as_the_fields_it_matches(self, tmp_path: Path) -> None:
+        # A diagram labels a guard by its callable's name; every matcher would otherwise read `matches`.
+        guards = (
+            {"if": {"when": {"ready": {"equals": True}}}},
+            {"unless": {"when": {"held": {"equals": True}}}},
+            {"if": {"when": {"branch": {"in": ["main", "dev"]}, "kind": {"equals": "push"}}}},
+            {"if": {"when": {"sha": {"exists": True}, "tag": {"exists": False}}}},
+        )
+        path = _written(tmp_path, _doc(*({"from": "a", "to": "b", **guard} for guard in guards)))
+        transitions = load_machine(path).machine.states_map["a"].transitions
+
+        assert [str(guard) for transition in transitions for guard in transition.cond] == [
+            "ready",
+            "!held",
+            "branch in [main, dev] and kind == push",
+            "sha exists and tag missing",
+        ]
+
     def test_a_named_guard_the_adapter_did_not_register_is_refused(self, tmp_path: Path) -> None:
         path = _written(tmp_path, _doc({"from": "a", "to": "b", "if": "unregistered"}))
 
