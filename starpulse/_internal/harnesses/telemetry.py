@@ -65,18 +65,18 @@ def _cost(value: Any) -> float | None:
         return None
 
 
-def _input(attributes: dict[str, Any]) -> dict[str, Any]:
+def _input(attributes: dict[str, Any]) -> tuple[dict[str, Any], str]:
     """A tool call's input as the export gave it: Claude Code's `tool_input` or Codex's `arguments`, parsed when it is
-    a JSON object."""
+    a JSON object, and its raw text."""
     for key in ("tool_input", "arguments"):
         if (raw := attributes.get(key)) is None:
             continue
         try:
             parsed = json.loads(str(raw))
         except ValueError:
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    return {}
+            return {}, str(raw)
+        return (parsed if isinstance(parsed, dict) else {}), str(raw)
+    return {}, ""
 
 
 def _command(tool_input: dict[str, Any]) -> str:
@@ -88,8 +88,8 @@ def _command(tool_input: dict[str, Any]) -> str:
 def _call(attributes: dict[str, Any]) -> dict[str, Any]:
     """What a tool result's input says the call did: its activities and the paths it read and wrote."""
     tool = str(attributes.get("tool_name") or "")
-    tool_input = _input(attributes)
-    reads, writes = paths(tool, tool_input)
+    tool_input, raw = _input(attributes)
+    reads, writes = paths(tool, tool_input, raw)
     return {"activities": tuple(activities(tool, tool_input)), "reads": tuple(reads), "writes": tuple(writes)}
 
 
@@ -217,7 +217,7 @@ def _named_text(attributes: dict[str, Any]) -> str:
     """The text of a Claude Code tool result that may name a task or deliver one: a shell command, or the arguments
     of a `Skill` call. Read for a match and dropped; only the task key a claim matched is ever kept."""
     tool = str(attributes.get("tool_name") or "")
-    tool_input = _input(attributes)
+    tool_input = _input(attributes)[0]
     if tool in SHELLS:
         return _command(tool_input)
     args = tool_input.get("args") if tool == "Skill" else None
@@ -232,7 +232,7 @@ def _stored_command(attributes: dict[str, Any], redact: Callable[[str], str] | N
     if redact is None or str(attributes.get("tool_name")) not in SHELLS:
         return ""
     try:
-        return redact(elide_heredocs(_command(_input(attributes))))
+        return redact(elide_heredocs(_command(_input(attributes)[0])))
     except Exception:
         log.exception("command redactor failed; the command is not stored")
         return ""
@@ -271,7 +271,7 @@ def signals(
                     harness, session, time=at, key=key, branch=branch, captured=harness == CLAUDE_CODE, turn=turn, **fields
                 )
             )
-        if str(a.get("tool_name")) in SHELLS and (switch := _SWITCH.search(_command(_input(a)))):
+        if str(a.get("tool_name")) in SHELLS and (switch := _SWITCH.search(_command(_input(a)[0]))):
             found.append(
                 Signal(
                     harness,
