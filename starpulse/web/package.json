@@ -1,5 +1,5 @@
 {
-  "name": "flow-view",
+  "name": "@starpulse/web",
   "private": true,
   "type": "module",
   "description": "StarPulse: React HUD over a canvas renderer, built into ../static for starpulse._internal.server.server",

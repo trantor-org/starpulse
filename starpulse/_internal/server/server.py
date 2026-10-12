@@ -12,7 +12,7 @@ GET /auth/login, /auth/callback
                    answers 403 naming why an account outside `allowed_groups` was refused. Every other route of a hub,
                    this one included, answers 401 until then; a bearer token is no session (see POST /api/runs/events),
                    except that a GET or HEAD carrying the hub's reader token (`reader_token_env`) is served
-GET /              the page, built by `pnpm --filter flow-view build` into static/: one view
+GET /              the page, built by `pnpm --filter @starpulse/web build` into static/: one view
                    that drills Board → Board state → machine, or Board → workflow. It holds one
                    /api/events connection and nothing else
 GET /board, /flow/<name>, /runs
@@ -1657,7 +1657,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         parser.exit(1, "[oidc] gates a hub: start one with `starpulse serve --hub`, or remove the table\n")
     base = args.config.parent if args.config else Path.cwd()
     if not (_STATIC / "index.html").is_file():
-        parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter flow-view build` first\n")
+        parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter @starpulse/web build` first\n")
     adapters = [(instance, _adapter(parser, instance)) for instance in config.runs if instance.type]  # push-only: none
     starts = {instance.name: start for instance, adapter in adapters if (start := adapter.start(instance.url))}
     # Run now is drawn only for an instance whose adapter can start a run, and only on its run-safe workflows.
