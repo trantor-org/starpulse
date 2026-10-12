@@ -21,7 +21,7 @@ const snap = (): Pick<Snapshot, "flows" | "cues"> => ({
   }],
   cues: [
     { dag: "dagu/apply-on-merge", event: "MERGED", state: "done", on: "push to main", resolves: "forced" },
-    { dag: "dagu/graph-refresh", event: "MERGED", state: "done", on: "push to main", resolves: "next" },
+    { dag: "dagu/healthcheck", event: "MERGED", state: "done", on: "push to main", resolves: "next" },
     { dag: "dagu/notifier", event: "CLAIM", state: "in_progress", on: "each claim", resolves: "next" },
   ],
 });
@@ -31,7 +31,7 @@ describe("the DAGs tied to an event", () => {
     const s = snap();
     s.cues![0] = { ...s.cues![0], grace: 120 };
 
-    expect(tiesOf(s, "MERGED").map((t) => [t.dag, t.grace])).toEqual([["dagu/main-follow", null], ["dagu/apply-on-merge", 120], ["dagu/graph-refresh", null]]);
+    expect(tiesOf(s, "MERGED").map((t) => [t.dag, t.grace])).toEqual([["dagu/main-follow", null], ["dagu/apply-on-merge", 120], ["dagu/healthcheck", null]]);
   });
 });
 
@@ -40,14 +40,14 @@ describe("a Board transition's Ledger level", () => {
     const level = ledgerLevel(snap(), "MERGED")!;
 
     expect(level).toEqual({
-      kind: "fold", event: "MERGED", path: ["review", "done"], dags: ["dagu/main-follow", "dagu/apply-on-merge", "dagu/graph-refresh"],
+      kind: "fold", event: "MERGED", path: ["review", "done"], dags: ["dagu/main-follow", "dagu/apply-on-merge", "dagu/healthcheck"],
       crit: [
         "dagu/main-follow: writes MERGED (Review → Done)",
         "dagu/apply-on-merge: runs on push to main, beside MERGED (Review → Done)",
-        "dagu/graph-refresh: runs on push to main, beside MERGED (Review → Done)",
+        "dagu/healthcheck: runs on push to main, beside MERGED (Review → Done)",
       ],
     });
-    expect(pathKey([...BOARD, level])).toBe("board/dagu/main-follow+dagu/apply-on-merge+dagu/graph-refresh");
+    expect(pathKey([...BOARD, level])).toBe("board/dagu/main-follow+dagu/apply-on-merge+dagu/healthcheck");
   });
 
   it("opens for every Board transition a DAG writes or is cued by, not only MERGED", () => {
@@ -77,7 +77,7 @@ describe("a Ledger's frame", () => {
     expect(l.ties).toEqual([
       { dag: "dagu/main-follow", role: "writer", on: "bin/board_reconcile_merged.py", resolves: null, grace: null },
       { dag: "dagu/apply-on-merge", role: "cue", on: "push to main", resolves: "forced", grace: null },
-      { dag: "dagu/graph-refresh", role: "cue", on: "push to main", resolves: "next", grace: null },
+      { dag: "dagu/healthcheck", role: "cue", on: "push to main", resolves: "next", grace: null },
     ]);
   });
 
@@ -88,7 +88,7 @@ describe("a Ledger's frame", () => {
   });
 
   it("names the event a Board fold's path carries by the DAGs it holds, when the fold is entered from a Board path", () => {
-    const fold = { kind: "fold" as const, dags: ["dagu/main-follow", "dagu/graph-refresh"], crit: [], path: ["review", "done"] as [string, string] };
+    const fold = { kind: "fold" as const, dags: ["dagu/main-follow", "dagu/healthcheck"], crit: [], path: ["review", "done"] as [string, string] };
 
     expect(ledgerOf(snap(), fold)!.event).toBe("MERGED");
     expect(ledgerOf(snap(), { ...fold, path: ["ready", "review"] })).toBeNull();

@@ -7,26 +7,26 @@ const iso = (s: number) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "
 const ties: Tie[] = [
   { dag: "main-follow", role: "writer", on: "push", resolves: null, grace: null },
   { dag: "apply-on-merge", role: "cue", on: "each merge", resolves: "forced", grace: null },
-  { dag: "graph-refresh", role: "cue", on: "each merge", resolves: "next", grace: null },
+  { dag: "healthcheck", role: "cue", on: "each merge", resolves: "next", grace: null },
 ];
 const run = (over: Partial<LedgerRun> = {}): LedgerRun => ({ runId: "r", status: "succeeded", startedAt: iso(1000), finishedAt: iso(1042), steps: { build: "succeeded", apply: "succeeded" }, step: "", inferred: false, ambiguous: 0, ...over });
 const fail = (over: Partial<LedgerFail> = {}): LedgerFail => ({ runId: "r", step: "apply", startedAt: iso(1000), finishedAt: iso(1042), resolves: "forced", resolved: null, ...over });
 const row = (over: Partial<LedgerRow> = {}): LedgerRow => ({ key: "abc", at: 990, tasks: ["TASK-7"], sha: "abc1234567", pr: { repo: "trantor", number: 77, url: "u" }, runs: {}, fails: {}, pinned: false, ...over });
 const ctx = (over: Partial<PanelCtx> = {}): PanelCtx => ({
   event: "MERGED", from: "Review", to: "Done", ties,
-  steps: { "main-follow": ["only"], "apply-on-merge": ["build", "apply"], "graph-refresh": ["index"] },
-  optional: {}, runnable: new Set(["apply-on-merge", "graph-refresh"]), palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" }, now: 2000, hm: (s) => `t${s % 1000}`, by: () => undefined, task: (id) => `<a>${id}</a>`, ...over,
+  steps: { "main-follow": ["only"], "apply-on-merge": ["build", "apply"], "healthcheck": ["index"] },
+  optional: {}, runnable: new Set(["apply-on-merge", "healthcheck"]), palette: { succeeded: "#34d399", failed: "#fb7185", not_started: "#334155" }, now: 2000, hm: (s) => `t${s % 1000}`, by: () => undefined, task: (id) => `<a>${id}</a>`, ...over,
 });
 
 describe("failHtml", () => {
   it("names each failed cue's step and says when and by what its failure was resolved, or that it is not", () => {
     const html = failHtml(row({ fails: {
       "apply-on-merge": fail(),
-      "graph-refresh": fail({ step: "index", resolves: "next", resolved: { runId: "n", at: iso(1500) } }),
+      "healthcheck": fail({ step: "index", resolves: "next", resolved: { runId: "n", at: iso(1500) } }),
     } }), ctx(), "note");
 
     expect(html).toContain("apply-on-merge ✕ apply: unresolved, clears on a forced rerun");
-    expect(html).toContain("graph-refresh ✕ index: resolved t500 by the next success");
+    expect(html).toContain("healthcheck ✕ index: resolved t500 by the next success");
     expect(html.match(/class="note"/g)).toHaveLength(2);
   });
 
@@ -37,7 +37,7 @@ describe("failHtml", () => {
 
 describe("mergePanel", () => {
   const panel = mergePanel(row({
-    runs: { "main-follow": run({ steps: {} }), "apply-on-merge": run({ status: "failed", steps: { build: "succeeded", apply: "failed" } }), "graph-refresh": run({ inferred: true, ambiguous: 2, steps: { index: "succeeded" } }) },
+    runs: { "main-follow": run({ steps: {} }), "apply-on-merge": run({ status: "failed", steps: { build: "succeeded", apply: "failed" } }), "healthcheck": run({ inferred: true, ambiguous: 2, steps: { index: "succeeded" } }) },
     fails: { "apply-on-merge": fail() },
   }), ctx());
 
@@ -72,17 +72,17 @@ describe("mergePanel", () => {
 });
 
 describe("mergePanel's rerun control", () => {
-  const failing = row({ fails: { "apply-on-merge": fail(), "graph-refresh": fail({ step: "index", resolves: "next", resolved: { runId: "n", at: iso(1500) } }) } });
+  const failing = row({ fails: { "apply-on-merge": fail(), "healthcheck": fail({ step: "index", resolves: "next", resolved: { runId: "n", at: iso(1500) } }) } });
 
   it("offers a Force rerun for each DAG whose failure is unresolved, and none for a resolved one", () => {
     const html = mergePanel(failing, ctx());
 
     expect(html).toContain('<button class="run" data-rerun="apply-on-merge">↻ Force rerun apply-on-merge</button>');
-    expect(html).not.toContain('data-rerun="graph-refresh"');
+    expect(html).not.toContain('data-rerun="healthcheck"');
   });
 
   it("offers no Force rerun for a DAG that is not run-safe, since the server would answer 404, and says to rerun it from its runner", () => {
-    const html = mergePanel(failing, ctx({ runnable: new Set(["graph-refresh"]) }));
+    const html = mergePanel(failing, ctx({ runnable: new Set(["healthcheck"]) }));
 
     expect(html).not.toContain("data-rerun");
     expect(html).toContain("apply-on-merge ✕ apply: unresolved, clears on a forced rerun");
@@ -159,7 +159,7 @@ describe("mergeTip", () => {
     expect(tip).toContain("merge to trantor · t990 · #77 · abc1234");
     expect(tip).toContain('<div class="n">TASK-7</div>');
     expect(tip).toMatch(/apply-on-merge: ✕ apply · 42 s/);
-    expect(tip).toContain("graph-refresh: no run yet");
+    expect(tip).toContain("healthcheck: no run yet");
     expect(tip).toContain("apply-on-merge ✕ apply: unresolved");
     expect(tip).toContain("click for its runs");
   });
@@ -189,7 +189,7 @@ describe("junctionTip", () => {
 
     expect(tip).toContain("merge to main · 2 in the last hour");
     expect(tip).toContain("main-follow runs on the push and writes MERGED, moving the task Review → Done");
-    expect(tip).toContain("apply-on-merge and graph-refresh");
+    expect(tip).toContain("apply-on-merge and healthcheck");
   });
 });
 

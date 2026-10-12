@@ -165,17 +165,17 @@ _CUE = {"event": "GO", "dag": "dagu/apply-on-merge", "on": "push to main", "reso
 
 class TestCues:
     def test_a_cues_block_loads_with_its_event_dag_on_and_resolves(self, tmp_path: Path) -> None:
-        other = {"event": "GO", "dag": "dagu/graph-refresh", "on": "push to main", "resolves": "next"}
+        other = {"event": "GO", "dag": "dagu/healthcheck", "on": "push to main", "resolves": "next"}
 
         compiled = load_machine(_written(tmp_path, _doc(cues=[_CUE, other])))
 
         assert compiled.cues == (
             Cue("GO", "dagu/apply-on-merge", "push to main", "forced"),
-            Cue("GO", "dagu/graph-refresh", "push to main", "next"),
+            Cue("GO", "dagu/healthcheck", "push to main", "next"),
         )
 
     def test_a_cue_may_declare_the_seconds_its_run_has_to_start_and_otherwise_gets_five_minutes(self, tmp_path: Path) -> None:
-        timed = {**_CUE, "dag": "dagu/graph-refresh", "grace": 120}
+        timed = {**_CUE, "dag": "dagu/healthcheck", "grace": 120}
 
         compiled = load_machine(_written(tmp_path, _doc(cues=[_CUE, timed])))
 
