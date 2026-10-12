@@ -33,7 +33,7 @@ from starpulse._internal.level.signals import CLAUDE_CODE, Signal
 from starpulse._internal.level.steps import owned_steps
 from starpulse.contracts.adapters import TaskKeys
 
-__all__ = ["MIN_N", "cell_report", "transition_cost"]
+__all__ = ["MIN_N", "cell_of", "cell_report", "transition_cost"]
 
 #: Clean completions a cell needs to report.
 MIN_N = 5
@@ -82,7 +82,7 @@ def cell_report(slices: Iterable[dict[str, Any]], tasks: Mapping[str, Mapping[st
     return rows
 
 
-def _cell(tasks: Mapping[str, Mapping[str, Any]], task: str | None) -> tuple[str, int] | None:
+def cell_of(tasks: Mapping[str, Mapping[str, Any]], task: str | None) -> tuple[str, int] | None:
     labels = tasks.get(task or "", {}).get("labels") or ()
     kind, size = _label(labels, "kind-"), _label(labels, "size-")
     return (kind, int(size)) if kind and size and size.isdigit() else None
@@ -112,7 +112,7 @@ def transition_cost(
     repeated = set().union(*map(_repeats, by_session.values()))
     cost: dict[tuple[str, int, str], dict[str, Any]] = {}
     for o in owned:
-        if (cell := _cell(tasks, o.step["task"])) is None:
+        if (cell := cell_of(tasks, o.step["task"])) is None:
             continue
         row = cost.setdefault(
             (*cell, o.step["skill"]),

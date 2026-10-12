@@ -31,6 +31,12 @@ internal and can change in any release.
   skill within a kind and size of task, and the median steps per clean completion of each kind and size (see
   [Connect sources](sources.md#price-each-transition-and-report-each-cell)), and `starpulse analytics transitions|cells
   [--hours]` that read them.
+- `GET /api/analytics/graph`, `GET /api/analytics/stages` and `GET /api/analytics/diff` and their bodies in
+  `api.schema.json`: the branching directly-follows graph of each transition with its judgement cuts, the sub-stages
+  mined at those cuts for the stretches no skill governs with their stability from one window to the one before, and
+  each transition's reference run against its slowest clean run (see
+  [Connect sources](sources.md#graph-a-transitions-activities-and-diff-a-fast-run-against-a-slow-one)), and `starpulse
+  analytics graph|stages|diff [--hours]` that read them.
 - `starpulse search QUERY` and its route `GET /api/search?q=`: the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
 - `GET /api/analytics/missed-loads` and `GET /api/analytics/trace-clusters` and their bodies in `api.schema.json`:
   the skills a session did not load for work that should have loaded them, and the work that recurs across sessions
@@ -46,8 +52,9 @@ internal and can change in any release.
   footprint the same whatever it holds.
 - The config file's keys, among them each `[[triggers]]` table's `on`, `start` and `when` ([Triggers](serving.md#triggers)),
   the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills`, `injected_openings`, `operator_tools`, `claims`,
-  `completion_skill`, `completion_call` and each `[[analytics.skill_loads]]`'s
-  `skill`, `activities`, `title` and `label`, and the `[search]` table's optional `embeddings_url`, `model` and
+  `completion_skill`, `completion_call`, each `[[analytics.skill_loads]]`'s
+  `skill`, `activities`, `title` and `label`, and each `[[analytics.skill_machines]]`'s `skill` and `stages` (`name`,
+  `activities`, `ok`), and the `[search]` table's optional `embeddings_url`, `model` and
   `token_env` ([Config file](serving.md#config-file)),
   and the machine YAML with its JSON Schema (`machine.schema.json`).
 

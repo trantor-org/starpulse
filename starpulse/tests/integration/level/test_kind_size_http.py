@@ -25,7 +25,7 @@ KEYS = TaskKeys(
     key_format="TASK-{}",
 )
 NOW = datetime.fromisoformat("2026-10-09T22:30:00+00:00").timestamp()
-ROUTES = pytest.mark.parametrize("route", ["transitions", "cells"])
+ROUTES = pytest.mark.parametrize("route", ["transitions", "cells", "graph", "diff", "stages"])
 
 
 def _get(server: ThreadingHTTPServer, route: str, query: str = "") -> tuple[int, dict]:
@@ -48,9 +48,16 @@ def server(tmp_path: Path) -> Iterator[ThreadingHTTPServer]:
 
 @ROUTES
 def test_a_report_with_no_labelled_task_is_empty_inside_the_history(server: ThreadingHTTPServer, route: str) -> None:
-    status, body = _get(server, route, "?hours=1.06")
+    hours = 0.5 if route == "stages" else 1.06  # stages also reads the window before
+    status, body = _get(server, route, f"?hours={hours}")
 
-    assert (status, body) == (200, {"now": NOW, "window_s": 1.06 * 3600, route: []})
+    assert (status, body) == (200, {"now": NOW, "window_s": hours * 3600, route: []})
+
+
+def test_the_stages_report_needs_the_history_to_hold_the_window_before_too(server: ThreadingHTTPServer) -> None:
+    status, body = _get(server, "stages", "?hours=1.06")
+
+    assert (status, "longer than the history" in body["error"]) == (400, True)
 
 
 @ROUTES

@@ -33,6 +33,7 @@ export interface ApiContract {
   build: BuildEvent;
   cells: Cells;
   contractReport: ContractReport;
+  diff: RunDiffs;
   docShown: DocShown;
   docs: Docs;
   events: (
@@ -40,6 +41,7 @@ export interface ApiContract {
   )[];
   forwardingStatus: ForwardingStatus;
   forwardingUnconfigured: ForwardingUnconfigured;
+  graph: FlowGraph;
   harnesses: Harnesses;
   health: Health;
   laneHistory: LaneHistory;
@@ -77,6 +79,7 @@ export interface ApiContract {
   sessionSteps: SessionSteps;
   sessions: Sessions;
   snapshot: Snapshot;
+  stages: SubStages;
   taskRecord: TaskRecord;
   traceClusters: TraceClusters;
   trajectories: Trajectories;
@@ -302,6 +305,64 @@ export interface ContractCheck {
   check: string;
   reason: string;
   status: "pass" | "warn" | "fail";
+}
+/**
+ * `GET /api/analytics/diff`: a transition with under 5 clean runs, or none that conforms, reports nothing.
+ */
+export interface RunDiffs {
+  diff: RunDiff[];
+  now: number;
+  window_s: number;
+}
+/**
+ * One transition's reference run against its slowest clean run.
+ */
+export interface RunDiff {
+  /**
+   * Of `runs`, those that conform to the skill's machine.
+   */
+  conformant: number;
+  kind: string;
+  reference: RunRef;
+  /**
+   * Activities the reference made more often than the slow run.
+   */
+  reference_only: ActivityCount[];
+  /**
+   * Clean completions of the transition.
+   */
+  runs: number;
+  size: number;
+  skill: string;
+  slow: RunRef1;
+  /**
+   * Activities the slow run made more often than the reference.
+   */
+  slow_only: ActivityCount[];
+}
+/**
+ * The fewest-step conformant clean run.
+ */
+export interface RunRef {
+  /**
+   * Model requests, a subagent's included.
+   */
+  steps: number;
+  task: string;
+}
+export interface ActivityCount {
+  activity: string;
+  count: number;
+}
+/**
+ * The most-step clean run.
+ */
+export interface RunRef1 {
+  /**
+   * Model requests, a subagent's included.
+   */
+  steps: number;
+  task: string;
 }
 /**
  * `GET /api/docs/<id>`: one open doc.
@@ -832,6 +893,49 @@ export interface ForwardedEntry {
  */
 export interface ForwardingUnconfigured {
   configured: false;
+}
+/**
+ * `GET /api/analytics/graph`: the branching directly-follows graph of each transition, Codex left out.
+ */
+export interface FlowGraph {
+  graph: FlowEdge[];
+  now: number;
+  window_s: number;
+}
+/**
+ * One directly-follows edge of a transition's graph.
+ */
+export interface FlowEdge {
+  /**
+   * Occurrences of the edge.
+   */
+  count: number;
+  /**
+   * `source` is a judgement cut: the agent chose there.
+   */
+  cut: boolean;
+  kind: string;
+  /**
+   * Runs (tasks) the edge occurred in.
+   */
+  runs: number;
+  /**
+   * Of the occurrences that leave `source`.
+   */
+  share: number;
+  size: number;
+  /**
+   * The skill in force: the transition.
+   */
+  skill: string;
+  /**
+   * An activity, or `[start]`.
+   */
+  source: string;
+  /**
+   * The activity that directly follows it, or `[end]`.
+   */
+  target: string;
 }
 /**
  * `GET /api/harnesses`: the tiers in order and each harness with its models and efforts.
@@ -1742,6 +1846,39 @@ export interface MachineEntry {
 export interface MachineEntryFrom {
   machine: string;
   state: string;
+}
+/**
+ * `GET /api/analytics/stages`: sub-stages and their stability from one window to the one before.
+ */
+export interface SubStages {
+  now: number;
+  stages: SubStage[];
+  window_s: number;
+}
+/**
+ * One stage mined at the judgement cuts of the stretches no skill governs, this week and the week before.
+ */
+export interface SubStage {
+  kind: string;
+  median_activities: number | null;
+  previous_median_activities: number | null;
+  /**
+   * Runs it occurred in over the window before.
+   */
+  previous_runs: number;
+  /**
+   * Runs the stage occurred in over the window; 0 when it did not occur.
+   */
+  runs: number;
+  size: number;
+  /**
+   * Of the cell: stages in both windows over stages in either; None when a window mined none.
+   */
+  stability: number | null;
+  /**
+   * The cut that opens the stage, `[start]` for the first.
+   */
+  stage: string;
 }
 /**
  * `GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields.

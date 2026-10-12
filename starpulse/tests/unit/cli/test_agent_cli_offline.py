@@ -157,6 +157,7 @@ class TestConfigCheck:
                 "claims": [],
                 "completion_skill": "",
                 "completion_call": None,
+                "skill_machines": [],
             },
             "search": {"embeddings_url": None, "model": None, "token_env": None},
         }
@@ -179,6 +180,9 @@ class TestConfigCheck:
             'skill = "verifying-claims"\n'
             'title = "^verify"\n'
             'label = "validation"\n'
+            "[[analytics.skill_machines]]\n"
+            'skill = "developing-test-first"\n'
+            'stages = [{ name = "RED", activities = ["pytest"], ok = false }]\n'
         )
 
         code, document = _run(capsys, ["config", "check", "--config", str(file)])
@@ -194,6 +198,12 @@ class TestConfigCheck:
             "claims": [r"start\s+(TASK-\d+)"],
             "completion_skill": "completing-tasks",
             "completion_call": r"deliver\b",
+            "skill_machines": [
+                {
+                    "skill": "developing-test-first",
+                    "stages": [{"name": "RED", "activities": ["pytest"], "ok": False}],
+                }
+            ],
         }
 
     def test_with_no_file_it_reports_the_defaults(
