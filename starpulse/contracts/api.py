@@ -799,7 +799,7 @@ class SessionSteps(_Api):
     steps: list[SessionStep]
 
 
-class Transition(_Api):
+class TransitionCost(_Api):
     """The cost of one skill in force, within one kind and size of task."""
 
     kind: str = Field(description="The `kind-*` label of the tasks, without the prefix.")
@@ -821,7 +821,7 @@ class Transitions(_Api):
 
     now: float
     window_s: float
-    transitions: list[Transition]
+    transitions: list[TransitionCost]
 
 
 class Cell(_Api):

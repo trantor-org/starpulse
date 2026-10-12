@@ -3362,7 +3362,7 @@
         },
         "transitions": {
           "items": {
-            "$ref": "#/$defs/__main____Transition__1"
+            "$ref": "#/$defs/Transition"
           },
           "type": "array"
         },
@@ -6545,6 +6545,85 @@
       "title": "TrajectoryRun",
       "type": "object"
     },
+    "Transition": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "event"
+      ],
+      "title": "Transition",
+      "type": "object"
+    },
+    "TransitionCost": {
+      "additionalProperties": false,
+      "description": "The cost of one skill in force, within one kind and size of task.",
+      "properties": {
+        "agent_s": {
+          "description": "The seconds of the steps' requests and tool calls.",
+          "type": "number"
+        },
+        "kind": {
+          "description": "The `kind-*` label of the tasks, without the prefix.",
+          "type": "string"
+        },
+        "peak_context": {
+          "description": "The most input, cache-read and cache-write tokens one request held.",
+          "type": "integer"
+        },
+        "side_steps": {
+          "description": "The subagents' share of `steps`.",
+          "type": "integer"
+        },
+        "size": {
+          "description": "The `size-*` label of the tasks.",
+          "type": "integer"
+        },
+        "skill": {
+          "description": "The skill in force on the steps; `none` before any load.",
+          "type": "string"
+        },
+        "steps": {
+          "description": "Model requests, a subagent's included.",
+          "type": "integer"
+        },
+        "tasks": {
+          "type": "integer"
+        },
+        "wasted_rate": {
+          "type": "number"
+        },
+        "wasted_steps": {
+          "description": "Steps with a call that failed, was refused by a guard or hook, or repeats the command before it.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "size",
+        "skill",
+        "tasks",
+        "steps",
+        "side_steps",
+        "wasted_steps",
+        "wasted_rate",
+        "agent_s",
+        "peak_context"
+      ],
+      "title": "TransitionCost",
+      "type": "object"
+    },
     "Transitions": {
       "additionalProperties": false,
       "description": "`GET /api/analytics/transitions`: what each skill cost within each kind and size, Codex left out.",
@@ -6554,7 +6633,7 @@
         },
         "transitions": {
           "items": {
-            "$ref": "#/$defs/__main____Transition__2"
+            "$ref": "#/$defs/TransitionCost"
           },
           "type": "array"
         },
@@ -6760,85 +6839,6 @@
         "trigger"
       ],
       "title": "Writer",
-      "type": "object"
-    },
-    "__main____Transition__1": {
-      "additionalProperties": false,
-      "properties": {
-        "event": {
-          "type": "string"
-        },
-        "source": {
-          "type": "string"
-        },
-        "target": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "source",
-        "target",
-        "event"
-      ],
-      "title": "Transition",
-      "type": "object"
-    },
-    "__main____Transition__2": {
-      "additionalProperties": false,
-      "description": "The cost of one skill in force, within one kind and size of task.",
-      "properties": {
-        "agent_s": {
-          "description": "The seconds of the steps' requests and tool calls.",
-          "type": "number"
-        },
-        "kind": {
-          "description": "The `kind-*` label of the tasks, without the prefix.",
-          "type": "string"
-        },
-        "peak_context": {
-          "description": "The most input, cache-read and cache-write tokens one request held.",
-          "type": "integer"
-        },
-        "side_steps": {
-          "description": "The subagents' share of `steps`.",
-          "type": "integer"
-        },
-        "size": {
-          "description": "The `size-*` label of the tasks.",
-          "type": "integer"
-        },
-        "skill": {
-          "description": "The skill in force on the steps; `none` before any load.",
-          "type": "string"
-        },
-        "steps": {
-          "description": "Model requests, a subagent's included.",
-          "type": "integer"
-        },
-        "tasks": {
-          "type": "integer"
-        },
-        "wasted_rate": {
-          "type": "number"
-        },
-        "wasted_steps": {
-          "description": "Steps with a call that failed, was refused by a guard or hook, or repeats the command before it.",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "kind",
-        "size",
-        "skill",
-        "tasks",
-        "steps",
-        "side_steps",
-        "wasted_steps",
-        "wasted_rate",
-        "agent_s",
-        "peak_context"
-      ],
-      "title": "Transition",
       "type": "object"
     }
   },

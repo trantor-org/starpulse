@@ -1979,13 +1979,13 @@ export interface Variant {
  */
 export interface Transitions {
   now: number;
-  transitions: Transition1[];
+  transitions: TransitionCost[];
   window_s: number;
 }
 /**
  * The cost of one skill in force, within one kind and size of task.
  */
-export interface Transition1 {
+export interface TransitionCost {
   /**
    * The seconds of the steps' requests and tool calls.
    */
