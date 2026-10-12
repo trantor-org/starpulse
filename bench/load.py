@@ -79,7 +79,8 @@ class Once[T]:
 
 def compressed_body(host: str, port: int, path: str) -> tuple[int, int]:
     """`path`'s status and the bytes it sent, asked for gzip and left compressed. A viewer's browser inflates the body
-    on the viewer's machine; inflating a crowd's worth here would time this process, not the server."""
+    on the viewer's machine; inflating a crowd's worth here would time this process, not the server (the snapshot's
+    5 MB takes ~28 ms of the one thread every viewer shares, which is what its own p50 and p95 then measured)."""
     conn = http.client.HTTPConnection(host, port, timeout=60)
     try:
         conn.request("GET", path, headers={"accept-encoding": "gzip"})
@@ -163,21 +164,23 @@ else:
                         first = False
                         self._fire(FIRST_SNAPSHOT, start, None)
                         if key := ref_key(data):
-                            self._body(*address, f"/api/events/body/{key}")
+                            self._fetch(BODY, f"/api/events/body/{key}")
             except (http.client.HTTPException, OSError) as error:
                 if first:
                     self._fire(FIRST_SNAPSHOT, start, error)
             finally:
                 conn.close()
 
-        def _body(self, host: str, port: int, path: str) -> None:
+        def _fetch(self, name: str, path: str) -> None:
+            """Read `path` as the viewer's browser would receive it, compressed, and time it as route `name`."""
+            parts = urllib.parse.urlsplit(self.host)
             start, error = time.perf_counter(), None
             try:
-                status, _ = compressed_body(host, port, path)
+                status, _ = compressed_body(parts.hostname or "127.0.0.1", parts.port or 80, path)
                 error = None if status == 200 else http.client.HTTPException(f"{path} answered {status}")
             except (http.client.HTTPException, OSError) as failed:
                 error = failed
-            self._fire(BODY, start, error)
+            self._fire(name, start, error)
 
         def _fire(self, name: str, start: float, error: BaseException | None) -> None:
             self.environment.events.request.fire(
@@ -191,4 +194,4 @@ else:
         @task
         def read(self) -> None:
             name, path = random.choice(list(self.routes.items()))
-            self.client.get(path, name=name, headers={"accept": "application/json"})
+            self._fetch(name, path)
