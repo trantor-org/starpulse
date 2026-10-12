@@ -230,7 +230,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, autopilot, board, ci, database_url, event_log_archive_dir, event_log_retention_days, "
-        "forward, harnesses_file, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, search, session_start_url, sources, tracker_url, triggers"
+        "forward, harnesses_file, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, search, session_start_url, slow_read_seconds, sources, tracker_url, triggers"
     )
 
 
@@ -541,6 +541,17 @@ def test_a_hub_takes_names_unless_it_is_configured_for_aggregates_only(tmp_path:
     assert load(None).aggregates_only is False
     assert load(_write(tmp_path, "aggregates_only = true\n")).aggregates_only is True
     assert _refusal(tmp_path, 'aggregates_only = "yes"\n') == "aggregates_only must be true or false"
+
+
+def test_a_pulls_read_is_slow_at_one_second_unless_the_config_says_otherwise(tmp_path: Path) -> None:
+    assert load(None).slow_read_seconds == 1.0
+    assert load(_write(tmp_path, "slow_read_seconds = 0.25\n")).slow_read_seconds == 0.25
+    assert load(_write(tmp_path, "slow_read_seconds = 3\n")).slow_read_seconds == 3.0
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "true", '"1"'])
+def test_a_slow_read_threshold_that_is_not_a_positive_number_is_refused(tmp_path: Path, value: str) -> None:
+    assert _refusal(tmp_path, f"slow_read_seconds = {value}\n") == "slow_read_seconds must be a number of seconds above 0"
 
 
 def test_the_event_log_keeps_seven_days_unless_the_config_says_otherwise(tmp_path: Path) -> None:

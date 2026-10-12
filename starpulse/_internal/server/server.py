@@ -194,7 +194,8 @@ import sys
 import threading
 import time
 from collections import Counter, OrderedDict
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import ModuleType
@@ -285,7 +286,7 @@ from starpulse._internal.feed.ledger import PAGE
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.feed.machine_tasks import tables as machine_tables
-from starpulse._internal.config.config import Config, ConfigError, RunsInstance, discover, load, runs_adapter
+from starpulse._internal.config.config import SLOW_READ_S, Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
 from starpulse._internal.autopilot.starter import builtin_starter
@@ -1198,11 +1199,13 @@ def request_handler(
     search: SearchIndex | None = None,
     analytics: Analytics | None = None,
     pull_refresh: PullRefresh | None = None,
+    slow_read_s: float = SLOW_READ_S,
 ) -> type[SimpleHTTPRequestHandler]:
     configured = harnesses or Harnesses((), {})
     harnesses_body = encode("harnesses", configured.as_json())
     snapshots = SnapshotCache(feed)
     pull_reads = _PullReads(pulls)
+    slow_reads = _SlowReads(slow_read_s)
     event_text = _EventText()
     flows = feed.machines.keys()
 
@@ -1233,6 +1236,11 @@ def request_handler(
             self.milestones = milestones
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
+        def setup(self) -> None:
+            super().setup()
+            now = time.monotonic()
+            self.queued_s = now - self.server.accepted.pop(self.request, now)  # type: ignore[attr-defined]
+
         def do_GET(self) -> None:
             url = urlsplit(self.path)
             if url.path == "/api/events":
@@ -1251,7 +1259,10 @@ def request_handler(
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows))
             elif url.path == "/api/pulls":
-                self._send(*pull_reads(url.query))
+                with slow_reads.watch(url.query, self.queued_s) as timing:
+                    body, status = pull_reads(url.query)
+                    timing.computed()
+                    self._send(body, status)
             elif url.path == "/api/search":
                 self._send(*search_response(search, parse_qs(url.query)))
             elif url.path == "/metrics":
@@ -1553,6 +1564,49 @@ class _PullReads:
         return held[1], held[2]
 
 
+class _SlowReads:
+    """Logs each `/api/pulls` read that took `threshold_s` seconds or more from accept to the last byte written, with
+    the seconds it waited for a handler thread, computed its answer and wrote it, and the reads in flight when it began,
+    so a stall of the whole process can be told apart by the phase that held the time."""
+
+    class _Read:
+        def __init__(self, started: float) -> None:
+            self.started = started
+            self.computed_at: float | None = None
+
+        def computed(self) -> None:
+            self.computed_at = time.monotonic()
+
+    def __init__(self, threshold_s: float) -> None:
+        self._threshold_s = threshold_s
+        self._lock = threading.Lock()
+        self._in_flight = 0
+
+    @contextmanager
+    def watch(self, query: str, queued_s: float) -> Iterator[_Read]:
+        with self._lock:
+            self._in_flight += 1
+            in_flight = self._in_flight
+        read = self._Read(time.monotonic())
+        try:
+            yield read
+        finally:  # a write that fails on a closed socket is the slow read most worth the line
+            ended = time.monotonic()
+            with self._lock:
+                self._in_flight -= 1
+            computed_at = read.computed_at if read.computed_at is not None else ended
+            compute_s, write_s = computed_at - read.started, ended - computed_at
+            if queued_s + compute_s + write_s >= self._threshold_s:
+                logger.warning(
+                    "slow_read route=/api/pulls query=%s queue_s=%.3f compute_s=%.3f write_s=%.3f in_flight=%d",
+                    query,
+                    queued_s,
+                    compute_s,
+                    write_s,
+                    in_flight,
+                )
+
+
 #: The first file descriptor a service manager passes (`sd_listen_fds(3)`): 0, 1 and 2 are stdio.
 _LISTEN_FDS_START = 3
 
@@ -1586,12 +1640,17 @@ class StarPulseServer(ThreadingHTTPServer):
     def __init__(
         self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], listening: socket.socket | None = None
     ) -> None:
+        self.accepted: dict[socket.socket, float] = {}  # when each request was accepted, until its thread takes it up
         super().__init__(address, handler, bind_and_activate=listening is None)
         if listening is not None:
             self.socket.close()  # the one the base class made for a bind that will not happen
             self.socket = listening
             self.server_address = listening.getsockname()
             self.server_name, self.server_port = self.server_address[:2]
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        self.accepted[request] = time.monotonic()
+        super().process_request(request, client_address)
 
 
 class _EventText:
@@ -1891,6 +1950,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         search=search,
         analytics=config.analytics,
         pull_refresh=pull_refresh,
+        slow_read_s=config.slow_read_seconds,
     )
     serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)
 
