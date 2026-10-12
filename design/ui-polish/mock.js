@@ -16,11 +16,11 @@
   const F = window.__FLOW_FIXTURE__;
   if (F) {
     const apply = q.get("apply") || "run", iso = (s) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
-    const fan = ["apply_unraid", "apply_rulesets", "apply_board", "apply_flow_view", "apply_machine_event_mapper", "apply_session_start", "apply_skills_claude", "apply_skills_codex", "apply_skills_unraid"];
+    const fan = ["apply_nas", "apply_rulesets", "apply_board", "apply_flow_view", "apply_machine_event_mapper", "apply_session_start", "apply_skills_claude", "apply_skills_codex", "apply_skills_nas"];
     const graph = [["validate_event", []], ["classify", ["validate_event"]], ["apply_migrations", ["classify"]], ["apply_images", ["apply_migrations"]],
       ["apply_deploy", ["apply_images"]], ["apply_systemd", ["apply_deploy"]], ["push_dashboards", ["apply_systemd"]], ...fan.map((n) => [n, ["classify"]]),
       ["verify_applied", ["push_dashboards", ...fan]]];
-    const run = { validate_event: "succeeded", classify: "succeeded", apply_migrations: "succeeded", apply_images: "running", apply_unraid: "succeeded",
+    const run = { validate_event: "succeeded", classify: "succeeded", apply_migrations: "succeeded", apply_images: "running", apply_nas: "succeeded",
       apply_rulesets: "succeeded", apply_board: "running", apply_flow_view: "running", apply_machine_event_mapper: "queued", apply_session_start: "queued" };
     const at = (n) => apply === "done" ? "succeeded" : apply === "fail" ? (n === "apply_board" ? "failed" : n === "verify_applied" ? "skipped" : "succeeded") : run[n] ?? "not_started";
     const steps = graph.map(([name, depends]) => ({ name, depends, status: at(name), kind: null }));

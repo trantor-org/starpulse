@@ -18,7 +18,9 @@ A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pyte
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
 CI runs only the tests a pull request or a push to main can reach (`ci/select_tests.py`); the full suite runs
 nightly and on a manual dispatch. CI's `ic` job imports every module an IC instance can load without the hub extras
-(`ci/ic_imports.py`) rather than running the suite a second time.
+(`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so CI's `public-names` job
+(`ci/public_names.py`) fails when a tracked file other than a workflow, the runner-label list or a test names the
+operator's private hosts; docs, comments and fixtures use neutral names.
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import
 graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite, and so does every
 push to `main`.
@@ -38,7 +40,7 @@ and commit both. CI's `api-types` job regenerates them and fails on any differen
 request and page surface against the 50 ms budget, and a Locust load test that holds that budget under many viewers.
 
 [`design/`](../design/index.html) is the design mockup, a static page over a saved snapshot (`data.js`) and, behind
-`?view=kanban`, a saved Board (`board.js`) drawn by `kanban.js`; view it with
+`?view=kanban`, a saved Board (`board.js`) drawn by `kanban.js`; both hold synthetic tasks only, never a real board's titles; view it with
 `uv run python -m http.server 8781 --directory design`, and `uv run python -m starpulse._internal.cli.demo --mockup design --out
 mockup.html` writes it as one scrubbed file. A pull request that changes the page (`starpulse/web/**`), the mockup or
 the preview itself gets one UI-preview comment from

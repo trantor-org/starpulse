@@ -90,6 +90,15 @@ jobs:
       - name: Fail when a generated file is stale
         run: git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts
 
+  # This repository is public: no tracked file outside the workflows and tests may name the operator's private hosts
+  # (ci/public_names.py). Needs no dependencies, so it runs on the system python.
+  public-names:
+    runs-on: [self-hosted, validate]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 ci/public_names.py
+
   # trantor's check-config test-tier policy over this tree (ci/trantor_tier_policy.py). A commit that fails it would
   # fail every trantor bump pinning it, so it must not go green here. Runs on the ai-vm-1 fleet beside dispatch.
   tier-policy:

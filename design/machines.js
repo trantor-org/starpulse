@@ -171,7 +171,7 @@
     // seed more lifecycles so the ledger shows the 20+ case: short machines of the live shape, their sessions taken from
     // in-progress tasks and timed across the last day; a few idle for hours, two with a task stuck past 2 h
     const MANY = P.get("many") == null ? 24 : Math.max(0, +P.get("many") || 0);
-    const NAMES = ["reviewing-prs", "authoring-tests", "verifying-claims", "querying-observability", "searching-code", "operating-unraid", "designing-ui",
+    const NAMES = ["reviewing-prs", "authoring-tests", "verifying-claims", "querying-observability", "searching-code", "operating-nas", "designing-ui",
       "briefing-subagents", "simplifying-implementations", "auditing-code", "authoring-docs", "rotating-secrets", "backing-up-postgres", "pruning-worktrees",
       "tuning-dashboards", "migrating-schemas", "renewing-certs", "triaging-alerts", "reconciling-board", "benchmarking-models", "curating-memory",
       "drafting-adrs", "replaying-trails", "sweeping-scratch", "probing-endpoints", "restoring-backups", "linting-docs", "watching-ci"];

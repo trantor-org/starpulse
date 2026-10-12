@@ -227,8 +227,8 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # stop_activities = ["Bash", "exec_command"]               # activities that say how a session ran, never a cluster's descriptors
 # lifecycle_skills = ["starting-tasks", "completing-tasks"] # skills every task loads, left out of a cluster's skills
 # [[analytics.skill_loads]]                                # what should load a skill: any of these
-# skill = "operating-unraid"
-# activities = ["ssh root@unraid"]                         # globs over an activity's name
+# skill = "operating-nas"
+# activities = ["ssh root@nas-host"]                       # globs over an activity's name
 # [[analytics.skill_loads]]
 # skill = "verifying-claims"
 # title = "^(validate|verify|check)"                       # a regular expression over the task's title, case-insensitive

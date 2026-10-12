@@ -1,7 +1,7 @@
 // Every time the page shows, written in Arizona time in the clock the Admin view chose. Formatting happens here, at the source, so
 // no text is rewritten after the fact.
 // Arizona keeps UTC-7 all year with no daylight saving time, so its wall clock is fixed arithmetic. An Intl.DateTimeFormat built at module
-// load cost ~20 ms of the cold first paint on the ai-vm-1 profile (ICU data load) for the same strings.
+// load cost ~20 ms of the cold first paint on the build-host profile (ICU data load) for the same strings.
 const MST_MS = -7 * 3600 * 1000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export type ClockMode = "24" | "12";

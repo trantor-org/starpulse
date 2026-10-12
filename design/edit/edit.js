@@ -36,7 +36,7 @@
       labels: [...a.labels], dependencies: [...a.dependencies],
       description: a.description || "",
       plan: `1. Read the code behind "${a.title}" and its tests.\n2. Write the failing test.\n3. Make the smallest change that passes.\n4. Update the service doc.`,
-      notes: n % 2 ? "" : "Checked against the live config on ai-vm-1; the old default is still read by one caller.",
+      notes: n % 2 ? "" : "Checked against the live config on host-a; the old default is still read by one caller.",
       ac: [
         { text: `A test that failed first covers "${a.title}"`, checked: a.state === "done" || a.state === "review" },
         { text: "make lint-changed passes", checked: a.state === "done" || a.state === "review" },
