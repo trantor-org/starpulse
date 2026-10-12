@@ -12,6 +12,7 @@ import pytest
 from starpulse._internal.cli.demo import (
     STATIC,
     TITLES,
+    _seed_ci,
     _send_back,
     capture,
     elements,
@@ -438,6 +439,24 @@ def test_scrub_seeds_one_ci_agent_per_task_with_pull_requests_walking_the_machin
     for agent in ci.values():
         assert agent["steps"] == len(agent["trail"]) and agent["active"] == agent["trail"][-1]["at"] <= live["now"]
         assert [s["at"] for s in agent["trail"]] == sorted(s["at"] for s in agent["trail"])
+        steps = zip(agent["trail"], agent["trail"][1:])
+        assert all(next_state[(a["state"], b["event"])] == b["state"] for a, b in steps)
+
+
+def test_seed_ci_walks_pull_requests_with_no_checks_or_an_unmerged_predecessor_without_leaving_the_machine() -> None:
+    flow = {"name": "ci", "machine": CI_MACHINES["ci"], "agents": []}
+    pulls = {
+        "T-1": [{"checks": "none", "merged": True}, {"checks": "none", "merged": True}],  # unscripted live pairs
+        "T-2": [{"checks": "none", "merged": False}],
+        "T-3": [{"checks": "pass", "merged": False}, {"checks": "pass", "merged": True}],  # unmerged predecessor
+        "T-4": [{"checks": "none", "merged": True}, {"checks": "none", "merged": False}],
+    }
+
+    _seed_ci([flow], {t: t for t in pulls}, pulls, 1e6)
+
+    next_state = {(t["source"], t["event"]): t["target"] for t in flow["machine"]["transitions"]}
+    assert {a["task"] for a in flow["agents"]} == set(pulls)
+    for agent in flow["agents"]:
         steps = zip(agent["trail"], agent["trail"][1:])
         assert all(next_state[(a["state"], b["event"])] == b["state"] for a, b in steps)
 
