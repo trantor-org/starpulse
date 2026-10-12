@@ -922,14 +922,14 @@ class RunDiff(_Api):
     skill: str
     runs: int = Field(description="Clean completions of the transition.")
     conformant: int = Field(description="Of `runs`, those that conform to the skill's machine.")
-    reference: RunRef = Field(description="The fewest-step conformant clean run.")
+    reference: RunRef | None = Field(description="The fewest-step conformant clean run; None when `conformant` is 0.")
     slow: RunRef = Field(description="The most-step clean run.")
     slow_only: list[ActivityCount] = Field(description="Activities the slow run made more often than the reference.")
     reference_only: list[ActivityCount] = Field(description="Activities the reference made more often than the slow run.")
 
 
 class RunDiffs(_Api):
-    """`GET /api/analytics/diff`: a transition with under 5 clean runs, or none that conforms, reports nothing."""
+    """`GET /api/analytics/diff`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0."""
 
     now: float
     window_s: float

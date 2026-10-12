@@ -226,11 +226,11 @@ def fast_slow_diff(
     for (kind, size, skill), runs in runs_by_transition(owned_steps(signals, keys, analytics), tasks, stop).items():
         group = [r for r in runs if r.task in clean]
         reference_bar = [r for r in group if _conforms(r, machines.get(skill))]
-        if skill == NO_SKILL or len(group) < MIN_N or not reference_bar:
+        if skill == NO_SKILL or len(group) < MIN_N:
             continue
-        reference = min(reference_bar, key=lambda r: (len(r.steps), r.task))
+        reference = min(reference_bar, key=lambda r: (len(r.steps), r.task), default=None)
         slow = max(group, key=lambda r: (len(r.steps), r.task))
-        fast, slower = Counter(reference.activities), Counter(slow.activities)
+        fast, slower = Counter(reference.activities if reference else ()), Counter(slow.activities)
         rows.append(
             {
                 "kind": kind,
@@ -238,7 +238,7 @@ def fast_slow_diff(
                 "skill": skill,
                 "runs": len(group),
                 "conformant": len(reference_bar),
-                "reference": {"task": reference.task, "steps": len(reference.steps)},
+                "reference": {"task": reference.task, "steps": len(reference.steps)} if reference else None,
                 "slow": {"task": slow.task, "steps": len(slow.steps)},
                 "slow_only": _counts(slower - fast),
                 "reference_only": _counts(fast - slower),

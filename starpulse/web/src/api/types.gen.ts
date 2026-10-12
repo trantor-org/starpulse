@@ -307,7 +307,7 @@ export interface ContractCheck {
   status: "pass" | "warn" | "fail";
 }
 /**
- * `GET /api/analytics/diff`: a transition with under 5 clean runs, or none that conforms, reports nothing.
+ * `GET /api/analytics/diff`: a transition with under 5 clean runs reports nothing; one with none that conforms has `conformant` 0.
  */
 export interface RunDiffs {
   diff: RunDiff[];
@@ -323,7 +323,10 @@ export interface RunDiff {
    */
   conformant: number;
   kind: string;
-  reference: RunRef;
+  /**
+   * The fewest-step conformant clean run; None when `conformant` is 0.
+   */
+  reference: RunRef | null;
   /**
    * Activities the reference made more often than the slow run.
    */
@@ -340,9 +343,6 @@ export interface RunDiff {
    */
   slow_only: ActivityCount[];
 }
-/**
- * The fewest-step conformant clean run.
- */
 export interface RunRef {
   /**
    * Model requests, a subagent's included.
