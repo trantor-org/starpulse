@@ -37,7 +37,7 @@ def _no_backlog_cli(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytes
 
 def _serving(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Board, BoardFeed]:
     """The default native board of an empty directory, scanned once on start."""
-    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: self.scan())
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
     built, feed = assemble(load(None), tmp_path, None, ())
     built.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
     return built, feed

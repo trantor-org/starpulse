@@ -109,7 +109,9 @@ writer: it polls a Backlog.md project's Markdown files, puts every task in the t
 `project_name` (a project that sets none is refused, so no task lands in a default team), takes
 the machine from the project's own statuses (any lane reaches any other, unless `machine` names a machine file
 whose states are those lanes and whose `writers` reserve a move to an actor, such as `operator`), and writes moves
-with the `backlog` CLI, answering a failed write with the CLI's output. An adapter with a writer subclasses
+with the `backlog` CLI, answering a failed write with the CLI's output. Its first scan is the feed's replay, as a
+stream adapter's read up to its start is: the feed builds the Ledger once, after the scan has placed every file, and a
+task write that meets the scan waits for it, so a restart serves the whole board in seconds. An adapter with a writer subclasses
 `BoardAdapterKit` with `writer` set, and the kit then checks that a move the operator may make is written and one
 the machine leaves to the operator is refused to the agent. A board kit also declares `teams`, the team key the
 adapter derives for each task it produces, and asserts each record carries it. `starpulse._internal.board.jira` reads a Jira project and has no writer. It imports the named workflow from the site's

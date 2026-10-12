@@ -500,7 +500,7 @@ def test_the_adapter_module_pulls_in_neither_the_legacy_client_nor_the_projectio
 
 def _started(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Path, float]]:
     started: list[tuple[Path, float]] = []
-    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: started.append((self.root, interval)))
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, **_: started.append((self.root, interval)))
     return started
 
 
@@ -529,6 +529,31 @@ def test_without_settings_the_board_reads_backlog_beside_the_config_every_two_se
     board({}, tmp_path).start(BoardFeed(), "test", EventLog("sqlite://"))
 
     assert started == [(tmp_path / "backlog", 2.0)]
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_the_first_scan_is_the_feeds_replay_and_the_feed_is_ready_once_it_has_placed_every_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A cold start places every task file; while it runs the feed builds no Ledger per task and a write waits for it.
+    write_config(tmp_path / "backlog")
+    for task_id in ("task-1", "task-2"):
+        write_task(tmp_path / "backlog", "tasks", task_id, "To Do")
+    feed = BoardFeed()
+    replayed_at_put: list[bool] = []
+    put = feed.put
+    monkeypatch.setattr(feed, "put", lambda task: (replayed_at_put.append(feed.wait_replayed(timeout=0)), put(task)))
+
+    board({"interval": "0.01"}, tmp_path).start(feed, "test", EventLog("sqlite://"))
+
+    assert feed.ready.wait(timeout=5)
+    assert replayed_at_put == [False, False]
+    assert sorted(task["id"] for task in feed.open_tasks()) == ["task-1", "task-2"]
+    monkeypatch.setattr(UpstreamBacklog, "scan", lambda self: (_ for _ in ()).throw(SystemExit))
+    for thread in threading.enumerate():
+        if thread.name == "upstream-backlog":
+            thread.join(timeout=5)
+            assert not thread.is_alive(), "the polling thread outlived its test"
 
 
 def test_a_board_setting_the_adapter_does_not_read_is_refused_beside_the_known_ones(tmp_path: Path) -> None:
@@ -714,7 +739,7 @@ def test_a_machine_without_cues_gives_the_board_none(tmp_path: Path) -> None:
 
 def served(built, monkeypatch: pytest.MonkeyPatch) -> BoardFeed:
     """A feed the board's tasks are on after one scan."""
-    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: self.scan())
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
     feed = BoardFeed(machines=built.machines(lambda name: name, ()), keys=built.keys)
     built.start(feed, "test", EventLog("sqlite://"))
     return feed

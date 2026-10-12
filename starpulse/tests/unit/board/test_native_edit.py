@@ -85,7 +85,7 @@ def _board_agents(feed: BoardFeed) -> list[dict]:
 @pytest.fixture
 def served(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Board, BoardFeed, Path]:
     """The default native board holding `task-5`, scanned once on start."""
-    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval: self.scan())
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
     built, feed = assemble(load(None), tmp_path, None, ())
     _file(tmp_path).write_text(FILE)
     built.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
