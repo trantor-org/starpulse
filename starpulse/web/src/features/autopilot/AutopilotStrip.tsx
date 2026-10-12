@@ -5,7 +5,7 @@ import { ago } from "../../shared/clock";
 import { useViewActive } from "../../shared/Kept";
 import { level, type AutopilotStore, type Dimension, type InFlight, type NextPick } from "./autopilot";
 
-/** While Autopilot is on, re-read so meters move with the host; the sampler also emits on a headroom crossing. */
+/** While Autopilot is on, re-read so meters track the host; the sampler also emits on a headroom crossing. */
 const REFRESH_MS = 5000;
 
 const pct = (d: Dimension) => `${Math.min(100, (d.used / d.limit) * 100)}%`;
