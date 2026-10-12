@@ -1083,4 +1083,7 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #admin .card h2 { flex-wrap: wrap; gap: 2px 10px; }
   #admin :is(.card h2, .row, .foot, .pv) { padding-inline: 12px; }
   #admin .grid { padding-bottom: var(--pm); }
+  /* a live value wider than the phone breaks inside its row instead of pushing the Next batch list out */
+  #admin .row.fw-block > * { min-width: 0; }
+  #admin .fw-next li { overflow-wrap: anywhere; }
 }
