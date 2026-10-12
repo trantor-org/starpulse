@@ -64,7 +64,7 @@ lists exactly the verbs there are.
 | Verb | Arguments | Document |
 |---|---|---|
 | `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `insights`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it; `machinePage` and `machineStrip` page and count the machines entered from the In Progress one ([Machine rows](serving.md#machine-rows)) |
-| `board` | `--state`, `--milestone`, `--label`, `--assignee`, `--holder` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, holder, milestone, labels, dependencies, waiting_on, prs, moves}`, `holder` the session that last claimed it (empty when none has) and `--holder` keeping only that session's tasks |
+| `board` | `--state`, `--milestone`, `--label`, `--assignee`, `--holder` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, holder, milestone, labels, dependencies, waiting_on, criteria, pause_reason, prs, moves}`, `holder` the session that last claimed it (empty when none has), `criteria` each acceptance criterion as `{text, checked}`, `pause_reason` why a `needs_attention` task waits for a person (empty otherwise) and `--holder` keeping only that session's tasks |
 | `search` | `QUERY...`, `--limit` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet}`, best match first, at most `--limit` (1 to 100, default 10); a blank query or a limit out of range exits 1, and a server that keeps no index (a hub) exits 3 |
 | `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
@@ -324,7 +324,9 @@ process's own gauges, `process_resident_memory_bytes`, `process_threads`,
 `process_open_fds` and `process_start_time_seconds`; the last changes on every restart, so a growth rule can tell one
 process lifetime from the next. A host with no `/proc` serves none of them.
 
-`waiting_on` is the dependencies neither in the `done` lane nor settled as completed. `prs` are the task's pull
+`waiting_on` is the dependencies neither in the `done` lane nor settled as completed. `criteria` and `pause_reason` come
+from `BoardTask.acceptance_criteria` with `acceptance_checked`, and `BoardTask.pause_reason`; an adapter that sets none
+serves `[]` and an empty reason. `prs` are the task's pull
 request links, each with the checks, merged state, open review threads and commits behind `main` the server last read
 when it has them.
 

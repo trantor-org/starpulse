@@ -4625,6 +4625,21 @@
           "default": null,
           "description": "When a Board task was created, in epoch seconds; null or absent when unknown."
         },
+        "criteria": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/TaskCriterion"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A Board task's acceptance criteria in file order; absent off the Board."
+        },
         "dependencies": {
           "anyOf": [
             {
@@ -4722,6 +4737,18 @@
           ],
           "default": null,
           "description": "The verdict on each Board column the task may move to, by state id."
+        },
+        "pause_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why a paused Board task waits for a person; empty when it is not paused, absent off the Board."
         },
         "previous": {
           "anyOf": [
@@ -6336,6 +6363,24 @@
         "stages"
       ],
       "title": "SubStages",
+      "type": "object"
+    },
+    "TaskCriterion": {
+      "additionalProperties": false,
+      "description": "One acceptance criterion of a Board task and whether it is checked.",
+      "properties": {
+        "checked": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "checked"
+      ],
+      "title": "TaskCriterion",
       "type": "object"
     },
     "TaskDelta": {

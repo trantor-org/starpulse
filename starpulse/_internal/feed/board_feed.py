@@ -71,6 +71,7 @@ def cited_pulls(task: BoardTask) -> list[str]:
 
 def task_agent(task: BoardTask) -> dict:
     """One task as an agent on the Board machine, its lane as the state id."""
+    ticks = task.acceptance_checked + (False,) * len(task.acceptance_criteria)  # a criterion past the ticks is unchecked
     return {
         "id": task.id,
         "title": task.title,
@@ -82,6 +83,8 @@ def task_agent(task: BoardTask) -> dict:
         "dependencies": list(task.dependencies),
         "prs": cited_pulls(task),
         "description": task.description,
+        "criteria": [{"text": text, "checked": checked} for text, checked in zip(task.acceptance_criteria, ticks)],
+        "pause_reason": task.pause_reason,
         "moves": {column: move.model_dump() for column, move in task.moves.items()},
         "created": task.created_at,
     }

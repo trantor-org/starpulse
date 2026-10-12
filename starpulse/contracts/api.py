@@ -112,6 +112,13 @@ class TrailStep(_Api):
     at: float
 
 
+class TaskCriterion(_Api):
+    """One acceptance criterion of a Board task and whether it is checked."""
+
+    text: str
+    checked: bool
+
+
 class RawAgent(_Api):
     """A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in."""
 
@@ -131,6 +138,12 @@ class RawAgent(_Api):
     active: float | None = None
     description: str | None = Field(default=None, description="A task's Backlog description.")
     milestone: str | None = Field(default=None, description="A Board task's milestone; empty or absent when it has none.")
+    criteria: list[TaskCriterion] | None = Field(
+        default=None, description="A Board task's acceptance criteria in file order; absent off the Board."
+    )
+    pause_reason: str | None = Field(
+        default=None, description="Why a paused Board task waits for a person; empty when it is not paused, absent off the Board."
+    )
     previous: str | None = Field(
         default=None, description="The Board lane the task left on its last move; absent before it has moved."
     )

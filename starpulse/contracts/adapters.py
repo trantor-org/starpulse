@@ -124,6 +124,16 @@ class BoardTask(_Contract):
         default=(),
         description="The text of each acceptance criterion, searched with the title and description; empty when the board keeps none.",
     )
+    acceptance_checked: tuple[bool, ...] = Field(
+        default=(),
+        description="Whether each criterion in `acceptance_criteria` is checked, in the same order; a criterion past "
+        "the end of this list is unchecked, so an adapter that keeps no checked state leaves it empty.",
+    )
+    pause_reason: str = Field(
+        default="",
+        description="Why a paused task waits for a person, the first line of the reason its board records; empty when "
+        "the task is not paused or the board keeps none.",
+    )
     notes: str = Field(
         default="",
         description="The task's running notes, searched with the title and description; empty when the board keeps none.",

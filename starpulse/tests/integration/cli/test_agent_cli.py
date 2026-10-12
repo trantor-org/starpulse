@@ -103,7 +103,19 @@ def base(tmp_path: Path) -> Iterator[str]:
         task("PROJ-2", "Ready", milestone="m-2", labels=("api", "cli"), assignee="@agent-b", references=(UNREAD_PULL,))
     )
     feed.put(task("PROJ-3", "Done", settled="completed"))
-    feed.put(task("PROJ-4", "In Progress", milestone="m-2", labels=("api",), assignee="@agent-a", holder="session-1"))
+    feed.put(
+        task(
+            "PROJ-4",
+            "In Progress",
+            milestone="m-2",
+            labels=("api",),
+            assignee="@agent-a",
+            holder="session-1",
+            acceptance_criteria=("first", "second", "third", "fourth"),
+            acceptance_checked=(True, True, False, False),
+            pause_reason="Restart the server",
+        )
+    )
     feed.put(task("PROJ-5", "Ready"))
     pull = {
         "number": 5,
@@ -484,6 +496,8 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         "labels": ["cli"],
         "dependencies": ["PROJ-2", "PROJ-3"],
         "waiting_on": ["PROJ-2"],
+        "criteria": [],
+        "pause_reason": "",
         "prs": [
             {
                 "number": 5,
@@ -530,6 +544,22 @@ def test_each_task_names_the_session_holding_it(base: str, capsys: pytest.Captur
 
     held = {t["id"]: t["holder"] for c in doc["columns"] for t in c["tasks"]}
     assert held == {"PROJ-1": "", "PROJ-2": "", "PROJ-4": "session-1", "PROJ-5": ""}
+
+
+def test_each_task_prints_its_criteria_with_their_checked_state_and_its_pause_reason(
+    base: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["board", "--holder", "session-1", "--server", base])
+
+    assert code == 0
+    [task] = [t for c in doc["columns"] for t in c["tasks"]]
+    assert task["criteria"] == [
+        {"text": "first", "checked": True},
+        {"text": "second", "checked": True},
+        {"text": "third", "checked": False},
+        {"text": "fourth", "checked": False},
+    ]
+    assert task["pause_reason"] == "Restart the server"
 
 
 def test_a_state_filter_leaves_only_that_column(base: str, capsys: pytest.CaptureFixture[str]) -> None:
@@ -612,6 +642,8 @@ def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys:
         "labels": [],
         "dependencies": [],
         "waiting_on": [],
+        "criteria": [],
+        "pause_reason": "",
         "prs": [],
         "moves": {},
         "description": "",

@@ -55,6 +55,9 @@ _NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END --
 _HOLDER = re.compile(r"^\*\*Holder:\*\* (\S+)[ \t]*$", re.M)
 _CRITERIA = re.compile(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", re.S)
 _ITEM = re.compile(r"^- \[([ xX])\] #(\d+) (.*?)[ \t]*$", re.M)
+_NEEDS_ATTENTION = re.compile(
+    r"^## Needs attention[ \t]*\n(.*?)(?=^## |<!-- SECTION:DESCRIPTION:END -->|\Z)", re.S | re.M
+)
 
 
 @dataclass(frozen=True)
@@ -173,10 +176,16 @@ def _holder(body: str) -> str:
     return held[-1] if held else ""
 
 
-def _criteria(body: str) -> tuple[str, ...]:
-    """The text of each acceptance criterion, in file order."""
+def _criteria(body: str) -> list[tuple[bool, str]]:
+    """Each acceptance criterion as whether it is checked and its text, in file order."""
     found = _CRITERIA.search(body)
-    return tuple(text for _, _, text in _ITEM.findall(found.group(1))) if found else ()
+    return [(mark != " ", text) for mark, _, text in _ITEM.findall(found.group(1))] if found else []
+
+
+def _pause_reason(body: str, lane: str) -> str:
+    """The first line of a `Needs attention` task's `## Needs attention` section, else empty."""
+    found = _NEEDS_ATTENTION.search(body) if lane == "needs_attention" else None
+    return next((line.strip() for line in found.group(1).splitlines() if line.strip()), "") if found else ""
 
 
 def _notes(body: str) -> str:
@@ -266,6 +275,7 @@ class UpstreamBacklog:
         from starpulse.contracts.adapters import BoardTask  # noqa: PLC0415 - import cost, paid on first use
 
         assignees = _strings(frontmatter.get("assignee"))
+        criteria = _criteria(body)
         dependencies = _strings(frontmatter.get("dependencies"))
         return BoardTask(
             id=task_id,
@@ -282,7 +292,9 @@ class UpstreamBacklog:
             labels=_strings(frontmatter.get("labels")),
             milestone=str(frontmatter.get("milestone") or "").strip(),
             description=_description(body),
-            acceptance_criteria=_criteria(body),
+            acceptance_criteria=tuple(text for _, text in criteria),
+            acceptance_checked=tuple(checked for checked, _ in criteria),
+            pause_reason=_pause_reason(body, lane),
             notes=_notes(body),
             moves={} if settled else dict(self._moves.get(lane, {})),
         )
