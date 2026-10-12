@@ -114,7 +114,7 @@ def test_an_edit_changes_the_front_matter_and_sections_of_the_task_file_in_one_w
         "title": "Draw the whole board",
         "priority": "low",
         "profile": "@agent-deep-medium",
-        "labels": ["ui", "needs-human"],
+        "labels": ["ui", "adr-needed"],
         "milestone": "",
         "dependencies": [],
         "description": "Draw all of it.",

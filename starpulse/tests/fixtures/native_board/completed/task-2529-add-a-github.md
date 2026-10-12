@@ -7,7 +7,7 @@ assignee:
 created_date: '2026-10-03 17:10'
 updated_date: '2026-10-06 23:32'
 labels:
-  - agent-resolvable
+  - adr-needed
   - kind-execute
   - size-8
 milestone: m-80

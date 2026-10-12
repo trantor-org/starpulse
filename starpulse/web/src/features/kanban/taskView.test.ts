@@ -3,7 +3,7 @@ import type { KanbanTask } from "./kanban";
 import { changedFields, ciHistory, editKey, fetchRecord, markdown, menuKey, saveSection, saveTask, SECTION_FIELDS, toggleItem, type MenuState, type TaskRecord } from "./taskView";
 
 const record = {
-  title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-human"], milestone: "m-89", dependencies: ["TASK-1"],
+  title: "T", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
   description: "d", plan: "1. a", notes: "n", acceptanceCriteria: [{ n: 1, text: "a gate", checked: true }], definitionOfDone: [],
 };
 const reply = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
@@ -27,7 +27,7 @@ describe("saving an edited task", () => {
   const base = record as TaskRecord;
 
   it("posts only changed fields and the matching base values in one request", async () => {
-    const draft = { ...base, title: "New title", labels: ["ui", "needs-human"] };
+    const draft = { ...base, title: "New title", labels: ["ui", "needs-review"] };
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ task: "TASK-9", changed: ["title", "labels"] })));
 
     const result = await saveTask("TASK-9", base, draft, {}, fetcher);
@@ -38,8 +38,8 @@ describe("saving an edited task", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         task: "TASK-9",
-        base: { title: "T", labels: ["needs-human"] },
-        changes: { title: "New title", labels: ["ui", "needs-human"] },
+        base: { title: "T", labels: ["needs-review"] },
+        changes: { title: "New title", labels: ["ui", "needs-review"] },
         comment: "",
       }),
     });

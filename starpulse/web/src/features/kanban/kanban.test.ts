@@ -260,7 +260,7 @@ describe("the cards drawn from a snapshot", () => {
 describe("the filters", () => {
   const card = (id: string, title: string, extra: Partial<KanbanTask> = {}): KanbanTask => ({ ...task(id, "ready"), title, ...extra });
   const tasks = [
-    card("PROJ-2482", "Kanban filters", { labels: ["needs-human", "size-3"], assignee: "@alice", milestone: "m-12" }),
+    card("PROJ-2482", "Kanban filters", { labels: ["needs-review", "size-3"], assignee: "@alice", milestone: "m-12" }),
     card("PROJ-2483", "Guard verdict per move", { labels: ["size-5"], assignee: "@alice", milestone: "m-12" }),
     card("PROJ-9", "Human review of the needs list", { labels: ["kind-decide"], assignee: "@agent-deep-high", milestone: "m-9" }),
     card("PROJ-10", "Unowned chore", { labels: ["size-3"] }),
@@ -282,7 +282,7 @@ describe("the filters", () => {
   it("limit a label: word to labels, so a title that says the same word does not match", () => {
     expect(ids({ query: "needs" })).toEqual(["PROJ-2482", "PROJ-9"]);
     expect(ids({ query: "label:needs" })).toEqual(["PROJ-2482"]);
-    expect(ids({ query: "label:Needs-Human" })).toEqual(["PROJ-2482"]);
+    expect(ids({ query: "label:Needs-Review" })).toEqual(["PROJ-2482"]);
   });
 
   it("need every word of the bar to match", () => {
@@ -325,11 +325,11 @@ describe("the filters", () => {
 
 describe("label suggestions", () => {
   const labelled = (id: string, labels: string[]): KanbanTask => ({ ...task(id, "ready"), labels });
-  const tasks = [labelled("PROJ-1", ["needs-human", "size-3"]), labelled("PROJ-2", ["needs-human"]), labelled("PROJ-3", ["adr-needed", "size-3"])];
+  const tasks = [labelled("PROJ-1", ["needs-review", "size-3"]), labelled("PROJ-2", ["needs-review"]), labelled("PROJ-3", ["adr-needed", "size-3"])];
 
   it("offer the labels that contain the word being typed, most used first, with their counts", () => {
-    expect(labelSuggestions(tasks, "need")).toEqual([{ label: "needs-human", count: 2 }, { label: "adr-needed", count: 1 }]);
-    expect(labelSuggestions(tasks, "kanban need")).toEqual([{ label: "needs-human", count: 2 }, { label: "adr-needed", count: 1 }]);
+    expect(labelSuggestions(tasks, "need")).toEqual([{ label: "needs-review", count: 2 }, { label: "adr-needed", count: 1 }]);
+    expect(labelSuggestions(tasks, "kanban need")).toEqual([{ label: "needs-review", count: 2 }, { label: "adr-needed", count: 1 }]);
   });
 
   it("read the word after label: and offer nothing for an empty or finished word", () => {
@@ -340,7 +340,7 @@ describe("label suggestions", () => {
   });
 
   it("write label:<name> in place of the word being typed, ready for the next word", () => {
-    expect(applySuggestion("need", "needs-human")).toBe("label:needs-human ");
+    expect(applySuggestion("need", "needs-review")).toBe("label:needs-review ");
     expect(applySuggestion("kanban label:si", "size-3")).toBe("kanban label:size-3 ");
   });
 });

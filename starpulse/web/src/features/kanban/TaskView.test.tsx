@@ -15,14 +15,14 @@ import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type StartCri
 const styles = readFileSync(new NodeURL("../../style.css", import.meta.url), "utf8");
 
 const task: KanbanTask = {
-  id: "TASK-9", title: "Redraw the view", lane: "ready", milestone: "m-89", labels: ["needs-human"], assignee: "@agent-standard-high",
+  id: "TASK-9", title: "Redraw the view", lane: "ready", milestone: "m-89", labels: ["needs-review"], assignee: "@agent-standard-high",
   dependencies: ["TASK-1"], openDeps: 0, prs: [{ number: 12, url: "http://pr/12", checks: "pass", merged: false, merge_sha: null, merged_at: null, threads: 0, behind_main: null, stale: false }],
   description: "from the snapshot", live: null, released: false, entered: 700, created: 100, workableSince: null,
   machines: [{ machine: "in-progress", state: "pr_opened", at: 900, trail: [] }],
   moves: { in_progress: { allowed: true, reason: "", skill: "" }, review: { allowed: false, reason: "no review yet", skill: "completing-tasks" } },
 };
 const record: TaskRecord = {
-  title: "Redraw the view", profile: "@agent-standard-high", priority: "High", labels: ["needs-human"], milestone: "m-89", dependencies: ["TASK-1"],
+  title: "Redraw the view", profile: "@agent-standard-high", priority: "High", labels: ["needs-review"], milestone: "m-89", dependencies: ["TASK-1"],
   description: "the full description", plan: "1. Write the test\n2. Make it pass", notes: "Checked against the live config",
   acceptanceCriteria: [{ n: 1, text: "A Vitest test failed first", checked: true }, { n: 2, text: "make lint-changed passes", checked: false }],
   definitionOfDone: [{ n: 1, text: "The completing-tasks skill was invoked", checked: false }],
@@ -513,11 +513,11 @@ describe("the task view's right rail", () => {
     expect(rows(draw({ task: { ...task, machines: [] } }), "Machines")).toContain("In no machine right now");
   });
 
-  it("draws the details as a read table, with needs-human highlighted and when the task was created", () => {
+  it("draws the details as a read table, and when the task was created", () => {
     const html = rows(draw({ task: { ...task, created: 400 } }), "Details");
 
     for (const text of ["profile", "@agent-standard-high", "priority", "High", "labels", "milestone", "m-89", "created", "10m ago"]) expect(html, text).toContain(text);
-    expect(html).toContain('<span class="chip nh">needs-human</span>');
+    expect(html).toContain('<span class="chip">needs-review</span>');
     expect(rows(draw({ task: { ...task, created: null } }), "Details")).toMatch(/created<\/td><td><span class="k">—<\/span>/);
   });
 

@@ -160,14 +160,14 @@ def lands(base: Path, require: dict[str, Any], body: str = "", **fields: object)
 
 
 SIZES = {"label": {"prefix": "size-", "in": [1, 2, 3, 5, 8]}}
-NEEDS_HUMAN = {"label": {"contains": "needs-human"}}
+ADR_NEEDED = {"label": {"contains": "adr-needed"}}
 
 
 @pytest.mark.parametrize(
     ("require", "labels", "expected"),
     [
-        (NEEDS_HUMAN, "[needs-human, size-3]", True),
-        (NEEDS_HUMAN, "[size-3]", False),
+        (ADR_NEEDED, "[adr-needed, size-3]", True),
+        (ADR_NEEDED, "[size-3]", False),
         (SIZES, "[size-3, bug]", True),
         (SIZES, "[size-4]", False),
         (SIZES, "[size-3, size-4]", False),

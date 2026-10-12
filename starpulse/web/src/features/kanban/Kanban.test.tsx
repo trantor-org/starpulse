@@ -7,7 +7,7 @@ import { place } from "./move";
 import { TaskView } from "./TaskView";
 
 const task: KanbanTask = {
-  id: "PROJ-1", title: "A title long enough to need two lines in a comfortable card", lane: "in_progress", milestone: "m-1", labels: ["feature", "needs-human"], assignee: "@agent-standard-high",
+  id: "PROJ-1", title: "A title long enough to need two lines in a comfortable card", lane: "in_progress", milestone: "m-1", labels: ["feature", "needs-review"], assignee: "@agent-standard-high",
   dependencies: [], openDeps: 2, prs: [], description: "", live: { machine: "in-progress", state: "red_proven", at: 100 }, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
 };
 const draw = (compact: boolean) => renderToStaticMarkup(<Card task={task} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} compact={compact} />);
@@ -17,7 +17,7 @@ describe("a Kanban card's density", () => {
     const html = draw(false);
 
     expect(html).toContain('class="foot"');
-    expect(html).toContain("needs-human");
+    expect(html).toContain("needs-review");
     expect(html).toContain("standard-high");
     expect(html).not.toContain("compact");
   });
@@ -27,7 +27,7 @@ describe("a Kanban card's density", () => {
 
     expect(html).toContain('class="card compact"');
     expect(html).not.toContain('class="foot"');
-    expect(html).not.toContain("needs-human");
+    expect(html).not.toContain("needs-review");
     expect(html).toContain("PROJ-1");
     expect(html).toContain("A title long enough");
     expect(html).toContain("red proven");
@@ -54,7 +54,7 @@ describe("a Kanban card's machine line", () => {
 });
 
 describe("what holds the Waiting lane", () => {
-  const holder = (id: string, holds: number, labels: string[] = []) => ({ task: { ...task, id, labels }, holds });
+  const holder = (id: string, holds: number, lane = "ready") => ({ task: { ...task, id, lane }, holds });
 
   it("marks a card with the Waiting tasks it holds, and draws no mark on a card that holds none", () => {
     const held = renderToStaticMarkup(<Card task={task} holds={23} now={160} marks={{}} names={{}} onOpen={() => {}} dismiss={() => {}} />);
@@ -65,9 +65,9 @@ describe("what holds the Waiting lane", () => {
     expect(free).not.toContain("⛓");
   });
 
-  it("lists the top three holders with their counts, flags a needs-human one and counts the rest", () => {
+  it("lists the top three holders with their counts, flags a Needs attention one and counts the rest", () => {
     const html = renderToStaticMarkup(
-      <HeldBy holders={[holder("TASK-2706", 23, ["needs-human"]), holder("TASK-2875", 3), holder("TASK-2873", 3), holder("TASK-1878", 2)]} open={() => {}} />,
+      <HeldBy holders={[holder("TASK-2706", 23, "needs_attention"), holder("TASK-2875", 3), holder("TASK-2873", 3), holder("TASK-1878", 2)]} open={() => {}} />,
     );
 
     expect(html).toContain("Held by");

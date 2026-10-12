@@ -58,9 +58,9 @@ describe("a deep link", () => {
   };
 
   it("starts from its own filters and drops the stored ones, hidden items and folds with them", () => {
-    const prefs = loadPrefs(stored(), "?view=kanban&q=label%3Aneeds-human&assignee=%40agent-standard-high&milestone=m-76");
+    const prefs = loadPrefs(stored(), "?view=kanban&q=label%3Aneeds-review&assignee=%40agent-standard-high&milestone=m-76");
 
-    expect(plain(prefs)).toEqual(plain({ ...NO_PREFS, query: "label:needs-human", assignee: "@agent-standard-high", milestone: "m-76" }));
+    expect(plain(prefs)).toEqual(plain({ ...NO_PREFS, query: "label:needs-review", assignee: "@agent-standard-high", milestone: "m-76" }));
   });
 
   it("leaves a filter it does not name unset rather than taking the stored one", () => {

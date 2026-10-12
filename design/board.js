@@ -21,7 +21,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -49,7 +48,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -77,7 +75,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -105,7 +102,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -131,7 +127,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-54",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-2",
     "validation"
@@ -158,7 +153,6 @@ window.BOARD = {
    "lane": "ready",
    "milestone": "m-51",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -185,7 +179,6 @@ window.BOARD = {
    "milestone": "m-69",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-69",
     "size-3"
    ],
@@ -208,7 +201,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-69",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -237,7 +229,6 @@ window.BOARD = {
    "milestone": "",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -266,7 +257,6 @@ window.BOARD = {
    "milestone": "m-53",
    "labels": [
     "kind-mechanical",
-    "needs-human",
     "size-1",
     "validation"
    ],
@@ -292,7 +282,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-53",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-2"
    ],
@@ -319,7 +308,6 @@ window.BOARD = {
    "milestone": "m-75",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-75",
     "size-3"
    ],
@@ -339,7 +327,6 @@ window.BOARD = {
    "milestone": "m-75",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-standard-high",
@@ -363,7 +350,6 @@ window.BOARD = {
    "milestone": "m-78",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-78",
     "size-3"
    ],
@@ -393,7 +379,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-78",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -419,7 +404,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-78",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-8"
    ],
@@ -446,7 +430,6 @@ window.BOARD = {
    "milestone": "m-80",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-80",
     "size-3"
    ],
@@ -488,7 +471,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-8"
    ],
@@ -525,7 +507,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -555,7 +536,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -591,7 +571,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-8"
    ],
@@ -628,7 +607,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -660,7 +638,6 @@ window.BOARD = {
    "milestone": "m-80",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-8"
    ],
    "assignee": "@agent-standard-high",
@@ -707,7 +684,6 @@ window.BOARD = {
    "milestone": "m-80",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-standard-high",
@@ -743,7 +719,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-8"
    ],
@@ -773,7 +748,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-8"
    ],
@@ -803,7 +777,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -833,7 +806,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -862,7 +834,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-81",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-1"
    ],
@@ -889,7 +860,6 @@ window.BOARD = {
    "milestone": "m-58",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-8"
    ],
    "assignee": "@agent-standard-high",
@@ -918,7 +888,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-58",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -945,7 +914,6 @@ window.BOARD = {
    "milestone": "m-58",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-1"
    ],
@@ -972,7 +940,6 @@ window.BOARD = {
    "milestone": "m-83",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-83",
     "size-3"
    ],
@@ -1000,7 +967,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-83",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -1027,7 +993,6 @@ window.BOARD = {
    "milestone": "m-85",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-85",
     "size-3"
    ],
@@ -1048,7 +1013,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-85",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -1066,7 +1030,6 @@ window.BOARD = {
    "milestone": "m-86",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-86",
     "size-3"
    ],
@@ -1095,7 +1058,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-86",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-2"
    ],
@@ -1121,7 +1083,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-86",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-1"
    ],
@@ -1148,7 +1109,6 @@ window.BOARD = {
    "milestone": "m-87",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-87",
     "size-3"
    ],
@@ -1173,7 +1133,6 @@ window.BOARD = {
    "milestone": "m-88",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-88",
     "size-3"
    ],
@@ -1199,7 +1158,6 @@ window.BOARD = {
    "milestone": "m-89",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-89",
     "size-3"
    ],
@@ -1224,7 +1182,6 @@ window.BOARD = {
    "milestone": "m-88",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-standard-high",
@@ -1253,7 +1210,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-89",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-2",
     "starpulse"
@@ -1275,7 +1231,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -1310,7 +1265,6 @@ window.BOARD = {
    "milestone": "m-87",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-5",
     "starpulse"
    ],
@@ -1344,7 +1298,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-87",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-2",
     "starpulse"
@@ -1368,7 +1321,6 @@ window.BOARD = {
    "lane": "in_progress",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-2"
    ],
@@ -1409,7 +1361,6 @@ window.BOARD = {
     "alert-investigation-handoff-alert-investigation-9438429d39fb2d28-human",
     "alert-owner-healthcheck-failed-dagu-jobs--host-a-cr-sweep",
     "kind-diagnose",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -1439,7 +1390,6 @@ window.BOARD = {
    "milestone": "m-94",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-94",
     "size-3"
    ],
@@ -1469,7 +1419,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-94",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-8"
    ],
@@ -1493,7 +1442,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-94",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -1520,7 +1468,6 @@ window.BOARD = {
    "milestone": "m-94",
    "labels": [
     "kind-diagnose",
-    "needs-human",
     "size-2"
    ],
    "assignee": "@agent-standard-high",
@@ -1559,7 +1506,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-1"
    ],
@@ -1586,7 +1532,6 @@ window.BOARD = {
    "milestone": "m-96",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-96",
     "size-3"
    ],
@@ -1618,7 +1563,6 @@ window.BOARD = {
    "milestone": "m-96",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-8"
    ],
    "assignee": "@agent-standard-high",
@@ -1654,7 +1598,6 @@ window.BOARD = {
    "milestone": "m-96",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-8"
    ],
    "assignee": "@agent-standard-high",
@@ -1690,7 +1633,6 @@ window.BOARD = {
    "milestone": "m-96",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-8"
    ],
    "assignee": "@agent-standard-high",
@@ -1725,7 +1667,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-96",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -1758,7 +1699,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -1787,7 +1727,6 @@ window.BOARD = {
    "milestone": "m-98",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-98",
     "size-3"
    ],
@@ -1806,7 +1745,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-98",
    "labels": [
-    "agent-resolvable",
     "execution-ready",
     "kind-execute",
     "size-5"
@@ -1831,7 +1769,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-92",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2",
     "starpulse"
@@ -1856,7 +1793,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-92",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-1",
     "starpulse"
@@ -1876,7 +1812,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-99",
    "labels": [
-    "agent-resolvable",
     "bin",
     "deploy",
     "kind-execute",
@@ -1903,7 +1838,6 @@ window.BOARD = {
    "milestone": "m-99",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-99",
     "size-3"
    ],
@@ -1937,7 +1871,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-99",
    "labels": [
-    "agent-resolvable",
     "bin",
     "deploy",
     "kind-execute",
@@ -1966,7 +1899,6 @@ window.BOARD = {
    "milestone": "m-99",
    "labels": [
     "agent-jobs",
-    "agent-resolvable",
     "bin",
     "kind-execute",
     "size-8"
@@ -1992,7 +1924,6 @@ window.BOARD = {
    "milestone": "m-99",
    "labels": [
     "agent-jobs",
-    "agent-resolvable",
     "bin",
     "kind-execute",
     "size-2"
@@ -2020,7 +1951,6 @@ window.BOARD = {
    "milestone": "m-99",
    "labels": [
     "agent-jobs",
-    "agent-resolvable",
     "bin",
     "kind-mechanical",
     "size-5"
@@ -2049,7 +1979,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-99",
    "labels": [
-    "agent-resolvable",
     "bin",
     "kind-mechanical",
     "size-3"
@@ -2074,7 +2003,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-99",
    "labels": [
-    "agent-resolvable",
     "bin",
     "kind-mechanical",
     "size-5",
@@ -2101,7 +2029,6 @@ window.BOARD = {
    "milestone": "m-102",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-deep-medium",
@@ -2125,7 +2052,6 @@ window.BOARD = {
    "milestone": "m-84",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-decide",
     "size-2"
    ],
@@ -2149,7 +2075,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "bin",
     "kind-execute",
     "size-2"
@@ -2176,7 +2101,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-100",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -2201,7 +2125,6 @@ window.BOARD = {
    "milestone": "m-100",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-standard-high",
@@ -2225,7 +2148,6 @@ window.BOARD = {
    "milestone": "m-100",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-standard-high",
@@ -2264,7 +2186,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-100",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -2291,7 +2212,6 @@ window.BOARD = {
    "milestone": "m-2",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-3",
     "testing"
    ],
@@ -2319,7 +2239,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-2",
     "skills"
    ],
@@ -2350,7 +2269,6 @@ window.BOARD = {
     "frigate",
     "kind-execute",
     "local-model",
-    "needs-human",
     "size-5",
     "nas"
    ],
@@ -2377,7 +2295,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2403,7 +2320,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2429,7 +2345,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2455,7 +2370,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2481,7 +2395,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2507,7 +2420,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2533,7 +2445,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2559,7 +2470,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2585,7 +2495,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2611,7 +2520,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2637,7 +2545,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2663,7 +2570,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2689,7 +2595,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -2715,7 +2620,6 @@ window.BOARD = {
    "milestone": "m-42",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-standard-high",
@@ -2742,7 +2646,6 @@ window.BOARD = {
    "labels": [
     "agent-profile",
     "kind-decide",
-    "needs-human",
     "size-2"
    ],
    "assignee": "@agent-deep-medium",
@@ -2767,7 +2670,6 @@ window.BOARD = {
    "lane": "ready",
    "milestone": "m-35",
    "labels": [
-    "agent-resolvable",
     "evaluation",
     "kind-execute",
     "size-3",
@@ -2795,7 +2697,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "host-a",
     "disk",
     "kind-execute",
@@ -2824,7 +2725,6 @@ window.BOARD = {
    "milestone": "m-2",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-2",
     "size-3"
    ],
@@ -2853,7 +2753,6 @@ window.BOARD = {
    "milestone": "m-35",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-35",
     "size-3"
    ],
@@ -2897,7 +2796,6 @@ window.BOARD = {
    "milestone": "m-42",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-42",
     "size-3"
    ],
@@ -2926,7 +2824,6 @@ window.BOARD = {
    "milestone": "m-44",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-44",
     "size-3"
    ],
@@ -2967,7 +2864,6 @@ window.BOARD = {
    "milestone": "m-49",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-49",
     "size-3"
    ],
@@ -2996,7 +2892,6 @@ window.BOARD = {
    "milestone": "m-35",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-deep-medium",
@@ -3026,7 +2921,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -3054,7 +2948,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -3082,7 +2975,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -3110,7 +3002,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -3138,7 +3029,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -3166,7 +3056,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -3194,7 +3083,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -3222,7 +3110,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -3250,7 +3137,6 @@ window.BOARD = {
    "labels": [
     "evaluation",
     "kind-decide",
-    "needs-human",
     "size-5",
     "skills"
    ],
@@ -3276,7 +3162,6 @@ window.BOARD = {
    "lane": "in_progress",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -3314,7 +3199,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-89",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -3338,7 +3222,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-100",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -3369,7 +3252,6 @@ window.BOARD = {
    "milestone": "m-100",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-100",
     "size-3"
    ],
@@ -3410,7 +3292,6 @@ window.BOARD = {
    "labels": [
     "adr-needed",
     "kind-execute",
-    "needs-human",
     "size-8"
    ],
    "assignee": "@agent-standard-high",
@@ -3434,7 +3315,6 @@ window.BOARD = {
    "milestone": "m-102",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-102",
     "size-3"
    ],
@@ -3456,7 +3336,6 @@ window.BOARD = {
    "milestone": "m-102",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -3483,7 +3362,6 @@ window.BOARD = {
    "milestone": "m-102",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-1"
    ],
@@ -3502,7 +3380,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-85",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -3532,7 +3409,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-103",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-8"
    ],
@@ -3550,7 +3426,6 @@ window.BOARD = {
    "milestone": "m-103",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-103",
     "size-3"
    ],
@@ -3571,7 +3446,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-103",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-3"
    ],
@@ -3588,7 +3462,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-103",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-5"
    ],
@@ -3605,7 +3478,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-98",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-3"
    ],
@@ -3622,7 +3494,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-98",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-2"
    ],
@@ -3648,7 +3519,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-98",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-2"
    ],
@@ -3674,7 +3544,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-98",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-1"
    ],
@@ -3700,7 +3569,6 @@ window.BOARD = {
    "labels": [
     "adr-needed",
     "kind-execute",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-standard-high",
@@ -3729,7 +3597,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-88",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -3754,7 +3621,6 @@ window.BOARD = {
    "milestone": "m-104",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-decide",
     "size-3"
    ],
@@ -3778,7 +3644,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-104",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-8"
    ],
@@ -3804,7 +3669,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-105",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -3829,7 +3693,6 @@ window.BOARD = {
    "milestone": "m-105",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-105",
     "size-3"
    ],
@@ -3852,7 +3715,6 @@ window.BOARD = {
    "milestone": "m-104",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-2"
    ],
    "assignee": "@agent-standard-medium",
@@ -3872,7 +3734,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-105",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -3897,7 +3758,6 @@ window.BOARD = {
    "milestone": "m-104",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-104",
     "size-3"
    ],
@@ -3922,7 +3782,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-105",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -3946,7 +3805,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-105",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -3972,7 +3830,6 @@ window.BOARD = {
    "labels": [
     "adr-needed",
     "kind-diagnose",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-standard-high",
@@ -3995,7 +3852,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-85",
    "labels": [
-    "agent-resolvable",
     "kind-mechanical",
     "size-1"
    ],
@@ -4020,7 +3876,6 @@ window.BOARD = {
    "milestone": "m-35",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-decide",
     "size-3"
    ],
@@ -4045,7 +3900,6 @@ window.BOARD = {
    "milestone": "m-102",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-decide",
     "size-2"
    ],
@@ -4070,7 +3924,6 @@ window.BOARD = {
    "milestone": "m-106",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-decide",
     "size-2"
    ],
@@ -4094,7 +3947,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-106",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -4120,7 +3972,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-106",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -4147,7 +3998,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-106",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -4179,7 +4029,6 @@ window.BOARD = {
    "milestone": "m-85",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -4203,7 +4052,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-106",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -4234,7 +4082,6 @@ window.BOARD = {
    "milestone": "m-85",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-1"
    ],
@@ -4261,7 +4108,6 @@ window.BOARD = {
    "milestone": "m-85",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-mechanical",
     "size-1"
    ],
@@ -4286,7 +4132,6 @@ window.BOARD = {
    "milestone": "m-85",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-mechanical",
     "size-1"
    ],
@@ -4311,7 +4156,6 @@ window.BOARD = {
    "milestone": "m-85",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-decide",
     "size-1"
    ],
@@ -4335,7 +4179,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-105",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -4359,7 +4202,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-35",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -4388,7 +4230,6 @@ window.BOARD = {
    "milestone": "m-75",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-5"
    ],
    "assignee": "@agent-standard-high",
@@ -4416,7 +4257,6 @@ window.BOARD = {
    "milestone": "m-75",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-standard-high",
@@ -4447,7 +4287,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-75",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -4471,7 +4310,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-75",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-1"
    ],
@@ -4496,7 +4334,6 @@ window.BOARD = {
    "milestone": "m-107",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-decide",
     "size-3"
    ],
@@ -4521,7 +4358,6 @@ window.BOARD = {
    "milestone": "m-107",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-107",
     "size-3"
    ],
@@ -4554,7 +4390,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-107",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-8"
    ],
@@ -4584,7 +4419,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-107",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -4614,7 +4448,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-107",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -4644,7 +4477,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-107",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-8"
    ],
@@ -4674,7 +4506,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-107",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -4702,7 +4533,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-78",
    "labels": [
-    "agent-resolvable",
     "kind-mechanical",
     "size-2"
    ],
@@ -4739,7 +4569,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-104",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -4767,7 +4596,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-104",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-1"
    ],
@@ -4796,7 +4624,6 @@ window.BOARD = {
    "milestone": "m-100",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -4825,7 +4652,6 @@ window.BOARD = {
    "milestone": "m-100",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-1"
    ],
@@ -4856,7 +4682,6 @@ window.BOARD = {
    "milestone": "m-88",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-mechanical",
     "size-1"
    ],
@@ -4893,7 +4718,6 @@ window.BOARD = {
    "milestone": "m-88",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-decide",
     "size-2"
    ],
@@ -4921,7 +4745,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -4950,7 +4773,6 @@ window.BOARD = {
    "milestone": "m-108",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -4979,7 +4801,6 @@ window.BOARD = {
    "milestone": "m-108",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-108",
     "size-3"
    ],
@@ -5010,7 +4831,6 @@ window.BOARD = {
    "milestone": "m-108",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -5039,7 +4859,6 @@ window.BOARD = {
    "milestone": "m-108",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-diagnose",
     "size-2"
    ],
@@ -5065,7 +4884,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-mechanical",
     "size-1"
    ],
@@ -5103,7 +4921,6 @@ window.BOARD = {
    "milestone": "m-100",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-standard-high",
@@ -5159,7 +4976,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -5187,7 +5003,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-1"
    ],
@@ -5209,7 +5024,6 @@ window.BOARD = {
    "milestone": "",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "ci",
     "kind-diagnose",
     "size-3"
@@ -5238,7 +5052,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-100",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -5268,7 +5081,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -5305,7 +5117,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-80",
    "labels": [
-    "agent-resolvable",
     "kind-mechanical",
     "size-1"
    ],
@@ -5336,7 +5147,6 @@ window.BOARD = {
    "milestone": "m-75",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -5366,7 +5176,6 @@ window.BOARD = {
    "labels": [
     "adr-needed",
     "kind-execute",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-standard-high",
@@ -5415,7 +5224,6 @@ window.BOARD = {
    "milestone": "m-100",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -5445,7 +5253,6 @@ window.BOARD = {
    "labels": [
     "adr-needed",
     "kind-execute",
-    "needs-human",
     "size-2"
    ],
    "assignee": "@agent-standard-medium",
@@ -5474,7 +5281,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-100",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-1"
    ],
@@ -5503,7 +5309,6 @@ window.BOARD = {
    "milestone": "",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -5538,7 +5343,6 @@ window.BOARD = {
    "milestone": "",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -5568,7 +5372,6 @@ window.BOARD = {
    "labels": [
     "adr-needed",
     "kind-execute",
-    "needs-human",
     "size-3"
    ],
    "assignee": "@agent-standard-high",
@@ -5597,7 +5400,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "alert-owner-mutation-survivor-aged",
     "alert-owner-mutation-sweep-stale",
     "unattended"
@@ -5626,7 +5428,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -5654,7 +5455,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-3"
    ],
@@ -5690,7 +5490,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-5"
    ],
@@ -5719,7 +5518,6 @@ window.BOARD = {
    "milestone": "",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-2"
    ],
@@ -5748,7 +5546,6 @@ window.BOARD = {
    "milestone": "",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-diagnose",
     "size-1"
    ],
@@ -5778,7 +5575,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-89",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-1"
    ],
@@ -5806,7 +5602,6 @@ window.BOARD = {
    "lane": "in_progress",
    "milestone": "m-89",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-2",
     "starpulse"
@@ -5849,7 +5644,6 @@ window.BOARD = {
    "lane": "review",
    "milestone": "m-89",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-2"
    ],
@@ -5886,7 +5680,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-89",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3",
     "starpulse"
@@ -5915,7 +5708,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-87",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5",
     "starpulse"
@@ -5953,7 +5745,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "m-87",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-2",
     "starpulse"
@@ -5982,7 +5773,6 @@ window.BOARD = {
    "lane": "in_progress",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-3"
    ],
@@ -6024,7 +5814,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-87",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3",
     "starpulse"
@@ -6053,7 +5842,6 @@ window.BOARD = {
    "lane": "in_progress",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-diagnose",
     "size-5"
    ],
@@ -6096,7 +5884,6 @@ window.BOARD = {
    "milestone": "m-87",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-2",
     "starpulse"
    ],
@@ -6126,7 +5913,6 @@ window.BOARD = {
    "lane": "done",
    "milestone": "m-87",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-3"
    ],
@@ -6154,7 +5940,6 @@ window.BOARD = {
    "lane": "waiting",
    "milestone": "",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-1"
    ],
@@ -6192,7 +5977,6 @@ window.BOARD = {
    "milestone": "",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],
@@ -6232,7 +6016,6 @@ window.BOARD = {
    "milestone": "",
    "labels": [
     "adr-needed",
-    "agent-resolvable",
     "kind-diagnose",
     "size-5"
    ],
@@ -6275,7 +6058,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6319,7 +6101,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "retro-m-109",
     "size-3"
    ],
@@ -6362,7 +6143,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6406,7 +6186,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6450,7 +6229,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6494,7 +6272,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6538,7 +6315,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6582,7 +6358,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6626,7 +6401,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6670,7 +6444,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6714,7 +6487,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-decide",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6758,7 +6530,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-2",
     "starpulse",
     "ui"
@@ -6802,7 +6573,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-diagnose",
-    "needs-human",
     "size-3",
     "starpulse",
     "ui"
@@ -6846,7 +6616,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-2",
     "starpulse",
     "ui"
@@ -6890,7 +6659,6 @@ window.BOARD = {
    "milestone": "m-109",
    "labels": [
     "kind-execute",
-    "needs-human",
     "size-8",
     "starpulse",
     "ui"
@@ -6933,7 +6701,6 @@ window.BOARD = {
    "lane": "in_progress",
    "milestone": "m-109",
    "labels": [
-    "agent-resolvable",
     "kind-decide",
     "size-2",
     "starpulse",
@@ -6977,7 +6744,6 @@ window.BOARD = {
    "lane": "in_progress",
    "milestone": "m-69",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-5"
    ],
@@ -7019,7 +6785,6 @@ window.BOARD = {
    "lane": "in_progress",
    "milestone": "m-69",
    "labels": [
-    "agent-resolvable",
     "kind-execute",
     "size-3"
    ],

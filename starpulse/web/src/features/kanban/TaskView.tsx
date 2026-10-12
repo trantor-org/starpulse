@@ -74,8 +74,8 @@ function Select({ value, options, label, onChange, ...f }: FieldProps & {
 }
 
 /** Labels in the rail's read table: a chip each, with the one that needs the operator highlighted. */
-function ChipList({ values, flag }: { values: string[]; flag: string }) {
-  return values.length ? <span className="chips">{values.map((v) => <span key={v} className={`chip${v === flag ? " nh" : ""}`}>{v}</span>)}</span> : <span className="k">—</span>;
+function ChipList({ values }: { values: string[] }) {
+  return values.length ? <span className="chips">{values.map((v) => <span key={v} className="chip">{v}</span>)}</span> : <span className="k">—</span>;
 }
 
 const LanePill = ({ lane, name, small = false }: { lane: string; name: string; small?: boolean }) =>
@@ -481,7 +481,7 @@ export function TaskView(p: TaskViewProps) {
               <table className="props"><tbody>
                 <tr><td>profile</td><td>{editing === "details" ? <Select {...fp("profile", "details")} label="Profile" value={draft.profile} options={[["", "unassigned"], ...p.profiles.map((v): [string, string] => [v, v])]} onChange={(value) => change("profile", value)} /> : draft.profile || "—"}</td></tr>
                 <tr><td>priority</td><td>{editing === "details" ? <Select {...fp("priority", "details")} label="Priority" value={priorityValue(draft.priority)} options={[["", "—"], ...PRIORITIES.map((v): [string, string] => [v, v])]} onChange={(value) => change("priority", value)} /> : priorityValue(draft.priority) || "—"}</td></tr>
-                <tr><td>labels</td><td><ChipList values={draft.labels} flag="needs-human" /></td></tr>
+                <tr><td>labels</td><td><ChipList values={draft.labels} /></td></tr>
                 <tr><td>milestone</td><td>{editing === "details" ? <Select {...fp("milestone", "details")} label="Milestone" value={draft.milestone} options={[["", "—"], ...p.milestones.map((v): [string, string] => [v, v])]} onChange={(value) => change("milestone", value)} /> : draft.milestone || "—"}</td></tr>
                 <tr><td>created</td><td><span className="k">{p.task.created ? `${ago(p.now - p.task.created)} ago` : "—"}</span></td></tr>
               </tbody></table>

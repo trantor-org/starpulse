@@ -1,4 +1,4 @@
-// Mockup layer (TASK-2633): the Admin view injected over a self-contained capture of the live StarPulse page.
+// Mockup layer (DEMO-5): the Admin view injected over a self-contained capture of the live StarPulse page.
 // Client settings persist in localStorage; the server's history window is simulated, including its refusals.
 (() => {
   const KEY = "fv.admin.prefs";
@@ -207,9 +207,9 @@
     <section class="card"><h2>Preview</h2><div class="pv">
       <div class="pvk">Star Map label</div><canvas id="ad-pv"></canvas>
       <div class="pvk">Kanban card</div>
-      <div class="pvcard"><div class="top"><span class="id">TASK-2633</span><span class="pr"><i></i>#2094</span></div>
+      <div class="pvcard"><div class="top"><span class="id">DEMO-5</span><span class="pr"><i></i>#2094</span></div>
         <div class="t">Design the StarPulse settings page (font size first)</div>
-        <div class="foot2"><span class="lab">feature</span><span class="lab">size-3</span><span class="lab">needs-human</span></div></div>
+        <div class="foot2"><span class="lab">feature</span><span class="lab">size-3</span><span class="lab">adr-needed</span></div></div>
     </div></section></div>`;
   }
 

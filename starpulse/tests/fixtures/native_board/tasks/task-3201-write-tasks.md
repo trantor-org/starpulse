@@ -8,7 +8,7 @@ assignee:
   - '@agent-standard-high'
 created_date: '2026-10-07 21:53'
 labels:
-  - agent-resolvable
+  - adr-needed
   - kind-execute
   - size-8
 milestone: m-115
