@@ -122,10 +122,6 @@ def build(
         if loop is not None:
             loop.wake()
 
-    def sampled() -> None:
-        if loop is not None:
-            loop.sampled()
-
     sampler = Sampler(
         policy.limits,
         probe or LocalProbe(),
@@ -133,7 +129,6 @@ def build(
         review=lambda: review_points(feed.open_tasks(), policy.review_lane, policy.unsized_points),
         on_crossing=crossed,
         clock=clock,
-        on_sample=sampled,
     )
     toggle = Toggle(log, state_dir / TOGGLE_FILE)
     if start is not None and settle is not None:
