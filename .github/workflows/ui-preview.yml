@@ -2,8 +2,8 @@ name: UI preview
 
 # Both paths filters are `UI_GLOBS` in ci/ui_preview.py; its test holds them equal.
 #
-# Every open UI pull request publishes its scrubbed demos to the public trantor-org/starpulse-demo Pages repository,
-# under pr-<N>/, and links them in its description; closing the pull request unpublishes them, which is why that
+# Every open UI pull request publishes its scrubbed demos to the gh-pages branch of this public repository, which GitHub Pages
+# serves, under pr-<N>/, and links them in its description; closing the pull request unpublishes them, which is why that
 # event starts a run too. A push to main, or a dispatch, republishes main/, the live demo and screenshots the README shows.
 on:
   pull_request:
@@ -50,6 +50,9 @@ jobs:
     # The server uses an isolated SQLite database for the preview.
     runs-on: [self-hosted, validate]
     timeout-minutes: 20
+    # The run's own token writes the gh-pages branch; the ruleset protects only the default branch.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,35 +77,20 @@ jobs:
         working-directory: starpulse/web
         run: pnpm install --frozen-lockfile && pnpm run build
 
-      # Writes to the public demo repository only. A missing App install on starpulse-demo must not leave this check
-      # FAILURE: wait_ci treats that as terminal even when the job has continue-on-error.
-      - name: Mint demo repository token
-        id: demo-token
-        continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: starpulse-demo
-          permission-contents: write
-
       - name: Publish main's live demo
-        if: >-
-          steps.demo-token.outcome == 'success' &&
-          github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
-          DEMO_TOKEN: ${{ steps.demo-token.outputs.token }}
+          DEMO_TOKEN: ${{ github.token }}
         run: uv run python ci/ui_preview.py --main
 
       - name: Render and post the screenshots
-        if: steps.demo-token.outcome == 'success' && github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request'
         env:
           # `gh pr comment --attach` is the only way to upload a screenshot into a comment, and it refuses an App or
           # Actions token ("unsupported authentication type"), so the comment is posted as RENOVATE_TOKEN's user, the
           # PAT the trantor workspace's own UI preview posts with.
           GH_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
-          DEMO_TOKEN: ${{ steps.demo-token.outputs.token }}
+          DEMO_TOKEN: ${{ github.token }}
           ACTION: ${{ github.event.action }}
         run: >-
           uv run python ci/ui_preview.py
