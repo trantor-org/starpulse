@@ -482,6 +482,90 @@
       "title": "CaseRef",
       "type": "object"
     },
+    "Cell": {
+      "additionalProperties": false,
+      "description": "Median steps per clean completion of one kind and size, over its latest-fifth holdout.",
+      "properties": {
+        "clean_rate": {
+          "type": "number"
+        },
+        "completions": {
+          "description": "Completions in the cell, clean or not.",
+          "type": "integer"
+        },
+        "holdout": {
+          "description": "The latest fifth of the clean completions by end time, rounded up.",
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "median_operator_prompts": {
+          "description": "Human prompts after the task's claim.",
+          "type": "number"
+        },
+        "median_steps": {
+          "description": "Of the holdout's steps, a subagent's included.",
+          "type": "number"
+        },
+        "median_steps_before_edit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "None when no holdout task made an edit."
+        },
+        "n": {
+          "description": "Clean completions in the cell.",
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "size",
+        "n",
+        "completions",
+        "clean_rate",
+        "holdout",
+        "median_steps",
+        "median_operator_prompts",
+        "median_steps_before_edit"
+      ],
+      "title": "Cell",
+      "type": "object"
+    },
+    "Cells": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/cells`: cells with at least 5 clean completions; a smaller cell reports nothing.",
+      "properties": {
+        "cells": {
+          "items": {
+            "$ref": "#/$defs/Cell"
+          },
+          "type": "array"
+        },
+        "now": {
+          "type": "number"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "cells"
+      ],
+      "title": "Cells",
+      "type": "object"
+    },
     "ChainState": {
       "additionalProperties": false,
       "properties": {
@@ -6482,6 +6566,89 @@
       "title": "Transition",
       "type": "object"
     },
+    "TransitionCost": {
+      "additionalProperties": false,
+      "description": "The cost of one skill in force, within one kind and size of task.",
+      "properties": {
+        "agent_s": {
+          "description": "The seconds of the steps' requests and tool calls.",
+          "type": "number"
+        },
+        "kind": {
+          "description": "The `kind-*` label of the tasks, without the prefix.",
+          "type": "string"
+        },
+        "peak_context": {
+          "description": "The most input, cache-read and cache-write tokens one request held.",
+          "type": "integer"
+        },
+        "side_steps": {
+          "description": "The subagents' share of `steps`.",
+          "type": "integer"
+        },
+        "size": {
+          "description": "The `size-*` label of the tasks.",
+          "type": "integer"
+        },
+        "skill": {
+          "description": "The skill in force on the steps; `none` before any load.",
+          "type": "string"
+        },
+        "steps": {
+          "description": "Model requests, a subagent's included.",
+          "type": "integer"
+        },
+        "tasks": {
+          "type": "integer"
+        },
+        "wasted_rate": {
+          "type": "number"
+        },
+        "wasted_steps": {
+          "description": "Steps with a call that failed, was refused by a guard or hook, or repeats the command before it.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "size",
+        "skill",
+        "tasks",
+        "steps",
+        "side_steps",
+        "wasted_steps",
+        "wasted_rate",
+        "agent_s",
+        "peak_context"
+      ],
+      "title": "TransitionCost",
+      "type": "object"
+    },
+    "Transitions": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/transitions`: what each skill cost within each kind and size, Codex left out.",
+      "properties": {
+        "now": {
+          "type": "number"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/TransitionCost"
+          },
+          "type": "array"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "transitions"
+      ],
+      "title": "Transitions",
+      "type": "object"
+    },
     "UnknownLaneWarning": {
       "additionalProperties": false,
       "description": "A lane that is no Board state.",
@@ -6760,6 +6927,9 @@
     "build": {
       "$ref": "#/$defs/BuildEvent"
     },
+    "cells": {
+      "$ref": "#/$defs/Cells"
+    },
     "contractReport": {
       "$ref": "#/$defs/ContractReport"
     },
@@ -6927,6 +7097,9 @@
     "trajectories": {
       "$ref": "#/$defs/Trajectories"
     },
+    "transitions": {
+      "$ref": "#/$defs/Transitions"
+    },
     "whatIf": {
       "$ref": "#/$defs/WhatIf"
     },
@@ -6948,6 +7121,8 @@
     "health",
     "sessions",
     "sessionSteps",
+    "transitions",
+    "cells",
     "missedLoads",
     "traceClusters",
     "level",

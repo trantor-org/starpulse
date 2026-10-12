@@ -799,6 +799,53 @@ class SessionSteps(_Api):
     steps: list[SessionStep]
 
 
+class TransitionCost(_Api):
+    """The cost of one skill in force, within one kind and size of task."""
+
+    kind: str = Field(description="The `kind-*` label of the tasks, without the prefix.")
+    size: int = Field(description="The `size-*` label of the tasks.")
+    skill: str = Field(description="The skill in force on the steps; `none` before any load.")
+    tasks: int
+    steps: int = Field(description="Model requests, a subagent's included.")
+    side_steps: int = Field(description="The subagents' share of `steps`.")
+    wasted_steps: int = Field(
+        description="Steps with a call that failed, was refused by a guard or hook, or repeats the command before it."
+    )
+    wasted_rate: float
+    agent_s: float = Field(description="The seconds of the steps' requests and tool calls.")
+    peak_context: int = Field(description="The most input, cache-read and cache-write tokens one request held.")
+
+
+class Transitions(_Api):
+    """`GET /api/analytics/transitions`: what each skill cost within each kind and size, Codex left out."""
+
+    now: float
+    window_s: float
+    transitions: list[TransitionCost]
+
+
+class Cell(_Api):
+    """Median steps per clean completion of one kind and size, over its latest-fifth holdout."""
+
+    kind: str
+    size: int
+    n: int = Field(description="Clean completions in the cell.")
+    completions: int = Field(description="Completions in the cell, clean or not.")
+    clean_rate: float
+    holdout: int = Field(description="The latest fifth of the clean completions by end time, rounded up.")
+    median_steps: float = Field(description="Of the holdout's steps, a subagent's included.")
+    median_operator_prompts: float = Field(description="Human prompts after the task's claim.")
+    median_steps_before_edit: float | None = Field(description="None when no holdout task made an edit.")
+
+
+class Cells(_Api):
+    """`GET /api/analytics/cells`: cells with at least 5 clean completions; a smaller cell reports nothing."""
+
+    now: float
+    window_s: float
+    cells: list[Cell]
+
+
 class CaseRef(_Api):
     """One session's work on one task (`task` None: a branch that names none)."""
 
@@ -1633,6 +1680,8 @@ RESPONSES: dict[str, Any] = {
     "/api/analytics/health": Health,
     "/api/analytics/sessions": Sessions,
     "/api/analytics/steps": SessionSteps,
+    "/api/analytics/transitions": Transitions,
+    "/api/analytics/cells": Cells,
     "/api/analytics/missed-loads": MissedLoads,
     "/api/analytics/trace-clusters": TraceClusters,
     "/api/level": Level,
@@ -1689,6 +1738,8 @@ BODIES: dict[str, Any] = {
     "health": Health | ApiError,
     "sessions": Sessions | ApiError | WindowTooLong,
     "session_steps": SessionSteps | ApiError | WindowTooLong,
+    "transitions": Transitions | ApiError | WindowTooLong,
+    "cells": Cells | ApiError | WindowTooLong,
     "missed_loads": MissedLoads | ApiError | WindowTooLong,
     "trace_clusters": TraceClusters | ApiError | WindowTooLong,
     "level": Level | ApiError | WindowTooLong,
@@ -1816,6 +1867,8 @@ class ApiContract(_Api):
     health: Health
     sessions: Sessions
     sessionSteps: SessionSteps
+    transitions: Transitions
+    cells: Cells
     missedLoads: MissedLoads
     traceClusters: TraceClusters
     level: Level

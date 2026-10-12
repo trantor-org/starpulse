@@ -27,6 +27,10 @@ internal and can change in any release.
 - `GET /api/analytics/steps` and its body in `api.schema.json`: one record per model request, with the skill in
   force, the activities and keys of its tool calls and its tokens (see
   [Connect sources](sources.md#read-each-step-of-a-session)), and `starpulse analytics steps [--hours]` that reads it.
+- `GET /api/analytics/transitions` and `GET /api/analytics/cells` and their bodies in `api.schema.json`: the cost of each
+  skill within a kind and size of task, and the median steps per clean completion of each kind and size (see
+  [Connect sources](sources.md#price-each-transition-and-report-each-cell)), and `starpulse analytics transitions|cells
+  [--hours]` that read them.
 - `starpulse search QUERY` and its route `GET /api/search?q=`: the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
 - `GET /api/analytics/missed-loads` and `GET /api/analytics/trace-clusters` and their bodies in `api.schema.json`:
   the skills a session did not load for work that should have loaded them, and the work that recurs across sessions

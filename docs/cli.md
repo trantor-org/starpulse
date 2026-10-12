@@ -32,6 +32,8 @@ starpulse analytics gates --task PROJ-45         # which gates a run can bypass,
 starpulse analytics forecast --task PROJ-45      # where a run still going is likely to end, and in how many days
 starpulse analytics what-if --from review --to in_progress --p 0.1  # the change in the goal and days
 starpulse analytics steps --hours 24             # one row per model request: skill in force, activities, keys, tokens
+starpulse analytics transitions --hours 168      # per kind x size x skill: steps, wasted-step rate, agent seconds, peak context
+starpulse analytics cells --hours 720            # per kind x size: median steps per clean completion on a latest-fifth holdout
 starpulse snapshot                               # everything the page draws, as one document
 starpulse doctor                                 # does this install work: each check passes or fails, with why
 starpulse skills install --claude --codex        # copy the bundled skills into .claude/skills and .agents/skills
@@ -97,6 +99,8 @@ lists exactly the verbs there are.
 | `analytics forecast` | `--hours`, `--task` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `forecast` and `calibration`, below; `--task` keeps one run and exits 4 when it has no run still going; refusals as `analytics level` |
 | `analytics what-if` | `--from`, `--to`, `--p`, `--hours` | `now`, `window_s`, `history_s`, `machine`, `goal`, `ended`, `from`, `to`, `p`, `was`, `n`, `start`, `p_goal`, `expected_days` and `chain`, below; a what-if the chain cannot answer exits 1; refusals as `analytics level` |
 | `analytics steps` | `--hours` | `now`, `window_s` and `steps`, each `{harness, session, task, at, model, origin, skill, activities, keys, tokens, captured}`, below; a window that is no positive number or is longer than the telemetry history exits 1 and a server that receives no telemetry exits 3 |
+| `analytics transitions` | `--hours` | `now`, `window_s` and `transitions`, each `{kind, size, skill, tasks, steps, side_steps, wasted_steps, wasted_rate, agent_s, peak_context}`, below; refusals as `analytics steps` |
+| `analytics cells` | `--hours` | `now`, `window_s` and `cells`, each `{kind, size, n, completions, clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, below; refusals as `analytics steps` |
 | `config check` | `--config` | `ok`, `file`, `unknown_keys`, `errors` and `config`, the effective config with every default filled in (null when it does not load); exit 1 when it does not load |
 | `demo` | `--out`, `--mockup`, `--server` | `written`: the HTML file; it reads the server's snapshot, or a design mockup directory with `--mockup` |
 | `doctor` | `--config` | `ok` and `checks`: each `{check, status, reason}`, `status` `pass`, `warn` or `fail`; exit 1 when any fails, never for a warning |
@@ -204,6 +208,11 @@ window, oldest first, that [Connect sources](sources.md#read-each-step-of-a-sess
 most recently loaded in the session, `none` before any load; `activities` and `keys` hold one entry per tool call
 the step made, a key being the command the server's redactor left, else the tool's name; `tokens` is
 `{input, output, cache_read, cache_write, reasoning}`.
+
+`analytics transitions` reads `GET /api/analytics/transitions[?hours=N]` and `analytics cells` reads
+`GET /api/analytics/cells[?hours=N]`, each with the window and refusals of `analytics steps`. They place a task by its
+board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither report, and neither ranks a Codex step.
+[Connect sources](sources.md#price-each-transition-and-report-each-cell) defines their columns and what they cannot see.
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
 the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}` with `actor` `operator` when

@@ -31,6 +31,7 @@ export interface ApiContract {
   )[];
   autopilotStatus: AutopilotStatus;
   build: BuildEvent;
+  cells: Cells;
   contractReport: ContractReport;
   docShown: DocShown;
   docs: Docs;
@@ -79,6 +80,7 @@ export interface ApiContract {
   taskRecord: TaskRecord;
   traceClusters: TraceClusters;
   trajectories: Trajectories;
+  transitions: Transitions;
   whatIf: WhatIf;
   windowState: WindowState;
 }
@@ -242,6 +244,46 @@ export interface AutopilotNext {
  */
 export interface BuildEvent {
   id: string;
+}
+/**
+ * `GET /api/analytics/cells`: cells with at least 5 clean completions; a smaller cell reports nothing.
+ */
+export interface Cells {
+  cells: Cell[];
+  now: number;
+  window_s: number;
+}
+/**
+ * Median steps per clean completion of one kind and size, over its latest-fifth holdout.
+ */
+export interface Cell {
+  clean_rate: number;
+  /**
+   * Completions in the cell, clean or not.
+   */
+  completions: number;
+  /**
+   * The latest fifth of the clean completions by end time, rounded up.
+   */
+  holdout: number;
+  kind: string;
+  /**
+   * Human prompts after the task's claim.
+   */
+  median_operator_prompts: number;
+  /**
+   * Of the holdout's steps, a subagent's included.
+   */
+  median_steps: number;
+  /**
+   * None when no holdout task made an edit.
+   */
+  median_steps_before_edit: number | null;
+  /**
+   * Clean completions in the cell.
+   */
+  n: number;
+  size: number;
 }
 /**
  * The contract checks `starpulse doctor` runs; `ok` is false when any fails.
@@ -1931,6 +1973,53 @@ export interface Variant {
   count: number;
   path: string[];
   share: number;
+}
+/**
+ * `GET /api/analytics/transitions`: what each skill cost within each kind and size, Codex left out.
+ */
+export interface Transitions {
+  now: number;
+  transitions: TransitionCost[];
+  window_s: number;
+}
+/**
+ * The cost of one skill in force, within one kind and size of task.
+ */
+export interface TransitionCost {
+  /**
+   * The seconds of the steps' requests and tool calls.
+   */
+  agent_s: number;
+  /**
+   * The `kind-*` label of the tasks, without the prefix.
+   */
+  kind: string;
+  /**
+   * The most input, cache-read and cache-write tokens one request held.
+   */
+  peak_context: number;
+  /**
+   * The subagents' share of `steps`.
+   */
+  side_steps: number;
+  /**
+   * The `size-*` label of the tasks.
+   */
+  size: number;
+  /**
+   * The skill in force on the steps; `none` before any load.
+   */
+  skill: string;
+  /**
+   * Model requests, a subagent's included.
+   */
+  steps: number;
+  tasks: number;
+  wasted_rate: number;
+  /**
+   * Steps with a call that failed, was refused by a guard or hook, or repeats the command before it.
+   */
+  wasted_steps: number;
 }
 /**
  * `GET /api/level/what-if`: the chain with one transition's probability changed, from the usual first state.
