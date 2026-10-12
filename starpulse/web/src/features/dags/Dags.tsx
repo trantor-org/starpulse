@@ -1,12 +1,12 @@
 // The DAGs view: a view of its own beside the Kanban, in the Kanban's frame. A catalog with a fold per domain and a row per DAG:
 // its state dot, its steps as a small constellation, its last run, its pool and its first Board tie, and on a run-safe row the
 // Kanban's ▶ edge strip. It reuses the Kanban's filter chips, menus and folds, and draws each DAG's steps as the Star Map's DAG bodies do (StepStar).
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { same } from "../../api/same";
 import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
 import { DagModal } from "./DagModal";
 import { lastLine, Orb, poolText, Strip, TieChip, type LedgerGo } from "./DagParts";
-import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rows, short, ties, type DagData, type Phase, type Row, type Tie } from "./dags";
+import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rowEstimate, rows, short, ties, type DagData, type Phase, type Row, type Tie } from "./dags";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { useViewActive } from "../../shared/Kept";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
@@ -14,6 +14,15 @@ import { refused, startRun } from "../../render/panels";
 import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 
 type Post = Parameters<typeof startRun>[1];
+
+/** The phone layout: a row takes two lines (the stylesheet's `max-width: 900px` query). */
+const PHONE = "(max-width: 900px)";
+const phone = () => window.matchMedia?.(PHONE).matches ?? false;
+const onPhone = (change: () => void) => {
+  const q = window.matchMedia?.(PHONE);
+  q?.addEventListener("change", change);
+  return () => q?.removeEventListener("change", change);
+};
 
 /** Run now: the Kanban's ▶ edge strip on a run-safe DAG's row; none on the rest, as on a card that cannot start. */
 function RunBtn({ r, why, run }: { r: Row; why: string | null; run: (r: Row) => void }) {
@@ -67,6 +76,7 @@ function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle, spot }
 }) {
   const doms = [...new Set([...data.domains.map((d) => d.name), ...rs.map((r) => r.domain)])].filter((d) => rs.some((r) => r.domain === d));
   let row = 0;
+  const estimate = rowEstimate(useSyncExternalStore(onPhone, phone), Number(document.documentElement.style.getPropertyValue("--fs")) || 1);
   return (
     <Viewport id="catalog">
       <div className="thead"><span /><span>DAG</span><span>Steps</span><span>Last run</span><span>Pool</span><span>Board</span><span /></div>
@@ -76,7 +86,7 @@ function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle, spot }
           <Fold key={d} k={`cat|${d}`} title={<>{d} <Census rs={list} /></>} n={list.length} folded={folded} toggle={toggle}>
             {list.map((r) => {
               const at = row++;
-              return <ViewportRow key={r.d.name} initial={at < 24} estimate={47} force={r.d.name === spot}>
+              return <ViewportRow key={r.d.name} initial={at < 24} estimate={estimate} force={r.d.name === spot}>
                 <DagRow r={r} now={now} spot={r.d.name === spot} why={why(r)} pool={poolText(data.pools, r)} tie={ties(data, r.d.name)[0]} ledger={ledger} run={run} open={open} />
               </ViewportRow>;
             })}

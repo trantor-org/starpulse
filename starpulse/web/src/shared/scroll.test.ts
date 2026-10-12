@@ -5,9 +5,19 @@ const css = sheet.replace(/\/\*[\s\S]*?\*\//g, "");
 const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: m[1].trim(), body: m[2] }));
 const scrolls = (body: string) => /overflow(-[xy])?\s*:\s*(auto|scroll)/.test(body);
 
+/** The one box that scrolls sideways: an open DAG's chart at phone width, which keeps the size its step names are read at. */
+const CHART = "#kbm .dgm .chart";
+
 describe("the page's scrolling boxes", () => {
+  it("scroll sideways in the open DAG's chart alone, and only at phone width", () => {
+    const sideways = rules.filter((r) => /overflow-x\s*:\s*(auto|scroll)/.test(r.body));
+    expect(sideways.map((r) => r.sel)).toEqual([CHART]);
+    const phone = css.slice(css.indexOf("@media (max-width: 900px) {", css.indexOf("Phone width.")));
+    expect(phone).toContain(`${CHART} { overflow-x: auto;`);
+  });
+
   it("scroll in one rule only: vertically, never sideways, with the Kanban columns' thin scrollbar", () => {
-    const scrolling = rules.filter((r) => scrolls(r.body));
+    const scrolling = rules.filter((r) => scrolls(r.body) && r.sel !== CHART);
     expect(scrolling.map((r) => r.sel)).toHaveLength(1);
     const [rule] = scrolling;
     expect(rule.body).toMatch(/overflow-x:\s*hidden/);

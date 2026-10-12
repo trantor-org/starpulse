@@ -1038,11 +1038,49 @@ svg.dstrip.big text.hot { fill: var(--run-text); }
   #kb .lanes button:focus-visible { outline: 1px solid var(--agent); outline-offset: 1px; }
   #kb .col:not(.on) { display: none; }
 
-  /* the task view fills the phone and covers the bar; a DAG's view is the DAGs slice's */
+  /* the task view fills the phone and covers the bar */
   #kbm .modal.tv:not(.dgm) { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border-inline: 0; }
   #kbm .modal.tv:not(.dgm) :is(.tvhead, .tvcol) { padding-inline: 14px; }
   /* the Move to menu is how a card changes lane here: it hangs from the whole header, so it stays inside the viewport wherever the actions wrap to */
   #kbm .modal.tv:not(.dgm) .tvhead { position: relative; }
   #kbm .modal.tv:not(.dgm) .tvhead .mv { position: static; }
   #kbm .modal.tv:not(.dgm) .tvhead .mvmenu { left: 14px; right: 14px; min-width: 0; }
+
+  /* A DAG's view fills the phone and covers the bar as the task view does. Its chart keeps the size its step names are read at and scrolls
+     inside its own box, the one place the page scrolls sideways; scaled to the phone's width the names were 4px tall. */
+  #kbm .modal.tv.dgm { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border-inline: 0; }
+  #kbm .dgm .tvhead { padding: 14px 44px 12px 14px; }
+  #kbm .dgm .tvbody { padding: 14px; }
+  #kbm .dgm .chart { overflow-x: auto; padding-bottom: 8px; }
+  #kbm .dgm .chart svg { max-width: none; }
+  #kbm .dgm .tierow { flex-wrap: wrap; gap: 4px 10px; }
+  #kbm .dgm .tierow .tie { max-width: 100%; }
+  #kbm .dgm .tierow .lgnote { margin-left: 0; white-space: normal; }
+  #kbm .dgm .tvfoot { padding-inline: 14px; }
+
+  /* DAGs: a row is two lines, the DAG and its last run over its steps, pool and board tie; the column header has nothing left to name. */
+  #dg .fw:has(#dgq) { flex: 1 1 100%; }
+  #dg .fw #dgq { width: 100%; box-sizing: border-box; }
+  #dg .thead { display: none; }
+  #dg .trow { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; padding-block: 8px; contain-intrinsic-size: auto calc(26px + 32px * var(--fs)); }
+  #dg .trow::before { content: ""; order: 2; flex: 0 0 100%; height: 5px; }
+  #dg .trow > :is(.orb, .nm, .last) { order: 1; }
+  /* a name and a last run too long to share the line take one each, neither cut short */
+  #dg .trow > .nm { flex: 0 1 auto; max-width: calc(100% - 14px - 10px); }
+  #dg .trow > .last { flex: 0 1 auto; margin-left: auto; }
+  /* the steps keep a width they can be read at; a pool and a tie too wide to sit beside them take the next line */
+  #dg .trow > :is(svg.dstrip, .pool, .pool + span) { order: 3; }
+  #dg .trow > svg.dstrip { flex: 1 1 calc(96px * var(--fs)); min-width: calc(96px * var(--fs)); width: auto; }
+  #dg .trow > .pool { flex: 0 1 auto; }
+  #dg .trow > .pool + span { flex: 0 1 auto; margin-left: auto; display: flex; max-width: 100%; }
+  #dg .trow > .pool + span:has(> .none) { display: none; }
+  #dg .trow > .play.edge + *, #dg .trow > span:empty { display: none; }
+  .dtoast { max-width: 100%; }
+
+  /* Admin: a setting's name and hint sit over its control */
+  #admin .row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  #admin .seg { max-width: 100%; flex-wrap: wrap; }
+  #admin .card h2 { flex-wrap: wrap; gap: 2px 10px; }
+  #admin :is(.card h2, .row, .foot, .pv) { padding-inline: 12px; }
+  #admin .grid { padding-bottom: var(--pm); }
 }
