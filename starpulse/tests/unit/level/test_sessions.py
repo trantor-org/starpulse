@@ -153,6 +153,15 @@ def test_a_model_or_effort_that_changes_between_main_requests_counts_and_an_unkn
     assert (row["model_changes"], row["effort_changes"]) == (1, 1)
     assert (row["models"], row["efforts"]) == (["a", "b", "c"], ["low", "high"])
     assert (row["requests"], row["side_requests"]) == (4, 1)
+    assert (row["main_model"], row["main_effort"]) == ("a", "low")
+
+
+def test_a_side_request_before_the_first_main_request_does_not_set_the_main_model() -> None:
+    found = [sig("request", 1, model="title", effort="low", origin="side"), sig("request", 2, model="big", effort="high")]
+
+    row = only(session_health(found, KEYS))
+
+    assert (row["models"], row["main_model"], row["main_effort"]) == (["title", "big"], "big", "high")
 
 
 def test_rejections_compactions_skills_and_interrupts_are_counted_by_their_name() -> None:

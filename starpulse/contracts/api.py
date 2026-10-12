@@ -717,6 +717,8 @@ class SessionHealth(_Api):
     interrupts: int
     models: list[str]
     efforts: list[str]
+    main_model: str | None
+    main_effort: str | None
     model_changes: int
     effort_changes: int
     tokens: TokenCounts

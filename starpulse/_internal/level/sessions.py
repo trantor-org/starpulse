@@ -100,6 +100,8 @@ def _empty(s: Signal, task: str | None, kind: str) -> dict[str, Any]:
         "interrupts": 0,
         "models": [],
         "efforts": [],
+        "main_model": None,
+        "main_effort": None,
         "model_changes": 0,
         "effort_changes": 0,
         "tokens": dict.fromkeys(_TOKENS, 0),
@@ -125,6 +127,8 @@ def _note_request(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
     if s.origin == "main":
         for field, change in (("model", "model_changes"), ("effort", "effort_changes")):
             value = getattr(s, field)
+            if value and row[f"main_{field}"] is None:
+                row[f"main_{field}"] = value
             if value and last.get(field) and value != last[field]:
                 row[change] += 1
             if value:
