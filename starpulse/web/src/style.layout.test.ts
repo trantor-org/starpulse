@@ -105,3 +105,11 @@ describe("the status dot", () => {
     expect(css).toMatch(/#nav \.dot\.off \{[^}]*box-shadow: 0 0 8px var\(--fail\)/);
   });
 });
+
+describe("the Admin page at phone width", () => {
+  it("lets a long Next batch value break and the grid cell shrink, so the row holds it", () => {
+    const phone = css.slice(css.lastIndexOf("@media (max-width: 900px)"));
+    expect(phone).toMatch(/#admin \.row\.fw-block > \* \{[^}]*min-width: 0/);
+    expect(phone).toMatch(/#admin \.fw-next li \{[^}]*overflow-wrap: anywhere/);
+  });
+});
