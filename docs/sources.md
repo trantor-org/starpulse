@@ -66,7 +66,11 @@ session's first claim or task-naming switch, when its launch branch names no tas
   prompt's text never is. Codex exports no `prompt.id`, so a Codex prompt's turn is the signals up to the next
   prompt, and its prompts are all `human`.
 - Time comes from the events' own durations, not from the gaps between them. `agent_s` is the sum of the model
-  requests' and tool results' durations (a subagent's included). `operator_wait_s` is the time from the end of the turn
+  requests' and tool results' durations (a subagent's included) and of the `hook_execution_complete` events a turn
+  caused (their `total_duration_ms`; a hook with no `prompt.id`, such as a session-start one, is no agent time). A
+  tool result's duration leaves its pre- and post-tool hooks out, so the hook events are what carry that time. Claude
+  Code logs no permission-prompt duration: only its `claude_code.tool.blocked_on_user` trace span has one, and traces
+  are not read. `operator_wait_s` is the time from the end of the turn
   before to a human prompt (never the session's first), `idle_s` the same before an injected prompt, a wait for a
   background task or scheduler. A prompt typed while the turn before still worked waits for nothing. A result of an
   `operator_tools` tool (a question answered, a plan approved) is no prompt but charges the silence before it to
