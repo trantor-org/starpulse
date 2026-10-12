@@ -1,4 +1,4 @@
-// The Server card's autopilot quiet hours: the daily window in which autopilot starts no task, kept by the server with the switch
+// The Autopilot card's quiet hours: the daily window in which autopilot starts no task, kept by the server with the switch
 // (`PUT /api/autopilot {"quietHours": ...}`). The server validates it; this store only asks, and shows what the server answered.
 import { apiFetch } from "../../api/apiFetch";
 import { ROUTE } from "../autopilot/autopilot";

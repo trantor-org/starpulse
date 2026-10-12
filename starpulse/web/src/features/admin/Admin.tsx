@@ -4,7 +4,6 @@ import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { SCALE, labelPx, type AdminStore } from "./adminPrefs";
 import { clockHm, type ClockMode } from "../../shared/clock";
 import { CHIPS, type HistoryWindowStore } from "./historyWindow";
-import type { QuietHoursStore } from "./quietHours";
 
 /** The Preview's Star Map label: a ring with a state's name and count beneath, sized as the renderer sizes them. */
 function drawPreview(c: HTMLCanvasElement, scale: number) {
@@ -72,42 +71,8 @@ function Seg<T extends string>({ label, value, options, onPick }: { label: strin
 /** The time of the example beside the Clock choice, written as the choice writes every time on the page. */
 const sample = (clock: "24" | "12") => clockHm(Date.now() / 1000, clock);
 
-/** The Server card's quiet hours row: the daily window in which autopilot starts no task, kept by the server with the switch. */
-function QuietRow({ store, clock }: { store: QuietHoursStore; clock: "24" | "12" }) {
-  const { loaded, current, draft, phase, unavailable } = useSyncExternalStore(store.subscribe, store.get);
-  useEffect(() => void store.load(), [store]);
-  const dirty = store.dirty(), saving = phase.kind === "saving";
-  return (
-    <div className="row">
-      <div><div className="lb">Autopilot quiet hours</div><div className="hint">Autopilot starts no task in this window; sessions already running continue</div></div>
-      <div>
-        {!loaded ? (
-          unavailable && <div className="refusal"><div className="k">the quiet hours cannot be read</div>{unavailable}</div>
-        ) : (
-          <>
-            <div className="hours">
-              <button type="button" className="sw" role="switch" aria-checked={draft.on} aria-label="Autopilot quiet hours" onClick={() => store.edit({ on: !draft.on })} />
-              <input type="time" value={draft.start} disabled={!draft.on} aria-label="Quiet hours start" onChange={(e) => store.edit({ start: e.target.value })} />
-              to
-              <input type="time" value={draft.end} disabled={!draft.on} aria-label="Quiet hours end" onChange={(e) => store.edit({ end: e.target.value })} />
-              <button type="button" className="btn go" disabled={!dirty || saving} onClick={() => void store.save()}>{saving ? "Saving…" : "Save"}</button>
-            </div>
-            <div className="hint">Times in {store.zone()}; an end before the start runs past midnight.</div>
-            {phase.kind === "saved" && (
-              <div className="ok">
-                {current ? `Saved: autopilot starts nothing from ${current.start} to ${current.end}` : "Saved: no quiet hours"} · <span className="when">{clockHm(phase.at, clock)}</span>
-              </div>
-            )}
-            {phase.kind === "refused" && <div className="refusal"><div className="k">the server refused the change</div>{phase.reason}</div>}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** The Server card: the history window every viewer shares and autopilot's quiet hours, which the server keeps and validates. */
-function ServerCard({ store, quiet, clock }: { store: HistoryWindowStore; quiet: QuietHoursStore; clock: "24" | "12" }) {
+/** The Server card: the history window every viewer shares, which the server keeps and validates. */
+function ServerCard({ store, clock }: { store: HistoryWindowStore; clock: "24" | "12" }) {
   const { current, draft, phase, unavailable } = useSyncExternalStore(store.subscribe, store.get);
   useEffect(() => void store.load(), [store]);
   const dirty = store.dirty(), saving = phase.kind === "saving";
@@ -137,16 +102,15 @@ function ServerCard({ store, quiet, clock }: { store: HistoryWindowStore; quiet:
           )}
         </div>
       </div>
-      <QuietRow store={quiet} clock={clock} />
     </section>
   );
 }
 
 /**
- * `tracker` and `forwarding` draw the Tracker and Forwarding cards in the settings column: each card is its own feature, so App hands them in,
- * `forwarding` with the clock it is to show.
+ * `autopilot`, `tracker` and `forwarding` draw the Autopilot, Tracker and Forwarding cards in the settings column: each card is its own
+ * feature, so App hands them in, `autopilot` and `forwarding` with the clock they are to show.
  */
-export function Admin({ store, window: historyWindow, quiet, forwarding, tracker }: { store: AdminStore; window: HistoryWindowStore; quiet: QuietHoursStore; forwarding: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
+export function Admin({ store, window: historyWindow, autopilot, forwarding, tracker }: { store: AdminStore; window: HistoryWindowStore; autopilot: (clock: ClockMode) => ReactNode; forwarding: (clock: ClockMode) => ReactNode; tracker?: ReactNode }) {
   const { scale, motion, view, density, clock } = useSyncExternalStore(store.subscribe, store.get);
   return (
     <div id="admin">
@@ -186,7 +150,8 @@ export function Admin({ store, window: historyWindow, quiet, forwarding, tracker
             </div>
             <div className="foot">Changes apply as you make them.<button type="button" className="btn" onClick={() => store.reset()}>Reset this browser</button></div>
           </section>
-          <ServerCard store={historyWindow} quiet={quiet} clock={clock} />
+          <ServerCard store={historyWindow} clock={clock} />
+          {autopilot(clock)}
           {tracker}
           {forwarding(clock)}
         </div>

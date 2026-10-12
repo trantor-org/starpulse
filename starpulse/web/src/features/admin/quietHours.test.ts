@@ -22,7 +22,7 @@ function server(opts: { window?: Window | null; status?: number } = {}) {
   return { fetcher, sent };
 }
 
-describe("the Server card's autopilot quiet hours", () => {
+describe("the Autopilot card's quiet hours", () => {
   it("reads the window the server keeps, and the controls start on it", async () => {
     const store = new QuietHoursStore(server({ window: NIGHT }).fetcher, () => "UTC");
 
