@@ -140,13 +140,13 @@ def test_a_machine_another_opens_with_flow_is_a_child_not_a_flow_of_its_own(tmp_
     assert list(project(tmp_path, board=parent, delivery=DELIVERY)) == ["board"]
 
 
-def test_loading_the_machines_leaves_backlog_lifecycle_unimported(tmp_path: Path) -> None:
+def test_loading_the_machines_leaves_board_client_unimported(tmp_path: Path) -> None:
     project(tmp_path, board=BOARD, in_progress=DELIVERY)
     code = (
         "import sys\nfrom pathlib import Path\nimport starpulse.board\n"
         f"built = starpulse.board.load('native', {{'machine': '.starpulse/machines/board.yaml'}}, Path({str(tmp_path)!r}))\n"
         "built.machines(lambda name: name, ())\n"
-        "print(sorted(name for name in sys.modules if name.split('.')[0] == 'backlog_lifecycle'))\n"
+        "print(sorted(name for name in sys.modules if name.split('.')[0] == 'board_client'))\n"
     )
 
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)

@@ -20,7 +20,7 @@ A top-level `writers:` block names, per event, who fires it: each entry is an
 the `trigger` it fires through. `refuse_unlisted` refuses a workflow no
 configured adapter lists.
 
-The compiled class is an ordinary `StateChart`, so `backlog_lifecycle`'s paths,
+The compiled class is an ordinary `StateChart`, so `board_client`'s paths,
 conformance and guard replay run on it unchanged.
 """
 
