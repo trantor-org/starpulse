@@ -235,6 +235,19 @@ iframe.phone { display: block; width: 390px; max-width: 100%; border: 0; border-
     </figure>
   </div>
 
+  <h2>Phone-width lane strip</h2>
+  <p class="lede">At 900 px and narrower the Kanban draws one lane at a time under its own header, picked on a strip above the lanes. The strip's rules sit under the same query, so each specimen is a 390 px frame filled by <code>elements.js</code>; above 900 px the strip is not drawn and all six lanes sit side by side.</p>
+  <div class="specimens">
+    <figure>
+      <figcaption><b>Lane strip, 100% text</b><code>#kb .lanes</code>, one <code>button[role=tab]</code> per lane: <code>.g</code> the lane's ring (its lane color), <code>.c</code> the count. <code>aria-selected=true</code> fills the ring and tints the tab; the lane's name stays on its header below.</figcaption>
+      <iframe class="phone strip" data-fs="1" title="Lane strip at 100% text"></iframe>
+    </figure>
+    <figure>
+      <figcaption><b>Lane strip, 150% text</b>A three-digit Done count still fits.</figcaption>
+      <iframe class="phone strip" data-fs="1.5" title="Lane strip at 150% text"></iframe>
+    </figure>
+  </div>
+
   <h2>Star Map bodies</h2>
   <p class="lede">Drawn on a canvas as <code>renderer.ts</code> draws them, from the tokens: a sun for a state with live work, and a black hole where a task's lifecycle ends. The renderer still spells its own hex literals; moving them onto the tokens is a follow-up.</p>
   <div class="bodies" style="margin-top: 14px">
