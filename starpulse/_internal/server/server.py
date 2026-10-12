@@ -61,7 +61,8 @@ GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_con
                    that is none of those, is 400
 GET /metrics       Prometheus text: `starpulse_pull_store_age_seconds{repo}`, the seconds since the newest record of
                    each repository holding an open pull request was read; a stale one means the refresh stopped.
-                   Also this process's `process_resident_memory_bytes`, `process_threads`, `process_open_fds` and
+                   `starpulse_page_build_info{build}`, 1 for the page build id the `build` event names (none without a
+                   build). Also this process's `process_resident_memory_bytes`, `process_threads`, `process_open_fds` and
                    `process_start_time_seconds`, which moves on every restart
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
@@ -820,6 +821,14 @@ def page_build(static: Path) -> str | None:
         return None
 
 
+def build_gauge(static: Path) -> str:
+    """`starpulse_page_build_info{build}` for the id the `build` event names `static`'s build; none without a build."""
+    if (build := page_build(static)) is None:
+        return ""
+    name = "starpulse_page_build_info"
+    return f'# HELP {name} The id of the page build served.\n# TYPE {name} gauge\n{name}{{build="{build}"}} 1\n'
+
+
 @functools.lru_cache(maxsize=64)
 def _gzipped(path: str, mtime_ns: int) -> bytes:
     """A static file gzipped once per build: `mtime_ns` keys a rebuilt file afresh."""
@@ -1179,7 +1188,7 @@ def request_handler(
                 self._send(*search_response(search, parse_qs(url.query)))
             elif url.path == "/metrics":
                 self._send(
-                    ((pulls.age_gauge(clock()) if pulls else "") + process_gauges()).encode(),
+                    ((pulls.age_gauge(clock()) if pulls else "") + build_gauge(static) + process_gauges()).encode(),
                     content_type="text/plain; version=0.0.4; charset=utf-8",
                 )
             elif url.path == "/api/analytics/health":
