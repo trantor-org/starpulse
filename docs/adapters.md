@@ -123,7 +123,7 @@ adapter derives for each task it produces, and asserts each record carries it. `
 `workflows/search` as the Board machine (a state per status, an event per transition, a global transition leaving every
 other status), refusing a workflow with a status in no transition, two statuses that make one lane, or no single initial
 transition. Each issue is a task in the lane of its status and the team of its Jira project; an issue it `Blocks` waits on
-the blocker, and a status in Jira's done category settles it as `completed`. Name your module in `[board] type` and StarPulse imports it.
+the blocker, and a status in Jira's done category settles it as `completed`. Its first successful poll is the feed's replay, as the Backlog.md adapter's first scan is. Name your module in `[board] type` and StarPulse imports it.
 
 **Migrating from `Board.history`.** `Board.history` is removed: StarPulse's store is the only history, so a `Board`
 that passes `history=` fails with `TypeError: Board.__init__() got an unexpected keyword argument 'history'`. Delete

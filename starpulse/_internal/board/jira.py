@@ -223,16 +223,26 @@ class JiraProject:
         )
 
     def start(  # pragma: no mutate block — polling thread plumbing
-        self, put: Callable[[BoardTask], None], retract: Callable[[str], None], interval: float
+        self,
+        put: Callable[[BoardTask], None],
+        retract: Callable[[str], None],
+        interval: float,
+        scanned: Callable[[], None] = lambda: None,
     ) -> threading.Thread:
-        """Scan now and then every `interval` seconds on a daemon thread, and return it; a failed scan is logged and retried."""
+        """Scan now and then every `interval` seconds on a daemon thread, and return it; a failed scan is logged and
+        retried, and `scanned` runs once, after the first scan that succeeds."""
 
         def run() -> None:
+            first = True
             while True:
                 try:
                     self.scan(put, retract)
                 except (OSError, ValueError, KeyError) as error:
                     logger.warning("jira %s: scan failed: %s", self.project, error)
+                else:
+                    if first:
+                        first = False
+                        scanned()
                 time.sleep(interval)
 
         thread = threading.Thread(target=run, name="jira", daemon=True)
@@ -276,6 +286,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         return {"board": jira.machine}
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
-        jira.start(feed.put, feed.retract, interval)
+        # The first poll is the feed's replay: it places every issue and the Ledger is built once at its end rather
+        # than once per task.
+        feed.await_stream()
+        jira.start(feed.put, feed.retract, interval, scanned=lambda: feed.expect("0-0"))
 
     return Board(machines=machines, start=start, keys=jira_keys(jira.project), source=f"{url} {jira.project}")
