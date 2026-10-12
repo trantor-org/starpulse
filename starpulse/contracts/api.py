@@ -119,6 +119,9 @@ class RawAgent(_Api):
     title: str
     state: str
     model: str
+    holder: str | None = Field(
+        default=None, description="The session that last claimed a Board task; empty when none has, absent off the Board."
+    )
     labels: list[str] | None = None
     dependencies: list[str] | None = Field(default=None, description="A task's dependencies, as task ids.")
     prs: list[str] | None = Field(default=None, description="A task's pull requests: the PR URLs among its references.")

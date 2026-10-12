@@ -182,6 +182,7 @@ _TASK_KEYS = (
     "title",
     "lane",
     "assignee",
+    "holder",
     "milestone",
     "labels",
     "dependencies",
@@ -309,6 +310,7 @@ def _task(agent: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
         "title": agent["title"],
         "lane": agent["state"],
         "assignee": agent["model"],
+        "holder": agent.get("holder", ""),
         "milestone": agent["milestone"],
         "labels": agent["labels"],
         "dependencies": agent["dependencies"],
@@ -330,6 +332,7 @@ def _board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
             (not args.milestone or agent["milestone"] == args.milestone)
             and (not args.label or args.label in agent["labels"])
             and (not args.assignee or agent["model"] == args.assignee)
+            and (not args.holder or agent.get("holder", "") == args.holder)
         )
 
     return {
@@ -1163,6 +1166,7 @@ def _parser() -> argparse.ArgumentParser:
     board.add_argument("--milestone", help="only tasks in this milestone")
     board.add_argument("--label", help="only tasks with this label")
     board.add_argument("--assignee", help="only tasks held by this assignee (`@agent-standard-high`)")
+    board.add_argument("--holder", help="only tasks this session last claimed, as its harness names it")
     search = leaf(
         verbs,
         "search",

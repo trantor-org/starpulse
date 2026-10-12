@@ -59,7 +59,7 @@ lists exactly the verbs there are.
 | Verb | Arguments | Document |
 |---|---|---|
 | `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `insights`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it; `machinePage` and `machineStrip` page and count the machines entered from the In Progress one ([Machine rows](serving.md#machine-rows)) |
-| `board` | `--state`, `--milestone`, `--label`, `--assignee` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, milestone, labels, dependencies, waiting_on, prs, moves}` |
+| `board` | `--state`, `--milestone`, `--label`, `--assignee`, `--holder` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, holder, milestone, labels, dependencies, waiting_on, prs, moves}`, `holder` the session that last claimed it (empty when none has) and `--holder` keeping only that session's tasks |
 | `search` | `QUERY...`, `--limit` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet}`, best match first, at most `--limit` (1 to 100, default 10); a blank query or a limit out of range exits 1, and a server that keeps no index (a hub) exits 3 |
 | `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
@@ -265,6 +265,10 @@ which of the four each copy is.
 Claude Code can load the same skills as a plugin instead of copies: the repository is a plugin marketplace
 (`.claude-plugin/`), so `/plugin marketplace add trantor-org/starpulse` then `/plugin install starpulse@starpulse`, or
 a `directory` marketplace pointing at a local checkout, serves them as `starpulse:<skill>`, read in place.
+The same marketplace serves `starpulse-board` (`plugins/starpulse-board/`, `/plugin install starpulse-board@starpulse`):
+it runs `starpulse board --holder <session id>` when a session starts and after each turn, draws the tasks that session
+holds above the prompt with a Hide button, and adds `/board` to list them with their titles. It reads only the
+`starpulse` CLI, so it shows nothing when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
 
 ## The pull-request store
 

@@ -347,6 +347,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "title": "Add thing",
             "state": "in_progress",
             "model": "claude-opus",
+            "holder": "",
             "labels": ["spike"],
             "milestone": "m-3",
             "dependencies": ["PROJ-0"],
