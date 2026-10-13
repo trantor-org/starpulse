@@ -25,7 +25,7 @@ collaborator, say so in an issue.
 - Nobody pushes to `main` directly, force-pushes it or deletes it.
 - At merge, `dispatch-merged.yml` pins the merged commit on trantor, once the merge-queue (or pull-request) run that
   tested that tree is green: its `Pin the starpulse SHA` step runs trantor's `bin/starpulse_ops/starpulse_pin.sh` on the
-  ai-vm-1 runner, and no `repository_dispatch` is sent. A push to `main` runs no test job: the queue already tested the
+  self-hosted runner, and no `repository_dispatch` is sent. A push to `main` runs no test job: the queue already tested the
   commit `main` received. The push run's `dispatch` job runs the same step as a fallback, and the script re-checks the
   queue run before pinning and does nothing for a SHA already pinned. Pull requests and merge-queue candidates pin
   nothing. The step reads the `WORKSPACE_APP_CLIENT_ID`, `WORKSPACE_APP_PRIVATE_KEY` and `TRANTOR_PIN_DEPLOY_KEY`
