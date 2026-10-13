@@ -114,6 +114,7 @@ type = "native"
 # path = ".starpulse/board"  # the board's directory, relative to this file; created empty when absent
 # machine = "board.yaml"     # a machine file for the Board: its transitions and `writers` decide which moves are offered, and to whom; every other file in `.starpulse/machines/` is drawn as a flow. Every lane must be one of its states; a state that is not a lane must be `initial` or `final`, is drawn, and is never offered as a move (a creation or archive state), else `serve` refuses to start
 # criteria = "my-evaluator {id}"  # evaluates a task's Start Criteria; {id} is the task's id (see docs/adapters.md)
+# holds = "my-holds {id}"    # prints a JSON array of reasons the task actor withholds the task's `deps_done` (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
 
@@ -467,6 +468,17 @@ move the machine declares. For a task in a state with `waits`, the first fact th
 - `deps_done`: the task has dependencies, every one is Done, its description declares no Start Criteria, and, under
   `[release] settle = "pin-bump"`, every dependency's pin bump has merged (the rule in Release).
 - `deps_unresolved`: a dependency is not Done.
+- `criteria_met`: the task's Start Criteria were last evaluated all `met`.
+- `criteria_unmet`: a Start Criterion was last evaluated `unmet` or `error`.
+
+The actor evaluates a task's Start Criteria with the board's evaluator (`[board] criteria`) on a thread of its own, when
+the task is in a lane that waits on a criteria fact and has no result or one older than the evaluator's cache (30 s), and
+re-derives the task when the result changes. A board with no `criteria` command fires neither criteria fact. A criterion
+the evaluator cannot evaluate is not retried before its result is stale.
+
+The board adapter may withhold `deps_done` with reasons (`Board.holds`; the native board's `[board] holds` command, run
+in the config's directory with `{id}` replaced, prints a JSON array of them, and output that is no such array holds the
+task). The actor writes the reasons once as a comment on the task, and re-derives every held task when a task is created.
 
 It keeps a `pull request -> tasks` and a `task -> dependents` index, built at start and kept current from lane writes. A
 change to a pull request in the store, a lane write or a merged pin bump re-derives only the tasks it reaches. At start
@@ -478,6 +490,8 @@ A write the board refuses is logged and counted, and is not retried until the ta
 
 - `starpulse_task_actor_refusals_total`: refused writes.
 - `starpulse_task_actor_latency_seconds`: a histogram of the seconds from the fact being observed to the write landing.
+- `starpulse_task_actor_criteria_errors{task}`: the Start Criteria of a gated task that could not be evaluated; such a
+  gate never passes.
 
 
 ## Event log archive

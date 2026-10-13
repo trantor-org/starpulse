@@ -15,6 +15,7 @@ class Actor:
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         self.args = args
+        self.kwargs = kwargs
         self.started = False
         Actor.built.append(self)
 
@@ -53,6 +54,14 @@ def test_the_actor_starts_and_releasers_thread_does_not(tmp_path: Path, monkeypa
 
     assert [actor.started for actor in Actor.built] == [True]
     assert polled == []
+
+
+def test_the_actor_is_given_the_boards_criteria_evaluator_and_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _serve(tmp_path, monkeypatch, f"{BOARD}[board.actor]\n")
+
+    assert {"evaluate", "holds"} <= Actor.built[0].kwargs.keys()
 
 
 def test_without_the_table_releasers_thread_starts_and_no_actor_does(
