@@ -313,10 +313,10 @@ shows no tasks when no server answers (`$STARPULSE_URL`, else `http://localhost:
 
 Below the tasks one button counts every other Claude Code session on the host by status (`2 working · 5 idle`, each with its status icon), from
 the registry each session writes under `~/.claude/sessions/`, reread every 5 seconds without waiting on `starpulse
-board`. The Sessions pane, one row per session with its status, opens by itself once the first list holds a session,
-docked as a tab beside the other right-side panes (such as Files) on a fullscreen terminal of 144 columns or more; until
-the first prompt, the first pane another plugin opens is followed by Sessions closing and reopening, so Sessions is the
-tab on show. Pressing the count opens it with the keys in the pane. Like Files, it shows only in the dock: placed inline
+board`. On the first list the dock opens by itself, without the keys, on a fullscreen terminal of 144 columns or more:
+the Sessions pane, one row per session with its status, when the list holds a session, then the Board pane, so the
+Board is the tab on show. Until the first prompt, the first pane another plugin opens is followed by the Board closing
+and reopening, so the Board stays on show. Pressing the count opens Sessions with the keys in the pane. Sessions shows only in the dock: placed inline
 (outside the fullscreen layout, or narrower than the dock) it closes itself. The pane lists only the sessions it can
 switch to: each one running in a tmux pane (as a StarPulse Start session does, in tmux session `task-<N>`) is a button
 that runs `tmux switch-client` to it, and this session is listed too. A background (`claude --bg`) session or one the
@@ -331,8 +331,8 @@ chips (working, idle, archived) combine as OR; `a` archives the focused row, kil
 first starts and switches to a fresh one). Archived sessions persist in the plugin's store and resume with
 `claude --resume <id>` in a new tmux session at their recorded directory.
 
-A Board button beside the count, and `/kanban`, open the Board pane: the board as a kanban, docked as its own tab with
-focus and, like Sessions, closing itself when placed inline. Its header names the open-task count beside a refresh
+Besides opening at session start, a Board button beside the count, and `/kanban`, open the Board pane with the keys: the
+board as a kanban, docked as its own tab and, like Sessions, closing itself when placed inline. Its header names the open-task count beside a refresh
 button. It stacks the open lanes (In Progress, Review, Needs attention, Ready, Waiting), each a header with the lane's
 icon and colour, its count and a rule, that folds and unfolds the lane; Ready and Waiting start folded. A task is a row of
 its ID, its title (or the reason a Needs attention task waits, or what a Waiting task waits on), a four-cell bar of

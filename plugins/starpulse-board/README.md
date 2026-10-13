@@ -4,6 +4,9 @@ Draws the Board tasks a Claude Code session holds above the prompt, a Board pane
 Install with `/plugin install starpulse-board@starpulse`; the StarPulse CLI reference (`docs/cli.md`) documents the
 band and the Board pane.
 
+At session start the dock opens without taking the keys: Sessions when another session runs, then the Board, the tab on
+show.
+
 ## Sessions pane
 
 Lists the Claude Code sessions in `~/.claude/sessions/` it can switch to in two groups, Active and Archived (Archived
