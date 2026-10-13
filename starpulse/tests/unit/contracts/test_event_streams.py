@@ -12,16 +12,13 @@ import starpulse
 from starpulse import contracts
 from starpulse._internal.eventlog import events, lane_events
 from starpulse._internal.eventlog.event_log import EventLog, Tail
-from starpulse._internal.feed import claim_refusals
 from starpulse._internal.runs import run_events
 
 STREAMS = contracts.EVENT_STREAMS
-#: Streams the package only reads: the board writer produces them, so no entry written here needs a record schema.
-CONSUMED = {claim_refusals.STREAM}
 
 
 def _declared_streams() -> set[str]:
-    """The stream names the package's producers declare: each module-level `STREAM = "..."` under `_internal`, bar those it only reads."""
+    """The stream names the package's producers declare: each module-level `STREAM = "..."` under `_internal`."""
     found: set[str] = set()
     for path in (Path(starpulse.__file__).parent / "_internal").rglob("*.py"):
         for node in ast.parse(path.read_text()).body:
@@ -32,7 +29,7 @@ def _declared_streams() -> set[str]:
                 and isinstance(node.value.value, str)
             ):
                 found.add(node.value.value)
-    return found - CONSUMED
+    return found
 
 
 def test_every_stream_a_producer_declares_has_a_contract_schema() -> None:
