@@ -6,8 +6,8 @@ rowid derived from the task id, so replacing a task and reading its stored diges
 again unchanged, as every task is on a restart, writes nothing.
 
 With an embeddings endpoint configured (`[search] embeddings_url`) the index also keeps one vector per task and model,
-in a table beside the FTS5 one, and ranks a query's lexical hits by a blend of their bm25 score and the cosine
-similarity between the query's vector and theirs. Embedding never runs on the feed's path: `index` writes the FTS5 row
+of the task's title and description, in a table beside the FTS5 one, and ranks a query's lexical hits by a blend of
+their bm25 score and the cosine similarity between the query's vector and theirs. Embedding never runs on the feed's path: `index` writes the FTS5 row
 and `embed_pending` (run by `keep_embedding`) catches the vectors up. Without an endpoint nothing calls out, and an
 endpoint that fails leaves the lexical order.
 """
@@ -52,6 +52,11 @@ _CREATE_VECTORS = (
     "task_row INTEGER NOT NULL, model TEXT NOT NULL, vector BLOB NOT NULL, PRIMARY KEY (task_row, model))"
 )
 _DROP_VECTORS = text(f"DELETE FROM {_VECTORS} WHERE task_row = :row")
+#: Drops the vectors another recipe made, which no query reads.
+_DROP_OTHER_RECIPES = text(f"DELETE FROM {_VECTORS} WHERE model != :model")
+#: The text a task is embedded as, which keys its vector with the model: the title and Description, as the query is a
+#: task-like sentence, and changing it makes every vector again.
+_EMBEDDED_TEXT = "title+description"
 _RANKED = text(
     f"SELECT task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, snippet({_TABLE}, -1, '', '', '…', 16) AS snippet, "
     f"{_VECTORS}.vector AS vector FROM {_TABLE} LEFT JOIN {_VECTORS} "
@@ -64,7 +69,7 @@ _EMBEDDED = text(
     f"FROM {_TABLE} JOIN {_VECTORS} ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model"
 )
 _PENDING = text(
-    f"SELECT rowid AS row, title, description, criteria, notes, digest FROM {_TABLE} "
+    f"SELECT rowid AS row, title, description, digest FROM {_TABLE} "
     f"WHERE rowid NOT IN (SELECT task_row FROM {_VECTORS} WHERE model = :model) LIMIT :limit"
 )
 #: Stores a vector only for the text it was made from: a task replaced since is left for the next pass.
@@ -74,8 +79,9 @@ _STORE = text(
 )
 #: How much of the lexical rank (the rest is the vector's cosine similarity) a hit keeps when a query is embedded.
 _LEXICAL_WEIGHT = 0.5
-#: The least cosine similarity at which a task that holds none of the query's words is still a hit.
-_RECALL_FLOOR = 0.6
+#: The least cosine similarity at which a task that holds none of the query's words is still a hit: under
+#: mxbai-embed-large a reworded task's original scores about 0.6 and an unrelated task 0.53 at most.
+_RECALL_FLOOR = 0.55
 #: How many lexical hits a ranked query blends before it cuts to `limit`, so a near meaning can rise past the top.
 _POOL = 50
 #: Tasks sent to the endpoint in one request, and the characters of one task's text it is sent.
@@ -123,6 +129,7 @@ class SearchIndex:
         self._lock = threading.Lock()
         self._url = settings.embeddings_url if settings else None
         self._model = settings.model if settings else None
+        self._recipe = f"{self._model} {_EMBEDDED_TEXT}"
         self._token = os.environ.get(settings.token_env) if settings and settings.token_env else None
         if settings and settings.token_env and not self._token:
             logger.warning("StarPulse: %s is not set, so embeddings requests carry no credentials", settings.token_env)
@@ -133,14 +140,17 @@ class SearchIndex:
         SQLite was built without FTS5, which then keeps no search. `settings` names the embeddings endpoint, if any."""
         if engine.dialect.name != "sqlite":
             return None
+        index = cls(engine, settings)
         try:
             with engine.begin() as connection:
                 connection.execute(text(_CREATE))
                 connection.execute(text(_CREATE_VECTORS))
+                if index._url:
+                    connection.execute(_DROP_OTHER_RECIPES, {"model": index._recipe})
         except OperationalError as error:
             logger.warning("StarPulse: this SQLite has no FTS5, so the board is not searchable: %s", error)
             return None
-        return cls(engine, settings)
+        return index
 
     def index(self, task: BoardTask) -> None:
         """Make the index hold `task` as it is now; a task already held unchanged is left alone."""
@@ -182,10 +192,10 @@ class SearchIndex:
             if vector is None:
                 rows = connection.execute(_SEARCH, {"query": match, "limit": limit})
                 return [dict(row._mapping) for row in rows]
-            rows = connection.execute(_RANKED, {"query": match, "model": self._model, "limit": max(limit, _POOL)})
+            rows = connection.execute(_RANKED, {"query": match, "model": self._recipe, "limit": max(limit, _POOL)})
             hits = [dict(row._mapping) for row in rows]
             lexical = {hit["task"] for hit in hits}
-            near = [dict(row._mapping) for row in connection.execute(_EMBEDDED, {"model": self._model})]
+            near = [dict(row._mapping) for row in connection.execute(_EMBEDDED, {"model": self._recipe})]
         top = max((hit["score"] for hit in hits), default=0.0) or 1.0
         for hit in hits:
             held = array.array("f")
@@ -207,10 +217,10 @@ class SearchIndex:
         stored = 0
         while self._url:
             with self._engine.connect() as connection:
-                rows = connection.execute(_PENDING, {"model": self._model, "limit": _BATCH}).all()
+                rows = connection.execute(_PENDING, {"model": self._recipe, "limit": _BATCH}).all()
             if not rows:
                 break
-            texts = ["\n".join((r.title, r.description, r.criteria, r.notes))[:_TEXT_LIMIT] for r in rows]
+            texts = [f"{r.title}\n{r.description}"[:_TEXT_LIMIT] for r in rows]
             vectors = self._embed(texts)
             with self._lock, self._engine.begin() as connection:
                 done = sum(
@@ -218,7 +228,7 @@ class SearchIndex:
                         _STORE,
                         {
                             "row": row.row,
-                            "model": self._model,
+                            "model": self._recipe,
                             "vector": array.array("f", vector).tobytes(),
                             "digest": row.digest,
                         },
