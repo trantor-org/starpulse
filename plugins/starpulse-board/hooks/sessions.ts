@@ -1,16 +1,16 @@
 import type { ArchivedSession, Lane, PeerSession } from '../types'
 
-export type Group = 'working' | 'idle' | 'archived'
+// A row's status, drawn as its icon and filtered by its chip.
+export type Status = 'working' | 'idle' | 'archived'
 
-// A status chip: the groups, plus `bg` for background sessions.
-export type Chip = Group | 'bg'
+// Active holds the working and idle sessions together; their icons tell them apart.
+export type Group = 'active' | 'archived'
 
 export const GROUPS: [group: Group, name: string][] = [
-  ['working', 'Working'],
-  ['idle', 'Idle'],
+  ['active', 'Active'],
   ['archived', 'Archived'],
 ]
-export const CHIPS: Chip[] = ['working', 'idle', 'bg', 'archived']
+export const CHIPS: Status[] = ['working', 'idle', 'archived']
 
 // One line of the Sessions pane: a live session, or an archived one that `claude --resume` can reopen.
 export type Row = {
@@ -20,7 +20,7 @@ export type Row = {
   cwd: string
   task: string
   lane: string
-  group: Group
+  status: Status
   isBackground: boolean
   isOwn: boolean
   updatedAt: number
@@ -62,9 +62,13 @@ export const alive = (all: PeerSession[], archived: ArchivedSession[]) => {
   return all.filter(s => !gone.has(s.id))
 }
 
-// Every row the pane can draw, before any filter: the live sessions, then the archived ones.
+export const groupOf = (r: Row): Group => (r.status === 'archived' ? 'archived' : 'active')
+
+// Every row the pane can draw, before any filter: the live sessions it can switch to (each in a tmux pane, and this one),
+// then the archived ones. A background or desktop session has no pane, so it is left out rather than listed unenterable.
 export const rowsOf = (all: PeerSession[], archived: ArchivedSession[], held: Map<string, Held>, byTask: Map<string, string>): Row[] => {
-  const live = alive(all, archived).map((s): Row => {
+  const enterable = alive(all, archived).filter(s => s.tmux !== null || s.isOwn)
+  const live = enterable.map((s): Row => {
     const mine = held.get(s.id)
 
     return {
@@ -74,7 +78,7 @@ export const rowsOf = (all: PeerSession[], archived: ArchivedSession[], held: Ma
       cwd: s.cwd,
       task: mine?.task ?? '',
       lane: mine?.lane ?? '',
-      group: s.status === 'busy' ? 'working' : 'idle',
+      status: s.status === 'busy' ? 'working' : 'idle',
       isBackground: s.isBackground,
       isOwn: s.isOwn,
       updatedAt: s.updatedAt,
@@ -89,7 +93,7 @@ export const rowsOf = (all: PeerSession[], archived: ArchivedSession[], held: Ma
       cwd: a.cwd,
       task: a.task,
       lane: byTask.get(a.task) ?? '',
-      group: 'archived',
+      status: 'archived',
       isBackground: false,
       isOwn: false,
       updatedAt: a.archivedAt,
@@ -100,17 +104,15 @@ export const rowsOf = (all: PeerSession[], archived: ArchivedSession[], held: Ma
   return [...live, ...kept]
 }
 
-const isChip = (r: Row, chip: string) => (chip === 'bg' ? r.isBackground : r.group === chip)
-
 // A chip counts its rows whatever the filter says.
-export const countOf = (rows: Row[], chip: Chip) => rows.filter(r => isChip(r, chip)).length
+export const countOf = (rows: Row[], chip: Status) => rows.filter(r => r.status === chip).length
 
 // The text matches a row's name, tmux session or task; the chips, if any are on, match when any of them does.
 export const matches = (r: Row, query: string, chips: string[]) => {
   const text = query.trim().toLowerCase()
   const haystack = `${r.name} ${r.tmux ?? ''} ${r.task}`.toLowerCase()
 
-  return haystack.includes(text) && (!chips.length || chips.some(c => isChip(r, c)))
+  return haystack.includes(text) && (!chips.length || chips.includes(r.status))
 }
 
 // This session first, then the most recently active.
@@ -131,7 +133,7 @@ export const ago = (now: number, then: number) => {
 
 // What a row's button is named: its name, then each fact it draws.
 export const rowLabel = (r: Row, age: string) =>
-  [r.name, r.isOwn && 'you', r.task, r.isBackground && 'background', r.group, age].filter(Boolean).join(', ')
+  [r.name, r.isOwn && 'you', r.task, r.isBackground && 'background', r.status, age].filter(Boolean).join(', ')
 
 // The session id of a focused row's button (`session:<id>`, `archive:<id>`, `resume:<id>`).
 export const focusedId = (key: string | null) => key?.match(/^(?:session|archive|resume):(.+)$/)?.[1] ?? null

@@ -6,16 +6,18 @@ band and the Board pane.
 
 ## Sessions pane
 
-Lists every Claude Code session in `~/.claude/sessions/` as Working, Idle and Archived groups (Archived folded by
-default; each header folds). A row shows the status icon, name, a `you` marker on this session, the held task as a
-lane-coloured chip, the age and an archive icon.
+Lists the Claude Code sessions in `~/.claude/sessions/` it can switch to in two groups, Active and Archived (Archived
+folded by default; each header folds). Active holds working and idle sessions together, told apart by the status icon
+(`●` working, `○` idle). A live session is listed only when it runs in a tmux pane, plus this session; a background or
+desktop session has none, so it is left out. A row shows the status icon, name, a `you` marker on this session, the held
+task as a lane-coloured chip, the age and an archive icon.
 
 | Key | Action |
 | --- | --- |
 | `n` | New session: a tmux session `claude-NNNNNN` running `claude` in the workspace, switched to |
 | `f` | Focus the filter: text over name, tmux session and task |
 | `a` | Archive the row focused with ↑↓ |
-| chips | working, idle, bg, archived; toggle, several combine as OR, and with the text as AND |
+| chips | working, idle, archived; toggle, several combine as OR, and with the text as AND |
 
 Archive kills the row's tmux session and moves the row to Archived. When the row is this session, a fresh tmux
 session is created and switched to first; if that fails the session is kept and a toast says so.

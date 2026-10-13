@@ -615,6 +615,21 @@ test('an In Progress task goes to its live session without starting one', async 
   await ui.unmount()
 })
 
+test('an In Progress task held by a background session attaches it in a tmux session and switches to it', async ($, on) => {
+  const switched: string[][] = []
+  const held = board([['in_progress', 'In Progress', [task({ id: 'TASK-8', title: 'Background one', holder: 'abcd1234-5678' })]]])
+  const ui = await openKanban($, on, { switched, board: () => answer(0, held) })
+
+  await ui.press({ key: 'task:TASK-8' })
+  await ui.press({ key: 'session:TASK-8' })
+
+  expect(switched).toEqual([
+    ['tmux', 'new-session', '-A', '-d', '-s', 'bg-abcd1234', 'claude', 'attach', 'abcd1234'],
+    ['tmux', 'switch-client', '-t', 'bg-abcd1234'],
+  ])
+  await ui.unmount()
+})
+
 test('a move button moves the task through StarPulse and rereads the Board', async ($, on) => {
   const posted: string[][] = []
   let reads = 0
@@ -747,7 +762,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(opened.at(-1)).toBe('starpulse-sessions focus=true')
   })
 
-  test(`the Sessions pane lists every session with its status, this one marked (${surface})`, async ($, on) => {
+  test(`the Sessions pane lists the sessions it can enter with their status, this one marked (${surface})`, async ($, on) => {
     sessionsHost(on)
 
     await start($, surface)
@@ -755,9 +770,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const label = async (key: string) => (await ui.find({ key }))?.props.label as string
 
     expect(await label('session:session-2')).toMatch(/^trantor-2, working, /)
-    expect(await label('session:abcd1234-5678')).toMatch(/^Check the alert, background, idle, /)
-    expect(await label('session:session-3')).toMatch(/^Fix the gate, idle, /)
     expect(await label(`session:${SESSION}`)).toMatch(/^me, you, working, /)
+    expect(await ui.find({ key: 'session:abcd1234-5678' })).toBeUndefined()
+    expect(await ui.find({ key: 'session:session-3' })).toBeUndefined()
   })
 
   test(`pressing a session in tmux switches the tmux client to it (${surface})`, async ($, on) => {
@@ -769,20 +784,6 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.press({ key: 'session:session-2' })
 
     expect(switched).toEqual([['tmux', 'switch-client', '-t', 'task-7']])
-  })
-
-  test(`pressing a background session attaches it in a tmux session and switches to it (${surface})`, async ($, on) => {
-    const switched: string[][] = []
-    sessionsHost(on, { switched })
-
-    await start($, surface)
-    const ui = await sessionsPane($, surface)
-    await ui.press({ key: 'session:abcd1234-5678' })
-
-    expect(switched).toEqual([
-      ['tmux', 'new-session', '-A', '-d', '-s', 'bg-abcd1234', 'claude', 'attach', 'abcd1234'],
-      ['tmux', 'switch-client', '-t', 'bg-abcd1234'],
-    ])
   })
 }
 

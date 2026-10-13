@@ -2,9 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface as Engine, Register, RenderChildren } from 'claude-code'
 import type { ArchivedSession, BoardTask, Checks, HeldTask, Lane, PeerSession, Pull } from '../types'
 import { CHECKS, LANES as LANE_STYLES, ROW_HEIGHT, SP, alt, glyphs, laneIcon, laneOf, paneSvg, progress, ratio, rowSvg, subline, termBar } from './draw'
-import type { Glyph, Glyphs } from './draw'
-import { CHIPS, GROUPS, ago, alive, countOf, focusedId, holdersOf, lanesOf, matches, ordered, rowLabel, rowsOf } from './sessions'
-import type { Chip, Group, Row } from './sessions'
+import type { Glyphs } from './draw'
+import { CHIPS, GROUPS, ago, alive, countOf, focusedId, groupOf, holdersOf, lanesOf, matches, ordered, rowLabel, rowsOf } from './sessions'
+import type { Group, Row, Status } from './sessions'
 
 const PANE = 'starpulse-board'
 const SESSIONS = 'starpulse-sessions'
@@ -390,16 +390,14 @@ const resume = async ($: Engine, r: Row) => {
   }
 }
 
-// A row's press goes to its session: an archived one resumes, this one only says so.
+// A row's press goes to its session: an archived one resumes, this one only says so, any other is in a tmux pane.
 const enter = async ($: Engine, r: Row) => {
-  if (r.group === 'archived') {
+  if (r.status === 'archived') {
     await resume($, r)
   } else if (r.isOwn) {
     $.ui.toast('This is the session you are in')
-  } else if (r.peer && (r.tmux !== null || r.isBackground)) {
+  } else if (r.peer) {
     await switchTo($, r.peer)
-  } else {
-    $.ui.toast(`${r.name} is not in tmux`)
   }
 }
 
@@ -409,7 +407,7 @@ const actOnFocused = async ($: Engine) => {
   const r = (await currentRows($)).find(x => x.id === id)
   if (!r) {
     $.ui.toast('Focus a session with ↑↓ first')
-  } else if (r.group === 'archived') {
+  } else if (r.status === 'archived') {
     await resume($, r)
   } else {
     await archive($, r)
@@ -918,10 +916,10 @@ export const register: Register = (on, options) => {
 
     const all = rowsOf(await read($, sessions), await read($, archived), holdersOf(found), lanesOf(found))
     const shown = all.filter(r => matches(r, text, active))
-    const chipStyle: Record<Chip, string> = { working: SP.run, idle: SP.slate, bg: SP.released, archived: SP.muted }
-    const groupStyle: Record<Group, string> = { working: SP.run, idle: SP.slate, archived: SP.muted }
+    const statusStyle: Record<Status, string> = { working: SP.run, idle: SP.slate, archived: SP.muted }
+    const groupStyle: Record<Group, string> = { active: SP.ink, archived: SP.muted }
     const fold = (group: string) => update($, sessionFolds, f => (f.includes(group) ? f.filter(x => x !== group) : [...f, group]))
-    const flip = async (c: Chip) => {
+    const flip = async (c: Status) => {
       const isOn = active.includes(c)
       await update($, chips, list => (isOn ? list.filter(x => x !== c) : [...list, c]))
       if (c === 'archived' && !isOn) {
@@ -929,14 +927,14 @@ export const register: Register = (on, options) => {
       }
     }
 
-    const chip = (c: Chip) => {
+    const chip = (c: Status) => {
       const label = `${c} ${countOf(all, c)}`
       const isOn = active.includes(c)
 
       return (
         <Button key={`chip:${c}`} label={label} plain onPress={() => flip(c)}>
-          <Text color={isOn ? chipStyle[c] : SP.faint}>{`${g(c)} `}</Text>
-          <Text bold={isOn} color={isOn ? chipStyle[c] : SP.muted}>
+          <Text color={isOn ? statusStyle[c] : SP.faint}>{`${g(c)} `}</Text>
+          <Text bold={isOn} color={isOn ? statusStyle[c] : SP.muted}>
             {label}
           </Text>
         </Button>
@@ -948,15 +946,14 @@ export const register: Register = (on, options) => {
       const age = ago(now, r.updatedAt)
       const fixed = 2 + 1 + 1 + (r.isOwn ? 6 : 0) + (r.task ? r.task.length + 1 : 0) + 4 + 1 + 2
       const [name, pad] = cut(r.name, Math.max(1, cols - fixed))
-      const icon: [Glyph, string] = r.group === 'archived' ? ['archived', SP.muted] : r.isBackground ? ['bg', r.group === 'working' ? SP.run : SP.released] : [r.group, r.group === 'working' ? SP.run : SP.slate]
-      const isArchived = r.group === 'archived'
+      const isArchived = r.status === 'archived'
       const taskColor = LANE_STYLES[r.lane]?.[1] ?? SP.slate
 
       return (
         <Box key={`row-${r.id}`}>
           <Button key={`session:${r.id}`} label={rowLabel(r, age)} plain onPress={() => enter($, r)}>
             {'  '}
-            <Text color={icon[1]}>{g(icon[0])}</Text>
+            <Text color={statusStyle[r.status]}>{g(r.status)}</Text>
             {' '}
             <Text bold={r.isOwn} color={isArchived ? SP.muted : SP.ink}>
               {name}
@@ -1013,7 +1010,7 @@ export const register: Register = (on, options) => {
           {CHIPS.map(chip)}
         </Box>
         {GROUPS.map(([group, name]) => {
-          const rows = ordered(shown.filter(r => r.group === group))
+          const rows = ordered(shown.filter(r => groupOf(r) === group))
           const isFolded = shut.includes(group)
           const header = `${name.toUpperCase()} ${rows.length}`
 
@@ -1045,7 +1042,7 @@ export const register: Register = (on, options) => {
         <Box marginTop={1}>
           <Text color={SP.faint}>↑↓ move · ↵ open · n new · f filter · </Text>
           <Button key="archive-focused" label="Archive or resume the focused session" hotkey="a" plain onPress={() => actOnFocused($)}>
-            <Text color={SP.faint}>{!shut.includes('archived') && shown.some(r => r.group === 'archived') ? 'archive/resume' : 'archive'}</Text>
+            <Text color={SP.faint}>{!shut.includes('archived') && shown.some(r => r.status === 'archived') ? 'archive/resume' : 'archive'}</Text>
           </Button>
         </Box>
       </Box>

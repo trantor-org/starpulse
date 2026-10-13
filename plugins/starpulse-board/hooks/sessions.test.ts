@@ -9,13 +9,14 @@ const MINUTE = 60_000
 const PANE = 'starpulse-sessions'
 
 // The registry every Claude Code session writes: this session in tmux claude-own, two interactive ones, a tmux session
-// StarPulse started for TASK-7, and a background session with no tmux pane.
+// StarPulse started for TASK-7, and two it cannot enter: a background session and an interactive one in no tmux pane.
 const REGISTRY: Record<string, object> = {
   '/home/me/.claude/sessions/100.json': { sessionId: OWN, pid: 100, name: 'trantor-d2', status: 'busy', kind: 'interactive', cwd: '/work', updatedAt: NOW - 2 * MINUTE },
   '/home/me/.claude/sessions/200.json': { sessionId: 'session-5d', pid: 200, name: 'trantor-5d', status: 'busy', kind: 'interactive', cwd: '/work/five', updatedAt: NOW - MINUTE },
   '/home/me/.claude/sessions/300.json': { sessionId: 'session-81', pid: 300, name: 'trantor-81', status: 'idle', kind: 'interactive', cwd: '/work/eighty', updatedAt: NOW - 12 * MINUTE },
   '/home/me/.claude/sessions/400.json': { sessionId: 'abcd1234-5678', pid: 400, name: 'Check the alert', status: 'idle', kind: 'bg', cwd: '/work/alert', updatedAt: NOW - 600 * MINUTE },
   '/home/me/.claude/sessions/500.json': { sessionId: 'session-t7', pid: 500, name: 'task-7 run', status: 'idle', kind: 'interactive', cwd: '/work/t7', updatedAt: NOW - 30 * MINUTE },
+  '/home/me/.claude/sessions/600.json': { sessionId: 'session-desk', pid: 600, name: 'desktop one', status: 'busy', kind: 'interactive', cwd: '/work', updatedAt: NOW },
 }
 
 const PANES = '100 claude-own\n200 claude-5d\n300 claude-81\n500 task-7\n'
@@ -44,10 +45,12 @@ type Host = {
   opened: string[]
   // Makes `tmux new-session` fail, as a server that is not running does.
   failNew?: boolean
+  // What `tmux list-panes` prints: each pane's pid and its tmux session.
+  panes?: string
 }
 
 const host = (on: On, seed: Partial<Host> = {}): Host => {
-  const seen: Host = { tmux: [], toasts: [], opened: [], store: new Map(), ...seed }
+  const seen: Host = { tmux: [], toasts: [], opened: [], store: new Map(), panes: PANES, ...seed }
   on('ui.render', ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
   on('session.id', () => ({ value: OWN }))
   on('session.root', () => ({ value: '/work' }))
@@ -78,7 +81,7 @@ const host = (on: On, seed: Partial<Host> = {}): Host => {
   on('fs.read', ($, e) => ({ value: JSON.stringify(REGISTRY[e.path]) }))
   on('process.run', ($, e) => {
     if (e.argv[0] === 'tmux') {
-      if (e.argv[1] === 'list-panes') return answer(0, PANES)
+      if (e.argv[1] === 'list-panes') return answer(0, seen.panes)
       seen.tmux.push([...e.argv])
       return answer(seen.failNew && e.argv[1] === 'new-session' ? 1 : 0)
     }
@@ -113,16 +116,24 @@ const focus = ($: any, key: string) => $.ui.focus({ requestId: PANE, key, elemen
 const AUTO = /^claude-\d{6}$/
 
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`the pane groups sessions into Working and Idle, this one first with its marker and task (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
+  test(`the pane lists working and idle sessions in one Active group, this one first with its marker and task (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
     host(on)
     await start($, surface)
     const ui = await pane($, surface)
 
-    expect(await keys(ui, 'fold:')).toEqual(['fold:working', 'fold:idle'])
-    expect(await keys(ui, 'session:')).toEqual([`session:${OWN}`, 'session:session-5d', 'session:session-81', 'session:session-t7', 'session:abcd1234-5678'])
+    expect(await keys(ui, 'fold:')).toEqual(['fold:active'])
+    expect(await keys(ui, 'session:')).toEqual([`session:${OWN}`, 'session:session-5d', 'session:session-81', 'session:session-t7'])
     expect(await label(ui, `session:${OWN}`)).toBe('trantor-d2, you, TASK-5020, working, 2m')
     expect(await label(ui, 'session:session-t7')).toBe('task-7 run, TASK-7, idle, 30m')
-    expect(await label(ui, 'session:abcd1234-5678')).toBe('Check the alert, background, idle, 10h')
+    await ui.unmount()
+  })
+
+  test(`a session in no tmux pane is not listed, a background one included, but this one always is (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
+    host(on, { panes: '200 claude-5d\n' })
+    await start($, surface)
+    const ui = await pane($, surface)
+
+    expect(await keys(ui, 'session:')).toEqual([`session:${OWN}`, 'session:session-5d'])
     await ui.unmount()
   })
 
@@ -132,8 +143,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await pane($, surface)
 
     expect(await label(ui, 'chip:working')).toBe('working 2')
-    expect(await label(ui, 'chip:idle')).toBe('idle 3')
-    expect(await label(ui, 'chip:bg')).toBe('bg 1')
+    expect(await label(ui, 'chip:idle')).toBe('idle 2')
+    expect(await keys(ui, 'chip:')).toEqual(['chip:working', 'chip:idle', 'chip:archived'])
     expect(await label(ui, 'chip:archived')).toBe('archived 1')
     expect((await ui.find({ key: 'new' }))?.props.hotkey).toBe('n')
     expect((await ui.find({ key: 'focus-filter' }))?.props.hotkey).toBe('f')
@@ -195,18 +206,12 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await pane($, surface)
 
     await ui.press({ key: 'chip:idle' })
-    expect(await keys(ui, 'session:')).toEqual(['session:session-81', 'session:session-t7', 'session:abcd1234-5678'])
+    expect(await keys(ui, 'session:')).toEqual(['session:session-81', 'session:session-t7'])
 
     await ui.press({ key: 'chip:working' })
-    expect(await keys(ui, 'session:')).toHaveLength(5)
+    expect(await keys(ui, 'session:')).toHaveLength(4)
 
     await ui.press({ key: 'chip:working' })
-    await ui.press({ key: 'chip:idle' })
-    await ui.press({ key: 'chip:bg' })
-    expect(await keys(ui, 'session:')).toEqual(['session:abcd1234-5678'])
-
-    await ui.press({ key: 'chip:bg' })
-    await ui.press({ key: 'chip:idle' })
     await ui.input({ key: 'filter', text: 'trantor', kind: 'change' })
     expect(await keys(ui, 'session:')).toEqual(['session:session-81'])
     await ui.unmount()
@@ -217,10 +222,10 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await start($, surface)
     const ui = await pane($, surface)
 
-    await ui.press({ key: 'fold:idle' })
-    expect(await keys(ui, 'session:')).toEqual([`session:${OWN}`, 'session:session-5d'])
-    await ui.press({ key: 'fold:idle' })
-    expect(await keys(ui, 'session:')).toHaveLength(5)
+    await ui.press({ key: 'fold:active' })
+    expect(await keys(ui, 'session:')).toEqual([])
+    await ui.press({ key: 'fold:active' })
+    expect(await keys(ui, 'session:')).toHaveLength(4)
     await ui.unmount()
   })
 
@@ -275,7 +280,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await start($, surface)
     const ui = await pane($, surface)
 
-    expect(await keys(ui, 'fold:')).toEqual(['fold:working', 'fold:idle', 'fold:archived'])
+    expect(await keys(ui, 'fold:')).toEqual(['fold:active', 'fold:archived'])
     expect(await keys(ui, 'session:')).not.toContain('session:old-77')
 
     await ui.press({ key: 'fold:archived' })
@@ -303,13 +308,13 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.unmount()
   })
 
-  test(`an archived session still in the registry stays out of the live groups (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
+  test(`an archived session still in the registry stays out of Active (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
     host(on, { store: new Map([['archived', [{ ...ARCHIVED, sessionId: 'session-81' }]]]) })
     await start($, surface)
     const ui = await pane($, surface)
 
     expect(await keys(ui, 'session:')).not.toContain('session:session-81')
-    expect(await label(ui, 'chip:idle')).toBe('idle 2')
+    expect(await label(ui, 'chip:idle')).toBe('idle 1')
     await ui.unmount()
   })
 
