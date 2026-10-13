@@ -114,6 +114,29 @@ def test_release_soak_queues_behind_a_running_one_rather_than_cancelling_it():
     assert concurrency["cancel-in-progress"] is False
 
 
+def root_checkouts() -> list[tuple[str, dict]]:
+    """Every actions/checkout step that fills the runner's workspace root, as (workflow/job, its `with`)."""
+    found = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for name, body in yaml.safe_load(path.read_text())["jobs"].items():
+            for step in body.get("steps", []):
+                options = step.get("with", {})
+                if step.get("uses", "").startswith("actions/checkout@") and "path" not in options:
+                    found.append((f"{path.name}/{name}", options))
+    return found
+
+
+def test_every_workspace_root_checkout_selects_the_full_tree():
+    """A runner's workspace outlives its job: a sparse root checkout leaves core.sparseCheckout=true, which the next
+    job's `git sparse-checkout disable` cannot clear, so that job gets a tree missing pyproject.toml and starpulse/web.
+    `/*` in non-cone mode overwrites the stale pattern, healing a workspace an earlier sparse checkout poisoned."""
+    checkouts = root_checkouts()
+    assert checkouts
+    for where, options in checkouts:
+        assert options.get("sparse-checkout") == "/*", where
+        assert options.get("sparse-checkout-cone-mode") is False, where
+
+
 def test_trantor_tier_policy_gates_the_green_dispatch():
     """A commit failing trantor's tier policy fails every bump that pins it, so it must not dispatch as green."""
     run = next(step["run"] for step in job("ci.yml", "tier-policy")["steps"] if "run" in step)
@@ -127,7 +150,7 @@ def test_trantor_tests_of_this_package_gate_the_green_dispatch():
     checkouts = [step.get("with", {}) for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")]
     runs = "\n".join(step["run"] for step in contract["steps"] if "run" in step)
     assert contract["runs-on"] == VALIDATE_LANE
-    assert "sparse-checkout" not in checkouts[0]  # a sparse root checkout empties every later job on the runner
+    assert checkouts[0]["sparse-checkout"] == "/*"  # a sparse root checkout empties every later job on the runner
     assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[1].items()
     assert checkouts[2]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
     assert "make test-changed FILES=starpulse CI=1" in runs
