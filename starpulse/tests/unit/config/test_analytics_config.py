@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.config.analytics import Analytics, MachineStage, SkillLoad, SkillMachine
+from starpulse._internal.config.analytics import Analytics, Labeller, MachineStage, SkillLoad, SkillMachine
 from starpulse._internal.config.config import ConfigError, load
 
 
@@ -99,11 +99,61 @@ stages = [
     )
 
 
+def test_a_table_declares_the_endpoint_that_labels_a_human_prompts_intent(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+[analytics.labeller]
+url = "http://127.0.0.1:8006/v1/systemone"
+model = "intent"
+instructions = "Classify this message."
+timeout = 0.5
+
+[analytics.labeller.criteria]
+correction = "The agent erred."
+approval = "Proceed."
+""",
+    )
+
+    assert load(path).analytics.labeller == Labeller(
+        url="http://127.0.0.1:8006/v1/systemone",
+        model="intent",
+        criteria={"correction": "The agent erred.", "approval": "Proceed."},
+        instructions="Classify this message.",
+        timeout=0.5,
+    )
+
+
+def test_a_labeller_with_only_its_required_keys_takes_the_default_timeout(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        '[analytics.labeller]\nurl = "http://x"\nmodel = "m"\n[analytics.labeller.criteria]\na = "A"\n',
+    )
+
+    assert load(path).analytics.labeller == Labeller("http://x", "m", {"a": "A"})
+
+
 @pytest.mark.parametrize(
     ("table", "refusal"),
     [
         ('analytics = "x"', "analytics must be an [analytics] table"),
         ("[analytics]\nroot = []", "analytics: unknown key(s) root"),
+        ("[analytics]\nlabeller = 1", "analytics.labeller must be a [analytics.labeller] table"),
+        ('[analytics.labeller]\nmodel = "m"', "analytics.labeller needs url"),
+        ('[analytics.labeller]\nurl = "http://x"', "analytics.labeller needs model"),
+        ('[analytics.labeller]\nurl = "http://x"\nmodel = "m"', "analytics.labeller: needs criteria"),
+        (
+            '[analytics.labeller]\nurl = "http://x"\nmodel = "m"\ncriteria = { a = 1 }',
+            "analytics.labeller: criteria must map each label to its definition",
+        ),
+        (
+            '[analytics.labeller]\nurl = "http://x"\nmodel = "m"\ncriteria = { a = "A" }\ntimeout = 0',
+            "analytics.labeller: timeout must be a positive number of seconds",
+        ),
+        (
+            '[analytics.labeller]\nurl = "http://x"\nmodel = "m"\ncriteria = { a = "A" }\nspeed = 1',
+            "analytics.labeller: unknown key(s) speed",
+        ),
         ("[analytics]\nroots = [1]", "analytics: roots must be a list of text"),
         ('[analytics]\nstop_activities = "a"', "analytics: stop_activities must be a list of text"),
         ('[analytics]\nroots = ["relative"]', "analytics: roots must be absolute paths"),
@@ -113,7 +163,7 @@ stages = [
             "[[analytics.skill_loads]]\nskill = 'x'\ntitle = '('",
             "analytics.skill_loads[0]: title is not a regular expression",
         ),
-        ('[analytics]\ninjected_openings = [1]', "analytics: injected_openings must be a list of text"),
+        ("[analytics]\ninjected_openings = [1]", "analytics: injected_openings must be a list of text"),
         ('[analytics]\noperator_tools = "a"', "analytics: operator_tools must be a list of text"),
         ('[analytics]\nclaims = ["("]', "analytics: claims[0] is not a regular expression"),
         ('[analytics]\nclaims = ["TASK-\\\\d+"]', "analytics: claims[0] needs a group that captures the task key"),

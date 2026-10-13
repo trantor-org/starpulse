@@ -9,11 +9,12 @@ from dataclasses import asdict
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.config.analytics import Analytics, Labeller
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.harnesses.claude_code import ClaudeCodeAdapter, handler, publisher
 from starpulse._internal.harnesses.telemetry import CLAUDE_CODE, Signal, TelemetryLog, signals
 from starpulse.contracts.adapters import TaskKeys
+from starpulse.tests.integration.harnesses.test_labeller import answer, stub
 from starpulse.tests.unit.harnesses.test_telemetry import claude, export
 
 
@@ -90,38 +91,45 @@ def test_a_codex_signal_stored_before_the_uncaptured_mark_existed_reads_as_uncap
     assert read.captured is False
 
 
-def test_a_prompts_text_is_in_no_stored_row_while_its_turn_carries_a_label(tmp_path: Path) -> None:
+def test_a_prompts_text_is_in_no_stored_row_while_its_turn_carries_an_origin_and_the_labellers_intent(
+    tmp_path: Path,
+) -> None:
     sentinel = "SENTINEL-prompt-3f9c2a"
     keys = TaskKeys(key=re.compile(r"TASK-\d+"), branch=re.compile(r"task-(\d+)"), key_format="TASK-{}")
-    analytics = Analytics(injected_openings=("<task-notification",))
     log = log_at(tmp_path)
     telemetry = TelemetryLog(log)
-    server = ThreadingHTTPServer(
-        ("127.0.0.1", 0),
-        handler(
-            ClaudeCodeAdapter(keys),
-            publisher(log),
-            lambda payload: telemetry.publish(signals(payload, None, analytics=analytics, keys=keys)),
-        ),
-    )
-    threading.Thread(target=server.serve_forever, daemon=True).start()
     body = export(
         claude("user_prompt", 1, prompt=f"please look at {sentinel}", prompt_length=30, **{"prompt.id": "p1"}),
         claude("assistant_response", 2, **{"prompt.id": "p1"}),
         claude("user_prompt", 3, prompt=f"<task-notification>{sentinel}</task-notification>", **{"prompt.id": "p2"}),
     )
-    try:
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{server.server_port}/v1/logs",
-            data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
+    with stub(answer("request")) as (url, seen):
+        analytics = Analytics(
+            injected_openings=("<task-notification",), labeller=Labeller(url, "intent", {"request": "New work."})
         )
-        urllib.request.urlopen(request, timeout=10).close()
-    finally:
-        server.shutdown()
-        server.server_close()
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            handler(
+                ClaudeCodeAdapter(keys),
+                publisher(log),
+                lambda payload: telemetry.publish(signals(payload, None, analytics=analytics, keys=keys)),
+            ),
+        )
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{server.server_port}/v1/logs",
+                data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(request, timeout=10).close()
+        finally:
+            server.shutdown()
+            server.server_close()
 
+    # the labeller was sent the human prompt's text and not the injected one's
+    assert [r["state"] for r in seen] == [f"please look at {sentinel}"]
     stored = "\n".join(sqlite3.connect(tmp_path / "events.sqlite").iterdump())
     assert sentinel not in stored
     prompts = [s for s in TelemetryLog(log).read() if s.kind == "prompt"]
-    assert [(s.turn, s.detail) for s in prompts] == [("p1", "human"), ("p2", "injected")]
+    assert [(s.turn, s.detail, s.label) for s in prompts] == [("p1", "human", "request"), ("p2", "injected", "")]

@@ -43,27 +43,32 @@ one. Every step after a claim belongs to the claimed task, until the next claim 
 session's first claim or task-naming switch, when its launch branch names no task, belong to that first task. The body is
 `{now, window_s, sessions, slices}`:
 
-- A `sessions` row is `{harness, session, task, kind, first_at, last_at, prompts, operator_prompts, requests,
-  side_requests, tool_calls, tool_failures, tools, rejections, gates, skills, compactions, interrupts, models, efforts,
+- A `sessions` row is `{harness, session, task, kind, first_at, last_at, prompts, operator_prompts, prompt_labels, requests,
+  side_requests, tool_calls, tool_failures, tools, rejections, user_rejects, gates, skills, compactions, interrupts, models, efforts,
   main_model, main_effort, model_changes, effort_changes, tokens, cost_usd, agent_s, operator_wait_s, idle_s, steps_before_edit, complete}`.
   `models` and `efforts` list every value seen, side requests included; `main_model` and `main_effort` are the first
   ones the main thread reported (null until it reports one), the session's profile.
   `kind` is `headless`, `interactive` or `unknown`. `operator_prompts` are the human prompts after the task's claim
-  (after the session's first prompt for the task it launched on or first claimed); `requests` are the main thread's model calls and
+  (after the session's first prompt for the task it launched on or first claimed), and `prompt_labels` counts those the
+  instance's labeller named by intent (none when no labeller is configured; it changes no other count); `requests` are the main thread's model calls and
   `side_requests` a subagent's. `steps_before_edit` is the model requests before the task's first successful `Edit`,
   `Write`, `MultiEdit` or `NotebookEdit`, null until it has one. `complete` is true for a session that loaded the
-  `completion_skill` and then ran a shell command matching `completion_call`. `rejections` counts rejected tool decisions by their source,
+  `completion_skill` and then ran a shell command matching `completion_call`. `rejections` counts rejected tool decisions by their source and `user_rejects` those whose source is `user_reject` or
+  `user_abort`,
   `gates` the same rejections by `<source>:<tool>` (`hook:Bash`, `user:Edit`; the export names no hook script, so a
   hook's gate is the tool it refused), and `compactions` by trigger. `tokens` is `{input, output, cache_read, cache_write, reasoning}`, with Codex's cached
   tokens taken out of its input; `cost_usd` is null for a session whose harness exports no cost.
-- A `slices` entry adds up the sessions that worked one task: `sessions`, `steps`, `operator_prompts`, `interrupts`,
-  `interventions` (operator prompts plus interrupts), `escalated` (a model or effort changed between main-thread
+- A `slices` entry adds up the sessions that worked one task: `sessions`, `steps`, `operator_prompts`, `prompt_labels`, `interrupts`,
+  `rejections`, `user_rejects`, `interventions` (operator prompts plus interrupts), `escalated` (a model or effort changed between main-thread
   requests) and `clean` (one session, no intervention, not escalated), with the same tokens, cost and time sums, and
   `complete` and `steps_before_edit` of its sessions (the earliest that has one).
   Whether the task then settled in Review or Done is the board's fact, which the reader joins.
 - A turn is the signals that share a Claude Code `prompt.id`; its end is its last signal. A prompt is labelled
   `injected` when its opening matches an `injected_openings` prefix and `human` otherwise; the label is kept and the
-  prompt's text never is. Codex exports no `prompt.id`, so a Codex prompt's turn is the signals up to the next
+  prompt's text never is. With an `[analytics.labeller]` configured, a `human` Claude Code prompt's text is also sent
+  to that Laya typed-decision endpoint, which names its intent (one of the table's `criteria`, else `unsure`); that
+  label is kept on the prompt and the text never is. An endpoint that is unreachable, slower than its `timeout`
+  (default 2 s) or answers nothing usable leaves the label empty and ingest goes on. Codex exports no `prompt.id`, so a Codex prompt's turn is the signals up to the next
   prompt, and its prompts are all `human`.
 - Time comes from the events' own durations, not from the gaps between them. `agent_s` is the sum of the model
   requests' and tool results' durations (a subagent's included) and of the `hook_execution_complete` events a turn

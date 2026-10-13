@@ -158,6 +158,7 @@ class TestConfigCheck:
                 "completion_skill": "",
                 "completion_call": None,
                 "skill_machines": [],
+                "labeller": None,
             },
             "task_actor": False,
             "search": {"embeddings_url": None, "model": None, "token_env": None},
@@ -184,6 +185,11 @@ class TestConfigCheck:
             "[[analytics.skill_machines]]\n"
             'skill = "developing-test-first"\n'
             'stages = [{ name = "RED", activities = ["pytest"], ok = false }]\n'
+            "[analytics.labeller]\n"
+            'url = "http://laya/v1"\n'
+            'model = "intent"\n'
+            "[analytics.labeller.criteria]\n"
+            'approval = "Proceed."\n'
         )
 
         code, document = _run(capsys, ["config", "check", "--config", str(file)])
@@ -205,6 +211,13 @@ class TestConfigCheck:
                     "stages": [{"name": "RED", "activities": ["pytest"], "ok": False}],
                 }
             ],
+            "labeller": {
+                "url": "http://laya/v1",
+                "model": "intent",
+                "criteria": {"approval": "Proceed."},
+                "instructions": "",
+                "timeout": 2.0,
+            },
         }
 
     def test_with_no_file_it_reports_the_defaults(

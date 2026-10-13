@@ -5502,6 +5502,12 @@
         "operator_wait_s": {
           "type": "number"
         },
+        "prompt_labels": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
         "prompts": {
           "type": "integer"
         },
@@ -5560,6 +5566,9 @@
             "type": "integer"
           },
           "type": "object"
+        },
+        "user_rejects": {
+          "type": "integer"
         }
       },
       "required": [
@@ -5571,12 +5580,14 @@
         "last_at",
         "prompts",
         "operator_prompts",
+        "prompt_labels",
         "requests",
         "side_requests",
         "tool_calls",
         "tool_failures",
         "tools",
         "rejections",
+        "user_rejects",
         "gates",
         "skills",
         "compactions",
@@ -5874,6 +5885,12 @@
         "operator_wait_s": {
           "type": "number"
         },
+        "prompt_labels": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
         "rejections": {
           "type": "integer"
         },
@@ -5910,6 +5927,9 @@
         },
         "tool_calls": {
           "type": "integer"
+        },
+        "user_rejects": {
+          "type": "integer"
         }
       },
       "required": [
@@ -5924,8 +5944,10 @@
         "side_steps",
         "tool_calls",
         "operator_prompts",
+        "prompt_labels",
         "interrupts",
         "rejections",
+        "user_rejects",
         "interventions",
         "compactions",
         "skills",

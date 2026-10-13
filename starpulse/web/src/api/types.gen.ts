@@ -1727,6 +1727,9 @@ export interface SessionHealth {
   models: string[];
   operator_prompts: number;
   operator_wait_s: number;
+  prompt_labels: {
+    [k: string]: number;
+  };
   prompts: number;
   rejections: {
     [k: string]: number;
@@ -1745,6 +1748,7 @@ export interface SessionHealth {
   tools: {
     [k: string]: number;
   };
+  user_rejects: number;
 }
 /**
  * What the sessions that worked one task did together.
@@ -1766,6 +1770,9 @@ export interface SliceHealth {
   models: string[];
   operator_prompts: number;
   operator_wait_s: number;
+  prompt_labels: {
+    [k: string]: number;
+  };
   rejections: number;
   sessions: number;
   side_steps: number;
@@ -1777,6 +1784,7 @@ export interface SliceHealth {
   task: string;
   tokens: TokenCounts;
   tool_calls: number;
+  user_rejects: number;
 }
 export interface Snapshot {
   /**

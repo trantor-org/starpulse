@@ -6,8 +6,10 @@ by its `event.timestamp`. Codex names its event in the `event.name` attribute, w
 `eventName`, since the attribute is what the exporter sets.
 
 What a signal keeps is a count, a duration, a model or effort name, a tool, skill or decision name and the branch;
-the prompt, reply, tool output and account fields every such record also carries are never read, and a shell tool's
-input is read only for the `git switch` or `git checkout` ref it names, which is kept as a `branch` signal.
+the reply, tool output and account fields every such record also carries are never read; a prompt's text is read only
+for its origin label and, when the instance configures a labeller, sent to it for its intent label, and never kept; and
+a shell tool's input is read only for the `git switch` or `git checkout` ref it names, which is kept as a `branch`
+signal.
 
 | harness | records read |
 |---|---|
@@ -29,6 +31,7 @@ from typing import Any
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths
+from starpulse._internal.harnesses.labeller import intent_label
 from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
 from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
@@ -267,7 +270,11 @@ def signals(
             if fields["kind"] == "tool" and harness == CLAUDE_CODE:
                 fields = {**fields, "command": _stored_command(a, redact)}
             elif fields["kind"] == "prompt" and harness == CLAUDE_CODE:
-                fields = {**fields, "detail": _label(a.get("prompt"), reading.injected_openings)}
+                origin = _label(a.get("prompt"), reading.injected_openings)
+                intent = (
+                    intent_label(reading.labeller, str(a["prompt"])) if reading.labeller and origin == "human" else ""
+                )
+                fields = {**fields, "detail": origin, "label": intent}
             found.append(
                 Signal(
                     harness, session, time=at, key=key, branch=branch, captured=harness == CLAUDE_CODE, turn=turn, **fields
