@@ -20,8 +20,12 @@ A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pyte
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
 A test whose setup, call and teardown together pass 5 s (`SLOW_TEST_SECONDS` overrides it) is named at the end of the
 run, slowest first (`ci/slow_tests.py`); in CI each is also a warning annotation on its `def` line and a row in the job
-summary. It never fails the run: make the test faster, or keep it slow with a `# Stays slow: <reason>` comment directly
-above its `def`, naming what the test must pay for (a server process, a container, a cold import).
+summary. A test that burns more than 5 CPU-s (`SLOW_TEST_CPU_SECONDS` overrides it; self plus waited-for children)
+is named beside them with its CPU seconds and the growth of its worker's peak RSS, and the summary table has Wall s,
+CPU s and Peak MB columns. Containers a test starts (Postgres, mock-oauth2) run outside the process tree, so their CPU
+and memory are not counted. None of it fails the run: make the test faster, or keep it slow with a `# Stays slow:
+<reason>` comment directly above its `def`, naming what the test must pay for (a server process, a container, a cold
+import).
 `starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`, and one
 background thread starts the session's Postgres and mock-issuer containers when collection finishes, so a test waits on
 a warm container instead of paying its start.
