@@ -95,6 +95,7 @@ _DONE = re.compile(r"<!-- DOD:BEGIN -->(.*?)<!-- DOD:END -->", re.S)
 _FINAL_SUMMARY = re.compile(r"<!-- SECTION:FINAL_SUMMARY:BEGIN -->(.*?)<!-- SECTION:FINAL_SUMMARY:END -->", re.S)
 _COMMENTS_SECTION = re.compile(r"<!-- COMMENTS:BEGIN -->(.*?)<!-- COMMENTS:END -->", re.S)
 _COMMENT_HEAD = re.compile(r"^created: (\S+ \S+)\n---\n", re.M)
+_SESSION_LINK = re.compile(r"^\*\*Session Link:\*\* (\S+)", re.M)
 _NOTES_SECTION = "\n## Implementation Notes\n\n<!-- SECTION:NOTES:BEGIN -->\n{}\n<!-- SECTION:NOTES:END -->\n"
 
 
@@ -295,6 +296,13 @@ def _comments(body: str) -> list[dict[str, str]]:
     ]
 
 
+def _session(notes: str, comments: list[dict[str, str]]) -> str:
+    """The link of the latest `**Session Link:**` line: the newest comment that has one, else the notes', else empty."""
+    texts = [notes, *(comment["text"] for comment in comments)]
+    links = [link for text in texts for link in _SESSION_LINK.findall(text)]
+    return links[-1] if links else ""
+
+
 def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) -> TaskReader:
     """A board reader: the record of the task's file, keyed by the fields the task view draws and edits.
 
@@ -308,6 +316,7 @@ def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) ->
         except OSError:
             return None  # moved or removed while reading
         description = _description(body)
+        notes, comments = _section(_NOTES, body), _comments(body)
         return {
             "title": str(frontmatter.get("title") or ""),
             "type": str(frontmatter.get("type") or ""),
@@ -323,9 +332,10 @@ def _reader(root: Path, evaluate: Callable[[str, str], list[dict[str, Any]]]) ->
             "description": description,
             "start_criteria": evaluate(task, description),
             "plan": _section(_PLAN, body),
-            "notes": _section(_NOTES, body),
+            "notes": notes,
             "finalSummary": _section(_FINAL_SUMMARY, body),
-            "comments": _comments(body),
+            "comments": comments,
+            "session": _session(notes, comments),
             "acceptanceCriteria": _items(_CRITERIA, body),
             "definitionOfDone": _items(_DONE, body),
         }
