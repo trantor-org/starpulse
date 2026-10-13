@@ -297,16 +297,18 @@ a `directory` marketplace pointing at a local checkout, serves them as `starpuls
 The same marketplace serves `starpulse-board` (`plugins/starpulse-board/`, `/plugin install starpulse-board@starpulse`):
 it runs `starpulse board --holder <session id>` when a session starts, after each tool call and after each turn, so a
 task claimed mid-turn shows before the turn ends. It draws each task that session holds as one row above the prompt in
-StarPulse's palette: lane dot, ID, the title (or the reason a Needs attention task waits on the operator, or what a
+StarPulse's palette: lane icon, ID, the title (or the reason a Needs attention task waits on the operator, or what a
 Waiting task waits on), a bar of checked acceptance criteria with `k/n`, the lane, and the PR with its check state. A
 server that serves no checked state draws the criteria count without a bar. Details opens a pane with the criteria
 ticked off, the holder and the PR; ✕ hides the band until its Show button or `/board`. The Claude Desktop (SSH) row is one
-`Svg` and the terminal row is Ink text. The `Svg` pulses the lane dot of an In Progress task and a running check, and
+`Svg` and the terminal row is Ink text. Icons are Nerd Font v3 glyphs; the `glyphs` plugin option (`nerd`, the default, or `plain`) sets
+the plain Unicode characters instead, for a terminal without a Nerd Font, since a terminal cannot report its font. No band or
+pane element sets a background and every Button is `plain`, so the elements add no fill of their own. The `Svg` pulses the lane dot of an In Progress task and a running check, and
 stops under the system's reduced-motion setting; the terminal row does not animate. `/board` lists the tasks with
 their titles. It reads only the `starpulse` CLI, retrying `~/.local/bin/starpulse` when the one on `PATH` fails or is missing, so it
 shows no tasks when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
 
-Below the tasks one button counts every other Claude Code session on the host by status (`● 2 busy · ○ 5 idle`), from
+Below the tasks one button counts every other Claude Code session on the host by status (`2 working · 5 idle`, each with its status icon), from
 the registry each session writes under `~/.claude/sessions/`, reread every 5 seconds without waiting on `starpulse
 board`. The Sessions pane, one row per session with its status, opens by itself once the first list holds a session,
 docked as a tab beside the other right-side panes (such as Files) on a fullscreen terminal of 144 columns or more; until
@@ -320,13 +322,16 @@ client; otherwise the press shows a toast. Any other session, such as one the de
 button.
 
 A Board button beside the count, and `/kanban`, open the Board pane: the board as a kanban, docked as its own tab with
-focus and, like Sessions, closing itself when placed inline. It stacks the open lanes (In Progress, Review, Needs
-attention, Ready, Waiting), each a header with its count that folds and unfolds the lane; Ready and Waiting start
-folded. Each task is a button that shows its actions. Start session, on a Ready, Waiting or Needs attention task, posts
+focus and, like Sessions, closing itself when placed inline. Its header names the open-task count beside a refresh
+button. It stacks the open lanes (In Progress, Review, Needs attention, Ready, Waiting), each a header with the lane's
+icon and colour, its count and a rule, that folds and unfolds the lane; Ready and Waiting start folded. A task is a row of
+its ID, its title (or the reason a Needs attention task waits, or what a Waiting task waits on), a four-cell bar of
+checked criteria and its PR's check icon; titles truncate first on a narrow dock, then the bar. Each task is a button
+that picks it: the row opens to the full title, the holder, the criteria count, the PR and its checks, and its actions. Start session, on a Ready, Waiting or Needs attention task, posts
 `/api/start` with the task's assignee and harness `claude`, then runs `tmux switch-client` to `task-<N>` (outside a tmux
 client, a toast names the `tmux attach` command). Go to session, on any other lane, switches to the task holder's live
-session, or toasts that it has none. A `→ <lane>` button for each move the board allows posts `/api/move`; a refused move
-shows its error as a toast. Each action rereads the board, and the pane rereads it with the band while open.
+session, or toasts that it has none. A `→ <lane>` button, coloured by the target lane, for each move the board lists posts `/api/move`; a refused move
+shows the server's reason as a toast and leaves the board as read. Each action rereads the board, and the pane rereads it with the band while open.
 
 ## The pull-request store
 

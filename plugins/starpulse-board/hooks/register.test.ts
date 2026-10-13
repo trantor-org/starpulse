@@ -195,7 +195,7 @@ test('terminal row: ID, title, AC bar and k/n, column, PR and its checks, button
   await $.command.run(RUN)
   const ui = await band($, 'terminal')
 
-  for (const text of ['PROJ-1', 'Add the verbs', '██████░░░░░░', '2/4', 'In Progress', '#392', 'PROJ-2', '████████████', '4/4', 'Review', '#388']) {
+  for (const text of ['PROJ-1', 'Add the verbs', '██████', '░░░░░░', '2/4', 'In Progress', '#392', 'PROJ-2', '████████████', '4/4', 'Review', '#388']) {
     expect(await ui.find({ type: 'Text', text }), text).toBeDefined()
   }
   expect(await checkColor(ui, 'PROJ-1')).toBe('#fbbf24')
@@ -554,7 +554,7 @@ const sent = (argv: readonly string[]) => JSON.parse(argv[argv.indexOf('--data')
 test('the Board tab lists the open lanes in order with their counts, Ready and Waiting folded', async ($, on) => {
   const ui = await openKanban($, on)
 
-  const lanes = (await ui.findAll({ type: 'Button', text: /^[▾▸] / })).map((b: any) => b.props.label)
+  const lanes = (await ui.findAll({ type: 'Button' })).map((b: any) => String(b.props.label)).filter((label: string) => /^[▾▸] /.test(label))
   expect(lanes).toEqual(['▾ In Progress 1', '▾ Review 0', '▾ Needs Attention 0', '▸ Ready 1', '▸ Waiting 0'])
   expect((await ui.find({ key: 'task:TASK-7' }))?.props.label).toBe('TASK-7 Busy one')
   expect(await ui.find({ key: 'task:TASK-10' })).toBeUndefined()
@@ -669,7 +669,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await band($, surface)
     await start($, surface)
 
-    expect((await ui.find({ key: 'sessions' }))?.props.label).toBe('● 1 busy · ○ 2 idle')
+    expect((await ui.find({ key: 'sessions' }))?.props.label).toBe('1 working · 2 idle')
     expect(await ui.find({ key: 'session:session-2' })).toBeUndefined()
   })
 
@@ -841,8 +841,149 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await settle()
 
     expect(before).toBeUndefined()
-    expect((await ui.find({ key: 'sessions' }))?.props.label).toBe('● 1 busy · ○ 2 idle')
+    expect((await ui.find({ key: 'sessions' }))?.props.label).toBe('1 working · 2 idle')
     expect(spawned.find(argv => argv[0] === 'inotifywait')?.at(-1)).toBe('/home/me/.claude/sessions')
     expect(everys).toEqual([])
   })
 }
+
+// The Nerd Font v3 icons the mod draws by default, and the plain characters `glyphs: plain` swaps in.
+const NERD = { inProgress: '', pending: '', pass: '', move: '', refresh: '', board: '', go: '', pr: '' }
+const PLAIN = { inProgress: '▶', pending: '●', pass: '✓', move: '→', refresh: '↻', board: '▦', go: '↗', pr: '#' }
+
+const LANE_COLORS = { in_progress: '#fbbf24', review: '#a78bfa', needs_attention: '#fb7185', ready: '#60a5fa', waiting: '#94a3b8', done: '#34d399' }
+
+// Every lane, each with one task that holds a PR and criteria, for the Board pane's colours.
+const COLOURED = board([
+  ['ready', 'Ready', [task({ id: 'TASK-10', title: 'Ready one', moves: { in_progress: { allowed: true } } })]],
+  ['waiting', 'Waiting', [task({ id: 'TASK-11', title: 'Waits', waiting_on: ['TASK-7'] })]],
+  ['in_progress', 'In Progress', [task({ id: 'TASK-7', title: 'Busy one', holder: 'session-2', moves: { review: { allowed: true }, done: { allowed: true } } })]],
+  ['review', 'Review', [task({ id: 'TASK-12', title: 'Reviewed', prs: [{ url: `${PULL}/9`, checks: 'pass' }] })]],
+  ['needs_attention', 'Needs Attention', [task({ id: 'TASK-13', title: 'Stuck', pause_reason: 'Operator: pick one', prs: [] })]],
+])
+
+// Every Text of a tree as [text, color, bold], read once: each `find` costs a round trip and a test has five seconds.
+type Seen = { text: string; color?: string; bold?: boolean }[]
+const texts = async (tree: any): Promise<Seen> =>
+  (await tree.findAll({ type: 'Text' })).map((el: any) => ({ text: el.children.join(''), color: el.props.color, bold: el.props.bold }))
+const has = (seen: Seen, text: string) => seen.some(t => t.text === text)
+const colorOf = (seen: Seen, text: string) => seen.find(t => t.text === text)?.color
+
+for (const glyphs of ['nerd', 'plain'] as const) {
+  const set = glyphs === 'nerd' ? NERD : PLAIN
+  test(`glyphs=${glyphs}: the band and the Board tab draw ${glyphs} icons`, { options: { glyphs } }, async ($, on) => {
+    const stream = feed()
+    const ui = await openKanban($, on, { board: () => answer(0, COLOURED), held: [stream] })
+    stream.held(BOARD)
+    await settle()
+    const held = await texts(await band($, 'terminal'))
+    await ui.press({ key: 'task:TASK-7' })
+    const tab = await texts(ui)
+
+    // The band: the held task's lane icon and PR checks glyph, and the summary line's Board icon.
+    expect(has(held, set.inProgress), 'lane icon').toBe(true)
+    expect(has(held, set.pending), 'checks glyph').toBe(true)
+    expect(has(held, `${set.board} Board`), 'board icon').toBe(true)
+    // The Board tab: refresh, lane icon, PR glyph, move arrow and the go icon once a task is picked.
+    expect(has(tab, set.refresh), 'refresh').toBe(true)
+    expect(has(tab, set.inProgress), 'lane icon in the tab').toBe(true)
+    expect(has(tab, `${set.move} Review`), 'move arrow').toBe(true)
+    expect(has(tab, `${set.go} Go to session`), 'go icon').toBe(true)
+    expect(has(tab, `${set.pr} #392`), 'pr icon').toBe(true)
+    await ui.unmount()
+  })
+}
+
+test('the Board tab colours each lane header and icon by its lane', async ($, on) => {
+  const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+  const seen = await texts(ui)
+
+  const names = { in_progress: 'IN PROGRESS', review: 'REVIEW', needs_attention: 'NEEDS ATTENTION', ready: 'READY', waiting: 'WAITING' } as const
+  for (const [lane, name] of Object.entries(names)) {
+    const header = seen.find(t => t.text === name)
+    expect(header?.color, name).toBe(LANE_COLORS[lane as keyof typeof LANE_COLORS])
+    expect(header?.bold, name).toBe(true)
+  }
+  // The lane's count sits beside it, dimmer.
+  expect(colorOf(seen, '1')).toBe('#6b7a93')
+  await ui.unmount()
+})
+
+test('a Board row draws the ID, title, four-cell bar and PR check icon', async ($, on) => {
+  const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+
+  const seen = await texts(ui)
+  expect(colorOf(seen, 'TASK-7')).toBe('#94a3b8')
+  expect(colorOf(seen, 'Busy one')).toBe('#dbe4f3')
+  expect(colorOf(seen, '██')).toBe('#fbbf24')
+  expect(colorOf(seen, '░░')).toBe('#334155')
+  expect(colorOf(seen, NERD.pending)).toBe('#fbbf24')
+  // A reason replaces the title in fail-text; a waiting task says what it waits on.
+  expect(colorOf(seen, 'Operator: pick one')).toBe('#fda4af')
+  await ui.press({ key: 'lane:waiting' })
+  expect(colorOf(await texts(ui), 'waiting on TASK-7')).toBe('#94a3b8')
+  await ui.unmount()
+})
+
+test('a picked task opens its title, holder, criteria, PR and actions coloured by target lane', async ($, on) => {
+  const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+
+  await ui.press({ key: 'task:TASK-7' })
+  const seen = await texts(ui)
+  const first = async (key: string) => ((await ui.find({ key })) as any)?.children[0]?.props.color
+
+  expect(seen.filter(t => t.text === 'Busy one').length, 'row and detail').toBe(2)
+  expect(colorOf(seen, 'task-7'), 'holder').toBe('#94a3b8')
+  expect(colorOf(seen, '2/4 criteria')).toBe('#6b7a93')
+  expect(colorOf(seen, `${NERD.pr} #392`)).toBe('#a78bfa')
+  expect(colorOf(seen, 'checks running')).toBe('#fbbf24')
+  expect(await first('session:TASK-7'), 'Go to session').toBe('#34d399')
+  expect(await first('move:TASK-7:review')).toBe('#a78bfa')
+  expect(await first('move:TASK-7:done')).toBe('#34d399')
+  await ui.press({ key: 'task:TASK-7' })
+  expect(await ui.find({ key: 'session:TASK-7' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a move to Done that StarPulse refuses toasts its reason and leaves the Board as read', async ($, on) => {
+  const toasts: string[] = []
+  const ui = await openKanban($, on, {
+    toasts,
+    board: () => answer(0, COLOURED),
+    post: () => answer(0, '{"error": "only the operator moves TASK-7 to Done"}\n409'),
+  })
+
+  await ui.press({ key: 'task:TASK-7' })
+  await ui.press({ key: 'move:TASK-7:done' })
+
+  expect(toasts).toEqual(['only the operator moves TASK-7 to Done'])
+  expect(await ui.find({ key: 'task:TASK-7' })).toBeDefined()
+  await ui.unmount()
+})
+
+// No fill: a `plain` Button draws no chrome and nothing sets a background, so the terminal's black shows through.
+const drawsNoFill = async (tree: any) => {
+  const buttons = await tree.findAll({ type: 'Button' })
+  expect(buttons.length).toBeGreaterThan(0)
+  for (const b of buttons) expect(b.props.plain, String(b.props.label)).toBe(true)
+  for (const type of ['Box', 'Text', 'Button'])
+    for (const el of await tree.findAll({ type })) expect(el.props.backgroundColor, `${type} fill`).toBeUndefined()
+}
+
+test('the Board tab draws no fill: every Button is plain and no element sets a background', async ($, on) => {
+  const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+  await ui.press({ key: 'task:TASK-7' })
+
+  await drawsNoFill(ui)
+  await ui.unmount()
+})
+
+test('the band draws no fill: every Button is plain and no element sets a background', async ($, on) => {
+  const stream = feed()
+  sessionsHost(on, { board: () => answer(0, COLOURED), held: [stream] })
+  await start($, 'terminal')
+  stream.held(BOARD)
+  await settle()
+
+  await drawsNoFill(await band($, 'terminal'))
+})
