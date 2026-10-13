@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, event, text
 
-from starpulse._internal.server.server import health_response, level_response, trajectories_response
+from starpulse._internal.server import server
+from starpulse._internal.server.server import (
+    health_response,
+    level_response,
+    trajectories_response,
+    what_if_response,
+)
 from starpulse._internal.eventlog import history
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.integration.level.test_level_http import LEVEL
@@ -340,3 +346,105 @@ def test_a_reader_never_sees_a_window_older_than_the_last_write_that_completed(s
         reader.join()
 
     assert stale == []
+
+
+@pytest.fixture
+def computed(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The views the level routes computed rather than answered from the memo, in order."""
+    seen: list[str] = []
+    for name in ("level_metrics", "trajectory_analytics", "what_if"):
+        monkeypatch.setattr(server, name, _counting(seen, name, getattr(server, name)))
+    return seen
+
+
+def _counting(seen: list[str], name: str, view):
+    def counted(*args, **kwargs):
+        seen.append(name)
+        return view(*args, **kwargs)
+
+    return counted
+
+
+@pytest.mark.parametrize(
+    ("route", "view"),
+    [(level_response, "level_metrics"), (trajectories_response, "trajectory_analytics")],
+    ids=["level", "trajectories"],
+)
+def test_a_repeat_request_with_no_summary_write_between_is_answered_from_the_memo(
+    store: HistoryStore, computed: list[str], route, view: str
+) -> None:
+    first = route(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+
+    again = route(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW + 1)
+
+    assert (again, computed) == (first, [view])
+
+
+def test_a_summary_write_forgets_the_memo(store: HistoryStore, computed: list[str]) -> None:
+    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+    store.record_lane("a/new", "N", "In Progress", NOW - H)
+
+    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+
+    assert computed == ["level_metrics", "level_metrics"]
+
+
+def test_a_request_in_a_later_second_bucket_computes_again(store: HistoryStore, computed: list[str]) -> None:
+    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+
+    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW + history._ANSWER_BUCKET_S)
+
+    assert computed == ["level_metrics", "level_metrics"]
+
+
+def test_distinct_query_params_get_distinct_entries(store: HistoryStore, computed: list[str]) -> None:
+    day = level_response(store, {"hours": ["24"]}, LEVEL, MACHINES, NOW)
+    two_days = level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+
+    assert day != two_days
+    assert level_response(store, {"hours": ["24"]}, LEVEL, MACHINES, NOW) == day
+    assert computed == ["level_metrics", "level_metrics"]
+
+
+def test_params_a_route_does_not_read_share_its_entry(store: HistoryStore, computed: list[str]) -> None:
+    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+
+    level_response(store, {"hours": ["48"], "cachebuster": ["1"]}, LEVEL, MACHINES, NOW)
+
+    assert computed == ["level_metrics"]
+
+
+def test_the_memo_holds_at_most_its_bound_and_forgets_the_least_recently_used(
+    store: HistoryStore, computed: list[str]
+) -> None:
+    kept = history._ANSWERS_KEPT
+    for hours in range(1, kept + 2):
+        level_response(store, {"hours": [str(hours)]}, LEVEL, MACHINES, NOW)
+    computed.clear()
+
+    level_response(store, {"hours": [str(kept + 1)]}, LEVEL, MACHINES, NOW)
+    assert computed == []
+    level_response(store, {"hours": ["1"]}, LEVEL, MACHINES, NOW)
+
+    assert computed == ["level_metrics"]
+
+
+def test_what_if_responses_differ_when_their_transition_parameters_differ(
+    store: HistoryStore, computed: list[str]
+) -> None:
+    def ask(p: str) -> tuple[bytes, int]:
+        query = {"hours": ["48"], "from": ["review"], "to": ["in_progress"], "p": [p]}
+        return what_if_response(store, query, LEVEL, MACHINES, NOW)
+
+    never, always = ask("0"), ask("1")
+
+    assert never != always
+    assert (ask("0"), ask("1")) == (never, always)
+    assert computed == ["what_if", "what_if"]
+
+
+def test_a_refused_what_if_is_not_kept(store: HistoryStore, computed: list[str]) -> None:
+    query = {"hours": ["48"], "from": ["nowhere"], "to": ["in_progress"], "p": ["0"]}
+
+    assert what_if_response(store, query, LEVEL, MACHINES, NOW) == what_if_response(store, query, LEVEL, MACHINES, NOW)
+    assert computed == ["what_if", "what_if"]

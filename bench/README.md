@@ -67,7 +67,8 @@ fetches 29, 37 and 45 rows: rows for the lanes and tasks in flight, not every la
 `starpulse_machine_events` or `starpulse_lane_changes`. The level and trajectories send no statements: the 60
 reads share the one window `HistoryStore.level_window` read for the first, which it keeps until a lane or machine
 event is recorded or the summaries are rebuilt (and re-reads each minute), so the level's p95 is its metrics and the
-trajectories' its analytics. Before that cache, at 10 thousand, the level took 131-176 ms CPU and the trajectories
+trajectories' its analytics, which `HistoryStore.level_answer` keeps as the response body for 5 seconds per route and
+query until the same writes, so a repeat request inside them runs neither. Before the window cache, at 10 thousand, the level took 131-176 ms CPU and the trajectories
 137-176 ms CPU in four runs on the same host, which was loaded (load average 94) while these rows ran. Before the
 summaries the same reads folded every lane change: at 1 million, health took 9.2 s and the level 11.6 s (p95 of 3
 reads, wall). At 10 thousand the first level read reads the

@@ -17,7 +17,8 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Iterable, Mapping
+from collections import OrderedDict
+from collections.abc import Callable, Hashable, Iterable, Mapping
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -82,6 +83,11 @@ _TASKS_PER_QUERY = 500
 #: How long one read of the level's window serves requests, and how many windows (one per level and span asked) are kept.
 _WINDOW_BUCKET_S = 60.0
 _WINDOWS_KEPT = 8
+
+#: How long one computed level answer serves requests, and how many answers (one per route and query) are kept.
+_ANSWER_BUCKET_S = 5.0
+_ANSWERS_KEPT = 32
+_Answer = tuple[bytes, int]
 
 #: The file a config without `database_url` keeps its history in, beside the config.
 DEFAULT_FILE = "starpulse-history.sqlite"
@@ -207,6 +213,11 @@ class SummarisedLevel(History, Protocol):
 
     def level_window(self, level: Level, *, now: float, window_s: float) -> RunWindow: ...
 
+    def level_answer(self, level: Level, key: Hashable, *, now: float, compute: Callable[[], _Answer]) -> _Answer:
+        """`compute()` for `key`, or the answer an earlier request computed in the same few seconds, as long as no
+        summary has been written since."""
+        ...
+
 
 def _held_ids(db: Connection, event_ids: list[str]) -> set[str]:
     """The `event_ids` the lane history holds."""
@@ -267,6 +278,9 @@ class HistoryStore:
         self._windows: dict[tuple[Level, float, float], RunWindow] = {}
         self._windows_lock = threading.Lock()
         self._summaries_version = 0
+        # the level answers computed since the last summary write, least recently used first
+        self._answers: OrderedDict[Hashable, _Answer] = OrderedDict()
+        self._answer_flight = threading.Lock()
         # pragma: no mutate start — SQLite compiles the postgresql insert's ON CONFLICT alike
         self._dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
         # pragma: no mutate end
@@ -345,6 +359,7 @@ class HistoryStore:
         with self._windows_lock:
             self._summaries_version += 1
             self._windows.clear()
+            self._answers.clear()
 
     def _summarise_event(self, db: Connection, row: dict) -> None:
         who = self._summariser
@@ -658,6 +673,31 @@ class HistoryStore:
                     if len(self._windows) >= _WINDOWS_KEPT:
                         del self._windows[next(iter(self._windows))]
                     self._windows[key] = held
+        return held
+
+    def level_answer(self, level: Level, key: Hashable, *, now: float, compute: Callable[[], _Answer]) -> _Answer:
+        """`compute()` for `key`, or the answer an earlier request computed in the same few seconds, as long as no
+        summary has been written since.
+
+        Only the Board's level is kept: another machine's runs are its events, which this store does not version. The
+        answer is as old as the first request of its bucket, and a request that finds one being computed waits for it
+        rather than computing it again.
+        """
+        if level.machine != BOARD:
+            return compute()
+        key = (level, key, now - now % _ANSWER_BUCKET_S)
+        with self._answer_flight:
+            with self._windows_lock:
+                version, held = self._summaries_version, self._answers.get(key)
+                if held is not None:
+                    self._answers.move_to_end(key)
+            if held is None:
+                held = compute()
+                with self._windows_lock:
+                    if self._summaries_version == version:  # a write that committed meanwhile may be missing from it
+                        self._answers[key] = held
+                        if len(self._answers) > _ANSWERS_KEPT:
+                            self._answers.popitem(last=False)
         return held
 
     def _read_level_window(self, level: Level, *, now: float, window_s: float) -> RunWindow:
