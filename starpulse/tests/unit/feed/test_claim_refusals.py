@@ -11,7 +11,7 @@ import pytest
 
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed, follow
-from starpulse._internal.feed.claim_refusals import STREAM, ClaimRefusals
+from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM, ClaimRefusals
 from starpulse.tests.machines import MACHINES
 
 
@@ -33,11 +33,11 @@ def test_a_board_claims_entry_is_the_tasks_claim_with_its_reason_and_time(
     tmp_path: Path, stop: threading.Event
 ) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    log.append(STREAM, {"task": "TASK-7", "reason": "no worktree", "actor": "agent", "time": "100.5"})
+    log.append(CLAIMS_STREAM, {"task": "TASK-7", "reason": "no worktree", "actor": "agent", "time": "100.5"})
     feed = BoardFeed(None, machines=MACHINES)
     refusals = ClaimRefusals(feed)
 
-    follow(refusals, log, STREAM, refusals.handle_entry, stop=stop, interval=0.01)
+    follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry, stop=stop, interval=0.01)
     _until(lambda: "TASK-7" in feed.snapshot()["claims"])
 
     assert feed.snapshot()["claims"] == {"TASK-7": {"reason": "no worktree", "at": 100.5}}
