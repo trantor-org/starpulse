@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchLevel, LevelStore, orbitInput, type LevelResponse } from "./levelData";
+import { fetchLevel, LevelStore, orbitInput, pushLevelMove, type LevelResponse, type LevelState } from "./levelData";
 
 const DAY = 86400;
 const level = (over: Partial<LevelResponse> = {}): LevelResponse => ({
@@ -119,12 +119,83 @@ describe("LevelStore", () => {
     vi.useFakeTimers();
     let asked = 0;
     const store = new LevelStore(async () => (asked++, { kind: "none" }));
-    await store.refresh();
+    store.setActive(true);
     await vi.advanceTimersByTimeAsync(5 * 60_000);
     expect(asked).toBe(1);
     await store.refresh();
     expect(asked).toBe(2);
     store.dispose();
     vi.useRealTimers();
+  });
+
+  describe("while the Orbit view is hidden", () => {
+    const answered = async (): Promise<LevelState> => ({ kind: "ok", level: level() });
+
+    it("asks nothing on the timer or on a lane move, then asks when shown, every minute while shown, and after each lane move", async () => {
+      vi.useFakeTimers();
+      let asked = 0;
+      const store = new LevelStore(async () => (asked++, answered()));
+      await store.refresh(); // the page's first answer, which the navigator's Flow entry needs
+      expect(asked).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      pushLevelMove();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toBe(1);
+
+      store.setActive(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toBe(2);
+      pushLevelMove();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toBe(3);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(asked).toBe(4);
+
+      store.setActive(false);
+      pushLevelMove();
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(asked).toBe(4);
+      store.dispose();
+      vi.useRealTimers();
+    });
+
+    it("leaves the first answer to the page's own first ask when the view is shown before it lands", async () => {
+      vi.useFakeTimers();
+      let asked = 0;
+      const store = new LevelStore(async () => (asked++, answered()));
+      const first = store.refresh();
+      store.setActive(true);
+      await first;
+      expect(asked).toBe(1);
+      store.dispose();
+      vi.useRealTimers();
+    });
+
+    it("folds a burst of lane moves into one ask more than the one in flight", async () => {
+      vi.useFakeTimers();
+      let asked = 0;
+      const store = new LevelStore(async () => (asked++, answered()));
+      await store.refresh();
+      store.setActive(true);
+      await vi.advanceTimersByTimeAsync(0);
+      asked = 0;
+      for (let i = 0; i < 5; i++) pushLevelMove();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(asked).toBe(2);
+      store.dispose();
+      vi.useRealTimers();
+    });
+
+    it("ignores lane moves once disposed", async () => {
+      let asked = 0;
+      const store = new LevelStore(async () => (asked++, answered()), 0);
+      await store.refresh();
+      store.setActive(true);
+      store.dispose();
+      asked = 0;
+      pushLevelMove();
+      expect(asked).toBe(0);
+    });
   });
 });

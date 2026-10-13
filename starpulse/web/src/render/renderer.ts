@@ -32,6 +32,7 @@ import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move
 import type { KanbanTask } from "../features/kanban/kanban";
 import { openStream, type Link } from "../api/stream";
 import { pushAutopilotStatus } from "../features/autopilot/autopilot";
+import { pushLevelMove } from "../features/orbit/levelData";
 import { UPDATING, linkHud } from "./connection";
 import { keep as reuse } from "../api/same";
 import { createHistory } from "../api/history";
@@ -485,6 +486,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       return;
     }
     if (kind === "ledgers" && S) return void applyLedgers(next);
+    if (kind === "move") pushLevelMove(); // a lane move changes the level's counts
     apply(next);
     if (first && demo && !stopped) timer = window.setTimeout(demoTick, 1200);
   }
