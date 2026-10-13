@@ -148,7 +148,10 @@ GET /api/level[?hours=N]
                    each entry into a terminal inside the window, `{source, state, at}` oldest first, for the comets.
                    A `hours` that is no positive number is 400, as is one longer than the history, with
                    `history_s` its length; a server with no `[level]` table or not serving `--hub` is 404, and a
-                   history that does not keep runs is 501
+                   history that does not keep runs is 501. The level, its trajectories and its what-if keep each
+                   answer for the same `hours` (and, for what-if, `from`, `to` and `p`) for 5 seconds, until a lane or
+                   machine event is recorded or the summaries are rebuilt, so `now` is the first request's of those
+                   seconds; at most 32 answers are kept
 GET /api/level/trajectories[?hours=N]
                    the trajectory analytics (`trajectories.trajectory_analytics`) of the level's runs that ended in a
                    terminal in the last `hours`, default 168: `variants` and the `norm`, `outliers` ranked by
@@ -936,23 +939,36 @@ def _level_view(
         return _error("hours must be a positive number"), 400
     if not isinstance(history, LevelHistory):
         return _error("this history does not keep every task's trajectory, so it cannot report the level"), 501
-    try:
-        if isinstance(history, SummarisedLevel):
-            held = history.level_window(level, now=now, window_s=window * 3600)
-        else:
-            held = RunWindow(history.level_runs(level.machine))
-        answer = view(
-            level,
-            machines[level.machine],
-            held.runs,
-            now=now,
-            window_s=window * 3600,
-            history_start=held.first,
-            sources=held.sources,
-        )
-    except WindowPastHistory as exc:
-        return encode(kind, {"error": str(exc), "history_s": exc.history_s}), 400
-    return encode(kind, answer), 200
+
+    def answer() -> tuple[bytes, int]:
+        try:
+            if isinstance(history, SummarisedLevel):
+                held = history.level_window(level, now=now, window_s=window * 3600)
+            else:
+                held = RunWindow(history.level_runs(level.machine))
+            return (
+                encode(
+                    kind,
+                    view(
+                        level,
+                        machines[level.machine],
+                        held.runs,
+                        now=now,
+                        window_s=window * 3600,
+                        history_start=held.first,
+                        sources=held.sources,
+                    ),
+                ),
+                200,
+            )
+        except WindowPastHistory as exc:
+            return encode(kind, {"error": str(exc), "history_s": exc.history_s}), 400
+
+    if not isinstance(history, SummarisedLevel):
+        return answer()
+    # the query's own params, so a junk param cannot fill the memo
+    params = tuple(tuple(query.get(name, ())) for name in ("hours", "from", "to", "p"))
+    return history.level_answer(level, (kind, params), now=now, compute=answer)
 
 
 #: The Vite build names every file under it by its content's digest, so a new build never reuses a name.
