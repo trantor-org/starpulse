@@ -5,5 +5,17 @@
   "types": "./types/index.d.ts",
   "author": {
     "name": "trantor-org"
+  },
+  "userConfig": {
+    "glyphs": {
+      "type": "string",
+      "title": "Glyphs",
+      "description": "nerd draws Nerd Font v3 icons (needs a Nerd Font in the terminal); plain draws ordinary Unicode characters. A terminal cannot report its font, so set plain when icons show as boxes.",
+      "default": "nerd",
+      "options": [
+        "nerd",
+        "plain"
+      ]
+    }
   }
 }

@@ -1,7 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface as Engine, Register } from 'claude-code'
 import type { BoardTask, Checks, HeldTask, Lane, PeerSession, Pull } from '../types'
-import { CHECKS, ROW_HEIGHT, SP, alt, laneOf, paneSvg, progress, ratio, rowSvg, subline, termBar } from './draw'
+import { CHECKS, LANES as LANE_STYLES, ROW_HEIGHT, SP, alt, glyphs, laneIcon, laneOf, paneSvg, progress, ratio, rowSvg, subline, termBar } from './draw'
+import type { Glyphs } from './draw'
 
 const PANE = 'starpulse-board'
 const SESSIONS = 'starpulse-sessions'
@@ -45,20 +46,19 @@ const pullOf = (prs: RawTask['prs']): Pull | null => {
   return { repo, number, checks: CHECK_NAMES[pr.checks ?? ''] ?? 'none' }
 }
 
-const heldOf = (board: Board): HeldTask[] =>
-  board.columns.flatMap(c =>
-    c.tasks.map(t => ({
-      id: t.id,
-      title: t.title,
-      column: c.name,
-      lane: c.state,
-      holder: t.holder ?? '',
-      criteria: t.criteria ?? null,
-      reason: t.pause_reason ?? '',
-      waitingOn: t.waiting_on ?? [],
-      pull: pullOf(t.prs),
-    })),
-  )
+const taskOf = (t: RawTask, c: Board['columns'][number]): HeldTask => ({
+  id: t.id,
+  title: t.title,
+  column: c.name,
+  lane: c.state,
+  holder: t.holder ?? '',
+  criteria: t.criteria ?? null,
+  reason: t.pause_reason ?? '',
+  waitingOn: t.waiting_on ?? [],
+  pull: pullOf(t.prs),
+})
+
+const heldOf = (board: Board): HeldTask[] => board.columns.flatMap(c => c.tasks.map(t => taskOf(t, c)))
 
 // The Board as `starpulse board` prints it, narrowed by `filters`; null when it cannot be read.
 const readBoard = async ($: Engine, filters: string[]): Promise<Board | null> => {
@@ -97,15 +97,13 @@ const readLanes = async ($: Engine): Promise<Lane[]> => {
   const board = await readBoard($, [])
   const columns = board?.columns ?? []
   const names = new Map(columns.map(c => [c.state, c.name]))
-  const task = (t: RawTask): BoardTask => ({
-    id: t.id,
-    title: t.title,
+  const task = (t: RawTask, c: Board['columns'][number]): BoardTask => ({
+    ...taskOf(t, c),
     assignee: t.assignee ?? '',
-    holder: t.holder ?? '',
     moves: Object.keys(t.moves ?? {}).map(to => ({ to, name: names.get(to) ?? to })),
   })
 
-  return LANES.flatMap(state => columns.filter(c => c.state === state)).map(c => ({ state: c.state, name: c.name, tasks: c.tasks.map(task) }))
+  return LANES.flatMap(state => columns.filter(c => c.state === state)).map(c => ({ state: c.state, name: c.name, tasks: c.tasks.map(t => task(t, c)) }))
 }
 
 type Registered = { sessionId: string; pid: number; name?: string; status?: string; kind?: string }
@@ -354,9 +352,11 @@ const moveTask = async ($: Engine, id: string, to: string) => {
 
 const peerLine = (s: PeerSession) => `${s.status === 'busy' ? '●' : '○'} ${s.label} ${s.status}`
 
-const count = (others: PeerSession[]) => {
-  const busy = others.filter(s => s.status === 'busy').length
-  return `● ${busy} busy · ○ ${others.length - busy} idle`
+// The sessions that are working and the rest, which the band counts on one line.
+const tally = (others: PeerSession[]) => {
+  const working = others.filter(s => s.status === 'busy').length
+
+  return { working, idle: others.length - working }
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
@@ -369,8 +369,15 @@ type Terminal = ElementTable<'terminal'>
 // Every surface but the terminal draws the Svg; the desktop's table stands for them (Box, Text and Button are the same).
 type Remote = ElementTable<'desktop'>
 
-// The terminal's row as Ink draws it: lane dot, ID, title cut to fit, bar and count, lane, PR and its checks.
-const termRow = (Box: Terminal['Box'], Text: Terminal['Text'], t: HeldTask) => {
+// The eighth-block bar as two Texts: the filled cells in `color`, the empty track dim.
+const barTexts = (Text: Terminal['Text'], k: number, n: number, cells: number, color: string) => {
+  const [fill, track] = termBar(k, n, cells)
+
+  return [fill && <Text color={color}>{fill}</Text>, track && <Text color={SP.track}>{track}</Text>]
+}
+
+// The terminal's row as Ink draws it: lane icon, ID, title cut to fit, bar and count, lane, PR and its checks.
+const termRow = (Box: Terminal['Box'], Text: Terminal['Text'], t: HeldTask, g: Glyphs) => {
   const [laneName, color] = laneOf(t)
   const p = progress(t)
   const sub = subline(t)
@@ -378,21 +385,23 @@ const termRow = (Box: Terminal['Box'], Text: Terminal['Text'], t: HeldTask) => {
 
   return (
     <Box flexGrow={1} flexShrink={1} gap={1}>
-      <Text color={color}>●</Text>
-      <Text bold>{t.id}</Text>
+      <Text color={color}>{laneIcon(g, t.lane)}</Text>
+      <Text bold color={SP.ink}>
+        {t.id}
+      </Text>
       <Box flexGrow={1} flexShrink={1}>
-        <Text wrap="truncate-end" color={sub.color === SP.ink ? undefined : sub.color}>
+        <Text wrap="truncate-end" color={sub.color}>
           {sub.text}
         </Text>
       </Box>
-      {p && p.k !== null && <Text color={color}>{termBar(p.k, p.n)}</Text>}
-      {p && <Text>{ratio(p)}</Text>}
+      {p && p.k !== null && <Box>{barTexts(Text, p.k, p.n, 12, color)}</Box>}
+      {p && <Text color={SP.ink}>{ratio(p)}</Text>}
       <Text color={color}>{laneName}</Text>
       {t.pull && checks && (
         <Box gap={1}>
-          <Text dimColor>{`#${t.pull.number}`}</Text>
+          <Text color={SP.muted}>{`#${t.pull.number}`}</Text>
           <Box key={`checks-${t.id}`}>
-            <Text color={checks.color}>{checks.glyph}</Text>
+            <Text color={checks.color}>{g(t.pull.checks)}</Text>
           </Box>
         </Box>
       )}
@@ -401,7 +410,7 @@ const termRow = (Box: Terminal['Box'], Text: Terminal['Text'], t: HeldTask) => {
 }
 
 // The terminal's pane: the same facts as the Svg pane, one Text a line.
-const termPane = (Box: Terminal['Box'], Text: Terminal['Text'], t: HeldTask) => {
+const termPane = (Box: Terminal['Box'], Text: Terminal['Text'], t: HeldTask, g: Glyphs) => {
   const [laneName, color] = laneOf(t)
   const p = progress(t)
   const checks = t.pull ? CHECKS[t.pull.checks] : null
@@ -422,13 +431,28 @@ const termPane = (Box: Terminal['Box'], Text: Terminal['Text'], t: HeldTask) => 
       ))}
       {t.pull && checks && (
         <Box gap={1}>
-          <Text color={checks.color}>{checks.glyph}</Text>
+          <Text color={checks.color}>{g(t.pull.checks)}</Text>
           <Text>{`${t.pull.repo}#${t.pull.number}`}</Text>
           <Text dimColor>{checks.phrase}</Text>
         </Box>
       )}
     </Box>
   )
+}
+
+// The room a Board row leaves its title, in cells: the indent, the ID, a space either side of the title, the bar (four
+// cells and its space) and the PR icon. One cell is left spare so a row never wraps.
+const BAR_CELLS = 4
+const titleRoom = (cols: number, idWidth: number, hasBar: boolean) => cols - (idWidth + 8 + (hasBar ? BAR_CELLS + 1 : 0)) - 1
+
+// A title cut to `room` cells with an ellipsis, and the blanks that pad a short one to it.
+const cut = (text: string, room: number): [shown: string, pad: string] => {
+  const chars = [...text]
+  if (chars.length <= room) {
+    return [text, ' '.repeat(room - chars.length)]
+  }
+
+  return [`${chars.slice(0, Math.max(0, room - 1)).join('')}…`, '']
 }
 
 const toggle = async ($: Engine, id: string) => {
@@ -441,7 +465,9 @@ const toggle = async ($: Engine, id: string) => {
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const g = glyphs(options.glyphs)
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'board', description: 'List the Board tasks this session holds' })
     await $.command.register({ name: 'kanban', description: 'Open the Board as a tab beside Files' })
@@ -508,31 +534,58 @@ export const register: Register = on => {
     const { Box, Button, Text, Svg } = $.ui.resolve(e) as Remote
     if (await read($, isHidden)) {
       const label = found.length ? 'Show task' : 'Show sessions'
-      return <Button key="show" label={label} onPress={() => update($, isHidden, () => false)} />
+      return (
+        <Button key="show" label={label} plain onPress={() => update($, isHidden, () => false)}>
+          <Text color={SP.slate}>{label}</Text>
+        </Button>
+      )
     }
-    const hide = <Button key="hide" label="✕" onPress={() => update($, isHidden, () => true)} />
+    const hide = (
+      <Button key="hide" label="✕" plain onPress={() => update($, isHidden, () => true)}>
+        <Text color={SP.faint}>✕</Text>
+      </Button>
+    )
 
     const opened = await read($, openTask)
     const width = clamp(Math.floor(e.props.bodyColumns * CELL_PX) - BUTTONS_PX, 280, 860)
+    const { working, idle } = tally(others)
 
     return (
       <Box flexDirection="column">
-        {found.map((t, i) => (
-          <Box flexDirection="row" alignItems="center" gap={1}>
-            {e.surface === 'terminal' ? (
-              termRow(Box, Text, t)
-            ) : (
-              <Svg source={rowSvg(t, width)} alt={alt(t)} width={width} height={ROW_HEIGHT} />
-            )}
-            <Button key={`details-${t.id}`} label={opened === t.id ? 'Close' : 'Details'} onPress={() => toggle($, t.id)} />
-            {i === 0 && hide}
-          </Box>
-        ))}
-        <Box flexDirection="row" alignItems="center" gap={1}>
+        {found.map((t, i) => {
+          const label = opened === t.id ? 'Close' : 'Details'
+
+          return (
+            <Box flexDirection="row" alignItems="center" gap={1}>
+              {e.surface === 'terminal' ? (
+                termRow(Box, Text, t, g)
+              ) : (
+                <Svg source={rowSvg(t, width)} alt={alt(t)} width={width} height={ROW_HEIGHT} />
+              )}
+              <Button key={`details-${t.id}`} label={label} plain onPress={() => toggle($, t.id)}>
+                <Text color={SP.slate}>{`[${label}]`}</Text>
+              </Button>
+              {i === 0 && hide}
+            </Box>
+          )
+        })}
+        <Box flexDirection="row" alignItems="center" gap={2}>
           {others.length > 0 && (
-            <Button key="sessions" label={count(others)} onPress={() => $.ui.open({ id: SESSIONS, title: 'Sessions', focus: true })} />
+            <Button
+              key="sessions"
+              label={`${working} working · ${idle} idle`}
+              plain
+              onPress={() => $.ui.open({ id: SESSIONS, title: 'Sessions', focus: true })}
+            >
+              <Text color={SP.run}>{`${g('working')} ${working} working`}</Text>
+              {'  '}
+              <Text color={SP.slate}>{`${g('idle')} ${idle} idle`}</Text>
+            </Button>
           )}
-          <Button key="kanban" label="Board" onPress={() => openBoard($)} />
+          {others.length > 0 && <Text color={SP.faint}>·</Text>}
+          <Button key="kanban" label="Board" plain onPress={() => openBoard($)}>
+            <Text color={SP.agent}>{`${g('board')} Board`}</Text>
+          </Button>
           {!found.length && hide}
         </Box>
       </Box>
@@ -555,7 +608,7 @@ export const register: Register = on => {
       return <Svg source={source} alt={`${alt(t)}. ${t.title}`} width={width} height={height} />
     }
 
-    return termPane(Box, Text, t)
+    return termPane(Box, Text, t, g)
   })
 
   on('ui.render', { component: 'Pane', requestId: KANBAN }, async ($, e) => {
@@ -567,40 +620,139 @@ export const register: Register = on => {
     const found = await read($, lanes)
     const shut = await read($, folded)
     const picked = await read($, pickedTask)
+    const others = await read($, sessions)
     const { Box, Button, Text } = $.ui.resolve(e) as Remote
     if (found === null || !found.length) {
       return <Text dimColor>{found === null ? 'Reading the Board…' : '`starpulse board` failed: is the StarPulse server running?'}</Text>
     }
     const fold = (state: string) => update($, folded, f => (f.includes(state) ? f.filter(x => x !== state) : [...f, state]))
+    const cols = e.props.bodyColumns
+    const open = found.reduce((sum, l) => sum + l.tasks.length, 0)
+    const idWidth = Math.max(...found.flatMap(l => l.tasks.map(t => t.id.length)), 0)
+    // The bar goes first when the dock is too narrow to leave a title any room.
+    const hasBar = titleRoom(cols, idWidth, true) >= 6
+    const room = Math.max(0, titleRoom(cols, idWidth, hasBar))
 
+    const row = (t: BoardTask, color: string, isPicked: boolean) => {
+      const p = progress(t)
+      const sub = subline(t)
+      const [shown, pad] = cut(sub.text, room)
+      const checks = t.pull ? CHECKS[t.pull.checks] : null
+      const [fill, track] = p && p.k !== null ? termBar(p.k, p.n, BAR_CELLS) : ['', ' '.repeat(BAR_CELLS)]
+
+      return (
+        <Button key={`task:${t.id}`} label={`${t.id} ${t.title}`} plain onPress={() => update($, pickedTask, x => (x === t.id ? null : t.id))}>
+          {'  '}
+          <Text bold={isPicked} color={isPicked ? color : SP.slate}>
+            {t.id}
+          </Text>
+          {' '}
+          <Text color={sub.color}>{shown}</Text>
+          {pad}
+          {hasBar && ' '}
+          {hasBar && fill && <Text color={p?.k === p?.n ? SP.ok : color}>{fill}</Text>}
+          {hasBar && <Text color={SP.track}>{track}</Text>}
+          {' '}
+          {checks && t.pull ? <Text color={checks.color}>{g(t.pull.checks)}</Text> : ' '}
+        </Button>
+      )
+    }
+
+    const detail = (t: BoardTask, state: string) => {
+      const p = progress(t)
+      const isStartable = STARTABLE.has(state)
+      const holder = others.find(s => s.id === t.holder)?.label ?? t.holder.slice(0, 8)
+      const checks = t.pull ? CHECKS[t.pull.checks] : null
+      const facts = [
+        t.holder && (
+          <Box key="holder">
+            <Text color={SP.muted}>held by </Text>
+            <Text color={SP.slate}>{holder}</Text>
+          </Box>
+        ),
+        p && (
+          <Text key="criteria" color={p.k === p.n ? SP.ok : SP.muted}>
+            {p.k === null ? ratio(p) : `${ratio(p)} criteria`}
+          </Text>
+        ),
+        t.pull && checks && (
+          <Box key="pr" gap={1}>
+            <Text color={SP.agent}>{`${g('pr')} #${t.pull.number}`}</Text>
+            <Text color={checks.color}>{checks.phrase}</Text>
+          </Box>
+        ),
+      ].filter(Boolean)
+
+      return (
+        <Box key={`detail-${t.id}`} flexDirection="column" paddingLeft={4}>
+          <Text bold color={SP.ink}>
+            {t.title}
+          </Text>
+          {facts.length > 0 && (
+            <Box flexWrap="wrap" columnGap={1}>
+              {facts.flatMap((fact, i) => (i ? [<Text key={`sep-${i}`} color={SP.faint}>·</Text>, fact] : [fact]))}
+            </Box>
+          )}
+          {t.reason && <Text color={SP.failText}>{t.reason}</Text>}
+          <Box flexWrap="wrap" columnGap={2}>
+            <Button key={`session:${t.id}`} label={isStartable ? 'Start session' : 'Go to session'} plain onPress={() => toSession($, t, state)}>
+              <Text bold color={SP.ok}>{`${g(isStartable ? 'start' : 'go')} ${isStartable ? 'Start session' : 'Go to session'}`}</Text>
+            </Button>
+            {t.moves.map(m => (
+              <Button key={`move:${t.id}:${m.to}`} label={`→ ${m.name}`} plain onPress={() => moveTask($, t.id, m.to)}>
+                <Text color={LANE_STYLES[m.to]?.[1] ?? SP.slate}>{`${g('move')} ${LANE_STYLES[m.to]?.[0] ?? m.name}`}</Text>
+              </Button>
+            ))}
+          </Box>
+        </Box>
+      )
+    }
+
+    // The dock paints grey behind every cell a pane draws; the root fills black to cover it.
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" flexGrow={1} backgroundColor={SP.black}>
+        <Box>
+          <Text bold color={SP.agent}>{`${g('board')} Board`}</Text>
+          <Text color={SP.muted}>{` · ${open} open`}</Text>
+          <Box flexGrow={1} />
+          <Button key="refresh" label="Refresh" plain onPress={() => reloadLanes($)}>
+            <Text color={SP.faint}>{g('refresh')}</Text>
+          </Button>
+        </Box>
         {found.map(l => {
           const isFolded = shut.includes(l.state)
+          const [laneName, color] = LANE_STYLES[l.state] ?? [l.name, SP.slate]
+          const header = `${laneName.toUpperCase()} ${l.tasks.length}`
+
           return (
-            <Box key={`lane-${l.state}`} flexDirection="column">
-              <Button key={`lane:${l.state}`} label={`${isFolded ? '▸' : '▾'} ${l.name} ${l.tasks.length}`} onPress={() => fold(l.state)} />
+            <Box key={`lane-${l.state}`} flexDirection="column" marginTop={1}>
+              <Box>
+                <Button key={`lane:${l.state}`} label={`${isFolded ? '▸' : '▾'} ${l.name} ${l.tasks.length}`} plain onPress={() => fold(l.state)}>
+                  <Text color={SP.faint}>{g(isFolded ? 'right' : 'down')}</Text>
+                  {' '}
+                  <Text color={color}>{laneIcon(g, l.state)}</Text>
+                  {' '}
+                  <Text bold color={color}>
+                    {laneName.toUpperCase()}
+                  </Text>
+                  {' '}
+                  <Text color={SP.muted}>{String(l.tasks.length)}</Text>
+                </Button>
+                <Text color={SP.track}>{` ${'─'.repeat(Math.max(0, cols - header.length - 6))}`}</Text>
+              </Box>
               {!isFolded &&
                 l.tasks.map(t => (
-                  <Box key={`row-${t.id}`} flexDirection="column" paddingLeft={2}>
-                    <Button key={`task:${t.id}`} label={`${t.id} ${t.title}`} onPress={() => update($, pickedTask, p => (p === t.id ? null : t.id))} />
-                    {picked === t.id && (
-                      <Box flexDirection="row" flexWrap="wrap" gap={1}>
-                        <Button
-                          key={`session:${t.id}`}
-                          label={STARTABLE.has(l.state) ? 'Start session' : 'Go to session'}
-                          onPress={() => toSession($, t, l.state)}
-                        />
-                        {t.moves.map(m => (
-                          <Button key={`move:${t.id}:${m.to}`} label={`→ ${m.name}`} onPress={() => moveTask($, t.id, m.to)} />
-                        ))}
-                      </Box>
-                    )}
+                  <Box key={`row-${t.id}`} flexDirection="column">
+                    {row(t, color, picked === t.id)}
+                    {picked === t.id && detail(t, l.state)}
                   </Box>
                 ))}
             </Box>
           )
         })}
+        <Box marginTop={1}>
+          <Text color={SP.faint}>↑↓ move · ↵ pick · lane header folds</Text>
+        </Box>
       </Box>
     )
   })

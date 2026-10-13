@@ -2,10 +2,12 @@ import type { Checks, HeldTask } from '../types'
 
 // StarPulse's :root tokens (starpulse/web/src/style.css). An Svg is drawn isolated, so it spells them out.
 export const SP = {
+  black: '#000000',
   ink: '#dbe4f3',
   slate: '#94a3b8',
   muted: '#6b7a93',
   track: '#334155',
+  faint: '#475569',
   surface: '#0c1322',
   ok: '#34d399',
   okHi: '#6ee7b7',
@@ -16,6 +18,44 @@ export const SP = {
   ready: '#60a5fa',
   ink0: '#05070d',
 }
+// Every icon the terminal draws: its Nerd Font v3 codepoint, then the plain Unicode character for a terminal without
+// the font. A terminal cannot report its font, so the `glyphs` option picks the column.
+const GLYPHS = {
+  down: ['\uf078', '▾'],
+  right: ['\uf054', '▸'],
+  working: ['\uf111', '●'],
+  idle: ['\uf10c', '○'],
+  ready: ['\uf01c', '◇'],
+  in_progress: ['\uf04b', '▶'],
+  review: ['\uf06e', '◉'],
+  needs_attention: ['\uf071', '!'],
+  waiting: ['\uf252', '…'],
+  done: ['\uf00c', '✓'],
+  pass: ['\uf058', '✓'],
+  pending: ['\uf192', '●'],
+  fail: ['\uf057', '✗'],
+  none: ['\uf1db', '○'],
+  pr: ['\uf407', '#'],
+  go: ['\uf08e', '↗'],
+  start: ['\uf04b', '▶'],
+  move: ['\uf061', '→'],
+  refresh: ['\uf021', '↻'],
+  board: ['\uf0db', '▦'],
+} as const
+
+export type Glyph = keyof typeof GLYPHS
+export type Glyphs = (name: Glyph) => string
+
+/** The icon lookup for the `glyphs` option: anything but `plain` draws Nerd Font. */
+export const glyphs = (mode: unknown): Glyphs => {
+  const column = mode === 'plain' ? 1 : 0
+
+  return name => GLYPHS[name][column]
+}
+
+/** A lane's icon: the glyph of its own name, `none` for a lane the map lacks. */
+export const laneIcon = (g: Glyphs, lane: string) => g(lane in GLYPHS ? (lane as Glyph) : 'none')
+
 const FONT = "Inter,system-ui,-apple-system,'Segoe UI',sans-serif"
 const MONO = "'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace"
 
@@ -29,12 +69,12 @@ export const LANES: Record<string, [string, string]> = {
   done: ['Done', SP.ok],
 }
 
-// What a pull request's checks say, their colour and the glyph the terminal draws.
-export const CHECKS: Record<Checks, { phrase: string; color: string; glyph: string }> = {
-  pass: { phrase: 'checks pass', color: SP.ok, glyph: '✓' },
-  pending: { phrase: 'checks running', color: SP.run, glyph: '●' },
-  fail: { phrase: 'checks failing', color: SP.fail, glyph: '✗' },
-  none: { phrase: 'no checks', color: SP.slate, glyph: '○' },
+// What a pull request's checks say and their colour; the terminal's icon is the glyph named for the check.
+export const CHECKS: Record<Checks, { phrase: string; color: string }> = {
+  pass: { phrase: 'checks pass', color: SP.ok },
+  pending: { phrase: 'checks running', color: SP.run },
+  fail: { phrase: 'checks failing', color: SP.fail },
+  none: { phrase: 'no checks', color: SP.slate },
 }
 
 export const laneOf = (t: HeldTask): [string, string] => LANES[t.lane] ?? [t.column, SP.slate]
@@ -83,13 +123,12 @@ export const subline = (t: HeldTask): { text: string; color: string } => {
   return { text: t.title, color: SP.ink }
 }
 
-/** A twelve-cell eighth-block bar, k of n filled. */
-export const termBar = (k: number, n: number) => {
-  const cells = 12
+/** An eighth-block bar of `cells` cells, k of n filled, as its filled part and its empty track. */
+export const termBar = (k: number, n: number, cells = 12): [fill: string, track: string] => {
   const eighths = Math.round((cells * 8 * k) / Math.max(1, n))
   const full = '█'.repeat(Math.floor(eighths / 8)) + (eighths % 8 ? '▏▎▍▌▋▊▉'[(eighths % 8) - 1] : '')
 
-  return full + '░'.repeat(cells - [...full].length)
+  return [full, '░'.repeat(cells - [...full].length)]
 }
 
 const xml = (t = '') => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)

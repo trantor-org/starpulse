@@ -33,8 +33,8 @@ export type PeerSession = { id: string; label: string; status: string; tmux: str
 /** A column a task may move to: its state id and name. */
 export type Move = { to: string; name: string }
 
-/** A task the Board tab lists: its key, title, assignee, the session holding it, and the columns it may move to. */
-export type BoardTask = { id: string; title: string; assignee: string; holder: string; moves: Move[] }
+/** A task the Board tab lists: what the band draws of a held task, plus its assignee and the columns it may move to. */
+export type BoardTask = HeldTask & { assignee: string; moves: Move[] }
 
 /** One open lane of the Board tab: its state id, name and tasks. */
 export type Lane = { state: string; name: string; tasks: BoardTask[] }
