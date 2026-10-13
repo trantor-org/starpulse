@@ -267,6 +267,15 @@ def test_static_checks_runs_its_checks_concurrently(tmp_path):
     assert time.monotonic() - started < 0.6 * calls * 0.75  # the longest check is half the calls
 
 
+def test_trantor_contract_re_locks_only_when_this_trees_dependencies_moved_off_trantors_lock():
+    """`uv sync --locked` refuses a stale lock, so a dependency change here still reaches `uv lock`; an unchanged one resolves once."""
+    runs = [step["run"] for step in job("ci.yml", "trantor-contract")["steps"] if "run" in step]
+    sync = next(run for run in runs if "uv sync" in run)
+    assert "uv sync --all-packages --locked || " in sync
+    assert sync.index("uv lock") > sync.index("--locked")  # the re-lock is the fallback, never the first command
+    assert not [run for run in runs if run.lstrip().startswith("uv lock")]
+
+
 def test_main_follow_submit_runs_on_the_merge_event_lane_and_never_for_a_fork():
     """The submit reaches trantor's Dagu from the host, and this repository is public: a fork's close must not run it.
 
