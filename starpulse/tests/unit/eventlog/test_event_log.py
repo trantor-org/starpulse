@@ -426,6 +426,17 @@ def test_a_new_connection_that_finds_the_database_locked_sets_its_pragmas_once_i
     assert connection.executed == ["PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL"]
 
 
+def test_a_production_connection_keeps_the_write_ahead_log_and_normal_syncing(tmp_path: Path) -> None:
+    # The suite opens its test databases unsynced (tests/conftest.py); the original pragmas stay what production runs.
+    connection = sqlite3.connect(tmp_path / "events.sqlite")
+
+    _sqlite_pragmas(connection, None)
+
+    assert connection.execute("PRAGMA journal_mode").fetchone() == ("wal",)
+    assert connection.execute("PRAGMA synchronous").fetchone() == (1,)  # 1 is NORMAL
+    connection.close()
+
+
 def test_an_instances_database_never_gains_the_hubs_rollups(tmp_path: Path) -> None:
     log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
 

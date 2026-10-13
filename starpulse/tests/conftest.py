@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, create_engine, event, text
 
+from starpulse._internal.eventlog import event_log
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.mock_issuer import IMAGE, answers
@@ -49,6 +50,21 @@ def _sqlite_without_sync(connection: object, _record: object) -> None:
     stores otherwise waits on the disk, seconds per test when runners share it."""
     if isinstance(connection, sqlite3.Connection):
         connection.execute("PRAGMA synchronous=OFF")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _event_log_without_sync() -> Iterator[None]:
+    """The event log sets `synchronous=NORMAL` on each connection after the listener above, so wrap its pragmas to end
+    on OFF in a test. Production keeps them: a test of them imports the original `_sqlite_pragmas` before this runs."""
+    production = event_log._sqlite_pragmas
+
+    def unsynced(dbapi_connection: Any, record: Any) -> None:
+        production(dbapi_connection, record)
+        dbapi_connection.execute("PRAGMA synchronous=OFF")
+
+    event_log._sqlite_pragmas = unsynced
+    yield
+    event_log._sqlite_pragmas = production
 
 
 #: Containers the run starts in the background as soon as collection shows a test needs one, so the first test to ask

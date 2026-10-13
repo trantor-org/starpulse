@@ -439,7 +439,8 @@ def serve(
         actor_metrics=actor_metrics,
     )
     server = StarPulseServer(("127.0.0.1", port), handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # A short poll interval: `shutdown` waits out the one in flight, so the default half second is paid by every test.
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         yield server
     finally:
