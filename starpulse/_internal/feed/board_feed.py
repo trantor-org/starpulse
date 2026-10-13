@@ -779,6 +779,11 @@ class BoardFeed:
         with self._lock:
             return list(self._open.values())
 
+    def is_done(self, task_id: str) -> bool:
+        """Whether the task is done: completed, or in the done lane; a task the Board does not hold is not."""
+        with self._lock:
+            return self._done_at(task_id) is not None
+
     def titled(self) -> dict[str, dict]:
         """Every Board task's `title` and `labels`, open or settled, by id; a settled task saved before its labels
         were kept has none."""

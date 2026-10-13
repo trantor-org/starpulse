@@ -439,6 +439,7 @@ def project_board(
         start=start,
         keys=upstream_keys(config.prefix),
         cues=lambda qualify: cues,
+        waits=compiled.waits if compiled else {},
         source=str(root),
         **writers(config),
     )

@@ -31,56 +31,24 @@ READY = "ready"
 COMMENT = "Every dependency has settled; StarPulse moved this task to Ready."
 
 
-class Releaser:
-    """Moves each Waiting task whose dependencies have settled to Ready, through the board's task editor."""
+class Settlement:
+    """Whether a task's dependencies in a pinned repository have reached the parent's pin, under `[release] settle`."""
 
     def __init__(
         self,
         feed: BoardFeed,
         store: PullStore,
-        edit: TaskEditor,
         repos: Sequence[Repo] = (),
         settle: str | None = None,
         pins: Pins | None = None,
     ) -> None:
         self._feed = feed
         self._store = store
-        self._edit = edit
         self._pinned = {repo.name: repo.path for repo in repos} if settle == "pin-bump" else {}
         self._repos = repos
         self._pins = pins or GitHub()
-        #: Tasks released that the feed still shows Waiting, so the board's next read is not written over again.
-        self._sent: set[str] = set()
 
-    def release(self) -> list[str]:
-        """Move every releasable Waiting task to Ready once; the ids moved. A refused or failed write is logged and
-        tried again on the next pass."""
-        waiting = [
-            agent
-            for agent in sorted(self._feed.open_tasks(), key=lambda agent: agent["id"])
-            if agent["state"] == WAITING and agent["dependencies"]
-        ]
-        self._sent &= {agent["id"] for agent in waiting}
-        moved: list[str] = []
-        for agent in waiting:
-            name = agent["id"]
-            if name in self._sent or not agent["workable"] or criteria.authored(agent["description"]):
-                continue
-            if self._unapplied(agent):
-                continue
-            try:
-                written = self._edit(name, {"status": READY}, COMMENT)
-            except Exception:  # one task's write must not end the pass
-                logger.exception("release: cannot move %s to Ready", name)
-                continue
-            if written.ok:
-                self._sent.add(name)
-                moved.append(name)
-            else:
-                logger.warning("release: %s was not moved to Ready: %s", name, written.output)
-        return moved
-
-    def _unapplied(self, agent: dict[str, Any]) -> bool:
+    def unapplied(self, agent: dict[str, Any]) -> bool:
         """Whether a dependency's merged change in a pinned repository is not in the parent's pin yet."""
         merges: list[dict] | None = None  # read once, and only for a task that needs the evidence
         for dependency in agent["dependencies"]:
@@ -118,6 +86,53 @@ class Releaser:
             for record in self._store.find(repo=repo, state="MERGED", detailed=True)
             if record["detail"]
         ]
+
+
+class Releaser:
+    """Moves each Waiting task whose dependencies have settled to Ready, through the board's task editor."""
+
+    def __init__(
+        self,
+        feed: BoardFeed,
+        store: PullStore,
+        edit: TaskEditor,
+        repos: Sequence[Repo] = (),
+        settle: str | None = None,
+        pins: Pins | None = None,
+    ) -> None:
+        self._feed = feed
+        self._edit = edit
+        self._settlement = Settlement(feed, store, repos, settle, pins)
+        #: Tasks released that the feed still shows Waiting, so the board's next read is not written over again.
+        self._sent: set[str] = set()
+
+    def release(self) -> list[str]:
+        """Move every releasable Waiting task to Ready once; the ids moved. A refused or failed write is logged and
+        tried again on the next pass."""
+        waiting = [
+            agent
+            for agent in sorted(self._feed.open_tasks(), key=lambda agent: agent["id"])
+            if agent["state"] == WAITING and agent["dependencies"]
+        ]
+        self._sent &= {agent["id"] for agent in waiting}
+        moved: list[str] = []
+        for agent in waiting:
+            name = agent["id"]
+            if name in self._sent or not agent["workable"] or criteria.authored(agent["description"]):
+                continue
+            if self._settlement.unapplied(agent):
+                continue
+            try:
+                written = self._edit(name, {"status": READY}, COMMENT)
+            except Exception:  # one task's write must not end the pass
+                logger.exception("release: cannot move %s to Ready", name)
+                continue
+            if written.ok:
+                self._sent.add(name)
+                moved.append(name)
+            else:
+                logger.warning("release: %s was not moved to Ready: %s", name, written.output)
+        return moved
 
 
 def _projected(record: dict[str, Any]) -> dict[str, Any]:

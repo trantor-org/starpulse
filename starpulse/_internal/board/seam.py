@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
@@ -231,6 +231,8 @@ class Board:
     """The tracker's task key scheme; None places any key."""
     cues: Callable[[Qualify], Sequence[dict]] = _no_cues
     """The workflow cues the page draws, each `{dag, ...}` with its workflow named as `qualify` does."""
+    waits: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    """The facts the Board machine's states wait on, `{lane: {fact kind: event}}`; empty when the machine declares none."""
     writer: MoveWriter | None = None
     """Sets a task's status when the page moves it; None refuses every move."""
     assign: AssigneeWriter | None = None

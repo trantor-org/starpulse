@@ -390,6 +390,7 @@ def serve(
     analytics: Analytics | None = None,
     pull_refresh: PullRefresh | None = None,
     slow_read_s: float = SLOW_READ_S,
+    actor_metrics: Callable[[], str] | None = None,
 ) -> Iterator[ThreadingHTTPServer]:
     """Serve a stub build in `tmp_path` until the `with` block ends."""
     static = tmp_path / "static"
@@ -435,6 +436,7 @@ def serve(
         analytics=analytics,
         pull_refresh=pull_refresh,
         slow_read_s=slow_read_s,
+        actor_metrics=actor_metrics,
     )
     server = StarPulseServer(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
