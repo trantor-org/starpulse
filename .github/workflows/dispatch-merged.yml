@@ -25,8 +25,9 @@ jobs:
   dispatch:
     name: dispatch
     if: github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
-    # The merge-event lane: a job that runs seconds after a merge and holds nothing else.
-    runs-on: [self-hosted, merge-event]
+    # Not the merge-event lane: that runner is the close submit's alone, and a second job per merge holds
+    # its other relay slot, so the next merge's close waits for a slot to re-register.
+    runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5
     steps:
       - name: Check the pull request tested the merged tree
