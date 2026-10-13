@@ -36,9 +36,11 @@ class Recorded:
         self._overrides = dict(overrides or {})
         self._served: dict[str, Answer] = {f"/repos/{REPO}/actions/workflows?per_page=100": (200, self._read("workflows"))}
         self._served[f"/repos/{REPO}"] = (200, {"default_branch": "main"})
+        latest: list[dict] = []
         for workflow, workflow_id in WORKFLOW_IDS.items():
             recorded = (runs or {}).get(workflow, workflow)
             run = self._read(f"{recorded}-runs")
+            latest += run["workflow_runs"]
             self._served[f"/repos/{REPO}/actions/workflows/{workflow_id}/runs?per_page=1"] = (200, run)
             for one in run["workflow_runs"]:
                 self._served[f"/repos/{REPO}/actions/runs/{one['id']}/jobs?per_page=100"] = (200, self._read(f"{recorded}-jobs"))
@@ -46,6 +48,7 @@ class Recorded:
                 200,
                 self._read(f"{workflow}-contents"),
             )
+        self._served[f"/repos/{REPO}/actions/runs?per_page=100"] = (200, {"workflow_runs": latest})
 
     @staticmethod
     def _read(name: str) -> dict:

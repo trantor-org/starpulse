@@ -326,9 +326,12 @@ run_safe = ["ui-preview.yml"]
   unauthenticated rate limit, and nothing starts.
 - **Run now** dispatches the workflow on the default branch (`workflow_dispatch`) and answers its run id. It is drawn
   only on a `run_safe` workflow whose file declares `workflow_dispatch`; any other workflow is refused.
-- **Events.** The repository is listed every 60 s. A `workflow_run` webhook, mapped with
-  `starpulse._internal.runs.github_actions.workflow_run_entry` and sent to the ingest (or `starpulse emit`), reads that workflow again
-  at once.
+- **Events.** The repository is read every 60 s: the workflow list and the repository's latest runs, two calls however
+  many workflows it has, and a workflow again only when it is new, its file or latest run changed, or its latest run has
+  not ended (its jobs move without the run moving). A quiet repository costs about 120 calls an hour. A `workflow_run`
+  webhook, mapped with `starpulse._internal.runs.github_actions.workflow_run_entry` and sent to the ingest (or
+  `starpulse emit`), reads that workflow again at once; the adapter does not receive webhooks itself, so a deployment
+  with no relay GitHub can reach shows a run within the 60 s.
 
 ## systemd timers
 

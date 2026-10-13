@@ -18,7 +18,9 @@ from starpulse._internal.runs import run_events
 from starpulse._internal.runs.github_actions import (
     _CONCLUSION,
     _STATUS,
+    RECONCILE_INTERVAL,
     GitHubRuns,
+    Repository,
     declares_dispatch,
     listing,
     start,
@@ -152,7 +154,15 @@ def test_a_workflow_with_no_file_lists_from_its_run_alone_and_leaves_the_others_
 
 
 def test_a_workflow_that_never_ran_is_not_started_with_every_job_not_started() -> None:
-    never = {f"/repos/{REPO}/actions/workflows/374969302/runs?per_page=1": (200, {"workflow_runs": []})}
+    github = Recorded()
+    latest = github._served[f"/repos/{REPO}/actions/runs?per_page=100"][1]
+    never = {
+        f"/repos/{REPO}/actions/runs?per_page=100": (
+            200,
+            {"workflow_runs": [r for r in latest["workflow_runs"] if r["workflow_id"] != 374969302]},
+        ),
+        f"/repos/{REPO}/actions/workflows/374969302/runs?per_page=1": (200, {"workflow_runs": []}),
+    }
     release = listed(overrides=never)["release.yml"]
     assert (release["status"], release["runId"], release["startedAt"], release["finishedAt"]) == ("not_started", "", "", "")
     assert {s["status"] for s in release["steps"]} == {"not_started"}
@@ -433,3 +443,42 @@ def test_following_a_repository_lists_it_then_moves_a_workflow_by_the_entries_on
         ("github-runs", True),
         ("github-runs-reconcile", True),
     ]
+
+
+def test_a_repository_where_no_run_changes_costs_at_most_five_calls_a_minute_over_ten_minutes() -> None:
+    quiet = Recorded(runs={"ci": "ci-success"})
+    runs = GitHubRuns(BoardFeed().runs("gh"), Repository(quiet, REPO))
+    runs.reconcile()
+    quiet.calls.clear()
+    passes = int(10 * 60 / RECONCILE_INTERVAL)
+    for _ in range(passes):
+        runs.reconcile()
+    assert len(quiet.calls) <= 5 * 10
+
+
+def test_a_pass_reads_again_only_the_workflows_whose_latest_run_changed_or_has_not_ended() -> None:
+    served = [Recorded()]
+    feed = BoardFeed()
+    runs = GitHubRuns(feed.runs("gh"), Repository(lambda *call: served[0](*call), REPO))
+    runs.reconcile()
+    served[0] = Recorded(runs={"ci": "ci-success"})
+    runs.reconcile()
+    paths = served[0].paths()
+    assert any("/37509740500/jobs" in p for p in paths)  # ci: a new run
+    assert any("/37517391672/jobs" in p for p in paths)  # release: still queued
+    assert not any("/37509741664/" in p for p in paths)  # ui-preview: ended, unchanged
+    assert {d["name"]: d["status"] for d in feed.snapshot()["dags"]}["gh/ci.yml"] == "succeeded"
+
+
+def test_a_pass_drops_a_workflow_the_repository_no_longer_lists_and_adds_one_it_gained() -> None:
+    served = [Recorded()]
+    feed = BoardFeed()
+    runs = GitHubRuns(feed.runs("gh"), Repository(lambda *call: served[0](*call), REPO))
+    runs.reconcile()
+    gone = Recorded(overrides={f"/repos/{REPO}/actions/workflows?per_page=100": (200, {"workflows": []})})
+    served[0] = gone
+    runs.reconcile()
+    assert feed.snapshot()["dags"] == []
+    served[0] = Recorded()
+    runs.reconcile()
+    assert len(feed.snapshot()["dags"]) == 3
