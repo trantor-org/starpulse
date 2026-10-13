@@ -291,11 +291,19 @@ task claimed mid-turn shows before the turn ends. It draws each task that sessio
 StarPulse's palette: lane dot, ID, the title (or the reason a Needs attention task waits on the operator, or what a
 Waiting task waits on), a bar of checked acceptance criteria with `k/n`, the lane, and the PR with its check state. A
 server that serves no checked state draws the criteria count without a bar. Details opens a pane with the criteria
-ticked off, the holder and the PR; ✕ hides the rows until Show task or `/board`. The Claude Desktop (SSH) row is one
+ticked off, the holder and the PR; ✕ hides the band until its Show button or `/board`. The Claude Desktop (SSH) row is one
 `Svg` and the terminal row is Ink text. The `Svg` pulses the lane dot of an In Progress task and a running check, and
 stops under the system's reduced-motion setting; the terminal row does not animate. `/board` lists the tasks with
 their titles. It reads only the `starpulse` CLI, retrying `~/.local/bin/starpulse` when the one on `PATH` fails or is missing, so it
-shows nothing when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
+shows no tasks when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
+
+Below the tasks it lists every other Claude Code session on the host with its `busy` or `idle` status, from the registry
+each session writes under `~/.claude/sessions/`, reread every 5 seconds. A session running in a tmux pane (as a StarPulse
+Start session does, in tmux session `task-<N>`) is a button that runs `tmux switch-client` to it; a background
+(`claude --bg`) session is a button that first opens it with `claude attach <job>` (the session id's first 8 characters) in tmux session `bg-<job>`
+(`new-session -A`, so a second press reuses it). Switching needs the session showing the band to run inside a tmux
+client; otherwise the press shows a toast. Any other session, such as one the desktop app started, is listed without a
+button.
 
 ## The pull-request store
 

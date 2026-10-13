@@ -1,7 +1,7 @@
 {
   "name": "starpulse-board",
   "version": "0.1.0",
-  "description": "Shows the Board tasks this Claude Code session holds above the prompt, and /board to list them",
+  "description": "Shows the Board tasks this Claude Code session holds and every other session's status above the prompt, switches to a session through tmux on a click, and /board to list held tasks",
   "types": "./types/index.d.ts",
   "author": {
     "name": "trantor-org"
