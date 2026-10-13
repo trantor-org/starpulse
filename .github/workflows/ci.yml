@@ -18,9 +18,19 @@ permissions:
 # Validation runs on the organization's self-hosted validate lane, free and independent of GitHub's hosted
 # pool. That runner group serves private repositories only: making this repository public strands these jobs.
 jobs:
-  python:
+  # The suite is split by test file across SHARD_COUNT jobs (ci/shard.py), each on its own validate slot. The count here and
+  # the matrix below move together.
+  python-shard:
     runs-on: [self-hosted, validate]
     timeout-minutes: 30
+    strategy:
+      # A red shard does not cancel the others: one run reports every failure.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    env:
+      SHARD_COUNT: 6
+      SHARD_INDEX: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,9 +45,25 @@ jobs:
       # nightly schedule and a manual dispatch run all.
       - if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push'
         run: git diff --name-only HEAD^1 HEAD | uv run --no-sync python ci/select_tests.py >> "$GITHUB_ENV"
-      # Postgres-backed integration cases use the runner's Docker; SQLite cases need no container runtime.
+      # Postgres-backed integration cases use the runner's Docker; SQLite cases need no container runtime. A selected run
+      # can leave a shard no test file: pytest exits 5 for it, which is a pass only while targets were selected.
       - if: env.PYTEST_SKIP != 'true'
-        run: uv run pytest $PYTEST_TARGETS
+        run: |
+          status=0
+          uv run pytest $PYTEST_TARGETS || status=$?
+          [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
+
+  # The ruleset's required context is `python`: it passes when every shard did, and fails when any failed, was cancelled or
+  # never ran. `always()` keeps it from being skipped behind a red shard, which the merge queue would read as missing.
+  python:
+    needs: python-shard
+    if: always()
+    runs-on: [self-hosted, validate]
+    timeout-minutes: 5
+    steps:
+      - env:
+          SHARDS: ${{ needs.python-shard.result }}
+        run: test "$SHARDS" = success
 
   # An IC instance runs without the hub extras: import every module it can load (ci/ic_imports.py) on an
   # environment that holds neither the Postgres driver, Alembic nor the container tooling, so a hub-only import in IC

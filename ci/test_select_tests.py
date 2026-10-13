@@ -162,7 +162,7 @@ def test_a_pull_request_merge_group_or_push_runs_the_selection_and_the_nightly_s
     workflow = yaml.safe_load(CI.read_text())
     # PyYAML reads the bare `on:` key as True.
     assert {"push", "pull_request", "merge_group", "schedule", "workflow_dispatch"} <= set(workflow[True])
-    job = workflow["jobs"]["python"]
+    job = workflow["jobs"]["python-shard"]
     assert "if" not in job  # the job always runs, so its required check reports even when no test is selected
     steps = job["steps"]
     checkout = next(s for s in steps if s.get("uses", "").startswith("actions/checkout"))
@@ -172,7 +172,7 @@ def test_a_pull_request_merge_group_or_push_runs_the_selection_and_the_nightly_s
     assert select_step["if"] == (
         "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push'"
     )
-    pytest_step = next(s for s in steps if s.get("run", "").rstrip().endswith("pytest $PYTEST_TARGETS"))
+    pytest_step = next(s for s in steps if "pytest $PYTEST_TARGETS" in s.get("run", ""))
     assert pytest_step["if"] == "env.PYTEST_SKIP != 'true'"
     assert steps.index(select_step) < steps.index(pytest_step)
 

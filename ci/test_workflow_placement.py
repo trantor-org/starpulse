@@ -23,7 +23,14 @@ def job(workflow: str, name: str) -> dict:
 
 @pytest.mark.parametrize(
     ("workflow", "name"),
-    [("ci.yml", "python"), ("ci.yml", "web"), ("ci.yml", "api-types"), ("ui-preview.yml", "render"), ("ui-preview.yml", "leak-scan")],
+    [
+        ("ci.yml", "python-shard"),
+        ("ci.yml", "python"),
+        ("ci.yml", "web"),
+        ("ci.yml", "api-types"),
+        ("ui-preview.yml", "render"),
+        ("ui-preview.yml", "leak-scan"),
+    ],
 )
 def test_pull_request_job_runs_on_the_validate_lane(workflow, name):
     assert job(workflow, name)["runs-on"] == VALIDATE_LANE
@@ -155,6 +162,61 @@ def test_merged_pull_request_dispatch_sends_only_after_the_tree_check_passes():
     send = next(step for step in steps if step["name"] == "Dispatch the merged SHA")
     assert steps.index(send) > next(i for i, step in enumerate(steps) if step.get("id") == "tested")
     assert send["if"] == "steps.tested.outputs.tested == 'true'"
+
+
+def run_step(step: dict, tmp_path, env: dict[str, str], *, uv_exit: int = 0) -> int:
+    """Run a workflow step's shell with the given environment and a stub `uv` that exits `uv_exit`; return its status."""
+    stub = tmp_path / "uv"
+    stub.write_text(f"#!/usr/bin/env bash\nexit {uv_exit}\n")
+    stub.chmod(0o755)
+    shell = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin", **env},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return shell.returncode
+
+
+def test_the_shard_count_matches_the_shard_matrix():
+    shard = job("ci.yml", "python-shard")
+    assert shard["env"]["SHARD_COUNT"] == len(shard["strategy"]["matrix"]["shard"])
+    assert shard["env"]["SHARD_INDEX"] == "${{ matrix.shard }}"
+
+
+@pytest.mark.parametrize(("result", "status"), [("success", 0), ("failure", 1), ("cancelled", 1), ("skipped", 1)])
+def test_the_python_check_passes_only_when_every_shard_passed(tmp_path, result, status):
+    """The ruleset requires `python`: a red, cancelled or skipped shard must not leave it green or missing."""
+    aggregate = job("ci.yml", "python")
+    assert aggregate["needs"] == "python-shard"
+    assert aggregate["if"] == "always()"  # a skipped aggregate reads as a missing required check
+    step = aggregate["steps"][0]
+    assert step["env"] == {"SHARDS": "${{ needs.python-shard.result }}"}
+    assert run_step(step, tmp_path, {"SHARDS": result}) == status
+
+
+def pytest_step() -> dict:
+    return next(
+        step for step in job("ci.yml", "python-shard")["steps"] if "pytest $PYTEST_TARGETS" in step.get("run", "")
+    )
+
+
+@pytest.mark.parametrize(
+    ("targets", "pytest_exit", "status"),
+    [
+        ("", 0, 0),
+        ("", 1, 1),
+        ("", 5, 1),  # a full run that collects nothing is broken
+        ("ci/test_a.py", 0, 0),
+        ("ci/test_a.py", 1, 1),
+        ("ci/test_a.py", 5, 0),  # this shard drew none of the selected files
+    ],
+)
+def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_does_not(
+    tmp_path, targets, pytest_exit, status
+):
+    assert run_step(pytest_step(), tmp_path, {"PYTEST_TARGETS": targets}, uv_exit=pytest_exit) == status
 
 
 #: The ruleset's required checks (trantor's infrastructure/github/starpulse.tf), by the workflow that reports each.

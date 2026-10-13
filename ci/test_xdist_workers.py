@@ -25,8 +25,8 @@ def test_a_runner_with_no_cgroup_memory_file_gets_four(tmp_path):
 
 
 def test_the_pytest_job_sizes_its_workers_before_it_runs_pytest():
-    runs = [step.get("run", "") for step in yaml.safe_load(CI.read_text())["jobs"]["python"]["steps"]]
+    runs = [step.get("run", "") for step in yaml.safe_load(CI.read_text())["jobs"]["python-shard"]["steps"]]
     sizing = next(i for i, run in enumerate(runs) if "ci/xdist_workers.py" in run)
     assert "PYTEST_ADDOPTS=-n" in runs[sizing]
     assert "--dist loadgroup" in runs[sizing]  # keeps each xdist_group (shared checkout state) on one worker
-    assert sizing < next(i for i, run in enumerate(runs) if run.endswith("pytest $PYTEST_TARGETS"))
+    assert sizing < next(i for i, run in enumerate(runs) if "pytest $PYTEST_TARGETS" in run)
