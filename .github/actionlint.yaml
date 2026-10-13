@@ -1,8 +1,9 @@
 # The self-hosted runner lanes the workflows target; actionlint reads this file from here. `tower` is the
-# NAS farm slots the release soak runs on; `merge-event` is trantor's one runner for merge-event submits.
+# NAS farm slots the release soak runs on; `merge-event` is trantor's one runner for merge-event submits; `merge-queue` is the lane reserved for a merge-queue run's jobs.
 self-hosted-runner:
   labels:
     - ai-vm-1
     - validate
+    - merge-queue
     - merge-event
     - tower
