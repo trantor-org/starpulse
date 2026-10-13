@@ -56,10 +56,14 @@ class MachineTasks:
         """Nothing to say before the stream is reached: an empty machine level is a correct one."""
 
     def _check_ready(self) -> None:
-        if self._expected is not None and self._seen >= self._expected:
-            self.ready.set()
+        """Turn ready once the entry expected has been read, and hand every connected page the tasks the replay placed in
+        one snapshot, as the Board does: a move per replayed entry would send each page the stream's whole retention."""
+        if self._expected is None or self._seen < self._expected or self.ready.is_set():
+            return
+        self.ready.set()
+        self._feed.publish("snapshot", self._feed.snapshot())
 
-    def put(self, event: MachineEvent) -> None:
+    def put(self, event: MachineEvent, *, publish: bool = True) -> None:
         """Move one task by a machine event; one that names a run, a machine the page does not draw, or a key outside the scheme is dropped."""
         flow, task = event.machine, event.task
         table = self._tables.get(flow)
@@ -82,14 +86,16 @@ class MachineTasks:
                 "trail": trail[-self._trail[flow] :],
                 "active": event.time,
             },
+            publish=publish,
         )
 
     def handle_entry(self, entry_id: str, fields: dict) -> None:
         """Take one stream entry; one that is not a machine event of the contract is dropped."""
         self._seen = max(self._seen, stream_id(entry_id))
-        self._check_ready()
         try:
             event = MachineEvent.model_validate(fields)
         except ValidationError:
-            return
-        self.put(event)
+            event = None
+        if event is not None:
+            self.put(event, publish=self._expected is None or self.ready.is_set())
+        self._check_ready()
