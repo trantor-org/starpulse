@@ -3,6 +3,7 @@
 numbering and dependency states still count it."""
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,8 +12,10 @@ import pytest
 from starpulse._internal.board.native import board
 from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
+from starpulse._internal.board.view import board_flow, task_view
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.server import writes
 from starpulse._internal.server.server import assemble
 from starpulse.tests.unit.board.test_native import native_root, write_task
@@ -248,3 +251,91 @@ def test_the_retired_routes_on_a_board_that_keeps_no_retired_tasks_are_404(board
     assert writes.retire_task(LAN, _raw(task="task-5"), board_without)[0] == 404
     assert writes.retired_list(board_without, "")[0] == 404
     assert writes.import_retired(LAN, _raw(name="task-3.md", text="---\nid: task-3\n---\n"), board_without)[0] == 404
+
+
+@pytest.fixture
+def scanning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Board, BoardFeed, UpstreamBacklog, Path]:
+    """The default native board started on a history store, its first scan done; the caller scans again by hand."""
+    scans: list[UpstreamBacklog] = []
+
+    def start(self: UpstreamBacklog, interval: float, scanned: Callable[[], None]) -> None:
+        scans.append(self)
+        self.scan()
+        scanned()
+
+    monkeypatch.setattr(UpstreamBacklog, "start", start)
+    built, feed = assemble(load(None), tmp_path, None, ())
+    write_task(tmp_path, "task-5", "Done")
+    write_task(tmp_path, "task-6", "To Do", dependencies="[task-5]")
+    built.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"))
+    return built, feed, scans[0], tmp_path
+
+
+def _waiting_on(feed: BoardFeed, task: str) -> list[str]:
+    snapshot = feed.snapshot()
+    return task_view(next(a for a in board_flow(snapshot)["agents"] if a["id"] == task), snapshot)["waiting_on"]
+
+
+def test_a_dependent_of_a_retired_done_task_is_workable_and_not_waiting(
+    scanning: tuple[Board, BoardFeed, UpstreamBacklog, Path],
+) -> None:
+    built, feed, backlog, _ = scanning
+    assert built.retire is not None and built.retire("task-5").ok
+
+    backlog.scan()
+
+    assert feed.is_done("task-5")
+    assert feed.task("task-6")["workable"]
+    assert _waiting_on(feed, "task-6") == []
+
+
+def test_a_dependent_of_a_done_task_imported_as_retired_is_workable_and_not_waiting(
+    scanning: tuple[Board, BoardFeed, UpstreamBacklog, Path],
+) -> None:
+    built, feed, backlog, base = scanning
+    assert built.import_retired is not None
+    write_task(base, "task-7", "Done")
+    text = _path(base, "task-7").read_text()
+    _path(base, "task-7").unlink()
+    write_task(base, "task-8", "To Do", dependencies="[task-7]")
+    backlog.scan()
+    assert not feed.task("task-8")["workable"]
+
+    assert built.import_retired("task-7 - Title.md", text).ok
+    backlog.scan()
+
+    assert feed.task("task-8")["workable"]
+    assert _waiting_on(feed, "task-8") == []
+
+
+def test_a_dependent_of_an_archived_then_retired_task_stays_waiting(
+    scanning: tuple[Board, BoardFeed, UpstreamBacklog, Path],
+) -> None:
+    built, feed, backlog, base = scanning
+    assert built.archive is not None and built.retire is not None
+    write_task(base, "task-7", "To Do")
+    write_task(base, "task-8", "To Do", dependencies="[task-7]")
+    assert built.archive("task-7", "").ok
+    backlog.scan()
+    assert built.retire("task-7").ok
+
+    backlog.scan()
+
+    assert not feed.is_done("task-7")
+    assert not feed.task("task-8")["workable"]
+    assert _waiting_on(feed, "task-8") == ["task-7"]
+
+
+def test_a_restored_retired_task_is_open_again_for_its_dependents(
+    scanning: tuple[Board, BoardFeed, UpstreamBacklog, Path],
+) -> None:
+    built, feed, backlog, _ = scanning
+    assert built.retire is not None and built.restore is not None
+    assert built.retire("task-5").ok
+    backlog.scan()
+
+    assert built.restore("task-5").ok
+    backlog.scan()
+
+    assert feed.is_done("task-5")
+    assert feed.task("task-5") is not None

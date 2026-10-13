@@ -31,8 +31,8 @@ from sqlalchemy.engine import Engine
 
 from starpulse._internal.board import native_docs, native_milestones, rules
 from starpulse._internal.board.seam import (
-    Board,
     OPERATOR,
+    Board,
     MoveWriter,
     RetiredImporter,
     RetiredReader,
@@ -553,6 +553,23 @@ class _Retired:
         with self.engine.connect() as db:
             return [dict(row._mapping) for row in db.execute(query)]
 
+    def changes(self) -> Callable[[], dict[str, str] | None]:
+        """A reader of every retired task's text by id that answers None while the rows are as it last read them."""
+        seen: tuple[int, float | None] | None = None
+
+        def read() -> dict[str, str] | None:
+            nonlocal seen
+            if self.engine is None:
+                return None
+            with self.engine.connect() as db:
+                now = tuple(db.execute(select(func.count(), func.max(retired_tasks.c.retired_at))).one())
+            if now == seen:
+                return None
+            seen = now
+            return {row["task"]: row["text"] for row in self.rows()}
+
+        return read
+
     def ids(self) -> list[str]:
         """Every retired task's id."""
         if self.engine is None:
@@ -898,6 +915,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "edit_milestone": native_milestones.editor(root),
             "archive_milestone": native_milestones.archiver(root),
         },
+        retired.changes(),
     )
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:

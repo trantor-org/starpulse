@@ -54,7 +54,7 @@ A retire takes a finished task's file (a Done task in `tasks/`, or any in `compl
 board into the history store's `starpulse_retired_tasks` table (migration 0017), one row per front matter `id` with
 the file's name and text byte for byte, which event-log pruning never touches; a board keeps none until it starts,
 since the table is in the store it starts on. A new task numbers past every retired one, a transition rule's dependency
-condition reads the status its text holds (the feed's `workable` does not yet count one done), and a restore writes its file back to `tasks/` and drops the row, never replacing a file there.
+condition reads the status its text holds, a scan settles one whose text is Done as completed (so `workable`, `is_done` and `waiting_on` count a dependency on it done, and an archived one whose text is not Done stays unplaced), and a restore writes its file back to `tasks/` and drops the row, never replacing a file there.
 An import keeps a file a client held the same way, accepting the same text again and refusing other text under a
 kept number or a task still on the board.
 Every task write is one rename of a whole file: an edit applies all its changes and every comment it carries (one text
