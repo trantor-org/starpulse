@@ -12,6 +12,11 @@ server reads) or the Postgres a `database_url` names. Delivery is at-least-once 
 treats `event_id` as its idempotency key. Latency is the poll interval, so a reader polls often (one indexed
 `id > ?` query) and holds no connection, hence no read transaction, between polls: a held SQLite read transaction
 would stop WAL checkpoints and grow the `-wal` file without bound.
+
+A running tail does not sleep out the interval. An append in this process wakes every waiting tail at once, and on
+SQLite so does a commit by another process, seen as a change of `PRAGMA data_version` that one watcher thread per log
+checks (`EventLog.wait_for_append`). The interval is the fallback bound: it alone delivers a Postgres append from
+another process, and it recovers a wake-up that went missing.
 """
 
 from __future__ import annotations
@@ -50,8 +55,15 @@ __all__ = ["Entry", "EventLog", "Tail"]
 
 logger = logging.getLogger(__name__)
 
-#: How often a running tail polls, in seconds. It is the delivery latency a producer's event adds.
-DEFAULT_POLL_INTERVAL = 0.25
+#: How long an idle running tail waits before it polls anyway, in seconds. An append wakes it sooner; this bounds the
+#: delivery latency of one that cannot, a Postgres append by another process.
+DEFAULT_POLL_INTERVAL = 5.0
+
+#: How often the SQLite watcher looks for a commit by another process, in seconds.
+_DATA_VERSION_INTERVAL = 0.25
+
+#: The longest a waiting tail sleeps before it looks at its stop event again, in seconds.
+_STOP_SLICE = 0.5
 
 #: How long SQLite waits on another process's write lock before an append gives up and fails open, in seconds.
 _SQLITE_BUSY_TIMEOUT = 5.0
@@ -100,6 +112,9 @@ class EventLog:
         self._engine = engine
         self._ready = False
         self._lock = threading.Lock()
+        self._appended = threading.Condition()
+        self._appends = 0
+        self._watching = False
 
     @property
     def engine(self) -> Engine:
@@ -203,10 +218,64 @@ class EventLog:
                     cursor = db.execute(statement).scalar()
                 if cursor is None:  # another process appended this event_id between the look and the insert
                     cursor = db.execute(known).scalar()
-            return cursor
         except Exception as exc:  # fail open, see module docstring
             logger.warning("EventLog: append to %s failed (event dropped): %s", stream, exc)
             return None
+        self._wake()
+        return cursor
+
+    @property
+    def appends(self) -> int:
+        """How many appends and commits by other processes this log has seen: the `seen` for `wait_for_append`."""
+        return self._appends
+
+    def wait_for_append(self, seen: int, timeout: float, stop: threading.Event) -> None:
+        """Return when `appends` has moved past `seen`, `stop` is set, or `timeout` seconds have passed.
+
+        Read `appends` before the poll it precedes, so an append that lands during that poll still ends this wait.
+        """
+        self._watch()
+        deadline = time.monotonic() + timeout
+        with self._appended:
+            while self._appends == seen and not stop.is_set() and (left := deadline - time.monotonic()) > 0:
+                self._appended.wait(min(left, _STOP_SLICE))
+
+    def _wake(self) -> None:
+        with self._appended:
+            self._appends += 1
+            self._appended.notify_all()
+
+    def _watch(self) -> None:
+        """Start, once, the thread that wakes waiters on another process's SQLite commit; nothing on Postgres or an
+        in-memory database, which have no other process to see."""
+        with self._lock:
+            if self._watching:
+                return
+            self._watching = True
+        url = make_url(self.url)
+        if url.get_backend_name() == "sqlite" and url.database not in (None, "", ":memory:"):
+            threading.Thread(
+                target=self._watch_data_version, args=(url.database,), name="eventlog-data-version", daemon=True
+            ).start()
+
+    def _watch_data_version(self, database: str) -> None:
+        """Wake waiters whenever another connection commits to `database`. `PRAGMA data_version` changes only for
+        commits made through other connections, and a connection without a transaction holds no read lock, so this
+        one never stalls a checkpoint."""
+        version = None
+        connection = None
+        while True:
+            try:
+                if connection is None:
+                    connection = sqlite3.connect(database, timeout=_SQLITE_BUSY_TIMEOUT, isolation_level=None)
+                current = connection.execute("PRAGMA data_version").fetchone()[0]
+                if version is not None and current != version:
+                    self._wake()
+                version = current
+            except sqlite3.Error as exc:  # the file is locked or gone; the interval still delivers
+                logger.debug("EventLog: data_version check failed: %s", exc)
+                connection, version = None, None
+            time.sleep(_DATA_VERSION_INTERVAL)
 
     def prune(self, retention: float, now: float | None = None, *, archive_dir: Path) -> int:
         """Archive and then delete the rows older than `retention` seconds and return how many; raises when the
@@ -340,11 +409,10 @@ class Tail:
         """
         engine = self.log.engine
         with engine.connect() as db:
-            oldest = db.execute(select(func.min(events.c.id))).scalar()
-            head = db.execute(select(func.max(events.c.id))).scalar()
-            if head is None:
-                return []
+            oldest, head = db.execute(select(func.min(events.c.id), func.max(events.c.id))).one()
             cursor = self.cursor
+            if head is None or head == cursor:  # idle: the one query above is the whole poll
+                return []
             gap = cursor is not None and oldest > cursor + 1
             start = oldest - 1 if gap else cursor or 0
             rows = db.execute(
@@ -364,7 +432,8 @@ class Tail:
         stop: threading.Event,
         transient: tuple[type[BaseException], ...] = (),
     ) -> None:
-        """Poll until `stop` is set, passing each entry to `handle`.
+        """Poll until `stop` is set, passing each entry to `handle`. Between polls an idle tail waits for an append
+        (`EventLog.wait_for_append`), so `interval` bounds the wait rather than setting it.
 
         A poll that fails (the database went away) is retried after the interval. A handler that raises is logged
         and the loop goes on with the next entry, so one bad event never stops a reader. A handler that raises one of
@@ -372,6 +441,7 @@ class Tail:
         and the poll after the interval reads it again.
         """
         while not stop.is_set():
+            seen = self.log.appends  # before the poll, so an append during it still ends the wait below
             try:
                 entries = self.poll()
             except Exception as exc:  # the database is unreachable or locked; the next poll retries
@@ -389,8 +459,10 @@ class Tail:
                     break
                 except Exception:  # a reader's bug must not stop the reader
                     logger.exception("Tail %s: handler failed on entry %s", self.stream, entry.id)
-            if retry or len(entries) < self.batch:
+            if retry:
                 stop.wait(self.interval)
+            elif len(entries) < self.batch:
+                self.log.wait_for_append(seen, self.interval, stop)
 
 
 def prune_forever(

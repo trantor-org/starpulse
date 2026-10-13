@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import inspect, text, update
+from sqlalchemy import event, inspect, text, update
 from sqlalchemy.exc import OperationalError
 
 from starpulse._internal.eventlog.event_log import (
@@ -227,9 +227,87 @@ def test_a_prune_removes_only_rows_older_than_the_retention(log: EventLog, archi
     assert [e.fields["n"] for e in Tail(log, "a").poll()] == ["new"]
 
 
-def test_the_default_poll_interval_is_at_most_half_a_second(log: EventLog) -> None:
-    assert DEFAULT_POLL_INTERVAL <= 0.5
+def test_a_tail_defaults_to_the_fallback_poll_interval(log: EventLog) -> None:
     assert Tail(log, "a").interval == DEFAULT_POLL_INTERVAL
+
+
+class _RunningTail:
+    """A tail running on a thread with a long interval, so only a wake-up can deliver an entry in time."""
+
+    def __init__(self, log: EventLog, interval: float = 30.0) -> None:
+        self.arrived = threading.Event()
+        self.entries: list = []
+        self.stop = threading.Event()
+        self.first_poll = threading.Event()
+        self.tail = Tail(log, "a", interval=interval)
+        poll = self.tail.poll
+
+        def polled() -> list:
+            try:
+                return poll()
+            finally:
+                self.first_poll.set()
+
+        self.tail.poll = polled  # type: ignore[method-assign]
+        self.thread = threading.Thread(target=self.tail.run, args=(self.handle, self.stop))
+
+    def handle(self, entry) -> None:
+        self.entries.append(entry)
+        self.arrived.set()
+
+    def __enter__(self) -> _RunningTail:
+        self.thread.start()
+        assert self.first_poll.wait(timeout=5)
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.stop.set()
+        self.thread.join(timeout=5)
+
+
+def test_an_append_in_this_process_reaches_a_waiting_tail_before_its_interval(log: EventLog) -> None:
+    with _RunningTail(log) as running:
+        started = time.monotonic()
+        log.append("a", {"n": "1"})
+
+        assert running.arrived.wait(timeout=2)
+        assert time.monotonic() - started < 2  # the interval is 30 s
+
+    assert [e.fields["n"] for e in running.entries] == ["1"]
+
+
+def test_an_append_through_another_connection_reaches_a_waiting_tail_before_its_interval(
+    log: EventLog, tmp_path: Path
+) -> None:
+    other = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    with _RunningTail(log) as running:
+        other.append("a", {"n": "elsewhere"})
+
+        assert running.arrived.wait(timeout=2)
+
+    assert [e.fields["n"] for e in running.entries] == ["elsewhere"]
+
+
+def test_setting_stop_ends_a_tail_waiting_out_a_long_interval(log: EventLog) -> None:
+    with _RunningTail(log) as running:
+        started = time.monotonic()
+        running.stop.set()
+        running.thread.join(timeout=5)
+
+        assert not running.thread.is_alive()
+        assert time.monotonic() - started < 2
+
+
+def test_an_idle_tail_issues_one_log_query_per_interval(log: EventLog) -> None:
+    statements: list[str] = []
+    event.listen(log.engine, "before_cursor_execute", lambda _c, _cur, statement, *_a: statements.append(statement))
+    interval, window = 0.3, 1.2
+
+    with _RunningTail(log, interval=interval):
+        statements.clear()
+        time.sleep(window)
+
+    assert len(statements) <= window / interval + 1
 
 
 @pytest.mark.parametrize("appended", [False, True])
