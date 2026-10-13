@@ -722,12 +722,14 @@ class SessionHealth(_Api):
     last_at: float
     prompts: int
     operator_prompts: int
+    prompt_labels: dict[str, int]
     requests: int
     side_requests: int
     tool_calls: int
     tool_failures: int
     tools: dict[str, int]
     rejections: dict[str, int]
+    user_rejects: int
     gates: dict[str, int]
     skills: dict[str, int]
     compactions: dict[str, int]
@@ -761,8 +763,10 @@ class SliceHealth(_Api):
     side_steps: int
     tool_calls: int
     operator_prompts: int
+    prompt_labels: dict[str, int]
     interrupts: int
     rejections: int
+    user_rejects: int
     interventions: int
     compactions: int
     skills: dict[str, int]

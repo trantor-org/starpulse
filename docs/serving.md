@@ -249,6 +249,14 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # title = "^(validate|verify|check)"                       # a regular expression over the task's title, case-insensitive
 # label = "validation"                                     # a label the task carries
 # injected_openings = ["<task-notification"]               # a prompt opening with one is labelled `injected`, any other `human`
+# [analytics.labeller]                                     # names a human prompt's intent at ingest; with none, no prompt is labelled
+# url = "http://127.0.0.1:8006/v1/systemone"               # a Laya typed-decision endpoint, sent the prompt's text; only its label is kept
+# model = "intent"                                         # the checkpoint it asks
+# instructions = "Classify this message an operator sent an AI coding agent."
+# timeout = 2.0                                            # seconds it may take; slower, unreachable or no answer leaves the label empty
+# [analytics.labeller.criteria]                            # each label and its definition; an answer that is none of them is `unsure`
+# correction = "The agent did something wrong or must stop or undo it."
+# approval = "Proceed, yes, continue, or an answer to a question the agent asked."
 # operator_tools = ["AskUserQuestion", "ExitPlanMode"]    # tools whose result is the operator's answer: the silence before one is their wait
 # claims = ['backlog_task\.py\s+start\s+(TASK-\d+)']        # group 1 is the task a command or `Skill` args claims
 # completion_skill = "completing-tasks"                    # with `completion_call`, marks a session's task complete

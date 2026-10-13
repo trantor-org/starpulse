@@ -40,8 +40,9 @@ class Signal:
     steps-per-completion ledger does not cover yet (Codex): its rows are kept and left out of every ranking.
 
     `turn` is the export's `prompt.id`, the one user prompt every event it caused shares; empty where the harness
-    names none. A `prompt` signal's `detail` is its label, `human` or `injected` (empty when the export carried no
-    prompt text to read it from); the text itself is never a field.
+    names none. A `prompt` signal's `detail` is its origin, `human` or `injected` (empty when the export carried no
+    prompt text to read it from), and its `label` the intent the instance's labeller gave a `human` one (empty when
+    none is configured or it did not answer); the text itself is never a field.
     """
 
     harness: str
@@ -70,6 +71,7 @@ class Signal:
     reads: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
     turn: str = ""
+    label: str = ""
 
 
 def claim_key(tool_key: str) -> str:

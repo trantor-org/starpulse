@@ -12,11 +12,15 @@ StarPulse reads missed skill loads and trace clusters from the harness exports (
   a task whose title matches `title` (a regular expression, case-insensitive) or one carrying `label`. A case that
   ran a trigger without activating the skill is a missed load; a skill with no declaration is never reported.
 
-What a session's own events say about its work is read against five more keys, so the package names no instance's
+What a session's own events say about its work is read against six more keys, so the package names no instance's
 tasks or skills (`GET /api/analytics/sessions`):
 
 - `injected_openings`: prefixes of a prompt's text. A prompt that opens with one is labelled `injected` (a harness
   or scheduler wrote it), any other `human`; the label is stored and the text never is.
+- `[analytics.labeller]`: the Laya typed-decision endpoint (`url`, the checkpoint `model`, optional `instructions` and a
+  `timeout` in seconds, 2 by default) that names a `human` Claude Code prompt's intent, one of the `criteria` table's
+  labels (label to definition) or `unsure`. The prompt's text is sent to it and only the label is kept; an endpoint that
+  is unreachable, slow or answers nothing usable leaves the label empty. With none, no prompt is labelled.
 - `operator_tools`: tools whose result is an operator's answer, such as `AskUserQuestion` and `ExitPlanMode`. The
   answer arrives as a tool result, not a prompt, so the silence before it is the operator's wait, not the agent's.
 - `claims`: regular expressions run over each shell command and each `Skill` call's arguments. Group 1 is a task
@@ -36,7 +40,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-__all__ = ["Analytics", "AnalyticsError", "MachineStage", "SkillLoad", "SkillMachine", "parse_analytics"]
+__all__ = ["Analytics", "AnalyticsError", "Labeller", "MachineStage", "SkillLoad", "SkillMachine", "parse_analytics"]
 
 _KEYS = {
     "roots",
@@ -49,10 +53,12 @@ _KEYS = {
     "completion_skill",
     "completion_call",
     "skill_machines",
+    "labeller",
 }
 _LOAD_KEYS = {"skill", "activities", "title", "label"}
 _MACHINE_KEYS = {"skill", "stages"}
 _STAGE_KEYS = {"name", "activities", "ok"}
+_LABELLER_KEYS = {"url", "model", "instructions", "criteria", "timeout"}
 
 
 class AnalyticsError(ValueError):
@@ -89,6 +95,18 @@ class SkillMachine:
 
 
 @dataclass(frozen=True)
+class Labeller:
+    """The endpoint that names a human prompt's intent: a Laya typed-decision `url` asked one `choice` question over the
+    `criteria` (label to definition) of the checkpoint `model`, given `timeout` seconds to answer."""
+
+    url: str
+    model: str
+    criteria: dict[str, str]
+    instructions: str = ""
+    timeout: float = 2.0
+
+
+@dataclass(frozen=True)
 class Analytics:
     roots: tuple[str, ...] = ()
     """The checkouts a path is cut to an area under; none: no areas."""
@@ -110,6 +128,8 @@ class Analytics:
     """The shell command that, after `completion_skill` loaded, marks the task complete."""
     skill_machines: tuple[SkillMachine, ...] = ()
     """Per skill, the stages a run reaches in order to conform; a skill with none declared has every run conform."""
+    labeller: Labeller | None = None
+    """The endpoint that labels a human prompt's intent at ingest; none: no prompt carries a label."""
 
 
 def _texts(raw: Mapping[str, object], key: str) -> tuple[str, ...]:
@@ -173,6 +193,26 @@ def _machine(raw: object, at: int) -> SkillMachine:
     return SkillMachine(skill, tuple(_stage(stage, f"{who}.stages[{n}]") for n, stage in enumerate(stages)))
 
 
+def _labeller(raw: object) -> Labeller:
+    who = "analytics.labeller"
+    table = _table(raw, who, _LABELLER_KEYS, "[analytics.labeller]")
+    for key in ("url", "model"):
+        if not isinstance(table.get(key), str) or not table[key]:
+            raise AnalyticsError(f"{who} needs {key}")
+    criteria = table.get("criteria")
+    if not criteria:
+        raise AnalyticsError(f"{who}: needs criteria")
+    if not isinstance(criteria, dict) or not all(isinstance(v, str) and v for v in criteria.values()):
+        raise AnalyticsError(f"{who}: criteria must map each label to its definition")
+    instructions = table.get("instructions", "")
+    if not isinstance(instructions, str):
+        raise AnalyticsError(f"{who}: instructions must be text")
+    timeout = table.get("timeout", Labeller.timeout)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise AnalyticsError(f"{who}: timeout must be a positive number of seconds")
+    return Labeller(str(table["url"]), str(table["model"]), dict(criteria), instructions, float(timeout))
+
+
 def _pattern(value: object, who: str) -> re.Pattern[str]:
     if not isinstance(value, str) or not value:
         raise AnalyticsError(f"analytics: {who} must be a regular expression")
@@ -225,4 +265,5 @@ def parse_analytics(raw: object) -> Analytics:
         completion_skill=skill,
         completion_call=None if call is None else _pattern(call, "completion_call"),
         skill_machines=tuple(_machine(table, at) for at, table in enumerate(machines)),
+        labeller=None if (labeller := raw.get("labeller")) is None else _labeller(labeller),
     )

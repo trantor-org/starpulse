@@ -157,7 +157,10 @@ def test_a_model_or_effort_that_changes_between_main_requests_counts_and_an_unkn
 
 
 def test_a_side_request_before_the_first_main_request_does_not_set_the_main_model() -> None:
-    found = [sig("request", 1, model="title", effort="low", origin="side"), sig("request", 2, model="big", effort="high")]
+    found = [
+        sig("request", 1, model="title", effort="low", origin="side"),
+        sig("request", 2, model="big", effort="high"),
+    ]
 
     row = only(session_health(found, KEYS))
 
@@ -183,6 +186,32 @@ def test_rejections_compactions_skills_and_interrupts_are_counted_by_their_name(
     assert row["rejections"] == {"hook": 2, "user": 1}
     assert row["compactions"] == {"auto": 2, "manual": 1}
     assert (row["skills"], row["interrupts"]) == ({"a": 2}, 1)
+
+
+def test_operator_prompts_are_counted_by_the_label_the_labeller_gave_them_and_user_rejects_apart_from_hook_ones() -> (
+    None
+):
+    found = [
+        sig("prompt", 0, detail="human", label="request", branch="claude/task-4-x"),  # the first prompt is not steering
+        sig("prompt", 10, detail="human", label="correction"),
+        sig("prompt", 20, detail="human", label="correction"),
+        sig("prompt", 30, detail="human", label="approval"),
+        sig("prompt", 40, detail="human"),  # no labeller answered
+        sig("prompt", 50, detail="injected"),
+        sig("decision", 60, name="Edit", ok=False, detail="user_reject"),
+        sig("decision", 61, name="Bash", ok=False, detail="user_abort"),
+        sig("decision", 62, name="Bash", ok=False, detail="hook"),
+        sig("decision", 63, name="Bash", ok=True, detail="user_reject"),
+    ]
+
+    row = only(session_health(found, KEYS))
+    (health,) = slice_health([row])
+
+    assert row["operator_prompts"] == 4
+    assert row["prompt_labels"] == {"correction": 2, "approval": 1}
+    assert row["user_rejects"] == 2
+    assert (health["prompt_labels"], health["user_rejects"]) == ({"correction": 2, "approval": 1}, 2)
+    assert (health["operator_prompts"], health["interventions"], health["clean"]) == (4, 4, False)
 
 
 def test_a_rejection_is_also_counted_by_the_gate_that_refused_it_as_source_and_tool() -> None:
@@ -432,7 +461,9 @@ def test_the_silence_before_an_operator_tool_result_is_the_operators_wait_and_no
     assert row["idle_s"] == 0
 
 
-def test_a_question_answered_by_a_hook_waits_for_nothing_and_a_tool_the_config_does_not_name_is_not_a_question() -> None:
+def test_a_question_answered_by_a_hook_waits_for_nothing_and_a_tool_the_config_does_not_name_is_not_a_question() -> (
+    None
+):
     answered = _asked(source="hook")
     answered[2] = replace(answered[2], time=answered[1].time + 1)  # a hook answers at once
     answered[3] = replace(answered[3], time=answered[1].time + 1.02)

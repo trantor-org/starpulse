@@ -33,8 +33,10 @@ from the events' own durations and from the turns' edges, never from the gaps be
 
 A prompt is `injected` when its label says so and `human` otherwise, so a Codex prompt, which is unlabelled, is human.
 `operator_prompts` are the human prompts after a task's claim: after the claim signal that brought the session to the
-task, or after the session's first prompt for the task it launched on or, on a task-less launch branch, claimed first. `interrupts` are the turns Claude Code started
-and never closed with a reply (one still running counts until its reply lands) and the interrupted turns Codex
+task, or after the session's first prompt for the task it launched on or, on a task-less launch branch, claimed first.
+`prompt_labels` counts those the instance's labeller named, by intent, and `user_rejects` the rejected tool decisions
+whose source is `user_reject` or `user_abort`; neither changes `operator_prompts` or `interventions`. `interrupts` are
+the turns Claude Code started and never closed with a reply (one still running counts until its reply lands) and the interrupted turns Codex
 exports. `steps_before_edit` is the model requests before the task's first successful file write, None until it has
 one. `complete` is a session that loaded the `[analytics]` `completion_skill` and then ran the completion call for the
 task. `interventions` of a slice are its operator prompts plus interrupts, and it is `escalated` when a model or effort
@@ -57,6 +59,8 @@ __all__ = ["attributed", "grouped", "session_health", "session_kind", "slice_hea
 
 #: Tools whose successful result is a file written: the work on a task has begun.
 _EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+#: The sources of a rejected tool decision that the operator made: a refusal, or an abort of the turn.
+_USER_REJECTS = {"user_reject", "user_abort"}
 _TOKENS = ("input", "output", "cache_read", "cache_write", "reasoning")
 #: `originator` values of Codex's interactive front ends; `codex_exec` is its headless one.
 _CODEX_INTERACTIVE = {"codex-tui", "codex_cli_rs"}
@@ -89,12 +93,14 @@ def _empty(s: Signal, task: str | None, kind: str) -> dict[str, Any]:
         "last_at": s.time,
         "prompts": 0,
         "operator_prompts": 0,
+        "prompt_labels": {},
         "requests": 0,
         "side_requests": 0,
         "tool_calls": 0,
         "tool_failures": 0,
         "tools": {},
         "rejections": {},
+        "user_rejects": 0,
         "gates": {},
         "skills": {},
         "compactions": {},
@@ -150,6 +156,7 @@ def _note(row: dict[str, Any], s: Signal, last: dict[str, str]) -> None:
     elif s.kind == "decision" and not s.ok:
         _count(row, "rejections", s.detail or "unknown")
         _count(row, "gates", f"{s.detail or 'unknown'}:{s.name or 'unknown'}")
+        row["user_rejects"] += s.detail in _USER_REJECTS
     elif s.kind == "skill":
         _count(row, "skills", s.name)
     elif s.kind == "compaction":
@@ -259,6 +266,8 @@ def session_health(
                     row["idle_s" if injected else "operator_wait_s"] += gap
                 if not injected and task in armed:
                     row["operator_prompts"] += 1
+                    if s.label:
+                        _count(row, "prompt_labels", s.label)
                 if prompts == 1:
                     armed.add(task)
                 if s.turn:
@@ -302,6 +311,9 @@ def slice_health(sessions: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         costs = [row["cost_usd"] for row in rows if row["cost_usd"] is not None]
         operator_prompts = sum(row["operator_prompts"] for row in rows)
         interrupts = sum(row["interrupts"] for row in rows)
+        prompt_labels = Counter[str]()
+        for row in rows:
+            prompt_labels.update(row["prompt_labels"])
         changes = sum(row["model_changes"] + row["effort_changes"] for row in rows)
         count = len({(row["harness"], row["session"]) for row in rows})
         slices.append(
@@ -317,8 +329,10 @@ def slice_health(sessions: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
                 "side_steps": sum(row["side_requests"] for row in rows),
                 "tool_calls": sum(row["tool_calls"] for row in rows),
                 "operator_prompts": operator_prompts,
+                "prompt_labels": dict(prompt_labels),
                 "interrupts": interrupts,
                 "rejections": sum(sum(row["rejections"].values()) for row in rows),
+                "user_rejects": sum(row["user_rejects"] for row in rows),
                 "interventions": operator_prompts + interrupts,
                 "compactions": sum(sum(row["compactions"].values()) for row in rows),
                 "skills": dict(skills),

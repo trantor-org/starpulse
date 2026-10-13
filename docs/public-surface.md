@@ -54,7 +54,8 @@ internal and can change in any release.
   footprint the same whatever it holds.
 - The config file's keys, among them each `[[triggers]]` table's `on`, `start` and `when` ([Triggers](serving.md#triggers)),
   the `[analytics]` table's `roots`, `stop_activities`, `lifecycle_skills`, `injected_openings`, `operator_tools`, `claims`,
-  `completion_skill`, `completion_call`, each `[[analytics.skill_loads]]`'s
+  `completion_skill`, `completion_call`, the optional `[analytics.labeller]` table's `url`, `model`, `instructions`,
+  `criteria` and `timeout`, each `[[analytics.skill_loads]]`'s
   `skill`, `activities`, `title` and `label`, and each `[[analytics.skill_machines]]`'s `skill` and `stages` (`name`,
   `activities`, `ok`), and the `[search]` table's optional `embeddings_url`, `model` and
   `token_env` ([Config file](serving.md#config-file)),
