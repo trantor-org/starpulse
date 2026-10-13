@@ -120,8 +120,8 @@ def test_trantor_tests_of_this_package_gate_the_green_dispatch():
     checkouts = [step["with"] for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")]
     runs = "\n".join(step["run"] for step in contract["steps"] if "run" in step)
     assert contract["runs-on"] == VALIDATE_LANE
-    assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[0].items()
-    assert checkouts[1]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
+    assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[1].items()
+    assert checkouts[2]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
     assert "make test-changed FILES=starpulse CI=1" in runs
     assert "trantor-contract" in job("ci.yml", "dispatch")["needs"]
 
