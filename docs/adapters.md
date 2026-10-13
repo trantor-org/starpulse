@@ -28,10 +28,10 @@ directory. The `Board` says:
   store: a `Board` has no history of its own. In the same transaction the store folds each of them into
   summaries a read of flow health or the level can use instead of every row: `starpulse_step_summaries` (steps and
   seconds in the from-state, per UTC day, machine, from-state and to-state), `starpulse_cases` (each task's or run's
-  current state, when it entered it and its last event), `starpulse_lane_intervals` (each stay in a lane) and
+  current state, when it entered it and its last event), `starpulse_lane_intervals` (each stay in a lane, with the source its event id names) and
   `starpulse_lanes` (per source and lane, the tasks in it now and when one first entered it). A store whose summaries
   are empty builds them from its rows when it opens (`HistoryStore.build_summaries`), and one that predates the lane
-  counts counts them from its intervals. It also rebuilds them when the machines it opens with place events otherwise
+  counts counts them from its intervals; one whose stays predate their source gains the column and fills it. It also rebuilds them when the machines it opens with place events otherwise
   than the ones that folded them: `starpulse_summary_basis` keeps a fingerprint of the initial and final states, moves
   and Board lanes, so an edit to a label or a position rebuilds nothing, and a store that predates the table rebuilds
   once. `rebuild_summaries` replaces them and `summary_differences` lists where they

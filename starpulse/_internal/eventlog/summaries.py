@@ -7,7 +7,8 @@ Three summaries follow the raw rows, updated in the transaction that writes one:
 - `starpulse_cases`: each case's current state, when it entered it, when it was first seen and its last event. A
   case is one source's one task or run on one machine; the Board is the machine `board`, its steps its lane changes.
 - `starpulse_lane_intervals`: each stay of a task in a lane, `left_at` null while it is still there. The lane is the
-  Board's status as recorded, so a lane the Board machine lacks is kept for health to name.
+  Board's status as recorded, so a lane the Board machine lacks is kept for health to name. Each stay also keeps its
+  `source`, the `<source>/` its event id names, so the level groups runs without parsing every id.
 - `starpulse_lanes`: each lane one source has recorded, how many of its tasks are in it now and when it first entered
   it, the count kept at zero once the last leaves. A read of how many tasks have finished, of where the history begins
   or of who reported does not count their stays.
@@ -94,6 +95,9 @@ lane_intervals = Table(
     Column("entered_at", Float, nullable=False),
     Column("left_at", Float),
     Column("event_id", String, nullable=False, unique=True),
+    # the `<source>/` the event id carries (`source`), so the level groups runs without parsing every id; null only in
+    # a store that predates it, until `fill_sources` runs at start-up
+    Column("source", String),
     # a task's stays in the order the level reads them (entered_at, then the row id every index ends in): no sort
     Index("ix_starpulse_lane_intervals_task_entered", "task", "entered_at"),
     Index("ix_starpulse_lane_intervals_entered", "entered_at"),
@@ -263,7 +267,9 @@ def write_lane(db: Connection, upsert: Callable[[Table], Any], event_id: str, ta
             .where(lanes.c.source == source(opened), lanes.c.lane == before)
             .values(open_tasks=lanes.c.open_tasks - 1)
         )
-    db.execute(insert(lane_intervals).values(task=task, lane=lane, entered_at=at, event_id=event_id))
+    db.execute(
+        insert(lane_intervals).values(task=task, lane=lane, entered_at=at, event_id=event_id, source=source(event_id))
+    )
     enter = upsert(lanes).values(source=source(event_id), lane=lane, open_tasks=1, first_at=at)
     db.execute(
         enter.on_conflict_do_update(
@@ -274,6 +280,18 @@ def write_lane(db: Connection, upsert: Callable[[Table], Any], event_id: str, ta
             },
         )
     )
+
+
+def fill_sources(db: Connection) -> None:
+    """Give each lane stay that predates the source column the source its event id names."""
+    i = lane_intervals.c
+    unfilled = select(i.id, i.event_id).where(i.source.is_(None)).execution_options(yield_per=5000)
+    ids: dict[str, list[int]] = {}
+    for id_, event_id in db.execute(unfilled):
+        ids.setdefault(source(event_id), []).append(id_)
+    for name, held in ids.items():
+        for start in range(0, len(held), _CHUNK):
+            db.execute(update(lane_intervals).where(i.id.in_(held[start : start + _CHUNK])).values(source=name))
 
 
 def count_lanes(db: Connection) -> None:
@@ -346,7 +364,7 @@ class Summaries:
                 for (m, src, k, c), case in self.cases.items()
             ],
             lane_intervals: [
-                {"task": t, "lane": lane, "entered_at": a, "left_at": b, "event_id": e}
+                {"task": t, "lane": lane, "entered_at": a, "left_at": b, "event_id": e, "source": source(e)}
                 for e, (t, lane, a, b) in self.intervals.items()
             ],
             lanes: [

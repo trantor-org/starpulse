@@ -256,6 +256,41 @@ def test_opening_a_store_with_the_older_task_index_puts_the_task_entered_index_i
     assert "ix_starpulse_lane_intervals_task" not in indexes
 
 
+def _sources(store: HistoryStore) -> list[tuple]:
+    return _rows(store, "starpulse_lane_intervals", "event_id, source")
+
+
+def test_a_lane_stay_keeps_the_source_its_event_id_names(store: HistoryStore) -> None:
+    store.record_lane("a/1", "T-1", "Ready", 10.0)
+    store.record_lane("T-2@Ready@11", "T-2", "Ready", 11.0)
+
+    assert _sources(store) == [("T-2@Ready@11", "unattributed"), ("a/1", "a")]
+
+
+def test_opening_a_store_whose_stays_predate_the_source_column_adds_and_fills_it(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    first.record_lane("a/1", "T-1", "Ready", 10.0)
+    first.record_lane("b/2", "T-1", "In Progress", 20.0)
+    first.record_lane("T-3@Ready@30", "T-3", "Ready", 30.0)
+    with first.engine.begin() as db:  # a store opened before the stays carried their source
+        db.execute(text("ALTER TABLE starpulse_lane_intervals DROP COLUMN source"))
+
+    reopened = HistoryStore(url, MACHINES)
+
+    assert _sources(reopened) == [("T-3@Ready@30", "unattributed"), ("a/1", "a"), ("b/2", "b")]
+
+
+def test_rebuilding_the_summaries_writes_each_stays_source(store: HistoryStore) -> None:
+    store.record_lane("a/1", "T-1", "Ready", 10.0)
+    with store.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_lane_intervals SET source = NULL"))
+
+    store.rebuild_summaries()
+
+    assert _sources(store) == [("a/1", "a")]
+
+
 def test_the_start_up_pass_leaves_summaries_that_already_exist_alone(store: HistoryStore) -> None:
     _fill(store)
     with store.engine.begin() as db:
