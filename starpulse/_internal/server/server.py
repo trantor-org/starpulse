@@ -1710,7 +1710,9 @@ def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> H
 
 class _PullReads:
     """`/api/pulls`' answers, by query, held until the store saves: the unfiltered list is ~1 MB to read, encode and
-    gzip, and every page asks for it."""
+    gzip, and every page asks for it. A save builds the unfiltered answer itself, in the poller's thread, so a reader
+    finds it held; readers asking together for any other answer share one computation, since each extra one only
+    waits behind the rest for the GIL."""
 
     #: How many distinct queries are held; past it the oldest is dropped.
     KEEP = 16
@@ -1719,18 +1721,29 @@ class _PullReads:
         self._pulls = pulls
         self._held: OrderedDict[str, tuple[int, Encoded, int]] = OrderedDict()
         self._lock = threading.Lock()
+        self._computing = threading.Lock()
+        if pulls:
+            pulls.subscribe(lambda: self(""))
 
-    def __call__(self, query: str) -> tuple[Encoded, int]:
+    def _current(self, query: str) -> tuple[int, Encoded, int] | None:
         rev = self._pulls.rev if self._pulls else 0
         with self._lock:
             held = self._held.get(query)
-        if held is None or held[0] != rev:
-            body, status = pulls_response(self._pulls, parse_qs(query))
-            held = (rev, Encoded.of(body), status)
-            with self._lock:
-                self._held[query] = held
-                while len(self._held) > self.KEEP:
-                    self._held.popitem(last=False)
+        return held if held and held[0] == rev else None
+
+    def __call__(self, query: str) -> tuple[Encoded, int]:
+        held = self._current(query)
+        if held is None:
+            with self._computing:
+                held = self._current(query)
+                if held is None:
+                    rev = self._pulls.rev if self._pulls else 0
+                    body, status = pulls_response(self._pulls, parse_qs(query))
+                    held = (rev, Encoded.of(body), status)
+                    with self._lock:
+                        self._held[query] = held
+                        while len(self._held) > self.KEEP:
+                            self._held.popitem(last=False)
         return held[1], held[2]
 
 

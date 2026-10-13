@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -190,3 +191,37 @@ def test_slow_read_logs_nothing_for_a_fast_read_or_a_slow_read_of_another_route(
         urllib.request.urlopen(url(server, "/metrics"), timeout=5).read()
 
     assert _slow_reads(caplog) == []
+
+
+def _counting_store(tmp_path: Path, seconds: float = 0.0) -> tuple[PullStore, list[tuple]]:
+    store = _slow_store(tmp_path, seconds)
+    calls: list[tuple] = []
+    find = store.find
+
+    def counted(*args: object, **kwargs: object) -> list[dict]:
+        calls.append(args)
+        return find(*args, **kwargs)
+
+    store.find = counted  # type: ignore[method-assign]
+    return store, calls
+
+
+def test_a_save_computes_the_unfiltered_answer_before_any_reader_asks(tmp_path: Path) -> None:
+    store, calls = _counting_store(tmp_path)
+    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=store) as server:
+        store.save([_pull("acme/widgets", 2, "OPEN", "Session: bbb-222", 101.0)])
+        computed_by_save = len(calls)
+        status, body = _get(server, "")
+
+    assert (computed_by_save, len(calls), status) == (1, 1, 200)
+    assert [pull["number"] for pull in body["pulls"]] == [1, 2]
+
+
+def test_readers_asking_together_for_an_answer_nobody_holds_share_one_computation(tmp_path: Path) -> None:
+    store, calls = _counting_store(tmp_path, seconds=0.3)
+    with serve(tmp_path, BoardFeed(machines=MACHINES), pulls=store) as server:
+        with ThreadPoolExecutor(6) as pool:
+            answers = list(pool.map(lambda _: _get(server, "?state=open"), range(6)))
+
+    assert len(calls) == 1
+    assert [status for status, _ in answers] == [200] * 6
