@@ -58,9 +58,9 @@ Result (build host, SQLite, 60 reads each; CPU time judges the 2x gate):
 
 | Events | Health p95 (wall / CPU) | Level p95 (wall / CPU) | Trajectories p95 (wall / CPU) | Store |
 | ---: | --- | --- | --- | ---: |
-| 10 thousand | 3.8 / 3.8 ms | 135.5 / 135.5 ms | 213.1 / 175.7 ms | 3 MB |
-| 1 million | 3.9 / 3.9 ms (x1.05) | 145.7 / 145.7 ms (x1.08) | 165.4 / 165.2 ms (x0.94) | 289 MB |
-| 10 million | 3.7 / 3.8 ms (x0.99) | 68.5 / 67.6 ms (x0.50) | 106.0 / 104.4 ms (x0.59) | 3.0 GB |
+| 10 thousand | 3.8 / 3.8 ms | 135.5 / 135.5 ms | 164.0 / 157.7 ms | 3 MB |
+| 1 million | 3.9 / 3.9 ms (x1.05) | 145.7 / 145.7 ms (x1.08) | 162.7 / 161.9 ms (x1.03) | 289 MB |
+| 10 million | 3.7 / 3.8 ms (x0.99) | 68.5 / 67.6 ms (x0.50) | 93.3 / 90.8 ms (x0.58) | 3.0 GB |
 
 The ratios are the CPU p95 against the 10 thousand row, all under 2x. Health sends six statements at every size and
 fetches 29, 37 and 45 rows: rows for the lanes and tasks in flight, not every lane interval. None of the reads touches

@@ -11,7 +11,14 @@ import pytest
 
 from starpulse._internal.config.level import Level, Terminal
 from starpulse._internal.eventlog.level_metrics import Run, WindowPastHistory
-from starpulse._internal.level.trajectories import WhatIfRefused, betweenness, trajectory_analytics, what_if
+from starpulse._internal.level.trajectories import (
+    WhatIfRefused,
+    _loops_so_far,
+    _rework,
+    betweenness,
+    trajectory_analytics,
+    what_if,
+)
 
 H = 3600.0
 NOW = 100 * H
@@ -545,3 +552,26 @@ def test_a_run_swept_from_the_goal_into_a_settle_ended_in_the_goal_when_it_reach
     assert result["ended"] == 2
     assert result["variants"] == [{"path": ["work", "review", "done"], "count": 2, "share": 1.0}]
     assert {run["task"]: run["reached_goal"] for run in result["runs"]} == {"t1": True, "t2": True}
+
+
+def _loops_by_prefix(steps: list[tuple[float, str]]) -> list[int]:
+    """The definition `_loops_so_far` must keep: the trips of the loops `_rework` finds in each prefix of the steps."""
+    return [sum(loop["trips"] for loop in _rework(steps[: i + 1])[0]) for i in range(len(steps))]
+
+
+@pytest.mark.parametrize("states", range(1, 7))
+def test_the_loops_so_far_equal_the_trips_of_each_prefix_over_random_walks(states: int) -> None:
+    rng = Random(4967 + states)
+    for _ in range(600):
+        walk = [rng.randrange(states) for _ in range(rng.randint(1, 30))]
+        steps = [(rng.uniform(0, 50) * H + at * H, f"s{state}") for at, state in enumerate(walk)]
+        assert _loops_so_far(steps) == _loops_by_prefix(steps), walk
+
+
+def test_the_loops_so_far_count_the_walk_whose_loop_target_the_search_met_first() -> None:
+    # TASK-3308's walk: done -> in_progress closes a loop of the whole path at in_progress's first visit, a non-trip
+    steps = [
+        (float(at), state) for at, state in enumerate(("done", "ready", "done", "in_progress", "ready", "in_progress"))
+    ]
+
+    assert _loops_so_far(steps) == _loops_by_prefix(steps) == [0, 0, 1, 1, 2, 2]
