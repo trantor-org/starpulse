@@ -36,6 +36,7 @@ bench = [
 dev = [
     "import-linter>=2.15",
     "pytest>=9",
+    "pytest-memray>=1.11.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
 ]
