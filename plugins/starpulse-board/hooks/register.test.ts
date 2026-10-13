@@ -702,6 +702,22 @@ test('a lanes frame from the stream redraws the open Board tab with no starpulse
   await ui.unmount()
 })
 
+test('a Board tab drawn with no lanes, as one left in the dock across /clear, follows the lanes stream', async ($, on) => {
+  const stream = feed()
+  const spawned: string[][] = []
+  sessionsHost(on, { lanes: [stream], spawned })
+  await start($, 'terminal')
+  const ui = await kanbanPane($)
+  await settle()
+
+  stream.lanes(KANBAN)
+  await settle()
+
+  expect(spawned.filter(argv => argv.at(-1)?.includes('/api/lanes')).length).toBe(1)
+  expect((await ui.find({ key: 'task:TASK-7' }))?.props.label).toBe('TASK-7 Busy one')
+  await ui.unmount()
+})
+
 test('closing the Board tab ends the stream child and registers no timer', { plugins: [CLOSER] }, async ($, on) => {
   const stream = feed()
   const afters: number[] = []
