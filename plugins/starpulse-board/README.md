@@ -26,3 +26,10 @@ Archived rows persist in `$.store` as `{ sessionId, name, cwd, task, archivedAt 
 `claude --resume <sessionId>` in a new tmux session at the recorded `cwd`.
 
 Options: `glyphs` is `nerd` (default) or `plain`.
+
+## Black dock
+
+Both panes fill their body black. The dock's tab strip, left border and bottom row are Claude Code's
+`composerSidebarBackground` (grey in the dark theme), which no pane draws. The plugin ships the theme
+`themes/black-dock.json`, the dark theme with that key black; select it with
+`"theme": "custom:starpulse-board:black-dock"` in `~/.claude/settings.json`.

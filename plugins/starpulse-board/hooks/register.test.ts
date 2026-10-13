@@ -860,6 +860,16 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await ui.find({ key: 'session:session-3' })).toBeUndefined()
   })
 
+  // The dock paints grey behind every cell a pane draws: the Sessions root takes the body's rows and fills them black, as the Board's does.
+  test(`the Sessions pane paints black down the whole dock body (${surface})`, async ($, on) => {
+    sessionsHost(on)
+
+    await start($, surface)
+    const ui = await sessionsPane($, surface)
+
+    expect((await ui.find({ key: 'sessions-fill' }))?.props).toMatchObject({ minHeight: PANE_PROPS.scroll.bodyRows, backgroundColor: '#000000' })
+  })
+
   test(`pressing a session in tmux switches the tmux client to it (${surface})`, async ($, on) => {
     const switched: string[][] = []
     sessionsHost(on, { switched })

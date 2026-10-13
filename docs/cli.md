@@ -304,8 +304,9 @@ server that serves no checked state draws the criteria count without a bar. Deta
 ticked off, the holder and the PR; ✕ hides the band until its Show button or `/board`. The Claude Desktop (SSH) row is one
 `Svg` and the terminal row is Ink text. Icons are Nerd Font v3 glyphs; the `glyphs` plugin option (`nerd`, the default, or `plain`) sets
 the plain Unicode characters instead, for a terminal without a Nerd Font, since a terminal cannot report its font. The band
-draws no fill. The Board pane's root Box is filled black (`#000000`) to cover the grey the dock paints behind every pane cell. The dock's own tab strip and the space below
-the pane stay grey. No other element sets a background and every Button is `plain`. The `Svg` pulses the lane dot of an In Progress task and a running check, and
+draws no fill. The Board and Sessions panes' root Box is filled black (`#000000`) down the dock body's rows (`scroll.bodyRows`) to cover the grey the dock paints
+behind every pane cell. The dock's tab strip, left border and bottom row are Claude Code's `composerSidebarBackground`, grey in the dark theme; the plugin's
+`custom:starpulse-board:black-dock` theme (`themes/black-dock.json`) is the dark theme with that key black. No other element sets a background and every Button is `plain`. The `Svg` pulses the lane dot of an In Progress task and a running check, and
 stops under the system's reduced-motion setting; the terminal row does not animate. `/board` lists the tasks with
 their titles. It reads only the `starpulse` CLI, retrying `~/.local/bin/starpulse` when the one on `PATH` fails or is missing, so it
 shows no tasks when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
