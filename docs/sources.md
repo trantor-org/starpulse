@@ -353,8 +353,12 @@ url = "systemd-tmpfiles-clean, apt-daily.timer, user/claude-sessions-snapshot"
   The run starts at `ExecMainStartTimestamp` and ends at `ExecMainExitTimestamp`.
 - **Errors.** An allowlisted unit that does not exist, or a `systemctl` that fails or answers a timestamp not in UTC,
   shows as the instance's error and keeps the last reading; no timer is dropped silently.
-- **Events.** The allowlist is read every 30 s; the adapter reads no event-log entries. There is no Run now: starting a
-  root unit needs a polkit grant, so the adapter offers no start. `systemctl` must run on the host that serves StarPulse.
+- **Events.** The allowlist is read once at start. After that a `gdbus monitor` per manager (system, and user when an
+  entry has `user/`) streams the D-Bus `PropertiesChanged` signals of the units, and a change to a timer or its service
+  re-reads only that timer, a third of a second after the signals settle. The whole allowlist is listed every 10 minutes
+  as a backstop, and every 30 s while a monitor is down or the last read failed. Idle, the adapter starts no `systemctl`
+  between those. The adapter reads no event-log entries. There is no Run now: starting a root unit needs a polkit grant,
+  so the adapter offers no start. `systemctl` and `gdbus` (`libglib2.0-bin`) must run on the host that serves StarPulse.
 
 ## Show pull requests and Copilot work
 
