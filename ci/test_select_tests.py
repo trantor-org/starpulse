@@ -151,6 +151,7 @@ def test_a_mapped_non_python_file_selects_the_tests_that_read_it(repo, path, tes
         ".github/ISSUE_TEMPLATE/bug.yml",
         ".github/pull_request_template.md",
         "bench/hub_ingest.py",
+        "bench/free_threading/run.sh",
         "plugins/starpulse-board/hooks/draw.ts",
         "plugins/starpulse-board/hooks/hooks.json",
     ],
