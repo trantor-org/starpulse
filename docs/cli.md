@@ -315,17 +315,17 @@ board`. The Sessions pane, one row per session with its status, opens by itself 
 docked as a tab beside the other right-side panes (such as Files) on a fullscreen terminal of 144 columns or more; until
 the first prompt, the first pane another plugin opens is followed by Sessions closing and reopening, so Sessions is the
 tab on show. Pressing the count opens it with the keys in the pane. Like Files, it shows only in the dock: placed inline
-(outside the fullscreen layout, or narrower than the dock) it closes itself. A session running in a tmux pane (as a StarPulse
-Start session does, in tmux session `task-<N>`) is a button that runs `tmux switch-client` to it; a background
-(`claude --bg`) session is a button that first opens it with `claude attach <job>` (the session id's first 8 characters) in tmux session `bg-<job>`
-(`new-session -A`, so a second press reuses it). Switching needs the session showing the pane to run inside a tmux
-client; otherwise the press shows a toast. Any other session, such as one the desktop app started, is listed without a
-button.
+(outside the fullscreen layout, or narrower than the dock) it closes itself. The pane lists only the sessions it can
+switch to: each one running in a tmux pane (as a StarPulse Start session does, in tmux session `task-<N>`) is a button
+that runs `tmux switch-client` to it, and this session is listed too. A background (`claude --bg`) session or one the
+desktop app started has no tmux pane and is left out. Switching needs the session showing the pane to run inside a tmux
+client; otherwise the press shows a toast.
 
-The pane groups rows as Working, Idle and Archived (folded by default); each row draws the status icon, the name, a `you`
+The pane groups rows as Active and Archived (Archived folded by default); Active holds working and idle sessions
+together, told apart by the status icon. Each row draws the status icon, the name, a `you`
 marker on this session, the task it holds as a lane-coloured chip, the age and an archive icon. `n` starts a new tmux
 session running `claude` in the workspace and switches to it; `f` filters by name, tmux session or task, and the status
-chips (working, idle, bg, archived) combine as OR; `a` archives the focused row, killing its tmux session (this session
+chips (working, idle, archived) combine as OR; `a` archives the focused row, killing its tmux session (this session
 first starts and switches to a fresh one). Archived sessions persist in the plugin's store and resume with
 `claude --resume <id>` in a new tmux session at their recorded directory.
 

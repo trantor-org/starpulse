@@ -16,7 +16,6 @@ export const SP = {
   failText: '#fda4af',
   agent: '#a78bfa',
   ready: '#60a5fa',
-  released: '#5eead4',
   ink0: '#05070d',
 }
 // Every icon the terminal draws: its Nerd Font v3 codepoint, then the plain Unicode character for a terminal without
@@ -44,7 +43,6 @@ const GLYPHS = {
   board: ['\uf0db', '▦'],
   new: ['\uf067', '+'],
   filter: ['\uf002', '/'],
-  bg: ['\uf186', '◐'],
   archived: ['\uf187', '▪'],
   archive: ['\uf187', '×'],
   you: ['\uf007', '•'],
