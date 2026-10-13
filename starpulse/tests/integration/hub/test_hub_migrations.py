@@ -170,3 +170,20 @@ def test_the_stay_index_revision_replaces_the_lane_index_and_a_downgrade_restore
         indexes = {i["name"]: i["column_names"] for i in inspect(db).get_indexes("starpulse_lane_intervals")}
         assert indexes["ix_starpulse_lane_intervals_lane"] == ["lane", "left_at"]
         assert "ix_starpulse_lane_intervals_stay" not in indexes
+
+
+def test_the_task_entered_index_revision_replaces_the_task_left_index_and_a_downgrade_restores_it(
+    empty_database: Engine,
+) -> None:
+    config = Config()
+    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "eventlog" / "migrations"))
+    with empty_database.begin() as db:
+        config.attributes["connection"] = db
+        command.upgrade(config, "0018")
+        indexes = {i["name"]: i["column_names"] for i in inspect(db).get_indexes("starpulse_lane_intervals")}
+        assert indexes["ix_starpulse_lane_intervals_task_entered"] == ["task", "entered_at"]
+        assert "ix_starpulse_lane_intervals_task" not in indexes
+        command.downgrade(config, "0017")
+        indexes = {i["name"]: i["column_names"] for i in inspect(db).get_indexes("starpulse_lane_intervals")}
+        assert indexes["ix_starpulse_lane_intervals_task"] == ["task", "left_at"]
+        assert "ix_starpulse_lane_intervals_task_entered" not in indexes

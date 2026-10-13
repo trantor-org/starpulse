@@ -263,8 +263,9 @@ class HistoryStore:
         create_tables(self.engine)  # a reader thread of the log may be creating its own at the same time
         for index in (*cases.indexes, *lane_intervals.indexes):  # create_all leaves a table that predates an index
             index.create(self.engine, checkfirst=True)
-        with self.engine.begin() as db:  # the stay index leads with the columns this one held
+        with self.engine.begin() as db:  # the stay and task-by-entered indexes replace the lane and task-by-left ones
             db.execute(text("DROP INDEX IF EXISTS ix_starpulse_lane_intervals_lane"))
+            db.execute(text("DROP INDEX IF EXISTS ix_starpulse_lane_intervals_task"))
         if self.repair_lanes():
             self.rebuild_summaries()
         self.build_summaries()
@@ -625,22 +626,28 @@ class HistoryStore:
             # no DISTINCT: it would send SQLite down the whole task index instead of the range of recent entries
             moved = db.execute(
                 select(i.task).where(i.entered_at >= min(now - window_s, now - AGING_WINDOW_S))
-            ).scalars()
-            live = db.execute(select(c.case_id).where(c.machine == BOARD, c.state.in_([*waiting, *working]))).scalars()
+            ).scalars().all()
+            live = db.execute(
+                select(c.case_id).where(c.machine == BOARD, c.state.in_([*waiting, *working]))
+            ).scalars().all()
             tasks = sorted({*moved, *live})
-            columns = (i.entered_at, i.id, i.event_id, i.task, i.lane)
+            # by task, then time, then the order they were recorded in: the task index hands them over in that order
+            query = select(i.entered_at, i.event_id, i.task, i.lane).order_by(i.task, i.entered_at, i.id)
             rows = [
-                tuple(row)
+                row
                 for start in range(0, len(tasks), _TASKS_PER_QUERY)
-                for row in db.execute(select(*columns).where(i.task.in_(tasks[start : start + _TASKS_PER_QUERY]))).all()
+                for row in db.execute(query.where(i.task.in_(tasks[start : start + _TASKS_PER_QUERY]))).all()
             ]
             seen = db.execute(
                 select(n.source, func.min(n.first_at)).where(n.lane.in_(list(states))).group_by(n.source)
             ).all()
         steps: dict[tuple[str, str], list[tuple[float, str]]] = {}
-        for at, _, event_id, task, lane in sorted(rows):  # by time, then by the order they were recorded in
+        for at, event_id, task, lane in rows:
             if (state := states.get(lane)) is not None:
-                steps.setdefault((source(event_id), task), []).append((at, state))
+                key = (source(event_id), task)
+                if (path := steps.get(key)) is None:
+                    path = steps[key] = []
+                path.append((at, state))
         runs = [Run(who, task, tuple(path)) for (who, task), path in steps.items()]
         return RunWindow(runs, min((first for _, first in seen), default=None), sorted(who for who, _ in seen))
 
