@@ -401,6 +401,12 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: SESSIONS }, async ($, e, next) => {
+    // Outside the fullscreen layout the terminal places a pane inline above the prompt; like Files, Sessions shows only in the dock.
+    if (e.surface === 'terminal' && e.props.placement === 'inline') {
+      void $.ui.close({ id: SESSIONS }).catch(() => undefined)
+      const { Box } = $.ui.resolve(e)
+      return <Box />
+    }
     const others = await read($, sessions)
     if (!others.length) {
       return next(e)

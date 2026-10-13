@@ -308,7 +308,8 @@ the registry each session writes under `~/.claude/sessions/`, reread every 5 sec
 board`. The Sessions pane, one row per session with its status, opens by itself once the first list holds a session,
 docked as a tab beside the other right-side panes (such as Files) on a fullscreen terminal of 144 columns or more; until
 the first prompt, the first pane another plugin opens is followed by Sessions closing and reopening, so Sessions is the
-tab on show. Pressing the count opens it at any width (inline below the dock's width) with the keys in the pane. A session running in a tmux pane (as a StarPulse
+tab on show. Pressing the count opens it with the keys in the pane. Like Files, it shows only in the dock: placed inline
+(outside the fullscreen layout, or narrower than the dock) it closes itself. A session running in a tmux pane (as a StarPulse
 Start session does, in tmux session `task-<N>`) is a button that runs `tmux switch-client` to it; a background
 (`claude --bg`) session is a button that first opens it with `claude attach <job>` (the session id's first 8 characters) in tmux session `bg-<job>`
 (`new-session -A`, so a second press reuses it). Switching needs the session showing the pane to run inside a tmux
