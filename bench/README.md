@@ -58,15 +58,20 @@ Result (build host, SQLite, 60 reads each; CPU time judges the 2x gate):
 
 | Events | Health p95 (wall / CPU) | Level p95 (wall / CPU) | Trajectories p95 (wall / CPU) | Store |
 | ---: | --- | --- | --- | ---: |
-| 10 thousand | 3.8 / 3.8 ms | 135.5 / 135.5 ms | 164.0 / 157.7 ms | 3 MB |
-| 1 million | 3.9 / 3.9 ms (x1.05) | 145.7 / 145.7 ms (x1.08) | 162.7 / 161.9 ms (x1.03) | 289 MB |
-| 10 million | 3.7 / 3.8 ms (x0.99) | 68.5 / 67.6 ms (x0.50) | 93.3 / 90.8 ms (x0.58) | 3.0 GB |
+| 10 thousand | 3.9 / 3.9 ms | 18.0 / 18.0 ms | 112.5 / 112.5 ms | 3 MB |
+| 1 million | 12.8 / 4.8 ms (x1.22) | 70.1 / 26.7 ms (x1.48) | 114.3 / 113.8 ms (x1.01) | 289 MB |
+| 10 million | 3.9 / 3.9 ms (x1.01) | 19.3 / 19.3 ms (x1.07) | 84.0 / 83.9 ms (x0.75) | 3.0 GB |
 
 The ratios are the CPU p95 against the 10 thousand row, all under 2x. Health sends six statements at every size and
 fetches 29, 37 and 45 rows: rows for the lanes and tasks in flight, not every lane interval. None of the reads touches
-`starpulse_machine_events` or `starpulse_lane_changes`. Before the summaries the same reads folded every lane change:
-at 1 million, health took 9.2 s and the level 11.6 s (p95 of 3 reads, wall). At 10 thousand the level reads the whole
-history, because the trailing 12 weeks that set the aging threshold reach back past its start; that is the most it
+`starpulse_machine_events` or `starpulse_lane_changes`. The level and trajectories send no statements: the 60
+reads share the one window `HistoryStore.level_window` read for the first, which it keeps until a lane or machine
+event is recorded or the summaries are rebuilt (and re-reads each minute), so the level's p95 is its metrics and the
+trajectories' its analytics. Before that cache, at 10 thousand, the level took 131-176 ms CPU and the trajectories
+137-176 ms CPU in four runs on the same host, which was loaded (load average 94) while these rows ran. Before the
+summaries the same reads folded every lane change: at 1 million, health took 9.2 s and the level 11.6 s (p95 of 3
+reads, wall). At 10 thousand the first level read reads the
+whole history, because the trailing 12 weeks that set the aging threshold reach back past its start; that is the most it
 ever reads, and why the level's cost stays where it is as the history grows. Loading 10 million lane changes took
 69.5 seconds and `rebuild_summaries` took 289.9 seconds.
 

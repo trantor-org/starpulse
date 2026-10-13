@@ -1,6 +1,7 @@
 """Flow health and the level answer from the summaries the history store keeps, and say the same as the row scan."""
 
 import json
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -210,7 +211,7 @@ def test_a_level_window_read_in_one_task_chunks_groups_the_same_runs(store: Hist
     whole = store.level_window(LEVEL, **window)
     monkeypatch.setattr(history, "_TASKS_PER_QUERY", 1)
 
-    chunked = store.level_window(LEVEL, **window)
+    chunked = _fresh(store).level_window(LEVEL, **window)
 
     assert len(whole.runs) > 1
     assert sorted(chunked.runs, key=_run_key) == sorted(whole.runs, key=_run_key)
@@ -218,6 +219,11 @@ def test_a_level_window_read_in_one_task_chunks_groups_the_same_runs(store: Hist
 
 def _run_key(run) -> tuple[str, str]:
     return run.source, run.task
+
+
+def _fresh(store: HistoryStore) -> HistoryStore:
+    """A store over the same database with no level window cached yet."""
+    return HistoryStore(str(store.engine.url), MACHINES, store.engine)
 
 
 def test_level_window_groups_runs_by_the_stored_source_without_resolving_one_per_row(
@@ -232,10 +238,10 @@ def test_level_window_groups_runs_by_the_stored_source_without_resolving_one_per
 
     monkeypatch.setattr(history, "source", refuse)
 
-    assert sorted(store.level_window(LEVEL, **window).runs, key=_run_key) == expected
+    assert sorted(_fresh(store).level_window(LEVEL, **window).runs, key=_run_key) == expected
     with store.engine.begin() as db:
         db.execute(text("UPDATE starpulse_lane_intervals SET source = 'moved' WHERE event_id IN ('b/c1', 'b/c2')"))
-    assert {(run.source, run.task) for run in store.level_window(LEVEL, **window).runs} >= {("moved", "A")}
+    assert {(run.source, run.task) for run in _fresh(store).level_window(LEVEL, **window).runs} >= {("moved", "A")}
 
 
 def test_level_window_has_sql_order_the_task_index_by_entered_at_without_a_sort(store: HistoryStore) -> None:
@@ -259,3 +265,78 @@ def test_level_window_has_sql_order_the_task_index_by_entered_at_without_a_sort(
     assert "ORDER BY" in statement
     assert "USING INDEX ix_starpulse_lane_intervals_task_entered" in plan
     assert "TEMP B-TREE" not in plan
+
+
+def _interval_reads(statements: list[str]) -> list[str]:
+    return [s for s in statements if "FROM starpulse_lane_intervals" in s]
+
+
+def _window(store: HistoryStore, now: float = NOW):
+    return store.level_window(LEVEL, now=now, window_s=48 * H)
+
+
+def test_a_second_level_window_with_no_summary_write_between_reads_nothing(
+    store: HistoryStore, statements: list[str]
+) -> None:
+    first = _window(store)
+    statements.clear()
+
+    again = _window(store, NOW + 30)
+
+    assert (again, _interval_reads(statements)) == (first, [])
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda store: store.record_lane("a/new", "N", "In Progress", NOW - H),
+        lambda store: store.record_machine("1-0", {"machine": "board", "event": "start", "task": "N", "time": NOW - H}),
+        lambda store: store.rebuild_summaries(),
+    ],
+    ids=["record_lane", "record_machine", "rebuild_summaries"],
+)
+def test_a_summary_write_between_two_level_windows_forces_a_fresh_read(
+    store: HistoryStore, statements: list[str], write
+) -> None:
+    _window(store)
+    write(store)
+    statements.clear()
+
+    _window(store)
+
+    assert _interval_reads(statements)
+
+
+def test_the_level_a_cached_window_answers_is_the_bytes_a_fresh_store_gives(store: HistoryStore) -> None:
+    level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW)
+
+    cached = level_response(store, {"hours": ["48"]}, LEVEL, MACHINES, NOW + 30)
+
+    fresh = HistoryStore(str(store.engine.url), MACHINES)
+    assert cached == level_response(fresh, {"hours": ["48"]}, LEVEL, MACHINES, NOW + 30)
+
+
+def test_a_reader_never_sees_a_window_older_than_the_last_write_that_completed(store: HistoryStore) -> None:
+    written, stop, stale = [0], threading.Event(), []
+
+    def write() -> None:
+        for i in range(1, 41):
+            store.record_lane(f"a/w-{i}", f"w-{i}", "In Progress", NOW - H)
+            written[0] = i
+        stop.set()
+
+    def read() -> None:
+        while not stop.is_set():
+            done = written[0]
+            tasks = sum(run.task.startswith("w-") for run in _window(store).runs)
+            if tasks < done:
+                stale.append((done, tasks))
+
+    readers = [threading.Thread(target=read) for _ in range(4)]
+    for reader in readers:
+        reader.start()
+    write()
+    for reader in readers:
+        reader.join()
+
+    assert stale == []

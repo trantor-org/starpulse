@@ -79,6 +79,10 @@ logger = logging.getLogger(__name__)
 #: How many tasks one statement asks the lane intervals for, under every dialect's limit on bound parameters.
 _TASKS_PER_QUERY = 500
 
+#: How long one read of the level's window serves requests, and how many windows (one per level and span asked) are kept.
+_WINDOW_BUCKET_S = 60.0
+_WINDOWS_KEPT = 8
+
 #: The file a config without `database_url` keeps its history in, beside the config.
 DEFAULT_FILE = "starpulse-history.sqlite"
 
@@ -259,6 +263,10 @@ class HistoryStore:
         self.engine = engine or create_engine(url)
         self._machines = machines
         self._summariser = Summariser(machines)
+        # the level windows read since the last summary write
+        self._windows: dict[tuple[Level, float, float], RunWindow] = {}
+        self._windows_lock = threading.Lock()
+        self._summaries_version = 0
         # pragma: no mutate start — SQLite compiles the postgresql insert's ON CONFLICT alike
         self._dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
         # pragma: no mutate end
@@ -323,10 +331,20 @@ class HistoryStore:
         }
         with self.engine.begin() as db:
             insert = self._insert(_machine_events).values(row).on_conflict_do_nothing()
-            if db.execute(insert.returning(_machine_events.c.id)).first() is not None:
+            written = db.execute(insert.returning(_machine_events.c.id)).first() is not None
+            if written:
                 self._summarise_event(db, row)
             if cursor is not None:
                 self._save_cursor(db, machine_events.STREAM, cursor)
+        if written:
+            self._summaries_changed()
+
+    def _summaries_changed(self) -> None:
+        """Forget the level windows: called once a write to the summaries has committed, so a window read after it sees the
+        write and one read before it is never kept."""
+        with self._windows_lock:
+            self._summaries_version += 1
+            self._windows.clear()
 
     def _summarise_event(self, db: Connection, row: dict) -> None:
         who = self._summariser
@@ -355,6 +373,8 @@ class HistoryStore:
             written = self._fold_lane(db, event_id, task, status, at)
             if cursor is not None:
                 self._save_cursor(db, lane_events.STREAM, cursor)
+        if written:
+            self._summaries_changed()
         return written
 
     def record_lane_entry(self, entry_id: str, fields: dict, *, cursor: int | None = None) -> bool:
@@ -436,6 +456,7 @@ class HistoryStore:
                 db.execute(delete(table))
             self._folded(db).write(db)
             db.execute(insert(summary_basis).values(fingerprint=self._summariser.fingerprint()))
+        self._summaries_changed()
 
     def summary_differences(self) -> list[str]:
         """Each way the summaries differ from the ones folded from the raw rows, one line each; none when they match."""
@@ -624,6 +645,22 @@ class HistoryStore:
         """
         if level.machine != BOARD:
             return RunWindow(self.level_runs(level.machine))
+        # The window holds every run that moved since a cutoff `now` sets, and a cutoff earlier than a request needs only
+        # adds runs the level's numbers clip away, so one read at the start of the minute answers every request in it.
+        bucket = now - now % _WINDOW_BUCKET_S
+        key = (level, window_s, bucket)
+        with self._windows_lock:
+            version, held = self._summaries_version, self._windows.get(key)
+        if held is None:
+            held = self._read_level_window(level, now=bucket, window_s=window_s)
+            with self._windows_lock:
+                if self._summaries_version == version:  # a write that committed meanwhile may be missing from it
+                    if len(self._windows) >= _WINDOWS_KEPT:
+                        del self._windows[next(iter(self._windows))]
+                    self._windows[key] = held
+        return held
+
+    def _read_level_window(self, level: Level, *, now: float, window_s: float) -> RunWindow:
         machine = self._machines[BOARD]
         states = {key: state["id"] for state in machine["states"] for key in (state["name"], state["id"])}
         _, working, waiting = state_roles(level, machine)
