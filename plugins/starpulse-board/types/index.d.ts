@@ -25,10 +25,25 @@ export type HeldTask = {
 }
 
 /**
- * Another Claude Code session on this host: its id, label and registry status, the tmux session holding it if any,
- * and whether it is a background (`claude --bg`) session, which `claude attach` opens in a terminal.
+ * A Claude Code session on this host: its id, label (its tmux session, else its name) and registry status, the tmux
+ * session holding it if any, and whether it is a background (`claude --bg`) session, which `claude attach` opens in a
+ * terminal. `name` is what its row reads, `cwd` where it runs, `updatedAt` its registry timestamp in ms, and `isOwn`
+ * marks the session this pane is drawn in.
  */
-export type PeerSession = { id: string; label: string; status: string; tmux: string | null; isBackground: boolean }
+export type PeerSession = {
+  id: string
+  label: string
+  name: string
+  status: string
+  tmux: string | null
+  isBackground: boolean
+  isOwn: boolean
+  cwd: string
+  updatedAt: number
+}
+
+/** A session the operator archived: kept in `$.store` so `claude --resume <sessionId>` can reopen it at `cwd`. */
+export type ArchivedSession = { sessionId: string; name: string; cwd: string; task: string; archivedAt: number }
 
 /** A column a task may move to: its state id and name. */
 export type Move = { to: string; name: string }
@@ -49,6 +64,11 @@ declare module 'claude-code' {
       lanes: Lane[] | null
       folded: string[]
       pickedTask: string | null
+      archived: ArchivedSession[]
+      query: string
+      chips: string[]
+      sessionFolds: string[]
+      focused: string | null
     }
   }
 }

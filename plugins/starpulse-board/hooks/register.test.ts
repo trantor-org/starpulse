@@ -472,6 +472,7 @@ const sessionsHost = (on: On, host: Host = {}) => {
       return { value: undefined }
     })
   }
+  if (!host.hasClock) on('clock.now', () => ({ value: 1_800_000_000_000 }))
   on('env.get', ($, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
   if (host.toasts) on('ui.toast', ($, e) => {
     host.toasts?.push(e.text)
@@ -746,17 +747,17 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(opened.at(-1)).toBe('starpulse-sessions focus=true')
   })
 
-  test(`the Sessions pane lists every other session with its status (${surface})`, async ($, on) => {
+  test(`the Sessions pane lists every session with its status, this one marked (${surface})`, async ($, on) => {
     sessionsHost(on)
 
     await start($, surface)
     const ui = await sessionsPane($, surface)
+    const label = async (key: string) => (await ui.find({ key }))?.props.label as string
 
-    expect((await ui.find({ key: 'session:session-2' }))?.props.label).toBe('● task-7 busy')
-    expect((await ui.find({ key: 'session:abcd1234-5678' }))?.props.label).toBe('○ Check the alert idle')
-    expect(await ui.find({ text: '○ Fix the gate idle' })).toBeDefined()
-    expect(await ui.find({ key: 'session:session-3' })).toBeUndefined()
-    expect(await ui.find({ key: `session:${SESSION}` })).toBeUndefined()
+    expect(await label('session:session-2')).toMatch(/^trantor-2, working, /)
+    expect(await label('session:abcd1234-5678')).toMatch(/^Check the alert, background, idle, /)
+    expect(await label('session:session-3')).toMatch(/^Fix the gate, idle, /)
+    expect(await label(`session:${SESSION}`)).toMatch(/^me, you, working, /)
   })
 
   test(`pressing a session in tmux switches the tmux client to it (${surface})`, async ($, on) => {
@@ -800,7 +801,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await ui.find({ key: 'details-PROJ-1' })).toBeDefined()
     expect(await ui.find({ key: 'details-PROJ-2' })).toBeDefined()
     expect(spawned.find(argv => argv[0] === 'curl')?.at(-1)).toBe('http://localhost:8766/api/held?holder=session-1')
-    expect(ran.filter(argv => argv.join(' ').includes('starpulse'))).toEqual([])
+    expect(ran.filter(argv => argv.join(' ').includes('--holder'))).toEqual([])
   })
 
   test(`a tool call and a turn's end read no board (${surface})`, async ($, on) => {

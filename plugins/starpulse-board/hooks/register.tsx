@@ -1,8 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface as Engine, Register, RenderChildren } from 'claude-code'
-import type { BoardTask, Checks, HeldTask, Lane, PeerSession, Pull } from '../types'
+import type { ArchivedSession, BoardTask, Checks, HeldTask, Lane, PeerSession, Pull } from '../types'
 import { CHECKS, LANES as LANE_STYLES, ROW_HEIGHT, SP, alt, glyphs, laneIcon, laneOf, paneSvg, progress, ratio, rowSvg, subline, termBar } from './draw'
-import type { Glyphs } from './draw'
+import type { Glyph, Glyphs } from './draw'
+import { CHIPS, GROUPS, ago, alive, countOf, focusedId, holdersOf, lanesOf, matches, ordered, rowLabel, rowsOf } from './sessions'
+import type { Chip, Group, Row } from './sessions'
 
 const PANE = 'starpulse-board'
 const SESSIONS = 'starpulse-sessions'
@@ -15,6 +17,11 @@ const openTask = atom({ plugin: 'starpulse-board', key: 'openTask' } as const, n
 const lanes = atom({ plugin: 'starpulse-board', key: 'lanes' } as const, null)
 const folded = atom({ plugin: 'starpulse-board', key: 'folded' } as const, ['ready', 'waiting'])
 const pickedTask = atom({ plugin: 'starpulse-board', key: 'pickedTask' } as const, null)
+const archived = atom({ plugin: 'starpulse-board', key: 'archived' } as const, [])
+const query = atom({ plugin: 'starpulse-board', key: 'query' } as const, '')
+const chips = atom({ plugin: 'starpulse-board', key: 'chips' } as const, [])
+const sessionFolds = atom({ plugin: 'starpulse-board', key: 'sessionFolds' } as const, ['archived'])
+const focused = atom({ plugin: 'starpulse-board', key: 'focused' } as const, null)
 
 // A task as `starpulse board` prints it. An older starpulse leaves out the criteria, the reason and each PR's checks.
 type RawTask = {
@@ -106,7 +113,7 @@ const readLanes = async ($: Engine): Promise<Lane[]> => {
   return LANES.flatMap(state => columns.filter(c => c.state === state)).map(c => ({ state: c.state, name: c.name, tasks: c.tasks.map(t => task(t, c)) }))
 }
 
-type Registered = { sessionId: string; pid: number; name?: string; status?: string; kind?: string }
+type Registered = { sessionId: string; pid: number; name?: string; status?: string; kind?: string; cwd?: string; updatedAt?: number }
 
 // Each tmux pane's pid and the tmux session it sits in; empty when no tmux server runs.
 const tmuxPanes = async ($: Engine): Promise<Map<number, string>> => {
@@ -125,8 +132,16 @@ const tmuxPanes = async ($: Engine): Promise<Map<number, string>> => {
   return panes
 }
 
-// The host's other sessions, from the registry every Claude Code session writes under ~/.claude/sessions. A session
-// StarPulse started runs as its tmux pane's own process, so its pid finds the tmux session to switch to.
+// The tmux session this session's own pane sits in, for a session started by hand: its pid is the shell's child, not the pane's.
+const ownTmux = async ($: Engine): Promise<string | null> => {
+  const pane = await $.env.get('TMUX_PANE')
+  const ran = pane ? await $.process.run(['tmux', 'display-message', '-p', '-t', pane, '#{session_name}']).catch(() => null) : null
+
+  return ran?.exitCode === 0 ? ran.stdout.trim() || null : null
+}
+
+// The host's sessions, this one included, from the registry every Claude Code session writes under ~/.claude/sessions.
+// A session StarPulse started runs as its tmux pane's own process, so its pid finds the tmux session to switch to.
 const peers = async ($: Engine): Promise<PeerSession[]> => {
   try {
     const dir = `${await $.env.get('HOME')}/.claude/sessions`
@@ -142,17 +157,24 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
           .catch(() => null),
       ),
     )
-    const others = found.filter((s): s is Registered => s !== null && s.sessionId !== own)
+    const known = found.filter((s): s is Registered => s !== null)
+    const mine = known.find(s => s.sessionId === own)
+    const handTmux = mine && !panes.has(mine.pid) ? await ownTmux($) : null
 
-    return others
+    return known
       .map(s => {
-        const tmux = panes.get(s.pid) ?? null
+        const tmux = panes.get(s.pid) ?? (s === mine ? handTmux : null)
+        const label = tmux ?? s.name ?? s.sessionId.slice(0, 8)
         return {
           id: s.sessionId,
-          label: tmux ?? s.name ?? s.sessionId.slice(0, 8),
+          label,
+          name: s.name ?? label,
           status: s.status ?? 'unknown',
           tmux,
           isBackground: s.kind === 'bg',
+          isOwn: s.sessionId === own,
+          cwd: s.cwd ?? '',
+          updatedAt: s.updatedAt ?? 0,
         }
       })
       .sort((a, b) => a.label.localeCompare(b.label))
@@ -160,6 +182,9 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
     return []
   }
 }
+
+// The sessions other than this one that are not archived: what the band counts and a task's Go to session looks through.
+const elsewhere = (all: PeerSession[], kept: ArchivedSession[]) => alive(all, kept).filter(s => !s.isOwn)
 
 const reloadLanes = async ($: Engine) => {
   const found = await readLanes($)
@@ -230,11 +255,19 @@ const followHeld = async ($: Engine) => {
 
 let hasOpened = false
 let isStarting = true
+// The Sessions rows name the task each session holds, so a registry change rereads the whole Board, at most twice a minute.
+let lanesReadAt = 0
+const LANES_EVERY_MS = 30_000
 const listPeers = async ($: Engine) => {
-  const others = await peers($)
-  await update($, sessions, () => others)
-  // The first list opens the pane unasked; opened after Files, it is the dock tab on show, and the prompt keeps the keys.
-  if (!hasOpened && others.length) {
+  const all = await peers($)
+  await update($, sessions, () => all)
+  const now = await $.clock.now()
+  if (now - lanesReadAt >= LANES_EVERY_MS) {
+    lanesReadAt = now
+    void reloadLanes($)
+  }
+  // The first list of other sessions opens the pane unasked; opened after Files, it is the dock tab on show, and the prompt keeps the keys.
+  if (!hasOpened && elsewhere(all, await read($, archived)).length) {
     hasOpened = true
     await $.ui.open({ id: SESSIONS, title: 'Sessions' })
   }
@@ -288,6 +321,101 @@ const switchTo = async ($: Engine, s: PeerSession) => {
   }
 }
 
+// A tmux session named claude-<six digits> running `command` at `cwd`, started detached: its name, or null when tmux refused.
+const startTmux = async ($: Engine, cwd: string, command: string[]): Promise<string | null> => {
+  const name = `claude-${String((await $.clock.now()) % 1_000_000).padStart(6, '0')}`
+  const ran = await $.process.run(['tmux', 'new-session', '-d', '-s', name, '-c', cwd, ...command]).catch(() => null)
+
+  return ran?.exitCode === 0 ? name : null
+}
+
+// Runs `command` in a tmux session of its own and switches to it: the session's name, or null once a toast says why not.
+const launch = async ($: Engine, cwd: string, command: string[], failure: string): Promise<string | null> => {
+  const name = await startTmux($, cwd, command)
+  if (name === null) {
+    $.ui.toast(failure)
+    return null
+  }
+  const ran = await tmux($, 'switch-client', '-t', name)
+  if (ran?.exitCode !== 0) {
+    $.ui.toast(`Started ${name}: tmux attach -t ${name}`)
+  }
+
+  return name
+}
+
+const newSession = async ($: Engine) => {
+  await launch($, await $.session.root(), ['claude'], 'Cannot start a tmux session: is tmux installed?')
+}
+
+// The archived list, newest first, kept in $.store and drawn from the atom.
+const saveArchived = async ($: Engine, list: ArchivedSession[]) => {
+  await $.store.set('archived', list)
+  await update($, archived, () => list)
+}
+
+const currentRows = async ($: Engine): Promise<Row[]> => {
+  const found = await read($, lanes)
+
+  return rowsOf(await read($, sessions), await read($, archived), holdersOf(found), lanesOf(found))
+}
+
+// Hides the session and kills its tmux session. This session's own is first replaced by a fresh one that is switched to,
+// since killing it ends this process: the list is saved before the kill for the same reason.
+const archive = async ($: Engine, r: Row) => {
+  if (r.isOwn) {
+    const fresh = r.tmux === null ? null : await startTmux($, await $.session.root(), ['claude'])
+    const ran = fresh === null ? null : await tmux($, 'switch-client', '-t', fresh)
+    if (ran?.exitCode !== 0) {
+      if (fresh !== null) {
+        await tmux($, 'kill-session', '-t', fresh)
+      }
+      $.ui.toast('Not archived: no fresh tmux session to switch to first')
+      return
+    }
+  }
+  const entry = { sessionId: r.id, name: r.name, cwd: r.cwd, task: r.task, archivedAt: await $.clock.now() }
+  await saveArchived($, [entry, ...(await read($, archived)).filter(a => a.sessionId !== r.id)])
+  if (r.tmux !== null) {
+    await tmux($, 'kill-session', '-t', r.tmux)
+  }
+}
+
+// Reopens an archived session with `claude --resume` in a new tmux session at its recorded directory.
+const resume = async ($: Engine, r: Row) => {
+  const cwd = r.cwd || (await $.session.root())
+  const name = await launch($, cwd, ['claude', '--resume', r.id], `Cannot resume ${r.name}: is tmux installed?`)
+  if (name !== null) {
+    await saveArchived($, (await read($, archived)).filter(a => a.sessionId !== r.id))
+  }
+}
+
+// A row's press goes to its session: an archived one resumes, this one only says so.
+const enter = async ($: Engine, r: Row) => {
+  if (r.group === 'archived') {
+    await resume($, r)
+  } else if (r.isOwn) {
+    $.ui.toast('This is the session you are in')
+  } else if (r.peer && (r.tmux !== null || r.isBackground)) {
+    await switchTo($, r.peer)
+  } else {
+    $.ui.toast(`${r.name} is not in tmux`)
+  }
+}
+
+// The `a` key: archives the row under the focus, or resumes it when it is archived.
+const actOnFocused = async ($: Engine) => {
+  const id = focusedId(await read($, focused))
+  const r = (await currentRows($)).find(x => x.id === id)
+  if (!r) {
+    $.ui.toast('Focus a session with ↑↓ first')
+  } else if (r.group === 'archived') {
+    await resume($, r)
+  } else {
+    await archive($, r)
+  }
+}
+
 // The Board tab opens with the keys and the whole Board read fresh.
 const openBoard = async ($: Engine) => {
   await $.ui.open({ id: KANBAN, title: 'Board', focus: true })
@@ -321,7 +449,7 @@ const STARTABLE = new Set(['ready', 'waiting', 'needs_attention'])
 const toSession = async ($: Engine, t: BoardTask, lane: string) => {
   const name = t.id.toLowerCase()
   if (!STARTABLE.has(lane)) {
-    const others = await read($, sessions)
+    const others = elsewhere(await read($, sessions), await read($, archived))
     const live = others.find(s => s.id === t.holder) ?? others.find(s => s.tmux === name)
     if (live) {
       await switchTo($, live)
@@ -349,8 +477,6 @@ const moveTask = async ($: Engine, id: string, to: string) => {
   }
   await reloadLanes($)
 }
-
-const peerLine = (s: PeerSession) => `${s.status === 'busy' ? '●' : '○'} ${s.label} ${s.status}`
 
 // The sessions that are working and the rest, which the band counts on one line.
 const tally = (others: PeerSession[]) => {
@@ -471,6 +597,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'board', description: 'List the Board tasks this session holds' })
     await $.command.register({ name: 'kanban', description: 'Open the Board as a tab beside Files' })
+    const kept = await $.store.get('archived').catch(() => undefined)
+    await update($, archived, () => (Array.isArray(kept) ? (kept as ArchivedSession[]) : []))
     listPeersSoon($)
     void followPeers($)
     void followHeld($)
@@ -512,6 +640,16 @@ export const register: Register = (on, options) => {
     return result
   })
 
+  // The ring's position is what `a` acts on.
+  on('ui.focus', { requestId: SESSIONS }, async ($, e, next) => {
+    const result = await next(e)
+    if (!result.deny) {
+      await update($, focused, () => e.element ?? null)
+    }
+
+    return result
+  })
+
   on('prompt.submit', ($, e, next) => {
     isStarting = false
 
@@ -526,7 +664,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const found = (await read($, tasks)) ?? []
-    const others = await read($, sessions)
+    const others = elsewhere(await read($, sessions), await read($, archived))
     if (e.props.hasSurvey || (!found.length && !others.length)) {
       return next(e)
     }
@@ -763,31 +901,153 @@ export const register: Register = (on, options) => {
     )
   })
 
-  on('ui.render', { component: 'Pane', requestId: SESSIONS }, async ($, e, next) => {
+  on('ui.render', { component: 'Pane', requestId: SESSIONS }, async ($, e) => {
     // Outside the fullscreen layout the terminal places a pane inline above the prompt; like Files, Sessions shows only in the dock.
     if (e.surface === 'terminal' && e.props.placement === 'inline') {
       void $.ui.close({ id: SESSIONS }).catch(() => undefined)
       const { Box } = $.ui.resolve(e)
       return <Box />
     }
-    const others = await read($, sessions)
-    if (!others.length) {
-      return next(e)
+    const found = await read($, lanes)
+    const text = await read($, query)
+    const active = await read($, chips)
+    const shut = await read($, sessionFolds)
+    const now = await $.clock.now()
+    const cols = e.props.bodyColumns
+    const { Box, Button, Input, Text } = $.ui.resolve(e) as Remote
+
+    const all = rowsOf(await read($, sessions), await read($, archived), holdersOf(found), lanesOf(found))
+    const shown = all.filter(r => matches(r, text, active))
+    const chipStyle: Record<Chip, string> = { working: SP.run, idle: SP.slate, bg: SP.released, archived: SP.muted }
+    const groupStyle: Record<Group, string> = { working: SP.run, idle: SP.slate, archived: SP.muted }
+    const fold = (group: string) => update($, sessionFolds, f => (f.includes(group) ? f.filter(x => x !== group) : [...f, group]))
+    const flip = async (c: Chip) => {
+      const isOn = active.includes(c)
+      await update($, chips, list => (isOn ? list.filter(x => x !== c) : [...list, c]))
+      if (c === 'archived' && !isOn) {
+        await update($, sessionFolds, f => f.filter(x => x !== 'archived'))
+      }
     }
 
-    const { Box, Button, Text } = $.ui.resolve(e) as Remote
+    const chip = (c: Chip) => {
+      const label = `${c} ${countOf(all, c)}`
+      const isOn = active.includes(c)
 
-    return (
-      <Box flexDirection="column">
-        {others.map(s =>
-          s.tmux !== null || s.isBackground ? (
-            <Button key={`session:${s.id}`} label={peerLine(s)} onPress={() => switchTo($, s)} />
-          ) : (
-            <Text key={`peer:${s.id}`} dimColor>
-              {peerLine(s)}
+      return (
+        <Button key={`chip:${c}`} label={label} plain onPress={() => flip(c)}>
+          <Text color={isOn ? chipStyle[c] : SP.faint}>{`${g(c)} `}</Text>
+          <Text bold={isOn} color={isOn ? chipStyle[c] : SP.muted}>
+            {label}
+          </Text>
+        </Button>
+      )
+    }
+
+    // Name room: what the columns leave once the icon, the facts and the age are drawn; one cell stays spare.
+    const row = (r: Row) => {
+      const age = ago(now, r.updatedAt)
+      const fixed = 2 + 1 + 1 + (r.isOwn ? 6 : 0) + (r.task ? r.task.length + 1 : 0) + 4 + 1 + 2
+      const [name, pad] = cut(r.name, Math.max(1, cols - fixed))
+      const icon: [Glyph, string] = r.group === 'archived' ? ['archived', SP.muted] : r.isBackground ? ['bg', r.group === 'working' ? SP.run : SP.released] : [r.group, r.group === 'working' ? SP.run : SP.slate]
+      const isArchived = r.group === 'archived'
+      const taskColor = LANE_STYLES[r.lane]?.[1] ?? SP.slate
+
+      return (
+        <Box key={`row-${r.id}`}>
+          <Button key={`session:${r.id}`} label={rowLabel(r, age)} plain onPress={() => enter($, r)}>
+            {'  '}
+            <Text color={icon[1]}>{g(icon[0])}</Text>
+            {' '}
+            <Text bold={r.isOwn} color={isArchived ? SP.muted : SP.ink}>
+              {name}
             </Text>
-          ),
+            {pad}
+            {r.isOwn && <Text color={SP.agent}>{` ${g('you')} you`}</Text>}
+            {r.task && <Text color={taskColor}>{` ${r.task}`}</Text>}
+            <Text color={SP.muted}>{` ${age.padStart(3)}`}</Text>
+          </Button>
+          {isArchived ? (
+            <Button key={`resume:${r.id}`} label={`Resume ${r.name}`} plain onPress={() => resume($, r)}>
+              {' '}
+              <Text color={SP.ok}>{g('start')}</Text>
+            </Button>
+          ) : (
+            <Button key={`archive:${r.id}`} label={`Archive ${r.name}`} plain onPress={() => archive($, r)}>
+              {' '}
+              <Text color={SP.faint}>{g('archive')}</Text>
+            </Button>
+          )}
+        </Box>
+      )
+    }
+
+    // The dock paints grey behind every cell a pane draws, and a pane body scrolls its tree, so the root takes the body's rows and fills them black.
+    return (
+      <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={SP.black}>
+        <Box>
+          <Button key="new" label="New session" hotkey="n" plain onPress={() => newSession($)}>
+            <Text bold color={SP.agent}>{`${g('new')} New session`}</Text>
+          </Button>
+          <Box flexGrow={1} />
+          <Button key="refresh" label="Refresh" plain onPress={() => {
+              lanesReadAt = 0
+              listPeersSoon($)
+            }}
+          >
+            <Text color={SP.faint}>{g('refresh')}</Text>
+          </Button>
+        </Box>
+        <Box>
+          <Button key="focus-filter" label="Filter" hotkey="f" plain onPress={() => $.ui.focus({ requestId: SESSIONS, key: 'filter' })}>
+            <Text color={SP.muted}>{`${g('filter')} `}</Text>
+          </Button>
+          <Input
+            key="filter"
+            placeholder="filter sessions, tmux or task"
+            value={text}
+            onInput={v => update($, query, () => v)}
+            onSubmit={() => $.ui.focus({ requestId: SESSIONS, key: `session:${ordered(shown)[0]?.id}` }).catch(() => undefined)}
+          />
+        </Box>
+        <Box flexWrap="wrap" columnGap={2}>
+          {CHIPS.map(chip)}
+        </Box>
+        {GROUPS.map(([group, name]) => {
+          const rows = ordered(shown.filter(r => r.group === group))
+          const isFolded = shut.includes(group)
+          const header = `${name.toUpperCase()} ${rows.length}`
+
+          return (
+            rows.length > 0 && (
+              <Box key={`group-${group}`} flexDirection="column" marginTop={1}>
+                <Box>
+                  <Button key={`fold:${group}`} label={`${isFolded ? '▸' : '▾'} ${name} ${rows.length}`} plain onPress={() => fold(group)}>
+                    <Text color={SP.faint}>{g(isFolded ? 'right' : 'down')}</Text>
+                    {' '}
+                    <Text bold color={groupStyle[group]}>
+                      {name.toUpperCase()}
+                    </Text>
+                    {' '}
+                    <Text color={SP.muted}>{String(rows.length)}</Text>
+                  </Button>
+                  <Text color={SP.track}>{` ${'─'.repeat(Math.max(0, cols - header.length - 6))}`}</Text>
+                </Box>
+                {!isFolded && rows.map(row)}
+              </Box>
+            )
+          )
+        })}
+        {!shown.length && (
+          <Box marginTop={1}>
+            <Text color={SP.muted}>{text ? `  No session matches “${text}”` : '  No sessions'}</Text>
+          </Box>
         )}
+        <Box marginTop={1}>
+          <Text color={SP.faint}>↑↓ move · ↵ open · n new · f filter · </Text>
+          <Button key="archive-focused" label="Archive or resume the focused session" hotkey="a" plain onPress={() => actOnFocused($)}>
+            <Text color={SP.faint}>{!shut.includes('archived') && shown.some(r => r.group === 'archived') ? 'archive/resume' : 'archive'}</Text>
+          </Button>
+        </Box>
       </Box>
     )
   })
