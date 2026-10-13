@@ -39,6 +39,7 @@ _CREATE = (
 )
 #: What a match in each column is worth, in the column order above: a title says most, a note least.
 _WEIGHTS = "4, 10, 2, 1, 1, 0, 0"
+_SNIPPET_CHARS = 160
 _SEARCH = text(
     f"SELECT task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, snippet({_TABLE}, -1, '', '', '…', 16) AS snippet "
     f"FROM {_TABLE} WHERE {_TABLE} MATCH :query ORDER BY bm25({_TABLE}, {_WEIGHTS}), task LIMIT :limit"
@@ -57,6 +58,11 @@ _RANKED = text(
     f"ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model "
     f"WHERE {_TABLE} MATCH :query ORDER BY bm25({_TABLE}, {_WEIGHTS}), task LIMIT :limit"
 )
+#: Every embedded task, for a query whose meaning (not its words) is what is wanted; `snippet` is the task's opening.
+_EMBEDDED = text(
+    f"SELECT task, title, lane, substr(description, 1, {_SNIPPET_CHARS}) AS snippet, {_VECTORS}.vector AS vector "
+    f"FROM {_TABLE} JOIN {_VECTORS} ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model"
+)
 _PENDING = text(
     f"SELECT rowid AS row, title, description, criteria, notes, digest FROM {_TABLE} "
     f"WHERE rowid NOT IN (SELECT task_row FROM {_VECTORS} WHERE model = :model) LIMIT :limit"
@@ -68,6 +74,8 @@ _STORE = text(
 )
 #: How much of the lexical rank (the rest is the vector's cosine similarity) a hit keeps when a query is embedded.
 _LEXICAL_WEIGHT = 0.5
+#: The least cosine similarity at which a task that holds none of the query's words is still a hit.
+_RECALL_FLOOR = 0.6
 #: How many lexical hits a ranked query blends before it cuts to `limit`, so a near meaning can rise past the top.
 _POOL = 50
 #: Tasks sent to the endpoint in one request, and the characters of one task's text it is sent.
@@ -163,7 +171,8 @@ class SearchIndex:
     def search(self, query: str, limit: int = 10) -> list[dict]:
         """The tasks holding every word of `query`, best first, as `{task, title, lane, score, snippet}`; `score` is
         higher for a better match and `snippet` is the text around it. With an embeddings endpoint the order blends
-        each hit's lexical score with the similarity of its vector to the query's."""
+        each hit's lexical score with the similarity of its vector to the query's, and a task that holds none of the
+        query's words is a hit too when its vector is near the query's (its snippet is the task's opening)."""
         match = _match(query)
         if not match:
             return []
@@ -175,12 +184,21 @@ class SearchIndex:
                 return [dict(row._mapping) for row in rows]
             rows = connection.execute(_RANKED, {"query": match, "model": self._model, "limit": max(limit, _POOL)})
             hits = [dict(row._mapping) for row in rows]
+            lexical = {hit["task"] for hit in hits}
+            near = [dict(row._mapping) for row in connection.execute(_EMBEDDED, {"model": self._model})]
         top = max((hit["score"] for hit in hits), default=0.0) or 1.0
         for hit in hits:
             held = array.array("f")
             if blob := hit.pop("vector"):
                 held.frombytes(blob)
             hit["score"] = _LEXICAL_WEIGHT * hit["score"] / top + (1 - _LEXICAL_WEIGHT) * _cosine(vector, held)
+        for hit in near:
+            if hit["task"] in lexical:
+                continue
+            held = array.array("f")
+            held.frombytes(hit.pop("vector"))
+            if (similarity := _cosine(vector, held)) >= _RECALL_FLOOR:
+                hits.append({**hit, "score": (1 - _LEXICAL_WEIGHT) * similarity})
         return sorted(hits, key=lambda hit: -hit["score"])[:limit]
 
     def embed_pending(self) -> int:
