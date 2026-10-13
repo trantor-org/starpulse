@@ -18,6 +18,9 @@ CI splits the suite by test file across the `python-shard` matrix (`ci/shard.py`
 locally); the `python` job, the ruleset's required check, passes only when every shard does.
 A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
+A test whose setup, call and teardown together pass 5 s (`SLOW_TEST_SECONDS` overrides it) is named at the end of the
+run, slowest first (`ci/slow_tests.py`); in CI each is also a warning annotation on its `def` line and a row in the job
+summary. It never fails the run: make the test faster, or move it to the integration tier.
 CI runs only the tests a pull request or a push to main can reach (`ci/select_tests.py`); the full suite runs
 nightly and on a manual dispatch. CI's `ic` job imports every module an IC instance can load without the hub extras
 (`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so CI's `public-names` job
