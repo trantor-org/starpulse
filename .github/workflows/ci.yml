@@ -18,13 +18,16 @@ permissions:
 
 # Validation runs on the organization's self-hosted validate lane, free and independent of GitHub's hosted
 # pool. That runner group serves private repositories only: making this repository public strands these jobs.
+# A merge-queue run takes the merge-queue lane instead: runners reserved for it (trantor's runner-fleet document), so it
+# never waits behind pull-request or trantor CI. The lane holds ten slots for the ten jobs a run has at once (six shards,
+# web, static-checks, trantor-contract and release.yml's build; `python` waits for the shards), so keep this count within it.
 jobs:
-  # The suite is split by test file across SHARD_COUNT jobs (ci/shard.py), each on its own validate slot. The count here and
+  # The suite is split by test file across SHARD_COUNT jobs (ci/shard.py), each on its own runner. The count here and
   # the matrix below move together.
   python-shard:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
     timeout-minutes: 30
     strategy:
       # A red shard does not cancel the others: one run reports every failure.
@@ -77,7 +80,7 @@ jobs:
   python:
     needs: python-shard
     if: always() && github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
     timeout-minutes: 5
     steps:
       - env:
@@ -87,7 +90,7 @@ jobs:
   web:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
     timeout-minutes: 15
     defaults:
       run:
@@ -109,11 +112,11 @@ jobs:
       - run: pnpm run check
 
   # The short static checks in one job (ci/static_checks.sh runs them at once): ic, public-names, api-types and
-  # tier-policy. A merge-queue run takes one validate job of a pool of ten for them, and its wall time is api-types' alone.
+  # tier-policy. A merge-queue run takes one job of its reserved lane for them, and its wall time is api-types' alone.
   static-checks:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
     timeout-minutes: 15
     steps:
       # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.
@@ -152,7 +155,7 @@ jobs:
   trantor-contract:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
     timeout-minutes: 30
     steps:
       # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.

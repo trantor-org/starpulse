@@ -16,6 +16,13 @@ VALIDATE_LANE = ["self-hosted", "validate"]
 #: The label only the Unraid farm slots carry: the hardware the latency budget was calibrated on.
 TOWER_LANE = ["self-hosted", "validate", "tower"]
 HOSTED = "ubuntu-latest"
+MERGE_QUEUE_LANE = ["self-hosted", "merge-queue"]
+#: Every test job of ci.yml (and release.yml's build) takes the reserved merge-queue lane on a merge_group event and the validate lane otherwise.
+MERGE_QUEUE_RUNS_ON = (
+    "${{ github.event_name == 'merge_group' && fromJSON('[\"self-hosted\", \"merge-queue\"]')"
+    " || fromJSON('[\"self-hosted\", \"validate\"]') }}"
+)
+CI_TEST_JOBS = ["python-shard", "python", "web", "static-checks", "trantor-contract"]
 
 
 def job(workflow: str, name: str) -> dict:
@@ -25,10 +32,6 @@ def job(workflow: str, name: str) -> dict:
 @pytest.mark.parametrize(
     ("workflow", "name"),
     [
-        ("ci.yml", "python-shard"),
-        ("ci.yml", "python"),
-        ("ci.yml", "web"),
-        ("ci.yml", "static-checks"),
         ("ui-preview.yml", "render"),
         ("ui-preview.yml", "leak-scan"),
     ],
@@ -37,14 +40,38 @@ def test_pull_request_job_runs_on_the_validate_lane(workflow, name):
     assert job(workflow, name)["runs-on"] == VALIDATE_LANE
 
 
-def test_release_build_runs_on_the_validate_lane_for_a_pull_request_and_hosted_for_a_tag():
-    runs_on = job("release.yml", "build")["runs-on"]
+@pytest.mark.parametrize("name", CI_TEST_JOBS)
+def test_ci_test_job_takes_the_merge_queue_lane_only_on_a_merge_group_event(name):
+    runs_on = job("ci.yml", name)["runs-on"]
     match = re.fullmatch(
-        r"\$\{\{ startsWith\(github\.ref, 'refs/tags/v'\) && '([^']+)' \|\| fromJSON\('([^']+)'\) \}\}", runs_on
+        r"\$\{\{ github\.event_name == 'merge_group' && fromJSON\('([^']+)'\) \|\| fromJSON\('([^']+)'\) \}\}", runs_on
     )
     assert match, runs_on
-    tag_runner, pull_request_runner = match.groups()
+    merge_group_runner, other_runner = match.groups()
+    assert json.loads(merge_group_runner) == MERGE_QUEUE_LANE
+    assert json.loads(other_runner) == VALIDATE_LANE
+
+
+def test_a_merge_queue_run_starts_as_many_jobs_at_once_as_the_reserved_lane_has_runners():
+    """The lane (trantor's runner-fleet document) holds ten slots for these ten; `python` waits for the six shards."""
+    jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
+    shards = len(jobs["python-shard"]["strategy"]["matrix"]["shard"])
+    unshared = [name for name in CI_TEST_JOBS if name != "python-shard" and "needs" not in jobs[name]]
+    release_build = 1  # release.yml's `build` is a required check on the same merge_group candidate
+    assert shards + len(unshared) + release_build == 10
+
+
+def test_release_build_runs_hosted_for_a_tag_and_on_the_merge_queue_lane_for_a_merge_group():
+    runs_on = job("release.yml", "build")["runs-on"]
+    match = re.fullmatch(
+        r"\$\{\{ startsWith\(github\.ref, 'refs/tags/v'\) && '([^']+)'"
+        r" \|\| github\.event_name == 'merge_group' && fromJSON\('([^']+)'\) \|\| fromJSON\('([^']+)'\) \}\}",
+        runs_on,
+    )
+    assert match, runs_on
+    tag_runner, merge_group_runner, pull_request_runner = match.groups()
     assert tag_runner == HOSTED
+    assert json.loads(merge_group_runner) == MERGE_QUEUE_LANE
     assert json.loads(pull_request_runner) == VALIDATE_LANE
 
 
@@ -149,7 +176,7 @@ def test_trantor_tests_of_this_package_gate_every_merge():
     contract = job("ci.yml", "trantor-contract")
     checkouts = [step.get("with", {}) for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")]
     runs = "\n".join(step["run"] for step in contract["steps"] if "run" in step)
-    assert contract["runs-on"] == VALIDATE_LANE
+    assert contract["runs-on"] == MERGE_QUEUE_RUNS_ON
     assert checkouts[0]["sparse-checkout"] == "/*"  # a sparse root checkout empties every later job on the runner
     assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[1].items()
     assert checkouts[2]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
