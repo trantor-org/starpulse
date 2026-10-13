@@ -19,6 +19,7 @@ import re
 import sys
 from dataclasses import dataclass
 from fnmatch import fnmatch
+from functools import cache
 from pathlib import Path
 
 #: Read by every test, by pytest itself or by a loader the graph cannot follow (YAML, JSON, skill files).
@@ -226,6 +227,12 @@ def select(root: Path, changed: list[str]) -> Selection:
         if name.startswith(ADAPTER_PACKAGES) and name.count(".") == 3 and _is_adapter(path)
     }
 
+    @cache
+    def names(module: str) -> frozenset[str]:
+        """The adapters whose name `module` holds as a word, read once however many tests reach it."""
+        text = modules[module].read_text()
+        return frozenset(a for a, word in adapters.items() if re.search(rf"\b{word}\b", text))
+
     def reaches(name: str) -> set[str]:
         """Modules `name` imports transitively, plus each adapter a loader it reaches would load by a name it holds."""
         seen, stack = {name}, [name]
@@ -234,8 +241,7 @@ def select(root: Path, changed: list[str]) -> Selection:
                 seen.add(dep)
                 stack.append(dep)
             if not stack and seen & set(NAMED_LOADERS):
-                text = "\n".join(modules[m].read_text() for m in seen - {TYPE_TABLE})
-                named = {a for a, word in adapters.items() if re.search(rf"\b{word}\b", text)} - seen
+                named = set().union(*(names(m) for m in seen - {TYPE_TABLE})) - seen
                 seen |= named
                 stack.extend(named)
         return seen
