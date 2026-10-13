@@ -159,6 +159,7 @@ class TestConfigCheck:
                 "completion_call": None,
                 "skill_machines": [],
             },
+            "task_actor": False,
             "search": {"embeddings_url": None, "model": None, "token_env": None},
         }
 
