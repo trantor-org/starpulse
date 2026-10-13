@@ -145,6 +145,9 @@ def test_the_switch_and_the_run_ledger_are_kept_in_the_store_not_in_files_beside
             _until(lambda: feed.task("task-1"), "the board's read of task-1")
             _task(tmp_path, "To Do")
             _until(lambda: asked, "the start")
+            # The start's claim comment rewrites the task file; a move written before it lands is overwritten.
+            task_file = tmp_path / ".starpulse" / "board" / "tasks" / "task-1 - Title.md"
+            _until(lambda: "Autopilot started task-1" in task_file.read_text(), "the start's claim comment")
             _task(tmp_path, "Done")  # the run's task leaves the lane: its run is recorded
             store = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
             ledger = Ledger(store, state / LEDGER_FILE)
