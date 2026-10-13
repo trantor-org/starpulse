@@ -6,6 +6,9 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -558,7 +561,7 @@ def test_the_board_reads_the_project_its_path_names_and_polls_at_its_interval(
     assert started == [(tmp_path / "proj", 0.5)]
 
 
-def test_without_settings_the_board_reads_backlog_beside_the_config_every_two_seconds(
+def test_without_settings_the_board_reads_backlog_beside_the_config_and_backs_its_watch_up_every_minute(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     started = _started(monkeypatch)
@@ -566,7 +569,7 @@ def test_without_settings_the_board_reads_backlog_beside_the_config_every_two_se
 
     board({}, tmp_path).start(BoardFeed(), "test", EventLog("sqlite://"))
 
-    assert started == [(tmp_path / "backlog", 2.0)]
+    assert started == [(tmp_path / "backlog", 60.0)]
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
@@ -582,21 +585,36 @@ def test_the_first_scan_is_the_feeds_replay_and_the_feed_is_ready_once_it_has_pl
     put = feed.put
     monkeypatch.setattr(feed, "put", lambda task: (replayed_at_put.append(feed.wait_replayed(timeout=0)), put(task)))
 
+    others = set(threading.enumerate())  # a board an earlier test left watching sleeps for its backstop scan
     board({"interval": "0.01"}, tmp_path).start(feed, "test", EventLog("sqlite://"))
 
     assert feed.ready.wait(timeout=5)
     assert replayed_at_put == [False, False]
     assert sorted(task["id"] for task in feed.open_tasks()) == ["task-1", "task-2"]
     monkeypatch.setattr(UpstreamBacklog, "scan", lambda self: (_ for _ in ()).throw(SystemExit))
-    for thread in threading.enumerate():
+    for thread in set(threading.enumerate()) - others:
         if thread.name == "upstream-backlog":
             thread.join(timeout=5)
             assert not thread.is_alive(), "the polling thread outlived its test"
 
 
+class _DeafWatch:
+    """A watch that never hears a file change, so a server left running by a test reads no file the test edits next."""
+
+    def __init__(self, _folders: object) -> None:
+        pass
+
+    def wait(self, timeout: float) -> None:
+        time.sleep(timeout)
+
+    def close(self) -> None:
+        pass
+
+
 def _restarted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[BoardFeed, list[str]]:
     """A server start over `tmp_path`'s board and log: the feed once ready, and the task files its first scan read."""
     read: list[str] = []
+    monkeypatch.setattr(upstream_backlog, "DirWatch", _DeafWatch)
     parse = UpstreamBacklog._task
     monkeypatch.setattr(
         UpstreamBacklog, "_task", lambda self, path, *a: (read.append(path.name), parse(self, path, *a))[1]
@@ -930,3 +948,110 @@ def test_a_task_carries_its_notes_without_the_holder_marker(tmp_path: Path) -> N
     )
 
     assert scanned(tmp_path)[0].notes == "Wired the writer.\nSecond line"
+
+
+@contextmanager
+def _watching(root: Path, **kwargs: object) -> Iterator[list[BoardTask]]:
+    """An adapter started with an hour between full scans, so only the file watch can place a file written later; its
+    thread is ended on exit by a file whose placement raises SystemExit, as the watch is the only thing that wakes it."""
+    write_config(root)
+    placed: list[BoardTask] = []
+    first = threading.Event()
+    adapter = UpstreamBacklog(root, placed.append, **kwargs)
+    thread = adapter.start(interval=3600, scanned=first.set)
+    assert first.wait(timeout=5)
+    try:
+        yield placed
+    finally:
+        adapter.scan_files = lambda _paths: (_ for _ in ()).throw(SystemExit)  # type: ignore[method-assign]
+        (root / "tasks").mkdir(exist_ok=True)
+        (root / "tasks" / "stop.md").write_text("stop")
+        thread.join(timeout=5)
+        assert not thread.is_alive(), "the watch thread outlived its test"
+
+
+def _await(condition: Callable[[], bool]) -> bool:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not condition():
+        time.sleep(0.01)
+    return condition()
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_file_written_after_start_reaches_the_feed_with_no_scan_interval_elapsing(tmp_path: Path) -> None:
+    with _watching(tmp_path) as placed:
+        write_task(tmp_path, "tasks", "task-1", "To Do")
+
+        assert _await(lambda: [t.id for t in placed] == ["task-1"])
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_file_edited_after_start_is_placed_again(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    write_task(tmp_path, "tasks", "task-1", "To Do")
+    with _watching(tmp_path) as placed:
+        write_task(tmp_path, "tasks", "task-1", "Doing")
+
+        assert _await(lambda: [t.lane for t in placed] == ["to_do", "doing"])
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_task_file_moved_to_completed_settles_its_task_and_retracts_nothing(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    path = write_task(tmp_path, "tasks", "task-1", "Done")
+    retracted: list[str] = []
+    with _watching(tmp_path, retract=retracted.append) as placed:
+        (tmp_path / "completed").mkdir(exist_ok=True)
+        path.rename(tmp_path / "completed" / path.name)
+
+        assert _await(lambda: [t.settled for t in placed] == [None, "completed"])
+        assert retracted == []
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_task_file_deleted_after_start_is_retracted(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    path = write_task(tmp_path, "tasks", "task-1", "To Do")
+    retracted: list[str] = []
+    with _watching(tmp_path, retract=retracted.append):
+        path.unlink()
+
+        assert _await(lambda: retracted == ["task-1"])
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_an_idle_adapter_stats_no_task_file_between_full_scans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_config(tmp_path)
+    for number in range(20):
+        write_task(tmp_path, "tasks", f"task-{number}", "To Do")
+    with _watching(tmp_path):
+        statted: list[Path] = []
+        real = Path.stat
+
+        def counting(self: Path, **kwargs: object) -> object:
+            statted.append(self)
+            return real(self, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", counting)
+        time.sleep(1.0)
+
+        assert [path for path in statted if path.suffix == ".md"] == []
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_board_without_inotify_still_polls_at_its_interval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(_folders: object) -> None:
+        raise OSError("no inotify")
+
+    monkeypatch.setattr(upstream_backlog, "DirWatch", refuse)
+    write_config(tmp_path)
+    placed: list[BoardTask] = []
+    adapter = UpstreamBacklog(tmp_path, placed.append)
+    thread = adapter.start(interval=0.01)
+
+    write_task(tmp_path, "tasks", "task-1", "To Do")
+
+    assert _await(lambda: [t.id for t in placed] == ["task-1"])
+    monkeypatch.setattr(adapter, "scan", lambda: (_ for _ in ()).throw(SystemExit))
+    thread.join(timeout=5)
+    assert not thread.is_alive()
