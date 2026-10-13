@@ -20,25 +20,21 @@ permissions:
 # pool. That runner group serves private repositories only: making this repository public strands these jobs.
 # A merge-queue run takes the merge-queue lane instead: runners reserved for it (trantor's runner-fleet document), so it
 # never waits behind pull-request or trantor CI. The lane holds ten slots for the ten jobs a run has at once (six shards,
-# web, static-checks, trantor-contract and release.yml's build; `python` waits for the shards), so keep this count within it.
+# web, static-checks, trantor-contract and release.yml's build; `select` ends before the shards it sizes start and
+# `python` waits for them), so keep this count within it. A run that selects fewer shards takes fewer slots.
 jobs:
-  # The suite is split by test file across SHARD_COUNT jobs (ci/shard.py), each on its own runner. The count here and
-  # the matrix below move together.
-  python-shard:
+  # Chooses the tests once for the shards: a pull request or a merge-queue candidate selects only the tests its changed
+  # files can reach (ci/select_tests.py); the nightly schedule and a manual dispatch select the whole suite. Its output
+  # sizes the shard matrix, so a change that reaches no test launches no shard and holds no slot for one. It also runs
+  # the import layers (pyproject's [tool.importlinter]), which hold on every pull request, not only for the tests it selects.
+  select:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
-    timeout-minutes: 30
-    strategy:
-      # A red shard does not cancel the others: one run reports every failure.
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6]
-    env:
-      SHARD_COUNT: 6
-      SHARD_INDEX: ${{ matrix.shard }}
-      # The slow/costly-test screen (ci/slow_tests.py) runs only in the nightly suite and a manual dispatch.
-      TEST_COST_REPORT: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
+    timeout-minutes: 10
+    outputs:
+      PYTEST_TARGETS: ${{ steps.select.outputs.PYTEST_TARGETS }}
+      PYTEST_SHARDS: ${{ steps.select.outputs.PYTEST_SHARDS }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,18 +43,51 @@ jobs:
           sparse-checkout-cone-mode: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --locked
-      # The package layers (pyproject's [tool.importlinter]) hold on every pull request, not only for the tests it selects.
       - run: uv run --no-sync lint-imports
+      # A merge-queue candidate is one squash commit over the entry ahead of it, so HEAD^1..HEAD is its own change.
+      - id: select
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; then
+            git diff --name-only HEAD^1 HEAD | uv run --no-sync python ci/select_tests.py
+          else
+            uv run --no-sync python ci/select_tests.py --full
+          fi >> "$GITHUB_OUTPUT"
+
+  # The suite is split by test file across the shards `select` launches (ci/shard.py), each on its own runner: one to six,
+  # none when it selected no test. The matrix is its PYTEST_SHARDS output, and SHARD_COUNT the matrix's size.
+  python-shard:
+    needs: select
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. An empty
+    # matrix is an error, so no shard is this job skipped, which the `python` job reads.
+    if: github.event_name != 'push' && needs.select.outputs.PYTEST_SHARDS != '[]'
+    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
+    timeout-minutes: 30
+    strategy:
+      # A red shard does not cancel the others: one run reports every failure.
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.select.outputs.PYTEST_SHARDS) }}
+    env:
+      SHARD_COUNT: ${{ strategy.job-total }}
+      SHARD_INDEX: ${{ matrix.shard }}
+      # The tests `select` chose; empty is the whole suite.
+      PYTEST_TARGETS: ${{ needs.select.outputs.PYTEST_TARGETS }}
+      # The slow/costly-test screen (ci/slow_tests.py) runs only in the nightly suite and a manual dispatch.
+      TEST_COST_REPORT: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: /*
+          sparse-checkout-cone-mode: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --locked
       # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
       - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
-      # A pull request or a merge-queue candidate runs only the tests its changed files can reach (ci/select_tests.py); the
-      # nightly schedule and a manual dispatch run all.
-      - if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-        run: git diff --name-only HEAD^1 HEAD | uv run --no-sync python ci/select_tests.py >> "$GITHUB_ENV"
       # Postgres-backed integration cases use the runner's Docker; SQLite cases need no container runtime. A selected run
       # can leave a shard no test file: pytest exits 5 for it, which is a pass only while targets were selected.
-      - if: env.PYTEST_SKIP != 'true'
-        run: |
+      - run: |
           status=0
           uv run pytest $PYTEST_TARGETS || status=$?
           [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
@@ -75,17 +104,23 @@ jobs:
             memray/
           if-no-files-found: error
 
-  # The ruleset's required context is `python`: it passes when every shard did, and fails when any failed, was cancelled or
-  # never ran. `always()` keeps it from being skipped behind a red shard, which the merge queue would read as missing.
+  # The ruleset's required context is `python`: it passes when `select` did and every shard it launched did, or when it
+  # launched none because no test was selected, and fails when any shard failed, was cancelled or never ran. `always()`
+  # keeps it from being skipped behind a red job, which the merge queue would read as missing. A `select` that failed or
+  # was cancelled skips the shards and leaves its outputs empty, so the shards' skip alone proves nothing.
   python:
-    needs: python-shard
+    needs: [select, python-shard]
     if: always() && github.event_name != 'push'
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
     timeout-minutes: 5
     steps:
       - env:
+          SELECT: ${{ needs.select.result }}
           SHARDS: ${{ needs.python-shard.result }}
-        run: test "$SHARDS" = success
+          LAUNCHED: ${{ needs.select.outputs.PYTEST_SHARDS }}
+        run: |
+          test "$SELECT" = success
+          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$LAUNCHED" = '[]'; }
 
   web:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
