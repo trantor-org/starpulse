@@ -137,15 +137,15 @@ def test_every_workspace_root_checkout_selects_the_full_tree():
         assert options.get("sparse-checkout-cone-mode") is False, where
 
 
-def test_trantor_tier_policy_gates_the_green_dispatch():
-    """A commit failing trantor's tier policy fails every bump that pins it, so it must not dispatch as green."""
+def test_trantor_tier_policy_gates_every_merge():
+    """A commit failing trantor's tier policy fails every bump that pins it, so it must not reach main."""
     run = next(step["run"] for step in job("ci.yml", "tier-policy")["steps"] if "run" in step)
     assert "ci/trantor_tier_policy.py" in run
-    assert "tier-policy" in job("ci.yml", "dispatch")["needs"]
+    assert ("ci.yml", "tier-policy") in REQUIRED_CHECKS
 
 
-def test_trantor_tests_of_this_package_gate_the_green_dispatch():
-    """A commit failing trantor's tests of this package fails every bump that pins it, so it must not dispatch as green."""
+def test_trantor_tests_of_this_package_gate_every_merge():
+    """A commit failing trantor's tests of this package fails every bump that pins it, so it must not reach main."""
     contract = job("ci.yml", "trantor-contract")
     checkouts = [step.get("with", {}) for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")]
     runs = "\n".join(step["run"] for step in contract["steps"] if "run" in step)
@@ -154,7 +154,27 @@ def test_trantor_tests_of_this_package_gate_the_green_dispatch():
     assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[1].items()
     assert checkouts[2]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
     assert "make test-changed FILES=starpulse CI=1" in runs
-    assert "trantor-contract" in job("ci.yml", "dispatch")["needs"]
+    assert ("ci.yml", "trantor-contract") in REQUIRED_CHECKS
+
+
+#: Every ci.yml job but `dispatch`: the jobs that test a tree.
+TEST_JOBS = ["python-shard", "python", "ic", "web", "api-types", "public-names", "tier-policy", "trantor-contract"]
+
+
+@pytest.mark.parametrize("name", TEST_JOBS)
+def test_a_push_to_main_runs_no_test_job(name):
+    """Main moves only through the merge queue, which already tested the pushed commit (its candidate)."""
+    assert "github.event_name != 'push'" in job("ci.yml", name)["if"]
+
+
+def test_every_ci_job_but_dispatch_is_a_test_job():
+    jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
+    assert sorted(jobs) == sorted([*TEST_JOBS, "dispatch"])
+
+
+def test_the_push_dispatch_waits_on_no_test_job():
+    """Its test jobs skip on a push, and a job needing a skipped job is skipped; trantor re-checks the queue run."""
+    assert "needs" not in job("ci.yml", "dispatch")
 
 
 def test_main_follow_submit_runs_on_the_merge_event_lane_and_never_for_a_fork():
@@ -225,7 +245,8 @@ def test_the_python_check_passes_only_when_every_shard_passed(tmp_path, result, 
     """The ruleset requires `python`: a red, cancelled or skipped shard must not leave it green or missing."""
     aggregate = job("ci.yml", "python")
     assert aggregate["needs"] == "python-shard"
-    assert aggregate["if"] == "always()"  # a skipped aggregate reads as a missing required check
+    # A skipped aggregate reads as a missing required check; a push carries none, so it skips there with the shards.
+    assert aggregate["if"] == "always() && github.event_name != 'push'"
     step = aggregate["steps"][0]
     assert step["env"] == {"SHARDS": "${{ needs.python-shard.result }}"}
     assert run_step(step, tmp_path, {"SHARDS": result}) == status

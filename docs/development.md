@@ -29,8 +29,8 @@ import).
 `starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`, and one
 background thread starts the session's Postgres and mock-issuer containers when collection finishes, so a test waits on
 a warm container instead of paying its start.
-CI runs only the tests a pull request or a push to main can reach (`ci/select_tests.py`); the full suite runs
-nightly and on a manual dispatch. CI's `ic` job imports every module an IC instance can load without the hub extras
+CI runs only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`); a push to main
+runs none, because the merge queue tested that very commit, and the full suite runs nightly and on a manual dispatch. CI's `ic` job imports every module an IC instance can load without the hub extras
 (`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so CI's `public-names` job
 (`ci/public_names.py`) fails when a tracked file other than a workflow, the runner-label list or a test names the
 operator's private hosts; docs, comments and fixtures use neutral names.

@@ -7,7 +7,8 @@ on:
   # The merge queue's candidate: every required check reports on it, or the queue fails the entry.
   merge_group:
     types: [checks_requested]
-  # The full suite runs nightly, not per change: a pull request or a push runs only the tests its files can reach.
+  # The full suite runs nightly, not per change: a pull request or a merge-queue candidate runs only the tests its files
+  # can reach, and a push to main runs none.
   schedule:
     - cron: "17 9 * * *" # 02:17 MST, after trantor's 01:17 whole-repo gate
   workflow_dispatch:
@@ -21,6 +22,8 @@ jobs:
   # The suite is split by test file across SHARD_COUNT jobs (ci/shard.py), each on its own validate slot. The count here and
   # the matrix below move together.
   python-shard:
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
+    if: github.event_name != 'push'
     runs-on: [self-hosted, validate]
     timeout-minutes: 30
     strategy:
@@ -43,9 +46,9 @@ jobs:
       - run: uv run --no-sync lint-imports
       # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
       - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
-      # A pull request, a merge-queue candidate or a push to main runs only the tests its changed files can reach (ci/select_tests.py); the
+      # A pull request or a merge-queue candidate runs only the tests its changed files can reach (ci/select_tests.py); the
       # nightly schedule and a manual dispatch run all.
-      - if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push'
+      - if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         run: git diff --name-only HEAD^1 HEAD | uv run --no-sync python ci/select_tests.py >> "$GITHUB_ENV"
       # Postgres-backed integration cases use the runner's Docker; SQLite cases need no container runtime. A selected run
       # can leave a shard no test file: pytest exits 5 for it, which is a pass only while targets were selected.
@@ -59,7 +62,7 @@ jobs:
   # never ran. `always()` keeps it from being skipped behind a red shard, which the merge queue would read as missing.
   python:
     needs: python-shard
-    if: always()
+    if: always() && github.event_name != 'push'
     runs-on: [self-hosted, validate]
     timeout-minutes: 5
     steps:
@@ -71,6 +74,8 @@ jobs:
   # environment that holds neither the Postgres driver, Alembic nor the container tooling, so a hub-only import in IC
   # mode fails here.
   ic:
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
+    if: github.event_name != 'push'
     runs-on: [self-hosted, validate]
     timeout-minutes: 10
     steps:
@@ -84,6 +89,8 @@ jobs:
       - run: uv run --no-sync python ci/ic_imports.py
 
   web:
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
+    if: github.event_name != 'push'
     runs-on: [self-hosted, validate]
     timeout-minutes: 15
     defaults:
@@ -108,6 +115,8 @@ jobs:
   # The page's API types are generated from the pydantic models in starpulse/contracts/api.py. Regenerate both outputs
   # and fail when either differs from what is committed: a model change ships with its schema and types.
   api-types:
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
+    if: github.event_name != 'push'
     runs-on: [self-hosted, validate]
     timeout-minutes: 15
     steps:
@@ -133,6 +142,8 @@ jobs:
   # This repository is public: no tracked file outside the workflows and tests may name the operator's private hosts
   # (ci/public_names.py). Needs no dependencies, so it runs without the project environment.
   public-names:
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
+    if: github.event_name != 'push'
     runs-on: [self-hosted, validate]
     timeout-minutes: 5
     steps:
@@ -146,6 +157,8 @@ jobs:
   # trantor's check-config test-tier policy over this tree (ci/trantor_tier_policy.py). A commit that fails it would
   # fail every trantor bump pinning it, so it must not go green here. Runs on the ai-vm-1 fleet beside dispatch.
   tier-policy:
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
+    if: github.event_name != 'push'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5
     steps:
@@ -182,6 +195,8 @@ jobs:
   # trantor bump pinning it, so it must not go green here. A change trantor must adopt (a new table needs an Alembic
   # adoption; a test that pins a feed key this package owns) lands in trantor first, then here.
   trantor-contract:
+    # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
+    if: github.event_name != 'push'
     runs-on: [self-hosted, validate]
     timeout-minutes: 30
     steps:
@@ -230,12 +245,12 @@ jobs:
       - working-directory: .trantor
         run: make test-changed FILES=starpulse CI=1
 
-  # Tells trantor which starpulse commit just passed so its starpulse-bump workflow opens one pull request pinned to
-  # exactly that SHA. It runs on the generic ai-vm-1 fleet, not the validate lane, so validate-lane queue time is
-  # unchanged, and it sends nothing for a pull request or a red run.
+  # Tells trantor which commit main just moved to, a fallback for dispatch-merged.yml's send at merge time. Every main
+  # commit is a merge-queue candidate whose required checks passed, so it waits on no test job here; trantor's bump
+  # re-checks that a green merge_group run tested the SHA before pinning it. It runs on the generic ai-vm-1 fleet, not the
+  # validate lane, and sends nothing for a pull request or a merge-queue candidate.
   dispatch:
     name: dispatch
-    needs: [python, web, api-types, tier-policy, trantor-contract]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5
