@@ -1,4 +1,4 @@
-// The orbit card's data: /api/level, fetched once a minute, and its mapping onto the orbit's input.
+// The orbit card's data: /api/level, fetched while the Orbit view is shown, and its mapping onto the orbit's input.
 import { apiFetch } from "../../api/apiFetch";
 import type { Drift, OrbitInput, SunMode } from "./orbit";
 import type { Measure, Pace } from "../../render/comets";
@@ -104,28 +104,64 @@ export function orbitInput(r: LevelResponse, name: (state: string) => string, as
   };
 }
 
-/** The level's answer, refreshed on a timer, for `useSyncExternalStore`. */
+/** The stores that take the stream's lane moves; the renderer pushes each one. */
+const moveListeners = new Set<() => void>();
+
+/** Hand a lane `move` stream event to every open store. */
+export function pushLevelMove(): void {
+  for (const fn of moveListeners) fn();
+}
+
+/**
+ * The level's answer, for `useSyncExternalStore`. It asks once when the page opens (the navigator shows its Flow entry only when a level
+ * exists), then only while the Orbit view is shown: on showing, after each lane move, and every `refreshMs` in between.
+ */
 export class LevelStore {
   private state: LevelState = { kind: "loading" };
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setInterval> | undefined;
+  private active = false;
+  private running: Promise<void> | undefined;
+  private again = false;
 
-  constructor(private load: () => Promise<LevelState> = () => fetchLevel(), refreshMs = REFRESH_MS) {
-    if (refreshMs > 0) this.timer = setInterval(() => void this.refresh(), refreshMs);
-  }
+  constructor(private load: () => Promise<LevelState> = () => fetchLevel(), private refreshMs = REFRESH_MS) {}
 
   get = () => this.state;
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   };
-  async refresh() {
-    this.state = await this.load();
-    // a server with no level will not grow one while the page is open: a reload asks again
-    if (this.state.kind === "none") clearInterval(this.timer);
-    for (const fn of this.listeners) fn();
+  /** Whether the Orbit view is shown: a hidden one asks nothing, a shown one asks now (unless the first ask is still out) and keeps asking. */
+  setActive(on: boolean) {
+    if (on === this.active) return;
+    this.active = on;
+    clearInterval(this.timer);
+    if (!on) return void moveListeners.delete(this.moved);
+    moveListeners.add(this.moved);
+    if (this.refreshMs > 0) this.timer = setInterval(() => void this.refresh(), this.refreshMs);
+    if (this.state.kind !== "loading") void this.refresh();
+  }
+  private moved = () => {
+    if (this.state.kind !== "none") void this.refresh();
+  };
+  /** Ask now; an ask made while one is out waits for it and then asks once more, however many were made. */
+  refresh(): Promise<void> {
+    if (this.running) {
+      this.again = true;
+      return this.running;
+    }
+    return (this.running = this.ask().finally(() => (this.running = undefined)));
+  }
+  private async ask() {
+    do {
+      this.again = false;
+      this.state = await this.load();
+      // a server with no level will not grow one while the page is open: a reload asks again
+      if (this.state.kind === "none") clearInterval(this.timer);
+      for (const fn of this.listeners) fn();
+    } while (this.again);
   }
   dispose() {
-    clearInterval(this.timer);
+    this.setActive(false);
   }
 }

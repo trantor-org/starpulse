@@ -189,8 +189,9 @@ The view always shows one of these states:
 | Sign-in | 401, or 403 from the OIDC gate | A card linking `/auth/login` (*Your session ended*, or *This account can't read the level* with *Sign in as someone else*) |
 | Error | any other failure, such as a window past the history | The message and **Retry** |
 
-The page asks again every minute. A self-contained demo page (`starpulse demo`) answers `/api/level` itself, with
-synthetic sources, and its address picks the state: `?view=graph`, `&suns=working`, `&gate=expired` or
+The page asks once when it opens (the Flow entry shows only when a level exists), then only while the Flow view is shown: when
+it is shown, every minute while it stays shown, and after each lane move on the event stream. A hidden view asks nothing.
+A self-contained demo page (`starpulse demo`) answers `/api/level` itself, with synthetic sources, and its address picks the state: `?view=graph`, `&suns=working`, `&gate=expired` or
 `&gate=refused`, `&pace=fast|live`, `&measure=count`. Motion off in the page's preferences draws one still frame.
 
 The right rail keeps one order in every view: the recent moves at the top and the legend at the bottom, each line

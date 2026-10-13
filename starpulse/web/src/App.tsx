@@ -48,7 +48,7 @@ export function App() {
   const [admin] = useState(() => held?.admin ?? new AdminStore());
   const [historyWindow] = useState(() => new HistoryWindowStore());
   const [forwarding] = useState(() => new ForwardingStore());
-  // the level above the Board: asked for once and then every minute while the server has one, its navigator entry shown only then
+  // the level above the Board: asked for once, its navigator entry shown only when the server has one, then again only while its view is shown
   const [levels] = useState(() => new LevelStore());
   useEffect(() => {
     void levels.refresh();
@@ -72,6 +72,8 @@ export function App() {
   const prefs = useSyncExternalStore(admin.subscribe, admin.get);
   // a bare address opens the view the Admin chose; one that names a view opens that
   const [view, setView] = useState<ViewName>(() => viewOf(location.search, retired(location.pathname, location.hash) ? "constellation" : admin.get().view));
+  // the level is asked for again only while its view is shown
+  useEffect(() => levels.setActive(view === "graph"), [levels, view]);
   const activeView = useRef(view);
   const pendingView = useRef(0);
   const commitView = useCallback((next: ViewName, url: string) => {
