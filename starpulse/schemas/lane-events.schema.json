@@ -46,6 +46,12 @@
       "description": "Who or which agent model held the task; empty when unassigned, and a person's name.",
       "title": "Assignee",
       "type": "string"
+    },
+    "actor": {
+      "default": "",
+      "description": "Who made the move: `operator`, `agent` or `<instance>/<workflow>`; empty when no write of the board's server made it.",
+      "title": "Actor",
+      "type": "string"
     }
   },
   "required": [

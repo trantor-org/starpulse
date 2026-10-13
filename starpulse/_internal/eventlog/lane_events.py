@@ -3,7 +3,8 @@
 `BoardFeed` appends an entry beside each lane change it records in the history (`HistoryStore.record_lane`), under
 the same `<task>@<lane>@<entered>` event id, so the log, the history and a hub that folds the entry agree on one id.
 An entry carries `task`, `lane` (the Board machine state id) and `time` (epoch seconds when the task entered the lane),
-the task's facets `team`, `milestone` and `labels` (absent when empty), and `assignee` when the task has one. It never
+the task's facets `team`, `milestone` and `labels` (absent when empty), `assignee` when the task has one and `actor`
+(`operator`, `agent` or `<instance>/<workflow>`) when the move was a write the board's server judged. It never
 carries a title, a description, a holder or any session detail. `assignee` names a person, so it leaves the instance
 only while it is opted in to naming (`adapters.runs.forwarded.PERSON`).
 """
@@ -21,11 +22,11 @@ STREAM = "board:lanes"
 #: The cursor name under which a store records that its lane history has been put in the log.
 REPLAYED = "board:lanes:replayed"
 #: The fields a forwarded lane entry may carry.
-FIELDS = ("task", "lane", "time", "team", "milestone", "labels", "assignee")
+FIELDS = ("task", "lane", "time", "team", "milestone", "labels", "assignee", "actor")
 
 
-def entry(task: BoardTask, at: float) -> dict[str, Any]:
-    """The entry's fields for `task` entering its lane at epoch `at`; a facet or assignee the task lacks is absent."""
+def entry(task: BoardTask, at: float, actor: str = "") -> dict[str, Any]:
+    """The entry's fields for `task` entering its lane at epoch `at`; a facet, assignee or actor it lacks is absent."""
     fields: dict[str, Any] = {"task": task.id, "lane": task.lane, "time": at, "team": task.team}
     if task.milestone:
         fields["milestone"] = task.milestone
@@ -33,12 +34,14 @@ def entry(task: BoardTask, at: float) -> dict[str, Any]:
         fields["labels"] = list(task.labels)
     if task.assignee:
         fields["assignee"] = task.assignee
+    if actor:
+        fields["actor"] = actor
     return fields
 
 
-def publish(log: EventLog, event_id: str, task: BoardTask, at: float) -> int | None:
+def publish(log: EventLog, event_id: str, task: BoardTask, at: float, actor: str = "") -> int | None:
     """Append the lane entry for `task` to `log` under `event_id`, fail-open; an id the log holds is not appended again."""
-    return log.append(STREAM, entry(task, at), event_id=event_id)
+    return log.append(STREAM, entry(task, at, actor), event_id=event_id)
 
 
 def append(log: EventLog, event_id: str, task: str, lane: str, at: float) -> int | None:

@@ -50,6 +50,8 @@ _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 PUSHED_INSTANCE = "pushed"
 #: How often a running reader saves the Board, in seconds; a restart reads again what arrived since.
 SAVE_INTERVAL = 60.0
+#: Seconds a write's noted actor stays good for the lane change that write makes, which the board's poll places later.
+MOVER_TTL = 60.0
 #: The lane an archived task enters: its file keeps its status, so only the folder it sits in says it was archived.
 ARCHIVED = "archived"
 #: The lane a swept task enters where the Board has it: its file keeps the done status in the folder it was swept to.
@@ -185,6 +187,8 @@ class BoardFeed:
         self._lanes: LaneRecorder | None = None
         #: Where each lane change `_lanes` wrote is also appended as a `lane_events` entry; None appends nothing.
         self._lane_log: EventLog | None = None
+        #: Who wrote each task last through the server (`note_actor`) and when, until the lane change it made is placed.
+        self._movers: dict[str, tuple[str, float]] = {}
         #: Each task placed or retracted is also kept in `_search`; None keeps none.
         self._search: TaskIndex | None = None
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
@@ -449,6 +453,21 @@ class BoardFeed:
         self._lanes = lanes
         self._lane_log = log
 
+    def note_actor(self, task_id: str, actor: str | None) -> None:
+        """Note that `actor` is writing `task_id`, so the lane entry of the change `put` next places names it; None forgets
+        the note, for a write that was refused."""
+        with self._lock:
+            if actor is None:
+                self._movers.pop(task_id, None)
+            else:
+                self._movers[task_id] = (actor, self._clock())
+
+    def _mover(self, task_id: str) -> str:
+        """The actor noted for `task_id`, taken so one write names it once; empty when none, or when its note is stale."""
+        with self._lock:
+            noted = self._movers.pop(task_id, None)
+        return noted[0] if noted and self._clock() - noted[1] <= MOVER_TTL else ""
+
     def index_tasks(self, search: TaskIndex) -> None:
         """Keep every task the feed places in `search`, and drop each one it retracts.
 
@@ -471,6 +490,7 @@ class BoardFeed:
                 self._search.index(task)
             except Exception as exc:  # the index is down; the task is placed and the next change is indexed
                 logger.warning("StarPulse: cannot index %s for search: %s", task.id, exc)
+        actor = self._mover(task.id)
         change = self._place(task)
         if change is None:
             return
@@ -485,7 +505,9 @@ class BoardFeed:
                     entered = max(entered, path[-1]["at"]) if path else entered
                 event_id = f"{task.id}@{lane}@{entered}"
                 if self._lanes.record_lane(event_id, task.id, lane, entered) and self._lane_log is not None:
-                    lane_events.publish(self._lane_log, event_id, task.model_copy(update={"lane": lane}), entered)
+                    lane_events.publish(
+                        self._lane_log, event_id, task.model_copy(update={"lane": lane}), entered, actor
+                    )
             except Exception as exc:  # the history is down; the task is placed and the next change is recorded
                 logger.warning("StarPulse: cannot record the lane change of %s: %s", task.id, exc)
         if not self._replaying():
