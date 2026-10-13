@@ -24,11 +24,18 @@ def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
-def task_view(agent: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
-    """A Board task as a verb reports it. It waits on each dependency neither completed nor in the `done` lane."""
-    pulls = {pull["url"]: pull for pull in snapshot["pulls"].get(agent["id"], [])}
+def done_ids(snapshot: dict[str, Any]) -> set[str]:
+    """The tasks a dependency no longer waits on: those in the `done` lane and those settled as completed."""
     done = {task["id"] for task in board_flow(snapshot)["agents"] if task["state"] == DONE}
-    done |= {task_id for task_id, entry in snapshot["settled"].items() if entry["state"] == "completed"}
+    return done | {task_id for task_id, entry in snapshot["settled"].items() if entry["state"] == "completed"}
+
+
+def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | None = None) -> dict[str, Any]:
+    """A Board task as a verb reports it. It waits on each dependency not in `done`, read from `snapshot` when absent:
+    a caller viewing many tasks passes it once rather than rescanning the board per task."""
+    pulls = {pull["url"]: pull for pull in snapshot["pulls"].get(agent["id"], [])}
+    if done is None:
+        done = done_ids(snapshot)
     return {
         "id": agent["id"],
         "title": agent["title"],
@@ -51,12 +58,15 @@ def board_columns(
 ) -> dict[str, Any]:
     """Each Board column, or only `state`'s, with the tasks in it that `kept` keeps."""
     board = board_flow(snapshot)
+    done = done_ids(snapshot)
     return {
         "columns": [
             {
                 "state": column["id"],
                 "name": column["name"],
-                "tasks": [task_view(a, snapshot) for a in board["agents"] if a["state"] == column["id"] and kept(a)],
+                "tasks": [
+                    task_view(a, snapshot, done) for a in board["agents"] if a["state"] == column["id"] and kept(a)
+                ],
             }
             for column in board["machine"]["states"]
             if not state or column["id"] == state
