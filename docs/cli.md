@@ -299,8 +299,10 @@ shows no tasks when no server answers (`$STARPULSE_URL`, else `http://localhost:
 
 Below the tasks one button counts every other Claude Code session on the host by status (`● 2 busy · ○ 5 idle`), from
 the registry each session writes under `~/.claude/sessions/`, reread every 5 seconds without waiting on `starpulse
-board`. Pressing it opens the Sessions pane, docked as a tab beside the other right-side panes (such as Files) on a wide
-fullscreen terminal and inline otherwise, with one row per session and its status. A session running in a tmux pane (as a StarPulse
+board`. The Sessions pane, one row per session with its status, opens by itself once the first list holds a session,
+docked as a tab beside the other right-side panes (such as Files) on a fullscreen terminal of 144 columns or more; until
+the first prompt, the first pane another plugin opens is followed by Sessions closing and reopening, so Sessions is the
+tab on show. Pressing the count opens it at any width (inline below the dock's width) with the keys in the pane. A session running in a tmux pane (as a StarPulse
 Start session does, in tmux session `task-<N>`) is a button that runs `tmux switch-client` to it; a background
 (`claude --bg`) session is a button that first opens it with `claude attach <job>` (the session id's first 8 characters) in tmux session `bg-<job>`
 (`new-session -A`, so a second press reuses it). Switching needs the session showing the pane to run inside a tmux
