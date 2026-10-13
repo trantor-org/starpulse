@@ -153,10 +153,9 @@ jobs:
           repositories: trantor
       # Trantor's tip can be red for a reason this package did not cause, and a red tip ejected a merge-queue entry three
       # times. Test the newest main commit whose CI passed (ci/trantor_green_sha.py logs it; none in the last 30 runs fails).
+      # A full checkout, never sparse: a sparse root checkout persists core.sparseCheckout in the runner's shared
+      # workspace, and every later job on that runner checks out an empty tree.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: ci/trantor_green_sha.py
-          sparse-checkout-cone-mode: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Pick trantor's newest green main SHA
         id: trantor-sha
