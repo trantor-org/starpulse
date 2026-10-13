@@ -50,8 +50,10 @@ _PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
 PUSHED_INSTANCE = "pushed"
 #: How often a running reader saves the Board, in seconds; a restart reads again what arrived since.
 SAVE_INTERVAL = 60.0
-#: Seconds a write's noted actor stays good for the lane change that write makes, which the board's poll places later.
-MOVER_TTL = 60.0
+#: Seconds a write's noted actor stays good for the lane change that write makes, which the board's poll places later:
+#: the full scan that backs the file watch up (`upstream_backlog.BACKSTOP`, 60 s) places a write the watch missed, and
+#: a scan on a busy host runs long, so the note outlasts several of them.
+MOVER_TTL = 300.0
 #: The lane an archived task enters: its file keeps its status, so only the folder it sits in says it was archived.
 ARCHIVED = "archived"
 #: The lane a swept task enters where the Board has it: its file keeps the done status in the folder it was swept to.
