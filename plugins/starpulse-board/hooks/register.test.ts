@@ -562,6 +562,16 @@ test('the Board tab lists the open lanes in order with their counts, Ready and W
   await ui.unmount()
 })
 
+// A pane body scrolls its tree, so flexGrow has no height to fill: the root takes the body's rows to paint the dock black to its floor.
+for (const [state, exitCode] of [['lanes', 0], ['a failed read', 1]] as const) {
+  test(`the Board tab paints black down the whole dock body with ${state}`, async ($, on) => {
+    const ui = await openKanban($, on, { board: () => answer(exitCode, exitCode ? '' : KANBAN) })
+
+    expect((await ui.find({ key: 'board-fill' }))?.props).toMatchObject({ minHeight: PANE_PROPS.scroll.bodyRows, backgroundColor: '#000000' })
+    await ui.unmount()
+  })
+}
+
 test('pressing a lane header folds and unfolds it', async ($, on) => {
   const ui = await openKanban($, on)
 
