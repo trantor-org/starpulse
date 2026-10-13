@@ -478,8 +478,20 @@ const start = async ($: any, surface: string) => {
   await settle()
 }
 
-const sessionsPane = ($: any, surface: string) =>
-  $.ui.mount({ plugin: 'starpulse-board', surface, component: 'Pane', props: PANE_PROPS, requestId: 'starpulse-sessions' })
+const sessionsPane = ($: any, surface: string, placement = 'dock') =>
+  $.ui.mount({ plugin: 'starpulse-board', surface, component: 'Pane', props: { ...PANE_PROPS, placement }, requestId: 'starpulse-sessions' })
+
+test('a Sessions pane placed inline closes itself and draws nothing, as Files does', async ($, on) => {
+  const opened: string[] = []
+  sessionsHost(on, { opened })
+
+  await start($, 'terminal')
+  const ui = await sessionsPane($, 'terminal', 'inline')
+  await settle()
+
+  expect(await ui.find({ key: 'session:session-2' })).toBeUndefined()
+  expect(opened.at(-1)).toBe('close starpulse-sessions')
+})
 
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`the band counts the other sessions on one line, with no button per session (${surface})`, async ($, on) => {
