@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import queue
 import re
+import threading
+import time
 
 import pytest
 
@@ -13,6 +16,8 @@ from starpulse.contracts.adapters import TaskKeys
 
 STARTED = "Thu 2026-10-08 20:00:01 UTC"
 EXITED = "Thu 2026-10-08 20:00:09 UTC"
+STARTED_ISO = "2026-10-08T20:00:01Z"
+FIRED_ISO = "2026-10-08T20:05:00Z"
 
 
 class FakeSystemctl:
@@ -187,11 +192,11 @@ def test_a_timer_whose_service_is_missing_is_an_error() -> None:
         systemd.listing(fake, "t")
 
 
-def test_reconcile_publishes_the_workflows_and_clears_the_error() -> None:
+def test_read_publishes_the_workflows_and_clears_the_error() -> None:
     sink = Sink()
     fake = FakeSystemctl({(False, "t.timer"): timer("t.service"), (False, "t.service"): service()})
 
-    systemd.reconcile(sink, fake, "t")
+    systemd.Timers(sink, fake, "t").read()
 
     assert [d["name"] for d in sink.dags] == ["t"]
     assert sink.error is None
@@ -200,7 +205,7 @@ def test_reconcile_publishes_the_workflows_and_clears_the_error() -> None:
 def test_a_failing_systemctl_sets_the_instance_error_and_publishes_no_workflows() -> None:
     sink = Sink()
 
-    systemd.reconcile(sink, FakeSystemctl({}, down="Failed to connect to bus"), "t")
+    systemd.Timers(sink, FakeSystemctl({}, down="Failed to connect to bus"), "t").read()
 
     assert sink.dags is None
     assert "Failed to connect to bus" in sink.error
@@ -209,7 +214,7 @@ def test_a_failing_systemctl_sets_the_instance_error_and_publishes_no_workflows(
 def test_a_missing_unit_sets_the_instance_error() -> None:
     sink = Sink()
 
-    systemd.reconcile(sink, FakeSystemctl({}), "nowhere")
+    systemd.Timers(sink, FakeSystemctl({}), "nowhere").read()
 
     assert sink.dags is None
     assert "nowhere.timer" in sink.error
@@ -224,7 +229,7 @@ def test_a_timestamp_not_in_utc_sets_the_instance_error() -> None:
         }
     )
 
-    systemd.reconcile(sink, fake, "t")
+    systemd.Timers(sink, fake, "t").read()
 
     assert sink.dags is None
     assert "unreadable response" in sink.error
@@ -232,3 +237,193 @@ def test_a_timestamp_not_in_utc_sets_the_instance_error() -> None:
 
 def test_start_returns_none_because_a_timer_has_no_run_now() -> None:
     assert systemd.start("systemd-tmpfiles-clean, user/claude-sessions-snapshot") is None
+
+
+FIRED = "Thu 2026-10-08 20:05:00 UTC"
+FIRED_DONE = "Thu 2026-10-08 20:05:03 UTC"
+
+
+def host() -> FakeSystemctl:
+    """A host with timers `a` and `b`, each last run at `STARTED`."""
+    return FakeSystemctl(
+        {
+            (False, "a.timer"): timer("a.service"),
+            (False, "a.service"): service(),
+            (False, "b.timer"): timer("b.service"),
+            (False, "b.service"): service(),
+        }
+    )
+
+
+def fire(fake: FakeSystemctl, unit: str) -> None:
+    """`unit` runs again at `FIRED`, as systemd records it before it signals the change."""
+    fake.units[(False, unit)] = service(started=FIRED, exited=FIRED_DONE)
+
+
+def started(sink: Sink) -> dict[str, str]:
+    return {d["name"]: d["startedAt"] for d in sink.dags}
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        (
+            "/org/freedesktop/systemd1/unit/proxmox_2dfan_2dmetrics_2eservice: "
+            "org.freedesktop.DBus.Properties.PropertiesChanged ('org.freedesktop.systemd1.Unit', {}, [])",
+            "proxmox-fan-metrics.service",
+        ),
+        ("/org/freedesktop/systemd1/unit/a_2etimer: org.freedesktop.DBus.Properties.PropertiesChanged ()", "a.timer"),
+        ("/org/freedesktop/systemd1: org.freedesktop.systemd1.Manager.JobNew (uint32 1, objectpath '/x', 'a.service')", None),
+        ("/org/freedesktop/systemd1/unit/a_2eservice: org.freedesktop.systemd1.Unit.Other ()", None),
+        ("Monitoring signals on object /org/freedesktop/systemd1 owned by org.freedesktop.systemd1", None),
+    ],
+)
+def test_a_property_change_signal_names_the_unit_it_is_about(line: str, expected: str | None) -> None:
+    assert systemd.changed_unit(line) == expected
+
+
+def test_a_change_to_one_service_reads_only_that_timer_and_keeps_the_rest() -> None:
+    sink, fake = Sink(), host()
+    timers = systemd.Timers(sink, fake, "a, b")
+    timers.read()
+    fire(fake, "b.service")
+    fake.calls.clear()
+
+    timers.read({timers.owner(False, "b.service")})
+
+    assert started(sink) == {"a": STARTED_ISO, "b": FIRED_ISO}
+    assert [d["name"] for d in sink.dags] == ["a", "b"]
+    assert {c[1] for c in fake.calls} == {"b.timer", "b.service"}
+
+
+def test_a_timer_and_its_service_belong_to_one_timer_and_other_units_to_none() -> None:
+    timers = systemd.Timers(Sink(), host(), "a, b")
+    timers.read()
+
+    assert timers.owner(False, "a.timer") == timers.owner(False, "a.service") == (False, "a.timer")
+    assert timers.owner(True, "a.service") is None
+    assert timers.owner(False, "other.service") is None
+
+
+def test_a_failing_read_after_a_change_keeps_the_last_reading_and_shows_the_error() -> None:
+    sink, fake = Sink(), host()
+    timers = systemd.Timers(sink, fake, "a")
+    timers.read()
+    fake.down = "Failed to connect to bus"
+
+    timers.read({(False, "a.timer")})
+
+    assert sink.dags is None
+    assert "Failed to connect to bus" in sink.error
+
+
+def test_feed_queues_the_changes_of_watched_units_only() -> None:
+    events: queue.Queue = queue.Queue()
+    lines = [
+        "/org/freedesktop/systemd1/unit/a_2eservice: org.freedesktop.DBus.Properties.PropertiesChanged ()",
+        "/org/freedesktop/systemd1/unit/zzz_2eservice: org.freedesktop.DBus.Properties.PropertiesChanged ()",
+        "/org/freedesktop/systemd1: org.freedesktop.systemd1.Manager.UnitNew ('a.service')",
+    ]
+
+    systemd.feed(True, lines, events, lambda user, unit: unit == "a.service")
+
+    assert events.get_nowait() == (True, "a.service")
+    assert events.empty()
+
+
+def run_serve(timers: systemd.Timers, events: queue.Queue, **intervals: float) -> threading.Thread:
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=systemd.serve, args=(timers, events, stop), kwargs={"healthy": lambda: True, **intervals}, daemon=True
+    )
+    thread.stop = stop  # type: ignore[attr-defined]
+    thread.start()
+    return thread
+
+
+def finish(thread: threading.Thread) -> None:
+    thread.stop.set()  # type: ignore[attr-defined]
+    thread.join(timeout=2)
+
+
+def wait_for(condition, seconds: float = 2.0) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_a_signal_updates_the_dag_record_without_a_periodic_listing() -> None:
+    sink, fake, events = Sink(), host(), queue.Queue()
+    timers = systemd.Timers(sink, fake, "a, b")
+    timers.read()
+    thread = run_serve(timers, events, backstop=60.0, fallback=60.0, debounce=0.01)
+
+    fire(fake, "a.service")
+    events.put((False, "a.service"))
+
+    assert wait_for(lambda: started(sink)["a"] == FIRED_ISO)
+    finish(thread)
+    assert started(sink)["b"] == STARTED_ISO
+
+
+def test_idle_the_adapter_starts_no_systemctl_between_backstop_listings() -> None:
+    sink, fake = Sink(), host()
+    timers = systemd.Timers(sink, fake, "a, b")
+    timers.read()
+    fake.calls.clear()
+    thread = run_serve(timers, queue.Queue(), backstop=60.0, fallback=0.01, debounce=0.01)
+
+    time.sleep(0.3)
+    finish(thread)
+
+    assert fake.calls == []
+
+
+def test_a_burst_of_signals_for_one_timer_is_one_read() -> None:
+    sink, fake, events = Sink(), host(), queue.Queue()
+    timers = systemd.Timers(sink, fake, "a")
+    timers.read()
+    fake.calls.clear()
+    fire(fake, "a.service")
+    for _ in range(4):
+        events.put((False, "a.service"))
+    thread = run_serve(timers, events, backstop=60.0, fallback=60.0, debounce=0.1)
+
+    assert wait_for(lambda: started(sink)["a"] == FIRED_ISO)
+    time.sleep(0.3)
+    finish(thread)
+
+    assert len(fake.calls) == 2  # the timer and its service, once
+
+
+def test_the_backstop_lists_every_timer_again_when_it_comes_due() -> None:
+    sink, fake = Sink(), host()
+    timers = systemd.Timers(sink, fake, "a, b")
+    timers.read()
+    fire(fake, "b.service")  # a change whose signal never arrived
+    thread = run_serve(timers, queue.Queue(), backstop=0.05, fallback=60.0, debounce=0.01)
+
+    assert wait_for(lambda: started(sink)["b"] == FIRED_ISO)
+    finish(thread)
+
+
+def test_a_dead_monitor_falls_back_to_the_short_listing_interval() -> None:
+    sink, fake = Sink(), host()
+    timers = systemd.Timers(sink, fake, "a")
+    timers.read()
+    fire(fake, "a.service")
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=systemd.serve,
+        args=(timers, queue.Queue(), stop),
+        kwargs={"healthy": lambda: False, "backstop": 60.0, "fallback": 0.05, "debounce": 0.01},
+        daemon=True,
+    )
+    thread.start()
+
+    assert wait_for(lambda: started(sink)["a"] == FIRED_ISO)
+    stop.set()
+    thread.join(timeout=2)
