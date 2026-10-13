@@ -56,9 +56,19 @@ def stack(tmp_path: Path) -> Iterator[Stack]:
     projections = threading.Semaphore(0)
     feed = BoardFeed()
     sync = PullSync(store, feed, (), github, lambda: 160.0, projections.release)
+    refreshed = threading.Event()
+    refresh = sync.refresh
+
+    def refresh_then_signal() -> None:
+        refresh()
+        refreshed.set()
+
+    sync.refresh = refresh_then_signal  # type: ignore[method-assign]
     threading.Thread(target=sync.run_forever, args=(3600.0,), daemon=True).start()
-    for _ in range(2):  # the thread projects the saved store, then makes its first refresh; the next is an hour away
-        assert projections.acquire(timeout=5)
+    # the thread projects the saved store, then makes its first refresh; the next is an hour away. A projection asked
+    # for while another runs coalesces with it, so the refresh is awaited itself, not counted in projections.
+    assert projections.acquire(timeout=5)
+    assert refreshed.wait(timeout=5)
     github.add(1, state="MERGED", updated=NEW, merged_at=NEW)  # merged on GitHub; the store has not heard
     github.queries.clear()
     with serve(tmp_path, feed, pull_refresh=PullRefresh(TOKEN, sync.request)) as server:
