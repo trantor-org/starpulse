@@ -39,6 +39,8 @@ class Served(NamedTuple):
     encoded: Encoded
     #: The body's digest, which names it at `/api/events/body/<key>`.
     key: str
+    #: The document the body encodes, for a reader that needs a part of it rather than all of it.
+    snapshot: dict[str, Any]
 
     @property
     def body(self) -> bytes:
@@ -77,7 +79,9 @@ class SnapshotCache:
                 return held  # type: ignore[return-value]
             rev, sent, snapshot = self._feed.snapshot_at()
             encoded = Encoded.of(encode_snapshot(snapshot, self._tasks))
-            self._held = held = Served(rev, sent, self._clock(), encoded, hashlib.sha1(encoded.body).hexdigest())
+            self._held = held = Served(
+                rev, sent, self._clock(), encoded, hashlib.sha1(encoded.body).hexdigest(), snapshot
+            )
             self._kept[held.key] = encoded
             while len(self._kept) > KEPT:
                 self._kept.popitem(last=False)

@@ -105,19 +105,6 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(text).toBe('PROJ-1 [In Progress] Add the verbs\nPROJ-2 [Review] Rotate the secret')
   })
 
-  test(`the band appears after a tool call mid-turn, before the turn ends (${surface})`, async ($, on) => {
-    let current = board([])
-    serve(on, '', { run: () => answer(0, current) })
-    on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '' } }))
-
-    const ui = await band($, surface)
-    current = BOARD
-    await $.tool.call({ tool: 'Bash', command: 'claim the task' })
-    await settle()
-
-    expect(await ui.find({ key: 'hide' })).toBeDefined()
-  })
-
   test(`an older starpulse on PATH falls back to ~/.local/bin (${surface})`, async ($, on) => {
     const argv0: string[] = []
     serve(on, BOARD, {
@@ -428,25 +415,63 @@ const FILES = {
   },
 }
 
+// A child's output the test writes as it goes; end() exits the child, as a server restart ends curl.
+const feed = () => {
+  const queue: (string | null)[] = []
+  let wake = () => {}
+  const push = (text: string | null) => {
+    queue.push(text)
+    wake()
+  }
+  return {
+    write: (text: string) => push(text),
+    // One frame of the held-task stream, carrying `board` as the server sends it.
+    held: (board: string) => push(`event: held\ndata: ${board}\n\n`),
+    end: () => push(null),
+    async *chunks() {
+      while (true) {
+        while (!queue.length) await new Promise<void>(r => (wake = r))
+        const text = queue.shift()
+        if (text === null || text === undefined) return { value: { code: 0, signal: null } }
+        yield { stream: 'stdout' as const, text }
+      }
+    },
+  }
+}
+type Feed = ReturnType<typeof feed>
+
 type Host = {
   switched?: string[][]
   opened?: string[]
-  board?: () => Promise<ReturnType<typeof answer>> | ReturnType<typeof answer>
+  ran?: string[][]
+  spawned?: string[][]
+  everys?: number[]
+  held?: Feed[]
+  watch?: Feed
+  registry?: Record<string, object>
   hasClock?: boolean
   isAlone?: boolean
+  board?: () => Promise<ReturnType<typeof answer>> | ReturnType<typeof answer>
   posted?: string[][]
   post?: (argv: readonly string[]) => ReturnType<typeof answer>
   toasts?: string[]
 }
 
-// Stands in for the engine and the host: the registry above, tmux session task-7 holding pid 200, and an empty board.
+// Stands in for the engine and the host: the registry above, tmux session task-7 holding pid 200, a held-task stream
+// that sends nothing until the test feeds it, and a sessions-folder watch likewise.
 // A test that mocks the clock says so with hasClock, since mock.clock answers clock.every itself.
 const sessionsHost = (on: On, host: Host = {}) => {
+  const registry = () => host.registry ?? (host.isAlone ? {} : REGISTRY)
   on('ui.render', ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
   on('session.id', () => ({ value: SESSION }))
   on('session.start', ($, e) => e)
   on('command.register', ($, e) => ({ value: { command: e.name } }))
-  if (!host.hasClock) on('clock.every', () => ({ value: undefined }))
+  if (!host.hasClock) {
+    on('clock.every', ($, e) => {
+      host.everys?.push(e.ms)
+      return { value: undefined }
+    })
+  }
   on('env.get', ($, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
   if (host.toasts) on('ui.toast', ($, e) => {
     host.toasts?.push(e.text)
@@ -461,7 +486,7 @@ const sessionsHost = (on: On, host: Host = {}) => {
     return { value: undefined }
   })
   on('fs.list', () => ({
-    value: host.isAlone ? [] : [...Object.keys(REGISTRY), '/home/me/.claude/sessions/200.abc.key'].map(p => ({
+    value: [...Object.keys(registry()), '/home/me/.claude/sessions/200.abc.key'].map(p => ({
       name: p.split('/').at(-1)!,
       kind: 'file' as const,
       size: 1,
@@ -469,8 +494,9 @@ const sessionsHost = (on: On, host: Host = {}) => {
       isLink: false,
     })),
   }))
-  on('fs.read', ($, e) => ({ value: JSON.stringify(REGISTRY[e.path]) }))
+  on('fs.read', ($, e) => ({ value: JSON.stringify(registry()[e.path]) }))
   on('process.run', ($, e) => {
+    host.ran?.push([...e.argv])
     if (e.argv[0] === 'tmux' && e.argv[1] === 'list-panes') return answer(0, '200 task-7\n999 scratch\n')
     if (e.argv[0] === 'tmux') {
       host.switched?.push([...e.argv])
@@ -481,6 +507,12 @@ const sessionsHost = (on: On, host: Host = {}) => {
       return host.post?.(e.argv) ?? answer(0, '{}\n200')
     }
     return host.board?.() ?? answer(0, JSON.stringify({ columns: [] }))
+  })
+  const watch = host.watch ?? feed()
+  on('process.spawn', async function* ($, e) {
+    host.spawned?.push([...e.argv])
+    const child = e.argv[0] === 'inotifywait' ? watch : (host.held?.shift() ?? feed())
+    return yield* child.chunks()
   })
 }
 
@@ -704,19 +736,6 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(opened.at(-1)).toBe('starpulse-sessions focus=true')
   })
 
-  test(`the count draws before starpulse board answers (${surface})`, async ($, on) => {
-    // The board answers only when the mocked clock moves a minute on, long after the count is drawn.
-    const clock = mock.clock(on)
-    sessionsHost(on, { hasClock: true, board: () => clock.sleep(60_000).then(() => answer(0, JSON.stringify({ columns: [] }))) })
-
-    const ui = await band($, surface)
-    await start($, surface)
-    const label = (await ui.find({ key: 'sessions' }))?.props.label
-    await clock.advance(60_000)
-
-    expect(label).toBe('● 1 busy · ○ 2 idle')
-  })
-
   test(`the Sessions pane lists every other session with its status (${surface})`, async ($, on) => {
     sessionsHost(on)
 
@@ -756,3 +775,74 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the band draws what the held-task stream sends, with no starpulse run (${surface})`, async ($, on) => {
+    const stream = feed()
+    const ran: string[][] = []
+    const spawned: string[][] = []
+    sessionsHost(on, { held: [stream], ran, spawned })
+
+    const ui = await band($, surface)
+    await start($, surface)
+    stream.held(BOARD)
+    await settle()
+
+    expect(await ui.find({ key: 'details-PROJ-1' })).toBeDefined()
+    expect(await ui.find({ key: 'details-PROJ-2' })).toBeDefined()
+    expect(spawned.find(argv => argv[0] === 'curl')?.at(-1)).toBe('http://localhost:8766/api/held?holder=session-1')
+    expect(ran.filter(argv => argv.join(' ').includes('starpulse'))).toEqual([])
+  })
+
+  test(`a tool call and a turn's end read no board (${surface})`, async ($, on) => {
+    const ran: string[][] = []
+    sessionsHost(on, { ran })
+    on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '' } }))
+    on('turn.complete', () => ({ text: '' }))
+
+    await start($, surface)
+    const before = ran.length
+    await $.tool.call({ tool: 'Bash', command: 'claim the task' })
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't-1', reason: 'answer' })
+    await settle()
+
+    expect(ran.slice(before)).toEqual([])
+  })
+
+  test(`a held-task stream that ends is opened again and its frames draw (${surface})`, async ($, on) => {
+    const [first, second] = [feed(), feed()]
+    const clock = mock.clock(on)
+    sessionsHost(on, { held: [first, second], hasClock: true })
+
+    const ui = await band($, surface)
+    await start($, surface)
+    first.held(board([['in_progress', 'In Progress', [task({ id: 'PROJ-1', title: 'Add the verbs' })]]]))
+    first.end()
+    await settle()
+    await clock.advance(30_000)
+    second.held(board([['review', 'Review', [task({ id: 'PROJ-9', title: 'After the restart' })]]]))
+    await settle()
+
+    expect(await ui.find({ key: 'details-PROJ-9' })).toBeDefined()
+    expect(await ui.find({ key: 'details-PROJ-1' })).toBeUndefined()
+  })
+
+  test(`a change in the sessions folder rereads the registry, and no timer runs (${surface})`, async ($, on) => {
+    const watch = feed()
+    const everys: number[] = []
+    const spawned: string[][] = []
+    const host: Host = { watch, everys, spawned, registry: {} }
+    sessionsHost(on, host)
+
+    const ui = await band($, surface)
+    await start($, surface)
+    const before = await ui.find({ key: 'sessions' })
+    host.registry = REGISTRY
+    watch.write('200.json\n')
+    await settle()
+
+    expect(before).toBeUndefined()
+    expect((await ui.find({ key: 'sessions' }))?.props.label).toBe('● 1 busy · ○ 2 idle')
+    expect(spawned.find(argv => argv[0] === 'inotifywait')?.at(-1)).toBe('/home/me/.claude/sessions')
+    expect(everys).toEqual([])
+  })
+}

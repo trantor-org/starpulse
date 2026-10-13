@@ -101,17 +101,14 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from starpulse._internal.cli import demo, skill_install
-from starpulse.contracts.adapters import Move
 from starpulse._internal.machines import mermaid_import
 from starpulse._internal.machines.machine_definition import MachineDefinitionError, Registry, load_machine
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import ConfigError, load
-from starpulse._internal.feed.board_feed import DONE
+from starpulse._internal.board.view import AGENT, board_columns, board_flow, task_view
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
-#: Who `task move` moves as: the machine YAML's writers say which moves an agent may make.
-AGENT = "agent"
 #: What each exit code means, as the manifest says it.
 EXIT_CODES = {0: "ok", 1: "refused or invalid", 2: "usage", 3: "unavailable", 4: "not found"}
 #: The exit code of each error `code`.
@@ -310,44 +307,9 @@ def _snapshot(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     return _get_snapshot(server_url(args.server, environ))
 
 
-def _board_flow(snapshot: dict[str, Any]) -> dict[str, Any]:
-    return next(flow for flow in snapshot["flows"] if flow["name"] == "board")
-
-
-def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """The verdict on each column as the agent meets it: a move the board machine leaves to others is refused."""
-    return {
-        column: Move.model_validate(raw).for_actor(AGENT).model_dump(include={"allowed", "reason", "skill"})
-        for column, raw in agent["moves"].items()
-    }
-
-
-def _task(agent: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
-    """A Board task as a verb reports it. It waits on each dependency neither completed nor in the `done` lane."""
-    pulls = {pull["url"]: pull for pull in snapshot["pulls"].get(agent["id"], [])}
-    done = {task["id"] for task in _board_flow(snapshot)["agents"] if task["state"] == DONE}
-    done |= {task_id for task_id, entry in snapshot["settled"].items() if entry["state"] == "completed"}
-    return {
-        "id": agent["id"],
-        "title": agent["title"],
-        "lane": agent["state"],
-        "assignee": agent["model"],
-        "holder": agent.get("holder", ""),
-        "milestone": agent["milestone"],
-        "labels": agent["labels"],
-        "dependencies": agent["dependencies"],
-        "waiting_on": [dependency for dependency in agent["dependencies"] if dependency not in done],
-        "criteria": agent.get("criteria", []),
-        "pause_reason": agent.get("pause_reason", ""),
-        "prs": [pulls.get(url, {"url": url}) for url in agent["prs"]],
-        "moves": _agent_moves(agent),
-    }
-
-
 def _board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     snapshot = _snapshot(args, environ)
-    board = _board_flow(snapshot)
-    states = board["machine"]["states"]
+    states = board_flow(snapshot)["machine"]["states"]
     if args.state and args.state not in (ids := [s["id"] for s in states]):
         raise CliError("usage", f"unknown state {args.state}; the board has {', '.join(ids)}")
 
@@ -359,23 +321,13 @@ def _board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
             and (not args.holder or agent.get("holder", "") == args.holder)
         )
 
-    return {
-        "columns": [
-            {
-                "state": state["id"],
-                "name": state["name"],
-                "tasks": [_task(a, snapshot) for a in board["agents"] if a["state"] == state["id"] and kept(a)],
-            }
-            for state in states
-            if not args.state or state["id"] == args.state
-        ]
-    }
+    return board_columns(snapshot, kept, args.state)
 
 
 def _show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     snapshot = _snapshot(args, environ)
     wanted = args.task.casefold()
-    agents = {agent["id"].casefold(): agent for agent in _board_flow(snapshot)["agents"]}
+    agents = {agent["id"].casefold(): agent for agent in board_flow(snapshot)["agents"]}
     if (agent := agents.get(wanted)) is None:
         settled_id, settled = next(
             ((key, value) for key, value in snapshot["settled"].items() if key.casefold() == wanted), (None, None)
@@ -395,7 +347,7 @@ def _show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
             "moves": {},
             "description": "",
         }
-    return {**_task(agent, snapshot), "description": agent["description"]}
+    return {**task_view(agent, snapshot), "description": agent["description"]}
 
 
 def _moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:

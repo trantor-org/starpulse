@@ -36,13 +36,29 @@ const pullOf = (prs: RawTask['prs']): Pull | null => {
   const open = (prs ?? []).filter(pr => !pr.merged)
   const pr = open.at(-1) ?? prs?.at(-1)
   const parsed = pr?.url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/)
+  const repo = parsed?.[1]
   const number = pr?.number ?? Number(parsed?.[2])
-  if (!pr || !parsed || !number) {
+  if (!pr || !repo || !number) {
     return null
   }
 
-  return { repo: parsed[1], number, checks: CHECK_NAMES[pr.checks ?? ''] ?? 'none' }
+  return { repo, number, checks: CHECK_NAMES[pr.checks ?? ''] ?? 'none' }
 }
+
+const heldOf = (board: Board): HeldTask[] =>
+  board.columns.flatMap(c =>
+    c.tasks.map(t => ({
+      id: t.id,
+      title: t.title,
+      column: c.name,
+      lane: c.state,
+      holder: t.holder ?? '',
+      criteria: t.criteria ?? null,
+      reason: t.pause_reason ?? '',
+      waitingOn: t.waiting_on ?? [],
+      pull: pullOf(t.prs),
+    })),
+  )
 
 // The Board as `starpulse board` prints it, narrowed by `filters`; null when it cannot be read.
 const readBoard = async ($: Engine, filters: string[]): Promise<Board | null> => {
@@ -70,21 +86,7 @@ const held = async ($: Engine): Promise<HeldTask[] | null> => {
   const session = await $.session.id().catch(() => null)
   const board = session === null ? null : await readBoard($, ['--holder', session])
 
-  return (
-    board?.columns.flatMap(c =>
-      c.tasks.map(t => ({
-        id: t.id,
-        title: t.title,
-        column: c.name,
-        lane: c.state,
-        holder: t.holder ?? '',
-        criteria: t.criteria ?? null,
-        reason: t.pause_reason ?? '',
-        waitingOn: t.waiting_on ?? [],
-        pull: pullOf(t.prs),
-      })),
-    ) ?? null
-  )
+  return board && heldOf(board)
 }
 
 // The Board tab's lanes, in the order work moves through them; New, Done and Archived stay off it.
@@ -161,47 +163,108 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
   }
 }
 
-let hasOpened = false
-let isStarting = true
-let isBoardOpen = false
 const reloadLanes = async ($: Engine) => {
   const found = await readLanes($)
   await update($, lanes, () => found)
 }
-const refresh = async ($: Engine) => {
-  const board = isBoardOpen ? reloadLanes($) : null
-  // The session list is a local read; it draws without waiting on the slower board read.
-  const listed = peers($).then(async others => {
-    await update($, sessions, () => others)
-    // The first list opens the pane unasked; opened after Files, it is the dock tab on show, and the prompt keeps the keys.
-    if (!hasOpened && others.length) {
-      hasOpened = true
-      await $.ui.open({ id: SESSIONS, title: 'Sessions' })
-    }
-  })
-  const found = await held($)
-  await update($, tasks, () => found)
-  await listed
-  await board
 
-  return found
+// Waits before starting a child that ended again: a second after one that printed, doubling to half a minute while none does.
+const retryMs = (tries: number) => Math.min(1000 * 2 ** tries, 30_000)
+
+// Runs `argv` for as long as it lives, handing `line` each line it prints, and starts it again once it ends.
+const follow = async ($: Engine, argv: string[], input: string | undefined, line: (text: string) => unknown, tries = 0) => {
+  let rest = ''
+  let hasPrinted = false
+  try {
+    for await (const chunk of $.process.spawn({ argv, input })) {
+      if (chunk.stream !== 'stdout') {
+        continue
+      }
+      const lines = (rest + chunk.text).split('\n')
+      rest = lines.pop() ?? ''
+      for (const text of lines) {
+        hasPrinted = true
+        await line(text)
+      }
+    }
+  } catch {
+    // A child that cannot start, or a line that cannot be read, ends this run like an exit.
+  }
+  const next = hasPrinted ? 0 : tries
+  $.clock.after(retryMs(next), () => follow($, argv, input, line, next + 1))
 }
 
-// Refreshes without holding up the caller, one read at a time, rereading once if a call came in during it.
+// Reads an event stream line by line, handing `frame` each event's name and data.
+const events = (frame: (event: string, data: string) => unknown) => {
+  let event = ''
+  let data: string[] = []
+  return async (line: string) => {
+    if (line === '') {
+      const [name, text] = [event, data.join('\n')]
+      ;[event, data] = ['', []]
+      if (text) {
+        await frame(name, text)
+      }
+    } else if (line.startsWith('event:')) {
+      event = line.slice(6).trim()
+    } else if (line.startsWith('data:')) {
+      data.push(line.slice(5).replace(/^ /, ''))
+    }
+  }
+}
+
+// The server sends this session's held tasks once and again whenever they change; nothing here asks it twice.
+const followHeld = async ($: Engine) => {
+  const session = await $.session.id()
+  const token = await $.env.get('STARPULSE_TOKEN')
+  const server = ((await $.env.get('STARPULSE_URL')) || 'http://localhost:8766').replace(/\/$/, '')
+  // The token goes in on stdin: every process on the host can read a child's argv.
+  const auth = token ? ['-H', '@-'] : []
+  const argv = ['curl', '-sfN', ...auth, `${server}/api/held?holder=${encodeURIComponent(session)}`]
+  const onFrame = async (event: string, data: string) => {
+    if (event === 'held') {
+      await update($, tasks, () => heldOf(JSON.parse(data) as Board))
+    }
+  }
+
+  await follow($, argv, token ? `Authorization: Bearer ${token}\n` : undefined, events(onFrame))
+}
+
+let hasOpened = false
+let isStarting = true
+const listPeers = async ($: Engine) => {
+  const others = await peers($)
+  await update($, sessions, () => others)
+  // The first list opens the pane unasked; opened after Files, it is the dock tab on show, and the prompt keeps the keys.
+  if (!hasOpened && others.length) {
+    hasOpened = true
+    await $.ui.open({ id: SESSIONS, title: 'Sessions' })
+  }
+}
+
+// Rereads the registry without holding up the watch, one read at a time, rereading once if a change came in during it.
 let reading: Promise<unknown> | null = null
 let isStale = false
-const refreshSoon = ($: Engine) => {
+const listPeersSoon = ($: Engine) => {
   if (reading) {
     isStale = true
     return
   }
-  reading = refresh($).finally(() => {
+  reading = listPeers($).finally(() => {
     reading = null
     if (isStale) {
       isStale = false
-      refreshSoon($)
+      listPeersSoon($)
     }
   })
+}
+
+// Each write to the registry (a session starting, ending, or going busy or idle) rereads it.
+const followPeers = async ($: Engine) => {
+  const dir = `${await $.env.get('HOME')}/.claude/sessions`
+  const argv = ['inotifywait', '-mq', '-e', 'create,delete,modify,moved_to,moved_from', '--format', '%f', dir]
+
+  await follow($, argv, undefined, () => listPeersSoon($))
 }
 
 const tmux = ($: Engine, ...args: string[]) => $.process.run(['tmux', ...args]).catch(() => null)
@@ -229,7 +292,6 @@ const switchTo = async ($: Engine, s: PeerSession) => {
 
 // The Board tab opens with the keys and the whole Board read fresh.
 const openBoard = async ($: Engine) => {
-  isBoardOpen = true
   await $.ui.open({ id: KANBAN, title: 'Board', focus: true })
   await reloadLanes($)
 }
@@ -292,12 +354,10 @@ const moveTask = async ($: Engine, id: string, to: string) => {
 
 const peerLine = (s: PeerSession) => `${s.status === 'busy' ? '●' : '○'} ${s.label} ${s.status}`
 
-// Other sessions change on their own, so the band rereads the registry between this session's turns too.
 const count = (others: PeerSession[]) => {
   const busy = others.filter(s => s.status === 'busy').length
   return `● ${busy} busy · ○ ${others.length - busy} idle`
 }
-const PEER_POLL_MS = 5000
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
 
@@ -385,30 +445,17 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'board', description: 'List the Board tasks this session holds' })
     await $.command.register({ name: 'kanban', description: 'Open the Board as a tab beside Files' })
-    void refresh($)
-    $.clock.every(PEER_POLL_MS, () => refreshSoon($))
+    listPeersSoon($)
+    void followPeers($)
+    void followHeld($)
 
     return next(e)
   })
 
-  on('turn.complete', async ($, e, next) => {
-    const ran = await next(e)
-    await refresh($)
-
-    return ran
-  })
-
-  // A session claims its task inside a turn, often its first and longest, so a tool call can change what it holds.
-  on('tool.call', async ($, e, next) => {
-    const ran = await next(e)
-    refreshSoon($)
-
-    return ran
-  })
-
   on('command.run', { command: 'board' }, async $ => {
     await update($, isHidden, () => false)
-    const found = await refresh($)
+    const found = await held($)
+    await update($, tasks, () => found)
     if (found === null) {
       return { text: '`starpulse board` failed: is the StarPulse server running?' }
     }
@@ -447,12 +494,6 @@ export const register: Register = on => {
 
   on('ui.close', { id: PANE }, async ($, e, next) => {
     await update($, openTask, () => null)
-
-    return next(e)
-  })
-
-  on('ui.close', { id: KANBAN }, async ($, e, next) => {
-    isBoardOpen = false
 
     return next(e)
   })
