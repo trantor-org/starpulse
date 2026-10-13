@@ -434,6 +434,9 @@ type Host = {
   board?: () => Promise<ReturnType<typeof answer>> | ReturnType<typeof answer>
   hasClock?: boolean
   isAlone?: boolean
+  posted?: string[][]
+  post?: (argv: readonly string[]) => ReturnType<typeof answer>
+  toasts?: string[]
 }
 
 // Stands in for the engine and the host: the registry above, tmux session task-7 holding pid 200, and an empty board.
@@ -444,7 +447,11 @@ const sessionsHost = (on: On, host: Host = {}) => {
   on('session.start', ($, e) => e)
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   if (!host.hasClock) on('clock.every', () => ({ value: undefined }))
-  on('env.get', () => ({ value: '/home/me' }))
+  on('env.get', ($, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
+  if (host.toasts) on('ui.toast', ($, e) => {
+    host.toasts?.push(e.text)
+    return { value: undefined }
+  })
   on('ui.open', ($, e) => {
     host.opened?.push(`${e.id} focus=${e.focus === true}`)
     return { value: { isPlaced: true as const } }
@@ -469,6 +476,10 @@ const sessionsHost = (on: On, host: Host = {}) => {
       host.switched?.push([...e.argv])
       return answer(0, '')
     }
+    if (e.argv[0] === 'curl') {
+      host.posted?.push([...e.argv])
+      return host.post?.(e.argv) ?? answer(0, '{}\n200')
+    }
     return host.board?.() ?? answer(0, JSON.stringify({ columns: [] }))
   })
 }
@@ -480,6 +491,132 @@ const start = async ($: any, surface: string) => {
 
 const sessionsPane = ($: any, surface: string, placement = 'dock') =>
   $.ui.mount({ plugin: 'starpulse-board', surface, component: 'Pane', props: { ...PANE_PROPS, placement }, requestId: 'starpulse-sessions' })
+
+// The whole Board as `starpulse board` prints it: a Ready task, one In Progress held by session-2 (tmux session task-7),
+// and the New and Done columns the Board tab leaves out.
+const KANBAN = board([
+  ['new', 'New', [task({ id: 'TASK-9', title: 'Unshaped' })]],
+  ['ready', 'Ready', [task({ id: 'TASK-10', title: 'Ready one', assignee: '@agent-standard-medium', moves: { in_progress: { allowed: true }, waiting: { allowed: true } } })]],
+  ['waiting', 'Waiting', []],
+  ['in_progress', 'In Progress', [task({ id: 'TASK-7', title: 'Busy one', holder: 'session-2', moves: { review: { allowed: true }, ready: { allowed: false, reason: 'made by operator, not agent' } } })]],
+  ['review', 'Review', []],
+  ['needs_attention', 'Needs Attention', []],
+  ['done', 'Done', [task({ id: 'TASK-1', title: 'Old' })]],
+])
+
+const kanbanPane = ($: any) =>
+  $.ui.mount({ plugin: 'starpulse-board', surface: 'terminal', component: 'Pane', props: { ...PANE_PROPS, placement: 'dock' }, requestId: 'starpulse-kanban' })
+
+// The Board tab, opened from /kanban the way a person would. Each test unmounts its drawing.
+const openKanban = async ($: any, on: On, host: Host = {}) => {
+  sessionsHost(on, { board: () => answer(0, KANBAN), ...host })
+  await start($, 'terminal')
+  await $.command.run({ ...RUN, command: 'kanban' })
+  await settle()
+  return kanbanPane($)
+}
+
+// The JSON body a curl call sends.
+const sent = (argv: readonly string[]) => JSON.parse(argv[argv.indexOf('--data') + 1] ?? 'null')
+
+test('the Board tab lists the open lanes in order with their counts, Ready and Waiting folded', async ($, on) => {
+  const ui = await openKanban($, on)
+
+  const lanes = (await ui.findAll({ type: 'Button', text: /^[▾▸] / })).map((b: any) => b.props.label)
+  expect(lanes).toEqual(['▾ In Progress 1', '▾ Review 0', '▾ Needs Attention 0', '▸ Ready 1', '▸ Waiting 0'])
+  expect((await ui.find({ key: 'task:TASK-7' }))?.props.label).toBe('TASK-7 Busy one')
+  expect(await ui.find({ key: 'task:TASK-10' })).toBeUndefined()
+  expect(await ui.find({ key: 'task:TASK-1' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('pressing a lane header folds and unfolds it', async ($, on) => {
+  const ui = await openKanban($, on)
+
+  await ui.press({ key: 'lane:in_progress' })
+  await ui.press({ key: 'lane:ready' })
+
+  expect((await ui.find({ key: 'lane:in_progress' }))?.props.label).toBe('▸ In Progress 1')
+  expect(await ui.find({ key: 'task:TASK-7' })).toBeUndefined()
+  expect((await ui.find({ key: 'task:TASK-10' }))?.props.label).toBe('TASK-10 Ready one')
+  await ui.unmount()
+})
+
+test('a Ready task starts a session through StarPulse, then switches tmux to it', async ($, on) => {
+  const posted: string[][] = []
+  const switched: string[][] = []
+  const ui = await openKanban($, on, { posted, switched })
+
+  await ui.press({ key: 'lane:ready' })
+  await ui.press({ key: 'task:TASK-10' })
+  expect((await ui.find({ key: 'session:TASK-10' }))?.props.label).toBe('Start session')
+  await ui.press({ key: 'session:TASK-10' })
+
+  expect(posted.map(a => a.find(x => x.startsWith('http')))).toEqual(['http://localhost:8766/api/start'])
+  expect(sent(posted[0]!)).toEqual({ task: 'TASK-10', assignee: '@agent-standard-medium', harness: 'claude' })
+  expect(switched).toEqual([['tmux', 'switch-client', '-t', 'task-10']])
+  await ui.unmount()
+})
+
+test('an In Progress task goes to its live session without starting one', async ($, on) => {
+  const posted: string[][] = []
+  const switched: string[][] = []
+  const ui = await openKanban($, on, { posted, switched })
+
+  await ui.press({ key: 'task:TASK-7' })
+  expect((await ui.find({ key: 'session:TASK-7' }))?.props.label).toBe('Go to session')
+  await ui.press({ key: 'session:TASK-7' })
+
+  expect(posted).toEqual([])
+  expect(switched).toEqual([['tmux', 'switch-client', '-t', 'task-7']])
+  await ui.unmount()
+})
+
+test('a move button moves the task through StarPulse and rereads the Board', async ($, on) => {
+  const posted: string[][] = []
+  let reads = 0
+  const ui = await openKanban($, on, {
+    posted,
+    board: () => {
+      reads++
+      return answer(0, KANBAN)
+    },
+  })
+
+  await ui.press({ key: 'task:TASK-7' })
+  expect((await ui.find({ key: 'move:TASK-7:review' }))?.props.label).toBe('→ Review')
+  const before = reads
+  await ui.press({ key: 'move:TASK-7:review' })
+  await settle()
+
+  expect(posted.map(a => a.find(x => x.startsWith('http')))).toEqual(['http://localhost:8766/api/move'])
+  expect(sent(posted[0]!)).toEqual({ task: 'TASK-7', to: 'review' })
+  expect(reads).toBeGreaterThan(before)
+  await ui.unmount()
+})
+
+test('a refused move shows the server\'s reason as a toast', async ($, on) => {
+  const toasts: string[] = []
+  const ui = await openKanban($, on, { toasts, post: () => answer(0, '{"error": "TASK-7 cannot move from in_progress to review"}\n409') })
+
+  await ui.press({ key: 'task:TASK-7' })
+  await ui.press({ key: 'move:TASK-7:review' })
+
+  expect(toasts).toEqual(['TASK-7 cannot move from in_progress to review'])
+  await ui.unmount()
+})
+
+test('the band\'s Board button opens the Board tab with the keys', async ($, on) => {
+  const opened: string[] = []
+  sessionsHost(on, { opened })
+
+  const ui = await band($, 'terminal')
+  await start($, 'terminal')
+  await ui.press({ key: 'kanban' })
+
+  expect(opened.at(-1)).toBe('starpulse-kanban focus=true')
+  await ui.unmount()
+})
 
 test('a Sessions pane placed inline closes itself and draws nothing, as Files does', async ($, on) => {
   const opened: string[] = []
@@ -618,3 +755,4 @@ for (const surface of ['terminal', 'desktop'] as const) {
     ])
   })
 }
+

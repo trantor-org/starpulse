@@ -316,6 +316,15 @@ Start session does, in tmux session `task-<N>`) is a button that runs `tmux swit
 client; otherwise the press shows a toast. Any other session, such as one the desktop app started, is listed without a
 button.
 
+A Board button beside the count, and `/kanban`, open the Board pane: the board as a kanban, docked as its own tab with
+focus and, like Sessions, closing itself when placed inline. It stacks the open lanes (In Progress, Review, Needs
+attention, Ready, Waiting), each a header with its count that folds and unfolds the lane; Ready and Waiting start
+folded. Each task is a button that shows its actions. Start session, on a Ready, Waiting or Needs attention task, posts
+`/api/start` with the task's assignee and harness `claude`, then runs `tmux switch-client` to `task-<N>` (outside a tmux
+client, a toast names the `tmux attach` command). Go to session, on any other lane, switches to the task holder's live
+session, or toasts that it has none. A `→ <lane>` button for each move the board allows posts `/api/move`; a refused move
+shows its error as a toast. Each action rereads the board, and the pane rereads it with the band while open.
+
 ## The pull-request store
 
 With `gh` available and the config's `pull_requests` not false, `serve` keeps a store of pull requests (table
