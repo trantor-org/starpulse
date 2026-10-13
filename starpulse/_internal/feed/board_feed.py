@@ -817,11 +817,13 @@ class BoardFeed:
         with self._lock:
             return self._machines[flow].get(task_id)
 
-    def move(self, flow: str, agent: dict) -> None:
-        """Place a task on a machine other than the Board and publish the move."""
+    def move(self, flow: str, agent: dict, *, publish: bool = True) -> None:
+        """Place a task on a machine other than the Board and publish the move, unless `publish` is false: a replayed
+        step is history, which the snapshot the replay ends with carries (`publish("snapshot", snapshot())`)."""
         with self._lock:
             self._machines[flow][agent["id"]] = agent
-            self._publish("move", {"flow": flow, "id": agent["id"], "agent": self._modelled(agent)})
+            if publish:
+                self._publish("move", {"flow": flow, "id": agent["id"], "agent": self._modelled(agent)})
 
     def _modelled(self, agent: dict) -> dict:
         """A machine's task with its Board task's assignee as its model when it carries none of its own."""

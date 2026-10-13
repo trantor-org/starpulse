@@ -222,6 +222,24 @@ def test_the_tasks_become_ready_once_the_last_entry_held_at_start_has_been_read(
     assert tasks.ready.is_set()
 
 
+def test_a_subscriber_connected_through_the_replay_gets_one_snapshot_of_it_not_a_move_per_replayed_entry() -> None:
+    feed, tasks = _feed()
+    entries = [_entry("in-progress", "WORKTREE_READY", task=f"PROJ-{n}", at=100.0 + n) for n in range(3)]
+    _, changes = feed.subscribe()
+
+    tasks.expect(entries[-1][0])
+    for entry in entries:
+        tasks.handle_entry(*entry)
+    kinds = []
+    while not changes.empty():
+        kinds.append(changes.get_nowait()[0])
+    tasks.handle_entry(*_entry("in-progress", "AC_CHECKPOINTED", task="PROJ-0", at=200.0))
+
+    assert kinds == ["snapshot"]
+    assert [a["id"] for a in _agents(feed, "in-progress")] == ["PROJ-0", "PROJ-1", "PROJ-2"]
+    assert changes.get_nowait()[0] == "move"  # once the replay is read, a new entry is a live change
+
+
 @pytest.mark.parametrize(("last_id", "ready"), [("0-0", True), ("1-0", False), ("0-1", False)])
 def test_nothing_has_been_read_before_the_first_entry_so_only_an_empty_stream_is_ready(
     last_id: str, ready: bool

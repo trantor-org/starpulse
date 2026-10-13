@@ -22,7 +22,7 @@ GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, p
                    machine, agents}], pulls, settled, error, now}: every machine with its tasks, the
                    workflow declarations, the workflows, each named `<instance>/<workflow>`, and the
                    concurrency pools they run on, each named `<instance>/<pool>`), then
-                   a `task` delta ({id, agent, settled}) per Board task change, a `move` delta ({flow, id, agent}) per task a machine placed, a
+                   a `task` delta ({id, agent, settled}) per Board task change, a `move` delta ({flow, id, agent}) per task a machine placed (the machine:events replay at start sends none: a `snapshot` follows it), a
                    `dags` delta ({dags, pools, error}) per runs change, a `pulls` delta ({pulls}) per
                    change to a task's pull requests and a `claim` delta ({task, reason, at}) per
                    refused agent claim the board adapter reports, an `insight` delta ({id, finding}) per finding
