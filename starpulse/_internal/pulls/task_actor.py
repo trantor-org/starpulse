@@ -24,7 +24,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from starpulse._internal.board.seam import TaskEditor, Written
+from starpulse._internal.board.seam import MERGE_EVIDENCE, TaskEditor, Written
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import Pins
 from starpulse._internal.feed import criteria
@@ -347,7 +347,7 @@ class TaskActor:
         if not parts:
             return None
         proof = "; ".join(parts)
-        return proof, f"Closed on merge evidence: {proof}"
+        return proof, f"{MERGE_EVIDENCE} {proof}"
 
     def _deps_done(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The dependencies when the task has some, every one is done and settled, and no Start Criteria gate it."""

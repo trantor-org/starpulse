@@ -188,7 +188,9 @@ class BoardFeed:
         #: Where each lane change `_lanes` wrote is also appended as a `lane_events` entry; None appends nothing.
         self._lane_log: EventLog | None = None
         #: Who wrote each task last through the server (`note_actor`) and when, until the lane change it made is placed.
+        #: Saved with the Board (`save`) and restored by `resume`, so a restart between a write and its placement keeps it.
         self._movers: dict[str, tuple[tuple[str, str, str], float]] = {}
+        self._movers_saved: dict[str, tuple[tuple[str, str, str], float]] = {}
         #: Each task placed or retracted is also kept in `_search`; None keeps none.
         self._search: TaskIndex | None = None
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
@@ -373,6 +375,10 @@ class BoardFeed:
                 dict(state.get("cited", {})),
                 dict(state.get("source", {})),
             )
+            movers = {  # a Board saved before notes were kept has none
+                task: ((actor, session, harness), float(at))
+                for task, (actor, session, harness, at) in state.get("movers", {}).items()
+            }
             if not all(isinstance(entry, dict) for entry in settled.values()):
                 raise TypeError("a settled task saved before settled entries carried their time")
         except KeyError, TypeError, ValueError:
@@ -382,6 +388,7 @@ class BoardFeed:
             self._open, self._settled, self._assignees, self._seen, self._saved = open_, settled, assignees, seen, seen
             self._pulls, self._pull_answers = pulls, answers
             self._cited, self._kept, self._kept_saved = cited, source, source
+            self._movers = self._movers_saved = movers
             self._gated = {
                 t for t, agent in open_.items() if agent["state"] == WAITING and criteria.authored(agent["description"])
             }
@@ -398,9 +405,14 @@ class BoardFeed:
             return
         store, stream = self._store
         with self._lock:
-            if self._seen == self._saved and not self._pulls_unsaved and self._kept is self._kept_saved:
+            if (
+                self._seen == self._saved
+                and not self._pulls_unsaved
+                and self._kept is self._kept_saved
+                and self._movers == self._movers_saved
+            ):
                 return
-            seen, source = self._seen, self._kept
+            seen, source, movers = self._seen, self._kept, dict(self._movers)
             state = {
                 "open": dict(self._open),
                 "settled": dict(self._settled),
@@ -409,13 +421,14 @@ class BoardFeed:
                 "pull_answers": dict(self._pull_answers),
                 "cited": dict(self._cited),
                 "source": source,
+                "movers": {task: [*who, at] for task, (who, at) in movers.items()},
             }
         try:
             store.save_board_state(stream, "-".join(map(str, seen)), state)
         except Exception as exc:  # the store is down; the Board still draws and the next save retries
             logger.warning("StarPulse: cannot save the Board of %s: %s", stream, exc)
             return
-        self._saved, self._pulls_unsaved, self._kept_saved = seen, False, source
+        self._saved, self._pulls_unsaved, self._kept_saved, self._movers_saved = seen, False, source, movers
 
     def pull_answers(self) -> dict:
         """What the pull request reader last handed `set_pulls`, as saved; empty when nothing was."""
