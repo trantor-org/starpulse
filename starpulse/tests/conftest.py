@@ -5,15 +5,19 @@ these tests inside its own suite may already provide `pg_engine` from a pytest p
 trantor's workspace plugin `db.testing` does, and then none is started here.
 """
 
+import importlib.util
 import shutil
+import sqlite3
 import sys
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import pytest
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, event, text
 
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
@@ -38,23 +42,100 @@ _TABLES = (
     "starpulse_forward_instances",
 )
 
+
+@event.listens_for(Engine, "connect")
+def _sqlite_without_sync(connection: object, _record: object) -> None:
+    """No sync per commit on a test's SQLite file: it need not survive a crash, and each `CREATE TABLE` of a fixture's
+    stores otherwise waits on the disk, seconds per test when runners share it."""
+    if isinstance(connection, sqlite3.Connection):
+        connection.execute("PRAGMA synchronous=OFF")
+
+
+#: Containers the run starts in the background as soon as collection shows a test needs one, so the first test to ask
+#: for it finds it up (or waits only for what is left) and is not charged the whole start. Keyed by what they serve.
+_WARM: dict[str, Future] = {}
+#: One at a time: testcontainers starts its reaper container with the first container, and two threads racing to do
+#: so collide on its name.
+_STARTER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="warm")
+
+
+def _container_skip_reason() -> str | None:
+    """Why no container can start here, or None."""
+    if not any(shutil.which(runtime) for runtime in ("docker", "podman")):
+        return "the integration cases that need a container need Docker or Podman"
+    # The hub dependency group; without it (the IC suite) these cases are skipped.
+    if importlib.util.find_spec("testcontainers") is None or importlib.util.find_spec("psycopg") is None:
+        return "the integration cases that need a container need the hub dependency group"
+    return None
+
+
+def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
+    from testcontainers.community.postgres import PostgresContainer  # noqa: PLC0415
+
+    # The data directory in memory and no sync: a throwaway server need not survive a crash, and initdb's syncs
+    # took seconds on a disk the runners share.
+    return (
+        PostgresContainer("postgres:17-alpine", driver="psycopg")
+        .with_env("POSTGRES_INITDB_ARGS", "--no-sync")
+        .with_tmpfs_mount("/var/lib/postgresql/data")
+        .with_command("postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off")
+        .start()
+    )
+
+
+def _start_issuer() -> tuple[Any, str]:  # pragma: no mutate block — container lifecycle
+    from testcontainers.core.container import DockerContainer  # noqa: PLC0415
+
+    container = DockerContainer(IMAGE).with_exposed_ports(8080).start()
+    address = f"http://127.0.0.1:{container.get_exposed_port(8080)}/default"
+    deadline = time.monotonic() + 60
+    while not answers(f"{address}/.well-known/openid-configuration"):
+        assert time.monotonic() < deadline, "the mock issuer never answered"
+        time.sleep(0.5)
+    return container, address
+
+
+def _warm(name: str, start: Callable[[], Any]) -> Future:
+    if name not in _WARM:
+        _WARM[name] = _STARTER.submit(start)
+    return _WARM[name]
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:  # pragma: no mutate block — container lifecycle
+    if _container_skip_reason():
+        return
+    wanted = set()
+    for item in session.items:
+        params = getattr(getattr(item, "callspec", None), "params", {})
+        if "pg_engine" in item.fixturenames or "postgres" in params.values():
+            wanted.add("postgres")
+        if "issuer" in item.fixturenames:
+            wanted.add("issuer")
+    if "postgres" in wanted and "db.testing" not in sys.modules:
+        _warm("postgres", _start_postgres)
+    if "issuer" in wanted:
+        _warm("issuer", _start_issuer)
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:  # pragma: no mutate block — container lifecycle
+    for name, future in _WARM.items():
+        if not future.cancel() and future.exception() is None:
+            (future.result() if name == "postgres" else future.result()[0]).stop()
+    _WARM.clear()
+
+
 if "db.testing" not in sys.modules:
 
     @pytest.fixture(scope="session")
     def pg_engine() -> Iterator[Engine]:  # pragma: no mutate block — container lifecycle
-        if not any(shutil.which(runtime) for runtime in ("docker", "podman")):
-            pytest.skip("Postgres integration cases need Docker or Podman")
-        # The hub dependency group; without it (the IC suite) the Postgres cases are skipped.
-        pytest.importorskip("psycopg", reason="Postgres integration cases need the hub extras")
-        postgres = pytest.importorskip("testcontainers.community.postgres", reason="needs the hub dependency group")
-        PostgresContainer = postgres.PostgresContainer  # noqa: N806
-
-        with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
-            engine = create_engine(container.get_connection_url())
-            try:
-                yield engine
-            finally:
-                engine.dispose()
+        if reason := _container_skip_reason():
+            pytest.skip(reason)
+        container = _warm("postgres", _start_postgres).result()
+        engine = create_engine(container.get_connection_url())
+        try:
+            yield engine
+        finally:
+            engine.dispose()
 
 
 @pytest.fixture(params=["sqlite", "postgres"])
@@ -95,17 +176,8 @@ def empty_database(pg_engine: Engine) -> Iterator[Engine]:
 
 
 @pytest.fixture(scope="session")
-def issuer() -> Iterator[str]:  # pragma: no mutate block — container lifecycle
+def issuer() -> str:  # pragma: no mutate block — container lifecycle
     """The address of a mock OpenID Connect issuer container, for the hub's sign-in cases."""
-    if not any(shutil.which(runtime) for runtime in ("docker", "podman")):
-        pytest.skip("the sign-in cases need Docker or Podman")
-    pytest.importorskip("testcontainers", reason="needs the hub dependency group")
-    from testcontainers.core.container import DockerContainer  # noqa: PLC0415
-
-    with DockerContainer(IMAGE).with_exposed_ports(8080) as container:
-        address = f"http://127.0.0.1:{container.get_exposed_port(8080)}/default"
-        deadline = time.monotonic() + 60
-        while not answers(f"{address}/.well-known/openid-configuration"):
-            assert time.monotonic() < deadline, "the mock issuer never answered"
-            time.sleep(0.5)
-        yield address
+    if reason := _container_skip_reason():
+        pytest.skip(reason)
+    return _warm("issuer", _start_issuer).result()[1]

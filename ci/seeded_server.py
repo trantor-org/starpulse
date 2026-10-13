@@ -19,11 +19,14 @@ from __future__ import annotations
 
 import argparse
 import signal
+import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+
+from sqlalchemy import Engine, event
 
 from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
 from starpulse._internal.board import native
@@ -184,11 +187,19 @@ def autopilot(directory: Path, log: EventLog, feed: BoardFeed, policy: Autopilot
     return runtime
 
 
+def _without_sync(connection: object, _record: object) -> None:
+    """No sync per commit: the seed writes a few thousand rows to a store that is gone with its directory."""
+    if isinstance(connection, sqlite3.Connection):
+        connection.execute("PRAGMA synchronous=OFF")
+
+
 def build(
     port: int, directory: Path, *, now: float | None = None
 ) -> tuple[ThreadingHTTPServer, BoardFeed, list[BoardTask]]:
     """The seeded server bound to `port` (0: any free one), the feed it draws and the tasks seeded on it."""
     directory.mkdir(parents=True, exist_ok=True)
+    if not event.contains(Engine, "connect", _without_sync):
+        event.listen(Engine, "connect", _without_sync)
     config = load(PREVIEW)
     _, feed = assemble(config, PREVIEW.parent, None, [])
     log = EventLog(f"sqlite:///{directory / 'history.sqlite'}")

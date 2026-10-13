@@ -122,11 +122,17 @@ def _modules(root: Path) -> dict[str, Path]:
     return found
 
 
-def _imports(module: str, path: Path) -> set[str]:
+def _imports(module: str, path: Path) -> frozenset[str]:
     """Every module name the file imports, with its parent packages, which importing it runs."""
-    package = module if path.name == "__init__.py" else module.rpartition(".")[0]
+    return _imports_of(module, path.name == "__init__.py", path.read_text())
+
+
+@cache
+def _imports_of(module: str, is_package: bool, text: str) -> frozenset[str]:
+    """`_imports` keyed on the source, so a process that selects again parses each file once."""
+    package = module if is_package else module.rpartition(".")[0]
     names: set[str] = {module}
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in ast.walk(ast.parse(text)):
         if isinstance(node, ast.Import):
             names |= {alias.name for alias in node.names}
         elif isinstance(node, ast.ImportFrom):
@@ -135,7 +141,7 @@ def _imports(module: str, path: Path) -> set[str]:
                 parts = package.split(".")[: len(package.split(".")) - node.level + 1]
                 base = ".".join(parts + ([node.module] if node.module else []))
             names |= {base} | {f"{base}.{alias.name}" for alias in node.names}
-    return {".".join(name.split(".")[:i]) for name in names for i in range(1, name.count(".") + 2)}
+    return frozenset(".".join(name.split(".")[:i]) for name in names for i in range(1, name.count(".") + 2))
 
 
 def _conftest_uses(path: Path) -> tuple[set[str], dict[str, set[str]]]:

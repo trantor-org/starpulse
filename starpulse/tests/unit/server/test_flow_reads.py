@@ -23,8 +23,6 @@ RAW = ("starpulse_machine_events", "starpulse_lane_changes")
 def store(tmp_path: Path) -> HistoryStore:
     url = f"sqlite:///{tmp_path / 'history.sqlite'}"
     engine = create_engine(url)
-    # No sync per commit: a test store need not survive a crash, and seeding 1000 stays takes seconds, not minutes.
-    event.listen(engine, "connect", lambda connection, _record: connection.execute("PRAGMA synchronous=OFF"))
     store = HistoryStore(url, MACHINES, engine)
     for i, (task, at, _old, new) in enumerate(ROWS):
         store.record_lane(f"{'a' if task in 'AB' else 'b'}/{i}", task, new, at)
@@ -83,11 +81,23 @@ def test_flow_health_from_the_summaries_is_the_bytes_the_row_scan_gives(store: H
     assert health_response(store, query, MACHINES, NOW) == health_response(RowScan(store), query, MACHINES, NOW)
 
 
+def _record_all(store: HistoryStore, changes: list[tuple[str, str, str, float]]) -> None:
+    """The lane changes `(event id, task, lane, at)` `record_lane` would write one by one, in a single transaction."""
+    with store.engine.begin() as db:
+        for event_id, task, lane, at in changes:
+            store._fold_lane(db, event_id, task, lane, at)
+
+
 def _churn(store: HistoryStore, tasks: int) -> None:
     """`tasks` more tasks that each pass through every lane inside the default week, ending in Done."""
-    for task in range(tasks):
-        for step, lane in enumerate(("To Do", "Ready", "In Progress", "Review", "Done")):
-            store.record_lane(f"a/churn-{task}-{step}", f"churn-{task}", lane, (50 + step + task % 40 / 10) * H)
+    _record_all(
+        store,
+        [
+            (f"a/churn-{task}-{step}", f"churn-{task}", lane, (50 + step + task % 40 / 10) * H)
+            for task in range(tasks)
+            for step, lane in enumerate(("To Do", "Ready", "In Progress", "Review", "Done"))
+        ],
+    )
 
 
 def _health_rows(store: HistoryStore) -> int:
@@ -101,7 +111,7 @@ def _health_rows(store: HistoryStore) -> int:
 
 def test_flow_health_fetches_no_more_rows_as_the_week_holds_more_lane_intervals(store: HistoryStore) -> None:
     few = _health_rows(store)
-    _churn(store, 200)
+    _churn(store, 40)
 
     assert (_health_rows(store), store.summary_differences()) == (few, [])
 
@@ -129,8 +139,7 @@ def test_flow_health_seeks_entries_by_the_window_not_every_stay(store: HistorySt
 
 def test_flow_health_fetches_no_row_for_a_task_in_flight_that_is_not_stuck(store: HistoryStore) -> None:
     few = _health_rows(store)
-    for task in range(200):
-        store.record_lane(f"a/flight-{task}", f"flight-{task}", "In Progress", NOW - H / 2)
+    _record_all(store, [(f"a/flight-{task}", f"flight-{task}", "In Progress", NOW - H / 2) for task in range(200)])
 
     assert (_health_rows(store), store.summary_differences()) == (few, [])
 

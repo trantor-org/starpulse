@@ -132,6 +132,8 @@ assert "starpulse._internal.hub.oidc" not in sys.modules, "IC mode imported the 
 """
 
 
+# Stays slow: it runs the package in a fresh isolated interpreter, whose cold import of the app is the point of the
+# test and costs seconds under CI load.
 def test_ic_mode_runs_without_the_hub_extras_and_never_imports_the_hub_module() -> None:
     ran = subprocess.run([sys.executable, "-I", "-c", _IC_RUN], capture_output=True, text=True, timeout=60)
 

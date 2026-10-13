@@ -66,6 +66,8 @@ def _get(port: int, path: str) -> tuple[int, dict]:
 
 
 @pytest.mark.usefixtures("build")
+# Stays slow: it starts the server as its own process, then runs `starpulse emit` as another, and each pays an
+# interpreter start with its imports; an in-process server would not prove the standalone entry point.
 def test_without_a_cache_server_or_any_tool_on_the_path_the_server_serves_history_and_what_emit_pushed(
     tmp_path: Path,
 ) -> None:
@@ -150,6 +152,8 @@ _INGEST_CONFIG = '[[runs]]\nname = "cron"\ntype = "dagu"\nurl = "http://127.0.0.
 
 
 @pytest.mark.usefixtures("build")
+# Stays slow: it starts the server as its own process, then runs `starpulse emit` as another, and each pays an
+# interpreter start with its imports; an in-process server would not prove the standalone entry point.
 def test_an_event_posted_with_the_token_in_the_environment_reaches_the_snapshot_and_a_wrong_token_does_not(
     tmp_path: Path,
 ) -> None:
@@ -241,6 +245,8 @@ def _fake_runs(tmp_path: Path, url: str) -> str:
 
 
 @pytest.mark.usefixtures("build")
+# Stays slow: it starts the server as its own process, then runs `starpulse emit` as another, and each pays an
+# interpreter start with its imports; an in-process server would not prove the standalone entry point.
 def test_a_lane_event_a_trigger_matches_starts_the_run_through_the_adapter_and_one_it_does_not_match_starts_none(
     tmp_path: Path,
 ) -> None:

@@ -20,7 +20,11 @@ A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pyte
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
 A test whose setup, call and teardown together pass 5 s (`SLOW_TEST_SECONDS` overrides it) is named at the end of the
 run, slowest first (`ci/slow_tests.py`); in CI each is also a warning annotation on its `def` line and a row in the job
-summary. It never fails the run: make the test faster, or move it to the integration tier.
+summary. It never fails the run: make the test faster, or keep it slow with a `# Stays slow: <reason>` comment directly
+above its `def`, naming what the test must pay for (a server process, a container, a cold import).
+`starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`, and one
+background thread starts the session's Postgres and mock-issuer containers when collection finishes, so a test waits on
+a warm container instead of paying its start.
 CI runs only the tests a pull request or a push to main can reach (`ci/select_tests.py`); the full suite runs
 nightly and on a manual dispatch. CI's `ic` job imports every module an IC instance can load without the hub extras
 (`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so CI's `public-names` job
