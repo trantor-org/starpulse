@@ -160,7 +160,7 @@ jobs:
           uv run --no-project --python 3.14 --with pyyaml
           python ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py
 
-  # trantor main's tests of this package, run against this tree in place of trantor's starpulse submodule: the same
+  # trantor main's (newest green commit) tests of this package, run against this tree in place of trantor's starpulse submodule: the same
   # `make test-changed FILES=starpulse` trantor's Validate runs on a bump PR. A commit that fails them would fail every
   # trantor bump pinning it, so it must not go green here. A change trantor must adopt (a new table needs an Alembic
   # adoption; a test that pins a feed key this package owns) lands in trantor first, then here.
@@ -177,16 +177,30 @@ jobs:
           private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: trantor
+      # Trantor's tip can be red for a reason this package did not cause, and a red tip ejected a merge-queue entry three
+      # times. Test the newest main commit whose CI passed (ci/trantor_green_sha.py logs it; none in the last 30 runs fails).
+      # A full checkout, never sparse: a sparse root checkout persists core.sparseCheckout in the runner's shared
+      # workspace, and every later job on that runner checks out an empty tree.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Pick trantor's newest green main SHA
+        id: trantor-sha
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api "repos/trantor-org/trantor/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=30" \
+            | uv run --no-project --python 3.14 python ci/trantor_green_sha.py > sha.txt
+          echo "sha=$(cat sha.txt)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: trantor-org/trantor
+          ref: ${{ steps.trantor-sha.outputs.sha }}
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
           path: .trantor
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: .trantor/starpulse
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       # `uv lock` as trantor's bump does: this tree's dependencies may differ from the ones trantor's lock pins.
       - working-directory: .trantor
         run: |
