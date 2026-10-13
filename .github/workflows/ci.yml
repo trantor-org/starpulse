@@ -27,9 +27,9 @@ jobs:
       # A red shard does not cancel the others: one run reports every failure.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6]
     env:
-      SHARD_COUNT: 5
+      SHARD_COUNT: 6
       SHARD_INDEX: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,7 +40,7 @@ jobs:
       # The package layers (pyproject's [tool.importlinter]) hold on every pull request, not only for the tests it selects.
       - run: uv run --no-sync lint-imports
       # pytest-xdist workers sized to the runner's memory: ci/xdist_workers.py.
-      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup --durations=0 --durations-min=0.5" >> "$GITHUB_ENV"
+      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
       # A pull request, a merge-queue candidate or a push to main runs only the tests its changed files can reach (ci/select_tests.py); the
       # nightly schedule and a manual dispatch run all.
       - if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push'

@@ -11,30 +11,39 @@ import os
 from collections import Counter
 from pathlib import Path
 
-#: Seconds of CPU a slow file takes, summed over its setup, call and teardown (`pytest --durations=0`, 3 workers). A file
-#: absent here, new or fast, weighs `UNMEASURED` per test. Stale numbers only unbalance the shards; each file still runs once.
+#: Seconds of CPU a slow file takes in CI, summed over its setup, call and teardown (`pytest --durations=0`, 4 workers).
+#: A file absent here, new or fast, weighs `UNMEASURED` per test. Stale numbers only unbalance the shards; each file
+#: still runs once.
 SECONDS = {
-    "starpulse/tests/integration/cli/test_agent_cli.py": 357,
-    "starpulse/tests/unit/server/test_flow_reads.py": 235,
-    "starpulse/tests/integration/hub/test_oidc_gate.py": 153,
-    "starpulse/tests/unit/hub/test_forwarder.py": 146,
-    "starpulse/tests/integration/server/test_api_contract.py": 114,
-    "starpulse/tests/integration/level/test_level_http.py": 104,
-    "starpulse/tests/integration/hub/test_lane_forwarding.py": 75,
-    "starpulse/tests/unit/server/test_forwarding_route.py": 61,
-    "starpulse/tests/unit/eventlog/test_history_summaries.py": 59,
-    "starpulse/tests/integration/hub/test_forwarding_kit.py": 59,
-    "starpulse/tests/unit/level/test_insights_kit.py": 51,
-    "starpulse/tests/integration/eventlog/test_history.py": 46,
-    "starpulse/tests/unit/runs/test_triggers.py": 43,
-    "starpulse/tests/integration/level/test_insights_http.py": 42,
-    "ci/test_soak.py": 41,
-    "starpulse/tests/unit/runs/test_dagu_runs.py": 36,
-    "ci/test_select_tests.py": 34,
-    "starpulse/tests/integration/server/test_write_guard.py": 34,
-    "starpulse/tests/unit/pulls/test_pull_store.py": 30,
+    "starpulse/tests/integration/cli/test_agent_cli.py": 306,
+    "starpulse/tests/unit/server/test_flow_reads.py": 191,
+    "starpulse/tests/integration/level/test_level_http.py": 152,
+    "starpulse/tests/integration/eventlog/test_history.py": 131,
+    "starpulse/tests/integration/server/test_api_contract.py": 120,
+    "starpulse/tests/integration/hub/test_oidc_gate.py": 90,
+    "starpulse/tests/integration/hub/test_lane_forwarding.py": 84,
+    "starpulse/tests/unit/hub/test_forwarder.py": 79,
+    "starpulse/tests/integration/eventlog/test_event_log.py": 59,
+    "starpulse/tests/unit/eventlog/test_history_summaries.py": 55,
+    "starpulse/tests/integration/hub/test_forwarding_kit.py": 51,
+    "starpulse/tests/unit/runs/test_dagu_runs.py": 34,
+    "starpulse/tests/unit/runs/test_triggers.py": 33,
+    "starpulse/tests/integration/server/test_standalone.py": 33,
+    "starpulse/tests/unit/server/test_forwarding_route.py": 29,
+    "starpulse/tests/integration/hub/test_hub.py": 25,
+    "ci/test_soak.py": 25,
+    "starpulse/tests/integration/level/test_insights_http.py": 24,
+    "starpulse/tests/integration/server/test_write_guard.py": 23,
+    "starpulse/tests/integration/feed/test_board_resume.py": 21,
+    "starpulse/tests/integration/eventlog/test_history_http.py": 20,
+    "starpulse/tests/integration/server/test_http.py": 13,
+    "ci/test_latency_gate.py": 13,
+    "starpulse/tests/unit/hub/test_forward.py": 12,
+    "starpulse/tests/unit/level/test_insights_kit.py": 11,
+    "starpulse/tests/integration/autopilot/test_autopilot_served.py": 11,
+    "starpulse/tests/unit/feed/test_lane_history_dedupe.py": 11,
 }
-UNMEASURED = 0.17
+UNMEASURED = 0.3
 
 
 def weigh(tests_per_file: dict[str, int]) -> dict[str, float]:

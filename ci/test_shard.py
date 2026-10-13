@@ -41,8 +41,8 @@ def test_a_file_weighs_its_measured_seconds_and_an_unmeasured_one_its_test_count
 
 
 def test_the_measured_files_are_spread_over_the_shards():
-    heaviest = sorted(SECONDS, key=SECONDS.get, reverse=True)[:5]
-    shards = assign(weigh(dict.fromkeys(heaviest, 1)), 5)
+    heaviest = sorted(SECONDS, key=SECONDS.get, reverse=True)[:6]
+    shards = assign(weigh(dict.fromkeys(heaviest, 1)), 6)
     assert all(len(shard) == 1 for shard in shards)
 
 
