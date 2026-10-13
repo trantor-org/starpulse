@@ -145,6 +145,7 @@ type = "native"
 # path = "backlog"       # the project's backlog/ directory, relative to this file
 # command = "backlog"    # the upstream Backlog.md CLI (`npm i -g backlog.md`) that writes a move (`backlog task edit <id> -s <status>`); a fork of it that lacks `backlog init` is not it
 # machine = "board.yaml" # as above
+# interval = 60          # seconds between the full rescans that back the file watch up (2 where inotify is missing)
 
 # To draw a Jira project instead (read-only; building the board reads the site once, to import the workflow):
 # [board]
