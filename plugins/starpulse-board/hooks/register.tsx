@@ -4,6 +4,7 @@ import type { Checks, HeldTask, PeerSession, Pull } from '../types'
 import { CHECKS, ROW_HEIGHT, SP, alt, laneOf, paneSvg, progress, ratio, rowSvg, subline, termBar } from './draw'
 
 const PANE = 'starpulse-board'
+const SESSIONS = 'starpulse-sessions'
 
 const tasks = atom({ plugin: 'starpulse-board', key: 'tasks' } as const, null)
 const sessions = atom({ plugin: 'starpulse-board', key: 'sessions' } as const, [])
@@ -128,9 +129,11 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
 }
 
 const refresh = async ($: Engine) => {
-  const [found, others] = await Promise.all([held($), peers($)])
+  // The session list is a local read; it draws without waiting on the slower board read.
+  const listed = peers($).then(others => update($, sessions, () => others))
+  const found = await held($)
   await update($, tasks, () => found)
-  await update($, sessions, () => others)
+  await listed
 
   return found
 }
@@ -178,6 +181,10 @@ const switchTo = async ($: Engine, s: PeerSession) => {
 const peerLine = (s: PeerSession) => `${s.status === 'busy' ? '●' : '○'} ${s.label} ${s.status}`
 
 // Other sessions change on their own, so the band rereads the registry between this session's turns too.
+const count = (others: PeerSession[]) => {
+  const busy = others.filter(s => s.status === 'busy').length
+  return `● ${busy} busy · ○ ${others.length - busy} idle`
+}
 const PEER_POLL_MS = 5000
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
@@ -335,16 +342,8 @@ export const register: Register = on => {
           </Box>
         ))}
         {others.length > 0 && (
-          <Box flexWrap="wrap">
-            {others.map(s =>
-              s.tmux !== null || s.isBackground ? (
-                <Button key={`session:${s.id}`} label={peerLine(s)} onPress={() => switchTo($, s)} />
-              ) : (
-                <Text key={`peer:${s.id}`} dimColor>
-                  {` ${peerLine(s)} `}
-                </Text>
-              ),
-            )}
+          <Box flexDirection="row" alignItems="center" gap={1}>
+            <Button key="sessions" label={count(others)} onPress={() => $.ui.open({ id: SESSIONS, title: 'Sessions' })} />
             {!found.length && hide}
           </Box>
         )}
@@ -369,5 +368,28 @@ export const register: Register = on => {
     }
 
     return termPane(Box, Text, t)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: SESSIONS }, async ($, e, next) => {
+    const others = await read($, sessions)
+    if (!others.length) {
+      return next(e)
+    }
+
+    const { Box, Button, Text } = $.ui.resolve(e) as Remote
+
+    return (
+      <Box flexDirection="column">
+        {others.map(s =>
+          s.tmux !== null || s.isBackground ? (
+            <Button key={`session:${s.id}`} label={peerLine(s)} onPress={() => switchTo($, s)} />
+          ) : (
+            <Text key={`peer:${s.id}`} dimColor>
+              {peerLine(s)}
+            </Text>
+          ),
+        )}
+      </Box>
+    )
   })
 }

@@ -297,11 +297,13 @@ stops under the system's reduced-motion setting; the terminal row does not anima
 their titles. It reads only the `starpulse` CLI, retrying `~/.local/bin/starpulse` when the one on `PATH` fails or is missing, so it
 shows no tasks when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
 
-Below the tasks it lists every other Claude Code session on the host with its `busy` or `idle` status, from the registry
-each session writes under `~/.claude/sessions/`, reread every 5 seconds. A session running in a tmux pane (as a StarPulse
+Below the tasks one button counts every other Claude Code session on the host by status (`● 2 busy · ○ 5 idle`), from
+the registry each session writes under `~/.claude/sessions/`, reread every 5 seconds without waiting on `starpulse
+board`. Pressing it opens the Sessions pane, docked as a tab beside the other right-side panes (such as Files) on a wide
+fullscreen terminal and inline otherwise, with one row per session and its status. A session running in a tmux pane (as a StarPulse
 Start session does, in tmux session `task-<N>`) is a button that runs `tmux switch-client` to it; a background
 (`claude --bg`) session is a button that first opens it with `claude attach <job>` (the session id's first 8 characters) in tmux session `bg-<job>`
-(`new-session -A`, so a second press reuses it). Switching needs the session showing the band to run inside a tmux
+(`new-session -A`, so a second press reuses it). Switching needs the session showing the pane to run inside a tmux
 client; otherwise the press shows a toast. Any other session, such as one the desktop app started, is listed without a
 button.
 
