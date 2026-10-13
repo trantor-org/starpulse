@@ -23,12 +23,13 @@ collaborator, say so in an issue.
   rebasing to stay current. Its title becomes the commit on `main` and the line in the next release's
   notes, so write the title for someone who uses StarPulse.
 - Nobody pushes to `main` directly, force-pushes it or deletes it.
-- At merge, `dispatch-merged.yml` sends trantor a `starpulse-green` `repository_dispatch` whose `sha` is the merged
-  commit, once the merge-queue (or pull-request) run that tested that tree is green, and trantor's `starpulse-bump`
-  workflow pins that commit. A push to `main` runs no test job: the queue already tested the commit `main` received.
-  The push run's `dispatch` job sends the same SHA again as a fallback, and trantor re-checks the queue run before
-  pinning it. Pull requests and merge-queue candidates send nothing. Each job mints the
-  workspace App token from the `WORKSPACE_APP_CLIENT_ID` and `WORKSPACE_APP_PRIVATE_KEY` secrets.
+- At merge, `dispatch-merged.yml` pins the merged commit on trantor, once the merge-queue (or pull-request) run that
+  tested that tree is green: its `Pin the starpulse SHA` step runs trantor's `bin/starpulse_ops/starpulse_pin.sh` on the
+  ai-vm-1 runner, and no `repository_dispatch` is sent. A push to `main` runs no test job: the queue already tested the
+  commit `main` received. The push run's `dispatch` job runs the same step as a fallback, and the script re-checks the
+  queue run before pinning and does nothing for a SHA already pinned. Pull requests and merge-queue candidates pin
+  nothing. The step reads the `WORKSPACE_APP_CLIENT_ID`, `WORKSPACE_APP_PRIVATE_KEY` and `TRANTOR_PIN_DEPLOY_KEY`
+  secrets.
 
 ## License
 
