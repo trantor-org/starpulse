@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -15,7 +16,7 @@ TESTS = "import time\n\ndef test_fast():\n    pass\n\n\ndef test_slow():\n    ti
 
 
 def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
-    """Run pytest in `tree` with the `slow_tests` plugin, a 0.3 s threshold and no GitHub Actions unless `env` sets it."""
+    """Run pytest in `tree` with the `slow_tests` plugin on, a 0.3 s threshold and no GitHub Actions unless `env` sets it."""
     return subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "slow_tests", "-p", "no:cacheprovider", *args],
         cwd=tree,
@@ -25,6 +26,8 @@ def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
             "SLOW_TEST_SECONDS": "0.3",
             "SLOW_TEST_CPU_SECONDS": "0.3",
             "GITHUB_ACTIONS": "",
+            "TEST_COST_REPORT": "1",
+            "TEST_COST_REPORT_PATH": str(tree / "test-cost.json"),
             **env,
         },
         capture_output=True,
@@ -105,3 +108,41 @@ def test_the_job_summary_row_carries_wall_cpu_and_peak_memory_for_a_costly_test(
     assert 0.5 <= cpu <= wall + 0.2 and peak >= 0
     assert "title=Costly test::test_x.py::test_busy took " in done.stdout
     assert "containers" in summary.read_text()
+
+
+@pytest.mark.parametrize("workers", [[], ["-n", "2"]], ids=["serial", "xdist"])
+def test_a_run_without_test_cost_report_prints_no_section_and_writes_no_report(tmp_path, workers):
+    (tmp_path / "test_x.py").write_text(TESTS + "\n\n" + BUSY.split("\n\n", 1)[1])
+    summary = tmp_path / "summary.md"
+
+    done = run(tmp_path, *workers, TEST_COST_REPORT="", GITHUB_ACTIONS="true", GITHUB_STEP_SUMMARY=str(summary))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "slow tests" not in done.stdout and "costly tests" not in done.stdout and "::warning" not in done.stdout
+    assert not (tmp_path / "test-cost.json").exists() and not summary.exists()
+
+
+@pytest.mark.parametrize("workers", [[], ["-n", "2"]], ids=["serial", "xdist"])
+def test_a_run_with_test_cost_report_writes_each_flagged_test_with_its_wall_cpu_and_peak_to_the_json_report(
+    tmp_path, workers
+):
+    (tmp_path / "test_x.py").write_text(TESTS + "\n\n" + BUSY.split("\n\n", 1)[1])
+
+    done = run(tmp_path, *workers)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    flagged = {row["nodeid"]: row for row in json.loads((tmp_path / "test-cost.json").read_text())["tests"]}
+    assert set(flagged) == {"test_x.py::test_slow", "test_x.py::test_busy"}
+    busy = flagged["test_x.py::test_busy"]
+    assert set(busy) == {"nodeid", "wall_s", "cpu_s", "peak_mb"}
+    assert 0.5 <= busy["cpu_s"] <= busy["wall_s"] + 0.2 and busy["peak_mb"] >= 0
+    assert flagged["test_x.py::test_slow"]["cpu_s"] < 0.3
+
+
+def test_a_run_with_test_cost_report_and_nothing_flagged_writes_an_empty_report(tmp_path):
+    (tmp_path / "test_x.py").write_text("def test_fast():\n    pass\n")
+
+    done = run(tmp_path)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert json.loads((tmp_path / "test-cost.json").read_text()) == {"tests": []}

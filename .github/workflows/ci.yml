@@ -34,6 +34,8 @@ jobs:
     env:
       SHARD_COUNT: 6
       SHARD_INDEX: ${{ matrix.shard }}
+      # The slow/costly-test screen (ci/slow_tests.py) runs only in the nightly suite and a manual dispatch.
+      TEST_COST_REPORT: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,6 +59,18 @@ jobs:
           status=0
           uv run pytest $PYTEST_TARGETS || status=$?
           [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
+      # The tests the screen flagged (test-cost.json) rerun alone under memray, even after a red suite; one that leaves no
+      # stats is named in the run (ci/memray_flagged.py).
+      - if: ${{ !cancelled() && env.TEST_COST_REPORT == '1' }}
+        run: uv run --no-sync python ci/memray_flagged.py test-cost.json memray
+      - if: ${{ !cancelled() && env.TEST_COST_REPORT == '1' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-cost-${{ matrix.shard }}
+          path: |
+            test-cost.json
+            memray/
+          if-no-files-found: error
 
   # The ruleset's required context is `python`: it passes when every shard did, and fails when any failed, was cancelled or
   # never ran. `always()` keeps it from being skipped behind a red shard, which the merge queue would read as missing.

@@ -18,6 +18,8 @@ CI splits the suite by test file across the `python-shard` matrix (`ci/shard.py`
 locally); the `python` job, the ruleset's required check, passes only when every shard does.
 A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
+The screen below runs only in the nightly full suite and a manual `workflow_dispatch`, where `ci.yml` sets `TEST_COST_REPORT=1`;
+a pull request, merge-queue, push or local run prints no section, annotation or summary row and writes no report.
 A test whose setup, call and teardown together pass 5 s (`SLOW_TEST_SECONDS` overrides it) is named at the end of the
 run, slowest first (`ci/slow_tests.py`); in CI each is also a warning annotation on its `def` line and a row in the job
 summary. A test that burns more than 5 CPU-s (`SLOW_TEST_CPU_SECONDS` overrides it; self plus waited-for children)
@@ -26,6 +28,10 @@ CPU s and Peak MB columns. Containers a test starts (Postgres, mock-oauth2) run 
 and memory are not counted. None of it fails the run: make the test faster, or keep it slow with a `# Stays slow:
 <reason>` comment directly above its `def`, naming what the test must pay for (a server process, a container, a cold
 import).
+With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB also go to `test-cost.json`
+(`TEST_COST_REPORT_PATH` moves it), and each shard reruns exactly those tests one by one under `pytest --memray`
+(`ci/memray_flagged.py`), then uploads the report and `memray/` (one allocation report per test plus `stats.json`) as the
+`test-cost-<shard>` artifact; a test whose rerun left no report is named in `stats.json` and a `::warning`.
 `starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`, and one
 background thread starts the session's Postgres and mock-issuer containers when collection finishes, so a test waits on
 a warm container instead of paying its start.
