@@ -38,6 +38,8 @@ def _until(check: Callable[[], object], proc: subprocess.Popen, what: str) -> ob
 
 
 @pytest.mark.usefixtures("build")
+# Stays slow: it starts a hub process, signs in through the issuer container and waits on the hub's migrations and
+# the event it reads back; the containers themselves start once per run.
 def test_a_hub_writes_a_machine_event_to_postgres_and_reads_it_back(
     pg_engine: Engine, issuer: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

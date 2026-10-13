@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,13 @@ import yaml
 from select_tests import FULL, Selection, select
 
 CI = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@cache
+def _every_test_the_package_reaches() -> int:
+    """How many test files a change to the package's own `__init__.py` selects, read once for the real repository."""
+    return len(select(ROOT, ["starpulse/__init__.py"]).tests)
 
 
 @pytest.fixture
@@ -62,7 +70,9 @@ def test_a_changed_test_helper_selects_the_tests_that_import_it(repo):
 
 
 def test_a_changed_test_file_selects_itself(repo):
-    assert select(repo, ["starpulse/tests/unit/feed/test_lone.py"]) == Selection(["starpulse/tests/unit/feed/test_lone.py"])
+    assert select(repo, ["starpulse/tests/unit/feed/test_lone.py"]) == Selection(
+        ["starpulse/tests/unit/feed/test_lone.py"]
+    )
 
 
 def test_a_ci_script_selects_the_ci_test_that_imports_it_by_its_bare_name(repo):
@@ -218,9 +228,10 @@ def test_a_module_conftest_code_uses_outside_a_fixture_selects_every_test_the_co
         ),
     ],
 )
+# Stays slow: the first case on each worker parses the import graph of every module in the repository, which is the
+# selection under test; later cases reuse the cached parse.
 def test_a_schema_selects_the_tests_of_its_readers_not_the_full_suite(schema, readers):
-    root = Path(__file__).resolve().parents[1]
-    selected = select(root, [schema]).tests
+    selected = select(ROOT, [schema]).tests
     assert selected
-    assert len(selected) < len(select(root, ["starpulse/__init__.py"]).tests)
-    assert select(root, readers).tests == selected
+    assert len(selected) < _every_test_the_package_reaches()
+    assert select(ROOT, readers).tests == selected
