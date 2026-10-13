@@ -8,20 +8,28 @@ line with its own flags, so `starpulse serve --help` lists the server's. Any oth
 running server as JSON (`starpulse._internal.cli.agent_cli`), and `starpulse help --agent` lists them.
 """
 
+import importlib
 import sys
 from collections.abc import Callable
 
-from starpulse._internal.runs import emit
-from starpulse._internal.hub import forward
-from starpulse._internal.server import history_import, server
-from starpulse._internal.cli import agent_cli, connect
+from starpulse._internal.cli import agent_cli
+
+
+def _lazy(module: str) -> Callable[[list[str]], int | None]:
+    """A subcommand's `main`, imported when it runs: an agent verb never pays for the server's or the event log's imports."""
+
+    def run(argv: list[str]) -> int | None:
+        return importlib.import_module(module).main(argv)
+
+    return run
+
 
 COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
-    "serve": server.main,
-    "emit": emit.main,
-    "forward": forward.main,
-    "connect": connect.main,
-    "import-history": history_import.main,
+    "serve": _lazy("starpulse._internal.server.server"),
+    "emit": _lazy("starpulse._internal.runs.emit"),
+    "forward": _lazy("starpulse._internal.hub.forward"),
+    "connect": _lazy("starpulse._internal.cli.connect"),
+    "import-history": _lazy("starpulse._internal.server.history_import"),
 }
 
 

@@ -103,8 +103,6 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from starpulse._internal.cli import demo, skill_install
-from starpulse._internal.machines import mermaid_import
-from starpulse._internal.machines.machine_definition import MachineDefinitionError, Registry, load_machine
 from starpulse._internal.cli import doctor
 from starpulse._internal.config.config import ConfigError, load
 from starpulse._internal.board.view import AGENT, board_columns, board_flow, task_view
@@ -234,9 +232,6 @@ class _AnyName(Mapping[str, Callable[..., Any]]):
 
     def __len__(self) -> int:
         return 0
-
-
-_ADAPTER_NAMES = Registry(guards=_AnyName(), actions=_AnyName())
 
 
 class CliError(Exception):
@@ -1081,8 +1076,10 @@ def _skills_install(args: argparse.Namespace, environ: Mapping[str, str]) -> dic
 
 def _checked(path: Path) -> dict[str, Any]:
     """One machine file's verdict: compiling it is what refuses a schema or a compile error."""
+    from starpulse._internal.machines.machine_definition import MachineDefinitionError, Registry, load_machine  # noqa: PLC0415 - import cost, paid on first use
+
     try:
-        load_machine(path, _ADAPTER_NAMES)
+        load_machine(path, Registry(guards=_AnyName(), actions=_AnyName()))
     except MachineDefinitionError as error:
         errors = [{"file": str(error.file or path), "line": error.line, "message": str(error)}]
     else:
@@ -1097,6 +1094,9 @@ def _validate(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 
 
 def _import_mermaid(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    from starpulse._internal.machines import mermaid_import  # noqa: PLC0415 - import cost, paid on first use
+    from starpulse._internal.machines.machine_definition import MachineDefinitionError  # noqa: PLC0415 - import cost, paid on first use
+
     if not args.source.is_file():
         raise CliError("not_found", f"{args.source} is not a file")
     try:

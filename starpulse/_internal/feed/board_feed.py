@@ -22,7 +22,7 @@ from starpulse._internal.machines.machine_ties import derive, entries
 from starpulse._internal.machines.machine_ties import page as machine_page
 from starpulse._internal.machines.snapshot import declared, qualifier
 from starpulse._internal.machines.stays import LaneRow
-from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_machine, lane_id
+from starpulse._internal.machines.transitions import DEFAULT_STATUSES, DONE, WAITING, board_machine, lane_id
 from starpulse._internal.feed import criteria
 from starpulse._internal.feed.ledger import (
     MERGE_EVENT,
@@ -58,8 +58,6 @@ ARCHIVED = "archived"
 COMPLETED = "completed"
 #: Seconds between passes that evaluate the Start Criteria of the Waiting tasks, as long as the evaluator caches a result.
 CRITERIA_INTERVAL = criteria.CACHE_SECONDS
-#: The lanes a task's workability reads: it can wait on Start Criteria in one, and a dependency is done in the other.
-WAITING, DONE = "waiting", "done"
 #: How far back a task's entry into a lane is an occurrence a run can pair with, in seconds: as far as a tied workflow's recent runs reach.
 LEDGER_WINDOW = 86400.0
 #: How many published changes the feed keeps for a page connecting on a snapshot older than the feed.
