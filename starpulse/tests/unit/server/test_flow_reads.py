@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import create_engine, event
 
 from starpulse._internal.server.server import health_response, level_response, trajectories_response
+from starpulse._internal.eventlog import history
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.integration.level.test_level_http import LEVEL
 from starpulse.tests.machines import MACHINES
@@ -192,3 +193,42 @@ def test_a_history_with_only_the_row_scan_still_answers_and_that_scan_reads_the_
 
     assert status == 200
     assert _raw(statements), "the control: the capture sees the whole-table read the summaries avoid"
+
+
+def test_a_level_window_read_in_one_task_chunks_groups_the_same_runs(store: HistoryStore, monkeypatch) -> None:
+    _add_long_history(store)
+    window = {"now": NOW, "window_s": 48 * H}
+    whole = store.level_window(LEVEL, **window)
+    monkeypatch.setattr(history, "_TASKS_PER_QUERY", 1)
+
+    chunked = store.level_window(LEVEL, **window)
+
+    assert len(whole.runs) > 1
+    assert sorted(chunked.runs, key=_run_key) == sorted(whole.runs, key=_run_key)
+
+
+def _run_key(run) -> tuple[str, str]:
+    return run.source, run.task
+
+
+def test_level_window_has_sql_order_the_task_index_by_entered_at_without_a_sort(store: HistoryStore) -> None:
+    executions: list[tuple[str, tuple]] = []
+
+    def capture(_conn, _cursor, statement, parameters, *_args) -> None:
+        if "FROM starpulse_lane_intervals" in statement and "IN (" in statement:
+            executions.append((statement, parameters))
+
+    event.listen(store.engine, "before_cursor_execute", capture)
+    try:
+        store.level_window(LEVEL, now=NOW, window_s=48 * H)
+    finally:
+        event.remove(store.engine, "before_cursor_execute", capture)
+
+    assert executions, "the read fetched the stays of the tasks it needs"
+    statement, parameters = executions[0]
+    with store.engine.connect() as db:
+        plan = " ".join(row[3] for row in db.exec_driver_sql(f"EXPLAIN QUERY PLAN {statement}", parameters))
+
+    assert "ORDER BY" in statement
+    assert "USING INDEX ix_starpulse_lane_intervals_task_entered" in plan
+    assert "TEMP B-TREE" not in plan

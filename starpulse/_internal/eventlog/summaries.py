@@ -94,7 +94,8 @@ lane_intervals = Table(
     Column("entered_at", Float, nullable=False),
     Column("left_at", Float),
     Column("event_id", String, nullable=False, unique=True),
-    Index("ix_starpulse_lane_intervals_task", "task", "left_at"),
+    # a task's stays in the order the level reads them (entered_at, then the row id every index ends in): no sort
+    Index("ix_starpulse_lane_intervals_task_entered", "task", "entered_at"),
     Index("ix_starpulse_lane_intervals_entered", "entered_at"),
     Index("ix_starpulse_lane_intervals_left", "left_at"),
     # each lane's stays by when they ended, with when they began: the health read seeks it lane by lane, never the table

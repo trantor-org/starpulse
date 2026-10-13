@@ -242,6 +242,20 @@ def test_opening_a_store_with_the_older_lane_index_puts_the_stay_index_in_its_pl
     assert "ix_starpulse_lane_intervals_lane" not in indexes
 
 
+def test_opening_a_store_with_the_older_task_index_puts_the_task_entered_index_in_its_place(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    first = HistoryStore(url, MACHINES)
+    with first.engine.begin() as db:  # a store opened before the level read a task's stays in entered_at order
+        db.execute(text("DROP INDEX ix_starpulse_lane_intervals_task_entered"))
+        db.execute(text("CREATE INDEX ix_starpulse_lane_intervals_task ON starpulse_lane_intervals (task, left_at)"))
+
+    reopened = HistoryStore(url, MACHINES)
+
+    indexes = {i["name"]: i["column_names"] for i in inspect(reopened.engine).get_indexes("starpulse_lane_intervals")}
+    assert indexes["ix_starpulse_lane_intervals_task_entered"] == ["task", "entered_at"]
+    assert "ix_starpulse_lane_intervals_task" not in indexes
+
+
 def test_the_start_up_pass_leaves_summaries_that_already_exist_alone(store: HistoryStore) -> None:
     _fill(store)
     with store.engine.begin() as db:
