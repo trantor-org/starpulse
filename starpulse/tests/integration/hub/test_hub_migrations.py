@@ -187,3 +187,25 @@ def test_the_task_entered_index_revision_replaces_the_task_left_index_and_a_down
         indexes = {i["name"]: i["column_names"] for i in inspect(db).get_indexes("starpulse_lane_intervals")}
         assert indexes["ix_starpulse_lane_intervals_task"] == ["task", "left_at"]
         assert "ix_starpulse_lane_intervals_task_entered" not in indexes
+
+
+def test_the_source_revision_fills_each_stays_source_and_a_downgrade_drops_the_column(empty_database: Engine) -> None:
+    config = Config()
+    config.set_main_option("script_location", str(Path(hub.__file__).parents[1] / "eventlog" / "migrations"))
+    with empty_database.begin() as db:
+        config.attributes["connection"] = db
+        command.upgrade(config, "0018")
+        db.execute(
+            text(
+                "INSERT INTO starpulse_lane_intervals (task, lane, entered_at, left_at, event_id) VALUES "
+                "('A', 'Ready', 1, 2, 'a/e1'), ('B', 'Done', 3, NULL, 'my_host/e3'), ('C', 'Ready', 4, NULL, 'e4')"
+            )
+        )
+        command.upgrade(config, "0019")
+        assert dict(db.execute(text("SELECT event_id, source FROM starpulse_lane_intervals")).all()) == {
+            "a/e1": "a",
+            "my_host/e3": "my_host",
+            "e4": "unattributed",
+        }
+        command.downgrade(config, "0018")
+        assert "source" not in {c["name"] for c in inspect(db).get_columns("starpulse_lane_intervals")}

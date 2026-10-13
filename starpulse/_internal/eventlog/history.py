@@ -35,6 +35,7 @@ from sqlalchemy import (
     delete,
     func,
     insert,
+    inspect,
     select,
     text,
     update,
@@ -58,6 +59,7 @@ from starpulse._internal.eventlog.summaries import (
     Summariser,
     cases,
     count_lanes,
+    fill_sources,
     lane_intervals,
     lanes,
     read_case,
@@ -263,6 +265,10 @@ class HistoryStore:
         create_tables(self.engine)  # a reader thread of the log may be creating its own at the same time
         for index in (*cases.indexes, *lane_intervals.indexes):  # create_all leaves a table that predates an index
             index.create(self.engine, checkfirst=True)
+        with self.engine.begin() as db:  # a store whose stays predate their source column gains and fills it
+            if "source" not in {column["name"] for column in inspect(db).get_columns(lane_intervals.name)}:
+                db.execute(text(f"ALTER TABLE {lane_intervals.name} ADD COLUMN source VARCHAR"))
+            fill_sources(db)
         with self.engine.begin() as db:  # the stay and task-by-entered indexes replace the lane and task-by-left ones
             db.execute(text("DROP INDEX IF EXISTS ix_starpulse_lane_intervals_lane"))
             db.execute(text("DROP INDEX IF EXISTS ix_starpulse_lane_intervals_task"))
@@ -632,7 +638,7 @@ class HistoryStore:
             ).scalars().all()
             tasks = sorted({*moved, *live})
             # by task, then time, then the order they were recorded in: the task index hands them over in that order
-            query = select(i.entered_at, i.event_id, i.task, i.lane).order_by(i.task, i.entered_at, i.id)
+            query = select(i.entered_at, i.source, i.task, i.lane).order_by(i.task, i.entered_at, i.id)
             rows = [
                 row
                 for start in range(0, len(tasks), _TASKS_PER_QUERY)
@@ -642,9 +648,9 @@ class HistoryStore:
                 select(n.source, func.min(n.first_at)).where(n.lane.in_(list(states))).group_by(n.source)
             ).all()
         steps: dict[tuple[str, str], list[tuple[float, str]]] = {}
-        for at, event_id, task, lane in rows:
+        for at, who, task, lane in rows:
             if (state := states.get(lane)) is not None:
-                key = (source(event_id), task)
+                key = (who, task)
                 if (path := steps.get(key)) is None:
                     path = steps[key] = []
                 path.append((at, state))

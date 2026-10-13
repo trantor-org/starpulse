@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 
 from starpulse._internal.server.server import health_response, level_response, trajectories_response
 from starpulse._internal.eventlog import history
@@ -218,6 +218,24 @@ def test_a_level_window_read_in_one_task_chunks_groups_the_same_runs(store: Hist
 
 def _run_key(run) -> tuple[str, str]:
     return run.source, run.task
+
+
+def test_level_window_groups_runs_by_the_stored_source_without_resolving_one_per_row(
+    store: HistoryStore, monkeypatch
+) -> None:
+    _add_long_history(store)
+    window = {"now": NOW, "window_s": 48 * H}
+    expected = sorted(store.level_window(LEVEL, **window).runs, key=_run_key)
+
+    def refuse(event_id: str) -> str:
+        raise AssertionError(f"resolved the source of {event_id} per row")
+
+    monkeypatch.setattr(history, "source", refuse)
+
+    assert sorted(store.level_window(LEVEL, **window).runs, key=_run_key) == expected
+    with store.engine.begin() as db:
+        db.execute(text("UPDATE starpulse_lane_intervals SET source = 'moved' WHERE event_id IN ('b/c1', 'b/c2')"))
+    assert {(run.source, run.task) for run in store.level_window(LEVEL, **window).runs} >= {("moved", "A")}
 
 
 def test_level_window_has_sql_order_the_task_index_by_entered_at_without_a_sort(store: HistoryStore) -> None:
