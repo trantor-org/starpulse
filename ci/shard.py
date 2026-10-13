@@ -13,9 +13,10 @@ from pathlib import Path
 
 #: Seconds of CPU a slow file takes in CI, summed over its setup, call and teardown (`pytest --durations=0`, 4 workers).
 #: A file absent here, new or fast, weighs `UNMEASURED` per test. Stale numbers only unbalance the shards; each file
-#: still runs once.
+#: still runs once. `test_agent_cli.py` is weighted above its 306 CPU seconds: the shard that held it ran 162-175 s while
+#: the rest ran 75-95 s, so it gets a shard to itself.
 SECONDS = {
-    "starpulse/tests/integration/cli/test_agent_cli.py": 306,
+    "starpulse/tests/integration/cli/test_agent_cli.py": 600,
     "starpulse/tests/unit/server/test_flow_reads.py": 191,
     "starpulse/tests/integration/level/test_level_http.py": 152,
     "starpulse/tests/integration/eventlog/test_history.py": 131,
