@@ -23,6 +23,7 @@ from starpulse.contracts.adapters import (
     TaskKeys,
 )
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse.contracts.api import REQUESTS
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.feed.test_machine_tasks import _agents, _entry
@@ -232,3 +233,12 @@ def test_a_board_task_from_an_adapter_that_predates_criteria_state_still_validat
 
     assert (old.acceptance_checked, old.pause_reason) == ((), "")
     assert {"acceptance_checked", "pause_reason"}.isdisjoint(contracts.SCHEMAS["board"]["required"])
+
+
+@pytest.mark.parametrize("route", ["/api/move", "/api/edit", "/api/archive", "/api/tasks"])
+def test_each_task_write_schema_names_its_actor_session_and_harness(route: str) -> None:
+    assert {"actor", "session", "harness"} <= set(REQUESTS[route].model_json_schema()["properties"])
+
+
+def test_a_lane_event_schema_names_the_session_and_harness_of_the_write_that_made_it() -> None:
+    assert {"session", "harness"} <= set(LaneEvent.model_json_schema()["properties"])

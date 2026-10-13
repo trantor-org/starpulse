@@ -1,5 +1,5 @@
 // Creating a task from the Kanban toolbar: the form's draft, the one request it sends, what the form holds after it, and its keys.
-import { apiFetch } from "../../api/apiFetch";
+import { apiFetch, PAGE_ACTOR } from "../../api/apiFetch";
 
 /** The New task form as typed: labels and dependencies stay comma-separated text until the create, so a comma can be typed. */
 export interface NewTaskDraft {
@@ -21,9 +21,9 @@ export type CreateResult = { ok: true; task: string } | { ok: false; reason: str
 
 const list = (text: string) => text.split(",").map((v) => v.trim()).filter(Boolean);
 
-/** `POST /api/tasks`'s body: the trimmed title and every other field the draft filled, lists split and blank criteria dropped. */
+/** `POST /api/tasks`'s body: the trimmed title, the page's actor and every other field the draft filled, lists split and blank criteria dropped. */
 export function createBody(draft: NewTaskDraft): Record<string, string | string[]> {
-  const body: Record<string, string | string[]> = { title: draft.title.trim() };
+  const body: Record<string, string | string[]> = { title: draft.title.trim(), actor: PAGE_ACTOR };
   for (const field of ["description", "priority", "milestone", "assignee"] as const) {
     if (draft[field].trim()) body[field] = draft[field].trim();
   }

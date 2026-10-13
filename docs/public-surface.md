@@ -118,11 +118,13 @@ the value under that key:
 | `checklist` | `{ sections = ["acceptance_criteria", "definition_of_done"], all_checked = true }` | every item of the named lists is checked; an empty or absent list holds |
 | `all_of`, `any_of`, `exactly_one`, `none_of` | a non-empty list of primitives | all, at least one, exactly one or none of them hold |
 
-A write names its actor, which `unless_actor` matches. `POST /api/move` takes `actor` (`operator` when absent, which is what
-the page sends; `starpulse task move` sends `agent`). `POST /api/edit`, `/api/archive`, `/api/tasks` and `/api/start`
-take an optional `actor` the same way: a board writer's `edit`, `archive`, `create` and `assign` receive it as the
-`actor` keyword only when the request named one, so a writer that predates actors keeps working, and a name that is
-not non-empty text is a 400.
+A write names its actor, which `unless_actor` matches. `POST /api/move`, `/api/edit`, `/api/archive` and `/api/tasks`
+take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). The page names
+`operator`; `starpulse` verbs name `agent`, their session and their harness. A write naming no actor is `agent` when it
+names a session and `anonymous` when it names none, never `operator`, so an unnamed write is not judged as the
+operator's. The write's `board:lanes` row carries all three, and a create stamps `created_by: <harness>:<session>` in
+the task (`anonymous` when it names no session). `POST /api/start` takes an optional `actor` and calls a board writer's
+`assign` with it only when named.
 
 ## Versioning
 

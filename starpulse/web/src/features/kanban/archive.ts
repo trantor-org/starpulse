@@ -1,5 +1,5 @@
 // Archiving a task from the task view: what the confirm warns about, the one request, and the cards an archive removes.
-import { apiFetch } from "../../api/apiFetch";
+import { apiFetch, PAGE_ACTOR } from "../../api/apiFetch";
 import type { KanbanTask } from "./kanban";
 import type { Pull } from "../../api";
 
@@ -20,7 +20,7 @@ export const archiveWarnings = (task: KanbanTask): ArchiveWarnings => ({
 export async function postArchive(task: string, reason: string, fetcher: typeof apiFetch = apiFetch): Promise<ArchiveResult> {
   let response: Response;
   try {
-    response = await fetcher("/api/archive", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ task, reason }) });
+    response = await fetcher("/api/archive", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ task, reason, actor: PAGE_ACTOR }) });
   } catch {
     return { ok: false, reason: "The task writer could not be reached; the task was not archived.", skill: "" };
   }

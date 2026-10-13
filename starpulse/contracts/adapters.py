@@ -388,8 +388,14 @@ class LaneEvent(_Contract):
     )
     actor: str = Field(
         default="",
-        description="Who made the move: `operator`, `agent` or `<instance>/<workflow>`; empty when no write of the "
-        "board's server made it.",
+        description="Who made the move: `operator`, `agent`, `anonymous` or `<instance>/<workflow>`; empty when no write "
+        "of the board's server made it.",
+    )
+    session: str = Field(
+        default="", description="The harness session that made the move, as its write named it; empty when it named none."
+    )
+    harness: str = Field(
+        default="", description="The harness (`claude`, `cursor`) of that session; empty when the write named none."
     )
 
 

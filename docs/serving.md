@@ -285,7 +285,7 @@ needed on the instance, and the workflow need not be in `run_safe`, because the 
 
 | Key | Meaning |
 |---|---|
-| `on` | The event: `lane` reads `board:lanes` (a task entered a lane; fields `task`, `lane`, `time`, `team`, and `milestone`, `labels`, `assignee` when the task has them, and `actor` (`operator`, `agent` or `<instance>/<workflow>`) when a write the server judged made the move), `machine` reads `machine:events` (fields `machine`, `event`, `task` or `run`, `actor`, `time`). Required. |
+| `on` | The event: `lane` reads `board:lanes` (a task entered a lane; fields `task`, `lane`, `time`, `team`, and `milestone`, `labels`, `assignee` when the task has them, and `actor` (`operator`, `agent`, `anonymous` or `<instance>/<workflow>`), `session` and `harness` when a write the server judged made the move), `machine` reads `machine:events` (fields `machine`, `event`, `task` or `run`, `actor`, `time`). Required. |
 | `start` | `<instance>/<workflow>`: a `[[runs]]` instance with a `type`, and a workflow of it. Required. |
 | `when` | Optional filter, the machine guard's field match: a table of field name to exactly one of `equals` (a string, number or boolean), `in` (a non-empty list of those) or `exists` (a boolean). Every listed field must match; a field the entry lacks matches only `exists = false`. No `when` matches every entry of the event. |
 

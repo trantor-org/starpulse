@@ -8,15 +8,15 @@ const FULL: NewTaskDraft = {
 };
 
 describe("the body of a create", () => {
-  it("carries every filled field, trimmed, with labels and dependencies split on commas and blank criteria dropped", () => {
+  it("names the operator and carries every filled field, trimmed, with labels and dependencies split on commas and blank criteria dropped", () => {
     expect(createBody(FULL)).toEqual({
       title: "Write the quickstart", description: "Explain the lanes.", priority: "High", labels: ["docs", "ui"], milestone: "m-1",
-      assignee: "@agent-fast-low", dependencies: ["task-1"], acceptanceCriteria: ["Names every lane", "Creates a task"],
+      assignee: "@agent-fast-low", dependencies: ["task-1"], acceptanceCriteria: ["Names every lane", "Creates a task"], actor: "operator",
     });
   });
 
   it("is the title alone when nothing else was filled", () => {
-    expect(createBody({ ...EMPTY_DRAFT, title: "Write the docs" })).toEqual({ title: "Write the docs" });
+    expect(createBody({ ...EMPTY_DRAFT, title: "Write the docs" })).toEqual({ title: "Write the docs", actor: "operator" });
   });
 });
 

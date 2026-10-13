@@ -1529,13 +1529,20 @@ class RetiredTasks(_Api):
 # --- writes -----------------------------------------------------------------------------------------------------
 
 
-class MoveRequest(_Api):
+class _Writer(_Api):
+    """The writer a board write names: `actor` is `operator` from the page and `agent` from a session; a write naming
+    neither is `anonymous`. The `session` and `harness` it names land on the change's `board:lanes` row."""
+
+    actor: str | None = None
+    session: str | None = None
+    harness: str | None = None
+
+
+class MoveRequest(_Writer):
     """`POST /api/move`: move `task` to the column `to`."""
 
     task: str
     to: str
-    actor: str | None = None
-    session: str | None = None
 
 
 class StartRequest(_Api):
@@ -1547,7 +1554,7 @@ class StartRequest(_Api):
     mode: str | None = None
 
 
-class EditRequest(_Api):
+class EditRequest(_Writer):
     """`POST /api/edit`: change fields of `task`; `base` holds the value each changed field had when the page read it."""
 
     task: str
@@ -1556,7 +1563,7 @@ class EditRequest(_Api):
     comment: str | None = None
 
 
-class ArchiveRequest(_Api):
+class ArchiveRequest(_Writer):
     """`POST /api/archive`: archive `task`, recording `reason` when it is not blank."""
 
     task: str
@@ -1588,8 +1595,8 @@ class CompleteRequest(_Api):
     task: str
 
 
-class CreateRequest(_Api):
-    """`POST /api/tasks`: create a task in the board's starting lane."""
+class CreateRequest(_Writer):
+    """`POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`."""
 
     title: str
     description: str | None = None

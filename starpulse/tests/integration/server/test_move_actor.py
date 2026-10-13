@@ -38,10 +38,10 @@ def _served(tmp_path: Path) -> Iterator[tuple[str, BoardFeed, EventLog]]:
 
 
 def _page_move(server: str, key: str) -> None:
-    """The page's move of `key` to Done: it names no actor, so the board writes it as the operator."""
+    """The page's move of `key` to Done, which names the operator."""
     post = urllib.request.Request(
         f"{server}/api/move",
-        data=json.dumps({"task": key, "to": "done"}).encode(),
+        data=json.dumps({"task": key, "to": "done", "actor": "operator"}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )

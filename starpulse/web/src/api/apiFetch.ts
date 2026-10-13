@@ -8,5 +8,8 @@ const asJson = (init?: RequestInit): RequestInit | undefined => {
   return { ...init, headers };
 };
 
+/** Who the page's writes name as their actor: a write that names none is recorded as anonymous, never as the operator. */
+export const PAGE_ACTOR = "operator";
+
 /** `fetch` for the page's /api requests: answered by the demo server on a demo page, by starpulse._internal.server.server otherwise. */
 export const apiFetch = (url: string, init?: RequestInit): Promise<Response> => demoServer()?.fetch(url, init) ?? fetch(url, asJson(init));

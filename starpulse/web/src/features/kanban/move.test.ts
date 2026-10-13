@@ -167,7 +167,7 @@ describe("posting a move", () => {
     const fetcher = reply(200, { task: "PROJ-1", to: "review" });
 
     expect(await postMove("PROJ-1", "review", fetcher)).toEqual({ ok: true });
-    expect(fetcher).toHaveBeenCalledWith("/api/move", { method: "POST", body: JSON.stringify({ task: "PROJ-1", to: "review" }) });
+    expect(fetcher).toHaveBeenCalledWith("/api/move", { method: "POST", body: JSON.stringify({ task: "PROJ-1", to: "review", actor: "operator" }) });
   });
 
   it("carries the writer's refusal and the skill it names", async () => {

@@ -735,7 +735,16 @@ def _next_id(root: Path, prefix: str, retired: _Retired) -> str:
 
 
 #: The details `_new_task` writes itself; any other detail is set as `edit` sets that field.
-_NEW_TASK_DETAILS = {"assignee", "labels", "milestone", "dependencies", "priority", "description", "acceptanceCriteria"}
+_NEW_TASK_DETAILS = {
+    "assignee",
+    "labels",
+    "milestone",
+    "dependencies",
+    "priority",
+    "description",
+    "acceptanceCriteria",
+    "created_by",
+}
 
 
 def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) -> str:
@@ -743,7 +752,8 @@ def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) ->
     frontmatter: dict[str, Any] = {"id": task, "title": title, "status": status}
     if "assignee" in details:
         frontmatter["assignee"] = [details["assignee"]]
-    frontmatter |= {key: details[key] for key in ("labels", "milestone", "dependencies", "priority") if key in details}
+    keys = ("labels", "milestone", "dependencies", "priority", "created_by")
+    frontmatter |= {key: details[key] for key in keys if key in details}
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---\n"
     if description := details.get("description"):
         text += (

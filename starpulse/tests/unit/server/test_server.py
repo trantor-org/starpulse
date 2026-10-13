@@ -263,7 +263,8 @@ def test_a_body_that_does_not_name_a_task_and_a_column_is_a_bad_request(raw: byt
 
     assert (status, writer.sent) == (400, [])
     assert body == {
-        "error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor" and a "session" (strings)'
+        "error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor", a "session" and a '
+        '"harness" (non-empty strings)'
     }
 
 
@@ -299,11 +300,26 @@ def test_a_move_the_writer_refuses_answers_409_with_its_reason_and_the_skill_tha
     assert writer.sent == [("PROJ-5", "Review")]  # the writer decides; the snapshot's verdict only forecasts it
 
 
-def test_a_move_with_no_actor_reaches_the_writer_as_the_operator() -> None:
+def test_a_move_naming_no_actor_reaches_the_writer_as_anonymous_never_the_operator() -> None:
     writer = _Writer()
 
     assert _move({"task": "PROJ-3", "to": "in_progress"}, writer)[0] == 200
-    assert writer.actors == ["operator"]
+    assert writer.actors == ["anonymous"]
+
+
+def test_a_move_naming_a_session_and_no_actor_reaches_the_writer_as_an_agent() -> None:
+    writer = _Writer()
+
+    assert _move({"task": "PROJ-3", "to": "in_progress", "session": "0d617371"}, writer)[0] == 200
+    assert writer.actors == ["agent"]
+
+
+def test_a_move_naming_no_actor_is_refused_what_only_the_operator_may_do() -> None:
+    writer = _Writer()
+
+    status, _ = _move({"task": "PROJ-6", "to": "ready"}, writer, feed=_operator_only_feed())
+
+    assert (status, writer.sent) == (409, [])
 
 
 def _operator_only_feed() -> BoardFeed:
@@ -322,11 +338,10 @@ def test_an_actor_outside_the_events_writers_is_refused_before_the_writer_is_ask
     assert body == {"error": "only the operator sends a task back", "skill": "operating"}
 
 
-@pytest.mark.parametrize("request_actor", [{"actor": "operator"}, {}])
-def test_the_operator_a_writer_names_moves_the_task_with_or_without_naming_itself(request_actor: dict) -> None:
+def test_the_operator_moves_the_task_when_it_names_itself() -> None:
     writer = _Writer()
 
-    status, _ = _move({"task": "PROJ-6", "to": "ready", **request_actor}, writer, feed=_operator_only_feed())
+    status, _ = _move({"task": "PROJ-6", "to": "ready", "actor": "operator"}, writer, feed=_operator_only_feed())
 
     assert (status, writer.sent, writer.actors) == (200, [("PROJ-6", "Ready")], ["operator"])
 
@@ -347,7 +362,7 @@ def test_a_move_naming_no_session_calls_a_writer_that_takes_three_arguments() ->
         return Written(True, "Updated")
 
     assert _move({"task": "PROJ-3", "to": "in_progress"}, three_argument_writer)[0] == 200
-    assert sent == [("PROJ-3", "In Progress", "operator")]
+    assert sent == [("PROJ-3", "In Progress", "anonymous")]
 
 
 def test_a_move_naming_a_non_text_session_is_a_bad_request() -> None:

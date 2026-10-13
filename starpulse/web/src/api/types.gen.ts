@@ -1434,6 +1434,7 @@ export interface PullThread {
  */
 export interface MoveRequest {
   actor?: string | null;
+  harness?: string | null;
   session?: string | null;
   task: string;
   to: string;
@@ -1451,6 +1452,7 @@ export interface StartRequest {
  * `POST /api/edit`: change fields of `task`; `base` holds the value each changed field had when the page read it.
  */
 export interface EditRequest {
+  actor?: string | null;
   base: {
     [k: string]: unknown;
   };
@@ -1458,13 +1460,18 @@ export interface EditRequest {
     [k: string]: unknown;
   };
   comment?: string | null;
+  harness?: string | null;
+  session?: string | null;
   task: string;
 }
 /**
  * `POST /api/archive`: archive `task`, recording `reason` when it is not blank.
  */
 export interface ArchiveRequest {
+  actor?: string | null;
+  harness?: string | null;
   reason?: string | null;
+  session?: string | null;
   task: string;
 }
 /**
@@ -1493,16 +1500,19 @@ export interface CompleteRequest {
   task: string;
 }
 /**
- * `POST /api/tasks`: create a task in the board's starting lane.
+ * `POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`.
  */
 export interface CreateRequest {
   acceptanceCriteria?: string[] | null;
+  actor?: string | null;
   assignee?: string | null;
   dependencies?: string[] | null;
   description?: string | null;
+  harness?: string | null;
   labels?: string[] | null;
   milestone?: string | null;
   priority?: string | null;
+  session?: string | null;
   title: string;
 }
 /**

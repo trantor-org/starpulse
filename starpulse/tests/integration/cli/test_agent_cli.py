@@ -722,7 +722,7 @@ def test_task_move_of_an_in_progress_task_to_ready_is_refused_to_the_agent_but_t
     assert writer.sent == []  # refused before the board was asked
     post = urllib.request.Request(
         f"{movable}/api/move",
-        data=json.dumps({"task": "PROJ-6", "to": "ready"}).encode(),
+        data=json.dumps({"task": "PROJ-6", "to": "ready", "actor": "operator"}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )

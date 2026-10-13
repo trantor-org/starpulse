@@ -46,8 +46,10 @@
     starpulse help --agent
 
 Every verb writes one JSON document to stdout, an error as `{"error": "...", "code": "..."}`, and nothing to stderr.
-`task move` always moves as the actor `agent`, naming its session when `--session` or `STARPULSE_SESSION` gives one: a claim
-(a move to `in_progress`) records that session as the task's holder, and the board writer may answer with `advice`. A move the board machine declares for the operator alone, or that the
+Every task write (`move`, `create`, `edit`, `assign`, `archive`, `checkpoint-ac`) is made as the actor `agent`, naming its
+session and harness when `--session` and `--harness`, or `STARPULSE_SESSION` and `STARPULSE_HARNESS`, give them: the change's
+lane entry records both, a create stamps `created_by: <harness>:<session>`, a claim (a move to `in_progress`) records the
+session as the task's holder, and the board writer may answer with `advice`. A move the board machine declares for the operator alone, or that the
 board's guard refuses, is `{"ok": false, "reason": "...", "skill": "..."}`, the verdict, and exit 1.
 The exit code is 0 for success (for `doctor`, every check passing), 1 for a refused or invalid request, a refused
 move or a failed `doctor` check, 2 for a usage error, 3 when the server (or what the
@@ -355,11 +357,32 @@ def _moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, An
     return {"task": shown["id"], "lane": shown["lane"], "moves": shown["moves"]}
 
 
+def _writer_flags(sub: argparse.ArgumentParser) -> None:
+    """Add the flags that name the session and harness a task write is made from."""
+    sub.add_argument(
+        "--session",
+        default="",
+        help="the session writing, recorded as the holder of a claimed task and on the change (else `STARPULSE_SESSION`)",
+    )
+    sub.add_argument(
+        "--harness", default="", help="the harness of that session (`claude`, `cursor`), else `STARPULSE_HARNESS`"
+    )
+
+
+def _writer(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, str]:
+    """Who a task write names as its writer: the agent, with the session and harness `--session` and `--harness` give,
+    else `STARPULSE_SESSION` and `STARPULSE_HARNESS`; one neither gives is left out, and the server records it anonymous."""
+    named = {
+        "session": args.session or environ.get("STARPULSE_SESSION", ""),
+        "harness": args.harness or environ.get("STARPULSE_HARNESS", ""),
+    }
+    return {"actor": AGENT, **{key: value for key, value in named.items() if value}}
+
+
 def _move(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Move the task as the agent: the server's verdict, or an error when no board writer can answer."""
     base = server_url(args.server, environ)
-    session = args.session or environ.get("STARPULSE_SESSION", "")
-    body = {"task": args.task, "to": args.to, "actor": AGENT, **({"session": session} if session else {})}
+    body = {"task": args.task, "to": args.to, **_writer(args, environ)}
     status, reply = _post(base, "/api/move", body)
     message = reply.get("error") or f"{base} answered {status} for /api/move"
     if status == 200:
@@ -481,7 +504,8 @@ def _task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
         "documentation": args.documentation,
         "definitionOfDone": args.dod,
     }
-    status, reply = _post(base, path, {"title": args.title, **{k: v for k, v in given.items() if v is not None}})
+    body = {"title": args.title, **{k: v for k, v in given.items() if v is not None}, **_writer(args, environ)}
+    status, reply = _post(base, path, body)
     return {"task": _record_call(base, path, status, reply, ok=(201,))["task"]}
 
 
@@ -501,7 +525,7 @@ def _task_edit_call(
     if base_record is None:
         current = _read_record(args, environ)
         base_record = {field: current.get(field) for field in changes}
-    body = {"task": args.task, "base": base_record, "changes": changes, "comment": comment}
+    body = {"task": args.task, "base": base_record, "changes": changes, "comment": comment, **_writer(args, environ)}
     status, reply = _post(base, "/api/edit", body)
     return _record_call(base, "/api/edit", status, reply, missing=_TASK_MISSING)["changed"]
 
@@ -590,7 +614,7 @@ def _task_assign(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
 
 def _task_archive(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base, path = server_url(args.server, environ), "/api/archive"
-    status, reply = _post(base, path, {"task": args.task, "reason": args.reason})
+    status, reply = _post(base, path, {"task": args.task, "reason": args.reason, **_writer(args, environ)})
     return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 
@@ -1243,11 +1267,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     move.add_argument("task", help="the task's key (`PROJ-45`)")
     move.add_argument("to", help="the column's state id (`review`), as `task moves` lists")
-    move.add_argument(
-        "--session",
-        default="",
-        help="the session making the move, recorded as the holder of a claimed task (else `STARPULSE_SESSION`)",
-    )
+    _writer_flags(move)
     trace = leaf(
         task_verbs,
         "trace",
@@ -1266,6 +1286,7 @@ def _parser() -> argparse.ArgumentParser:
         ("task",),
         (0, 1, 2, 3),
     )
+    _writer_flags(create)
     create.add_argument("title", help="the task's title")
     create.add_argument("--description", help="the task's Description section")
     create.add_argument("--priority", help="`high`, `medium` or `low`")
@@ -1287,6 +1308,7 @@ def _parser() -> argparse.ArgumentParser:
         ("task", "changed"),
         (0, 1, 2, 3, 4),
     )
+    _writer_flags(edit)
     edit.add_argument("task", help="the task's key (`PROJ-45`)")
     edit.add_argument("--title", help="the new title; blank is refused")
     edit.add_argument("--type", help="the task's type; blank removes it")
@@ -1341,6 +1363,7 @@ def _parser() -> argparse.ArgumentParser:
         ("task", "assignee", "changed"),
         (0, 1, 2, 3, 4),
     )
+    _writer_flags(assign)
     assign.add_argument("task", help="the task's key (`PROJ-45`)")
     assign.add_argument("assignee", help="who or which agent profile holds it (`@agent-standard-high`); blank clears")
     archive = leaf(
@@ -1351,6 +1374,7 @@ def _parser() -> argparse.ArgumentParser:
         ("task",),
         (0, 1, 2, 3, 4),
     )
+    _writer_flags(archive)
     archive.add_argument("task", help="the task's key (`PROJ-45`)")
     archive.add_argument("--reason", default="", help="why it is archived, recorded as a comment on the task")
     restore = leaf(
@@ -1406,6 +1430,7 @@ def _parser() -> argparse.ArgumentParser:
         ("task", "criterion", "changed"),
         (0, 1, 2, 3, 4),
     )
+    _writer_flags(checkpoint)
     checkpoint.add_argument("task", help="the task's key (`PROJ-45`)")
     checkpoint.add_argument("criterion", type=int, help="the criterion's number (`2` for `#2`)")
     checkpoint.add_argument("evidence", help="what shows it holds, recorded as `Verified AC #N: <evidence>`")

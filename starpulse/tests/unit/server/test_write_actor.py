@@ -61,7 +61,7 @@ ROUTES = {
         ("PROJ-3", {"title": "New"}, ""),
     ),
     "archive": (_archive, {"task": "PROJ-3", "reason": "obsolete"}, ("PROJ-3", "obsolete")),
-    "create": (_create, {"title": "New task"}, ("New task", {})),
+    "create": (_create, {"title": "New task"}, ("New task", {"created_by": "anonymous"})),
     "start": (
         _start,
         {"task": "PROJ-3", "assignee": "@agent-deep-high", "harness": "claude"},
@@ -82,14 +82,14 @@ def test_a_write_naming_an_actor_hands_it_to_the_writer(route: str) -> None:
 
 
 @pytest.mark.parametrize("route", ROUTES)
-def test_a_write_naming_no_actor_calls_a_writer_that_predates_actors(route: str) -> None:
+def test_a_write_naming_no_actor_is_handed_to_the_writer_as_anonymous(route: str) -> None:
     handler, body, args = ROUTES[route]
     writer = _Writer()
 
     status, _ = _post(handler, body, writer)
 
     assert status in (200, 201)
-    assert writer.calls == [(args, {})]
+    assert writer.calls == [(args, {} if route == "start" else {"actor": "anonymous"})]  # a start names its own actor
 
 
 @pytest.mark.parametrize("route", ROUTES)
