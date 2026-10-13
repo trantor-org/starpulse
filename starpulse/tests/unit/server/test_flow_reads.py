@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy import event
+from sqlalchemy import create_engine, event
 
 from starpulse._internal.server.server import health_response, level_response, trajectories_response
 from starpulse._internal.eventlog.history import HistoryStore
@@ -20,7 +20,11 @@ RAW = ("starpulse_machine_events", "starpulse_lane_changes")
 
 @pytest.fixture
 def store(tmp_path: Path) -> HistoryStore:
-    store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
+    engine = create_engine(url)
+    # No sync per commit: a test store need not survive a crash, and seeding 1000 stays takes seconds, not minutes.
+    event.listen(engine, "connect", lambda connection, _record: connection.execute("PRAGMA synchronous=OFF"))
+    store = HistoryStore(url, MACHINES, engine)
     for i, (task, at, _old, new) in enumerate(ROWS):
         store.record_lane(f"{'a' if task in 'AB' else 'b'}/{i}", task, new, at)
     return store
@@ -94,8 +98,6 @@ def _health_rows(store: HistoryStore) -> int:
     return fetched[0]
 
 
-# 1000 recorded lane stays take about two minutes to seed, past the suite's per-test limit.
-@pytest.mark.timeout(300)
 def test_flow_health_fetches_no_more_rows_as_the_week_holds_more_lane_intervals(store: HistoryStore) -> None:
     few = _health_rows(store)
     _churn(store, 200)
