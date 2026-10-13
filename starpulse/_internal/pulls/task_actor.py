@@ -7,6 +7,11 @@ re-derives that task's waits and writes the first that holds through the board's
 The board's rules and the machine's guards judge the write like any other. A write the board refuses is logged and
 counted, and not tried again until the task's facts change. A start re-derives every open task once, which is the
 recovery for a change that happened while the server was down.
+
+A task whose lane waits on its Start Criteria is evaluated on a thread of its own when it has no result or its result is
+older than `fresh_s`, and re-derived when the result changes; a criterion that cannot be evaluated is exported, not
+retried before then. The board adapter may hold a task's `deps_done` with reasons, written once as a comment; a task
+created re-derives every held task.
 """
 
 from __future__ import annotations
@@ -37,6 +42,9 @@ ACTOR = "starpulse/task-actor"
 #: The pull request states that end a pull request.
 _TERMINAL = ("MERGED", "CLOSED")
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
+CRITERIA_ERRORS_METRIC = "starpulse_task_actor_criteria_errors"
+#: The facts read from a task's evaluated Start Criteria.
+_CRITERIA_FACTS = ("criteria_met", "criteria_unmet")
 LATENCY_METRIC = "starpulse_task_actor_latency_seconds"
 #: The upper bounds of the latency histogram's buckets, in seconds; the count past the last is the `+Inf` bucket's.
 BUCKETS_S = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
@@ -55,6 +63,8 @@ class TaskActor:
     `waits` is `{lane: {fact kind: event}}` (`Compiled.waits`) and `moves` is `{(lane, event): target lane}`, from the
     Board machine's transitions. `edit` is the board's task editor. `repos`, `settle` and `pins` are the `[release]`
     settle rule (`release.Settlement`): a dependency in a pinned repository settles on the parent's pin bump.
+    `evaluate` is the board's Start Criteria evaluator (`Board.evaluate`; None: no criteria fact ever holds) and `holds`
+    the reasons the board adapter withholds a task's `deps_done` (`Board.holds`; None: it holds none).
     """
 
     def __init__(
@@ -68,6 +78,9 @@ class TaskActor:
         settle: str | None = None,
         pins: Pins | None = None,
         clock: Callable[[], float] = time.monotonic,
+        evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None,
+        holds: Callable[[str], Sequence[str]] | None = None,
+        fresh_s: float = criteria.CACHE_SECONDS,
     ) -> None:
         self._feed = feed
         self._store = store
@@ -75,6 +88,15 @@ class TaskActor:
         self._waits = waits
         self._moves = moves
         self._clock = clock
+        self._evaluate = evaluate
+        self._holds = holds
+        self._fresh_s = fresh_s
+        #: The lanes that wait on a task's Start Criteria.
+        self._gated_lanes = {lane for lane, facts in waits.items() if facts.keys() & set(_CRITERIA_FACTS)}
+        #: When each gated task's criteria were last evaluated, and each criterion's `(id, status)` then.
+        self._results: dict[str, tuple[float, tuple[tuple[str, str], ...]]] = {}
+        #: Tasks whose `deps_done` the board adapter holds; a task created re-derives them.
+        self._held: set[str] = set()
         self._settlement = Settlement(feed, store, repos, settle, pins)
         self._lock = threading.RLock()
         #: Each open task's lane, dependencies and pull requests as the actor last saw them.
@@ -101,8 +123,13 @@ class TaskActor:
         """Prometheus text of the writes the board refused and of how long a fact took to become a landed write."""
         with self._metrics:
             counts, total, refusals = list(self._buckets), self._sum, self._refusals
+        with self._lock:
+            errors = {
+                name: sum(status == "error" for _, status in statuses) for name, (_, statuses) in self._results.items()
+            }
         samples = [
-            f'{LATENCY_METRIC}_bucket{{le="{bound:g}"}} {count}' for bound, count in zip(BUCKETS_S, counts, strict=False)
+            f'{LATENCY_METRIC}_bucket{{le="{bound:g}"}} {count}'
+            for bound, count in zip(BUCKETS_S, counts, strict=False)
         ]
         return "\n".join(
             [
@@ -115,6 +142,13 @@ class TaskActor:
                 f'{LATENCY_METRIC}_bucket{{le="+Inf"}} {counts[-1]}',
                 f"{LATENCY_METRIC}_sum {total:g}",
                 f"{LATENCY_METRIC}_count {counts[-1]}",
+                f"# HELP {CRITERIA_ERRORS_METRIC} Start Criteria the evaluator could not evaluate, per gated task; such a gate never passes.",
+                f"# TYPE {CRITERIA_ERRORS_METRIC} gauge",
+                *(
+                    f'{CRITERIA_ERRORS_METRIC}{{task="{name}"}} {count}'
+                    for name, count in sorted(errors.items())
+                    if count
+                ),
                 "",
             ]
         )
@@ -123,7 +157,48 @@ class TaskActor:
         """Follow the feed on a daemon thread until `stop` is set."""
         thread = threading.Thread(target=self._run, args=(stop,), name="task-actor", daemon=True)
         thread.start()
+        if self._evaluate is not None and self._gated_lanes:
+            threading.Thread(target=self._keep_criteria, args=(stop,), name="task-actor-criteria", daemon=True).start()
         return thread
+
+    def _keep_criteria(self, stop: threading.Event) -> None:
+        """Evaluate each gated task whose result is missing or stale, and re-derive it when the result changed."""
+        self.ready.wait()
+        while not stop.is_set():
+            try:
+                self._evaluate_due()
+            except Exception:  # one pass must not end the thread
+                logger.exception("task actor: cannot evaluate Start Criteria")
+            stop.wait(min(self._fresh_s / 2, _POLL_S))
+
+    def _evaluate_due(self) -> None:
+        gated = {
+            agent["id"]: agent["description"]
+            for agent in self._feed.open_tasks()
+            if agent["state"] in self._gated_lanes and criteria.authored(agent["description"])
+        }
+        with self._lock:
+            for name in self._results.keys() - gated.keys():  # no longer gated: its result and its errors go
+                del self._results[name]
+            now = self._clock()
+            due = [
+                name
+                for name in sorted(gated)
+                if name not in self._results or now - self._results[name][0] >= self._fresh_s
+            ]
+        for name in due:
+            try:
+                evaluated = self._evaluate(name, gated[name])
+            except Exception as error:  # an evaluator returns errors as results; this one raised
+                logger.warning("task actor: cannot evaluate the Start Criteria of %s: %s", name, error)
+                evaluated = [{"id": each["id"], "status": "error"} for each in criteria.authored(gated[name])]
+            statuses = tuple((str(each["id"]), str(each["status"])) for each in evaluated)
+            observed = self._clock()
+            with self._lock:
+                before = self._results.get(name)
+                self._results[name] = (observed, statuses)
+                if before is None or before[1] != statuses:
+                    self._derive(name, observed)
 
     def _run(self, stop: threading.Event) -> None:
         self._feed.wait_replayed()
@@ -171,6 +246,8 @@ class TaskActor:
                 return
             self._index(agent)
             touched = {name}
+            if before is None:  # a task created: a hold may have waited on it
+                touched |= self._held
             if before is None or before[0] != now[0]:
                 self._tried.pop(name, None)
                 touched |= self._dependents(name)
@@ -276,12 +353,67 @@ class TaskActor:
         """The dependencies when the task has some, every one is done and settled, and no Start Criteria gate it."""
         dependencies = tuple(agent["dependencies"])
         self._pin_held.discard(agent["id"])
-        if not dependencies or not all(map(self._feed.is_done, dependencies)) or criteria.authored(agent["description"]):
+        self._held.discard(agent["id"])
+        if (
+            not dependencies
+            or not all(map(self._feed.is_done, dependencies))
+            or criteria.authored(agent["description"])
+        ):
             return None
         if self._settlement.unapplied(agent):
             self._pin_held.add(agent["id"])
             return None
+        if reasons := self._held_by(agent["id"]):
+            self._held.add(agent["id"])
+            self._note_hold(agent, reasons)
+            return None
         return dependencies, "Every dependency has settled."
+
+    def _held_by(self, name: str) -> tuple[str, ...]:
+        """Why the board adapter withholds the task's `deps_done`; a hold that raises holds it with that error."""
+        if self._holds is None:
+            return ()
+        try:
+            return tuple(self._holds(name))
+        except Exception as error:
+            logger.warning("task actor: cannot read the holds of %s: %s", name, error)
+            return (f"the board's holds cannot be read: {error}",)
+
+    def _note_hold(self, agent: dict[str, Any], reasons: tuple[str, ...]) -> None:
+        """Comment the hold's reasons on the task, once until they or its lane change."""
+        name, sent = agent["id"], (agent["state"], "hold", reasons)
+        if self._tried.get(name) == sent:
+            return
+        self._tried[name] = sent
+        logger.info("task actor: %s is held: %s", name, "; ".join(reasons))
+        try:
+            written = self._edit(name, {}, f"Held from Ready: {'; '.join(reasons)}.", actor=ACTOR)
+        except Exception as error:
+            written = Written(False, str(error))
+        if not written.ok:
+            logger.warning("task actor: the hold of %s was not written: %s", name, written.output)
+            with self._metrics:
+                self._refusals += 1
+
+    def _criteria(self, agent: dict[str, Any]) -> tuple[tuple[tuple[str, str], ...], list[str]] | None:
+        """The task's last evaluated `(id, status)` pairs and the ids not met, when its criteria have a result; a board
+        with no evaluator command leaves each `not evaluated`, which is no result."""
+        result = self._results.get(agent["id"])
+        if not criteria.authored(agent["description"]) or not result or not result[1]:
+            return None
+        if any(status == criteria.NOT_EVALUATED for _, status in result[1]):
+            return None
+        return result[1], [criterion for criterion, status in result[1] if status != "met"]
+
+    def _criteria_met(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
+        """The results when every Start Criterion was evaluated met."""
+        found = self._criteria(agent)
+        return (found[0], "Every Start Criterion passes.") if found and not found[1] else None
+
+    def _criteria_unmet(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
+        """The results when a Start Criterion was evaluated unmet or could not be evaluated."""
+        found = self._criteria(agent)
+        return (found[0], f"Start Criteria not met: {', '.join(found[1])}.") if found and found[1] else None
 
     def _deps_unresolved(self, agent: dict[str, Any]) -> tuple[Any, str] | None:
         """The dependencies that are not done, when there are any."""
@@ -292,4 +424,6 @@ class TaskActor:
         "pr_terminal": _pr_terminal,
         "deps_done": _deps_done,
         "deps_unresolved": _deps_unresolved,
+        "criteria_met": _criteria_met,
+        "criteria_unmet": _criteria_unmet,
     }

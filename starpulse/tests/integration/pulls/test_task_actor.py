@@ -15,6 +15,7 @@ from starpulse._internal.pulls.task_actor import ACTOR
 from starpulse.tests.task_actor_kit import (
     CHILD,
     CHILD_PR,
+    GATED,
     PARENT,
     PR_ONE,
     PR_TWO,
@@ -22,6 +23,7 @@ from starpulse.tests.task_actor_kit import (
     SHA,
     WITHIN_S,
     Board,
+    Criteria,
     Pins,
     pull,
     running,
@@ -63,7 +65,11 @@ def test_a_review_task_whose_only_pr_merged_moves_to_done_and_no_other_task_is_d
     name, changes, comment, actor_name = board.writes[0]
     assert (changes, actor_name) == ({"status": "done"}, ACTOR)
     assert f"acme/trantor#1 merged as {SHA}" in str(comment)
-    assert {name: count - derived[name] for name, count in actor.derivations.items()} == {"TASK-1": 1, "TASK-2": 0, "TASK-3": 0}
+    assert {name: count - derived[name] for name, count in actor.derivations.items()} == {
+        "TASK-1": 1,
+        "TASK-2": 0,
+        "TASK-3": 0,
+    }
 
 
 def test_a_waiting_task_moves_to_ready_when_its_last_dependency_enters_done(
@@ -125,3 +131,36 @@ def test_a_review_task_whose_pr_merged_while_the_server_was_down_moves_on_start(
 
     assert board.moved() == [("TASK-1", "done")]
     assert actor.derivations["TASK-2"] == 1  # every open task is derived once on start
+
+
+def test_criteria_move_a_gated_task_both_ways_each_time_the_evaluators_result_goes_stale(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Waiting", description=GATED), task("TASK-2", "Waiting"))
+    evaluate = Criteria("unmet")
+    running(board, store, stop, evaluate=evaluate, fresh_s=0.05)
+    assert board.moved() == []
+
+    evaluate.status = "met"
+
+    assert until(lambda: board.moved() == [("TASK-1", "ready")])
+    assert board.writes[0][3] == ACTOR
+    evaluate.status = "unmet"
+    assert until(lambda: board.moved() == [("TASK-1", "ready"), ("TASK-1", "waiting")])
+    assert "TASK-2" not in evaluate.asked  # a task with no Start Criteria is never evaluated
+
+
+def test_an_adapter_hold_withholds_deps_done_with_its_reason_until_a_task_is_created(
+    store: PullStore, stop: threading.Event
+) -> None:
+    held = {"TASK-2": ['"Slice three" has no task']}
+    board = Board(BoardFeed(), task("TASK-1", "Done"), task("TASK-2", "Waiting", dependencies=("TASK-1",)))
+    running(board, store, stop, holds=lambda name: held.get(name, []))
+    assert board.moved() == []
+    assert board.comments() == [("TASK-2", 'Held from Ready: "Slice three" has no task.')]
+
+    held.clear()
+    board.put(task("TASK-3", "Ready", title="Slice three"))
+
+    assert until(lambda: board.moved() == [("TASK-2", "ready")])
+    assert len(board.comments()) == 1  # the reason is written once, not on every derivation

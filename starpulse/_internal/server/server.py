@@ -1994,6 +1994,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
             config.repos,
             config.release.settle if config.release else None,
             pins,
+            evaluate=board.evaluate,
+            holds=board.holds,
         )
         actor.start(threading.Event())
     if config.pull_requests and shutil.which("gh"):

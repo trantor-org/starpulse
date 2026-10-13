@@ -312,6 +312,9 @@ class Board:
     evaluate: Callable[[str, str], list[dict[str, Any]]] | None = None
     """Evaluates a task's Start Criteria, given its id and description; None leaves each `not evaluated`, so a Waiting task
     that declares any is never workable."""
+    holds: Callable[[str], Sequence[str]] | None = None
+    """Why the board withholds a task's `deps_done` from the task actor, given its id; empty when nothing does, and an
+    exception holds the task. None holds no task."""
 
     def __post_init__(self) -> None:
         if self.edit is not None and self.read is None:

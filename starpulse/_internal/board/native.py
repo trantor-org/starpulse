@@ -9,9 +9,12 @@ edits the files with no `backlog` CLI, and creates the board, empty, when its di
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import re
+import shlex
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -70,7 +73,7 @@ DEFAULT_PATH = ".starpulse/board"
 #: `validate` the `module:function` that may refuse a task write before it lands, `rules` the record-level rules every
 #: task write must satisfy (`starpulse._internal.board.rules`), `task_file_name` the form of the name a created task's
 #: file is written under (`_FILE_NAMES`).
-_SETTINGS = {"type", "path", "interval", "machine", "criteria", "validate", "rules", "task_file_name"}
+_SETTINGS = {"type", "path", "interval", "machine", "criteria", "holds", "validate", "rules", "task_file_name"}
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
 _FILE_NAMES = ("title", "slug")
@@ -797,6 +800,28 @@ def _creator(
     return create
 
 
+def _holds(command: object, base: Path) -> Callable[[str], list[str]] | None:
+    """The `holds` command, run in `base` with `{id}` replaced by the task's id, as the board's holds: it prints a JSON
+    array of the reasons the task's `deps_done` is withheld. Output that is no such array raises, which holds the task."""
+    if not command:
+        return None
+    parts = shlex.split(str(command))
+
+    def holds(task: str) -> list[str]:
+        argv = [part.replace("{id}", task) for part in parts]
+        done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=criteria.TIMEOUT, check=False)
+        try:
+            printed = json.loads(done.stdout)
+        except ValueError:
+            printed = None
+        if not isinstance(printed, list) or not all(isinstance(reason, str) for reason in printed):
+            said = done.stderr.strip() or done.stdout.strip() or "printed nothing"
+            raise ValueError(f"{shlex.join(argv)}: exit {done.returncode}: {said}")
+        return printed
+
+    return holds
+
+
 def board(settings: Mapping[str, Any], base: Path) -> Board:
     """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, as the project named for `base`'s directory, polled every `interval` seconds.
 
@@ -831,6 +856,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "create": _creator(root, config, retired, guard, file_name),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
+            "holds": _holds(settings.get("holds"), base),
             "edit": _editor(root, config.statuses, guard),
             "archive": _archiver(root, guard),
             "restore": _restorer(root, retired),
