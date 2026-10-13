@@ -36,10 +36,9 @@ With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB 
 background thread starts the session's Postgres and mock-issuer containers when collection finishes, so a test waits on
 a warm container instead of paying its start.
 CI runs only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`); a push to main
-runs none, because the merge queue tested that very commit, and the full suite runs nightly and on a manual dispatch. CI's `ic` job imports every module an IC instance can load without the hub extras
-(`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so CI's `public-names` job
-(`ci/public_names.py`) fails when a tracked file other than a workflow, the runner-label list or a test names the
-operator's private hosts; docs, comments and fixtures use neutral names.
+runs none, because the merge queue tested that very commit, and the full suite runs nightly and on a manual dispatch. CI's `static-checks` job imports every module an IC instance can load without the hub extras
+(`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so its `ci/public_names.py` check fails
+when a tracked file other than a workflow, the runner-label list or a test names the operator's private hosts; docs, comments and fixtures use neutral names.
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import
 graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite, and so does every
 push to `main`.
@@ -54,7 +53,7 @@ to `api/`, `render/`, `shared/` and its own folder, so a feature never reaches i
 Every `/api` body is a pydantic model in `starpulse/contracts/api.py`, and the server builds each response through it.
 The page's types are generated from those models: after changing one, run `uv run python -m starpulse.contracts.api`
 (writes `starpulse/api.schema.json`) and `pnpm --dir starpulse/web run gen:types` (writes `starpulse/web/src/api/types.gen.ts`),
-and commit both. CI's `api-types` job regenerates them and fails on any difference.
+and commit both. CI's `static-checks` job regenerates them and fails on any difference.
 [`bench/`](../bench/README.md) holds the hub-ingest, instance event-log and flow-read benchmarks, the page-latency harness that times every
 request and page surface against the 50 ms budget, and a Locust load test that holds that budget under many viewers.
 

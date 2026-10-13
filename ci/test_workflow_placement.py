@@ -28,7 +28,6 @@ def job(workflow: str, name: str) -> dict:
         ("ci.yml", "python-shard"),
         ("ci.yml", "python"),
         ("ci.yml", "web"),
-        ("ci.yml", "api-types"),
         ("ci.yml", "static-checks"),
         ("ui-preview.yml", "render"),
         ("ui-preview.yml", "leak-scan"),
@@ -58,7 +57,6 @@ def test_publishing_job_runs_on_a_hosted_runner(name):
     ("workflow", "name"),
     [
         ("ci.yml", "web"),
-        ("ci.yml", "api-types"),
         ("ci.yml", "static-checks"),
         ("release.yml", "build"),
         ("release.yml", "soak"),
@@ -142,9 +140,8 @@ def test_every_workspace_root_checkout_selects_the_full_tree():
 
 def test_trantor_tier_policy_gates_every_merge():
     """A commit failing trantor's tier policy fails every bump that pins it, so it must not reach main."""
-    run = next(step["run"] for step in job("ci.yml", "tier-policy")["steps"] if "run" in step)
-    assert "ci/trantor_tier_policy.py" in run
-    assert ("ci.yml", "tier-policy") in REQUIRED_CHECKS
+    assert "ci/trantor_tier_policy.py" in STATIC_SCRIPT.read_text()
+    assert ("ci.yml", "static-checks") in REQUIRED_CHECKS
 
 
 def test_trantor_tests_of_this_package_gate_every_merge():
@@ -161,7 +158,7 @@ def test_trantor_tests_of_this_package_gate_every_merge():
 
 
 #: Every ci.yml job but `dispatch`: the jobs that test a tree.
-TEST_JOBS = ["python-shard", "python", "ic", "web", "api-types", "public-names", "tier-policy", "static-checks", "trantor-contract"]
+TEST_JOBS = ["python-shard", "python", "web", "static-checks", "trantor-contract"]
 
 
 @pytest.mark.parametrize("name", TEST_JOBS)
@@ -183,8 +180,10 @@ def test_the_push_dispatch_waits_on_no_test_job():
 STATIC_SCRIPT = WORKFLOWS.parents[1] / "ci/static_checks.sh"
 
 
-def test_static_checks_runs_every_check_the_four_short_jobs_ran():
+def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ran():
     """ic, public-names, api-types and tier-policy share one job so a merge-queue run starts four fewer validate jobs."""
+    jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
+    assert not {"ic", "public-names", "api-types", "tier-policy"} & jobs.keys()
     script = STATIC_SCRIPT.read_text()
     runs = "\n".join(step["run"] for step in job("ci.yml", "static-checks")["steps"] if "run" in step)
     assert "ci/static_checks.sh" in runs
@@ -378,8 +377,6 @@ def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_d
 REQUIRED_CHECKS = [
     ("ci.yml", "python"),
     ("ci.yml", "web"),
-    ("ci.yml", "api-types"),
-    ("ci.yml", "tier-policy"),
     ("ci.yml", "static-checks"),
     ("ci.yml", "trantor-contract"),
     ("release.yml", "build"),
