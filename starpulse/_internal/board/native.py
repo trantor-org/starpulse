@@ -240,12 +240,20 @@ def _split_record(text: str) -> tuple[dict, str]:
     return (frontmatter if isinstance(frontmatter, dict) else {}), body
 
 
+#: Returned by `_land` when the file no longer holds the text the write was made over.
+_STALE = Written(False, "the task file changed while it was being written")
+#: How many times `_update` redoes an edit on a file that changed under it before it gives up.
+_ATTEMPTS = 5
+
+
 def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: _Guard, actor: str) -> Written | None:
-    """Write the task file at `path` in one rename, unless `guard` refuses `actor`'s write: the refusal, or None once
-    it landed."""
+    """Write the task file at `path` in one rename, unless `guard` refuses `actor`'s write or the file no longer holds
+    `before`: the refusal (`_STALE` for a changed file), or None once it landed."""
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}"
     if refused := guard.refusal(path, before, frontmatter, body, text, actor):
         return refused
+    if before is not None and path.read_text() != before:
+        return _STALE
     # Unique per write, so concurrent writers never share a scratch file; not a `.md` file, so a scan never reads it half written.
     scratch = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     scratch.write_text(text)
@@ -257,18 +265,24 @@ def _update(
     root: Path, task: str, edit: Callable[[dict, str], str], guard: _Guard = _Guard(), actor: str = OPERATOR
 ) -> Written:
     """Rewrite the file of `task` with its front matter edited in place, its body as `edit` returns it and a new
-    `updated_date`, as `actor`."""
+    `updated_date`, as `actor`.
+
+    A file that changed between the read and the write is read and edited again, so another writer's change is kept;
+    after `_ATTEMPTS` such races the edit is refused."""
     if (path := _find(root, task)) is None:
         return Written(False, f"{task} has no task file in {root / 'tasks'}")
     try:
-        before = path.read_text()
-        frontmatter, body = _split(before)
-        body = edit(frontmatter, body)
-        if refused := _land(path, before, _stamped(frontmatter), body, guard, actor):
-            return refused
+        for _ in range(_ATTEMPTS):
+            before = path.read_text()
+            frontmatter, body = _split(before)
+            body = edit(frontmatter, body)
+            if (refused := _land(path, before, _stamped(frontmatter), body, guard, actor)) is None:
+                return Written(True, f"Updated task {task}")
+            if refused is not _STALE:
+                return refused
     except OSError as error:
         return Written(False, f"{path}: {error}")
-    return Written(True, f"Updated task {task}")
+    return _STALE
 
 
 def _section(pattern: re.Pattern[str], body: str) -> str:
