@@ -25,6 +25,7 @@ from starpulse._internal.kit.adapter_kit import serve as _real_serve
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.kit.adapter_kit import url as _url
 from starpulse._internal.server.server import _no_writer
+from starpulse._internal.board.view import task_view
 from starpulse._internal.cli import agent_cli as cli
 from starpulse._internal.cli import skill_install
 from starpulse.contracts.adapters import Move
@@ -640,7 +641,7 @@ def test_waiting_on_drops_a_dependency_in_the_done_lane_and_keeps_one_in_progres
     board = [agent("PROJ-1", "waiting", ["PROJ-2", "PROJ-3"]), agent("PROJ-2", "done", []), agent("PROJ-3", "in_progress", [])]
     snapshot = {"pulls": {}, "settled": {}, "flows": [{"name": "board", "agents": board}]}
 
-    assert cli._task(board[0], snapshot)["waiting_on"] == ["PROJ-3"]
+    assert task_view(board[0], snapshot)["waiting_on"] == ["PROJ-3"]
 
 
 def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys: pytest.CaptureFixture[str]) -> None:

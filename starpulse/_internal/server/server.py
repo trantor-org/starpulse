@@ -236,6 +236,7 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.board.seam import load as load_board
+from starpulse._internal.board.view import board_columns
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs import run_events
@@ -341,6 +342,8 @@ _STATIC = _HERE / "static"
 _PAGES = {"/", "/board", "/runs"}
 #: Seconds an idle event stream waits before a keep-alive comment, which is how a closed page is noticed.
 _PING_S = 15.0
+#: Seconds a held-task stream lets a burst of changes settle before it rereads the holder's tasks.
+_HELD_SETTLE_S = 0.5
 _RUN = "/api/run/"
 _RERUN = "/api/runs/"
 _RERUN_TAIL = "/rerun"
@@ -351,6 +354,7 @@ _FORWARDING = "/api/forwarding"
 _AUTOPILOT = "/api/autopilot"
 _TASK = "/api/task/"
 _SNAPSHOT_BODY = "/api/events/body/"
+_HELD = "/api/held"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
 _RESTORE = "/api/restore"
@@ -1341,6 +1345,8 @@ def request_handler(
             url = urlsplit(self.path)
             if url.path == "/api/events":
                 self._stream_events(parse_qs(url.query).get("snapshot") == ["ref"])
+            elif url.path == _HELD:
+                self._stream_held(parse_qs(url.query).get("holder", [""])[0])
             elif url.path.startswith(_SNAPSHOT_BODY):
                 self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
             elif url.path == "/api/snapshot":
@@ -1460,15 +1466,7 @@ def request_handler(
                 while (attached := feed.watch_from(served.sent)) is None:
                     served = snapshots.get()
                 missed, changes = attached
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")  # pragma: no mutate: names are case-insensitive
-                self.send_header("Cache-Control", "no-store")  # pragma: no mutate: names are case-insensitive
-                if accepts_gzip(self.headers.get("Accept-Encoding")):
-                    self.send_header("Content-Encoding", "gzip")  # pragma: no mutate: names are case-insensitive
-                    self._write = gzip_stream(self.wfile)
-                else:
-                    self._write = self._write_plain
-                self.end_headers()
+                self._open_stream()
                 self._frame("snapshot", f"ref {_SNAPSHOT_BODY}{served.key}" if by_ref else served.body.decode())
                 if (build := page_build(static)) is not None:
                     self._frame("build", _build_text(build))  # a page holding another build than this one is out of date
@@ -1488,6 +1486,52 @@ def request_handler(
                 pass
             except ValidationError:
                 logger.exception("StarPulse: /api/events sent a body its model refuses; the stream ends")
+            finally:
+                if changes is not None:
+                    feed.unsubscribe(changes)
+
+        def _open_stream(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")  # pragma: no mutate: names are case-insensitive
+            self.send_header("Cache-Control", "no-store")  # pragma: no mutate: names are case-insensitive
+            if accepts_gzip(self.headers.get("Accept-Encoding")):
+                self.send_header("Content-Encoding", "gzip")  # pragma: no mutate: names are case-insensitive
+                self._write = gzip_stream(self.wfile)
+            else:
+                self._write = self._write_plain
+            self.end_headers()
+
+        def _stream_held(self, holder: str) -> None:
+            """Hold the connection open: the tasks `holder` holds, then those tasks again each time they change, so a
+            session's band redraws on a change instead of asking. A burst of changes settles before one reread."""
+            if not holder:
+                return self._send(_error(f"name the session: {_HELD}?holder=<session>"), 400)
+            changes = None
+            try:
+                served = snapshots.get()
+                while (attached := feed.watch_from(served.sent)) is None:
+                    served = snapshots.get()
+                _, changes = attached
+                self._open_stream()
+                sent = None
+                while True:
+                    held = board_columns(served.snapshot, lambda agent: agent.get("holder", "") == holder)
+                    if held != sent:
+                        self._frame("held", json.dumps(held, ensure_ascii=False))
+                        sent = held
+                    try:
+                        changes.get(timeout=_PING_S)
+                    except queue.Empty:
+                        self._write(b": ping\n\n")  # a closed session fails this write, which ends the stream
+                        continue
+                    changes.task_done()  # `feed.announce` waits for the marks of what it queued
+                    time.sleep(_HELD_SETTLE_S)
+                    while not changes.empty():
+                        changes.get_nowait()
+                        changes.task_done()
+                    served = snapshots.get()
+            except OSError:
+                pass
             finally:
                 if changes is not None:
                     feed.unsubscribe(changes)

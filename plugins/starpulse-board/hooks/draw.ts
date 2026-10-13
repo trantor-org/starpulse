@@ -92,7 +92,7 @@ export const termBar = (k: number, n: number) => {
   return full + '░'.repeat(cells - [...full].length)
 }
 
-const xml = (t: string) => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
+const xml = (t = '') => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
 
 // The module has no canvas to measure with, so widths come from per-glyph advances in em, a little generous.
 const advance = (ch: string) => {
