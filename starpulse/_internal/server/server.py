@@ -63,7 +63,8 @@ GET /metrics       Prometheus text: `starpulse_pull_store_age_seconds{repo}`, th
                    each repository holding an open pull request was read; a stale one means the refresh stopped.
                    `starpulse_page_build_info{build}`, 1 for the page build id the `build` event names (none without a
                    build). Also this process's `process_resident_memory_bytes`, `process_threads`, `process_open_fds` and
-                   `process_start_time_seconds`, which moves on every restart
+                   `process_start_time_seconds`, which moves on every restart. With `[board.actor]`, also
+                   `starpulse_task_actor_refusals_total` and the `starpulse_task_actor_latency_seconds` histogram
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
@@ -241,6 +242,7 @@ from starpulse._internal.runs import run_events
 from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.release import READY, RELEASE_S, Releaser
+from starpulse._internal.pulls.task_actor import TaskActor, moves_of
 from starpulse._internal.config.pins import GitHub
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
@@ -1273,6 +1275,7 @@ def request_handler(
     analytics: Analytics | None = None,
     pull_refresh: PullRefresh | None = None,
     slow_read_s: float = SLOW_READ_S,
+    actor_metrics: Callable[[], str] | None = None,
 ) -> type[SimpleHTTPRequestHandler]:
     configured = harnesses or Harnesses((), {})
     harnesses_body = encode("harnesses", configured.as_json())
@@ -1340,7 +1343,12 @@ def request_handler(
                 self._send(*search_response(search, parse_qs(url.query)))
             elif url.path == "/metrics":
                 self._send(
-                    ((pulls.age_gauge(clock()) if pulls else "") + build_gauge(static) + process_gauges()).encode(),
+                    (
+                        (pulls.age_gauge(clock()) if pulls else "")
+                        + (actor_metrics() if actor_metrics else "")
+                        + build_gauge(static)
+                        + process_gauges()
+                    ).encode(),
                     content_type="text/plain; version=0.0.4; charset=utf-8",
                 )
             elif url.path == "/api/analytics/health":
@@ -1821,6 +1829,16 @@ def keep_event_log(
     return thread
 
 
+def _then(first: Callable[[], None], second: Callable[[], None]) -> Callable[[], None]:
+    """One callback that runs `first` and then `second`."""
+
+    def both() -> None:
+        first()
+        second()
+
+    return both
+
+
 def _keep_released(releaser: Releaser, feed: BoardFeed, interval_s: float = RELEASE_S) -> None:  # pragma: no mutate block
     """Once the Board replay is done, release the Waiting tasks whose dependencies settled every `interval_s` seconds;
     a failed pass is logged and never ends the loop."""
@@ -1941,19 +1959,38 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     pull_refresh = None
     pins = GitHub()  # one memo of the pointer reads for the pull request projection and the release of dependents
     # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
+    actor = None
+    if config.task_actor:
+        if board.edit is None:
+            parser.exit(1, "[board.actor] needs a board that edits tasks\n")
+        actor = TaskActor(
+            feed,
+            pulls,
+            board.edit,
+            board.waits,
+            moves_of(feed.machines["board"]),
+            config.repos,
+            config.release.settle if config.release else None,
+            pins,
+        )
+        actor.start(threading.Event())
     if config.pull_requests and shutil.which("gh"):
         pull_requests = PullRequests(
             feed, pulls, repos=config.repos, pins=pins, trail=CiTrail(log) if config.ci else None
         )
-        sync = PullSync(pulls, feed, config.repos, project=pull_requests.refresh)
+        project = pull_requests.refresh
+        if actor:  # the actor derives from the projection, so it follows each one
+            project = _then(pull_requests.refresh, actor.pulls_changed)
+        sync = PullSync(pulls, feed, config.repos, project=project)
         threading.Thread(target=sync.run_forever, name="pull-store", daemon=True).start()
         pull_refresh = PullRefresh(refresh_token, sync.request) if refresh_token else None
     if config.release is not None:
         lanes = {state["id"] for state in feed.machines["board"]["states"]}
         if board.edit is None or not {WAITING, READY} <= lanes:
             parser.exit(1, "[release] needs a board that edits tasks and draws waiting and ready lanes\n")
-        releaser = Releaser(feed, pulls, board.edit, config.repos, config.release.settle, pins)
-        threading.Thread(target=_keep_released, args=(releaser, feed), name="board-release", daemon=True).start()
+        if actor is None:  # the actor settles and releases on the facts, so the polling pass would only repeat it
+            releaser = Releaser(feed, pulls, board.edit, config.repos, config.release.settle, pins)
+            threading.Thread(target=_keep_released, args=(releaser, feed), name="board-release", daemon=True).start()
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)
     threading.Thread(
@@ -2024,6 +2061,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),
         milestones=board,
         pulls=pulls,
+        actor_metrics=actor.exposition if actor else None,
         telemetry=TelemetryLog(log),
         autopilot=autopilot_runtime,
         search=search,

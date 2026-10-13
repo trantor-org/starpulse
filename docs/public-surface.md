@@ -61,7 +61,10 @@ internal and can change in any release.
   `criteria_met` or `criteria_unmet`) to the event that leaves the state when that fact holds. The loader refuses an
   unknown fact kind and an event that is not a transition out of the declaring state, naming the state and event, and
   exposes the declared map as `Compiled.waits` (`{state id: {fact kind: event}}`; a child flow's states carry their
-  `<state>_<child state>` id). Declaring `waits` fires nothing.
+  `<state>_<child state>` id). Declaring `waits` fires nothing by itself: a board adapter hands the Board machine's map
+to the server as `Board.waits`, and the task actor (`[board.actor]`, [Task actor](serving.md#task-actor)) fires the event
+when the fact holds. The actor's series on `GET /metrics` are `starpulse_task_actor_refusals_total` and
+`starpulse_task_actor_latency_seconds`.
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
 

@@ -134,6 +134,10 @@ type = "native"
 # skill = "completing-tasks"
 # unless_actor = ["dagu/reconciler"]
 
+# Optional: move a task on the facts its lane waits on (see Task actor). The table takes no keys; its presence turns the
+# actor on, and the board must edit tasks, else `serve` refuses to start. With it, the [release] polling pass does not run.
+# [board.actor]
+
 # To draw a Backlog.md project instead:
 # [board]
 # type = "upstream_backlog"
@@ -448,6 +452,33 @@ one never reaches the pin and is ignored. The bump is looked for among the store
 cites still settles the dependency, while one older than the store's records is not found and holds it. The pointer and
 containment reads are the memoized `gh` calls the pull request projection makes; a path a merge does not pin (GitHub's
 404) is a remembered answer too, so only a read `gh` could not make is asked again.
+
+## Task actor
+
+With a `[board.actor]` table, `serve` runs the task actor: an in-process worker that moves a task out of a lane when a
+fact that lane's machine state waits on (`waits`, [Public surface](public-surface.md)) holds, through the board's task
+editor as actor `starpulse/task-actor`. The board must edit tasks, else `serve` refuses to start. The table takes no keys.
+
+The actor reads the `waits` of the Board machine and the transition each wait's event draws, so it moves only along a
+move the machine declares. For a task in a state with `waits`, the first fact that holds fires its event:
+
+- `pr_terminal`: every pull request the task cites is merged or closed in the PR store. A merged one is written with its
+  merge commit as the proof in the edit's comment.
+- `deps_done`: the task has dependencies, every one is Done, its description declares no Start Criteria, and, under
+  `[release] settle = "pin-bump"`, every dependency's pin bump has merged (the rule in Release).
+- `deps_unresolved`: a dependency is not Done.
+
+It keeps a `pull request -> tasks` and a `task -> dependents` index, built at start and kept current from lane writes. A
+change to a pull request in the store, a lane write or a merged pin bump re-derives only the tasks it reaches. At start
+it re-derives every open task once, so a pull request that merged while the server was down still moves its task. With
+the actor on, the 30-second pass of Release does not start; the actor settles and releases on the same rules, so
+`[release]` still names the settle rule.
+
+A write the board refuses is logged and counted, and is not retried until the task's facts change. `GET /metrics` carries:
+
+- `starpulse_task_actor_refusals_total`: refused writes.
+- `starpulse_task_actor_latency_seconds`: a histogram of the seconds from the fact being observed to the write landing.
+
 
 ## Event log archive
 

@@ -466,6 +466,8 @@ class Config:
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
     release: Release | None = None
     """The `[release]` table: None releases no task, so a config without it leaves release to whoever does it today."""
+    task_actor: bool = False
+    """The `[board.actor]` table is present: `serve` runs the task actor, which moves a task on the facts its lane waits on and replaces the release pass."""
     search: Search = field(default_factory=Search)
     """The optional embeddings service that ranks search by meaning (`[search]`); no table: search is lexical only."""
 
@@ -615,6 +617,13 @@ def load(path: Path | None) -> Config:
     board = raw.get("board", {})
     if not isinstance(board, dict):
         raise ConfigError("board must be a [board] table")
+    actor = board.get("actor")
+    if "actor" in board:
+        if not isinstance(actor, dict):
+            raise ConfigError("board.actor must be a [board.actor] table")
+        if actor:
+            raise ConfigError("board.actor: the [board.actor] table takes no keys")
+        board = {key: value for key, value in board.items() if key != "actor"}
     kind = board.get("type", DEFAULT_TYPE)
     if not isinstance(kind, str) or not all(part.isidentifier() for part in kind.split(".")):
         raise ConfigError(f"board type {kind!r} is not a module name")
@@ -652,6 +661,7 @@ def load(path: Path | None) -> Config:
         triggers=_triggers(raw.get("triggers"), runs),
         analytics=_analytics(raw.get("analytics")),
         release=_release(raw, repos),
+        task_actor=actor is not None,
         search=_search(raw.get("search")),
         refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
         pull_requests=_flag(raw, "pull_requests", True),
