@@ -230,6 +230,19 @@ def test_the_event_log_keeps_one_saved_board_per_stream_and_the_oldest_row_it_ho
     assert log.load_board_state(STREAM) == ("2-0", {"open": {"TASK-1": {"id": "TASK-1"}}})
 
 
+def test_saving_a_board_under_a_new_projection_hash_removes_the_row_under_the_old_one(tmp_path: Path) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    log.save_board_state("native:/a@hash1", "1-0", {"open": {}})
+    log.save_board_state("native:/a@hash2", "2-0", {"open": {}})
+    log.save_board_state("native:/ab@hash1", "3-0", {})
+    log.save_board_state("board:tasks", "4-0", {})
+
+    assert log.load_board_state("native:/a@hash1") is None
+    assert log.load_board_state("native:/a@hash2") == ("2-0", {"open": {}})
+    assert log.load_board_state("native:/ab@hash1") == ("3-0", {})
+    assert log.load_board_state("board:tasks") == ("4-0", {})
+
+
 class _Server:
     """A server that runs until a signal ends it."""
 

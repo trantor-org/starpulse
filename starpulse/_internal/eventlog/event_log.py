@@ -248,8 +248,14 @@ class EventLog:
             return db.execute(select(func.min(events.c.id))).scalar()
 
     def save_board_state(self, stream: str, cursor: str, state: dict) -> None:
-        """Keep `state`, the Board a reader built from `stream` up to the entry `cursor`, in place of the last one."""
+        """Keep `state`, the Board a reader built from `stream` up to the entry `cursor`, in place of the last one.
+
+        A key ending `@<hash>` also removes the Boards saved under the same base with another hash: a projection
+        change saved under a new key, and the old row would otherwise stay forever.
+        """
         engine = self.engine
+        base, at, _ = stream.rpartition("@")
+        superseded = board_state.c.stream.startswith(base + at, autoescape=True) & (board_state.c.stream != stream)
         insert = (
             _dialect(engine)
             .insert(board_state)
@@ -266,6 +272,8 @@ class EventLog:
                     },
                 )
             )
+            if at:
+                db.execute(delete(board_state).where(superseded))
 
     def load_board_state(self, stream: str) -> tuple[str, dict] | None:
         """The cursor and state last saved for `stream`, or None when none was; raises when the database does."""
