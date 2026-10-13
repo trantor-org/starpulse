@@ -121,6 +121,18 @@ def test_a_configured_endpoint_re_ranks_the_lexical_hits_by_its_vectors(engine, 
     assert endpoint.requests[-1]["input"] == ["tuning"]  # the query is embedded once per search
 
 
+def test_a_task_near_the_query_in_meaning_is_found_without_sharing_a_word(engine, endpoint: _Endpoint) -> None:
+    index = _open(engine, Search(endpoint.url, "m"))
+    index.index(_task("PROJ-1", title="Eviction policy", description="when the cache drops entries"))
+    index.index(_task("PROJ-2", title="Backlog", description="queue depth"))
+    index.embed_pending()
+
+    hits = index.search("tuning knobs")  # no task holds both words, so the lexical match is empty
+
+    assert [hit["task"] for hit in hits] == ["PROJ-1"]  # PROJ-2's vector is orthogonal to the query's
+    assert hits[0]["snippet"].startswith("when the cache drops entries")
+
+
 def test_a_task_is_embedded_once_until_its_text_changes(engine, endpoint: _Endpoint) -> None:
     index = _open(engine, Search(endpoint.url, "m"))
     index.index(_task("PROJ-1", title="Tuning"))
