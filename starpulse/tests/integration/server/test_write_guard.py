@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.board.seam import Written
+from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.server import server as server_module
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
@@ -30,6 +30,8 @@ _WRITES = [
     ("POST", "/api/edit", {"task": "PROJ-3", "base": {}, "changes": {"title": "x"}}),
     ("POST", "/api/archive", {"task": "PROJ-3", "reason": "obsolete"}),
     ("POST", "/api/restore", {"task": "PROJ-3"}),
+    ("POST", "/api/retire", {"task": "PROJ-3"}),
+    ("POST", "/api/retired/import", {"name": "PROJ-3.md", "text": "---\nid: PROJ-3\n---\n"}),
     ("POST", "/api/complete", {"task": "PROJ-3"}),
     ("POST", "/api/tasks", {"title": "from a stranger"}),
     ("PUT", "/api/history-window", {"hours": 24}),
@@ -82,6 +84,12 @@ def _recording(tmp_path: Path) -> Iterator[tuple[ThreadingHTTPServer, list[str],
         restore=noting("restore", Written(True, "ok")),
         complete=noting("complete", Written(True, "ok")),
         create=noting("create", Written(True, "ok")),
+        milestones=Board(
+            machines=lambda qualify, workflows: {},
+            start=lambda *_: None,
+            retire=noting("retire", Written(True, "ok")),
+            import_retired=noting("import_retired", Written(True, "PROJ-3")),
+        ),
     ) as server:
         yield server, calls, window
 

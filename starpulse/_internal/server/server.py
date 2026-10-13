@@ -266,6 +266,7 @@ from starpulse._internal.server.writes import (
     create_milestone,
     create_task,
     doc_record,
+    import_retired,
     docs_list,
     edit_doc,
     edit_milestone,
@@ -279,6 +280,8 @@ from starpulse._internal.server.writes import (
     rerun_dag,
     restore_doc,
     restore_task,
+    retire_task,
+    retired_list,
     run_dag,
     start_task,
     task_record,
@@ -350,6 +353,9 @@ _SNAPSHOT_BODY = "/api/events/body/"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
 _RESTORE = "/api/restore"
+_RETIRE = "/api/retire"
+_RETIRED = "/api/retired"
+_RETIRED_IMPORT = "/api/retired/import"
 _COMPLETE = "/api/complete"
 _TASKS = "/api/tasks"
 _MILESTONES = "/api/milestones"
@@ -367,6 +373,12 @@ _PULL_REFRESH = "/api/pulls/refresh"
 _MILESTONE_WRITES = frozenset({_MILESTONES, _MILESTONE_EDIT, _MILESTONE_ARCHIVE})
 #: The write routes of doc records; `/api/docs/<id>` reads one, so a GET of these answers 405.
 _DOC_WRITES = frozenset({_DOCS, _DOC_EDIT, _DOC_ARCHIVE, _DOC_RESTORE})
+#: The write routes of retired tasks; `/api/retired` reads them.
+_RETIRED_WRITES = frozenset({_RETIRE, _RETIRED_IMPORT})
+#: The write routes whose JSON body a handler in `writes` reads whole.
+_TASK_WRITES = frozenset(
+    {_MOVE, _START, _EDIT, _ARCHIVE, _RESTORE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES, *_RETIRED_WRITES}
+)
 #: The body each write route answers, by `contracts.api.BODIES`; a run and a rerun answer `run`.
 _WRITES = {
     _MOVE: "move",
@@ -374,6 +386,8 @@ _WRITES = {
     _EDIT: "edit",
     _ARCHIVE: "archive",
     _RESTORE: "restore",
+    _RETIRE: "retire",
+    _RETIRED_IMPORT: "retired_import",
     _COMPLETE: "complete",
     _TASKS: "create",
     _MILESTONES: "milestone_create",
@@ -1066,6 +1080,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 _PULL_REFRESH,
                 *_MILESTONE_WRITES,
                 *_DOC_WRITES,
+                *_RETIRED_WRITES,
             }
         ):
             self.send_response(405)
@@ -1085,13 +1100,13 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
         if (
-            path in {_MOVE, _START, _EDIT, _ARCHIVE, _RESTORE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}
+            path in _TASK_WRITES
             or path.startswith(_RUN)
             or _is_rerun(path)
         ) and self._refused_write():
             return
         kind = _WRITES.get(path, "run")
-        if path in {_MOVE, _START, _EDIT, _ARCHIVE, _RESTORE, _COMPLETE, _TASKS, *_MILESTONE_WRITES, *_DOC_WRITES}:
+        if path in _TASK_WRITES:
             declared = self.headers.get("Content-Length")  # pragma: no mutate: header names are case-insensitive
             raw = self.rfile.read(int(declared or 0))
             if path == _MOVE:
@@ -1102,6 +1117,10 @@ class _ApiHandler(SimpleHTTPRequestHandler):
                 status, body = archive_task(self.client_address[0], raw, self.feed, self.archive)
             elif path == _RESTORE:
                 status, body = restore_task(self.client_address[0], raw, self.restore)
+            elif path == _RETIRE:
+                status, body = retire_task(self.client_address[0], raw, self.milestones)
+            elif path == _RETIRED_IMPORT:
+                status, body = import_retired(self.client_address[0], raw, self.milestones)
             elif path == _COMPLETE:
                 status, body = complete_task(self.client_address[0], raw, self.feed, self.complete)
             elif path == _TASKS:
@@ -1402,6 +1421,9 @@ def request_handler(
             elif url.path.startswith(f"{_DOCS}/") and url.path not in _DOC_WRITES:
                 status, body = doc_record(self.milestones, unquote(url.path.removeprefix(f"{_DOCS}/")))
                 self._send(encode("doc", body), status)
+            elif url.path == _RETIRED:
+                status, body = retired_list(self.milestones, parse_qs(url.query).get("task", [""])[0])
+                self._send(encode("retired", body), status)
             elif url.path == "/api/harnesses":
                 self._send(harnesses_body)
             elif url.path == _WINDOW:

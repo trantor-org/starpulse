@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.board.seam import Written
+from starpulse._internal.board.seam import Board, Written
 from starpulse._internal.server import server as server_module
 from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
@@ -455,6 +455,48 @@ def test_an_archived_task_is_restored_through_the_server_and_a_refusal_carries_i
     assert malformed[0] == 400
     assert restored == ["PROJ-3", "PROJ-4"]
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def test_a_task_is_retired_read_back_and_imported_through_the_server(tmp_path: Path) -> None:
+    kept = {"PROJ-1": {"task": "PROJ-1", "name": "PROJ-1.md", "text": "---\nid: PROJ-1\n---\n"}}
+
+    def retire(task: str) -> Written:
+        return Written(task == "PROJ-3", "ok" if task == "PROJ-3" else f"{task} is not finished", skill="retiring")
+
+    def import_retired(name: str, text: str) -> Written:
+        return Written(True, name.removesuffix(".md"))
+
+    board = Board(
+        machines=lambda qualify, workflows: {},
+        start=lambda *_: None,
+        retire=retire,
+        retired=lambda task: [row for key, row in kept.items() if task in ("", key)],
+        import_retired=import_retired,
+    )
+    with _serve(tmp_path, BoardFeed(), milestones=board) as server:
+        retired = _post(server, "/api/retire", {"task": "PROJ-3"})
+        refused = _post(server, "/api/retire", {"task": "PROJ-4"})
+        imported = _post(server, "/api/retired/import", {"name": "PROJ-2.md", "text": "---\nid: PROJ-2\n---\n"})
+        with urllib.request.urlopen(_url(server, "/api/retired"), timeout=5) as resp:
+            every = json.load(resp)
+        with urllib.request.urlopen(_url(server, "/api/retired?task=PROJ-9"), timeout=5) as resp:
+            none = json.load(resp)
+        with pytest.raises(urllib.error.HTTPError) as got:
+            urllib.request.urlopen(_url(server, "/api/retire"), timeout=5)
+
+    assert retired == (200, {"task": "PROJ-3"})
+    assert refused == (409, {"error": "PROJ-4 is not finished", "skill": "retiring"})
+    assert imported == (200, {"task": "PROJ-2"})
+    assert every == {"tasks": [kept["PROJ-1"]]}
+    assert none == {"tasks": []}
+    assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
+
+
+def test_the_retired_tasks_of_a_board_that_keeps_none_are_404(tmp_path: Path) -> None:
+    with _serve(tmp_path, BoardFeed()) as server, pytest.raises(urllib.error.HTTPError) as got:
+        urllib.request.urlopen(_url(server, "/api/retired"), timeout=5)
+
+    assert got.value.code == 404
 
 
 def test_a_done_task_is_completed_through_the_server_and_a_refusal_carries_its_skill(tmp_path: Path) -> None:

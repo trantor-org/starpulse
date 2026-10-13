@@ -1508,6 +1508,20 @@ class DocShown(_Api):
     doc: DocRecord
 
 
+class RetiredTask(_Api):
+    """A retired task as the board's history store keeps it: its id, its file name and the file's text, byte-for-byte."""
+
+    task: str
+    name: str
+    text: str
+
+
+class RetiredTasks(_Api):
+    """`GET /api/retired[?task=<id>]`: every retired task, or the one `task` names, by id."""
+
+    tasks: list[RetiredTask]
+
+
 # --- writes -----------------------------------------------------------------------------------------------------
 
 
@@ -1549,6 +1563,19 @@ class RestoreRequest(_Api):
     """`POST /api/restore`: return the archived task `task` to the board's tasks, unchanged."""
 
     task: str
+
+
+class RetireRequest(_Api):
+    """`POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks."""
+
+    task: str
+
+
+class RetiredImportRequest(_Api):
+    """`POST /api/retired/import`: keep the retired task file `name`, holding `text`, in the history store."""
+
+    name: str
+    text: str
 
 
 class CompleteRequest(_Api):
@@ -1715,6 +1742,14 @@ class Restored(_Api):
     task: str
 
 
+class Retired(_Api):
+    task: str
+
+
+class RetiredImported(_Api):
+    task: str
+
+
 class Completed(_Api):
     task: str
 
@@ -1808,6 +1843,7 @@ RESPONSES: dict[str, Any] = {
     "/api/milestones/": MilestoneShown,
     "/api/docs": Docs,
     "/api/docs/": DocShown,
+    "/api/retired": RetiredTasks,
     "/api/history": LaneHistory | MachineHistory,
     "/api/pulls": Pulls,
     "/api/search": SearchResults,
@@ -1822,6 +1858,8 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/edit": EditRequest,
     "/api/archive": ArchiveRequest,
     "/api/restore": RestoreRequest,
+    "/api/retire": RetireRequest,
+    "/api/retired/import": RetiredImportRequest,
     "/api/complete": CompleteRequest,
     "/api/tasks": CreateRequest,
     "/api/milestones": MilestoneCreateRequest,
@@ -1872,6 +1910,9 @@ BODIES: dict[str, Any] = {
     "edit": Edited | StaleEdit | SkillRefusal | ApiError,
     "archive": Archived | SkillRefusal | ApiError,
     "restore": Restored | SkillRefusal | ApiError,
+    "retire": Retired | SkillRefusal | ApiError,
+    "retired": RetiredTasks | ApiError,
+    "retired_import": RetiredImported | SkillRefusal | ApiError,
     "complete": Completed | SkillRefusal | ApiError,
     "create": Created | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,
@@ -2004,12 +2045,15 @@ class ApiContract(_Api):
     milestoneShown: MilestoneShown
     docs: Docs
     docShown: DocShown
+    retiredTasks: RetiredTasks
     requests: list[
         MoveRequest
         | StartRequest
         | EditRequest
         | ArchiveRequest
         | RestoreRequest
+        | RetireRequest
+        | RetiredImportRequest
         | CompleteRequest
         | CreateRequest
         | MilestoneCreateRequest
@@ -2030,6 +2074,8 @@ class ApiContract(_Api):
         | Edited
         | Archived
         | Restored
+        | Retired
+        | RetiredImported
         | Completed
         | Created
         | MilestoneCreated

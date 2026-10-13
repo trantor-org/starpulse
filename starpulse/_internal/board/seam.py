@@ -41,12 +41,15 @@ __all__ = [
     "MilestoneReader",
     "MoveWriter",
     "OPERATOR",
+    "RetiredImporter",
+    "RetiredReader",
     "TaskArchiver",
     "TaskCompleter",
     "TaskCreator",
     "TaskEditor",
     "TaskReader",
     "TaskRestorer",
+    "TaskRetirer",
     "Written",
     "load",
     "module_name",
@@ -115,6 +118,33 @@ class TaskRestorer(Protocol):
     A task with no archived file, or whose number is already open or completed, is refused."""
 
     def __call__(self, task: str, /) -> Written: ...
+
+
+class TaskRetirer(Protocol):
+    """A board writer: take a finished task's file off the board into the board's retired tasks, kept whole, and say
+    what it did.
+
+    A Done task, or an archived one in any state, is retired; an open task, an unknown one, or one whose number is
+    already retired with other text is refused and keeps its file. `restore` returns a retired task."""
+
+    def __call__(self, task: str, /) -> Written: ...
+
+
+class RetiredReader(Protocol):
+    """A board reader: the retired task `task` as `[{task, name, text}]` (its id, file name and file text), empty when
+    it is not retired; a blank `task` reads every retired task, by id."""
+
+    def __call__(self, task: str, /) -> list[Mapping[str, str]]: ...
+
+
+class RetiredImporter(Protocol):
+    """A board writer: keep the file `name` with `text`, retired elsewhere, among the board's retired tasks, and say what
+    it did. A successful `Written.output` is the task's id.
+
+    Text that names no task id, a name that is no plain file name, a task on the board, or a task retired with other
+    text is refused; the same task with the same text is accepted again."""
+
+    def __call__(self, name: str, text: str, /) -> Written: ...
 
 
 class TaskCompleter(Protocol):
@@ -249,6 +279,12 @@ class Board:
     """Returns an archived task to the board's tasks; None refuses every restore."""
     complete: TaskCompleter | None = None
     """Completes a Done task; None refuses every complete."""
+    retire: TaskRetirer | None = None
+    """Takes a finished task off the board into its retired tasks; None refuses every retire."""
+    retired: RetiredReader | None = None
+    """Reads the retired tasks; None when the board keeps none."""
+    import_retired: RetiredImporter | None = None
+    """Keeps a task retired elsewhere among the retired tasks; None refuses every import."""
     create: TaskCreator | None = None
     """Creates a task in the first lane when the page asks for a new one; None refuses every create."""
     milestones: MilestoneLister | None = None

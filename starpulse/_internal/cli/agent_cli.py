@@ -10,6 +10,9 @@
     starpulse task assign PROJ-45 @agent-standard-high
     starpulse task archive PROJ-45 --reason "superseded"
     starpulse task restore PROJ-45
+    starpulse task retire PROJ-45
+    starpulse task retired PROJ-45
+    starpulse task import-retired "retired/PROJ-3 - Old.md"
     starpulse task complete PROJ-45
     starpulse task checkpoint-ac PROJ-45 2 "pytest exits 0"
     starpulse machine show in-progress
@@ -65,7 +68,11 @@ JSON object of values the caller read earlier. A `--label`, `--dependency`, `--r
 the assignee alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
 `task archive` moves a task from any lane to the board's archive, recording `--reason` as a comment when given, and
 `task restore` returns an archived task's file to the board's tasks, unchanged, refusing one whose number is open or whose
-file name is taken (exit 1);
+file name is taken (exit 1), and returns a retired task the same way;
+`task retire` takes a finished task (Done, completed or archived) off the board into the server's history store, kept
+byte-for-byte, refusing an open task or a number kept with other text (exit 1); `task retired` reads every retired task,
+or the one named, each with its file name and text; `task import-retired` keeps each retired task file a client held in
+the history store, accepting the same file again, so a run a refusal stopped (exit 1) can be given the same files again;
 `task complete` moves a Done task to the board's completed tasks and refuses one that is not Done (exit 1);
 `task checkpoint-ac` checks one Acceptance Criterion and records its evidence as the comment `Verified AC #N: <evidence>`
 in one write, refusing a criterion the task lacks (exit 1) without writing. A board that cannot do one answers exit 3.
@@ -639,6 +646,31 @@ def _task_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
     base, path = server_url(args.server, environ), "/api/restore"
     status, reply = _post(base, path, {"task": args.task})
     return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+
+
+def _task_retire(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/retire"
+    status, reply = _post(base, path, {"task": args.task})
+    return {"task": _record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
+
+
+def _task_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base = server_url(args.server, environ)
+    path = f"/api/retired?task={urllib.parse.quote(args.task, safe='')}" if args.task else "/api/retired"
+    status, reply = _get(base, path)
+    return {"tasks": _record_call(base, path, status, reply, noun="retired task")["tasks"]}
+
+
+def _task_import_retired(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/retired/import"
+    files = [Path(file) for file in args.files]
+    if unreadable := [str(file) for file in files if not file.is_file()]:
+        raise CliError("usage", f"no such file: {', '.join(unreadable)}")
+    tasks = []
+    for file in files:  # the bytes as kept: read_text would turn a CRLF file's line ends into LF
+        status, reply = _post(base, path, {"name": file.name, "text": file.read_bytes().decode()})
+        tasks.append(_record_call(base, path, status, reply, noun="retired task")["task"])
+    return {"tasks": tasks}
 
 
 def _task_complete(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1377,7 +1409,34 @@ def _parser() -> argparse.ArgumentParser:
         ("task",),
         (0, 1, 2, 3),
     )
-    restore.add_argument("task", help="the archived task's key (`PROJ-45`)")
+    restore.add_argument("task", help="the archived or retired task's key (`PROJ-45`)")
+    retire = leaf(
+        task_verbs,
+        "retire",
+        "take a finished task off the board into the history store, kept byte-for-byte; refused when it is open",
+        _task_retire,
+        ("task",),
+        (0, 1, 2, 3),
+    )
+    retire.add_argument("task", help="the Done, completed or archived task's key (`PROJ-45`)")
+    retired = leaf(
+        task_verbs,
+        "retired",
+        "the retired tasks the history store keeps, or the one named, each with its file name and text",
+        _task_retired,
+        ("tasks",),
+        (0, 2, 3),
+    )
+    retired.add_argument("task", nargs="?", default="", help="one retired task's key (`PROJ-45`); default: every one")
+    import_retired = leaf(
+        task_verbs,
+        "import-retired",
+        "keep retired task files a client held in the history store; the same file again is accepted",
+        _task_import_retired,
+        ("tasks",),
+        (0, 1, 2, 3),
+    )
+    import_retired.add_argument("files", nargs="+", help="each retired task's file (`retired/PROJ-3 - Old.md`)")
     complete = leaf(
         task_verbs,
         "complete",

@@ -10,7 +10,9 @@ directory. The `Board` says:
 - and optionally a `writer(task, status, actor)` for moves made on the page or by an agent (each task's `moves` may
   list the `writers` the machine declares per event), an `assign` for assignee changes, a `read`, `edit` and `archive` for the full task record and guarded edits and
   archives (`edit` needs `read`; the snapshot's `capabilities` says which the board has), a `restore(task)` that
-  returns an archived task's file to the board's tasks unchanged (`POST /api/restore`), a `complete(task)` that
+  returns an archived or retired task's file to the board's tasks unchanged (`POST /api/restore`), a `retire(task)`,
+  `retired(task)` and `import_retired(name, text)` that keep a finished task's file in the history store instead
+  (`POST /api/retire`, `GET /api/retired[?task=<id>]`, `POST /api/retired/import`), a `complete(task)` that
   moves a Done task out of the lanes (the native board's to `completed/`, where `read` and `edit` still find it), a `create(title, details)` that
   makes a task whole, in one write, in the board's starting lane or the lane a `status` detail names, with the
   details the page filled (description, priority, labels, milestone, assignee, dependencies, acceptance
@@ -48,6 +50,13 @@ assignee changes and new tasks to them in Python, reads a task's full record (pr
 criteria, plan, notes and definition of done) back for the task view, applies an edit to a task's file in one write,
 and archives a task by moving its file to `archive/tasks/` after a reason is appended to its comments; a restore moves that
 file back to `tasks/` unchanged and never replaces a file there.
+A retire takes a finished task's file (a Done task in `tasks/`, or any in `completed/` or `archive/tasks/`) off the
+board into the history store's `starpulse_retired_tasks` table (migration 0017), one row per front matter `id` with
+the file's name and text byte for byte, which event-log pruning never touches; a board keeps none until it starts,
+since the table is in the store it starts on. A new task numbers past every retired one, a transition rule's dependency
+condition reads the status its text holds (the feed's `workable` does not yet count one done), and a restore writes its file back to `tasks/` and drops the row, never replacing a file there.
+An import keeps a file a client held the same way, accepting the same text again and refusing other text under a
+kept number or a task still on the board.
 Every task write is one rename of a whole file: an edit applies all its changes and every comment it carries (one text
 or a list, in order) at once, and a create also sets any further field an edit sets (`status`, `type`, `references`,
 `documentation`, `definitionOfDone`, `plan`, `notes`) in the same write, refusing the whole create on a field it cannot

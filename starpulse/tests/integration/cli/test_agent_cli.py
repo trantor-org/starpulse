@@ -364,6 +364,21 @@ def shipped(tmp_path: Path) -> Iterator[str]:
 
 
 @pytest.fixture
+def retiring(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """A server whose native board, started on a history store, holds `task-1` and a Done `task-2`, retired, read back,
+    imported and restored through its own writers."""
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: (self.scan(), scanned()))
+    board = native.board({}, tmp_path)
+    root = tmp_path / ".starpulse" / "board"
+    for name, text in (("task-1 - Draw the board.md", TASK_FILE), ("task-2 - Ship the board.md", SHIPPED_FILE)):
+        (root / "tasks" / name).write_text(text)
+    feed = BoardFeed(machines=MACHINES)
+    board.start(feed, "test", EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"))
+    with _serve(tmp_path, feed, restore=board.restore, milestones=board) as server:
+        yield _url(server, "")
+
+
+@pytest.fixture
 def searchable(tmp_path: Path) -> Iterator[str]:
     """A server whose search index holds two tasks, one of them found by `signing`."""
     index = SearchIndex.open(create_engine(f"sqlite:///{tmp_path / 'search.sqlite'}"))
@@ -954,6 +969,61 @@ def test_task_restore_undoes_an_archive_and_a_second_restore_is_refused(
     assert _task_file(tmp_path).is_file()
 
 
+def test_task_retire_keeps_a_done_task_byte_for_byte_and_task_restore_returns_it(
+    retiring: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gone = _run(capsys, ["task", "retire", "task-2", "--server", retiring])
+    kept = _run(capsys, ["task", "retired", "task-2", "--server", retiring])
+    off_board = list((tmp_path / ".starpulse" / "board").glob("**/task-2 - *.md"))
+    back = _run(capsys, ["task", "restore", "task-2", "--server", retiring])
+
+    assert gone == (0, {"task": "task-2"})
+    assert kept == (0, {"tasks": [{"task": "task-2", "name": "task-2 - Ship the board.md", "text": SHIPPED_FILE}]})
+    assert off_board == []
+    assert back == (0, {"task": "task-2"})
+    assert _task_file(tmp_path, "task-2").read_text() == SHIPPED_FILE
+    assert _run(capsys, ["task", "retired", "--server", retiring]) == (0, {"tasks": []})
+
+
+def test_task_retire_of_an_open_task_is_refused_and_leaves_its_file(
+    retiring: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _run(capsys, ["task", "retire", "task-1", "--server", retiring])
+
+    assert (code, doc["code"]) == (1, "refused")
+    assert _task_file(tmp_path).read_text() == TASK_FILE
+
+
+def test_task_import_retired_keeps_each_file_and_accepts_the_same_files_again(
+    retiring: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    held = tmp_path / "held"
+    held.mkdir()
+    old = "---\r\nid: task-3\r\ntitle: Old\r\nstatus: Done\r\n---\r\n"
+    (held / "task-3 - Old.md").write_bytes(old.encode())
+    (held / "task-4 - Older.md").write_text("---\nid: task-4\nstatus: Done\n---\n")
+    files = [str(held / "task-3 - Old.md"), str(held / "task-4 - Older.md")]
+
+    first = _run(capsys, ["task", "import-retired", *files, "--server", retiring])
+    again = _run(capsys, ["task", "import-retired", *files, "--server", retiring])
+    kept = _run(capsys, ["task", "retired", "task-3", "--server", retiring])[1]["tasks"]
+
+    assert first == again == (0, {"tasks": ["task-3", "task-4"]})
+    assert [row["text"] for row in kept] == [old]
+
+
+def test_task_import_retired_of_a_file_that_is_not_there_is_a_usage_error_and_sends_nothing(
+    retiring: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "task-3.md").write_text("---\nid: task-3\nstatus: Done\n---\n")
+    code, doc = _run(
+        capsys, ["task", "import-retired", str(tmp_path / "task-3.md"), str(tmp_path / "nope.md"), "--server", retiring]
+    )
+
+    assert (code, doc["code"]) == (2, "usage")
+    assert _run(capsys, ["task", "retired", "--server", retiring]) == (0, {"tasks": []})
+
+
 def test_doc_restore_returns_the_archived_file_unchanged_to_the_folder_named(
     shelved: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1067,6 +1137,9 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task assign",
         "task archive",
         "task restore",
+        "task retire",
+        "task retired",
+        "task import-retired",
         "task complete",
         "task checkpoint-ac",
         "machine list",
@@ -1787,6 +1860,17 @@ CASES = {
     ("task restore", 1): ["task", "restore", "task-1", "--server", "{tasked}"],
     ("task restore", 2): ["task", "restore"],
     ("task restore", 3): ["task", "restore", "task-1", "--server", "{down}"],
+    ("task retire", 0): ["task", "retire", "task-2", "--server", "{retiring}"],
+    ("task retire", 1): ["task", "retire", "task-1", "--server", "{retiring}"],
+    ("task retire", 2): ["task", "retire"],
+    ("task retire", 3): ["task", "retire", "task-2", "--server", "{down}"],
+    ("task retired", 0): ["task", "retired", "--server", "{retiring}"],
+    ("task retired", 2): ["task", "retired", "--nope"],
+    ("task retired", 3): ["task", "retired", "--server", "{down}"],
+    ("task import-retired", 0): ["task", "import-retired", "{dir}/retired.md", "--server", "{retiring}"],
+    ("task import-retired", 1): ["task", "import-retired", "{dir}/no-id.md", "--server", "{retiring}"],
+    ("task import-retired", 2): ["task", "import-retired", "{dir}/nope.md", "--server", "{retiring}"],
+    ("task import-retired", 3): ["task", "import-retired", "{dir}/retired.md", "--server", "{down}"],
     ("task complete", 0): ["task", "complete", "task-2", "--server", "{shipped}"],
     ("task complete", 1): ["task", "complete", "task-1", "--server", "{shipped}"],
     ("task complete", 2): ["task", "complete"],
@@ -1921,6 +2005,8 @@ def _case_files(root: Path) -> Path:
     (root / "bad.yaml").write_text("name: flow\nstates:\n  idle: {initial: true}\n  done: {final: maybe}\nevents: {}\n")
     (root / "ok.toml").write_text('tracker_url = "http://tracker.example"\n')
     (root / "bad.toml").write_text('colour = "red"\n')
+    (root / "retired.md").write_text("---\nid: task-3\nstatus: Done\n---\n")
+    (root / "no-id.md").write_text("no front matter\n")
     (root / "flow.mmd").write_text("stateDiagram-v2\n    [*] --> open\n    open --> closed : Close it\n")
     board = {"agents": [{"id": "PROJ-1", "title": "Rotate the secret", "state": "ready"}]}
     snap = {"now": 1.0, "dags": [], "flows": {"board": board, "in-progress": {"agents": []}}}
@@ -1944,6 +2030,7 @@ SERVERS = {
     "shipped": "shipped",
     "readonly": "readonly",
     "searchable": "searchable",
+    "retiring": "retiring",
 }
 
 

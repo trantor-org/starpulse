@@ -41,6 +41,7 @@ from starpulse._internal.eventlog.tables import (
     events,
     gaps,
     metadata,
+    retired_tasks,
     settings,
     source_instances,
 )
@@ -109,7 +110,10 @@ class EventLog:
                     self._engine = _create_engine(self.url)
                 if self._engine.dialect.name == "sqlite":
                     event.listen(self._engine, "connect", _sqlite_pragmas)
-                create_tables(self._engine, [events, gaps, board_state, source_instances, settings, autopilot_runs])
+                create_tables(
+                    self._engine,
+                    [events, gaps, board_state, source_instances, settings, autopilot_runs, retired_tasks],
+                )
                 self._ready = True
             assert self._engine is not None
             return self._engine
