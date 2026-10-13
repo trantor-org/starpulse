@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,7 @@ def job(workflow: str, name: str) -> dict:
         ("ci.yml", "python"),
         ("ci.yml", "web"),
         ("ci.yml", "api-types"),
+        ("ci.yml", "static-checks"),
         ("ui-preview.yml", "render"),
         ("ui-preview.yml", "leak-scan"),
     ],
@@ -57,6 +59,7 @@ def test_publishing_job_runs_on_a_hosted_runner(name):
     [
         ("ci.yml", "web"),
         ("ci.yml", "api-types"),
+        ("ci.yml", "static-checks"),
         ("release.yml", "build"),
         ("release.yml", "soak"),
         ("ui-preview.yml", "render"),
@@ -158,7 +161,7 @@ def test_trantor_tests_of_this_package_gate_every_merge():
 
 
 #: Every ci.yml job but `dispatch`: the jobs that test a tree.
-TEST_JOBS = ["python-shard", "python", "ic", "web", "api-types", "public-names", "tier-policy", "trantor-contract"]
+TEST_JOBS = ["python-shard", "python", "ic", "web", "api-types", "public-names", "tier-policy", "static-checks", "trantor-contract"]
 
 
 @pytest.mark.parametrize("name", TEST_JOBS)
@@ -175,6 +178,93 @@ def test_every_ci_job_but_dispatch_is_a_test_job():
 def test_the_push_dispatch_waits_on_no_test_job():
     """Its test jobs skip on a push, and a job needing a skipped job is skipped; trantor re-checks the queue run."""
     assert "needs" not in job("ci.yml", "dispatch")
+
+
+STATIC_SCRIPT = WORKFLOWS.parents[1] / "ci/static_checks.sh"
+
+
+def test_static_checks_runs_every_check_the_four_short_jobs_ran():
+    """ic, public-names, api-types and tier-policy share one job so a merge-queue run starts four fewer validate jobs."""
+    script = STATIC_SCRIPT.read_text()
+    runs = "\n".join(step["run"] for step in job("ci.yml", "static-checks")["steps"] if "run" in step)
+    assert "ci/static_checks.sh" in runs
+    for command in (
+        "uv sync --locked --no-group hub",  # ic: an environment without the hub extras
+        "ci/ic_imports.py",
+        "ci/public_names.py",
+        "python -m starpulse.contracts.api",  # api-types: regenerate both outputs, fail on a diff
+        "pnpm --dir starpulse/web run gen:types",
+        "git diff --exit-code -- starpulse/api.schema.json starpulse/web/src/api/types.gen.ts",
+        "ci/trantor_tier_policy.py .trantor/lib/linting/check_config_checks/tier_policy.py",  # tier-policy
+    ):
+        assert command in script, command
+
+
+def test_static_checks_checks_out_trantor_for_the_tier_policy():
+    steps = job("ci.yml", "static-checks")["steps"]
+    checkouts = [step.get("with", {}) for step in steps if step.get("uses", "").startswith("actions/checkout")]
+    assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[1].items()
+
+
+def stub_tools(tmp_path, *, delay: float = 0.0) -> Path:
+    """A directory holding `uv`, `pnpm` and `git` stubs that log each call and fail one whose arguments hold $FAIL_ON."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("uv", "pnpm", "git"):
+        stub = bin_dir / tool
+        stub.write_text(
+            "#!/usr/bin/env bash\n"
+            f'echo "{tool} $*" >> "$CALLS"\n'
+            f"sleep {delay}\n"
+            '[ -n "${FAIL_ON:-}" ] && [[ "$*" == *"$FAIL_ON"* ]] && exit 1\n'
+            "exit 0\n"
+        )
+        stub.chmod(0o755)
+    return bin_dir
+
+
+def run_static_checks(tmp_path, *, fail_on: str = "", delay: float = 0.0) -> subprocess.CompletedProcess:
+    calls = tmp_path / "calls"
+    calls.touch()
+    env = {
+        "PATH": f"{stub_tools(tmp_path, delay=delay)}:/usr/bin:/bin",
+        "CALLS": str(calls),
+        "FAIL_ON": fail_on,
+        "RUNNER_TEMP": str(tmp_path),
+    }
+    return subprocess.run(
+        ["bash", str(STATIC_SCRIPT)], env=env, cwd=tmp_path, capture_output=True, text=True, check=False
+    )
+
+
+def test_static_checks_passes_when_every_check_passes(tmp_path):
+    assert run_static_checks(tmp_path).returncode == 0
+
+
+@pytest.mark.parametrize(
+    ("fail_on", "name"),
+    [
+        ("ci/ic_imports.py", "ic"),
+        ("ci/public_names.py", "public-names"),
+        ("gen:types", "api-types"),
+        ("ci/trantor_tier_policy.py", "tier-policy"),
+    ],
+)
+def test_static_checks_fails_naming_the_failed_check_and_still_runs_the_others(tmp_path, fail_on, name):
+    result = run_static_checks(tmp_path, fail_on=fail_on)
+    assert result.returncode == 1
+    assert re.findall(r"static check failed: (\S+)", result.stdout) == [name]
+    calls = (tmp_path / "calls").read_text()
+    assert all(command in calls for command in ("ci/ic_imports.py", "ci/public_names.py", "ci/trantor_tier_policy.py"))
+
+
+def test_static_checks_runs_its_checks_concurrently(tmp_path):
+    """Run in sequence, the stubbed calls would take their summed delay; the job's wall time is the longest check's."""
+    started = time.monotonic()
+    result = run_static_checks(tmp_path, delay=0.6)
+    calls = len((tmp_path / "calls").read_text().splitlines())
+    assert result.returncode == 0
+    assert time.monotonic() - started < 0.6 * calls * 0.75  # the longest check is half the calls
 
 
 def test_main_follow_submit_runs_on_the_merge_event_lane_and_never_for_a_fork():
@@ -281,6 +371,7 @@ REQUIRED_CHECKS = [
     ("ci.yml", "web"),
     ("ci.yml", "api-types"),
     ("ci.yml", "tier-policy"),
+    ("ci.yml", "static-checks"),
     ("ci.yml", "trantor-contract"),
     ("release.yml", "build"),
 ]
