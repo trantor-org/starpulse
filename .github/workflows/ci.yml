@@ -201,30 +201,22 @@ jobs:
       - working-directory: .trantor
         run: make test-changed FILES=starpulse CI=1
 
-  # Tells trantor which commit main just moved to, a fallback for dispatch-merged.yml's send at merge time. Every main
-  # commit is a merge-queue candidate whose required checks passed, so it waits on no test job here; trantor's bump
+  # Pins the commit main just moved to on trantor, a fallback for dispatch-merged.yml's pin at merge time. Every main
+  # commit is a merge-queue candidate whose required checks passed, so it waits on no test job here; trantor's pin script
   # re-checks that a green merge_group run tested the SHA before pinning it. It runs on the generic ai-vm-1 fleet, not the
-  # validate lane, and sends nothing for a pull request or a merge-queue candidate.
+  # validate lane, and pins nothing for a pull request or a merge-queue candidate.
   dispatch:
     name: dispatch
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5
     steps:
-      # The workspace App token, not GITHUB_TOKEN: a dispatch sent with GITHUB_TOKEN reaches only this repository.
-      - name: Mint App token
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: trantor
-      - name: Dispatch the green SHA to trantor
+      - name: Pin the starpulse SHA
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GREEN_SHA: ${{ github.sha }}
+          APP_CLIENT_ID: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
+          OWNER: ${{ github.repository_owner }}
+          DISPATCH_SHA: ${{ github.sha }}
+          PIN_DEPLOY_KEY: ${{ secrets.TRANTOR_PIN_DEPLOY_KEY }}
         run: |
-          gh api repos/trantor-org/trantor/dispatches \
-            -f event_type=starpulse-green \
-            -f "client_payload[sha]=$GREEN_SHA"
+          "$HOME/trantor/bin/starpulse_ops/starpulse_pin.sh"

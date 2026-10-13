@@ -1,17 +1,19 @@
 name: Dispatch merged pull request
 
-# Sends the downstream consumer a merged commit's SHA at merge time when this repository's own CI
-# already tested the tree the commit holds, instead of waiting for the push run on main to re-test
-# it (ci.yml's `dispatch` job). That holds when the pull request's base is the merge commit's
-# parent: the green pull-request run then tested head merged over exactly that parent. It also
+# Pins a merged commit on trantor at merge time when this repository's own CI already tested the tree
+# the commit holds, instead of waiting for the push run on main to re-test it (ci.yml's `dispatch` job).
+# That holds when the pull request's base is the merge commit's parent: the green pull-request run then tested head merged over exactly that parent. It also
 # holds for a merge-queue merge: main fast-forwards to the queue's candidate, so a green
 # merge_group run on the merge commit tested that very commit. Any other merge sends nothing
-# here; the push run still dispatches it. The consumer
-# re-checks the same condition and treats a duplicate dispatch for one SHA as one pull request.
+# here; the push run still pins it. The pin script re-checks the same condition under one lock, so the
+# second pin of a SHA finds it already on trantor's main and does nothing.
 #
 # `pull_request_target`, not `pull_request`: the workflow file is read from the base branch, so a
 # fork's pull request cannot rewrite this job or its condition. The job checks out nothing and
 # passes the event's values through env, never into the script text.
+# Titled with the SHA it pins: bin/ci/merge_latency.py in trantor finds the run by it.
+run-name: Pin ${{ github.event.pull_request.merge_commit_sha }}
+
 on:
   pull_request_target:
     types: [closed]
@@ -52,24 +54,18 @@ jobs:
           if [ "$green" -gt 0 ]; then
             echo "tested=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No green run tested the merged tree: the push run dispatches."
+            echo "No green run tested the merged tree: the push run pins it."
           fi
-      # The workspace App token, not GITHUB_TOKEN: a dispatch sent with GITHUB_TOKEN reaches only this repository.
-      - name: Mint App token
-        if: steps.tested.outputs.tested == 'true'
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: trantor
-      - name: Dispatch the merged SHA
+      # trantor's script, run from the shared checkout on this runner: it mints the workspace App token by hand (the action
+      # costs a runner download), pins under the warm clone's lock, and falls back to a bump pull request without the key.
+      # bin/ci/merge_latency.py dates the pin from this step's start.
+      - name: Pin the starpulse SHA
         if: steps.tested.outputs.tested == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GREEN_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          APP_CLIENT_ID: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}
+          OWNER: ${{ github.repository_owner }}
+          DISPATCH_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PIN_DEPLOY_KEY: ${{ secrets.TRANTOR_PIN_DEPLOY_KEY }}
         run: |
-          gh api repos/trantor-org/trantor/dispatches \
-            -f event_type=starpulse-green \
-            -f "client_payload[sha]=$GREEN_SHA"
+          "$HOME/trantor/bin/starpulse_ops/starpulse_pin.sh"

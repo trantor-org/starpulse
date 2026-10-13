@@ -310,11 +310,44 @@ def test_merged_pull_request_dispatch_skips_unmerged_and_fork_pull_requests():
     assert "head.repo.full_name == github.repository" in condition
 
 
-def test_merged_pull_request_dispatch_sends_only_after_the_tree_check_passes():
+PIN_SCRIPT = '"$HOME/trantor/bin/starpulse_ops/starpulse_pin.sh"'
+PIN_STEP = "Pin the starpulse SHA"
+
+
+def pin_step(workflow: str) -> dict:
+    return next(step for step in job(workflow, "dispatch")["steps"] if step["name"] == PIN_STEP)
+
+
+def test_merged_pull_request_dispatch_pins_only_after_the_tree_check_passes():
     steps = job("dispatch-merged.yml", "dispatch")["steps"]
-    send = next(step for step in steps if step["name"] == "Dispatch the merged SHA")
-    assert steps.index(send) > next(i for i, step in enumerate(steps) if step.get("id") == "tested")
-    assert send["if"] == "steps.tested.outputs.tested == 'true'"
+    pin = pin_step("dispatch-merged.yml")
+    assert steps.index(pin) > next(i for i, step in enumerate(steps) if step.get("id") == "tested")
+    assert pin["if"] == "steps.tested.outputs.tested == 'true'"
+    assert pin["env"]["DISPATCH_SHA"] == "${{ github.event.pull_request.merge_commit_sha }}"
+
+
+def test_the_push_fallback_pins_the_pushed_commit():
+    assert pin_step("ci.yml")["env"]["DISPATCH_SHA"] == "${{ github.sha }}"
+
+
+@pytest.mark.parametrize("workflow", ["dispatch-merged.yml", "ci.yml"])
+def test_the_dispatch_jobs_pin_in_their_own_job_and_send_trantor_no_dispatch(workflow):
+    """A second Actions job for the pin cost 11 s of queue and runner setup; the jobs run trantor's script instead."""
+    pin = pin_step(workflow)
+    assert pin["run"].strip() == PIN_SCRIPT
+    assert pin["env"]["PIN_DEPLOY_KEY"] == "${{ secrets.TRANTOR_PIN_DEPLOY_KEY }}"
+    assert pin["env"]["APP_CLIENT_ID"] == "${{ secrets.WORKSPACE_APP_CLIENT_ID }}"
+    assert pin["env"]["APP_PRIVATE_KEY"] == "${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}"
+    assert pin["env"]["OWNER"] == "${{ github.repository_owner }}"
+    assert all("uses" not in step for step in job(workflow, "dispatch")["steps"]), "no marketplace action"
+    assert "repository_dispatch" not in (WORKFLOWS / workflow).read_text()
+    assert "/dispatches" not in (WORKFLOWS / workflow).read_text()
+
+
+def test_a_merged_pull_request_run_is_titled_with_the_sha_it_pins():
+    """bin/ci/merge_latency.py finds the run that pinned a SHA by this title."""
+    title = yaml.safe_load((WORKFLOWS / "dispatch-merged.yml").read_text())["run-name"]
+    assert title == "Pin ${{ github.event.pull_request.merge_commit_sha }}"
 
 
 def run_step(step: dict, tmp_path, env: dict[str, str], *, uv_exit: int = 0) -> int:
