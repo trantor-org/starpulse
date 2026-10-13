@@ -30,8 +30,25 @@ export type HeldTask = {
  */
 export type PeerSession = { id: string; label: string; status: string; tmux: string | null; isBackground: boolean }
 
+/** A column a task may move to: its state id and name. */
+export type Move = { to: string; name: string }
+
+/** A task the Board tab lists: its key, title, assignee, the session holding it, and the columns it may move to. */
+export type BoardTask = { id: string; title: string; assignee: string; holder: string; moves: Move[] }
+
+/** One open lane of the Board tab: its state id, name and tasks. */
+export type Lane = { state: string; name: string; tasks: BoardTask[] }
+
 declare module 'claude-code' {
   interface PluginState {
-    'starpulse-board': { tasks: HeldTask[] | null; sessions: PeerSession[]; isHidden: boolean; openTask: string | null }
+    'starpulse-board': {
+      tasks: HeldTask[] | null
+      sessions: PeerSession[]
+      isHidden: boolean
+      openTask: string | null
+      lanes: Lane[] | null
+      folded: string[]
+      pickedTask: string | null
+    }
   }
 }

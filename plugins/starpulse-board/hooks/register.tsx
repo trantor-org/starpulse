@@ -1,21 +1,27 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface as Engine, Register } from 'claude-code'
-import type { Checks, HeldTask, PeerSession, Pull } from '../types'
+import type { BoardTask, Checks, HeldTask, Lane, PeerSession, Pull } from '../types'
 import { CHECKS, ROW_HEIGHT, SP, alt, laneOf, paneSvg, progress, ratio, rowSvg, subline, termBar } from './draw'
 
 const PANE = 'starpulse-board'
 const SESSIONS = 'starpulse-sessions'
+const KANBAN = 'starpulse-kanban'
 
 const tasks = atom({ plugin: 'starpulse-board', key: 'tasks' } as const, null)
 const sessions = atom({ plugin: 'starpulse-board', key: 'sessions' } as const, [])
 const isHidden = atom({ plugin: 'starpulse-board', key: 'isHidden' } as const, false)
 const openTask = atom({ plugin: 'starpulse-board', key: 'openTask' } as const, null)
+const lanes = atom({ plugin: 'starpulse-board', key: 'lanes' } as const, null)
+const folded = atom({ plugin: 'starpulse-board', key: 'folded' } as const, ['ready', 'waiting'])
+const pickedTask = atom({ plugin: 'starpulse-board', key: 'pickedTask' } as const, null)
 
 // A task as `starpulse board` prints it. An older starpulse leaves out the criteria, the reason and each PR's checks.
 type RawTask = {
   id: string
   title: string
+  assignee?: string
   holder?: string
+  moves?: Record<string, unknown>
   waiting_on?: string[]
   criteria?: { text: string; checked?: boolean }[]
   pause_reason?: string
@@ -38,11 +44,10 @@ const pullOf = (prs: RawTask['prs']): Pull | null => {
   return { repo: parsed[1], number, checks: CHECK_NAMES[pr.checks ?? ''] ?? 'none' }
 }
 
-// The tasks this session last claimed, from the StarPulse server `starpulse board` reads; null when it cannot be read.
-const held = async ($: Engine): Promise<HeldTask[] | null> => {
+// The Board as `starpulse board` prints it, narrowed by `filters`; null when it cannot be read.
+const readBoard = async ($: Engine, filters: string[]): Promise<Board | null> => {
   try {
-    const session = await $.session.id()
-    const args = ['board', '--holder', session]
+    const args = ['board', ...filters]
     // A start failure counts as a failed run: a non-login PATH (a Desktop SSH session's) lacks ~/.local/bin.
     const run = (argv0: string) => $.process.run([argv0, ...args]).catch(() => null)
     let ran = await run('starpulse')
@@ -53,9 +58,20 @@ const held = async ($: Engine): Promise<HeldTask[] | null> => {
     if (ran?.exitCode !== 0) {
       return null
     }
-    const board = JSON.parse(ran.stdout) as Board
 
-    return board.columns.flatMap(c =>
+    return JSON.parse(ran.stdout) as Board
+  } catch {
+    return null
+  }
+}
+
+// The tasks this session last claimed, from the StarPulse server `starpulse board` reads; null when it cannot be read.
+const held = async ($: Engine): Promise<HeldTask[] | null> => {
+  const session = await $.session.id().catch(() => null)
+  const board = session === null ? null : await readBoard($, ['--holder', session])
+
+  return (
+    board?.columns.flatMap(c =>
       c.tasks.map(t => ({
         id: t.id,
         title: t.title,
@@ -67,10 +83,27 @@ const held = async ($: Engine): Promise<HeldTask[] | null> => {
         waitingOn: t.waiting_on ?? [],
         pull: pullOf(t.prs),
       })),
-    )
-  } catch {
-    return null
-  }
+    ) ?? null
+  )
+}
+
+// The Board tab's lanes, in the order work moves through them; New, Done and Archived stay off it.
+const LANES = ['in_progress', 'review', 'needs_attention', 'ready', 'waiting']
+
+// The open lanes of the whole Board, each task with the columns it may move to; empty when the Board cannot be read.
+const readLanes = async ($: Engine): Promise<Lane[]> => {
+  const board = await readBoard($, [])
+  const columns = board?.columns ?? []
+  const names = new Map(columns.map(c => [c.state, c.name]))
+  const task = (t: RawTask): BoardTask => ({
+    id: t.id,
+    title: t.title,
+    assignee: t.assignee ?? '',
+    holder: t.holder ?? '',
+    moves: Object.keys(t.moves ?? {}).map(to => ({ to, name: names.get(to) ?? to })),
+  })
+
+  return LANES.flatMap(state => columns.filter(c => c.state === state)).map(c => ({ state: c.state, name: c.name, tasks: c.tasks.map(task) }))
 }
 
 type Registered = { sessionId: string; pid: number; name?: string; status?: string; kind?: string }
@@ -130,7 +163,13 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
 
 let hasOpened = false
 let isStarting = true
+let isBoardOpen = false
+const reloadLanes = async ($: Engine) => {
+  const found = await readLanes($)
+  await update($, lanes, () => found)
+}
 const refresh = async ($: Engine) => {
+  const board = isBoardOpen ? reloadLanes($) : null
   // The session list is a local read; it draws without waiting on the slower board read.
   const listed = peers($).then(async others => {
     await update($, sessions, () => others)
@@ -143,6 +182,7 @@ const refresh = async ($: Engine) => {
   const found = await held($)
   await update($, tasks, () => found)
   await listed
+  await board
 
   return found
 }
@@ -185,6 +225,69 @@ const switchTo = async ($: Engine, s: PeerSession) => {
   if (ran?.exitCode !== 0) {
     $.ui.toast(`Cannot switch to ${s.label}: start Claude inside tmux to switch sessions`)
   }
+}
+
+// The Board tab opens with the keys and the whole Board read fresh.
+const openBoard = async ($: Engine) => {
+  isBoardOpen = true
+  await $.ui.open({ id: KANBAN, title: 'Board', focus: true })
+  await reloadLanes($)
+}
+
+// A write to the StarPulse server `starpulse board` reads: null when it took, else the reason it was refused.
+const post = async ($: Engine, path: string, body: object): Promise<string | null> => {
+  const server = ((await $.env.get('STARPULSE_URL')) || 'http://localhost:8766').replace(/\/+$/, '')
+  const argv = ['curl', '-sS', '-X', 'POST', '-H', 'Content-Type: application/json', '--data', JSON.stringify(body)]
+  const ran = await $.process.run([...argv, '-w', '\n%{http_code}', `${server}${path}`]).catch(() => null)
+  if (ran?.exitCode !== 0) {
+    return `Cannot reach StarPulse at ${server}`
+  }
+  const lines = ran.stdout.trimEnd().split('\n')
+  const code = lines.pop()
+  if (code === '200') {
+    return null
+  }
+  try {
+    return (JSON.parse(lines.join('\n')) as { error?: string }).error ?? `StarPulse answered ${code}`
+  } catch {
+    return `StarPulse answered ${code}`
+  }
+}
+
+// A lane whose task StarPulse can start a session for; any other task already has one to go to.
+const STARTABLE = new Set(['ready', 'waiting', 'needs_attention'])
+
+// StarPulse starts a task's session in tmux session task-<n>; a task already in progress is switched to where it runs.
+const toSession = async ($: Engine, t: BoardTask, lane: string) => {
+  const name = t.id.toLowerCase()
+  if (!STARTABLE.has(lane)) {
+    const others = await read($, sessions)
+    const live = others.find(s => s.id === t.holder) ?? others.find(s => s.tmux === name)
+    if (live) {
+      await switchTo($, live)
+    } else {
+      $.ui.toast(`${t.id} has no live session`)
+    }
+    return
+  }
+  const refused = await post($, '/api/start', { task: t.id, assignee: t.assignee, harness: 'claude' })
+  if (refused) {
+    $.ui.toast(refused)
+    return
+  }
+  const ran = await tmux($, 'switch-client', '-t', name)
+  if (ran?.exitCode !== 0) {
+    $.ui.toast(`Started ${t.id}: tmux attach -t ${name}`)
+  }
+  await reloadLanes($)
+}
+
+const moveTask = async ($: Engine, id: string, to: string) => {
+  const refused = await post($, '/api/move', { task: id, to })
+  if (refused) {
+    $.ui.toast(refused)
+  }
+  await reloadLanes($)
 }
 
 const peerLine = (s: PeerSession) => `${s.status === 'busy' ? '●' : '○'} ${s.label} ${s.status}`
@@ -281,6 +384,7 @@ const toggle = async ($: Engine, id: string) => {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'board', description: 'List the Board tasks this session holds' })
+    await $.command.register({ name: 'kanban', description: 'Open the Board as a tab beside Files' })
     void refresh($)
     $.clock.every(PEER_POLL_MS, () => refreshSoon($))
 
@@ -314,10 +418,16 @@ export const register: Register = on => {
     }
   })
 
+  on('command.run', { command: 'kanban' }, async $ => {
+    await openBoard($)
+
+    return { text: 'Opened the Board tab.' }
+  })
+
   // Until the first prompt, the first pane another plugin opens (Files) would take the dock's shown tab: reopen Sessions over it, once.
   on('ui.open', async ($, e, next) => {
     const result = await next(e)
-    if (isStarting && hasOpened && e.id !== SESSIONS && e.id !== PANE) {
+    if (isStarting && hasOpened && e.id !== SESSIONS && e.id !== PANE && e.id !== KANBAN) {
       isStarting = false
       // Opening an open pane only retitles it: close it first so the open lands as the newest tab.
       $.clock.after(0, async () => {
@@ -337,6 +447,12 @@ export const register: Register = on => {
 
   on('ui.close', { id: PANE }, async ($, e, next) => {
     await update($, openTask, () => null)
+
+    return next(e)
+  })
+
+  on('ui.close', { id: KANBAN }, async ($, e, next) => {
+    isBoardOpen = false
 
     return next(e)
   })
@@ -371,12 +487,13 @@ export const register: Register = on => {
             {i === 0 && hide}
           </Box>
         ))}
-        {others.length > 0 && (
-          <Box flexDirection="row" alignItems="center" gap={1}>
+        <Box flexDirection="row" alignItems="center" gap={1}>
+          {others.length > 0 && (
             <Button key="sessions" label={count(others)} onPress={() => $.ui.open({ id: SESSIONS, title: 'Sessions', focus: true })} />
-            {!found.length && hide}
-          </Box>
-        )}
+          )}
+          <Button key="kanban" label="Board" onPress={() => openBoard($)} />
+          {!found.length && hide}
+        </Box>
       </Box>
     )
   })
@@ -398,6 +515,53 @@ export const register: Register = on => {
     }
 
     return termPane(Box, Text, t)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: KANBAN }, async ($, e) => {
+    if (e.surface === 'terminal' && e.props.placement === 'inline') {
+      void $.ui.close({ id: KANBAN }).catch(() => undefined)
+      const { Box } = $.ui.resolve(e)
+      return <Box />
+    }
+    const found = await read($, lanes)
+    const shut = await read($, folded)
+    const picked = await read($, pickedTask)
+    const { Box, Button, Text } = $.ui.resolve(e) as Remote
+    if (found === null || !found.length) {
+      return <Text dimColor>{found === null ? 'Reading the Board…' : '`starpulse board` failed: is the StarPulse server running?'}</Text>
+    }
+    const fold = (state: string) => update($, folded, f => (f.includes(state) ? f.filter(x => x !== state) : [...f, state]))
+
+    return (
+      <Box flexDirection="column">
+        {found.map(l => {
+          const isFolded = shut.includes(l.state)
+          return (
+            <Box key={`lane-${l.state}`} flexDirection="column">
+              <Button key={`lane:${l.state}`} label={`${isFolded ? '▸' : '▾'} ${l.name} ${l.tasks.length}`} onPress={() => fold(l.state)} />
+              {!isFolded &&
+                l.tasks.map(t => (
+                  <Box key={`row-${t.id}`} flexDirection="column" paddingLeft={2}>
+                    <Button key={`task:${t.id}`} label={`${t.id} ${t.title}`} onPress={() => update($, pickedTask, p => (p === t.id ? null : t.id))} />
+                    {picked === t.id && (
+                      <Box flexDirection="row" flexWrap="wrap" gap={1}>
+                        <Button
+                          key={`session:${t.id}`}
+                          label={STARTABLE.has(l.state) ? 'Start session' : 'Go to session'}
+                          onPress={() => toSession($, t, l.state)}
+                        />
+                        {t.moves.map(m => (
+                          <Button key={`move:${t.id}:${m.to}`} label={`→ ${m.name}`} onPress={() => moveTask($, t.id, m.to)} />
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                ))}
+            </Box>
+          )
+        })}
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: SESSIONS }, async ($, e, next) => {
