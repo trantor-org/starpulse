@@ -17,15 +17,15 @@ POST /api/runs/<instance>/<workflow>/rerun
                    outside loopback and RFC 1918, 404 when the instance has no adapter that can rerun or the
                    workflow is not in its `run_safe`, 409 when the instance declares no force parameter or the
                    workflow has no unresolved failure, 502 when the adapter's rerun fails. A GET answers 405
-POST /api/move     {task, to[, actor]}: set a Board task's status through the board adapter's writer, as `actor`
-                   (`operator`, the page's identity, when absent). An actor outside the event's declared writers
+POST /api/move     {task, to[, actor, session, harness]}: set a Board task's status through the board adapter's writer, as
+                   `actor` (the page names `operator`; absent, `agent` with a session, else `anonymous`). An actor outside the event's declared writers
                    is refused 409 before the writer is asked; a board with no writer answers 501
 GET /api/task/<id> {task, record}: every editable field of a task from the board's `read`, which the snapshot's
                    entry does not carry; 404 when the board cannot read or the task is not on it
-POST /api/edit     {task, base, changes, comment[, actor]}: one write of every change through the board's `edit`. 409 with the
+POST /api/edit     {task, base, changes, comment[, actor, session, harness]}: one write of every change through the board's `edit`. 409 with the
                    stale fields and their current values when any changed field no longer equals its `base`, or with
                    the writer's refusal and its skill; 403 outside loopback and RFC 1918. A GET answers 405
-POST /api/archive  {task, reason[, actor]}: archive a task from any lane through the board's `archive`; refusals as for
+POST /api/archive  {task, reason[, actor, session, harness]}: archive a task from any lane through the board's `archive`; refusals as for
                    an edit
 POST /api/complete {task}: move a Done task into the board's completed tasks through its `complete`; refusals
                    as for an edit (409 for a task that is not Done), 404 when the board does not complete or the task is
@@ -44,7 +44,7 @@ POST /api/retired/import
                    `import_retired`, and answer 200 {task}; the same file again is accepted, 409 for other text under a
                    kept number, a task on the board or a file with no id, 404 when the board does not import
 POST /api/tasks    {title, description, priority, labels, milestone, assignee, dependencies, acceptanceCriteria[,
-                   actor]}: create
+                   actor, session, harness]}: create, stamping `created_by: <harness>:<session>`
                    a task in the board's starting lane through the board's `create`, and answer 201 {task}
                    with its id; only the title is required. 400 for a missing, blank or over-long title or a detail of
                    the wrong kind, 403 outside loopback and RFC 1918, 404 when the board
@@ -92,10 +92,12 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 from starpulse._internal.board.seam import (
+    AGENT,
+    ANONYMOUS,
     AssigneeWriter,
     Board,
     OPERATOR,
@@ -272,13 +274,45 @@ def _named_actor(request: Any) -> dict[str, str] | None:
     return {"actor": actor.strip()} if isinstance(actor, str) and actor.strip() else None
 
 
-def _written_by(feed: BoardFeed, task: str, actor: str, write: Callable[[], Written]) -> Written:
-    """Run `write` of `task` with `actor` noted on the feed, so the lane entry of the change it makes names the actor.
+_BAD_WHO = {
+    "error": 'a write may name its "actor", "session" and "harness", each a non-empty text; a write naming no actor is '
+    'made by `agent` when it names a session and by `anonymous` when it names none'
+}
+
+
+class _Who(NamedTuple):
+    """Who makes a write: its actor, and the session and harness it names, each empty when it names none."""
+
+    actor: str
+    session: str
+    harness: str
+
+    @property
+    def created_by(self) -> str:
+        """What a create stamps in the task: `<harness>:<session>`, or `anonymous` when the write names no session."""
+        return f"{self.harness}:{self.session}" if self.session and self.harness else self.session or ANONYMOUS
+
+
+def _named_who(request: Any) -> _Who | None:
+    """Who `request` names as its writer, or None when a name it gives is not a non-empty text.
+
+    A write that names no actor is an agent's when it names a session and anonymous when it names none: never the
+    operator, whom only the page names.
+    """
+    named = {key: request[key] for key in ("actor", "session", "harness") if isinstance(request, dict) and key in request}
+    if not all(isinstance(value, str) and value.strip() for value in named.values()):
+        return None
+    session = named.get("session", "").strip()
+    return _Who(named.get("actor", AGENT if session else ANONYMOUS).strip(), session, named.get("harness", "").strip())
+
+
+def _written_by(feed: BoardFeed, task: str, who: _Who, write: Callable[[], Written]) -> Written:
+    """Run `write` of `task` with `who` noted on the feed, so the lane entry of the change it makes names its writer.
 
     The note comes before the write because the board's poll can place the change the moment the file lands; a refused
     write forgets it.
     """
-    feed.note_actor(task, actor)
+    feed.note_actor(task, who.actor, who.session, who.harness)
     written = write()
     if not written.ok:
         feed.note_actor(task, None)
@@ -296,22 +330,26 @@ def move_task(source: str, raw: bytes, feed: BoardFeed, writer: MoveWriter) -> t
     try:
         request = json.loads(raw)
         task, column = request["task"], request["to"]
-        actor, session = request.get("actor", OPERATOR), request.get("session", "")
+        who = _named_who(request)
     except ValueError, TypeError, KeyError, AttributeError:
-        task = column = actor = session = None
-    if not all(isinstance(value, str) for value in (task, column, actor, session)):
+        task = column = who = None
+    if not (isinstance(task, str) and isinstance(column, str) and who):
         return 400, {
-            "error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor" and a "session" (strings)'
+            "error": 'a move needs {"task": "TASK-N", "to": "<column>"} and may name an "actor", a "session" and a '
+            '"harness" (non-empty strings)'
         }
     if (agent := _held(feed, task)) is None:
         return _not_held(feed, task)
     if column not in agent["moves"]:
         return 409, {"error": f"{task} cannot move from {agent['state']} to {column}"}
-    if not (move := Move.model_validate(agent["moves"][column])).permits(actor):
-        return 409, {"error": move.for_actor(actor).reason, "skill": move.skill}
+    if not (move := Move.model_validate(agent["moves"][column])).permits(who.actor):
+        return 409, {"error": move.for_actor(who.actor).reason, "skill": move.skill}
     status = column.replace("_", " ").title()
     written = _written_by(
-        feed, task, actor, lambda: writer(task, status, actor, session) if session else writer(task, status, actor)
+        feed,
+        task,
+        who,
+        lambda: writer(task, status, who.actor, who.session) if who.session else writer(task, status, who.actor),
     )
     if written.unavailable:
         return 501, {"error": written.output}
@@ -358,17 +396,17 @@ def edit_task(
     try:
         request = json.loads(raw)
         task, base, changes, comment = request["task"], request["base"], request["changes"], request.get("comment", "")
-        named = _named_actor(request)
+        who = _named_who(request)
     except ValueError, TypeError, KeyError:
-        task = base = changes = comment = named = None
+        task = base = changes = comment = who = None
     if not (
         isinstance(task, str) and isinstance(base, dict) and isinstance(changes, dict) and changes
     ) or not isinstance(comment, str):
         return 400, {
             "error": 'an edit needs {"task": "TASK-N", "base": {...}, "changes": {...}, "comment": "<optional>"}'
         }
-    if named is None:
-        return 400, _BAD_ACTOR
+    if who is None:
+        return 400, _BAD_WHO
     if read is None or edit is None:
         return 404, {"error": "this board does not edit tasks"}
     if _held(feed, task) is None:
@@ -394,7 +432,7 @@ def edit_task(
             todo[_APPEND_NOTES] = changes[_APPEND_NOTES]
         if not todo and not comment.strip():
             return 200, {"task": task, "changed": []}
-        written = _written_by(feed, task, named.get("actor", OPERATOR), lambda: edit(task, todo, comment, **named))
+        written = _written_by(feed, task, who, lambda: edit(task, todo, comment, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     changed = ("notes" if field == _APPEND_NOTES else field for field in todo)
@@ -413,18 +451,18 @@ def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver
     try:
         request = json.loads(raw)
         task, reason = request["task"], request.get("reason", "")
-        named = _named_actor(request)
+        who = _named_who(request)
     except ValueError, TypeError, KeyError:
-        task = reason = named = None
+        task = reason = who = None
     if not isinstance(task, str) or not isinstance(reason, str):
         return 400, {"error": 'an archive needs {"task": "TASK-N", "reason": "<optional text>"}'}
-    if named is None:
-        return 400, _BAD_ACTOR
+    if who is None:
+        return 400, _BAD_WHO
     if archive is None:
         return 404, {"error": "this board does not archive tasks"}
     if _held(feed, task) is None:
         return _not_held(feed, task)
-    written = _written_by(feed, task, named.get("actor", OPERATOR), lambda: archive(task, reason, **named))
+    written = _written_by(feed, task, who, lambda: archive(task, reason, actor=who.actor))
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
@@ -529,7 +567,7 @@ def _create_details(body: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
     """The filled details of a create body, trimmed, and the first field that is unknown or of the wrong kind, or ""."""
     details: dict[str, Any] = {}
     for field, value in body.items():
-        if field in ("title", "actor"):
+        if field in ("title", "actor", "session", "harness"):
             continue
         if field in _CREATE_TEXT:
             ok = isinstance(value, str)
@@ -567,23 +605,23 @@ def create_task(
     try:
         body = json.loads(raw)
         title = body["title"]
-        named = _named_actor(body)
+        who = _named_who(body)
     except ValueError, TypeError, KeyError:
-        body, title, named = {}, None, None
+        body, title, who = {}, None, None
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > _TITLE_MAX:
         return 400, {"error": f'a create needs {{"title": "<1 to {_TITLE_MAX} characters>"}}'}
-    if named is None:
-        return 400, _BAD_ACTOR
+    if who is None:
+        return 400, _BAD_WHO
     details, wrong = _create_details(body)
     if wrong:
         return 400, {"error": wrong}
     if create is None:
         return 404, {"error": "this board does not create tasks"}
-    written = create(title.strip(), details, **named)
+    written = create(title.strip(), {**details, "created_by": who.created_by}, actor=who.actor)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
-    if feed is not None:  # the id is the writer's to choose, so the actor is noted once the task is made
-        feed.note_actor(written.output, named.get("actor", OPERATOR))
+    if feed is not None:  # the id is the writer's to choose, so the writer is noted once the task is made
+        feed.note_actor(written.output, who.actor, who.session, who.harness)
     return 201, {"task": written.output}
 
 

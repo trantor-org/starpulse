@@ -150,7 +150,40 @@
       "additionalProperties": false,
       "description": "`POST /api/archive`: archive `task`, recording `reason` when it is not blank.",
       "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
           "anyOf": [
             {
               "type": "string"
@@ -860,7 +893,7 @@
     },
     "CreateRequest": {
       "additionalProperties": false,
-      "description": "`POST /api/tasks`: create a task in the board's starting lane.",
+      "description": "`POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`.",
       "properties": {
         "acceptanceCriteria": {
           "anyOf": [
@@ -869,6 +902,17 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
             },
             {
               "type": "null"
@@ -912,6 +956,17 @@
           ],
           "default": null
         },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "labels": {
           "anyOf": [
             {
@@ -938,6 +993,17 @@
           "default": null
         },
         "priority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
           "anyOf": [
             {
               "type": "string"
@@ -1502,6 +1568,17 @@
       "additionalProperties": false,
       "description": "`POST /api/edit`: change fields of `task`; `base` holds the value each changed field had when the page read it.",
       "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "base": {
           "additionalProperties": true,
           "type": "object"
@@ -1511,6 +1588,28 @@
           "type": "object"
         },
         "comment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
           "anyOf": [
             {
               "type": "string"
@@ -4222,6 +4321,17 @@
       "description": "`POST /api/move`: move `task` to the column `to`.",
       "properties": {
         "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "harness": {
           "anyOf": [
             {
               "type": "string"

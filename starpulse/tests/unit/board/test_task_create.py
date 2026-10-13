@@ -120,6 +120,7 @@ def test_a_create_writes_every_detail_as_backlog_markdown_and_the_next_scan_read
         "milestone": "m-1",
         "dependencies": ["task-1"],
         "priority": "high",
+        "created_by": "anonymous",
     }
     assert (
         "## Acceptance Criteria\n<!-- AC:BEGIN -->\n- [ ] #1 The quickstart names every lane\n"

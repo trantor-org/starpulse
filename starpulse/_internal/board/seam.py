@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from starpulse.contracts.task_keys import TaskKeys
 
 __all__ = [
+    "AGENT",
+    "ANONYMOUS",
     "DEFAULT_TYPE",
     "AssigneeWriter",
     "Board",
@@ -55,8 +57,12 @@ __all__ = [
     "module_name",
 ]
 
-#: Who a write is made by when it names no actor: the page, which acts for the operator.
+#: Who the page acts for, which it names on every write it makes.
 OPERATOR = "operator"
+#: Who a session's write is made by when it names no actor.
+AGENT = "agent"
+#: Who a write is made by when it names no actor and no session: never the operator.
+ANONYMOUS = "anonymous"
 
 
 class Written(NamedTuple):

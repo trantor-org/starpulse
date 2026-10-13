@@ -348,7 +348,7 @@ def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_pat
     feed = BoardFeed()
     feed.put(task("PROJ-3", "Ready", moves={"in_progress": Move(allowed=True), "waiting": Move(allowed=True)}))
     with _serve(tmp_path, feed, writer=writer) as server:
-        allowed = _post_move(server, {"task": "PROJ-3", "to": "in_progress"})
+        allowed = _post_move(server, {"task": "PROJ-3", "to": "in_progress", "actor": "operator"})
         refused = _post_move(server, {"task": "PROJ-3", "to": "waiting"})
         with pytest.raises(urllib.error.HTTPError) as got:
             urllib.request.urlopen(_url(server, "/api/move"), timeout=5)
@@ -357,7 +357,7 @@ def test_a_move_posted_to_the_server_reaches_the_writer_and_answers_json(tmp_pat
     assert refused == (409, {"error": "refused: Run the `x` skill", "skill": "x"})
     assert (got.value.code, got.value.headers["Allow"]) == (405, "POST")
     assert sent == [("PROJ-3", "In Progress"), ("PROJ-3", "Waiting")]
-    assert actors == ["operator", "operator"]  # the page names no actor, so it writes as the operator
+    assert actors == ["operator", "anonymous"]  # the page names the operator; a write naming nobody is anonymous
 
 
 def test_a_start_posted_to_the_server_saves_the_assignee_starts_the_session_and_answers_json(tmp_path: Path) -> None:
@@ -405,12 +405,12 @@ def test_a_task_is_read_edited_and_archived_through_the_server(tmp_path: Path) -
     sent: list[tuple[str, dict, str]] = []
     archived: list[tuple[str, str]] = []
 
-    def edit(task: str, changes: dict, comment: str) -> Written:
+    def edit(task: str, changes: dict, comment: str, actor: str) -> Written:
         sent.append((task, changes, comment))
         record.update(changes)
         return Written(True, "ok")
 
-    def archive(task: str, reason: str) -> Written:
+    def archive(task: str, reason: str, actor: str) -> Written:
         archived.append((task, reason))
         return Written(True, "ok")
 

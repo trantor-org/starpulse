@@ -41,6 +41,7 @@ describe("saving an edited task", () => {
         base: { title: "T", labels: ["needs-review"] },
         changes: { title: "New title", labels: ["ui", "needs-review"] },
         comment: "",
+        actor: "operator",
       }),
     });
     expect(result).toMatchObject({ ok: true, changed: ["title", "labels"], record: draft });
@@ -134,7 +135,7 @@ describe("toggling a checkbox without an editor", () => {
     await saveSection("TASK-9", "definitionOfDone", open, toggleItem(open, "definitionOfDone", 1, true), {}, fetcher);
 
     const body = JSON.parse((fetcher.mock.calls[0] as unknown as [string, { body: string }])[1].body);
-    expect(body).toEqual({ task: "TASK-9", base: { definitionOfDone: open.definitionOfDone }, changes: { definitionOfDone: [{ n: 1, text: "done item", checked: true }] }, comment: "" });
+    expect(body).toEqual({ task: "TASK-9", base: { definitionOfDone: open.definitionOfDone }, changes: { definitionOfDone: [{ n: 1, text: "done item", checked: true }] }, comment: "", actor: "operator" });
   });
 
   it("asks for evidence before writing a newly checked acceptance criterion", async () => {

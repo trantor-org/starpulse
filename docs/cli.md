@@ -234,8 +234,8 @@ with the window and refusals of `analytics steps`, and place a task as `transiti
 columns and what they cannot see.
 
 A move carries the actor that makes it. The machine YAML names, per event, who fires it (`writers`), and each move
-the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}` with `actor` `operator` when
-absent, which is what the page sends. The server refuses an actor outside the event's writers before the board
+the server offers lists them as `writers`; `POST /api/move` takes `{task, to, actor}`; the page sends
+`operator`, and a move naming no actor is `anonymous` (`agent` when it names a session), never the operator. The server refuses an actor outside the event's writers before the board
 writer is asked, so a move declared for `operator` alone (sending an In Progress task back to Ready) is refused to
 `starpulse task move`, which always moves as `agent`. A board adapter's `writer` receives that actor as its third
 argument: `writer(task, status, actor)`. `/api/move` is unauthenticated on the LAN, so this stops an agent's
@@ -256,8 +256,9 @@ file stem and `exits` mapping each of its final states to the event of this mach
 `launches` (per workflow, `{skill, flow}`, `flow` a sibling's stem or absent). The Board is also drawn with every
 writer and the `dagActors` among them. A state, event or flow a declaration names that does not exist is refused.
 
-A move may also name the mover's session: `POST /api/move` takes `{task, to, actor, session}`, and `starpulse task move`
-sends `--session`, else `STARPULSE_SESSION`. A move that names one calls the writer with it as a fourth argument,
+A move may also name the mover's session: `POST /api/move` takes `{task, to, actor, session, harness}`, and
+`starpulse task move` sends `--session`, else `STARPULSE_SESSION`, and `--harness`, else `STARPULSE_HARNESS`; the
+task `create`, `edit`, `assign`, `archive` and `checkpoint` verbs send the same two. A move that names one calls the writer with it as a fourth argument,
 `writer(task, status, actor, session)`; one that names none calls it with three, so a writer written before sessions
 keeps working. The writer records the session as the task's holder when the move is a claim, `BoardTask.holder`
 carries it back, and a `Written.advice` string rides in the move's answer (`advice` in the CLI document, empty when

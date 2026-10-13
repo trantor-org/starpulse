@@ -41,7 +41,7 @@ class _File:
     def read(self, task: str, /) -> dict[str, Any] | None:
         return json.loads(self.path.read_text()) if task == "PROJ-3" else None
 
-    def edit(self, task: str, changes: dict[str, Any], comment: str, /) -> Written:
+    def edit(self, task: str, changes: dict[str, Any], comment: str, /, *, actor: str) -> Written:
         self.sent.append((task, dict(changes), comment))
         if self.refusal is not None:
             return self.refusal
@@ -268,7 +268,7 @@ class _Archive:
         self.reply = reply
         self.sent: list[tuple[str, str]] = []
 
-    def __call__(self, task: str, reason: str, /) -> Written:
+    def __call__(self, task: str, reason: str, /, *, actor: str) -> Written:
         self.sent.append((task, reason))
         return self.reply
 

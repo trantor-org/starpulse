@@ -74,7 +74,9 @@ write land.
 With `[[board.rules]]` set, the board judges each task write against those rules first, as the actor that makes it, and
 a rule broken refuses the write with its `reason` and `skill` before `validate` is asked (see Board rules in
 [public-surface.md](public-surface.md)); the `edit`, `archive`, `create` and `assign` writers take that actor as a
-keyword, `edit(task, changes, comment, actor="agent")`, and the server passes it only when the request names one.
+keyword, `edit(task, changes, comment, actor="agent")`, which the server always passes on `edit`, `archive` and `create`
+(`anonymous` when the request names none); a `create` writer's `details` also carry `created_by`, the writer's
+`<harness>:<session>` to stamp in the task.
 A task record also carries `start_criteria`: each criterion of the `start_criteria` YAML block under the
 description's `## Start Criteria` heading (`id`, `kind`, `expr`, `cmp` and `want` for its threshold), with its
 `status` (`met`, `unmet`, `error` or `not evaluated`), `observed` value, `error` and `checked` time. With `[board]

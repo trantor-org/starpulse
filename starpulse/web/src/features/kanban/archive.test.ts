@@ -20,7 +20,7 @@ describe("posting an archive", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0].url).toBe("/api/archive");
     expect(seen[0].init?.method).toBe("POST");
-    expect(JSON.parse(String(seen[0].init?.body))).toEqual({ task: "TASK-9", reason: "superseded by m-80" });
+    expect(JSON.parse(String(seen[0].init?.body))).toEqual({ task: "TASK-9", reason: "superseded by m-80", actor: "operator" });
   });
 
   it("returns the writer's refusal with its skill", async () => {

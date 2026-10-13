@@ -1,6 +1,6 @@
 // The task view's model: the full record GET /api/task/<id> returns, and the Move to menu's keyboard.
 import { ago, fmtAt } from "../../shared/clock";
-import { apiFetch } from "../../api/apiFetch";
+import { apiFetch, PAGE_ACTOR } from "../../api/apiFetch";
 import type { KanbanTask } from "./kanban";
 
 export interface Item { n: number; text: string; checked: boolean }
@@ -92,7 +92,7 @@ export async function saveTask(
     response = await fetcher("/api/edit", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ task, base: diff.base, changes: withoutNew(diff.changes), comment }),
+      body: JSON.stringify({ task, base: diff.base, changes: withoutNew(diff.changes), comment, actor: PAGE_ACTOR }),
     });
   } catch {
     return { ok: false, reason: "The task writer could not be reached.", skill: "", fields: diff.fields, record: draft };
