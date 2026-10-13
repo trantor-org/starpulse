@@ -19,7 +19,14 @@ def run(tree: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "slow_tests", "-p", "no:cacheprovider", *args],
         cwd=tree,
-        env={**os.environ, "PYTHONPATH": str(CI), "SLOW_TEST_SECONDS": "0.3", "GITHUB_ACTIONS": "", **env},
+        env={
+            **os.environ,
+            "PYTHONPATH": str(CI),
+            "SLOW_TEST_SECONDS": "0.3",
+            "SLOW_TEST_CPU_SECONDS": "0.3",
+            "GITHUB_ACTIONS": "",
+            **env,
+        },
         capture_output=True,
         text=True,
         check=False,
@@ -49,6 +56,7 @@ def test_under_github_actions_a_slow_test_is_annotated_on_its_line_and_added_to_
     assert "::warning file=test_x.py,line=7,title=Slow test::test_x.py::test_slow took " in done.stdout
     assert "test_fast" not in summary.read_text()
     assert "| `test_x.py::test_slow` |" in summary.read_text()
+    assert "| Wall s | CPU s | Peak MB | Test |" in summary.read_text()
 
 
 def test_a_run_with_no_slow_test_names_none(tmp_path):
@@ -59,3 +67,41 @@ def test_a_run_with_no_slow_test_names_none(tmp_path):
     assert done.returncode == 0, done.stdout + done.stderr
     assert "slow test" not in done.stdout.lower()
     assert not (tmp_path / "summary.md").exists()
+
+
+BUSY = "import time\n\ndef test_busy():\n    end = time.process_time() + 0.6\n    while time.process_time() < end:\n        pass\n"
+
+
+def listed(stdout: str, section: str, test: str) -> list[str]:
+    """The fields of `test`'s line under the `section` heading of the run output, or [] when it is not listed there."""
+    lines = stdout.split("=== ")
+    body = next((chunk for chunk in lines if chunk.startswith(section)), "")
+    return next((line.split() for line in body.splitlines() if line.endswith(test)), [])
+
+
+@pytest.mark.parametrize("workers", [[], ["-n", "2"]], ids=["serial", "xdist"])
+def test_a_cpu_bound_test_is_listed_with_its_cpu_seconds_and_a_sleeping_one_by_wall_time_only(tmp_path, workers):
+    (tmp_path / "test_x.py").write_text(TESTS + "\n\n" + BUSY.split("\n\n", 1)[1])
+
+    done = run(tmp_path, *workers)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    busy = listed(done.stdout, "costly tests", "test_x.py::test_busy")
+    assert 0.5 <= float(busy[0].rstrip("s")) < 5, done.stdout
+    assert listed(done.stdout, "costly tests", "test_x.py::test_slow") == []
+    assert listed(done.stdout, "slow tests", "test_x.py::test_slow") != []
+    assert "outside" in done.stdout
+
+
+def test_the_job_summary_row_carries_wall_cpu_and_peak_memory_for_a_costly_test(tmp_path):
+    (tmp_path / "test_x.py").write_text(BUSY)
+    summary = tmp_path / "summary.md"
+
+    done = run(tmp_path, GITHUB_ACTIONS="true", SLOW_TEST_SECONDS="60", GITHUB_STEP_SUMMARY=str(summary))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    row = next(line for line in summary.read_text().splitlines() if "test_busy" in line)
+    wall, cpu, peak = (float(cell) for cell in row.split("|")[1:4])
+    assert 0.5 <= cpu <= wall + 0.2 and peak >= 0
+    assert "title=Costly test::test_x.py::test_busy took " in done.stdout
+    assert "containers" in summary.read_text()
