@@ -4997,6 +4997,103 @@
       "title": "Restored",
       "type": "object"
     },
+    "RetireRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks.",
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "RetireRequest",
+      "type": "object"
+    },
+    "Retired": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "Retired",
+      "type": "object"
+    },
+    "RetiredImportRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/retired/import`: keep the retired task file `name`, holding `text`, in the history store.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "text"
+      ],
+      "title": "RetiredImportRequest",
+      "type": "object"
+    },
+    "RetiredImported": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "RetiredImported",
+      "type": "object"
+    },
+    "RetiredTask": {
+      "additionalProperties": false,
+      "description": "A retired task as the board's history store keeps it: its id, its file name and the file's text, byte-for-byte.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "name",
+        "text"
+      ],
+      "title": "RetiredTask",
+      "type": "object"
+    },
+    "RetiredTasks": {
+      "additionalProperties": false,
+      "description": "`GET /api/retired[?task=<id>]`: every retired task, or the one `task` names, by id.",
+      "properties": {
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/RetiredTask"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "title": "RetiredTasks",
+      "type": "object"
+    },
     "RunDiff": {
       "additionalProperties": false,
       "description": "One transition's reference run against its slowest clean run.",
@@ -7281,6 +7378,12 @@
             "$ref": "#/$defs/Restored"
           },
           {
+            "$ref": "#/$defs/Retired"
+          },
+          {
+            "$ref": "#/$defs/RetiredImported"
+          },
+          {
             "$ref": "#/$defs/Completed"
           },
           {
@@ -7454,6 +7557,12 @@
             "$ref": "#/$defs/RestoreRequest"
           },
           {
+            "$ref": "#/$defs/RetireRequest"
+          },
+          {
+            "$ref": "#/$defs/RetiredImportRequest"
+          },
+          {
             "$ref": "#/$defs/CompleteRequest"
           },
           {
@@ -7501,6 +7610,9 @@
     },
     "restarting": {
       "$ref": "#/$defs/RestartingEvent"
+    },
+    "retiredTasks": {
+      "$ref": "#/$defs/RetiredTasks"
     },
     "searchResults": {
       "$ref": "#/$defs/SearchResults"
@@ -7571,6 +7683,7 @@
     "milestoneShown",
     "docs",
     "docShown",
+    "retiredTasks",
     "requests",
     "answers"
   ],

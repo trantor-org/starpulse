@@ -33,6 +33,16 @@ POST /api/complete {task}: move a Done task into the board's completed tasks thr
 POST /api/restore  {task}: return an archived task to the board's tasks, unchanged, through its `restore`; 409 with the
                    writer's refusal for a task that is not archived, is already open or completed, or whose file name is
                    taken, 404 when the board does not restore
+POST /api/retire   {task}: take a finished task (Done, completed or archived) off the board into the history store's
+                   retired tasks through its `retire`, kept byte-for-byte; 409 with the writer's refusal for an open or
+                   unknown task or a number kept with other text, 404 when the board does not retire
+GET /api/retired[?task=<id>]
+                   {tasks}: the retired tasks, or the one `task` names, each {task, name, text}; 404 for a board that
+                   keeps none. A `restore` of a retired task returns its file to the board's tasks
+POST /api/retired/import
+                   {name, text}: keep a retired task file a client held in the history store through the board's
+                   `import_retired`, and answer 200 {task}; the same file again is accepted, 409 for other text under a
+                   kept number, a task on the board or a file with no id, 404 when the board does not import
 POST /api/tasks    {title, description, priority, labels, milestone, assignee, dependencies, acceptanceCriteria[,
                    actor]}: create
                    a task in the board's starting lane through the board's `create`, and answer 201 {task}
@@ -464,6 +474,55 @@ def restore_task(source: str, raw: bytes, restore: TaskRestorer | None) -> tuple
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
+
+
+def retire_task(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Take the finished task `raw` names off the board into its history store through the board's `retire`, for a
+    browser at `source`: the HTTP status and JSON body.
+
+    The writer owns every other refusal (an open or unknown task, the number kept with other text, a board not started),
+    which answers 409 with its reason.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Retiring a task answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        task = json.loads(raw)["task"]
+    except ValueError, TypeError, KeyError:
+        task = None
+    if not isinstance(task, str):
+        return 400, {"error": 'a retire needs {"task": "TASK-N"}'}
+    if board is None or board.retire is None:
+        return 404, {"error": "this board does not retire tasks"}
+    written = board.retire(task)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task}
+
+
+def retired_list(board: Board | None, task: str) -> tuple[int, dict[str, Any]]:
+    """The retired task `task` names, or every retired task for a blank one, each {task, name, text}: the HTTP status and
+    JSON body. Reading is not LAN-limited."""
+    if board is None or board.retired is None:
+        return 404, {"error": "this board keeps no retired tasks"}
+    return 200, {"tasks": board.retired(task)}
+
+
+def import_retired(source: str, raw: bytes, board: Board | None) -> tuple[int, dict[str, Any]]:
+    """Keep the retired task file `raw` holds, {name, text}, in the board's history store through its `import_retired`,
+    for a browser at `source`: the HTTP status and JSON body, which holds the task's id. The same file again is accepted;
+    the writer's refusal (no id, a task on the board, other text under the kept number) answers 409."""
+    body, refusal = _record_request(source, raw, "Importing", "retired task")
+    if body is None:
+        return refusal
+    name, text = body.get("name"), body.get("text")
+    if not isinstance(name, str) or not isinstance(text, str):
+        return 400, {"error": 'an import needs {"name": "<file name>", "text": "<file text>"}'}
+    if board is None or board.import_retired is None:
+        return 404, {"error": "this board does not import retired tasks"}
+    written = board.import_retired(name, text)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": written.output}
 
 
 def _create_details(body: Mapping[str, Any]) -> tuple[dict[str, Any], str]:

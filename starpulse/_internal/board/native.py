@@ -14,25 +14,31 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+from sqlalchemy import delete, func, insert, select
+from sqlalchemy.engine import Engine
 
 from starpulse._internal.board import native_docs, native_milestones, rules
 from starpulse._internal.board.seam import (
     Board,
     OPERATOR,
     MoveWriter,
+    RetiredImporter,
+    RetiredReader,
     TaskArchiver,
     TaskCompleter,
     TaskCreator,
     TaskEditor,
     TaskReader,
     TaskRestorer,
+    TaskRetirer,
     Written,
 )
 from starpulse._internal.board.upstream_backlog import (
@@ -50,7 +56,12 @@ from starpulse._internal.board.upstream_backlog import (
     lane_id,
     project_board,
 )
+from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed import criteria
+
+if TYPE_CHECKING:
+    from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.feed.board_feed import BoardFeed
 
 #: Where the board lives, relative to the config's directory (or the working directory without a config).
 DEFAULT_PATH = ".starpulse/board"
@@ -152,16 +163,19 @@ def _id_line(task: str) -> re.Pattern[str]:
     return re.compile(rf"^id:[ \t]*[\"']?{re.escape(task)}[\"']?[ \t]*$", re.M | re.I)
 
 
-def _state_of(root: Path) -> Callable[[str], str | None]:
-    """A lookup of the state (its lane id) a task's file is in, None for a task with no file."""
+def _state_of(root: Path, retired: _Retired) -> Callable[[str], str | None]:
+    """A lookup of the state (its lane id) a task's file is in, or its retired file was in, None for a task with neither."""
 
     def state(task: str) -> str | None:
         if (path := _find(root, task)) is None:
-            return None
-        try:
-            frontmatter, _ = _split(path.read_text())
-        except OSError:
-            return None  # moved or removed while looking
+            kept = retired.rows(task)
+            text = kept[0]["text"] if kept else ""
+        else:
+            try:
+                text = path.read_text()
+            except OSError:
+                return None  # moved or removed while looking
+        frontmatter, _ = _split(text)
         return lane_id(str(frontmatter.get("status") or "").strip()) if isinstance(frontmatter, dict) else None
 
     return state
@@ -505,17 +519,134 @@ def _archiver(root: Path, guard: _Guard = _Guard()) -> TaskArchiver:
     return archive
 
 
-def _restorer(root: Path) -> TaskRestorer:
-    """A board writer that returns an archived task's file, unchanged, to `tasks/` under its own name.
+class _Retired:
+    """The board's retired tasks, rows of the history store's `starpulse_retired_tasks`, once `start` binds the store.
 
-    The task is refused while its number is open or completed, and when the name is taken: the file is linked into
-    place, so a file another writer put there first is never replaced."""
+    A board that has not started has no store: it reads no retired task and refuses to keep one. A task is matched by
+    its id in any case, as `_find` matches a file."""
+
+    def __init__(self) -> None:
+        self.engine: Engine | None = None
+
+    def rows(self, task: str = "") -> list[dict[str, str]]:
+        """The retired task `task` as `[{task, name, text}]`, empty when it is not retired; every one, by id, for ""."""
+        if self.engine is None:
+            return []
+        query = select(retired_tasks.c.task, retired_tasks.c.name, retired_tasks.c.text).order_by(retired_tasks.c.task)
+        if task:
+            query = query.where(func.lower(retired_tasks.c.task) == task.lower())
+        with self.engine.connect() as db:
+            return [dict(row._mapping) for row in db.execute(query)]
+
+    def ids(self) -> list[str]:
+        """Every retired task's id."""
+        if self.engine is None:
+            return []
+        with self.engine.connect() as db:
+            return list(db.execute(select(retired_tasks.c.task)).scalars())
+
+    def keep(self, task: str, name: str, text: str) -> str | None:
+        """Keep `task`'s file `name` with `text`: why it is refused (the board has not started, or `task` is retired
+        with other text), or None once it is kept. The same task with the same text is kept already."""
+        if self.engine is None:
+            return "the board keeps no retired tasks until it starts"
+        with self.engine.begin() as db:
+            held = db.execute(
+                select(retired_tasks.c.text).where(func.lower(retired_tasks.c.task) == task.lower())
+            ).scalar()
+            if held is None:
+                db.execute(insert(retired_tasks).values(task=task, name=name, text=text, retired_at=time.time()))
+        return None if held in (None, text) else f"{task} is already retired with other text"
+
+    def take(self, task: str, directory: Path) -> Written | None:
+        """Write the retired `task` back into `directory` under its own name and drop its row; None when it is not
+        retired. A file already at that name is never replaced: the restore is refused and the row stays."""
+        if not (kept := self.rows(task)):
+            return None
+        target = directory / kept[0]["name"]
+        try:
+            with target.open("xb") as file:
+                file.write(kept[0]["text"].encode())
+        except FileExistsError:
+            return Written(False, f"{task}: {target} already exists")
+        except OSError as error:
+            return Written(False, f"{target}: {error}")
+        assert self.engine is not None  # rows found one
+        with self.engine.begin() as db:
+            db.execute(delete(retired_tasks).where(retired_tasks.c.task == kept[0]["task"]))
+        return Written(True, f"Restored task {task}")
+
+
+#: Where a finished task's file may be retired from: a Done task's lanes, or the archive whatever its state.
+_RETIRABLE = ("tasks", "completed", "archive/tasks")
+
+
+def _retirer(root: Path, retired: _Retired) -> TaskRetirer:
+    """A board writer that takes a Done or archived task's file off the board into `retired`, byte for byte.
+
+    The file is first renamed to a name no scan reads, so a write meeting the retire finds no file rather than losing
+    its change; a retire the store refuses renames it back."""
+
+    def retire(task: str, /) -> Written:
+        if (path := _find(root, task, _RETIRABLE)) is None:
+            return Written(False, f"{task} has no task file on the board")
+        frontmatter, _ = _split(text := path.read_bytes().decode())
+        status = str(frontmatter.get("status") or "") if isinstance(frontmatter, dict) else ""
+        if path.parent != root / "archive" / "tasks" and lane_id(status) != "done":
+            return Written(False, f"{task} is {status or 'without a status'}, neither Done nor archived")
+        held = path.with_name(f"{path.name}.retiring")
+        try:
+            os.replace(path, held)
+            if refused := retired.keep(str(frontmatter["id"]).strip(), path.name, held.read_bytes().decode()):
+                os.replace(held, path)
+                return Written(False, refused)
+            held.unlink()
+        except OSError as error:
+            return Written(False, f"{path}: {error}")
+        return Written(True, f"Retired task {task}")
+
+    return retire
+
+
+def _retired_reader(retired: _Retired) -> RetiredReader:
+    def read(task: str, /) -> list[Mapping[str, str]]:
+        return list(retired.rows(task))
+
+    return read
+
+
+def _importer(root: Path, retired: _Retired) -> RetiredImporter:
+    """A board writer that keeps a task file another client retired, `name` and `text`, among `retired`."""
+
+    def import_retired(name: str, text: str, /) -> Written:
+        if Path(name).name != name or not name.endswith(".md"):
+            return Written(False, f"{name!r} is not a plain task file name")
+        frontmatter, _ = _split(text)
+        if not (task := str(frontmatter.get("id") or "").strip() if isinstance(frontmatter, dict) else ""):
+            return Written(False, f"{name} names no task id in its front matter")
+        if _find(root, task, _RETIRABLE) is not None:
+            return Written(False, f"{task} is on the board")
+        if refused := retired.keep(task, name, text):
+            return Written(False, refused)
+        return Written(True, task)
+
+    return import_retired
+
+
+def _restorer(root: Path, retired: _Retired) -> TaskRestorer:
+    """A board writer that returns an archived or retired task's file, unchanged, to `tasks/` under its own name.
+
+    The task is refused while its number is open or completed, and when the name is taken: an archived file is linked
+    into place and a retired one written only as a new file, so a file another writer put there first is never
+    replaced."""
 
     def restore(task: str, /) -> Written:
         if _find(root, task) is not None:
             return Written(False, f"{task} is already on the board")
         if (path := _find(root, task, ("archive/tasks",))) is None:
-            return Written(False, f"{task} has no archived task file in {root / 'archive' / 'tasks'}")
+            return retired.take(task, root / "tasks") or Written(
+                False, f"{task} has no archived task file in {root / 'archive' / 'tasks'} and is not retired"
+            )
         target = root / "tasks" / path.name
         try:
             os.link(path, target)
@@ -575,10 +706,10 @@ def _completer(root: Path) -> TaskCompleter:
     return complete
 
 
-def _next_id(root: Path, prefix: str) -> str:
-    """`<prefix>-N` with N one past the highest on the board, its completed and archived tasks included."""
+def _next_id(root: Path, prefix: str, retired: _Retired) -> str:
+    """`<prefix>-N` with N one past the highest on the board, its completed, archived and retired tasks included."""
     number = re.compile(rf"{re.escape(prefix)}-(\d+)", re.I)
-    highest = 0
+    highest = max((int(found[1]) for task in retired.ids() if (found := number.fullmatch(task))), default=0)
     for folder, _ in _FOLDERS:
         for path in (root / folder).glob("*.md"):
             try:
@@ -635,7 +766,9 @@ def _file_name(task: str, title: str, form: str) -> str:
     return f"{task} - {re.sub(r'[^\w-]+', '-', title).strip('-')[:60].strip('-') or 'Task'}.md"
 
 
-def _creator(root: Path, config: BacklogConfig, guard: _Guard = _Guard(), file_name: str = "title") -> TaskCreator:
+def _creator(
+    root: Path, config: BacklogConfig, retired: _Retired, guard: _Guard = _Guard(), file_name: str = "title"
+) -> TaskCreator:
     """A board writer that makes a task file with the next id, named in the `file_name` form, in one write.
 
     It starts in the first lane; any detail beyond the ones the page fills (a `status`, `type`, `references`,
@@ -647,7 +780,7 @@ def _creator(root: Path, config: BacklogConfig, guard: _Guard = _Guard(), file_n
 
     def create(title: str, details: Mapping[str, Any], /, actor: str = OPERATOR) -> Written:
         with lock:
-            task = _next_id(root, config.prefix)
+            task = _next_id(root, config.prefix, retired)
             path = root / "tasks" / _file_name(task, title, file_name)
             frontmatter, body = _split(_new_task(task, title, config.statuses[0], details))
             rest = {field: value for field, value in details.items() if field not in _NEW_TASK_DETAILS}
@@ -678,7 +811,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     root = base / str(settings.get("path", DEFAULT_PATH))
     _create(root, base.resolve().name)
     evaluate = criteria.evaluator(settings.get("criteria"), base)
-    guard = _Guard(rules.load(settings.get("rules")), _hook(settings.get("validate")), _state_of(root))
+    retired = _Retired()
+    guard = _Guard(rules.load(settings.get("rules")), _hook(settings.get("validate")), _state_of(root, retired))
 
     def assign(task: str, assignee: str, /, actor: str = OPERATOR) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
@@ -687,20 +821,23 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
         return _update(root, task, edit, guard, actor)
 
-    return project_board(
+    made = project_board(
         root,
         settings,
         base,
         lambda config: {
             "writer": _writer(root, config.statuses, guard),
             "assign": assign,
-            "create": _creator(root, config, guard, file_name),
+            "create": _creator(root, config, retired, guard, file_name),
             "read": _reader(root, evaluate.latest if isinstance(evaluate, criteria.Evaluator) else evaluate),
             "evaluate": evaluate,
             "edit": _editor(root, config.statuses, guard),
             "archive": _archiver(root, guard),
-            "restore": _restorer(root),
+            "restore": _restorer(root, retired),
             "complete": _completer(root),
+            "retire": _retirer(root, retired),
+            "retired": _retired_reader(retired),
+            "import_retired": _importer(root, retired),
             "docs": native_docs.lister(root),
             "read_doc": native_docs.reader(root),
             "create_doc": native_docs.creator(root),
@@ -714,3 +851,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "archive_milestone": native_milestones.archiver(root),
         },
     )
+
+    def start(feed: BoardFeed, group: str, log: EventLog) -> None:
+        retired.engine = log.engine  # the retired tasks live in the view's history store
+        made.start(feed, group, log)
+
+    return replace(made, start=start)

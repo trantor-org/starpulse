@@ -9,6 +9,8 @@ export interface ApiContract {
     | Edited
     | Archived
     | Restored
+    | Retired
+    | RetiredImported
     | Completed
     | Created
     | MilestoneCreated
@@ -59,6 +61,8 @@ export interface ApiContract {
     | EditRequest
     | ArchiveRequest
     | RestoreRequest
+    | RetireRequest
+    | RetiredImportRequest
     | CompleteRequest
     | CreateRequest
     | MilestoneCreateRequest
@@ -75,6 +79,7 @@ export interface ApiContract {
     | ForwardRequest
   )[];
   restarting: RestartingEvent;
+  retiredTasks: RetiredTasks;
   searchResults: SearchResults;
   sessionSteps: SessionSteps;
   sessions: Sessions;
@@ -100,6 +105,12 @@ export interface Archived {
   task: string;
 }
 export interface Restored {
+  task: string;
+}
+export interface Retired {
+  task: string;
+}
+export interface RetiredImported {
   task: string;
 }
 export interface Completed {
@@ -1463,6 +1474,19 @@ export interface RestoreRequest {
   task: string;
 }
 /**
+ * `POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks.
+ */
+export interface RetireRequest {
+  task: string;
+}
+/**
+ * `POST /api/retired/import`: keep the retired task file `name`, holding `text`, in the history store.
+ */
+export interface RetiredImportRequest {
+  name: string;
+  text: string;
+}
+/**
  * `POST /api/complete`: move the Done task `task` into the board's completed tasks.
  */
 export interface CompleteRequest {
@@ -1589,6 +1613,20 @@ export interface ForwardedEvent {
  */
 export interface RestartingEvent {
   at: number;
+}
+/**
+ * `GET /api/retired[?task=<id>]`: every retired task, or the one `task` names, by id.
+ */
+export interface RetiredTasks {
+  tasks: RetiredTask[];
+}
+/**
+ * A retired task as the board's history store keeps it: its id, its file name and the file's text, byte-for-byte.
+ */
+export interface RetiredTask {
+  name: string;
+  task: string;
+  text: string;
 }
 /**
  * `GET /api/search?q=&limit=`: the tasks holding every word of `q`, best match first.

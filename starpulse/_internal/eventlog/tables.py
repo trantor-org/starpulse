@@ -103,6 +103,18 @@ autopilot_runs = Table(
     sqlite_autoincrement=True,
 )
 
+#: The native board's retired tasks: a finished task's file taken off the board, so its reads and numbering scan fewer
+#: files, kept whole by its front matter `id` (`task`) under its file `name`, to be restored as that file. `retired_at`
+#: is the epoch second it was retired or imported. Event-log pruning never touches it.
+retired_tasks = Table(
+    "starpulse_retired_tasks",
+    metadata,
+    Column("task", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("retired_at", Float, nullable=False),
+)
+
 #: What a hub keeps of a day after its raw events are dropped (`hub.enforce_retention`): per team, machine and state,
 #: how many tasks or runs entered the state that UTC day (`entries`), how many of those had not left it when the day was
 #: rolled up (`open_entries`), and the seconds the others stayed. A hub writes it; an IC instance never does.
