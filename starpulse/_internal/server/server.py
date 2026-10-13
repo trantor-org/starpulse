@@ -306,6 +306,7 @@ from starpulse._internal.ci.ci import attach
 from starpulse._internal.ci.ci_trail import CiTrail
 from starpulse._internal.level.insights import Insights, InsightStore, restore
 from starpulse._internal.feed.ledger import PAGE
+from starpulse._internal.feed.claim_refusals import STREAM as CLAIMS_STREAM, ClaimRefusals
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.feed.machine_tasks import tables as machine_tables
@@ -1977,6 +1978,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
+    refusals = ClaimRefusals(feed)
+    follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry)
     pulls = PullStore(log.engine)
     pull_refresh = None
     pins = GitHub()  # one memo of the pointer reads for the pull request projection and the release of dependents
