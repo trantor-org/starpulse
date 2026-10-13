@@ -264,7 +264,7 @@ every 30 seconds, warms it with a discarded 1 minute crowd, then runs `load.py` 
 the duration with Locust on `CLIENT_CPUS` (`8-9`). Rounds alternate which interpreter goes first. `summarize.py`
 prints each run's host load and GIL report, then one row per route and run.
 
-Result (2026-10-13, ai-vm-1's live state, server on 8 of the host's 36 cores; host load1 12 to 61 during the runs):
+Result (2026-10-13, a live instance's state on a 36-core build host, server on 8 cores; host load1 12 to 61 during the runs):
 
 | Crowd | Interpreter | Runs | Aggregated p50 | Aggregated p95 | Max | Requests/s |
 | ---: | --- | ---: | --- | --- | --- | --- |
