@@ -871,22 +871,29 @@ const colorOf = (seen: Seen, text: string) => seen.find(t => t.text === text)?.c
 
 for (const glyphs of ['nerd', 'plain'] as const) {
   const set = glyphs === 'nerd' ? NERD : PLAIN
-  test(`glyphs=${glyphs}: the band and the Board tab draw ${glyphs} icons`, { options: { glyphs } }, async ($, on) => {
+
+  test(`glyphs=${glyphs}: the band draws ${glyphs} icons`, { options: { glyphs } }, async ($, on) => {
     const stream = feed()
-    const ui = await openKanban($, on, { board: () => answer(0, COLOURED), held: [stream] })
+    sessionsHost(on, { held: [stream] })
+    await start($, 'terminal')
     stream.held(BOARD)
     await settle()
     const held = await texts(await band($, 'terminal'))
-    await ui.press({ key: 'task:TASK-7' })
-    const tab = await texts(ui)
 
-    // The band: the held task's lane icon and PR checks glyph, and the summary line's Board icon.
+    // The held task's lane icon and PR checks glyph, and the summary line's Board icon.
     expect(has(held, set.inProgress), 'lane icon').toBe(true)
     expect(has(held, set.pending), 'checks glyph').toBe(true)
     expect(has(held, `${set.board} Board`), 'board icon').toBe(true)
-    // The Board tab: refresh, lane icon, PR glyph, move arrow and the go icon once a task is picked.
+  })
+
+  test(`glyphs=${glyphs}: the Board tab draws ${glyphs} icons`, { options: { glyphs } }, async ($, on) => {
+    const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+    await ui.press({ key: 'task:TASK-7' })
+    const tab = await texts(ui)
+
+    // Refresh, lane icon, PR glyph, then the move arrow and the go icon once a task is picked.
     expect(has(tab, set.refresh), 'refresh').toBe(true)
-    expect(has(tab, set.inProgress), 'lane icon in the tab').toBe(true)
+    expect(has(tab, set.inProgress), 'lane icon').toBe(true)
     expect(has(tab, `${set.move} Review`), 'move arrow').toBe(true)
     expect(has(tab, `${set.go} Go to session`), 'go icon').toBe(true)
     expect(has(tab, `${set.pr} #392`), 'pr icon').toBe(true)
@@ -930,16 +937,17 @@ test('a picked task opens its title, holder, criteria, PR and actions coloured b
 
   await ui.press({ key: 'task:TASK-7' })
   const seen = await texts(ui)
-  const first = async (key: string) => ((await ui.find({ key })) as any)?.children[0]?.props.color
+  const buttons = await ui.findAll({ type: 'Button' })
+  const first = (key: string) => (buttons.find((b: any) => b.key === key) as any)?.children[0]?.props.color
 
   expect(seen.filter(t => t.text === 'Busy one').length, 'row and detail').toBe(2)
   expect(colorOf(seen, 'task-7'), 'holder').toBe('#94a3b8')
   expect(colorOf(seen, '2/4 criteria')).toBe('#6b7a93')
   expect(colorOf(seen, `${NERD.pr} #392`)).toBe('#a78bfa')
   expect(colorOf(seen, 'checks running')).toBe('#fbbf24')
-  expect(await first('session:TASK-7'), 'Go to session').toBe('#34d399')
-  expect(await first('move:TASK-7:review')).toBe('#a78bfa')
-  expect(await first('move:TASK-7:done')).toBe('#34d399')
+  expect(first('session:TASK-7'), 'Go to session').toBe('#34d399')
+  expect(first('move:TASK-7:review')).toBe('#a78bfa')
+  expect(first('move:TASK-7:done')).toBe('#34d399')
   await ui.press({ key: 'task:TASK-7' })
   expect(await ui.find({ key: 'session:TASK-7' })).toBeUndefined()
   await ui.unmount()
@@ -962,19 +970,22 @@ test('a move to Done that StarPulse refuses toasts its reason and leaves the Boa
 })
 
 // No fill: a `plain` Button draws no chrome and nothing sets a background, so the terminal's black shows through.
-const drawsNoFill = async (tree: any) => {
+// The one exception is the Board pane's root Box, filled black to cover the dock's own grey (the operator's call).
+const fills = async (tree: any, root?: string) => {
   const buttons = await tree.findAll({ type: 'Button' })
   expect(buttons.length).toBeGreaterThan(0)
   for (const b of buttons) expect(b.props.plain, String(b.props.label)).toBe(true)
+  const filled: string[] = []
   for (const type of ['Box', 'Text', 'Button'])
-    for (const el of await tree.findAll({ type })) expect(el.props.backgroundColor, `${type} fill`).toBeUndefined()
+    for (const el of await tree.findAll({ type })) if (el.props.backgroundColor !== undefined) filled.push(`${type} ${el.props.backgroundColor}`)
+  expect(filled).toEqual(root ? [`Box ${root}`] : [])
 }
 
-test('the Board tab draws no fill: every Button is plain and no element sets a background', async ($, on) => {
+test('the Board tab fills its root black to cover the dock grey, every Button is plain and nothing else sets a background', async ($, on) => {
   const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
   await ui.press({ key: 'task:TASK-7' })
 
-  await drawsNoFill(ui)
+  await fills(ui, '#000000')
   await ui.unmount()
 })
 
@@ -985,5 +996,5 @@ test('the band draws no fill: every Button is plain and no element sets a backgr
   stream.held(BOARD)
   await settle()
 
-  await drawsNoFill(await band($, 'terminal'))
+  await fills(await band($, 'terminal'))
 })

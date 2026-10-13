@@ -2,6 +2,7 @@ import type { Checks, HeldTask } from '../types'
 
 // StarPulse's :root tokens (starpulse/web/src/style.css). An Svg is drawn isolated, so it spells them out.
 export const SP = {
+  black: '#000000',
   ink: '#dbe4f3',
   slate: '#94a3b8',
   muted: '#6b7a93',

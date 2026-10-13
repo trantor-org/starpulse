@@ -708,8 +708,9 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // The dock paints grey behind every cell a pane draws; the root fills black to cover it.
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" flexGrow={1} backgroundColor={SP.black}>
         <Box>
           <Text bold color={SP.agent}>{`${g('board')} Board`}</Text>
           <Text color={SP.muted}>{` · ${open} open`}</Text>
