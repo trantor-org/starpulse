@@ -3,7 +3,8 @@
 A NAS farm slot is capped at 4 GiB, and its cgroup also holds its own dockerd and the Postgres containers the
 hub tests start; a worker OOM-killed there leaves xdist hanging until the job timeout. So a memory-limited runner gets
 one worker per 2 GiB. A runner with no cgroup memory limit shares the build host's cores with the rest of the pool and gets
-MAX_WORKERS. trantor's `bin/ci_pytest_workers.py` applies the same rule to its own Validate job.
+MAX_WORKERS: two, so a pool of runners fills the host's test CPU budget instead of oversubscribing it. trantor's
+`bin/ci_pytest_workers.py` applies the same rule to its own Validate job.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-MAX_WORKERS = 4
+MAX_WORKERS = 2
 GIB_PER_WORKER = 2
 CGROUP_MEMORY_MAX = Path("/sys/fs/cgroup/memory.max")
 

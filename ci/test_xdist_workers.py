@@ -14,14 +14,14 @@ CI = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
 
 @pytest.mark.parametrize(
     ("limit", "workers"),
-    [("max", 4), ("", 4), (str(1 * GIB), 1), (str(4 * GIB), 2), (str(6 * GIB), 3), (str(64 * GIB), 4)],
+    [("max", 2), ("", 2), (str(1 * GIB), 1), (str(4 * GIB), 2), (str(6 * GIB), 2), (str(64 * GIB), 2)],
 )
-def test_a_runner_gets_one_worker_per_2_gib_of_its_memory_limit_up_to_four(limit, workers):
+def test_a_runner_gets_one_worker_per_2_gib_of_its_memory_limit_up_to_two(limit, workers):
     assert workers_for(limit) == workers
 
 
-def test_a_runner_with_no_cgroup_memory_file_gets_four(tmp_path):
-    assert workers_for_file(tmp_path / "memory.max") == 4
+def test_a_runner_with_no_cgroup_memory_file_gets_two(tmp_path):
+    assert workers_for_file(tmp_path / "memory.max") == 2
 
 
 def test_the_pytest_job_sizes_its_workers_before_it_runs_pytest():
