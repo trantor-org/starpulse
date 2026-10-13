@@ -132,12 +132,12 @@ task placed again unchanged, as every task is on a restart, writes nothing. A hu
 text stays on the instance, and a SQLite built without FTS5 serves none: the route answers 404 and the verb exits 3.
 
 The `[search]` table's `embeddings_url` is optional ([Config file](serving.md#config-file)). Unset, ranking is the
-lexical order above and nothing calls out. Set, `serve` sends each task's text to that OpenAI-compatible endpoint in
-the background and keeps one vector per task and `model`; a query is then embedded once and its lexical hits (up to
-the 50 best) are ordered by half their bm25 score, relative to the best hit's, and half the cosine similarity of
+lexical order above and nothing calls out. Set, `serve` sends each task's title and description to that
+OpenAI-compatible endpoint in the background and keeps one vector per task and `model`; a query is then embedded once
+and its lexical hits (up to the 50 best) are ordered by half their bm25 score, relative to the best hit's, and half the cosine similarity of
 their vector to the query's, so `score` is that blend. A task whose vector is not stored yet counts as no similarity.
 A task that holds none of the query's words is a hit too when the cosine similarity of its vector to the query's is at
-least 0.6, so a reworded description still finds the task it rewords; its `snippet` is the task's opening and its
+least 0.55, so a reworded description still finds the task it rewords; its `snippet` is the task's opening and its
 `score` is half that similarity. Without a vector for the query (no endpoint, or one that does not answer) a query still
 needs every word to match. An endpoint that does not answer leaves the lexical order and is retried every minute.
 

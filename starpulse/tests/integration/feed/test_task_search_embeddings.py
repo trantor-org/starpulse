@@ -1,6 +1,7 @@
 """Search ranks by meaning only when an embeddings URL is configured, and is lexical, calling nothing, without one."""
 
 import json
+import math
 import socket
 import threading
 import time
@@ -9,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from starpulse._internal.config.search import Search
 from starpulse._internal.feed import search as search_module
@@ -131,6 +132,47 @@ def test_a_task_near_the_query_in_meaning_is_found_without_sharing_a_word(engine
 
     assert [hit["task"] for hit in hits] == ["PROJ-1"]  # PROJ-2's vector is orthogonal to the query's
     assert hits[0]["snippet"].startswith("when the cache drops entries")
+
+
+def test_a_reworded_task_clears_the_recall_floor_and_an_unrelated_one_does_not(engine, endpoint: _Endpoint) -> None:
+    # The cosines mxbai-embed-large gives a reworded task's original (0.598) and an unrelated task (0.53) on the live board.
+    endpoint.rules = (
+        ("reworded", [1.0, 0.0]),
+        ("original", [0.598, math.sqrt(1 - 0.598**2)]),
+        ("unrelated", [0.53, math.sqrt(1 - 0.53**2)]),
+    )
+    index = _open(engine, Search(endpoint.url, "m"))
+    index.index(_task("PROJ-1", title="The original"))
+    index.index(_task("PROJ-2", title="Something unrelated"))
+    index.embed_pending()
+
+    assert _found(index, "reworded query") == ["PROJ-1"]
+
+
+def test_a_task_is_embedded_by_its_title_and_description_alone(engine, endpoint: _Endpoint) -> None:
+    index = _open(engine, Search(endpoint.url, "m"))
+    index.index(
+        _task("PROJ-1", title="Tuning", description="queue depth", acceptance_criteria=["tests pass"], notes="later")
+    )
+
+    index.embed_pending()
+
+    assert endpoint.requests[0]["input"] == ["Tuning\nqueue depth"]
+
+
+def test_a_vector_stored_from_the_whole_task_is_made_again_once(engine, endpoint: _Endpoint) -> None:
+    _open(engine, Search(endpoint.url, "m")).index(_task("PROJ-1", title="Tuning"))
+    with engine.begin() as connection:  # a vector as an earlier release stored it, keyed by the model alone
+        connection.execute(
+            text("INSERT INTO starpulse_task_vectors (task_row, model, vector) VALUES (:row, 'm', x'00')"),
+            {"row": search_module._row("PROJ-1")},
+        )
+    index = _open(engine, Search(endpoint.url, "m"))
+
+    assert index.embed_pending() == 1
+    assert index.embed_pending() == 0
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM starpulse_task_vectors")).scalar() == 1
 
 
 def test_a_task_is_embedded_once_until_its_text_changes(engine, endpoint: _Endpoint) -> None:
