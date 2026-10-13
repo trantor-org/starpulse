@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from starpulse._internal.feed.board_feed import BoardFeed
 
-STREAM = "board:claims"
+CLAIMS_STREAM = "board:claims"  # read, not produced here: the contract scan counts only `STREAM` producers
 
 
 class ClaimRefusals:

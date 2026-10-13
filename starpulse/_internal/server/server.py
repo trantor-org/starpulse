@@ -307,7 +307,7 @@ from starpulse._internal.ci.ci import attach
 from starpulse._internal.ci.ci_trail import CiTrail
 from starpulse._internal.level.insights import Insights, InsightStore, restore
 from starpulse._internal.feed.ledger import PAGE
-from starpulse._internal.feed.claim_refusals import STREAM as CLAIMS_STREAM, ClaimRefusals
+from starpulse._internal.feed.claim_refusals import CLAIMS_STREAM, ClaimRefusals
 from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.feed.machine_tasks import tables as machine_tables
