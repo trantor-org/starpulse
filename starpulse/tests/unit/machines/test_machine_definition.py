@@ -160,6 +160,54 @@ class TestTheSchema:
         assert json.loads(schema.read_text()) == machine_definition.SCHEMA
 
 
+def _review(waits: dict[str, Any]) -> dict[str, Any]:
+    """A machine whose `review` state declares `waits` and leaves on `MERGED`."""
+    return {
+        "name": "sample",
+        "states": {"review": {"initial": True, "waits": waits}, "done": {"final": True}},
+        "events": {"MERGED": [{"from": "review", "to": "done"}]},
+    }
+
+
+class TestWaits:
+    def test_a_state_declaring_waits_reads_them_back_from_the_loaded_machine(self, tmp_path: Path) -> None:
+        compiled = load_machine(_written(tmp_path, _review({"pr_terminal": "MERGED"})))
+
+        assert compiled.waits == {"review": {"pr_terminal": "MERGED"}}
+
+    def test_a_machine_whose_states_wait_on_nothing_has_no_waits(self, tmp_path: Path) -> None:
+        assert load_machine(_written(tmp_path, _doc())).waits == {}
+
+    def test_an_unknown_fact_kind_is_refused_naming_the_state_and_event(self, tmp_path: Path) -> None:
+        path = _written(tmp_path, _review({"moon_phase": "MERGED"}))
+
+        with pytest.raises(MachineDefinitionError) as raised:
+            load_machine(path)
+
+        message = str(raised.value)
+        assert "review" in message and "MERGED" in message and "moon_phase" in message
+
+    def test_an_event_that_does_not_leave_the_state_is_refused_naming_the_state_and_event(self, tmp_path: Path) -> None:
+        document = _review({"deps_done": "DEPS_DONE"})
+        document["events"]["DEPS_DONE"] = [{"from": "done", "to": "done"}]
+        path = _written(tmp_path, document)
+
+        with pytest.raises(MachineDefinitionError) as raised:
+            load_machine(path)
+
+        message = str(raised.value)
+        assert "review" in message and "DEPS_DONE" in message
+
+    def test_an_event_the_machine_lacks_is_refused_naming_the_state_and_event(self, tmp_path: Path) -> None:
+        path = _written(tmp_path, _review({"criteria_met": "CRITERIA_MET"}))
+
+        with pytest.raises(MachineDefinitionError) as raised:
+            load_machine(path)
+
+        message = str(raised.value)
+        assert "review" in message and "CRITERIA_MET" in message
+
+
 _CUE = {"event": "GO", "dag": "dagu/apply-on-merge", "on": "push to main", "resolves": "forced"}
 
 

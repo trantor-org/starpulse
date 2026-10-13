@@ -57,6 +57,11 @@ internal and can change in any release.
   `activities`, `ok`), and the `[search]` table's optional `embeddings_url`, `model` and
   `token_env` ([Config file](serving.md#config-file)),
   and the machine YAML with its JSON Schema (`machine.schema.json`).
+- A machine state's optional `waits` key: a map from a fact kind (`pr_terminal`, `deps_done`, `deps_unresolved`,
+  `criteria_met` or `criteria_unmet`) to the event that leaves the state when that fact holds. The loader refuses an
+  unknown fact kind and an event that is not a transition out of the declaring state, naming the state and event, and
+  exposes the declared map as `Compiled.waits` (`{state id: {fact kind: event}}`; a child flow's states carry their
+  `<state>_<child state>` id). Declaring `waits` fires nothing.
 
 The modules an adapter may import, each exporting exactly the names in its `__all__`:
 
