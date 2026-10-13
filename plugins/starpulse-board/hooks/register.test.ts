@@ -400,7 +400,7 @@ const REGISTRY: Record<string, object> = {
   '/home/me/.claude/sessions/400.json': { sessionId: 'abcd1234-5678', pid: 400, name: 'Check the alert', status: 'idle', kind: 'bg' },
 }
 
-// Stands in for filetree: a second plugin that opens its own pane a second into the session, then one more.
+// Stands in for another dock plugin (filetree): a second plugin that opens its own pane a second into the session, then one more.
 const FILES = {
   name: 'files',
   register(on: On) {
@@ -784,17 +784,17 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await ui.find({ key: 'session:session-2' })).toBeUndefined()
   })
 
-  test(`a new session opens the Sessions pane without taking the keys (${surface})`, async ($, on) => {
+  test(`a new session opens Sessions, then the Board over it, without taking the keys (${surface})`, async ($, on) => {
     const opened: string[] = []
     sessionsHost(on, { opened })
 
     await start($, surface)
 
-    expect(opened).toEqual(['starpulse-sessions focus=false'])
+    expect(opened).toEqual(['starpulse-sessions focus=false', 'starpulse-kanban focus=false'])
   })
 
   test(
-    `the first pane another plugin opens at start is reopened under Sessions, once (${surface})`,
+    `the first pane another plugin opens at start is reopened under the Board, once (${surface})`,
     { plugins: [FILES] },
     async ($, on) => {
       const opened: string[] = []
@@ -806,10 +806,11 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
       expect(opened).toEqual([
         'starpulse-sessions focus=false',
+        'starpulse-kanban focus=false',
         'filetree focus=false',
         'other focus=false',
-        'close starpulse-sessions',
-        'starpulse-sessions focus=false',
+        'close starpulse-kanban',
+        'starpulse-kanban focus=false',
       ])
     },
   )
@@ -824,16 +825,16 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
     await clock.advance(1000)
 
-    expect(opened).toEqual(['starpulse-sessions focus=false', 'filetree focus=false', 'other focus=false'])
+    expect(opened).toEqual(['starpulse-sessions focus=false', 'starpulse-kanban focus=false', 'filetree focus=false', 'other focus=false'])
   })
 
-  test(`a new session with no other session opens no pane (${surface})`, async ($, on) => {
+  test(`a new session with no other session opens only the Board (${surface})`, async ($, on) => {
     const opened: string[] = []
     sessionsHost(on, { opened, isAlone: true })
 
     await start($, surface)
 
-    expect(opened).toEqual([])
+    expect(opened).toEqual(['starpulse-kanban focus=false'])
   })
 
   test(`pressing the count opens the Sessions pane with the keys (${surface})`, async ($, on) => {

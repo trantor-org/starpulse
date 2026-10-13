@@ -317,10 +317,13 @@ const listPeers = async ($: Engine) => {
     lanesReadAt = now
     void reloadLanes($)
   }
-  // The first list of other sessions opens the pane unasked; opened after Files, it is the dock tab on show, and the prompt keeps the keys.
-  if (!hasOpened && elsewhere(all, await read($, archived)).length) {
+  // The first list opens the dock unasked: Sessions when another session runs, then the Board as the tab on show; the prompt keeps the keys.
+  if (!hasOpened) {
     hasOpened = true
-    await $.ui.open({ id: SESSIONS, title: 'Sessions' })
+    if (elsewhere(all, await read($, archived)).length) {
+      await $.ui.open({ id: SESSIONS, title: 'Sessions' })
+    }
+    await openBoard($, false)
   }
 }
 
@@ -465,9 +468,9 @@ const actOnFocused = async ($: Engine) => {
   }
 }
 
-// The Board tab opens with the keys and follows the server's lanes stream until it closes.
-const openBoard = async ($: Engine) => {
-  await $.ui.open({ id: KANBAN, title: 'Board', focus: true })
+// The Board tab opens, with the keys unless asked not to, and follows the server's lanes stream until it closes.
+const openBoard = async ($: Engine, hasKeys = true) => {
+  await $.ui.open(hasKeys ? { id: KANBAN, title: 'Board', focus: true } : { id: KANBAN, title: 'Board' })
   void followLanes($)
 }
 
@@ -643,7 +646,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'board', description: 'List the Board tasks this session holds' })
-    await $.command.register({ name: 'kanban', description: 'Open the Board as a tab beside Files' })
+    await $.command.register({ name: 'kanban', description: 'Open the Board tab in the dock with the keys' })
     const kept = await $.store.get('archived').catch(() => undefined)
     await update($, archived, () => (Array.isArray(kept) ? (kept as ArchivedSession[]) : []))
     listPeersSoon($)
@@ -672,15 +675,15 @@ export const register: Register = (on, options) => {
     return { text: 'Opened the Board tab.' }
   })
 
-  // Until the first prompt, the first pane another plugin opens (Files) would take the dock's shown tab: reopen Sessions over it, once.
+  // Until the first prompt, the first pane another plugin opens would take the dock's shown tab: reopen the Board over it, once.
   on('ui.open', async ($, e, next) => {
     const result = await next(e)
     if (isStarting && hasOpened && e.id !== SESSIONS && e.id !== PANE && e.id !== KANBAN) {
       isStarting = false
       // Opening an open pane only retitles it: close it first so the open lands as the newest tab.
       $.clock.after(0, async () => {
-        await $.ui.close({ id: SESSIONS })
-        await $.ui.open({ id: SESSIONS, title: 'Sessions' })
+        await $.ui.close({ id: KANBAN })
+        await openBoard($, false)
       })
     }
 
