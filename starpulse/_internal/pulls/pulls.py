@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import threading
+from collections.abc import Callable, Iterable
 from typing import Any
 
-from sqlalchemy import Engine, case, delete, func, inspect, insert, select, text
+from sqlalchemy import Engine, case, delete, func, inspect, insert, select, text, tuple_
 
 from starpulse._internal.eventlog.event_log import create_tables
 from starpulse._internal.eventlog.tables import pull_requests
@@ -37,12 +38,18 @@ AGE_HELP = "Seconds since the newest pull request record of a repository was rea
 
 
 class PullStore:
-    """Pull request records by (repository, number), in the database `engine` opens."""
+    """Pull request records by (repository, number), in the database `engine` opens.
+
+    Reads are served from memory: `sqlite3` gives up the GIL at every row step, and beside a thread that computes, each
+    step waits its turn again, so a 1,968-row read took 12-45 s on a busy server (TASK-5076). Every write passes
+    through `save`, which keeps the copy current; a record a caller changes in place changes what a later read serves."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
         #: Counts saves, so a reader holding an answer knows when it is stale.
         self.rev = 0
+        self._lock = threading.Lock()
+        self._listeners: list[Callable[[], None]] = []
         create_tables(engine, [pull_requests])
         present = {column["name"] for column in inspect(engine).get_columns(pull_requests.name)}
         added = {
@@ -57,6 +64,18 @@ class PullStore:
             for column, kind in added.items():
                 if column not in present:
                     db.execute(text(f"ALTER TABLE {pull_requests.name} ADD COLUMN {column} {kind}"))
+        self._held: dict[tuple[str, int], dict[str, Any]] = {}
+        self._hold(select(pull_requests))
+
+    def _hold(self, query: Any) -> None:
+        """Take the rows `query` selects into memory, replacing each held record of the same repository and number."""
+        with self._engine.connect() as db:
+            rows = [
+                {name: row[column] for column, name in (_FIELDS | _LATER).items()} | {"detail": row["detail"]}
+                for row in db.execute(query).mappings()
+            ]
+        with self._lock:
+            self._held.update({(row["repo"], row["number"]): row for row in rows})
 
     def save(self, records: Iterable[dict[str, Any]]) -> None:
         """Replace each record (served names, as `find` returns them, and a `detail` when it has one) by its repository
@@ -77,7 +96,19 @@ class PullStore:
                     delete(pull_requests).where(*(pull_requests.c[key] == row[key] for key in ("repo", "number")))
                 )
             db.execute(insert(pull_requests), rows)
+        self._hold(
+            select(pull_requests).where(
+                tuple_(pull_requests.c.repo, pull_requests.c.number).in_([(row["repo"], row["number"]) for row in rows])
+            )
+        )
         self.rev += 1
+        for listener in self._listeners:
+            listener()
+
+    def subscribe(self, listener: Callable[[], None]) -> None:
+        """Call `listener` in the saving thread after each save, so an answer built from the store is ready before a
+        reader asks for it."""
+        self._listeners.append(listener)
 
     def repos(self) -> list[str]:
         """The repositories the store holds a record of."""
@@ -111,15 +142,14 @@ class PullStore:
         """The records matching every given filter, by repository then number; `body_contains` is a body substring.
 
         `detailed` adds each record's `detail`, which is not served: None for a record saved before it was kept."""
-        query = select(pull_requests).order_by(pull_requests.c.repo, pull_requests.c.number)
-        for column, value in (("repo", repo), ("number", number), ("state", state)):
-            if value is not None:
-                query = query.where(pull_requests.c[column] == value)
-        if body_contains:
-            query = query.where(pull_requests.c.body.contains(body_contains, autoescape=True))
-        with self._engine.connect() as db:
-            return [
-                {name: row[column] for column, name in (_FIELDS | _LATER).items()}
-                | ({"detail": row["detail"]} if detailed else {})
-                for row in db.execute(query).mappings()
-            ]
+        needle = body_contains.lower() if body_contains else None  # SQLite's LIKE ignores ASCII case
+        with self._lock:
+            held = sorted(self._held.items())
+        return [
+            {name: value for name, value in record.items() if detailed or name != "detail"}
+            for _, record in held
+            if repo in (None, record["repo"])
+            and number in (None, record["number"])
+            and state in (None, record["state"])
+            and (needle is None or needle in record["body"].lower())
+        ]

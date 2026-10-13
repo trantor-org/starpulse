@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 
 from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -196,6 +196,27 @@ def test_a_record_saved_without_threads_or_branch_is_served_with_both_null(store
     assert (pull["unresolvedThreads"], pull["headRefName"]) == (None, None)
 
 
+def test_a_read_runs_no_sql_because_a_row_step_gives_up_the_gil_and_waits_behind_every_busy_thread(
+    store: PullStore,
+) -> None:
+    """A 1,968-row read made 1,968 such steps and took 12-45 s beside a busy thread (TASK-5076), so reads are served
+    from memory."""
+    store.save([{**_stored(REPO, 1), "detail": {"files": ["a.py"]}}, _stored(REPO, 2) | {"state": "MERGED"}])
+    statements: list[str] = []
+    event.listen(store._engine, "before_cursor_execute", lambda *args: statements.append(args[2]))
+
+    everything = store.find()
+    one = store.find(REPO, 1, "OPEN", detailed=True)
+
+    assert (len(everything), one[0]["detail"], statements) == (2, {"files": ["a.py"]}, [])
+
+
+def test_a_store_opened_over_saved_rows_serves_what_the_first_one_did(store: PullStore) -> None:
+    store.save([{**_stored(REPO, 2), "detail": {"files": ["b.py"]}, "threads": 3}, _stored(REPO, 1)])
+
+    assert PullStore(store._engine).find(detailed=True) == store.find(detailed=True)
+
+
 def test_a_table_an_earlier_version_created_gains_the_thread_and_branch_columns(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
     PullStore(engine)
@@ -348,9 +369,7 @@ def test_a_record_carries_the_facts_pr_status_prints(store: PullStore) -> None:
             "checks": "pass",
             "requiredChecks": [{"name": "lint", "result": "pass"}],
             "threads": 2,
-            "unresolvedThreads": [
-                {"id": f"PRRT_4_{index}", "author": "coderabbitai"} for index in (1, 2)
-            ],
+            "unresolvedThreads": [{"id": f"PRRT_4_{index}", "author": "coderabbitai"} for index in (1, 2)],
             "headRefName": "claude/task-7-thing",
             "updatedAt": OLD,
             "mergedAt": None,
