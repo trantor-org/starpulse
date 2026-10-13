@@ -981,9 +981,9 @@ export const register: Register = (on, options) => {
       )
     }
 
-    // The dock paints grey behind every cell a pane draws; the root fills black to cover it.
+    // The dock paints grey behind every cell a pane draws, and a pane body scrolls its tree, so the root takes the body's rows and fills them black.
     return (
-      <Box flexDirection="column" flexGrow={1} backgroundColor={SP.black}>
+      <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={SP.black}>
         <Box>
           <Button key="new" label="New session" hotkey="n" plain onPress={() => newSession($)}>
             <Text bold color={SP.agent}>{`${g('new')} New session`}</Text>

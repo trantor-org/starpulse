@@ -393,6 +393,6 @@ test('the pane draws no fill: its root is black and every Button is plain', { ti
   const buttons = await ui.findAll({ type: 'Button' })
   expect(buttons.length).toBeGreaterThan(5)
   for (const b of buttons) expect(b.props.plain, String(b.key)).toBe(true)
-  expect((await ui.drawn()).props?.backgroundColor).toBe('#000000')
+  expect((await ui.drawn()).props).toMatchObject({ backgroundColor: '#000000', minHeight: PANE_PROPS.scroll.bodyRows })
   await ui.unmount()
 })
