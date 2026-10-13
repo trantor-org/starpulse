@@ -15,9 +15,9 @@ collaborator, say so in an issue.
 ## Open a pull request (collaborators)
 
 - Branch from `main` in this repository and keep a pull request to one change, with tests for what it changes.
-- The `python`, `web`, `api-types` and `build` checks must pass before it merges. `uv run pytest` and
+- The `python`, `web`, `static-checks` and `build` checks must pass before it merges. `uv run pytest` and
   `pnpm --dir starpulse/web run check` run the first two locally; [docs/development.md](docs/development.md) sets them up and says
-  how to regenerate the API schema and types that `api-types` compares.
+  how to regenerate the API schema and types that `static-checks` compares.
 - The maintainer adds it to the merge queue. The queue squashes it onto `main` plus every pull request ahead of it,
   reruns the required checks on that candidate, and merges only a green one, so a pull request never needs
   rebasing to stay current. Its title becomes the commit on `main` and the line in the next release's
