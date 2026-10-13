@@ -119,6 +119,7 @@ def test_a_task_file_reads_as_every_field_the_task_view_draws(tmp_path: Path, mo
         "notes": "kept in the file",
         "finalSummary": "",
         "comments": [],
+        "session": "",
         "acceptanceCriteria": [
             {"n": 1, "text": "It draws", "checked": True},
             {"n": 2, "text": "It scrolls", "checked": False},
@@ -154,9 +155,44 @@ def test_a_task_file_with_only_front_matter_reads_with_empty_fields(
         "notes": "",
         "finalSummary": "",
         "comments": [],
+        "session": "",
         "acceptanceCriteria": [],
         "definitionOfDone": [],
     }
+
+
+SESSION_NOTES = "kept\n\n**Session Link:** https://claude.ai/code/session_notes — local session `a`"
+SESSION_COMMENTS = (
+    "<!-- COMMENTS:BEGIN -->\n"
+    "created: 2026-10-06 22:11\n---\n**Session Link:** https://claude.ai/code/session_old\n---\n\n"
+    "created: 2026-10-06 22:18\n---\nVerified AC #1.\n---\n\n"
+    "created: 2026-10-06 22:30\n---\n**Session Link:** https://claude.ai/code/session_new — resumed\n---\n"
+    "<!-- COMMENTS:END -->\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("notes", "comments", "session"),
+    [
+        (SESSION_NOTES, "", "https://claude.ai/code/session_notes"),
+        ("kept", SESSION_COMMENTS, "https://claude.ai/code/session_new"),
+        (SESSION_NOTES, SESSION_COMMENTS, "https://claude.ai/code/session_new"),
+        ("kept", "", ""),
+    ],
+    ids=["notes", "latest-comment", "comment-after-notes", "none"],
+)
+def test_a_task_reads_its_latest_session_link_from_its_notes_or_comments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, notes: str, comments: str, session: str
+) -> None:
+    built, _ = _serving(tmp_path, monkeypatch)
+    text = FILE.replace("kept in the file", notes) + (f"\n## Comments\n\n{comments}" if comments else "")
+    (tmp_path / ".starpulse" / "board" / "tasks" / "task-5 - Draw.md").write_text(text)
+    assert built.read is not None
+
+    record = built.read("task-5")
+
+    assert record is not None
+    assert record["session"] == session
 
 
 def test_a_task_the_board_has_no_file_for_reads_as_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -164,6 +200,19 @@ def test_a_task_the_board_has_no_file_for_reads_as_none(tmp_path: Path, monkeypa
     assert built.read is not None
 
     assert built.read("task-404") is None
+
+
+def test_the_task_endpoint_carries_the_session_link_the_kanban_modal_draws(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, feed = _serving(tmp_path, monkeypatch)
+    text = FILE.replace("kept in the file", SESSION_NOTES)
+    (tmp_path / ".starpulse" / "board" / "tasks" / "task-5 - Draw.md").write_text(text)
+    _scan(tmp_path, feed)
+
+    _, body = task_record(feed, built.read, "task-5")
+
+    assert body["record"]["session"] == "https://claude.ai/code/session_notes"
 
 
 def test_the_task_endpoint_answers_200_with_the_record_on_a_native_board(
