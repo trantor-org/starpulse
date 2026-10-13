@@ -12,6 +12,7 @@ import json
 import os
 import re
 import threading
+import uuid
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -125,7 +126,8 @@ def _render(milestone: str, title: str, sections: Mapping[str, str]) -> str:
 
 
 def _write(path: Path, text: str) -> None:
-    scratch = path.with_name(f"{path.name}.tmp")  # not a `.md` file, so a scan never reads it half written
+    # Unique per write, so concurrent writers never share a scratch file; not a `.md` file, so a scan never reads it half written.
+    scratch = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     scratch.write_text(text)
     os.replace(scratch, path)
 
