@@ -1,11 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface as Engine, Register } from 'claude-code'
-import type { Checks, HeldTask, Pull } from '../types'
+import type { Checks, HeldTask, PeerSession, Pull } from '../types'
 import { CHECKS, ROW_HEIGHT, SP, alt, laneOf, paneSvg, progress, ratio, rowSvg, subline, termBar } from './draw'
 
 const PANE = 'starpulse-board'
 
 const tasks = atom({ plugin: 'starpulse-board', key: 'tasks' } as const, null)
+const sessions = atom({ plugin: 'starpulse-board', key: 'sessions' } as const, [])
 const isHidden = atom({ plugin: 'starpulse-board', key: 'isHidden' } as const, false)
 const openTask = atom({ plugin: 'starpulse-board', key: 'openTask' } as const, null)
 
@@ -71,9 +72,65 @@ const held = async ($: Engine): Promise<HeldTask[] | null> => {
   }
 }
 
+type Registered = { sessionId: string; pid: number; name?: string; status?: string; kind?: string }
+
+// Each tmux pane's pid and the tmux session it sits in; empty when no tmux server runs.
+const tmuxPanes = async ($: Engine): Promise<Map<number, string>> => {
+  const panes = new Map<number, string>()
+  const ran = await $.process.run(['tmux', 'list-panes', '-a', '-F', '#{pane_pid} #{session_name}']).catch(() => null)
+  if (ran?.exitCode !== 0) {
+    return panes
+  }
+  for (const row of ran.stdout.split('\n')) {
+    const [pid, ...name] = row.split(' ')
+    if (name.length) {
+      panes.set(Number(pid), name.join(' '))
+    }
+  }
+
+  return panes
+}
+
+// The host's other sessions, from the registry every Claude Code session writes under ~/.claude/sessions. A session
+// StarPulse started runs as its tmux pane's own process, so its pid finds the tmux session to switch to.
+const peers = async ($: Engine): Promise<PeerSession[]> => {
+  try {
+    const dir = `${await $.env.get('HOME')}/.claude/sessions`
+    const own = await $.session.id()
+    const [entries, panes] = await Promise.all([$.fs.list(dir), tmuxPanes($)])
+    const files = entries.filter(f => f.name.endsWith('.json'))
+    // A session that exits between the listing and the read is skipped, not fatal.
+    const found = await Promise.all(
+      files.map(f =>
+        $.fs
+          .read(`${dir}/${f.name}`)
+          .then(text => JSON.parse(String(text)) as Registered)
+          .catch(() => null),
+      ),
+    )
+    const others = found.filter((s): s is Registered => s !== null && s.sessionId !== own)
+
+    return others
+      .map(s => {
+        const tmux = panes.get(s.pid) ?? null
+        return {
+          id: s.sessionId,
+          label: tmux ?? s.name ?? s.sessionId.slice(0, 8),
+          status: s.status ?? 'unknown',
+          tmux,
+          isBackground: s.kind === 'bg',
+        }
+      })
+      .sort((a, b) => a.label.localeCompare(b.label))
+  } catch {
+    return []
+  }
+}
+
 const refresh = async ($: Engine) => {
-  const found = await held($)
+  const [found, others] = await Promise.all([held($), peers($)])
   await update($, tasks, () => found)
+  await update($, sessions, () => others)
 
   return found
 }
@@ -94,6 +151,34 @@ const refreshSoon = ($: Engine) => {
     }
   })
 }
+
+const tmux = ($: Engine, ...args: string[]) => $.process.run(['tmux', ...args]).catch(() => null)
+
+// A session in a tmux pane is switched to. A background session has no pane, so it is first opened with `claude attach`
+// in a tmux session of its own (-A reuses one already open). `claude attach` takes the job id, the session id's first 8
+// characters (~/.claude/jobs/<job>), and refuses the full id. Fails visibly: switch-client needs this session's own
+// terminal to be a tmux client.
+const switchTo = async ($: Engine, s: PeerSession) => {
+  let target = s.tmux
+  if (target === null) {
+    const job = s.id.slice(0, 8)
+    target = `bg-${job}`
+    const opened = await tmux($, 'new-session', '-A', '-d', '-s', target, 'claude', 'attach', job)
+    if (opened?.exitCode !== 0) {
+      $.ui.toast(`Cannot open ${s.label} in tmux: is tmux installed?`)
+      return
+    }
+  }
+  const ran = await tmux($, 'switch-client', '-t', target)
+  if (ran?.exitCode !== 0) {
+    $.ui.toast(`Cannot switch to ${s.label}: start Claude inside tmux to switch sessions`)
+  }
+}
+
+const peerLine = (s: PeerSession) => `${s.status === 'busy' ? '●' : '○'} ${s.label} ${s.status}`
+
+// Other sessions change on their own, so the band rereads the registry between this session's turns too.
+const PEER_POLL_MS = 5000
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
 
@@ -181,6 +266,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'board', description: 'List the Board tasks this session holds' })
     void refresh($)
+    $.clock.every(PEER_POLL_MS, () => refreshSoon($))
 
     return next(e)
   })
@@ -219,15 +305,18 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const found = await read($, tasks)
-    if (e.props.hasSurvey || !found?.length) {
+    const found = (await read($, tasks)) ?? []
+    const others = await read($, sessions)
+    if (e.props.hasSurvey || (!found.length && !others.length)) {
       return next(e)
     }
 
     const { Box, Button, Text, Svg } = $.ui.resolve(e) as Remote
     if (await read($, isHidden)) {
-      return <Button key="show" label="Show task" onPress={() => update($, isHidden, () => false)} />
+      const label = found.length ? 'Show task' : 'Show sessions'
+      return <Button key="show" label={label} onPress={() => update($, isHidden, () => false)} />
     }
+    const hide = <Button key="hide" label="✕" onPress={() => update($, isHidden, () => true)} />
 
     const opened = await read($, openTask)
     const width = clamp(Math.floor(e.props.bodyColumns * CELL_PX) - BUTTONS_PX, 280, 860)
@@ -242,9 +331,23 @@ export const register: Register = on => {
               <Svg source={rowSvg(t, width)} alt={alt(t)} width={width} height={ROW_HEIGHT} />
             )}
             <Button key={`details-${t.id}`} label={opened === t.id ? 'Close' : 'Details'} onPress={() => toggle($, t.id)} />
-            {i === 0 && <Button key="hide" label="✕" onPress={() => update($, isHidden, () => true)} />}
+            {i === 0 && hide}
           </Box>
         ))}
+        {others.length > 0 && (
+          <Box flexWrap="wrap">
+            {others.map(s =>
+              s.tmux !== null || s.isBackground ? (
+                <Button key={`session:${s.id}`} label={peerLine(s)} onPress={() => switchTo($, s)} />
+              ) : (
+                <Text key={`peer:${s.id}`} dimColor>
+                  {` ${peerLine(s)} `}
+                </Text>
+              ),
+            )}
+            {!found.length && hide}
+          </Box>
+        )}
       </Box>
     )
   })

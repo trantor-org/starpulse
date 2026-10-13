@@ -1,4 +1,4 @@
-import type { RenderElement } from 'claude-code'
+import type { On, RenderElement } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
 const PULL = 'https://github.com/trantor-org/starpulse/pull'
@@ -47,6 +47,9 @@ const PANE_PROPS = {
 } as const
 
 const RUN = { command: 'board', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
+
+// The test runner's timer; the plugin's own lib (es2023, no DOM) declares none.
+declare const setTimeout: (fn: (value?: unknown) => void, ms: number) => unknown
 
 // Lets a refresh the engine did not await finish.
 const settle = async () => {
@@ -119,7 +122,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const argv0: string[] = []
     serve(on, BOARD, {
       run: e => {
-        argv0.push(e.argv[0])
+        if (e.argv[0] === 'tmux') return answer(1, '')
+        argv0.push(e.argv[0] ?? '')
         return e.argv[0] === 'starpulse' ? answer(2, '') : answer(0, BOARD)
       },
     })
@@ -135,7 +139,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const argv0: string[] = []
     serve(on, BOARD, {
       run: e => {
-        argv0.push(e.argv[0])
+        if (e.argv[0] === 'tmux') return answer(1, '')
+        argv0.push(e.argv[0] ?? '')
         if (e.argv[0] === 'starpulse') {
           throw new Error('ENOENT: Executable not found in $PATH: "starpulse"')
         }
@@ -398,3 +403,92 @@ test('the pane shows the first held task when none was picked', async ($, on) =>
 
   expect(svg?.source).toContain('PROJ-1')
 })
+
+// Registered sessions besides the key files beside them: this one, one in tmux session task-7, an interactive one in no
+// tmux pane (a desktop app session), and a background one in no tmux pane.
+const REGISTRY: Record<string, object> = {
+  '/home/me/.claude/sessions/100.json': { sessionId: SESSION, pid: 100, name: 'me', status: 'busy' },
+  '/home/me/.claude/sessions/200.json': { sessionId: 'session-2', pid: 200, name: 'trantor-2', status: 'busy' },
+  '/home/me/.claude/sessions/300.json': { sessionId: 'session-3', pid: 300, name: 'Fix the gate', status: 'idle', kind: 'interactive' },
+  '/home/me/.claude/sessions/400.json': { sessionId: 'abcd1234-5678', pid: 400, name: 'Check the alert', status: 'idle', kind: 'bg' },
+}
+
+const sessionsHost = (on: On, switched: string[][]) => {
+  on('ui.render', ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
+  on('session.id', () => ({ value: SESSION }))
+  on('session.start', ($, e) => e)
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('clock.every', () => ({ value: undefined }))
+  on('env.get', () => ({ value: '/home/me' }))
+  on('fs.list', () => ({
+    value: [...Object.keys(REGISTRY), '/home/me/.claude/sessions/200.abc.key'].map(p => ({
+      name: p.split('/').at(-1)!,
+      kind: 'file' as const,
+      size: 1,
+      mtimeMs: 0,
+      isLink: false,
+    })),
+  }))
+  on('fs.read', ($, e) => ({ value: JSON.stringify(REGISTRY[e.path]) }))
+  on('process.run', ($, e) => {
+    if (e.argv[0] === 'tmux' && e.argv[1] === 'list-panes') return answer(0, '200 task-7\n999 scratch\n')
+    if (e.argv[0] === 'tmux') {
+      switched.push([...e.argv])
+      return answer(0, '')
+    }
+    return answer(0, JSON.stringify({ columns: [] }))
+  })
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the band shows every other session's status (${surface})`, async ($, on) => {
+    sessionsHost(on, [])
+
+    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'AbovePrompt', props: PROPS })
+    await $.session.start({ cwd: '/work', surface, isInteractive: true })
+    await settle()
+
+    expect((await ui.find({ key: 'session:session-2' }))?.text).toBe('● task-7 busy')
+    expect(await ui.find({ text: ' ○ Fix the gate idle ' })).toBeDefined()
+    expect(await ui.find({ key: `session:${SESSION}` })).toBeUndefined()
+  })
+
+  test(`pressing a session in tmux switches the tmux client to it (${surface})`, async ($, on) => {
+    const switched: string[][] = []
+    sessionsHost(on, switched)
+
+    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'AbovePrompt', props: PROPS })
+    await $.session.start({ cwd: '/work', surface, isInteractive: true })
+    await settle()
+    await ui.press({ key: 'session:session-2' })
+
+    expect(switched).toEqual([['tmux', 'switch-client', '-t', 'task-7']])
+  })
+
+  test(`a session in no tmux pane has no switch button (${surface})`, async ($, on) => {
+    sessionsHost(on, [])
+
+    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'AbovePrompt', props: PROPS })
+    await $.session.start({ cwd: '/work', surface, isInteractive: true })
+    await settle()
+
+    expect(await ui.find({ key: 'session:session-3' })).toBeUndefined()
+  })
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`pressing a background session attaches it in a tmux session and switches to it (${surface})`, async ($, on) => {
+    const switched: string[][] = []
+    sessionsHost(on, switched)
+
+    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'AbovePrompt', props: PROPS })
+    await $.session.start({ cwd: '/work', surface, isInteractive: true })
+    await settle()
+    await ui.press({ key: 'session:abcd1234-5678' })
+
+    expect(switched).toEqual([
+      ['tmux', 'new-session', '-A', '-d', '-s', 'bg-abcd1234', 'claude', 'attach', 'abcd1234'],
+      ['tmux', 'switch-client', '-t', 'bg-abcd1234'],
+    ])
+  })
+}

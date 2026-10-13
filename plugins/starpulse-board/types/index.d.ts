@@ -24,8 +24,14 @@ export type HeldTask = {
   pull: Pull | null
 }
 
+/**
+ * Another Claude Code session on this host: its id, label and registry status, the tmux session holding it if any,
+ * and whether it is a background (`claude --bg`) session, which `claude attach` opens in a terminal.
+ */
+export type PeerSession = { id: string; label: string; status: string; tmux: string | null; isBackground: boolean }
+
 declare module 'claude-code' {
   interface PluginState {
-    'starpulse-board': { tasks: HeldTask[] | null; isHidden: boolean; openTask: string | null }
+    'starpulse-board': { tasks: HeldTask[] | null; sessions: PeerSession[]; isHidden: boolean; openTask: string | null }
   }
 }
