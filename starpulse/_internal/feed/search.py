@@ -103,12 +103,19 @@ def _row(task_id: str) -> int:
     return int.from_bytes(hashlib.blake2b(task_id.encode(), digest_size=7).digest(), "big")
 
 
+def _unit(vector: array.array) -> array.array:
+    """`vector` scaled to length 1; a zero vector stays zero, which makes every similarity to it 0."""
+    norm = math.sqrt(math.sumprod(vector, vector))
+    return array.array("f", (x / norm for x in vector)) if norm else vector
+
+
 def _cosine(left: array.array, right: array.array) -> float:
-    """The cosine similarity of two vectors; 0 for vectors of different lengths or a zero vector."""
-    norm = math.sqrt(sum(x * x for x in left)) * math.sqrt(sum(y * y for y in right))
+    """The cosine similarity of two vectors; 0 for vectors of different lengths or a zero vector. `math.sumprod` runs
+    each sum in C, as a Python loop over a thousand floats held the GIL against every other request thread."""
+    norm = math.sqrt(math.sumprod(left, left) * math.sumprod(right, right))
     if len(left) != len(right) or not norm:
         return 0.0
-    return sum(x * y for x, y in zip(left, right, strict=True)) / norm
+    return math.sumprod(left, right) / norm
 
 
 def _match(query: str) -> str:
@@ -127,6 +134,9 @@ class SearchIndex:
     def __init__(self, engine: Engine, settings: Search | None = None) -> None:
         self._engine = engine
         self._lock = threading.Lock()
+        #: Each embedded task as its `_EMBEDDED` row and unit vector, read once and dropped by every write that changes
+        #: the vectors, so a search scores them in memory instead of reading and decoding every one.
+        self._near: list[tuple[dict, array.array]] | None = None
         self._url = settings.embeddings_url if settings else None
         self._model = settings.model if settings else None
         self._recipe = f"{self._model} {_EMBEDDED_TEXT}"
@@ -171,12 +181,14 @@ class SearchIndex:
             connection.execute(_DELETE, {"row": row})
             connection.execute(_DROP_VECTORS, {"row": row})
             connection.execute(_INSERT, {"row": row, "digest": digest, **fields})
+            self._near = None
 
     def remove(self, task_id: str) -> None:
         """Drop `task_id` from the index; a task the index does not hold is a no-op."""
         with self._lock, self._engine.begin() as connection:
             connection.execute(_DELETE, {"row": _row(task_id)})
             connection.execute(_DROP_VECTORS, {"row": _row(task_id)})
+            self._near = None
 
     def search(self, query: str, limit: int = 10) -> list[dict]:
         """The tasks holding every word of `query`, best first, as `{task, title, lane, score, snippet}`; `score` is
@@ -195,21 +207,28 @@ class SearchIndex:
             rows = connection.execute(_RANKED, {"query": match, "model": self._recipe, "limit": max(limit, _POOL)})
             hits = [dict(row._mapping) for row in rows]
             lexical = {hit["task"] for hit in hits}
-            near = [dict(row._mapping) for row in connection.execute(_EMBEDDED, {"model": self._recipe})]
         top = max((hit["score"] for hit in hits), default=0.0) or 1.0
         for hit in hits:
             held = array.array("f")
             if blob := hit.pop("vector"):
                 held.frombytes(blob)
             hit["score"] = _LEXICAL_WEIGHT * hit["score"] / top + (1 - _LEXICAL_WEIGHT) * _cosine(vector, held)
-        for hit in near:
-            if hit["task"] in lexical:
+        unit = _unit(vector)
+        for hit, held in self._near_vectors():
+            if hit["task"] in lexical or len(held) != len(unit):
                 continue
-            held = array.array("f")
-            held.frombytes(hit.pop("vector"))
-            if (similarity := _cosine(vector, held)) >= _RECALL_FLOOR:
+            if (similarity := math.sumprod(unit, held)) >= _RECALL_FLOOR:
                 hits.append({**hit, "score": (1 - _LEXICAL_WEIGHT) * similarity})
         return sorted(hits, key=lambda hit: -hit["score"])[:limit]
+
+    def _near_vectors(self) -> list[tuple[dict, array.array]]:
+        """Every embedded task with its unit vector, read from the database when a write has dropped them."""
+        with self._lock:
+            if self._near is None:
+                with self._engine.connect() as connection:
+                    rows = [dict(row._mapping) for row in connection.execute(_EMBEDDED, {"model": self._recipe})]
+                self._near = [(row, _unit(array.array("f", row.pop("vector")))) for row in rows]
+            return self._near
 
     def embed_pending(self) -> int:
         """Embed every task the index holds no vector of the configured model for, and return how many were stored; 0
@@ -236,6 +255,8 @@ class SearchIndex:
                     for row, vector in zip(rows, vectors, strict=True)
                 )
             stored += done
+            if done:
+                self._near = None
             if not done:
                 break
         return stored

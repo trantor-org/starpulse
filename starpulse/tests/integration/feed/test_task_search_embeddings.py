@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 
 from starpulse._internal.config.search import Search
 from starpulse._internal.feed import search as search_module
@@ -237,3 +237,34 @@ def test_the_keeping_loop_catches_the_vectors_up_until_it_is_stopped(
 
     assert _found(index, "tuning") == ["PROJ-2", "PROJ-1"]
     assert not thread.is_alive()
+
+
+def test_a_repeat_search_scores_the_held_vectors_without_scanning_them_again(engine, endpoint: _Endpoint) -> None:
+    index = _open(engine, Search(endpoint.url, "m"))
+    _board(index)
+    index.embed_pending()
+    index.search("knobs")  # the first search holds the embedded tasks' vectors
+    statements: list[str] = []
+    event.listen(engine, "before_cursor_execute", lambda *args: statements.append(args[2]))
+
+    index.search("knobs")
+
+    assert [sql for sql in statements if "MATCH" not in sql] == []  # only the lexical query reads the database
+
+
+def test_a_search_after_a_warm_one_sees_tasks_embedded_changed_and_removed_since(engine, endpoint: _Endpoint) -> None:
+    index = _open(engine, Search(endpoint.url, "m"))
+    index.index(_task("PROJ-1", title="Eviction policy", description="when the cache drops entries"))
+    index.embed_pending()
+    assert _found(index, "tuning knobs") == ["PROJ-1"]  # warm
+
+    index.index(_task("PROJ-2", title="Pacing", description="queue depth"))
+    index.embed_pending()
+    assert _found(index, "tuning knobs") == ["PROJ-1"]  # PROJ-2's vector is orthogonal to the query's
+
+    index.index(_task("PROJ-2", title="Pacing", description="the cache again"))
+    index.embed_pending()
+    assert sorted(_found(index, "tuning knobs")) == ["PROJ-1", "PROJ-2"]  # the replaced text, embedded anew
+
+    index.remove("PROJ-1")
+    assert _found(index, "tuning knobs") == ["PROJ-2"]
