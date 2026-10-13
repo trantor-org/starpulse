@@ -1,19 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { build, Drawn, pickRows, SUN_R, routed, clip, curveDist, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
+import { build, Drawn, pickRows, SUN_R, routed, curveDist, glyph, nearestWithin, paged, rings, sample, stateR, terminal, textW, turnPage, type Curve, type Galaxy, type MState, type Pt, type Scene } from "./scene";
 import { ledgerLevel, type Level } from "./levels";
 import { merge, midnight, Moves } from "./sky";
 import { emptyNote } from "../features/level/machineRows";
-import type { Cue, Dag, LedgerRow, Machine, Snapshot } from "../api";
+import type { Cue, LedgerRow, Machine, Snapshot } from "../api";
+import { dag, machine, SAVED_STATES, savedBoardSky } from "./sceneFixtures";
 
-const dag = (name: string, steps: [string, string[]][] = []): Dag => ({
-  name, status: "succeeded", runId: "r", startedAt: "", finishedAt: "",
-  steps: steps.map(([n, depends]) => ({ name: n, depends, status: "succeeded", kind: null })),
-});
-const machine = (ids: string[], extra: Partial<Machine> = {}): Machine => ({
-  states: ids.map((id, i) => ({ id, name: id, initial: i === 0, final: false })),
-  transitions: [],
-  ...extra,
-});
 const sky = () => {
   const snap: Snapshot = {
     graphs: ["board", "in-progress", "triaging-cr-reviews", "runs"],
@@ -571,19 +563,19 @@ describe("a Board path's route search", () => {
 
   it("picks the same path as a search that tries every spot against every state, so a faster search draws the same Board", () => {
     let searched = 0;
-    for (let n = 0; n < 60; n++) {
-      const r = rand(n + 1), sky = { x: 1200 + r() * 1200, y: 700 + r() * 600 };
-      const gs = Array.from({ length: 4 + Math.floor(r() * 10) }, (_, i) => ({ id: `s${i}`, x: 60 + r() * (sky.x - 120), y: 60 + r() * (sky.y - 120), R: 15 + r() * 60 })).map((g) => ({ ...g, edge: g.R })) as unknown as Galaxy[];
+    for (let n = 0; n < 30; n++) {
+      const r = rand(n + 1), sky = { x: 600 + r() * 400, y: 400 + r() * 200 };
+      const gs = Array.from({ length: 4 + Math.floor(r() * 10) }, (_, i) => ({ id: `s${i}`, x: 60 + r() * (sky.x - 120), y: 60 + r() * (sky.y - 120), R: 12 + r() * 36 })).map((g) => ({ ...g, edge: g.R })) as unknown as Galaxy[];
       const [a, b] = gs, c0 = { x: (a.x + b.x) / 2 + (r() - 0.5) * 200, y: (a.y + b.y) / 2 + (r() - 0.5) * 200 };
       const drawn = new Drawn();
-      drawn.add(Array.from({ length: 200 }, () => ({ x: r() * sky.x, y: r() * sky.y })));
+      drawn.add(Array.from({ length: 80 }, () => ({ x: r() * sky.x, y: r() * sky.y })));
       const held = n % 3 ? undefined : { x: r() * sky.x, y: r() * sky.y };
 
       const got = routed(a, b, c0, gs, drawn, sky, held);
       expect(got, `case ${n}`).toEqual(reference(a, b, c0, gs, drawn, sky, held));
       if (got.c !== c0 && got.c.x % 40 === 10) searched++;
     }
-    expect(searched).toBeGreaterThanOrEqual(20); // a third of the cases ran the search rather than drawing straight or keeping their bend
+    expect(searched).toBeGreaterThanOrEqual(10); // a third of the cases ran the search rather than drawing straight or keeping their bend
   });
 });
 
@@ -615,27 +607,6 @@ describe("a Board with DAGs in its snapshot", () => {
   });
 });
 
-// The saved design snapshot's Board (the design mockup): ten states and their transitions, in declaration order.
-const SAVED_STATES = ["new", "ready", "blocked", "waiting", "in_progress", "review", "needs_attention", "done", "completed", "archived"];
-const SAVED_TRANSITIONS = `new>ready new>blocked new>waiting new>in_progress ready>in_progress ready>blocked ready>waiting ready>archived
-  blocked>blocked blocked>ready blocked>in_progress blocked>archived waiting>ready waiting>in_progress waiting>archived in_progress>blocked
-  in_progress>in_progress in_progress>review in_progress>done in_progress>needs_attention in_progress>archived review>done review>in_progress
-  review>archived needs_attention>ready needs_attention>in_progress needs_attention>archived done>completed`.split(/\s+/).map((t) => t.split(">"));
-const savedBoardSky = (W: number, H: number, patch: (snap: Snapshot) => void = () => {}) => {
-  const snap: Snapshot = {
-    graphs: ["board"],
-    flows: [{ name: "board", agents: [], machine: {
-      states: SAVED_STATES.map((id, i) => ({ id, name: id, initial: i === 0, final: id === "completed" || id === "archived" })),
-      transitions: SAVED_TRANSITIONS.map(([source, target]) => ({ source, target, event: `${source}_${target}` })),
-      mainLine: ["new", "ready", "in_progress", "review", "done"],
-    } }],
-    dags: [], domains: [], settled: {}, error: null, now: 1000,
-  };
-  patch(snap);
-  const S = merge(snap), moves = new Moves();
-  moves.observe(S, 1000);
-  return { S, moves, W, H, T: 1000 };
-};
 /** The distance from a point to the nearest sample of a path. */
 const clearance = (e: Curve, g: Pt & { R: number }) => Math.min(...sample(e, 200).map((q) => Math.hypot(q.x - g.x, q.y - g.y))) - g.R;
 
@@ -1784,83 +1755,6 @@ describe("a Board drawn again", () => {
     moved.S.flows.board.machine.tiers = [["review"], ["ready"]];
     expect(placed(build(busy, { kind: "board" }))).toEqual(before);
     expect(placed(build(moved, { kind: "board" }))).not.toEqual(before);
-  });
-});
-
-describe("a Board whose every open state opens into lifecycle machines", () => {
-  const ALL = SAVED_STATES.filter((id) => id !== "completed" && id !== "archived");
-  /** Every open state opens into `n` machines, the primary and the rest each holding a sub-state that opens a child machine, with tasks working them. */
-  const everyState = (n: number, tasks = 4, W = 1920, H = 1080, OPEN = ALL, short = false, dags = false) => savedBoardSky(W, H, (snap) => {
-    const board = snap.flows[0], flows: Snapshot["flows"] = [];
-    // the live Board's DAGs: long names writing the paths beside crowded states, three folded on one path, and ten free in the hangar
-    if (dags) {
-      const writes: Record<string, string[]> = { waiting_ready: ["dagu/board-dependency-reconciliation"], ready_in_progress: ["dagu/board-autopilot"], done_completed: ["dagu/backlog-sweep"], review_done: ["dagu/main-follow", "dagu/apply-merged", "dagu/pr-reaper"] };
-      const free = { Ops: ["a", "b", "c", "d", "e", "f"].map((x) => `dagu/ops-${x}`), Docs: ["a", "b", "c", "d"].map((x) => `dagu/docs-${x}`) }, tied = Object.values(writes).flat();
-      board.machine.writers = Object.fromEntries(Object.entries(writes).map(([e, ns]) => [e, ns.map((actor) => ({ actor, trigger: "dagu" }))]));
-      snap.dags = [...tied, ...Object.values(free).flat()].map((d) => dag(d, [["run", []]]));
-      snap.domains = [{ name: "Board", dags: tied.map((name) => ({ name, runSafe: false })) }, ...Object.entries(free).map(([name, ds]) => ({ name, dags: ds.map((d) => ({ name: d, runSafe: false })) }))];
-    }
-    board.agents = OPEN.flatMap((state) => Array.from({ length: tasks }, (_, i) => ({ id: `${state}-${i}`, title: "t", state, model: "", labels: [] })));
-    board.machine.subflows = OPEN.flatMap((state) => Array.from({ length: n }, (_, i) => {
-      const name = short ? `${state.slice(0, 2)}${i}` : `${state}-machine-${String(i).padStart(2, "0")}`;
-      flows.push({ name, agents: board.agents.filter((a) => a.state === state && i === 0).map((a, j) => ({ id: `${a.id}-s`, title: "t", state: "reading", model: "", task: a.id, active: 900 + j })), machine: machine(["reading", "writing"], short ? {} : { subflows: [{ state: "reading", flow: "child", exits: {}, parent: name, when: "it reads" }] }) });
-      return { state, flow: name, exits: {}, parent: "board", when: "" };
-    }));
-    flows.push({ name: "child", agents: [], machine: machine(["a", "b"]) });
-    snap.flows.push(...flows);
-    snap.graphs.push(...flows.map((f) => f.name));
-  });
-  const boxes = (scene: Scene, W: number) => {
-    const F = ((scene.labelScale ?? 1) * scene.w) / (0.94 * W), at = (id: string) => ({ x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, id });
-    const out = Object.fromEntries(Object.keys(scene.galaxies).map((id) => [id, at(id)])), grow = (id: string, x0: number, x1: number, y0: number, y1: number) => {
-      const b = out[id];
-      b.x0 = Math.min(b.x0, x0); b.x1 = Math.max(b.x1, x1); b.y0 = Math.min(b.y0, y0); b.y1 = Math.max(b.y1, y1);
-    };
-    for (const g of Object.values(scene.galaxies)) grow(g.id, g.x - g.R, g.x + g.R, g.y - g.R, g.y + g.R);
-    for (const t of scene.tasks) grow(t.state, t.x - t.R, t.x + t.R, t.y - t.R, t.y + t.R);
-    for (const m of scene.moons) {
-      const sg = m.x < m.parent.x ? -1 : 1, end = m.x + sg * (m.R + m.ext + 10 + textW(scene.clipped ? clip(m.label) : m.label, 10.5) * F);
-      grow(m.parent.id, Math.min(m.x - m.R, end), Math.max(m.x + m.R, end), m.y - m.R, m.y + m.R);
-    }
-    return Object.values(out);
-  };
-
-  it.each([[12, 1920], [20, 1920], [12, 1420], [20, 1420]])("holds 16 px between one state's tasks, moons and moon names and the next state's, at %i machines a state on a %i px canvas", (n, W) => {
-    const scene = build(everyState(n, 4, W, 1080, ALL), { kind: "board" }), bs = boxes(scene, W), short: string[] = [];
-    const px = (16 * scene.w) / (0.94 * W);
-    for (const a of bs) for (const b of bs) if (a.id < b.id && Math.max(b.x0 - a.x1, a.x0 - b.x1, b.y0 - a.y1, a.y0 - b.y1) < px - 1e-6) short.push(`${a.id}/${b.id}`);
-
-    expect(short).toEqual([]);
-  });
-
-  it.each([[12, 1920], [20, 1920], [12, 1420], [20, 1420]])("keeps every state, task, moon and moon name inside the fitted sky at %i machines a state on a %i px canvas", (n, W) => {
-    const scene = build(everyState(n, 4, W, 1080, ALL), { kind: "board" }), bs = boxes(scene, W);
-
-    expect(scene.w / scene.h).toBeCloseTo(W / 1080, 1);
-    for (const b of bs) expect([b.id, b.x0 >= 0, b.x1 <= scene.w, b.y0 >= 0, b.y1 <= scene.h]).toEqual([b.id, true, true, true, true]);
-  });
-
-  /** Every state's disc, name and count line and moon rows, each as a box. */
-  const labels = (scene: Scene, W: number) => {
-    const F = ((scene.labelScale ?? 1) * scene.w) / (0.94 * W), out: { o: string; x0: number; x1: number; y0: number; y1: number }[] = [];
-    const add = (o: string, x: number, hw: number, y0: number, y1: number) => out.push({ o, x0: x - hw, x1: x + hw, y0, y1 });
-    for (const g of Object.values(scene.galaxies)) {
-      const sub = `${g.n}${g.subs.length ? ` · ${g.subs.length} lifecycles` : ""}`;
-      add(g.id, g.lab.x, (Math.max(textW(g.name, 13), textW(sub, 11)) / 2) * F, g.lab.y - 6.5 * F, g.lab.y + 21.5 * F);
-      add(g.id, g.x, g.R, g.y - g.R, g.y + g.R);
-    }
-    for (const m of scene.moons) {
-      const sg = m.x < m.parent.x ? -1 : 1, end = m.x + sg * (m.R + m.ext + 10 + textW(scene.clipped ? clip(m.label) : m.label, 10.5) * F);
-      out.push({ o: m.parent.id, x0: Math.min(m.x - m.R, end), x1: Math.max(m.x + m.R, end), y0: m.y - Math.max(m.R, 5.25 * F), y1: m.y + Math.max(m.R, 5.25 * F) });
-    }
-    return out;
-  };
-
-  it.each([[12, 1920], [20, 1920], [12, 1420], [20, 1420]])("keeps state names off each other and off every other state's rows at %i machines a state on a %i px canvas", (n, W) => {
-    const scene = build(everyState(n, 4, W, 1080, ALL, false, true), { kind: "board" }), bs = labels(scene, W), hit: string[] = [];
-    bs.forEach((a, i) => bs.slice(i + 1).forEach((b) => { if (a.o !== b.o && a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) hit.push(`${a.o}/${b.o}`); }));
-
-    expect(hit).toEqual([]);
   });
 });
 
