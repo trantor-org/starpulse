@@ -215,7 +215,7 @@ import sys
 import threading
 import time
 from collections import Counter, OrderedDict
-from collections.abc import Callable, Collection, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -358,6 +358,7 @@ _AUTOPILOT = "/api/autopilot"
 _TASK = "/api/task/"
 _SNAPSHOT_BODY = "/api/events/body/"
 _HELD = "/api/held"
+_LANES = "/api/lanes"
 _EDIT = "/api/edit"
 _ARCHIVE = "/api/archive"
 _RESTORE = "/api/restore"
@@ -1363,6 +1364,8 @@ def request_handler(
                 self._stream_events(parse_qs(url.query).get("snapshot") == ["ref"])
             elif url.path == _HELD:
                 self._stream_held(parse_qs(url.query).get("holder", [""])[0])
+            elif url.path == _LANES:
+                self._stream_columns("lanes", lambda agent: True, parse_qs(url.query).get("state", []))
             elif url.path.startswith(_SNAPSHOT_BODY):
                 self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
             elif url.path == "/api/snapshot":
@@ -1519,9 +1522,14 @@ def request_handler(
 
         def _stream_held(self, holder: str) -> None:
             """Hold the connection open: the tasks `holder` holds, then those tasks again each time they change, so a
-            session's band redraws on a change instead of asking. A burst of changes settles before one reread."""
+            session's band redraws on a change instead of asking."""
             if not holder:
                 return self._send(_error(f"name the session: {_HELD}?holder=<session>"), 400)
+            self._stream_columns("held", lambda agent: agent.get("holder", "") == holder)
+
+        def _stream_columns(self, event: str, kept: Callable[[dict], bool], states: Sequence[str] = ()) -> None:
+            """Hold the connection open: the Board's columns (only `states`, when named) with the tasks `kept` keeps,
+            as `event`, then again each time that view changes. A burst of changes settles before one reread."""
             changes = None
             try:
                 served = snapshots.get()
@@ -1531,10 +1539,12 @@ def request_handler(
                 self._open_stream()
                 sent = None
                 while True:
-                    held = board_columns(served.snapshot, lambda agent: agent.get("holder", "") == holder)
-                    if held != sent:
-                        self._frame("held", json.dumps(held, ensure_ascii=False))
-                        sent = held
+                    view = board_columns(served.snapshot, kept)
+                    if states:
+                        view["columns"] = [c for c in view["columns"] if c["state"] in states]
+                    if view != sent:
+                        self._frame(event, json.dumps(view, ensure_ascii=False))
+                        sent = view
                     try:
                         changes.get(timeout=_PING_S)
                     except queue.Empty:

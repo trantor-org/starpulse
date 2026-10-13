@@ -339,7 +339,10 @@ that picks it: the row opens to the full title, the holder, the criteria count, 
 `/api/start` with the task's assignee and harness `claude`, then runs `tmux switch-client` to `task-<N>` (outside a tmux
 client, a toast names the `tmux attach` command). Go to session, on any other lane, switches to the task holder's live
 session, or toasts that it has none. A `→ <lane>` button, coloured by the target lane, for each move the board lists posts `/api/move`; a refused move
-shows the server's reason as a toast and leaves the board as read. Each action rereads the board, and the pane rereads it with the band while open.
+shows the server's reason as a toast and leaves the board as read. While the pane is open it follows `GET /api/lanes?state=<lane>…`
+(one `state` per open lane), an event stream like `/api/held`: the server sends the lanes as a `lanes` event on connect and again only
+when they change, and the pane redraws from it with no `starpulse` run and no timer. Closing the pane, or placing it inline, ends the
+stream; a stream that drops is retried with backoff while the pane stays open. The refresh button still rereads the board once.
 
 ## The pull-request store
 

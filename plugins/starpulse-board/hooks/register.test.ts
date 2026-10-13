@@ -415,25 +415,47 @@ const FILES = {
   },
 }
 
+// A second plugin that closes the Board tab the way the person does, on /close-board.
+const CLOSER = {
+  name: 'closer',
+  register(on: On) {
+    on('command.run', { command: 'close-board' }, async $ => {
+      await $.ui.close({ id: 'starpulse-kanban' })
+
+      return { text: 'closed' }
+    })
+  },
+}
+
 // A child's output the test writes as it goes; end() exits the child, as a server restart ends curl.
 const feed = () => {
   const queue: (string | null)[] = []
   let wake = () => {}
+  const state = { isClosed: false }
   const push = (text: string | null) => {
     queue.push(text)
     wake()
   }
   return {
+    state,
     write: (text: string) => push(text),
     // One frame of the held-task stream, carrying `board` as the server sends it.
     held: (board: string) => push(`event: held\ndata: ${board}\n\n`),
+    // One frame of the lanes stream.
+    lanes: (board: string) => push(`event: lanes\ndata: ${board}\n\n`),
     end: () => push(null),
-    async *chunks() {
-      while (true) {
-        while (!queue.length) await new Promise<void>(r => (wake = r))
-        const text = queue.shift()
-        if (text === null || text === undefined) return { value: { code: 0, signal: null } }
-        yield { stream: 'stdout' as const, text }
+    // The engine kills the child when the loop is left or `signal` aborts; the fake notes it and ends the stream.
+    async *chunks(signal?: AbortSignal) {
+      signal?.addEventListener('abort', () => push(null))
+      try {
+        while (true) {
+          while (!queue.length) await new Promise<void>(r => (wake = r))
+          const text = queue.shift()
+          if (text === null || text === undefined) return { value: { code: 0, signal: null } }
+          yield { stream: 'stdout' as const, text }
+        }
+      } finally {
+        state.isClosed = true
       }
     },
   }
@@ -447,9 +469,13 @@ type Host = {
   spawned?: string[][]
   everys?: number[]
   held?: Feed[]
+  lanes?: Feed[]
+  afters?: number[]
   watch?: Feed
   registry?: Record<string, object>
   hasClock?: boolean
+  noFrame?: boolean
+  frame?: string
   isAlone?: boolean
   board?: () => Promise<ReturnType<typeof answer>> | ReturnType<typeof answer>
   posted?: string[][]
@@ -510,10 +536,18 @@ const sessionsHost = (on: On, host: Host = {}) => {
     return host.board?.() ?? answer(0, JSON.stringify({ columns: [] }))
   })
   const watch = host.watch ?? feed()
-  on('process.spawn', async function* ($, e) {
+  if (host.afters) {
+    // A wait that never ends, so a retry that is scheduled shows up in `afters` and does not run.
+    on('clock.after', (_$, e) => {
+      host.afters?.push(e.ms)
+      return new Promise(() => {})
+    })
+  }
+  on('process.spawn', async function* ($, e, next) {
     host.spawned?.push([...e.argv])
-    const child = e.argv[0] === 'inotifywait' ? watch : (host.held?.shift() ?? feed())
-    return yield* child.chunks()
+    const isLanes = e.argv.at(-1)?.includes('/api/lanes')
+    const child = e.argv[0] === 'inotifywait' ? watch : ((isLanes ? host.lanes : host.held)?.shift() ?? feed())
+    return yield* child.chunks(next.signal)
   })
 }
 
@@ -542,9 +576,11 @@ const kanbanPane = ($: any) =>
 
 // The Board tab, opened from /kanban the way a person would. Each test unmounts its drawing.
 const openKanban = async ($: any, on: On, host: Host = {}) => {
-  sessionsHost(on, { board: () => answer(0, KANBAN), ...host })
+  const stream = host.lanes?.[0] ?? feed()
+  sessionsHost(on, { lanes: [stream], ...host })
   await start($, 'terminal')
   await $.command.run({ ...RUN, command: 'kanban' })
+  if (!host.noFrame) stream.lanes(host.frame ?? KANBAN)
   await settle()
   return kanbanPane($)
 }
@@ -564,9 +600,9 @@ test('the Board tab lists the open lanes in order with their counts, Ready and W
 })
 
 // A pane body scrolls its tree, so flexGrow has no height to fill: the root takes the body's rows to paint the dock black to its floor.
-for (const [state, exitCode] of [['lanes', 0], ['a failed read', 1]] as const) {
+for (const [state, noFrame] of [['lanes', false], ['no frame yet', true]] as const) {
   test(`the Board tab paints black down the whole dock body with ${state}`, async ($, on) => {
-    const ui = await openKanban($, on, { board: () => answer(exitCode, exitCode ? '' : KANBAN) })
+    const ui = await openKanban($, on, { noFrame })
 
     expect((await ui.find({ key: 'board-fill' }))?.props).toMatchObject({ minHeight: PANE_PROPS.scroll.bodyRows, backgroundColor: '#000000' })
     await ui.unmount()
@@ -618,7 +654,7 @@ test('an In Progress task goes to its live session without starting one', async 
 test('an In Progress task held by a background session attaches it in a tmux session and switches to it', async ($, on) => {
   const switched: string[][] = []
   const held = board([['in_progress', 'In Progress', [task({ id: 'TASK-8', title: 'Background one', holder: 'abcd1234-5678' })]]])
-  const ui = await openKanban($, on, { switched, board: () => answer(0, held) })
+  const ui = await openKanban($, on, { switched, frame: held })
 
   await ui.press({ key: 'task:TASK-8' })
   await ui.press({ key: 'session:TASK-8' })
@@ -630,26 +666,75 @@ test('an In Progress task held by a background session attaches it in a tmux ses
   await ui.unmount()
 })
 
-test('a move button moves the task through StarPulse and rereads the Board', async ($, on) => {
+test('a move button moves the task through StarPulse and reads no Board', async ($, on) => {
   const posted: string[][] = []
-  let reads = 0
-  const ui = await openKanban($, on, {
-    posted,
-    board: () => {
-      reads++
-      return answer(0, KANBAN)
-    },
-  })
+  const ran: string[][] = []
+  const ui = await openKanban($, on, { posted, ran })
 
   await ui.press({ key: 'task:TASK-7' })
   expect((await ui.find({ key: 'move:TASK-7:review' }))?.props.label).toBe('→ Review')
-  const before = reads
+  const before = ran.length
   await ui.press({ key: 'move:TASK-7:review' })
   await settle()
 
   expect(posted.map(a => a.find(x => x.startsWith('http')))).toEqual(['http://localhost:8766/api/move'])
   expect(sent(posted[0]!)).toEqual({ task: 'TASK-7', to: 'review' })
-  expect(reads).toBeGreaterThan(before)
+  expect(ran.slice(before).filter(argv => argv[0] !== 'curl')).toEqual([])
+  await ui.unmount()
+})
+
+test('a lanes frame from the stream redraws the open Board tab with no starpulse run', async ($, on) => {
+  const stream = feed()
+  const ran: string[][] = []
+  const spawned: string[][] = []
+  const ui = await openKanban($, on, { lanes: [stream], ran, spawned })
+  const before = ran.length
+
+  stream.lanes(board([['review', 'Review', [task({ id: 'TASK-11', title: 'Just arrived', holder: 'session-3' })]]]))
+  await settle()
+
+  expect((await ui.find({ key: 'task:TASK-11' }))?.props.label).toBe('TASK-11 Just arrived')
+  expect(await ui.find({ key: 'task:TASK-7' })).toBeUndefined()
+  expect(ran.slice(before)).toEqual([])
+  expect(spawned.find(argv => argv.at(-1)?.includes('/api/lanes'))?.at(-1)).toBe(
+    'http://localhost:8766/api/lanes?state=in_progress&state=review&state=needs_attention&state=ready&state=waiting',
+  )
+  await ui.unmount()
+})
+
+test('closing the Board tab ends the stream child and registers no timer', { plugins: [CLOSER] }, async ($, on) => {
+  const stream = feed()
+  const afters: number[] = []
+  const everys: number[] = []
+  const ui = await openKanban($, on, { lanes: [stream], afters, everys })
+  expect(stream.state.isClosed).toBe(false)
+
+  await $.command.run({ ...RUN, command: 'close-board' })
+  await settle()
+
+  expect(stream.state.isClosed).toBe(true)
+  expect(afters).toEqual([])
+  expect(everys).toEqual([])
+  await ui.unmount()
+})
+
+test('reopening the Board tab follows a new stream, and opening it twice follows one', { plugins: [CLOSER] }, async ($, on) => {
+  const [first, second] = [feed(), feed()]
+  const spawned: string[][] = []
+  const ui = await openKanban($, on, { lanes: [first, second], spawned })
+  await $.command.run({ ...RUN, command: 'kanban' })
+  await settle()
+  const lanesStreams = () => spawned.filter(argv => argv.at(-1)?.includes('/api/lanes')).length
+  expect(lanesStreams()).toBe(1)
+
+  await $.command.run({ ...RUN, command: 'close-board' })
+  await $.command.run({ ...RUN, command: 'kanban' })
+  second.lanes(KANBAN)
+  await settle()
+
+  expect(lanesStreams()).toBe(2)
+  expect(first.state.isClosed).toBe(true)
+  expect((await ui.find({ key: 'task:TASK-7' }))?.props.label).toBe('TASK-7 Busy one')
   await ui.unmount()
 })
 
@@ -899,7 +984,7 @@ for (const glyphs of ['nerd', 'plain'] as const) {
   })
 
   test(`glyphs=${glyphs}: the Board tab draws ${glyphs} icons`, { options: { glyphs } }, async ($, on) => {
-    const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+    const ui = await openKanban($, on, { frame: COLOURED })
     await ui.press({ key: 'task:TASK-7' })
     const tab = await texts(ui)
 
@@ -914,7 +999,7 @@ for (const glyphs of ['nerd', 'plain'] as const) {
 }
 
 test('the Board tab colours each lane header and icon by its lane', async ($, on) => {
-  const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+  const ui = await openKanban($, on, { frame: COLOURED })
   const seen = await texts(ui)
 
   const names = { in_progress: 'IN PROGRESS', review: 'REVIEW', needs_attention: 'NEEDS ATTENTION', ready: 'READY', waiting: 'WAITING' } as const
@@ -929,7 +1014,7 @@ test('the Board tab colours each lane header and icon by its lane', async ($, on
 })
 
 test('a Board row draws the ID, title, four-cell bar and PR check icon', async ($, on) => {
-  const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+  const ui = await openKanban($, on, { frame: COLOURED })
 
   const seen = await texts(ui)
   expect(colorOf(seen, 'TASK-7')).toBe('#94a3b8')
@@ -945,7 +1030,7 @@ test('a Board row draws the ID, title, four-cell bar and PR check icon', async (
 })
 
 test('a picked task opens its title, holder, criteria, PR and actions coloured by target lane', async ($, on) => {
-  const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+  const ui = await openKanban($, on, { frame: COLOURED })
 
   await ui.press({ key: 'task:TASK-7' })
   const seen = await texts(ui)
@@ -969,7 +1054,7 @@ test('a move to Done that StarPulse refuses toasts its reason and leaves the Boa
   const toasts: string[] = []
   const ui = await openKanban($, on, {
     toasts,
-    board: () => answer(0, COLOURED),
+    frame: COLOURED,
     post: () => answer(0, '{"error": "only the operator moves TASK-7 to Done"}\n409'),
   })
 
@@ -994,7 +1079,7 @@ const fills = async (tree: any, root?: string) => {
 }
 
 test('the Board tab fills its root black to cover the dock grey, every Button is plain and nothing else sets a background', async ($, on) => {
-  const ui = await openKanban($, on, { board: () => answer(0, COLOURED) })
+  const ui = await openKanban($, on, { frame: COLOURED })
   await ui.press({ key: 'task:TASK-7' })
 
   await fills(ui, '#000000')

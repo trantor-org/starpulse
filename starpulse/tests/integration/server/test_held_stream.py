@@ -55,3 +55,26 @@ def test_a_stream_without_a_holder_is_refused(tmp_path: Path) -> None:
             urllib.request.urlopen(_url(server, "/api/held"), timeout=5)
 
     assert refused.value.code == 400
+
+
+def _lanes(document: dict) -> dict[str, list[str]]:
+    return {c["state"]: [t["id"] for t in c["tasks"]] for c in document["columns"]}
+
+
+def test_the_lanes_stream_sends_on_connect_and_again_only_on_a_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("starpulse._internal.server.server._HELD_SETTLE_S", 0)
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-1", "In Progress", holder="session-1"))
+    feed.put(task("PROJ-2", "Ready"))
+    feed.put(task("PROJ-9", "Done"))
+    with _serve(tmp_path, feed) as server:
+        with urllib.request.urlopen(_url(server, "/api/lanes?state=in_progress&state=ready"), timeout=5) as resp:
+            head = (resp.status, resp.headers["Content-Type"], resp.headers["Cache-Control"])
+            first = _next_event(resp)
+            feed.put(task("PROJ-9", "Archived"))  # a lane the stream was not asked for: nothing to send
+            feed.put(task("PROJ-2", "Review"))
+            second = _next_event(resp)
+
+    assert head == (200, "text/event-stream", "no-store")
+    assert (first[0], _lanes(first[1])) == ("lanes", {"in_progress": ["PROJ-1"], "ready": ["PROJ-2"]})
+    assert (second[0], _lanes(second[1])) == ("lanes", {"in_progress": ["PROJ-1"], "ready": []})
