@@ -343,7 +343,8 @@ client, a toast names the `tmux attach` command). Go to session, on any other la
 session, or toasts that it has none. A `→ <lane>` button, coloured by the target lane, for each move the board lists posts `/api/move`; a refused move
 shows the server's reason as a toast and leaves the board as read. While the pane is open it follows `GET /api/lanes?state=<lane>…`
 (one `state` per open lane), an event stream like `/api/held`: the server sends the lanes as a `lanes` event on connect and again only
-when they change, and the pane redraws from it with no `starpulse` run and no timer. Closing the pane, or placing it inline, ends the
+when they change, and the pane redraws from it with no `starpulse` run and no timer. A docked pane that `/kanban` did not open, such as
+one left in the dock across `/clear`, starts the stream when it draws. Closing the pane, or placing it inline, ends the
 stream; a stream that drops is retried with backoff while the pane stays open. The refresh button still rereads the board once.
 
 ## The pull-request store

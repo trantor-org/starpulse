@@ -809,6 +809,8 @@ export const register: Register = (on, options) => {
       const { Box } = $.ui.resolve(e)
       return <Box />
     }
+    // A tab /kanban did not open, as one left in the dock across /clear, has no stream yet; one already running is kept.
+    void followLanes($)
     const found = await read($, lanes)
     const shut = await read($, folded)
     const picked = await read($, pickedTask)
