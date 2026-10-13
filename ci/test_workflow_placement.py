@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from select_tests import SHARD_COUNT
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github/workflows"
 VALIDATE_LANE = ["self-hosted", "validate"]
@@ -22,7 +23,7 @@ MERGE_QUEUE_RUNS_ON = (
     "${{ github.event_name == 'merge_group' && fromJSON('[\"self-hosted\", \"merge-queue\"]')"
     " || fromJSON('[\"self-hosted\", \"validate\"]') }}"
 )
-CI_TEST_JOBS = ["python-shard", "python", "web", "static-checks", "trantor-contract"]
+CI_TEST_JOBS = ["select", "python-shard", "python", "web", "static-checks", "trantor-contract"]
 
 
 def job(workflow: str, name: str) -> dict:
@@ -53,10 +54,11 @@ def test_ci_test_job_takes_the_merge_queue_lane_only_on_a_merge_group_event(name
 
 
 def test_a_merge_queue_run_starts_as_many_jobs_at_once_as_the_reserved_lane_has_runners():
-    """The lane (trantor's runner-fleet document) holds ten slots for these ten; `python` waits for the six shards."""
+    """The lane (trantor's runner-fleet document) holds ten slots for these ten; `select` ends before the six shards it
+    sizes start, and `python` waits for them."""
     jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
-    shards = len(jobs["python-shard"]["strategy"]["matrix"]["shard"])
-    unshared = [name for name in CI_TEST_JOBS if name != "python-shard" and "needs" not in jobs[name]]
+    shards = SHARD_COUNT  # a full run: ci/select_tests.py sizes the matrix up to it
+    unshared = [name for name in CI_TEST_JOBS if name not in ("select", "python-shard") and "needs" not in jobs[name]]
     release_build = 1  # release.yml's `build` is a required check on the same merge_group candidate
     assert shards + len(unshared) + release_build == 10
 
@@ -185,7 +187,7 @@ def test_trantor_tests_of_this_package_gate_every_merge():
 
 
 #: Every ci.yml job but `dispatch`: the jobs that test a tree.
-TEST_JOBS = ["python-shard", "python", "web", "static-checks", "trantor-contract"]
+TEST_JOBS = ["select", "python-shard", "python", "web", "static-checks", "trantor-contract"]
 
 
 @pytest.mark.parametrize("name", TEST_JOBS)
@@ -392,22 +394,44 @@ def run_step(step: dict, tmp_path, env: dict[str, str], *, uv_exit: int = 0) -> 
     return shell.returncode
 
 
-def test_the_shard_count_matches_the_shard_matrix():
+def test_the_shard_count_is_the_size_of_the_matrix_the_selection_made():
     shard = job("ci.yml", "python-shard")
-    assert shard["env"]["SHARD_COUNT"] == len(shard["strategy"]["matrix"]["shard"])
+    assert shard["env"]["SHARD_COUNT"] == "${{ strategy.job-total }}"
     assert shard["env"]["SHARD_INDEX"] == "${{ matrix.shard }}"
 
 
-@pytest.mark.parametrize(("result", "status"), [("success", 0), ("failure", 1), ("cancelled", 1), ("skipped", 1)])
-def test_the_python_check_passes_only_when_every_shard_passed(tmp_path, result, status):
-    """The ruleset requires `python`: a red, cancelled or skipped shard must not leave it green or missing."""
+def test_the_python_check_waits_for_the_selection_and_the_shards_and_runs_behind_a_red_one():
     aggregate = job("ci.yml", "python")
-    assert aggregate["needs"] == "python-shard"
+    assert aggregate["needs"] == ["select", "python-shard"]
     # A skipped aggregate reads as a missing required check; a push carries none, so it skips there with the shards.
     assert aggregate["if"] == "always() && github.event_name != 'push'"
-    step = aggregate["steps"][0]
-    assert step["env"] == {"SHARDS": "${{ needs.python-shard.result }}"}
-    assert run_step(step, tmp_path, {"SHARDS": result}) == status
+    assert aggregate["steps"][0]["env"] == {
+        "SELECT": "${{ needs.select.result }}",
+        "SHARDS": "${{ needs.python-shard.result }}",
+        "LAUNCHED": "${{ needs.select.outputs.PYTEST_SHARDS }}",
+    }
+
+
+@pytest.mark.parametrize(
+    ("select_result", "shards", "launched", "status"),
+    [
+        ("success", "success", "[1, 2, 3]", 0),
+        ("success", "skipped", "[]", 0),  # no test selected: no shard launched, none failed
+        ("success", "failure", "[1, 2, 3]", 1),
+        ("success", "cancelled", "[1, 2, 3]", 1),
+        ("success", "skipped", "[1, 2, 3]", 1),  # shards were wanted and never ran
+        ("failure", "skipped", "", 1),  # a failed selection or lint skips the shards and leaves its outputs empty
+        ("cancelled", "skipped", "[]", 1),
+        ("failure", "success", "[1]", 1),
+    ],
+)
+def test_the_python_check_passes_when_every_launched_shard_passed_or_none_was_needed(
+    tmp_path, select_result, shards, launched, status
+):
+    """The ruleset requires `python`: a red, cancelled or never-run shard must not leave it green or missing."""
+    step = job("ci.yml", "python")["steps"][0]
+    env = {"SELECT": select_result, "SHARDS": shards, "LAUNCHED": launched}
+    assert run_step(step, tmp_path, env) == status
 
 
 def pytest_step() -> dict:

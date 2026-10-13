@@ -1,6 +1,6 @@
 """The test files a pull request's changes can affect, or the full suite when that cannot be known from its paths.
 
-    git diff --name-only HEAD^1 HEAD | python ci/select_tests.py >> "$GITHUB_ENV"
+    git diff --name-only HEAD^1 HEAD | python ci/select_tests.py >> "$GITHUB_OUTPUT"
 
 A changed Python module selects every test file that imports it directly or through other modules, read from the
 import statements under `starpulse/` and `ci/`; a changed test file selects itself. A non-Python file selects the tests
@@ -9,18 +9,22 @@ readers the import graph cannot name (`FULL_SUITE`, a deleted module, or any pat
 everything. A push to main selects the same way; the nightly scheduled run is the full suite, so what a selection
 misses fails there.
 
-Prints `PYTEST_TARGETS` (empty means the whole suite) and `PYTEST_SKIP` (true when no test is selected).
+Prints `PYTEST_TARGETS` (empty means the whole suite) and `PYTEST_SHARDS` (a JSON list of the shard indexes to launch:
+empty when no test is selected, all six for a full run). `--full` prints the whole suite without reading a diff.
 """
 
 from __future__ import annotations
 
 import ast
+import json
 import re
 import sys
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from functools import cache
 from pathlib import Path
+
+from shard import SECONDS
 
 #: Read by every test, by pytest itself or by a loader the graph cannot follow (YAML, JSON, skill files).
 FULL_SUITE = (
@@ -108,6 +112,25 @@ class Selection:
 
 
 FULL = Selection(None)
+
+#: Shards a full run splits the suite across (`ci/shard.py`).
+SHARD_COUNT = 6
+
+#: Seconds of tests a selected shard should hold, about what its checkout and `uv sync` cost: a smaller share does not
+#: pay for the runner it holds. A selected file `ci/shard.py` has not weighed counts `FILE_SECONDS`.
+SHARD_SECONDS = 60
+FILE_SECONDS = 5
+
+
+def shards_for(selection: Selection) -> list[int]:
+    """The 1-based shard indexes to launch: all of them for a full run, none for no test, else by the files' weight.
+
+    Never more than the files: `ci/shard.py` never splits one.
+    """
+    if selection.tests is None:
+        return list(range(1, SHARD_COUNT + 1))
+    seconds = sum(SECONDS.get(test, FILE_SECONDS) for test in selection.tests)
+    return list(range(1, min(SHARD_COUNT, len(selection.tests), -(-seconds // SHARD_SECONDS)) + 1))
 
 
 def _modules(root: Path) -> dict[str, Path]:
@@ -256,12 +279,13 @@ def select(root: Path, changed: list[str]) -> Selection:
     return Selection(sorted(str(modules[t].relative_to(root)) for t in tests if reaches(t) & affected))
 
 
-def main() -> None:
-    selection = select(Path.cwd(), [line.strip() for line in sys.stdin if line.strip()])
+def main(argv: list[str]) -> None:
+    """Print the selection for the diff on stdin, or the whole suite for `--full` (the schedule, a dispatch: no diff)."""
+    selection = FULL if argv == ["--full"] else select(Path.cwd(), [line.strip() for line in sys.stdin if line.strip()])
     targets = selection.tests or []
     print(f"PYTEST_TARGETS={' '.join(targets)}")
-    print(f"PYTEST_SKIP={'true' if selection.tests == [] else 'false'}")
+    print(f"PYTEST_SHARDS={json.dumps(shards_for(selection))}")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

@@ -15,7 +15,11 @@ instance runs, and the suite then skips the Postgres and hub cases.
 `uv run pytest -n 4 --dist loadgroup` spreads it over four pytest-xdist workers (CI starts two per runner); `loadgroup` keeps the tests that
 share checkout state on one worker. CI sizes `-n` to its runner's memory with `ci/xdist_workers.py`.
 CI splits the suite by test file across the `python-shard` matrix (`ci/shard.py`: `SHARD_INDEX` of `SHARD_COUNT`, both unset
-locally); the `python` job, the ruleset's required check, passes only when every shard does.
+locally). A `select` job runs `ci/select_tests.py` once and sizes the matrix from the selection: no shard when it selects no
+test, one shard per minute of the selected files' test time (never more than the files), and all six for the nightly and a
+manual dispatch. `select` also runs `lint-imports` on every pull request. The `python` job, the ruleset's required check,
+passes when `select` did and every shard it launched did, including when it launched none; a failed, cancelled or never-run
+shard fails it.
 A test that runs past 120 s (`timeout` in `[tool.pytest.ini_options]`, from pytest-timeout) fails with a timeout error;
 a test that needs longer carries `@pytest.mark.timeout(<seconds>)` with the reason beside it.
 The screen below runs only in the nightly full suite and a manual `workflow_dispatch`, where `ci.yml` sets `TEST_COST_REPORT=1`;
@@ -40,8 +44,7 @@ runs none, because the merge queue tested that very commit, and the full suite r
 (`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so its `ci/public_names.py` check fails
 when a tracked file other than a workflow, the runner-label list or a test names the operator's private hosts; docs, comments and fixtures use neutral names.
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import
-graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite, and so does every
-push to `main`.
+graph; a dependency, `conftest.py`, fixture, machine, schema or skill change runs the whole suite.
 `uv run lint-imports` checks the tiers under `starpulse/_internal`, top to bottom: `api` over `cli` (the server's routes and
 the hub, then the command line), `adapters`, `level`, `feed` and `ci`, `eventlog`, then `config`, `machines` and
 `contracts`. A package imports its own tier or one below; none import upward, and `feed` and `ci` never import each other.
