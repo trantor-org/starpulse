@@ -394,3 +394,16 @@ def test_task_edit_reword_without_a_number_and_colon_is_a_usage_error(
 
     assert (code, doc["code"]) == (2, "usage")
     assert "N:TEXT" in doc["error"]
+
+
+def test_a_close_comment_of_merge_evidence_the_task_records_is_not_written_again(
+    served: tuple[Board, BoardFeed, Path],
+) -> None:
+    built, _, base = served
+    proof = "Closed on merge evidence: trantor-org/starpulse#70 merged as 9893f05 (PR #70)"
+
+    first = built.edit("task-5", {}, proof)  # type: ignore[misc]
+    again = built.edit("task-5", {}, proof)  # type: ignore[misc]
+
+    assert (first.ok, again.ok) == (True, True)
+    assert _file(base).read_text().count(proof) == 1

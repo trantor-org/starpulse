@@ -31,6 +31,7 @@ from sqlalchemy.engine import Engine
 
 from starpulse._internal.board import native_docs, native_milestones, rules
 from starpulse._internal.board.seam import (
+    MERGE_EVIDENCE,
     OPERATOR,
     Board,
     MoveWriter,
@@ -511,7 +512,8 @@ def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> 
         def apply(frontmatter: dict, body: str) -> str:
             body = _apply(task, frontmatter, body, changes, spelled)
             for text in [comment] if isinstance(comment, str) else comment:
-                body = _comment(body, text) if text.strip() else body
+                recorded = text.startswith(MERGE_EVIDENCE) and text.strip() in {c["text"] for c in _comments(body)}
+                body = _comment(body, text) if text.strip() and not recorded else body
             return body
 
         try:

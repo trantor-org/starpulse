@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -53,3 +54,37 @@ def test_a_lane_change_the_backstop_scan_places_still_names_the_actor_that_wrote
     entry = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "done"][0]
 
     assert entry.fields.get("actor") == "starpulse/task-actor"
+
+
+class _BoardStore:
+    """A store holding one saved Board per stream."""
+
+    def __init__(self) -> None:
+        self.saved: dict[str, tuple[str, dict]] = {}
+
+    def load_board_state(self, stream: str) -> tuple[str, dict] | None:
+        return self.saved.get(stream)
+
+    def save_board_state(self, stream: str, cursor: str, state: dict) -> None:
+        self.saved[stream] = (cursor, json.loads(json.dumps(state)))  # a store keeps JSON
+
+
+def test_a_note_set_before_a_restart_names_its_writer_on_the_first_place_after_it(tmp_path: Path) -> None:
+    board, log = _BoardStore(), EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    before = BoardFeed(machines=MACHINES)
+    before.resume(board, "board:tasks", lambda cursor: True)
+    before.put(_task("in_progress", "t", 100.0))
+    before.seen("7-0")
+    before.save()
+    before.note_actor("T-1", "agent", "s1", "claude")  # written, not yet placed when the service stops
+    before.save()  # the stop's last save
+
+    after = BoardFeed(machines=MACHINES)
+    after.record_lanes(history, log)
+    after.resume(board, "board:tasks", lambda cursor: True)
+    after.put(_task("review", "t", 120.0))  # the first scan after the restart places the write
+
+    entry = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "review"][0]
+
+    assert (entry.fields.get("actor"), entry.fields.get("session")) == ("agent", "s1")
