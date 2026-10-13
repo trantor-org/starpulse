@@ -1,5 +1,5 @@
 import type { On, RenderElement } from 'claude-code'
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 const PULL = 'https://github.com/trantor-org/starpulse/pull'
 const CRITERIA = [true, true, false, false].map((checked, i) => ({ text: `Criterion ${i + 1}`, checked }))
@@ -413,13 +413,26 @@ const REGISTRY: Record<string, object> = {
   '/home/me/.claude/sessions/400.json': { sessionId: 'abcd1234-5678', pid: 400, name: 'Check the alert', status: 'idle', kind: 'bg' },
 }
 
-const sessionsHost = (on: On, switched: string[][]) => {
+type Host = {
+  switched?: string[][]
+  opened?: string[]
+  board?: () => Promise<ReturnType<typeof answer>> | ReturnType<typeof answer>
+  hasClock?: boolean
+}
+
+// Stands in for the engine and the host: the registry above, tmux session task-7 holding pid 200, and an empty board.
+// A test that mocks the clock says so with hasClock, since mock.clock answers clock.every itself.
+const sessionsHost = (on: On, host: Host = {}) => {
   on('ui.render', ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
   on('session.id', () => ({ value: SESSION }))
   on('session.start', ($, e) => e)
   on('command.register', ($, e) => ({ value: { command: e.name } }))
-  on('clock.every', () => ({ value: undefined }))
+  if (!host.hasClock) on('clock.every', () => ({ value: undefined }))
   on('env.get', () => ({ value: '/home/me' }))
+  on('ui.open', ($, e) => {
+    host.opened?.push(e.id)
+    return { value: { isPlaced: true as const } }
+  })
   on('fs.list', () => ({
     value: [...Object.keys(REGISTRY), '/home/me/.claude/sessions/200.abc.key'].map(p => ({
       name: p.split('/').at(-1)!,
@@ -433,57 +446,86 @@ const sessionsHost = (on: On, switched: string[][]) => {
   on('process.run', ($, e) => {
     if (e.argv[0] === 'tmux' && e.argv[1] === 'list-panes') return answer(0, '200 task-7\n999 scratch\n')
     if (e.argv[0] === 'tmux') {
-      switched.push([...e.argv])
+      host.switched?.push([...e.argv])
       return answer(0, '')
     }
-    return answer(0, JSON.stringify({ columns: [] }))
+    return host.board?.() ?? answer(0, JSON.stringify({ columns: [] }))
   })
 }
 
+const start = async ($: any, surface: string) => {
+  await $.session.start({ cwd: '/work', surface, isInteractive: true })
+  await settle()
+}
+
+const sessionsPane = ($: any, surface: string) =>
+  $.ui.mount({ plugin: 'starpulse-board', surface, component: 'Pane', props: PANE_PROPS, requestId: 'starpulse-sessions' })
+
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`the band shows every other session's status (${surface})`, async ($, on) => {
-    sessionsHost(on, [])
+  test(`the band counts the other sessions on one line, with no button per session (${surface})`, async ($, on) => {
+    sessionsHost(on)
 
-    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'AbovePrompt', props: PROPS })
-    await $.session.start({ cwd: '/work', surface, isInteractive: true })
-    await settle()
+    const ui = await band($, surface)
+    await start($, surface)
 
-    expect((await ui.find({ key: 'session:session-2' }))?.text).toBe('● task-7 busy')
-    expect(await ui.find({ text: ' ○ Fix the gate idle ' })).toBeDefined()
+    expect((await ui.find({ key: 'sessions' }))?.props.label).toBe('● 1 busy · ○ 2 idle')
+    expect(await ui.find({ key: 'session:session-2' })).toBeUndefined()
+  })
+
+  test(`pressing the count opens the Sessions pane (${surface})`, async ($, on) => {
+    const opened: string[] = []
+    sessionsHost(on, { opened })
+
+    const ui = await band($, surface)
+    await start($, surface)
+    await ui.press({ key: 'sessions' })
+
+    expect(opened).toEqual(['starpulse-sessions'])
+  })
+
+  test(`the count draws before starpulse board answers (${surface})`, async ($, on) => {
+    // The board answers only when the mocked clock moves a minute on, long after the count is drawn.
+    const clock = mock.clock(on)
+    sessionsHost(on, { hasClock: true, board: () => clock.sleep(60_000).then(() => answer(0, JSON.stringify({ columns: [] }))) })
+
+    const ui = await band($, surface)
+    await start($, surface)
+    const label = (await ui.find({ key: 'sessions' }))?.props.label
+    await clock.advance(60_000)
+
+    expect(label).toBe('● 1 busy · ○ 2 idle')
+  })
+
+  test(`the Sessions pane lists every other session with its status (${surface})`, async ($, on) => {
+    sessionsHost(on)
+
+    await start($, surface)
+    const ui = await sessionsPane($, surface)
+
+    expect((await ui.find({ key: 'session:session-2' }))?.props.label).toBe('● task-7 busy')
+    expect((await ui.find({ key: 'session:abcd1234-5678' }))?.props.label).toBe('○ Check the alert idle')
+    expect(await ui.find({ text: '○ Fix the gate idle' })).toBeDefined()
+    expect(await ui.find({ key: 'session:session-3' })).toBeUndefined()
     expect(await ui.find({ key: `session:${SESSION}` })).toBeUndefined()
   })
 
   test(`pressing a session in tmux switches the tmux client to it (${surface})`, async ($, on) => {
     const switched: string[][] = []
-    sessionsHost(on, switched)
+    sessionsHost(on, { switched })
 
-    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'AbovePrompt', props: PROPS })
-    await $.session.start({ cwd: '/work', surface, isInteractive: true })
-    await settle()
+    await start($, surface)
+    const ui = await sessionsPane($, surface)
     await ui.press({ key: 'session:session-2' })
 
     expect(switched).toEqual([['tmux', 'switch-client', '-t', 'task-7']])
   })
 
-  test(`a session in no tmux pane has no switch button (${surface})`, async ($, on) => {
-    sessionsHost(on, [])
-
-    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'AbovePrompt', props: PROPS })
-    await $.session.start({ cwd: '/work', surface, isInteractive: true })
-    await settle()
-
-    expect(await ui.find({ key: 'session:session-3' })).toBeUndefined()
-  })
-}
-
-for (const surface of ['terminal', 'desktop'] as const) {
   test(`pressing a background session attaches it in a tmux session and switches to it (${surface})`, async ($, on) => {
     const switched: string[][] = []
-    sessionsHost(on, switched)
+    sessionsHost(on, { switched })
 
-    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'AbovePrompt', props: PROPS })
-    await $.session.start({ cwd: '/work', surface, isInteractive: true })
-    await settle()
+    await start($, surface)
+    const ui = await sessionsPane($, surface)
     await ui.press({ key: 'session:abcd1234-5678' })
 
     expect(switched).toEqual([
