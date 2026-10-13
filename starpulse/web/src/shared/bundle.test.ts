@@ -1,5 +1,5 @@
 // @ts-expect-error Vitest runs this test in Node; production source stays browser-only.
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 // @ts-expect-error Node-only, as above.
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 // @ts-expect-error Node-only, as above.
@@ -39,11 +39,13 @@ const root = new URL("../..", import.meta.url).pathname;
 const vite = join(root, "node_modules/.bin/vite");
 
 /** `vite build` into `out` as production, with source maps so each chunk says which source files it holds. */
-function build(out: string, ...args: string[]): void {
-  execFileSync(vite, ["build", "--outDir", out, "--emptyOutDir", "--sourcemap", "--logLevel", "silent", ...args], {
-    cwd: root,
-    // @ts-expect-error Node-only, as above.
-    env: { ...process.env, NODE_ENV: "production" },
+function build(out: string, ...args: string[]): Promise<void> {
+  return new Promise((done, fail) => {
+    execFile(vite, ["build", "--outDir", out, "--emptyOutDir", "--sourcemap", "--logLevel", "silent", ...args], {
+      cwd: root,
+      // @ts-expect-error Node-only, as above.
+      env: { ...process.env, NODE_ENV: "production" },
+    }, (err: unknown) => (err ? fail(err) : done()));
   });
 }
 
@@ -62,11 +64,11 @@ const holds = (sources: string[], view: string) => sources.some((s) => s.endsWit
 
 describe("the built page", () => {
   let served: string, oneFile: string;
-  beforeAll(() => {
+  // the two builds share nothing, so they run side by side
+  beforeAll(async () => {
     served = mkdtempSync(join(tmpdir(), "starpulse-served-"));
     oneFile = mkdtempSync(join(tmpdir(), "starpulse-one-file-"));
-    build(served);
-    build(oneFile, "--mode", "one-file");
+    await Promise.all([build(served), build(oneFile, "--mode", "one-file")]);
   }, 120_000);
   afterAll(() => {
     rmSync(served, { recursive: true, force: true });
