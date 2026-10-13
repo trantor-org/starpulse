@@ -171,20 +171,18 @@ def test_the_real_repository_selects_a_subset_for_one_adapter():
     assert "ci/test_workflow_placement.py" not in selected
 
 
-def test_a_pull_request_merge_group_or_push_runs_the_selection_and_the_nightly_schedule_runs_everything():
+def test_a_pull_request_or_merge_group_runs_the_selection_and_the_nightly_schedule_runs_everything():
     workflow = yaml.safe_load(CI.read_text())
     # PyYAML reads the bare `on:` key as True.
     assert {"push", "pull_request", "merge_group", "schedule", "workflow_dispatch"} <= set(workflow[True])
     job = workflow["jobs"]["python-shard"]
-    assert "if" not in job  # the job always runs, so its required check reports even when no test is selected
+    assert job["if"] == "github.event_name != 'push'"  # else it runs, so its required check reports with no test selected
     steps = job["steps"]
     checkout = next(s for s in steps if s.get("uses", "").startswith("actions/checkout"))
     assert checkout["with"]["fetch-depth"] == 2  # the merge commit and its base parent
     select_step = next(s for s in steps if "ci/select_tests.py" in s.get("run", ""))
     # A merge-queue candidate is one squash commit over the entry ahead of it, so HEAD^1..HEAD is its own change.
-    assert select_step["if"] == (
-        "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push'"
-    )
+    assert select_step["if"] == "github.event_name == 'pull_request' || github.event_name == 'merge_group'"
     pytest_step = next(s for s in steps if "pytest $PYTEST_TARGETS" in s.get("run", ""))
     assert pytest_step["if"] == "env.PYTEST_SKIP != 'true'"
     assert steps.index(select_step) < steps.index(pytest_step)

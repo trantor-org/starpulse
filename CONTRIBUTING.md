@@ -23,11 +23,11 @@ collaborator, say so in an issue.
   rebasing to stay current. Its title becomes the commit on `main` and the line in the next release's
   notes, so write the title for someone who uses StarPulse.
 - Nobody pushes to `main` directly, force-pushes it or deletes it.
-- After a merge, the `dispatch` job in `ci.yml` runs once `python`, `web` and `api-types` pass on `main`. It sends trantor a
-  `starpulse-green` `repository_dispatch` whose `sha` is the tested commit, and trantor's `starpulse-bump` workflow
-  opens one pull request pinned to that commit. Pull requests and red runs send nothing. A
-  merge whose pull-request or merge-queue run already tested the merged tree is sent at merge time by
-  `dispatch-merged.yml` instead. The job mints the
+- At merge, `dispatch-merged.yml` sends trantor a `starpulse-green` `repository_dispatch` whose `sha` is the merged
+  commit, once the merge-queue (or pull-request) run that tested that tree is green, and trantor's `starpulse-bump`
+  workflow pins that commit. A push to `main` runs no test job: the queue already tested the commit `main` received.
+  The push run's `dispatch` job sends the same SHA again as a fallback, and trantor re-checks the queue run before
+  pinning it. Pull requests and merge-queue candidates send nothing. Each job mints the
   workspace App token from the `WORKSPACE_APP_CLIENT_ID` and `WORKSPACE_APP_PRIVATE_KEY` secrets.
 
 ## License
