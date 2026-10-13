@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { ElementTable, EngineInterface as Engine, Register } from 'claude-code'
+import type { ElementTable, EngineInterface as Engine, Register, RenderChildren } from 'claude-code'
 import type { BoardTask, Checks, HeldTask, Lane, PeerSession, Pull } from '../types'
 import { CHECKS, LANES as LANE_STYLES, ROW_HEIGHT, SP, alt, glyphs, laneIcon, laneOf, paneSvg, progress, ratio, rowSvg, subline, termBar } from './draw'
 import type { Glyphs } from './draw'
@@ -622,8 +622,15 @@ export const register: Register = (on, options) => {
     const picked = await read($, pickedTask)
     const others = await read($, sessions)
     const { Box, Button, Text } = $.ui.resolve(e) as Remote
+    // The dock paints grey behind every cell a pane draws, and a pane body scrolls its tree, so flexGrow has no height to fill:
+    // the root takes the body's rows and fills them black, and a longer Board still scrolls.
+    const fill = (children: RenderChildren) => (
+      <Box key="board-fill" flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={SP.black}>
+        {children}
+      </Box>
+    )
     if (found === null || !found.length) {
-      return <Text dimColor>{found === null ? 'Reading the Board…' : '`starpulse board` failed: is the StarPulse server running?'}</Text>
+      return fill(<Text dimColor>{found === null ? 'Reading the Board…' : '`starpulse board` failed: is the StarPulse server running?'}</Text>)
     }
     const fold = (state: string) => update($, folded, f => (f.includes(state) ? f.filter(x => x !== state) : [...f, state]))
     const cols = e.props.bodyColumns
@@ -708,9 +715,8 @@ export const register: Register = (on, options) => {
       )
     }
 
-    // The dock paints grey behind every cell a pane draws; the root fills black to cover it.
-    return (
-      <Box flexDirection="column" flexGrow={1} backgroundColor={SP.black}>
+    return fill(
+      <Box flexDirection="column">
         <Box>
           <Text bold color={SP.agent}>{`${g('board')} Board`}</Text>
           <Text color={SP.muted}>{` · ${open} open`}</Text>
@@ -753,7 +759,7 @@ export const register: Register = (on, options) => {
         <Box marginTop={1}>
           <Text color={SP.faint}>↑↓ move · ↵ pick · lane header folds</Text>
         </Box>
-      </Box>
+      </Box>,
     )
   })
 
