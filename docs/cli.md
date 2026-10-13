@@ -322,6 +322,13 @@ Start session does, in tmux session `task-<N>`) is a button that runs `tmux swit
 client; otherwise the press shows a toast. Any other session, such as one the desktop app started, is listed without a
 button.
 
+The pane groups rows as Working, Idle and Archived (folded by default); each row draws the status icon, the name, a `you`
+marker on this session, the task it holds as a lane-coloured chip, the age and an archive icon. `n` starts a new tmux
+session running `claude` in the workspace and switches to it; `f` filters by name, tmux session or task, and the status
+chips (working, idle, bg, archived) combine as OR; `a` archives the focused row, killing its tmux session (this session
+first starts and switches to a fresh one). Archived sessions persist in the plugin's store and resume with
+`claude --resume <id>` in a new tmux session at their recorded directory.
+
 A Board button beside the count, and `/kanban`, open the Board pane: the board as a kanban, docked as its own tab with
 focus and, like Sessions, closing itself when placed inline. Its header names the open-task count beside a refresh
 button. It stacks the open lanes (In Progress, Review, Needs attention, Ready, Waiting), each a header with the lane's

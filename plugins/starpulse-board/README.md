@@ -1,0 +1,26 @@
+# starpulse-board
+
+Draws the Board tasks a Claude Code session holds above the prompt, a Board pane (`/kanban`) and a Sessions pane.
+Install with `/plugin install starpulse-board@starpulse`; the StarPulse CLI reference (`docs/cli.md`) documents the
+band and the Board pane.
+
+## Sessions pane
+
+Lists every Claude Code session in `~/.claude/sessions/` as Working, Idle and Archived groups (Archived folded by
+default; each header folds). A row shows the status icon, name, a `you` marker on this session, the held task as a
+lane-coloured chip, the age and an archive icon.
+
+| Key | Action |
+| --- | --- |
+| `n` | New session: a tmux session `claude-NNNNNN` running `claude` in the workspace, switched to |
+| `f` | Focus the filter: text over name, tmux session and task |
+| `a` | Archive the row focused with ↑↓ |
+| chips | working, idle, bg, archived; toggle, several combine as OR, and with the text as AND |
+
+Archive kills the row's tmux session and moves the row to Archived. When the row is this session, a fresh tmux
+session is created and switched to first; if that fails the session is kept and a toast says so.
+
+Archived rows persist in `$.store` as `{ sessionId, name, cwd, task, archivedAt }`. Pressing one, or `a` on it, runs
+`claude --resume <sessionId>` in a new tmux session at the recorded `cwd`.
+
+Options: `glyphs` is `nerd` (default) or `plain`.
