@@ -140,8 +140,19 @@ def test_main_follow_submit_runs_on_the_merge_event_lane_and_never_for_a_fork():
     assert follow["if"] == "github.event.pull_request.head.repo.full_name == github.repository"
 
 
-def test_merged_pull_request_dispatch_runs_on_the_merge_event_lane():
-    assert job("dispatch-merged.yml", "dispatch")["runs-on"] == ["self-hosted", "merge-event"]
+def test_only_the_close_submit_targets_the_merge_event_lane():
+    """Two jobs per merge fill the lane's two relay slots, and the next merge's close waits for one to re-register."""
+    on_the_lane = sorted(
+        path.name
+        for path in WORKFLOWS.glob("*.yml")
+        for spec in yaml.safe_load(path.read_text())["jobs"].values()
+        if "merge-event" in str(spec["runs-on"])
+    )
+    assert on_the_lane == ["main-follow-on-close.yml"]
+
+
+def test_merged_pull_request_dispatch_runs_on_the_general_lane():
+    assert job("dispatch-merged.yml", "dispatch")["runs-on"] == ["self-hosted", "ai-vm-1"]
 
 
 def test_merged_pull_request_dispatch_skips_unmerged_and_fork_pull_requests():
