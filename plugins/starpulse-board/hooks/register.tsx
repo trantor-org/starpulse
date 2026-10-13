@@ -99,9 +99,8 @@ const held = async ($: Engine): Promise<HeldTask[] | null> => {
 // The Board tab's lanes, in the order work moves through them; New, Done and Archived stay off it.
 const LANES = ['in_progress', 'review', 'needs_attention', 'ready', 'waiting']
 
-// The open lanes of the whole Board, each task with the columns it may move to; empty when the Board cannot be read.
-const readLanes = async ($: Engine): Promise<Lane[]> => {
-  const board = await readBoard($, [])
+// The open lanes of a Board, each task with the columns it may move to; empty when there is no Board.
+const openLanes = (board: Board | null): Lane[] => {
   const columns = board?.columns ?? []
   const names = new Map(columns.map(c => [c.state, c.name]))
   const task = (t: RawTask, c: Board['columns'][number]): BoardTask => ({
@@ -112,6 +111,9 @@ const readLanes = async ($: Engine): Promise<Lane[]> => {
 
   return LANES.flatMap(state => columns.filter(c => c.state === state)).map(c => ({ state: c.state, name: c.name, tasks: c.tasks.map(t => task(t, c)) }))
 }
+
+// The open lanes of the whole Board, read once; empty when the Board cannot be read.
+const readLanes = async ($: Engine): Promise<Lane[]> => openLanes(await readBoard($, []))
 
 type Registered = { sessionId: string; pid: number; name?: string; status?: string; kind?: string; cwd?: string; updatedAt?: number }
 
@@ -194,12 +196,24 @@ const reloadLanes = async ($: Engine) => {
 // Waits before starting a child that ended again: a second after one that printed, doubling to half a minute while none does.
 const retryMs = (tries: number) => Math.min(1000 * 2 ** tries, 30_000)
 
-// Runs `argv` for as long as it lives, handing `line` each line it prints, and starts it again once it ends.
-const follow = async ($: Engine, argv: string[], input: string | undefined, line: (text: string) => unknown, tries = 0) => {
+// A followed child: `child` is the one running now, and `isStopped` keeps it from starting again.
+type Run = { isStopped: boolean; child: ReturnType<Engine['process']['spawn']> | null }
+
+const newRun = (): Run => ({ isStopped: false, child: null })
+
+// Ends the child now, as leaving its loop does, and keeps `follow` from starting another.
+const stop = (run: Run) => {
+  run.isStopped = true
+  void run.child?.return({ code: null, signal: null }).catch(() => undefined)
+}
+
+// Runs `argv` for as long as it lives, handing `line` each line it prints, and starts it again once it ends, unless `run` was stopped.
+const follow = async ($: Engine, argv: string[], input: string | undefined, line: (text: string) => unknown, run = newRun(), tries = 0) => {
   let rest = ''
   let hasPrinted = false
   try {
-    for await (const chunk of $.process.spawn({ argv, input })) {
+    run.child = $.process.spawn({ argv, input })
+    for await (const chunk of run.child) {
       if (chunk.stream !== 'stdout') {
         continue
       }
@@ -213,8 +227,11 @@ const follow = async ($: Engine, argv: string[], input: string | undefined, line
   } catch {
     // A child that cannot start, or a line that cannot be read, ends this run like an exit.
   }
+  if (run.isStopped) {
+    return
+  }
   const next = hasPrinted ? 0 : tries
-  $.clock.after(retryMs(next), () => follow($, argv, input, line, next + 1))
+  $.clock.after(retryMs(next), () => follow($, argv, input, line, run, next + 1))
 }
 
 // Reads an event stream line by line, handing `frame` each event's name and data.
@@ -236,21 +253,55 @@ const events = (frame: (event: string, data: string) => unknown) => {
   }
 }
 
-// The server sends this session's held tasks once and again whenever they change; nothing here asks it twice.
-const followHeld = async ($: Engine) => {
-  const session = await $.session.id()
+// The argv and stdin of curl following one of the server's event streams.
+const streamOf = async ($: Engine, path: string) => {
   const token = await $.env.get('STARPULSE_TOKEN')
   const server = ((await $.env.get('STARPULSE_URL')) || 'http://localhost:8766').replace(/\/$/, '')
   // The token goes in on stdin: every process on the host can read a child's argv.
   const auth = token ? ['-H', '@-'] : []
-  const argv = ['curl', '-sfN', ...auth, `${server}/api/held?holder=${encodeURIComponent(session)}`]
+
+  return { argv: ['curl', '-sfN', ...auth, `${server}${path}`], input: token ? `Authorization: Bearer ${token}\n` : undefined }
+}
+
+// The server sends this session's held tasks once and again whenever they change; nothing here asks it twice.
+const followHeld = async ($: Engine) => {
+  const session = await $.session.id()
+  const { argv, input } = await streamOf($, `/api/held?holder=${encodeURIComponent(session)}`)
   const onFrame = async (event: string, data: string) => {
     if (event === 'held') {
       await update($, tasks, () => heldOf(JSON.parse(data) as Board))
     }
   }
 
-  await follow($, argv, token ? `Authorization: Bearer ${token}\n` : undefined, events(onFrame))
+  await follow($, argv, input, events(onFrame))
+}
+
+// The stream the open Board tab follows: set while the tab is open, ended when it closes.
+let lanesRun: Run | null = null
+
+// Ends the stream the Board tab followed; it starts again when the tab opens.
+const endLanes = () => {
+  if (lanesRun) {
+    stop(lanesRun)
+    lanesRun = null
+  }
+}
+
+// While the Board tab is open the server sends the open lanes on connect and again whenever they change.
+const followLanes = async ($: Engine) => {
+  if (lanesRun && !lanesRun.isStopped) {
+    return
+  }
+  const run = (lanesRun = newRun())
+  const { argv, input } = await streamOf($, `/api/lanes?${LANES.map(state => `state=${state}`).join('&')}`)
+  const onFrame = async (event: string, data: string) => {
+    if (event === 'lanes') {
+      await update($, lanes, () => openLanes(JSON.parse(data) as Board))
+    }
+  }
+  if (!run.isStopped) {
+    await follow($, argv, input, events(onFrame), run)
+  }
 }
 
 let hasOpened = false
@@ -414,10 +465,10 @@ const actOnFocused = async ($: Engine) => {
   }
 }
 
-// The Board tab opens with the keys and the whole Board read fresh.
+// The Board tab opens with the keys and follows the server's lanes stream until it closes.
 const openBoard = async ($: Engine) => {
   await $.ui.open({ id: KANBAN, title: 'Board', focus: true })
-  await reloadLanes($)
+  void followLanes($)
 }
 
 // A write to the StarPulse server `starpulse board` reads: null when it took, else the reason it was refused.
@@ -465,7 +516,6 @@ const toSession = async ($: Engine, t: BoardTask, lane: string) => {
   if (ran?.exitCode !== 0) {
     $.ui.toast(`Started ${t.id}: tmux attach -t ${name}`)
   }
-  await reloadLanes($)
 }
 
 const moveTask = async ($: Engine, id: string, to: string) => {
@@ -473,7 +523,6 @@ const moveTask = async ($: Engine, id: string, to: string) => {
   if (refused) {
     $.ui.toast(refused)
   }
-  await reloadLanes($)
 }
 
 // The sessions that are working and the rest, which the band counts on one line.
@@ -660,6 +709,12 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  on('ui.close', { id: KANBAN }, ($, e, next) => {
+    endLanes()
+
+    return next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const found = (await read($, tasks)) ?? []
     const others = elsewhere(await read($, sessions), await read($, archived))
@@ -749,6 +804,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: KANBAN }, async ($, e) => {
     if (e.surface === 'terminal' && e.props.placement === 'inline') {
+      endLanes()
       void $.ui.close({ id: KANBAN }).catch(() => undefined)
       const { Box } = $.ui.resolve(e)
       return <Box />
