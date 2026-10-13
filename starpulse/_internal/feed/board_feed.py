@@ -464,7 +464,8 @@ class BoardFeed:
 
     def _mover(self, task_id: str) -> tuple[str, str, str]:
         """The actor, session and harness noted for `task_id`, taken so one write names them once; empty when none, or
-        when the note is stale."""
+        when the note is stale. Only a put that changes the lane takes it: a put that changes none (an earlier write of
+        a multi-verb command) would otherwise spend the note of the move that follows."""
         with self._lock:
             noted = self._movers.pop(task_id, None)
         return noted[0] if noted and self._clock() - noted[1] <= MOVER_TTL else ("", "", "")
@@ -491,10 +492,10 @@ class BoardFeed:
                 self._search.index(task)
             except Exception as exc:  # the index is down; the task is placed and the next change is indexed
                 logger.warning("StarPulse: cannot index %s for search: %s", task.id, exc)
-        writer = self._mover(task.id)
         change = self._place(task)
         if change is None:
-            return
+            return  # the note stays for the lane change of the write that made it: the watch can place an earlier write first
+        writer = self._mover(task.id)
         if self._lanes is not None:
             lane, entered = change
             try:
