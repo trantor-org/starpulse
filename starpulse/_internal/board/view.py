@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from starpulse._internal.feed.board_feed import DONE
+from starpulse._internal.machines.transitions import DONE
 from starpulse.contracts.adapters import Move
 
 #: Who `task move` moves as: the machine YAML's writers say which moves an agent may make.
