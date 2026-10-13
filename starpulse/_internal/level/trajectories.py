@@ -227,8 +227,116 @@ class _Model:
 
 
 def _loops_so_far(steps: Sequence[tuple[float, str]]) -> list[int]:
-    """At each step, the rework loops the run had gone round: the trips of the back-edges of its steps up to there."""
-    return [sum(loop["trips"] for loop in _rework(steps[: i + 1])[0]) for i in range(len(steps))]
+    """At each step, the rework loops the run had gone round: the trips of the back-edges of its steps up to there.
+
+    The same as summing `_rework`'s trips over each prefix, in one pass. A back-edge is an edge outside the search tree
+    whose ends lie in one strongly connected component. A step's edge comes last among its source's, so a state met for
+    the first time is a leaf of the tree and an edge to a state the search had already found changes nothing; only an
+    edge to a state it would have found later, through some other branch, re-runs the search. The components only
+    merge, when a new edge closes a path from its target back to its source.
+    """
+    succ: dict[str, dict[str, None]] = defaultdict(dict)
+    pred: dict[str, dict[str, None]] = defaultdict(dict)
+    parent: dict[str, str | None] = {}
+    order: list[str] = []  # the states in the order the search finds them
+    component: dict[str, str] = {}
+    entered: dict[str, str] = {}  # the state before each state's first visit
+    taken: Counter[tuple[str, str]] = Counter()
+    total = 0
+    so_far = []
+    previous = None
+    for _, state in steps:
+        if previous is None:
+            parent[state] = None
+            order.append(state)
+            component[state] = state
+        else:
+            fresh = state not in succ[previous]
+            succ[previous][state] = pred[state][previous] = None
+            taken[previous, state] += 1
+            if state not in parent:
+                parent[state] = entered[state] = previous
+                order.insert(_subtree_end(parent, order, previous), state)
+                component[state] = state
+            else:
+                redo = fresh and _merge(succ, pred, component, previous, state)
+                if fresh and _found_later(parent, order, previous, state):
+                    order, parent = _search(succ, order[0])
+                    redo = True
+                if redo:
+                    total = sum(
+                        n - (entered.get(b) == a)
+                        for (a, b), n in taken.items()
+                        if component[a] == component[b] and parent[b] != a
+                    )
+                else:
+                    total += component[previous] == component[state] and parent[state] != previous
+        so_far.append(total)
+        previous = state
+    return so_far
+
+
+def _search(succ: Mapping[str, Iterable[str]], root: str) -> tuple[list[str], dict[str, str | None]]:
+    """The states a depth-first search from `root` finds, in order, and the state each was found from."""
+    parent: dict[str, str | None] = {root: None}
+    order = [root]
+    todo = [(root, iter(succ[root]))]
+    while todo:
+        state, edges = todo[-1]
+        for after in edges:
+            if after not in parent:
+                parent[after] = state
+                order.append(after)
+                todo.append((after, iter(succ[after])))
+                break
+        else:
+            todo.pop()
+    return order, parent
+
+
+def _under(parent: Mapping[str, str | None], state: str, ancestor: str) -> bool:
+    """Whether `state` is `ancestor` or in the subtree below it."""
+    while state != ancestor and (state := parent[state]) is not None:
+        pass
+    return state == ancestor
+
+
+def _subtree_end(parent: Mapping[str, str | None], order: Sequence[str], state: str) -> int:
+    """Where in the search order the subtree of `state` ends."""
+    end = order.index(state) + 1
+    while end < len(order) and _under(parent, order[end], state):
+        end += 1
+    return end
+
+
+def _found_later(parent: Mapping[str, str | None], order: Sequence[str], source: str, target: str) -> bool:
+    """Whether the search, finished with the edges of `source` but one, has yet to find `target`."""
+    return order.index(target) > order.index(source) and not _under(parent, target, source)
+
+
+def _merge(
+    succ: Mapping[str, Iterable[str]],
+    pred: Mapping[str, Iterable[str]],
+    component: dict[str, str],
+    source: str,
+    target: str,
+) -> bool:
+    """Join the components an edge from `source` to `target` closes into one, and say whether it did."""
+    if component[source] == component[target] or source not in (forward := _reach(succ, target)):
+        return False
+    component.update(dict.fromkeys(forward & _reach(pred, source), component[source]))
+    return True
+
+
+def _reach(adjacent: Mapping[str, Iterable[str]], start: str) -> set[str]:
+    """The states `start` reaches along `adjacent`, itself included."""
+    reached, todo = {start}, [start]
+    while todo:
+        for state in adjacent[todo.pop()]:
+            if state not in reached:
+                reached.add(state)
+                todo.append(state)
+    return reached
 
 
 def _forecast(level: Level, machine: Mapping[str, Any], model: _Model, held: Iterable[_Held]) -> list[dict[str, Any]]:
