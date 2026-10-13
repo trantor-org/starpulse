@@ -1,8 +1,9 @@
 # Benchmarks
 
 Three scripts measure the event log at the two ends of a deployment and the reads of the store beside it, a fourth
-times a running page against its latency budget, a fifth holds that page open idle to see it degrade, and a sixth loads
-it with many viewers at once. They are not part of the installed package and the test suite does not run them;
+times a running page against its latency budget, a fifth holds that page open idle to see it degrade, a sixth loads
+it with many viewers at once, and `free_threading/` runs that crowd against one copy of a state on CPython 3.14 and
+its free-threaded build. They are not part of the installed package and the test suite does not run them;
 `ci/test_page_latency.py`, `ci/test_soak.py` and `ci/test_load.py` hold the page harnesses' rules.
 
 | Script | Measures | Needs |
@@ -13,6 +14,7 @@ it with many viewers at once. They are not part of the installed package and the
 | `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
 | `soak.py` | one tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files; against a running StarPulse, or a seeded one it starts and feeds events | Google Chrome, a built page for the seeded server, or a running StarPulse |
 | `load.py` | a Locust crowd of viewers, each holding the event stream open and reading the `/api` routes: per-route p50, p95 and p99 and the stream's first snapshot, against 50 ms | a running StarPulse |
+| `free_threading/` | `load.py`'s crowd against the same state served on CPython 3.14 and on 3.14t (free-threaded), interleaved: per-route p50, p95, max and requests a second for each run | Docker and a state directory |
 
 Run them from the repository root after `uv sync`; `page_latency.py`, `soak.py` and `load.py` also need `uv sync --group bench`.
 
@@ -237,3 +239,43 @@ At the end Locust prints each route's p50 to p100 and `/api/events first snapsho
 stream's first `snapshot` event. The run exits 1, printing an `OVER BUDGET` line per cause, when a route's p95 is over
 50 ms or one of its requests failed. Every viewer holds a server thread for its stream, so a high `-u` also measures
 how the server shares its threads; host load moves the tail as it does `page_latency.py`'s.
+
+## Free-threaded interpreter
+
+```sh
+docker build -f bench/free_threading/Dockerfile -t starpulse-free-threading .
+bench/free_threading/run.sh .tmp/ft-state .tmp/ft-ab 3 3m              # 3 rounds, 3 minutes a run
+USERS=200 bench/free_threading/run.sh .tmp/ft-state .tmp/ft-ab200 2 3m
+```
+
+The image holds two virtualenvs from the one lockfile, `/opt/gil` on CPython 3.14 and `/opt/ft` on 3.14t, with the
+runtime dependencies only (the hub group's `psycopg-binary` has no 3.14t wheel, so this is an instance, not a hub);
+`/opt/gil` also holds the bench group, whose Locust drives both. serve refuses to start without a built page, and
+Locust reads only `/api`, so each virtualenv gets a placeholder `index.html`.
+
+The state directory is what the server serves: a `starpulse.toml`, the SQLite history its `database_url` names at
+`/tmp/work/` (the container copies the read-only directory there before each run, so every run starts from the same
+state) and the `.starpulse/` board and machines it reads. Copy a live instance's with SQLite's backup API, and drop
+the config's tables that reach out (`[search]`, `[[runs]]`, `[[triggers]]`, `[[repos]]`, `[autopilot]`, `[forward]`,
+`session_start_url`, the board's `criteria`): the container runs with `--network none` either way.
+
+Each run serves the copy on `SERVER_CPUS` (default `0-7`) through `serve.py`, which reports `sys._is_gil_enabled()`
+every 30 seconds, warms it with a discarded 1 minute crowd, then runs `load.py` headless at `USERS` (default 50) for
+the duration with Locust on `CLIENT_CPUS` (`8-9`). Rounds alternate which interpreter goes first. `summarize.py`
+prints each run's host load and GIL report, then one row per route and run.
+
+Result (2026-10-13, a live instance's state on a 36-core build host, server on 8 cores; host load1 12 to 61 during the runs):
+
+| Crowd | Interpreter | Runs | Aggregated p50 | Aggregated p95 | Max | Requests/s |
+| ---: | --- | ---: | --- | --- | --- | --- |
+| 50 | 3.14 | 3 | 7-8 ms | 26-38 ms | 267-759 ms | 39.2-39.6 |
+| 50 | 3.14t | 3 | 8-10 ms | 21-38 ms | 304-513 ms | 39.2-39.7 |
+| 200 | 3.14 | 2 | 100-130 ms | 860-990 ms | 2.2-2.3 s | 122 |
+| 200 | 3.14t | 2 | 6-15 ms | 19-300 ms | 0.4-1.0 s | 139-144 |
+
+At 50 viewers neither interpreter is near a ceiling: requests a second is the crowd's own pace, the free-threaded build
+costs 1 to 3 ms of p50 on every route, and the p95s overlap, set by host load rather than the interpreter. At 200
+viewers the GIL is the ceiling: 3.14 serves 122 requests a second where 3.14t serves the same crowd 139-144, `/api/task/<id>`'s p95
+reaches 1.8-1.9 s and `/api/docs`' 1.2 s, while 3.14t keeps pace and holds `/api/task/<id>` at 26-330 ms. The 3.14t
+run at the lower host load (`ft-2`) held every route's p95 under 30 ms. No run failed a request, and no server logged
+anything but the broken pipes of streams Locust closed at the end.

@@ -82,6 +82,7 @@ INERT = (
     "plugins/*",  # TypeScript the Python tests never load; the plugin's own test runs under bun
     "bench/README.md",
     "bench/flow_reads.py",
+    "bench/free_threading/*",  # the interpreter A/B image and its scripts, run by hand
     "bench/hub_ingest.py",
     "bench/ic_event_log.py",
 )
