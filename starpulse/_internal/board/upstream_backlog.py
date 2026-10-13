@@ -38,8 +38,8 @@ from starpulse._internal.machines.transitions import DEFAULT_STATUSES, board_mac
 from starpulse.contracts.task_keys import TaskKeys
 
 if TYPE_CHECKING:
-    from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.eventlog.event_log import EventLog
+    from starpulse._internal.feed.board_feed import BoardFeed
     from starpulse._internal.machines.machine_definition import Compiled, Writer
     from starpulse._internal.machines.snapshot import Qualify
     from starpulse.contracts.adapters import BoardTask, Move
@@ -61,6 +61,7 @@ _FOLDERS: tuple[tuple[str, Literal["completed", "archived"] | None], ...] = (
     ("completed", "completed"),
     ("archive/tasks", "archived"),
 )
+_DONE_LANE = "done"
 _DESCRIPTION = re.compile(r"<!-- SECTION:DESCRIPTION:BEGIN -->(.*?)<!-- SECTION:DESCRIPTION:END -->", re.S)
 _HEADED_DESCRIPTION = re.compile(r"^## Description\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
 _NOTES = re.compile(r"<!-- SECTION:NOTES:BEGIN -->(.*?)<!-- SECTION:NOTES:END -->", re.S)
@@ -234,14 +235,20 @@ class UpstreamBacklog:
         retract: Callable[[str], None] = lambda _task: None,
         files: Mapping[str, list] | None = None,
         kept: Callable[[dict[str, list]], None] = lambda _files: None,
+        retired: Callable[[], Mapping[str, str] | None] = lambda: None,
     ) -> None:
         """`files` are the fingerprints a saved Board was placed from (`files`), so the first scan reads only the files
-        changed since; `kept` is handed them after each scan that placed or retracted a task."""
+        changed since; `kept` is handed them after each scan that placed or retracted a task. `retired` answers the
+        text of every retired task by id, or None while that is unchanged since it last answered; a scan settles the
+        ones in the done lane as completed, so a task depending on one is not left waiting on a file that is gone."""
         self.root = root
         self.config = read_config(root)
         self._team = require_project(root, self.config)
         self._put = put
         self._retract = retract
+        self._retired = retired
+        self._settled_retired: set[str] = set()
+        self._retired_texts: Mapping[str, str] = {}
         self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
         self._lanes = {lane_id(status) for status in self.config.statuses}
         self._seen: dict[Path, tuple[int, int]] = {}
@@ -270,6 +277,7 @@ class UpstreamBacklog:
         for gone in self._seen.keys() - present:
             self._forget(gone)
             changed = True
+        self._settle(changed)
         if changed:
             self._kept(self.files())
 
@@ -285,6 +293,7 @@ class UpstreamBacklog:
             elif path in self._seen:
                 self._forget(path)
                 changed = True
+        self._settle(changed)
         if changed:
             self._kept(self.files())
 
@@ -316,6 +325,32 @@ class UpstreamBacklog:
         if task_id and task_id not in self._ids.values():
             self._retract(task_id)
         del self._seen[gone]
+
+    def _settle(self, changed: bool) -> None:
+        """Settle the retired tasks again when their text or the board's files changed.
+
+        A file that leaves the board for the retired store is retracted with it, so the retired text kept from the
+        last answer is settled again even when `retired` answers None (unchanged)."""
+        if (texts := self._retired()) is not None:
+            self._retired_texts, changed = texts, True
+        if changed:
+            self._settle_retired(self._retired_texts)
+
+    def _settle_retired(self, texts: Mapping[str, str]) -> None:
+        """Place each retired task whose kept text is in the done lane as completed, and retract one no longer kept.
+
+        A retired task that is not Done (archived before it was retired) stays unplaced, as it is once its file is
+        gone; one whose file is back (restored) is the scan's to place."""
+        placed: set[str] = set()
+        held = set(self._ids.values())
+        for text in texts.values():
+            task = self._task(self.root, text, "completed")
+            if task is not None and task.lane == _DONE_LANE and task.id not in held:
+                self._put(task)
+                placed.add(task.id)
+        for task_id in self._settled_retired - placed - held:
+            self._retract(task_id)
+        self._settled_retired = placed
 
     def _task(self, path: Path, text: str, settled: Literal["completed", "archived"] | None) -> BoardTask | None:
         frontmatter, body = _split(text)
@@ -447,12 +482,16 @@ def _machine(path: Path, config: BacklogConfig) -> tuple[Compiled, dict, list[di
 
 
 def project_board(
-    root: Path, settings: Mapping[str, Any], base: Path, writers: Callable[[BacklogConfig], Mapping[str, Any]]
+    root: Path,
+    settings: Mapping[str, Any],
+    base: Path,
+    writers: Callable[[BacklogConfig], Mapping[str, Any]],
+    retired: Callable[[], Mapping[str, str] | None] = lambda: None,
 ) -> Board:
     """The Board of the Markdown project in `root`, polled every `settings["interval"]` seconds, with the writers `writers` builds.
 
     Any lane reaches any other unless `settings["machine"]` names a machine file (relative to `base`), whose transitions
-    and `writers` then decide which moves are offered and to whom.
+    and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text.
     """
     interval = float(settings.get("interval", BACKSTOP))
     config = read_config(root)
@@ -483,7 +522,13 @@ def project_board(
             files = feed.source().get("files")
         moves = board_moves(drawn, declared, lane_ids)
         UpstreamBacklog(
-            root, feed.put, moves, feed.retract, files=files, kept=lambda scanned: feed.keep_source({"files": scanned})
+            root,
+            feed.put,
+            moves,
+            feed.retract,
+            files=files,
+            kept=lambda scanned: feed.keep_source({"files": scanned}),
+            retired=retired,
         ).start(interval, scanned=lambda: feed.expect("0-0"))
         threading.Thread(target=feed.keep_saved, args=(threading.Event(),), name="board-state", daemon=True).start()
 

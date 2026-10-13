@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from starpulse._internal.board import upstream_backlog
 from starpulse._internal.board.upstream_backlog import (
     BacklogConfig,
     UpstreamBacklog,
@@ -24,13 +25,12 @@ from starpulse._internal.board.upstream_backlog import (
     read_config,
     upstream_keys,
 )
-from starpulse._internal.board import upstream_backlog
+from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import BoardAdapterKit
+from starpulse._internal.machines.machine_definition import Writer
 from starpulse._internal.server.writes import move_task
 from starpulse.contracts.adapters import BoardTask, Move
-from starpulse._internal.machines.machine_definition import Writer
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.eventlog.event_log import EventLog
 
 STATUSES = ("To Do", "Doing", "Review", "Done")
 
@@ -261,7 +261,11 @@ def test_a_task_carries_which_of_its_criteria_are_checked_in_file_order(tmp_path
     ("status", "body", "reason"),
     [
         ("Doing", "Why\n\n## Needs attention\n\nRestart the server.\nThen rerun deliver.", ""),
-        ("Needs attention", "Why\n\n## Needs attention\n\nRestart the server.\nThen rerun deliver.", "Restart the server."),
+        (
+            "Needs attention",
+            "Why\n\n## Needs attention\n\nRestart the server.\nThen rerun deliver.",
+            "Restart the server.",
+        ),
         ("Needs attention", "Why\n\n## Needs attention\n\n\n  Pick one.  \n\n## Other\n\nelse", "Pick one."),
         ("Needs attention", "Why, with no reason section", ""),
     ],
@@ -854,7 +858,14 @@ def test_a_machines_cues_are_the_boards_cues_beside_the_lane_their_event_reaches
     built = board({"command": "backlog", "machine": "board.yaml"}, tmp_path)
 
     assert built.cues(lambda name: name) == [
-        {"event": "to_done", "dag": "dagu/apply-on-merge", "on": "push to main", "resolves": "forced", "grace": 300, "state": "done"}
+        {
+            "event": "to_done",
+            "dag": "dagu/apply-on-merge",
+            "on": "push to main",
+            "resolves": "forced",
+            "grace": 300,
+            "state": "done",
+        }
     ]
 
 
@@ -931,7 +942,8 @@ def test_a_task_carries_the_text_of_each_acceptance_criterion_checked_or_not(tmp
     write_config(tmp_path)
     task = write_task(tmp_path, "tasks", "task-1", "To Do")
     task.write_text(
-        task.read_text() + "\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n- [x] #1 It draws\n- [ ] #2 It scrolls\n<!-- AC:END -->\n"
+        task.read_text()
+        + "\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n- [x] #1 It draws\n- [ ] #2 It scrolls\n<!-- AC:END -->\n"
     )
 
     assert scanned(tmp_path)[0].acceptance_criteria == ("It draws", "It scrolls")
@@ -1017,6 +1029,22 @@ def test_a_task_file_deleted_after_start_is_retracted(tmp_path: Path) -> None:
         path.unlink()
 
         assert _await(lambda: retracted == ["task-1"])
+
+
+def test_a_done_file_a_watch_sees_leave_for_the_retired_store_is_settled_done_again(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    path = write_task(tmp_path, "completed", "task-3", "Done")
+    answers = iter([{"task-3": path.read_text()}, None])  # retired before its file left, then unchanged
+    placed: list[BoardTask] = []
+    retracted: list[str] = []
+    adapter = UpstreamBacklog(tmp_path, placed.append, retract=retracted.append, retired=lambda: next(answers))
+    adapter.scan()
+    path.unlink()
+
+    adapter.scan_files([path])
+
+    assert retracted == ["task-3"]
+    assert [(t.id, t.lane) for t in placed] == [("task-3", "done"), ("task-3", "done")]
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
