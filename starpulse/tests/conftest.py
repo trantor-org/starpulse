@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, create_engine, event, text
+from tests_slice import join_slice
 
 from starpulse._internal.eventlog import event_log
 from starpulse._internal.eventlog.history import HistoryStore
@@ -90,19 +91,18 @@ def _start_postgres() -> Any:  # pragma: no mutate block — container lifecycle
 
     # The data directory in memory and no sync: a throwaway server need not survive a crash, and initdb's syncs
     # took seconds on a disk the runners share.
-    return (
+    return join_slice(
         PostgresContainer("postgres:17-alpine", driver="psycopg")
         .with_env("POSTGRES_INITDB_ARGS", "--no-sync")
         .with_tmpfs_mount("/var/lib/postgresql/data")
         .with_command("postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off")
-        .start()
-    )
+    ).start()
 
 
 def _start_issuer() -> tuple[Any, str]:  # pragma: no mutate block — container lifecycle
     from testcontainers.core.container import DockerContainer  # noqa: PLC0415
 
-    container = DockerContainer(IMAGE).with_exposed_ports(8080).start()
+    container = join_slice(DockerContainer(IMAGE).with_exposed_ports(8080)).start()
     address = f"http://127.0.0.1:{container.get_exposed_port(8080)}/default"
     deadline = time.monotonic() + 60
     while not answers(f"{address}/.well-known/openid-configuration"):
