@@ -29,8 +29,6 @@ FULL_SUITE = (
     "*/conftest.py",
     "starpulse/tests/fixtures/*",
     "starpulse/machines/*",
-    "starpulse/schemas/*",
-    "*.schema.json",
     "starpulse/skills/*",
 )
 
@@ -41,9 +39,21 @@ READERS = {
     "starpulse/web/*": ("starpulse/tests/unit/contracts/test_neutrality.py", "ci/ui_preview.py"),
     "design/*": ("ci/ui_preview.py",),
     ".claude-plugin/*": ("starpulse/tests/integration/cli/test_agent_cli.py",),
+    "docs/consumers.md": ("starpulse/tests/unit/eventlog/test_consumer_pattern.py",),
     "docs/serving.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
     "docs/sources.md": ("starpulse/tests/unit/config/test_builtin_types.py",),
     "ci/preview.toml": ("ci/ui_preview.py", "ci/seeded_server.py"),
+    "starpulse/api.schema.json": ("starpulse/contracts/api.py", "starpulse/contracts/__main__.py"),
+    "starpulse/schemas/*": (
+        "starpulse/contracts/adapters.py",
+        "starpulse/contracts/__main__.py",
+        "starpulse/tests/unit/contracts/test_contracts.py",
+        "starpulse/tests/unit/contracts/test_finding.py",
+    ),
+    "starpulse/machine.schema.json": (
+        "starpulse/_internal/machines/machine_definition.py",
+        "starpulse/_internal/config/triggers.py",
+    ),
     "starpulse/_internal/eventlog/migrations/*": ("starpulse/_internal/hub/hub.py",),
     "bench/page_latency.py": ("ci/test_page_latency.py", "ci/test_soak.py", "ci/test_load.py"),
     "bench/soak.py": ("ci/test_soak.py",),
@@ -68,6 +78,7 @@ INERT = (
     ".github/actionlint.yaml",
     ".github/ISSUE_TEMPLATE/*",
     ".github/pull_request_template.md",
+    "plugins/*",  # TypeScript the Python tests never load; the plugin's own test runs under bun
     "bench/README.md",
     "bench/flow_reads.py",
     "bench/hub_ingest.py",

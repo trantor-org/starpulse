@@ -35,6 +35,7 @@ def repo(tmp_path: Path) -> Path:
         "starpulse/tests/unit/board/test_board.py": 'from starpulse._internal.board import seam\n\nKIND = "jira"\n',
         "starpulse/tests/unit/contracts/test_public_surface.py": "",
         "starpulse/tests/unit/contracts/test_neutrality.py": "",
+        "starpulse/tests/unit/eventlog/test_consumer_pattern.py": "",
         "starpulse/tests/unit/config/test_builtin_types.py": "",
         "ci/sizer.py": "",
         "ci/test_sizer.py": "from sizer import X\n",
@@ -92,7 +93,6 @@ def test_a_migration_selects_the_tests_of_the_module_that_runs_migrations(repo):
         "starpulse/tests/conftest.py",
         "starpulse/tests/fixtures/jira/search_page_1.json",
         "starpulse/machines/copilot.yaml",
-        "starpulse/schemas/board.schema.json",
         "starpulse/skills/writing-starpulse-adapters/SKILL.md",
         "starpulse/gone.py",  # deleted: what imported it is no longer in the graph
         "some/new/file.txt",
@@ -109,6 +109,7 @@ def test_a_change_whose_readers_the_graph_cannot_name_runs_the_full_suite(repo, 
         ("README.md", ["ci/test_ui_preview.py"]),
         ("docs/public-surface.md", ["starpulse/tests/unit/contracts/test_public_surface.py"]),
         ("starpulse/web/src/App.tsx", ["ci/test_ui_preview.py", "starpulse/tests/unit/contracts/test_neutrality.py"]),
+        ("docs/consumers.md", ["starpulse/tests/unit/eventlog/test_consumer_pattern.py"]),
         ("docs/serving.md", ["starpulse/tests/unit/config/test_builtin_types.py"]),
         ("docs/sources.md", ["starpulse/tests/unit/config/test_builtin_types.py"]),
         (
@@ -140,6 +141,8 @@ def test_a_mapped_non_python_file_selects_the_tests_that_read_it(repo, path, tes
         ".github/ISSUE_TEMPLATE/bug.yml",
         ".github/pull_request_template.md",
         "bench/hub_ingest.py",
+        "plugins/starpulse-board/hooks/draw.ts",
+        "plugins/starpulse-board/hooks/hooks.json",
     ],
 )
 def test_a_file_no_test_reads_selects_nothing(repo, path):
@@ -196,3 +199,28 @@ def test_a_module_conftest_code_uses_outside_a_fixture_selects_every_test_the_co
     assert select(repo, ["starpulse/lone.py"]) == Selection(
         sorted(str(p.relative_to(repo)) for p in (repo / "starpulse/tests").rglob("test_*.py"))
     )
+
+
+@pytest.mark.parametrize(
+    ("schema", "readers"),
+    [
+        (
+            "starpulse/api.schema.json",
+            ["starpulse/contracts/api.py", "starpulse/contracts/__main__.py"],
+        ),
+        (
+            "starpulse/schemas/board.schema.json",
+            ["starpulse/contracts/adapters.py", "starpulse/contracts/__main__.py"],
+        ),
+        (
+            "starpulse/machine.schema.json",
+            ["starpulse/_internal/machines/machine_definition.py", "starpulse/_internal/config/triggers.py"],
+        ),
+    ],
+)
+def test_a_schema_selects_the_tests_of_its_readers_not_the_full_suite(schema, readers):
+    root = Path(__file__).resolve().parents[1]
+    selected = select(root, [schema]).tests
+    assert selected
+    assert len(selected) < len(select(root, ["starpulse/__init__.py"]).tests)
+    assert select(root, readers).tests == selected
