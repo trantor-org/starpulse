@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -245,7 +246,8 @@ def _land(path: Path, before: str | None, frontmatter: dict, body: str, guard: _
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}"
     if refused := guard.refusal(path, before, frontmatter, body, text, actor):
         return refused
-    scratch = path.with_name(f"{path.name}.tmp")  # not a `.md` file, so a scan never reads it half written
+    # Unique per write, so concurrent writers never share a scratch file; not a `.md` file, so a scan never reads it half written.
+    scratch = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     scratch.write_text(text)
     os.replace(scratch, path)
     return None

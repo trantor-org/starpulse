@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -123,7 +124,8 @@ def _kind(value: Any) -> str:
 
 
 def _write(path: Path, text: str) -> None:
-    scratch = path.with_name(f"{path.name}.tmp")  # not a `.md` file, so a scan never reads it half written
+    # Unique per write, so concurrent writers never share a scratch file; not a `.md` file, so a scan never reads it half written.
+    scratch = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     scratch.write_text(text)
     os.replace(scratch, path)
 
