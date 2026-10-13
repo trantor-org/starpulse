@@ -413,11 +413,27 @@ const REGISTRY: Record<string, object> = {
   '/home/me/.claude/sessions/400.json': { sessionId: 'abcd1234-5678', pid: 400, name: 'Check the alert', status: 'idle', kind: 'bg' },
 }
 
+// Stands in for filetree: a second plugin that opens its own pane a second into the session, then one more.
+const FILES = {
+  name: 'files',
+  register(on: On) {
+    on('session.start', async ($, e, next) => {
+      $.clock.after(1000, async () => {
+        await $.ui.open({ id: 'filetree', title: 'Files' })
+        await $.ui.open({ id: 'other', title: 'Other' })
+      })
+
+      return next(e)
+    })
+  },
+}
+
 type Host = {
   switched?: string[][]
   opened?: string[]
   board?: () => Promise<ReturnType<typeof answer>> | ReturnType<typeof answer>
   hasClock?: boolean
+  isAlone?: boolean
 }
 
 // Stands in for the engine and the host: the registry above, tmux session task-7 holding pid 200, and an empty board.
@@ -430,11 +446,15 @@ const sessionsHost = (on: On, host: Host = {}) => {
   if (!host.hasClock) on('clock.every', () => ({ value: undefined }))
   on('env.get', () => ({ value: '/home/me' }))
   on('ui.open', ($, e) => {
-    host.opened?.push(e.id)
+    host.opened?.push(`${e.id} focus=${e.focus === true}`)
     return { value: { isPlaced: true as const } }
   })
+  on('ui.close', ($, e) => {
+    host.opened?.push(`close ${e.id}`)
+    return { value: undefined }
+  })
   on('fs.list', () => ({
-    value: [...Object.keys(REGISTRY), '/home/me/.claude/sessions/200.abc.key'].map(p => ({
+    value: host.isAlone ? [] : [...Object.keys(REGISTRY), '/home/me/.claude/sessions/200.abc.key'].map(p => ({
       name: p.split('/').at(-1)!,
       kind: 'file' as const,
       size: 1,
@@ -472,7 +492,59 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await ui.find({ key: 'session:session-2' })).toBeUndefined()
   })
 
-  test(`pressing the count opens the Sessions pane (${surface})`, async ($, on) => {
+  test(`a new session opens the Sessions pane without taking the keys (${surface})`, async ($, on) => {
+    const opened: string[] = []
+    sessionsHost(on, { opened })
+
+    await start($, surface)
+
+    expect(opened).toEqual(['starpulse-sessions focus=false'])
+  })
+
+  test(
+    `the first pane another plugin opens at start is reopened under Sessions, once (${surface})`,
+    { plugins: [FILES] },
+    async ($, on) => {
+      const opened: string[] = []
+      const clock = mock.clock(on)
+      sessionsHost(on, { opened, hasClock: true })
+
+      await start($, surface)
+      await clock.advance(1000)
+
+      expect(opened).toEqual([
+        'starpulse-sessions focus=false',
+        'filetree focus=false',
+        'other focus=false',
+        'close starpulse-sessions',
+        'starpulse-sessions focus=false',
+      ])
+    },
+  )
+
+  test(`a pane opened after the first prompt keeps the dock (${surface})`, { plugins: [FILES] }, async ($, on) => {
+    const opened: string[] = []
+    const clock = mock.clock(on)
+    sessionsHost(on, { opened, hasClock: true })
+    on('prompt.submit', ($, e) => e)
+
+    await start($, surface)
+    await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
+    await clock.advance(1000)
+
+    expect(opened).toEqual(['starpulse-sessions focus=false', 'filetree focus=false', 'other focus=false'])
+  })
+
+  test(`a new session with no other session opens no pane (${surface})`, async ($, on) => {
+    const opened: string[] = []
+    sessionsHost(on, { opened, isAlone: true })
+
+    await start($, surface)
+
+    expect(opened).toEqual([])
+  })
+
+  test(`pressing the count opens the Sessions pane with the keys (${surface})`, async ($, on) => {
     const opened: string[] = []
     sessionsHost(on, { opened })
 
@@ -480,7 +552,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await start($, surface)
     await ui.press({ key: 'sessions' })
 
-    expect(opened).toEqual(['starpulse-sessions'])
+    expect(opened.at(-1)).toBe('starpulse-sessions focus=true')
   })
 
   test(`the count draws before starpulse board answers (${surface})`, async ($, on) => {

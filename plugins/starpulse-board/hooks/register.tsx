@@ -128,9 +128,18 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
   }
 }
 
+let hasOpened = false
+let isStarting = true
 const refresh = async ($: Engine) => {
   // The session list is a local read; it draws without waiting on the slower board read.
-  const listed = peers($).then(others => update($, sessions, () => others))
+  const listed = peers($).then(async others => {
+    await update($, sessions, () => others)
+    // The first list opens the pane unasked; opened after Files, it is the dock tab on show, and the prompt keeps the keys.
+    if (!hasOpened && others.length) {
+      hasOpened = true
+      await $.ui.open({ id: SESSIONS, title: 'Sessions' })
+    }
+  })
   const found = await held($)
   await update($, tasks, () => found)
   await listed
@@ -305,6 +314,27 @@ export const register: Register = on => {
     }
   })
 
+  // Until the first prompt, the first pane another plugin opens (Files) would take the dock's shown tab: reopen Sessions over it, once.
+  on('ui.open', async ($, e, next) => {
+    const result = await next(e)
+    if (isStarting && hasOpened && e.id !== SESSIONS && e.id !== PANE) {
+      isStarting = false
+      // Opening an open pane only retitles it: close it first so the open lands as the newest tab.
+      $.clock.after(0, async () => {
+        await $.ui.close({ id: SESSIONS })
+        await $.ui.open({ id: SESSIONS, title: 'Sessions' })
+      })
+    }
+
+    return result
+  })
+
+  on('prompt.submit', ($, e, next) => {
+    isStarting = false
+
+    return next(e)
+  })
+
   on('ui.close', { id: PANE }, async ($, e, next) => {
     await update($, openTask, () => null)
 
@@ -343,7 +373,7 @@ export const register: Register = on => {
         ))}
         {others.length > 0 && (
           <Box flexDirection="row" alignItems="center" gap={1}>
-            <Button key="sessions" label={count(others)} onPress={() => $.ui.open({ id: SESSIONS, title: 'Sessions' })} />
+            <Button key="sessions" label={count(others)} onPress={() => $.ui.open({ id: SESSIONS, title: 'Sessions', focus: true })} />
             {!found.length && hide}
           </Box>
         )}
