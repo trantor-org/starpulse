@@ -115,9 +115,6 @@ jobs:
     runs-on: [self-hosted, validate]
     timeout-minutes: 45
     env:
-      # Outside the checkout: a runner's workspace outlives the job, and a 3.14t .venv there would satisfy the next job's
-      # `requires-python >=3.14` and silently move it onto the free-threaded build.
-      UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/ft-venv
       PYTEST_TARGETS: ${{ needs.select.outputs.PYTEST_TARGETS }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -125,6 +122,10 @@ jobs:
           sparse-checkout: /*
           sparse-checkout-cone-mode: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      # Outside the checkout: a runner's workspace outlives the job, and a 3.14t .venv there would satisfy the next job's
+      # `requires-python >=3.14` and silently move it onto the free-threaded build. The runner context is not available to
+      # a job-level env, so the path is exported from a step.
+      - run: echo "UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"
       - run: uv sync --locked --no-group hub --python 3.14t
       # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
       - run: uv run --no-sync python -c "import sys, starpulse._internal.server.server; sys.exit(sys._is_gil_enabled())"

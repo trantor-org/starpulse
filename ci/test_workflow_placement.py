@@ -222,6 +222,15 @@ def test_the_free_threaded_suite_runs_without_the_hub_extras_and_fails_when_the_
     assert "PYTEST_TARGETS" in runs  # the same selected tests as the shards
 
 
+def test_the_free_threaded_environment_lives_outside_the_checkout_and_is_set_in_a_step():
+    """A runner's workspace outlives the job, so a 3.14t .venv in it would move the next job onto the free-threaded
+    build. GitHub rejects the whole workflow when a job-level env reads the runner context, which it does not offer."""
+    ft = job("ci.yml", "python-ft")
+    assert "runner" not in str(ft.get("env", {}))
+    runs = "\n".join(step["run"] for step in ft["steps"] if "run" in step)
+    assert 'UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"' in runs
+
+
 def test_the_push_dispatch_waits_on_no_test_job():
     """Its test jobs skip on a push, and a job needing a skipped job is skipped; trantor re-checks the queue run."""
     assert "needs" not in job("ci.yml", "dispatch")
