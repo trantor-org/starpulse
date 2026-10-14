@@ -769,11 +769,12 @@ class BoardFeed:
             self._publish("pulls", {"pulls": _drawn_pulls(pulls)})
         self._refresh_ledgers()
 
-    def refuse_claim(self, task: str, reason: str, at: float) -> None:
-        """Keep the board writer's latest refusal of an agent's claim on `task` and publish it."""
+    def refuse_claim(self, task: str, reason: str, at: float, *, publish: bool = True) -> None:
+        """Keep the board writer's latest refusal of an agent's claim on `task` and, unless `publish` is False, publish it."""
         with self._lock:
             self._claims[task] = {"reason": reason, "at": at}
-            self._publish("claim", {"task": task, "reason": reason, "at": at})
+            if publish:
+                self._publish("claim", {"task": task, "reason": reason, "at": at})
 
     def task(self, task_id: str) -> dict | None:
         """The open Board task as the page draws it, or None when the Board holds no open task by that id, spelled as

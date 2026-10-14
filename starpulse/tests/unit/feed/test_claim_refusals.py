@@ -52,3 +52,26 @@ def test_an_entry_missing_its_task_reason_or_time_is_dropped(fields: dict) -> No
     ClaimRefusals(feed).handle_entry("1", fields)
 
     assert feed.snapshot()["claims"] == {}
+
+
+def _claim(entry_id: str, task: str) -> tuple[str, dict]:
+    return entry_id, {"task": task, "reason": "no worktree", "time": "100.5"}
+
+
+def test_a_subscriber_connected_through_the_replay_gets_one_snapshot_not_a_claim_per_replayed_entry() -> None:
+    feed = BoardFeed(None, machines=MACHINES)
+    refusals = ClaimRefusals(feed)
+    entries = [_claim(f"{n}-0", f"TASK-{n}") for n in range(1, 4)]
+    _, changes = feed.subscribe()
+
+    refusals.expect(entries[-1][0])
+    for entry in entries:
+        refusals.handle_entry(*entry)
+    kinds = []
+    while not changes.empty():
+        kinds.append(changes.get_nowait()[0])
+    refusals.handle_entry(*_claim("4-0", "TASK-4"))
+
+    assert kinds == ["snapshot"]
+    assert sorted(feed.snapshot()["claims"]) == ["TASK-1", "TASK-2", "TASK-3", "TASK-4"]
+    assert changes.get_nowait()[0] == "claim"  # once the replay is read, a new entry is a live change
