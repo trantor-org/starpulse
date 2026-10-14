@@ -104,12 +104,17 @@ _LEXICAL_WEIGHT = 0.5
 _RECALL_FLOOR = 0.55
 #: How many lexical hits a ranked query blends before it cuts to `limit`, so a near meaning can rise past the top.
 _POOL = 50
-#: Tasks sent to the endpoint in one request, and the characters of one task's text it is sent.
-_BATCH = 32
+#: Tasks sent to the endpoint in one request, and the characters of one task's text it is sent. One, because the
+#: endpoint embeds one request at a time: a query arriving behind a batch waits for all of it (2 s behind five texts on
+#: a loaded host, 7 s behind 32), and behind one text it waits for that text alone.
+_BATCH = 1
 #: Rows changed since the held vectors were read beyond which reading them all again is cheaper than naming them.
 _RELOAD_AT = 500
 _TEXT_LIMIT = 8000
 _TIMEOUT = 10.0
+#: Seconds a search waits for its query's vector before ranking lexically, so a slow endpoint costs the order and not
+#: the answer.
+_QUERY_TIMEOUT = 1.0
 #: Seconds `keep_embedding` waits between passes, and after a failed one.
 _POLL = 5.0
 _RETRY = 60.0
@@ -393,12 +398,12 @@ class SearchIndex:
         if not self._url:
             return None
         try:
-            return array.array("f", self._embed([query])[0])
+            return array.array("f", self._embed([query], _QUERY_TIMEOUT)[0])
         except EmbeddingError as exc:
             logger.warning("StarPulse: cannot embed the search query, ranking lexically: %s", exc)
             return None
 
-    def _embed(self, texts: list[str]) -> list[list[float]]:
+    def _embed(self, texts: list[str], timeout: float = _TIMEOUT) -> list[list[float]]:
         """One vector per text from the endpoint (OpenAI-compatible: `POST {model, input}`, `data[].embedding`)."""
         headers = {"Content-Type": "application/json"}
         if self._token:
@@ -407,7 +412,7 @@ class SearchIndex:
             self._url, json.dumps({"model": self._model, "input": texts}).encode(), headers, method="POST"
         )
         try:
-            with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 data = sorted(json.load(response)["data"], key=lambda item: item["index"])
             vectors = [item["embedding"] for item in data]
         except (OSError, http.client.HTTPException, ValueError, KeyError, TypeError) as exc:

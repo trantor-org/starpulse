@@ -142,13 +142,13 @@ placed, as every task is on a restart, without embedding anything again.
 
 The `[search]` table's `embeddings_url` is optional ([Config file](serving.md#config-file)). Unset, ranking is the
 lexical order above and nothing calls out. Set, `serve` sends each task's title and description to that
-OpenAI-compatible endpoint in the background and keeps one vector per task and `model`; a query is then embedded once
+OpenAI-compatible endpoint in the background, one task to a request so a query never waits behind a batch, and keeps one vector per task and `model`; a query is then embedded once
 and its lexical hits (up to the 50 best) are ordered by half their bm25 score, relative to the best hit's, and half the cosine similarity of
 their vector to the query's, so `score` is that blend. A task whose vector is not stored yet counts as no similarity.
 A task that holds none of the query's words is a hit too when the cosine similarity of its vector to the query's is at
 least 0.55, so a reworded description still finds the task it rewords; its `snippet` is the task's opening and its
 `score` is half that similarity. The server holds the unit vectors as one matrix and scores them in a single product, reading again only the vectors
-of tasks a write changed, so a search over thousands of tasks takes milliseconds and never waits for a write. Without a vector for the query (no endpoint, or one that does not answer) a query still
+of tasks a write changed, so a search over thousands of tasks takes milliseconds and never waits for a write. Without a vector for the query (no endpoint, or one that does not answer within a second) a query still
 needs every word to match. An endpoint that does not answer leaves the lexical order and is retried every minute.
 
 `analytics health` reads `GET /api/analytics/health[?hours=N][&stuck_hours=N]` (a window of 168 hours and a stuck

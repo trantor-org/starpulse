@@ -33,6 +33,7 @@ class _Endpoint:
         self.requests: list[dict] = []
         self.authorizations: list[str | None] = []
         self.failing = False
+        self.delay = 0.0
         endpoint = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -40,6 +41,7 @@ class _Endpoint:
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 endpoint.requests.append(body)
                 endpoint.authorizations.append(self.headers.get("Authorization"))
+                time.sleep(endpoint.delay)
                 if endpoint.failing:
                     self.send_response(503)
                     self.end_headers()
@@ -244,6 +246,34 @@ def test_an_endpoint_that_fails_leaves_search_lexical(engine, endpoint: _Endpoin
     index.index(_task("PROJ-3", title="Tuning again"))
     with pytest.raises(EmbeddingError):
         index.embed_pending()
+
+
+def test_the_pending_tasks_are_sent_one_to_a_request_so_a_query_waits_behind_one_text_at_most(
+    engine, endpoint: _Endpoint
+) -> None:
+    index = _open(engine, Search(endpoint.url, "m"))
+    for number in range(5):
+        index.index(_task(f"PROJ-{number}", title="Tuning"))
+
+    assert index.embed_pending() == 5
+
+    assert [len(request["input"]) for request in endpoint.requests] == [1] * 5
+
+
+def test_a_query_the_endpoint_is_slow_to_embed_is_ranked_lexically_instead_of_waiting(
+    engine, endpoint: _Endpoint, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index = _open(engine, Search(endpoint.url, "m"))
+    _board(index)
+    assert index.embed_pending() == 2
+    monkeypatch.setattr(search_module, "_QUERY_TIMEOUT", 0.1)
+    endpoint.delay = 1.0
+
+    started = time.monotonic()
+    found = _found(index, "tuning")
+
+    assert found == ["PROJ-1", "PROJ-2"]  # the lexical order, as the vectors would have put PROJ-2 first
+    assert time.monotonic() - started < 0.8
 
 
 def test_the_bearer_token_comes_from_the_variable_the_table_names(
