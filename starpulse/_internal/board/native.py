@@ -63,6 +63,7 @@ from starpulse._internal.board.upstream_backlog import (
 )
 from starpulse._internal.eventlog.tables import retired_tasks
 from starpulse._internal.feed import criteria
+from starpulse._internal.machines.transitions import DONE, WAITING
 
 if TYPE_CHECKING:
     from starpulse._internal.eventlog.event_log import EventLog
@@ -539,8 +540,44 @@ def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> 
     return edit
 
 
-def _archiver(root: Path, guard: _Guard = _Guard()) -> TaskArchiver:
-    """A board writer that moves a task's file to `archive/tasks/`, from any lane, after recording a non-blank reason as a comment."""
+def _open_dependents(root: Path, task: str) -> list[str]:
+    """Ids of the tasks under `tasks/` that are not Done and list `task` as a dependency, in file order."""
+    found = []
+    for path in sorted((root / "tasks").glob("*.md")):
+        try:
+            frontmatter, _ = _split(path.read_text())
+        except OSError:
+            continue  # moved or removed while looking
+        if not isinstance(frontmatter, dict) or lane_id(str(frontmatter.get("status") or "")) == DONE:
+            continue
+        if task.casefold() in {dependency.casefold() for dependency in _strings(frontmatter.get("dependencies"))}:
+            found.append(str(frontmatter.get("id") or path.stem).strip())
+    return found
+
+
+def _unlinker(task: str, reason: str, ready: str | None) -> Callable[[dict, str], str]:
+    """An edit that drops `task` from a task's dependencies and says why; a Waiting task left with no dependency and
+    no Start Criteria moves to `ready`, since the release pass reads only Waiting tasks that still have one."""
+    note = f"Removed dependency on {task}: archived" + (f" ({reason.strip()})" if reason.strip() else "")
+
+    def edit(frontmatter: dict, body: str) -> str:
+        kept = [name for name in _strings(frontmatter.get("dependencies")) if name.casefold() != task.casefold()]
+        frontmatter["dependencies"] = kept
+        waiting = lane_id(str(frontmatter.get("status") or "")) == WAITING
+        if waiting and not kept and ready is not None and not criteria.authored(body):
+            frontmatter["status"] = ready
+            return _comment(body, f"{note}; no dependency is left, so it moved to {ready}.")
+        return _comment(body, note)
+
+    return edit
+
+
+def _archiver(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> TaskArchiver:
+    """A board writer that moves a task's file to `archive/tasks/`, from any lane, after recording a non-blank reason as a comment.
+
+    An archived task never reaches Done, so each open task that depends on it has that dependency removed first, with
+    a comment saying why; a Waiting one left with no dependency is released to Ready."""
+    ready = {lane_id(status): status for status in statuses}.get("ready")
 
     def archive(task: str, reason: str, /, actor: str = OPERATOR) -> Written:
         if (path := _find(root, task)) is None:
@@ -554,13 +591,18 @@ def _archiver(root: Path, guard: _Guard = _Guard()) -> TaskArchiver:
             ).ok
         ):
             return noted
+        dependents = _open_dependents(root, task)
+        for dependent in dependents:
+            if not (unlinked := _update(root, dependent, _unlinker(task, reason, ready), guard, actor)).ok:
+                return unlinked
         target = root / "archive" / "tasks" / path.name
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             os.replace(path, target)
         except OSError as error:
             return Written(False, f"{path}: {error}")
-        return Written(True, f"Archived task {task}")
+        unlinked = f"; removed it from the dependencies of {', '.join(dependents)}" if dependents else ""
+        return Written(True, f"Archived task {task}{unlinked}")
 
     return archive
 
@@ -928,7 +970,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "evaluate": evaluate,
             "holds": _holds(settings.get("holds"), base),
             "edit": _editor(root, config.statuses, guard),
-            "archive": _archiver(root, guard),
+            "archive": _archiver(root, config.statuses, guard),
             "restore": _restorer(root, retired),
             "complete": _completer(root),
             "retire": _retirer(root, retired),
