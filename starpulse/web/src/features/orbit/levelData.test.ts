@@ -13,15 +13,15 @@ const level = (): LevelResponse => ({
     runs: "runs",
     gates: [],
     terminals: [{ id: "done", role: "goal" }],
-    orbit: { suns: "none", working: ["in_progress"] },
+    orbit: { suns: "terminal", working: ["in_progress"] },
     facets: [],
-    activity: { measure: "ended", pace: "day" },
+    activity: { measure: "share", pace: "live" },
   },
   wip: { count: 0, states: {} },
   throughput: { count: 0, per_day: 0 },
   time_in_state: [],
   aging: { threshold_s: null, runs: [] },
-  orbit: { suns: "none", terminals: { done: { ended: 1 } }, working: { in_progress: { task_s: 0 } } },
+  orbit: { suns: "terminal", terminals: { done: { ended: 1 } }, working: { in_progress: { task_s: 0 } } },
   arrivals: [],
   sources: [
     {
