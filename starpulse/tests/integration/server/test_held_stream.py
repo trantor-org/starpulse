@@ -97,9 +97,7 @@ def test_held_and_lanes_streams_share_one_build_of_the_columns_per_change(tmp_pa
     calls: list[int] = []
 
     def counted(*args: object, **kwargs: object) -> dict:
-        import copy  # DIAG
-        from starpulse._internal.board.view import board_flow  # DIAG
-        calls.append(copy.deepcopy((board_flow(args[0]), args[0]["settled"], args[0]["pulls"])))  # DIAG
+        calls.append(1)
         return board_columns(*args, **kwargs)
 
     monkeypatch.setattr("starpulse._internal.server.column_stream.board_columns", counted)
@@ -118,10 +116,4 @@ def test_held_and_lanes_streams_share_one_build_of_the_columns_per_change(tmp_pa
         _next_event(lanes)
         builds = _builds_after_quiet(calls)
 
-    def _diff(a, b):  # DIAG
-        out = []  # DIAG
-        for x, y in zip(a[0]["agents"], b[0]["agents"]):  # DIAG
-            out += [(x["id"], k, x[k], y[k]) for k in x if x[k] != y.get(k)]  # DIAG
-        out += [("flow", k) for k in a[0] if k != "agents" and a[0][k] != b[0][k]]  # DIAG
-        return out + [("settled", a[1] != b[1]), ("pulls", a[2] != b[2])]  # DIAG
-    assert builds == 1, [_diff(calls[i], calls[i + 1]) for i in range(len(calls) - 1)]  # DIAG
+    assert builds == 1

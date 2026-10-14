@@ -1548,14 +1548,7 @@ def request_handler(
                         self._frame(event, json.dumps(view, ensure_ascii=False))
                         sent = view
                         interest = Interest(view, holder, states)
-                    try:
-                        change = changes.get(timeout=_PING_S)
-                    except queue.Empty:
-                        self._write(b": ping\n\n")  # a closed session fails this write, which ends the stream
-                        continue
-                    changes.task_done()  # `feed.announce` waits for the marks of what it queued
-                    if not interest.touched_by(*change):
-                        continue
+                    self._wait_touched(changes, interest)
                     time.sleep(_HELD_SETTLE_S)
                     while not changes.empty():
                         changes.get_nowait()
@@ -1566,6 +1559,18 @@ def request_handler(
             finally:
                 if changes is not None:
                     feed.unsubscribe(changes)
+
+        def _wait_touched(self, changes: queue.Queue, interest: Interest) -> None:
+            """Take changes off `changes` until one alters the view `interest` describes, pinging while none arrives."""
+            while True:
+                try:
+                    change = changes.get(timeout=_PING_S)
+                except queue.Empty:
+                    self._write(b": ping\n\n")  # a closed session fails this write, which ends the stream
+                    continue
+                changes.task_done()  # `feed.announce` waits for the marks of what it queued
+                if interest.touched_by(*change):
+                    return
 
         def _event(self, name: str, data: dict) -> None:
             self._frame(name, event_text(name, data))
