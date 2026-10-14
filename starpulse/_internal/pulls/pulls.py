@@ -34,7 +34,7 @@ _LATER = {"head_ref": "headRefName", "unresolved": "unresolvedThreads"}
 
 
 AGE_METRIC = "starpulse_pull_store_age_seconds"
-AGE_HELP = "Seconds since the newest pull request record of a repository was read from GitHub."
+AGE_HELP = "Seconds since GitHub was last read successfully for a repository holding an open pull request."
 
 
 class PullStore:
@@ -50,6 +50,7 @@ class PullStore:
         self.rev = 0
         self._lock = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
+        self._checked: dict[str, float] = {}
         create_tables(engine, [pull_requests])
         present = {column["name"] for column in inspect(engine).get_columns(pull_requests.name)}
         added = {
@@ -115,11 +116,17 @@ class PullStore:
         with self._engine.connect() as db:
             return list(db.execute(select(pull_requests.c.repo).distinct().order_by(pull_requests.c.repo)).scalars())
 
-    def age_gauge(self, now: float) -> str:
-        """Prometheus text of the seconds since each repository's newest record was read, as of epoch `now`.
+    def mark_checked(self, repo: str, now: float) -> None:
+        """Note that GitHub answered a read of `repo` at epoch `now`, though no record changed."""
+        self._checked[repo] = now
 
-        A refresh rewrites only the open and the changed PRs, so only a repository holding an open one is
-        re-read every cycle; one with none ages without being stale and is left out."""
+    def age_gauge(self, now: float) -> str:
+        """Prometheus text of the seconds since GitHub was last read for each repository, as of epoch `now`: the
+        later of its newest record's read and its last `mark_checked`, since a listing that agrees with the store
+        rewrites nothing.
+
+        Only a repository holding an open PR is polled every cycle; one with none ages without being stale and is
+        left out."""
         newest = (
             select(pull_requests.c.repo, func.max(pull_requests.c.fetched_at).label("newest"))
             .group_by(pull_requests.c.repo)
@@ -128,7 +135,10 @@ class PullStore:
         )
         with self._engine.connect() as db:
             rows = db.execute(newest).all()
-        samples = [f'{AGE_METRIC}{{repo="{repo}"}} {now - fetched:g}' for repo, fetched in rows]
+        samples = [
+            f'{AGE_METRIC}{{repo="{repo}"}} {now - max(fetched, self._checked.get(repo, fetched)):g}'
+            for repo, fetched in rows
+        ]
         return "\n".join([f"# HELP {AGE_METRIC} {AGE_HELP}", f"# TYPE {AGE_METRIC} gauge", *samples]) + "\n"
 
     def find(

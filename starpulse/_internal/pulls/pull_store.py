@@ -298,6 +298,7 @@ class PullSync:
                 if listing_drifted(repo, self._store, self._graphql, cited):
                     _note_drift()
                     refresh_repository(repo, self._store, self._clock(), self._graphql, cited)
+                self._store.mark_checked(repo, self._clock())
             except GhUnavailableError as exc:
                 logger.warning("pull requests: %s", exc)
             except Exception:

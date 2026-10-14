@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
+from starpulse._internal.pulls.pull_requests import GhUnavailableError
 from starpulse._internal.pulls.pull_store import (
     DRIFT_METRIC,
     PullSync,
@@ -111,3 +112,28 @@ def test_run_forever_uses_reconcile_not_blind_refresh(monkeypatch: pytest.Monkey
         Sync(PullStore(create_engine("sqlite://")), BoardFeed(), (), lambda *_: {}, lambda: 0.0).run_forever(1.0)
 
     assert calls == ["reconcile"]
+
+
+def test_a_no_drift_reconcile_resets_the_age_gauge_and_a_failed_listing_does_not() -> None:
+    """The age gauge measures the last successful read, not the last rewrite of a record."""
+    store = PullStore(create_engine("sqlite://"))
+    feed = BoardFeed()
+    feed.put(task("PROJ-1", "In Progress", references=[f"https://github.com/{REPO}/pull/1"]))
+    failing = False
+
+    def graphql(repo: str, query: str) -> dict:
+        if failing:
+            raise GhUnavailableError("down")
+        return {
+            "open": {"pageInfo": {"hasNextPage": False}, "nodes": [_open_node(1)]},
+            "recent": {"nodes": [_open_node(1)]},
+            "p1": _pr_node(1),
+        }
+
+    refresh_repository(REPO, store, 100.0, graphql)
+    PullSync(store, feed, (), graphql, lambda: 400.0).reconcile()
+    assert f'starpulse_pull_store_age_seconds{{repo="{REPO}"}} 10\n' in store.age_gauge(410.0)
+
+    failing = True
+    PullSync(store, feed, (), graphql, lambda: 700.0).reconcile()
+    assert f'starpulse_pull_store_age_seconds{{repo="{REPO}"}} 310\n' in store.age_gauge(710.0)
