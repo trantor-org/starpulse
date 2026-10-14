@@ -1,11 +1,10 @@
-// The orbit card's data: /api/level, fetched while the Orbit view is shown, and its mapping onto the orbit's input.
+// The orbit card's data: /api/level once on show, then `level` events from /api/events.
 import { apiFetch } from "../../api/apiFetch";
 import type { Drift, OrbitInput, SunMode } from "./orbit";
 import type { Measure, Pace } from "../../render/comets";
 
 const DAY = 86400;
 const HOURS = 168;
-const REFRESH_MS = 60_000;
 
 export interface LevelSource {
   id: string;
@@ -104,47 +103,49 @@ export function orbitInput(r: LevelResponse, name: (state: string) => string, as
   };
 }
 
-/** The stores that take the stream's lane moves; the renderer pushes each one. */
-const moveListeners = new Set<() => void>();
+/** Stores that take `/api/events` `level` bodies; the renderer pushes each one. */
+const streamListeners = new Set<(body: unknown) => void>();
 
-/** Hand a lane `move` stream event to every open store. */
-export function pushLevelMove(): void {
-  for (const fn of moveListeners) fn();
+/** Hand a `level` stream event to every open Orbit store. */
+export function pushLevelStatus(body: unknown): void {
+  for (const fn of streamListeners) fn(body);
 }
 
 /**
- * The level's answer, for `useSyncExternalStore`. It asks once when the page opens (the navigator shows its Flow entry only when a level
- * exists), then only while the Orbit view is shown: on showing, after each lane move, and every `refreshMs` in between.
+ * The level's answer, for `useSyncExternalStore`. It asks once when Orbit is shown, then applies `level` stream events.
  */
 export class LevelStore {
   private state: LevelState = { kind: "loading" };
   private listeners = new Set<() => void>();
-  private timer: ReturnType<typeof setInterval> | undefined;
   private active = false;
   private running: Promise<void> | undefined;
   private again = false;
 
-  constructor(private load: () => Promise<LevelState> = () => fetchLevel(), private refreshMs = REFRESH_MS) {}
+  constructor(private load: () => Promise<LevelState> = () => fetchLevel()) {
+    streamListeners.add(this.accept);
+  }
 
   get = () => this.state;
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   };
-  /** Whether the Orbit view is shown: a hidden one asks nothing, a shown one asks now (unless the first ask is still out) and keeps asking. */
+
+  /** Apply a level body from the stream; a shape the store refuses leaves the last reading. */
+  accept = (body: unknown): void => {
+    if (body === null || typeof body !== "object") return;
+    this.state = { kind: "ok", level: body as LevelResponse };
+    for (const fn of this.listeners) fn();
+  };
+
+  /** Whether the Orbit view is shown: a hidden one asks nothing; a shown one GETs once if idle without an ok body (not while the page's first ask is in flight). */
   setActive(on: boolean) {
     if (on === this.active) return;
     this.active = on;
-    clearInterval(this.timer);
-    if (!on) return void moveListeners.delete(this.moved);
-    moveListeners.add(this.moved);
-    if (this.refreshMs > 0) this.timer = setInterval(() => void this.refresh(), this.refreshMs);
-    if (this.state.kind !== "loading") void this.refresh();
+    if (on && this.state.kind !== "ok" && this.state.kind !== "loading") void this.refresh();
   }
-  private moved = () => {
-    if (this.state.kind !== "none") void this.refresh();
-  };
-  /** Ask now; an ask made while one is out waits for it and then asks once more, however many were made. */
+
+  /** Ask once (connect sync); stream events keep it current afterwards. */
   refresh(): Promise<void> {
     if (this.running) {
       this.again = true;
@@ -152,16 +153,17 @@ export class LevelStore {
     }
     return (this.running = this.ask().finally(() => (this.running = undefined)));
   }
+
   private async ask() {
     do {
       this.again = false;
       this.state = await this.load();
-      // a server with no level will not grow one while the page is open: a reload asks again
-      if (this.state.kind === "none") clearInterval(this.timer);
       for (const fn of this.listeners) fn();
     } while (this.again);
   }
+
   dispose() {
-    this.setActive(false);
+    streamListeners.delete(this.accept);
+    this.active = false;
   }
 }

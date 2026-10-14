@@ -1421,6 +1421,7 @@ class AutopilotStatus(_Api):
 
 
 EVENTS["autopilot"] = AutopilotStatus
+EVENTS["level"] = Level
 
 
 class ForwardingStatus(_Api):
@@ -1436,6 +1437,9 @@ class ForwardingStatus(_Api):
     next: list[ForwardedEntry]
     more: bool
     contract: dict[str, list[ForwardedField]]
+
+
+EVENTS["forwarding"] = ForwardingStatus
 
 
 class ContractCheck(_Api):

@@ -56,10 +56,25 @@ async function ask(fetcher: typeof apiFetch, init: RequestInit | undefined, unre
   return { ok: false, reason: body?.error ?? `the server answered ${response.status}` };
 }
 
+/** Stores that take `/api/events` `forwarding` bodies; the renderer pushes each one. */
+const streamListeners = new Set<(body: unknown) => void>();
+
+/** Hand a `forwarding` stream event to every open Admin card store. */
+export function pushForwardingStatus(body: unknown): void {
+  for (const fn of streamListeners) fn(body);
+}
+
 export class ForwardingStore {
   private view: ForwardingView = { current: null, phase: { kind: "idle" }, unavailable: "" };
   private listeners = new Set<() => void>();
-  constructor(private fetcher: typeof apiFetch = apiFetch, private clock: () => number = () => Date.now() / 1000) {}
+  constructor(private fetcher: typeof apiFetch = apiFetch, private clock: () => number = () => Date.now() / 1000) {
+    streamListeners.add(this.accept);
+  }
+
+  /** Drop the stream listener when the card unmounts with this store. */
+  dispose(): void {
+    streamListeners.delete(this.accept);
+  }
 
   get = () => this.view;
   subscribe = (fn: () => void) => {
@@ -71,7 +86,13 @@ export class ForwardingStore {
     for (const fn of this.listeners) fn();
   }
 
-  /** Read the status; one that cannot be read leaves the last status on the card. */
+  /** Apply a status body from the stream; a shape the store refuses leaves the last reading. */
+  accept = (body: unknown): void => {
+    if (body === null || typeof body !== "object") return;
+    this.set({ current: body as ForwardingState, unavailable: "" });
+  };
+
+  /** Read the status once (connect sync); stream events keep it current afterwards. */
   async load(): Promise<void> {
     const answer = await ask(this.fetcher, undefined, "the server did not answer");
     if (answer.ok) this.set({ current: answer.state, unavailable: "" });
