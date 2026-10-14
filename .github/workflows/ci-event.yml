@@ -1,0 +1,45 @@
+name: Submit CI event to Dagu
+
+# The thin adapter behind starpulse's shadow checks on Dagu: GitHub cannot reach the LAN, so a pull request or
+# merge-queue event reaches trantor's `ci-sp-*` DAGs through here. The job checks out nothing, holds no secret and
+# returns once the runs exist. Each DAG posts `<name> (Dagu)`, a non-required check beside the Actions job of that name;
+# the run id is repository + head SHA + DAG, so a rerun of one event observes the run instead of starting another.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  merge_group:
+
+permissions:
+  contents: read
+
+# No concurrency group: a rerun of one event names the same Dagu runs, and Dagu's queue serializes them.
+# `before` is the base branch tip (a pull request) or the queue's base (a merge group); the DAGs' diff against
+# a base tip is a superset of the merge-base diff, so it can only run more checks, never fewer.
+jobs:
+  submit:
+    name: Submit ci-sp DAGs to Dagu
+    runs-on: [self-hosted, ai-vm-1]
+    timeout-minutes: 5
+    steps:
+      - name: Submit
+        env:
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          AFTER: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          REPOSITORY: ${{ github.repository }}
+          DELIVERY: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+          EVENT_NAME: ${{ github.event_name }}
+          MERGE_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+          TRANTOR_NOTIFY: "1"
+        run: |
+          set -a
+          # shellcheck disable=SC1091
+          . /home/adinb/trantor/events/lib/dagu_events/dagu_events.env
+          set +a
+          for dag in ci-sp-python ci-sp-web ci-sp-static ci-sp-contract; do
+            /home/adinb/trantor/.venv/bin/python /home/adinb/trantor/bin/dagu_event.py submit \
+              --dag "$dag" --repository "$REPOSITORY" --before "$BEFORE" --after "$AFTER" \
+              --delivery "$DELIVERY" --run-attempt "$RUN_ATTEMPT" --pull-request "$PULL_REQUEST" \
+              --event-name "$EVENT_NAME" --merge-queue-ref "$MERGE_QUEUE_REF" --no-observe
+          done
