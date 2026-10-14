@@ -2,9 +2,10 @@ name: Dispatch merged pull request
 
 # Pins a merged commit on trantor at merge time when this repository's own CI already tested the tree
 # the commit holds, instead of waiting for the push run on main to re-test it (ci.yml's `dispatch` job).
-# That holds when the pull request's base is the merge commit's parent: the green pull-request run then tested head merged over exactly that parent. It also
-# holds for a merge-queue merge: main fast-forwards to the queue's candidate, so a green
-# merge_group run on the merge commit tested that very commit. Any other merge sends nothing
+# That holds when the pull request's base is the merge commit's parent: the workspace App's passing check runs on the
+# head then tested head merged over exactly that parent. It also holds for a merge-queue merge: main fast-forwards to
+# the queue's candidate, so the App's passing check runs on the merge commit tested that very commit (the checks are
+# trantor's `ci-sp-*` Dagu DAGs, submitted by ci-event.yml). Any other merge sends nothing
 # here; the push run still pins it. The pin script re-checks the same condition under one lock, so the
 # second pin of a SHA finds it already on trantor's main and does nothing.
 #
@@ -20,7 +21,7 @@ on:
     branches: [main]
 
 permissions:
-  actions: read
+  checks: read
   contents: read
 
 jobs:
@@ -40,21 +41,25 @@ jobs:
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # true when the workspace App's check run of every required context completed with success.
+          PASSED: >-
+            [.check_runs[] | select(.app.slug == "trantor-agent" and .status == "completed" and .conclusion == "success")
+            | .name] as $passed
+            | ["python", "web", "static-checks", "trantor-contract"] | all(. as $name | $passed | index($name) != null)
         run: |
           parent=$(gh api "repos/$REPOSITORY/commits/$MERGE_SHA" \
             --jq 'if (.parents | length) == 1 then .parents[0].sha else "" end')
           if [ -n "$parent" ] && [ "$parent" = "$BASE_SHA" ]; then
-            tested_by="event=pull_request&head_sha=$HEAD_SHA"
+            tested="$HEAD_SHA"
           else
-            # A queue merge's base is stale; its merge_group run tested the merge commit itself.
-            tested_by="event=merge_group&head_sha=$MERGE_SHA"
+            # A queue merge's base is stale; the App's checks on the queue candidate tested the merge commit itself.
+            tested="$MERGE_SHA"
           fi
-          green=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?$tested_by&status=success&per_page=1" \
-            --jq .total_count)
-          if [ "$green" -gt 0 ]; then
+          green=$(gh api "repos/$REPOSITORY/commits/$tested/check-runs?per_page=100" --jq "$PASSED")
+          if [ "$green" = true ]; then
             echo "tested=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No green run tested the merged tree: the push run pins it."
+            echo "No passing App checks tested the merged tree: the push run pins it."
           fi
       # trantor's script, run from the shared checkout on this runner: it mints the workspace App token by hand (the action
       # costs a runner download), pins under the warm clone's lock, and falls back to a bump pull request without the key.

@@ -243,26 +243,20 @@ def _ci() -> dict:
     return yaml.safe_load(CI.read_text())["jobs"]
 
 
-def test_a_pull_request_or_merge_group_selects_once_in_a_job_and_the_nightly_schedule_selects_everything():
+def test_the_nightly_schedule_and_a_dispatch_select_everything_once_in_a_job():
     workflow = yaml.safe_load(CI.read_text())
     # PyYAML reads the bare `on:` key as True.
-    assert {"push", "pull_request", "merge_group", "schedule", "workflow_dispatch"} <= set(workflow[True])
+    # A pull request and a merge group run on Dagu; only a push, the schedule and a dispatch reach this workflow.
+    assert set(workflow[True]) == {"push", "schedule", "workflow_dispatch"}
     job = workflow["jobs"]["select"]
     assert job["if"] == "github.event_name != 'push'"
     assert job["outputs"] == {
         "PYTEST_TARGETS": "${{ steps.select.outputs.PYTEST_TARGETS }}",
         "PYTEST_SHARDS": "${{ steps.select.outputs.PYTEST_SHARDS }}",
     }
-    steps = job["steps"]
-    checkout = next(s for s in steps if s.get("uses", "").startswith("actions/checkout"))
-    assert checkout["with"]["fetch-depth"] == 2  # the merge commit and its base parent
-    select_step = next(s for s in steps if s.get("id") == "select")
-    # A merge-queue candidate is one squash commit over the entry ahead of it, so HEAD^1..HEAD is its own change.
-    assert "git diff --name-only HEAD^1 HEAD | uv run --no-sync python ci/select_tests.py" in select_step["run"]
-    assert select_step["env"] == {"EVENT": "${{ github.event_name }}"}
-    assert '[ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]' in select_step["run"]
-    assert "uv run --no-sync python ci/select_tests.py --full" in select_step["run"]  # schedule, dispatch
-    assert select_step["run"].rstrip().endswith('>> "$GITHUB_OUTPUT"')
+    select_step = next(s for s in job["steps"] if s.get("id") == "select")
+    # Only the nightly schedule and a dispatch reach this workflow, and neither has a diff: both select everything.
+    assert select_step["run"] == 'uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"'
 
 
 def test_the_import_layers_are_checked_once_in_the_select_job_not_in_every_shard():
