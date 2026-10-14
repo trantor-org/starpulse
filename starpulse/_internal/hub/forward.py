@@ -65,7 +65,8 @@ TIMEOUT = 10.0
 DEFAULT_INTERVAL = 5.0
 #: How often the forwarder sends every task's current lane again, besides once at its start.
 SNAPSHOT_EVERY = 24 * 3600.0
-#: How long `GET /api/forwarding` reuses the status it built: each build is four store reads, over the page's 50 ms budget.
+#: How long `GET /api/forwarding` answers the status it built before a background rebuild replaces it: each build is
+#: four store reads, over the page's 50 ms budget, so no read waits on one once the first has been built.
 STATUS_TTL = 2.0
 
 Send = Callable[[str, str, bytes], tuple[int, dict[str, Any]]]
@@ -128,6 +129,8 @@ class Forwarder:
         self.problem: str | None = None  # why the last batch did not go through; None once one does
         self._status_ttl = status_ttl
         self._status: tuple[float, dict[str, Any]] | None = None  # when `status` built its last answer, and that answer
+        self._status_epoch = 0  # bumped by `forget_status`, so a rebuild begun before it cannot restore the old answer
+        self._rebuilding = threading.Lock()  # held while one background rebuild runs
 
     def step(self) -> int | None:
         """Send the next batch: how many entries the log held past the cursor, or None when it did not go through.
@@ -203,15 +206,32 @@ class Forwarder:
         fields of an entry that stay on the instance. `names` is whether a person's name leaves in that batch: an
         opt-in a hub refused (`refused`) does not. Reading the log can note the same gap `step` would.
         """
-        if self._status and time.monotonic() - self._status[0] < self._status_ttl:
-            return self._status[1]
-        built = self._build_status()
-        self._status = (time.monotonic(), built)
-        return built
+        cached = self._status
+        if cached is None or not self._status_ttl:
+            return self._rebuild_status()
+        if time.monotonic() - cached[0] >= self._status_ttl and self._rebuilding.acquire(blocking=False):
+            threading.Thread(target=self._refresh_status, daemon=True).start()
+        return cached[1]
 
     def forget_status(self) -> None:
         """Drop the status kept for `status_ttl`, so the next read sees a change made now, such as a new opt-in."""
+        self._status_epoch += 1
         self._status = None
+
+    def _rebuild_status(self) -> dict[str, Any]:
+        epoch = self._status_epoch
+        built = self._build_status()
+        if epoch == self._status_epoch:
+            self._status = (time.monotonic(), built)
+        return built
+
+    def _refresh_status(self) -> None:
+        try:
+            self._rebuild_status()
+        except Exception:  # the log or store failed; the next read after the ttl tries again
+            logger.exception("Forwarder: status rebuild failed, serving the last one")
+        finally:
+            self._rebuilding.release()
 
     def _build_status(self) -> dict[str, Any]:
         opted = self.opt_in.get()
