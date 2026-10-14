@@ -315,7 +315,7 @@ def test_a_dependent_of_an_archived_then_retired_task_stays_waiting(
     assert built.archive is not None and built.retire is not None
     write_task(base, "task-7", "To Do")
     assert built.archive("task-7", "").ok
-    write_task(base, "task-8", "To Do", dependencies="[task-7]")  # the archiver refuses once it exists
+    write_task(base, "task-8", "To Do", dependencies="[task-7]")  # written after the archive, which would unlink it
     backlog.scan()
     assert built.retire("task-7").ok
 

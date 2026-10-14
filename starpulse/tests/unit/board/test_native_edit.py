@@ -238,42 +238,6 @@ def test_an_archive_of_a_task_with_no_file_is_refused(served: tuple[Board, Board
     assert not built.archive("task-404", "gone").ok
 
 
-def _dependent(base: Path, status: str, name: str = "task-9") -> Path:
-    path = _tasks(base) / f"{name} - Waits.md"
-    path.write_text(f"---\nid: {name}\ntitle: Waits\nstatus: {status}\ndependencies:\n  - TASK-5\n---\n")
-    return path
-
-
-def test_an_archive_of_a_task_an_open_task_depends_on_is_refused_naming_the_dependent(
-    served: tuple[Board, BoardFeed, Path],
-) -> None:
-    built, _, base = served
-    assert built.archive is not None
-    _dependent(base, "Waiting")
-
-    result = built.archive("task-5", "obsolete")
-
-    assert not result.ok
-    assert "task-9" in result.output
-    assert "--remove-dependency task-5" in result.output
-    assert _file(base).read_text() == FILE
-    assert not (base / ".starpulse" / "board" / "archive").exists()
-
-
-def test_an_archive_proceeds_when_every_dependent_is_done_or_archived(served: tuple[Board, BoardFeed, Path]) -> None:
-    built, _, base = served
-    assert built.archive is not None
-    _dependent(base, "Done")
-    archived = base / ".starpulse" / "board" / "archive" / "tasks"
-    archived.mkdir(parents=True)
-    (archived / "task-8 - Gone.md").write_text(
-        "---\nid: task-8\ntitle: Gone\nstatus: To Do\ndependencies:\n  - task-5\n---\n"
-    )
-
-    assert built.archive("task-5", "obsolete").ok
-    assert _archived(base).exists()
-
-
 def _archived(base: Path) -> Path:
     return base / ".starpulse" / "board" / "archive" / "tasks" / "task-5 - Draw.md"
 
