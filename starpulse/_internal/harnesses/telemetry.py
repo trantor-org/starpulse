@@ -78,8 +78,23 @@ def _input(attributes: dict[str, Any]) -> tuple[dict[str, Any], str]:
             parsed = json.loads(str(raw))
         except ValueError:
             return {}, str(raw)
-        return (parsed if isinstance(parsed, dict) else {}), str(raw)
+        if not isinstance(parsed, dict):
+            return {}, str(raw)
+        if full := _full_command(attributes):
+            parsed = {**parsed, "command": full}
+        return parsed, str(raw)
     return {}, ""
+
+
+def _full_command(attributes: dict[str, Any]) -> str:
+    """The untruncated shell command of a Claude Code tool result: its `tool_parameters.full_command`, where
+    `tool_input` caps each string over 512 characters. Empty when the export carries none."""
+    try:
+        parameters = json.loads(str(attributes.get("tool_parameters")))
+    except ValueError:
+        return ""
+    full = parameters.get("full_command") if isinstance(parameters, dict) else None
+    return full if isinstance(full, str) else ""
 
 
 def _command(tool_input: dict[str, Any]) -> str:

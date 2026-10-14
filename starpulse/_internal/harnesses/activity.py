@@ -69,6 +69,8 @@ _READS = frozenset({"cat", "head", "tail", "nl", "bat", "less", "more", "wc", "s
 _SEARCHES = frozenset({"grep", "egrep", "rg", "find", "fd", "ls", "tree"})
 # gh commands that take an argument rather than a verb.
 _GH_LEAVES = frozenset({"api", "browse", "status"})
+# `uv run` flags whose next word is a directory, not the command.
+_UV_VALUE_FLAGS = frozenset({"--project", "--directory"})
 # Flags that take the next word as their value, so it is not an operand.
 _VALUE_FLAGS = {
     "git": frozenset({"-C", "-c"}),
@@ -132,7 +134,7 @@ def _unwrap(argv: list[str]) -> list[str]:
         elif head == "uv" and argv[1:2] == ["run"]:
             argv = argv[2:]
             while argv and argv[0].startswith("-"):
-                argv = argv[1:]
+                argv = argv[2:] if argv[0] in _UV_VALUE_FLAGS else argv[1:]
         else:
             return argv
     return argv

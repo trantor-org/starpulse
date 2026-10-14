@@ -245,7 +245,9 @@ The same signals say what each session did, not only how long it took. A tool ca
 argument, so work recurs across sessions: a non-shell tool is its bare name; a shell call is each statement's leading
 command, as `git status`, `gh pr view`, `make test`, `bin/<script>`, `ssh <user@host>`, `shell_read`, `shell_search`,
 its binary name or `shell_other`. An export that carries no command (`OTEL_LOG_TOOL_DETAILS` off) leaves a shell call
-as its tool name. The path a file tool read or wrote is kept raw and cut at read time to an *area*, its first two
+as its tool name. Claude Code caps each `tool_input` string over 512 characters, so a shell call reads its command from
+`tool_parameters.full_command`, which is whole, and falls back to `tool_input`. `uv run` is unwrapped through its flags,
+including the directory after `--project` or `--directory`. The path a file tool read or wrote is kept raw and cut at read time to an *area*, its first two
 components below an `[analytics]` root. A *case* is one session's work on one task, as under session health; a session
 that no branch or claim ever ties to a task is a case with no task.
 
