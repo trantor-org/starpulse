@@ -104,6 +104,38 @@ jobs:
             memray/
           if-no-files-found: error
 
+  # The same selected tests on the free-threaded build (3.14t), without the hub group: psycopg-binary has no 3.14t wheel, so
+  # hub mode stays on 3.14 and an IC instance is what runs here. trantor's live server runs on 3.14t, so a change that
+  # breaks that build shows on its pull request. One job, not a shard matrix, and not on a merge-queue candidate: a queue run
+  # starts as many jobs at once as that lane has runners (trantor's runner-fleet document), so a job added to it raises the
+  # lane. It is not a required check and `python` does not wait for it; the pull request and the nightly suite show it.
+  python-ft:
+    needs: select
+    if: github.event_name != 'push' && github.event_name != 'merge_group' && needs.select.outputs.PYTEST_SHARDS != '[]'
+    runs-on: [self-hosted, validate]
+    timeout-minutes: 45
+    env:
+      PYTEST_TARGETS: ${{ needs.select.outputs.PYTEST_TARGETS }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: /*
+          sparse-checkout-cone-mode: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      # Outside the checkout: a runner's workspace outlives the job, and a 3.14t .venv there would satisfy the next job's
+      # `requires-python >=3.14` and silently move it onto the free-threaded build. The runner context is not available to
+      # a job-level env, so the path is exported from a step.
+      - run: echo "UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"
+      - run: uv sync --locked --no-group hub --python 3.14t
+      # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
+      - run: uv run --no-sync python -c "import sys, starpulse._internal.server.server; sys.exit(sys._is_gil_enabled())"
+      - run: echo "PYTEST_ADDOPTS=-n $(uv run --no-sync python ci/xdist_workers.py) --dist loadgroup" >> "$GITHUB_ENV"
+      # The selected files may leave nothing for pytest to run (exit 5), which is a pass only while targets were selected.
+      - run: |
+          status=0
+          uv run --no-sync pytest $PYTEST_TARGETS || status=$?
+          [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
+
   # The ruleset's required context is `python`: it passes when `select` did and every shard it launched did, or when it
   # launched none because no test was selected, and fails when any shard failed, was cancelled or never ran. `always()`
   # keeps it from being skipped behind a red job, which the merge queue would read as missing. A `select` that failed or
