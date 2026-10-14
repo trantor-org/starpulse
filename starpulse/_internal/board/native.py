@@ -539,12 +539,37 @@ def _editor(root: Path, statuses: tuple[str, ...], guard: _Guard = _Guard()) -> 
     return edit
 
 
+def _open_dependents(root: Path, task: str) -> list[str]:
+    """Ids of the tasks under `tasks/` that are not Done and list `task` as a dependency, in file order."""
+    found = []
+    for path in sorted((root / "tasks").glob("*.md")):
+        try:
+            frontmatter, _ = _split(path.read_text())
+        except OSError:
+            continue  # moved or removed while looking
+        if not isinstance(frontmatter, dict) or lane_id(str(frontmatter.get("status") or "")) == "done":
+            continue
+        if task.casefold() in {dependency.casefold() for dependency in _strings(frontmatter.get("dependencies"))}:
+            found.append(str(frontmatter.get("id") or path.stem).strip())
+    return found
+
+
 def _archiver(root: Path, guard: _Guard = _Guard()) -> TaskArchiver:
-    """A board writer that moves a task's file to `archive/tasks/`, from any lane, after recording a non-blank reason as a comment."""
+    """A board writer that moves a task's file to `archive/tasks/`, from any lane, after recording a non-blank reason as a comment.
+
+    A task an open task depends on is refused, naming each dependent: an archived task never reaches Done, so its
+    dependent would wait on it forever."""
 
     def archive(task: str, reason: str, /, actor: str = OPERATOR) -> Written:
         if (path := _find(root, task)) is None:
             return Written(False, f"{task} has no task file in {root / 'tasks'}")
+        if dependents := _open_dependents(root, task):
+            fixes = "; ".join(f"update {dependent} --remove-dependency {task}" for dependent in dependents)
+            return Written(
+                False,
+                f"{task} is a dependency of {', '.join(dependents)}, which would wait on it forever; "
+                f"remove the dependency first ({fixes}), then archive",
+            )
         if (
             reason.strip()
             and not (

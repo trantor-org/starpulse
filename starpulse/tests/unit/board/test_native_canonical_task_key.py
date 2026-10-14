@@ -73,6 +73,7 @@ def test_canonical_task_key_finds_a_task_whichever_case_the_caller_spells(tmp_pa
     assert built.read(spelling)["title"] == "Title"
     assert built.edit(spelling, {"priority": "high"}, "")[0]
     assert built.writer(spelling, "Done", "operator")[0]
+    assert built.writer("TASK-2", "Done", "operator")[0]  # an open dependent would refuse the archive below
     assert built.read("TASK-1")["priority"] == "high"
     assert built.read("TASK-1")["status"] == "Done"
     assert built.archive(spelling, "gone")[0]
