@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -395,5 +396,20 @@ def test_a_status_inside_its_ttl_reads_nothing_and_a_forgotten_one_reads_again(r
     assert forwarder.status() == first
 
     forwarder.forget_status()
+
+    assert len(forwarder.status()["next"]) == 1
+
+
+def test_an_expired_status_answers_the_last_one_while_a_background_rebuild_refreshes_it(rig: Rig) -> None:
+    forwarder = rig.forwarder(status_ttl=0.01)
+    first = forwarder.status()
+    rig.move("T-1")
+    time.sleep(0.05)
+
+    assert forwarder.status() == first
+
+    deadline = time.monotonic() + 5
+    while not forwarder.status()["next"] and time.monotonic() < deadline:
+        time.sleep(0.01)
 
     assert len(forwarder.status()["next"]) == 1
