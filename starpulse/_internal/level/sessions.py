@@ -58,7 +58,7 @@ from starpulse.contracts.adapters import TaskKeys
 __all__ = ["attributed", "grouped", "session_health", "session_kind", "slice_health"]
 
 #: Tools whose successful result is a file written: the work on a task has begun.
-_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
 #: The sources of a rejected tool decision that the operator made: a refusal, or an abort of the turn.
 _USER_REJECTS = {"user_reject", "user_abort"}
 _TOKENS = ("input", "output", "cache_read", "cache_write", "reasoning")

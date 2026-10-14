@@ -11,10 +11,11 @@ from dataclasses import dataclass
 
 from starpulse.contracts.task_keys import TaskKeys
 
-__all__ = ["CLAUDE_CODE", "CODEX", "Signal", "claim_key", "claimed", "main_thread_source"]
+__all__ = ["CLAUDE_CODE", "CODEX", "CURSOR", "Signal", "claim_key", "claimed", "main_thread_source"]
 
 CLAUDE_CODE = "claude-code"
 CODEX = "codex"
+CURSOR = "cursor"
 _MAIN_THREAD = "repl_main_thread"
 
 
@@ -37,7 +38,7 @@ class Signal:
     replayed export gives the same signals. A `tool` signal carries the `activities` the call performed, in order, as
     a closed vocabulary with no arguments, and the `reads` and `writes` it named, as the export gave them. `agent` is
     the subagent that made a `request` or `tool` step, empty for the main thread. `captured` is False for a harness the
-    steps-per-completion ledger does not cover yet (Codex): its rows are kept and left out of every ranking.
+    steps-per-completion ledger does not cover yet (Codex, Cursor): its rows are kept and left out of every ranking.
 
     `turn` is the export's `prompt.id`, the one user prompt every event it caused shares; empty where the harness
     names none. A `prompt` signal's `detail` is its origin, `human` or `injected` (empty when the export carried no

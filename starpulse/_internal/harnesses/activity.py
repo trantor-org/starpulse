@@ -25,7 +25,7 @@ from typing import Any
 __all__ = ["SHELLS", "activities", "elide_heredocs", "paths"]
 
 #: The tools that run a shell command, whose input is a command line.
-SHELLS = frozenset({"Bash", "exec_command", "shell", "local_shell"})
+SHELLS = frozenset({"Bash", "Shell", "exec_command", "shell", "local_shell"})
 
 SHELL_READ = "shell_read"
 SHELL_SEARCH = "shell_search"
@@ -64,7 +64,7 @@ _NOT_WORK = frozenset(
 )
 _PATCH_FILE = re.compile(r"\*\*\* (?:Add|Update|Delete) File: ([^\n\\\"'`]+)")
 _READ_TOOLS = {"Read": "file_path", "Grep": "path", "Glob": "path"}
-_WRITE_TOOLS = {"Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"}
+_WRITE_TOOLS = {"Edit": "file_path", "StrReplace": "file_path", "Write": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"}
 _READS = frozenset({"cat", "head", "tail", "nl", "bat", "less", "more", "wc", "sed"})
 _SEARCHES = frozenset({"grep", "egrep", "rg", "find", "fd", "ls", "tree"})
 # gh commands that take an argument rather than a verb.
