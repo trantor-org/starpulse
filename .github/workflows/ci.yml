@@ -125,7 +125,10 @@ jobs:
       # Outside the checkout: a runner's workspace outlives the job, and a 3.14t .venv there would satisfy the next job's
       # `requires-python >=3.14` and silently move it onto the free-threaded build. The runner context is not available to
       # a job-level env, so the path is exported from a step.
-      - run: echo "UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"
+      # The runner image points UV_PYTHON_INSTALL_DIR at /opt/uv-python, which the job cannot write, and 3.14t is not in it.
+      - run: |
+          echo "UV_PROJECT_ENVIRONMENT=$RUNNER_TEMP/ft-venv" >> "$GITHUB_ENV"
+          echo "UV_PYTHON_INSTALL_DIR=$RUNNER_TEMP/uv-python" >> "$GITHUB_ENV"
       - run: uv sync --locked --no-group hub --python 3.14t
       # A dependency that re-enables the GIL on import leaves every test green on the build this job exists to test.
       - run: uv run --no-sync python -c "import sys, starpulse._internal.server.server; sys.exit(sys._is_gil_enabled())"
