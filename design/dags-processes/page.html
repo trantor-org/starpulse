@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Design mockup of the DAGs catalog with process packages (doc-230, Approach A), under operator review; not served by starpulse.
+  The real #dg markup under the real stylesheet (build.py inlines it into index.html), drawn by mock.js from data.js: the live
+  DAGs re-bucketed into doc-230's taxonomy. Variants: ?view=dags  ?s=smart|open|search|failing|domain  ?fs=100|125|150
+-->
+<title>StarPulse — DAGs, process packages (mockup)</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../starpulse/web/src/style.css">
+<style>
+/* Proposed for the slice: a process subfold, the Kanban fold header one step in and one step quieter, sticking under its domain's. Tokens only.
+   The domain header sticks under the column header rather than behind it, so a scrolled process still shows its domain. */
+#dg .bucket > .bh { top: var(--headh, 20px); }
+#dg .bucket.process { margin-left: calc(14px * var(--fs)); gap: 7px; }
+#dg .bucket.process + .bucket.process { margin-top: 2px; }
+#dg .bucket.process > .bh { top: var(--subtop, 17px); z-index: 1; margin: 0 -8px 0 -10px; padding: 4px 10px 4px; color: var(--slate-4);
+  background: var(--sticky); border-bottom: 1px dashed color-mix(in srgb, var(--slate) 10%, transparent); }
+#dg .bucket.process > .bh:hover { color: var(--ink-2); }
+#dg .bucket.process > .bh .census { margin-left: 6px; }
+
+/* Mockup frame only: the navigator and the rail are unchanged, so they are held as quiet panes at their real widths. */
+.pane { position: fixed; top: 0; bottom: 0; width: var(--nav); box-sizing: border-box; padding: 22px 18px; font-size: calc(10px * var(--fs)); letter-spacing: .2em; text-transform: uppercase;
+  color: var(--ghost); border: 0 solid color-mix(in srgb, var(--slate) 10%, transparent); background: color-mix(in srgb, var(--glass) 60%, transparent); }
+.pane.l { left: 0; border-right-width: 1px; }
+.pane.r { right: 0; width: var(--rail); border-left-width: 1px; }
+#mockbar { position: fixed; z-index: 50; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; justify-content: center;
+  max-width: calc(100vw - 540px); padding: 6px 10px; border-radius: 9px; border: 1px dashed color-mix(in srgb, var(--run) 45%, transparent); background: color-mix(in srgb, var(--glass) 92%, transparent);
+  font: 11px Inter, system-ui, sans-serif; color: var(--muted); }
+#mockbar b { color: var(--run); font-weight: 500; letter-spacing: .2em; font-size: 9.5px; }
+#mockbar span { display: inline-flex; gap: 3px; align-items: center; }
+#mockbar a { padding: 1px 6px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--slate) 18%, transparent); color: var(--ink-3); text-decoration: none; }
+#mockbar a.on { border-color: var(--run); color: var(--run-text); background: color-mix(in srgb, var(--run) 10%, transparent); }
+@media (max-width: 900px) { .pane { display: none; } #mockbar { max-width: calc(100vw - 24px); bottom: 8px; } }
+</style>
+</head>
+<body>
+<div class="pane l">Navigator · unchanged</div>
+<div class="pane r">Rail · unchanged</div>
+<div class="kept"><main id="dg"></main></div>
+<script src="data.js"></script>
+<script src="mock.js"></script>
+</body>
+</html>
