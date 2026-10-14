@@ -93,11 +93,10 @@ class PullRequests:
         self._feed = feed
         self._store = store
         self._repos = repos
-        self._pins = pins or GitHub()
+        self._pins = pins or GitHub(lambda: feed.pull_answers().get("pins", {}))
         self._trail = trail
         self._clock = clock
         self._last: dict[str, dict] = {}
-        self._restored = False
 
     def _stored(self, urls: Sequence[str]) -> dict[str, dict]:
         """The store's record of each URL it holds with its detail; a PR it does not hold, or holds from before it
@@ -112,10 +111,6 @@ class PullRequests:
 
     def refresh(self) -> None:
         """Project every open task's PRs from the store once."""
-        if not self._restored:  # the answers the feed resumed with spare the first pin bump reads
-            self._restored = True
-            if isinstance(self._pins, GitHub):
-                self._pins.restore(self._feed.pull_answers().get("pins", {}))
         wanted = self._feed.pull_requests()
         stored = self._stored(list(dict.fromkeys(url for prs in wanted.values() for url in prs)))
         now = self._clock()

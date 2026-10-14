@@ -4,7 +4,8 @@ A `[[repos]]` entry says a repository's merges reach live state through the pare
 submodule pointer first contains the child's merge commit. `link` finds that merge; the pointer and containment
 reads are GitHub calls, so `GitHub` memoizes them (a commit's pointer and a pair of commits never change) and the
 caller runs `link` on the timer that projects pull requests, never under the feed's lock. The answers are saved with
-the Board (`answers`, `restore`), so a restart asks GitHub for none of them again.
+the Board (`answers`), and `GitHub` takes them back before its first read (`saved`), whoever makes it, so a restart
+asks GitHub for none of them again.
 """
 
 from __future__ import annotations
@@ -104,11 +105,19 @@ class GitHub:
     """The pointer and containment reads `link` needs, through `gh`; an answer is kept, an unreadable one is not.
     A path GitHub answers 404 for is an answer, None: a commit that pins nothing there never will."""
 
-    def __init__(self) -> None:
+    def __init__(self, saved: Callable[[], Mapping[str, list[list]]] = dict) -> None:
+        """`saved` returns the answers the Board last saved; it is called once, when the first read needs them."""
         self._pointers: dict[tuple[str, str, str], str | None] = {}
         self._reaches: dict[tuple[str, str, str], bool] = {}
+        self._saved: Callable[[], Mapping[str, list[list]]] | None = saved
+
+    def _restored(self) -> None:
+        if self._saved is not None:
+            saved, self._saved = self._saved, None
+            self.restore(saved())
 
     def pointer(self, repo: str, sha: str, path: str) -> str | None:
+        self._restored()
         key = (repo, sha, path)
         if key not in self._pointers:
             found = _api(f"repos/{repo}/contents/{path}?ref={sha}", ".sha", missing=_MISSING)
@@ -117,6 +126,7 @@ class GitHub:
         return self._pointers.get(key)
 
     def reaches(self, repo: str, sha: str, pointer: str) -> bool:
+        self._restored()
         key = (repo, sha, pointer)
         if key not in self._reaches and (status := _api(f"repos/{repo}/compare/{sha}...{pointer}", ".status")):
             self._reaches[key] = status in _CONTAINS

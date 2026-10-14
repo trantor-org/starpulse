@@ -46,7 +46,7 @@ class Settlement:
         self._store = store
         self._pinned = {repo.name: repo.path for repo in repos} if settle == "pin-bump" else {}
         self._repos = repos
-        self._pins = pins or GitHub()
+        self._pins = pins or GitHub(lambda: feed.pull_answers().get("pins", {}))
 
     def unapplied(self, agent: dict[str, Any]) -> bool:
         """Whether a dependency's merged change in a pinned repository is not in the parent's pin yet."""

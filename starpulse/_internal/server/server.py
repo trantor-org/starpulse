@@ -2086,7 +2086,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry)
     pulls = PullStore(log.engine)
     pull_refresh = None
-    pins = GitHub()  # one memo of the pointer reads for the pull request projection and the release of dependents
+    # one memo of the pointer reads for the projection and the release of dependents, restored from the saved Board
+    pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
     actor = None
     if config.task_actor:
