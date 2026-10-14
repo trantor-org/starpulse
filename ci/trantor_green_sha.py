@@ -1,11 +1,12 @@
 """Print the newest trantor main commit whose CI passed, for the trantor-contract job to check out.
 
-    gh api "repos/trantor-org/trantor/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=30" \\
-        | python ci/trantor_green_sha.py
+    <Validate check runs, reshaped by ci.yml's trantor-contract job> | python ci/trantor_green_sha.py
 
-Reads the workflow-runs response on stdin. Trantor's tip can be red for a reason this package did not cause; checking it
-out ejected a starpulse merge-queue entry on every red tip. The SHA goes to stdout and a log line naming it to stderr; a
-lookback with no green push run exits non-zero with a message.
+Reads a workflow-runs-shaped response on stdin: one entry per App `Validate` check run on trantor main's newest commits,
+its commit as `head_sha`, its lowercased conclusion as `conclusion` and its completion time as `created_at`. Trantor's
+tip can be red for a reason this package did not cause; checking it out ejected a starpulse merge-queue entry on every
+red tip. The SHA goes to stdout and a log line naming it to stderr; a lookback with no green run exits non-zero with a
+message.
 """
 
 from __future__ import annotations

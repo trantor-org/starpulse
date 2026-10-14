@@ -1,14 +1,11 @@
 name: CI
 
+# A pull request and a merge-queue candidate are not here: their required checks (`python`, `web`, `static-checks`,
+# `trantor-contract`) are the workspace App's check runs, posted by trantor's `ci-sp-*` Dagu DAGs, which ci-event.yml
+# submits (trantor's ci.md). What runs here is the nightly suite and a manual dispatch; a push to main runs none.
 on:
   push:
     branches: [main]
-  pull_request:
-  # The merge queue's candidate: every required check reports on it, or the queue fails the entry.
-  merge_group:
-    types: [checks_requested]
-  # The full suite runs nightly, not per change: a pull request or a merge-queue candidate runs only the tests its files
-  # can reach, and a push to main runs none.
   schedule:
     - cron: "17 9 * * *" # 02:17 MST, after trantor's 01:17 whole-repo gate
   workflow_dispatch:
@@ -18,19 +15,14 @@ permissions:
 
 # Validation runs on the organization's self-hosted validate lane, free and independent of GitHub's hosted
 # pool. That runner group serves private repositories only: making this repository public strands these jobs.
-# A merge-queue run takes the merge-queue lane instead: runners reserved for it (trantor's runner-fleet document), so it
-# never waits behind pull-request or trantor CI. The lane holds ten slots for the ten jobs a run has at once (six shards,
-# web, static-checks, trantor-contract and release.yml's build; `select` ends before the shards it sizes start and
-# `python` waits for them), so keep this count within it. A run that selects fewer shards takes fewer slots.
 jobs:
-  # Chooses the tests once for the shards: a pull request or a merge-queue candidate selects only the tests its changed
-  # files can reach (ci/select_tests.py); the nightly schedule and a manual dispatch select the whole suite. Its output
-  # sizes the shard matrix, so a change that reaches no test launches no shard and holds no slot for one. It also runs
-  # the import layers (pyproject's [tool.importlinter]), which hold on every pull request, not only for the tests it selects.
+  # Chooses the tests once for the shards: the nightly schedule and a manual dispatch select the whole suite
+  # (ci/select_tests.py --full; the `ci-sp-*` DAGs select by changed files for a pull request). Its output sizes the
+  # shard matrix. It also runs the import layers (pyproject's [tool.importlinter]).
   select:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
+    runs-on: [self-hosted, validate]
     timeout-minutes: 10
     outputs:
       PYTEST_TARGETS: ${{ steps.select.outputs.PYTEST_TARGETS }}
@@ -38,31 +30,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2 # the pull request's merge commit and its base parent, for ci/select_tests.py
           sparse-checkout: /*
           sparse-checkout-cone-mode: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --locked
       - run: uv run --no-sync lint-imports
-      # A merge-queue candidate is one squash commit over the entry ahead of it, so HEAD^1..HEAD is its own change.
       - id: select
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; then
-            git diff --name-only HEAD^1 HEAD | uv run --no-sync python ci/select_tests.py
-          else
-            uv run --no-sync python ci/select_tests.py --full
-          fi >> "$GITHUB_OUTPUT"
+        run: uv run --no-sync python ci/select_tests.py --full >> "$GITHUB_OUTPUT"
 
-  # The suite is split by test file across the shards `select` launches (ci/shard.py), each on its own runner: one to six,
-  # none when it selected no test. The matrix is its PYTEST_SHARDS output, and SHARD_COUNT the matrix's size.
+  # The suite is split by test file across the shards `select` launches (ci/shard.py), each on its own runner: one to six. The matrix is its PYTEST_SHARDS output, and SHARD_COUNT the matrix's size.
   python-shard:
     needs: select
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. An empty
     # matrix is an error, so no shard is this job skipped, which the `python` job reads.
     if: github.event_name != 'push' && needs.select.outputs.PYTEST_SHARDS != '[]'
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
+    runs-on: [self-hosted, validate]
     timeout-minutes: 30
     strategy:
       # A red shard does not cancel the others: one run reports every failure.
@@ -106,12 +88,11 @@ jobs:
 
   # The same selected tests on the free-threaded build (3.14t), without the hub group: psycopg-binary has no 3.14t wheel, so
   # hub mode stays on 3.14 and an IC instance is what runs here. trantor's live server runs on 3.14t, so a change that
-  # breaks that build shows on its pull request. One job, not a shard matrix, and not on a merge-queue candidate: a queue run
-  # starts as many jobs at once as that lane has runners (trantor's runner-fleet document), so a job added to it raises the
-  # lane. It is not a required check and `python` does not wait for it; the pull request and the nightly suite show it.
+  # breaks that build shows in the nightly suite. One job, not a shard matrix. It is not a required check and `python`
+  # does not wait for it.
   python-ft:
     needs: select
-    if: github.event_name != 'push' && github.event_name != 'merge_group' && needs.select.outputs.PYTEST_SHARDS != '[]'
+    if: github.event_name != 'push' && needs.select.outputs.PYTEST_SHARDS != '[]'
     runs-on: [self-hosted, validate]
     timeout-minutes: 45
     env:
@@ -139,14 +120,14 @@ jobs:
           uv run --no-sync pytest $PYTEST_TARGETS || status=$?
           [ "$status" -eq 0 ] || { [ "$status" -eq 5 ] && [ -n "$PYTEST_TARGETS" ]; }
 
-  # The ruleset's required context is `python`: it passes when `select` did and every shard it launched did, or when it
+  # The nightly's counterpart of the required context `python` (the App's `ci-sp-python` check run): it passes when `select` did and every shard it launched did, or when it
   # launched none because no test was selected, and fails when any shard failed, was cancelled or never ran. `always()`
   # keeps it from being skipped behind a red job, which the merge queue would read as missing. A `select` that failed or
   # was cancelled skips the shards and leaves its outputs empty, so the shards' skip alone proves nothing.
   python:
     needs: [select, python-shard]
     if: always() && github.event_name != 'push'
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
+    runs-on: [self-hosted, validate]
     timeout-minutes: 5
     steps:
       - env:
@@ -160,7 +141,7 @@ jobs:
   web:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
+    runs-on: [self-hosted, validate]
     timeout-minutes: 15
     defaults:
       run:
@@ -182,11 +163,11 @@ jobs:
       - run: pnpm run check
 
   # The short static checks in one job (ci/static_checks.sh runs them at once): ic, public-names, api-types and
-  # tier-policy. A merge-queue run takes one job of its reserved lane for them, and its wall time is api-types' alone.
+  # tier-policy.
   static-checks:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
+    runs-on: [self-hosted, validate]
     timeout-minutes: 15
     steps:
       # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.
@@ -225,7 +206,7 @@ jobs:
   trantor-contract:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
+    runs-on: [self-hosted, validate]
     timeout-minutes: 30
     steps:
       # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.
@@ -238,7 +219,8 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: trantor
       # Trantor's tip can be red for a reason this package did not cause, and a red tip ejected a merge-queue entry three
-      # times. Test the newest main commit whose CI passed (ci/trantor_green_sha.py logs it; none in the last 30 runs fails).
+      # times. Test the newest main commit whose `Validate` passed (ci/trantor_green_sha.py logs it; none in the newest 30
+      # commits fails).
       # A full checkout, never sparse: a sparse root checkout persists core.sparseCheckout in the runner's shared
       # workspace, and every later job on that runner checks out an empty tree.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -250,8 +232,18 @@ jobs:
         id: trantor-sha
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # The App's `Validate` check run on trantor main's newest 30 commits, reshaped to the workflow-runs shape the
+          # selector reads. Kept in step with trantor's bin/ci/ci_starpulse.py (VALIDATE_QUERY, validate_runs).
+          QUERY: >-
+            query { repository(owner: "trantor-org", name: "trantor") { ref(qualifiedName: "refs/heads/main") {
+            target { ... on Commit { history(first: 30) { nodes { oid checkSuites(first: 20) { nodes { app { slug }
+            checkRuns(first: 5, filterBy: {checkName: "Validate"}) { nodes { conclusion completedAt } } } } } } } } } } }
+          RUNS: >-
+            {workflow_runs: [.data.repository.ref.target.history.nodes[] | . as $commit
+            | .checkSuites.nodes[] | select(.app.slug == "trantor-agent") | .checkRuns.nodes[]
+            | {head_sha: $commit.oid, conclusion: ((.conclusion // "") | ascii_downcase), created_at: .completedAt}]}
         run: |
-          gh api "repos/trantor-org/trantor/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=30" \
+          gh api graphql -f query="$QUERY" --jq "$RUNS" \
             | uv run --no-project --python 3.14 python ci/trantor_green_sha.py > sha.txt
           echo "sha=$(cat sha.txt)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -276,7 +268,7 @@ jobs:
 
   # Pins the commit main just moved to on trantor, a fallback for dispatch-merged.yml's pin at merge time. Every main
   # commit is a merge-queue candidate whose required checks passed, so it waits on no test job here; trantor's pin script
-  # re-checks that a green merge_group run tested the SHA before pinning it. It runs on the generic ai-vm-1 fleet, not the
+  # re-checks that the App's check runs passed on the SHA before pinning it. It runs on the generic ai-vm-1 fleet, not the
   # validate lane, and pins nothing for a pull request or a merge-queue candidate.
   dispatch:
     name: dispatch

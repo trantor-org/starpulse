@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-from select_tests import SHARD_COUNT
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github/workflows"
 VALIDATE_LANE = ["self-hosted", "validate"]
@@ -18,11 +17,9 @@ VALIDATE_LANE = ["self-hosted", "validate"]
 TOWER_LANE = ["self-hosted", "validate", "tower"]
 HOSTED = "ubuntu-latest"
 MERGE_QUEUE_LANE = ["self-hosted", "merge-queue"]
-#: Every test job of ci.yml (and release.yml's build) takes the reserved merge-queue lane on a merge_group event and the validate lane otherwise.
-MERGE_QUEUE_RUNS_ON = (
-    "${{ github.event_name == 'merge_group' && fromJSON('[\"self-hosted\", \"merge-queue\"]')"
-    " || fromJSON('[\"self-hosted\", \"validate\"]') }}"
-)
+#: The required checks the workspace App reports (trantor's `ci-sp-*` Dagu DAGs, submitted by ci-event.yml): the
+#: contexts of trantor's infrastructure/github/starpulse.tf that ci.yml no longer runs on a pull request or a candidate.
+APP_CHECKS = ["python", "web", "static-checks", "trantor-contract"]
 CI_TEST_JOBS = ["select", "python-shard", "python", "web", "static-checks", "trantor-contract"]
 
 
@@ -42,25 +39,14 @@ def test_pull_request_job_runs_on_the_validate_lane(workflow, name):
 
 
 @pytest.mark.parametrize("name", CI_TEST_JOBS)
-def test_ci_test_job_takes_the_merge_queue_lane_only_on_a_merge_group_event(name):
-    runs_on = job("ci.yml", name)["runs-on"]
-    match = re.fullmatch(
-        r"\$\{\{ github\.event_name == 'merge_group' && fromJSON\('([^']+)'\) \|\| fromJSON\('([^']+)'\) \}\}", runs_on
-    )
-    assert match, runs_on
-    merge_group_runner, other_runner = match.groups()
-    assert json.loads(merge_group_runner) == MERGE_QUEUE_LANE
-    assert json.loads(other_runner) == VALIDATE_LANE
+def test_ci_test_job_runs_on_the_validate_lane(name):
+    assert job("ci.yml", name)["runs-on"] == VALIDATE_LANE
 
 
-def test_a_merge_queue_run_starts_as_many_jobs_at_once_as_the_reserved_lane_has_runners():
-    """The lane (trantor's runner-fleet document) holds ten slots for these ten; `select` ends before the six shards it
-    sizes start, and `python` waits for them."""
-    jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
-    shards = SHARD_COUNT  # a full run: ci/select_tests.py sizes the matrix up to it
-    unshared = [name for name in CI_TEST_JOBS if name not in ("select", "python-shard") and "needs" not in jobs[name]]
-    release_build = 1  # release.yml's `build` is a required check on the same merge_group candidate
-    assert shards + len(unshared) + release_build == 10
+def test_ci_runs_only_the_nightly_dispatch_and_push_events():
+    """A pull request and a merge-queue candidate get their required checks from the App, not from this workflow."""
+    document = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())
+    assert set(document[True]) == {"push", "schedule", "workflow_dispatch"}
 
 
 def test_release_build_runs_hosted_for_a_tag_and_on_the_merge_queue_lane_for_a_merge_group():
@@ -170,7 +156,7 @@ def test_every_workspace_root_checkout_selects_the_full_tree():
 def test_trantor_tier_policy_gates_every_merge():
     """A commit failing trantor's tier policy fails every bump that pins it, so it must not reach main."""
     assert "ci/trantor_tier_policy.py" in STATIC_SCRIPT.read_text()
-    assert ("ci.yml", "static-checks") in REQUIRED_CHECKS
+    assert "static-checks" in APP_CHECKS
 
 
 def test_trantor_tests_of_this_package_gate_every_merge():
@@ -178,12 +164,12 @@ def test_trantor_tests_of_this_package_gate_every_merge():
     contract = job("ci.yml", "trantor-contract")
     checkouts = [step.get("with", {}) for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")]
     runs = "\n".join(step["run"] for step in contract["steps"] if "run" in step)
-    assert contract["runs-on"] == MERGE_QUEUE_RUNS_ON
+    assert contract["runs-on"] == VALIDATE_LANE
     assert checkouts[0]["sparse-checkout"] == "/*"  # a sparse root checkout empties every later job on the runner
     assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[1].items()
     assert checkouts[2]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
     assert "make test-changed FILES=starpulse CI=1" in runs
-    assert ("ci.yml", "trantor-contract") in REQUIRED_CHECKS
+    assert "trantor-contract" in APP_CHECKS
 
 
 #: Every ci.yml job but `dispatch`: the jobs that test a tree.
@@ -201,16 +187,14 @@ def test_every_ci_job_but_dispatch_is_a_test_job():
     assert sorted(jobs) == sorted([*TEST_JOBS, "dispatch"])
 
 
-def test_the_free_threaded_suite_runs_beside_the_shards_without_taking_a_merge_queue_slot():
-    """trantor's live server runs on 3.14t, so a change that breaks that build must show on its pull request. The job
-    takes no merge-queue slot (a queue run's job count sizes that lane, trantor's runner-fleet document) and is not a
-    required check: a pull request and the nightly run show it, and `python` neither waits for it nor counts it."""
+def test_the_free_threaded_suite_runs_beside_the_shards_and_is_no_required_check():
+    """trantor's live server runs on 3.14t, so a change that breaks that build must show in the nightly run. The job is
+    not a required check: `python` neither waits for it nor counts it."""
     ft = job("ci.yml", "python-ft")
     assert ft["runs-on"] == VALIDATE_LANE
     assert "select" in needs("ci.yml", "python-ft")
-    assert "github.event_name != 'merge_group'" in ft["if"]
     assert "python-ft" not in needs("ci.yml", "python")
-    assert ("ci.yml", "python-ft") not in REQUIRED_CHECKS
+    assert "python-ft" not in APP_CHECKS
 
 
 def test_the_free_threaded_suite_runs_without_the_hub_extras_and_fails_when_the_gil_comes_back():
@@ -487,22 +471,11 @@ def test_a_shard_with_no_selected_files_passes_but_a_failing_or_empty_full_run_d
     assert run_step(pytest_step(), tmp_path, {"PYTEST_TARGETS": targets}, uv_exit=pytest_exit) == status
 
 
-#: The ruleset's required checks (trantor's infrastructure/github/starpulse.tf), by the workflow that reports each.
-REQUIRED_CHECKS = [
-    ("ci.yml", "python"),
-    ("ci.yml", "web"),
-    ("ci.yml", "static-checks"),
-    ("ci.yml", "trantor-contract"),
-    ("release.yml", "build"),
-]
-
-
-@pytest.mark.parametrize(("workflow", "name"), REQUIRED_CHECKS)
-def test_every_required_check_reports_on_a_merge_queue_candidate(workflow, name):
-    """The merge queue waits for each required check on the candidate; one that never reports fails the entry."""
-    document = yaml.safe_load((WORKFLOWS / workflow).read_text())
+def test_release_build_reports_on_a_merge_queue_candidate():
+    """`build` is the one required check still an Actions job: the queue waits for it on the candidate."""
+    document = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
     assert document[True]["merge_group"] == {"types": ["checks_requested"]}
-    assert "merge_group" not in job(workflow, name).get("if", "")
+    assert "merge_group" not in job("release.yml", "build").get("if", "")
 
 
 @pytest.mark.parametrize(
@@ -515,16 +488,27 @@ def test_a_merge_queue_candidate_dispatches_soaks_and_publishes_nothing(workflow
     assert "github.event_name == 'push'" in condition or "github.event_name != 'merge_group'" in condition
 
 
-def run_tree_check(tmp_path, *, parent, base, pr_runs, queue_runs):
-    """Run dispatch-merged.yml's tree check against a stub `gh` and return what it wrote to GITHUB_OUTPUT."""
+def check_runs(*names: str, slug: str = "trantor-agent", conclusion: str = "success") -> str:
+    runs = [{"name": n, "app": {"slug": slug}, "status": "completed", "conclusion": conclusion} for n in names]
+    return json.dumps({"check_runs": runs})
+
+
+def run_tree_check(tmp_path, *, parent, base, head_checks, merge_checks):
+    """Run dispatch-merged.yml's tree check against a stub `gh` and return what it wrote to GITHUB_OUTPUT.
+
+    The stub answers the commit read with `parent` and each commit's check runs from the canned JSON, applying the
+    step's own `--jq` filter with the real jq.
+    """
     step = next(s for s in job("dispatch-merged.yml", "dispatch")["steps"] if s.get("id") == "tested")
+    (tmp_path / "head.json").write_text(head_checks)
+    (tmp_path / "merge.json").write_text(merge_checks)
     stub = tmp_path / "gh"
     stub.write_text(
         "#!/usr/bin/env bash\n"
         'case "$2" in\n'
+        f'  */commits/{"h" * 40}/check-runs*) jq -r "$4" "{tmp_path}/head.json" ;;\n'
+        f'  */commits/{"m" * 40}/check-runs*) jq -r "$4" "{tmp_path}/merge.json" ;;\n'
         f'  */commits/*) echo "{parent}" ;;\n'
-        f'  *event=pull_request*) echo "{pr_runs}" ;;\n'
-        f'  *event=merge_group*) echo "{queue_runs}" ;;\n'
         '  *) echo "unexpected gh call: $*" >&2; exit 1 ;;\n'
         "esac\n"
     )
@@ -538,19 +522,42 @@ def run_tree_check(tmp_path, *, parent, base, pr_runs, queue_runs):
         "MERGE_SHA": "m" * 40,
         "BASE_SHA": base,
         "HEAD_SHA": "h" * 40,
+        "PASSED": step["env"]["PASSED"],
     }
     subprocess.run(["bash", "-e", "-c", step["run"]], env=env, check=True, capture_output=True, text=True)
     return output.read_text()
 
 
-def test_merged_pull_request_dispatch_sends_a_queue_merge_its_green_candidate_tested(tmp_path):
-    """A queue merge's base is stale, but the green merge_group run on the merge commit tested exactly that tree."""
-    assert run_tree_check(tmp_path, parent="p" * 40, base="b" * 40, pr_runs=0, queue_runs=1) == "tested=true\n"
+def test_merged_pull_request_dispatch_sends_a_queue_merge_its_candidates_checks_tested(tmp_path):
+    """A queue merge's base is stale, but the App's passing checks on the merge commit tested exactly that tree."""
+    tested = run_tree_check(
+        tmp_path, parent="p" * 40, base="b" * 40, head_checks=check_runs(), merge_checks=check_runs(*APP_CHECKS)
+    )
+    assert tested == "tested=true\n"
 
 
-def test_merged_pull_request_dispatch_leaves_a_stale_base_with_no_green_candidate_to_the_push_run(tmp_path):
-    assert run_tree_check(tmp_path, parent="p" * 40, base="b" * 40, pr_runs=1, queue_runs=0) == ""
+def test_merged_pull_request_dispatch_leaves_a_stale_base_with_no_passing_candidate_to_the_push_run(tmp_path):
+    tested = run_tree_check(
+        tmp_path, parent="p" * 40, base="b" * 40, head_checks=check_runs(*APP_CHECKS), merge_checks=check_runs()
+    )
+    assert tested == ""
 
 
-def test_merged_pull_request_dispatch_still_sends_a_current_base_its_pull_request_run_tested(tmp_path):
-    assert run_tree_check(tmp_path, parent="b" * 40, base="b" * 40, pr_runs=1, queue_runs=0) == "tested=true\n"
+def test_merged_pull_request_dispatch_still_sends_a_current_base_its_head_checks_tested(tmp_path):
+    tested = run_tree_check(
+        tmp_path, parent="b" * 40, base="b" * 40, head_checks=check_runs(*APP_CHECKS), merge_checks=check_runs()
+    )
+    assert tested == "tested=true\n"
+
+
+@pytest.mark.parametrize(
+    "checks",
+    [
+        pytest.param(check_runs(*APP_CHECKS[:3]), id="missing-contract"),
+        pytest.param(check_runs(*APP_CHECKS, conclusion="failure"), id="failed"),
+        pytest.param(check_runs(*APP_CHECKS, slug="github-actions"), id="another-app"),
+    ],
+)
+def test_merged_pull_request_dispatch_needs_every_required_check_passed_by_the_app(tmp_path, checks):
+    tested = run_tree_check(tmp_path, parent="b" * 40, base="b" * 40, head_checks=checks, merge_checks=check_runs())
+    assert tested == ""

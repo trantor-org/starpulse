@@ -41,8 +41,9 @@ With `TEST_COST_REPORT=1` the flagged tests' node id, wall s, CPU s and peak MB 
 `starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`, and one
 background thread starts the session's Postgres and mock-issuer containers when collection finishes, so a test waits on
 a warm container instead of paying its start.
-CI runs only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`); a push to main
-runs none, because the merge queue tested that very commit, and the full suite runs nightly and on a manual dispatch. CI's `static-checks` job imports every module an IC instance can load without the hub extras
+The required checks run only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`), as the
+workspace App's check runs from trantor's `ci-sp-*` Dagu DAGs; a push to main runs none, because the merge queue tested
+that very commit, and the full suite runs nightly and on a manual dispatch as this repository's `ci.yml`. CI's `static-checks` job imports every module an IC instance can load without the hub extras
 (`ci/ic_imports.py`) rather than running the suite a second time. This repository is public, so its `ci/public_names.py` check fails
 when a tracked file other than a workflow, the runner-label list or a test names the operator's private hosts; docs, comments and fixtures use neutral names.
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the import

@@ -1,8 +1,9 @@
 name: Submit CI event to Dagu
 
-# The thin adapter behind starpulse's shadow checks on Dagu: GitHub cannot reach the LAN, so a pull request or
+# The thin adapter behind starpulse's required checks: GitHub cannot reach the LAN, so a pull request or
 # merge-queue event reaches trantor's `ci-sp-*` DAGs through here. The job checks out nothing, holds no secret and
-# returns once the runs exist. Each DAG posts `<name> (Dagu)`, a non-required check beside the Actions job of that name;
+# returns once the runs exist. Each DAG posts the check run of its required context (`python`, `web`,
+# `static-checks`, `trantor-contract`) as the workspace App, which the ruleset pins by `integration_id`;
 # the run id is repository + head SHA + DAG, so a rerun of one event observes the run instead of starting another.
 on:
   pull_request:
