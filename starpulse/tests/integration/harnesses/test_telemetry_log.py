@@ -133,3 +133,16 @@ def test_a_prompts_text_is_in_no_stored_row_while_its_turn_carries_an_origin_and
     assert sentinel not in stored
     prompts = [s for s in TelemetryLog(log).read() if s.kind == "prompt"]
     assert [(s.turn, s.detail, s.label) for s in prompts] == [("p1", "human", "request"), ("p2", "injected", "")]
+
+
+def test_a_shell_tool_signal_reads_back_marked_when_its_stored_command_writes_a_file(tmp_path: Path) -> None:
+    telemetry = TelemetryLog(log_at(tmp_path))
+    bash = {"name": "Bash"}
+    stored = [
+        Signal(CLAUDE_CODE, "s", "tool", 1.0, "w", command="echo x > a.txt", **bash),
+        Signal(CLAUDE_CODE, "s", "tool", 2.0, "r", command="rg -n x", **bash),
+        Signal(CLAUDE_CODE, "s", "tool", 3.0, "e", name="Edit"),
+    ]
+    telemetry.publish(stored)
+
+    assert {s.key: s.shell_write for s in telemetry.read()} == {"w": True, "r": False, "e": False}

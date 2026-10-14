@@ -535,7 +535,7 @@ def test_a_shell_command_that_writes_a_file_is_the_first_edit() -> None:
         sig("request", 2, model="m", turn="p1"),
         sig("tool", 3, name="Bash", command="rg -n foo", turn="p1"),
         sig("request", 4, model="m", turn="p1"),
-        sig("tool", 5, name="Bash", command="python3 - <<'EOF'\n[heredoc length=5 sha256=ab]\nEOF", turn="p1"),
+        sig("tool", 5, name="Bash", command="cat > a.py", shell_write=True, turn="p1"),
         sig("request", 6, model="m", turn="p1"),
         sig("reply", 7, turn="p1"),
     ]
@@ -548,7 +548,7 @@ def test_a_failed_shell_write_is_not_the_first_edit() -> None:
         sig("prompt", 0, turn="p1", detail="human"),
         sig("claim", 1, name="TASK-9", turn="p1"),
         sig("request", 2, model="m", turn="p1"),
-        sig("tool", 3, name="Bash", command="echo x > a.txt", ok=False, turn="p1"),
+        sig("tool", 3, name="Bash", command="echo x > a.txt", shell_write=True, ok=False, turn="p1"),
         sig("reply", 4, turn="p1"),
     ]
 
