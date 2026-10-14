@@ -752,8 +752,9 @@ def _doc_restore(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
 
 def _search(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     base = server_url(args.server, environ)
-    query = {"q": " ".join(args.query), **({"limit": args.limit} if args.limit is not None else {})}
-    path = f"/api/search?{urllib.parse.urlencode(query)}"
+    given = {"limit": args.limit, "label": args.label, "finished_within_days": args.finished_within_days}
+    query = {"q": " ".join(args.query), **{key: value for key, value in given.items() if value is not None}}
+    path = f"/api/search?{urllib.parse.urlencode(query, doseq=True)}"
     status, reply = _get(base, path)
     found = _record_call(base, path, status, reply, noun="search")
     return {"query": found["query"], "hits": found["hits"]}
@@ -1237,6 +1238,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     search.add_argument("query", nargs="+", help="the words to find (`signing keys`)")
     search.add_argument("--limit", type=int, help="at most this many hits, from 1 to 100 (default 10)")
+    search.add_argument("--label", action="append", help="only tasks carrying this label; repeat for each (`disk`)")
+    search.add_argument(
+        "--finished-within-days",
+        type=int,
+        help="drop a task that finished (settled or entered Done) longer ago than this many days; open tasks stay",
+    )
     task = verbs.add_parser("task", description="one task of the Board", help="one task of the Board")
     task_verbs = task.add_subparsers(dest="verb", required=True, metavar="verb")
     show = leaf(

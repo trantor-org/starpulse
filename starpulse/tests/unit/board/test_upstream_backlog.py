@@ -1063,7 +1063,8 @@ def test_an_idle_adapter_stats_no_task_file_between_full_scans(tmp_path: Path, m
         monkeypatch.setattr(Path, "stat", counting)
         time.sleep(1.0)
 
-        assert [path for path in statted if path.suffix == ".md"] == []
+        # an earlier test's watcher thread may still be winding down in this worker: count only this board's files
+        assert [path for path in statted if path.suffix == ".md" and tmp_path in path.parents] == []
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")

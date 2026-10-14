@@ -58,9 +58,19 @@ def test_a_task_outside_the_declared_key_scheme_is_not_indexed(index: SearchInde
     assert _found(index, "drain") == []
 
 
+def test_a_task_in_the_done_lane_is_indexed_as_finished_when_it_entered_the_lane(index: SearchIndex) -> None:
+    feed = BoardFeed()
+    feed.index_tasks(index)
+
+    feed.put(_task("PROJ-1", title="Drain", lane="done", observed_at=100.0))
+
+    assert index.search("drain", finished_since=200.0) == []
+    assert [hit["task"] for hit in index.search("drain", finished_since=50.0)] == ["PROJ-1"]
+
+
 def test_an_index_that_fails_does_not_stop_the_task_being_placed() -> None:
     class Broken:
-        def index(self, task: BoardTask) -> None:
+        def index(self, task: BoardTask, finished_at: float | None = None) -> None:
             raise RuntimeError("disk full")
 
         def remove(self, task_id: str) -> None:

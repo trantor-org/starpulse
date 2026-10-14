@@ -91,8 +91,8 @@ def _board(index: SearchIndex) -> None:
     index.index(_task("PROJ-2", title="Latency", description="notes on tuning the cache"))
 
 
-def _found(index: SearchIndex, query: str) -> list[str]:
-    return [hit["task"] for hit in index.search(query)]
+def _found(index: SearchIndex, query: str, **filters: object) -> list[str]:
+    return [hit["task"] for hit in index.search(query, **filters)]  # type: ignore[arg-type]
 
 
 def test_without_an_embeddings_url_search_is_lexical_and_nothing_calls_out(
@@ -134,6 +134,43 @@ def test_a_task_near_the_query_in_meaning_is_found_without_sharing_a_word(engine
 
     assert [hit["task"] for hit in hits] == ["PROJ-1"]  # PROJ-2's vector is orthogonal to the query's
     assert hits[0]["snippet"].startswith("when the cache drops entries")
+
+
+def test_a_filter_drops_a_task_found_by_meaning_alone_as_it_drops_a_lexical_hit(engine, endpoint: _Endpoint) -> None:
+    index = _open(engine, Search(endpoint.url, "m"))
+    index.index(_task("PROJ-1", title="Eviction", description="the cache", labels=["disk"]))
+    index.index(_task("PROJ-2", title="Purging", description="the cache", settled="completed", settled_at=100.0))
+    index.index(_task("PROJ-3", title="Tuning", description="the cache", settled="archived", settled_at=100.0))
+    index.index(_task("PROJ-4", title="Tuning", description="the cache", lane="done"), finished_at=100.0)
+    index.index(_task("PROJ-5", title="Tuning", description="the cache", settled="completed", settled_at=300.0))
+    index.embed_pending()
+    assert len(_found(index, "tuning knobs")) == 5  # PROJ-1 and PROJ-2 by meaning alone
+
+    assert sorted(_found(index, "tuning knobs", finished_since=200.0)) == ["PROJ-1", "PROJ-5"]
+    assert _found(index, "tuning knobs", labels=["disk"]) == ["PROJ-1"]
+
+
+def test_an_index_written_before_facets_gains_them_without_embedding_again(engine, endpoint: _Endpoint) -> None:
+    first = _task("PROJ-1", title="Tuning", description="the cache", labels=["disk"])
+    second = _task("PROJ-2", title="Tuning", description="the queue", settled="completed", settled_at=100.0)
+    index = _open(engine, Search(endpoint.url, "m"))
+    index.index(first)
+    index.index(second)
+    index.embed_pending()
+    with engine.begin() as connection:  # the index as a release before facets left it
+        connection.execute(text("DROP TABLE starpulse_task_facets"))
+    requests = len(endpoint.requests)
+
+    upgraded = _open(engine, Search(endpoint.url, "m"))
+    upgraded.index(first)
+    upgraded.index(second)
+
+    assert upgraded.embed_pending() == 0
+    assert len(endpoint.requests) == requests
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM starpulse_task_vectors")).scalar() == 2
+    assert _found(upgraded, "tuning", labels=["disk"]) == ["PROJ-1"]
+    assert _found(upgraded, "tuning", finished_since=200.0) == ["PROJ-1"]
 
 
 def test_a_reworded_task_clears_the_recall_floor_and_an_unrelated_one_does_not(engine, endpoint: _Endpoint) -> None:

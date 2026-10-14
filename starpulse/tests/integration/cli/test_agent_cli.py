@@ -1122,6 +1122,23 @@ def test_the_manifest_lists_each_verbs_arguments_outputs_and_exit_codes(capsys: 
     assert [(a["name"], a["required"]) for a in show["arguments"] if not a["flags"]] == [("task", True)]
 
 
+def test_search_sends_each_label_and_the_finished_within_window(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    index = SearchIndex.open(create_engine(f"sqlite:///{tmp_path / 'search.sqlite'}"))
+    assert index is not None
+    index.index(task("PROJ-1", "To Do", title="Drain", labels=["disk", "unraid"]))
+    index.index(task("PROJ-2", "To Do", title="Drain", labels=["disk"]))
+    month_ago = time.time() - 31 * 86400
+    index.index(task("PROJ-3", "Done", title="Drain", labels=["disk", "unraid"], settled="completed", settled_at=month_ago))
+    with _serve(tmp_path, BoardFeed(machines=MACHINES), search=index) as server:
+        argv = ["search", "drain", "--label", "disk", "--label", "unraid", "--finished-within-days", "30"]
+        code, doc = _run(capsys, [*argv, "--server", _url(server, "")])
+
+    assert code == 0
+    assert [hit["task"] for hit in doc["hits"]] == ["PROJ-1"]
+
+
 def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pytest.CaptureFixture[str]) -> None:
     _, doc = _run(capsys, ["help", "--agent"])
 

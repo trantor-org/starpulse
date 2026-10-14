@@ -502,9 +502,12 @@ _SEARCH_LIMIT = 100
 
 
 def search_response(search: SearchIndex | None, query: dict[str, list[str]]) -> tuple[bytes, int]:
-    """The body and status for `/api/search`: the tasks holding every word of `?q=`, best first, at most `?limit=`.
+    """The body and status for `/api/search`: the tasks holding every word of `?q=`, best first, at most `?limit=`;
+    each repeated `?label=` keeps only the tasks carrying it, and `?finished_within_days=` drops a task that finished
+    (settled, or entered the done lane) longer ago than that many days.
 
-    A server with no index is 404; a blank `q` or a `limit` that is not an integer from 1 to 100 is 400."""
+    A server with no index is 404; a blank `q`, a `limit` that is not an integer from 1 to 100 or a
+    `finished_within_days` that is not a positive integer is 400."""
     if search is None:
         return _error("this server keeps no search index"), 404
     words = query.get("q", [""])[0].strip()
@@ -512,9 +515,17 @@ def search_response(search: SearchIndex | None, query: dict[str, list[str]]) -> 
         limit = int(query["limit"][0]) if "limit" in query else _SEARCH_HITS
     except ValueError:
         limit = 0
-    if not words or not 0 < limit <= _SEARCH_LIMIT:
-        return _error(f"search takes a ?q= of words and a ?limit= from 1 to {_SEARCH_LIMIT}"), 400
-    return encode("search", {"query": words, "hits": search.search(words, limit)}), 200
+    try:
+        days = int(query["finished_within_days"][0]) if "finished_within_days" in query else None
+    except ValueError:
+        days = 0
+    if not words or not 0 < limit <= _SEARCH_LIMIT or (days is not None and days < 1):
+        return _error(
+            f"search takes a ?q= of words, a ?limit= from 1 to {_SEARCH_LIMIT} and a positive ?finished_within_days="
+        ), 400
+    since = None if days is None else time.time() - days * 86400
+    hits = search.search(words, limit, labels=query.get("label", []), finished_since=since)
+    return encode("search", {"query": words, "hits": hits}), 200
 
 
 #: `/api/analytics/health`'s defaults: the window it counts over, and how long a stay in one state makes a task stuck.

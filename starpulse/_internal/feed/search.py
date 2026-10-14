@@ -24,6 +24,7 @@ import math
 import os
 import threading
 import urllib.request
+from collections.abc import Sequence
 
 import numpy as np
 from sqlalchemy import Engine, bindparam, text
@@ -42,9 +43,10 @@ _CREATE = (
 #: What a match in each column is worth, in the column order above: a title says most, a note least.
 _WEIGHTS = "4, 10, 2, 1, 1, 0, 0"
 _SNIPPET_CHARS = 160
-_SEARCH = text(
+#: The lexical query, `{filtered}` taking `_filtered`'s condition.
+_SEARCH = (
     f"SELECT task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, snippet({_TABLE}, -1, '', '', '…', 16) AS snippet "
-    f"FROM {_TABLE} WHERE {_TABLE} MATCH :query ORDER BY bm25({_TABLE}, {_WEIGHTS}), task LIMIT :limit"
+    f"FROM {_TABLE} WHERE {_TABLE} MATCH :query{{filtered}} ORDER BY bm25({_TABLE}, {_WEIGHTS}), task LIMIT :limit"
 )
 _DIGEST = text(f"SELECT digest FROM {_TABLE} WHERE rowid = :row")
 _DELETE = text(f"DELETE FROM {_TABLE} WHERE rowid = :row")
@@ -54,16 +56,28 @@ _CREATE_VECTORS = (
     "task_row INTEGER NOT NULL, model TEXT NOT NULL, vector BLOB NOT NULL, PRIMARY KEY (task_row, model))"
 )
 _DROP_VECTORS = text(f"DELETE FROM {_VECTORS} WHERE task_row = :row")
+#: What a search may filter a task by, a row per task: its labels, each on its own line so a label matches whole, and
+#: when it finished (settled, or entered the done lane), NULL while it is open. A table of its own, so an index written
+#: before it gains a task's row from the next `index` without the task's text, and so its vector, being written again.
+_FACETS = "starpulse_task_facets"
+_CREATE_FACETS = (
+    f"CREATE TABLE IF NOT EXISTS {_FACETS} (task_row INTEGER PRIMARY KEY, labels TEXT NOT NULL, finished_at REAL)"
+)
+_HELD_FACETS = text(f"SELECT labels, finished_at FROM {_FACETS} WHERE task_row = :row")
+_STORE_FACETS = text(
+    f"INSERT OR REPLACE INTO {_FACETS} (task_row, labels, finished_at) VALUES (:row, :labels, :finished_at)"
+)
+_DROP_FACETS = text(f"DELETE FROM {_FACETS} WHERE task_row = :row")
 #: Drops the vectors another recipe made, which no query reads.
 _DROP_OTHER_RECIPES = text(f"DELETE FROM {_VECTORS} WHERE model != :model")
 #: The text a task is embedded as, which keys its vector with the model: the title and Description, as the query is a
 #: task-like sentence, and changing it makes every vector again.
 _EMBEDDED_TEXT = "title+description"
-_RANKED = text(
+_RANKED = (
     f"SELECT task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, snippet({_TABLE}, -1, '', '', '…', 16) AS snippet, "
     f"{_VECTORS}.vector AS vector FROM {_TABLE} LEFT JOIN {_VECTORS} "
     f"ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model "
-    f"WHERE {_TABLE} MATCH :query ORDER BY bm25({_TABLE}, {_WEIGHTS}), task LIMIT :limit"
+    f"WHERE {_TABLE} MATCH :query{{filtered}} ORDER BY bm25({_TABLE}, {_WEIGHTS}), task LIMIT :limit"
 )
 #: Every embedded task, for a query whose meaning (not its words) is what is wanted; `snippet` is the task's opening.
 _EMBEDDED_SELECT = (
@@ -103,6 +117,19 @@ _INSERT = text(
     f"INSERT INTO {_TABLE} (rowid, task, title, description, criteria, notes, lane, digest) "
     "VALUES (:row, :task, :title, :description, :criteria, :notes, :lane, :digest)"
 )
+
+
+def _filtered(labels: Sequence[str], finished_since: float | None) -> tuple[str, dict]:
+    """The condition, ANDed onto a query's WHERE, that keeps the tasks carrying every one of `labels` and not finished
+    before `finished_since` (epoch seconds), with its parameters; no condition when neither narrows."""
+    conditions = [f"instr(labels, :label_{at}) > 0" for at in range(len(labels))]
+    parameters: dict = {f"label_{at}": f"\n{label}\n" for at, label in enumerate(labels)}
+    if finished_since is not None:
+        conditions.append("(finished_at IS NULL OR finished_at >= :finished_since)")
+        parameters["finished_since"] = finished_since
+    if not conditions:
+        return "", {}
+    return f" AND {_TABLE}.rowid IN (SELECT task_row FROM {_FACETS} WHERE {' AND '.join(conditions)})", parameters
 
 
 def _row(task_id: str) -> int:
@@ -179,6 +206,7 @@ class SearchIndex:
             with engine.begin() as connection:
                 connection.execute(text(_CREATE))
                 connection.execute(text(_CREATE_VECTORS))
+                connection.execute(text(_CREATE_FACETS))
                 if index._url:
                     connection.execute(_DROP_OTHER_RECIPES, {"model": index._recipe})
         except OperationalError as error:
@@ -186,8 +214,14 @@ class SearchIndex:
             return None
         return index
 
-    def index(self, task: BoardTask) -> None:
-        """Make the index hold `task` as it is now; a task already held unchanged is left alone."""
+    def index(self, task: BoardTask, finished_at: float | None = None) -> None:
+        """Make the index hold `task` as it is now; a task already held unchanged is left alone.
+
+        `finished_at` is when the task finished, which the feed knows for a task in the done lane; without it a settled
+        task finished at its `settled_at` (0, older than any bound, when the board does not say) and any other is open."""
+        if finished_at is None and task.settled:
+            finished_at = task.settled_at or 0.0
+        facets = {"labels": "\n" + "".join(f"{label}\n" for label in task.labels), "finished_at": finished_at}
         lane = task.settled or task.lane
         fields = {
             "task": task.id,
@@ -200,6 +234,12 @@ class SearchIndex:
         digest = hashlib.sha256("\x1f".join(fields.values()).encode()).hexdigest()
         row = _row(task.id)
         with self._lock, self._engine.begin() as connection:
+            held = connection.execute(_HELD_FACETS, {"row": row}).one_or_none()
+            if held is not None and held.finished_at is not None and finished_at is not None:
+                # a finished task keeps its earliest finish: a restart dates a done-lane entry the history lacks now
+                facets["finished_at"] = min(held.finished_at, finished_at)
+            if held is None or tuple(held) != tuple(facets.values()):
+                connection.execute(_STORE_FACETS, {"row": row, **facets})
             if connection.execute(_DIGEST, {"row": row}).scalar() == digest:
                 return
             connection.execute(_DELETE, {"row": row})
@@ -212,25 +252,42 @@ class SearchIndex:
         with self._lock, self._engine.begin() as connection:
             connection.execute(_DELETE, {"row": _row(task_id)})
             connection.execute(_DROP_VECTORS, {"row": _row(task_id)})
+            connection.execute(_DROP_FACETS, {"row": _row(task_id)})
             self._dirty.add(_row(task_id))
 
-    def search(self, query: str, limit: int = 10) -> list[dict]:
+    def search(
+        self, query: str, limit: int = 10, *, labels: Sequence[str] = (), finished_since: float | None = None
+    ) -> list[dict]:
         """The tasks holding every word of `query`, best first, as `{task, title, lane, score, snippet}`; `score` is
         higher for a better match and `snippet` is the text around it. With an embeddings endpoint the order blends
         each hit's lexical score with the similarity of its vector to the query's, and a task that holds none of the
-        query's words is a hit too when its vector is near the query's (its snippet is the task's opening)."""
+        query's words is a hit too when its vector is near the query's (its snippet is the task's opening).
+
+        A hit carries every one of `labels`, and with `finished_since` (epoch seconds) a task that finished before it
+        is no hit; an open task always may be."""
         match = _match(query)
         if not match:
             return []
         limit = max(1, limit)
         vector = self._embed_query(query)
+        filtered, narrowing = _filtered(labels, finished_since)
         with self._engine.connect() as connection:
             if vector is None:
-                rows = connection.execute(_SEARCH, {"query": match, "limit": limit})
+                rows = connection.execute(
+                    text(_SEARCH.format(filtered=filtered)), {"query": match, "limit": limit, **narrowing}
+                )
                 return [dict(row._mapping) for row in rows]
-            rows = connection.execute(_RANKED, {"query": match, "model": self._recipe, "limit": max(limit, _POOL)})
+            rows = connection.execute(
+                text(_RANKED.format(filtered=filtered)),
+                {"query": match, "model": self._recipe, "limit": max(limit, _POOL), **narrowing},
+            )
             hits = [dict(row._mapping) for row in rows]
             lexical = {hit["task"] for hit in hits}
+            allowed = (
+                set(connection.execute(text(f"SELECT rowid FROM {_TABLE} WHERE 1{filtered}"), narrowing).scalars())
+                if filtered
+                else None
+            )
         top = max((hit["score"] for hit in hits), default=0.0) or 1.0
         for hit in hits:
             held = array.array("f")
@@ -242,7 +299,9 @@ class SearchIndex:
         # more than the 20 MB it reads.
         similarities = np.einsum("ij,j->i", near.matrix, _unit(np.array(vector, dtype=np.float32)))
         near_enough = [
-            at for at in np.flatnonzero(similarities >= _RECALL_FLOOR) if near.hits[at]["task"] not in lexical
+            at
+            for at in np.flatnonzero(similarities >= _RECALL_FLOOR)
+            if near.hits[at]["task"] not in lexical and (allowed is None or near.rows[at] in allowed)
         ]
         for at in sorted(near_enough, key=lambda at: -similarities[at])[
             :limit

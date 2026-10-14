@@ -26,8 +26,8 @@ def index(engine) -> SearchIndex:
     return opened
 
 
-def _found(index: SearchIndex, query: str) -> list[str]:
-    return [hit["task"] for hit in index.search(query)]
+def _found(index: SearchIndex, query: str, **filters: object) -> list[str]:
+    return [hit["task"] for hit in index.search(query, **filters)]  # type: ignore[arg-type]
 
 
 def test_a_task_is_found_by_its_title_description_criteria_notes_and_id(index: SearchIndex) -> None:
@@ -65,6 +65,55 @@ def test_a_settled_task_is_found_in_the_lane_it_settled_in(index: SearchIndex) -
     index.index(_task("PROJ-8", title="Retire the cron", settled="archived"))
 
     assert index.search("cron")[0]["lane"] == "archived"
+
+
+def test_a_finished_since_bound_drops_the_tasks_that_finished_before_it(index: SearchIndex) -> None:
+    index.index(_task("PROJ-1", title="Drain the open queue"))
+    index.index(_task("PROJ-2", title="Drain the completed queue", settled="completed", settled_at=100.0))
+    index.index(_task("PROJ-3", title="Drain the archived queue", settled="archived", settled_at=100.0))
+    index.index(_task("PROJ-4", title="Drain the done queue", lane="done"), finished_at=100.0)
+    index.index(_task("PROJ-5", title="Drain the recent queue", settled="completed", settled_at=300.0))
+
+    assert sorted(_found(index, "drain", finished_since=200.0)) == ["PROJ-1", "PROJ-5"]
+    assert len(_found(index, "drain")) == 5
+
+
+def test_a_settled_task_the_board_gives_no_time_for_is_older_than_any_bound(index: SearchIndex) -> None:
+    index.index(_task("PROJ-1", title="Drain", settled="completed"))
+
+    assert _found(index, "drain", finished_since=1.0) == []
+
+
+def test_a_finished_task_placed_again_keeps_the_earlier_of_its_finish_times(engine, index: SearchIndex) -> None:
+    index.index(_task("PROJ-1", title="Drain", lane="done"), finished_at=100.0)
+    writes: list[str] = []
+    event.listen(engine, "before_cursor_execute", lambda *args: writes.append(args[2]))
+
+    index.index(_task("PROJ-1", title="Drain", lane="done"), finished_at=300.0)  # a restart dates an undated entry now
+    assert [s for s in writes if s.lstrip().upper().startswith(("INSERT", "DELETE", "UPDATE"))] == []
+    assert _found(index, "drain", finished_since=200.0) == []
+
+    index.index(_task("PROJ-1", title="Drain", settled="completed", settled_at=50.0))
+    assert _found(index, "drain", finished_since=75.0) == []
+
+
+def test_a_label_filter_keeps_only_the_tasks_carrying_every_named_label(index: SearchIndex) -> None:
+    index.index(_task("PROJ-1", title="Drain", labels=["disk", "unraid"]))
+    index.index(_task("PROJ-2", title="Drain", labels=["disk"]))
+    index.index(_task("PROJ-3", title="Drain", labels=["disk-usage", "unraid"]))
+
+    assert _found(index, "drain", labels=["disk", "unraid"]) == ["PROJ-1"]
+    assert sorted(_found(index, "drain", labels=["disk"])) == ["PROJ-1", "PROJ-2"]
+
+
+def test_a_task_relabelled_or_finished_since_it_was_indexed_is_filtered_by_what_it_is_now(index: SearchIndex) -> None:
+    index.index(_task("PROJ-1", title="Drain", labels=["disk"]))
+
+    index.index(_task("PROJ-1", title="Drain", labels=["ci"], settled="completed", settled_at=100.0))
+
+    assert _found(index, "drain", labels=["disk"]) == []
+    assert _found(index, "drain", finished_since=200.0) == []
+    assert _found(index, "drain", labels=["ci"]) == ["PROJ-1"]
 
 
 def test_a_title_match_ranks_above_a_description_match(index: SearchIndex) -> None:
