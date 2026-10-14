@@ -1,15 +1,14 @@
 """Every open and recently updated pull request of each repository, read in one query and kept in the PR store.
 
-A refresh asks GitHub once per repository (`query_github`, which logs the query's `rateLimit` cost) for the numbers of
-every open PR and of the PRs updated most recently, and in the same request for the state of each PR the store holds
-open. `isRequired` takes the PR's number, so a required check can only be read through `pullRequest(number:)`, never
-inside a listing; a PR the listing shows that the store lacks, or holds in another state, costs one more request, for
-itself alone. A check finishing does not change a PR's `updatedAt`, so the open PRs are asked for on every refresh; a
-merged or closed PR whose saved record is final is never asked for again (a merged one without its `mergeSha`
-is not final yet). No request reads more than `_BATCH` PRs: the rest go in further requests, and each batch of
-newly seen PRs is saved as it lands, so a request GitHub refuses or times out on is not repeated with the ones
-already read. A repository holding more open PRs than one
-listing page (`_PAGE`) is read for the first page only, and says so.
+The UI and Board projection serve from the store. Network reads run on miss (no row / no `detail`),
+`POST /api/pulls/refresh` / `PullSync.request`, or the periodic reconcile backstop: a listing-only query that
+compares open PR numbers to the store and, on mismatch, runs a full `refresh_repository` and increments
+`starpulse_pull_reconcile_drift`. A full refresh asks GitHub once per repository (`query_github`) for the
+numbers of every open PR and of the PRs updated most recently, and for the state of each PR the store holds
+open. `isRequired` takes the PR's number, so a required check can only be read through `pullRequest(number:)`,
+never inside a listing. A merged or closed PR whose saved record is final is never asked for again (a merged
+one without its `mergeSha` is not final yet). No request reads more than `_BATCH` PRs. A repository holding
+more open PRs than one listing page (`_PAGE`) is read for the first page only, and says so.
 """
 
 from __future__ import annotations
@@ -28,6 +27,12 @@ from starpulse._internal.pulls.pull_requests import PULL_URL, REFRESH_S, GhUnava
 from starpulse._internal.pulls.pulls import PullStore
 
 logger = logging.getLogger(__name__)
+
+#: Prometheus counter name: how many times a listing reconcile found the store's open set wrong and ran a full refresh.
+DRIFT_METRIC = "starpulse_pull_reconcile_drift"
+DRIFT_HELP = "Times the pull-store listing reconcile disagreed with the store and ran a full GitHub refresh."
+_drift = 0
+_drift_lock = threading.Lock()
 
 _PAGE = 100
 #: Merged rows still lacking a merge commit that one refresh reads again, to bound its query cost.
@@ -186,11 +191,48 @@ def refresh_pull(
         store.save([_record(repo, node, now)])
 
 
+def drift_count() -> int:
+    """How many listing reconciles have disagreed with the store since this process started."""
+    with _drift_lock:
+        return _drift
+
+
+def _note_drift() -> None:
+    global _drift
+    with _drift_lock:
+        _drift += 1
+
+
+def listing_drifted(
+    repo: str,
+    store: PullStore,
+    graphql: Callable[[str, str], dict],
+    linked: Collection[int] = (),
+) -> bool:
+    """True when a listing-only query disagrees with the store's open set or a cited PR lacks detail."""
+    answer = graphql(repo, _query((), listing=True))
+    if answer["open"]["pageInfo"]["hasNextPage"]:
+        logger.warning("pull requests: %s has more than %d open PRs; the rest are not listed", repo, _PAGE)
+    listed_open = {item["number"] for item in answer["open"]["nodes"] if item["state"] == "OPEN"}
+    saved = {record["number"]: record for record in store.find(repo=repo, detailed=True)}
+    held_open = {number for number, record in saved.items() if record["state"] == "OPEN"}
+    if listed_open != held_open:
+        return True
+    return any(number not in saved or not saved[number].get("detail") for number in linked)
+
+
+def drift_counter() -> str:
+    """Prometheus text of how many listing reconciles found drift and ran a full refresh."""
+    return "\n".join(
+        [f"# HELP {DRIFT_METRIC} {DRIFT_HELP}", f"# TYPE {DRIFT_METRIC} counter", f"{DRIFT_METRIC} {drift_count()}"]
+    ) + "\n"
+
+
 class PullSync:
-    """Refreshes `store` from GitHub, one query per repository a minute, for every repository worth asking about, and
-    after each read hands the Board its tasks' pull requests (`project`, `PullRequests.refresh`). A pull request
-    named to `request` is read alone on this same thread as soon as it is asked for: between refreshes, and during
-    one after the repository being read, ahead of that refresh's projection."""
+    """Keeps `store` current from GitHub for every repository worth asking about, and after each read hands the
+    Board its tasks' pull requests (`project`, `PullRequests.refresh`). The periodic loop is listing reconcile
+    (drift-only full refresh); `refresh` still walks open PR detail. A pull request named to `request` is read
+    alone on this same thread as soon as it is asked for."""
 
     def __init__(
         self,
@@ -241,6 +283,25 @@ class PullSync:
                 logger.warning("pull requests: %s", exc)
             except Exception:  # one repository's bad answer must not end the refresh thread
                 logger.exception("pull requests: %s failed to refresh", repo)
+            self._read_requests()
+        self.project()
+
+    def reconcile(self) -> None:
+        """Listing-only per tracked repository; full `refresh_repository` only on drift or a cited miss.
+
+        On agreement with the store, no detail GraphQL runs. Drift increments `starpulse_pull_reconcile_drift`.
+        Queued single-PR requests still run, then the Board is projected from the store."""
+        linked = self._linked()
+        for repo in self.tracked():
+            try:
+                cited = linked.get(repo, ())
+                if listing_drifted(repo, self._store, self._graphql, cited):
+                    _note_drift()
+                    refresh_repository(repo, self._store, self._clock(), self._graphql, cited)
+            except GhUnavailableError as exc:
+                logger.warning("pull requests: %s", exc)
+            except Exception:
+                logger.exception("pull requests: %s failed to reconcile", repo)
             self._read_requests()
         self.project()
 
@@ -308,12 +369,13 @@ class PullSync:
 
     def run_forever(self, interval_s: float = REFRESH_S) -> None:  # pragma: no mutate block — timer loop
         """Once the Board replay is done, so the first projection sees every task, project what the store already
-        holds, then refresh every `interval_s`. Projection runs on its own thread: a cold pin memo makes it walk
-        hundreds of `gh` reads, and the refresh must not wait behind that."""
+        holds, then reconcile every `interval_s` (listing drift backstop; full detail only on miss/drift/push).
+        Projection runs on its own thread: a cold pin memo makes it walk hundreds of `gh` reads, and the
+        reconcile must not wait behind that."""
         self._feed.wait_replayed()
         self._projecting = True
         threading.Thread(target=self._project_forever, name="pull-project", daemon=True).start()
         self.project()
         while True:
-            self.refresh()
+            self.reconcile()
             self._idle(interval_s)
