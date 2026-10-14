@@ -235,7 +235,7 @@ the step made, a key being the command the server's redactor left, else the tool
 
 `analytics transitions` reads `GET /api/analytics/transitions[?hours=N]` and `analytics cells` reads
 `GET /api/analytics/cells[?hours=N]`, each with the window and refusals of `analytics steps`. They place a task by its
-board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither report, and neither ranks a Codex step.
+board labels `kind-<kind>` and `size-<n>`; a task missing either is in neither report, and neither ranks a Codex or Cursor step.
 [Connect sources](sources.md#price-each-transition-and-report-each-cell) defines their columns and what they cannot see.
 
 `analytics graph`, `analytics stages` and `analytics diff` read `GET /api/analytics/graph`, `/stages` and `/diff`, each

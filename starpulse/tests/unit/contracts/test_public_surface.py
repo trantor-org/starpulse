@@ -126,7 +126,7 @@ def test_each_public_module_exports_exactly_its_pinned_names(module: str) -> Non
 
 
 #: Root entries that are not a listed public module: the entry points, the internal code and the packages that ship data.
-ROOT_OTHER = {"__init__", "__main__", "claude_code", "_internal", "tests"}
+ROOT_OTHER = {"__init__", "__main__", "claude_code", "cursor", "_internal", "tests"}
 
 
 def _unlisted_at_root(package: Path) -> set[str]:

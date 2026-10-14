@@ -36,6 +36,20 @@ log_user_prompt = false
 exporter = { otlp-http = { endpoint = "http://127.0.0.1:4319/v1/logs", protocol = "json" } }
 ```
 
+Cursor exports no telemetry, so a one-shot reader takes its agent transcripts instead, and a scheduler runs it:
+
+```sh
+python -m starpulse.cursor [--root ~/.cursor/projects] [--hours 48] [--config FILE] [--redactor MODULE:FUNCTION]
+```
+
+It reads each `<project>/agent-transcripts/<conversation-id>/<conversation-id>.jsonl` written in the window into the same
+signals, under harness `cursor`; a transcript read again adds nothing. A transcript records no model, effort, token, tool
+result or per-line time, so a Cursor row has `main_model` null, zero tokens, and `agent_s`, `idle_s` and
+`operator_wait_s` of 0 (every signal takes the time of the last prompt, to the minute). It carries steps (`requests`),
+tool calls by name (each `ok`), prompts (`human` with a `<user_query>`, otherwise `injected`), task claims and `git
+switch` from `Shell` commands, `turn_ended` errors as `interrupts`, and one compaction per `compaction/segment_*.md`
+(trigger `unknown`). Subagent transcripts are not read. No Cursor row is in any ranking.
+
 A session is one harness session id; it has one row per task it worked, found from the branch the export names
 (`vcs.ref.head.name`, which Codex's export does not carry, so its sessions have no task until a shell `git switch` or
 `git checkout` in them names one), or a command or `Skill` call that matches an `[analytics]` `claims` pattern claims
