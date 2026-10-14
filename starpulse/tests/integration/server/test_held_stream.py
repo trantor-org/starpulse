@@ -1,11 +1,14 @@
 """The stream a session reads its held tasks from: its own tasks, sent again only when they change."""
 
+import time
 import urllib.error
 import urllib.request
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
 
+from starpulse._internal.board.view import board_columns
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
@@ -78,3 +81,39 @@ def test_the_lanes_stream_sends_on_connect_and_again_only_on_a_change(tmp_path: 
     assert head == (200, "text/event-stream", "no-store")
     assert (first[0], _lanes(first[1])) == ("lanes", {"in_progress": ["PROJ-1"], "ready": ["PROJ-2"]})
     assert (second[0], _lanes(second[1])) == ("lanes", {"in_progress": ["PROJ-1"], "ready": []})
+
+
+def _builds_after_quiet(calls: list[int]) -> int:
+    """The builds counted once no stream has built for a moment: a stream woken in error builds a beat after the others."""
+    seen = -1
+    while seen != len(calls):
+        seen = len(calls)
+        time.sleep(0.2)
+    return seen
+
+
+def test_held_and_lanes_streams_share_one_build_of_the_columns_per_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("starpulse._internal.server.server._HELD_SETTLE_S", 0)
+    calls: list[int] = []
+
+    def counted(*args: object, **kwargs: object) -> dict:
+        calls.append(1)
+        return board_columns(*args, **kwargs)
+
+    monkeypatch.setattr("starpulse._internal.server.column_stream.board_columns", counted)
+    feed = BoardFeed(machines=MACHINES)
+    sessions = [f"session-{n}" for n in range(4)]
+    for n, session in enumerate(sessions):
+        feed.put(task(f"PROJ-{n}", "In Progress", holder=session))
+    with _serve(tmp_path, feed) as server, ExitStack() as streams:
+        held = [streams.enter_context(urllib.request.urlopen(_url(server, f"/api/held?holder={s}"), timeout=5)) for s in sessions]
+        lanes = streams.enter_context(urllib.request.urlopen(_url(server, "/api/lanes?state=in_progress"), timeout=5))
+        for resp in [*held, lanes]:
+            _next_event(resp)
+        calls.clear()
+        feed.put(task("PROJ-0", "In Progress", holder="session-0", title="Renamed"))
+        _next_event(held[0])
+        _next_event(lanes)
+        builds = _builds_after_quiet(calls)
+
+    assert builds == 1

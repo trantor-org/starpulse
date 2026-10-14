@@ -239,7 +239,6 @@ from starpulse._internal.board.seam import (
     Written,
 )
 from starpulse._internal.board.seam import load as load_board
-from starpulse._internal.board.view import board_columns
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs import run_events
@@ -258,6 +257,7 @@ from starpulse._internal.hub import forward
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.server.process_metrics import process_gauges
 from starpulse._internal.hub.forward import Forwarder
+from starpulse._internal.server.column_stream import ColumnViews, Interest, column_view
 from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse._internal.server.writes import (
     autopilot,
@@ -1321,6 +1321,7 @@ def request_handler(
     configured = harnesses or Harnesses((), {})
     harnesses_body = encode("harnesses", configured.as_json())
     snapshots = SnapshotCache(feed)
+    column_views = ColumnViews()
     pull_reads = _PullReads(pulls)
     slow_reads = _SlowReads(slow_read_s)
     event_text = _EventText()
@@ -1365,7 +1366,7 @@ def request_handler(
             elif url.path == _HELD:
                 self._stream_held(parse_qs(url.query).get("holder", [""])[0])
             elif url.path == _LANES:
-                self._stream_columns("lanes", lambda agent: True, parse_qs(url.query).get("state", []))
+                self._stream_columns("lanes", None, parse_qs(url.query).get("state", []))
             elif url.path.startswith(_SNAPSHOT_BODY):
                 self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
             elif url.path == "/api/snapshot":
@@ -1525,32 +1526,29 @@ def request_handler(
             session's band redraws on a change instead of asking."""
             if not holder:
                 return self._send(_error(f"name the session: {_HELD}?holder=<session>"), 400)
-            self._stream_columns("held", lambda agent: agent.get("holder", "") == holder)
+            self._stream_columns("held", holder)
 
-        def _stream_columns(self, event: str, kept: Callable[[dict], bool], states: Sequence[str] = ()) -> None:
-            """Hold the connection open: the Board's columns (only `states`, when named) with the tasks `kept` keeps,
-            as `event`, then again each time that view changes. A burst of changes settles before one reread."""
+        def _stream_columns(self, event: str, holder: str | None, states: Sequence[str] = ()) -> None:
+            """Hold the connection open: the Board's columns (only `states`, when named) with the tasks `holder` holds
+            (all, when None), as `event`, then again each time a change alters that view. A burst of changes settles
+            before one reread, and the streams that reread for a change read one build of the columns."""
             changes = None
             try:
                 served = snapshots.get()
                 while (attached := feed.watch_from(served.sent)) is None:
                     served = snapshots.get()
-                _, changes = attached
+                missed, changes = attached
+                if missed:
+                    served = snapshots.get()  # the view must include what was published after the snapshot it started from
                 self._open_stream()
                 sent = None
                 while True:
-                    view = board_columns(served.snapshot, kept)
-                    if states:
-                        view["columns"] = [c for c in view["columns"] if c["state"] in states]
+                    view = column_view(column_views.of(served), holder, states)
                     if view != sent:
                         self._frame(event, json.dumps(view, ensure_ascii=False))
                         sent = view
-                    try:
-                        changes.get(timeout=_PING_S)
-                    except queue.Empty:
-                        self._write(b": ping\n\n")  # a closed session fails this write, which ends the stream
-                        continue
-                    changes.task_done()  # `feed.announce` waits for the marks of what it queued
+                        interest = Interest(view, holder, states)
+                    self._wait_touched(changes, interest)
                     time.sleep(_HELD_SETTLE_S)
                     while not changes.empty():
                         changes.get_nowait()
@@ -1561,6 +1559,18 @@ def request_handler(
             finally:
                 if changes is not None:
                     feed.unsubscribe(changes)
+
+        def _wait_touched(self, changes: queue.Queue, interest: Interest) -> None:
+            """Take changes off `changes` until one alters the view `interest` describes, pinging while none arrives."""
+            while True:
+                try:
+                    change = changes.get(timeout=_PING_S)
+                except queue.Empty:
+                    self._write(b": ping\n\n")  # a closed session fails this write, which ends the stream
+                    continue
+                changes.task_done()  # `feed.announce` waits for the marks of what it queued
+                if interest.touched_by(*change):
+                    return
 
         def _event(self, name: str, data: dict) -> None:
             self._frame(name, event_text(name, data))
