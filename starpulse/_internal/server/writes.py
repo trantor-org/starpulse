@@ -920,6 +920,7 @@ def forwarding(source: str, method: str, raw: bytes, forwarder: Forwarder | None
         if not isinstance(opt_in, bool):
             return 400, {"error": 'forwarding takes {"opt_in": true} or {"opt_in": false}'}
         forwarder.opt_in.set(opt_in)
+        forwarder.forget_status()
     return 200, {"configured": True, **forwarder.status()}
 
 
