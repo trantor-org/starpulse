@@ -60,11 +60,13 @@ GET /api/pulls[?repo=OWNER/NAME][&number=N][&state=open|merged|closed][&body_con
                    merge stored before they were kept), and fetchedAt (epoch seconds this record was read)}. A `number` that is not an integer, or a `state`
                    that is none of those, is 400
 GET /metrics       Prometheus text: `starpulse_pull_store_age_seconds{repo}`, the seconds since the newest record of
-                   each repository holding an open pull request was read; a stale one means the refresh stopped.
-                   `starpulse_page_build_info{build}`, 1 for the page build id the `build` event names (none without a
-                   build). Also this process's `process_resident_memory_bytes`, `process_threads`, `process_open_fds` and
-                   `process_start_time_seconds`, which moves on every restart. With `[board.actor]`, also
-                   `starpulse_task_actor_refusals_total` and the `starpulse_task_actor_latency_seconds` histogram
+                   each repository holding an open pull request was read (a stale one means reads stopped);
+                   `starpulse_pull_reconcile_drift`, how many listing reconciles disagreed with the store and ran a
+                   full GitHub refresh; `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
+                   names (none without a build). Also this process's `process_resident_memory_bytes`,
+                   `process_threads`, `process_open_fds` and `process_start_time_seconds`, which moves on every
+                   restart. With `[board.actor]`, also `starpulse_task_actor_refusals_total` and the
+                   `starpulse_task_actor_latency_seconds` histogram
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
@@ -251,7 +253,7 @@ from starpulse._internal.config.pins import GitHub
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse._internal.pulls.pull_refresh import PullRefresh
-from starpulse._internal.pulls.pull_store import PullSync
+from starpulse._internal.pulls.pull_store import PullSync, drift_counter
 from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse._internal.runs.triggers import run_triggers
 from starpulse._internal.hub import forward
@@ -1403,6 +1405,7 @@ def request_handler(
                 self._send(
                     (
                         (pulls.age_gauge(clock()) if pulls else "")
+                        + (drift_counter() if pulls else "")
                         + (actor_metrics() if actor_metrics else "")
                         + build_gauge(static)
                         + process_gauges()
