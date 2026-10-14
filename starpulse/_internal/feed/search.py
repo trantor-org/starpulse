@@ -15,6 +15,7 @@ endpoint that fails leaves the lexical order.
 from __future__ import annotations
 
 import array
+import dataclasses
 import hashlib
 import http.client
 import json
@@ -24,7 +25,8 @@ import os
 import threading
 import urllib.request
 
-from sqlalchemy import Engine, text
+import numpy as np
+from sqlalchemy import Engine, bindparam, text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from starpulse._internal.config.search import Search
@@ -64,10 +66,14 @@ _RANKED = text(
     f"WHERE {_TABLE} MATCH :query ORDER BY bm25({_TABLE}, {_WEIGHTS}), task LIMIT :limit"
 )
 #: Every embedded task, for a query whose meaning (not its words) is what is wanted; `snippet` is the task's opening.
-_EMBEDDED = text(
-    f"SELECT task, title, lane, substr(description, 1, {_SNIPPET_CHARS}) AS snippet, {_VECTORS}.vector AS vector "
-    f"FROM {_TABLE} JOIN {_VECTORS} ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model"
+_EMBEDDED_SELECT = (
+    f"SELECT {_TABLE}.rowid AS row, task, title, lane, substr(description, 1, {_SNIPPET_CHARS}) AS snippet, "
+    f"{_VECTORS}.vector AS vector FROM {_TABLE} JOIN {_VECTORS} "
+    f"ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model"
 )
+_EMBEDDED = text(_EMBEDDED_SELECT)
+#: Only the named rows of `_EMBEDDED`, which is how the held vectors catch up with the writes made since.
+_EMBEDDED_ROWS = text(f"{_EMBEDDED_SELECT} WHERE {_TABLE}.rowid IN :rows").bindparams(bindparam("rows", expanding=True))
 _PENDING = text(
     f"SELECT rowid AS row, title, description, digest FROM {_TABLE} "
     f"WHERE rowid NOT IN (SELECT task_row FROM {_VECTORS} WHERE model = :model) LIMIT :limit"
@@ -86,6 +92,8 @@ _RECALL_FLOOR = 0.55
 _POOL = 50
 #: Tasks sent to the endpoint in one request, and the characters of one task's text it is sent.
 _BATCH = 32
+#: Rows changed since the held vectors were read beyond which reading them all again is cheaper than naming them.
+_RELOAD_AT = 500
 _TEXT_LIMIT = 8000
 _TIMEOUT = 10.0
 #: Seconds `keep_embedding` waits between passes, and after a failed one.
@@ -103,10 +111,11 @@ def _row(task_id: str) -> int:
     return int.from_bytes(hashlib.blake2b(task_id.encode(), digest_size=7).digest(), "big")
 
 
-def _unit(vector: array.array) -> array.array:
-    """`vector` scaled to length 1; a zero vector stays zero, which makes every similarity to it 0."""
-    norm = math.sqrt(math.sumprod(vector, vector))
-    return array.array("f", (x / norm for x in vector)) if norm else vector
+def _unit(vectors: np.ndarray) -> np.ndarray:
+    """`vectors` (one, or one per row) scaled to length 1; a zero vector stays zero, which makes every similarity to it
+    0."""
+    norms = np.linalg.norm(vectors, axis=-1, keepdims=True)
+    return np.divide(vectors, norms, out=np.zeros_like(vectors), where=norms > 0)
 
 
 def _cosine(left: array.array, right: array.array) -> float:
@@ -124,6 +133,17 @@ def _match(query: str) -> str:
     return " ".join('"' + word.replace('"', '""') + '"' for word in query.split())
 
 
+@dataclasses.dataclass(frozen=True)
+class _Near:
+    """The embedded tasks a query is scored against: each task's rowid and `_EMBEDDED` row, and its unit vector as a
+    row of `matrix`, so one product scores them all. Replaced whole, never changed in place, so a search holding one is
+    unaffected by the next refresh."""
+
+    rows: list[int]
+    hits: list[dict]
+    matrix: np.ndarray
+
+
 class EmbeddingError(RuntimeError):
     """The embeddings endpoint did not answer with a vector for every text it was sent."""
 
@@ -134,9 +154,13 @@ class SearchIndex:
     def __init__(self, engine: Engine, settings: Search | None = None) -> None:
         self._engine = engine
         self._lock = threading.Lock()
-        #: Each embedded task as its `_EMBEDDED` row and unit vector, read once and dropped by every write that changes
-        #: the vectors, so a search scores them in memory instead of reading and decoding every one.
-        self._near: list[tuple[dict, array.array]] | None = None
+        #: The embedded tasks' unit vectors, read once. A write that changes a task's vector adds its row to `_dirty`
+        #: and the next search reads those rows alone, so a burst of writes never makes a search read every vector.
+        self._near: _Near | None = None
+        self._dirty: set[int] = set()
+        #: Held by the one search refreshing `_near`, which reads and normalises outside `_lock` so a write never waits
+        #: for it.
+        self._refreshing = threading.Lock()
         self._url = settings.embeddings_url if settings else None
         self._model = settings.model if settings else None
         self._recipe = f"{self._model} {_EMBEDDED_TEXT}"
@@ -181,14 +205,14 @@ class SearchIndex:
             connection.execute(_DELETE, {"row": row})
             connection.execute(_DROP_VECTORS, {"row": row})
             connection.execute(_INSERT, {"row": row, "digest": digest, **fields})
-            self._near = None
+            self._dirty.add(row)
 
     def remove(self, task_id: str) -> None:
         """Drop `task_id` from the index; a task the index does not hold is a no-op."""
         with self._lock, self._engine.begin() as connection:
             connection.execute(_DELETE, {"row": _row(task_id)})
             connection.execute(_DROP_VECTORS, {"row": _row(task_id)})
-            self._near = None
+            self._dirty.add(_row(task_id))
 
     def search(self, query: str, limit: int = 10) -> list[dict]:
         """The tasks holding every word of `query`, best first, as `{task, title, lane, score, snippet}`; `score` is
@@ -213,22 +237,55 @@ class SearchIndex:
             if blob := hit.pop("vector"):
                 held.frombytes(blob)
             hit["score"] = _LEXICAL_WEIGHT * hit["score"] / top + (1 - _LEXICAL_WEIGHT) * _cosine(vector, held)
-        unit = _unit(vector)
-        for hit, held in self._near_vectors():
-            if hit["task"] in lexical or len(held) != len(unit):
-                continue
-            if (similarity := math.sumprod(unit, held)) >= _RECALL_FLOOR:
-                hits.append({**hit, "score": (1 - _LEXICAL_WEIGHT) * similarity})
+        near = self._near_vectors(len(vector))
+        # einsum, not `@`: a matrix-vector product through BLAS fans out over every core, which on a busy host costs far
+        # more than the 20 MB it reads.
+        similarities = np.einsum("ij,j->i", near.matrix, _unit(np.array(vector, dtype=np.float32)))
+        near_enough = [
+            at for at in np.flatnonzero(similarities >= _RECALL_FLOOR) if near.hits[at]["task"] not in lexical
+        ]
+        for at in sorted(near_enough, key=lambda at: -similarities[at])[
+            :limit
+        ]:  # no more than `limit` can survive the cut
+            hits.append({**near.hits[at], "score": (1 - _LEXICAL_WEIGHT) * float(similarities[at])})
         return sorted(hits, key=lambda hit: -hit["score"])[:limit]
 
-    def _near_vectors(self) -> list[tuple[dict, array.array]]:
-        """Every embedded task with its unit vector, read from the database when a write has dropped them."""
-        with self._lock:
-            if self._near is None:
-                with self._engine.connect() as connection:
-                    rows = [dict(row._mapping) for row in connection.execute(_EMBEDDED, {"model": self._recipe})]
-                self._near = [(row, _unit(array.array("f", row.pop("vector")))) for row in rows]
+    def _near_vectors(self, dimension: int) -> _Near:
+        """Every embedded task whose vector has `dimension` numbers, with the vectors read again only for the rows a
+        write has changed since the last read (all of them the first time, or when too many changed to name)."""
+        with self._refreshing:
+            with self._lock:
+                changed, self._dirty = self._dirty, set()
+            held = self._near
+            if held is not None and (held.matrix.shape[1] != dimension or len(changed) > _RELOAD_AT):
+                held = None
+            if held is not None and not changed:
+                return held
+            try:
+                self._near = self._read_near(held, changed, dimension)
+            except BaseException:
+                with self._lock:
+                    self._dirty |= changed
+                raise
             return self._near
+
+    def _read_near(self, held: _Near | None, changed: set[int], dimension: int) -> _Near:
+        """`held` with the vectors of the `changed` rows read again, or every vector when nothing is held."""
+        query = _EMBEDDED if held is None else _EMBEDDED_ROWS
+        with self._engine.connect() as connection:
+            result = connection.execute(query, {"model": self._recipe, "rows": list(changed)})
+            fresh = [dict(row._mapping) for row in result if len(row.vector) == dimension * 4]
+        blobs = b"".join(row.pop("vector") for row in fresh)
+        rows = [row.pop("row") for row in fresh]
+        matrix = _unit(np.frombuffer(blobs, dtype=np.float32).reshape(-1, dimension))
+        if held is None:
+            return _Near(rows, fresh, matrix)
+        kept = ~np.isin(held.rows, list(changed))
+        return _Near(
+            [row for row, keep in zip(held.rows, kept, strict=True) if keep] + rows,
+            [hit for hit, keep in zip(held.hits, kept, strict=True) if keep] + fresh,
+            np.concatenate([held.matrix[kept], matrix]),
+        )
 
     def embed_pending(self) -> int:
         """Embed every task the index holds no vector of the configured model for, and return how many were stored; 0
@@ -242,8 +299,10 @@ class SearchIndex:
             texts = [f"{r.title}\n{r.description}"[:_TEXT_LIMIT] for r in rows]
             vectors = self._embed(texts)
             with self._lock, self._engine.begin() as connection:
-                done = sum(
-                    connection.execute(
+                done = [
+                    row.row
+                    for row, vector in zip(rows, vectors, strict=True)
+                    if connection.execute(
                         _STORE,
                         {
                             "row": row.row,
@@ -252,11 +311,9 @@ class SearchIndex:
                             "digest": row.digest,
                         },
                     ).rowcount
-                    for row, vector in zip(rows, vectors, strict=True)
-                )
-            stored += done
-            if done:
-                self._near = None
+                ]
+                self._dirty.update(done)
+            stored += len(done)
             if not done:
                 break
         return stored

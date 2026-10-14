@@ -1,7 +1,9 @@
 """Search ranks by meaning only when an embeddings URL is configured, and is lexical, calling nothing, without one."""
 
+import array
 import json
 import math
+import random
 import socket
 import threading
 import time
@@ -268,3 +270,102 @@ def test_a_search_after_a_warm_one_sees_tasks_embedded_changed_and_removed_since
 
     index.remove("PROJ-1")
     assert _found(index, "tuning knobs") == ["PROJ-2"]
+
+
+def test_a_search_after_one_write_reads_only_the_vector_that_write_changed(engine, endpoint: _Endpoint) -> None:
+    index = _open(engine, Search(endpoint.url, "m"))
+    for number in range(20):
+        index.index(_task(f"PROJ-{number}", title=f"Task {number}", description="the cache"))
+    index.embed_pending()
+    index.search("knobs")  # warm
+    index.index(_task("PROJ-99", title="Newcomer", description="the queue"))
+    index.embed_pending()
+    statements: list[tuple[str, object]] = []
+    event.listen(engine, "before_cursor_execute", lambda *args: statements.append((args[2], args[3])))
+
+    index.search("knobs")
+
+    reads = [(sql, params) for sql, params in statements if "MATCH" not in sql and sql.lstrip().startswith("SELECT")]
+    assert len(reads) == 1  # one read, of the changed task's row alone
+    assert " IN (" in reads[0][0]
+    assert len(reads[0][1]) == 2  # the recipe and the one row
+
+
+def test_a_write_does_not_wait_for_a_search_loading_the_vectors(engine, endpoint: _Endpoint) -> None:
+    index = _open(engine, Search(endpoint.url, "m"))
+    _board(index)
+    index.embed_pending()
+    loading, release = threading.Event(), threading.Event()
+
+    def hold_the_load(connection, cursor, statement, *rest) -> None:
+        if (
+            "starpulse_task_vectors" in statement
+            and "MATCH" not in statement
+            and statement.lstrip().startswith("SELECT")
+        ):
+            loading.set()
+            release.wait(timeout=10)
+
+    event.listen(engine, "before_cursor_execute", hold_the_load)
+    searcher = threading.Thread(target=index.search, args=("knobs",))
+    searcher.start()
+    assert loading.wait(timeout=10)
+    writer = threading.Thread(target=index.index, args=(_task("PROJ-3", title="Late", description="the queue"),))
+    writer.start()
+
+    writer.join(timeout=3)
+    stalled = writer.is_alive()
+    release.set()
+    searcher.join(timeout=10)
+    writer.join(timeout=10)
+
+    assert not stalled
+
+
+def test_five_thousand_embedded_tasks_are_scored_in_under_a_tenth_of_a_second(engine, endpoint: _Endpoint) -> None:
+    dimension, count = 1024, 5000
+    rng = random.Random(7)
+    query = array.array("f", (rng.random() - 0.5 for _ in range(dimension)))
+    endpoint.vector = lambda text: list(query)
+    index = _open(engine, Search(endpoint.url, "m"))
+    vectors: dict[str, array.array] = {}
+    with engine.begin() as connection:
+        for number in range(count):
+            noise = array.array("f", (rng.random() - 0.5 for _ in range(dimension)))
+            weight = number / count / 2  # each task a little nearer the query than the last (cosine to 0.7), none tied
+            held = array.array("f", (weight * q + (1 - weight) * n for q, n in zip(query, noise, strict=True)))
+            task_id, row = f"PROJ-{number}", search_module._row(f"PROJ-{number}")
+            vectors[task_id] = held
+            connection.execute(
+                search_module._INSERT,
+                {
+                    "row": row,
+                    "task": task_id,
+                    "title": task_id,
+                    "description": "d",
+                    "criteria": "",
+                    "notes": "",
+                    "lane": "to_do",
+                    "digest": task_id,
+                },
+            )
+            connection.execute(
+                text("INSERT INTO starpulse_task_vectors (task_row, model, vector) VALUES (:row, :model, :vector)"),
+                {"row": row, "model": index._recipe, "vector": held.tobytes()},
+            )
+    expected = sorted(
+        ((task_id, search_module._cosine(query, held)) for task_id, held in vectors.items()),
+        key=lambda pair: -pair[1],
+    )
+    expected = [(task_id, sim) for task_id, sim in expected if sim >= search_module._RECALL_FLOOR][:10]
+    assert expected  # the floor leaves hits to compare
+    index.search("zzz")  # warm
+
+    started = time.perf_counter()
+    hits = index.search("zzz")
+    elapsed = time.perf_counter() - started
+
+    assert [hit["task"] for hit in hits] == [task_id for task_id, _ in expected]
+    for hit, (_, similarity) in zip(hits, expected, strict=True):
+        assert hit["score"] == pytest.approx((1 - search_module._LEXICAL_WEIGHT) * similarity, abs=1e-4)
+    assert elapsed < 0.1
