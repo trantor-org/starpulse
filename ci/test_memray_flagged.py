@@ -8,12 +8,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 CI = Path(__file__).resolve().parent
 SHARD = yaml.safe_load((CI.parent / ".github/workflows/ci.yml").read_text())["jobs"]["python-shard"]
 
 
+@pytest.mark.skipif(
+    not sys._is_gil_enabled(),
+    reason="memray reports no allocation for the test's 800 KB list on the free-threaded build",
+)
 def test_each_reported_test_gets_memray_stats_and_one_that_leaves_none_is_named_with_a_warning(tmp_path):
     (tmp_path / "test_x.py").write_text("def test_alloc():\n    assert len([0] * 100_000) == 100_000\n")
     report = tmp_path / "test-cost.json"

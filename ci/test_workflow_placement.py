@@ -187,7 +187,7 @@ def test_trantor_tests_of_this_package_gate_every_merge():
 
 
 #: Every ci.yml job but `dispatch`: the jobs that test a tree.
-TEST_JOBS = ["select", "python-shard", "python", "web", "static-checks", "trantor-contract"]
+TEST_JOBS = ["select", "python-shard", "python-ft", "python", "web", "static-checks", "trantor-contract"]
 
 
 @pytest.mark.parametrize("name", TEST_JOBS)
@@ -199,6 +199,27 @@ def test_a_push_to_main_runs_no_test_job(name):
 def test_every_ci_job_but_dispatch_is_a_test_job():
     jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
     assert sorted(jobs) == sorted([*TEST_JOBS, "dispatch"])
+
+
+def test_the_free_threaded_suite_runs_beside_the_shards_without_taking_a_merge_queue_slot():
+    """trantor's live server runs on 3.14t, so a change that breaks that build must show on its pull request. The job
+    takes no merge-queue slot (a queue run's job count sizes that lane, trantor's runner-fleet document) and is not a
+    required check: a pull request and the nightly run show it, and `python` neither waits for it nor counts it."""
+    ft = job("ci.yml", "python-ft")
+    assert ft["runs-on"] == VALIDATE_LANE
+    assert "select" in needs("ci.yml", "python-ft")
+    assert "github.event_name != 'merge_group'" in ft["if"]
+    assert "python-ft" not in needs("ci.yml", "python")
+    assert ("ci.yml", "python-ft") not in REQUIRED_CHECKS
+
+
+def test_the_free_threaded_suite_runs_without_the_hub_extras_and_fails_when_the_gil_comes_back():
+    """psycopg-binary has no 3.14t wheel, so the hub group is out; a dependency that re-enables the GIL on import
+    would leave the job green on the build it does not test, so the job checks the interpreter after the imports."""
+    runs = "\n".join(step["run"] for step in job("ci.yml", "python-ft")["steps"] if "run" in step)
+    assert "uv sync --locked --no-group hub --python 3.14t" in runs
+    assert "sys._is_gil_enabled()" in runs
+    assert "PYTEST_TARGETS" in runs  # the same selected tests as the shards
 
 
 def test_the_push_dispatch_waits_on_no_test_job():
