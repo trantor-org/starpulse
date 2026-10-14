@@ -14,6 +14,7 @@ import threading
 import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,15 @@ try:  # libyaml's loader: the same safe schema and errors, a tenth of the pure-P
 except ImportError:
     from yaml import SafeLoader as _FrontmatterLoader
 
-from starpulse._internal.board.seam import DocArchiver, DocCreator, DocEditor, DocLister, DocReader, DocRestorer, Written
+from starpulse._internal.board.seam import (
+    DocArchiver,
+    DocCreator,
+    DocEditor,
+    DocLister,
+    DocReader,
+    DocRestorer,
+    Written,
+)
 
 _TYPES = ("specification", "guide", "readme", "other")
 _CREATE = {"type", "folder", "body"}
@@ -46,22 +55,37 @@ def _parts(text: str) -> tuple[str, str] | None:
     return text[4 : end + 1], text[end + 5 :]
 
 
+@lru_cache(maxsize=2048)
+def _parsed(path: Path, mtime_ns: int, size: int) -> tuple[str, dict, str] | None:
+    """A doc file's front matter lines, parsed front matter and body; None for a file that is not a doc.
+
+    Keyed by the file's modification time and size, so a file read twice unchanged is parsed once and a rewrite is read anew.
+    """
+    parts = _parts(path.read_text())
+    if parts is None:
+        return None
+    try:
+        frontmatter = yaml.load(parts[0], Loader=_FrontmatterLoader)
+    except yaml.YAMLError:
+        return None
+    return (
+        (parts[0], frontmatter, parts[1])
+        if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip()
+        else None
+    )
+
+
 def _files(root: Path, folder: str = "docs") -> list[tuple[Path, str, dict, str]]:
     """Each doc's file under `folder` with its front matter lines, parsed front matter and body, by ascending number."""
     found = []
     for path in (root / folder).rglob("doc-*.md"):
         try:
-            parts = _parts(path.read_text())
+            stat = path.stat()
+            parsed = _parsed(path, stat.st_mtime_ns, stat.st_size)
         except OSError:
             continue  # moved or removed while looking
-        if parts is None:
-            continue
-        try:
-            frontmatter = yaml.load(parts[0], Loader=_FrontmatterLoader)
-        except yaml.YAMLError:
-            continue
-        if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip():
-            found.append((path, parts[0], frontmatter, parts[1]))
+        if parsed is not None:
+            found.append((path, *parsed))
     return sorted(found, key=lambda file: int(re.sub(r"\D", "", str(file[2]["id"])) or 0))
 
 

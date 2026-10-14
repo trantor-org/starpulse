@@ -126,29 +126,44 @@ def _create(root: Path, project: str) -> None:
         shutil.rmtree(built, ignore_errors=True)
 
 
+#: Where `_find` last found each task, so a repeat lookup reads that one file instead of listing the board.
+_FOUND: dict[tuple[Path, str, tuple[str, ...]], Path] = {}
+
+
 def _find(root: Path, task: str, folders: tuple[str, ...] = ("tasks", "completed")) -> Path | None:
     """The file under `tasks/`, or `completed/` once it is completed, whose front matter holds `id: <task>` in any case;
     `folders` names where else to look.
 
     A file named for the id is checked first; any other is parsed only when its raw front matter has an `id:` line
-    spelling the id, so a lookup parses the file it returns rather than every file on the board.
+    spelling the id, so a lookup parses the file it returns rather than every file on the board. The file found last
+    time is tried before the folders are listed; one that was renamed, moved or rewritten for another task is a miss.
     """
+    key = (root, task.casefold(), folders)
+    if (path := _FOUND.get(key)) is not None and _has_id(path, task, _id_line(task), False):
+        return path
     paths = [path for folder in folders for path in sorted((root / folder).glob("*.md"))]
     named = [path for path in paths if _named_for(path, task)]
     others = [path for path in paths if not _named_for(path, task)]
     spelled = _id_line(task)
     for candidates, prefilter in ((named, False), (others, True)):
         for path in candidates:
-            try:
-                text = path.read_text()
-            except OSError:
-                continue  # moved or removed while looking
-            if prefilter and not spelled.search(_front_matter(text)):
-                continue
-            frontmatter, _ = _split(text)
-            if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip().casefold() == task.casefold():
+            if _has_id(path, task, spelled, prefilter):
+                _FOUND[key] = path
                 return path
+    _FOUND.pop(key, None)
     return None
+
+
+def _has_id(path: Path, task: str, spelled: re.Pattern[str], prefilter: bool) -> bool:
+    """Whether the file's front matter has `id: <task>`; `prefilter` skips the parse of a file whose raw text does not spell it."""
+    try:
+        text = path.read_text()
+    except OSError:
+        return False  # moved or removed while looking
+    if prefilter and not spelled.search(_front_matter(text)):
+        return False
+    frontmatter, _ = _split(text)
+    return isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip().casefold() == task.casefold()
 
 
 def _named_for(path: Path, task: str) -> bool:

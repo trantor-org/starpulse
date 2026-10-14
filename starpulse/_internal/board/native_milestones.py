@@ -14,6 +14,7 @@ import re
 import threading
 import uuid
 from collections.abc import Mapping
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -54,16 +55,27 @@ def _bullets(text: str) -> list[str]:
     return [line[2:].strip() for line in text.splitlines() if line.startswith("- ") and line[2:].strip()]
 
 
+@lru_cache(maxsize=512)
+def _parsed(path: Path, mtime_ns: int, size: int) -> tuple[dict, str] | None:
+    """A milestone file's front matter and body; None for a file with no id.
+
+    Keyed by the file's modification time and size, so a file read twice unchanged is parsed once and a rewrite is read anew.
+    """
+    frontmatter, body = _split(path.read_text())
+    return (frontmatter, body) if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip() else None
+
+
 def _files(root: Path) -> list[tuple[Path, dict, str]]:
     """Each open milestone's file with its front matter and body, by ascending number."""
     found = []
     for path in (root / "milestones").glob("m-*.md"):
         try:
-            frontmatter, body = _split(path.read_text())
+            stat = path.stat()
+            parsed = _parsed(path, stat.st_mtime_ns, stat.st_size)
         except OSError:
             continue  # moved or removed while looking
-        if isinstance(frontmatter, dict) and str(frontmatter.get("id") or "").strip():
-            found.append((path, frontmatter, body))
+        if parsed is not None:
+            found.append((path, *parsed))
     return sorted(found, key=lambda file: int(re.sub(r"\D", "", str(file[1]["id"])) or 0))
 
 
