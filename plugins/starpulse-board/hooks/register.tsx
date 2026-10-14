@@ -115,7 +115,30 @@ const openLanes = (board: Board | null): Lane[] => {
 // The open lanes of the whole Board, read once; empty when the Board cannot be read.
 const readLanes = async ($: Engine): Promise<Lane[]> => openLanes(await readBoard($, []))
 
-type Registered = { sessionId: string; pid: number; name?: string; status?: string; kind?: string; cwd?: string; updatedAt?: number }
+type Registered = {
+  sessionId: string
+  pid: number
+  name?: string
+  status?: string
+  kind?: string
+  cwd?: string
+  updatedAt?: number
+  bridgeSessionId?: string | null
+}
+
+// Where Claude Code keeps a session's transcript: under its cwd with every character but a letter or digit made a dash.
+const transcriptOf = (home: string, s: Registered) => `${home}/.claude/projects/${(s.cwd ?? '').replace(/[^A-Za-z0-9]/g, '-')}/${s.sessionId}.jsonl`
+
+// The sessions claude.ai archived: Remote Control once bridged them, as their transcript's bridge-session row says, and
+// archiving dropped the bridge from the registry while the process runs on. One grep reads every unbridged transcript.
+const archivedRemotely = async ($: Engine, home: string, known: Registered[]) => {
+  const unbridged = known.filter(s => !s.bridgeSessionId && s.cwd)
+  const paths = new Map(unbridged.map(s => [transcriptOf(home, s), s.sessionId]))
+  const ran = paths.size ? await $.process.run(['grep', '-l', '-s', '-F', '"type":"bridge-session"', ...paths.keys()]).catch(() => null) : null
+  const lines = ran?.stdout.split('\n') ?? []
+
+  return new Set(lines.flatMap(line => paths.get(line) ?? []))
+}
 
 // Each tmux pane's pid and the tmux session it sits in; empty when no tmux server runs.
 const tmuxPanes = async ($: Engine): Promise<Map<number, string>> => {
@@ -146,7 +169,8 @@ const ownTmux = async ($: Engine): Promise<string | null> => {
 // A session StarPulse started runs as its tmux pane's own process, so its pid finds the tmux session to switch to.
 const peers = async ($: Engine): Promise<PeerSession[]> => {
   try {
-    const dir = `${await $.env.get('HOME')}/.claude/sessions`
+    const home = await $.env.get('HOME')
+    const dir = `${home}/.claude/sessions`
     const own = await $.session.id()
     const [entries, panes] = await Promise.all([$.fs.list(dir), tmuxPanes($)])
     const files = entries.filter(f => f.name.endsWith('.json'))
@@ -162,6 +186,7 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
     const known = found.filter((s): s is Registered => s !== null)
     const mine = known.find(s => s.sessionId === own)
     const handTmux = mine && !panes.has(mine.pid) ? await ownTmux($) : null
+    const remote = await archivedRemotely($, String(home), known)
 
     return known
       .map(s => {
@@ -177,6 +202,7 @@ const peers = async ($: Engine): Promise<PeerSession[]> => {
           isOwn: s.sessionId === own,
           cwd: s.cwd ?? '',
           updatedAt: s.updatedAt ?? 0,
+          isArchivedRemotely: remote.has(s.sessionId),
         }
       })
       .sort((a, b) => a.label.localeCompare(b.label))
@@ -444,9 +470,10 @@ const resume = async ($: Engine, r: Row) => {
   }
 }
 
-// A row's press goes to its session: an archived one resumes, this one only says so, any other is in a tmux pane.
+// A row's press goes to its session: an archived one resumes, this one only says so, any other is in a tmux pane,
+// a session archived in claude.ai included.
 const enter = async ($: Engine, r: Row) => {
-  if (r.status === 'archived') {
+  if (r.status === 'archived' && !r.peer) {
     await resume($, r)
   } else if (r.isOwn) {
     $.ui.toast('This is the session you are in')
@@ -455,13 +482,13 @@ const enter = async ($: Engine, r: Row) => {
   }
 }
 
-// The `a` key: archives the row under the focus, or resumes it when it is archived.
+// The `a` key: archives the row under the focus, or resumes it when it is archived and no longer runs.
 const actOnFocused = async ($: Engine) => {
   const id = focusedId(await read($, focused))
   const r = (await currentRows($)).find(x => x.id === id)
   if (!r) {
     $.ui.toast('Focus a session with ↑↓ first')
-  } else if (r.status === 'archived') {
+  } else if (r.status === 'archived' && !r.peer) {
     await resume($, r)
   } else {
     await archive($, r)
@@ -1008,6 +1035,7 @@ export const register: Register = (on, options) => {
       const fixed = 2 + 1 + 1 + (r.isOwn ? 6 : 0) + (r.task ? r.task.length + 1 : 0) + 4 + 1 + 2
       const [name, pad] = cut(r.name, Math.max(1, cols - fixed))
       const isArchived = r.status === 'archived'
+      const isResumable = isArchived && !r.peer
       const taskColor = LANE_STYLES[r.lane]?.[1] ?? SP.slate
 
       return (
@@ -1024,7 +1052,7 @@ export const register: Register = (on, options) => {
             {r.task && <Text color={taskColor}>{` ${r.task}`}</Text>}
             <Text color={SP.muted}>{` ${age.padStart(3)}`}</Text>
           </Button>
-          {isArchived ? (
+          {isResumable ? (
             <Button key={`resume:${r.id}`} label={`Resume ${r.name}`} plain onPress={() => resume($, r)}>
               {' '}
               <Text color={SP.ok}>{g('start')}</Text>

@@ -28,7 +28,8 @@ export type HeldTask = {
  * A Claude Code session on this host: its id, label (its tmux session, else its name) and registry status, the tmux
  * session holding it if any, and whether it is a background (`claude --bg`) session, which `claude attach` opens in a
  * terminal. `name` is what its row reads, `cwd` where it runs, `updatedAt` its registry timestamp in ms, and `isOwn`
- * marks the session this pane is drawn in.
+ * marks the session this pane is drawn in. `isArchivedRemotely` marks a Remote Control session archived in claude.ai:
+ * its process still runs, but its bridge is gone.
  */
 export type PeerSession = {
   id: string
@@ -40,6 +41,7 @@ export type PeerSession = {
   isOwn: boolean
   cwd: string
   updatedAt: number
+  isArchivedRemotely: boolean
 }
 
 /** A session the operator archived: kept in `$.store` so `claude --resume <sessionId>` can reopen it at `cwd`. */

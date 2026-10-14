@@ -65,7 +65,7 @@ export const alive = (all: PeerSession[], archived: ArchivedSession[]) => {
 export const groupOf = (r: Row): Group => (r.status === 'archived' ? 'archived' : 'active')
 
 // Every row the pane can draw, before any filter: the live sessions it can switch to (each in a tmux pane, and this one),
-// then the archived ones. A background or desktop session has no pane, so it is left out rather than listed unenterable.
+// then the archived ones. A live session archived in claude.ai is archived too, but keeps its tmux session to switch to. A background or desktop session has no pane, so it is left out rather than listed unenterable.
 export const rowsOf = (all: PeerSession[], archived: ArchivedSession[], held: Map<string, Held>, byTask: Map<string, string>): Row[] => {
   const enterable = alive(all, archived).filter(s => s.tmux !== null || s.isOwn)
   const live = enterable.map((s): Row => {
@@ -78,7 +78,7 @@ export const rowsOf = (all: PeerSession[], archived: ArchivedSession[], held: Ma
       cwd: s.cwd,
       task: mine?.task ?? '',
       lane: mine?.lane ?? '',
-      status: s.status === 'busy' ? 'working' : 'idle',
+      status: s.isArchivedRemotely ? 'archived' : s.status === 'busy' ? 'working' : 'idle',
       isBackground: s.isBackground,
       isOwn: s.isOwn,
       updatedAt: s.updatedAt,
