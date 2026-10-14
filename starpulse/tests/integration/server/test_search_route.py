@@ -1,6 +1,7 @@
 """`GET /api/search?q=`: the board's tasks matching every word of a query, best first, from the instance's own index."""
 
 import json
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -62,8 +63,52 @@ def test_the_limit_caps_the_hits(server: ThreadingHTTPServer) -> None:
     assert len(body["hits"]) == 2
 
 
-@pytest.mark.parametrize("query", ["", "q=", "q=%20%20", "q=a&limit=0", "q=a&limit=101", "q=a&limit=many"])
-def test_a_missing_or_blank_query_or_a_limit_out_of_range_is_400(server: ThreadingHTTPServer, query: str) -> None:
+def test_a_finished_within_bound_keeps_open_tasks_and_those_that_finished_inside_it(tmp_path: Path) -> None:
+    index = SearchIndex.open(create_engine(f"sqlite:///{tmp_path / 'search.sqlite'}"))
+    assert index is not None
+    month_ago = time.time() - 31 * 86400
+    index.index(task("PROJ-1", "To Do", title="Drain"))
+    index.index(task("PROJ-2", "Done", title="Drain", settled="completed", settled_at=time.time() - 29 * 86400))
+    index.index(task("PROJ-3", "Done", title="Drain", settled="completed", settled_at=month_ago))
+    index.index(task("PROJ-4", "Done", title="Drain", settled="archived", settled_at=month_ago))
+    index.index(task("PROJ-5", "Done", title="Drain"), finished_at=month_ago)
+    with serve(tmp_path, search=index) as server:
+        within = _get(server, "/api/search?q=drain&finished_within_days=30")
+        unbounded = _get(server, "/api/search?q=drain")
+
+    assert within[0] == 200 and within[1] is not None
+    assert sorted(hit["task"] for hit in within[1]["hits"]) == ["PROJ-1", "PROJ-2"]
+    assert unbounded[1] is not None and len(unbounded[1]["hits"]) == 5
+
+
+def test_each_label_named_narrows_the_hits_to_the_tasks_carrying_it(tmp_path: Path) -> None:
+    index = SearchIndex.open(create_engine(f"sqlite:///{tmp_path / 'search.sqlite'}"))
+    assert index is not None
+    index.index(task("PROJ-1", "To Do", title="Drain", labels=["disk", "unraid"]))
+    index.index(task("PROJ-2", "To Do", title="Drain", labels=["disk"]))
+    with serve(tmp_path, search=index) as server:
+        status, body = _get(server, "/api/search?q=drain&label=disk&label=unraid")
+
+    assert status == 200 and body is not None
+    assert [hit["task"] for hit in body["hits"]] == ["PROJ-1"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "",
+        "q=",
+        "q=%20%20",
+        "q=a&limit=0",
+        "q=a&limit=101",
+        "q=a&limit=many",
+        "q=a&finished_within_days=0",
+        "q=a&finished_within_days=-1",
+        "q=a&finished_within_days=1.5",
+        "q=a&finished_within_days=many",
+    ],
+)
+def test_a_missing_or_blank_query_or_a_limit_or_window_out_of_range_is_400(server: ThreadingHTTPServer, query: str) -> None:
     status, body = _get(server, f"/api/search?{query}")
 
     assert status == 400

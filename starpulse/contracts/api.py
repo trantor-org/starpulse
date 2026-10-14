@@ -629,7 +629,8 @@ class SearchHit(_Api):
 
 
 class SearchResults(_Api):
-    """`GET /api/search?q=&limit=`: the tasks holding every word of `q`, best match first."""
+    """`GET /api/search?q=&limit=&label=&finished_within_days=`: the tasks holding every word of `q`, best match first,
+    each carrying every `label` and, with `finished_within_days`, open or finished within that many days."""
 
     query: str
     hits: list[SearchHit]

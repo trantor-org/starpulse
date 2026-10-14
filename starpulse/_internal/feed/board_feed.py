@@ -124,7 +124,7 @@ class LaneRecorder(Protocol):
 class TaskIndex(Protocol):
     """Where the feed keeps each task's searchable text (`search.SearchIndex`)."""
 
-    def index(self, task: BoardTask) -> None: ...
+    def index(self, task: BoardTask, finished_at: float | None = None) -> None: ...
 
     def remove(self, task_id: str) -> None: ...
 
@@ -500,12 +500,12 @@ class BoardFeed:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
         if self._keys is not None and not self._keys.matches(task.id):
             return
+        change = self._place(task)
         if self._search is not None:
             try:
-                self._search.index(task)
+                self._search.index(task, self._done_at(task.id))  # placed first: the done lane's entry dates it
             except Exception as exc:  # the index is down; the task is placed and the next change is indexed
                 logger.warning("StarPulse: cannot index %s for search: %s", task.id, exc)
-        change = self._place(task)
         if change is None:
             return  # the note stays for the lane change of the write that made it: the watch can place an earlier write first
         writer = self._mover(task.id)

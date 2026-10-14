@@ -68,7 +68,7 @@ lists exactly the verbs there are.
 |---|---|---|
 | `snapshot` | | the server's snapshot: `graphs`, `flows`, `dags`, `pools`, `pulls`, `claims`, `insights`, `settled`, ...; each `flows` entry but the Board's also carries `ties` (`{kind, machine, state, count, dag, when}`: `declared`, `observed` or `dag`), `parent`, `depth`, `chain`, `nested`, `last` and `stuck` (`{machine, state, since}`, a task idle over 2 h), rolled up from the machines nested below it; `machinePage` and `machineStrip` page and count the machines entered from the In Progress one ([Machine rows](serving.md#machine-rows)) |
 | `board` | `--state`, `--milestone`, `--label`, `--assignee`, `--holder` | `columns`: each `{state, name, tasks}`; a task is `{id, title, lane, assignee, holder, milestone, labels, dependencies, waiting_on, criteria, pause_reason, prs, moves}`, `holder` the session that last claimed it (empty when none has), `criteria` each acceptance criterion as `{text, checked}`, `pause_reason` why a `needs_attention` task waits for a person (empty otherwise) and `--holder` keeping only that session's tasks |
-| `search` | `QUERY...`, `--limit` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet}`, best match first, at most `--limit` (1 to 100, default 10); a blank query or a limit out of range exits 1, and a server that keeps no index (a hub) exits 3 |
+| `search` | `QUERY...`, `--limit`, `--label`, `--finished-within-days` | `query` and `hits`: each task holding every word of the query as `{task, title, lane, score, snippet}`, best match first, at most `--limit` (1 to 100, default 10); each `--label` keeps only the tasks carrying it, and `--finished-within-days N` drops a task that finished more than `N` days ago; a blank query, a limit out of range or a window that is not a positive integer exits 1, and a server that keeps no index (a hub) exits 3 |
 | `task show` | `TASK` | a task as above, with its `description`; a completed or archived task has only its `id` and where it settled as `lane` |
 | `task moves` | `TASK` | `task`, `lane` and `moves`: each column the task may move to as `{allowed, reason, skill}`, as the agent meets it |
 | `task move` | `TASK`, `TO`, `--session` | `ok`, `task`, `to`, `reason`, `skill` and `advice`: the move made, or the refusal and the skill that satisfies it (exit 1); exit 3 when the board has no writer |
@@ -120,7 +120,7 @@ lists exactly the verbs there are.
 | `skills install` | `--claude`, `--codex`, `--user`, `--force` | `scope` and `installed`: each `{harness, skill, path, was}`; exit 1 when a copy was modified since install |
 | `help --agent` | | `exit_codes` and `verbs` |
 
-`search` reads `GET /api/search?q=QUERY[&limit=N]`: the words of `q` are each a quoted phrase and all must match, so
+`search` reads `GET /api/search?q=QUERY[&limit=N][&label=L]...[&finished_within_days=N]`: the words of `q` are each a quoted phrase and all must match, so
 punctuation (`PROJ-45`, `NEAR`, `title:`) is text and never query syntax. A task is searchable by its key, title,
 description, acceptance criteria and notes (its `**Holder:**` claim marker is not text), and a match in the title
 ranks above one in the description, which ranks above one in a criterion or a note; words are matched by their
@@ -130,6 +130,14 @@ table in the instance's own database, filled from the board adapter on the first
 Backlog.md, Jira) is searched the same way, and kept current as each task is placed, edited, moved or retracted; a
 task placed again unchanged, as every task is on a restart, writes nothing. A hub keeps none, since individual task
 text stays on the instance, and a SQLite built without FTS5 serves none: the route answers 404 and the verb exits 3.
+
+Without filters a search reaches every task, open or settled, of any age. Each `label` (repeatable) keeps only the
+tasks carrying that label, matched whole (`disk` does not match `disk-usage`). `finished_within_days=N` keeps every
+open task and drops one that finished more than `N` days ago: a completed or archived task finished when it settled
+(a settled task the board gives no time for counts as older than any window), and a task in the done lane when it
+entered that lane. Both narrow the lexical and the vector hits alike. The index keeps each task's labels and finish
+time beside its text, outside the text's digest, so an index written before them gains them as each task is next
+placed, as every task is on a restart, without embedding anything again.
 
 The `[search]` table's `embeddings_url` is optional ([Config file](serving.md#config-file)). Unset, ranking is the
 lexical order above and nothing calls out. Set, `serve` sends each task's title and description to that
