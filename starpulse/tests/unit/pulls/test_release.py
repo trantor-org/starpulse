@@ -1,5 +1,6 @@
 """A Waiting task moves to Ready once every dependency settles; a pinned repository's dependency settles on its bump."""
 
+import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -177,6 +178,32 @@ def test_a_pin_settled_dependency_waits_for_its_bump_merge(store: PullStore) -> 
     store.save([_pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"])])
 
     assert _release(feed, store, "pin-bump") == ["TASK-2"]
+
+
+def test_a_release_pass_after_a_restart_reads_no_pin_answer_the_board_saved(
+    store: PullStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[str] = []
+
+    def gh(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        asked.append(command[2])
+        return subprocess.CompletedProcess(command, 1, "", "")
+
+    monkeypatch.setattr(subprocess, "run", gh)
+    store.save([_pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN)])
+    store.save([_pull("acme/trantor", 50, state="MERGED", sha=PARENT, at=LATER, files=["starpulse"])])
+    feed = _pinned()
+    saved = {
+        "pointers": [["acme/trantor", PARENT, "starpulse", CHILD]],
+        "reaches": [["acme/starpulse", CHILD, CHILD, True]],
+    }
+    feed.set_pulls({}, {"pins": saved})  # what `BoardFeed.resume` restores
+    edits = Edits()
+
+    Releaser(feed, store, edits, repos=REPOS, settle="pin-bump").release()
+
+    assert asked == []
+    assert edits.moved == ["TASK-2"]
 
 
 def test_a_bump_merged_before_the_child_does_not_settle_it(store: PullStore) -> None:

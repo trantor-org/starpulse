@@ -354,7 +354,7 @@ def test_pin_answers_saved_with_the_board_spare_a_restarted_projector_every_poin
     after = _feed(proj_7=[FIRST], proj_8=[CHILD])
     after.set_pulls({}, before.pull_answers())  # what `BoardFeed.resume` restores
     asked.clear()
-    PullRequests(after, store, repos=REPOS, pins=GitHub(), clock=lambda: NOW).refresh()
+    PullRequests(after, store, repos=REPOS, clock=lambda: NOW).refresh()
 
     assert asked == []
     assert _records(after)[CHILD]["applied_by"] == SHA
