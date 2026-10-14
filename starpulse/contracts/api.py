@@ -251,11 +251,19 @@ class DomainDag(_Api):
     runSafe: bool
 
 
-class Domain(_Api):
-    """A domain's DAGs, and whether each is declared safe to run from the page."""
+class DomainProcess(_Api):
+    """A named package of a domain's DAGs."""
 
     name: str
     dags: list[DomainDag]
+
+
+class Domain(_Api):
+    """A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured."""
+
+    name: str
+    dags: list[DomainDag]
+    processes: list[DomainProcess] = Field(default_factory=list)
 
 
 class Cue(_Api):

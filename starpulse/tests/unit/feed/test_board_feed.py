@@ -150,6 +150,7 @@ def test_the_domains_and_run_safe_the_feed_is_given_are_what_the_snapshot_declar
         {
             "name": "Ops",
             "dags": [{"name": "prod/nightly", "runSafe": False}, {"name": "staging/nightly", "runSafe": True}],
+            "processes": [],
         }
     ]
 

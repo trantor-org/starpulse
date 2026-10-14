@@ -80,16 +80,26 @@ def declared(
     domains: Mapping[str, Sequence[str]] | None = None,
     run_safe: Collection[str] = (),
     cues: Sequence[dict] = (),
+    processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
 ) -> dict:
     """The workflow relationships the page draws: the board adapter's cues, and the config's domains with each
     workflow flagged when `run_safe` holds it.
 
     `domains` and `run_safe` name workflows as `<instance>/<workflow>`, and so does each cue's `dag`.
     """
+    procs = processes or {}
+
+    def dags_of(names: Sequence[str]) -> list[dict]:
+        return [{"name": dag, "runSafe": dag in run_safe} for dag in names]
+
     return {
         "cues": list(cues),
         "domains": [
-            {"name": name, "dags": [{"name": dag, "runSafe": dag in run_safe} for dag in dags]}
+            {
+                "name": name,
+                "dags": dags_of(dags),
+                "processes": [{"name": pname, "dags": dags_of(p_dags)} for pname, p_dags in procs.get(name, ())],
+            }
             for name, dags in (domains or {}).items()
         ],
     }

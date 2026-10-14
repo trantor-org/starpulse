@@ -1643,6 +1643,7 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
         config.tracker_url,
         machines=machines,
         domains=domains,
+        processes=config.qualified_processes(),
         run_safe=run_safe,
         cues=board.cues(qualify),
         source=board.source,

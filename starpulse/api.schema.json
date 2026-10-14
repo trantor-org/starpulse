@@ -1528,7 +1528,7 @@
     },
     "Domain": {
       "additionalProperties": false,
-      "description": "A domain's DAGs, and whether each is declared safe to run from the page.",
+      "description": "A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured.",
       "properties": {
         "dags": {
           "items": {
@@ -1538,6 +1538,12 @@
         },
         "name": {
           "type": "string"
+        },
+        "processes": {
+          "items": {
+            "$ref": "#/$defs/DomainProcess"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -1562,6 +1568,27 @@
         "runSafe"
       ],
       "title": "DomainDag",
+      "type": "object"
+    },
+    "DomainProcess": {
+      "additionalProperties": false,
+      "description": "A named package of a domain's DAGs.",
+      "properties": {
+        "dags": {
+          "items": {
+            "$ref": "#/$defs/DomainDag"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "dags"
+      ],
+      "title": "DomainProcess",
       "type": "object"
     },
     "EditRequest": {

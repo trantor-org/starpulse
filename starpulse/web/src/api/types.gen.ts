@@ -1897,15 +1897,23 @@ export interface Cue {
   state: string;
 }
 /**
- * A domain's DAGs, and whether each is declared safe to run from the page.
+ * A domain's DAGs, and whether each is declared safe to run from the page; `processes` package them when configured.
  */
 export interface Domain {
   dags: DomainDag[];
   name: string;
+  processes?: DomainProcess[];
 }
 export interface DomainDag {
   name: string;
   runSafe: boolean;
+}
+/**
+ * A named package of a domain's DAGs.
+ */
+export interface DomainProcess {
+  dags: DomainDag[];
+  name: string;
 }
 export interface FlowSnapshot {
   agents: RawAgent[];

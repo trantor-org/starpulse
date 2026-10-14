@@ -48,8 +48,9 @@ class TestDeclared:
             {
                 "name": "Ops",
                 "dags": [{"name": "prod/nightly", "runSafe": True}, {"name": "prod/backup", "runSafe": False}],
+                "processes": [],
             },
-            {"name": "Data", "dags": [{"name": "staging/nightly", "runSafe": True}]},
+            {"name": "Data", "dags": [{"name": "staging/nightly", "runSafe": True}], "processes": []},
         ]
 
     def test_without_config_domains_none_is_drawn_and_none_is_run_safe(self) -> None:
@@ -57,6 +58,23 @@ class TestDeclared:
 
     def test_only_cues_and_domains_are_served(self) -> None:
         assert set(snapshot.declared()) == {"cues", "domains"}
+
+    def test_it_carries_each_domains_processes(self) -> None:
+        body = snapshot.declared(
+            domains={"Ops": ("dagu/nightly", "dagu/backup")},
+            processes={"Ops": (("Nightly", ("dagu/nightly",)), ("Backup", ("dagu/backup",)))},
+            run_safe=("dagu/nightly",),
+        )
+        assert body["domains"] == [
+            {
+                "name": "Ops",
+                "dags": [{"name": "dagu/nightly", "runSafe": True}, {"name": "dagu/backup", "runSafe": False}],
+                "processes": [
+                    {"name": "Nightly", "dags": [{"name": "dagu/nightly", "runSafe": True}]},
+                    {"name": "Backup", "dags": [{"name": "dagu/backup", "runSafe": False}]},
+                ],
+            }
+        ]
 
 
 class TestQualifier:
