@@ -9,23 +9,29 @@ import threading
 from collections.abc import Sequence
 from typing import Any
 
-from starpulse._internal.board.view import board_columns
+from starpulse._internal.board.view import board_columns, board_flow
 from starpulse._internal.server.snapshot_cache import Served
 
 
 class ColumnViews:
-    """The Board's columns for the snapshot last asked about, built once however many streams read them."""
+    """The Board's columns for the snapshot last asked about, built once however many streams read them.
+
+    Streams woken by one change can read snapshots a publish apart, so the columns are reused for any snapshot whose
+    Board lanes, settled tasks and pull requests equal those they were built from.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._snapshot: dict[str, Any] | None = None
+        self._inputs: tuple[Any, ...] | None = None
         self._columns: list[dict[str, Any]] = []
 
     def of(self, served: Served) -> list[dict[str, Any]]:
+        snapshot = served.snapshot
+        inputs = (board_flow(snapshot), snapshot["settled"], snapshot["pulls"])
         with self._lock:
-            if served.snapshot is not self._snapshot:
-                self._columns = board_columns(served.snapshot, lambda agent: True)["columns"]
-                self._snapshot = served.snapshot
+            if inputs != self._inputs:
+                self._columns = board_columns(snapshot, lambda agent: True)["columns"]
+                self._inputs = inputs
             return self._columns
 
 
