@@ -65,6 +65,8 @@ TIMEOUT = 10.0
 DEFAULT_INTERVAL = 5.0
 #: How often the forwarder sends every task's current lane again, besides once at its start.
 SNAPSHOT_EVERY = 24 * 3600.0
+#: How long `GET /api/forwarding` reuses the status it built: each build is four store reads, over the page's 50 ms budget.
+STATUS_TTL = 2.0
 
 Send = Callable[[str, str, bytes], tuple[int, dict[str, Any]]]
 
@@ -107,6 +109,7 @@ class Forwarder:
         send: Send = post,
         interval: float = DEFAULT_INTERVAL,
         clock: Callable[[], float] = time.time,
+        status_ttl: float = 0.0,
     ) -> None:
         self.log = log
         self.store = store
@@ -123,6 +126,8 @@ class Forwarder:
         self._snapshot_at: float | None = None  # when the hub last took this process's snapshot; None: not yet
         self.last_sent: float | None = None  # when the hub last acknowledged a batch, in this process
         self.problem: str | None = None  # why the last batch did not go through; None once one does
+        self._status_ttl = status_ttl
+        self._status: tuple[float, dict[str, Any]] | None = None  # when `status` built its last answer, and that answer
 
     def step(self) -> int | None:
         """Send the next batch: how many entries the log held past the cursor, or None when it did not go through.
@@ -198,6 +203,17 @@ class Forwarder:
         fields of an entry that stay on the instance. `names` is whether a person's name leaves in that batch: an
         opt-in a hub refused (`refused`) does not. Reading the log can note the same gap `step` would.
         """
+        if self._status and time.monotonic() - self._status[0] < self._status_ttl:
+            return self._status[1]
+        built = self._build_status()
+        self._status = (time.monotonic(), built)
+        return built
+
+    def forget_status(self) -> None:
+        """Drop the status kept for `status_ttl`, so the next read sees a change made now, such as a new opt-in."""
+        self._status = None
+
+    def _build_status(self) -> dict[str, Any]:
         opted = self.opt_in.get()
         names = opted and not self._refused
         tail = Tail(self.log, self.name, streams=tuple(FIELDS), after=self.store.cursor(self.name), batch=PREVIEW + 1)
@@ -290,7 +306,7 @@ def build(
         raise ValueError("[forward] sends an IC's events to a hub; a hub does not forward")
     if not (token := environ.get(config.forward.token_env)):
         raise ValueError(f"[forward]: {config.forward.token_env} is not set")
-    return Forwarder(log, store, config.forward, token, OptIn(log, base / OPT_IN_FILE))
+    return Forwarder(log, store, config.forward, token, OptIn(log, base / OPT_IN_FILE), status_ttl=STATUS_TTL)
 
 
 def start(forwarder: Forwarder, stop: threading.Event) -> threading.Thread:

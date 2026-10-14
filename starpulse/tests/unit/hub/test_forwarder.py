@@ -45,8 +45,16 @@ class Rig:
         self.opt_in = OptIn(self.log, tmp_path / "starpulse-forward.json")
         self.hub = FakeHub()
 
-    def forwarder(self, *, batch: int = 50, url: str = URL) -> Forwarder:
-        return Forwarder(self.log, self.store, Forward(url, "HUB_TOKEN", batch), "secret", self.opt_in, send=self.hub)
+    def forwarder(self, *, batch: int = 50, url: str = URL, status_ttl: float = 0.0) -> Forwarder:
+        return Forwarder(
+            self.log,
+            self.store,
+            Forward(url, "HUB_TOKEN", batch),
+            "secret",
+            self.opt_in,
+            send=self.hub,
+            status_ttl=status_ttl,
+        )
 
     def move(self, task: str, actor: str = "ana") -> None:
         events.publish("board", "MOVED", actor=actor, task=task, now=1.0, log=self.log)
@@ -377,3 +385,15 @@ def test_a_forwarder_on_a_fresh_store_is_a_second_instance_the_hub_refuses(tmp_p
     assert [e.event_id for e in Tail(hub.log, events.STREAM).poll()] == [
         f"ana/{e.event_id}" for e in Tail(ic.log, events.STREAM).poll()
     ]
+
+
+def test_a_status_inside_its_ttl_reads_nothing_and_a_forgotten_one_reads_again(rig: Rig) -> None:
+    forwarder = rig.forwarder(status_ttl=60.0)
+    first = forwarder.status()
+    rig.move("T-1")
+
+    assert forwarder.status() == first
+
+    forwarder.forget_status()
+
+    assert len(forwarder.status()["next"]) == 1
