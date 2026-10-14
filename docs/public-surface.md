@@ -23,7 +23,7 @@ internal and can change in any release.
   every verb but `create`, 4 for an unknown task.
 - `starpulse import-history`, and the JSON Lines it reads: one `{event_id, task, lane, time}` object per line ([format](cli.md#importing-a-boards-history)).
 - The documented entry point `python -m starpulse.claude_code`, which receives Claude Code's and Codex's OTLP log
-  exports.
+  exports, and `python -m starpulse.cursor`, which reads Cursor's agent transcripts.
 - `GET /api/analytics/sessions` and its body in `api.schema.json`: session and slice health from those exports (see
   [Connect sources](sources.md#measure-session-and-slice-health)).
 - `GET /api/analytics/steps` and its body in `api.schema.json`: one record per model request, with the skill in
