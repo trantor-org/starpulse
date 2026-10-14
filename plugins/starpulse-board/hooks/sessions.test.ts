@@ -21,6 +21,15 @@ const REGISTRY: Record<string, object> = {
 
 const PANES = '100 claude-own\n200 claude-5d\n300 claude-81\n500 task-7\n'
 
+// Two Remote Control sessions in tmux: one claude.ai archived, which drops its bridge but keeps the process running, and one
+// still bridged. Both transcripts carry the bridge-session row; only the archived one's registry record has lost its bridge.
+const REMOTE: Record<string, object> = {
+  '/home/me/.claude/sessions/700.json': { sessionId: 'session-70', pid: 700, name: 'trantor-70', status: 'idle', kind: 'interactive', cwd: '/work/seventy', updatedAt: NOW - 5 * MINUTE, bridgeSessionId: null },
+  '/home/me/.claude/sessions/800.json': { sessionId: 'session-88', pid: 800, name: 'trantor-88', status: 'idle', kind: 'interactive', cwd: '/work/eighty-eight', updatedAt: NOW - 5 * MINUTE, bridgeSessionId: 'session_01abc' },
+}
+const REMOTE_PANES = `${PANES}700 claude-70\n800 claude-88\n`
+const BRIDGED = ['/home/me/.claude/projects/-work-seventy/session-70.jsonl', '/home/me/.claude/projects/-work-eighty-eight/session-88.jsonl']
+
 const BOARD = JSON.stringify({
   columns: [
     { state: 'in_progress', name: 'In Progress', tasks: [{ id: 'TASK-5020', title: 'Design', holder: OWN }, { id: 'TASK-7', title: 'Busy one', holder: 'session-t7' }] },
@@ -47,10 +56,17 @@ type Host = {
   failNew?: boolean
   // What `tmux list-panes` prints: each pane's pid and its tmux session.
   panes?: string
+  // Registry records beyond REGISTRY, by file path.
+  extra?: Record<string, object>
+  // The transcripts that hold a bridge-session row, which grep lists.
+  bridged?: string[]
+  // Every grep the pane ran.
+  greps?: string[][]
 }
 
 const host = (on: On, seed: Partial<Host> = {}): Host => {
-  const seen: Host = { tmux: [], toasts: [], opened: [], store: new Map(), panes: PANES, ...seed }
+  const seen: Host = { tmux: [], toasts: [], opened: [], store: new Map(), panes: PANES, greps: [], ...seed }
+  const registry = { ...REGISTRY, ...seen.extra }
   on('ui.render', ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
   on('session.id', () => ({ value: OWN }))
   on('session.root', () => ({ value: '/work' }))
@@ -76,14 +92,19 @@ const host = (on: On, seed: Partial<Host> = {}): Host => {
   on('ui.close', () => ({ value: undefined }))
   on('ui.focus', () => ({}))
   on('fs.list', () => ({
-    value: Object.keys(REGISTRY).map(p => ({ name: p.split('/').at(-1)!, kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false })),
+    value: Object.keys(registry).map(p => ({ name: p.split('/').at(-1)!, kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false })),
   }))
-  on('fs.read', ($, e) => ({ value: JSON.stringify(REGISTRY[e.path]) }))
+  on('fs.read', ($, e) => ({ value: JSON.stringify(registry[e.path]) }))
   on('process.run', ($, e) => {
     if (e.argv[0] === 'tmux') {
       if (e.argv[1] === 'list-panes') return answer(0, seen.panes)
       seen.tmux.push([...e.argv])
       return answer(seen.failNew && e.argv[1] === 'new-session' ? 1 : 0)
+    }
+    if (e.argv[0] === 'grep') {
+      seen.greps!.push([...e.argv])
+      const found = e.argv.filter(a => seen.bridged?.includes(a))
+      return answer(found.length ? 0 : 1, found.map(f => `${f}\n`).join(''))
     }
     return answer(0, BOARD)
   })
@@ -315,6 +336,40 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     expect(await keys(ui, 'session:')).not.toContain('session:session-81')
     expect(await label(ui, 'chip:idle')).toBe('idle 1')
+    await ui.unmount()
+  })
+
+  test(`a session archived in claude.ai draws under Archived and a bridged one under Active (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
+    const h = host(on, { extra: REMOTE, panes: REMOTE_PANES, bridged: BRIDGED })
+    await start($, surface)
+    const ui = await pane($, surface)
+
+    expect(await keys(ui, 'fold:')).toEqual(['fold:active', 'fold:archived'])
+    expect(await keys(ui, 'session:')).toContain('session:session-88')
+    expect(await keys(ui, 'session:')).toContain('session:session-81')
+    expect(await keys(ui, 'session:')).not.toContain('session:session-70')
+    expect(await label(ui, 'chip:archived')).toBe('archived 1')
+    expect(h.greps!.at(-1)).toContain('/home/me/.claude/projects/-work-seventy/session-70.jsonl')
+    expect(h.greps!.at(-1)).not.toContain('/home/me/.claude/projects/-work-eighty-eight/session-88.jsonl')
+
+    await ui.press({ key: 'fold:archived' })
+    expect(await label(ui, 'session:session-70')).toBe('trantor-70, archived, 5m')
+    await ui.unmount()
+  })
+
+  test(`a session archived in claude.ai still runs: Enter switches to its tmux session and a archives it (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
+    const h = host(on, { extra: REMOTE, panes: REMOTE_PANES, bridged: BRIDGED })
+    await start($, surface)
+    const ui = await pane($, surface)
+
+    await ui.press({ key: 'fold:archived' })
+    await ui.press({ key: 'session:session-70' })
+    expect(h.tmux).toEqual([['tmux', 'switch-client', '-t', 'claude-70']])
+
+    await focus($, 'session:session-70')
+    await ui.press({ key: 'archive-focused' })
+    expect(h.tmux.at(-1)).toEqual(['tmux', 'kill-session', '-t', 'claude-70'])
+    expect((h.store.get('archived') as { sessionId: string }[]).map(a => a.sessionId)).toEqual(['session-70'])
     await ui.unmount()
   })
 

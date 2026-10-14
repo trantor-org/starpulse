@@ -28,6 +28,10 @@ session is created and switched to first; if that fails the session is kept and 
 Archived rows persist in `$.store` as `{ sessionId, name, cwd, task, archivedAt }`. Pressing one, or `a` on it, runs
 `claude --resume <sessionId>` in a new tmux session at the recorded `cwd`.
 
+A Remote Control session archived in claude.ai shows in Archived too: its registry record has lost `bridgeSessionId`
+while its transcript holds a `bridge-session` row. Its process still runs, so pressing it switches to its tmux session
+and `a` archives it here.
+
 Options: `glyphs` is `nerd` (default) or `plain`.
 
 ## Black dock
