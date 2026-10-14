@@ -259,6 +259,7 @@ from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip,
 from starpulse._internal.server.process_metrics import process_gauges
 from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.server.column_stream import ColumnViews, Interest, column_view
+from starpulse._internal.server.live_push import wire_forwarding, wire_level
 from starpulse._internal.server.snapshot_cache import SnapshotCache
 from starpulse._internal.server.writes import (
     autopilot,
@@ -2162,10 +2163,21 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         restore(store, feed)
         insights = Insights(store, feed)
     if forwarder is not None:
+        wire_forwarding(feed, forwarder)
         forward.start(forwarder, forwarding)
+    level_cfg = config.level if args.hub else None
+    if level_cfg is not None:
+
+        def _level_body() -> dict[str, Any] | None:
+            raw, status = level_response(store, {"hours": ["168"]}, level_cfg, feed.machines, time.time())
+            if status != 200:
+                return None
+            return json.loads(raw)
+
+        wire_level(feed, _level_body)
     announce(port, feed.snapshot()["hint"])
     autopilot_runtime = start_autopilot(
-        config, base, feed, board, store, log, config.level if args.hub else None, threading.Event()
+        config, base, feed, board, store, log, level_cfg, threading.Event()
     )
     handler = request_handler(
         feed,

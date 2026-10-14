@@ -5,9 +5,6 @@ import { clockHm, type ClockMode } from "../../shared/clock";
 import { useViewActive } from "../../shared/Kept";
 import type { ForwardStatus, ForwardingStore, ForwardingView } from "./forwarding";
 
-/** How often the card re-reads what is queued; the forwarder moves on its own interval, so the listing drifts while the view is open. */
-const REFRESH_MS = 5000;
-
 const show = (key: string, value: string | number | string[], clock: ClockMode) =>
   key === "time" && typeof value === "number" ? clockHm(value, clock) : Array.isArray(value) ? value.join(", ") : String(value);
 
@@ -86,13 +83,11 @@ export function ForwardingBody({ view, clock, onToggle }: { view: ForwardingView
 
 export function ForwardingCard({ store, clock }: { store: ForwardingStore; clock: ClockMode }) {
   const view = useSyncExternalStore(store.subscribe, store.get);
-  // a view that is left stops asking; it reads the status again when it is shown
+  // one GET when the Admin view is shown; afterwards `forwarding` stream events keep the card current
   const active = useViewActive();
   useEffect(() => {
     if (!active) return;
     void store.load();
-    const refresh = setInterval(() => void store.load(), REFRESH_MS);
-    return () => clearInterval(refresh);
   }, [store, active]);
   return (
     <section className="card">

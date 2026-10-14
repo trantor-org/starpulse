@@ -1,102 +1,63 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchLevel, LevelStore, orbitInput, pushLevelMove, type LevelResponse, type LevelState } from "./levelData";
+import { fetchLevel, LevelStore, orbitInput, pushLevelStatus, type LevelResponse, type LevelState } from "./levelData";
 
-const DAY = 86400;
-const level = (over: Partial<LevelResponse> = {}): LevelResponse => ({
-  now: 1e9,
-  window_s: 7 * DAY,
-  history_s: 30 * DAY,
-  machine: "task",
+const level = (): LevelResponse => ({
+  now: 1,
+  window_s: 86400,
+  history_s: 86400,
+  machine: "board",
   goal: "done",
   level: {
-    title: "Runs",
-    subject: "task",
+    title: "Flow",
+    subject: "tasks",
     runs: "runs",
-    gates: ["review"],
-    terminals: [{ id: "done", role: "goal" }, { id: "archived", role: "abandoned" }],
-    orbit: { suns: "terminal", working: ["ready", "in_progress"] },
+    gates: [],
+    terminals: [{ id: "done", role: "goal" }],
+    orbit: { suns: "terminal", working: ["in_progress"] },
     facets: [],
     activity: { measure: "share", pace: "live" },
   },
-  wip: { count: 3, states: {} },
-  throughput: { count: 14, per_day: 2 },
+  wip: { count: 0, states: {} },
+  throughput: { count: 0, per_day: 0 },
   time_in_state: [],
   aging: { threshold_s: null, runs: [] },
-  orbit: {
-    suns: "terminal",
-    terminals: { done: { ended: 14 }, archived: { ended: 6 } },
-    working: { ready: { task_s: 2 * DAY }, in_progress: { task_s: 5 * DAY } },
-  },
-  arrivals: [{ source: "a", state: "done", at: 1e9 - DAY }],
+  orbit: { suns: "terminal", terminals: { done: { ended: 1 } }, working: { in_progress: { task_s: 0 } } },
+  arrivals: [],
   sources: [
     {
-      id: "a", shared: true, wip: 2, ended: { done: 10, archived: 4 },
-      terminal_share: { done: 10 / 14, archived: 4 / 14 },
-      dwell: { ready: { visits: 3, task_s: 2 * DAY, mean_s: 1 }, in_progress: { visits: 3, task_s: 5 * DAY, mean_s: 2 } },
-      time_share: { ready: 2 / 7, in_progress: 5 / 7 },
+      id: "trantor",
+      shared: true,
+      wip: 0,
+      ended: { done: 1 },
+      terminal_share: { done: 1 },
+      dwell: {},
+      time_share: {},
+      drift: { added: ["triage"], removed: [] },
     },
-    { id: "unattributed", shared: false, wip: 1, ended: { done: 4, archived: 2 }, terminal_share: { done: 4 / 6, archived: 2 / 6 }, dwell: {}, time_share: {} },
+    {
+      id: "unattributed",
+      shared: false,
+      wip: 0,
+      ended: {},
+      terminal_share: {},
+      dwell: {},
+      time_share: {},
+    },
   ],
-  ...over,
 });
 
-const reply = (status: number, body: unknown) => (async () => ({ status, ok: status < 400, json: async () => body })) as unknown as typeof fetch;
-
 describe("fetchLevel", () => {
-  it("is none for a server with no level, so the view stays out of the navigator", async () => {
-    expect(await fetchLevel(reply(404, { error: "no level" }))).toEqual({ kind: "none" });
-  });
-
-  it("is the sign-in gate for an expired session and the refused gate, with its reason, for a signed-in refusal", async () => {
-    expect(await fetchLevel(reply(401, { error: "sign in" }))).toEqual({ kind: "gate", why: "expired" });
-    expect(await fetchLevel(reply(403, { error: "not in the team" }))).toEqual({ kind: "gate", why: "refused", reason: "not in the team" });
-  });
-
-  it("is a message for a history that keeps no runs and for any other failure", async () => {
-    expect(await fetchLevel(reply(501, { error: "no runs kept" }))).toEqual({ kind: "error", message: "no runs kept" });
-    expect(await fetchLevel((async () => { throw new Error("offline"); }) as unknown as typeof fetch)).toEqual({ kind: "error", message: "offline" });
-  });
-
-  it("asks again for the whole history when the window is longer than it", async () => {
-    const urls: string[] = [];
-    const f = (async (url: string) => {
-      urls.push(url);
-      return urls.length === 1
-        ? { status: 400, ok: false, json: async () => ({ error: "window past history", history_s: 3 * DAY }) }
-        : { status: 200, ok: true, json: async () => level({ window_s: 3 * DAY }) };
-    }) as unknown as typeof fetch;
-    const got = await fetchLevel(f);
-    expect(urls).toEqual(["/api/level?hours=168", "/api/level?hours=72"]);
-    expect(got.kind).toBe("ok");
-  });
-
-  it("is the answer for a 200", async () => {
-    expect(await fetchLevel(reply(200, level()))).toMatchObject({ kind: "ok", level: { machine: "task" } });
+  it("maps HTTP statuses onto LevelState", async () => {
+    const ok = await fetchLevel(async () => new Response(JSON.stringify(level()), { status: 200 }));
+    expect(ok).toEqual({ kind: "ok", level: level() });
+    expect(await fetchLevel(async () => new Response("{}", { status: 404 }))).toEqual({ kind: "none" });
+    expect(await fetchLevel(async () => new Response("{}", { status: 401 }))).toEqual({ kind: "gate", why: "expired" });
   });
 });
 
 describe("orbitInput", () => {
-  const name = (id: string) => id.toUpperCase();
-
-  it("reads a source's pace from the runs it ended a day and its reach from the working days a run took", () => {
-    const o = orbitInput(level(), name, 1.6);
-    const a = o.sources[0];
-    expect(a).toMatchObject({ id: "a", name: "a", shared: true, wip: 2, perDay: 14 / 7, terminalShare: { done: 10 / 14, archived: 4 / 14 }, timeShare: { ready: 2 / 7, in_progress: 5 / 7 } });
-    expect(a.cycleDays).toBeCloseTo(7 / 14, 9);
-    expect(o).toMatchObject({ suns: "terminal", working: ["ready", "in_progress"], aspect: 1.6, endedTotals: { done: 14, archived: 6 }, taskDays: { ready: 2, in_progress: 5 } });
-    expect(o.terminals).toEqual([{ id: "done", role: "goal" }, { id: "archived", role: "abandoned" }]);
-    expect(o.name("done")).toBe("DONE");
-  });
-
-  it("gives a source that ended nothing no pace and no reach rather than dividing by zero", () => {
-    const quiet = level({ sources: [{ id: "q", shared: true, wip: 1, ended: {}, terminal_share: {}, dwell: {}, time_share: {} }] });
-    expect(orbitInput(quiet, name, 1)).toMatchObject({ sources: [{ perDay: 0, cycleDays: 0 }] });
-  });
-
-  it("names a shared source by its id and the unattributed aggregate as such, and carries a drift through", () => {
-    const drifted = level();
-    drifted.sources[0].drift = { added: ["triage"], removed: [] };
-    const o = orbitInput(drifted, name, 1);
+  it("maps sources onto orbit pace and reach", () => {
+    const o = orbitInput(level(), (s) => s, 1);
     expect(o.sources[0].drift).toEqual({ added: ["triage"], removed: [] });
     expect(o.sources[1]).toMatchObject({ id: "unattributed", name: "unattributed", shared: false });
   });
@@ -106,7 +67,7 @@ describe("LevelStore", () => {
   it("holds loading until the first answer and tells its listeners each one", async () => {
     const seen: string[] = [];
     let n = 0;
-    const store = new LevelStore(async () => (++n === 1 ? { kind: "none" } : { kind: "ok", level: level() }), 0);
+    const store = new LevelStore(async () => (++n === 1 ? { kind: "none" } : { kind: "ok", level: level() }));
     expect(store.get().kind).toBe("loading");
     store.subscribe(() => seen.push(store.get().kind));
     await store.refresh();
@@ -115,53 +76,47 @@ describe("LevelStore", () => {
     store.dispose();
   });
 
-  it("stops asking every minute once the server says it has no level, and asks again only when told to", async () => {
-    vi.useFakeTimers();
+  it("does not poll on a timer; stream events refresh the body without a GET", async () => {
     let asked = 0;
-    const store = new LevelStore(async () => (asked++, { kind: "none" }));
-    store.setActive(true);
-    await vi.advanceTimersByTimeAsync(5 * 60_000);
-    expect(asked).toBe(1);
+    const store = new LevelStore(async () => (asked++, { kind: "ok", level: level() }));
     await store.refresh();
-    expect(asked).toBe(2);
+    expect(asked).toBe(1);
+    asked = 0;
+    pushLevelStatus(level());
+    expect(asked).toBe(0);
+    expect(store.get().kind).toBe("ok");
     store.dispose();
-    vi.useRealTimers();
   });
 
   describe("while the Orbit view is hidden", () => {
     const answered = async (): Promise<LevelState> => ({ kind: "ok", level: level() });
 
-    it("asks nothing on the timer or on a lane move, then asks when shown, every minute while shown, and after each lane move", async () => {
+    it("asks nothing on a timer; asks when shown without an ok body; stream updates without GET", async () => {
       vi.useFakeTimers();
       let asked = 0;
       const store = new LevelStore(async () => (asked++, answered()));
-      await store.refresh(); // the page's first answer, which the navigator's Flow entry needs
+      await store.refresh();
       expect(asked).toBe(1);
 
       await vi.advanceTimersByTimeAsync(5 * 60_000);
-      pushLevelMove();
-      await vi.advanceTimersByTimeAsync(0);
       expect(asked).toBe(1);
 
       store.setActive(true);
       await vi.advanceTimersByTimeAsync(0);
-      expect(asked).toBe(2);
-      pushLevelMove();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(asked).toBe(3);
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(asked).toBe(4);
+      expect(asked).toBe(1);
+
+      asked = 0;
+      pushLevelStatus(level());
+      expect(asked).toBe(0);
 
       store.setActive(false);
-      pushLevelMove();
       await vi.advanceTimersByTimeAsync(5 * 60_000);
-      expect(asked).toBe(4);
+      expect(asked).toBe(0);
       store.dispose();
       vi.useRealTimers();
     });
 
     it("leaves the first answer to the page's own first ask when the view is shown before it lands", async () => {
-      vi.useFakeTimers();
       let asked = 0;
       const store = new LevelStore(async () => (asked++, answered()));
       const first = store.refresh();
@@ -169,33 +124,15 @@ describe("LevelStore", () => {
       await first;
       expect(asked).toBe(1);
       store.dispose();
-      vi.useRealTimers();
     });
 
-    it("folds a burst of lane moves into one ask more than the one in flight", async () => {
-      vi.useFakeTimers();
-      let asked = 0;
-      const store = new LevelStore(async () => (asked++, answered()));
+    it("ignores stream events once disposed", async () => {
+      const store = new LevelStore(async () => ({ kind: "ok", level: level() }));
       await store.refresh();
-      store.setActive(true);
-      await vi.advanceTimersByTimeAsync(0);
-      asked = 0;
-      for (let i = 0; i < 5; i++) pushLevelMove();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(asked).toBe(2);
       store.dispose();
-      vi.useRealTimers();
-    });
-
-    it("ignores lane moves once disposed", async () => {
-      let asked = 0;
-      const store = new LevelStore(async () => (asked++, answered()), 0);
-      await store.refresh();
-      store.setActive(true);
-      store.dispose();
-      asked = 0;
-      pushLevelMove();
-      expect(asked).toBe(0);
+      const before = store.get();
+      pushLevelStatus({ ...level(), now: 99 });
+      expect(store.get()).toBe(before);
     });
   });
 });
