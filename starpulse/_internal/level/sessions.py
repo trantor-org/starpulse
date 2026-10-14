@@ -37,8 +37,8 @@ task, or after the session's first prompt for the task it launched on or, on a t
 `prompt_labels` counts those the instance's labeller named, by intent, and `user_rejects` the rejected tool decisions
 whose source is `user_reject` or `user_abort`; neither changes `operator_prompts` or `interventions`. `interrupts` are
 the turns Claude Code started and never closed with a reply (one still running counts until its reply lands) and the interrupted turns Codex
-exports. `steps_before_edit` is the model requests before the task's first successful file write, None until it has
-one. `complete` is a session that loaded the `[analytics]` `completion_skill` and then ran the completion call for the
+exports. `steps_before_edit` is the model requests before the task's first successful file write (an edit tool, or a shell
+command `activity.writes_file` reads as one), None until it has one. `complete` is a session that loaded the `[analytics]` `completion_skill` and then ran the completion call for the
 task. `interventions` of a slice are its operator prompts plus interrupts, and it is `escalated` when a model or effort
 changed between a session's main-thread requests. A slice is `clean` when one session did its work with no
 intervention and no escalation; whether it settled in Review or Done is the board's fact, which the reader joins.
@@ -52,6 +52,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
 from starpulse._internal.config.analytics import Analytics
+from starpulse._internal.harnesses.activity import SHELLS, writes_file
 from starpulse._internal.level.signals import CODEX, Signal, claim_key, claimed, main_thread_source
 from starpulse.contracts.adapters import TaskKeys
 
@@ -281,7 +282,9 @@ def session_health(
                 if row["steps_before_edit"] is None:
                     if s.kind == "request" and s.origin in {"main", "side"}:
                         steps[task] += 1
-                    elif s.kind == "tool" and s.ok and s.name in _EDITS:
+                    elif (
+                        s.kind == "tool" and s.ok and (s.name in _EDITS or s.name in SHELLS and writes_file(s.command))
+                    ):
                         row["steps_before_edit"] = steps[task]
             elif s.kind == "skill" and completion and s.name == completion:
                 loaded.add(task)

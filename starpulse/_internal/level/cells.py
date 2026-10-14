@@ -15,9 +15,10 @@ the steps ledger does not cover. A slice that completed *clean* counts toward th
 `clean_rate`, completions that were clean over completions.
 
 The cell reports nothing under `MIN_N` clean completions. Otherwise its `holdout` is the latest fifth of them, rounded
-up, by the end of their last session, and the medians are the holdout's: `median_steps` (main and subagent requests),
-and the blind spot's two, `median_operator_prompts` (human prompts after the claim) and `median_steps_before_edit`. A
-cell can improve because its tasks got easier, so the report carries `n`, `completions` and `clean_rate` beside them.
+up, by the end of their last session, and the medians are the holdout's: `median_steps` (main and subagent requests)
+and `median_steps_before_edit`. A clean completion has no human prompt after the claim, so `median_operator_prompts`
+(human prompts after the claim) is the median of the latest fifth of all the cell's completions, clean or not, the
+same share of them by the same end time. A cell can improve because its tasks got easier, so the report carries `n`, `completions` and `clean_rate` beside them.
 """
 
 from __future__ import annotations
@@ -66,6 +67,7 @@ def cell_report(slices: Iterable[dict[str, Any]], tasks: Mapping[str, Mapping[st
         if len(clean) < MIN_N:
             continue
         holdout = clean[-ceil(len(clean) / _HOLDOUT) :]
+        latest = sorted(completed, key=lambda s: (s["last_at"], s["task"]))[-ceil(len(completed) / _HOLDOUT) :]
         rows.append(
             {
                 "kind": kind,
@@ -75,7 +77,7 @@ def cell_report(slices: Iterable[dict[str, Any]], tasks: Mapping[str, Mapping[st
                 "clean_rate": len(clean) / len(completed),
                 "holdout": len(holdout),
                 "median_steps": _median(s["steps"] + s["side_steps"] for s in holdout),
-                "median_operator_prompts": _median(s["operator_prompts"] for s in holdout),
+                "median_operator_prompts": _median(s["operator_prompts"] for s in latest),
                 "median_steps_before_edit": _median(s["steps_before_edit"] for s in holdout),
             }
         )

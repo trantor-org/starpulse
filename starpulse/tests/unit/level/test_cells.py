@@ -81,7 +81,7 @@ def test_a_cell_of_five_clean_completions_reports_its_holdout_median_n_clean_rat
             "clean_rate": pytest.approx(5 / 6),
             "holdout": 1,
             "median_steps": 51,  # TASK-5's 50 main requests and its one subagent request
-            "median_operator_prompts": 0,
+            "median_operator_prompts": 1,  # the latest two completions: the steered one's 2 and TASK-5's 0
             "median_steps_before_edit": 1,
         }
     ]
@@ -165,3 +165,14 @@ def test_a_transition_counts_its_subagent_steps_and_its_failed_refused_and_repea
             "peak_context": 3000,
         },
     ]
+
+
+def test_the_operator_prompt_median_is_over_the_latest_fifth_of_all_completions_not_only_clean_ones() -> None:
+    clean = [completion(n, steps=10, end=1_000 * n) for n in range(1, 6)]
+    steered = [completion(6, steps=10, end=6_000, steered=3), completion(7, steps=10, end=7_000, steered=1)]
+    labels = {f"TASK-{n}": EXECUTE_3 for n in range(1, 8)}
+
+    (row,) = report(*clean, *steered, labels=labels)
+
+    assert (row["n"], row["completions"], row["holdout"]) == (5, 7, 1)
+    assert row["median_operator_prompts"] == 2  # the latest two completions (ceil of 7/5), both steered

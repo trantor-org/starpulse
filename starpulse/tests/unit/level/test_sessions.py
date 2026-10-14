@@ -526,3 +526,30 @@ def test_human_prompts_after_a_claim_and_the_steps_before_the_first_edit_are_cou
 
     assert list(rows) == ["TASK-9"]
     assert (rows["TASK-9"]["operator_prompts"], rows["TASK-9"]["steps_before_edit"]) == (2, 3)
+
+
+def test_a_shell_command_that_writes_a_file_is_the_first_edit() -> None:
+    found = [
+        sig("prompt", 0, turn="p1", detail="human"),
+        sig("claim", 1, name="TASK-9", turn="p1"),
+        sig("request", 2, model="m", turn="p1"),
+        sig("tool", 3, name="Bash", command="rg -n foo", turn="p1"),
+        sig("request", 4, model="m", turn="p1"),
+        sig("tool", 5, name="Bash", command="python3 - <<'EOF'\n[heredoc length=5 sha256=ab]\nEOF", turn="p1"),
+        sig("request", 6, model="m", turn="p1"),
+        sig("reply", 7, turn="p1"),
+    ]
+
+    assert only(session_health(found, KEYS))["steps_before_edit"] == 2
+
+
+def test_a_failed_shell_write_is_not_the_first_edit() -> None:
+    found = [
+        sig("prompt", 0, turn="p1", detail="human"),
+        sig("claim", 1, name="TASK-9", turn="p1"),
+        sig("request", 2, model="m", turn="p1"),
+        sig("tool", 3, name="Bash", command="echo x > a.txt", ok=False, turn="p1"),
+        sig("reply", 4, turn="p1"),
+    ]
+
+    assert only(session_health(found, KEYS))["steps_before_edit"] is None
