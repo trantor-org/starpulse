@@ -2,7 +2,7 @@
 
 import pytest
 
-from starpulse._internal.harnesses.activity import activities, paths
+from starpulse._internal.harnesses.activity import activities, paths, writes_file
 
 
 def shell(command: str) -> list[str]:
@@ -85,3 +85,36 @@ def test_sql_python_and_shell_syntax_are_not_activities(command: str) -> None:
 
 def test_a_loop_body_keeps_its_commands_past_break() -> None:
     assert shell("for f in a b; do make test; break; done") == ["make test"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo x > notes.txt",
+        "cat <<'EOF' > a.py\n[heredoc length=3 sha256=ab]\nEOF",
+        "cat > a.py <<EOF\n[heredoc length=3 sha256=ab]\nEOF",
+        "printf x >> log.txt && ls",
+        "python3 - <<'EOF'\n[heredoc length=53 sha256=ab]\nEOF",
+        "sed -i 's/a/b/' a.py",
+        "git apply fix.patch",
+        "patch -p1 < fix.patch",
+        "ls | tee out.txt",
+    ],
+)
+def test_a_shell_command_that_writes_a_file_is_a_write(command: str) -> None:
+    assert writes_file(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "ls -l && git status",
+        "make test 2>&1 | tail -5",
+        "pytest > /dev/null 2>/dev/null",
+        "rg foo 2>&1",
+        "cat <<'EOF' | wc -l\n[heredoc length=3 sha256=ab]\nEOF",
+        "sed -n 1,5p a.py",
+    ],
+)
+def test_a_shell_command_that_only_reads_is_not_a_write(command: str) -> None:
+    assert not writes_file(command)

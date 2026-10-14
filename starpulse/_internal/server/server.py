@@ -119,8 +119,9 @@ GET /api/analytics/cells[?hours=N]
                    the median steps per clean completion of each kind and size over the last `hours`, default 168,
                    as `{now, window_s, cells}` (`cells.cell_report`): each is `{kind, size, n, completions,
                    clean_rate, holdout, median_steps, median_operator_prompts, median_steps_before_edit}`, medians
-                   over the latest fifth of the cell's `n` clean completions by end time. A cell under 5 clean
-                   completions is not listed. Refusals as `/api/analytics/steps`
+                   over the latest fifth of the cell's `n` clean completions by end time, except
+                   `median_operator_prompts`, over the latest fifth of its `completions`, clean or not. A cell under
+                   5 clean completions is not listed. Refusals as `/api/analytics/steps`
 GET /api/analytics/graph[?hours=N]
                    the branching directly-follows graph of each skill's transition within each kind and size, from
                    the steps of those exports over the last `hours`, default 168, as `{now, window_s, graph}`

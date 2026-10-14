@@ -22,7 +22,7 @@ import re
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-__all__ = ["SHELLS", "activities", "elide_heredocs", "paths"]
+__all__ = ["SHELLS", "activities", "elide_heredocs", "paths", "writes_file"]
 
 #: The tools that run a shell command, whose input is a command line.
 SHELLS = frozenset({"Bash", "Shell", "exec_command", "shell", "local_shell"})
@@ -62,6 +62,8 @@ _NOT_WORK = frozenset(
     {"cd", "for", "case", "select", "done", "fi", "esac", "}", "break", "continue"}
     | {"echo", "printf", "sleep", "true", "false", ":", "export", "set", "unset"}
 )
+_INTERPRETER_HEREDOC = re.compile(r"(?:^|[\s;&|(])(?:python[\d.]*|perl|ruby|node)\b[^\n|;&]*<<")
+_STDOUT_REDIRECTS = frozenset({">", ">>", "1>", "1>>", "&>"})
 _PATCH_FILE = re.compile(r"\*\*\* (?:Add|Update|Delete) File: ([^\n\\\"'`]+)")
 _READ_TOOLS = {"Read": "file_path", "Grep": "path", "Glob": "path"}
 _WRITE_TOOLS = {"Edit": "file_path", "StrReplace": "file_path", "Write": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"}
@@ -193,3 +195,32 @@ def paths(tool: str, tool_input: Mapping[str, Any], raw: str) -> tuple[list[str]
     if (key := _WRITE_TOOLS.get(tool)) and isinstance(path := tool_input.get(key), str):
         return [], [path]
     return [], []
+
+
+def writes_file(command: str) -> bool:
+    """Whether the shell `command` writes a file, as its stored form shows it: an output redirect to a path, a pipe to
+    `tee`, `sed -i`, `patch`, `git apply`, or an interpreter fed a heredoc (whose body is elided, so a script that
+    only reads counts too)."""
+    if _INTERPRETER_HEREDOC.search(command):
+        return True
+    redirecting = piped = False
+    for token in _TOKEN.finditer(_HEREDOC.sub(lambda found: found["head"], command)):
+        word = token["word"]
+        if word and redirecting and not word.startswith("/dev/"):
+            return True
+        if word and piped and word.rpartition("/")[2] == "tee":
+            return True
+        redirecting = token["redirect"] in _STDOUT_REDIRECTS
+        piped = token["op"] == "|"
+    return any(_writes(_unwrap(argv)) for argv in _statements(_HEREDOC.sub("", command)))
+
+
+def _writes(argv: list[str]) -> bool:
+    binary = argv[0].rpartition("/")[2] if argv else ""
+    return (
+        binary == "patch"
+        or binary == "git"
+        and _operands("git", argv[1:])[:1] == ["apply"]
+        or binary in {"sed", "perl"}
+        and any(arg.startswith("-i") for arg in argv[1:])
+    )

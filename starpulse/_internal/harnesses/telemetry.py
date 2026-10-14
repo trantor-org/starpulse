@@ -30,7 +30,7 @@ from typing import Any
 
 from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.eventlog.event_log import EventLog, Tail
-from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths
+from starpulse._internal.harnesses.activity import SHELLS, activities, elide_heredocs, paths, writes_file
 from starpulse._internal.harnesses.labeller import intent_label
 from starpulse._internal.harnesses.otlp import BRANCH, _attributes, _epoch, _records
 from starpulse._internal.level.signals import CLAUDE_CODE, CODEX, Signal, claim_key, claimed, main_thread_source
@@ -325,6 +325,8 @@ def _signal(stored: dict[str, Any]) -> Signal:
     """A signal as the event log stored it, whose tuples came back as lists."""
     kept = {k: v for k, v in stored.items() if k in _FIELDS}
     kept.setdefault("captured", kept.get("harness") == CLAUDE_CODE)  # rows stored before the mark was kept
+    # Read from the stored command, so a row stored before the mark existed carries it too.
+    kept["shell_write"] = kept.get("kind") == "tool" and kept.get("name") in SHELLS and writes_file(kept.get("command", ""))
     return Signal(**{k: tuple(v) if k in _LISTS else v for k, v in kept.items()})
 
 

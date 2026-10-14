@@ -66,7 +66,8 @@ session's first claim or task-naming switch, when its launch branch names no tas
   (after the session's first prompt for the task it launched on or first claimed), and `prompt_labels` counts those the
   instance's labeller named by intent (none when no labeller is configured; it changes no other count); `requests` are the main thread's model calls and
   `side_requests` a subagent's. `steps_before_edit` is the model requests before the task's first successful `Edit`,
-  `Write`, `MultiEdit` or `NotebookEdit`, null until it has one. `complete` is true for a session that loaded the
+  `Write`, `MultiEdit` or `NotebookEdit` or shell command that writes a file (an output redirect to a path, a pipe to `tee`,
+  `sed -i`, `patch`, `git apply`, or an interpreter fed a heredoc, whose body is elided, so a read-only script counts), null until it has one. `complete` is true for a session that loaded the
   `completion_skill` and then ran a shell command matching `completion_call`. `rejections` counts rejected tool decisions by their source and `user_rejects` those whose source is `user_reject` or
   `user_abort`,
   `gates` the same rejections by `<source>:<tool>` (`hook:Bash`, `user:Edit`; the export names no hook script, so a
@@ -176,9 +177,10 @@ change was tuned on. Its columns:
 
 - `kind`, `size`; `n` clean completions and `completions` of any kind; `clean_rate`, their ratio.
 - `median_steps`: main and subagent requests of the holdout's tasks.
-- `median_operator_prompts`: human prompts after the task's claim, the steering count.
-- `median_steps_before_edit`: model requests before the task's first successful file write; null when no holdout task
-  made one.
+- `median_operator_prompts`: human prompts after the task's claim, the steering count. A clean completion has none, so it
+  is the median over the latest fifth (rounded up) of all the cell's completions, clean or not.
+- `median_steps_before_edit`: model requests before the task's first successful file write, by an edit tool or a shell
+  command that writes a file; null when no holdout task made one.
 
 Blind spot: a cell can improve because its tasks got easier, so read `n`, `clean_rate` and the two medians beside
 `median_steps`. A cell with a few tasks has a median of one or two.

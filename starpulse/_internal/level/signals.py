@@ -36,7 +36,9 @@ class Signal:
     matched the instance's completion call). `origin` is
     `main`, `side` (a subagent) or `auxiliary` (a compaction's own call). `key` is unique to the record, so a
     replayed export gives the same signals. A `tool` signal carries the `activities` the call performed, in order, as
-    a closed vocabulary with no arguments, and the `reads` and `writes` it named, as the export gave them. `agent` is
+    a closed vocabulary with no arguments, and the `reads` and `writes` it named, as the export gave them. `shell_write` is
+    True for a shell command that writes a file, which names no path (`starpulse._internal.harnesses.activity.writes_file`,
+    set when the stored signal is read). `agent` is
     the subagent that made a `request` or `tool` step, empty for the main thread. `captured` is False for a harness the
     steps-per-completion ledger does not cover yet (Codex, Cursor): its rows are kept and left out of every ranking.
 
@@ -70,6 +72,7 @@ class Signal:
     cost: float | None = None
     activities: tuple[str, ...] = ()
     reads: tuple[str, ...] = ()
+    shell_write: bool = False
     writes: tuple[str, ...] = ()
     turn: str = ""
     label: str = ""
