@@ -483,6 +483,25 @@ def shell(command: str, tool: str = "Bash", seq: int = 1) -> dict[str, Any]:
     return claude("tool_result", seq, tool_name=tool, success="true", tool_input=json.dumps({"command": command}))
 
 
+def test_a_truncated_tool_input_command_is_read_from_the_untruncated_full_command() -> None:
+    full = "cat <<'EOF' > t.py\n" + "x = 1\n" * 100 + "EOF\nuv run pytest t.py"
+    cut = json.dumps({"command": full[:128] + f"...[truncated, {len(full)} chars]"})
+    event = claude(
+        "tool_result",
+        1,
+        tool_name="Bash",
+        success="true",
+        tool_input=cut,
+        tool_parameters=json.dumps({"bash_command": "cat", "full_command": full}),
+    )
+
+    (tool,) = signals(export(event), scrub)
+
+    assert tool.activities == ("shell_read", "pytest")
+    assert "uv run pytest t.py" in tool.command
+    assert "truncated" not in tool.command
+
+
 def test_a_shell_command_is_stored_with_its_token_filtered_and_its_heredoc_body_as_length_and_hash() -> None:
     body = f"note with {TOKEN}\nsecond line\n"
     command = f"gh api -H 'Authorization: token {TOKEN}' /user && cat <<'EOF' > notes.md\n{body}EOF\nmake test"
