@@ -57,16 +57,17 @@ def stack(tmp_path: Path) -> Iterator[Stack]:
     feed = BoardFeed()
     sync = PullSync(store, feed, (), github, lambda: 160.0, projections.release)
     refreshed = threading.Event()
-    refresh = sync.refresh
+    reconcile = sync.reconcile
 
-    def refresh_then_signal() -> None:
-        refresh()
+    def reconcile_then_signal() -> None:
+        reconcile()
         refreshed.set()
 
-    sync.refresh = refresh_then_signal  # type: ignore[method-assign]
+    sync.reconcile = reconcile_then_signal  # type: ignore[method-assign]
     threading.Thread(target=sync.run_forever, args=(3600.0,), daemon=True).start()
-    # the thread projects the saved store, then makes its first refresh; the next is an hour away. A projection asked
-    # for while another runs coalesces with it, so the refresh is awaited itself, not counted in projections.
+    # the thread projects the saved store, then makes its first listing reconcile; the next is an hour away. A
+    # projection asked for while another runs coalesces with it, so the reconcile is awaited itself, not counted
+    # in projections.
     assert projections.acquire(timeout=5)
     assert refreshed.wait(timeout=5)
     github.add(1, state="MERGED", updated=NEW, merged_at=NEW)  # merged on GitHub; the store has not heard
