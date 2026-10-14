@@ -84,6 +84,19 @@ def test_a_settled_task_the_board_gives_no_time_for_is_older_than_any_bound(inde
     assert _found(index, "drain", finished_since=1.0) == []
 
 
+def test_a_finished_task_placed_again_keeps_the_earlier_of_its_finish_times(engine, index: SearchIndex) -> None:
+    index.index(_task("PROJ-1", title="Drain", lane="done"), finished_at=100.0)
+    writes: list[str] = []
+    event.listen(engine, "before_cursor_execute", lambda *args: writes.append(args[2]))
+
+    index.index(_task("PROJ-1", title="Drain", lane="done"), finished_at=300.0)  # a restart dates an undated entry now
+    assert [s for s in writes if s.lstrip().upper().startswith(("INSERT", "DELETE", "UPDATE"))] == []
+    assert _found(index, "drain", finished_since=200.0) == []
+
+    index.index(_task("PROJ-1", title="Drain", settled="completed", settled_at=50.0))
+    assert _found(index, "drain", finished_since=75.0) == []
+
+
 def test_a_label_filter_keeps_only_the_tasks_carrying_every_named_label(index: SearchIndex) -> None:
     index.index(_task("PROJ-1", title="Drain", labels=["disk", "unraid"]))
     index.index(_task("PROJ-2", title="Drain", labels=["disk"]))

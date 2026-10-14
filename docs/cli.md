@@ -135,7 +135,8 @@ Without filters a search reaches every task, open or settled, of any age. Each `
 tasks carrying that label, matched whole (`disk` does not match `disk-usage`). `finished_within_days=N` keeps every
 open task and drops one that finished more than `N` days ago: a completed or archived task finished when it settled
 (a settled task the board gives no time for counts as older than any window), and a task in the done lane when it
-entered that lane. Both narrow the lexical and the vector hits alike. The index keeps each task's labels and finish
+entered that lane (when the lane history does not date that entry, the first time the index saw it there). A task
+keeps its earliest finish time until it reopens, so a restart moves none later. Both narrow the lexical and the vector hits alike. The index keeps each task's labels and finish
 time beside its text, outside the text's digest, so an index written before them gains them as each task is next
 placed, as every task is on a restart, without embedding anything again.
 

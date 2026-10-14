@@ -235,6 +235,9 @@ class SearchIndex:
         row = _row(task.id)
         with self._lock, self._engine.begin() as connection:
             held = connection.execute(_HELD_FACETS, {"row": row}).one_or_none()
+            if held is not None and held.finished_at is not None and finished_at is not None:
+                # a finished task keeps its earliest finish: a restart dates a done-lane entry the history lacks now
+                facets["finished_at"] = min(held.finished_at, finished_at)
             if held is None or tuple(held) != tuple(facets.values()):
                 connection.execute(_STORE_FACETS, {"row": row, **facets})
             if connection.execute(_DIGEST, {"row": row}).scalar() == digest:
