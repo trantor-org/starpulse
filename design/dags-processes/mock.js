@@ -13,7 +13,7 @@
   const now0 = F.now, iso = (s) => new Date(s * 1000).toISOString().replace(/\.\d+Z$/, "Z");
   const aom = F.dags.find((d) => d.name === "dagu/apply-on-merge");
   if (aom) {
-    const done = new Set(["validate_event", "sync", "enqueue_graph_refresh", "classify", "apply_migrations", "apply_unraid", "apply_rulesets", "apply_user_units"]);
+    const done = new Set(["validate_event", "sync", "enqueue_graph_refresh", "classify", "apply_migrations", "apply_host", "apply_rulesets", "apply_user_units"]);
     const st = Object.fromEntries(aom.steps.map((x) => [x.name, done.has(x.name) ? "succeeded" : x.name === "apply_images" ? "running" : "not_started"]));
     aom.status = "running";
     aom.active = [{ startedAt: iso(now0 - 94), step: "apply_images", steps: st }];

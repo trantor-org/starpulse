@@ -21,7 +21,7 @@ STYLE = HERE.parents[1] / "starpulse" / "web" / "src" / "style.css"
 #: doc-230's initial dagu taxonomy, in page order; host timers and github stay flat.
 TAXONOMY: dict[str, dict[str, list[str]] | str] = {
     "Delivery & CI": {
-        "Merge apply": ["apply-on-merge", "unraid-apply-merged", "setup-vm-apply", "gitlink-bump-gap"],
+        "Merge apply": ["apply-on-merge", "host-apply-merged", "setup-vm-apply", "gitlink-bump-gap"],
         "CI gates": [
             "ci-sp-contract",
             "ci-sp-python",
