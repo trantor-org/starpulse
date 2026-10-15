@@ -66,7 +66,8 @@ class Loop:
     """Starts admitted tasks through `start` and settles stuck ones through `settle`.
 
     `start` takes a task id and answers the session's address, raising `StartFailedError` when it cannot; `settle` moves a
-    task to Needs attention with the reason and says whether it did; `chain` is the trajectory chain `decide` ranks on.
+    task to Needs attention with the reason and says whether it did; `chain` is the trajectory chain `decide` ranks on
+    and `p_goals` each task's forecast chance of the goal in `lane`.
     `lane` is the eligible lane, `claim` comments a started session's address on its task, `clock` is the loop's notion
     of now, and `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds.
     """
@@ -86,6 +87,7 @@ class Loop:
         claim: Callable[[str, str], Written] | None = None,
         clock: Callable[[], float] = time.time,
         quiet_hours: Callable[[], QuietHours | None] = lambda: None,
+        p_goals: Callable[[], Mapping[str, float]] = dict,
     ) -> None:
         self._feed = feed
         self._policy = policy
@@ -95,6 +97,7 @@ class Loop:
         self._start = start
         self._settle = settle
         self._chain = chain
+        self._p_goals = p_goals
         self._lane = lane
         self._claim = claim
         self._clock = clock
@@ -271,7 +274,9 @@ class Loop:
             {**agent, "workable": False} if agent["id"] in self._running or agent["id"] in skipped else agent
             for agent in self._feed.open_tasks()
         ]
-        return tasks, decide(tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log)
+        return tasks, decide(
+            tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log, p_goals=self._p_goals()
+        )
 
     def next_pick(self) -> dict[str, Any] | None:
         """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.

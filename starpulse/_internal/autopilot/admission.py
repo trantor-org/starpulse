@@ -5,8 +5,8 @@ order is critical-path depth, and the shadow order is `value / dominant share` (
 value is depth times the chance of the goal. The shadow order is only logged beside the enforced one until a calibration
 report earns it the enforced place (`shadow=False`).
 
-The rule is pure over the sampler's readings, the policy, the run ledger, the board's tasks and the trajectory chain; the
-loop that acts on it is not here. It reads the headroom it is given, so a caller that starts a task passes the readings
+The rule is pure over the sampler's readings, the policy, the run ledger, the board's tasks, the trajectory chain and
+each task's forecast P(goal); the loop that acts on it is not here. It reads the headroom it is given, so a caller that starts a task passes the readings
 again, with that task's demand in them, before deciding the next.
 """
 
@@ -57,9 +57,9 @@ class Decision:
     """One eligible task's verdict.
 
     It is `admitted` when its `demand` fits every dimension's headroom, else `blocked_by` the first dimension it overfits.
-    `depth` is the longest chain of open tasks waiting on it; `p_goal` the chain's chance of the goal from its lane and
-    `predictor` the optional predictor's score. The ranks number the admitted tasks from 1: `shadow_rank` by value over
-    dominant share and `enforced_rank` by the order admission follows.
+    `depth` is the longest chain of open tasks waiting on it; `p_goal` the forecast chance of the goal for that task in
+    the eligible lane, else the chain's chance from the lane; `predictor` the optional predictor's score. The ranks number
+    the admitted tasks from 1: `shadow_rank` by value over dominant share and `enforced_rank` by the order admission follows.
     """
 
     task: str
@@ -92,6 +92,21 @@ def _depths(tasks: Collection[Mapping[str, Any]]) -> dict[str, int]:
     return {task["id"]: depth(task["id"], frozenset()) for task in tasks}
 
 
+def ranks_from_trajectories_body(body: Mapping[str, Any], lane: str) -> dict[str, Any]:
+    """The chain and per-task P(goal) `decide` ranks on, taken from a trajectories analytics body.
+
+    `p_goals` is each forecast row whose `state` is `lane` (a Ready task's going run); a task with no row falls back to
+    the lane's chain chance inside `decide`.
+    """
+    chain = body.get("chain") or {}
+    p_goals: dict[str, float] = {}
+    for row in body.get("forecast") or ():
+        chance = row.get("p_goal")
+        if row.get("state") == lane and chance is not None:
+            p_goals[row["task"]] = float(chance)
+    return {"chain": chain, "p_goals": p_goals}
+
+
 def _score(predictor: Callable[[str], float] | None, task: Mapping[str, Any]) -> float | None:
     """The predictor's score for the task's text, None without a predictor or when it fails: it is only a shadow."""
     if predictor is None:
@@ -114,18 +129,21 @@ def decide(
     predictor: Callable[[str], float] | None = None,
     shadow: bool = True,
     log: bool = True,
+    p_goals: Mapping[str, float] | None = None,
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
     `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. `chain` is the
-    trajectory analytics' chain (`trajectory_analytics(...)["chain"]`); a lane with no row, as in a board with no history,
-    gives P(goal) 1. With `shadow` on, the predictor's score and P(goal) rank only the shadow order; off, that order is
-    enforced. Each decision is logged unless `log` is off, as for a read that only looks.
+    trajectory analytics' chain (`trajectory_analytics(...)["chain"]`); `p_goals` is each task's forecast chance of the
+    goal in `lane`. A task with no forecast row uses the lane's chain chance, and a lane with no row gives P(goal) 1.
+    With `shadow` on, the predictor's score and P(goal) rank only the shadow order; off, that order is enforced. Each
+    decision is logged unless `log` is off, as for a read that only looks.
     """
     depths = _depths(tasks)
     limits = {reading.name: reading.limit for reading in readings}
     headroom = {reading.name: reading.limit - reading.use for reading in readings}
-    p_goal = chain.get(lane, {}).get("p_goal", 1.0)
+    lane_p_goal = chain.get(lane, {}).get("p_goal", 1.0)
+    chances = p_goals or {}
     decisions, values = [], {}
     for task in tasks:
         if task["state"] != lane or not task["workable"]:
@@ -133,6 +151,7 @@ def decide(
         need = demand(task, policy, ledger)
         blocked_by = next((name for name in DIMENSIONS if need[name] > headroom[name]), None)
         score = _score(predictor, task)
+        p_goal = chances.get(task["id"], lane_p_goal)
         decision = Decision(task["id"], blocked_by is None, blocked_by, need, depths[task["id"]], p_goal, score)
         share = max(need[name] / limits[name] for name in DIMENSIONS)
         values[decision.task] = decision.depth * (p_goal if score is None else score) / share

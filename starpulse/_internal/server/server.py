@@ -320,6 +320,7 @@ from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.feed.machine_tasks import tables as machine_tables
 from starpulse._internal.config.config import SLOW_READ_S, Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.harnesses import Harnesses
+from starpulse._internal.autopilot.admission import ranks_from_trajectories_body
 from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
 from starpulse._internal.autopilot.starter import builtin_starter
 from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
@@ -1698,7 +1699,8 @@ def start_autopilot(
 
     The loop admits from the lane `[autopilot] lane` names (else the board's initial lane), starts a session through
     `session_start_url` (else the built-in tmux starter in `base`), and settles a stuck one by moving it to Needs
-    attention through the board's editor. Its chain is the trajectory analytics' when this server has a level.
+    attention through the board's editor. Its chain and per-task P(goal) are the trajectory analytics' when this
+    server has a `[level]` table, including on an IC instance that is not serving `--hub`.
     """
 
     def settle(task: str, reason: str) -> Written:
@@ -1711,11 +1713,25 @@ def start_autopilot(
             return Written(False, "this board has no editor", unavailable=True)
         return board.edit(task, {}, comment)
 
-    def read_chain() -> dict[str, Any]:
-        body, status = trajectories_response(history, {}, level, feed.machines, time.time())
-        return json.loads(body)["chain"] if status == 200 else {}
-
     initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
+    lane = config.autopilot.eligible_lane(initial)
+
+    def read_ranks() -> dict[str, Any]:
+        empty: dict[str, Any] = {"chain": {}, "p_goals": {}}
+        if level is None:
+            return empty
+        query: dict[str, list[str]] = {}
+        body, status = trajectories_response(history, query, level, feed.machines, time.time())
+        if status == 400:
+            history_s = json.loads(body).get("history_s")
+            if history_s:
+                query = {"hours": [str(float(history_s) / 3600)]}
+                body, status = trajectories_response(history, query, level, feed.machines, time.time())
+        if status != 200:
+            return empty
+        return ranks_from_trajectories_body(json.loads(body), lane)
+
+    ranks = _cached(read_ranks, _CHAIN_TTL_S)
     state_dir = base / (config.autopilot.state_dir or "")
     state_dir.mkdir(parents=True, exist_ok=True)
     runtime = build_autopilot(
@@ -1727,8 +1743,9 @@ def start_autopilot(
         start=starter(config.session_start_url, by="autopilot") or builtin_starter(base),
         settle=settle,
         claim=claim,
-        chain=_cached(read_chain, _CHAIN_TTL_S),
-        lane=config.autopilot.eligible_lane(initial),
+        chain=lambda: ranks()["chain"],
+        p_goals=lambda: ranks()["p_goals"],
+        lane=lane,
     )
     runtime.wire_status(feed.publish)
     threading.Thread(target=runtime.sampler.run_forever, args=(stop,), name="autopilot-sampler", daemon=True).start()
@@ -2181,7 +2198,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         wire_level(feed, _level_body)
     announce(port, feed.snapshot()["hint"])
     autopilot_runtime = start_autopilot(
-        config, base, feed, board, store, log, level_cfg, threading.Event()
+        config, base, feed, board, store, log, config.level, threading.Event()
     )
     handler = request_handler(
         feed,

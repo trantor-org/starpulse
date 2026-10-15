@@ -119,6 +119,7 @@ def build(
     settle: Callable[[str, str], Written] | None = None,
     claim: Callable[[str, str], Written] | None = None,
     chain: Callable[[], Mapping[str, Mapping[str, Any]]] = dict,
+    p_goals: Callable[[], Mapping[str, float]] = dict,
     lane: str = "",
 ) -> Runtime:
     """The switch kept in `log`'s store (a file in `state_dir` from before it moved there is imported once) and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
@@ -153,6 +154,7 @@ def build(
             start=start,
             settle=settle,
             chain=chain,
+            p_goals=p_goals,
             lane=lane,
             claim=claim,
             clock=clock,

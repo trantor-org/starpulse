@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from starpulse._internal.autopilot.admission import MIN_RUNS, decide, demand
+from starpulse._internal.autopilot.admission import MIN_RUNS, decide, demand, ranks_from_trajectories_body
 from starpulse._internal.autopilot.ledger import Ledger, RunRecord
 from starpulse._internal.autopilot.sampler import Reading
 from starpulse._internal.config.autopilot import DIMENSIONS, Autopilot
@@ -132,6 +132,24 @@ def test_p_goal_is_the_chains_chance_of_the_goal_from_the_tasks_lane(ledger: Led
     assert decision.p_goal == 0.25
 
 
+def test_a_per_task_p_goal_scores_the_shadow_rank_and_never_the_enforced_order(ledger: Ledger) -> None:
+    tasks = [_task("A"), _task("B")]
+
+    decisions = _decide(tasks, ledger, p_goals={"A": 0.1, "B": 0.9})
+
+    assert {d.task: d.p_goal for d in decisions} == {"A": 0.1, "B": 0.9}
+    assert _by_rank(decisions, "shadow_rank") == ["B", "A"]
+    assert _by_rank(decisions, "enforced_rank") == ["A", "B"]
+
+
+def test_a_task_without_a_forecast_keeps_the_lanes_chain_p_goal(ledger: Ledger) -> None:
+    chain = {"ready": {"p_goal": 0.25, "expected_days": 3.0}}
+
+    [decision] = _decide([_task("A")], ledger, chain, p_goals={"B": 0.9})
+
+    assert decision.p_goal == 0.25
+
+
 def test_a_predictor_scores_the_shadow_rank_and_never_the_enforced_order(ledger: Ledger) -> None:
     tasks = [_task("A", title="a plain fix"), _task("B", title="a risky rewrite")]
 
@@ -179,6 +197,22 @@ def test_each_decision_is_logged_with_its_p_goal_and_both_ranks(
 
     [line] = [r.getMessage() for r in caplog.records]
     assert "T-9" in line and "p_goal=0.50" in line and "shadow_rank=1" in line and "enforced_rank=1" in line
+
+
+def test_ranks_from_trajectories_body_take_forecast_rows_in_the_eligible_lane() -> None:
+    body = {
+        "chain": {"ready": {"p_goal": 0.5, "expected_days": 1.0}},
+        "forecast": [
+            {"task": "A", "state": "ready", "p_goal": 0.1},
+            {"task": "B", "state": "in_progress", "p_goal": 0.9},
+            {"task": "C", "state": "ready", "p_goal": None},
+        ],
+    }
+
+    ranks = ranks_from_trajectories_body(body, "ready")
+
+    assert ranks["chain"]["ready"]["p_goal"] == 0.5
+    assert ranks["p_goals"] == {"A": 0.1}
 
 
 def test_a_predictor_that_fails_leaves_the_decision_without_a_score(ledger: Ledger) -> None:
