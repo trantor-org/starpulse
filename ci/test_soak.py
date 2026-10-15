@@ -6,7 +6,7 @@ import http.client
 import importlib.util
 import json
 import os
-import signal
+import subprocess
 import sys
 import threading
 import time
@@ -277,14 +277,19 @@ def test_the_soak_starts_a_seeded_server_replays_into_it_and_tears_it_down():
     assert not server.scratch.exists()
 
 
-# Stays slow: it starts the seeded server as a subprocess, which seeds a month of tasks and lane history before it
-# answers; that start is what the soak runs against.
-def test_a_seeded_server_that_dies_during_the_run_is_a_failure_of_the_run():
-    with soak.seeded(1) as server:
-        assert server.pid > 0  # pid 0 would signal the whole process group
-        os.kill(server.pid, signal.SIGKILL)
-        server.proc.wait(timeout=10)
+def test_a_seeded_server_that_dies_during_the_run_is_a_failure_of_the_run(tmp_path):
+    # `failure()` reads only the process, so a sleeping child stands in for the server: seeding a real one costs the
+    # seconds the test above already spends on that start
+    proc = subprocess.Popen(["sleep", "60"])
+    server = soak.SeededServer("", proc, tmp_path)
+    try:
+        assert server.failure() is None
+        proc.kill()
+        proc.wait(timeout=10)
         assert "exited" in server.failure()
+    finally:
+        proc.kill()
+        proc.wait()
 
 
 def test_a_seeded_soak_without_the_built_page_says_how_to_build_it(tmp_path, monkeypatch):
