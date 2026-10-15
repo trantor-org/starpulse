@@ -43,7 +43,7 @@ jobs:
         run: |
           set -a
           # shellcheck disable=SC1091
-          . /home/adinb/trantor/lib/dagu_events/dagu_events.env
+          . /home/adinb/trantor/events/lib/dagu_events/dagu_events.env
           set +a
           /home/adinb/trantor/.venv/bin/python /home/adinb/trantor/bin/dagu_event.py submit \
             --dag main-follow --repository "$REPOSITORY" --before "$BEFORE" --after "$AFTER" \
