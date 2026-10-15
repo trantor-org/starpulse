@@ -456,9 +456,15 @@ class Loop:
             agent = self._feed.task(task)
             if agent is not None and agent["state"] in (self._lane, IN_PROGRESS):
                 kept.add(task)
-        if kept != self._held:
-            self._held = kept
-            self._save_held()
+        released = self._held - kept
+        if not released:
+            return
+        for task in released:
+            self._starts.pop(task, None)
+            self._parked.pop(task, None)
+        self._held = kept
+        self._save_held()
+        self._remember()
 
     def _note_limit(self, text: str, now: float) -> None:
         resume = usage_until(text, now)
