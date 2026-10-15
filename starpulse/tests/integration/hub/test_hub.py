@@ -37,6 +37,9 @@ def _until(check: Callable[[], object], proc: subprocess.Popen, what: str) -> ob
         time.sleep(0.2)
 
 
+# The `build` stub writes and removes the checkout's shared static directory: in the group `test_standalone.py` names, so
+# another xdist worker's teardown cannot delete the page out from under the hub this test starts.
+@pytest.mark.xdist_group("static-build")
 @pytest.mark.usefixtures("build")
 # Stays slow: it starts a hub process, signs in through the issuer container and waits on the hub's migrations and
 # the event it reads back; the containers themselves start once per run.
