@@ -113,6 +113,7 @@ retired_tasks = Table(
     Column("name", String, nullable=False),
     Column("text", Text, nullable=False),
     Column("retired_at", Float, nullable=False),
+    Index("ix_starpulse_retired_tasks_retired_at", "retired_at"),  # the change poll's count and max read this alone
 )
 
 #: What a hub keeps of a day after its raw events are dropped (`hub.enforce_retention`): per team, machine and state,
