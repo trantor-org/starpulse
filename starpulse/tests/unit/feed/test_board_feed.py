@@ -9,12 +9,12 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import text
 
-from starpulse.contracts.adapters import BoardTask, MachineEvent, TaskKeys
-from starpulse.contracts.api import event
-from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.feed.machine_tasks import MachineTasks
 from starpulse._internal.config.config import CommitKeys
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse.contracts.adapters import BoardTask, MachineEvent, TaskKeys
+from starpulse.contracts.api import event
 from starpulse.tests.machines import FLOWS, MACHINES
 
 PR = "https://github.com/acme/widgets/pull/1750"
@@ -238,6 +238,35 @@ def test_a_page_connected_while_the_stream_is_replayed_gets_one_snapshot_once_it
     assert changes.empty()
     assert (first["reading"], kind, body["reading"]) == (True, "snapshot", False)
     assert {a["id"]: a["state"] for a in body["flows"][0]["agents"]} == {"PROJ-1": "in_progress", "PROJ-2": "review"}
+
+
+#: Delta kinds a restart must not resend: the snapshot at the end of replay carries their result.
+_REPLAY_DELTAS = (
+    "task",
+    "move",
+    "insight",
+    "pulls",
+    "claim",
+    "dags",
+    "ledgers",
+    "level",
+    "forwarding",
+    "autopilot",
+)
+
+
+def test_a_replay_resends_only_the_snapshot_not_delta_kinds() -> None:
+    feed = BoardFeed()
+    feed.expect("1-0")
+    _, changes = feed.subscribe()
+    for kind in _REPLAY_DELTAS:
+        feed.publish(kind, {"id": kind})
+
+    assert changes.empty()
+
+    feed.seen("1-0")
+    assert changes.get_nowait()[0] == "snapshot"
+    assert changes.empty()
 
 
 def test_the_sequence_half_of_a_stream_id_orders_entries_that_share_a_millisecond() -> None:
@@ -824,7 +853,7 @@ def test_the_replay_builds_the_ledger_once_when_it_reaches_the_entry_it_expected
     feed.seen("2-0")
 
     kinds = [deltas.get_nowait()[0] for _ in range(deltas.qsize())]
-    assert kinds.count("ledgers") == 1
+    assert kinds == ["snapshot"]
     assert sorted(r["tasks"][0] for r in feed.snapshot()["ledgers"]["STARTED"]) == ["TASK-1", "TASK-2"]
 
 
@@ -1115,7 +1144,9 @@ def test_the_open_tasks_and_a_machines_tasks_can_be_read_without_a_snapshot() ->
 def test_every_task_open_or_settled_is_named_by_its_title_and_labels() -> None:
     feed = BoardFeed()
     feed.put(BoardTask(id="PROJ-1", team="demo", title="open one", lane="ready", labels=["a"]))
-    feed.put(BoardTask(id="PROJ-2", team="demo", title="done one", lane="done", labels=["validation"], settled="completed"))
+    feed.put(
+        BoardTask(id="PROJ-2", team="demo", title="done one", lane="done", labels=["validation"], settled="completed")
+    )
 
     assert feed.titled() == {
         "PROJ-1": {"title": "open one", "labels": ["a"]},

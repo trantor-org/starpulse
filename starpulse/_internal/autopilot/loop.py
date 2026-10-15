@@ -15,8 +15,8 @@ A run holds its capacity from its start until its task leaves In Progress. While
 active the loop adds its demand to the sampler's readings itself; once it is active the sampler counts it. The one wake
 a timer makes (`period`) only finishes and settles runs, so an idle session is found without any event arriving.
 
-The runs in flight are in memory: a restart forgets them, and a session started before it is then only counted, never
-settled by this loop.
+The runs in flight, each task's last start time and the last capacity sample live in the history store, so a restart
+restores them. A start still inside `START_COOLDOWN` is not admitted again when that restore misses the run.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 from starpulse._internal.autopilot.admission import Decision, decide, tier_of
@@ -34,9 +34,11 @@ from starpulse._internal.autopilot.inputs import points
 from starpulse._internal.autopilot.ledger import Ledger, RunRecord
 from starpulse._internal.autopilot.quiet_hours import QuietHours
 from starpulse._internal.autopilot.sampler import PERIOD, Reading, Sampler
+from starpulse._internal.autopilot.state import START_COOLDOWN, AutopilotState
 from starpulse._internal.autopilot.toggle import Toggle
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS
 from starpulse.contracts.adapters import StartFailedError
@@ -47,6 +49,22 @@ IN_PROGRESS = "in_progress"
 NEEDS_ATTENTION = "needs_attention"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
 _HOST = ("cpu", "memory")
+
+
+def _run_from(fields: Mapping[str, Any]) -> _Run | None:
+    """One saved run, or None when the row cannot be a `_Run`."""
+    try:
+        return _Run(
+            str(fields["session"]),
+            str(fields["tier"]),
+            int(fields["points"]),
+            float(fields["started_at"]),
+            dict(fields["demand"]),
+            dict(fields["baseline"]),
+            dict(fields.get("peak") or {}),
+        )
+    except KeyError, TypeError, ValueError:
+        return None
 
 
 @dataclass
@@ -69,7 +87,8 @@ class Loop:
     task to Needs attention with the reason and says whether it did; `chain` is the trajectory chain `decide` ranks on
     and `p_goals` each task's forecast chance of the goal in `lane`.
     `lane` is the eligible lane, `claim` comments a started session's address on its task, `clock` is the loop's notion
-    of now, and `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds.
+    of now, `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, and
+    `log` is the history store a restart restores in-flight runs and start times from.
     """
 
     def __init__(
@@ -88,6 +107,7 @@ class Loop:
         clock: Callable[[], float] = time.time,
         quiet_hours: Callable[[], QuietHours | None] = lambda: None,
         p_goals: Callable[[], Mapping[str, float]] = dict,
+        log: EventLog | None = None,
     ) -> None:
         self._feed = feed
         self._policy = policy
@@ -102,9 +122,12 @@ class Loop:
         self._claim = claim
         self._clock = clock
         self._quiet_hours = quiet_hours
+        self._state = AutopilotState(log) if log is not None else None
         self._running: dict[str, _Run] = {}
+        self._starts: dict[str, float] = {}
         self._events: queue.Queue | None = None
         self._sampled_at: float | None = None  # the sample of the last `autopilot` status the loop was offered
+        self._restore()
 
     def wants(self, kind: str, data: Mapping[str, Any]) -> bool:
         """Whether a feed event (or a `wake`) can free or fill capacity: a task entering the eligible lane, a running task's
@@ -184,6 +207,31 @@ class Loop:
             )
         return sessions
 
+    def _restore(self) -> None:
+        """Load in-flight runs and start times the last process saved; a missing or unreadable row is an empty set."""
+        if self._state is None:
+            return
+        for task, fields in self._state.inflight().items():
+            if (run := _run_from(fields)) is not None:
+                self._running[task] = run
+        self._starts = self._state.starts()
+        logger.info("StarPulse autopilot: restored %d in-flight", len(self._running))
+
+    def _remember(self) -> None:
+        """Write start times first so a crash before the in-flight row still leaves the cooldown."""
+        if self._state is None:
+            return
+        now = self._clock()
+        self._starts = {
+            task: at for task, at in self._starts.items() if task in self._running or now - at < START_COOLDOWN
+        }
+        self._state.save_starts(self._starts)
+        self._state.save_inflight({task: asdict(run) for task, run in self._running.items()})
+
+    def _cooling(self, task: str, now: float) -> bool:
+        started = self._starts.get(task)
+        return started is not None and now - started < START_COOLDOWN
+
     def _quiet(self, now: float) -> bool:
         """Whether `now` is inside the quiet hours, when the loop admits nothing and finishes and settles runs as ever."""
         quiet = self._quiet_hours()
@@ -217,7 +265,10 @@ class Loop:
 
     def _close(self, task: str, run: _Run, outcome: str, now: float) -> None:
         del self._running[task]
-        record = RunRecord(task, run.tier, run.points, outcome, now - run.started_at, {**run.peak, "sessions": 1, "review": run.points})
+        self._remember()
+        record = RunRecord(
+            task, run.tier, run.points, outcome, now - run.started_at, {**run.peak, "sessions": 1, "review": run.points}
+        )
         try:
             self._ledger.record(record)
         except Exception:  # the store is a database: any failure to write must not stop the loop
@@ -270,10 +321,9 @@ class Loop:
         self, readings: list[Reading], skipped: set[str], log: bool = True
     ) -> tuple[list[dict[str, Any]], list[Decision]]:
         """The open tasks with the running and `skipped` ones unworkable, and `decide`'s verdict on them over `readings`."""
-        tasks = [
-            {**agent, "workable": False} if agent["id"] in self._running or agent["id"] in skipped else agent
-            for agent in self._feed.open_tasks()
-        ]
+        now = self._clock()
+        held = set(self._running) | skipped | {task for task in self._starts if self._cooling(task, now)}
+        tasks = [{**agent, "workable": False} if agent["id"] in held else agent for agent in self._feed.open_tasks()]
         return tasks, decide(
             tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log, p_goals=self._p_goals()
         )
@@ -314,6 +364,7 @@ class Loop:
                 logger.warning("StarPulse autopilot: cannot start %s: %s", picked.task, exc)
                 skipped.add(picked.task)
                 continue
+            self._starts[picked.task] = now
             self._running[picked.task] = _Run(
                 session,
                 tier_of(agent),
@@ -322,6 +373,7 @@ class Loop:
                 picked.demand,
                 self._use(),
             )
+            self._remember()
             started.append(picked.task)
             logger.info("StarPulse autopilot: started %s at %s", picked.task, session)
             self._note_claim(picked.task, session)

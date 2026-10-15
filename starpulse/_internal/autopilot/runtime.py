@@ -19,7 +19,8 @@ from starpulse._internal.autopilot.ledger import LEDGER_FILE, Ledger
 from starpulse._internal.autopilot.loop import Loop
 from starpulse._internal.autopilot.probe import LocalProbe
 from starpulse._internal.autopilot.quiet_hours import QuietHoursSetting
-from starpulse._internal.autopilot.sampler import Crossing, Sampler
+from starpulse._internal.autopilot.sampler import Crossing, Reading, Sampler
+from starpulse._internal.autopilot.state import AutopilotState
 from starpulse._internal.autopilot.toggle import TOGGLE_FILE, Toggle
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
@@ -134,6 +135,11 @@ def build(
         if loop is not None:
             loop.wake()
 
+    state = AutopilotState(log)
+
+    def remember_sample(readings: list[Reading], at: float) -> None:
+        state.save_sample([{"name": r.name, "use": r.use, "limit": r.limit} for r in readings], at)
+
     sampler = Sampler(
         policy.limits,
         probe or LocalProbe(),
@@ -141,7 +147,14 @@ def build(
         review=lambda: review_points(feed.open_tasks(), policy.review_lane, policy.unsized_points),
         on_crossing=crossed,
         clock=clock,
+        remember=remember_sample,
     )
+    if saved := state.sample():
+        try:
+            rows, at = saved
+            sampler.restore([Reading(str(row["name"]), float(row["use"]), float(row["limit"])) for row in rows], at)
+        except KeyError, TypeError, ValueError:
+            pass  # a malformed row is a missing sample; the first live pass is the baseline
     toggle = Toggle(log, state_dir / TOGGLE_FILE)
     quiet_hours = QuietHoursSetting(log)
     if start is not None and settle is not None:
@@ -159,5 +172,6 @@ def build(
             claim=claim,
             clock=clock,
             quiet_hours=quiet_hours.get,
+            log=log,
         )
     return Runtime(toggle, sampler, quiet_hours, loop)

@@ -60,6 +60,12 @@ The dot does not pulse under `prefers-reduced-motion`.
 The page reconnects at once after a drop, then waits 250 ms, 500 ms, 1 s, 2 s and 3 s between tries and keeps trying at 3 s.
 Each connect replaces the page's Board with a fresh snapshot.
 
+While the Board is replaying after a start, `/api/events` resends only `snapshot`, once the replay has ended, because a
+reconnecting page needs the Board the replay built. Every other kind is a delta of that Board; resending it would make
+consumers such as the autopilot act twice. `FEED_EVENT_RESEND` in the feed module is the table: `snapshot` is resent,
+and `task`, `move`, `insight`, `pulls`, `claim`, `dags`, `ledgers`, `level`, `forwarding` and `autopilot` are not.
+`build` and `restarting` are process announcements on an open stream, not replayed deltas.
+
 Two events on `/api/events` carry what the page needs:
 
 - `build` ({id}): the page build the server is serving, the first 12 hex digits of the SHA-256 of `static/index.html`
@@ -440,9 +446,11 @@ why, and is never started again. A board with no editor, or no `needs_attention`
 refusal and retries on the next sampler period. The sampler period (60 seconds) is the only timer; it finishes and settles
 runs and never admits.
 
-The runs in flight are held in memory, and are what `GET /api/autopilot` lists as `inFlight`. A restart forgets them: a
-session started before it still counts toward capacity once the harness sees it, but the loop neither lists, settles nor
-records it.
+The runs in flight, each task's last start time and the last capacity sample live in `starpulse_settings`
+(`autopilot.inflight`, `autopilot.starts`, `autopilot.sample`), so a restart restores them: `GET /api/autopilot` still
+lists the sessions, the loop still settles and records them, and a task it already started is not started again. A restart
+logs `StarPulse autopilot: restored N in-flight`. A start still inside 15 minutes (`START_COOLDOWN`) is not admitted
+even when the in-flight row is missing, so a restart that lost that row does not send a second `started`.
 
 ## Release
 

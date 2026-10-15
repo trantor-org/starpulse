@@ -11,10 +11,10 @@ from sqlalchemy.exc import OperationalError
 
 from starpulse._internal.autopilot.ledger import Ledger
 from starpulse._internal.autopilot.loop import Loop
+from starpulse._internal.autopilot.quiet_hours import QuietHours
 from starpulse._internal.autopilot.sampler import Sampler
 from starpulse._internal.autopilot.toggle import Toggle
 from starpulse._internal.board.seam import Written
-from starpulse._internal.autopilot.quiet_hours import QuietHours
 from starpulse._internal.config.autopilot import Autopilot
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -50,20 +50,36 @@ class Rig:
             on_crossing=lambda crossing: None,
             clock=lambda: self.now,
         )
-        log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
-        self.ledger = Ledger(log, tmp_path / "runs.jsonl")
-        self.toggle = Toggle(log, tmp_path / "toggle.json")
+        self.log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
+        self.ledger = Ledger(self.log, tmp_path / "runs.jsonl")
+        self.toggle = Toggle(self.log, tmp_path / "toggle.json")
         self.toggle.set(True)
         self.started: list[str] = []
         self.settled: list[tuple[str, str]] = []
         self.failing: set[str] = set()
         self.claims: list[tuple[str, str]] = []
         self.claim_ok = True
-        self.loop = Loop(
+        self.quiet = quiet
+        self.loop = self._bind(self.sampler)
+
+    def restarted(self) -> Loop:
+        """A new loop and sampler over this store: a StarPulse restart."""
+        sampler = Sampler(
+            self.policy.limits,
+            probe=lambda: self.host,
+            sessions=lambda: 0,
+            review=lambda: 0,
+            on_crossing=lambda crossing: None,
+            clock=lambda: self.now,
+        )
+        return self._bind(sampler)
+
+    def _bind(self, sampler: Sampler) -> Loop:
+        return Loop(
             feed=self.feed,
             policy=self.policy,
             toggle=self.toggle,
-            sampler=self.sampler,
+            sampler=sampler,
             ledger=self.ledger,
             start=self._start,
             settle=self._settle,
@@ -71,7 +87,8 @@ class Rig:
             lane="ready",
             claim=self._claim,
             clock=lambda: self.now,
-            quiet_hours=lambda: quiet,
+            quiet_hours=lambda: self.quiet,
+            log=self.log,
         )
 
     def _claim(self, task: str, text: str) -> Written:
@@ -107,6 +124,39 @@ class Rig:
 @pytest.fixture
 def rig(tmp_path: Path) -> Rig:
     return Rig(tmp_path)
+
+
+def test_a_restarted_loop_does_not_start_a_ready_task_it_already_started(rig: Rig) -> None:
+    rig.put("T-1")
+    assert rig.loop.tick() == ["T-1"]
+
+    restarted = rig.restarted()
+
+    assert restarted.tick() == []
+    assert rig.started == ["T-1"]
+
+
+def test_a_restarted_loop_keeps_an_in_progress_run_and_does_not_start_it_again(rig: Rig) -> None:
+    rig.put("T-1")
+    assert rig.loop.tick() == ["T-1"]
+    rig.put("T-1", lane="in_progress")
+
+    restarted = rig.restarted()
+
+    assert restarted.tick() == []
+    assert [session["task"] for session in restarted.in_flight()] == ["T-1"]
+    assert rig.started == ["T-1"]
+
+
+def test_a_start_cooldown_blocks_re_admission_when_inflight_state_was_lost(rig: Rig) -> None:
+    rig.put("T-1")
+    assert rig.loop.tick() == ["T-1"]
+    rig.log.delete_setting("autopilot.inflight")
+
+    restarted = rig.restarted()
+
+    assert restarted.tick() == []
+    assert rig.started == ["T-1"]
 
 
 def test_a_tick_starts_a_ready_task_once_and_leaves_it_alone_until_it_finishes(rig: Rig) -> None:
