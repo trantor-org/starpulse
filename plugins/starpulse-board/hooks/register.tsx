@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { ElementTable, EngineInterface as Engine, Register, RenderChildren } from 'claude-code'
 import type { ArchivedSession, BoardTask, Checks, HeldTask, Lane, PeerSession, Pull } from '../types'
-import { CHECKS, LANES as LANE_STYLES, ROW_HEIGHT, SP, alt, glyphs, laneIcon, laneOf, paneSvg, progress, ratio, rowSvg, subline, termBar } from './draw'
+import { CHECKS, LANES as LANE_STYLES, SP, glyphs, laneIcon, laneOf, progress, ratio, subline, termBar } from './draw'
 import type { Glyphs } from './draw'
 import { CHIPS, GROUPS, ago, alive, countOf, focusedId, groupOf, holdersOf, lanesOf, matches, ordered, rowLabel, rowsOf } from './sessions'
 import type { Group, Row, Status } from './sessions'
@@ -562,15 +562,8 @@ const tally = (others: PeerSession[]) => {
   return { working, idle: others.length - working }
 }
 
-const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
-
-// Pixels a monospace cell takes on the remote surfaces, and the room the Details and ✕ buttons beside the Svg row need.
-const CELL_PX = 7.5
-const BUTTONS_PX = 104
 
 type Terminal = ElementTable<'terminal'>
-// Every surface but the terminal draws the Svg; the desktop's table stands for them (Box, Text and Button are the same).
-type Remote = ElementTable<'desktop'>
 
 // The eighth-block bar as two Texts: the filled cells in `color`, the empty track dim.
 const barTexts = (Text: Terminal['Text'], k: number, n: number, cells: number, color: string) => {
@@ -612,7 +605,7 @@ const termRow = (Box: Terminal['Box'], Text: Terminal['Text'], t: HeldTask, g: G
   )
 }
 
-// The terminal's pane: the same facts as the Svg pane, one Text a line.
+// The terminal's pane: one Text a line.
 const termPane = (Box: Terminal['Box'], Text: Terminal['Text'], t: HeldTask, g: Glyphs) => {
   const [laneName, color] = laneOf(t)
   const p = progress(t)
@@ -671,7 +664,11 @@ const toggle = async ($: Engine, id: string) => {
 export const register: Register = (on, options) => {
   const g = glyphs(options.glyphs)
 
+  // The band and panes are the terminal CLI's: on Desktop and mobile the plugin draws nothing and opens no dock.
   on('session.start', async ($, e, next) => {
+    if (e.surface !== 'terminal') {
+      return next(e)
+    }
     await $.command.register({ name: 'board', description: 'List the Board tasks this session holds' })
     await $.command.register({ name: 'kanban', description: 'Open the Board tab in the dock with the keys' })
     const kept = await $.store.get('archived').catch(() => undefined)
@@ -748,11 +745,11 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const found = (await read($, tasks)) ?? []
     const others = elsewhere(await read($, sessions), await read($, archived))
-    if (e.props.hasSurvey || (!found.length && !others.length)) {
+    if (e.surface !== 'terminal' || e.props.hasSurvey || (!found.length && !others.length)) {
       return next(e)
     }
 
-    const { Box, Button, Text, Svg } = $.ui.resolve(e) as Remote
+    const { Box, Button, Text } = $.ui.resolve(e) as Terminal
     if (await read($, isHidden)) {
       const label = found.length ? 'Show task' : 'Show sessions'
       return (
@@ -768,7 +765,6 @@ export const register: Register = (on, options) => {
     )
 
     const opened = await read($, openTask)
-    const width = clamp(Math.floor(e.props.bodyColumns * CELL_PX) - BUTTONS_PX, 280, 860)
     const { working, idle } = tally(others)
 
     return (
@@ -778,11 +774,7 @@ export const register: Register = (on, options) => {
 
           return (
             <Box flexDirection="row" alignItems="center" gap={1}>
-              {e.surface === 'terminal' ? (
-                termRow(Box, Text, t, g)
-              ) : (
-                <Svg source={rowSvg(t, width)} alt={alt(t)} width={width} height={ROW_HEIGHT} />
-              )}
+              {termRow(Box, Text, t, g)}
               <Button key={`details-${t.id}`} label={label} plain onPress={() => toggle($, t.id)}>
                 <Text color={SP.slate}>{`[${label}]`}</Text>
               </Button>
@@ -817,23 +809,20 @@ export const register: Register = (on, options) => {
     const found = await read($, tasks)
     const picked = await read($, openTask)
     const t = found?.find(x => x.id === picked) ?? found?.[0]
-    if (!t) {
+    if (e.surface !== 'terminal' || !t) {
       return next(e)
     }
 
-    const { Box, Text, Svg } = $.ui.resolve(e) as Remote
-    if (e.surface !== 'terminal') {
-      const width = clamp(Math.floor(e.props.bodyColumns * CELL_PX), 240, 720)
-      const { source, height } = paneSvg(t, width)
-
-      return <Svg source={source} alt={`${alt(t)}. ${t.title}`} width={width} height={height} />
-    }
+    const { Box, Text } = $.ui.resolve(e) as Terminal
 
     return termPane(Box, Text, t, g)
   })
 
-  on('ui.render', { component: 'Pane', requestId: KANBAN }, async ($, e) => {
-    if (e.surface === 'terminal' && e.props.placement === 'inline') {
+  on('ui.render', { component: 'Pane', requestId: KANBAN }, async ($, e, next) => {
+    if (e.surface !== 'terminal') {
+      return next(e)
+    }
+    if (e.props.placement === 'inline') {
       endLanes()
       void $.ui.close({ id: KANBAN }).catch(() => undefined)
       const { Box } = $.ui.resolve(e)
@@ -845,7 +834,7 @@ export const register: Register = (on, options) => {
     const shut = await read($, folded)
     const picked = await read($, pickedTask)
     const others = await read($, sessions)
-    const { Box, Button, Text } = $.ui.resolve(e) as Remote
+    const { Box, Button, Text } = $.ui.resolve(e) as Terminal
     // The dock paints grey behind every cell a pane draws, and a pane body scrolls its tree, so flexGrow has no height to fill:
     // the root takes the body's rows and fills them black, and a longer Board still scrolls.
     const fill = (children: RenderChildren) => (
@@ -987,9 +976,12 @@ export const register: Register = (on, options) => {
     )
   })
 
-  on('ui.render', { component: 'Pane', requestId: SESSIONS }, async ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: SESSIONS }, async ($, e, next) => {
+    if (e.surface !== 'terminal') {
+      return next(e)
+    }
     // Outside the fullscreen layout the terminal places a pane inline above the prompt; like Files, Sessions shows only in the dock.
-    if (e.surface === 'terminal' && e.props.placement === 'inline') {
+    if (e.props.placement === 'inline') {
       void $.ui.close({ id: SESSIONS }).catch(() => undefined)
       const { Box } = $.ui.resolve(e)
       return <Box />
@@ -1000,7 +992,7 @@ export const register: Register = (on, options) => {
     const shut = await read($, sessionFolds)
     const now = await $.clock.now()
     const cols = e.props.bodyColumns
-    const { Box, Button, Input, Text } = $.ui.resolve(e) as Remote
+    const { Box, Button, Input, Text } = $.ui.resolve(e) as Terminal
 
     const all = rowsOf(await read($, sessions), await read($, archived), holdersOf(found), lanesOf(found))
     const shown = all.filter(r => matches(r, text, active))

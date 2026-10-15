@@ -1,6 +1,7 @@
 # starpulse-board
 
-Draws the Board tasks a Claude Code session holds above the prompt, a Board pane (`/kanban`) and a Sessions pane.
+Draws the Board tasks a Claude Code session holds above the prompt, a Board pane (`/kanban`) and a Sessions pane, in
+the terminal CLI only: on Claude Desktop and mobile it draws nothing and opens no dock.
 Install with `/plugin install starpulse-board@starpulse`; the StarPulse CLI reference (`docs/cli.md`) documents the
 band and the Board pane.
 

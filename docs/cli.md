@@ -310,13 +310,12 @@ task claimed mid-turn shows before the turn ends. It draws each task that sessio
 StarPulse's palette: lane icon, ID, the title (or the reason a Needs attention task waits on the operator, or what a
 Waiting task waits on), a bar of checked acceptance criteria with `k/n`, the lane, and the PR with its check state. A
 server that serves no checked state draws the criteria count without a bar. Details opens a pane with the criteria
-ticked off, the holder and the PR; ✕ hides the band until its Show button or `/board`. The Claude Desktop (SSH) row is one
-`Svg` and the terminal row is Ink text. Icons are Nerd Font v3 glyphs; the `glyphs` plugin option (`nerd`, the default, or `plain`) sets
+ticked off, the holder and the PR; ✕ hides the band until its Show button or `/board`. The band and its panes draw only
+in the terminal CLI, as Ink text: on Claude Desktop and mobile the plugin leaves Claude Code's own drawing and opens no dock. Icons are Nerd Font v3 glyphs; the `glyphs` plugin option (`nerd`, the default, or `plain`) sets
 the plain Unicode characters instead, for a terminal without a Nerd Font, since a terminal cannot report its font. The band
 draws no fill. The Board and Sessions panes' root Box is filled black (`#000000`) down the dock body's rows (`scroll.bodyRows`) to cover the grey the dock paints
 behind every pane cell. The dock's tab strip, left border and bottom row are Claude Code's `composerSidebarBackground`, grey in the dark theme; the plugin's
-`custom:starpulse-board:black-dock` theme (`themes/black-dock.json`) is the dark theme with that key black. No other element sets a background and every Button is `plain`. The `Svg` pulses the lane dot of an In Progress task and a running check, and
-stops under the system's reduced-motion setting; the terminal row does not animate. `/board` lists the tasks with
+`custom:starpulse-board:black-dock` theme (`themes/black-dock.json`) is the dark theme with that key black. No other element sets a background and every Button is `plain`. The row does not animate. `/board` lists the tasks with
 their titles. It reads only the `starpulse` CLI, retrying `~/.local/bin/starpulse` when the one on `PATH` fails or is missing, so it
 shows no tasks when no server answers (`$STARPULSE_URL`, else `http://localhost:8766`).
 

@@ -136,7 +136,7 @@ const focus = ($: any, key: string) => $.ui.focus({ requestId: PANE, key, elemen
 // The tmux session names a test did not choose.
 const AUTO = /^claude-\d{6}$/
 
-for (const surface of ['terminal', 'desktop'] as const) {
+for (const surface of ['terminal'] as const) {
   test(`the pane lists working and idle sessions in one Active group, this one first with its marker and task (${surface})`, { timeoutMs: SLOW }, async ($, on) => {
     host(on)
     await start($, surface)

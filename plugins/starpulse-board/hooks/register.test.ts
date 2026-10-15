@@ -86,10 +86,7 @@ const pane = ($: any, surface: string) =>
 // The colour of the dot a terminal row draws for its task's PR checks.
 const checkColor = async (ui: any, id: string) => ((await ui.find({ key: `checks-${id}` }))?.children[0] as { props: { color: string } } | undefined)?.props.color
 
-// The Svg a desktop band or pane draws.
-const drawn = async (ui: any) => (await ui.find({ type: 'Svg' }))?.props as { source: string; alt: string } | undefined
-
-for (const surface of ['terminal', 'desktop'] as const) {
+for (const surface of ['terminal'] as const) {
   test(`/board lists the tasks this session holds (${surface})`, async ($, on) => {
     let argv: readonly string[] = []
     serve(on, BOARD, {
@@ -253,75 +250,6 @@ test('terminal row: no checked data draws a count without a bar, no criteria dra
   expect(await ui.find({ type: 'Text', text: /criteria/ })).toBeDefined()
 })
 
-test('desktop row: one Svg carries the ID, title, bar, k/n, lane and PR, with alt text', async ($, on) => {
-  serve(on, BOARD)
-
-  await $.command.run(RUN)
-  const ui = await band($, 'desktop')
-  const svg = await drawn(ui)
-
-  expect(svg?.alt).toBe('PROJ-1: In Progress, 2 of 4 criteria, PR #392 checks running')
-  for (const text of ['PROJ-1', 'Add the verbs', '2/4', 'In Progress', '#392', '#fbbf24', '#0c1322']) {
-    expect(svg?.source, text).toContain(text)
-  }
-  expect((await ui.find({ key: 'details-PROJ-1' }))?.props.label).toBe('Details')
-  expect((await ui.find({ key: 'hide' }))?.props.label).toBe('✕')
-})
-
-test('desktop row: a Needs attention reason replaces the title; no checked data drops the bar', async ($, on) => {
-  serve(
-    on,
-    board([
-      [
-        'needs_attention',
-        'Needs Attention',
-        [task({ id: 'PROJ-4', title: 'Investigate the alert', pause_reason: 'Operator: confirm the target was retired', criteria: [{ text: 'One' }], prs: [] })],
-      ],
-    ]),
-  )
-
-  await $.command.run(RUN)
-  const svg = await drawn(await band($, 'desktop'))
-
-  expect(svg?.source).toContain('Operator: confirm the target was retired')
-  expect(svg?.source).not.toContain('Investigate the alert')
-  expect(svg?.source).toContain('1 criterion')
-  expect(svg?.source).not.toMatch(/\d\/\d/)
-  expect(svg?.alt).toBe('PROJ-4: Needs attention, 1 criterion')
-})
-
-test('desktop row: a narrow band drops the title, then the PR; the ID, bar and count stay', async ($, on) => {
-  serve(on, BOARD)
-
-  await $.command.run(RUN)
-  const svg = await drawn(await band($, 'desktop', { ...PROPS, bodyColumns: 36 }))
-
-  expect(svg?.source).toContain('PROJ-1')
-  expect(svg?.source).toContain('2/4')
-  expect(svg?.source).not.toContain('Add the verbs')
-  expect(svg?.source).not.toContain('#392')
-})
-
-test('desktop row: under reduced motion the Svg animation stops, and only a live lane or running check animates', async ($, on) => {
-  const quiet = board([['review', 'Review', [task({ id: 'PROJ-2', title: 'Rotate the secret', prs: [{ url: `${PULL}/388`, checks: 'pass' }] })]]])
-  let current = BOARD
-  serve(on, '', { run: () => answer(0, current) })
-
-  await $.command.run(RUN)
-  const live = (await drawn(await band($, 'desktop')))?.source ?? ''
-  const reduced = /@media \(prefers-reduced-motion: reduce\)\{\.t0,\.t1,\.t2,\.t3,\.live\{animation:none\}\}/
-  expect(live).toMatch(reduced)
-  expect(live).toContain('class="live"')
-
-  current = quiet
-  await $.command.run(RUN)
-  const still = (await drawn(await band($, 'desktop')))?.source ?? ''
-
-  expect(still).toMatch(reduced)
-  expect(still).not.toContain('class="live"')
-  expect(still).toContain('.t0,.t1,.t2,.t3{animation:none}')
-})
-
 test('terminal pane: ID, title, lane and holder, reason, criteria with ticks, PR and its checks', async ($, on) => {
   serve(
     on,
@@ -357,38 +285,13 @@ test('terminal pane: a task with no checked data lists its criteria without tick
   expect(await pane_.find({ type: 'Text', text: /[✓○]/ })).toBeUndefined()
 })
 
-for (const surface of ['desktop', 'mobile'] as const) {
-  test(`pane Svg: ID, title, lane and holder, reason, criteria list and PR (${surface})`, async ($, on) => {
-    serve(
-      on,
-      board([
-        [
-          'needs_attention',
-          'Needs Attention',
-          [task({ id: 'PROJ-4', title: 'Investigate the alert', pause_reason: 'Operator: confirm it' })],
-        ],
-      ]),
-    )
-
-    await $.command.run(RUN)
-    await (await band($, 'desktop')).press({ key: 'details-PROJ-4' })
-    const svg = await drawn(await pane($, surface))
-
-    for (const text of ['PROJ-4', 'Investigate the alert', 'Needs attention', 'held by session-1', 'Operator: confirm it', 'ACCEPTANCE CRITERIA', '2/4', 'Criterion 1', 'Criterion 4', 'trantor-org/starpulse#392', 'checks running']) {
-      expect(svg?.source, text).toContain(text)
-    }
-    expect(svg?.alt).toContain('PROJ-4')
-    expect(svg?.source).toMatch(/@media \(prefers-reduced-motion: reduce\)/)
-  })
-}
-
 test('the pane shows the first held task when none was picked', async ($, on) => {
   serve(on, BOARD)
 
   await $.command.run(RUN)
-  const svg = await drawn(await pane($, 'desktop'))
+  const ui = await pane($, 'terminal')
 
-  expect(svg?.source).toContain('PROJ-1')
+  expect(await ui.find({ type: 'Text', text: 'PROJ-1' })).toBeDefined()
 })
 
 // Registered sessions besides the key files beside them: this one, one in tmux session task-7, an interactive one in no
@@ -789,7 +692,7 @@ test('a Sessions pane placed inline closes itself and draws nothing, as Files do
   expect(opened.at(-1)).toBe('close starpulse-sessions')
 })
 
-for (const surface of ['terminal', 'desktop'] as const) {
+for (const surface of ['terminal'] as const) {
   test(`the band counts the other sessions on one line, with no button per session (${surface})`, async ($, on) => {
     sessionsHost(on)
 
@@ -899,7 +802,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-for (const surface of ['terminal', 'desktop'] as const) {
+for (const surface of ['terminal'] as const) {
   test(`the band draws what the held-task stream sends, with no starpulse run (${surface})`, async ($, on) => {
     const stream = feed()
     const ran: string[][] = []
@@ -1122,3 +1025,30 @@ test('the band draws no fill: every Button is plain and no element sets a backgr
 
   await fills(await band($, 'terminal'))
 })
+
+// The band and panes are drawn for the terminal CLI only: elsewhere Claude Code draws its own, and the dock stays shut.
+for (const surface of ['desktop', 'mobile'] as const) {
+  test(`the band and every pane leave the ${surface} to Claude Code, and the session opens no dock`, async ($, on) => {
+    const opened: string[] = []
+    const stream = feed()
+    sessionsHost(on, { opened, held: [stream] })
+
+    await start($, surface)
+    stream.held(BOARD)
+    await settle()
+    await $.command.run(RUN)
+    const drawings = [
+      await band($, surface),
+      await pane($, surface),
+      await sessionsPane($, surface),
+      await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'Pane', props: { ...PANE_PROPS, placement: 'dock' }, requestId: 'starpulse-kanban' }),
+    ]
+
+    expect(opened).toEqual([])
+    for (const ui of drawings) {
+      expect(await ui.find({ key: 'engine' })).toBeDefined()
+      expect(await ui.find({ key: 'hide' })).toBeUndefined()
+      await ui.unmount()
+    }
+  })
+}
