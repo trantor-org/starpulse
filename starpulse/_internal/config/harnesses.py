@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,18 @@ class Tier:
     model: str
     efforts: tuple[str, ...]
     """The efforts this tier takes; empty when the harness gives it none."""
+    models: dict[str, str] = field(default_factory=dict)
+    """Optional per-effort model ids; when set, every effort must be named. Empty means use `model` for each."""
+
+    def model_for(self, effort: str | None) -> str:
+        """The model this effort runs: `models[effort]` when present, else `model`."""
+        return self.models[effort] if effort and effort in self.models else self.model
+
+    def as_json(self) -> dict[str, Any]:
+        body: dict[str, Any] = {"model": self.model, "efforts": list(self.efforts)}
+        if self.models:
+            body["models"] = dict(self.models)
+        return body
 
 
 @dataclass(frozen=True)
@@ -51,7 +63,7 @@ class Harness:
     def profiles(self) -> dict[str, tuple[str, str | None]]:
         """Each `@agent-<tier>[-<effort>]` profile and the `(model, effort)` it runs on this harness."""
         return {
-            f"@agent-{name}-{effort}" if effort else f"@agent-{name}": (tier.model, effort)
+            f"@agent-{name}-{effort}" if effort else f"@agent-{name}": (tier.model_for(effort), effort)
             for name, tier in self.tiers.items()
             for effort in tier.efforts or (None,)
         }
@@ -72,7 +84,7 @@ class Harnesses:
                     "label": h.label,
                     "sessions": h.sessions,
                     "reason": h.reason,
-                    "tiers": {n: {"model": t.model, "efforts": list(t.efforts)} for n, t in h.tiers.items()},
+                    "tiers": {n: t.as_json() for n, t in h.tiers.items()},
                     "desktop": {"host": h.desktop.host, "folder": h.desktop.folder} if h.desktop else None,
                 }
                 for h in self.harnesses.values()
@@ -113,9 +125,27 @@ def _harness(name: str, raw: dict[str, Any], tiers: tuple[str, ...]) -> Harness:
         efforts = _names(spec.get("efforts", []))
         if efforts is None:
             raise HarnessError(f"harness {name} tier {tier} efforts must be a list of names")
-        parsed[tier] = Tier(spec["model"], efforts)
+        models = _models(name, tier, spec.get("models"), efforts)
+        parsed[tier] = Tier(spec["model"], efforts, models)
     desktop = _desktop(name, raw["desktop"]) if "desktop" in raw else None
     return Harness(name, raw.get("label", name), bool(sessions), reason, parsed, desktop)
+
+
+def _models(
+    harness: str, tier: str, raw: object, efforts: tuple[str, ...]
+) -> dict[str, str]:
+    """Per-effort model ids, or empty when the tier uses one `model` for every effort."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict) or not all(isinstance(k, str) and isinstance(v, str) and k and v for k, v in raw.items()):
+        raise HarnessError(f"harness {harness} tier {tier} models must be a table of effort = model id")
+    named = tuple(raw)
+    if set(named) != set(efforts):
+        raise HarnessError(
+            f"harness {harness} tier {tier} models must name each effort "
+            f"{', '.join(efforts) or 'none'}, not {', '.join(named) or 'none'}"
+        )
+    return {effort: raw[effort] for effort in efforts}
 
 
 def load_harnesses(path: Path) -> Harnesses:

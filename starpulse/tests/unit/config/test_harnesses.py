@@ -62,6 +62,67 @@ def test_a_harness_resolves_each_tier_profile_to_its_model_and_effort(tmp_path: 
     }
 
 
+_CURSOR_PER_EFFORT = """
+tiers = ["fast", "standard", "deep"]
+
+[harnesses.cursor]
+label = "Cursor"
+sessions = true
+
+[harnesses.cursor.tiers.fast]
+model = "composer-2.5"
+
+[harnesses.cursor.tiers.standard]
+model = "claude-sonnet-5-thinking-high"
+efforts = ["medium", "high"]
+
+[harnesses.cursor.tiers.standard.models]
+medium = "claude-sonnet-5-thinking-high"
+high = "claude-sonnet-5-thinking-xhigh"
+
+[harnesses.cursor.tiers.deep]
+model = "claude-opus-5-5-high"
+efforts = ["medium", "high"]
+
+[harnesses.cursor.tiers.deep.models]
+medium = "claude-opus-5-5-medium"
+high = "claude-opus-5-5-high"
+"""
+
+
+def test_a_tier_may_name_a_model_per_effort(tmp_path: Path) -> None:
+    """Cursor embeds effort in the model id; a tier's models table overrides model per effort."""
+    cursor = _load(tmp_path, _CURSOR_PER_EFFORT).harnesses["cursor"]
+
+    assert cursor.profiles() == {
+        "@agent-fast": ("composer-2.5", None),
+        "@agent-standard-medium": ("claude-sonnet-5-thinking-high", "medium"),
+        "@agent-standard-high": ("claude-sonnet-5-thinking-xhigh", "high"),
+        "@agent-deep-medium": ("claude-opus-5-5-medium", "medium"),
+        "@agent-deep-high": ("claude-opus-5-5-high", "high"),
+    }
+    served = _load(tmp_path, _CURSOR_PER_EFFORT).as_json()["harnesses"][0]["tiers"]["standard"]
+    assert served == {
+        "model": "claude-sonnet-5-thinking-high",
+        "efforts": ["medium", "high"],
+        "models": {
+            "medium": "claude-sonnet-5-thinking-high",
+            "high": "claude-sonnet-5-thinking-xhigh",
+        },
+    }
+
+
+def test_a_models_table_must_cover_exactly_the_tier_efforts(tmp_path: Path) -> None:
+    text = _CURSOR_PER_EFFORT.replace(
+        'medium = "claude-opus-5-5-medium"\nhigh = "claude-opus-5-5-high"\n',
+        'high = "claude-opus-5-5-high"\n',
+    )
+
+    assert _refusal(tmp_path, text) == (
+        "harness cursor tier deep models must name each effort medium, high, not high"
+    )
+
+
 def test_the_page_receives_the_tiers_and_each_harness_without_its_credentials_or_paths(tmp_path: Path) -> None:
     assert _load(tmp_path, _CLAUDE).as_json() == {
         "tiers": ["fast", "standard", "deep"],

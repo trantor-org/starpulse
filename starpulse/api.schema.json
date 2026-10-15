@@ -2514,6 +2514,20 @@
         },
         "model": {
           "type": "string"
+        },
+        "models": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

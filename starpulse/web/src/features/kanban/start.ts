@@ -11,7 +11,7 @@ export interface Harness {
   label: string;
   sessions: boolean;
   reason: string;
-  tiers: Record<string, { model: string; efforts: string[] }>;
+  tiers: Record<string, { model: string; efforts: string[]; models?: Record<string, string> }>;
   /** The SSH host (`user@address`) and folder a Claude Desktop session opens on; absent when none is configured. */
   desktop?: { host: string; folder: string } | null;
 }
@@ -98,7 +98,8 @@ export const profileOf = (pick: Pick) => `@agent-${pick.tier}${pick.effort ? `-$
 /** The line under the pick: the model, its effort and the harness. */
 export function runsOn(pick: Pick, h: Harnesses): string {
   const harness = harnessOf(pick.harness, h);
-  const model = harness?.tiers[pick.tier]?.model ?? pick.tier;
+  const tier = harness?.tiers[pick.tier];
+  const model = (pick.effort && tier?.models?.[pick.effort]) || tier?.model || pick.tier;
   return `runs ${model}${pick.effort ? ` at ${pick.effort} effort` : ""} on ${harness?.label ?? pick.harness}`;
 }
 
