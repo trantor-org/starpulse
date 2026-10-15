@@ -261,6 +261,14 @@ def test_a_judged_kind_still_fails_the_run_when_a_row_of_it_is_over(monkeypatch)
     assert pl.main(["http://h", "--judge", "request"]) == 1
 
 
+def test_a_request_row_answered_404_fails_only_under_fail_non_2xx(monkeypatch):
+    missing = pl.Row("/api/docs", "request", 50.0, [0.2], note="answered [404]", non_2xx=True)
+    _stub_run(monkeypatch, [missing])
+
+    assert pl.main(["http://h"]) == 0
+    assert pl.main(["http://h", "--fail-non-2xx"]) == 1
+
+
 def test_a_kind_the_harness_does_not_time_is_refused(capsys):
     with pytest.raises(SystemExit):
         pl.main(["http://h", "--judge", "reqeust"])
