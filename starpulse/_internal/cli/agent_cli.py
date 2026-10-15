@@ -285,6 +285,10 @@ def _get(base: str, path: str) -> tuple[int, Any]:
             return exc.code, json.load(exc)
         except ValueError:
             return exc.code, None
+    except TimeoutError as exc:  # before OSError: a slow search is not an unreachable server
+        if path.startswith("/api/search"):
+            raise CliError("unavailable", f"slow search at {base}: timed out after 10s") from exc
+        raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
     except (OSError, ValueError) as exc:
         raise CliError("unavailable", f"cannot reach StarPulse at {base}: {exc}") from exc
 
