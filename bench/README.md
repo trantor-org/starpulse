@@ -142,6 +142,8 @@ quiet slot) until the page work in TASK-3334 to TASK-3337 cuts it; drop the flag
 `--judge KIND` (repeatable; `request`, `connect`, `stream`, `interaction`, `frame`) judges only the rows of those kinds:
 the rest print with a `not judged` note and never fail the run, for a host whose CPU cannot hold the page's paint and
 interaction rows but can hold its routes and stream deliveries. An untimed request still fails the run.
+`--fail-non-2xx` fails the run when a judged request row answered with a non-2xx status (the row still notes
+`answered [...]` without the flag).
 
 ## Latency gate
 
@@ -149,8 +151,8 @@ trantor's nightly whole-repo gate runs it (`make starpulse-latency`, `bin/starpu
 the starpulse commit trantor pins; pull requests do not, because on the shared `validate` lane it was the slowest job and
 red from host load alone. It builds the page, serves `ci/seeded_server.py` (`ci/preview.toml`'s workspace with the real
 request handler, a month of lane history for about 160 tasks, a level, 16 milestones and 24 docs on a native board,
-and an autopilot with one capacity sample), runs `page_latency.py --repeat 3` against it
-and fails on a row over budget or an untimed request. `ci/seeded_server.py` runs the same server by hand:
+and an autopilot with one capacity sample), runs `page_latency.py --repeat 3 --fail-non-2xx` against it
+and fails on a row over budget, a non-2xx request row, or an untimed request. `ci/seeded_server.py` runs the same server by hand:
 
 ```sh
 uv run python -m ci.seeded_server --port 8766 --dir .tmp/gate
@@ -205,9 +207,9 @@ until the run ends.
   under its usual load. The default holds every row to the budget, which is what the soak runner's hold is judged by.
 - A URL selects a running server and takes `--pid`; `--replay-multiple` is refused with one, and `--pid` without one.
 
-`.github/workflows/release.yml` runs this mode as its `soak` job on a self-hosted soak runner: 4 hours on a `v*` tag, which the
-GitHub Release and PyPI jobs both need, and any `duration` on a `workflow_dispatch`, which publishes nothing. The report
-uploads as the run's `soak-report` artifact.
+`.github/workflows/release.yml` runs this mode as its `soak` job on a self-hosted soak runner: 4 hours on a `v*` tag, beside
+the GitHub Release and PyPI jobs, and any `duration` on a `workflow_dispatch`, which publishes nothing. A red or cancelled
+soak files a GitHub issue naming the tag and the run. The report uploads as the run's `soak-report` artifact.
 
 **Replay rate.** The live instance's event log took 14,497 events in the 24 hours to 2026-10-10 09:30 MST, 1,312 of
 them lane changes, and 11,075 a day over the 7 days before. `LIVE_EVENTS_PER_DAY` in `soak.py` is 14,500, about 0.17

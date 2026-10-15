@@ -118,6 +118,7 @@ class Row:
     samples: list[float] = field(default_factory=list)
     note: str = ""
     judged: bool = True
+    non_2xx: bool = False
 
     @property
     def p50(self) -> float | None:
@@ -176,7 +177,15 @@ def median_run(runs: Sequence[Sequence[Row]]) -> list[Row]:
             median = sampled[(len(sampled) - 1) // 2]
             note = f"median of {len(runs)} runs, p95 {'/'.join(f'{r.p95:.0f}' for r in sampled)}"
             judged.append(
-                Row(median.name, median.kind, median.budget, median.samples, f"{median.note}; {note}".strip("; "))
+                Row(
+                    median.name,
+                    median.kind,
+                    median.budget,
+                    median.samples,
+                    f"{median.note}; {note}".strip("; "),
+                    median.judged,
+                    median.non_2xx,
+                )
             )
     return judged
 
@@ -212,11 +221,20 @@ def starved(waited: float | None) -> bool:
     return waited is not None and waited > STARVED_SHARE
 
 
-def verdict(rows: Sequence[Row], missing: Sequence[str], waited: float | None = None) -> int:
-    """STARVED for a starved run; else 0 when every row is under its budget and the page made no untimed request, else 1."""
+def verdict(
+    rows: Sequence[Row],
+    missing: Sequence[str],
+    waited: float | None = None,
+    fail_non_2xx: bool = False,
+) -> int:
+    """STARVED for a starved run; else 0 when every row is under its budget and the page made no untimed request, else 1.
+
+    With `fail_non_2xx`, a judged row whose samples included a non-2xx status also fails the run.
+    """
     if starved(waited):
         return STARVED
-    return 1 if missing or any(r.over for r in rows) else 0
+    bad_status = fail_non_2xx and any(r.judged and r.non_2xx for r in rows)
+    return 1 if missing or bad_status or any(r.over for r in rows) else 0
 
 
 def table(rows: Sequence[Row], missing: Sequence[str], waited: float | None = None) -> str:
@@ -317,7 +335,8 @@ def time_reads(client: Client, samples: int, what_if: Sequence[str] = WHAT_IF) -
             status, _, ms = client.get(path)
             statuses.add(status)
             row.samples.append(ms)
-        if statuses - {200}:
+        row.non_2xx = any(status // 100 != 2 for status in statuses)
+        if row.non_2xx:
             row.note = f"answered {sorted(statuses)}"
         rows.append(row)
     return rows
@@ -672,6 +691,11 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="judge only the rows of this kind (repeatable); the rest are printed, never fail the run (default: all)",
     )
+    parser.add_argument(
+        "--fail-non-2xx",
+        action="store_true",
+        help="fail the run when any judged request row answered with a non-2xx status",
+    )
     parser.add_argument("--json", type=argparse.FileType("w"), help="also write the rows here")
     parser.add_argument(
         "--viewer",
@@ -725,7 +749,7 @@ def main(argv: list[str] | None = None) -> int:
             args.json,
             indent=2,
         )
-    return verdict(rows, missing, share)
+    return verdict(rows, missing, share, fail_non_2xx=args.fail_non_2xx)
 
 
 if __name__ == "__main__":

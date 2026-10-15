@@ -89,12 +89,27 @@ def needs(workflow: str, name: str) -> list[str]:
     return [declared] if isinstance(declared, str) else declared
 
 
-def test_release_soak_runs_on_tower_after_the_build_and_gates_both_publishing_jobs():
-    """A red soak publishes nothing: the GitHub Release and PyPI both wait for it, and it waits for a build that passed."""
+def test_release_soak_runs_on_tower_after_the_build_and_does_not_gate_publishing():
+    """The soak still runs on Tower after a green build; a red soak no longer holds the GitHub Release or PyPI."""
     assert job("release.yml", "soak")["runs-on"] == TOWER_LANE
     assert "build" in needs("release.yml", "soak")
-    assert "soak" in needs("release.yml", "github-release")
-    assert "soak" in needs("release.yml", "pypi")
+    assert "build" in needs("release.yml", "github-release")
+    assert "soak" not in needs("release.yml", "github-release")
+    assert "soak" not in needs("release.yml", "pypi")
+
+
+def test_a_failed_or_cancelled_release_soak_files_a_github_issue_naming_the_tag_and_run():
+    """Publishing no longer waits; a red or cancelled soak still records the tag and the run as an issue."""
+    alert = job("release.yml", "soak-alert")
+    step = next(s for s in alert["steps"] if "gh issue create" in s.get("run", ""))
+    env = step.get("env", {})
+
+    assert needs("release.yml", "soak-alert") == ["soak"]
+    assert "needs.soak.result" in alert["if"]
+    assert "failure" in alert["if"] and "cancelled" in alert["if"]
+    assert env.get("TAG") == "${{ github.ref_name }}"
+    assert "github.run_id" in env.get("RUN_URL", "")
+    assert "${TAG}" in step["run"] and "${RUN_URL}" in step["run"]
 
 
 def test_release_soak_runs_for_a_tag_or_a_dispatch_and_publishing_only_for_a_tag_push():

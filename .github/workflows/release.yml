@@ -1,9 +1,9 @@
 name: Release
 
 # A `v<version>` tag publishes that version: a GitHub Release with generated notes and the built files,
-# then PyPI through trusted publishing, once a soak of the page has held. A pull request runs the build alone, so a
-# broken package shows before anything is tagged. A manual dispatch builds and soaks any ref and publishes nothing,
-# whatever ref it names.
+# then PyPI through trusted publishing. The soak of the page runs beside that publish and does not hold it. A pull
+# request runs the build alone, so a broken package shows before anything is tagged. A manual dispatch builds and soaks
+# any ref and publishes nothing, whatever ref it names.
 on:
   push:
     tags: ["v*"]
@@ -56,8 +56,8 @@ jobs:
 
   # The latency budget's endurance half (bench/soak.py): one Chrome tab held open on a disposable seeded server that
   # the soak starts and feeds a replayed event stream, sampled and probed until the hold ends. It runs on the Tower
-  # farm slots, the hardware the budget is judged on (ai-vm-1's Xeon cannot hold it). The soak's exit status is the
-  # job's, so a page over budget or leaking publishes nothing: both publishing jobs need it.
+  # farm slots, the hardware the budget is judged on (ai-vm-1's Xeon cannot hold it). Publishing does not wait for it:
+  # a page over budget or leaking fails this job while the GitHub Release and PyPI still ship.
   soak:
     if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
     needs: build
@@ -100,10 +100,29 @@ jobs:
           path: ${{ runner.temp }}/soak.json
           if-no-files-found: warn
 
+  # Publishing does not wait for the soak, so a red or cancelled run (a job timeout included) files an issue
+  # naming the tag and the run. Skipped soaks, including pull requests, do not.
+  soak-alert:
+    if: always() && contains(fromJSON('["failure", "cancelled"]'), needs.soak.result)
+    needs: soak
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: File an issue for the failed soak
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "Release soak failed for ${TAG}" \
+            --body "The release soak for \`${TAG}\` failed or was cancelled. Run: ${RUN_URL}"
+
   github-release:
     # A push here is a tag: only `v*` tags trigger it. A dispatch names a ref, which may be a tag, and publishes nothing.
     if: github.event_name == 'push'
-    needs: [build, soak]
+    needs: [build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -118,7 +137,7 @@ jobs:
 
   pypi:
     if: github.event_name == 'push'
-    needs: [github-release, soak]
+    needs: [github-release]
     runs-on: ubuntu-latest
     environment:
       name: pypi
