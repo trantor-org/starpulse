@@ -100,7 +100,12 @@ def _found(index: SearchIndex, query: str, **filters: object) -> list[str]:
 def test_without_an_embeddings_url_search_is_lexical_and_nothing_calls_out(
     engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def refuse(*args: object, **kwargs: object) -> None:
+    owner = threading.get_ident()
+    connect = socket.socket.connect
+
+    def refuse(self: socket.socket, *args: object, **kwargs: object) -> None:
+        if threading.get_ident() != owner:  # the suite's warm-up thread starting a container is not search
+            return connect(self, *args, **kwargs)  # type: ignore[arg-type]
         raise AssertionError("search opened a network connection without an embeddings URL")
 
     monkeypatch.setattr(socket.socket, "connect", refuse)
