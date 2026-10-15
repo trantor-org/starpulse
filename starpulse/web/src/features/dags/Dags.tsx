@@ -1,12 +1,12 @@
 // The DAGs view: a view of its own beside the Kanban, in the Kanban's frame. A catalog with a fold per domain and a row per DAG:
 // its state dot, its steps as a small constellation, its last run, its pool and its first Board tie, and on a run-safe row the
 // Kanban's ▶ edge strip. It reuses the Kanban's filter chips, menus and folds, and draws each DAG's steps as the Star Map's DAG bodies do (StepStar).
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { same } from "../../api/same";
 import { DAG_PREFS_KEY, NO_DAG_FILTERS, useFilters } from "../../shared/viewPrefs";
 import { DagModal } from "./DagModal";
 import { lastLine, Orb, poolText, Strip, TieChip, type LedgerGo } from "./DagParts";
-import { filterRows, group, order, PHASES, RECENCY, recent, refusal, rowEstimate, rows, short, ties, type DagData, type Phase, type Row, type Tie } from "./dags";
+import { closedProcessKeys, filterRows, group, order, PHASES, processNames, RECENCY, recent, refusal, rowEstimate, rows, short, ties, type DagData, type Phase, type Row, type Tie } from "./dags";
 import { ChoiceMenu } from "../../shared/ChoiceMenu";
 import { useViewActive } from "../../shared/Kept";
 import { BOARD, ledgerLevel, type Path } from "../../render/levels";
@@ -33,10 +33,10 @@ function RunBtn({ r, why, run }: { r: Row; why: string | null; run: (r: Row) => 
   );
 }
 
-function Fold({ k, title, n, folded, toggle, children }: { k: string; title: ReactNode; n: number; folded: Set<string>; toggle: (k: string) => void; children: ReactNode }) {
+function Fold({ k, title, n, folded, toggle, children, process }: { k: string; title: ReactNode; n: number; folded: Set<string>; toggle: (k: string) => void; children: ReactNode; process?: boolean }) {
   const f = folded.has(k);
   return (
-    <div className={`bucket${f ? " folded" : ""}`}>
+    <div className={`bucket${process ? " process" : ""}${f ? " folded" : ""}`}>
       <div className="bh" onClick={() => toggle(k)} role="button" tabIndex={0} aria-expanded={!f}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle(k))}><span className="tw">▾</span><span className="bn">{title}</span><span className="c">{n}</span></div>
       {!f && children}
@@ -76,20 +76,34 @@ function Catalog({ data, rs, now, why, run, open, ledger, folded, toggle, spot }
 }) {
   const doms = [...new Set([...data.domains.map((d) => d.name), ...rs.map((r) => r.domain)])].filter((d) => rs.some((r) => r.domain === d));
   let row = 0;
+  // a domain header sticks under the column header, and a process header under its domain's: both heights are the text scale's, so they are read
+  useLayoutEffect(() => {
+    const el = document.getElementById("catalog"), head = el?.querySelector<HTMLElement>(".thead"), dom = el?.querySelector<HTMLElement>(".bucket:not(.process) > .bh");
+    if (!el || !head) return;
+    el.style.setProperty("--headh", `${head.offsetHeight}px`);
+    if (dom) el.style.setProperty("--subtop", `${head.offsetHeight + dom.offsetHeight}px`);
+  });
   const estimate = rowEstimate(useSyncExternalStore(onPhone, phone), Number(document.documentElement.style.getPropertyValue("--fs")) || 1);
   return (
     <Viewport id="catalog">
       <div className="thead"><span /><span>DAG</span><span>Steps</span><span>Last run</span><span>Pool</span><span>Board</span><span /></div>
       {doms.map((d) => {
         const list = rs.filter((r) => r.domain === d).sort(order);
+        const meta = data.domains.find((x) => x.name === d);
+        const line = (r: Row) => {
+          const at = row++;
+          return <ViewportRow key={r.d.name} initial={at < 24} estimate={estimate} force={r.d.name === spot}>
+            <DagRow r={r} now={now} spot={r.d.name === spot} why={why(r)} pool={poolText(data.pools, r)} tie={ties(data, r.d.name)[0]} ledger={ledger} run={run} open={open} />
+          </ViewportRow>;
+        };
         return (
           <Fold key={d} k={`cat|${d}`} title={<>{d} <Census rs={list} /></>} n={list.length} folded={folded} toggle={toggle}>
-            {list.map((r) => {
-              const at = row++;
-              return <ViewportRow key={r.d.name} initial={at < 24} estimate={estimate} force={r.d.name === spot}>
-                <DagRow r={r} now={now} spot={r.d.name === spot} why={why(r)} pool={poolText(data.pools, r)} tie={ties(data, r.d.name)[0]} ledger={ledger} run={run} open={open} />
-              </ViewportRow>;
-            })}
+            {meta?.processes?.length
+              ? processNames(meta, list).map((p) => {
+                const pl = list.filter((r) => r.process === p);
+                return pl.length ? <Fold key={p} k={`cat|${d}|${p}`} process title={<>{p} <Census rs={pl} /></>} n={pl.length} folded={folded} toggle={toggle}>{pl.map(line)}</Fold> : null;
+              })
+              : list.map(line)}
           </Fold>
         );
       })}
@@ -107,6 +121,7 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
   const setQ = (v: string) => keep({ q: v }), setOnly = (v: typeof only) => keep({ only: v }), setDom = (v: string | null) => keep({ dom: v }), setWin = (v: string | null) => keep({ win: v });
   const [menu, setMenu] = useState<"status" | "domain" | "recency" | null>(null);
   const [folded, setFolded] = useState<Set<string>>(new Set());
+  const [seeded, setSeeded] = useState(false);
   const [toast, setToast] = useState<{ text: string; n: number } | null>(null);
   const [starting, setStarting] = useState<Set<string>>(new Set());
   const [opened, setOpened] = useState<string | null>(null);
@@ -159,6 +174,12 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
   const why = (r: Row) => refusal(r, starting.has(r.d.name));
   const cutoff = (label: string) => now - RECENCY.find(([l]) => l === label)![1];
   const rs = filterRows(all, { q, only, dom, since: win ? cutoff(win) : 0 });
+  // the process folds start as smart-open leaves them, once: a filter in force opens every process it leaves a row in, and a later snapshot keeps the operator's toggles
+  if (!seeded) {
+    setSeeded(true);
+    const filtered = !!(only || dom || win || q.trim());
+    setFolded(new Set(data.domains.flatMap((d) => closedProcessKeys(d, all.filter((r) => r.domain === d.name), filtered ? rs : undefined))));
+  }
   const shown = opened ? all.find((r) => r.d.name === opened) : undefined;
   // the Kanban's filter chip: a label, the chosen value, ▾; a press opens its menu
   const chip = (name: "status" | "domain" | "recency", label: string, text: string | null) => (

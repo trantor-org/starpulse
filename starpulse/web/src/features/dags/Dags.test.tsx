@@ -275,3 +275,56 @@ describe("a DAGs delta", () => {
     expect(q(".trow[data-dag='runs/triage']").className).toContain("p-running");
   });
 });
+
+describe("process folds", () => {
+  const member = (n: string) => ({ name: `runs/${n}`, runSafe: false });
+  const nest: DagData = {
+    ...data,
+    dags: [dag("runs/a1", "succeeded"), dag("runs/b1", "failed"), dag("runs/c1", "succeeded"), dag("runs/d1", "succeeded"), dag("runs/flat", "succeeded")],
+    domains: [
+      { name: "Pack", dags: ["a1", "b1", "c1", "d1"].map(member), processes: ["a1", "b1", "c1", "d1"].map((n, i) => ({ name: `P${i + 1}`, dags: [member(n)] })) },
+      { name: "Flat", dags: [member("flat")], processes: [] },
+    ],
+  };
+  const folds = () => all(".bucket").map((b) => [b.querySelector(":scope > .bh .bn")!.textContent!.replace(/\d+$/, "").trim().split(" ")[0], b.classList.contains("folded")] as const);
+  const bh = (title: string) => all(".bucket > .bh").find((h) => h.querySelector(".bn")!.textContent!.startsWith(title))!;
+
+  it("nests a fold per process in a domain that packages them, and leaves a flat domain one level", async () => {
+    await draw(nest);
+
+    expect(all("#catalog > .bucket > .bucket.process > .bh .bn").map((e) => e.textContent!.replace(/\d+$/, "").trim().split(" ")[0])).toEqual(["P1", "P2", "P3", "P4"]);
+    expect(all("#catalog > .bucket:last-child .bucket")).toHaveLength(0);
+    expect(all(".chip, .pchip")).toHaveLength(0);
+  });
+
+  it("starts a healthy process folded in a domain of more than three, and a failing one open", async () => {
+    await draw(nest);
+
+    expect(folds()).toEqual([["Pack", false], ["P1", true], ["P2", false], ["P3", true], ["P4", true], ["Flat", false]]);
+    expect(names()).toEqual(["b1", "flat"]);
+  });
+
+  it("seeds the folds once, so an operator's toggle outlives the next snapshot", async () => {
+    await draw(nest);
+    await click(bh("P1"));
+    await draw({ ...nest, now: nest.now + 5 });
+
+    expect(folds().find(([n]) => n === "P1")![1]).toBe(false);
+    await click(bh("P2"));
+    await draw({ ...nest, now: nest.now + 9 });
+    expect(folds().find(([n]) => n === "P2")![1]).toBe(true);
+  });
+
+  it("starts open every process a filter in force leaves a row in", async () => {
+    localStorage.setItem("fv.dags.prefs", JSON.stringify({ q: "c1", only: null, dom: null, win: null }));
+    await draw(nest);
+
+    expect(folds()).toEqual([["Pack", false], ["P3", false]]);
+  });
+
+  it("sticks the domain header under the column header and the process header under that", () => {
+    expect(css).toMatch(/#dg \.bucket > \.bh \{[^}]*top: var\(--headh/);
+    expect(css).toMatch(/#dg \.bucket\.process > \.bh \{[^}]*top: var\(--subtop/);
+    expect(css).toMatch(/#dg \.bucket \.bucket \{[^}]*margin-left/);
+  });
+});

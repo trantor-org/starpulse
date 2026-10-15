@@ -796,6 +796,15 @@ html.still *, html.still *::before, html.still *::after { animation: none !impor
    whole catalog streaming kept an idle page's main thread busy 40% of the time */
 @media (prefers-reduced-motion: no-preference) { .kept:not([inert]) #dg :is(.trow:is(:hover, .spot, :focus-visible), .dgm) svg.dstrip path.link { animation: dag-stream .42s linear infinite; } }
 @keyframes dag-stream { to { stroke-dashoffset: -6; } }
+/* A process subfold: the domain fold's header one step in and one step quieter. A domain header sticks under the column header, a process header under its domain's;
+   the catalog sets --headh and --subtop from the heights the text scale gives them. */
+#dg .bucket .bucket { margin-left: 12px; }
+#dg .bucket > .bh { top: var(--headh, 20px); }
+#dg .bucket.process { margin-left: calc(14px * var(--fs)); gap: 7px; }
+#dg .bucket.process + .bucket.process { margin-top: 2px; }
+#dg .bucket.process > .bh { top: var(--subtop, 17px); z-index: 1; margin: 0 -8px 0 -10px; padding: 4px 10px 4px; color: var(--slate-4); background: var(--sticky); border-bottom: 1px dashed color-mix(in srgb, var(--slate) 10%, transparent); }
+#dg .bucket.process > .bh:hover { color: var(--ink-2); }
+#dg .bucket.process > .bh .census { margin-left: 6px; }
 #dg .fw #dgq { width: calc(270px * var(--fs)); max-width: 100%; }
 .census { display: inline-flex; align-items: center; gap: 10px; margin-left: 8px; font-size: calc(11px * var(--fs)); font-weight: 400; letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
 .census > span { display: inline-flex; align-items: center; gap: 5px; }
