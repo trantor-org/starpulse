@@ -135,9 +135,9 @@ describe("process folds", () => {
       expect(closedProcessKeys(dom, rs)).toEqual(["cat|D|P1", "cat|D|P2", "cat|D|P3", "cat|D|P4"]);
     });
 
-    it("keeps a process open when it has a failing DAG", () => {
+    it("collapses a process even when it has a failing DAG (folds freeze; no auto-open on fail)", () => {
       const { dom, rs } = mk(four, { "x/2": { status: "failed" } });
-      expect(closedProcessKeys(dom, rs)).toEqual(["cat|D|P1", "cat|D|P3", "cat|D|P4"]);
+      expect(closedProcessKeys(dom, rs)).toEqual(["cat|D|P1", "cat|D|P2", "cat|D|P3", "cat|D|P4"]);
     });
 
     it("keeps every process open when the domain has three or fewer processes", () => {
@@ -153,10 +153,32 @@ describe("process folds", () => {
 });
 
 describe("the catalog's order", () => {
-  it("lists running, queued, failed, never run, then healthy, the newest finish first within a phase", () => {
+  it("lists each domain's DAGs in snapshot membership order, then Other by name", () => {
+    // Board: pr-watch, triage, sweeper; Ops: backup, deploy, lost; Other: stray — not by phase
     const names = rows(data).sort(order).map((r) => r.d.name);
 
-    expect(names).toEqual(["runs/deploy", "runs/backup", "runs/triage", "runs/lost", "runs/sweeper", "runs/pr-watch", "runs/stray"]);
+    expect(names).toEqual(["runs/pr-watch", "runs/triage", "runs/sweeper", "runs/backup", "runs/deploy", "runs/lost", "runs/stray"]);
+  });
+
+  it("holds a row's place when only its phase changes", () => {
+    const before = rows(data).sort(order).map((r) => r.d.name);
+    const fired: DagData = {
+      ...data,
+      dags: data.dags.map((d) => (d.name === "runs/pr-watch" ? dag("runs/pr-watch", "running", {
+        finishedAt: "1970-01-01T00:10:00Z", startedAt: "1970-01-01T00:09:00Z",
+        active: [{ runId: "r2", status: "running", startedAt: "1970-01-01T00:16:00Z", step: "a", stepStartedAt: "", steps: { a: "running", b: "not_started" } }],
+      }) : d)),
+    };
+    const after = rows(fired).sort(order).map((r) => r.d.name);
+
+    expect(after).toEqual(before);
+    expect(rows(fired).find((r) => r.d.name === "runs/pr-watch")!.phase).toBe("running");
+  });
+
+  it("orders nested process members by process package then membership, not phase", () => {
+    const names = rows(nested).filter((r) => r.domain === "Board").sort(order).map((r) => r.d.name);
+
+    expect(names).toEqual(["runs/pr-watch", "runs/triage", "runs/sweeper"]);
   });
 });
 

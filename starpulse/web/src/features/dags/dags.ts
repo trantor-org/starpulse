@@ -42,6 +42,8 @@ export interface Row {
   runSafe: boolean;
   /** The process package of its domain it belongs to; `Other` when the domain packages processes but omits it, null when the domain has none. */
   process: string | null;
+  /** Snapshot membership rank: domain order, then process package order, then list order; Other-domain DAGs sort after by name. */
+  ord: number;
   phase: Phase;
   /** Each step's status in the run the row shows: the active one, else the last. */
   steps: Record<string, string>;
@@ -58,19 +60,30 @@ const iso = (s: string) => (s ? Date.parse(s) / 1000 : 0);
 const made = new WeakMap<Dag, Row>();
 
 export function rows(data: DagData): Row[] {
-  const home: Record<string, { domain: string; runSafe: boolean; process: string | null }> = {};
+  const home: Record<string, { domain: string; runSafe: boolean; process: string | null; ord: number }> = {};
+  let ord = 0;
   for (const dom of data.domains) {
-    const byDag = new Map(dom.processes?.flatMap((p) => p.dags.map((x) => [x.name, p.name] as const)));
-    for (const x of dom.dags) home[x.name] = { domain: dom.name, runSafe: x.runSafe, process: dom.processes?.length ? byDag.get(x.name) ?? "Other" : null };
+    if (dom.processes?.length) {
+      for (const p of dom.processes) {
+        for (const x of p.dags) home[x.name] = { domain: dom.name, runSafe: x.runSafe, process: p.name, ord: ord++ };
+      }
+      for (const x of dom.dags) {
+        if (!(x.name in home)) home[x.name] = { domain: dom.name, runSafe: x.runSafe, process: "Other", ord: ord++ };
+      }
+    } else {
+      for (const x of dom.dags) home[x.name] = { domain: dom.name, runSafe: x.runSafe, process: null, ord: ord++ };
+    }
   }
   return data.dags.map((d) => {
-    const had = made.get(d), domain = home[d.name]?.domain ?? "Other", runSafe = home[d.name]?.runSafe ?? false, process = home[d.name]?.process ?? null;
-    if (had && had.domain === domain && had.runSafe === runSafe && had.process === process) return had;
+    const spot = home[d.name], domain = spot?.domain ?? "Other", runSafe = spot?.runSafe ?? false, process = spot?.process ?? null;
+    const rank = spot?.ord ?? 1e9;
+    const had = made.get(d);
+    if (had && had.domain === domain && had.runSafe === runSafe && had.process === process && had.ord === rank) return had;
     const run = d.active?.[0];
     const phase: Phase = run || d.status === "running" ? "running" : d.status === "queued" ? "queued"
       : d.status === "failed" || d.status === "aborted" ? "failed" : d.status === "not_started" ? "idle" : "ok";
     const row: Row = {
-      d, domain, runSafe, process, phase,
+      d, domain, runSafe, process, ord: rank, phase,
       steps: Object.fromEntries(d.steps.map((x) => [x.name, run?.steps[x.name] ?? x.status])),
       startedAt: iso(run?.startedAt ?? d.startedAt), finishedAt: iso(d.finishedAt), step: run?.step ?? "",
     };
@@ -79,8 +92,8 @@ export function rows(data: DagData): Row[] {
   });
 }
 
-const RANK: Record<Phase, number> = { running: 0, queued: 1, failed: 2, idle: 3, ok: 4 };
-export const order = (a: Row, b: Row) => RANK[a.phase] - RANK[b.phase] || b.finishedAt - a.finishedAt || a.d.name.localeCompare(b.d.name);
+/** Stable catalog order: snapshot membership, then name (phase never moves a row). */
+export const order = (a: Row, b: Row) => a.ord - b.ord || a.d.name.localeCompare(b.d.name);
 
 /** The Last run menu's windows, each with its length in seconds; no choice shows every DAG. */
 export const RECENCY: [string, number][] = [["Past hour", 3600], ["Past day", 86400], ["Past week", 7 * 86400], ["Past month", 30 * 86400], ["Past year", 365 * 86400]];
@@ -101,11 +114,11 @@ export function processNames(domain: Domain, rs: Row[]): string[] {
   return rs.some((r) => r.process === "Other") && !names.includes("Other") ? [...names, "Other"] : names;
 }
 
-/** The process folds of a domain that start folded (`cat|<domain>|<process>`): a healthy process in a domain of more than three, unless `matching`, the rows a filter leaves, has one in it. */
+/** The process folds of a domain that start folded (`cat|<domain>|<process>`): every process in a domain of more than three, unless `matching`, the rows a filter leaves, has one in it. Phase never reopens a fold. */
 export function closedProcessKeys(domain: Domain, rs: Row[], matching?: Row[]): string[] {
   const names = processNames(domain, rs);
   if (names.length <= 3) return [];
-  return names.filter((p) => !rs.some((r) => r.process === p && group(r.phase) !== "ok") && !matching?.some((r) => r.domain === domain.name && r.process === p)).map((p) => `cat|${domain.name}|${p}`);
+  return names.filter((p) => !matching?.some((r) => r.domain === domain.name && r.process === p)).map((p) => `cat|${domain.name}|${p}`);
 }
 
 /** Where a DAG touches the Board: the event that cues it, the transitions it writes, the skill it launches. `ev` is the transition's event, which has a Ledger on the Star Map. */
