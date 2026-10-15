@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import itertools
 import json
 import os
 import re
@@ -179,15 +180,27 @@ def listening_pid(port: int) -> int | None:
             fields = line.split()
             if fields[3] == "0A" and int(fields[1].rsplit(":", 1)[1], 16) == port:  # 0A is LISTEN
                 inodes.add(f"socket:[{fields[9]}]")
-    for proc in Path("/proc").iterdir():
-        if not proc.name.isdigit():
-            continue
+    # this run's own children first: the seeded server is one, and walking every process's descriptors on a busy host
+    # costs seconds of CPU where its parent's few children cost none
+    everyone = (int(proc.name) for proc in Path("/proc").iterdir() if proc.name.isdigit())
+    for pid in itertools.chain(_children(os.getpid()), everyone):
         try:
-            if any(os.readlink(fd) in inodes for fd in map(str, proc.joinpath("fd").iterdir())):
-                return int(proc.name)
+            if any(os.readlink(f"/proc/{pid}/fd/{fd}") in inodes for fd in os.listdir(f"/proc/{pid}/fd")):
+                return pid
         except OSError:
             continue
     return None
+
+
+def _children(pid: int) -> list[int]:
+    """The processes `pid` started that still run, as /proc lists them under each of its threads."""
+    found: list[int] = []
+    for children in Path(f"/proc/{pid}/task").glob("*/children"):
+        try:
+            found.extend(int(child) for child in children.read_text().split())
+        except OSError:
+            continue
+    return found
 
 
 def replay_rate(multiple: float) -> float:

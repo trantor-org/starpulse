@@ -261,7 +261,7 @@ def test_the_replay_rate_is_a_multiple_of_the_live_rate_and_the_default_passes_a
     assert soak.replay_rate(soak.REPLAY_MULTIPLE) * 4 * 3600 == pytest.approx(soak.LIVE_EVENTS_PER_DAY)
 
 
-# Stays slow: it starts the seeded server as a subprocess, which seeds a month of tasks and lane history before it
+# Stays slow: it starts the seeded server as a subprocess, which imports the server and a month of lane history before it
 # answers; that start is what the soak runs against.
 def test_the_soak_starts_a_seeded_server_replays_into_it_and_tears_it_down():
     with soak.seeded(3000) as server:
@@ -270,7 +270,6 @@ def test_the_soak_starts_a_seeded_server_replays_into_it_and_tears_it_down():
             assert response.status == 200
         port = int(server.base.rsplit(":", 1)[1])
         assert soak.listening_pid(port) == server.pid  # the process the soak reads /proc for is the server itself
-        time.sleep(1)
 
     assert server.replayed > 0
     assert not Path(f"/proc/{server.pid}").exists()
