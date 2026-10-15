@@ -129,8 +129,6 @@ class EventLog:
                     self._engine,
                     [events, gaps, board_state, source_instances, settings, autopilot_runs, retired_tasks],
                 )
-                for index in retired_tasks.indexes:  # create_all leaves a table that predates an index
-                    index.create(self._engine, checkfirst=True)
                 self._ready = True
             assert self._engine is not None
             return self._engine

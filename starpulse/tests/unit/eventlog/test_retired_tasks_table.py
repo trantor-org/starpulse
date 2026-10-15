@@ -38,21 +38,38 @@ def test_pruning_the_event_log_keeps_every_retired_task(tmp_path: Path) -> None:
         assert db.execute(select(retired_tasks.c.task)).scalars().all() == ["TASK-1"]
 
 
-def test_the_change_poll_reads_the_retired_tasks_through_the_covering_retired_at_index(tmp_path: Path) -> None:
-    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
-    engine = create_engine(url)
-    with engine.begin() as db:  # a store that predates the index: the table alone
+_POLL = "EXPLAIN QUERY PLAN SELECT count(*), max(retired_at) FROM starpulse_retired_tasks"
+_COVERING = "USING COVERING INDEX ix_starpulse_retired_tasks_retired_at"
+
+
+def _plan(engine) -> str:
+    with engine.connect() as db:
+        return " ".join(row[-1] for row in db.execute(text(_POLL)).all())
+
+
+def test_the_change_poll_reads_a_new_store_through_the_covering_retired_at_index(tmp_path: Path) -> None:
+    assert _COVERING in _plan(EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}").engine)
+
+
+def test_migration_0020_gives_a_store_that_predates_the_index_the_covering_retired_at_index() -> None:
+    pytest.importorskip("alembic")
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    migration = importlib.import_module(
+        "starpulse._internal.eventlog.migrations.versions.0020_retired_tasks_retired_at_index"
+    )
+    engine = create_engine("sqlite://")
+    with engine.begin() as db:
         db.execute(
             text(
                 "CREATE TABLE starpulse_retired_tasks (task VARCHAR NOT NULL PRIMARY KEY, name VARCHAR NOT NULL, "
                 "text TEXT NOT NULL, retired_at FLOAT NOT NULL)"
             )
         )
-    engine.dispose()
+    assert _COVERING not in _plan(engine)
 
-    with EventLog(url).engine.connect() as db:
-        plan = db.execute(
-            text("EXPLAIN QUERY PLAN SELECT count(*), max(retired_at) FROM starpulse_retired_tasks")
-        ).all()
+    with engine.begin() as db, Operations.context(MigrationContext.configure(db)):
+        migration.upgrade()
 
-    assert "USING COVERING INDEX ix_starpulse_retired_tasks_retired_at" in " ".join(row[-1] for row in plan)
+    assert _COVERING in _plan(engine)
