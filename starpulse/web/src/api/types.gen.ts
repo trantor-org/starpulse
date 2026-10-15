@@ -1006,6 +1006,9 @@ export interface HarnessDesktop {
 export interface HarnessTier {
   efforts: string[];
   model: string;
+  models?: {
+    [k: string]: string;
+  } | null;
 }
 /**
  * `GET /api/analytics/health`: the Board's flow health over a window.

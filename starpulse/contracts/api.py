@@ -1323,6 +1323,8 @@ class WhatIf(_Api):
 class HarnessTier(_Api):
     model: str
     efforts: list[str]
+    models: dict[str, str] | None = None
+    """Per-effort model ids when a harness embeds effort in the model id; omitted when every effort shares `model`."""
 
 
 class HarnessDesktop(_Api):

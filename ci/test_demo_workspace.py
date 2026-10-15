@@ -14,9 +14,18 @@ NOW = 1_790_000_000.0
 LANES = ["new", "ready", "waiting", "in_progress", "review", "needs_attention", "done", "archived"]
 
 
+def _domain_workflows(value: object) -> list[str]:
+    """Workflow names under a domain: a flat list, or the union of nested process lists."""
+    if isinstance(value, list) and all(isinstance(w, str) for w in value):
+        return list(value)
+    if isinstance(value, dict) and all(isinstance(ws, list) for ws in value.values()):
+        return [w for ws in value.values() for w in ws]
+    return []
+
+
 def _workflows() -> list[str]:
     runs = tomllib.loads(PREVIEW.read_text())["runs"]
-    return [f"{r['name']}/{w}" for r in runs for ws in r["domains"].values() for w in ws]
+    return [f"{r['name']}/{w}" for r in runs for ws in r["domains"].values() for w in _domain_workflows(ws)]
 
 
 def _machines() -> dict[str, dict]:
@@ -83,7 +92,10 @@ def _capture() -> dict:
     """The snapshot CI's server opens its stream with on `ci/preview.toml`: this structure, no task and no run."""
     machines = _machines()
     domains = [
-        {"name": domain, "dags": [{"name": f"{r['name']}/{w}", "runSafe": False} for w in ws]}
+        {
+            "name": domain,
+            "dags": [{"name": f"{r['name']}/{w}", "runSafe": False} for w in _domain_workflows(ws)],
+        }
         for r in tomllib.loads(PREVIEW.read_text())["runs"]
         for domain, ws in r["domains"].items()
     ]
