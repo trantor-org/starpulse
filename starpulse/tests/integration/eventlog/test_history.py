@@ -1,8 +1,10 @@
 """The history store's rules, on SQLite and on Postgres, and its recorder fed from the event log."""
 
+import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -405,3 +407,31 @@ def test_the_summaries_a_store_keeps_on_write_match_the_ones_folded_from_its_row
         open_stays = db.execute(text("SELECT lane FROM starpulse_lane_intervals WHERE left_at IS NULL")).scalars().all()
     assert steps == 5
     assert open_stays == ["in_progress"]
+
+
+def test_a_sqlite_history_connection_bounds_the_write_ahead_log_file(tmp_path: Path) -> None:
+    # SQLite keeps the -wal file at its high-water mark unless a limit is set, so one burst leaves hundreds of MB.
+    store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+
+    with store.engine.connect() as db:
+        limit = db.exec_driver_sql("PRAGMA journal_size_limit").scalar()
+
+    assert limit is not None
+    assert 0 < limit <= 128 * 1024 * 1024
+
+
+def test_a_sqlite_history_store_refreshes_its_planner_statistics_when_a_connection_opens(tmp_path: Path) -> None:
+    # the server never disposes its pool, so the statistics must refresh as a connection opens, not as one closes
+    path = tmp_path / "history.sqlite"
+    first = HistoryStore(f"sqlite:///{path}", MACHINES)
+    first.record_machine("1-0", _CLAIM)
+    first.engine.dispose()
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT count(*) FROM sqlite_master WHERE name = 'sqlite_stat1'").fetchone() == (0,)
+
+    reopened = HistoryStore(f"sqlite:///{path}", MACHINES)
+    with reopened.engine.connect() as db:
+        analysed = db.exec_driver_sql("SELECT count(*) FROM sqlite_stat1").scalar()
+
+    assert analysed is not None
+    assert analysed > 0

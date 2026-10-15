@@ -97,6 +97,10 @@ when it exists. Database credentials never go in it: they come from the driver's
 The default SQLite store must be on a local disk because WAL mode does not work on network filesystems such as NFS
 or SMB. When the project or config lives on network storage, set `database_url` to a Postgres database instead.
 
+On every SQLite connection the store sets `journal_size_limit` to 64 MiB, so a checkpoint that resets the WAL
+truncates it to that bound instead of leaving the file at its high-water mark, and runs `PRAGMA optimize` so
+the planner statistics stay fresh. The limit bounds the file after a checkpoint; it does not cap growth between them.
+
 ```toml
 # The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's own Kanban.
 tracker_url = "https://tracker.example.com"

@@ -20,7 +20,7 @@ import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Hashable, Iterable, Mapping
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy import (
     Column,
@@ -41,6 +41,7 @@ from sqlalchemy import (
     text,
     update,
 )
+from sqlalchemy import event as sa_event
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import OperationalError
 
@@ -91,6 +92,10 @@ _Answer = tuple[bytes, int]
 
 #: The file a config without `database_url` keeps its history in, beside the config.
 DEFAULT_FILE = "starpulse-history.sqlite"
+
+#: The most the -wal file keeps after a checkpoint resets it. SQLite keeps the file at its high-water mark otherwise,
+#: so one burst left a 462 MB file holding a few hundred frames.
+_WAL_SIZE_LIMIT = 64 * 1024 * 1024
 
 _machine_events = Table(
     "starpulse_machine_events",
@@ -264,6 +269,16 @@ def machine_steps(machine: dict, rows: list[tuple[float, str]]) -> tuple[list[di
     return path, len(path)
 
 
+def _sqlite_tune(dbapi_connection: Any, _record: Any) -> None:  # pragma: no mutate block — sqlite3 tuning
+    """Bound the -wal file and refresh the planner statistics, as each pooled connection opens.
+
+    The server exits without disposing its pool, so a connection-close hook never runs; opening is when SQLite's own
+    guidance runs `optimize`, and 0x10000 makes it look at every table, not only those this connection has touched.
+    """
+    dbapi_connection.execute(f"PRAGMA journal_size_limit={_WAL_SIZE_LIMIT}")
+    dbapi_connection.execute("PRAGMA optimize=0x10002")
+
+
 class HistoryStore:
     """The history in one database; consumer threads write and request threads read, each through its own connection.
 
@@ -272,6 +287,8 @@ class HistoryStore:
 
     def __init__(self, url: str, machines: Mapping[str, dict], engine: Engine | None = None) -> None:
         self.engine = engine or create_engine(url)
+        if self.engine.dialect.name == "sqlite":
+            sa_event.listen(self.engine, "connect", _sqlite_tune)
         self._machines = machines
         self._summariser = Summariser(machines)
         # the level windows read since the last summary write
