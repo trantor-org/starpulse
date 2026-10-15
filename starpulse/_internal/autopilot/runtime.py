@@ -19,7 +19,8 @@ from starpulse._internal.autopilot.ledger import LEDGER_FILE, Ledger
 from starpulse._internal.autopilot.loop import Loop
 from starpulse._internal.autopilot.probe import LocalProbe
 from starpulse._internal.autopilot.quiet_hours import QuietHoursSetting
-from starpulse._internal.autopilot.sampler import Crossing, Sampler
+from starpulse._internal.autopilot.sampler import Crossing, Reading, Sampler
+from starpulse._internal.autopilot.state import AutopilotState
 from starpulse._internal.autopilot.toggle import TOGGLE_FILE, Toggle
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
@@ -69,6 +70,8 @@ class Runtime:
         if self.loop is not None:
             body["inFlight"] = self.loop.in_flight()
             body["next"] = self.loop.next_pick()
+            if pauses := self.loop.pauses():
+                body["pauses"] = pauses
         return body
 
     def push_status(self) -> None:
@@ -119,6 +122,7 @@ def build(
     settle: Callable[[str, str], Written] | None = None,
     claim: Callable[[str, str], Written] | None = None,
     chain: Callable[[], Mapping[str, Mapping[str, Any]]] = dict,
+    p_goals: Callable[[], Mapping[str, float]] = dict,
     lane: str = "",
 ) -> Runtime:
     """The switch kept in `log`'s store (a file in `state_dir` from before it moved there is imported once) and a sampler of `policy`'s limits over `feed`, on the local probe unless given another.
@@ -133,6 +137,11 @@ def build(
         if loop is not None:
             loop.wake()
 
+    state = AutopilotState(log)
+
+    def remember_sample(readings: list[Reading], at: float) -> None:
+        state.save_sample([{"name": r.name, "use": r.use, "limit": r.limit} for r in readings], at)
+
     sampler = Sampler(
         policy.limits,
         probe or LocalProbe(),
@@ -140,7 +149,14 @@ def build(
         review=lambda: review_points(feed.open_tasks(), policy.review_lane, policy.unsized_points),
         on_crossing=crossed,
         clock=clock,
+        remember=remember_sample,
     )
+    if saved := state.sample():
+        try:
+            rows, at = saved
+            sampler.restore([Reading(str(row["name"]), float(row["use"]), float(row["limit"])) for row in rows], at)
+        except KeyError, TypeError, ValueError:
+            pass  # a malformed row is a missing sample; the first live pass is the baseline
     toggle = Toggle(log, state_dir / TOGGLE_FILE)
     quiet_hours = QuietHoursSetting(log)
     if start is not None and settle is not None:
@@ -153,9 +169,11 @@ def build(
             start=start,
             settle=settle,
             chain=chain,
+            p_goals=p_goals,
             lane=lane,
             claim=claim,
             clock=clock,
             quiet_hours=quiet_hours.get,
+            log=log,
         )
     return Runtime(toggle, sampler, quiet_hours, loop)

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 from starpulse._internal.autopilot.sampler import Crossing, Reading, Sampler
+from starpulse._internal.autopilot.state import AutopilotState
+from starpulse._internal.eventlog.event_log import EventLog
 
 LIMITS = {"cpu": 80.0, "memory": 80.0, "sessions": 2, "review": 20}
 
@@ -131,6 +134,26 @@ def test_run_forever_samples_until_stopped() -> None:
     rig.sampler.run_forever(stop, interval=0)
 
     assert len(calls) == 3
+
+
+def test_a_capacity_sample_survives_a_restart(tmp_path: Path) -> None:
+    log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
+    state = AutopilotState(log)
+    first = Rig()
+    first.sampler._remember = lambda readings, at: state.save_sample(
+        [{"name": r.name, "use": r.use, "limit": r.limit} for r in readings], at
+    )
+    first.host = {"cpu": 42.5, "memory": 61.0}
+    first.sessions, first.review = 1, 7
+    first.sampler.sample()
+
+    saved = state.sample()
+    assert saved is not None
+    rows, at = saved
+    second = Rig()
+    second.sampler.restore([Reading(row["name"], row["use"], row["limit"]) for row in rows], at)
+
+    assert second.sampler.readings() == first.sampler.readings()
 
 
 def test_a_listener_that_raises_neither_stops_the_sampler_nor_hides_the_crossing_from_the_rest() -> None:

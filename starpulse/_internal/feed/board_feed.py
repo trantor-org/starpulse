@@ -1,7 +1,8 @@
 """What StarPulse draws, held in memory and kept current by the adapters.
 
 The board adapter (`starpulse._internal.board.seam`) places each Board task here, the server keeps each task's latest state,
-and every connected page gets one snapshot and then a delta per change. Each other machine's tasks arrive from
+and every connected page gets one snapshot and then a delta per change. A restart resends only `snapshot` (`FEED_EVENT_RESEND`);
+replayed deltas stay off the stream because that snapshot already carries their result. Each other machine's tasks arrive from
 the event log (`machine_tasks`), and each runs adapter instance's workflows from its adapter module.
 """
 
@@ -16,13 +17,9 @@ from collections import deque
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from starpulse.contracts.adapters import BoardTask, TaskKeys
-from starpulse.contracts.api import Pull
-from starpulse._internal.machines.machine_ties import derive, entries
-from starpulse._internal.machines.machine_ties import page as machine_page
-from starpulse._internal.machines.snapshot import declared, qualifier
-from starpulse._internal.machines.stays import LaneRow
-from starpulse._internal.machines.transitions import DEFAULT_STATUSES, DONE, WAITING, board_machine, lane_id
+from starpulse._internal.config.config import CommitKeys
+from starpulse._internal.eventlog import lane_events
+from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
 from starpulse._internal.feed import criteria
 from starpulse._internal.feed.ledger import (
     MERGE_EVENT,
@@ -36,11 +33,31 @@ from starpulse._internal.feed.ledger import (
     reruns,
     strip,
 )
-from starpulse._internal.config.config import CommitKeys
-from starpulse._internal.eventlog import lane_events
-from starpulse._internal.eventlog.event_log import DEFAULT_POLL_INTERVAL, EventLog, Tail
+from starpulse._internal.machines.machine_ties import derive, entries
+from starpulse._internal.machines.machine_ties import page as machine_page
+from starpulse._internal.machines.snapshot import declared, qualifier
+from starpulse._internal.machines.stays import LaneRow
+from starpulse._internal.machines.transitions import DEFAULT_STATUSES, DONE, WAITING, board_machine, lane_id
+from starpulse.contracts.adapters import BoardTask, TaskKeys
+from starpulse.contracts.api import Pull
 
-__all__ = ["BoardFeed", "BoardStore", "Followed", "Resumable"]
+__all__ = ["BoardFeed", "BoardStore", "FEED_EVENT_RESEND", "Followed", "Resumable"]
+
+#: Whether a restart resends this `/api/events` kind. Only `snapshot`: a reconnecting page needs the Board
+#: the replay built. Every other kind is a delta of that Board, so resending it would make consumers act twice.
+FEED_EVENT_RESEND = {
+    "snapshot": True,
+    "task": False,
+    "move": False,
+    "insight": False,
+    "pulls": False,
+    "claim": False,
+    "dags": False,
+    "ledgers": False,
+    "level": False,
+    "forwarding": False,
+    "autopilot": False,
+}
 
 # The public path's name, not this module's: operators and trantor's tests filter the feed's records by it.
 logger = logging.getLogger("starpulse.board_feed")
@@ -1098,8 +1115,8 @@ class BoardFeed:
         with self._lock:
             self._rev += 1
             self.revised.set()
-            if kind in ("task", "move") and self._replaying():
-                return  # a replayed step is history, not a move to draw: the snapshot once the stream is read carries its result
+            if self._replaying() and not FEED_EVENT_RESEND.get(kind, False):
+                return  # a replayed delta is history: the snapshot once the stream is read carries its result
             self._sent += 1
             self._sent_log.append((self._sent, kind, data))
             for subscriber in self._subscribers:

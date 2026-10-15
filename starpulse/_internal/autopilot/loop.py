@@ -5,7 +5,8 @@ session stopping, the toggle turning on, a capacity dimension crossing its limit
 status of a sample that leaves room for a task admission turned away. Each wake is one `tick`:
 
 1. a run whose task left the eligible lane and In Progress is finished and written to the ledger (its outcome is the
-   lane it went to, its duration and its resource peak);
+   lane it went to, its duration and its resource peak); a session that stops while the task is still in those lanes is
+   finished as `session-ended` and held out of admission until the task leaves them;
 2. a session idle past `idle_minutes` with its task still open is settled to Needs attention once, with a reason, and is
    never started again;
 3. while the switch is on and the clock is outside the quiet hours, `decide` ranks the Ready tasks and the loop starts the first admitted, then decides again over
@@ -15,8 +16,8 @@ A run holds its capacity from its start until its task leaves In Progress. While
 active the loop adds its demand to the sampler's readings itself; once it is active the sampler counts it. The one wake
 a timer makes (`period`) only finishes and settles runs, so an idle session is found without any event arriving.
 
-The runs in flight are in memory: a restart forgets them, and a session started before it is then only counted, never
-settled by this loop.
+The runs in flight, each task's last start time and the last capacity sample live in the history store, so a restart
+restores them. A start still inside `START_COOLDOWN` is not admitted again when that restore misses the run.
 """
 
 from __future__ import annotations
@@ -26,17 +27,20 @@ import queue
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
-from starpulse._internal.autopilot.admission import Decision, decide, tier_of
+from starpulse._internal.autopilot.admission import Decision, decide, demand, tier_of
 from starpulse._internal.autopilot.inputs import points
 from starpulse._internal.autopilot.ledger import Ledger, RunRecord
 from starpulse._internal.autopilot.quiet_hours import QuietHours
 from starpulse._internal.autopilot.sampler import PERIOD, Reading, Sampler
+from starpulse._internal.autopilot.state import START_COOLDOWN, AutopilotState
 from starpulse._internal.autopilot.toggle import Toggle
+from starpulse._internal.autopilot.usage_limit import until as usage_until
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.autopilot import Autopilot
+from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.harness import HARNESS
 from starpulse.contracts.adapters import StartFailedError
@@ -45,8 +49,28 @@ logger = logging.getLogger(__name__)
 
 IN_PROGRESS = "in_progress"
 NEEDS_ATTENTION = "needs_attention"
+SESSION_ENDED = "session-ended"
+DEFAULT_HARNESS = "claude"
+HELD_KEY = "autopilot.held"
+PAUSES_KEY = "autopilot.harness_pauses"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
 _HOST = ("cpu", "memory")
+
+
+def _run_from(fields: Mapping[str, Any]) -> _Run | None:
+    """One saved run, or None when the row cannot be a `_Run`."""
+    try:
+        return _Run(
+            str(fields["session"]),
+            str(fields["tier"]),
+            int(fields["points"]),
+            float(fields["started_at"]),
+            dict(fields["demand"]),
+            dict(fields["baseline"]),
+            dict(fields.get("peak") or {}),
+        )
+    except KeyError, TypeError, ValueError:
+        return None
 
 
 @dataclass
@@ -66,9 +90,11 @@ class Loop:
     """Starts admitted tasks through `start` and settles stuck ones through `settle`.
 
     `start` takes a task id and answers the session's address, raising `StartFailedError` when it cannot; `settle` moves a
-    task to Needs attention with the reason and says whether it did; `chain` is the trajectory chain `decide` ranks on.
+    task to Needs attention with the reason and says whether it did; `chain` is the trajectory chain `decide` ranks on
+    and `p_goals` each task's forecast chance of the goal in `lane`.
     `lane` is the eligible lane, `claim` comments a started session's address on its task, `clock` is the loop's notion
-    of now, and `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds.
+    of now, `quiet_hours` answers the window in which it admits nothing, read on every pass so Admin's change holds, and
+    `log` is the history store a restart restores in-flight runs and start times from.
     """
 
     def __init__(
@@ -86,6 +112,8 @@ class Loop:
         claim: Callable[[str, str], Written] | None = None,
         clock: Callable[[], float] = time.time,
         quiet_hours: Callable[[], QuietHours | None] = lambda: None,
+        p_goals: Callable[[], Mapping[str, float]] = dict,
+        log: EventLog | None = None,
     ) -> None:
         self._feed = feed
         self._policy = policy
@@ -95,13 +123,20 @@ class Loop:
         self._start = start
         self._settle = settle
         self._chain = chain
+        self._p_goals = p_goals
         self._lane = lane
         self._claim = claim
         self._clock = clock
         self._quiet_hours = quiet_hours
+        self._state = AutopilotState(log) if log is not None else None
         self._running: dict[str, _Run] = {}
+        self._starts: dict[str, float] = {}
+        self._parked: dict[str, _Run] = {}
+        self._held: set[str] = self._load_held()
+        self._paused: dict[str, dict[str, Any]] = self._load_pauses()
         self._events: queue.Queue | None = None
         self._sampled_at: float | None = None  # the sample of the last `autopilot` status the loop was offered
+        self._restore()
 
     def wants(self, kind: str, data: Mapping[str, Any]) -> bool:
         """Whether a feed event (or a `wake`) can free or fill capacity: a task entering the eligible lane, a running task's
@@ -118,7 +153,11 @@ class Loop:
             agent = data["agent"]
             return data["id"] in self._running or (agent is not None and agent["state"] == self._lane)
         if kind == "move":
-            return data["flow"] == HARNESS.name and data["agent"]["state"] == "stopped"
+            if data["flow"] != HARNESS.name:
+                return False
+            if data["agent"]["state"] == "stopped":
+                return True
+            return data["id"] in self._held
         return False
 
     def wake(self) -> None:
@@ -131,8 +170,10 @@ class Loop:
         now = self._clock()
         self._observe()
         self._finish(now)
+        self._revive(now)
+        self._release()
         self._reap(now)
-        if not admit or not self._toggle.get() or self._quiet(now):
+        if not admit or not self._toggle.get() or self._quiet(now) or self._active_pause(now):
             return []
         return self._admit(now)
 
@@ -181,6 +222,39 @@ class Loop:
             )
         return sessions
 
+    def _restore(self) -> None:
+        """Load in-flight runs and start times the last process saved; a missing or unreadable row is an empty set."""
+        if self._state is None:
+            return
+        for task, fields in self._state.inflight().items():
+            if (run := _run_from(fields)) is not None:
+                self._running[task] = run
+        self._starts = self._state.starts()
+        logger.info("StarPulse autopilot: restored %d in-flight", len(self._running))
+
+    def _remember(self) -> None:
+        """Write start times first so a crash before the in-flight row still leaves the cooldown."""
+        if self._state is None:
+            return
+        now = self._clock()
+        self._starts = {
+            task: at for task, at in self._starts.items() if task in self._running or now - at < START_COOLDOWN
+        }
+        self._state.save_starts(self._starts)
+        self._state.save_inflight({task: asdict(run) for task, run in self._running.items()})
+
+    def _cooling(self, task: str, now: float) -> bool:
+        started = self._starts.get(task)
+        return started is not None and now - started < START_COOLDOWN
+
+    def pauses(self) -> list[dict[str, Any]]:
+        """Harnesses whose admission is paused until `until`, for `GET /api/autopilot`."""
+        self._drop_expired(self._clock())
+        return [
+            {"harness": name, "until": row["until"], "reason": row["reason"]}
+            for name, row in sorted(self._paused.items())
+        ]
+
     def _quiet(self, now: float) -> bool:
         """Whether `now` is inside the quiet hours, when the loop admits nothing and finishes and settles runs as ever."""
         quiet = self._quiet_hours()
@@ -205,16 +279,29 @@ class Loop:
                     run.peak[name] = max(run.peak.get(name, 0.0), rise)
 
     def _finish(self, now: float) -> None:
-        """Record each run whose task has left the eligible lane and In Progress, and free its capacity."""
+        """Record each run whose task has left the eligible lane and In Progress, or whose session stopped with the task
+        still there, and free its capacity."""
         for task, run in list(self._running.items()):
             agent = self._feed.task(task)
             state = agent["state"] if agent else None
             if state not in (self._lane, IN_PROGRESS):
                 self._close(task, run, state or "closed", now)
+                continue
+            seen = self._feed.machine_task(HARNESS.name, task)
+            if seen is not None and seen["state"] == "stopped":
+                self._hold(task)
+                self._close(task, run, SESSION_ENDED, now)
 
     def _close(self, task: str, run: _Run, outcome: str, now: float) -> None:
         del self._running[task]
-        record = RunRecord(task, run.tier, run.points, outcome, now - run.started_at, {**run.peak, "sessions": 1, "review": run.points})
+        if outcome == SESSION_ENDED:
+            self._parked[task] = run
+        else:
+            self._parked.pop(task, None)
+        self._remember()
+        record = RunRecord(
+            task, run.tier, run.points, outcome, now - run.started_at, {**run.peak, "sessions": 1, "review": run.points}
+        )
         try:
             self._ledger.record(record)
         except Exception:  # the store is a database: any failure to write must not stop the loop
@@ -267,11 +354,13 @@ class Loop:
         self, readings: list[Reading], skipped: set[str], log: bool = True
     ) -> tuple[list[dict[str, Any]], list[Decision]]:
         """The open tasks with the running and `skipped` ones unworkable, and `decide`'s verdict on them over `readings`."""
-        tasks = [
-            {**agent, "workable": False} if agent["id"] in self._running or agent["id"] in skipped else agent
-            for agent in self._feed.open_tasks()
-        ]
-        return tasks, decide(tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log)
+        now = self._clock()
+        cooling = {task for task in self._starts if self._cooling(task, now)}
+        held = set(self._running) | skipped | cooling | self._held
+        tasks = [{**agent, "workable": False} if agent["id"] in held else agent for agent in self._feed.open_tasks()]
+        return tasks, decide(
+            tasks, self._lane, readings, self._policy, self._chain(), self._ledger, log=log, p_goals=self._p_goals()
+        )
 
     def next_pick(self) -> dict[str, Any] | None:
         """The task the next pass would start, or, when none fits, the top-ranked one and the dimension it waits on.
@@ -287,12 +376,22 @@ class Loop:
             return None
         top = decisions[0]  # the admitted in enforced order come first, then the refused by depth
         agent = next(a for a in tasks if a["id"] == top.task)
-        waits = not top.admitted or self._quiet(self._clock())
+        now = self._clock()
+        pause = self._active_pause(now)
+        waits = not top.admitted or self._quiet(now) or pause is not None
+        if not top.admitted:
+            reason = top.blocked_by
+        elif self._quiet(now):
+            reason = "quiet hours"
+        elif pause is not None:
+            reason = f"{pause} usage limit"
+        else:
+            reason = "goes next"
         return {
             "task": top.task,
             "title": agent["title"],
             "verdict": "waits" if waits else "starting",
-            "reason": top.blocked_by if not top.admitted else "quiet hours" if waits else "goes next",
+            "reason": reason,
         }
 
     def _admit(self, now: float) -> list[str]:
@@ -307,8 +406,12 @@ class Loop:
                 session = self._start(picked.task)
             except StartFailedError as exc:
                 logger.warning("StarPulse autopilot: cannot start %s: %s", picked.task, exc)
+                self._note_limit(str(exc), now)
+                if self._active_pause(now):
+                    break
                 skipped.add(picked.task)
                 continue
+            self._starts[picked.task] = now
             self._running[picked.task] = _Run(
                 session,
                 tier_of(agent),
@@ -317,7 +420,100 @@ class Loop:
                 picked.demand,
                 self._use(),
             )
+            self._remember()
             started.append(picked.task)
             logger.info("StarPulse autopilot: started %s at %s", picked.task, session)
             self._note_claim(picked.task, session)
         return started
+
+    def _hold(self, task: str) -> None:
+        self._held.add(task)
+        self._save_held()
+
+    def _revive(self, now: float) -> None:
+        """A held task whose harness is active again is the same run, not a new admission."""
+        revived = False
+        for task in list(self._held):
+            seen = self._feed.machine_task(HARNESS.name, task)
+            if seen is None or seen["state"] != "active":
+                continue
+            self._held.discard(task)
+            revived = True
+            if task not in self._running:
+                parked = self._parked.pop(task, None)
+                self._running[task] = parked if parked is not None else self._stub(task, now)
+        if revived:
+            self._save_held()
+
+    def _stub(self, task: str, now: float) -> _Run:
+        agent = self._feed.task(task) or {"labels": (), "model": ""}
+        return _Run("", tier_of(agent), points(agent["labels"], self._policy.unsized_points), now, demand(agent, self._policy, self._ledger), self._use())
+
+    def _release(self) -> None:
+        """Drop a hold once the task leaves Ready and In Progress: a person or the sweep moved it."""
+        kept = set()
+        for task in self._held:
+            agent = self._feed.task(task)
+            if agent is not None and agent["state"] in (self._lane, IN_PROGRESS):
+                kept.add(task)
+        released = self._held - kept
+        if not released:
+            return
+        for task in released:
+            self._starts.pop(task, None)
+            self._parked.pop(task, None)
+        self._held = kept
+        self._save_held()
+        self._remember()
+
+    def _note_limit(self, text: str, now: float) -> None:
+        resume = usage_until(text, now)
+        if resume is None:
+            return
+        self._paused[DEFAULT_HARNESS] = {"until": resume, "reason": "usage limit"}
+        self._save_pauses()
+
+    def _active_pause(self, now: float) -> str | None:
+        self._drop_expired(now)
+        return next(iter(self._paused), None)
+
+    def _drop_expired(self, now: float) -> None:
+        live = {name: row for name, row in self._paused.items() if row["until"] > now}
+        if live != self._paused:
+            self._paused = live
+            self._save_pauses()
+
+    def _load_held(self) -> set[str]:
+        raw = self._setting(HELD_KEY)
+        if not isinstance(raw, list):
+            return set()
+        return {item for item in raw if isinstance(item, str)}
+
+    def _load_pauses(self) -> dict[str, dict[str, Any]]:
+        raw = self._setting(PAUSES_KEY)
+        if not isinstance(raw, dict):
+            return {}
+        loaded: dict[str, dict[str, Any]] = {}
+        for name, row in raw.items():
+            if isinstance(name, str) and isinstance(row, dict) and isinstance(row.get("until"), (int, float)):
+                loaded[name] = {"until": float(row["until"]), "reason": str(row.get("reason") or "usage limit")}
+        return loaded
+
+    def _save_held(self) -> None:
+        self._put_setting(HELD_KEY, sorted(self._held))
+
+    def _save_pauses(self) -> None:
+        self._put_setting(PAUSES_KEY, self._paused)
+
+    def _setting(self, key: str) -> Any:
+        try:
+            return self._ledger.log.setting(key)
+        except Exception:  # an unreadable store holds nothing back
+            logger.exception("StarPulse autopilot: cannot read %s", key)
+            return None
+
+    def _put_setting(self, key: str, value: Any) -> None:
+        try:
+            self._ledger.log.set_setting(key, value)
+        except Exception:  # a failed write must not stop the loop
+            logger.exception("StarPulse autopilot: cannot write %s", key)

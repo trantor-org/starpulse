@@ -58,13 +58,19 @@ class Sampler:
         review: Callable[[], float],
         on_crossing: Callable[[Crossing], object],
         clock: Callable[[], float],
+        remember: Callable[[list[Reading], float], object] | None = None,
     ) -> None:
         self._limits = limits
         self._probe = probe
         self._uses = {"sessions": sessions, "review": review}
         self._on_crossing = on_crossing
         self._clock = clock
+        self._remember = remember
         self._latest: tuple[list[Reading], float | None] = ([], None)
+
+    def restore(self, readings: list[Reading], at: float) -> None:
+        """Install a sample saved from a previous process; the next `sample` treats it as the baseline."""
+        self._latest = (readings, at)
 
     def readings(self) -> tuple[list[Reading], float | None]:
         """The latest pass in `DIMENSIONS` order and when it was taken; nothing, and no time, before the first sample."""
@@ -80,7 +86,13 @@ class Sampler:
             logger.exception("StarPulse: the autopilot cannot sample capacity")
             return
         before = {reading.name: reading.full for reading in self._latest[0]}
-        self._latest = (now, self._clock())
+        taken = self._clock()
+        self._latest = (now, taken)
+        if self._remember is not None:
+            try:
+                self._remember(now, taken)
+            except Exception:  # a store that cannot be written must not stop sampling
+                logger.exception("StarPulse: cannot keep the autopilot capacity sample")
         for reading in now:
             if before.get(reading.name, reading.full) != reading.full:
                 try:

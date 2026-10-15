@@ -66,6 +66,12 @@ The dot does not pulse under `prefers-reduced-motion`.
 The page reconnects at once after a drop, then waits 250 ms, 500 ms, 1 s, 2 s and 3 s between tries and keeps trying at 3 s.
 Each connect replaces the page's Board with a fresh snapshot.
 
+While the Board is replaying after a start, `/api/events` resends only `snapshot`, once the replay has ended, because a
+reconnecting page needs the Board the replay built. Every other kind is a delta of that Board; resending it would make
+consumers such as the autopilot act twice. `FEED_EVENT_RESEND` in the feed module is the table: `snapshot` is resent,
+and `task`, `move`, `insight`, `pulls`, `claim`, `dags`, `ledgers`, `level`, `forwarding` and `autopilot` are not.
+`build` and `restarting` are process announcements on an open stream, not replayed deltas.
+
 Two events on `/api/events` carry what the page needs:
 
 - `build` ({id}): the page build the server is serving, the first 12 hex digits of the SHA-256 of `static/index.html`
@@ -332,7 +338,8 @@ time as the row's `updated_at`, then renamed to `starpulse-autopilot.json.import
   "sampledAt": 1788307200.5,
   "dimensions": [{"name": "cpu", "use": 35.0, "limit": 80.0}],
   "inFlight": [{"task": "TASK-1", "title": "First", "model": "@agent-standard-high", "started": 1788307000.0, "url": "https://claude.ai/code/session_01"}],
-  "next": {"task": "TASK-2", "title": "Second", "verdict": "waits", "reason": "cpu"}
+  "next": {"task": "TASK-2", "title": "Second", "verdict": "waits", "reason": "cpu"},
+  "pauses": [{"harness": "claude", "until": 1788344400.0, "reason": "usage limit"}]
 }
 ```
 
@@ -344,15 +351,17 @@ time as the row's `updated_at`, then renamed to `starpulse-autopilot.json.import
 - `sessions` counts the tasks with an active harness session.
 - `review` sums the `size-N` labels of the tasks in `review_lane`; a task without one counts `unsized_points`.
 
-`inFlight` and `next` come from the dispatch loop, so a server that runs none leaves both out.
+`inFlight`, `next` and `pauses` come from the dispatch loop, so a server that runs none leaves them out.
 
 - `inFlight` lists the sessions the loop started whose tasks are still running, oldest first, each with its task, title,
   agent profile, start time in epoch seconds and session address (`url`); it is `[]` when none runs.
 - `next` is what the next pass would do, whatever the switch says: the task `decide` ranks first among those that fit, with
   `verdict` `starting` and `reason` `goes next`; when none fits, the top-ranked task with `verdict` `waits` and the first
   dimension it overfits as `reason`. Inside the quiet hours the top-ranked task `waits` with `reason` `quiet hours`,
-  whatever room the host has. It is `null` before the first sample or with no workable task in the eligible lane.
-  Reading it logs no decision.
+  whatever room the host has. While a harness usage pause holds, it `waits` with `reason` `<harness> usage limit`. It is
+  `null` before the first sample or with no workable task in the eligible lane. Reading it logs no decision.
+- `pauses` lists each harness whose admission is paused until `until` (epoch seconds) after a usage or credit-limit
+  start, with `reason` `usage limit`. The key is absent when none are paused.
 
 `PUT /api/autopilot` with `{"enabled": true}` or `{"enabled": false}` sets the switch, and with
 `{"quietHours": {"start": "HH:MM", "end": "HH:MM", "timezone": "<IANA zone>"}}` or `{"quietHours": null}` sets or clears
@@ -386,7 +395,8 @@ sends the browser's own zone with the times.
 ### Admission
 
 `autopilot.admission.decide` answers, for each workable task in the eligible lane, whether it fits and where it ranks. It is
-a pure function of the open tasks, the sampler's readings, the `[autopilot]` policy, the trajectory chain and the run ledger.
+a pure function of the open tasks, the sampler's readings, the `[autopilot]` policy, the trajectory chain, each task's
+forecast P(goal), and the run ledger.
 
 - **Demand.** A task draws `size points x its tier's weight` percent of CPU and of memory, one session, and its points of
   review. The tier is the middle word of its profile (`@agent-standard-high` is `standard`); a tier with no weight, or no
@@ -396,8 +406,10 @@ a pure function of the open tasks, the sampler's readings, the `[autopilot]` pol
   the decision names the first dimension it overfits.
 - **Order.** The admitted tasks go in the order of critical-path depth, the task itself plus the longest chain of open
   tasks waiting on it. In shadow, the default, a second order is only logged: `value / dominant share`, where value is depth
-  times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the chain's
-  `p_goal` for the lane (`trajectory_analytics(...)["chain"]`), and 1 when the lane has no history. An optional predictor, a
+  times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the task's forecast
+  chance of the goal in the eligible lane (`trajectory_analytics(...)["forecast"]`), else the chain's `p_goal` for that
+  lane, and 1 when the lane has no history. The loop reads those ranks whenever `[level]` is set, including on an IC
+  server that is not serving `--hub`. An optional predictor, a
   function from a task's title and description to a score, replaces P(goal) in that shadow value and is logged; a
   predictor that raises leaves the score empty.
 - **Log.** Each decision logs one line:
@@ -425,7 +437,10 @@ While the switch is on, the loop calls `decide` and starts the admitted tasks. I
 Each pass starts the first admitted task, then decides again over readings that carry that task's demand, so two tasks that
 do not fit together are never both started in one pass. A run holds its capacity from its start until its task leaves
 `in_progress`; until the harness reports the session active the loop adds that demand to the sampler's readings itself.
-A start that fails (`StartFailedError`) is logged and skipped until the next pass. A start that succeeds comments
+A start that fails (`StartFailedError`) is logged and skipped until the next pass, unless the refusal names a usage or
+credit limit: admission for that harness then pauses until the reset clock the message names (or five hours when it
+names none), `GET /api/autopilot` lists it under `pauses`, and the next pick `waits` with `reason` `<harness> usage
+limit`. A start that succeeds comments
 `Autopilot started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
 
 A session starts through `session_start_url` when the config sets it; the loop's request is
@@ -437,15 +452,21 @@ unlike one an operator opened (an operator's start has no `by`, and the page's `
 box. Autopilot stays Claude-only; the built-in starter ignores `harness` and `mode`.
 
 When a run's task leaves the eligible lane and `in_progress`, the loop writes its outcome (the lane it went to), duration and
-peak to the ledger. A started session that has been idle longer than `idle_minutes` (the harness's last active event, or
-its start before any) with its task still open is settled once: the task moves to `needs_attention` with a comment saying
-why, and is never started again. A board with no editor, or no `needs_attention` lane, refuses the move; the loop logs the
+peak to the ledger. When the harness session stops while the task is still in those lanes, the run is written as
+`session-ended` and the task is held out of admission until a person or the sweep moves it; a later tool or start on the
+same session revives that run instead of starting another. A started session that has been idle longer than
+`idle_minutes` (the harness's last active event, or its start before any) with its task still open is settled once: the
+task moves to `needs_attention` with a comment saying why, and is never started again. A board with no editor, or no `needs_attention` lane, refuses the move; the loop logs the
 refusal and retries on the next sampler period. The sampler period (60 seconds) is the only timer; it finishes and settles
 runs and never admits.
 
-The runs in flight are held in memory, and are what `GET /api/autopilot` lists as `inFlight`. A restart forgets them: a
-session started before it still counts toward capacity once the harness sees it, but the loop neither lists, settles nor
-records it.
+The runs in flight, each task's last start time and the last capacity sample live in `starpulse_settings`
+(`autopilot.inflight`, `autopilot.starts`, `autopilot.sample`), so a restart restores them: `GET /api/autopilot` still
+lists the sessions, the loop still settles and records them, and a task it already started is not started again. A restart
+logs `StarPulse autopilot: restored N in-flight`. A start still inside 15 minutes (`START_COOLDOWN`) is not admitted
+even when the in-flight row is missing, so a restart that lost that row does not send a second `started`.
+Held `session-ended` tasks and harness pauses live in the history store, so a restart still keeps those tasks out of
+admission and keeps that harness paused.
 
 ## Release
 
