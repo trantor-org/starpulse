@@ -31,6 +31,8 @@ from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 from starpulse._internal.autopilot.admission import Decision, decide, demand, tier_of
+from starpulse._internal.autopilot.harness_setting import DEFAULT as DEFAULT_HARNESS
+from starpulse._internal.autopilot.harness_setting import HarnessSetting
 from starpulse._internal.autopilot.inputs import points
 from starpulse._internal.autopilot.ledger import Ledger, RunRecord
 from starpulse._internal.autopilot.quiet_hours import QuietHours
@@ -50,7 +52,6 @@ logger = logging.getLogger(__name__)
 IN_PROGRESS = "in_progress"
 NEEDS_ATTENTION = "needs_attention"
 SESSION_ENDED = "session-ended"
-DEFAULT_HARNESS = "claude"
 HELD_KEY = "autopilot.held"
 PAUSES_KEY = "autopilot.harness_pauses"
 #: The dimensions a host reading measures, so a run's peak is how far they rose while it ran.
@@ -68,6 +69,7 @@ def _run_from(fields: Mapping[str, Any]) -> _Run | None:
             dict(fields["demand"]),
             dict(fields["baseline"]),
             dict(fields.get("peak") or {}),
+            str(fields.get("harness") or DEFAULT_HARNESS),
         )
     except KeyError, TypeError, ValueError:
         return None
@@ -84,6 +86,7 @@ class _Run:
     demand: Mapping[str, float]
     baseline: Mapping[str, float]
     peak: dict[str, float] = field(default_factory=dict)
+    harness: str = DEFAULT_HARNESS
 
 
 class Loop:
@@ -105,7 +108,7 @@ class Loop:
         toggle: Toggle,
         sampler: Sampler,
         ledger: Ledger,
-        start: Callable[[str], str],
+        start: Callable[..., str],
         settle: Callable[[str, str], Written],
         chain: Callable[[], Mapping[str, Mapping[str, Any]]],
         lane: str,
@@ -114,6 +117,7 @@ class Loop:
         quiet_hours: Callable[[], QuietHours | None] = lambda: None,
         p_goals: Callable[[], Mapping[str, float]] = dict,
         log: EventLog | None = None,
+        harness: HarnessSetting | None = None,
     ) -> None:
         self._feed = feed
         self._policy = policy
@@ -128,6 +132,7 @@ class Loop:
         self._claim = claim
         self._clock = clock
         self._quiet_hours = quiet_hours
+        self._harness = harness
         self._state = AutopilotState(log) if log is not None else None
         self._running: dict[str, _Run] = {}
         self._starts: dict[str, float] = {}
@@ -137,6 +142,18 @@ class Loop:
         self._events: queue.Queue | None = None
         self._sampled_at: float | None = None  # the sample of the last `autopilot` status the loop was offered
         self._restore()
+
+    def selected_harness(self) -> str:
+        """The harness this loop starts on: the setting when one is wired, else Claude."""
+        return self._harness.get() if self._harness is not None else DEFAULT_HARNESS
+
+    def sessions_by_harness(self) -> dict[str, dict[str, float]]:
+        """Each harness's in-flight count against its session cap, for the capacity strip's hint."""
+        use: dict[str, float] = {}
+        for run in self._running.values():
+            use[run.harness] = use.get(run.harness, 0.0) + 1
+        names = set(use) | set(self._policy.session_limits) | {self.selected_harness()}
+        return {name: {"use": use.get(name, 0.0), "limit": self._policy.session_limit(name)} for name in sorted(names)}
 
     def wants(self, kind: str, data: Mapping[str, Any]) -> bool:
         """Whether a feed event (or a `wake`) can free or fill capacity: a task entering the eligible lane, a running task's
@@ -173,7 +190,7 @@ class Loop:
         self._revive(now)
         self._release()
         self._reap(now)
-        if not admit or not self._toggle.get() or self._quiet(now) or self._active_pause(now):
+        if not admit or not self._toggle.get() or self._quiet(now) or self._selected_paused(now):
             return []
         return self._admit(now)
 
@@ -330,7 +347,10 @@ class Loop:
         return seen is not None and seen["state"] == "active"
 
     def _readings(self) -> list[Reading]:
-        """The sampler's readings with the demand of each run the sampler does not yet count added; none without a sample."""
+        """The sampler's readings with the demand of each run the sampler does not yet count added; none without a sample.
+
+        The sessions dimension is the selected harness only: its own in-flight count against its session cap.
+        """
         readings, _ = self._sampler.readings()
         if not readings:
             self._sampler.sample()
@@ -339,8 +359,19 @@ class Loop:
         for task, run in self._running.items():
             if not self._counted(task):
                 for name, need in run.demand.items():
+                    if name == "sessions":
+                        continue  # sessions is the selected harness's own count, below
                     taken[name] = taken.get(name, 0.0) + need
-        return [replace(reading, use=reading.use + taken.get(reading.name, 0.0)) for reading in readings]
+        harness = self.selected_harness()
+        sessions_use = float(sum(1 for run in self._running.values() if run.harness == harness))
+        sessions_limit = self._policy.session_limit(harness)
+        out: list[Reading] = []
+        for reading in readings:
+            if reading.name == "sessions":
+                out.append(replace(reading, use=sessions_use, limit=sessions_limit))
+            else:
+                out.append(replace(reading, use=reading.use + taken.get(reading.name, 0.0)))
+        return out
 
     def _note_claim(self, task: str, session: str) -> None:
         """Comment the session's address on its task; a board that refuses it leaves the session started."""
@@ -377,7 +408,7 @@ class Loop:
         top = decisions[0]  # the admitted in enforced order come first, then the refused by depth
         agent = next(a for a in tasks if a["id"] == top.task)
         now = self._clock()
-        pause = self._active_pause(now)
+        pause = self._selected_paused(now)
         waits = not top.admitted or self._quiet(now) or pause is not None
         if not top.admitted:
             reason = top.blocked_by
@@ -402,12 +433,13 @@ class Loop:
             if (picked := next((d for d in decisions if d.admitted), None)) is None:
                 break
             agent = next(a for a in tasks if a["id"] == picked.task)
+            harness = self.selected_harness()
             try:
-                session = self._start(picked.task)
+                session = self._start(picked.task, harness=harness)
             except StartFailedError as exc:
                 logger.warning("StarPulse autopilot: cannot start %s: %s", picked.task, exc)
-                self._note_limit(str(exc), now)
-                if self._active_pause(now):
+                self._note_limit(str(exc), now, harness)
+                if self._selected_paused(now):
                     break
                 skipped.add(picked.task)
                 continue
@@ -419,6 +451,7 @@ class Loop:
                 now,
                 picked.demand,
                 self._use(),
+                harness=harness,
             )
             self._remember()
             started.append(picked.task)
@@ -447,7 +480,15 @@ class Loop:
 
     def _stub(self, task: str, now: float) -> _Run:
         agent = self._feed.task(task) or {"labels": (), "model": ""}
-        return _Run("", tier_of(agent), points(agent["labels"], self._policy.unsized_points), now, demand(agent, self._policy, self._ledger), self._use())
+        return _Run(
+            "",
+            tier_of(agent),
+            points(agent["labels"], self._policy.unsized_points),
+            now,
+            demand(agent, self._policy, self._ledger),
+            self._use(),
+            harness=self.selected_harness(),
+        )
 
     def _release(self) -> None:
         """Drop a hold once the task leaves Ready and In Progress: a person or the sweep moved it."""
@@ -466,16 +507,18 @@ class Loop:
         self._save_held()
         self._remember()
 
-    def _note_limit(self, text: str, now: float) -> None:
+    def _note_limit(self, text: str, now: float, harness: str) -> None:
         resume = usage_until(text, now)
         if resume is None:
             return
-        self._paused[DEFAULT_HARNESS] = {"until": resume, "reason": "usage limit"}
+        self._paused[harness] = {"until": resume, "reason": "usage limit"}
         self._save_pauses()
 
-    def _active_pause(self, now: float) -> str | None:
+    def _selected_paused(self, now: float) -> str | None:
+        """The selected harness when its credit pause is still live; other harnesses keep admitting."""
         self._drop_expired(now)
-        return next(iter(self._paused), None)
+        harness = self.selected_harness()
+        return harness if harness in self._paused else None
 
     def _drop_expired(self, now: float) -> None:
         live = {name: row for name, row in self._paused.items() if row["until"] > now}

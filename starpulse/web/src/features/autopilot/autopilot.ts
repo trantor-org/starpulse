@@ -1,9 +1,10 @@
-// The Admin view's Autopilot card: the global switch and what the admission loop sees, read from /api/autopilot.
+// The Admin view's Autopilot card: the global switch, the harness it starts on, and what the admission loop sees, read from /api/autopilot.
 // Off stops admission only: sessions already running keep running, and the card says how many.
 import { apiFetch } from "../../api/apiFetch";
 import type { AutopilotDimension, AutopilotStatus } from "../../api";
 
 export const ROUTE = "/api/autopilot";
+export const HARNESSES_ROUTE = "/api/harnesses";
 
 /** One capacity dimension as the card draws it: what is in use against the limit admission holds it under. `detail` is the meter's tooltip. */
 export interface Dimension {
@@ -29,14 +30,39 @@ export interface NextPick {
   verdict: "starting" | "waits";
   reason: string;
 }
+/** A harness `GET /api/harnesses` names for the Admission Segments picker. */
+export interface HarnessOption {
+  name: string;
+  label: string;
+  /** False when the harness cannot open a session; `reason` is the disabled tooltip. */
+  sessions: boolean;
+  reason: string;
+}
+/** A harness whose admission is paused until `until` after a usage or credit limit. */
+export interface Pause {
+  harness: string;
+  until: number;
+  reason: string;
+}
+/** One harness's in-flight count against its own session cap. */
+export interface HarnessSessions {
+  use: number;
+  limit: number;
+}
 export interface AutopilotState {
   on: boolean;
+  /** The harness the loop starts sessions on; defaults to claude. */
+  harness: string;
   sampledAt: number | null;
   dimensions: Dimension[];
   /** The sessions autopilot started, null while the server does not list them (the Sessions meter's count still reads). */
   inFlight: InFlight[] | null;
   /** The pick the loop would admit next, null when the server names none. */
   next: NextPick | null;
+  /** Harnesses whose admission is paused until `until`; empty when none are. */
+  pauses: Pause[];
+  /** Each harness's in-flight count against its session cap; empty when the server serves none. */
+  sessionsByHarness: Record<string, HarnessSessions>;
 }
 
 export type Phase = { kind: "idle" } | { kind: "saving" } | { kind: "refused"; reason: string };
@@ -46,6 +72,8 @@ export interface AutopilotView {
   phase: Phase;
   /** Why the status could not be read, empty when it could. */
   unavailable: string;
+  /** The harnesses the Admission Segments offer; empty until `GET /api/harnesses` answers. */
+  harnesses: HarnessOption[];
 }
 
 /** A dimension's meter state: quiet under 80% of its limit, near from there to the limit, over past it. */
@@ -95,9 +123,38 @@ function pick(raw: unknown): NextPick | null {
   };
 }
 
-/** The card's state from an answer, or null when the answer is not an autopilot status. `inFlight` and `next` are additive: absent is fine, present must hold. */
+function pause(raw: unknown): Pause | null {
+  if (!isRecord(raw) || typeof raw.harness !== "string" || typeof raw.until !== "number") return null;
+  return { harness: raw.harness, until: raw.until, reason: str(raw.reason, "usage limit") };
+}
+
+function sessionsByHarness(raw: unknown): Record<string, HarnessSessions> | null {
+  if (raw === undefined) return {};
+  if (!isRecord(raw)) return null;
+  const out: Record<string, HarnessSessions> = {};
+  for (const [name, row] of Object.entries(raw)) {
+    if (!isRecord(row) || typeof row.use !== "number" || typeof row.limit !== "number") return null;
+    out[name] = { use: row.use, limit: row.limit };
+  }
+  return out;
+}
+
+function harnessOptions(body: unknown): HarnessOption[] {
+  if (!isRecord(body) || !Array.isArray(body.harnesses)) return [];
+  return body.harnesses.flatMap((raw) => {
+    if (!isRecord(raw) || typeof raw.name !== "string") return [];
+    return [{
+      name: raw.name,
+      label: str(raw.label, raw.name),
+      sessions: raw.sessions !== false,
+      reason: str(raw.reason, ""),
+    }];
+  });
+}
+
+/** The card's state from an answer, or null when the answer is not an autopilot status. `inFlight`, `next`, `pauses` and `sessionsByHarness` are additive: absent is fine, present must hold. */
 function parse(body: unknown): AutopilotState | null {
-  const status = body as Partial<AutopilotStatus> & { inFlight?: unknown; next?: unknown };
+  const status = body as Partial<AutopilotStatus> & { inFlight?: unknown; next?: unknown; pauses?: unknown; sessionsByHarness?: unknown };
   if (!isRecord(body) || typeof status.enabled !== "boolean" || !Array.isArray(status.dimensions)) return null;
   const dimensions = status.dimensions.map(dimension);
   if (dimensions.some((d) => d === null)) return null;
@@ -113,7 +170,26 @@ function parse(body: unknown): AutopilotState | null {
     next = pick(status.next);
     if (!next) return null;
   }
-  return { on: status.enabled, sampledAt: status.sampledAt ?? null, dimensions: dimensions as Dimension[], inFlight, next };
+  let pauses: Pause[] = [];
+  if (status.pauses !== undefined) {
+    if (!Array.isArray(status.pauses)) return null;
+    const rows = status.pauses.map(pause);
+    if (rows.some((p) => p === null)) return null;
+    pauses = rows as Pause[];
+  }
+  const byHarness = sessionsByHarness(status.sessionsByHarness);
+  if (byHarness === null) return null;
+  const harness = typeof status.harness === "string" && status.harness ? status.harness : "claude";
+  return {
+    on: status.enabled,
+    harness,
+    sampledAt: status.sampledAt ?? null,
+    dimensions: dimensions as Dimension[],
+    inFlight,
+    next,
+    pauses,
+    sessionsByHarness: byHarness,
+  };
 }
 
 type Answer = { ok: true; state: AutopilotState } | { ok: false; reason: string };
@@ -143,7 +219,7 @@ export function pushAutopilotStatus(body: unknown): void {
 }
 
 export class AutopilotStore {
-  private view: AutopilotView = { current: null, phase: { kind: "idle" }, unavailable: "" };
+  private view: AutopilotView = { current: null, phase: { kind: "idle" }, unavailable: "", harnesses: [] };
   private listeners = new Set<() => void>();
   constructor(private fetcher: typeof apiFetch = apiFetch) {
     streamListeners.add(this.accept);
@@ -170,11 +246,14 @@ export class AutopilotStore {
     if (state) this.set({ current: state, unavailable: "" });
   };
 
-  /** Read the status once (connect sync); one that cannot be read leaves the last reading on the card. */
+  /** Read the status and harnesses once (connect sync); a status that cannot be read leaves the last reading on the card. */
   async load(): Promise<void> {
-    const answer = await ask(this.fetcher, undefined, "the server did not answer");
-    if (answer.ok) this.set({ current: answer.state, unavailable: "" });
-    else this.set({ unavailable: answer.reason });
+    const [answer, harnesses] = await Promise.all([
+      ask(this.fetcher, undefined, "the server did not answer"),
+      this.fetcher(HARNESSES_ROUTE).then((r) => r.json()).then(harnessOptions).catch(() => [] as HarnessOption[]),
+    ]);
+    if (answer.ok) this.set({ current: answer.state, unavailable: "", harnesses });
+    else this.set({ unavailable: answer.reason, harnesses });
   }
 
   /** Ask the server to admit tasks or stop admitting; a refusal leaves the switch as it was and names why. */
@@ -182,6 +261,15 @@ export class AutopilotStore {
     if (this.view.phase.kind === "saving") return;
     this.set({ phase: { kind: "saving" } });
     const answer = await ask(this.fetcher, { method: "PUT", body: JSON.stringify({ enabled: on }) }, "the change did not reach the server");
+    if (answer.ok) this.set({ current: answer.state, unavailable: "", phase: { kind: "idle" } });
+    else this.set({ phase: { kind: "refused", reason: answer.reason } });
+  }
+
+  /** Ask the server to start sessions on another harness; a refusal leaves the pick as it was and names why. */
+  async setHarness(harness: string): Promise<void> {
+    if (this.view.phase.kind === "saving") return;
+    this.set({ phase: { kind: "saving" } });
+    const answer = await ask(this.fetcher, { method: "PUT", body: JSON.stringify({ harness }) }, "the change did not reach the server");
     if (answer.ok) this.set({ current: answer.state, unavailable: "", phase: { kind: "idle" } });
     else this.set({ phase: { kind: "refused", reason: answer.reason } });
   }

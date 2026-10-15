@@ -243,8 +243,11 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # [autopilot.limits]        # each dimension's limit; a dimension left out keeps its limit
 # cpu = 80       # host CPU, percent
 # memory = 80    # host memory, percent
-# sessions = 2   # harness sessions in flight
+# sessions = 2   # default harness sessions in flight (used when a harness has no session_limits row)
 # review = 20    # points of tasks in the review lane
+# [autopilot.session_limits]  # optional per-harness session caps; a harness left out uses limits.sessions
+# claude = 3
+# cursor = 2
 
 # Optional: release Waiting tasks natively. With the table present, `serve` moves a Waiting task to Ready once every task
 # it depends on is Done (see Release); with no [release] table it releases none. The board must edit tasks and draw
@@ -338,17 +341,23 @@ time as the row's `updated_at`, then renamed to `starpulse-autopilot.json.import
 ```json
 {
   "enabled": false,
+  "harness": "claude",
   "quietHours": {"start": "22:00", "end": "07:00", "timezone": "America/Phoenix"},
   "sampledAt": 1788307200.5,
   "dimensions": [{"name": "cpu", "use": 35.0, "limit": 80.0}],
   "inFlight": [{"task": "TASK-1", "title": "First", "model": "@agent-standard-high", "started": 1788307000.0, "url": "https://claude.ai/code/session_01"}],
   "next": {"task": "TASK-2", "title": "Second", "verdict": "waits", "reason": "cpu"},
-  "pauses": [{"harness": "claude", "until": 1788344400.0, "reason": "usage limit"}]
+  "pauses": [{"harness": "claude", "until": 1788344400.0, "reason": "usage limit"}],
+  "sessionsByHarness": {"claude": {"use": 1.0, "limit": 3.0}, "cursor": {"use": 0.0, "limit": 2.0}}
 }
 ```
 
+`harness` is the harness the loop starts sessions on (default `claude`); `PUT /api/autopilot` with `{"harness": "<name>"}` selects another.
 `quietHours` is the daily window in which the loop admits nothing, or `null` for none (see Quiet hours below).
-`dimensions` lists `cpu`, `memory`, `sessions` and `review` in that order, each as its use against its limit.
+`dimensions` lists `cpu`, `memory`, `sessions` and `review` in that order, each as its use against its limit; the
+`sessions` meter follows the selected harness's cap from `[autopilot.session_limits]` (else `limits.sessions`).
+`sessionsByHarness` names every harness's in-flight count against its own cap. A credit or usage pause for one
+harness lands in `pauses` and blocks admission for that harness only.
 `sampledAt` is epoch seconds, and `dimensions` is empty with `sampledAt` null until the first sample.
 
 - `cpu` and `memory` are the host's busy share and used share, in percent, read from `/proc`.

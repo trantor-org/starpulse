@@ -925,31 +925,39 @@ def forwarding(source: str, method: str, raw: bytes, forwarder: Forwarder | None
 
 
 def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | None) -> tuple[int, dict[str, Any]]:
-    """Read (`GET`) whether the autopilot admits tasks, its quiet hours and each capacity dimension's use against its
-    limit, or set (`PUT {"enabled": bool}`, `PUT {"quietHours": {...} | null}`, or both) whether it admits and the daily
-    window in which it admits nothing, for a browser at `source`: the HTTP status and JSON body.
+    """Read (`GET`) whether the autopilot admits tasks, which harness it starts on, its quiet hours and each capacity
+    dimension's use against its limit, or set (`PUT {"enabled": bool}`, `PUT {"harness": "<name>"}`,
+    `PUT {"quietHours": {...} | null}`, or any combination) those settings, for a browser at `source`.
 
-    Both are kept in the store the autopilot reads, so a PUT takes effect at the next admission and survives a restart.
-    A read answers any address, as every read does; a write answers only loopback and RFC 1918. A body with anything
-    wrong changes nothing.
+    Settings are kept in the store the autopilot reads, so a PUT takes effect at the next admission and survives a
+    restart. A read answers any address, as every read does; a write answers only loopback and RFC 1918. A body with
+    anything wrong changes nothing.
     """
     if runtime is None:
         return 404, {"error": "this instance runs no autopilot"}
     if method == "PUT":
         if not _on_lan(source):
             return 403, {"error": "The autopilot switch answers only loopback and private network (RFC 1918) browsers"}
-        usage = 'the autopilot takes {"enabled": true|false} and/or {"quietHours": {"start", "end", "timezone"}|null}'
+        usage = (
+            'the autopilot takes {"enabled": true|false}, {"harness": "<name>"} and/or '
+            '{"quietHours": {"start", "end", "timezone"}|null}'
+        )
         try:
             body = json.loads(raw)
         except ValueError:
             body = None
-        if not isinstance(body, dict) or not body or body.keys() - {"enabled", "quietHours"}:
+        if not isinstance(body, dict) or not body or body.keys() - {"enabled", "quietHours", "harness"}:
             return 400, {"error": usage}
         if "enabled" in body and not isinstance(body["enabled"], bool):
             return 400, {"error": usage}
         if "quietHours" in body:
             try:
                 runtime.set_quiet_hours(body["quietHours"])
+            except ValueError as exc:
+                return 400, {"error": str(exc)}
+        if "harness" in body:
+            try:
+                runtime.set_harness(body["harness"])
             except ValueError as exc:
                 return 400, {"error": str(exc)}
         if "enabled" in body:

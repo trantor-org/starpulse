@@ -208,6 +208,7 @@ export class DemoServer {
   private forcing = new Set<string>();
   private optIn = false;
   private admitting: boolean;
+  private harness = "claude";
   private quietHours: typeof NIGHT | null;
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -454,13 +455,16 @@ export class DemoServer {
     if (this.pilot === "down") return json({ error: "This server has no autopilot." }, 404);
     if (method === "PUT") {
       if (this.pilot === "refused") return json({ error: "Autopilot changes are taken only from loopback or a private address; this demo is neither." }, 403);
-      let sent: { enabled?: unknown; quietHours?: unknown } = {};
+      let sent: { enabled?: unknown; quietHours?: unknown; harness?: unknown } = {};
       try { sent = JSON.parse(raw) as typeof sent; } catch { /* refused below */ }
-      const usage = 'the autopilot takes {"enabled": true|false} and/or {"quietHours": {"start", "end", "timezone"}|null}';
+      const usage = 'the autopilot takes {"enabled": true|false}, {"harness": "<name>"} and/or {"quietHours": {"start", "end", "timezone"}|null}';
       const window = sent?.quietHours as typeof NIGHT | null | undefined;
-      if (!sent || (sent.enabled === undefined && window === undefined) || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
+      const noField = sent.enabled === undefined && window === undefined && sent.harness === undefined;
+      if (!sent || noField || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
+      if (sent.harness !== undefined && (typeof sent.harness !== "string" || !sent.harness)) return json({ error: usage }, 400);
       if (window && window.start === window.end) return json({ error: "quiet hours start and end must differ" }, 400);
       if (typeof sent.enabled === "boolean") this.admitting = sent.enabled;
+      if (typeof sent.harness === "string") this.harness = sent.harness;
       if (window !== undefined) this.quietHours = window;
     } else if (method !== "GET") return json({ error: `${method} is not served here` }, 405);
     const at = this.clock();
@@ -477,13 +481,19 @@ export class DemoServer {
     const use = { cpu: over ? 74 : 41, memory: over ? 91 : 58, sessions: inFlight.length, review: 13 };
     const pick = this.pilot === "empty" ? undefined : cards.find((a) => a.state === "ready" && !a.dependencies?.length);
     const waits = this.quietHours ? "quiet hours" : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= PILOT.sessions ? `Sessions ${use.sessions}/${PILOT.sessions}` : "";
+    const other = this.harness === "claude" ? "cursor" : "claude";
     return json({
       enabled: this.admitting,
+      harness: this.harness,
       quietHours: this.quietHours,
       sampledAt: at,
       dimensions: (Object.keys(PILOT) as (keyof typeof PILOT)[]).map((name) => ({ name, use: use[name], limit: PILOT[name] })),
       inFlight,
       next: this.admitting && pick ? { task: pick.id, title: pick.title ?? pick.id, verdict: waits ? "waits" : "starting", reason: waits } : null,
+      sessionsByHarness: {
+        [this.harness]: { use: inFlight.length, limit: PILOT.sessions },
+        [other]: { use: 0, limit: this.harness === "claude" ? 2 : PILOT.sessions },
+      },
     });
   }
 

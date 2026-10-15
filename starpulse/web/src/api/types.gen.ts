@@ -198,11 +198,16 @@ export interface WindowTooLong {
 /**
  * Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.
  *
- * `inFlight` and `next` are served only by a server that runs a dispatch loop; without one they are absent.
+ * `inFlight`, `next` and `sessionsByHarness` are served only by a server that runs a dispatch loop; without one they
+ * are absent.
  */
 export interface AutopilotStatus {
   dimensions: AutopilotDimension[];
   enabled: boolean;
+  /**
+   * The harness the loop starts sessions on; defaults to claude.
+   */
+  harness: string;
   /**
    * The sessions the loop started and has not finished, oldest first.
    */
@@ -220,6 +225,12 @@ export interface AutopilotStatus {
    */
   quietHours?: QuietHours | null;
   sampledAt: number | null;
+  /**
+   * Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.
+   */
+  sessionsByHarness?: {
+    [k: string]: AutopilotHarnessSessions;
+  };
 }
 /**
  * One capacity dimension's use against its limit: percent for `cpu` and `memory`, a count for `sessions`, points for `review`.
@@ -282,6 +293,13 @@ export interface QuietHours {
    * The IANA zone the window's times are read in, such as America/Phoenix.
    */
   timezone: string;
+}
+/**
+ * One harness's autopilot sessions in flight against its own session cap.
+ */
+export interface AutopilotHarnessSessions {
+  limit: number;
+  use: number;
 }
 /**
  * The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,
@@ -1603,10 +1621,11 @@ export interface ForwardingRequest {
   opt_in: boolean;
 }
 /**
- * `PUT /api/autopilot`: whether the autopilot admits tasks, its quiet hours (null clears them), or both.
+ * `PUT /api/autopilot`: whether the autopilot admits tasks, which harness it starts on, and/or its quiet hours.
  */
 export interface AutopilotRequest {
   enabled?: boolean | null;
+  harness?: string | null;
   quietHours?: QuietHours | null;
 }
 /**

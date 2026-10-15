@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy.exc import OperationalError
 
+from starpulse._internal.autopilot.harness_setting import HarnessSetting
 from starpulse._internal.autopilot.ledger import Ledger
 from starpulse._internal.autopilot.loop import Loop
 from starpulse._internal.autopilot.quiet_hours import QuietHours
@@ -54,7 +55,9 @@ class Rig:
         self.ledger = Ledger(self.log, tmp_path / "runs.jsonl")
         self.toggle = Toggle(self.log, tmp_path / "toggle.json")
         self.toggle.set(True)
+        self.harness_setting = HarnessSetting(self.log)
         self.started: list[str] = []
+        self.started_harness: list[str] = []
         self.settled: list[tuple[str, str]] = []
         self.failing: set[str] = set()
         self.limit: str | None = None
@@ -90,18 +93,21 @@ class Rig:
             clock=lambda: self.now,
             quiet_hours=lambda: self.quiet,
             log=self.log,
+            harness=self.harness_setting,
         )
 
     def _claim(self, task: str, text: str) -> Written:
         self.claims.append((task, text))
         return Written(self.claim_ok, task)
 
-    def _start(self, task: str) -> str:
+    def _start(self, task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
+        _ = mode
         if self.limit is not None:
             raise StartFailedError(self.limit)
         if task in self.failing:
             raise StartFailedError(f"no session for {task}")
         self.started.append(task)
+        self.started_harness.append(harness)
         return f"https://claude.ai/code/{task}"
 
     def _settle(self, task: str, reason: str) -> Written:
@@ -577,3 +583,50 @@ def test_a_usage_limit_stop_pauses_that_harness_until_its_reset(rig: Rig) -> Non
     rig.now = 75_600.0
     assert rig.loop.tick() == ["T-1", "T-2"]
     assert rig.loop.pauses() == []
+
+
+def test_the_loop_starts_on_the_selected_harness(rig: Rig) -> None:
+    rig.harness_setting.set("cursor")
+    rig.put("T-1")
+
+    assert rig.loop.tick() == ["T-1"]
+    assert rig.started_harness == ["cursor"]
+
+
+def test_a_credit_pause_on_claude_does_not_block_cursor_admission(rig: Rig) -> None:
+    rig.limit = "You've hit your weekly limit · resets 9pm (UTC)"
+    rig.put("T-1")
+    assert rig.loop.tick() == []
+    assert rig.loop.pauses()[0]["harness"] == "claude"
+
+    rig.limit = None
+    rig.harness_setting.set("cursor")
+    rig.put("T-2")
+
+    assert rig.loop.tick() == ["T-1", "T-2"]
+    assert rig.started_harness == ["cursor", "cursor"]
+    assert rig.loop.pauses() == [
+        {"harness": "claude", "until": 75_600.0, "reason": "usage limit"}
+    ]
+
+
+def test_each_harness_has_its_own_session_cap(rig: Rig) -> None:
+    rig.policy = Autopilot(
+        lane="ready",
+        limits={**Autopilot().limits, "sessions": 3},
+        session_limits={"claude": 1, "cursor": 2},
+    )
+    rig.loop = rig._bind(rig.sampler)
+    rig.put("T-1")
+    rig.put("T-2")
+
+    assert rig.loop.tick() == ["T-1"]  # Claude cap is 1
+    assert rig.loop.next_pick()["reason"] == "sessions"
+    assert rig.loop.sessions_by_harness() == {
+        "claude": {"use": 1.0, "limit": 1.0},
+        "cursor": {"use": 0.0, "limit": 2.0},
+    }
+
+    rig.harness_setting.set("cursor")
+    assert rig.loop.tick() == ["T-2"]
+    assert rig.started_harness == ["claude", "cursor"]

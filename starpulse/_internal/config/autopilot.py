@@ -17,7 +17,16 @@ __all__ = ["DIMENSIONS", "Autopilot", "AutopilotError", "parse_autopilot"]
 #: The capacity dimensions: host CPU and memory (percent), autopilot sessions in flight, and review-lane points.
 DIMENSIONS = ("cpu", "memory", "sessions", "review")
 
-_KEYS = {"lane", "review_lane", "unsized_points", "idle_minutes", "state_dir", "tier_weights", "limits"}
+_KEYS = {
+    "lane",
+    "review_lane",
+    "unsized_points",
+    "idle_minutes",
+    "state_dir",
+    "tier_weights",
+    "limits",
+    "session_limits",
+}
 
 
 class AutopilotError(ValueError):
@@ -42,10 +51,16 @@ class Autopilot:
         default_factory=lambda: {"cpu": 80, "memory": 80, "sessions": 2, "review": 20}
     )
     """Each dimension's limit: CPU and memory in percent, sessions as a count, review in points."""
+    session_limits: Mapping[str, float] = field(default_factory=dict)
+    """Per-harness session caps; a harness left out uses `limits["sessions"]`."""
 
     def eligible_lane(self, initial: str) -> str:
         """The lane autopilot admits from: the configured one, else the board's `initial` lane."""
         return self.lane or initial
+
+    def session_limit(self, harness: str) -> float:
+        """The session cap for `harness`: its own when set, else the shared `sessions` limit."""
+        return float(self.session_limits.get(harness, self.limits["sessions"]))
 
 
 def _lane(value: object, key: str) -> str | None:
@@ -88,6 +103,7 @@ def parse_autopilot(raw: object) -> Autopilot:
         raise AutopilotError("autopilot state_dir must be a directory path")
     weights = _table(raw.get("tier_weights", {}), "tier_weights", None)
     limits = _table(raw.get("limits", {}), "limits", defaults.limits)
+    session_limits = _table(raw.get("session_limits", {}), "session_limits", None)
     return Autopilot(
         lane,
         review_lane,
@@ -96,4 +112,5 @@ def parse_autopilot(raw: object) -> Autopilot:
         state_dir,
         {**defaults.tier_weights, **weights},
         {**defaults.limits, **limits},
+        session_limits,
     )
