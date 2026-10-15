@@ -380,7 +380,8 @@ sends the browser's own zone with the times.
 ### Admission
 
 `autopilot.admission.decide` answers, for each workable task in the eligible lane, whether it fits and where it ranks. It is
-a pure function of the open tasks, the sampler's readings, the `[autopilot]` policy, the trajectory chain and the run ledger.
+a pure function of the open tasks, the sampler's readings, the `[autopilot]` policy, the trajectory chain, each task's
+forecast P(goal), and the run ledger.
 
 - **Demand.** A task draws `size points x its tier's weight` percent of CPU and of memory, one session, and its points of
   review. The tier is the middle word of its profile (`@agent-standard-high` is `standard`); a tier with no weight, or no
@@ -390,8 +391,10 @@ a pure function of the open tasks, the sampler's readings, the `[autopilot]` pol
   the decision names the first dimension it overfits.
 - **Order.** The admitted tasks go in the order of critical-path depth, the task itself plus the longest chain of open
   tasks waiting on it. In shadow, the default, a second order is only logged: `value / dominant share`, where value is depth
-  times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the chain's
-  `p_goal` for the lane (`trajectory_analytics(...)["chain"]`), and 1 when the lane has no history. An optional predictor, a
+  times P(goal) and dominant share is the largest `demand / limit` over the dimensions. P(goal) is the task's forecast
+  chance of the goal in the eligible lane (`trajectory_analytics(...)["forecast"]`), else the chain's `p_goal` for that
+  lane, and 1 when the lane has no history. The loop reads those ranks whenever `[level]` is set, including on an IC
+  server that is not serving `--hub`. An optional predictor, a
   function from a task's title and description to a score, replaces P(goal) in that shadow value and is logged; a
   predictor that raises leaves the score empty.
 - **Log.** Each decision logs one line:
