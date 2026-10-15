@@ -1848,6 +1848,12 @@ def inherited_socket(environ: Mapping[str, str]) -> socket.socket | None:
     return socket.socket(fileno=_LISTEN_FDS_START)
 
 
+#: Bytes of C stack each request thread is given. The stock 8 MiB, times a 50-viewer crowd, is hundreds of megabytes
+#: of RSS the free-threaded allocator does not return when those threads exit (live: threads and FDs back after
+#: starpulse-load, RSS not). 256 KiB encodes a 1 MB snapshot.
+REQUEST_STACK = 256 * 1024
+
+
 class StarPulseServer(ThreadingHTTPServer):
     """The view's HTTP server, with a listen backlog a crowd of pages connecting at once fits in: the stock 5 drops the
     rest's SYNs, and each waits out a 1 s retransmit before its first byte.
@@ -1870,7 +1876,11 @@ class StarPulseServer(ThreadingHTTPServer):
 
     def process_request(self, request: Any, client_address: Any) -> None:
         self.accepted[request] = time.monotonic()
-        super().process_request(request, client_address)
+        previous = threading.stack_size(REQUEST_STACK)
+        try:
+            super().process_request(request, client_address)
+        finally:
+            threading.stack_size(previous)
 
 
 class _EventText:

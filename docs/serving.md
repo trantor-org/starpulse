@@ -41,6 +41,10 @@ The adopted socket's backlog and options stay as the manager set them, `--host` 
 startup line and the board's instance name (`starpulse-<port>`) name the socket's port. A `.socket` unit's
 `ListenStream=` sets that address; `Accept=no` (the default) hands the server the listening socket itself.
 
+Each accepted request runs on its own thread with a 256 KiB C stack (`REQUEST_STACK` in the server). The stdlib default
+of 8 MiB is not returned on the free-threaded CPython build after the thread exits, so a crowd of pages would leave that
+RSS behind; 256 KiB still encodes a 1 MB snapshot.
+
 ### What the page shows when the server restarts
 
 The page keeps its last Board on screen while the connection is down and says why in the navigator's header, where the dot
