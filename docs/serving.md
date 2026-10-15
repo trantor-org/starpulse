@@ -44,7 +44,8 @@ startup line and the board's instance name (`starpulse-<port>`) name the socket'
 Each accepted request runs on a pooled worker thread (up to the listen backlog of 128) with a 256 KiB C stack
 (`REQUEST_STACK` in the server). The stdlib default of 8 MiB, and a new thread per request, is not returned on the
 free-threaded CPython build after the thread exits, so a crowd of pages would leave that RSS behind; 256 KiB still
-encodes a 1 MB snapshot, and later requests reuse the same workers.
+encodes a 1 MB snapshot, and later requests reuse the same workers. A 50-viewer Locust crowd therefore occupies 50 of
+those workers, not one abandoned heap per request.
 
 ### What the page shows when the server restarts
 
