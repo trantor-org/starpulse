@@ -4,7 +4,8 @@ import importlib
 import time
 from pathlib import Path
 
-import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect, select
 
 from starpulse._internal.autopilot.ledger import Ledger, RunRecord
@@ -13,10 +14,6 @@ from starpulse._internal.eventlog.tables import autopilot_runs
 
 
 def test_migration_0016_creates_the_autopilot_runs_table_the_code_declares() -> None:
-    pytest.importorskip("alembic")
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-
     migration = importlib.import_module("starpulse._internal.eventlog.migrations.versions.0016_autopilot_runs")
     engine = create_engine("sqlite://")
     with engine.begin() as db, Operations.context(MigrationContext.configure(db)):

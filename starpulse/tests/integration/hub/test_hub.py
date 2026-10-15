@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, create_engine, text
 
-pytest.importorskip("alembic", reason="the hub extras are not installed")
+pytest.importorskip("jwt", reason="the hub extras are not installed")
 
 from starpulse._internal.eventlog import events  # noqa: E402
 from starpulse._internal.eventlog.event_log import EventLog  # noqa: E402

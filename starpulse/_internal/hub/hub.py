@@ -1,7 +1,7 @@
 """Hub mode: the same package served from a Postgres history, started by `starpulse serve --hub`.
 
-This module and what it imports (Alembic, the Postgres driver) are the hub extras (`pip install 'starpulse[hub]'`).
-Only `serve --hub` imports it, so an IC instance on SQLite runs without them.
+This module and what it imports (the Postgres driver) are the hub extras (`pip install 'starpulse[hub]'`). Only
+`serve --hub` imports it, so an IC instance on SQLite runs without them.
 """
 
 from __future__ import annotations
@@ -11,10 +11,8 @@ import threading
 from collections import defaultdict
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 
 from alembic import command
-from alembic.config import Config as AlembicConfig
 from sqlalchemy import Connection, Engine, create_engine, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
@@ -22,6 +20,7 @@ from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 
 from starpulse._internal.machines.transitions import Table
 from starpulse._internal.eventlog.events import STREAM
+from starpulse._internal.eventlog.migrate import alembic_config
 from starpulse._internal.eventlog.tables import VERSION_TABLE, day_rollups, events
 
 logger = logging.getLogger(__name__)
@@ -37,9 +36,6 @@ __all__ = [
     "prepare",
     "rollup_day",
 ]
-
-_MIGRATIONS = Path(__file__).parents[1] / "eventlog" / "migrations"
-
 
 class HubError(ValueError):
     """The config cannot run a hub; the message says what to change."""
@@ -58,13 +54,10 @@ def prepare(database_url: str | None) -> None:
 
 def _upgrade(url: str) -> None:
     """Run every revision the database has not yet seen, in one transaction (Postgres DDL rolls back)."""
-    config = AlembicConfig()
-    config.set_main_option("script_location", str(_MIGRATIONS))
     engine = create_engine(url)
     try:
         with engine.begin() as connection:
-            config.attributes["connection"] = connection
-            command.upgrade(config, "head")
+            command.upgrade(alembic_config(connection), "head")
     except SQLAlchemyError as exc:
         raise HubError(f"cannot bring the hub database to the latest schema: {exc.__class__.__name__}: {exc}") from exc
     finally:

@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from sqlalchemy import Engine, case, delete, func, inspect, insert, select, text, tuple_
+from sqlalchemy import Engine, case, delete, func, insert, select, tuple_
 
 from starpulse._internal.eventlog.event_log import create_tables
 from starpulse._internal.eventlog.tables import pull_requests
@@ -52,19 +52,6 @@ class PullStore:
         self._listeners: list[Callable[[], None]] = []
         self._checked: dict[str, float] = {}
         create_tables(engine, [pull_requests])
-        present = {column["name"] for column in inspect(engine).get_columns(pull_requests.name)}
-        added = {
-            "detail": "JSON",
-            "merged_at": "VARCHAR",
-            "merge_sha": "VARCHAR",
-            "head_ref": "VARCHAR",
-            "unresolved": "JSON",
-        }
-        # a table an earlier version created: the hub's migrations 0010, 0011 and 0013 add these
-        with engine.begin() as db:
-            for column, kind in added.items():
-                if column not in present:
-                    db.execute(text(f"ALTER TABLE {pull_requests.name} ADD COLUMN {column} {kind}"))
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
         self._hold(select(pull_requests))
 

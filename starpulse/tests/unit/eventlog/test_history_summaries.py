@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
@@ -228,34 +228,6 @@ def test_opening_a_store_whose_summaries_predate_the_lane_counts_counts_its_lane
     assert _snapshot(HistoryStore(url, MACHINES)) == recorded
 
 
-def test_opening_a_store_with_the_older_lane_index_puts_the_stay_index_in_its_place(tmp_path: Path) -> None:
-    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
-    first = HistoryStore(url, MACHINES)
-    with first.engine.begin() as db:  # a store opened before the health read seeked each lane's stays
-        db.execute(text("DROP INDEX ix_starpulse_lane_intervals_stay"))
-        db.execute(text("CREATE INDEX ix_starpulse_lane_intervals_lane ON starpulse_lane_intervals (lane, left_at)"))
-
-    reopened = HistoryStore(url, MACHINES)
-
-    indexes = {i["name"]: i["column_names"] for i in inspect(reopened.engine).get_indexes("starpulse_lane_intervals")}
-    assert indexes["ix_starpulse_lane_intervals_stay"] == ["lane", "left_at", "entered_at"]
-    assert "ix_starpulse_lane_intervals_lane" not in indexes
-
-
-def test_opening_a_store_with_the_older_task_index_puts_the_task_entered_index_in_its_place(tmp_path: Path) -> None:
-    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
-    first = HistoryStore(url, MACHINES)
-    with first.engine.begin() as db:  # a store opened before the level read a task's stays in entered_at order
-        db.execute(text("DROP INDEX ix_starpulse_lane_intervals_task_entered"))
-        db.execute(text("CREATE INDEX ix_starpulse_lane_intervals_task ON starpulse_lane_intervals (task, left_at)"))
-
-    reopened = HistoryStore(url, MACHINES)
-
-    indexes = {i["name"]: i["column_names"] for i in inspect(reopened.engine).get_indexes("starpulse_lane_intervals")}
-    assert indexes["ix_starpulse_lane_intervals_task_entered"] == ["task", "entered_at"]
-    assert "ix_starpulse_lane_intervals_task" not in indexes
-
-
 def _sources(store: HistoryStore) -> list[tuple]:
     return _rows(store, "starpulse_lane_intervals", "event_id, source")
 
@@ -265,20 +237,6 @@ def test_a_lane_stay_keeps_the_source_its_event_id_names(store: HistoryStore) ->
     store.record_lane("T-2@Ready@11", "T-2", "Ready", 11.0)
 
     assert _sources(store) == [("T-2@Ready@11", "unattributed"), ("a/1", "a")]
-
-
-def test_opening_a_store_whose_stays_predate_the_source_column_adds_and_fills_it(tmp_path: Path) -> None:
-    url = f"sqlite:///{tmp_path / 'history.sqlite'}"
-    first = HistoryStore(url, MACHINES)
-    first.record_lane("a/1", "T-1", "Ready", 10.0)
-    first.record_lane("b/2", "T-1", "In Progress", 20.0)
-    first.record_lane("T-3@Ready@30", "T-3", "Ready", 30.0)
-    with first.engine.begin() as db:  # a store opened before the stays carried their source
-        db.execute(text("ALTER TABLE starpulse_lane_intervals DROP COLUMN source"))
-
-    reopened = HistoryStore(url, MACHINES)
-
-    assert _sources(reopened) == [("T-3@Ready@30", "unattributed"), ("a/1", "a"), ("b/2", "b")]
 
 
 def test_rebuilding_the_summaries_writes_each_stays_source(store: HistoryStore) -> None:

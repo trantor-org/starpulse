@@ -217,20 +217,6 @@ def test_a_store_opened_over_saved_rows_serves_what_the_first_one_did(store: Pul
     assert PullStore(store._engine).find(detailed=True) == store.find(detailed=True)
 
 
-def test_a_table_an_earlier_version_created_gains_the_thread_and_branch_columns(tmp_path: Path) -> None:
-    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
-    PullStore(engine)
-    with engine.begin() as db:
-        for column in ("head_ref", "unresolved"):
-            db.execute(text(f"ALTER TABLE starpulse_pull_requests DROP COLUMN {column}"))
-
-    store = PullStore(engine)
-    store.save([_stored(REPO, 1) | {"headRefName": "claude/task-7-thing", "unresolvedThreads": []}])
-
-    [pull] = store.find()
-    assert (pull["headRefName"], pull["unresolvedThreads"]) == ("claude/task-7-thing", [])
-
-
 def test_a_refresh_sends_one_query_for_the_repository_and_none_for_a_final_record(store: PullStore) -> None:
     github = Github()
     github.add(1, checks={"lint": "SUCCESS"})
@@ -401,49 +387,6 @@ def test_a_merged_prs_record_keeps_what_the_task_consumers_read_beside_the_serve
         },
     }
     assert "detail" not in store.find(number=5)[0]
-
-
-def test_a_table_an_earlier_version_created_gains_the_detail_column_and_keeps_its_rows(tmp_path: Path) -> None:
-    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
-    with engine.begin() as db:
-        db.exec_driver_sql(
-            "CREATE TABLE starpulse_pull_requests (repo VARCHAR NOT NULL, number INTEGER NOT NULL, state VARCHAR NOT NULL,"
-            " is_draft BOOLEAN NOT NULL, mergeable VARCHAR NOT NULL, base VARCHAR NOT NULL, head VARCHAR NOT NULL,"
-            " body TEXT NOT NULL, checks VARCHAR NOT NULL, required JSON NOT NULL, threads INTEGER NOT NULL,"
-            " updated_at VARCHAR NOT NULL, fetched_at FLOAT NOT NULL, PRIMARY KEY (repo, number))"
-        )
-        db.exec_driver_sql(
-            "INSERT INTO starpulse_pull_requests VALUES ('acme/widgets', 1, 'MERGED', 0, 'UNKNOWN', 'main', 'abc', '',"
-            " 'pass', '[]', 0, '2026-10-07T12:00:00Z', 1.0)"
-        )
-
-    store = PullStore(engine)
-    store.save([{**_stored(REPO, 2), "detail": {"files": ["a.py"]}}])
-
-    assert {pull["number"]: pull["detail"] for pull in store.find(detailed=True)} == {1: None, 2: {"files": ["a.py"]}}
-
-
-def test_a_table_an_earlier_version_created_gains_the_merge_columns_and_keeps_its_rows(tmp_path: Path) -> None:
-    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
-    with engine.begin() as db:
-        db.exec_driver_sql(
-            "CREATE TABLE starpulse_pull_requests (repo VARCHAR NOT NULL, number INTEGER NOT NULL, state VARCHAR NOT NULL,"
-            " is_draft BOOLEAN NOT NULL, mergeable VARCHAR NOT NULL, base VARCHAR NOT NULL, head VARCHAR NOT NULL,"
-            " body TEXT NOT NULL, checks VARCHAR NOT NULL, required JSON NOT NULL, threads INTEGER NOT NULL,"
-            " updated_at VARCHAR NOT NULL, fetched_at FLOAT NOT NULL, detail JSON, PRIMARY KEY (repo, number))"
-        )
-        db.exec_driver_sql(
-            "INSERT INTO starpulse_pull_requests VALUES ('acme/widgets', 1, 'OPEN', 0, 'UNKNOWN', 'main', 'abc', '',"
-            " 'pass', '[]', 0, '2026-10-07T12:00:00Z', 1.0, NULL)"
-        )
-
-    store = PullStore(engine)
-    store.save([{**_stored(REPO, 2), "state": "MERGED", "mergedAt": NEW, "mergeSha": "a" * 40}])
-
-    assert {pull["number"]: (pull["mergedAt"], pull["mergeSha"]) for pull in store.find()} == {
-        1: (None, None),
-        2: (NEW, "a" * 40),
-    }
 
 
 def test_a_pr_an_open_task_cites_is_read_when_the_store_lacks_it_or_holds_it_without_detail(store: PullStore) -> None:

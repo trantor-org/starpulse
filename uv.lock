@@ -1518,6 +1518,7 @@ name = "starpulse"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [
+    { name = "alembic" },
     { name = "jsonschema" },
     { name = "numpy" },
     { name = "pydantic" },
@@ -1528,7 +1529,6 @@ dependencies = [
 
 [package.optional-dependencies]
 hub = [
-    { name = "alembic" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyjwt", extra = ["crypto"] },
 ]
@@ -1549,7 +1549,6 @@ dev = [
     { name = "pytest-xdist" },
 ]
 hub = [
-    { name = "alembic" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "testcontainers" },
@@ -1557,7 +1556,7 @@ hub = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", marker = "extra == 'hub'", specifier = ">=1.16" },
+    { name = "alembic", specifier = ">=1.16" },
     { name = "jsonschema", specifier = ">=4.25.1" },
     { name = "numpy", specifier = ">=2.5.4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'hub'", specifier = ">=3.2" },
@@ -1583,7 +1582,6 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
 ]
 hub = [
-    { name = "alembic", specifier = ">=1.16" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4.15.0" },

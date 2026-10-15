@@ -20,6 +20,7 @@ def upgrade() -> None:
         sa.Column("fields", sa.JSON, nullable=False),
         sa.Column("at", sa.Float, nullable=False),
         sa.UniqueConstraint("event_id"),
+        sqlite_autoincrement=True,
     )
     op.create_index("ix_starpulse_events_stream", "starpulse_events", ["stream", "id"])
     op.create_index("ix_starpulse_events_at", "starpulse_events", ["at"])

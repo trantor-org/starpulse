@@ -36,9 +36,7 @@ from sqlalchemy import (
     delete,
     func,
     insert,
-    inspect,
     select,
-    text,
     update,
 )
 from sqlalchemy.dialects import postgresql, sqlite
@@ -60,7 +58,6 @@ from starpulse._internal.eventlog.summaries import (
     Summariser,
     cases,
     count_lanes,
-    fill_sources,
     lane_intervals,
     lanes,
     read_case,
@@ -284,16 +281,7 @@ class HistoryStore:
         # pragma: no mutate start — SQLite compiles the postgresql insert's ON CONFLICT alike
         self._dialect = postgresql if self.engine.dialect.name == "postgresql" else sqlite
         # pragma: no mutate end
-        create_tables(self.engine)  # a reader thread of the log may be creating its own at the same time
-        for index in (*cases.indexes, *lane_intervals.indexes):  # create_all leaves a table that predates an index
-            index.create(self.engine, checkfirst=True)
-        with self.engine.begin() as db:  # a store whose stays predate their source column gains and fills it
-            if "source" not in {column["name"] for column in inspect(db).get_columns(lane_intervals.name)}:
-                db.execute(text(f"ALTER TABLE {lane_intervals.name} ADD COLUMN source VARCHAR"))
-            fill_sources(db)
-        with self.engine.begin() as db:  # the stay and task-by-entered indexes replace the lane and task-by-left ones
-            db.execute(text("DROP INDEX IF EXISTS ix_starpulse_lane_intervals_lane"))
-            db.execute(text("DROP INDEX IF EXISTS ix_starpulse_lane_intervals_task"))
+        create_tables(self.engine)  # a reader thread of the log may be bringing the same store up at the same time
         if self.repair_lanes():
             self.rebuild_summaries()
         self.build_summaries()

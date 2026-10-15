@@ -13,6 +13,8 @@ down_revision = "0018"
 
 def upgrade() -> None:
     op.add_column("starpulse_lane_intervals", sa.Column("source", sa.String))
+    if op.get_bind().dialect.name != "postgresql":
+        return  # a SQLite store reaches here with empty tables
     # a stay's source is the `<source>/` its event id carries, `unattributed` when it carries none
     op.execute(
         "UPDATE starpulse_lane_intervals SET source = "

@@ -39,6 +39,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
+from starpulse._internal.eventlog.migrate import migrate
 from starpulse._internal.eventlog.tables import (
     autopilot_runs,
     board_state,
@@ -517,14 +518,18 @@ def _create_engine(url: str) -> Engine:
 
 
 def create_tables(engine: Engine, tables: Sequence[Table] | None = None) -> None:
-    """Create `tables`, or every StarPulse table but the hub's rollups for None, in `engine`'s database.
+    """Bring `engine`'s database to the schema the migration chain declares, the hub's rollups apart.
 
-    The rollups belong to a hub and arrive with its migrations, so an instance's own database never gains them here.
+    A SQLite store is built and versioned by the chain, whole whichever `tables` the caller needs. Another database is
+    not: the hub's Postgres arrives through its own migrations, and an instance on it creates `tables`, or every
+    StarPulse table but the rollups for None, where they are missing.
 
     A caller that lost a race to create them looks again and finds them: each lost race means another process or
     thread created a table meanwhile, and the tables are created once, so a few looks suffice; the last failure is a
     real one and raises.
     """
+    if engine.dialect.name == "sqlite":
+        return migrate(engine)
     if tables is None:
         tables = [table for table in metadata.sorted_tables if table is not day_rollups]
     for _ in range(_CREATE_ATTEMPTS - 1):

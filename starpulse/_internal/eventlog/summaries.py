@@ -95,8 +95,7 @@ lane_intervals = Table(
     Column("entered_at", Float, nullable=False),
     Column("left_at", Float),
     Column("event_id", String, nullable=False, unique=True),
-    # the `<source>/` the event id carries (`source`), so the level groups runs without parsing every id; null only in
-    # a store that predates it, until `fill_sources` runs at start-up
+    # the `<source>/` the event id carries (`source`), so the level groups runs without parsing every id
     Column("source", String),
     # a task's stays in the order the level reads them (entered_at, then the row id every index ends in): no sort
     Index("ix_starpulse_lane_intervals_task_entered", "task", "entered_at"),
@@ -280,18 +279,6 @@ def write_lane(db: Connection, upsert: Callable[[Table], Any], event_id: str, ta
             },
         )
     )
-
-
-def fill_sources(db: Connection) -> None:
-    """Give each lane stay that predates the source column the source its event id names."""
-    i = lane_intervals.c
-    unfilled = select(i.id, i.event_id).where(i.source.is_(None)).execution_options(yield_per=5000)
-    ids: dict[str, list[int]] = {}
-    for id_, event_id in db.execute(unfilled):
-        ids.setdefault(source(event_id), []).append(id_)
-    for name, held in ids.items():
-        for start in range(0, len(held), _CHUNK):
-            db.execute(update(lane_intervals).where(i.id.in_(held[start : start + _CHUNK])).values(source=name))
 
 
 def count_lanes(db: Connection) -> None:
