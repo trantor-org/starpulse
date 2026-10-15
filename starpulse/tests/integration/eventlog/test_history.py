@@ -121,6 +121,20 @@ def test_lane_rows_are_every_tasks_lane_changes_in_time_order(store: HistoryStor
     ]
 
 
+def test_current_lanes_are_each_tasks_latest_lane_change_in_the_order_those_changes_happened(store: HistoryStore) -> None:
+    store.record_lane("a", "PROJ-7", "Ready", 1.0)
+    store.record_lane("b", "PROJ-8", "To Do", 2.0)
+    store.record_lane("c", "PROJ-7", "Done", 9.0)
+    store.record_lane("d", "PROJ-8", "To Do", 4.0)  # repeats the last lane: no change
+    store.record_lane("e", "PROJ-9", "Ready", 9.0)  # same instant as PROJ-7's: the earlier insert first
+
+    assert store.current_lanes() == [
+        ("b", "PROJ-8", "to_do", 2.0),
+        ("c", "PROJ-7", "done", 9.0),
+        ("e", "PROJ-9", "ready", 9.0),
+    ]
+
+
 def test_the_same_gap_reported_again_is_one_gap_with_its_latest_bounds(store: HistoryStore) -> None:
     store.record_gap("machine:events", "5-0", "9-0", 3)
     store.record_gap("machine:events", "5-0", "12-0", 6)

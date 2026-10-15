@@ -614,8 +614,20 @@ class HistoryStore:
         return self._read(select(c.event_id, c.task, c.new_status, c.observed_at).order_by(*_LANE_ORDER))
 
     def current_lanes(self) -> list[tuple[str, str, str, float]]:
-        """`(event_id, task, lane, at)` for the latest lane change of each task, in the order the tasks first moved."""
-        return list({row[1]: row for row in self.lane_changes()}.values())
+        """`(event_id, task, lane, at)` for the latest lane change of each task, in the order those changes happened.
+
+        The latest is picked in SQL on the task index, so a superseded change is never read."""
+        c, earlier = _lane_changes.c, _lane_changes.alias("earlier")
+        latest = (
+            select(earlier.c.id)
+            .where(earlier.c.task == c.task)
+            .order_by(earlier.c.observed_at.desc(), earlier.c.id.desc())
+            .limit(1)
+            .correlate(_lane_changes)
+            .scalar_subquery()
+        )
+        query = select(c.event_id, c.task, c.new_status, c.observed_at).where(c.id == latest).order_by(*_LANE_ORDER)
+        return self._read(query)
 
     def level_runs(self, flow: str) -> list[Run]:
         """Every task's trajectory on `flow` as a `Run` of the source its event ids name, for the level's aggregates.
