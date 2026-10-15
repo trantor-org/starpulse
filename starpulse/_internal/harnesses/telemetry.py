@@ -337,18 +337,17 @@ class TelemetryLog:
 
     `publish` appends each signal under its `key`, so a replayed export adds nothing, and fails open like the log: a
     database that cannot be opened drops the signals, never the export. `read` returns the signals no older than
-    `since`, in the order they were published; it polls the stream's tail since its last read and holds what it
-    read, dropping what is older than `keep` seconds before the newest signal it holds (the log prunes its own rows
-    by its `event_log_retention_days`), so a read costs only what was published since the last one.
+    `since`, in the order they were published, dropping what is older than `keep` seconds before the newest signal
+    (the log prunes its own rows by its `event_log_retention_days`). Each read hydrates from the log and keeps no
+    Signals on this object, so idle RSS does not grow with the stream.
     """
 
     STREAM = "telemetry:signals"
+    _BATCH = 5000
 
     def __init__(self, log: EventLog, keep: float = 7 * 86400.0) -> None:
         self._log = log
-        self._tail = Tail(log, self.STREAM, batch=5000)
         self._keep = keep
-        self._held: list[Signal] = []
         self._lock = threading.Lock()
 
     def publish(self, found: Iterable[Signal]) -> None:
@@ -356,13 +355,15 @@ class TelemetryLog:
             self._log.append(self.STREAM, asdict(signal), event_id=signal.key)
 
     def read(self, since: float = 0.0) -> list[Signal]:
-        """The held signals from `since` on; raises when the database cannot be read."""
+        """The signals from `since` on; raises when the database cannot be read."""
         with self._lock:
-            while entries := self._tail.poll():
-                self._held += [_signal(entry.fields) for entry in entries]
-                if len(entries) < self._tail.batch:
+            tail = Tail(self._log, self.STREAM, batch=self._BATCH)
+            held: list[Signal] = []
+            while entries := tail.poll():
+                held += [_signal(entry.fields) for entry in entries]
+                if len(entries) < tail.batch:
                     break
-            if self._held:
-                floor = max(s.time for s in self._held) - self._keep
-                self._held = [s for s in self._held if s.time >= floor]
-            return [s for s in self._held if s.time >= since]
+            if held:
+                floor = max(s.time for s in held) - self._keep
+                held = [s for s in held if s.time >= max(since, floor)]
+            return held

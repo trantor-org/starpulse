@@ -1,5 +1,6 @@
 """The telemetry log over a real event log: what a replay, an outage, a window and a trim do to what is read."""
 
+import gc
 import json
 import re
 import sqlite3
@@ -66,6 +67,20 @@ def test_signals_older_than_the_hold_before_the_newest_are_dropped(tmp_path: Pat
     telemetry.publish([signal(1, 100.0), signal(2, 250.0), signal(3, 300.0)])
 
     assert [s.key for s in telemetry.read()] == ["k2", "k3"]
+
+
+def test_a_read_does_not_keep_hydrated_signals_on_the_log(tmp_path: Path) -> None:
+    """Idle RSS: the log must not retain every tailed Signal between reads (live: 371k objects, ~400 MB/hr)."""
+    telemetry = TelemetryLog(log_at(tmp_path))
+    telemetry.publish([signal(i, 100.0 + i) for i in range(50)])
+
+    found = telemetry.read()
+    assert [s.key for s in found] == [f"k{i}" for i in range(50)]
+    del found
+    gc.collect()
+
+    leftover = [obj for obj in gc.get_objects() if type(obj) is Signal]
+    assert leftover == []
 
 
 def test_publishing_to_a_database_that_cannot_be_opened_drops_the_signals_without_raising(tmp_path: Path) -> None:
