@@ -5,7 +5,7 @@ import time
 from collections.abc import Callable, Iterator
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 
 from starpulse._internal.eventlog.level_metrics import UNATTRIBUTED, Run
@@ -119,6 +119,35 @@ def test_lane_rows_are_every_tasks_lane_changes_in_time_order(store: HistoryStor
         ("PROJ-7", 5.0, None, "ready"),
         ("PROJ-7", 9.0, "ready", "done"),
     ]
+
+
+_LANE_OBSERVED_INDEX = "ix_starpulse_lane_changes_observed"
+
+
+def _lane_index_names(store: HistoryStore) -> set[str]:
+    return {index["name"] for index in inspect(store.engine).get_indexes("starpulse_lane_changes")}
+
+
+def test_a_sqlite_store_reads_lane_rows_since_a_time_through_an_index_and_a_postgres_one_gains_none(
+    store: HistoryStore,
+) -> None:
+    if store.engine.dialect.name != "sqlite":
+        assert _LANE_OBSERVED_INDEX not in _lane_index_names(store)
+        return
+    query = text(
+        "EXPLAIN QUERY PLAN SELECT task, observed_at, old_status, new_status FROM starpulse_lane_changes "
+        "WHERE observed_at >= 5 ORDER BY observed_at, id"
+    )
+    with store.engine.begin() as db:  # a store that predates the index
+        db.execute(text(f"DROP INDEX IF EXISTS {_LANE_OBSERVED_INDEX}"))
+    reopened = HistoryStore(store.engine.url.render_as_string(hide_password=False), MACHINES)
+
+    with reopened.engine.connect() as db:
+        plan = " ".join(row[-1] for row in db.execute(query))
+
+    assert _LANE_OBSERVED_INDEX in _lane_index_names(reopened)
+    assert f"SEARCH starpulse_lane_changes USING INDEX {_LANE_OBSERVED_INDEX}" in plan
+    assert "TEMP B-TREE" not in plan
 
 
 def test_the_same_gap_reported_again_is_one_gap_with_its_latest_bounds(store: HistoryStore) -> None:

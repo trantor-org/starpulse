@@ -287,6 +287,14 @@ class HistoryStore:
         create_tables(self.engine)  # a reader thread of the log may be creating its own at the same time
         for index in (*cases.indexes, *lane_intervals.indexes):  # create_all leaves a table that predates an index
             index.create(self.engine, checkfirst=True)
+        if self.engine.dialect.name == "sqlite":  # off the shared metadata: a Postgres hub is not given this index
+            with self.engine.begin() as db:  # serves `lane_rows(since)`: a range read in `_LANE_ORDER`
+                db.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_starpulse_lane_changes_observed "
+                        f"ON {_lane_changes.name} (observed_at, id)"
+                    )
+                )
         with self.engine.begin() as db:  # a store whose stays predate their source column gains and fills it
             if "source" not in {column["name"] for column in inspect(db).get_columns(lane_intervals.name)}:
                 db.execute(text(f"ALTER TABLE {lane_intervals.name} ADD COLUMN source VARCHAR"))
