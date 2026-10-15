@@ -271,7 +271,7 @@
       "description": "The task the loop would admit next, or, when none fits, the top-ranked one and what it waits on.",
       "properties": {
         "reason": {
-          "description": "`goes next`, `quiet hours` while the quiet hours hold admission, or the first dimension the task overfits, which the strip shows after `waits:`.",
+          "description": "`goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.",
           "type": "string"
         },
         "task": {
@@ -295,6 +295,29 @@
         "reason"
       ],
       "title": "AutopilotNext",
+      "type": "object"
+    },
+    "AutopilotPause": {
+      "additionalProperties": false,
+      "description": "A harness whose admission is paused until `until` after a usage or credit limit.",
+      "properties": {
+        "harness": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "until": {
+          "description": "When admission for this harness may resume, in epoch seconds.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "harness",
+        "until",
+        "reason"
+      ],
+      "title": "AutopilotPause",
       "type": "object"
     },
     "AutopilotRequest": {
@@ -391,6 +414,13 @@
           ],
           "default": null,
           "description": "Null when no task in the eligible lane is workable."
+        },
+        "pauses": {
+          "description": "Harnesses whose admission is paused until `until`. Absent when none are paused.",
+          "items": {
+            "$ref": "#/$defs/AutopilotPause"
+          },
+          "type": "array"
         },
         "quietHours": {
           "anyOf": [

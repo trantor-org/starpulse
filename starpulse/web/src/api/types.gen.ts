@@ -212,6 +212,10 @@ export interface AutopilotStatus {
    */
   next?: AutopilotNext | null;
   /**
+   * Harnesses whose admission is paused until `until`. Absent when none are paused.
+   */
+  pauses?: AutopilotPause[];
+  /**
    * Null when no window holds admission back.
    */
   quietHours?: QuietHours | null;
@@ -249,12 +253,23 @@ export interface AutopilotSession {
  */
 export interface AutopilotNext {
   /**
-   * `goes next`, `quiet hours` while the quiet hours hold admission, or the first dimension the task overfits, which the strip shows after `waits:`.
+   * `goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`.
    */
   reason: string;
   task: string;
   title: string;
   verdict: "starting" | "waits";
+}
+/**
+ * A harness whose admission is paused until `until` after a usage or credit limit.
+ */
+export interface AutopilotPause {
+  harness: string;
+  reason: string;
+  /**
+   * When admission for this harness may resume, in epoch seconds.
+   */
+  until: number;
 }
 /**
  * A daily window in which the autopilot admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before

@@ -70,6 +70,8 @@ class Runtime:
         if self.loop is not None:
             body["inFlight"] = self.loop.in_flight()
             body["next"] = self.loop.next_pick()
+            if pauses := self.loop.pauses():
+                body["pauses"] = pauses
         return body
 
     def push_status(self) -> None:

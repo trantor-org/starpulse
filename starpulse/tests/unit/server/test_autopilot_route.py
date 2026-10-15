@@ -178,6 +178,41 @@ def test_a_get_with_a_loop_lists_each_started_session_and_no_pick_once_nothing_i
     assert body["next"] is None
 
 
+def test_a_get_with_a_loop_names_a_harness_usage_pause(tmp_path: Path) -> None:
+    from starpulse.contracts.adapters import StartFailedError
+
+    feed = BoardFeed(machines={**MACHINES, **HARNESS_MACHINES})
+    feed.put(
+        BoardTask(
+            id="T-4", team="demo", title="Serve it", lane="ready", labels=["size-1"], assignee="@agent-standard-high"
+        )
+    )
+
+    def refuse(task: str) -> str:
+        raise StartFailedError("You've hit your weekly limit · resets 9pm (UTC)")
+
+    runtime = build(
+        Autopilot(lane="ready"),
+        tmp_path,
+        EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}"),
+        feed,
+        probe=lambda: {"cpu": 5.0, "memory": 5.0},
+        clock=lambda: 1000.0,
+        start=refuse,
+        settle=lambda task, reason: Written(True, task),
+        lane="ready",
+    )
+    runtime.sampler.sample()
+    runtime.set_enabled(True)
+    assert runtime.loop is not None
+    runtime.loop.tick()
+
+    body = autopilot("127.0.0.1", "GET", b"", runtime)[1]
+
+    assert body["pauses"] == [{"harness": "claude", "until": 75_600.0, "reason": "usage limit"}]
+    AutopilotStatus.model_validate(body)
+
+
 def test_every_body_the_route_serves_is_one_the_contract_names(tmp_path: Path) -> None:
     looping = _looping(tmp_path)
     looping.set_enabled(True)

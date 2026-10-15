@@ -57,6 +57,7 @@ class Rig:
         self.started: list[str] = []
         self.settled: list[tuple[str, str]] = []
         self.failing: set[str] = set()
+        self.limit: str | None = None
         self.claims: list[tuple[str, str]] = []
         self.claim_ok = True
         self.quiet = quiet
@@ -96,6 +97,8 @@ class Rig:
         return Written(self.claim_ok, task)
 
     def _start(self, task: str) -> str:
+        if self.limit is not None:
+            raise StartFailedError(self.limit)
         if task in self.failing:
             raise StartFailedError(f"no session for {task}")
         self.started.append(task)
@@ -480,3 +483,97 @@ def test_next_pick_names_quiet_hours_as_why_the_top_task_waits(tmp_path: Path) -
     rig.sampler.sample()
 
     assert rig.loop.next_pick() == {"task": "T-1", "title": "T-1", "verdict": "waits", "reason": "quiet hours"}
+
+
+def test_a_session_stop_with_the_task_still_open_closes_the_run_and_does_not_start_it_again(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path, limits={"sessions": 1})
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.session("T-1")
+    rig.session("T-1", "SESSION_STOPPED")
+    rig.put("T-2")
+
+    started = rig.loop.tick()
+
+    assert started == ["T-2"]
+    assert [run.outcome for run in rig.ledger.runs("T-1")] == ["session-ended"]
+    assert rig.started == ["T-1", "T-2"]
+    assert rig.loop.tick() == []  # T-1 stays Ready and is not admitted again
+    assert rig.settled == []
+
+
+def test_a_stopped_session_that_becomes_active_again_is_not_admitted_as_a_new_run(rig: Rig) -> None:
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.session("T-1")
+    rig.session("T-1", "SESSION_STOPPED")
+    rig.loop.tick()
+    assert rig.loop.in_flight() == []
+    rig.session("T-1", "TOOL_USED")  # a mid-turn reply stops, then a tool starts the session again
+
+    assert rig.loop.tick() == []
+    assert [session["task"] for session in rig.loop.in_flight()] == ["T-1"]
+    assert rig.started == ["T-1"]
+
+
+def test_a_held_task_stays_out_of_admission_on_a_new_loop_over_the_same_store(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, limits={"sessions": 1})
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.session("T-1")
+    rig.session("T-1", "SESSION_STOPPED")
+    rig.loop.tick()
+    again = Loop(
+        feed=rig.feed,
+        policy=rig.policy,
+        toggle=rig.toggle,
+        sampler=rig.sampler,
+        ledger=rig.ledger,
+        start=rig._start,
+        settle=rig._settle,
+        chain=lambda: {},
+        lane="ready",
+        clock=lambda: rig.now,
+    )
+    rig.put("T-2")
+
+    assert again.tick() == ["T-2"]
+    assert rig.started == ["T-1", "T-2"]
+
+
+def test_moving_a_held_task_out_of_ready_lets_admission_take_it_once_it_is_ready_again(rig: Rig) -> None:
+    rig.put("T-1")
+    rig.loop.tick()
+    rig.session("T-1")
+    rig.session("T-1", "SESSION_STOPPED")
+    rig.loop.tick()
+    rig.put("T-1", lane="to_do")  # a person or the sweep moved it
+    rig.loop.tick()
+    rig.put("T-1")
+
+    assert rig.loop.tick() == ["T-1"]
+
+
+def test_a_usage_limit_stop_pauses_that_harness_until_its_reset(rig: Rig) -> None:
+    rig.limit = "You've hit your weekly limit · resets 9pm (UTC)"
+    rig.put("T-1")
+    rig.put("T-2")
+
+    assert rig.loop.tick() == []
+    assert rig.started == []
+    assert rig.loop.pauses() == [
+        {"harness": "claude", "until": 75_600.0, "reason": "usage limit"}
+    ]  # 21:00 UTC on the clock's day
+    assert rig.loop.next_pick() == {
+        "task": "T-1",
+        "title": "T-1",
+        "verdict": "waits",
+        "reason": "claude usage limit",
+    }
+
+    rig.limit = None
+    rig.now = 75_600.0
+    assert rig.loop.tick() == ["T-1", "T-2"]
+    assert rig.loop.pauses() == []

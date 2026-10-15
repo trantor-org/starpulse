@@ -1400,9 +1400,17 @@ class AutopilotNext(_Api):
     title: str
     verdict: Literal["starting", "waits"]
     reason: str = Field(
-        description="`goes next`, `quiet hours` while the quiet hours hold admission, or the first dimension the task "
-        "overfits, which the strip shows after `waits:`."
+        description="`goes next`, `quiet hours` while the quiet hours hold admission, `<harness> usage limit` while "
+        "that harness is paused, or the first dimension the task overfits, which the strip shows after `waits:`."
     )
+
+
+class AutopilotPause(_Api):
+    """A harness whose admission is paused until `until` after a usage or credit limit."""
+
+    harness: str
+    until: float = Field(description="When admission for this harness may resume, in epoch seconds.")
+    reason: str
 
 
 class QuietHours(_Api):
@@ -1428,6 +1436,10 @@ class AutopilotStatus(_Api):
         default_factory=list, description="The sessions the loop started and has not finished, oldest first."
     )
     next: AutopilotNext | None = Field(default=None, description="Null when no task in the eligible lane is workable.")
+    pauses: list[AutopilotPause] = Field(
+        default_factory=list,
+        description="Harnesses whose admission is paused until `until`. Absent when none are paused.",
+    )
 
 
 EVENTS["autopilot"] = AutopilotStatus
