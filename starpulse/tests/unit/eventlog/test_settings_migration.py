@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect
 
 from starpulse._internal.eventlog.event_log import EventLog
@@ -46,10 +48,6 @@ def test_settings_outlive_the_log_object(tmp_path: Path) -> None:
 
 
 def test_migration_0015_creates_the_settings_table_the_code_declares() -> None:
-    pytest.importorskip("alembic")
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-
     migration = importlib.import_module("starpulse._internal.eventlog.migrations.versions.0015_settings")
     engine = create_engine("sqlite://")
     with engine.begin() as db, Operations.context(MigrationContext.configure(db)):

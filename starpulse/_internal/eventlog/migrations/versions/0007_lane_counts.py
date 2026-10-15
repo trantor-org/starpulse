@@ -22,6 +22,8 @@ def upgrade() -> None:
     )
     op.create_index("ix_starpulse_lane_intervals_lane", "starpulse_lane_intervals", ["lane", "left_at"])
     op.create_index("ix_starpulse_cases_state", "starpulse_cases", ["machine", "state"])
+    if op.get_bind().dialect.name != "postgresql":
+        return  # a SQLite store reaches here with empty tables
     # a lane change's source is the `<source>/` its event id carries, `unattributed` when it carries none
     op.execute(
         "INSERT INTO starpulse_lanes (source, lane, open_tasks, first_at) "

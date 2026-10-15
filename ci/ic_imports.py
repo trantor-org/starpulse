@@ -2,8 +2,8 @@
 
     uv sync --locked --no-group hub && uv run --no-sync python ci/ic_imports.py
 
-An IC instance is `starpulse serve` without `--hub`. A module it loads that imports Alembic, the Postgres driver or
-PyJWT at import time fails here, in seconds, instead of in a second run of the whole suite. `HUB_ONLY` names the
+An IC instance is `starpulse serve` without `--hub`. A module it loads that imports the Postgres driver or PyJWT
+at import time fails here, in seconds, instead of in a second run of the whole suite. `HUB_ONLY` names the
 modules that import a hub extra directly; everything else under `starpulse/` except the tests must import without one.
 Prints each module that fails and exits 1.
 """

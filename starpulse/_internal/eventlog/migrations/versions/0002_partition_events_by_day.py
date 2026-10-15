@@ -24,6 +24,9 @@ def _name(day: datetime) -> str:
 
 
 def upgrade() -> None:
+    # SQLite has no partitions: its events stay the table 0001 made
+    if op.get_bind().dialect.name != "postgresql":
+        return
     op.execute(
         """
         CREATE TABLE starpulse_events_partitioned (

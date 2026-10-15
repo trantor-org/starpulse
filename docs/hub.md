@@ -4,8 +4,13 @@
 Install the hub extras (`uvx --from 'starpulse[hub]' starpulse serve --hub`) and set `database_url` to a Postgres
 database in the config; a config with none, or with a SQLite URL, is refused before anything starts. The hub brings
 the database's schema to the latest revision on every start: the history tables are versioned with the package by
-Alembic (`starpulse/_internal/eventlog/migrations`, revisions recorded in `starpulse_alembic_version`), so upgrading the package and
-restarting upgrades the schema. An instance without `--hub` keeps its SQLite file and never imports the hub extras.
+one Alembic chain (`starpulse/_internal/eventlog/migrations`, revisions recorded in `starpulse_alembic_version`), so
+upgrading the package and restarting upgrades the schema. An instance without `--hub` keeps its SQLite file and never
+imports the hub extras, and the same chain versions that file: opening a store upgrades it to the latest revision,
+a store from before the chain (tables, no version table) is stamped at revision `0019`, the shape the last release
+left it in, and then upgraded, and a fresh file is built by the chain from empty. Objects only one dialect carries
+(the hub's `starpulse_day_rollups` and partitioned events; SQLite's lane-change index) are dialect-guarded revisions of
+that chain, not code in the stores.
 
 A hub also requires an `[oidc]` table, because viewers sign in with the hub's OpenID Connect issuer before anything is
 drawn; a hub without one is refused before it starts, and an instance without `--hub` refuses the table rather than

@@ -4,7 +4,8 @@ import importlib
 import time
 from pathlib import Path
 
-import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import create_engine, insert, inspect, select, text
 
 from starpulse._internal.eventlog.event_log import EventLog
@@ -12,10 +13,6 @@ from starpulse._internal.eventlog.tables import retired_tasks
 
 
 def test_migration_0017_creates_the_retired_tasks_table_the_code_declares() -> None:
-    pytest.importorskip("alembic")
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-
     migration = importlib.import_module("starpulse._internal.eventlog.migrations.versions.0017_retired_tasks")
     engine = create_engine("sqlite://")
     with engine.begin() as db, Operations.context(MigrationContext.configure(db)):

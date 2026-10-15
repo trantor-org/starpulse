@@ -11,7 +11,7 @@ import starpulse._internal.hub
 from starpulse._internal.server import server
 
 needs_extras = pytest.mark.skipif(
-    importlib.util.find_spec("alembic") is None, reason="the hub extras are not installed"
+    importlib.util.find_spec("jwt") is None, reason="the hub extras are not installed"
 )
 
 
@@ -42,9 +42,10 @@ def _serve_hub(tmp_path: Path, config_text: str, oidc: str | None = _OIDC, argv:
 def test_a_hub_without_the_hub_extras_names_the_extra_to_install(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delitem(sys.modules, "starpulse._internal.hub.hub", raising=False)
-    monkeypatch.delattr(starpulse._internal.hub, "hub", raising=False)  # `from starpulse._internal.hub import hub` finds the attribute first
-    monkeypatch.setitem(sys.modules, "alembic", None)  # importing it raises, as on a machine without the extras
+    for name in ("hub", "oidc"):  # `jwt`, which `oidc` imports, is the hub extra a machine without them lacks
+        monkeypatch.delitem(sys.modules, f"starpulse._internal.hub.{name}", raising=False)
+        monkeypatch.delattr(starpulse._internal.hub, name, raising=False)  # `from ... import name` finds the attribute first
+    monkeypatch.setitem(sys.modules, "jwt", None)  # importing it raises, as on a machine without the extras
 
     assert _serve_hub(tmp_path, f'database_url = "postgresql+psycopg://h/{tmp_path.name}"\n') == 1
     assert "pip install 'starpulse[hub]'" in capsys.readouterr().err
@@ -104,7 +105,7 @@ def test_an_instance_that_is_not_a_hub_refuses_an_oidc_table_rather_than_serving
 
 _IC_RUN = """
 import sys
-for name in ("alembic", "psycopg", "jwt"):
+for name in ("psycopg", "jwt"):
     sys.modules[name] = None  # an import of either raises ImportError, as on a machine without the hub extras
 
 import tempfile, threading

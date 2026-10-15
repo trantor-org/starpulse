@@ -12,7 +12,6 @@ from starpulse._internal.eventlog.level_metrics import UNATTRIBUTED, Run
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore, record_machine_events
-from starpulse._internal.eventlog.tables import metadata
 from starpulse.tests.machines import MACHINES
 
 _CLAIM = {"event_id": "e-1", "machine": "in-progress", "event": "WORKTREE_READY", "task": "PROJ-7", "time": "100"}
@@ -172,24 +171,6 @@ def test_an_entry_that_cannot_be_written_moves_no_cursor(store: HistoryStore) ->
         store.record_machine("2-0", {"event_id": "e-2"}, cursor=4)  # lacks the machine and event
 
     assert store.cursor(events.STREAM) == 3
-
-
-def test_a_store_that_loses_the_race_to_create_the_tables_to_a_reader_thread_still_opens(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    create_all, attempts = metadata.create_all, []
-
-    def lose_the_race(engine, **kwargs) -> None:
-        attempts.append(1)
-        create_all(engine, **kwargs)  # the log's reader created them meanwhile ...
-        if len(attempts) == 1:
-            raise OperationalError("CREATE TABLE starpulse_events", {}, Exception("table already exists"))
-
-    monkeypatch.setattr(metadata, "create_all", lose_the_race)
-
-    opened = HistoryStore(f"sqlite:///{tmp_path / 'raced.sqlite'}", MACHINES)
-
-    assert (len(attempts), opened.cursor(events.STREAM)) == (2, None)
 
 
 def test_a_thread_other_than_the_one_that_opened_the_store_can_use_it(store: HistoryStore) -> None:

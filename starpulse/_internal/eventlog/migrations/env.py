@@ -1,4 +1,4 @@
-"""Alembic's environment for the hub's history schema: online only, on the connection `starpulse._internal.hub.hub` passes in."""
+"""Alembic's environment for the history schema: online only, on the connection `eventlog.migrate` or the hub passes in."""
 
 from alembic import context
 

@@ -12,6 +12,9 @@ down_revision = "0002"
 
 
 def upgrade() -> None:
+    # the rollups are the hub's: an instance's SQLite store never holds them
+    if op.get_bind().dialect.name != "postgresql":
+        return
     op.create_table(
         "starpulse_day_rollups",
         sa.Column("day", sa.Date, nullable=False),

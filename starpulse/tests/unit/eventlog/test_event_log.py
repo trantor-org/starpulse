@@ -21,7 +21,7 @@ from starpulse._internal.eventlog.event_log import (
     create_tables,
     prune_forever,
 )
-from starpulse._internal.eventlog.tables import events, metadata
+from starpulse._internal.eventlog.tables import events
 
 
 @pytest.fixture
@@ -87,25 +87,6 @@ def test_a_log_whose_database_appears_later_appends_once_it_is_reachable(tmp_pat
     directory.mkdir()
 
     assert log.append("s", {"k": "v"}) == 1
-
-
-def test_a_producer_that_loses_the_race_to_create_the_tables_still_appends(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
-    create_all = metadata.create_all
-    attempts: list[int] = []
-
-    def lose_the_race(engine, **kwargs) -> None:
-        attempts.append(1)
-        create_all(engine, **kwargs)  # the other process's tables exist ...
-        if len(attempts) == 1:
-            raise OperationalError("CREATE TABLE starpulse_events", {}, Exception("table already exists"))
-
-    monkeypatch.setattr(metadata, "create_all", lose_the_race)
-
-    assert log.append("s", {"k": "v"}) == 1
-    assert len(attempts) == 2
 
 
 def test_a_new_tail_replays_its_stream_from_the_start_of_retention_in_order(log: EventLog) -> None:
