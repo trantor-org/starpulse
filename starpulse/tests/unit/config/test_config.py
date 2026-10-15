@@ -649,3 +649,34 @@ def test_a_repos_entry_the_loader_cannot_use_is_refused_with_the_key_to_fix(
     tmp_path: Path, text: str, message: str
 ) -> None:
     assert message in _refusal(tmp_path, text)
+
+
+_DAGU = '[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "http://dagu.test"\n'
+
+
+def test_nested_domains_parse_into_flat_union_and_processes(tmp_path: Path) -> None:
+    text = _DAGU + '[runs.domains."Delivery & CI"]\n"CI gates" = ["ci-sp-web", "ci-validate"]\n"Merge apply" = ["apply-on-merge"]\n'
+    config = load(_write(tmp_path, text))
+    (inst,) = config.runs
+    assert inst.domains == {"Delivery & CI": ("apply-on-merge", "ci-sp-web", "ci-validate")}
+    assert inst.processes == {
+        "Delivery & CI": (("CI gates", ("ci-sp-web", "ci-validate")), ("Merge apply", ("apply-on-merge",)))
+    }
+    assert config.qualified_processes() == {
+        "Delivery & CI": (
+            ("CI gates", ("dagu/ci-sp-web", "dagu/ci-validate")),
+            ("Merge apply", ("dagu/apply-on-merge",)),
+        )
+    }
+
+
+def test_flat_domains_leave_processes_empty_and_keep_order(tmp_path: Path) -> None:
+    (inst,) = load(_write(tmp_path, _DAGU + '[runs.domains]\nOps = ["nightly", "backup"]\n')).runs
+    assert inst.domains == {"Ops": ("nightly", "backup")}
+    assert inst.processes == {"Ops": ()}
+
+
+def test_duplicate_workflow_in_two_processes_is_refused(tmp_path: Path) -> None:
+    text = _DAGU + '[runs.domains.Ops]\nA = ["nightly"]\nB = ["nightly"]\n'
+    refusal = _refusal(tmp_path, text)
+    assert "duplicate" in refusal and "runs instance dagu" in refusal

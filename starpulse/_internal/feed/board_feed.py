@@ -177,6 +177,7 @@ class BoardFeed:
         capabilities: Mapping[str, bool] | None = None,
         hint: str | None = None,
         commit: Mapping[str, CommitKeys] | None = None,
+        processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._hint = hint
@@ -196,6 +197,7 @@ class BoardFeed:
         self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
+        self._processes = processes or {}
         self._run_safe = run_safe
         self._cues = cues
         self._source = source
@@ -1177,7 +1179,7 @@ class BoardFeed:
                 "settled": dict(self._settled),
                 "error": self._error(),
                 "reading": self._replaying(),
-                **declared(self._domains, self._runnable(), self._cues),
+                **declared(self._domains, self._runnable(), self._cues, self._processes),
                 "boardUrl": self._board_url,
                 "hint": self._hint,
                 "now": now,

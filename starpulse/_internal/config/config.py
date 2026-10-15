@@ -132,7 +132,9 @@ class RunsInstance:
     run_safe: tuple[str, ...] = ()
     """The workflows Run now may start; any other answers 404, so none is startable by default."""
     domains: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    """The page's groups of this instance's workflows, in the order it lays them out."""
+    """The page's groups of this instance's workflows, in the order it lays them out; a nested domain lists its workflows name-sorted."""
+    processes: Mapping[str, tuple[tuple[str, tuple[str, ...]], ...]] = field(default_factory=dict)
+    """Each domain's ordered `(process, workflows)` packages; an empty tuple is a flat domain."""
     token_env: str | None = None
     """The environment variable holding this instance's ingest token; none: the instance takes no pushed events."""
     commit: CommitKeys | None = None
@@ -289,8 +291,7 @@ def _instance(raw: object) -> RunsInstance:
         raise ConfigError(f"runs instance {name}: run_safe must be a list of workflow names")
     if push_only and run_safe:
         raise ConfigError(f"runs instance {name}: a push-only instance has no start, so run_safe does not apply")
-    if not isinstance(domains, dict) or not all(_names(workflows) for workflows in domains.values()):
-        raise ConfigError(f"runs instance {name}: domains must map each domain name to a list of workflow names")
+    flat, processes = _domains(domains, name)
     token_env = raw.get("token_env")
     if token_env is not None and not (isinstance(token_env, str) and _ENV_NAME.fullmatch(token_env)):
         raise ConfigError(f"runs instance {name}: token_env must be the name of an environment variable")
@@ -299,10 +300,39 @@ def _instance(raw: object) -> RunsInstance:
         kind,
         url,
         tuple(run_safe),
-        {domain: tuple(ws) for domain, ws in domains.items()},
+        flat,
+        processes,
         token_env,
         _commit(raw["commit"], name) if "commit" in raw else None,
     )
+
+
+def _domains(
+    raw: object, name: str
+) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[tuple[str, tuple[str, ...]], ...]]]:
+    """A runs instance's `domains`: each domain is a workflow list, or a table of process name to workflow list."""
+    refusal = f"runs instance {name}: domains must map each domain name to a list of workflow names"
+    if not isinstance(raw, dict):
+        raise ConfigError(refusal)
+    domains: dict[str, tuple[str, ...]] = {}
+    processes: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {}
+    for domain, value in raw.items():
+        if _names(value):
+            domains[domain] = tuple(value)
+            processes[domain] = ()
+        elif isinstance(value, dict) and all(_names(ws) for ws in value.values()):
+            ordered = tuple((proc, tuple(ws)) for proc, ws in value.items())
+            workflows = [w for _, ws in ordered for w in ws]
+            for w in workflows:
+                if workflows.count(w) > 1:
+                    raise ConfigError(
+                        f"runs instance {name}: workflow {w!r} listed twice (duplicate) in the processes under {domain!r}"
+                    )
+            domains[domain] = tuple(sorted(workflows))
+            processes[domain] = ordered
+        else:
+            raise ConfigError(refusal)
+    return domains, processes
 
 
 def _commit(raw: object, instance: str) -> CommitKeys:
@@ -477,6 +507,15 @@ class Config:
         for instance in self.runs:
             for domain, workflows in instance.domains.items():
                 merged[domain] = (*merged.get(domain, ()), *(f"{instance.name}/{w}" for w in workflows))
+        return merged
+
+    def qualified_processes(self) -> dict[str, tuple[tuple[str, tuple[str, ...]], ...]]:
+        """Every instance's processes with workflows as `<instance>/<workflow>`, per domain name, in first-seen order."""
+        merged: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {}
+        for instance in self.runs:
+            for domain, packages in instance.processes.items():
+                qualified = tuple((proc, tuple(f"{instance.name}/{w}" for w in ws)) for proc, ws in packages)
+                merged[domain] = (*merged.get(domain, ()), *qualified)
         return merged
 
     def qualified_run_safe(self) -> tuple[str, ...]:

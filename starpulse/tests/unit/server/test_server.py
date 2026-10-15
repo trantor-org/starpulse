@@ -84,6 +84,7 @@ def test_a_config_with_two_runs_instances_draws_both_each_workflow_prefixed_with
                 {"name": "prod/backup", "runSafe": False},
                 {"name": "staging/nightly", "runSafe": True},
             ],
+            "processes": [],
         }
     ]
 
