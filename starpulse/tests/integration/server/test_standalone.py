@@ -27,6 +27,8 @@ _ENV_DROPPED = (
     "LISTEN_FDS",  # a socket-activated test run must not hand its own sockets to the servers it starts
     "LISTEN_PID",
 )
+# Importing the server pulls numpy, whose BLAS pool spins one thread per core for ~2.5 CPU-s without shortening the start.
+_BLAS_THREADS = {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
 
 # The `build` stub writes and removes the checkout's shared static directory, so under pytest-xdist these tests share
 # one worker (`--dist loadgroup`): another worker's teardown would delete the page out from under a running server.
@@ -51,7 +53,7 @@ def build() -> Iterator[None]:
 def _env(**overrides: str) -> dict[str, str]:
     host_suffix = f"_{_CLIENT_MODULE.upper()}_HOST"
     env = {k: v for k, v in os.environ.items() if k not in _ENV_DROPPED and not k.endswith(host_suffix)}
-    return env | overrides
+    return env | _BLAS_THREADS | overrides
 
 
 def _free_port() -> int:
