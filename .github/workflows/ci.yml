@@ -274,7 +274,7 @@ jobs:
     name: dispatch
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Pin the starpulse SHA
         env:

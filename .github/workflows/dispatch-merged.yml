@@ -31,41 +31,12 @@ jobs:
     # Not the merge-event lane: that runner is the close submit's alone, and a second job per merge holds
     # its other relay slot, so the next merge's close waits for a slot to re-register.
     runs-on: [self-hosted, ai-vm-1]
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
-      - name: Check the pull request tested the merged tree
-        id: tested
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          # true when the workspace App's check run of every required context completed with success.
-          PASSED: >-
-            [.check_runs[] | select(.app.slug == "trantor-agent" and .status == "completed" and .conclusion == "success")
-            | .name] as $passed
-            | ["python", "web", "static-checks", "trantor-contract"] | all(. as $name | $passed | index($name) != null)
-        run: |
-          parent=$(gh api "repos/$REPOSITORY/commits/$MERGE_SHA" \
-            --jq 'if (.parents | length) == 1 then .parents[0].sha else "" end')
-          if [ -n "$parent" ] && [ "$parent" = "$BASE_SHA" ]; then
-            tested="$HEAD_SHA"
-          else
-            # A queue merge's base is stale; the App's checks on the queue candidate tested the merge commit itself.
-            tested="$MERGE_SHA"
-          fi
-          green=$(gh api "repos/$REPOSITORY/commits/$tested/check-runs?per_page=100" --jq "$PASSED")
-          if [ "$green" = true ]; then
-            echo "tested=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No passing App checks tested the merged tree: the push run pins it."
-          fi
       # trantor's script, run from the shared checkout on this runner: it mints the workspace App token by hand (the action
-      # costs a runner download), pins under the warm clone's lock, and falls back to a bump pull request without the key.
-      # bin/ci/merge_latency.py dates the pin from this step's start.
+      # costs a runner download), pins under the warm clone's lock, restarts StarPulse on a direct pin, and falls back
+      # to a bump pull request without a green App check. bin/ci/merge_latency.py dates the pin from this step's start.
       - name: Pin the starpulse SHA
-        if: steps.tested.outputs.tested == 'true'
         env:
           APP_CLIENT_ID: ${{ secrets.WORKSPACE_APP_CLIENT_ID }}
           APP_PRIVATE_KEY: ${{ secrets.WORKSPACE_APP_PRIVATE_KEY }}

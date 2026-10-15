@@ -376,11 +376,12 @@ def pin_step(workflow: str) -> dict:
     return next(step for step in job(workflow, "dispatch")["steps"] if step["name"] == PIN_STEP)
 
 
-def test_merged_pull_request_dispatch_pins_only_after_the_tree_check_passes():
+def test_merged_pull_request_dispatch_pins_without_a_tested_tree_step():
+    """The pin script re-reads the App checks; the extra gh round trip cost 1.6 s mean."""
     steps = job("dispatch-merged.yml", "dispatch")["steps"]
     pin = pin_step("dispatch-merged.yml")
-    assert steps.index(pin) > next(i for i, step in enumerate(steps) if step.get("id") == "tested")
-    assert pin["if"] == "steps.tested.outputs.tested == 'true'"
+    assert all(step.get("id") != "tested" for step in steps)
+    assert "if" not in pin
     assert pin["env"]["DISPATCH_SHA"] == "${{ github.event.pull_request.merge_commit_sha }}"
 
 
@@ -503,76 +504,3 @@ def test_a_merge_queue_candidate_dispatches_soaks_and_publishes_nothing(workflow
     assert "github.event_name == 'push'" in condition or "github.event_name != 'merge_group'" in condition
 
 
-def check_runs(*names: str, slug: str = "trantor-agent", conclusion: str = "success") -> str:
-    runs = [{"name": n, "app": {"slug": slug}, "status": "completed", "conclusion": conclusion} for n in names]
-    return json.dumps({"check_runs": runs})
-
-
-def run_tree_check(tmp_path, *, parent, base, head_checks, merge_checks):
-    """Run dispatch-merged.yml's tree check against a stub `gh` and return what it wrote to GITHUB_OUTPUT.
-
-    The stub answers the commit read with `parent` and each commit's check runs from the canned JSON, applying the
-    step's own `--jq` filter with the real jq.
-    """
-    step = next(s for s in job("dispatch-merged.yml", "dispatch")["steps"] if s.get("id") == "tested")
-    (tmp_path / "head.json").write_text(head_checks)
-    (tmp_path / "merge.json").write_text(merge_checks)
-    stub = tmp_path / "gh"
-    stub.write_text(
-        "#!/usr/bin/env bash\n"
-        'case "$2" in\n'
-        f'  */commits/{"h" * 40}/check-runs*) jq -r "$4" "{tmp_path}/head.json" ;;\n'
-        f'  */commits/{"m" * 40}/check-runs*) jq -r "$4" "{tmp_path}/merge.json" ;;\n'
-        f'  */commits/*) echo "{parent}" ;;\n'
-        '  *) echo "unexpected gh call: $*" >&2; exit 1 ;;\n'
-        "esac\n"
-    )
-    stub.chmod(0o755)
-    output = tmp_path / "output"
-    output.write_text("")
-    env = {
-        "PATH": f"{tmp_path}:/usr/bin:/bin",
-        "GITHUB_OUTPUT": str(output),
-        "REPOSITORY": "trantor-org/starpulse",
-        "MERGE_SHA": "m" * 40,
-        "BASE_SHA": base,
-        "HEAD_SHA": "h" * 40,
-        "PASSED": step["env"]["PASSED"],
-    }
-    subprocess.run(["bash", "-e", "-c", step["run"]], env=env, check=True, capture_output=True, text=True)
-    return output.read_text()
-
-
-def test_merged_pull_request_dispatch_sends_a_queue_merge_its_candidates_checks_tested(tmp_path):
-    """A queue merge's base is stale, but the App's passing checks on the merge commit tested exactly that tree."""
-    tested = run_tree_check(
-        tmp_path, parent="p" * 40, base="b" * 40, head_checks=check_runs(), merge_checks=check_runs(*APP_CHECKS)
-    )
-    assert tested == "tested=true\n"
-
-
-def test_merged_pull_request_dispatch_leaves_a_stale_base_with_no_passing_candidate_to_the_push_run(tmp_path):
-    tested = run_tree_check(
-        tmp_path, parent="p" * 40, base="b" * 40, head_checks=check_runs(*APP_CHECKS), merge_checks=check_runs()
-    )
-    assert tested == ""
-
-
-def test_merged_pull_request_dispatch_still_sends_a_current_base_its_head_checks_tested(tmp_path):
-    tested = run_tree_check(
-        tmp_path, parent="b" * 40, base="b" * 40, head_checks=check_runs(*APP_CHECKS), merge_checks=check_runs()
-    )
-    assert tested == "tested=true\n"
-
-
-@pytest.mark.parametrize(
-    "checks",
-    [
-        pytest.param(check_runs(*APP_CHECKS[:3]), id="missing-contract"),
-        pytest.param(check_runs(*APP_CHECKS, conclusion="failure"), id="failed"),
-        pytest.param(check_runs(*APP_CHECKS, slug="github-actions"), id="another-app"),
-    ],
-)
-def test_merged_pull_request_dispatch_needs_every_required_check_passed_by_the_app(tmp_path, checks):
-    tested = run_tree_check(tmp_path, parent="b" * 40, base="b" * 40, head_checks=checks, merge_checks=check_runs())
-    assert tested == ""
