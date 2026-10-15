@@ -22,6 +22,8 @@ export interface Launch {
 export interface Group {
   name: string;
   dags: string[];
+  /** The domain's process packages, when it has any. */
+  processes?: { name: string; dags: string[] }[];
 }
 export interface ChildLink {
   flow: string;
@@ -126,7 +128,7 @@ function arrivals(board: FlowSnapshot, settled: Record<string, Settled>, since: 
 export function merge(snap: Snapshot, since = midnight()): Sky {
   const boardTasks = new Map((snap.flows.find((f) => f.name === "board")?.agents ?? []).map((a) => [a.id, a]));
   const flows = Object.fromEntries(snap.flows.map((f) => [f.name, f.name === "board" ? f : { ...f, agents: f.agents.map((a) => joined(a, boardTasks)) }]));
-  const board = flows.board ?? EMPTY, t = tree(snap), groups = (snap.domains ?? []).map((d) => ({ name: d.name, dags: d.dags.map((x) => x.name) }));
+  const board = flows.board ?? EMPTY, t = tree(snap), groups = (snap.domains ?? []).map((d): Group => ({ name: d.name, dags: d.dags.map((x) => x.name), ...(d.processes && { processes: d.processes.map((p) => ({ name: p.name, dags: p.dags.map((x) => x.name) })) }) }));
   // the writers the Star Map draws on a Board path are the ones that are no DAG; a DAG's own are on the DAGs view and a Ledger
   const actors = new Set([...(board.machine.dagActors ?? []), ...snap.dags.map((d) => d.name)]);
   const child: Sky["child"] = {}, latest: Sky["latest"] = {}, active: Record<string, number> = {};

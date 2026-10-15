@@ -17,7 +17,10 @@ export interface DagData {
 /** The snapshot's DAG data as the HUD holds it; a machine's tasks stay behind, so a task move does not redraw the view. */
 export const dagData = (sky: Sky): DagData => ({
   dags: sky.dags,
-  domains: sky.groups.map((g) => ({ name: g.name, dags: g.dags.map((name) => ({ name, runSafe: sky.runnable.has(name) })) })),
+  domains: sky.groups.map((g) => {
+    const member = (name: string) => ({ name, runSafe: sky.runnable.has(name) });
+    return { name: g.name, dags: g.dags.map(member), ...(g.processes && { processes: g.processes.map((p) => ({ name: p.name, dags: p.dags.map(member) })) }) };
+  }),
   pools: sky.pools,
   cues: sky.cues,
   flows: Object.values(sky.flows).map((f) => ({ name: f.name, machine: f.machine })),
@@ -37,6 +40,8 @@ export interface Row {
   d: Dag;
   domain: string;
   runSafe: boolean;
+  /** The process package of its domain it belongs to; `Other` when the domain packages processes but omits it, null when the domain has none. */
+  process: string | null;
   phase: Phase;
   /** Each step's status in the run the row shows: the active one, else the last. */
   steps: Record<string, string>;
@@ -53,16 +58,19 @@ const iso = (s: string) => (s ? Date.parse(s) / 1000 : 0);
 const made = new WeakMap<Dag, Row>();
 
 export function rows(data: DagData): Row[] {
-  const home: Record<string, { domain: string; runSafe: boolean }> = {};
-  for (const dom of data.domains) for (const x of dom.dags) home[x.name] = { domain: dom.name, runSafe: x.runSafe };
+  const home: Record<string, { domain: string; runSafe: boolean; process: string | null }> = {};
+  for (const dom of data.domains) {
+    const byDag = new Map(dom.processes?.flatMap((p) => p.dags.map((x) => [x.name, p.name] as const)));
+    for (const x of dom.dags) home[x.name] = { domain: dom.name, runSafe: x.runSafe, process: dom.processes?.length ? byDag.get(x.name) ?? "Other" : null };
+  }
   return data.dags.map((d) => {
-    const had = made.get(d), domain = home[d.name]?.domain ?? "Other", runSafe = home[d.name]?.runSafe ?? false;
-    if (had && had.domain === domain && had.runSafe === runSafe) return had;
+    const had = made.get(d), domain = home[d.name]?.domain ?? "Other", runSafe = home[d.name]?.runSafe ?? false, process = home[d.name]?.process ?? null;
+    if (had && had.domain === domain && had.runSafe === runSafe && had.process === process) return had;
     const run = d.active?.[0];
     const phase: Phase = run || d.status === "running" ? "running" : d.status === "queued" ? "queued"
       : d.status === "failed" || d.status === "aborted" ? "failed" : d.status === "not_started" ? "idle" : "ok";
     const row: Row = {
-      d, domain, runSafe, phase,
+      d, domain, runSafe, process, phase,
       steps: Object.fromEntries(d.steps.map((x) => [x.name, run?.steps[x.name] ?? x.status])),
       startedAt: iso(run?.startedAt ?? d.startedAt), finishedAt: iso(d.finishedAt), step: run?.step ?? "",
     };
@@ -80,11 +88,24 @@ export const RECENCY: [string, number][] = [["Past hour", 3600], ["Past day", 86
 /** Whether a row's DAG is active now or last ran at or after `since` (epoch seconds); a never-run DAG is not recent. */
 export const recent = (r: Row, since: number) => group(r.phase) === "running" || (r.phase !== "idle" && Math.max(r.startedAt, r.finishedAt) >= since);
 
-/** The rows a search, a Status choice, a Domain choice and a Last run window (`since`, epoch seconds; 0 for all) leave; the search reads a DAG's name, its steps and its domain. */
+/** The rows a search, a Status choice, a Domain choice and a Last run window (`since`, epoch seconds; 0 for all) leave; the search reads a DAG's name, its steps, its domain and its process. */
 export function filterRows(all: Row[], f: { q?: string; only?: Exclude<Phase, "queued"> | null; dom?: string | null; since?: number }): Row[] {
   const needle = (f.q ?? "").trim().toLowerCase();
   return all.filter((r) => (!f.only || group(r.phase) === f.only) && (!f.dom || r.domain === f.dom) && (!f.since || recent(r, f.since)) &&
-    (!needle || r.d.name.toLowerCase().includes(needle) || r.domain.toLowerCase().includes(needle) || r.d.steps.some((x) => x.name.toLowerCase().includes(needle))));
+    (!needle || r.d.name.toLowerCase().includes(needle) || r.domain.toLowerCase().includes(needle) || (r.process ?? "").toLowerCase().includes(needle) || r.d.steps.some((x) => x.name.toLowerCase().includes(needle))));
+}
+
+/** Process names in snapshot order, then Other when a row needs it. */
+export function processNames(domain: Domain, rs: Row[]): string[] {
+  const names = (domain.processes ?? []).map((p) => p.name);
+  return rs.some((r) => r.process === "Other") && !names.includes("Other") ? [...names, "Other"] : names;
+}
+
+/** The process folds of a domain that start folded (`cat|<domain>|<process>`): a healthy process in a domain of more than three, unless `matching`, the rows a filter leaves, has one in it. */
+export function closedProcessKeys(domain: Domain, rs: Row[], matching?: Row[]): string[] {
+  const names = processNames(domain, rs);
+  if (names.length <= 3) return [];
+  return names.filter((p) => !rs.some((r) => r.process === p && group(r.phase) !== "ok") && !matching?.some((r) => r.domain === domain.name && r.process === p)).map((p) => `cat|${domain.name}|${p}`);
 }
 
 /** Where a DAG touches the Board: the event that cues it, the transitions it writes, the skill it launches. `ev` is the transition's event, which has a Ledger on the Star Map. */

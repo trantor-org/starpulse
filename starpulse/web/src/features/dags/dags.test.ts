@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bigPlace, chartHeight, dagData, filterRows, order, place, RECENCY, refusal, rows, ties, type DagData } from "./dags";
+import { bigPlace, chartHeight, closedProcessKeys, dagData, filterRows, order, processNames, place, RECENCY, refusal, rows, ties, type DagData } from "./dags";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 
 const step = (name: string, depends: string[] = [], status: RunStatus = "succeeded"): DagStep => ({ name, depends, status, kind: null });
@@ -67,6 +67,88 @@ describe("a DAG's row", () => {
     expect(byName("runs/triage")).toMatchObject({ domain: "Board", runSafe: false });
     expect(byName("runs/deploy")).toMatchObject({ domain: "Ops", runSafe: true });
     expect(byName("runs/stray")).toMatchObject({ domain: "Other", runSafe: false });
+  });
+});
+
+const nested: DagData = {
+  ...data,
+  domains: [{
+    name: "Board",
+    dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/triage", runSafe: false }, { name: "runs/sweeper", runSafe: false }],
+    processes: [
+      { name: "Watch", dags: [{ name: "runs/pr-watch", runSafe: true }] },
+      { name: "Triage", dags: [{ name: "runs/triage", runSafe: false }] },
+    ],
+  }],
+};
+
+describe("a DAG's process", () => {
+  const r = (n: string) => rows(nested).find((x) => x.d.name === n)!;
+
+  it("comes from the domain's processes, Other when the domain packages processes but omits the DAG, none for a flat domain", () => {
+    expect(r("runs/pr-watch").process).toBe("Watch");
+    expect(r("runs/triage").process).toBe("Triage");
+    expect(r("runs/sweeper").process).toBe("Other");
+    expect(r("runs/stray").process).toBeNull();
+    expect(byName("runs/pr-watch").process).toBeNull();
+  });
+
+  it("is matched by the search", () => {
+    expect(filterRows(rows(nested), { q: "triage" }).map((x) => x.d.name).sort()).toEqual(["runs/triage"]);
+    expect(filterRows(rows(nested), { q: "watch" }).map((x) => x.d.name)).toEqual(["runs/pr-watch"]);
+  });
+
+  it("survives the snapshot's reading by the view", () => {
+    const sky = {
+      now: 5, dags: data.dags, pools: [], cues: [], flows: {}, runnable: new Set(["runs/pr-watch"]),
+      groups: [{ name: "Board", dags: ["runs/pr-watch", "runs/triage"], processes: [{ name: "Watch", dags: ["runs/pr-watch"] }, { name: "Triage", dags: ["runs/triage"] }] }, { name: "Ops", dags: ["runs/backup"] }],
+    } as unknown as Parameters<typeof dagData>[0];
+
+    expect(dagData(sky).domains).toEqual([
+      { name: "Board", dags: [{ name: "runs/pr-watch", runSafe: true }, { name: "runs/triage", runSafe: false }],
+        processes: [{ name: "Watch", dags: [{ name: "runs/pr-watch", runSafe: true }] }, { name: "Triage", dags: [{ name: "runs/triage", runSafe: false }] }] },
+      { name: "Ops", dags: [{ name: "runs/backup", runSafe: false }] },
+    ]);
+  });
+});
+
+describe("process folds", () => {
+  const proc = (name: string, ...dags: string[]) => ({ name, dags: dags.map((d) => ({ name: d, runSafe: false })) });
+  const mk = (procs: ReturnType<typeof proc>[], over: Record<string, Partial<Dag>> = {}) => {
+    const dom = { name: "D", dags: procs.flatMap((p) => p.dags), processes: procs };
+    const d: DagData = { ...data, dags: dom.dags.map((x) => dag(x.name, "succeeded", over[x.name])), domains: [dom] };
+    return { dom, rs: rows(d) };
+  };
+
+  it("lists processes in snapshot order, then Other when a row needs it", () => {
+    const { dom, rs } = mk([proc("B", "x/1"), proc("A", "x/2")]);
+    expect(processNames(dom, rs)).toEqual(["B", "A"]);
+    const stray = rows({ ...data, dags: [dag("x/1", "succeeded"), dag("x/9", "succeeded")], domains: [{ ...dom, dags: [...dom.dags, { name: "x/9", runSafe: false }], processes: [proc("B", "x/1")] }] });
+    expect(processNames({ ...dom, processes: [proc("B", "x/1")] }, stray)).toEqual(["B", "Other"]);
+  });
+
+  describe("closedProcessKeys", () => {
+    const four = [proc("P1", "x/1"), proc("P2", "x/2"), proc("P3", "x/3"), proc("P4", "x/4")];
+
+    it("collapses an all-healthy process when the domain has more than three processes", () => {
+      const { dom, rs } = mk(four);
+      expect(closedProcessKeys(dom, rs)).toEqual(["cat|D|P1", "cat|D|P2", "cat|D|P3", "cat|D|P4"]);
+    });
+
+    it("keeps a process open when it has a failing DAG", () => {
+      const { dom, rs } = mk(four, { "x/2": { status: "failed" } });
+      expect(closedProcessKeys(dom, rs)).toEqual(["cat|D|P1", "cat|D|P3", "cat|D|P4"]);
+    });
+
+    it("keeps every process open when the domain has three or fewer processes", () => {
+      const { dom, rs } = mk(four.slice(0, 3));
+      expect(closedProcessKeys(dom, rs)).toEqual([]);
+    });
+
+    it("keeps open every process a filter leaves a row in", () => {
+      const { dom, rs } = mk(four);
+      expect(closedProcessKeys(dom, rs, rs.filter((r) => r.process === "P3"))).toEqual(["cat|D|P1", "cat|D|P2", "cat|D|P4"].filter((k) => k !== "cat|D|P3"));
+    });
   });
 });
 

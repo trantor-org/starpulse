@@ -16,59 +16,30 @@ name = "dagu"
 type = "dagu"
 url = "http://127.0.0.1:9"
 
-[runs.domains]
-"Delivery & CI" = [
-  "deliver",
-  "merge-apply",
-  "full-repo-gate",
-  "flaky-test-sweep",
-  "coverage-report",
-  "ruleset-drift",
-  "ci-queue-metrics",
-  "mutation-sweep",
-  "preview-deploy",
-  "release-cut",
-]
-"Board" = [
-  "backlog-sweep",
-  "board-autopilot",
-  "dependency-promotion",
-  "board-lint",
-  "drift-to-task",
-  "stale-branch-reap",
-  "main-follow",
-  "duplicate-detect",
-]
-"Agent jobs & evals" = [
-  "alert-triage",
-  "dependency-update-review",
-  "nightly-audit",
-  "ci-fix",
-  "session-stats",
-  "skill-conformance",
-  "eval-suite",
-  "prompt-optimize",
-  "weekly-code-audit",
-]
-"Retrieval & search" = [
-  "index-refresh",
-  "docs-reindex",
-  "search-metrics",
-  "embedding-backfill",
-  "tag-optimizer",
-  "link-check",
-  "rag-audit",
-]
-"Host ops & backups" = [
-  "healthcheck",
-  "db-backup",
-  "db-restore-verify",
-  "image-prune",
-  "log-rotate",
-  "cert-renew",
-  "disk-report",
-  "metrics-snapshot",
-]
+# Nested process packages (doc-230 Approach A). Flat domain lists remain valid elsewhere.
+[runs.domains."Delivery & CI"]
+"Merge apply" = ["merge-apply", "release-cut"]
+"CI gates" = ["full-repo-gate", "flaky-test-sweep", "coverage-report", "preview-deploy"]
+"PR hygiene" = ["deliver"]
+"Metrics & drift" = ["ruleset-drift", "ci-queue-metrics", "mutation-sweep"]
+
+[runs.domains.Board]
+Reconcile = ["backlog-sweep", "board-autopilot", "dependency-promotion", "duplicate-detect"]
+Hygiene = ["board-lint", "drift-to-task", "stale-branch-reap", "main-follow"]
+
+[runs.domains."Agent jobs & evals"]
+Triage = ["alert-triage", "dependency-update-review", "ci-fix"]
+Evals = ["eval-suite", "skill-conformance", "prompt-optimize"]
+Audits = ["nightly-audit", "session-stats", "weekly-code-audit"]
+
+[runs.domains."Retrieval & search"]
+Index = ["index-refresh", "docs-reindex", "embedding-backfill"]
+Quality = ["search-metrics", "tag-optimizer", "link-check", "rag-audit"]
+
+[runs.domains."Host ops & backups"]
+Health = ["healthcheck", "disk-report", "metrics-snapshot"]
+Backup = ["db-backup", "db-restore-verify"]
+Housekeeping = ["image-prune", "log-rotate", "cert-renew"]
 
 # The flow graph the gate's seeded server draws (ci/seeded_server.py). An IC instance parses it and draws no level, so the
 # UI preview is unchanged.
