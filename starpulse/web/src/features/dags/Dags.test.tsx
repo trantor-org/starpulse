@@ -83,7 +83,7 @@ describe("the DAGs view's catalog", () => {
 
     expect(all(".bucket .bh .bn").map((e) => e.textContent!.replace(/\d+$/, "").trim().split(" ")[0])).toEqual(["Board", "Ops"]);
     expect(q(".bucket:last-child .bh .census").textContent).toBe("11");
-    expect(names()).toEqual(["triage", "pr-watch", "deploy", "never"]);
+    expect(names()).toEqual(["pr-watch", "triage", "deploy", "never"]);
     const row = all("#catalog .trow").find((r) => r.querySelector(".nm")!.textContent === "pr-watch")!;
     expect(row.querySelector("i.orb.o-ok")).not.toBeNull();
     // each step as the Star Map's DAG bodies draw it (renderer drawStars): a dark disc ringed in its status colour round a core dot
@@ -297,11 +297,11 @@ describe("process folds", () => {
     expect(all(".chip, .pchip")).toHaveLength(0);
   });
 
-  it("starts a healthy process folded in a domain of more than three, and a failing one open", async () => {
+  it("starts every process folded in a domain of more than three, including a failing one", async () => {
     await draw(nest);
 
-    expect(folds()).toEqual([["Pack", false], ["P1", true], ["P2", false], ["P3", true], ["P4", true], ["Flat", false]]);
-    expect(names()).toEqual(["b1", "flat"]);
+    expect(folds()).toEqual([["Pack", false], ["P1", true], ["P2", true], ["P3", true], ["P4", true], ["Flat", false]]);
+    expect(names()).toEqual(["flat"]);
   });
 
   it("seeds the folds once, so an operator's toggle outlives the next snapshot", async () => {
@@ -312,7 +312,7 @@ describe("process folds", () => {
     expect(folds().find(([n]) => n === "P1")![1]).toBe(false);
     await click(bh("P2"));
     await draw({ ...nest, now: nest.now + 9 });
-    expect(folds().find(([n]) => n === "P2")![1]).toBe(true);
+    expect(folds().find(([n]) => n === "P2")![1]).toBe(false);
   });
 
   it("starts open every process a filter in force leaves a row in", async () => {

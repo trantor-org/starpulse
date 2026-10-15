@@ -174,7 +174,7 @@ export function Dags({ data, post, openPath, spot = null, opening = null }: { da
   const why = (r: Row) => refusal(r, starting.has(r.d.name));
   const cutoff = (label: string) => now - RECENCY.find(([l]) => l === label)![1];
   const rs = filterRows(all, { q, only, dom, since: win ? cutoff(win) : 0 });
-  // the process folds start as smart-open leaves them, once: a filter in force opens every process it leaves a row in, and a later snapshot keeps the operator's toggles
+  // process folds seed once (collapsed when a domain has more than three; a filter opens matches); later snapshots keep the operator's toggles — phase never reopens a fold
   if (!seeded) {
     setSeeded(true);
     const filtered = !!(only || dom || win || q.trim());
