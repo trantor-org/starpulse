@@ -18,6 +18,8 @@ from starpulse.tests.machines import MACHINES
 _MIGRATIONS = Path(history.__file__).parent / "migrations"
 #: Objects only one dialect carries: the Postgres hub's rollups, SQLite's lane-change index.
 _SQLITE_ONLY_INDEX = "ix_starpulse_lane_changes_observed"
+#: The index revision 0020 added to the declared schema, so the release before the chain had none.
+_RETIRED_AT_INDEX = "ix_starpulse_retired_tasks_retired_at"
 _DIALECT_ONLY = {day_rollups.name, _SQLITE_ONLY_INDEX}
 
 
@@ -42,7 +44,13 @@ def _a_pre_alembic_store(path: Path) -> Engine:
     engine = create_engine(f"sqlite:///{path}")
     tables = [table for table in metadata.sorted_tables if table is not day_rollups]
     metadata.create_all(engine, tables=tables)
+    with engine.begin() as db:
+        db.execute(text(f"DROP INDEX {_RETIRED_AT_INDEX}"))
     return engine
+
+
+def test_the_chain_has_one_head() -> None:
+    assert ScriptDirectory(str(_MIGRATIONS)).get_heads() == ["0021"]
 
 
 def test_a_fresh_store_is_built_by_the_chain_and_matches_the_declared_schema(tmp_path: Path) -> None:
@@ -98,7 +106,8 @@ def test_a_store_from_before_the_chain_is_stamped_and_upgraded_with_its_rows_int
         [tuple(row) for row in changes],
         store.cursor("machine:events"),
         _SQLITE_ONLY_INDEX in _indexes(store.engine, "starpulse_lane_changes"),
-    ) == ([_head()], [("lc-1", "PROJ-7", 100.0)], 9, True)
+        _RETIRED_AT_INDEX in _indexes(store.engine, "starpulse_retired_tasks"),
+    ) == ([_head()], [("lc-1", "PROJ-7", 100.0)], 9, True, True)
 
 
 def test_a_store_already_at_head_is_opened_again_unchanged(tmp_path: Path) -> None:
