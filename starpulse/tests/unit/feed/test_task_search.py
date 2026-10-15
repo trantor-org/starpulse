@@ -1,5 +1,6 @@
 """The search index: what a placed task is found by, how an edit or a retraction changes it, and what a query may hold."""
 
+import time
 from pathlib import Path
 
 import pytest
@@ -213,3 +214,56 @@ def test_a_database_that_is_not_sqlite_keeps_no_index() -> None:
     engine = create_mock_engine("postgresql://u:p@localhost/none", lambda sql, *args, **kwargs: None)
 
     assert SearchIndex.open(engine) is None
+
+
+def test_a_filtered_search_runs_the_fts_match_before_the_facets_narrowing(engine, index: SearchIndex) -> None:
+    """ANDing the facets IN onto MATCH makes SQLite look up each facet rowid in FTS (`0:=M`); MATCH first keeps `0:M`."""
+    index.index(_task("PROJ-1", title="Drain", labels=["disk"]))
+    statements: list[tuple[str, object]] = []
+
+    def capture(_conn, _cursor, statement, parameters, *_rest) -> None:
+        if " MATCH " in statement:
+            statements.append((statement, parameters))
+
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        index.search("drain", labels=["disk"], finished_since=0.0)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    assert statements
+    statement, parameters = statements[0]
+    with engine.connect() as db:
+        plan = " ".join(row[3] for row in db.exec_driver_sql(f"EXPLAIN QUERY PLAN {statement}", parameters))
+
+    assert "0:=M" not in plan
+    assert "0:M" in plan
+
+
+def _seed_many(index: SearchIndex, count: int = 2500) -> None:
+    for number in range(count):
+        index.index(
+            _task(
+                f"T-{number}",
+                title=f"drain item {number}",
+                labels=["disk"] if number % 2 == 0 else ["other"],
+            )
+        )
+
+
+def test_a_finished_since_filtered_search_of_200_words_returns_in_under_one_second(index: SearchIndex) -> None:
+    _seed_many(index)
+    query = "drain " + " ".join(f"unique{n}" for n in range(200))
+
+    started = time.perf_counter()
+    index.search(query, finished_since=0.0)
+    assert time.perf_counter() - started < 1.0
+
+
+def test_a_label_filtered_search_of_200_words_returns_in_under_one_second(index: SearchIndex) -> None:
+    _seed_many(index)
+    query = "drain " + " ".join(f"unique{n}" for n in range(200))
+
+    started = time.perf_counter()
+    index.search(query, labels=["disk"])
+    assert time.perf_counter() - started < 1.0

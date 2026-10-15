@@ -2,6 +2,7 @@
 
 import json
 import socket
+import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -313,3 +314,20 @@ class TestDemo:
 
         assert (code, document["code"]) == (3, "unavailable")
         assert not (tmp_path / "demo.html").exists()
+
+
+class TestSearchTimeout:
+    def test_a_search_that_times_out_names_a_slow_search_not_an_unreachable_server(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        def urlopen(request, timeout=None):  # noqa: ANN001 - urllib's Request|str
+            raise TimeoutError("timed out")
+
+        monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+
+        code, document = _run(capsys, ["search", "--server", "http://127.0.0.1:9", "--", "drain"])
+
+        assert code == 3
+        assert document["code"] == "unavailable"
+        assert "slow search" in document["error"]
+        assert "cannot reach StarPulse" not in document["error"]

@@ -43,10 +43,15 @@ _CREATE = (
 #: What a match in each column is worth, in the column order above: a title says most, a note least.
 _WEIGHTS = "4, 10, 2, 1, 1, 0, 0"
 _SNIPPET_CHARS = 160
-#: The lexical query, `{filtered}` taking `_filtered`'s condition.
+#: The lexical query: MATCH first into a MATERIALIZED CTE, then `{filtered}` (facets) on those rowids. ANDing the
+#: facets IN onto MATCH makes SQLite look up each facet rowid in FTS (`0:=M`) and cost grows with rows × words.
 _SEARCH = (
-    f"SELECT task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, snippet({_TABLE}, -1, '', '', '…', 16) AS snippet "
-    f"FROM {_TABLE} WHERE {_TABLE} MATCH :query{{filtered}} ORDER BY bm25({_TABLE}, {_WEIGHTS}), task LIMIT :limit"
+    f"WITH matched AS MATERIALIZED ("
+    f"SELECT {_TABLE}.rowid AS row, task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, "
+    f"snippet({_TABLE}, -1, '', '', '…', 16) AS snippet, bm25({_TABLE}, {_WEIGHTS}) AS rank "
+    f"FROM {_TABLE} WHERE {_TABLE} MATCH :query"
+    f") SELECT task, title, lane, score, snippet FROM matched WHERE 1{{filtered}} "
+    f"ORDER BY rank, task LIMIT :limit"
 )
 _DIGEST = text(f"SELECT digest FROM {_TABLE} WHERE rowid = :row")
 _DELETE = text(f"DELETE FROM {_TABLE} WHERE rowid = :row")
@@ -74,10 +79,14 @@ _DROP_OTHER_RECIPES = text(f"DELETE FROM {_VECTORS} WHERE model != :model")
 #: task-like sentence, and changing it makes every vector again.
 _EMBEDDED_TEXT = "title+description"
 _RANKED = (
-    f"SELECT task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, snippet({_TABLE}, -1, '', '', '…', 16) AS snippet, "
+    f"WITH matched AS MATERIALIZED ("
+    f"SELECT {_TABLE}.rowid AS row, task, title, lane, -bm25({_TABLE}, {_WEIGHTS}) AS score, "
+    f"snippet({_TABLE}, -1, '', '', '…', 16) AS snippet, bm25({_TABLE}, {_WEIGHTS}) AS rank, "
     f"{_VECTORS}.vector AS vector FROM {_TABLE} LEFT JOIN {_VECTORS} "
     f"ON {_VECTORS}.task_row = {_TABLE}.rowid AND {_VECTORS}.model = :model "
-    f"WHERE {_TABLE} MATCH :query{{filtered}} ORDER BY bm25({_TABLE}, {_WEIGHTS}), task LIMIT :limit"
+    f"WHERE {_TABLE} MATCH :query"
+    f") SELECT task, title, lane, score, snippet, vector FROM matched WHERE 1{{filtered}} "
+    f"ORDER BY rank, task LIMIT :limit"
 )
 #: Every embedded task, for a query whose meaning (not its words) is what is wanted; `snippet` is the task's opening.
 _EMBEDDED_SELECT = (
@@ -124,9 +133,12 @@ _INSERT = text(
 )
 
 
-def _filtered(labels: Sequence[str], finished_since: float | None) -> tuple[str, dict]:
+def _filtered(labels: Sequence[str], finished_since: float | None, *, row: str = f"{_TABLE}.rowid") -> tuple[str, dict]:
     """The condition, ANDed onto a query's WHERE, that keeps the tasks carrying every one of `labels` and not finished
-    before `finished_since` (epoch seconds), with its parameters; no condition when neither narrows."""
+    before `finished_since` (epoch seconds), with its parameters; no condition when neither narrows.
+
+    `row` is the outer column compared to `task_row` (the MATCH CTE's `row`, or `{_TABLE}.rowid` for a facets-only
+    select)."""
     conditions = [f"instr(labels, :label_{at}) > 0" for at in range(len(labels))]
     parameters: dict = {f"label_{at}": f"\n{label}\n" for at, label in enumerate(labels)}
     if finished_since is not None:
@@ -134,7 +146,7 @@ def _filtered(labels: Sequence[str], finished_since: float | None) -> tuple[str,
         parameters["finished_since"] = finished_since
     if not conditions:
         return "", {}
-    return f" AND {_TABLE}.rowid IN (SELECT task_row FROM {_FACETS} WHERE {' AND '.join(conditions)})", parameters
+    return f" AND {row} IN (SELECT task_row FROM {_FACETS} WHERE {' AND '.join(conditions)})", parameters
 
 
 def _row(task_id: str) -> int:
@@ -275,7 +287,7 @@ class SearchIndex:
             return []
         limit = max(1, limit)
         vector = self._embed_query(query)
-        filtered, narrowing = _filtered(labels, finished_since)
+        filtered, narrowing = _filtered(labels, finished_since, row="row")
         with self._engine.connect() as connection:
             if vector is None:
                 rows = connection.execute(
@@ -288,8 +300,9 @@ class SearchIndex:
             )
             hits = [dict(row._mapping) for row in rows]
             lexical = {hit["task"] for hit in hits}
+            facets, _ = _filtered(labels, finished_since)
             allowed = (
-                set(connection.execute(text(f"SELECT rowid FROM {_TABLE} WHERE 1{filtered}"), narrowing).scalars())
+                set(connection.execute(text(f"SELECT rowid FROM {_TABLE} WHERE 1{facets}"), narrowing).scalars())
                 if filtered
                 else None
             )
