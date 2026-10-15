@@ -41,9 +41,10 @@ The adopted socket's backlog and options stay as the manager set them, `--host` 
 startup line and the board's instance name (`starpulse-<port>`) name the socket's port. A `.socket` unit's
 `ListenStream=` sets that address; `Accept=no` (the default) hands the server the listening socket itself.
 
-Each accepted request runs on its own thread with a 256 KiB C stack (`REQUEST_STACK` in the server). The stdlib default
-of 8 MiB is not returned on the free-threaded CPython build after the thread exits, so a crowd of pages would leave that
-RSS behind; 256 KiB still encodes a 1 MB snapshot.
+Each accepted request runs on a pooled worker thread (up to the listen backlog of 128) with a 256 KiB C stack
+(`REQUEST_STACK` in the server). The stdlib default of 8 MiB, and a new thread per request, is not returned on the
+free-threaded CPython build after the thread exits, so a crowd of pages would leave that RSS behind; 256 KiB still
+encodes a 1 MB snapshot, and later requests reuse the same workers.
 
 ### What the page shows when the server restarts
 

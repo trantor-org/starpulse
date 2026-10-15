@@ -1,9 +1,9 @@
-"""A crowd of event streams must not keep stepping RSS after its request threads exit.
+"""A crowd of gzip snapshot reads must reuse request threads so RSS does not step once per request.
 
-The live server is CPython 3.14t. ThreadingHTTPServer starts an 8 MiB-stack thread per request; a 50-viewer
-starpulse-load run dirties those stacks, then the threads exit, FDs and `process_threads` return, and RSS does not
-(object counts fall). Request threads take a 256 KiB stack instead. The first crowd may step RSS (abandoned
-free-threaded heaps); a second crowd against the same process must hold near that step.
+The live server is CPython 3.14t. ThreadingHTTPServer starts a new 8 MiB-stack thread per request; a 5 min
+starpulse-load run creates thousands of them, they exit, FDs and `process_threads` return, and RSS does not (object
+counts fall). Request threads are pooled at 256 KiB; the first crowd may step RSS, a second crowd must reuse those
+workers and hold near that step.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Connection
 from pathlib import Path
 
@@ -25,10 +26,11 @@ from starpulse._internal.server.server import REQUEST_STACK
 from starpulse.tests.machines import MACHINES
 
 VIEWERS = 40
-#: KiB the first event-stream crowd may keep after its threads have exited.
-_FIRST_SLACK_KB = 32_768
-#: KiB a second crowd may add on top of the first step.
-_HOLD_SLACK_KB = 8_192
+FETCHES = 4
+#: KiB the first gzip-snapshot crowd may keep in its pooled workers (40 threads writing ~800 KB gzip).
+_FIRST_SLACK_KB = 131_072
+#: KiB a second crowd may add on top of the first step (mimalloc noise on reused workers).
+_HOLD_SLACK_KB = 16_384
 
 
 def _rss_kb(pid: int | None = None) -> int:
@@ -48,8 +50,7 @@ def _threads(pid: int) -> int:
 
 def _feed() -> BoardFeed:
     feed = BoardFeed(machines=MACHINES)
-    for n in range(400):
-        feed.put(task(f"PROJ-{n}", title=f"{'a long title ' * 20}{n}"))
+    feed.put(task("PROJ-0", title="crowd", description=os.urandom(400_000).hex()))
     return feed
 
 
@@ -62,19 +63,16 @@ def _serve_crowd(directory: str, conn: Connection) -> None:
         conn.recv()
 
 
-def _wait_idle(pid: int, idle: int) -> None:
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline and _threads(pid) > idle + 2:
-        time.sleep(0.05)
+def _snapshot_crowd(port: int) -> None:
+    snapshot = f"http://127.0.0.1:{port}/api/snapshot"
+    headers = {"Accept-Encoding": "gzip"}
 
+    def read() -> None:
+        for _ in range(FETCHES):
+            urllib.request.urlopen(urllib.request.Request(snapshot, headers=headers), timeout=30).read()
 
-def _stream_crowd(port: int, pid: int, idle: int) -> int:
-    events = f"http://127.0.0.1:{port}/api/events?snapshot=ref"
-    for _ in range(VIEWERS):
-        with urllib.request.urlopen(events, timeout=30) as resp:
-            resp.readline()
-    _wait_idle(pid, idle)
-    return _rss_kb(pid)
+    with ThreadPoolExecutor(max_workers=VIEWERS) as pool:
+        list(pool.map(lambda _: read(), range(VIEWERS)))
 
 
 def test_a_request_thread_is_started_at_the_request_stack_size(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,7 +92,7 @@ def test_a_request_thread_is_started_at_the_request_stack_size(tmp_path: Path, m
 
 @pytest.mark.skipif(sys._is_gil_enabled(), reason="the live server is 3.14t; GIL heaps return after a crowd")
 @pytest.mark.xdist_group("crowd-rss")
-def test_a_second_event_stream_crowd_holds_rss_near_the_first(tmp_path: Path) -> None:
+def test_a_second_gzip_snapshot_crowd_reuses_request_threads_and_holds_rss(tmp_path: Path) -> None:
     ctx = mp.get_context("spawn")
     parent, child = ctx.Pipe()
     proc = ctx.Process(target=_serve_crowd, args=(str(tmp_path), child), daemon=True)
@@ -102,14 +100,24 @@ def test_a_second_event_stream_crowd_holds_rss_near_the_first(tmp_path: Path) ->
     try:
         assert parent.poll(30), "the crowd server did not start"
         port, pid = parent.recv()
+        urllib.request.urlopen(
+            urllib.request.Request(f"http://127.0.0.1:{port}/api/snapshot", headers={"Accept-Encoding": "gzip"}),
+            timeout=30,
+        ).read()
         time.sleep(0.2)
         idle = _threads(pid)
         warm = _rss_kb(pid)
-        first = _stream_crowd(port, pid, idle) - warm
-        held = _stream_crowd(port, pid, idle) - warm - first
+        _snapshot_crowd(port)
+        time.sleep(0.3)
+        workers = _threads(pid)
+        first = _rss_kb(pid) - warm
+        _snapshot_crowd(port)
+        time.sleep(0.3)
+        held = _rss_kb(pid) - warm - first
     finally:
         parent.send(None)
         proc.join(timeout=10)
 
-    assert first < _FIRST_SLACK_KB, f"first crowd kept {first} kB RSS after its threads exited (warm {warm} kB)"
+    assert workers >= idle + VIEWERS // 2, f"request workers exited after the crowd (idle {idle}, now {workers})"
+    assert first < _FIRST_SLACK_KB, f"first crowd kept {first} kB RSS (warm {warm} kB)"
     assert held < _HOLD_SLACK_KB, f"second crowd added {held} kB RSS on top of the first step of {first} kB"

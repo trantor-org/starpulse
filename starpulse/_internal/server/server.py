@@ -1848,9 +1848,9 @@ def inherited_socket(environ: Mapping[str, str]) -> socket.socket | None:
     return socket.socket(fileno=_LISTEN_FDS_START)
 
 
-#: Bytes of C stack each request thread is given. The stock 8 MiB, times a 50-viewer crowd, is hundreds of megabytes
-#: of RSS the free-threaded allocator does not return when those threads exit (live: threads and FDs back after
-#: starpulse-load, RSS not). 256 KiB encodes a 1 MB snapshot.
+#: Bytes of C stack each pooled request thread is given. The stock 8 MiB, times a 50-viewer crowd of one-shot threads,
+#: is hundreds of megabytes of RSS the free-threaded allocator does not return when those threads exit (live: threads
+#: and FDs back after starpulse-load, RSS not). 256 KiB encodes a 1 MB snapshot.
 REQUEST_STACK = 256 * 1024
 
 
@@ -1859,6 +1859,8 @@ class StarPulseServer(ThreadingHTTPServer):
     rest's SYNs, and each waits out a 1 s retransmit before its first byte.
 
     Given `listening`, it serves on that socket as passed, its backlog and options untouched, and binds nothing.
+    Request threads are pooled (one worker per accepted connection, up to the backlog) at `REQUEST_STACK` bytes so a
+    crowd does not abandon a free-threaded heap per request.
     """
 
     request_queue_size = 128
@@ -1867,6 +1869,9 @@ class StarPulseServer(ThreadingHTTPServer):
         self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], listening: socket.socket | None = None
     ) -> None:
         self.accepted: dict[socket.socket, float] = {}  # when each request was accepted, until its thread takes it up
+        self._work: queue.SimpleQueue[tuple[Any, Any]] = queue.SimpleQueue()
+        self._workers = 0
+        self._workers_lock = threading.Lock()
         super().__init__(address, handler, bind_and_activate=listening is None)
         if listening is not None:
             self.socket.close()  # the one the base class made for a bind that will not happen
@@ -1876,11 +1881,19 @@ class StarPulseServer(ThreadingHTTPServer):
 
     def process_request(self, request: Any, client_address: Any) -> None:
         self.accepted[request] = time.monotonic()
-        previous = threading.stack_size(REQUEST_STACK)
-        try:
-            super().process_request(request, client_address)
-        finally:
-            threading.stack_size(previous)
+        with self._workers_lock:
+            if self._workers < self.request_queue_size:
+                self._workers += 1
+                previous = threading.stack_size(REQUEST_STACK)
+                try:
+                    threading.Thread(target=self._run_requests, name="http", daemon=True).start()
+                finally:
+                    threading.stack_size(previous)
+        self._work.put((request, client_address))
+
+    def _run_requests(self) -> None:
+        while True:
+            self.process_request_thread(*self._work.get())
 
 
 class _EventText:
