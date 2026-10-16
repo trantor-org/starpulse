@@ -13,7 +13,7 @@ on:
 permissions:
   contents: read
 
-# Validation runs on the organization's self-hosted validate lane, free and independent of GitHub's hosted
+# The nightly suite runs on the organization's self-hosted ai-vm-1 fleet, free and independent of GitHub's hosted
 # pool. That runner group serves private repositories only: making this repository public strands these jobs.
 jobs:
   # Chooses the tests once for the shards: the nightly schedule and a manual dispatch select the whole suite
@@ -22,7 +22,7 @@ jobs:
   select:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 10
     outputs:
       PYTEST_TARGETS: ${{ steps.select.outputs.PYTEST_TARGETS }}
@@ -44,7 +44,7 @@ jobs:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved. An empty
     # matrix is an error, so no shard is this job skipped, which the `python` job reads.
     if: github.event_name != 'push' && needs.select.outputs.PYTEST_SHARDS != '[]'
-    runs-on: [self-hosted, validate]
+    runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 30
     strategy:
       # A red shard does not cancel the others: one run reports every failure.
@@ -93,7 +93,7 @@ jobs:
   python-ft:
     needs: select
     if: github.event_name != 'push' && needs.select.outputs.PYTEST_SHARDS != '[]'
-    runs-on: [self-hosted, validate]
+    runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 45
     env:
       PYTEST_TARGETS: ${{ needs.select.outputs.PYTEST_TARGETS }}
@@ -127,7 +127,7 @@ jobs:
   python:
     needs: [select, python-shard]
     if: always() && github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 5
     steps:
       - env:
@@ -141,7 +141,7 @@ jobs:
   web:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 15
     defaults:
       run:
@@ -167,7 +167,7 @@ jobs:
   static-checks:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 15
     steps:
       # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.
@@ -206,7 +206,7 @@ jobs:
   trantor-contract:
     # A push to main runs no test: the merge queue tested the pushed commit, its candidate, before main moved.
     if: github.event_name != 'push'
-    runs-on: [self-hosted, validate]
+    runs-on: [self-hosted, ai-vm-1]
     timeout-minutes: 30
     steps:
       # The workspace App token, not GITHUB_TOKEN: GITHUB_TOKEN reads only this repository.
@@ -268,8 +268,8 @@ jobs:
 
   # Pins the commit main just moved to on trantor, a fallback for dispatch-merged.yml's pin at merge time. Every main
   # commit is a merge-queue candidate whose required checks passed, so it waits on no test job here; trantor's pin script
-  # re-checks that the App's check runs passed on the SHA before pinning it. It runs on the generic ai-vm-1 fleet, not the
-  # validate lane, and pins nothing for a pull request or a merge-queue candidate.
+  # re-checks that the App's check runs passed on the SHA before pinning it. It runs on the ai-vm-1 fleet like the nightly
+  # suite, and pins nothing for a pull request or a merge-queue candidate.
   dispatch:
     name: dispatch
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

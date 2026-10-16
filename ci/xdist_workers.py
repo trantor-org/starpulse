@@ -1,8 +1,7 @@
-"""Print the pytest-xdist worker count a validate runner's memory limit can hold.
+"""Print the pytest-xdist worker count a self-hosted runner's memory limit can hold.
 
-A NAS farm slot is capped at 4 GiB, and its cgroup also holds its own dockerd and the Postgres containers the
-hub tests start; a worker OOM-killed there leaves xdist hanging until the job timeout. So a memory-limited runner gets
-one worker per 2 GiB. A runner with no cgroup memory limit shares the build host's cores with the rest of the pool and gets
+A runner whose cgroup is capped also holds the Postgres containers the hub tests start in that cap; a worker
+OOM-killed there leaves xdist hanging until the job timeout. So a memory-limited runner gets one worker per 2 GiB. A runner with no cgroup memory limit shares the build host's cores with the rest of the pool and gets
 MAX_WORKERS: two, so a pool of runners fills the host's test CPU budget instead of oversubscribing it. trantor's
 `bin/ci_pytest_workers.py` applies the same rule to its own Validate job.
 """

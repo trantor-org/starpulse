@@ -23,9 +23,9 @@ permissions:
 
 jobs:
   build:
-    # A pull request builds on the self-hosted validate lane and a merge-queue candidate on its reserved lane, as CI does;
-    # a tag builds on a clean hosted runner, since what it builds is published.
-    runs-on: ${{ startsWith(github.ref, 'refs/tags/v') && 'ubuntu-latest' || github.event_name == 'merge_group' && fromJSON('["self-hosted", "merge-queue"]') || fromJSON('["self-hosted", "validate"]') }}
+    # A pull request and a merge-queue candidate build on the self-hosted ai-vm-1 fleet; a tag builds on a clean hosted
+    # runner, since what it builds is published.
+    runs-on: ${{ startsWith(github.ref, 'refs/tags/v') && 'ubuntu-latest' || fromJSON('["self-hosted", "ai-vm-1"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,16 +55,17 @@ jobs:
           path: dist/
 
   # The latency budget's endurance half (bench/soak.py): one Chrome tab held open on a disposable seeded server that
-  # the soak starts and feeds a replayed event stream, sampled and probed until the hold ends. It runs on the Tower
-  # farm slots, the hardware the budget is judged on (ai-vm-1's Xeon cannot hold it). Publishing does not wait for it:
-  # a page over budget or leaking fails this job while the GitHub Release and PyPI still ship.
+  # the soak starts and feeds a replayed event stream, sampled and probed until the hold ends. It runs on the ai-vm-1
+  # fleet; its probes (reads, a stream delivery, a task's modal) hold the 50 ms budget there, unlike the board's first
+  # paint, which they do not time. Publishing does not wait for it: a page over budget or leaking fails this job while
+  # the GitHub Release and PyPI still ship.
   soak:
     if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
     needs: build
-    runs-on: [self-hosted, validate, tower]
+    runs-on: [self-hosted, ai-vm-1]
     # The 4 h hold, plus the page's build and the seeded server's start.
     timeout-minutes: 300
-    # A soak holds one of Tower's three farm slots for hours: the next one for the same ref waits rather than
+    # A soak holds one of ai-vm-1's runners for hours: the next one for the same ref waits rather than
     # cancelling it. A tag's soak and a dispatch on that tag share no group, so a dispatch never displaces a release.
     concurrency:
       group: release-soak-${{ github.event_name }}-${{ github.ref }}
