@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 #: The `starpulse worker` contexts, by the `Config` flag that says an outside runner owns them.
-WORKER_FLAGS = {"pulls": "delivery_worker", "autopilot": "autopilot_worker"}
+WORKER_FLAGS = {"pulls": "delivery_worker", "autopilot": "autopilot_worker", "runs": "runs_worker"}
 
 
 def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[str]]:

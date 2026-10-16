@@ -230,7 +230,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, autopilot, autopilot_worker, board, ci, cursor_context, database_url, delivery_worker, event_log_archive_dir, event_log_retention_days, "
-        "forward, harnesses_file, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, search, session_start_url, slow_read_seconds, sources, tracker_url, triggers"
+        "forward, harnesses_file, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, session_start_url, slow_read_seconds, sources, tracker_url, triggers"
     )
 
 
@@ -541,6 +541,12 @@ def test_autopilot_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
     assert load(None).autopilot_worker is False
     assert load(_write(tmp_path, "autopilot_worker = true\n")).autopilot_worker is True
     assert _refusal(tmp_path, 'autopilot_worker = "yes"\n') == "autopilot_worker must be true or false"
+
+
+def test_runs_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
+    assert load(None).runs_worker is False
+    assert load(_write(tmp_path, "runs_worker = true\n")).runs_worker is True
+    assert _refusal(tmp_path, 'runs_worker = "yes"\n') == "runs_worker must be true or false"
 
 
 def test_delivery_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:

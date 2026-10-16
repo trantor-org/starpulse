@@ -1,5 +1,6 @@
 """`serve` supervises a `starpulse worker` child for each context whose `*_worker` setting is false, and runs no context's threads itself."""
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,7 @@ def _serve(
     monkeypatch.setattr(service, "start_autopilot", lambda *args, **kwargs: threads.append("autopilot"))
     monkeypatch.setattr(server, "start_delivery", lambda *args, **kwargs: threads.append("delivery") or (None, None))
     handled: dict[str, object] = {}
-    monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: handled.update(kwargs))
+    monkeypatch.setattr(server, "request_handler", lambda *args, **kwargs: handled.update(kwargs, args=args))
     config = tmp_path / "starpulse.toml"
     config.write_text(settings + BOARD)
 
@@ -43,7 +44,7 @@ def _serve(
     return handled, threads
 
 
-def test_serve_supervises_both_workers_and_starts_neither_context_in_process(
+def test_serve_supervises_every_worker_and_starts_no_context_in_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
 ) -> None:
     handled, threads = _serve(tmp_path, monkeypatch, "")
@@ -51,16 +52,17 @@ def test_serve_supervises_both_workers_and_starts_neither_context_in_process(
     assert threads == []
     assert isinstance(handled["autopilot"], Remote)
     [supervisor] = supervisors
-    assert set(supervisor.commands) == {"pulls", "autopilot"}
+    assert set(supervisor.commands) == {"pulls", "autopilot", "runs"}
     assert supervisor.started
 
 
 @pytest.mark.parametrize(
     ("settings", "supervised"),
     [
-        ("delivery_worker = true\n", {"autopilot"}),
-        ("autopilot_worker = true\n", {"pulls"}),
-        ("delivery_worker = true\nautopilot_worker = true\n", set()),
+        ("delivery_worker = true\n", {"autopilot", "runs"}),
+        ("autopilot_worker = true\n", {"pulls", "runs"}),
+        ("runs_worker = true\n", {"pulls", "autopilot"}),
+        ("delivery_worker = true\nautopilot_worker = true\nruns_worker = true\n", set()),
     ],
 )
 def test_a_true_worker_setting_gets_neither_a_thread_nor_a_child(
@@ -86,3 +88,36 @@ def test_serve_stops_its_children_however_it_ends(
     _serve(tmp_path, monkeypatch, "", ending)
 
     assert supervisors[0].stopped
+
+
+RUNS = '[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "http://dagu.invalid"\n[[triggers]]\non = "lane"\nstart = "dagu/reconcile"\n'
+
+
+class Dagu:
+    """A runs adapter that notes the follow `serve` must leave to the Runs worker, and starts what the page asks."""
+
+    followed: list[str] = []
+
+    @staticmethod
+    def start(url: str):
+        return lambda workflow: "run-1"
+
+    @classmethod
+    def follow(cls, url: str, sink: object, log: object) -> None:
+        cls.followed.append(url)
+
+
+@pytest.mark.parametrize("settings", ["", "runs_worker = true\n"])
+def test_serve_follows_no_run_adapter_and_starts_no_trigger_or_pushed_run_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], settings: str
+) -> None:
+    monkeypatch.setattr(Dagu, "followed", [])
+    monkeypatch.setattr(server, "_adapter", lambda parser, instance: Dagu)
+    monkeypatch.setattr(server, "PushRuns", lambda *args: pytest.fail("serve follows pushed runs"), raising=False)
+    before = {t.name for t in threading.enumerate()}
+
+    handled, _ = _serve(tmp_path, monkeypatch, settings + RUNS)
+
+    assert Dagu.followed == []
+    assert "board-triggers" not in {t.name for t in threading.enumerate()} - before
+    assert "dagu" in handled["args"][2]  # the page's Run now still reaches the adapter

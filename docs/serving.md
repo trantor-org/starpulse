@@ -53,8 +53,8 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery) and `autopilot`. For each one whose `delivery_worker` or
-`autopilot_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery), `autopilot` and `runs`. For each one whose `delivery_worker`,
+`autopilot_worker` or `runs_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
@@ -214,6 +214,15 @@ type = "native"
 # switch, quiet-hours or harness change; the switch, the pauses and the run ledger stay in the store, so a restarted
 # worker starts no task twice. `SIGHUP` re-reads the config. With the flag set and no worker running, no task is started.
 # autopilot_worker = false
+
+# Whether something outside `serve` runs the Runs context (the run adapters, the trigger starts and the pushed-runs
+# follower). False, the default: `serve` supervises it as a child process, `starpulse worker runs`. True: you run
+# `starpulse worker runs --config <this file>` yourself and `serve` starts no child for it. Either way `serve` runs
+# none of the three: it draws the workflows, pools and startable workflows the worker keeps in the event log
+# (`runs.projection`), and the page's Run now still starts a workflow through the adapter. Run-stream cursors and trigger
+# state stay in the event log, so a restarted worker neither drops nor repeats a run entry or a trigger start. With the
+# flag set and no worker running, no run is followed and no trigger starts a workflow.
+# runs_worker = false
 
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
 # `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's
