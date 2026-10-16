@@ -7,11 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.board.upstream_backlog import BACKSTOP as BACKSTOP_SCAN_S
+from starpulse._internal.board.upstream_backlog import upstream_keys
 from starpulse._internal.eventlog import lane_events
 from starpulse._internal.eventlog.event_log import EventLog, Tail
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse._internal.feed.board_feed import BoardFeed
-from starpulse._internal.board.upstream_backlog import BACKSTOP as BACKSTOP_SCAN_S
 from starpulse.contracts import BoardTask
 from starpulse.tests.machines import MACHINES
 
@@ -54,6 +55,23 @@ def test_a_lane_change_the_backstop_scan_places_still_names_the_actor_that_wrote
     entry = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "done"][0]
 
     assert entry.fields.get("actor") == "starpulse/task-actor"
+
+
+def test_a_note_under_the_files_lowercase_id_names_the_actor_of_the_move_placed_under_the_canonical_key(
+    tmp_path: Path,
+) -> None:
+    """An older task file spells its id `task-4613`, so the write notes its writer under that spelling while the feed
+    places the move as `TASK-4613`: TASK-4613's six lane entries on 2026-10-16 carried no actor."""
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    feed = BoardFeed(keys=upstream_keys("TASK"), machines=MACHINES)
+    feed.record_lanes(HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES), log)
+    feed.put(BoardTask(id="TASK-12", team="demo", title="t", lane="ready", observed_at=100.0))
+    feed.note_actor("task-12", "agent", "s1", "claude")
+    feed.put(BoardTask(id="TASK-12", team="demo", title="t", lane="in_progress", observed_at=110.0))
+
+    entry = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "in_progress"][0]
+
+    assert (entry.fields.get("actor"), entry.fields.get("session")) == ("agent", "s1")
 
 
 class _BoardStore:
