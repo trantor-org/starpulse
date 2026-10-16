@@ -102,6 +102,19 @@ jobs:
           --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           --action "$ACTION"
 
+      # `continue-on-error` hides a failed render on a pull request, so say so in the preview comment, with the run.
+      - name: Report a failed render
+        if: ${{ failure() && github.event_name == 'pull_request' && github.event.action != 'closed' }}
+        env:
+          GH_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+        run: >-
+          python3 ci/ui_preview.py --failed
+          --repo "${{ github.repository }}"
+          --pr "${{ github.event.pull_request.number }}"
+          --sha "${{ github.event.pull_request.head.sha }}"
+          --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          --action "${{ github.event.action }}"
+
       # The copy of the scrubbed demos the leak scan reads; the render published the same files.
       - name: Upload the demos
         if: ${{ !cancelled() && github.event.action != 'closed' }}

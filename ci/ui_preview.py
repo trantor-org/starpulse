@@ -162,6 +162,18 @@ def comment_body(shots: Mapping[str, Sequence[Path]], run_url: str, sha: str, de
     return "\n".join(lines) + "\n"
 
 
+def failure_body(run_url: str, sha: str) -> str:
+    """The one PR comment when the render failed: no screenshots, the run to read, and no `rendered` commit.
+
+    It carries no `<!-- rendered: -->` line, so `rendered_sha` finds none and the next push renders again.
+    """
+    return (
+        f"{MARKER}\n## UI preview of `{sha[:7]}` failed\n\n"
+        f"The render did not finish, so this pull request has no screenshots or demos for that commit. "
+        f"See [the run]({run_url}). This preview never gates the pull request.\n"
+    )
+
+
 def find_comment(comments: Sequence[Mapping[str, Any]], author: str) -> int | None:
     """The id of `author`'s earlier preview comment, if this PR has one."""
     return next(
@@ -211,6 +223,16 @@ def publish(gh: Callable[..., str], repo: str, pr: int, body: Path, images: Sequ
     gh("api", "--method", "PATCH", f"repos/{repo}/issues/comments/{old_id}", "-f", f"body={uploaded}")
     gh("api", "--method", "DELETE", f"repos/{repo}/issues/comments/{new_id}")
     return next(c["html_url"] for c in earlier if c["id"] == old_id)
+
+
+def publish_failure(gh: Callable[..., str], repo: str, pr: int, body: str, author: str) -> None:
+    """Put `body` in `author`'s one preview comment, editing the earlier one in place or creating it."""
+    pages = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/issues/{pr}/comments"))
+    old_id = find_comment([c for page in pages for c in page], author)
+    if old_id is None:
+        gh("api", "--method", "POST", f"repos/{repo}/issues/{pr}/comments", "-f", f"body={body}")
+    else:
+        gh("api", "--method", "PATCH", f"repos/{repo}/issues/comments/{old_id}", "-f", f"body={body}")
 
 
 #: The public repository whose GitHub Pages site serves the demos, from its `gh-pages` branch.
@@ -497,6 +519,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
     parser.add_argument("--pr", type=int)
     parser.add_argument("--sha")
     parser.add_argument("--run-url")
+    parser.add_argument("--failed", action="store_true", help="comment that the pull request's render failed, rendering nothing")
     parser.add_argument("--action", help="the pull_request event's action")
     parser.add_argument("--out", type=Path, default=Path(".tmp/ui-preview"), help="where screenshots and demos go")
     args = parser.parse_args(argv)
@@ -519,6 +542,10 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover — proc
     if None in (args.repo, args.pr, args.sha, args.run_url, args.action):
         parser.error("a pull request preview needs --repo, --pr, --sha, --run-url and --action")
 
+    if args.failed:
+        author = _gh("api", "user", "--jq", ".login").strip()
+        publish_failure(_gh, args.repo, args.pr, failure_body(args.run_url, args.sha), author)
+        return 0
     folder = demo_folder(args.pr)
     if args.action == "closed":
         unpublish_demos(_demo_gh, folder)
