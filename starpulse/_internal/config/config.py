@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 
 from starpulse._internal.config.adapter_types import module_name
 from starpulse._internal.config.autopilot import Autopilot, AutopilotError, parse_autopilot
+from starpulse._internal.config.cursor_context import CursorContext, CursorContextError, parse_cursor_context
 from starpulse._internal.config.level import Level, LevelError, parse_level
 from starpulse._internal.config.harnesses import Harnesses, load_harnesses
 from starpulse._internal.config.analytics import Analytics, AnalyticsError, parse_analytics
@@ -67,6 +68,7 @@ _KEYS = {
     "triggers",
     "analytics",
     "search",
+    "cursor_context",
     "refresh_token_env",
     "pull_requests",
     "slow_read_seconds",
@@ -500,6 +502,8 @@ class Config:
     """The `[board.actor]` table is present: `serve` runs the task actor, which moves a task on the facts its lane waits on and replaces the release pass."""
     search: Search = field(default_factory=Search)
     """The optional embeddings service that ranks search by meaning (`[search]`); no table: search is lexical only."""
+    cursor_context: CursorContext = field(default_factory=CursorContext)
+    """The context limit a Cursor task session is reset at (`[cursor_context]`); no table: 150000 of a 200000 window."""
 
     def qualified_domains(self) -> dict[str, tuple[str, ...]]:
         """Every instance's domains as `<instance>/<workflow>`, one entry per domain name, in first-seen order."""
@@ -544,6 +548,14 @@ def _search(raw: object) -> Search:
     try:
         return parse_search(raw)
     except SearchError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _cursor_context(raw: object) -> CursorContext:
+    """The `[cursor_context]` table, or the default limit when the config has none; a refusal is a `ConfigError`."""
+    try:
+        return parse_cursor_context(raw)
+    except CursorContextError as exc:
         raise ConfigError(str(exc)) from exc
 
 
@@ -702,6 +714,7 @@ def load(path: Path | None) -> Config:
         release=_release(raw, repos),
         task_actor=actor is not None,
         search=_search(raw.get("search")),
+        cursor_context=_cursor_context(raw.get("cursor_context")),
         refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
         pull_requests=_flag(raw, "pull_requests", True),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),

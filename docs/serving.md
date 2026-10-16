@@ -292,6 +292,12 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # embeddings_url = "http://localhost:8080/v1/embeddings"  # optional: POSTed `{model, input}`, answered with `data[].embedding`
 # model = "nomic-embed-text"                             # required with embeddings_url: the model the endpoint is asked for
 # token_env = "EMBEDDINGS_TOKEN"                         # optional: the environment variable holding the endpoint's bearer token
+
+# Optional: hold Cursor task sessions to a context limit (see `python -m starpulse.cursor_context` in docs/sources.md).
+# [cursor_context]
+# limit_tokens = 150000    # a session past this many context tokens is asked to checkpoint, then restarted fresh
+# window_tokens = 200000   # the context window the pane footer's percent is read against; limit_tokens may not exceed it
+# wrapup_s = 600           # seconds an asked session has to checkpoint before it is restarted regardless
 ```
 
 ## Triggers

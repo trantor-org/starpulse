@@ -163,6 +163,7 @@ class TestConfigCheck:
             },
             "task_actor": False,
             "search": {"embeddings_url": None, "model": None, "token_env": None},
+            "cursor_context": {"limit_tokens": 150000, "window_tokens": 200000, "wrapup_s": 600.0},
         }
 
     def test_a_declared_analytics_table_shows_as_lists_and_pattern_text(
