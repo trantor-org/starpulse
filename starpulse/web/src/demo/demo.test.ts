@@ -486,13 +486,13 @@ describe("the demo server", () => {
     expect(quiet).toMatchObject({ quietHours: { start: "22:00", end: "07:00" }, next: { verdict: "waits", reason: "quiet hours" } });
   });
 
-  it("in its credits state, pauses Cursor for a usage limit and holds the pick when Cursor is selected", async () => {
+  it("in its credits state, opens on Cursor paused for a usage limit and holding the pick, which Claude Code starts", async () => {
     const s = new DemoServer(fixture(), () => 1000, false, undefined, false, "credits");
     const pause = { harness: "cursor", until: 1000 + 2 * 3600, reason: "usage limit" };
 
-    expect(await body(s.fetch("/api/autopilot"))).toMatchObject({ harness: "claude", pauses: [pause], next: { verdict: "starting" } });
-    const cursor = await body(s.fetch("/api/autopilot", { method: "PUT", body: JSON.stringify({ harness: "cursor" }) }));
-    expect(cursor).toMatchObject({ harness: "cursor", pauses: [pause], next: { verdict: "waits", reason: "cursor usage limit" } });
+    expect(await body(s.fetch("/api/autopilot"))).toMatchObject({ harness: "cursor", pauses: [pause], next: { verdict: "waits", reason: "cursor usage limit" } });
+    const claude = await body(s.fetch("/api/autopilot", { method: "PUT", body: JSON.stringify({ harness: "claude" }) }));
+    expect(claude).toMatchObject({ harness: "claude", pauses: [pause], next: { verdict: "starting" }, sessionsByHarness: { claude: { limit: 3 }, cursor: { limit: 2 } } });
   });
 
   it("keeps a crowded board's sessions under the limit by default and at it when the host is over", async () => {

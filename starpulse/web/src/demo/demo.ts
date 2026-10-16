@@ -174,6 +174,8 @@ const HARNESSES = {
 };
 /** The limits the demo's capacity strip holds its stand-in host under, in the units the server samples. */
 const PILOT = { cpu: 80, memory: 85, sessions: 4, review: 24 };
+/** Each harness's session cap, as `[autopilot.session_limits]` sets it on the live server. */
+const CAPS: Record<string, number> = { claude: 3, cursor: 2 };
 /** The fields `adapters.runs.forwarded.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
 const CONTRACT = {
   "machine:events": ["machine", "event", "task", "run", "actor", "assignee", "time"],
@@ -226,6 +228,8 @@ export class DemoServer {
 
   constructor(fixture: DemoFixture, private clock: () => number = () => Date.now() / 1000, private refuseEdits = false, private forward?: ForwardDemo, private failingEvaluator = false, private pilot?: AutopilotDemo) {
     this.admitting = pilot !== "off";
+    // the credits state opens on the paused harness, so the page draws its disabled option and the pick it holds
+    if (pilot === "credits") this.harness = "cursor";
     this.quietHours = pilot === "quiet" ? NIGHT : null;
     const { history, ...snap } = structuredClone(fixture);
     // the fixture's times are kept as ages, so what settled an hour before the capture settled an hour before the page opened
@@ -492,7 +496,7 @@ export class DemoServer {
     const pick = this.pilot === "empty" ? undefined : cards.find((a) => a.state === "ready" && !a.dependencies?.length);
     const pauses = this.pilot === "credits" ? [{ harness: "cursor", until: at + 2 * 3600, reason: "usage limit" }] : [];
     const paused = pauses.some((p) => p.harness === this.harness);
-    const waits = this.quietHours ? "quiet hours" : paused ? `${this.harness} usage limit` : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= PILOT.sessions ? `Sessions ${use.sessions}/${PILOT.sessions}` : "";
+    const waits = this.quietHours ? "quiet hours" : paused ? `${this.harness} usage limit` : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= CAPS[this.harness] ? `Sessions ${use.sessions}/${CAPS[this.harness]}` : "";
     const other = this.harness === "claude" ? "cursor" : "claude";
     return json({
       enabled: this.admitting,
@@ -504,8 +508,8 @@ export class DemoServer {
       next: this.admitting && pick ? { task: pick.id, title: pick.title ?? pick.id, verdict: waits ? "waits" : "starting", reason: waits } : null,
       pauses,
       sessionsByHarness: {
-        [this.harness]: { use: inFlight.length, limit: PILOT.sessions },
-        [other]: { use: 0, limit: this.harness === "claude" ? 2 : PILOT.sessions },
+        [this.harness]: { use: inFlight.length, limit: CAPS[this.harness] },
+        [other]: { use: 0, limit: CAPS[other] },
       },
     });
   }
