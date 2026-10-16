@@ -219,7 +219,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: trantor
       # Trantor's tip can be red for a reason this package did not cause, and a red tip ejected a merge-queue entry three
-      # times. Test the newest main commit whose `Validate` passed (ci/trantor_green_sha.py logs it; none in the newest 30
+      # times. Test the newest main commit whose `Validate` passed (ci/trantor_green_sha.py logs it; none in the newest 15
       # commits fails).
       # A full checkout, never sparse: a sparse root checkout persists core.sparseCheckout in the runner's shared
       # workspace, and every later job on that runner checks out an empty tree.
@@ -232,11 +232,11 @@ jobs:
         id: trantor-sha
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          # The App's `Validate` check run on trantor main's newest 30 commits, reshaped to the workflow-runs shape the
+          # The App's `Validate` check run on trantor main's newest 15 commits, reshaped to the workflow-runs shape the
           # selector reads. Kept in step with trantor's bin/ci/ci_starpulse.py (VALIDATE_QUERY, validate_runs).
           QUERY: >-
             query { repository(owner: "trantor-org", name: "trantor") { ref(qualifiedName: "refs/heads/main") {
-            target { ... on Commit { history(first: 30) { nodes { oid checkSuites(first: 20) { nodes { app { slug }
+            target { ... on Commit { history(first: 15) { nodes { oid checkSuites(first: 8) { nodes { app { slug }
             checkRuns(first: 5, filterBy: {checkName: "Validate"}) { nodes { conclusion completedAt } } } } } } } } } } }
           RUNS: >-
             {workflow_runs: [.data.repository.ref.target.history.nodes[] | . as $commit
