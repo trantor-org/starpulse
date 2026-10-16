@@ -244,7 +244,6 @@ from starpulse._internal.board.seam import (
 from starpulse._internal.board.seam import load as load_board
 from starpulse._internal.harnesses.harness import HARNESS_MACHINES
 from starpulse._internal.harnesses.session_start import starter
-from starpulse._internal.runs import run_events
 from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.delivery import Projected, follow_notes, metrics_of, request_refresh
@@ -255,8 +254,7 @@ from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
 from starpulse._internal.pulls.pull_refresh import PullRefresh
 from starpulse._internal.pulls.pull_store import PullSync, drift_counter
-from starpulse._internal.runs.push_runs import PUSHED_INSTANCE, PushRuns
-from starpulse._internal.runs.triggers import run_triggers
+from starpulse._internal.runs import projection as runs_projection
 from starpulse._internal.hub import forward
 from starpulse._internal.server.compression import LEVEL, Encoded, accepts_gzip, compressed, gzip_stream
 from starpulse._internal.server.process_metrics import process_gauges
@@ -1651,6 +1649,21 @@ def _adapter(parser: argparse.ArgumentParser, instance: RunsInstance) -> ModuleT
         parser.exit(1, f"runs instance {instance.name}: {exc}\n")
 
 
+def run_adapters(parser: argparse.ArgumentParser, config: Config) -> list[tuple[RunsInstance, ModuleType]]:
+    """Each `[[runs]]` instance that names a type, with its adapter module (an instance with none is push-only)."""
+    return [(instance, _adapter(parser, instance)) for instance in config.runs if instance.type]
+
+
+def run_starts(adapters: Sequence[tuple[RunsInstance, ModuleType]]) -> dict[str, Callable[[str], str]]:
+    """The start capability of each run adapter instance that has one, by instance name."""
+    starts = {}
+    for instance, adapter in adapters:
+        start = adapter.start(instance.url)
+        if start:
+            starts[instance.name] = start
+    return starts
+
+
 def assemble(config: Config, base: Path, window_s: float | None, run_safe: Collection[str]) -> tuple[Board, BoardFeed]:
     """The board the config's `[board]` adapter builds, and the feed that draws it; `base` is the config's directory.
 
@@ -2141,8 +2154,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     base = args.config.parent if args.config else Path.cwd()
     if not (_STATIC / "index.html").is_file():
         parser.exit(1, f"{_STATIC} has no build; run `pnpm --filter @starpulse/web build` first\n")
-    adapters = [(instance, _adapter(parser, instance)) for instance in config.runs if instance.type]  # push-only: none
-    starts = {instance.name: start for instance, adapter in adapters if (start := adapter.start(instance.url))}
+    adapters = run_adapters(parser, config)
+    starts = run_starts(adapters)
     # Run now is drawn only for an instance whose adapter can start a run, and only on its run-safe workflows.
     reruns = {
         instance.name: rerun
@@ -2217,12 +2230,13 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     stop = threading.Event()
     Projected(log, feed).follow(stop)
     follow_notes(log, feed, stop)
+    # `starpulse worker runs` runs the run adapters, the trigger starts and the pushed-runs follower; this process
+    # draws the workflows that worker keeps in the log, and starts a run only when the page asks
+    runs_projection.Projected(log, feed).follow(stop)
     if config.task_actor:
         actor_metrics = metrics_of(log)
     if refresh_token:
         pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
-    for instance, adapter in adapters:
-        adapter.follow(instance.url, feed.runs(instance.name), log)
     threading.Thread(
         target=record_machine_events, args=(store, log, threading.Event()), name="machine-history", daemon=True
     ).start()
@@ -2230,17 +2244,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         threading.Thread(
             target=record_lane_events, args=(store, log, threading.Event()), name="lane-history", daemon=True
         ).start()
-    if config.triggers:
-        threading.Thread(
-            target=run_triggers,
-            args=(config.triggers, starts, store, log, threading.Event()),
-            kwargs={"replayed": feed.wait_replayed, "replay_head": feed.replay_head},
-            name="board-triggers",
-            daemon=True,
-        ).start()
-    # The learned step graphs persist only in StarPulse's own store.
-    pushed = PushRuns(feed.runs(PUSHED_INSTANCE), store)
-    follow(pushed, log, run_events.STREAM, pushed.handle_entry)
     forwarding = threading.Event()  # never set: the forwarder lives as long as the process
     try:
         forwarder = forward.build(

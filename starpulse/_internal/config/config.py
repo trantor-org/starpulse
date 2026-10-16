@@ -73,6 +73,7 @@ _KEYS = {
     "pull_requests",
     "delivery_worker",
     "autopilot_worker",
+    "runs_worker",
     "slow_read_seconds",
 }
 _OIDC_KEYS = {
@@ -498,6 +499,8 @@ class Config:
     """The Delivery context (pull-store sync, pull projection, task actor, board release) runs in `starpulse worker pulls`, not in `serve`: `serve` keeps the store read-only and starts none of those threads; false: `serve` runs them."""
     autopilot_worker: bool = False
     """The autopilot (capacity sampler and dispatch loop) runs in `starpulse worker autopilot`, not in `serve`: `serve` starts neither and reads and writes the autopilot's settings through the event log; false: `serve` runs them."""
+    runs_worker: bool = False
+    """The Runs context (the run adapters, the trigger starts and the pushed-runs follower) runs in `starpulse worker runs`, not in `serve`: `serve` starts none of them and draws the workflows the worker keeps in the event log; false: `serve` supervises that worker as a child."""
     slow_read_seconds: float = SLOW_READ_S
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     analytics: Analytics = field(default_factory=Analytics)
@@ -725,5 +728,6 @@ def load(path: Path | None) -> Config:
         pull_requests=_flag(raw, "pull_requests", True),
         delivery_worker=_flag(raw, "delivery_worker", False),
         autopilot_worker=_flag(raw, "autopilot_worker", False),
+        runs_worker=_flag(raw, "runs_worker", False),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),
     )

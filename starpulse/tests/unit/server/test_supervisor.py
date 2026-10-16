@@ -53,12 +53,15 @@ def _wait_for(check, timeout: float = 10.0):
 
 
 def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true_one_gets_none() -> None:
-    both = worker_commands(load(None), None)
-    only_autopilot = worker_commands(replace(load(None), delivery_worker=True), Path("/etc/starpulse.toml"))
-    neither = worker_commands(replace(load(None), delivery_worker=True, autopilot_worker=True), None)
+    every = worker_commands(load(None), None)
+    only_autopilot = worker_commands(
+        replace(load(None), delivery_worker=True, runs_worker=True), Path("/etc/starpulse.toml")
+    )
+    neither = worker_commands(replace(load(None), delivery_worker=True, autopilot_worker=True, runs_worker=True), None)
 
-    assert both["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
-    assert set(both) == {"pulls", "autopilot"}
+    assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
+    assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
+    assert set(every) == {"pulls", "autopilot", "runs"}
     assert only_autopilot == {
         "autopilot": [sys.executable, "-m", "starpulse", "worker", "autopilot", "--config", "/etc/starpulse.toml"]
     }
