@@ -130,6 +130,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
   "/api/forwarding": (server, _path, _query, init) => server.forwarding(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/autopilot": (server, _path, _query, init) => server.autopilot(init?.method ?? "GET", String(init?.body ?? "")),
+  "/api/harnesses": () => json(HARNESSES),
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
   "/api/merges": (server, _path, query) => json(server.mergesBefore(query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
   "/api/runs": (server, path, _query, init) => {
@@ -155,11 +156,22 @@ const HANDLERS: Record<string, Handler> = {
 export type ForwardDemo = "refused" | "down" | "none";
 /**
  * The autopilot a demo page pretends to run: `off` is paused, `over` a host past its RAM limit, `empty` a queue with nothing eligible,
- * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no autopilot, `quiet` inside its quiet hours.
+ * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no autopilot, `quiet` inside its quiet hours,
+ * `credits` Cursor paused for two hours on a usage limit.
  */
-export type AutopilotDemo = "off" | "over" | "empty" | "refused" | "down" | "quiet";
+export type AutopilotDemo = "off" | "over" | "empty" | "refused" | "down" | "quiet" | "credits";
 /** The quiet hours the `quiet` demo holds admission in; the demo treats any window it keeps as holding now. */
 const NIGHT = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
+/** The harnesses the demo names, so the Autopilot card draws its harness Segments; a start on either is still refused (`/api/start`). */
+const HARNESSES = {
+  tiers: ["fast", "standard", "deep"],
+  harnesses: [
+    { name: "claude", label: "Claude Code", sessions: true, reason: null, desktop: null, tiers: {
+      fast: { model: "haiku", efforts: [] }, standard: { model: "sonnet", efforts: ["medium", "high"] }, deep: { model: "opus", efforts: ["medium", "high"] } } },
+    { name: "cursor", label: "Cursor", sessions: true, reason: null, desktop: null, tiers: {
+      fast: { model: "composer-2.5-fast", efforts: [] }, standard: { model: "composer-2.5", efforts: ["medium", "high"] }, deep: { model: "cursor-grok-4.6-xhigh", efforts: ["medium", "high"] } } },
+  ],
+};
 /** The limits the demo's capacity strip holds its stand-in host under, in the units the server samples. */
 const PILOT = { cpu: 80, memory: 85, sessions: 4, review: 24 };
 /** The fields `adapters.runs.forwarded.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
@@ -179,8 +191,6 @@ export const ROUTES: Record<string, string | null> = {
   ...Object.fromEntries(Object.keys(HANDLERS).map((r) => [r, null])),
   "/api/run": "This demo has no runs instance to start a run on.",
   "/api/start": "This demo has no session-start service to start a session with.",
-  // unanswered, the start question offers only Work it manually
-  "/api/harnesses": "This demo has no harnesses configured.",
   "/api/history-window": "This demo has no server to keep a shared history window.",
 };
 
@@ -208,6 +218,7 @@ export class DemoServer {
   private forcing = new Set<string>();
   private optIn = false;
   private admitting: boolean;
+  private harness = "claude";
   private quietHours: typeof NIGHT | null;
   private listeners = new Set<(s: Snapshot) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -454,13 +465,16 @@ export class DemoServer {
     if (this.pilot === "down") return json({ error: "This server has no autopilot." }, 404);
     if (method === "PUT") {
       if (this.pilot === "refused") return json({ error: "Autopilot changes are taken only from loopback or a private address; this demo is neither." }, 403);
-      let sent: { enabled?: unknown; quietHours?: unknown } = {};
+      let sent: { enabled?: unknown; quietHours?: unknown; harness?: unknown } = {};
       try { sent = JSON.parse(raw) as typeof sent; } catch { /* refused below */ }
-      const usage = 'the autopilot takes {"enabled": true|false} and/or {"quietHours": {"start", "end", "timezone"}|null}';
+      const usage = 'the autopilot takes {"enabled": true|false}, {"harness": "<name>"} and/or {"quietHours": {"start", "end", "timezone"}|null}';
       const window = sent?.quietHours as typeof NIGHT | null | undefined;
-      if (!sent || (sent.enabled === undefined && window === undefined) || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
+      const noField = sent.enabled === undefined && window === undefined && sent.harness === undefined;
+      if (!sent || noField || (sent.enabled !== undefined && typeof sent.enabled !== "boolean")) return json({ error: usage }, 400);
+      if (sent.harness !== undefined && (typeof sent.harness !== "string" || !sent.harness)) return json({ error: usage }, 400);
       if (window && window.start === window.end) return json({ error: "quiet hours start and end must differ" }, 400);
       if (typeof sent.enabled === "boolean") this.admitting = sent.enabled;
+      if (typeof sent.harness === "string") this.harness = sent.harness;
       if (window !== undefined) this.quietHours = window;
     } else if (method !== "GET") return json({ error: `${method} is not served here` }, 405);
     const at = this.clock();
@@ -476,14 +490,23 @@ export class DemoServer {
     const over = this.pilot === "over";
     const use = { cpu: over ? 74 : 41, memory: over ? 91 : 58, sessions: inFlight.length, review: 13 };
     const pick = this.pilot === "empty" ? undefined : cards.find((a) => a.state === "ready" && !a.dependencies?.length);
-    const waits = this.quietHours ? "quiet hours" : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= PILOT.sessions ? `Sessions ${use.sessions}/${PILOT.sessions}` : "";
+    const pauses = this.pilot === "credits" ? [{ harness: "cursor", until: at + 2 * 3600, reason: "usage limit" }] : [];
+    const paused = pauses.some((p) => p.harness === this.harness);
+    const waits = this.quietHours ? "quiet hours" : paused ? `${this.harness} usage limit` : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= PILOT.sessions ? `Sessions ${use.sessions}/${PILOT.sessions}` : "";
+    const other = this.harness === "claude" ? "cursor" : "claude";
     return json({
       enabled: this.admitting,
+      harness: this.harness,
       quietHours: this.quietHours,
       sampledAt: at,
       dimensions: (Object.keys(PILOT) as (keyof typeof PILOT)[]).map((name) => ({ name, use: use[name], limit: PILOT[name] })),
       inFlight,
       next: this.admitting && pick ? { task: pick.id, title: pick.title ?? pick.id, verdict: waits ? "waits" : "starting", reason: waits } : null,
+      pauses,
+      sessionsByHarness: {
+        [this.harness]: { use: inFlight.length, limit: PILOT.sessions },
+        [other]: { use: 0, limit: this.harness === "claude" ? 2 : PILOT.sessions },
+      },
     });
   }
 
@@ -555,7 +578,7 @@ export function ensureDemoServer(): DemoServer | null {
   const query = new URLSearchParams(globalThis.location?.search ?? "");
   const refuseEdits = query.get("edit") === "refuse";
   const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
-  const autopilot = (["off", "over", "empty", "refused", "down", "quiet"] as const).find((state) => state === query.get("autopilot"));
+  const autopilot = (["off", "over", "empty", "refused", "down", "quiet", "credits"] as const).find((state) => state === query.get("autopilot"));
   const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
   const shaped = fixture ? shapeBoard(fixture, query.get("board")) : null; // `?board=no-archived|no-attention|unlisted|fourteen` reshapes the Board for a Star Map review
   if (!shaped) return null;

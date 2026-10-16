@@ -1,11 +1,20 @@
-// The Admin view's Autopilot card: the global switch, each capacity dimension's use against its limit, the next pick as text with why it
-// goes or waits, the count of sessions in flight and the quiet hours. Status arrives on /api/events; one GET syncs on view open. Off stops
-// admission; the card dims and counts the sessions still running from its last reading.
+// The Admin view's Autopilot card: the global switch, the harness Segments, each capacity dimension's use against its
+// limit, the next pick as text with why it goes or waits, the count of sessions in flight and the quiet hours. Status
+// arrives on /api/events; one GET syncs on view open. Off stops admission; the card dims and counts the sessions still
+// running from its last reading.
 import { useEffect, useSyncExternalStore } from "react";
 import { clockHm } from "../../shared/clock";
 import { useViewActive } from "../../shared/Kept";
 import type { QuietHoursStore } from "../admin/quietHours";
-import { level, type AutopilotStore, type Dimension, type NextPick } from "./autopilot";
+import {
+  level,
+  type AutopilotState,
+  type AutopilotStore,
+  type Dimension,
+  type HarnessOption,
+  type NextPick,
+  type Pause,
+} from "./autopilot";
 
 const pct = (d: Dimension) => `${Math.min(100, (d.used / d.limit) * 100)}%`;
 
@@ -61,8 +70,32 @@ function QuietRow({ store, clock }: { store: QuietHoursStore; clock: "24" | "12"
   );
 }
 
+/** Tooltip / hint for a credit pause: `credits until 14:00` in the Admin clock. */
+const creditHint = (pause: Pause | undefined, clock: "24" | "12") =>
+  pause ? `credits until ${clockHm(pause.until, clock)}` : "";
+
+function optionReason(h: HarnessOption, pauses: Pause[], clock: "24" | "12"): string | undefined {
+  const paused = pauses.find((p) => p.harness === h.name);
+  if (paused) return creditHint(paused, clock);
+  if (!h.sessions) return h.reason || "runs no sessions";
+  return undefined;
+}
+
+function labelOf(name: string, options: HarnessOption[]) {
+  return options.find((h) => h.name === name)?.label ?? name;
+}
+
+function capacityHint(current: AutopilotState, options: HarnessOption[]) {
+  const selected = labelOf(current.harness, options);
+  const other = Object.keys(current.sessionsByHarness).find((n) => n !== current.harness)
+    ?? options.find((h) => h.name !== current.harness)?.name;
+  if (!other) return `${selected}'s session cap`;
+  const row = current.sessionsByHarness[other] ?? { use: 0, limit: 0 };
+  return `${selected}'s session cap; ${labelOf(other, options)} ${Math.round(row.use)}/${row.limit} running`;
+}
+
 export function AutopilotCard({ store, quiet, clock }: { store: AutopilotStore; quiet: QuietHoursStore; clock: "24" | "12" }) {
-  const { current, phase, unavailable } = useSyncExternalStore(store.subscribe, store.get);
+  const { current, phase, unavailable, harnesses } = useSyncExternalStore(store.subscribe, store.get);
   const active = useViewActive();
   useEffect(() => {
     if (!active) return;
@@ -77,19 +110,37 @@ export function AutopilotCard({ store, quiet, clock }: { store: AutopilotStore; 
       </section>
     );
   }
-  const { on, dimensions, inFlight, next } = current;
+  const { on, dimensions, inFlight, next, harness, pauses } = current;
   const running = dimensions.find((d) => d.name === "sessions")?.used ?? inFlight?.length ?? 0;
+  const selectedPause = pauses.find((p) => p.harness === harness);
+  const selectedLabel = labelOf(harness, harnesses);
   return (
     <section className={`card ap${on ? "" : " off"}`}>
       {head}
       <div className="row">
-        <div><div className="lb">Admission</div><div className="hint">Off starts nothing; sessions already running continue</div></div>
+        <div>
+          <div className="lb">Admission</div>
+          <div className="hint">Off starts nothing; sessions already running continue. Starts on the picked harness.</div>
+        </div>
         <div>
           <div className="hours">
             <button type="button" className="sw" role="switch" aria-checked={on} aria-label="Autopilot" disabled={phase.kind === "saving"}
               onClick={() => void store.setOn(!on)} />
             <span className="state">{on ? "On" : "Paused"}</span>
+            {harnesses.length > 1 && (
+              <span className="seg" role="radiogroup" aria-label="Harness">
+                {harnesses.map((h) => {
+                  const reason = optionReason(h, pauses, clock);
+                  return (
+                    <button key={h.name} type="button" role="radio" aria-pressed={h.name === harness}
+                      disabled={!!reason || phase.kind === "saving"} title={reason}
+                      onClick={() => void store.setHarness(h.name)}>{h.label}</button>
+                  );
+                })}
+              </span>
+            )}
           </div>
+          {selectedPause && <div className="hint">{creditHint(selectedPause, clock)}</div>}
           {phase.kind === "refused" && (
             <div className="refusal" role="alert">
               <div className="k">the server refused the change</div><div className="via">{phase.reason}<button type="button" className="dismiss" aria-label="Dismiss" onClick={() => store.dismiss()}>✕</button></div>
@@ -98,7 +149,7 @@ export function AutopilotCard({ store, quiet, clock }: { store: AutopilotStore; 
         </div>
       </div>
       <div className="row">
-        <div><div className="lb">Capacity</div><div className="hint">Use against the limit autopilot admits under</div></div>
+        <div><div className="lb">Capacity</div><div className="hint">{capacityHint(current, harnesses)}</div></div>
         <div className="dims">{dimensions.map((d) => <Meter key={d.name} d={d} />)}</div>
       </div>
       <div className="row">
@@ -106,7 +157,7 @@ export function AutopilotCard({ store, quiet, clock }: { store: AutopilotStore; 
         <Next on={on} next={next} />
       </div>
       <div className="row">
-        <div><div className="lb">In flight</div><div className="hint">Autopilot's sessions running now</div></div>
+        <div><div className="lb">In flight</div><div className="hint">Autopilot's sessions running now on {selectedLabel}</div></div>
         <div className="inflight">{running} running</div>
       </div>
       <QuietRow store={quiet} clock={clock} />

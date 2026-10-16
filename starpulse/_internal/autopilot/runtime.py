@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from starpulse._internal.autopilot.harness_setting import HarnessSetting
 from starpulse._internal.autopilot.inputs import review_points, sessions_in_flight
 from starpulse._internal.autopilot.ledger import LEDGER_FILE, Ledger
 from starpulse._internal.autopilot.loop import Loop
@@ -36,6 +37,8 @@ class Runtime:
     toggle: Toggle
     sampler: Sampler
     quiet_hours: QuietHoursSetting
+    harness: HarnessSetting
+    policy: Autopilot
     loop: Loop | None = None
     _push_status: Callable[[], None] | None = None
 
@@ -54,22 +57,44 @@ class Runtime:
             self.loop.wake()
         self.push_status()
 
-    def status(self) -> dict[str, Any]:
-        """Whether admission is on, when capacity was last sampled, and each dimension's use against its limit.
+    def set_harness(self, raw: object) -> None:
+        """Keep the harness the loop starts on; a bad name raises ValueError. Wakes the loop so the next pick follows."""
+        self.harness.set(raw)
+        if self.loop is not None:
+            self.loop.wake()
+        self.push_status()
 
-        With a dispatch loop it also lists the sessions in flight and the next pick (null when none); without one the
-        server has neither to say, so the keys are absent.
+    def status(self) -> dict[str, Any]:
+        """Whether admission is on, which harness it starts on, when capacity was last sampled, and each dimension.
+
+        With a dispatch loop it also lists the sessions in flight, the next pick, per-harness session use and any
+        credit pauses; without one those keys are absent.
         """
         readings, at = self.sampler.readings()
+        selected = self.harness.get()
+        dimensions = []
+        for reading in readings:
+            if reading.name == "sessions" and self.loop is not None:
+                by = self.loop.sessions_by_harness()
+                row = by.get(selected, {"use": 0.0, "limit": self.policy.session_limit(selected)})
+                dimensions.append({"name": "sessions", "use": row["use"], "limit": row["limit"]})
+            elif reading.name == "sessions":
+                dimensions.append(
+                    {"name": "sessions", "use": reading.use, "limit": self.policy.session_limit(selected)}
+                )
+            else:
+                dimensions.append({"name": reading.name, "use": reading.use, "limit": reading.limit})
         body: dict[str, Any] = {
             "enabled": self.toggle.get(),
+            "harness": selected,
             "quietHours": self.quiet_hours.state(),
             "sampledAt": at,
-            "dimensions": [{"name": r.name, "use": r.use, "limit": r.limit} for r in readings],
+            "dimensions": dimensions,
         }
         if self.loop is not None:
             body["inFlight"] = self.loop.in_flight()
             body["next"] = self.loop.next_pick()
+            body["sessionsByHarness"] = self.loop.sessions_by_harness()
             if pauses := self.loop.pauses():
                 body["pauses"] = pauses
         return body
@@ -118,7 +143,7 @@ def build(
     on_crossing: Callable[[Crossing], object] = log_crossing,
     clock: Callable[[], float] = time.time,
     *,
-    start: Callable[[str], str] | None = None,
+    start: Callable[..., str] | None = None,
     settle: Callable[[str, str], Written] | None = None,
     claim: Callable[[str, str], Written] | None = None,
     chain: Callable[[], Mapping[str, Mapping[str, Any]]] = dict,
@@ -159,6 +184,7 @@ def build(
             pass  # a malformed row is a missing sample; the first live pass is the baseline
     toggle = Toggle(log, state_dir / TOGGLE_FILE)
     quiet_hours = QuietHoursSetting(log)
+    harness = HarnessSetting(log)
     if start is not None and settle is not None:
         loop = Loop(
             feed=feed,
@@ -175,5 +201,6 @@ def build(
             clock=clock,
             quiet_hours=quiet_hours.get,
             log=log,
+            harness=harness,
         )
-    return Runtime(toggle, sampler, quiet_hours, loop)
+    return Runtime(toggle, sampler, quiet_hours, harness, policy, loop)

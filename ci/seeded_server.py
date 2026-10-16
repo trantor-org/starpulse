@@ -180,7 +180,7 @@ def autopilot(directory: Path, log: EventLog, feed: BoardFeed, policy: Autopilot
         log,
         feed,
         lambda: HOST,
-        start=lambda task: "",
+        start=lambda task, **_: "",
         settle=lambda task, reason: Written(True, ""),
         lane=policy.eligible_lane(next(s["id"] for s in feed.machines["board"]["states"] if s.get("initial"))),
     )

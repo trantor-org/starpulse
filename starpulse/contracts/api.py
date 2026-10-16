@@ -1422,13 +1422,22 @@ class QuietHours(_Api):
     timezone: str = Field(description="The IANA zone the window's times are read in, such as America/Phoenix.")
 
 
+class AutopilotHarnessSessions(_Api):
+    """One harness's autopilot sessions in flight against its own session cap."""
+
+    use: float
+    limit: float
+
+
 class AutopilotStatus(_Api):
     """Whether the autopilot admits tasks, and the capacity strip's readings; no dimensions before the first sample.
 
-    `inFlight` and `next` are served only by a server that runs a dispatch loop; without one they are absent.
+    `inFlight`, `next` and `sessionsByHarness` are served only by a server that runs a dispatch loop; without one they
+    are absent.
     """
 
     enabled: bool
+    harness: str = Field(description="The harness the loop starts sessions on; defaults to claude.")
     quietHours: QuietHours | None = Field(default=None, description="Null when no window holds admission back.")
     sampledAt: float | None
     dimensions: list[AutopilotDimension]
@@ -1439,6 +1448,10 @@ class AutopilotStatus(_Api):
     pauses: list[AutopilotPause] = Field(
         default_factory=list,
         description="Harnesses whose admission is paused until `until`. Absent when none are paused.",
+    )
+    sessionsByHarness: dict[str, AutopilotHarnessSessions] = Field(
+        default_factory=dict,
+        description="Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.",
     )
 
 
@@ -1701,9 +1714,10 @@ class ForwardingRequest(_Api):
 
 
 class AutopilotRequest(_Api):
-    """`PUT /api/autopilot`: whether the autopilot admits tasks, its quiet hours (null clears them), or both."""
+    """`PUT /api/autopilot`: whether the autopilot admits tasks, which harness it starts on, and/or its quiet hours."""
 
     enabled: bool | None = None
+    harness: str | None = None
     quietHours: QuietHours | None = None
 
 

@@ -32,7 +32,7 @@ describe("the Admin view", () => {
   });
 
   it("draws an Autopilot card holding the switch and autopilot's quiet hours, on and in the window's zone, and the Server card holds neither", async () => {
-    const status = { enabled: true, quietHours: { start: "22:00", end: "07:00", timezone: "America/Phoenix" }, sampledAt: null, dimensions: [] };
+    const status = { enabled: true, harness: "claude", quietHours: { start: "22:00", end: "07:00", timezone: "America/Phoenix" }, sampledAt: null, dimensions: [] };
     vi.stubGlobal("fetch", vi.fn(async (url: string) => (String(url).endsWith("/api/autopilot") ? new Response(JSON.stringify(status)) : new Response("{}", { status: 503 }))));
 
     await act(async () => root.render(<AdminPage store={new AdminStore()} window={new HistoryWindowStore()} forwarding={new ForwardingStore()} hint={null} />));

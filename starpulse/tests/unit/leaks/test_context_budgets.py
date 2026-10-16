@@ -100,7 +100,7 @@ def _autopilot_step(tmp_path: Path) -> tuple[Callable[[], None], list[int]]:
     )
     log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
 
-    def start(task_id: str) -> str:
+    def start(task_id: str, *, harness: str = "claude") -> str:
         starts[0] += 1
         return f"https://claude.ai/code/{task_id}"
 

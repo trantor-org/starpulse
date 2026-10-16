@@ -63,6 +63,7 @@ def test_a_get_reports_every_dimensions_use_and_limit_and_that_the_autopilot_is_
     assert status == 200
     assert body == {
         "enabled": False,
+        "harness": "claude",
         "quietHours": None,
         "sampledAt": 1000.0,
         "dimensions": [
@@ -77,7 +78,7 @@ def test_a_get_reports_every_dimensions_use_and_limit_and_that_the_autopilot_is_
 def test_a_get_before_the_first_sample_has_no_readings(tmp_path: Path) -> None:
     assert autopilot("127.0.0.1", "GET", b"", _runtime(tmp_path)) == (
         200,
-        {"enabled": False, "quietHours": None, "sampledAt": None, "dimensions": []},
+        {"enabled": False, "harness": "claude", "quietHours": None, "sampledAt": None, "dimensions": []},
     )
 
 
@@ -143,7 +144,7 @@ def _looping(tmp_path: Path) -> Runtime:
         feed,
         probe=lambda: {"cpu": 5.0, "memory": 5.0},
         clock=lambda: 1000.0,
-        start=lambda task: f"https://claude.ai/code/{task}",
+        start=lambda task, **_: f"https://claude.ai/code/{task}",
         settle=lambda task, reason: Written(True, task),
         lane="ready",
     )
@@ -188,7 +189,7 @@ def test_a_get_with_a_loop_names_a_harness_usage_pause(tmp_path: Path) -> None:
         )
     )
 
-    def refuse(task: str) -> str:
+    def refuse(task: str, **_: object) -> str:
         raise StartFailedError("You've hit your weekly limit · resets 9pm (UTC)")
 
     runtime = build(
@@ -226,6 +227,23 @@ def test_every_body_the_route_serves_is_one_the_contract_names(tmp_path: Path) -
 
 # The runtimes' clock reads 1000.0: 00:16:40 UTC, inside this window.
 QUIET = {"start": "00:00", "end": "01:00", "timezone": "UTC"}
+
+
+def test_a_get_defaults_the_harness_to_claude_and_a_put_selects_another(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    assert autopilot("127.0.0.1", "GET", b"", runtime)[1]["harness"] == "claude"
+    assert _put(runtime, {"harness": "cursor"})[1]["harness"] == "cursor"
+    assert autopilot("127.0.0.1", "GET", b"", _runtime(tmp_path))[1]["harness"] == "cursor"
+
+
+def test_a_put_with_an_empty_harness_is_a_400(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    status, body = _put(runtime, {"harness": ""})
+
+    assert status == 400 and "harness" in body["error"]
+    assert runtime.harness.get() == "claude"
 
 
 def test_a_put_sets_the_quiet_hours_a_restart_keeps_them_and_null_clears_them(tmp_path: Path) -> None:

@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { ROUTES } from "../../demo/demo";
 import { AutopilotStore, level, type Dimension } from "./autopilot";
 
-/** What `GET /api/autopilot` answers today: the switch, when the sampler last read, and each dimension's use against its limit. */
+/** What `GET /api/autopilot` answers today: the switch, harness, when the sampler last read, and each dimension's use against its limit. */
 const STATUS = {
   enabled: true,
+  harness: "claude",
   sampledAt: 100,
   dimensions: [
     { name: "cpu", use: 41, limit: 80 },
@@ -13,23 +14,41 @@ const STATUS = {
     { name: "review", use: 13, limit: 24 },
   ],
 };
+const HARNESSES = {
+  tiers: ["fast", "standard"],
+  harnesses: [
+    { name: "claude", label: "Claude Code", sessions: true, reason: "", tiers: {} },
+    { name: "cursor", label: "Cursor", sessions: true, reason: "", tiers: {} },
+  ],
+};
 const IN_FLIGHT = [{ task: "TASK-1", title: "First", model: "opus · high", started: 40, url: "#demo-session-0001" }];
 const NEXT = { task: "TASK-2", title: "Second", verdict: "waits", reason: "Sessions 4/4" };
 
 const answer = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
 
-/** A server that keeps the switch as the route does: a PUT sets it and the answer follows it; anything but a boolean is refused. */
+/** A server that keeps the switch and harness as the route does: a PUT sets them and the answer follows; a bad body is refused. */
 function server(opts: { down?: boolean; body?: unknown; status?: number } = {}) {
   let enabled = true;
-  return vi.fn<typeof fetch>((_url, init) => {
+  let harness = "claude";
+  return vi.fn<typeof fetch>((url, init) => {
     if (opts.down) return Promise.reject(new Error("offline"));
+    if (String(url).endsWith("/api/harnesses")) return answer(HARNESSES);
     if (opts.body !== undefined) return answer(opts.body, opts.status);
     if (init?.method === "PUT") {
-      const sent = (JSON.parse(String(init.body)) as { enabled: unknown }).enabled;
-      if (typeof sent !== "boolean") return answer({ error: 'the autopilot takes {"enabled": true} or {"enabled": false}' }, 400);
-      enabled = sent;
+      const sent = JSON.parse(String(init.body)) as { enabled?: unknown; harness?: unknown };
+      if (sent.enabled !== undefined && typeof sent.enabled !== "boolean") {
+        return answer({ error: 'the autopilot takes {"enabled": true} or {"enabled": false}' }, 400);
+      }
+      if (sent.harness !== undefined && (typeof sent.harness !== "string" || !sent.harness)) {
+        return answer({ error: "harness must be a non-empty string" }, 400);
+      }
+      if (sent.enabled === undefined && sent.harness === undefined) {
+        return answer({ error: "the autopilot takes enabled and/or harness" }, 400);
+      }
+      if (typeof sent.enabled === "boolean") enabled = sent.enabled;
+      if (typeof sent.harness === "string") harness = sent.harness;
     }
-    return answer({ ...STATUS, enabled });
+    return answer({ ...STATUS, enabled, harness });
   });
 }
 
@@ -41,6 +60,7 @@ describe("the Autopilot card's store", () => {
 
     const current = store.get().current!;
     expect(current.on).toBe(true);
+    expect(current.harness).toBe("claude");
     expect(current.dimensions.map((d) => [d.name, d.label, d.used, d.limit, d.unit])).toEqual([
       ["cpu", "CPU", 41, 80, "%"],
       ["memory", "RAM", 58, 85, "%"],
@@ -49,6 +69,31 @@ describe("the Autopilot card's store", () => {
     ]);
     expect(current.dimensions[0].detail).toContain("80%");
     expect(store.get().unavailable).toBe("");
+    expect(store.get().harnesses.map((h) => h.name)).toEqual(["claude", "cursor"]);
+  });
+
+  it("defaults the harness to claude and carries pauses and per-harness session use when the server serves them", async () => {
+    const pauses = [{ harness: "claude", until: 75_600, reason: "usage limit" }];
+    const sessionsByHarness = { claude: { use: 1, limit: 3 }, cursor: { use: 0, limit: 2 } };
+    const store = new AutopilotStore(server({
+      body: { ...STATUS, harness: undefined, pauses, sessionsByHarness },
+    }));
+
+    await store.load();
+
+    expect(store.get().current).toMatchObject({ harness: "claude", pauses, sessionsByHarness });
+  });
+
+  it("selects another harness with a PUT and shows the answer", async () => {
+    const fetcher = server();
+    const store = new AutopilotStore(fetcher);
+    await store.load();
+
+    await store.setHarness("cursor");
+
+    expect(fetcher).toHaveBeenLastCalledWith("/api/autopilot", { method: "PUT", body: JSON.stringify({ harness: "cursor" }) });
+    expect(store.get().current?.harness).toBe("cursor");
+    expect(store.get().phase).toEqual({ kind: "idle" });
   });
 
   it("has no session list and no pick while the server serves neither", async () => {

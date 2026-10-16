@@ -26,12 +26,15 @@ def builtin_starter(
 ) -> Callable[..., str]:
     """Start a task's session in a detached tmux session started in `cwd` and answer `tmux:<session name>`.
 
-    A missing `tmux` or `claude`, or a tmux that exits non-zero, raises `StartFailedError` naming the cause.
-    Autopilot stays Claude-only: `harness` and `mode` are accepted so the seam matches `session_start_url` and ignored.
+    A missing `tmux` or `claude`, or a tmux that exits non-zero, raises `StartFailedError` naming the cause. It starts
+    only Claude: another `harness` raises `StartFailedError` naming `session_start_url`, the seam that dispatches one.
+    `mode` is accepted so the seam matches `session_start_url` and ignored.
     """
 
     def start(task: str, *, harness: str = "claude", mode: str = "interactive") -> str:
-        _ = harness, mode
+        _ = mode
+        if harness != "claude":
+            raise StartFailedError(f"the built-in starter starts only claude; set session_start_url to start {harness}")
         if missing := next((name for name in _BINARIES if which(name) is None), None):
             raise StartFailedError(f"the built-in starter needs {missing} on PATH")
         name = f"starpulse-{task}"

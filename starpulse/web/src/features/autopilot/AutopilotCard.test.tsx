@@ -18,21 +18,37 @@ const SESSIONS = [
   { task: "TASK-12", title: "Move the tracker card", model: "sonnet · high", started: NOW - 37 * 60, url: "#demo-session-0012" },
 ];
 const NEXT = { task: "TASK-21", title: "Next up", verdict: "starting", reason: "" };
+const HARNESSES = {
+  tiers: ["fast", "standard"],
+  harnesses: [
+    { name: "claude", label: "Claude Code", sessions: true, reason: "", tiers: {} },
+    { name: "cursor", label: "Cursor", sessions: true, reason: "", tiers: {} },
+  ],
+};
+const BY_HARNESS = { claude: { use: 2, limit: 3 }, cursor: { use: 0, limit: 2 } };
 
-let host: HTMLDivElement, root: Root, enabled: boolean, status: () => unknown, fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
+let host: HTMLDivElement, root: Root, enabled: boolean, harness: string, status: () => unknown, fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
 const reply = (body: unknown, code = 200) => Promise.resolve(new Response(JSON.stringify(body), { status: code }));
 const settle = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
 const q = <T extends Element = HTMLElement>(sel: string) => host.querySelector<T>(sel);
 const SWITCH = '[role="switch"][aria-label="Autopilot"]';
+const HARNESS = '[role="radiogroup"][aria-label="Harness"]';
 
 async function draw(body: Record<string, unknown> = {}, opts: { put?: () => Promise<Response>; down?: boolean } = {}) {
   enabled = (body.enabled as boolean | undefined) ?? true;
-  status = () => ({ sampledAt: NOW, dimensions: dims(), inFlight: SESSIONS, next: NEXT, quietHours: null, ...body, enabled });
-  fetcher = vi.fn<typeof fetch>((_url, init) => {
+  harness = (body.harness as string | undefined) ?? "claude";
+  status = () => ({
+    sampledAt: NOW, dimensions: dims(), inFlight: SESSIONS, next: NEXT, quietHours: null,
+    sessionsByHarness: BY_HARNESS, pauses: [], ...body, enabled, harness,
+  });
+  fetcher = vi.fn<typeof fetch>((url, init) => {
+    if (String(url).endsWith("/api/harnesses")) return reply(HARNESSES);
     if (opts.down) return reply({ error: "This server has no autopilot." }, 404);
     if (init?.method === "PUT") {
       if (opts.put) return opts.put();
-      enabled = (JSON.parse(String(init.body)) as { enabled: boolean }).enabled;
+      const sent = JSON.parse(String(init.body)) as { enabled?: boolean; harness?: string };
+      if (typeof sent.enabled === "boolean") enabled = sent.enabled;
+      if (typeof sent.harness === "string") harness = sent.harness;
     }
     return reply(status());
   });
@@ -64,6 +80,39 @@ describe("the Admin view's Autopilot card", () => {
     const meters = [...host.querySelectorAll(".dm")].map((m) => m.querySelector(".r")?.textContent);
     expect(meters).toEqual(["CPU41/80%", "RAM58/85%", "Sessions2/4", "Review13/24 pts"]);
     expect(q(".ap.off")).toBeNull();
+  });
+
+  it("offers harness Segments beside On/Paused and selects another with a PUT", async () => {
+    await draw();
+
+    const radios = [...host.querySelectorAll(`${HARNESS} [role="radio"]`)] as HTMLButtonElement[];
+    expect(radios.map((b) => [b.textContent, b.getAttribute("aria-pressed"), b.disabled])).toEqual([
+      ["Claude Code", "true", false],
+      ["Cursor", "false", false],
+    ]);
+    expect(q(".hint")?.textContent).toContain("Starts on the picked harness");
+
+    await act(async () => radios[1].click());
+    await settle();
+
+    expect(fetcher).toHaveBeenCalledWith("/api/autopilot", { method: "PUT", body: JSON.stringify({ harness: "cursor" }) });
+    expect(radios[1].getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("disables an exhausted harness and scopes the Sessions meter hint to the selection", async () => {
+    await draw({
+      pauses: [{ harness: "claude", until: 75_600, reason: "usage limit" }],
+      harness: "cursor",
+      dimensions: dims({ sessions: 0 }),
+      sessionsByHarness: { claude: { use: 1, limit: 3 }, cursor: { use: 0, limit: 2 } },
+    });
+
+    const claude = host.querySelector(`${HARNESS} [role="radio"]`) as HTMLButtonElement;
+    expect(claude.disabled).toBe(true);
+    expect(claude.title).toContain("credits until");
+    expect(host.textContent).toContain("Cursor's session cap");
+    expect(host.textContent).toMatch(/Claude Code 1\/3 running/);
+    expect(q(".inflight")?.closest(".row")?.querySelector(".hint")?.textContent).toContain("on Cursor");
   });
 
   it("prints a fractional use as a whole number, and still fills its bar to the fraction", async () => {

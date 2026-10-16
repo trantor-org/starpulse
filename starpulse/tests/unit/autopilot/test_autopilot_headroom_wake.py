@@ -39,7 +39,7 @@ def test_a_task_refused_for_headroom_starts_when_a_sample_leaves_room_with_nothi
     host = {"cpu": 70.0, "memory": 5.0}
     started: list[str] = []
 
-    def start(task: str) -> str:
+    def start(task: str, **_: object) -> str:
         started.append(task)
         return f"https://claude.ai/code/{task}"
 
