@@ -114,11 +114,13 @@ def test_a_pin_bump_settle_holds_the_dependent_until_the_pin_bump_merge_projects
     store.save([pull(10, state="MERGED", repo="acme/starpulse", sha=CHILD)])
     actor = running(board, store, stop, repos=REPOS, settle="pin-bump", pins=Pins())
     assert board.moved() == []
+    assert "\nstarpulse_task_actor_pin_held 1\n" in actor.exposition()
 
     store.save([pull(11, state="MERGED", sha=PARENT, files=("starpulse",))])
     actor.pulls_changed()
 
     assert until(lambda: board.moved() == [("TASK-2", "ready")])
+    assert "\nstarpulse_task_actor_pin_held 0\n" in actor.exposition()
 
 
 def test_a_review_task_whose_pr_merged_while_the_server_was_down_moves_on_start(

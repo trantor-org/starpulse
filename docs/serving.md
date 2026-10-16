@@ -565,6 +565,8 @@ A write the board refuses is logged and counted, and is not retried until the ta
 - `starpulse_task_actor_latency_seconds`: a histogram of the seconds from the fact being observed to the write landing.
 - `starpulse_task_actor_criteria_errors{task}`: the Start Criteria of a gated task that could not be evaluated; such a
   gate never passes.
+- `starpulse_task_actor_pin_held`: a gauge of Waiting tasks whose dependencies are done but wait for a pin bump to
+  settle (`Settlement.unapplied`); one that stays above 0 is a pin that never settles.
 
 
 ## Event log archive

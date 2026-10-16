@@ -43,6 +43,7 @@ ACTOR = "starpulse/task-actor"
 _TERMINAL = ("MERGED", "CLOSED")
 REFUSALS_METRIC = "starpulse_task_actor_refusals_total"
 CRITERIA_ERRORS_METRIC = "starpulse_task_actor_criteria_errors"
+PIN_HELD_METRIC = "starpulse_task_actor_pin_held"
 #: The facts read from a task's evaluated Start Criteria.
 _CRITERIA_FACTS = ("criteria_met", "criteria_unmet")
 LATENCY_METRIC = "starpulse_task_actor_latency_seconds"
@@ -127,6 +128,7 @@ class TaskActor:
             errors = {
                 name: sum(status == "error" for _, status in statuses) for name, (_, statuses) in self._results.items()
             }
+            pin_held = len(self._pin_held)
         samples = [
             f'{LATENCY_METRIC}_bucket{{le="{bound:g}"}} {count}'
             for bound, count in zip(BUCKETS_S, counts, strict=False)
@@ -142,6 +144,9 @@ class TaskActor:
                 f'{LATENCY_METRIC}_bucket{{le="+Inf"}} {counts[-1]}',
                 f"{LATENCY_METRIC}_sum {total:g}",
                 f"{LATENCY_METRIC}_count {counts[-1]}",
+                f"# HELP {PIN_HELD_METRIC} Waiting tasks whose dependencies are done but wait for a pin bump to settle.",
+                f"# TYPE {PIN_HELD_METRIC} gauge",
+                f"{PIN_HELD_METRIC} {pin_held}",
                 f"# HELP {CRITERIA_ERRORS_METRIC} Start Criteria the evaluator could not evaluate, per gated task; such a gate never passes.",
                 f"# TYPE {CRITERIA_ERRORS_METRIC} gauge",
                 *(
