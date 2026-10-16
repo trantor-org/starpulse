@@ -162,8 +162,9 @@ def test_the_board_feed_logs_under_its_public_path() -> None:
     assert importlib.import_module("starpulse._internal.feed.board_feed").logger.name == "starpulse.board_feed"
 
 
-#: Test directories under a tier that mirror no `_internal` package: the public `contracts` package and the public surface.
-TEST_DIRECTORIES_OTHER = {"contracts"}
+#: Test directories under a tier that mirror no `_internal` package: the public `contracts` package and the public
+#: surface, and the `leaks` gate that measures memory across every feature.
+TEST_DIRECTORIES_OTHER = {"contracts", "leaks"}
 
 
 def _misplaced_tests(tests: Path, features: set[str]) -> set[str]:
