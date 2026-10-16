@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -106,3 +107,73 @@ def test_a_note_set_before_a_restart_names_its_writer_on_the_first_place_after_i
     entry = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "review"][0]
 
     assert (entry.fields.get("actor"), entry.fields.get("session")) == ("agent", "s1")
+
+
+def test_a_note_set_after_resuming_a_saved_board_is_saved_by_the_stop_and_names_its_writer_after_it(
+    tmp_path: Path,
+) -> None:
+    """A feed that resumed a saved Board kept its notes in the dict it compared the saved ones by, so the stop's save
+    saw no change and dropped the note: TASK-5601 entered Done at 07:47:14 on 2026-10-15, written before the restart
+    and placed after it, with no actor."""
+    board, log = _BoardStore(), EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    first = BoardFeed(machines=MACHINES)
+    first.resume(board, "board:tasks", lambda cursor: True)
+    first.put(_task("review", "t", 100.0))
+    first.seen("7-0")
+    first.save()
+
+    running = BoardFeed(machines=MACHINES)
+    running.resume(board, "board:tasks", lambda cursor: True)  # the service the restart stops resumed a saved Board
+    running.note_actor("T-1", "starpulse/task-actor")  # written, not yet placed when the service stops
+    running.save()  # the stop's last save
+
+    after = BoardFeed(machines=MACHINES)
+    after.record_lanes(history, log)
+    after.resume(board, "board:tasks", lambda cursor: True)
+    after.put(_task("done", "t", 120.0))
+
+    entry = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "done"][0]
+
+    assert entry.fields.get("actor") == "starpulse/task-actor"
+
+
+class _ReconcilingIndex:
+    """A search index whose `index` runs the start's lane reconcile on its own thread, as the lane-reconcile thread
+    does while the watch places a change, and gives it a moment to finish."""
+
+    def __init__(self, feed: BoardFeed, history: HistoryStore) -> None:
+        self.feed, self.history = feed, history
+        self.workers: list[threading.Thread] = []
+
+    def index(self, task: BoardTask, done_at: float | None) -> None:
+        worker = threading.Thread(target=lambda: self.feed.reconcile_lanes(self.history.current_lanes()))
+        self.workers.append(worker)
+        worker.start()
+        worker.join(0.5)
+
+    def retract(self, task_id: str) -> None:
+        pass
+
+
+def test_the_starts_lane_reconcile_running_while_a_change_is_placed_leaves_the_change_to_name_its_writer(
+    tmp_path: Path,
+) -> None:
+    """TASK-5577 entered In Progress at 11:07:20 on 2026-10-16, as the start's reconcile ran, in a bare entry: the
+    reconcile recorded the change the watch had placed but not yet recorded, so the watch's entry, naming the claim's
+    writer, was a repeat it dropped."""
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    history = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", MACHINES)
+    feed = BoardFeed(machines=MACHINES)
+    feed.record_lanes(history, log)
+    feed.put(_task("ready", "t", 100.0))
+    index = _ReconcilingIndex(feed, history)
+    feed.index_tasks(index)
+    feed.note_actor("T-1", "agent", "s1", "claude")
+    feed.put(_task("in_progress", "t", 110.0))
+    for worker in index.workers:
+        worker.join()
+
+    entries = [e for e in Tail(log, lane_events.STREAM).poll() if e.fields["lane"] == "in_progress"]
+
+    assert [(e.fields.get("actor"), e.fields.get("session")) for e in entries] == [("agent", "s1")]
