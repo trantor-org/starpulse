@@ -232,7 +232,8 @@ class PullSync:
     """Keeps `store` current from GitHub for every repository worth asking about, and after each read hands the
     Board its tasks' pull requests (`project`, `PullRequests.refresh`). The periodic loop is listing reconcile
     (drift-only full refresh); `refresh` still walks open PR detail. A pull request named to `request` is read
-    alone on this same thread as soon as it is asked for."""
+    alone on this same thread as soon as it is asked for. Setting `stop` ends the loops `run_forever` runs and the
+    pass in hand at its next repository."""
 
     def __init__(
         self,
@@ -242,6 +243,7 @@ class PullSync:
         graphql: Callable[[str, str], dict] = query_github,
         clock: Callable[[], float] = time.time,
         project: Callable[[], None] | None = None,
+        stop: threading.Event | None = None,
     ) -> None:
         self._store = store
         self._feed = feed
@@ -249,6 +251,7 @@ class PullSync:
         self._graphql = graphql
         self._clock = clock
         self._project = project
+        self._stop = stop or threading.Event()
         self._requests: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
         self._wake = threading.Event()
         self._projection = threading.Event()
@@ -277,6 +280,8 @@ class PullSync:
         repository in hand, so this projection carries it."""
         linked = self._linked()
         for repo in self.tracked():
+            if self._stop.is_set():
+                return
             try:
                 refresh_repository(repo, self._store, self._clock(), self._graphql, linked.get(repo, ()))
             except GhUnavailableError as exc:
@@ -293,6 +298,8 @@ class PullSync:
         Queued single-PR requests still run, then the Board is projected from the store."""
         linked = self._linked()
         for repo in self.tracked():
+            if self._stop.is_set():
+                return
             try:
                 cited = linked.get(repo, ())
                 if listing_drifted(repo, self._store, self._graphql, cited):
@@ -341,7 +348,7 @@ class PullSync:
     def _idle(self, seconds: float) -> None:  # pragma: no mutate block — timer loop
         """Wait `seconds` for the next refresh, serving each request as it arrives."""
         deadline = time.monotonic() + seconds
-        while (left := deadline - time.monotonic()) > 0:
+        while not self._stop.is_set() and (left := deadline - time.monotonic()) > 0:
             self._wake.wait(left)
             self._wake.clear()  # before the drain: a request queued after it sets the event again
             self.serve_requests()
@@ -363,20 +370,28 @@ class PullSync:
 
     def _project_forever(self) -> None:  # pragma: no mutate block — timer loop
         """Project whenever asked, asks made meanwhile coalescing into one run."""
-        while True:
+        while not self._stop.is_set():
             self._projection.wait()
             self._projection.clear()
-            self._project_now()
+            if not self._stop.is_set():
+                self._project_now()
+
+    def _wake_on_stop(self) -> None:  # pragma: no mutate block — timer loop
+        """Wake the loops that wait on an event of their own once `stop` is set."""
+        self._stop.wait()
+        self._wake.set()
+        self._projection.set()
 
     def run_forever(self, interval_s: float = REFRESH_S) -> None:  # pragma: no mutate block — timer loop
         """Once the Board replay is done, so the first projection sees every task, project what the store already
         holds, then reconcile every `interval_s` (listing drift backstop; full detail only on miss/drift/push).
         Projection runs on its own thread: a cold pin memo makes it walk hundreds of `gh` reads, and the
         reconcile must not wait behind that."""
+        threading.Thread(target=self._wake_on_stop, name="pull-stop", daemon=True).start()
         self._feed.wait_replayed()
         self._projecting = True
         threading.Thread(target=self._project_forever, name="pull-project", daemon=True).start()
         self.project()
-        while True:
+        while not self._stop.is_set():
             self.reconcile()
             self._idle(interval_s)

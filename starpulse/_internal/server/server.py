@@ -2137,7 +2137,7 @@ def start_delivery(
             project = _then(project, actor.pulls_changed)
         if after_project:
             project = _then(project, after_project)
-        sync = PullSync(pulls, feed, config.repos, project=project)
+        sync = PullSync(pulls, feed, config.repos, project=project, stop=stop)
         threading.Thread(target=sync.run_forever, name="pull-store", daemon=True).start()
     if config.release is not None:
         lanes = {state["id"] for state in feed.machines["board"]["states"]}
@@ -2145,20 +2145,22 @@ def start_delivery(
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
         if actor is None:  # the actor settles and releases on the facts, so the polling pass would only repeat it
             releaser = Releaser(feed, pulls, board.edit, config.repos, config.release.settle, pins)
-            threading.Thread(target=_keep_released, args=(releaser, feed), name="board-release", daemon=True).start()
+            threading.Thread(target=_keep_released, args=(releaser, feed, stop), name="board-release", daemon=True).start()
     return actor, sync
 
 
-def _keep_released(releaser: Releaser, feed: BoardFeed, interval_s: float = RELEASE_S) -> None:  # pragma: no mutate block
-    """Once the Board replay is done, release the Waiting tasks whose dependencies settled every `interval_s` seconds;
-    a failed pass is logged and never ends the loop."""
+def _keep_released(
+    releaser: Releaser, feed: BoardFeed, stop: threading.Event, interval_s: float = RELEASE_S
+) -> None:  # pragma: no mutate block
+    """Once the Board replay is done, release the Waiting tasks whose dependencies settled every `interval_s` seconds
+    until `stop`; a failed pass is logged and never ends the loop."""
     feed.wait_replayed()
-    while True:
+    while not stop.is_set():
         try:
             releaser.release()
         except Exception:
             logger.exception("release: the pass failed")
-        time.sleep(interval_s)
+        stop.wait(interval_s)
 
 
 def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — serve_forever process boundary
