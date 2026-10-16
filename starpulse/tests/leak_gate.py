@@ -63,6 +63,12 @@ def retained_bytes(step: Callable[[], None], iterations: int) -> int:
 def check(context: str, step: Callable[[], None], budget: Budget) -> int:
     """Run `step` under memray; raise `LeakBudgetExceededError` naming `context` when it retains over `budget`."""
     retained = retained_bytes(step, budget.iterations)
+    if retained > budget.retained_bytes:
+        message = (
+            f"{context}: retained {retained} B over {budget.iterations} iterations, "
+            f"budget {budget.retained_bytes} B exceeded"
+        )
+        raise LeakBudgetExceededError(message)
     return retained
 
 
