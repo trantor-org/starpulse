@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import subprocess
+import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
@@ -25,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 _PULL = re.compile(r"https://github\.com/([^/\s]+)/([^/\s]+)/pull/\d+/?")
 _GH_TIMEOUT_S = 30
+#: Seconds a read of a default branch's head commit is reused; the branch moves, so it is never saved.
+_HEAD_TTL_S = 60.0
 #: `compare` statuses meaning the pointer's commit is, or descends from, the compared merge.
 _CONTAINS = {"ahead", "identical"}
 _COMMIT_ID = re.compile(r"[0-9a-f]{40}")
@@ -38,6 +41,8 @@ class Pins(Protocol):
     def pointer(self, repo: str, sha: str, path: str) -> str | None: ...
 
     def reaches(self, repo: str, sha: str, pointer: str) -> bool: ...
+
+    def head(self, repo: str) -> str | None: ...
 
 
 def link(
@@ -110,6 +115,7 @@ class GitHub:
         self._pointers: dict[tuple[str, str, str], str | None] = {}
         self._reaches: dict[tuple[str, str, str], bool] = {}
         self._saved: Callable[[], Mapping[str, list[list]]] | None = saved
+        self._heads: dict[str, tuple[float, str | None]] = {}
 
     def _restored(self) -> None:
         if self._saved is not None:
@@ -131,6 +137,15 @@ class GitHub:
         if key not in self._reaches and (status := _api(f"repos/{repo}/compare/{sha}...{pointer}", ".status")):
             self._reaches[key] = status in _CONTAINS
         return self._reaches.get(key, False)
+
+    def head(self, repo: str) -> str | None:
+        """The commit `repo`'s default branch is at, read again once `_HEAD_TTL_S` has passed since the last read."""
+        now = time.monotonic()
+        read_at, sha = self._heads.get(repo, (-_HEAD_TTL_S, None))
+        if now - read_at >= _HEAD_TTL_S:
+            sha = _api(f"repos/{repo}/commits/HEAD", ".sha")
+            self._heads[repo] = (now, sha)
+        return sha
 
     def answers(self) -> dict[str, list[list]]:
         """Every answer kept, as JSON a saved Board can hold; `restore` takes it back."""

@@ -267,7 +267,7 @@ when = { lane = { equals = "done" } }    # optional: each field must match by `e
 # it depends on is Done (see Release); with no [release] table it releases none. The board must edit tasks and draw
 # `waiting` and `ready` lanes, else `serve` refuses to start.
 # [release]
-# settle = "pin-bump"  # optional: a dependency citing a pull request in a [[repos]] repository settles only when the parent's pin bump has merged
+# settle = "pin-bump"  # optional: a dependency citing a pull request in a [[repos]] repository settles only once the parent pins its merge commit
 
 # Optional: what harness telemetry is read against for missed skill loads and trace clusters (see Find missed skill
 # loads and recurring work in docs/sources.md). Every key is optional; with no table nothing is declared, and no
@@ -517,7 +517,9 @@ refused without one). A dependency task that cites a pull request in such a repo
 
 - the pull request is merged and the PR store holds its merge commit;
 - a later merged pull request of the same owner, in a repository that is not pinned, changed the submodule's path and pins
-  a commit containing that merge commit (`pins.link`, the rule that sets a pull request's `applied_by`).
+  a commit containing that merge commit (`pins.link`, the rule that sets a pull request's `applied_by`); or, for a pin
+  pushed with no pull request, the default branch of such a repository pins a commit containing it (`Pins.head`, its
+  head commit read again at most once a minute and never saved).
 
 A pull request the store does not hold, or holds open, holds the dependent, the fail-closed direction. A closed, unmerged
 one never reaches the pin and is ignored. The bump is looked for among the store's merged pull requests, so one no task

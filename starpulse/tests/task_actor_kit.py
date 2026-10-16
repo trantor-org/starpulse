@@ -64,6 +64,9 @@ class Pins:
     def reaches(self, repo: str, sha: str, pointer: str) -> bool:
         return sha == pointer
 
+    def head(self, repo: str) -> str | None:
+        return None
+
 
 class Board:
     """A board whose editor applies each status change to the feed, as the board's poll places a written file."""

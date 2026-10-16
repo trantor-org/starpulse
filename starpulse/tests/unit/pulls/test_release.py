@@ -8,12 +8,12 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 
-from starpulse._internal.pulls.release import Releaser
 from starpulse._internal.board.seam import Written
 from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.pulls.release import Releaser
 
 CHILD, PARENT = "c" * 40, "p" * 40
 CHILD_PR = "https://github.com/acme/starpulse/pull/10"
@@ -21,7 +21,9 @@ OTHER_PR = "https://github.com/acme/widgets/pull/7"
 REPOS = [Repo(name="starpulse", path="starpulse", applied_by="pin-bump")]
 WHEN = "2026-10-06T21:14:09Z"
 LATER = "2026-10-07T09:00:00Z"
-NEEDS_CRITERIA = "## Start Criteria\n```yaml\nstart_criteria:\n  - id: soak\n    kind: prom\n    expr: up\n    equals: 1\n```\n"
+NEEDS_CRITERIA = (
+    "## Start Criteria\n```yaml\nstart_criteria:\n  - id: soak\n    kind: prom\n    expr: up\n    equals: 1\n```\n"
+)
 
 
 class Edits:
@@ -40,7 +42,14 @@ class Edits:
 
 
 class Pins:
-    """The parent's pointer reads: `main`'s bump PR pins `CHILD` at `starpulse`; a child contains a commit it equals."""
+    """The parent's pointer reads: `main`'s bump PR pins `CHILD` at `starpulse`; a child contains a commit it equals.
+    `tip` is the parent's default-branch commit, None when unreadable."""
+
+    def __init__(self, tip: str | None = None) -> None:
+        self.tip = tip
+
+    def head(self, repo: str) -> str | None:
+        return self.tip if repo == "acme/trantor" else None
 
     def pointer(self, repo: str, sha: str, path: str) -> str | None:
         return CHILD if (repo, sha, path) == ("acme/trantor", PARENT, "starpulse") else None
@@ -82,9 +91,9 @@ def _board(*tasks: Any) -> BoardFeed:
     return feed
 
 
-def _release(feed: BoardFeed, store: PullStore, settle: str | None = None) -> list[str]:
+def _release(feed: BoardFeed, store: PullStore, settle: str | None = None, pins: Pins | None = None) -> list[str]:
     edits = Edits()
-    Releaser(feed, store, edits, repos=REPOS, settle=settle, pins=Pins()).release()
+    Releaser(feed, store, edits, repos=REPOS, settle=settle, pins=pins or Pins()).release()
     return edits.moved
 
 
@@ -204,6 +213,30 @@ def test_a_release_pass_after_a_restart_reads_no_pin_answer_the_board_saved(
 
     assert asked == []
     assert edits.moved == ["TASK-2"]
+
+
+def test_a_pin_pushed_to_the_parent_default_branch_without_a_pull_request_settles_the_dependency(
+    store: PullStore,
+) -> None:
+    store.save(
+        [
+            _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN),
+            _pull("acme/trantor", 50, state="MERGED", sha="d" * 40, at=LATER, files=["README.md"]),
+        ]
+    )
+
+    assert _release(_pinned(), store, "pin-bump", Pins(tip=PARENT)) == ["TASK-2"]
+
+
+def test_a_parent_default_branch_that_does_not_pin_the_merge_holds_the_dependent(store: PullStore) -> None:
+    store.save(
+        [
+            _pull("acme/starpulse", 10, state="MERGED", sha=CHILD, at=WHEN),
+            _pull("acme/trantor", 50, state="MERGED", sha="d" * 40, at=LATER, files=["README.md"]),
+        ]
+    )
+
+    assert _release(_pinned(), store, "pin-bump", Pins(tip="d" * 40)) == []
 
 
 def test_a_bump_merged_before_the_child_does_not_settle_it(store: PullStore) -> None:

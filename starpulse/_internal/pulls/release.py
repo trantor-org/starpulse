@@ -7,6 +7,7 @@ the merge in the PR store whose submodule pointer at the repository's path conta
 closed, unmerged one never reaches the pin and is ignored. A task that Start Criteria also gate is left to them.
 The bump is looked for among the merged pull requests of the child's owner in repositories that are not pinned, so
 one a task never cited still settles the dependency; one older than the store's records is not found and holds it.
+A pin pushed to the parent's default branch with no pull request settles it too: the branch head's pointer is read.
 """
 
 from __future__ import annotations
@@ -73,8 +74,21 @@ class Settlement:
                     if merge["repo"].startswith(f"{owner}/") and path in merge["detail"]["files"]
                 ]
                 projected = {record["url"]: record for record in map(_projected, [child, *bumps])}
-                if not link(projected, self._repos, self._pins.pointer, self._pins.reaches)[url].get("applied_by"):
+                applied = link(projected, self._repos, self._pins.pointer, self._pins.reaches)[url].get("applied_by")
+                if not applied and not self._at_head(found[1], child["mergeSha"], path):
                     return True
+        return False
+
+    def _at_head(self, child: str, sha: str, path: str) -> bool:
+        """Whether a parent's default branch pins `sha` of `child` at `path`: a pin pushed there with no bump PR."""
+        owner = child.partition("/")[0]
+        for repo in self._store.repos():
+            if not repo.startswith(f"{owner}/") or repo.partition("/")[2] in self._pinned:
+                continue
+            tip = self._pins.head(repo)
+            at_tip = self._pins.pointer(repo, tip, path) if tip else None
+            if at_tip and self._pins.reaches(child, sha, at_tip):
+                return True
         return False
 
     def _merges(self) -> list[dict]:
