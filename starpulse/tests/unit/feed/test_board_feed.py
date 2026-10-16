@@ -404,6 +404,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "holder": "",
             "labels": ["spike"],
             "milestone": "m-3",
+            "type": "",
             "dependencies": ["PROJ-0"],
             "prs": [PR],
             "description": "Draw it.",

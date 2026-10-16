@@ -43,6 +43,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "assignee": agent["model"],
         "holder": agent.get("holder", ""),
         "milestone": agent["milestone"],
+        "type": agent.get("type", ""),
         "labels": agent["labels"],
         "dependencies": agent["dependencies"],
         "waiting_on": [dependency for dependency in agent["dependencies"] if dependency not in done],

@@ -75,8 +75,8 @@ DEFAULT_PATH = ".starpulse/board"
 #: relative to the config, `criteria` the command that evaluates a task's Start Criteria (`{id}` is the task's id),
 #: `validate` the `module:function` that may refuse a task write before it lands, `rules` the record-level rules every
 #: task write must satisfy (`starpulse._internal.board.rules`), `task_file_name` the form of the name a created task's
-#: file is written under (`_FILE_NAMES`).
-_SETTINGS = {"type", "path", "interval", "machine", "criteria", "holds", "validate", "rules", "task_file_name"}
+#: file is written under (`_FILE_NAMES`), `types` the names a task's `type` may take (any when absent).
+_SETTINGS = {"type", "path", "interval", "machine", "criteria", "holds", "validate", "rules", "task_file_name", "types"}
 #: The forms of a created task's file name: `title` is `<id> - <Title>.md`, as Backlog.md writes it (the default), `slug`
 #: is `<id>-<slug>.md`, lowercase and space-free, its slug capped at `_SLUG_MAX` characters.
 _FILE_NAMES = ("title", "slug")
@@ -217,6 +217,14 @@ def _hook(setting: object) -> Validate | None:
     return found
 
 
+def _types(settings: Mapping[str, Any]) -> tuple[str, ...]:
+    """The names the `types` setting declares, empty when it declares none."""
+    declared = settings.get("types", ())
+    if not isinstance(declared, (list, tuple)) or not all(isinstance(name, str) and name.strip() for name in declared):
+        raise ValueError("board: types must be a list of non-empty names")
+    return tuple(declared)
+
+
 def _stamped(frontmatter: dict, *, created: bool = False) -> dict:
     """`frontmatter` with `updated_date` (and `created_date` on a new task) set to now in UTC, after the assignee or status."""
     now = f"{datetime.now(timezone.utc):{_STAMP}}"
@@ -232,17 +240,23 @@ def _stamped(frontmatter: dict, *, created: bool = False) -> dict:
 
 @dataclass(frozen=True)
 class _Guard:
-    """What a task write must pass before it lands: the board's rules, then its `validate` hook."""
+    """What a task write must pass before it lands: the declared `types`, the board's rules, then its `validate` hook."""
 
     rules: tuple[rules.Rule, ...] = ()
     validate: Validate | None = None
     #: The state of another task (a dependency a rule reads), or None when the board has none.
     state_of: Callable[[str], str | None] = lambda _: None
+    #: The names a task's `type` may take; empty accepts any.
+    types: tuple[str, ...] = ()
 
     def refusal(
         self, path: Path, before: str | None, frontmatter: dict, body: str, text: str, actor: str
     ) -> Written | None:
         """Why the write of `text` over `before` (None for a create) by `actor` is refused, or None to let it land."""
+        kind = str(frontmatter.get("type") or "")
+        was = str(_split_record(before or "")[0].get("type") or "")  # a write that leaves the type alone is not refused for it
+        if self.types and kind and kind != was and kind not in self.types:
+            return Written(False, f"type {kind!r} is not one of this board's types: {', '.join(self.types)}")
         if self.rules:
             earlier = None if before is None else rules.Record(*_split_record(before))
             if broken := rules.refusal(self.rules, earlier, rules.Record(frontmatter, body, self.state_of), actor):
@@ -949,7 +963,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     _create(root, base.resolve().name)
     evaluate = criteria.evaluator(settings.get("criteria"), base)
     retired = _Retired()
-    guard = _Guard(rules.load(settings.get("rules")), _hook(settings.get("validate")), _state_of(root, retired))
+    guard = _Guard(
+        rules.load(settings.get("rules")), _hook(settings.get("validate")), _state_of(root, retired), _types(settings)
+    )
 
     def assign(task: str, assignee: str, /, actor: str = OPERATOR) -> Written:
         def edit(frontmatter: dict, body: str) -> str:
