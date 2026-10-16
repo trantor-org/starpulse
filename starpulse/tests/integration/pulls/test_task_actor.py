@@ -8,10 +8,12 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
+from starpulse._internal.config.config import load
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pulls import PullStore
-from starpulse._internal.pulls.task_actor import ACTOR
+from starpulse._internal.pulls.task_actor import ACTOR, TaskActor
+from starpulse._internal.server.server import assemble
 from starpulse.tests.task_actor_kit import (
     CHILD,
     CHILD_PR,
@@ -20,7 +22,9 @@ from starpulse.tests.task_actor_kit import (
     PR_ONE,
     PR_TWO,
     REPOS,
+    MOVES,
     SHA,
+    WAITS,
     WITHIN_S,
     Board,
     Criteria,
@@ -166,3 +170,25 @@ def test_an_adapter_hold_withholds_deps_done_with_its_reason_until_a_task_is_cre
 
     assert until(lambda: board.moved() == [("TASK-2", "ready")])
     assert len(board.comments()) == 1  # the reason is written once, not on every derivation
+
+
+def test_a_restarted_actor_does_not_write_the_hold_comment_the_task_already_holds(
+    store: PullStore, stop: threading.Event, tmp_path: Path
+) -> None:
+    tasks = tmp_path / ".starpulse" / "board" / "tasks"
+    tasks.mkdir(parents=True)
+    (tasks.parent / "config.yml").write_text("project_name: Trantor\n")
+    path = tasks / "task-2 - Held.md"
+    path.write_text(
+        "---\nid: task-2\ntitle: Held\nstatus: Waiting\ndependencies:\n  - task-1\n---\n\n## Description\n\nHeld.\n"
+    )
+    edit = assemble(load(None), tmp_path, None, ())[0].edit
+    reason = ['"Slice three" has no task']
+
+    for _ in range(2):  # the second pass is the restart: a new actor, an empty in-memory memo
+        board = Board(BoardFeed(), task("task-1", "Done"), task("task-2", "Waiting", dependencies=("task-1",)))
+        actor = TaskActor(board.feed, store, edit, WAITS, MOVES, holds=lambda name: reason)
+        actor.start(stop)
+        assert actor.ready.wait(WITHIN_S)
+
+    assert path.read_text().count('Held from Ready: "Slice three" has no task.') == 1

@@ -24,7 +24,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from starpulse._internal.board.seam import MERGE_EVIDENCE, TaskEditor, Written
+from starpulse._internal.board.seam import HELD, MERGE_EVIDENCE, TaskEditor, Written
 from starpulse._internal.config.config import Repo
 from starpulse._internal.config.pins import Pins
 from starpulse._internal.feed import criteria
@@ -392,7 +392,7 @@ class TaskActor:
         self._tried[name] = sent
         logger.info("task actor: %s is held: %s", name, "; ".join(reasons))
         try:
-            written = self._edit(name, {}, f"Held from Ready: {'; '.join(reasons)}.", actor=ACTOR)
+            written = self._edit(name, {}, f"{HELD} {'; '.join(reasons)}.", actor=ACTOR)
         except Exception as error:
             written = Written(False, str(error))
         if not written.ok:

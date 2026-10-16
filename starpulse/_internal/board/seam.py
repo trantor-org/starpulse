@@ -28,6 +28,7 @@ __all__ = [
     "AGENT",
     "ANONYMOUS",
     "DEFAULT_TYPE",
+    "HELD",
     "MERGE_EVIDENCE",
     "AssigneeWriter",
     "Board",
@@ -62,6 +63,8 @@ __all__ = [
 OPERATOR = "operator"
 #: What a close comment of merge evidence starts with; a board writes the same one once per task.
 MERGE_EVIDENCE = "Closed on merge evidence:"
+#: What a hold comment starts with; a board does not repeat the task's latest one, so a restart writes nothing new.
+HELD = "Held from Ready:"
 #: Who a session's write is made by when it names no actor.
 AGENT = "agent"
 #: Who a write is made by when it names no actor and no session: never the operator.
