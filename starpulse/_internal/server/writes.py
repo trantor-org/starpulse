@@ -962,4 +962,4 @@ def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | None) -> 
                 return 400, {"error": str(exc)}
         if "enabled" in body:
             runtime.set_enabled(body["enabled"])
-    return 200, runtime.status()
+    return 200, runtime.served_status()

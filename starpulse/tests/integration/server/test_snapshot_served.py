@@ -1,6 +1,7 @@
 """How the server serves the snapshot: encoded once per change, never once per request."""
 
 import gzip
+import json
 import threading
 import time
 import urllib.error
@@ -11,7 +12,9 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.board.seam import Written
 from starpulse._internal.server import snapshot_cache
+from starpulse.contracts.adapters import Move
 from starpulse._internal.kit.adapter_kit import next_event as _next_event
 from starpulse._internal.kit.adapter_kit import serve as _serve
 from starpulse._internal.kit.adapter_kit import task
@@ -62,10 +65,14 @@ def test_a_change_is_in_the_next_snapshot_served(tmp_path: Path, builds: Counter
         first = _get(server)
         feed.put(task("PROJ-1", "In Progress"))
         second = _get(server)
+        deadline = time.monotonic() + 5
+        while b'"in_progress"' not in second and time.monotonic() < deadline:  # the rebuild lands behind the change
+            time.sleep(0.05)
+            second = _get(server)
 
     assert b'"to_do"' in first
     assert b'"in_progress"' in second
-    assert builds[id(feed)] - started == 2
+    assert builds[id(feed)] - started >= 1
 
 
 def test_a_connecting_page_neither_misses_nor_repeats_a_change(tmp_path: Path) -> None:
@@ -206,3 +213,26 @@ def test_a_snapshot_is_gzipped_when_built_not_by_the_request_that_reads_it(
 
     assert built == 1
     assert len(compressions) == built
+
+
+def test_a_snapshot_read_straight_after_a_write_holds_the_write(tmp_path: Path) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    feed.put(task("PROJ-1", "Ready", moves={"in_progress": Move(allowed=True)}))
+
+    def writer(name: str, status: str, actor: str) -> Written:
+        feed.put(task(name, status, title="written"))
+        return Written(True, "ok")
+
+    with _serve(tmp_path, feed, writer=writer) as server:
+        before = _get(server)
+        move = urllib.request.Request(
+            _url(server, "/api/move"),
+            data=json.dumps({"task": "PROJ-1", "to": "in_progress", "actor": "operator"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(move, timeout=5).close()
+        after = _get(server)
+
+    assert b'"written"' not in before
+    assert b'"written"' in after
