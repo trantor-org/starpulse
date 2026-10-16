@@ -134,6 +134,7 @@ class TestConfigCheck:
             "refresh_token_env": None,
             "pull_requests": True,
             "delivery_worker": False,
+            "autopilot_worker": False,
             "slow_read_seconds": 1.0,
             "event_log_retention_days": 7,
             "event_log_archive_dir": "starpulse-archive",

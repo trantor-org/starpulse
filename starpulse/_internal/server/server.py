@@ -223,7 +223,7 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import ModuleType
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from pydantic import ValidationError
@@ -321,9 +321,6 @@ from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.feed.machine_tasks import tables as machine_tables
 from starpulse._internal.config.config import SLOW_READ_S, Config, ConfigError, RunsInstance, discover, load, runs_adapter
 from starpulse._internal.config.harnesses import Harnesses
-from starpulse._internal.autopilot.admission import ranks_from_trajectories_body
-from starpulse._internal.autopilot.runtime import Runtime, build as build_autopilot
-from starpulse._internal.autopilot.starter import builtin_starter
 from starpulse._internal.feed.history_window import SETTINGS_FILE, HistoryWindow
 from starpulse._internal.eventlog import events as machine_events
 from starpulse._internal.eventlog import lane_events
@@ -362,6 +359,10 @@ _MOVE = "/api/move"
 _START = "/api/start"
 _WINDOW = "/api/history-window"
 _FORWARDING = "/api/forwarding"
+if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
+    from starpulse._internal.autopilot.remote import Remote
+    from starpulse._internal.autopilot.runtime import Runtime
+
 _AUTOPILOT = "/api/autopilot"
 _TASK = "/api/task/"
 _SNAPSHOT_BODY = "/api/events/body/"
@@ -1062,7 +1063,7 @@ class _ApiHandler(SimpleHTTPRequestHandler):
     forward: ForwardIngest | None
     pull_refresh: PullRefresh | None
     forwarding: Forwarder | None
-    autopilot: Runtime | None
+    autopilot: Runtime | Remote | None
     milestones: Board | None
 
     #: Whether the response being written is a hashed build asset's file, which a browser may keep for good.
@@ -1330,7 +1331,7 @@ def request_handler(
     level: Level | None = None,
     insights: Insights | None = None,
     forwarding: Forwarder | None = None,
-    autopilot: Runtime | None = None,
+    autopilot: Runtime | Remote | None = None,
     reruns: Mapping[str, Callable[[str, Mapping[str, str]], str]] | None = None,
     contract: Callable[[], dict[str, Any]] | None = None,
     milestones: Board | None = None,
@@ -1709,78 +1710,21 @@ def announce(port: int, hint: str | None) -> None:
         print(hint, flush=True)
 
 
-#: How long the dispatch loop holds the trajectory chain it ranks on: the analytics read the whole history.
-_CHAIN_TTL_S = 300
+def start_autopilot_context(
+    config: Config, base: Path, feed: BoardFeed, board: Board, store: History, log: EventLog
+) -> Runtime | Remote:
+    """The autopilot `serve` answers `/api/autopilot` from: its own runtime, started here, or with `autopilot_worker`
+    the `Remote` that reads the worker's status and writes the settings the worker reads.
 
-
-def start_autopilot(
-    config: Config,
-    base: Path,
-    feed: BoardFeed,
-    board: Board,
-    history: History,
-    log: EventLog,
-    level: Level | None,
-    stop: threading.Event,
-    probe: Callable[[], Mapping[str, float]] | None = None,
-) -> Runtime:
-    """The autopilot's runtime with its sampler and dispatch loop running on daemon threads until `stop` is set.
-
-    The loop admits from the lane `[autopilot] lane` names (else the board's initial lane), starts a session through
-    `session_start_url` (else the built-in tmux starter in `base`), and settles a stuck one by moving it to Needs
-    attention through the board's editor. Its chain and per-task P(goal) are the trajectory analytics' when this
-    server has a `[level]` table, including on an IC instance that is not serving `--hub`.
+    The autopilot modules are imported here, not at the top, so `starpulse worker pulls` does not load them.
     """
+    from starpulse._internal.autopilot.remote import Remote, follow_status
+    from starpulse._internal.server import autopilot_service as service
 
-    def settle(task: str, reason: str) -> Written:
-        if board.edit is None:
-            return Written(False, "this board has no editor", unavailable=True)
-        return board.edit(task, {"status": "needs_attention"}, reason)
-
-    def claim(task: str, comment: str) -> Written:
-        if board.edit is None:
-            return Written(False, "this board has no editor", unavailable=True)
-        return board.edit(task, {}, comment)
-
-    initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
-    lane = config.autopilot.eligible_lane(initial)
-
-    def read_ranks() -> dict[str, Any]:
-        empty: dict[str, Any] = {"chain": {}, "p_goals": {}}
-        if level is None:
-            return empty
-        query: dict[str, list[str]] = {}
-        body, status = trajectories_response(history, query, level, feed.machines, time.time())
-        if status == 400:
-            history_s = json.loads(body).get("history_s")
-            if history_s:
-                query = {"hours": [str(float(history_s) / 3600)]}
-                body, status = trajectories_response(history, query, level, feed.machines, time.time())
-        if status != 200:
-            return empty
-        return ranks_from_trajectories_body(json.loads(body), lane)
-
-    ranks = _cached(read_ranks, _CHAIN_TTL_S)
-    state_dir = base / (config.autopilot.state_dir or "")
-    state_dir.mkdir(parents=True, exist_ok=True)
-    runtime = build_autopilot(
-        config.autopilot,
-        state_dir,
-        log,
-        feed,
-        probe,
-        start=starter(config.session_start_url, by="autopilot") or builtin_starter(base),
-        settle=settle,
-        claim=claim,
-        chain=lambda: ranks()["chain"],
-        p_goals=lambda: ranks()["p_goals"],
-        lane=lane,
-    )
-    runtime.wire_status(feed.publish)
-    threading.Thread(target=runtime.sampler.run_forever, args=(stop,), name="autopilot-sampler", daemon=True).start()
-    if runtime.loop is not None:
-        threading.Thread(target=runtime.loop.run_forever, args=(stop,), name="autopilot-loop", daemon=True).start()
-    return runtime
+    if not config.autopilot_worker:
+        return service.start_autopilot(config, base, feed, board, store, log, config.level, threading.Event())
+    follow_status(log, feed, threading.Event())
+    return Remote(log, base / (config.autopilot.state_dir or ""))
 
 
 def history_store(config: Config, base: Path, machines: Mapping[str, dict]) -> HistoryStore:
@@ -2340,9 +2284,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
 
         wire_level(feed, _level_body)
     announce(port, feed.snapshot()["hint"])
-    autopilot_runtime = start_autopilot(
-        config, base, feed, board, store, log, config.level, threading.Event()
-    )
+    autopilot_runtime = start_autopilot_context(config, base, feed, board, store, log)
     handler = request_handler(
         feed,
         _STATIC,

@@ -1,19 +1,19 @@
-"""`starpulse worker pulls`: the Delivery context (the pull request store's sync and projection, the task actor and the
-release of dependents) as its own process, beside `serve`.
+"""`starpulse worker <context>`: one bounded context as its own process, beside `serve`.
 
-It reads the config and the history database `serve` does and meets `serve` only in the event log
+`pulls` is the Delivery context (the pull request store's sync and projection, the task actor and the release of
+dependents); `autopilot` is the Autopilot context, run by `starpulse._internal.server.autopilot_worker`.
+
+The `pulls` worker reads the config and the history database `serve` does and meets `serve` only in the event log
 (`starpulse._internal.pulls.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and
-relays the actor's notes and metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a Delivery setting changed, rebuilds the loops in the same
-process.
+relays the actor's notes and metrics. `SIGTERM` stops it; `SIGHUP` re-reads the config and, when a Delivery setting
+changed, rebuilds the loops in the same process.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-import signal
 import threading
-from collections.abc import Callable
 from pathlib import Path
 
 from starpulse._internal.board.seam import Board
@@ -29,11 +29,12 @@ from starpulse._internal.pulls.delivery import (
     keep_metrics,
 )
 from starpulse._internal.pulls.pulls import PullStore
+from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import assemble, start_delivery
 
 logger = logging.getLogger(__name__)
 
-CONTEXTS = ("pulls",)
+CONTEXTS = ("pulls", "autopilot")
 
 
 def delivery_blocks(config: Config) -> tuple:
@@ -110,21 +111,10 @@ class Delivery:
             self.start()
 
 
-def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: no mutate block — process boundary
-    """Block until `SIGTERM`, running `reload` for each `SIGHUP`, one at a time."""
-    reloads = threading.Event()
-    signal.signal(signal.SIGTERM, lambda *_: (stop.set(), reloads.set()))
-    signal.signal(signal.SIGHUP, lambda *_: reloads.set())
-    while True:
-        reloads.wait()
-        reloads.clear()
-        if stop.is_set():
-            return
-        reload()
-
-
 def worker_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="starpulse worker", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        prog="starpulse worker", description="Run one bounded context of StarPulse as its own process."
+    )
     parser.add_argument("context", choices=CONTEXTS, help="the bounded context to run")
     parser.add_argument(
         "--config",
@@ -139,6 +129,10 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO)
     parser = worker_parser()
     args = parser.parse_args(argv)
+    if args.context == "autopilot":  # imported here: the Delivery worker's closure holds no autopilot module
+        from starpulse._internal.server import autopilot_worker as worker
+
+        return worker.main(argv, parser)
     path = discover(args.config)
     try:
         config = load(path)
