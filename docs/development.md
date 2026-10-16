@@ -12,6 +12,9 @@ The build also writes `starpulse/static/one-file`, the same page as a single scr
 `uv run pytest` runs the suite with Python alone. When Docker or Podman is available, it also runs the Postgres-backed
 integration cases; otherwise those cases are skipped. `uv sync --no-group hub` installs without the hub extras, as an IC
 instance runs, and the suite then skips the Postgres and hub cases.
+`starpulse/tests/e2e/` holds the tests that run an operator's entry point end to end, such as `starpulse serve --hub`
+as a process on Postgres; `addopts` deselects them, so no default, pull-request or nightly run pays their seconds, and
+`uv run pytest -m e2e` runs them. Each piece such a test composes keeps a fast integration test of its own.
 `uv sync --no-group hub --python 3.14t` is the free-threaded build, which CI runs the same selected tests on (`python-ft`, on a pull request and the nightly run, not a required check): `psycopg-binary`
 has no 3.14t wheel, so hub mode stays on 3.14. `test_memray_flagged.py` skips there, since memray reports no allocation for a small test's list on that build.
 `uv run pytest -n 4 --dist loadgroup` spreads it over four pytest-xdist workers (CI starts two per runner); `loadgroup` keeps the tests that
