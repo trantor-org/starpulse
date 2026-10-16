@@ -1,12 +1,13 @@
 """`serve` as a supervisor: each context whose `*_worker` setting is false runs as a `starpulse worker <context>` child.
 
-A child is started with `subprocess`, restarted with a growing delay when it exits and stopped with `serve`. A context
+A child is started with `subprocess` on a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with `serve`. A context
 whose setting is true is run by something outside `serve`, so it gets no child here.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -17,8 +18,10 @@ from pathlib import Path
 from typing import Any
 
 from starpulse._internal.config.config import Config
+from starpulse._internal.server.hold import SUPERVISED_ENV
 
 logger = logging.getLogger(__name__)
+
 
 #: The `starpulse worker` contexts, by the `Config` flag that says an outside runner owns them.
 WORKER_FLAGS = {"pulls": "delivery_worker", "autopilot": "autopilot_worker"}
@@ -32,6 +35,13 @@ def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[
         for context, flag in WORKER_FLAGS.items()
         if not getattr(config, flag)
     }
+
+
+def spawn_child(command: Sequence[str]) -> subprocess.Popen:
+    """Start a child that dies with `serve` (its stdin pipe closes) and sits outside the terminal's process group."""
+    return subprocess.Popen(
+        command, stdin=subprocess.PIPE, env={**os.environ, SUPERVISED_ENV: "1"}, start_new_session=True
+    )
 
 
 @dataclass
@@ -50,7 +60,7 @@ class Supervisor:
         self,
         commands: Mapping[str, Sequence[str]],
         *,
-        spawn: Callable[[Sequence[str]], Any] = subprocess.Popen,
+        spawn: Callable[[Sequence[str]], Any] = spawn_child,
         first_delay: float = 1.0,
         longest_delay: float = 60.0,
         stable_after: float = 60.0,
