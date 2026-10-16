@@ -29,6 +29,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "emit": _lazy("starpulse._internal.runs.emit"),
     "forward": _lazy("starpulse._internal.hub.forward"),
     "connect": _lazy("starpulse._internal.cli.connect"),
+    "worker": _lazy("starpulse._internal.server.worker"),
     "import-history": _lazy("starpulse._internal.server.history_import"),
 }
 

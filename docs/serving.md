@@ -191,6 +191,14 @@ type = "native"
 # that reads the same repositories, so the GitHub budget pays for one store.
 # pull_requests = true
 
+# Run the Delivery context (the pull request store's sync and projection, the task actor and the release of dependents) in
+# its own process, `starpulse worker pulls --config <this file>`, instead of in `serve`. `serve` then keeps the store
+# read-only, starts none of those threads, draws the projection the worker keeps in the event log, and queues
+# `POST /api/pulls/refresh` for the worker; the two share this file and its `database_url`. Restarting `serve` no longer
+# interrupts a sync or an actor write. Start the worker beside it (a unit file, `systemctl --user start`): with the flag set
+# and no worker running, no pull request state is refreshed.
+# delivery_worker = false
+
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
 # `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's
 # thread reads that pull request alone (one single-PR GraphQL read, no listing) and publishes it as a refresh does; one

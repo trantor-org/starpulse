@@ -247,6 +247,7 @@ from starpulse._internal.harnesses.session_start import starter
 from starpulse._internal.runs import run_events
 from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
+from starpulse._internal.pulls.delivery import Projected, follow_notes, metrics_of, request_refresh
 from starpulse._internal.pulls.release import READY, RELEASE_S, Releaser
 from starpulse._internal.pulls.task_actor import ACTOR, TaskActor, moves_of
 from starpulse._internal.config.pins import GitHub
@@ -2090,6 +2091,64 @@ def _then(first: Callable[[], None], second: Callable[[], None]) -> Callable[[],
     return both
 
 
+def start_delivery(
+    config: Config,
+    board: Board,
+    feed: BoardFeed,
+    log: EventLog,
+    pulls: PullStore,
+    pins: GitHub,
+    stop: threading.Event,
+    *,
+    actor_feed: BoardFeed | None = None,
+    after_project: Callable[[], None] | None = None,
+) -> tuple[TaskActor | None, PullSync | None]:
+    """Start the Delivery context: the task actor, the pull store's sync with the projection it feeds, and the
+    release of dependents, as `config` asks. Returns the actor and the sync, each None when not started.
+
+    `actor_feed` is the feed the actor notes its writes on (the worker's relays them to `serve`); `after_project`
+    runs after each projection. Raises `ValueError` naming a table the board cannot serve.
+    """
+    # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
+    actor = None
+    if config.task_actor:
+        if board.edit is None:
+            raise ValueError("[board.actor] needs a board that edits tasks")
+        actor = TaskActor(
+            actor_feed or feed,
+            pulls,
+            board.edit,
+            board.waits,
+            moves_of(feed.machines["board"]),
+            config.repos,
+            config.release.settle if config.release else None,
+            pins,
+            evaluate=board.evaluate,
+            holds=board.holds,
+        )
+        actor.start(stop)
+    sync = None
+    if config.pull_requests and shutil.which("gh"):
+        pull_requests = PullRequests(
+            feed, pulls, repos=config.repos, pins=pins, trail=CiTrail(log) if config.ci else None
+        )
+        project = pull_requests.refresh
+        if actor:  # the actor derives from the projection, so it follows each one
+            project = _then(project, actor.pulls_changed)
+        if after_project:
+            project = _then(project, after_project)
+        sync = PullSync(pulls, feed, config.repos, project=project)
+        threading.Thread(target=sync.run_forever, name="pull-store", daemon=True).start()
+    if config.release is not None:
+        lanes = {state["id"] for state in feed.machines["board"]["states"]}
+        if board.edit is None or not {WAITING, READY} <= lanes:
+            raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
+        if actor is None:  # the actor settles and releases on the facts, so the polling pass would only repeat it
+            releaser = Releaser(feed, pulls, board.edit, config.repos, config.release.settle, pins)
+            threading.Thread(target=_keep_released, args=(releaser, feed), name="board-release", daemon=True).start()
+    return actor, sync
+
+
 def _keep_released(releaser: Releaser, feed: BoardFeed, interval_s: float = RELEASE_S) -> None:  # pragma: no mutate block
     """Once the Board replay is done, release the Waiting tasks whose dependencies settled every `interval_s` seconds;
     a failed pass is logged and never ends the loop."""
@@ -2212,41 +2271,22 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     pull_refresh = None
     # one memo of the pointer reads for the projection and the release of dependents, restored from the saved Board
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
-    # without the GitHub CLI there is no source, and a task simply carries no PR state; a config can turn the store off
-    actor = None
-    if config.task_actor:
-        if board.edit is None:
-            parser.exit(1, "[board.actor] needs a board that edits tasks\n")
-        actor = TaskActor(
-            feed,
-            pulls,
-            board.edit,
-            board.waits,
-            moves_of(feed.machines["board"]),
-            config.repos,
-            config.release.settle if config.release else None,
-            pins,
-            evaluate=board.evaluate,
-            holds=board.holds,
-        )
-        actor.start(threading.Event())
-    if config.pull_requests and shutil.which("gh"):
-        pull_requests = PullRequests(
-            feed, pulls, repos=config.repos, pins=pins, trail=CiTrail(log) if config.ci else None
-        )
-        project = pull_requests.refresh
-        if actor:  # the actor derives from the projection, so it follows each one
-            project = _then(pull_requests.refresh, actor.pulls_changed)
-        sync = PullSync(pulls, feed, config.repos, project=project)
-        threading.Thread(target=sync.run_forever, name="pull-store", daemon=True).start()
-        pull_refresh = PullRefresh(refresh_token, sync.request) if refresh_token else None
-    if config.release is not None:
-        lanes = {state["id"] for state in feed.machines["board"]["states"]}
-        if board.edit is None or not {WAITING, READY} <= lanes:
-            parser.exit(1, "[release] needs a board that edits tasks and draws waiting and ready lanes\n")
-        if actor is None:  # the actor settles and releases on the facts, so the polling pass would only repeat it
-            releaser = Releaser(feed, pulls, board.edit, config.repos, config.release.settle, pins)
-            threading.Thread(target=_keep_released, args=(releaser, feed), name="board-release", daemon=True).start()
+    actor_metrics = None
+    if config.delivery_worker:  # `starpulse worker pulls` runs the context; this process reads its projection and asks it
+        stop = threading.Event()
+        Projected(log, feed).follow(stop)
+        follow_notes(log, feed, stop)
+        if config.task_actor:
+            actor_metrics = metrics_of(log)
+        if refresh_token:
+            pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
+    else:
+        try:
+            actor, sync = start_delivery(config, board, feed, log, pulls, pins, threading.Event())
+        except ValueError as exc:
+            parser.exit(1, f"{exc}\n")
+        actor_metrics = actor.exposition if actor else None
+        pull_refresh = PullRefresh(refresh_token, sync.request) if sync and refresh_token else None
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)
     threading.Thread(
@@ -2328,7 +2368,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         contract=_cached(lambda: doctor.contract(feed.snapshot(), config, doctor.LIVE), _CONTRACT_TTL_S),
         milestones=board,
         pulls=pulls,
-        actor_metrics=actor.exposition if actor else None,
+        actor_metrics=actor_metrics,
         telemetry=TelemetryLog(log),
         autopilot=autopilot_runtime,
         search=search,
