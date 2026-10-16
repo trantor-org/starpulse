@@ -109,14 +109,6 @@ def test_serve_starts_none_of_the_delivery_threads_when_the_worker_runs_them(
     assert (Actor.made, [sync.started for sync in Sync.made], Projection.made, polled) == ([], [False], [], [])
 
 
-def test_serve_without_a_worker_still_runs_the_delivery_context(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _serve(tmp_path, monkeypatch, CONTEXT, worker=False)
-
-    assert ([a.started for a in Actor.made], len(Projection.made), Follower.started) == ([True], 1, [])
-
-
 def test_serve_follows_the_projection_the_worker_keeps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _serve(tmp_path, monkeypatch, CONTEXT, worker=True)
 

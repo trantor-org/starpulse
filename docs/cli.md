@@ -358,7 +358,7 @@ stream; a stream that drops is retried with backoff while the pane stays open. T
 
 ## The pull-request store
 
-With `gh` available and the config's `pull_requests` not false, `serve` (or, with `delivery_worker = true`, `starpulse worker pulls` alone) keeps a store of pull requests (table
+With `gh` available and the config's `pull_requests` not false, `starpulse worker pulls` (a child `serve` supervises, or one you run yourself with `delivery_worker = true`) keeps a store of pull requests (table
 `starpulse_pull_requests`) and refreshes it every minute, one GraphQL query per repository: every open pull request, plus any other pull request updated since the newest
 `updatedAt` the store holds for that repository. A merged or closed record is final and is never read again, except a merged one saved without its `mergeSha`
 (stored before the store read the merge commit), which is re-read on every refresh until it has one. An open

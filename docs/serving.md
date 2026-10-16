@@ -51,6 +51,13 @@ An event stream (`/api/events`, `/api/lanes`, `/api/held`) leaves that pool for 
 against `stream_limit` (256 on `StarPulseServer`) instead, so a crowd of long-lived streams never takes the worker a
 short request needs. A stream past the limit gets `503` with `Retry-After: 5` and the client reconnects.
 
+### Worker processes
+
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery) and `autopilot`. For each one whose `delivery_worker` or
+`autopilot_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
+ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
+the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
+
 ### What the page shows when the server restarts
 
 The page keeps its last Board on screen while the connection is down and says why in the navigator's header, where the dot
@@ -192,19 +199,20 @@ type = "native"
 # that reads the same repositories, so the GitHub budget pays for one store.
 # pull_requests = true
 
-# Run the Delivery context (the pull request store's sync and projection, the task actor and the release of dependents) in
-# its own process, `starpulse worker pulls --config <this file>`, instead of in `serve`. `serve` then keeps the store
-# read-only, starts none of those threads, draws the projection the worker keeps in the event log, and queues
-# `POST /api/pulls/refresh` for the worker; the two share this file and its `database_url`. Restarting `serve` no longer
-# interrupts a sync or an actor write. Start the worker beside it (a unit file, `systemctl --user start`): with the flag set
-# and no worker running, no pull request state is refreshed.
+# Whether something outside `serve` runs the Delivery context (the pull request store's sync and projection, the task actor
+# and the release of dependents). False, the default: `serve` supervises it as a child process, `starpulse worker pulls`.
+# True: you run `starpulse worker pulls --config <this file>` yourself (a unit file, `systemctl --user start`) and `serve`
+# starts no child for it. Either way `serve` runs none of those threads: it keeps the store read-only, draws the projection
+# the worker keeps in the event log, and queues `POST /api/pulls/refresh` for the worker; the two share this file and
+# `database_url`. With the flag set and no worker running, no pull request state is refreshed.
 # delivery_worker = false
 
-# Run the Autopilot context (the sampler and the loop that starts a session per eligible task) in its own process,
-# `starpulse worker autopilot --config <this file>`, instead of in `serve`. `serve` then starts neither, answers the
-# autopilot's status from what the worker publishes in the event log, and wakes the worker on a switch, quiet-hours or
-# harness change; the switch, the pauses and the run ledger stay in the store, so a restarted worker starts no task twice.
-# `SIGHUP` re-reads the config. With the flag set and no worker running, no task is started.
+# Whether something outside `serve` runs the Autopilot context (the sampler and the loop that starts a session per
+# eligible task). False, the default: `serve` supervises it as a child process, `starpulse worker autopilot`. True: you
+# run `starpulse worker autopilot --config <this file>` yourself and `serve` starts no child for it. Either way `serve`
+# runs neither, answers the autopilot's status from what the worker publishes in the event log, and wakes the worker on a
+# switch, quiet-hours or harness change; the switch, the pauses and the run ledger stay in the store, so a restarted
+# worker starts no task twice. `SIGHUP` re-reads the config. With the flag set and no worker running, no task is started.
 # autopilot_worker = false
 
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:

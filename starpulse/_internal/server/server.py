@@ -264,6 +264,7 @@ from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.server.column_stream import ColumnViews, Interest, column_view
 from starpulse._internal.server.live_push import wire_forwarding, wire_level
 from starpulse._internal.server.snapshot_cache import SnapshotCache
+from starpulse._internal.server.supervisor import Supervisor, worker_commands
 from starpulse._internal.server.writes import (
     autopilot,
     OPERATOR,
@@ -1710,19 +1711,14 @@ def announce(port: int, hint: str | None) -> None:
         print(hint, flush=True)
 
 
-def start_autopilot_context(
-    config: Config, base: Path, feed: BoardFeed, board: Board, store: History, log: EventLog
-) -> Runtime | Remote:
-    """The autopilot `serve` answers `/api/autopilot` from: its own runtime, started here, or with `autopilot_worker`
-    the `Remote` that reads the worker's status and writes the settings the worker reads.
+def autopilot_remote(config: Config, base: Path, feed: BoardFeed, log: EventLog) -> Remote:
+    """The autopilot `serve` answers `/api/autopilot` from: the `Remote` that reads the status the autopilot worker
+    publishes and writes the settings the worker reads. The loop itself runs in that worker, never in `serve`.
 
     The autopilot modules are imported here, not at the top, so `starpulse worker pulls` does not load them.
     """
     from starpulse._internal.autopilot.remote import Remote, follow_status
-    from starpulse._internal.server import autopilot_service as service
 
-    if not config.autopilot_worker:
-        return service.start_autopilot(config, base, feed, board, store, log, config.level, threading.Event())
     follow_status(log, feed, threading.Event())
     return Remote(log, base / (config.autopilot.state_dir or ""))
 
@@ -2215,24 +2211,16 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     follow(refusals, log, CLAIMS_STREAM, refusals.handle_entry)
     pulls = PullStore(log.engine)
     pull_refresh = None
-    # one memo of the pointer reads for the projection and the release of dependents, restored from the saved Board
-    pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     actor_metrics = None
-    if config.delivery_worker:  # `starpulse worker pulls` runs the context; this process reads its projection and asks it
-        stop = threading.Event()
-        Projected(log, feed).follow(stop)
-        follow_notes(log, feed, stop)
-        if config.task_actor:
-            actor_metrics = metrics_of(log)
-        if refresh_token:
-            pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
-    else:
-        try:
-            actor, sync = start_delivery(config, board, feed, log, pulls, pins, threading.Event())
-        except ValueError as exc:
-            parser.exit(1, f"{exc}\n")
-        actor_metrics = actor.exposition if actor else None
-        pull_refresh = PullRefresh(refresh_token, sync.request) if sync and refresh_token else None
+    # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its
+    # projection and asks it
+    stop = threading.Event()
+    Projected(log, feed).follow(stop)
+    follow_notes(log, feed, stop)
+    if config.task_actor:
+        actor_metrics = metrics_of(log)
+    if refresh_token:
+        pull_refresh = PullRefresh(refresh_token, request_refresh(log, PullSync(pulls, feed, config.repos).tracked))
     for instance, adapter in adapters:
         adapter.follow(instance.url, feed.runs(instance.name), log)
     threading.Thread(
@@ -2284,7 +2272,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
 
         wire_level(feed, _level_body)
     announce(port, feed.snapshot()["hint"])
-    autopilot_runtime = start_autopilot_context(config, base, feed, board, store, log)
+    autopilot_runtime = autopilot_remote(config, base, feed, log)
     handler = request_handler(
         feed,
         _STATIC,
@@ -2320,7 +2308,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         pull_refresh=pull_refresh,
         slow_read_s=config.slow_read_seconds,
     )
-    serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)
+    supervisor = Supervisor(worker_commands(config, args.config))
+    supervisor.start()
+    try:
+        serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)
+    finally:
+        supervisor.stop()
 
 
 if __name__ == "__main__":

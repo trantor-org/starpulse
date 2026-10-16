@@ -39,9 +39,3 @@ def test_serve_starts_neither_the_sampler_nor_the_loop_when_the_worker_runs_them
     assert started == []
     assert isinstance(handled["autopilot"], Remote)
 
-
-def test_serve_without_a_worker_still_starts_the_autopilot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    started, handled = _serve(tmp_path, monkeypatch, worker=False)
-
-    assert len(started) == 1
-    assert handled["autopilot"] is None
