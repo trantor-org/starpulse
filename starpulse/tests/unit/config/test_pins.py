@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 
 import pytest
 
@@ -105,6 +106,21 @@ def test_the_pointer_a_parent_merge_pins_is_read_once_and_remembered(monkeypatch
 
     assert [github.pointer("trantor-org/trantor", "p1", "skills") for _ in range(2)] == [NEW_POINTER] * 2
     assert len(gh.asked) == 1
+
+
+def test_a_default_branch_head_is_reused_within_its_ttl_then_read_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    gh = Gh({"repos/trantor-org/trantor/commits/HEAD": NEW_POINTER})
+    monkeypatch.setattr(subprocess, "run", gh)
+    clock = [1000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    github = GitHub()
+
+    assert [github.head("trantor-org/trantor") for _ in range(2)] == [NEW_POINTER] * 2
+    clock[0] += 61
+    github.head("trantor-org/trantor")
+
+    assert len(gh.asked) == 2
+    assert github.answers() == {"pointers": [], "reaches": []}
 
 
 def test_an_unreadable_pointer_is_asked_again_rather_than_remembered(monkeypatch: pytest.MonkeyPatch) -> None:
