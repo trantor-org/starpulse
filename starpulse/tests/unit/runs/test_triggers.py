@@ -58,7 +58,11 @@ def test_every_event_a_trigger_may_name_has_a_stream() -> None:
 
 @pytest.fixture
 def log(store: HistoryStore) -> EventLog:
-    return EventLog(store.engine.url.render_as_string(hide_password=False), engine=store.engine)
+    log = EventLog(store.engine.url.render_as_string(hide_password=False), engine=store.engine)
+    # open it now: the log adds its connect listener on first use, which the consumer thread would do while the test
+    # thread connects through the same engine, mutating the listeners mid-iteration
+    assert log.engine is store.engine
+    return log
 
 
 @pytest.fixture
