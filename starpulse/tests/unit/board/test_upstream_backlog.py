@@ -994,7 +994,9 @@ def test_a_file_written_after_start_reaches_the_feed_with_no_scan_interval_elaps
     with _watching(tmp_path) as placed:
         write_task(tmp_path, "tasks", "task-1", "To Do")
 
-        assert _await(lambda: [t.id for t in placed] == ["task-1"])
+        # the new folder triggers a full scan that can read the file the moment the write lands, then the close event
+        # places it again; the feed takes a repeat as a no-op, so what matters is that the task arrives
+        assert _await(lambda: {t.id for t in placed} == {"task-1"})
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
