@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
 
 from starpulse._internal.config.config import Repo
 from starpulse._internal.feed.board_feed import BoardFeed
@@ -680,6 +680,17 @@ def test_age_gauge_leaves_out_a_repository_holding_no_open_pull_request(tmp_path
 
     assert 'repo="acme/widgets"' not in store.age_gauge(1000.0)
     assert 'starpulse_pull_store_age_seconds{repo="acme/skills"} 10' in store.age_gauge(1000.0)
+
+
+def test_a_check_marked_by_another_process_resets_this_stores_age_gauge(tmp_path: Path) -> None:
+    """The pulls worker marks the listing checks and the server serves the gauge, each with its own `PullStore`."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'pulls.sqlite'}")
+    server, worker = PullStore(engine), PullStore(engine)
+    server.save([_record("acme/widgets", 1, "OPEN", 100.0)])
+
+    worker.mark_checked("acme/widgets", 990.0)
+
+    assert 'starpulse_pull_store_age_seconds{repo="acme/widgets"} 10' in server.age_gauge(1000.0)
 
 
 def test_a_merged_pr_is_recorded_with_its_merge_commit_and_time_and_an_open_one_with_neither(store: PullStore) -> None:

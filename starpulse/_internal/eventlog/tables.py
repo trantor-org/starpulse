@@ -185,3 +185,12 @@ pull_requests = Table(
     PrimaryKeyConstraint("repo", "number"),
     Index("ix_starpulse_pull_requests_state", "state", "repo"),
 )
+
+#: The epoch second GitHub last answered a read of a repository, whether or not a record changed: the pulls worker
+#: writes it and the server, a separate process, serves the age gauge from it.
+pull_checks = Table(
+    "starpulse_pull_checks",
+    metadata,
+    Column("repo", String, primary_key=True),
+    Column("checked_at", Float, nullable=False),
+)

@@ -6,10 +6,10 @@ import threading
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from sqlalchemy import Engine, case, delete, func, insert, select, tuple_
+from sqlalchemy import Engine, case, delete, func, insert, select, tuple_, update
 
 from starpulse._internal.eventlog.event_log import create_tables
-from starpulse._internal.eventlog.tables import pull_requests
+from starpulse._internal.eventlog.tables import pull_checks, pull_requests
 
 #: The GraphQL names a record is served under, by column.
 _FIELDS = {
@@ -50,8 +50,7 @@ class PullStore:
         self.rev = 0
         self._lock = threading.Lock()
         self._listeners: list[Callable[[], None]] = []
-        self._checked: dict[str, float] = {}
-        create_tables(engine, [pull_requests])
+        create_tables(engine, [pull_requests, pull_checks])
         self._held: dict[tuple[str, int], dict[str, Any]] = {}
         self._hold(select(pull_requests))
 
@@ -104,8 +103,11 @@ class PullStore:
             return list(db.execute(select(pull_requests.c.repo).distinct().order_by(pull_requests.c.repo)).scalars())
 
     def mark_checked(self, repo: str, now: float) -> None:
-        """Note that GitHub answered a read of `repo` at epoch `now`, though no record changed."""
-        self._checked[repo] = now
+        """Note that GitHub answered a read of `repo` at epoch `now`, though no record changed. The note is stored, for
+        the server's gauge to read: the worker that marks it runs in another process."""
+        with self._engine.begin() as db:
+            if not db.execute(update(pull_checks).where(pull_checks.c.repo == repo).values(checked_at=now)).rowcount:
+                db.execute(insert(pull_checks).values(repo=repo, checked_at=now))
 
     def age_gauge(self, now: float) -> str:
         """Prometheus text of the seconds since GitHub was last read for each repository, as of epoch `now`: the
@@ -122,8 +124,9 @@ class PullStore:
         )
         with self._engine.connect() as db:
             rows = db.execute(newest).all()
+            checked = dict(db.execute(select(pull_checks.c.repo, pull_checks.c.checked_at)).all())
         samples = [
-            f'{AGE_METRIC}{{repo="{repo}"}} {now - max(fetched, self._checked.get(repo, fetched)):g}'
+            f'{AGE_METRIC}{{repo="{repo}"}} {now - max(fetched, checked.get(repo, fetched)):g}'
             for repo, fetched in rows
         ]
         return "\n".join([f"# HELP {AGE_METRIC} {AGE_HELP}", f"# TYPE {AGE_METRIC} gauge", *samples]) + "\n"
