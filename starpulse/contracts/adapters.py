@@ -119,6 +119,10 @@ class BoardTask(_Contract):
     )
     labels: tuple[str, ...] = Field(default=(), description="The task's labels.")
     milestone: str = Field(default="", description="The milestone the task belongs to; empty when it has none.")
+    type: str = Field(
+        default="",
+        description="The task's type, a name the deployment chooses (`spike`, `bug`); empty when it has none. StarPulse names no type.",
+    )
     description: str = Field(default="", description="The task's description text, shown when the task is opened.")
     acceptance_criteria: tuple[str, ...] = Field(
         default=(),

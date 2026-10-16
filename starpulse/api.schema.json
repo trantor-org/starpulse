@@ -5122,6 +5122,18 @@
           ],
           "default": null
         },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A Board task's type; empty or absent when it has none."
+        },
         "workable": {
           "anyOf": [
             {

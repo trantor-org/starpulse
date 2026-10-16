@@ -138,6 +138,7 @@ class RawAgent(_Api):
     active: float | None = None
     description: str | None = Field(default=None, description="A task's Backlog description.")
     milestone: str | None = Field(default=None, description="A Board task's milestone; empty or absent when it has none.")
+    type: str | None = Field(default=None, description="A Board task's type; empty or absent when it has none.")
     criteria: list[TaskCriterion] | None = Field(
         default=None, description="A Board task's acceptance criteria in file order; absent off the Board."
     )

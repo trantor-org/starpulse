@@ -397,6 +397,7 @@ class UpstreamBacklog:
             holder=_holder(body),
             labels=_strings(frontmatter.get("labels")),
             milestone=str(frontmatter.get("milestone") or "").strip(),
+            type=str(frontmatter.get("type") or "").strip(),
             description=_description(body),
             acceptance_criteria=tuple(text for _, text in criteria),
             acceptance_checked=tuple(checked for checked, _ in criteria),

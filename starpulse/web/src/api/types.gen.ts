@@ -530,6 +530,10 @@ export interface RawAgent {
   title: string;
   trail?: TrailStep[] | null;
   /**
+   * A Board task's type; empty or absent when it has none.
+   */
+  type?: string | null;
+  /**
    * Whether a Board task can be worked now.
    */
   workable?: boolean | null;

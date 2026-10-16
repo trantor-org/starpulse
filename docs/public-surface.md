@@ -87,6 +87,16 @@ The modules an adapter may import, each exporting exactly the names in its `__al
 
 A package test pins this list and each module's names, so adding or removing one is a reviewed change.
 
+## Board types
+
+A task carries an optional `type`, a free string the board gives no meaning: `starpulse` ships no built-in names.
+`[board] types` in the config file (the native board's `types` setting) is an optional list of the names it may take.
+With the list declared, a write that sets a type outside it is refused with the list in the reason, whichever writer
+makes it: `starpulse task create` and `task edit`, the page, `/api/tasks` and `/api/edit`; a task whose type is
+unchanged is not refused, so narrowing the list never blocks an edit to a task already of another type. With no list,
+any non-empty string lands. `starpulse board --type NAME` keeps only the tasks of that type, and each task the board
+reports carries its `type` (empty when it has none). The Backlog.md adapter does not enforce the list.
+
 ## Board rules
 
 `[[board.rules]]` in the config file (the native board's `rules` setting) declares record-level rules every task write

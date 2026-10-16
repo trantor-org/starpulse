@@ -163,6 +163,12 @@
       "title": "Milestone",
       "type": "string"
     },
+    "type": {
+      "default": "",
+      "description": "The task's type, a name the deployment chooses (`spike`, `bug`); empty when it has none. StarPulse names no type.",
+      "title": "Type",
+      "type": "string"
+    },
     "description": {
       "default": "",
       "description": "The task's description text, shown when the task is opened.",

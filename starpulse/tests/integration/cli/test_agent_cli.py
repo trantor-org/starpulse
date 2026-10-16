@@ -101,7 +101,15 @@ def base(tmp_path: Path) -> Iterator[str]:
         )
     )
     feed.put(
-        task("PROJ-2", "Ready", milestone="m-2", labels=("api", "cli"), assignee="@agent-b", references=(UNREAD_PULL,))
+        task(
+            "PROJ-2",
+            "Ready",
+            milestone="m-2",
+            labels=("api", "cli"),
+            assignee="@agent-b",
+            references=(UNREAD_PULL,),
+            type="spike",
+        )
     )
     feed.put(task("PROJ-3", "Done", settled="completed"))
     feed.put(
@@ -112,6 +120,7 @@ def base(tmp_path: Path) -> Iterator[str]:
             labels=("api",),
             assignee="@agent-a",
             holder="session-1",
+            type="story",
             acceptance_criteria=("first", "second", "third", "fourth"),
             acceptance_checked=(True, True, False, False),
             pause_reason="Restart the server",
@@ -509,6 +518,7 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         "assignee": "@agent-a",
         "holder": "",
         "milestone": "m-1",
+        "type": "",
         "labels": ["cli"],
         "dependencies": ["PROJ-2", "PROJ-3"],
         "waiting_on": ["PROJ-2"],
@@ -544,6 +554,9 @@ def test_the_board_lists_each_column_with_its_tasks_dependencies_prs_and_moves(
         (["--holder", "session-1"], ["PROJ-4"]),
         (["--holder", "session-2"], []),
         (["--milestone", "m-9"], []),
+        (["--type", "spike"], ["PROJ-2"]),
+        (["--type", "story", "--state", "in_progress"], ["PROJ-4"]),
+        (["--type", "bug"], []),
     ],
 )
 def test_the_board_keeps_only_the_tasks_every_filter_matches(
@@ -655,6 +668,7 @@ def test_task_show_reports_a_settled_task_by_where_it_settled(base: str, capsys:
         "assignee": "",
         "holder": "",
         "milestone": "",
+        "type": "",
         "labels": [],
         "dependencies": [],
         "waiting_on": [],
