@@ -248,7 +248,7 @@ from starpulse._internal.runs import run_events
 from starpulse._internal.runs.ingest import MAX_BODY, MAX_FORWARD_BODY, ForwardIngest, Ingest
 from starpulse._internal.runs.ingest import tokens as ingest_tokens
 from starpulse._internal.pulls.release import READY, RELEASE_S, Releaser
-from starpulse._internal.pulls.task_actor import TaskActor, moves_of
+from starpulse._internal.pulls.task_actor import ACTOR, TaskActor, moves_of
 from starpulse._internal.config.pins import GitHub
 from starpulse._internal.pulls.pull_requests import PullRequests
 from starpulse._internal.pulls.pull_refresh import MAX_BODY as MAX_REFRESH_BODY
@@ -1653,7 +1653,9 @@ def assemble(config: Config, base: Path, window_s: float | None, run_safe: Colle
     board = load_board(config.board_type, config.board, base)
     domains = config.qualified_domains()
     qualify = qualifier(domains)
-    drawn = board.machines(qualify, [name for names in domains.values() for name in names])
+    # `[board.actor]` makes the task actor a writer the machine may name beside the adapters' workflows.
+    listed = [name for names in domains.values() for name in names]
+    drawn = board.machines(qualify, [*listed, ACTOR] if config.task_actor else listed)
     # Every harness adapter writes this one machine, so the page draws it unless the board declares a machine of that name.
     machines = {**drawn, **{name: m for name, m in HARNESS_MACHINES.items() if name not in drawn}}
     if config.ci:

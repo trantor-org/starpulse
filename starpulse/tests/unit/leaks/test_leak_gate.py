@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 
 import pytest
 
@@ -29,3 +31,21 @@ def test_a_context_that_retains_memory_every_iteration_exceeds_its_budget_and_is
 
 def test_a_context_that_frees_what_it_allocates_stays_within_its_budget() -> None:
     check("tidy-context", _tidy, BUDGET)
+
+
+def test_a_thread_another_test_left_running_does_not_count_against_the_context() -> None:
+    held: list[bytearray] = []
+    done = threading.Event()
+
+    def stray() -> None:
+        while not done.is_set():
+            held[:] = [bytearray(BUDGET.retained_bytes + 1)]
+            time.sleep(0)
+
+    thread = threading.Thread(target=stray, name="stray", daemon=True)
+    thread.start()
+    try:
+        check("tidy-context", _tidy, BUDGET)
+    finally:
+        done.set()
+        thread.join()

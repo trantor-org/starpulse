@@ -311,3 +311,32 @@ class TestNativeBoardAdapter(BoardAdapterKit):
         tasks: list[BoardTask] = []
         UpstreamBacklog(native_root(self.base), tasks.append, self.moves).scan()
         return [task.model_dump(mode="json") for task in tasks]
+
+
+_NAMING_THE_TASK_ACTOR = _WITH_CREATION_AND_ARCHIVE.replace(
+    "cues:", "writers:\n  to_done: [{actor: starpulse/task-actor, trigger: manual}]\ncues:"
+)
+
+
+def _served_naming_the_task_actor(base: Path, actor: str) -> None:
+    (base / "board.yaml").write_text(_NAMING_THE_TASK_ACTOR)
+    (base / "starpulse.toml").write_text(
+        '[board]\ntype = "native"\nmachine = "board.yaml"\n'
+        + actor
+        + '[[runs]]\nname = "dagu"\ntype = "dagu"\nurl = "http://dagu.test"\n'
+        + '[runs.domains.Ops]\nNightly = ["apply-on-merge"]\n'
+    )
+    native_root(base).mkdir(parents=True)
+    (native_root(base) / "config.yml").write_text(
+        yaml.safe_dump({"project_name": "demo", "statuses": LANES, "task_prefix": "task"})
+    )
+    assemble(load(base / "starpulse.toml"), base, None, ())
+
+
+def test_a_machine_may_name_the_task_actor_as_a_writer_when_the_board_runs_it(tmp_path: Path) -> None:
+    _served_naming_the_task_actor(tmp_path, "[board.actor]\n")
+
+
+def test_a_machine_naming_the_task_actor_is_refused_when_the_board_runs_none(tmp_path: Path) -> None:
+    with pytest.raises(Exception, match=r"no configured adapter lists: \['starpulse/task-actor'\]"):
+        _served_naming_the_task_actor(tmp_path, "")
