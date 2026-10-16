@@ -1,4 +1,4 @@
-"""How many pytest-xdist workers a validate runner gets, and that the pytest job uses that count."""
+"""How many pytest-xdist workers a self-hosted runner gets, and that the pytest job uses that count."""
 
 from __future__ import annotations
 

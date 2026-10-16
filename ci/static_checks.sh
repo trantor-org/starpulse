@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The short static checks, run at once in one job so a merge-queue run takes one validate runner for them, not four:
+# The short static checks, run at once in one job so a run takes one runner for them, not four:
 # the job's wall time is its slowest check (api-types), not their sum. Each check logs to its own file, printed as a
 # group when all have finished; one that fails is named and fails the job, and the others still run to completion.
 # shellcheck disable=SC2317 # the checks are invoked through "$check"

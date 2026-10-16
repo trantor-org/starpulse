@@ -1,4 +1,4 @@
-"""Where each workflow job runs: pull-request validation on the validate lane, tag publishing on hosted runners."""
+"""Where each workflow job runs: the nightly suite and the release soak on the ai-vm-1 fleet, tag publishing on hosted runners."""
 
 from __future__ import annotations
 
@@ -12,11 +12,8 @@ import pytest
 import yaml
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github/workflows"
-VALIDATE_LANE = ["self-hosted", "validate"]
-#: The label only the Unraid farm slots carry: the hardware the latency budget was calibrated on.
-TOWER_LANE = ["self-hosted", "validate", "tower"]
+AI_VM_1_LANE = ["self-hosted", "ai-vm-1"]
 HOSTED = "ubuntu-latest"
-MERGE_QUEUE_LANE = ["self-hosted", "merge-queue"]
 #: The required checks the workspace App reports (trantor's `ci-sp-*` Dagu DAGs, submitted by ci-event.yml): the
 #: contexts of trantor's infrastructure/github/starpulse.tf that ci.yml no longer runs on a pull request or a candidate.
 APP_CHECKS = ["python", "web", "static-checks", "trantor-contract"]
@@ -34,13 +31,13 @@ def job(workflow: str, name: str) -> dict:
         ("ui-preview.yml", "leak-scan"),
     ],
 )
-def test_pull_request_job_runs_on_the_validate_lane(workflow, name):
-    assert job(workflow, name)["runs-on"] == VALIDATE_LANE
+def test_pull_request_job_runs_on_the_ai_vm_1_fleet(workflow, name):
+    assert job(workflow, name)["runs-on"] == AI_VM_1_LANE
 
 
 @pytest.mark.parametrize("name", CI_TEST_JOBS)
-def test_ci_test_job_runs_on_the_validate_lane(name):
-    assert job("ci.yml", name)["runs-on"] == VALIDATE_LANE
+def test_ci_test_job_runs_on_the_ai_vm_1_fleet(name):
+    assert job("ci.yml", name)["runs-on"] == AI_VM_1_LANE
 
 
 def test_ci_runs_only_the_nightly_dispatch_and_push_events():
@@ -49,18 +46,15 @@ def test_ci_runs_only_the_nightly_dispatch_and_push_events():
     assert set(document[True]) == {"push", "schedule", "workflow_dispatch"}
 
 
-def test_release_build_runs_hosted_for_a_tag_and_on_the_merge_queue_lane_for_a_merge_group():
+def test_release_build_runs_hosted_for_a_tag_and_on_the_ai_vm_1_fleet_otherwise():
     runs_on = job("release.yml", "build")["runs-on"]
     match = re.fullmatch(
-        r"\$\{\{ startsWith\(github\.ref, 'refs/tags/v'\) && '([^']+)'"
-        r" \|\| github\.event_name == 'merge_group' && fromJSON\('([^']+)'\) \|\| fromJSON\('([^']+)'\) \}\}",
-        runs_on,
+        r"\$\{\{ startsWith\(github\.ref, 'refs/tags/v'\) && '([^']+)' \|\| fromJSON\('([^']+)'\) \}\}", runs_on
     )
     assert match, runs_on
-    tag_runner, merge_group_runner, pull_request_runner = match.groups()
+    tag_runner, other_runner = match.groups()
     assert tag_runner == HOSTED
-    assert json.loads(merge_group_runner) == MERGE_QUEUE_LANE
-    assert json.loads(pull_request_runner) == VALIDATE_LANE
+    assert json.loads(other_runner) == AI_VM_1_LANE
 
 
 @pytest.mark.parametrize("name", ["github-release", "pypi"])
@@ -79,7 +73,7 @@ def test_publishing_job_runs_on_a_hosted_runner(name):
     ],
 )
 def test_node_is_installed_before_pnpm(workflow, name):
-    """`pnpm/action-setup` installs pnpm with the runner's `npm`, which fails under the system Node of a validate runner."""
+    """`pnpm/action-setup` installs pnpm with the runner's `npm`, which fails under the system Node of a self-hosted runner."""
     uses = [step["uses"].split("@")[0] for step in job(workflow, name)["steps"] if "uses" in step]
     assert uses.index("actions/setup-node") < uses.index("pnpm/action-setup")
 
@@ -89,9 +83,9 @@ def needs(workflow: str, name: str) -> list[str]:
     return [declared] if isinstance(declared, str) else declared
 
 
-def test_release_soak_runs_on_tower_after_the_build_and_does_not_gate_publishing():
-    """The soak still runs on Tower after a green build; a red soak no longer holds the GitHub Release or PyPI."""
-    assert job("release.yml", "soak")["runs-on"] == TOWER_LANE
+def test_release_soak_runs_on_the_ai_vm_1_fleet_after_the_build_and_does_not_gate_publishing():
+    """The soak runs after a green build; a red soak does not hold the GitHub Release or PyPI."""
+    assert job("release.yml", "soak")["runs-on"] == AI_VM_1_LANE
     assert "build" in needs("release.yml", "soak")
     assert "build" in needs("release.yml", "github-release")
     assert "soak" not in needs("release.yml", "github-release")
@@ -113,7 +107,7 @@ def test_a_failed_or_cancelled_release_soak_files_a_github_issue_naming_the_tag_
 
 
 def test_release_soak_runs_for_a_tag_or_a_dispatch_and_publishing_only_for_a_tag_push():
-    """A pull request or a merge-queue candidate never takes a Tower slot for hours, and a dispatch on a tag's ref publishes nothing."""
+    """A pull request or a merge-queue candidate never takes a runner for hours, and a dispatch on a tag's ref publishes nothing."""
     assert job("release.yml", "soak")["if"] == (
         "github.event_name != 'pull_request' && github.event_name != 'merge_group'"
     )
@@ -139,7 +133,7 @@ def test_release_soak_holds_the_duration_input_four_hours_by_default_and_reports
 
 
 def test_release_soak_queues_behind_a_running_one_rather_than_cancelling_it():
-    """A 4 hour hold is not restarted by the next run: one holds a farm slot, the next waits."""
+    """A 4 hour hold is not restarted by the next run: one holds a runner, the next waits."""
     concurrency = job("release.yml", "soak")["concurrency"]
     assert concurrency["group"]
     assert concurrency["cancel-in-progress"] is False
@@ -179,7 +173,7 @@ def test_trantor_tests_of_this_package_gate_every_merge():
     contract = job("ci.yml", "trantor-contract")
     checkouts = [step.get("with", {}) for step in contract["steps"] if step.get("uses", "").startswith("actions/checkout")]
     runs = "\n".join(step["run"] for step in contract["steps"] if "run" in step)
-    assert contract["runs-on"] == VALIDATE_LANE
+    assert contract["runs-on"] == AI_VM_1_LANE
     assert checkouts[0]["sparse-checkout"] == "/*"  # a sparse root checkout empties every later job on the runner
     assert {"repository": "trantor-org/trantor", "path": ".trantor"}.items() <= checkouts[1].items()
     assert checkouts[2]["path"] == ".trantor/starpulse"  # this tree in the submodule's place
@@ -206,7 +200,7 @@ def test_the_free_threaded_suite_runs_beside_the_shards_and_is_no_required_check
     """trantor's live server runs on 3.14t, so a change that breaks that build must show in the nightly run. The job is
     not a required check: `python` neither waits for it nor counts it."""
     ft = job("ci.yml", "python-ft")
-    assert ft["runs-on"] == VALIDATE_LANE
+    assert ft["runs-on"] == AI_VM_1_LANE
     assert "select" in needs("ci.yml", "python-ft")
     assert "python-ft" not in needs("ci.yml", "python")
     assert "python-ft" not in APP_CHECKS
@@ -239,7 +233,7 @@ STATIC_SCRIPT = WORKFLOWS.parents[1] / "ci/static_checks.sh"
 
 
 def test_the_four_short_jobs_are_gone_and_static_checks_runs_every_check_they_ran():
-    """ic, public-names, api-types and tier-policy share one job so a merge-queue run starts four fewer validate jobs."""
+    """ic, public-names, api-types and tier-policy share one job so a run starts four fewer jobs."""
     jobs = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
     assert not {"ic", "public-names", "api-types", "tier-policy"} & jobs.keys()
     script = STATIC_SCRIPT.read_text()
@@ -498,7 +492,7 @@ def test_release_build_reports_on_a_merge_queue_candidate():
     [("ci.yml", "dispatch"), ("release.yml", "soak"), ("release.yml", "github-release"), ("release.yml", "pypi")],
 )
 def test_a_merge_queue_candidate_dispatches_soaks_and_publishes_nothing(workflow, name):
-    """The candidate is not on main yet: dispatching it pins a SHA trantor cannot fetch, and a soak holds Tower for hours."""
+    """The candidate is not on main yet: dispatching it pins a SHA trantor cannot fetch, and a soak holds a runner for hours."""
     condition = job(workflow, name)["if"]
     assert "github.event_name == 'push'" in condition or "github.event_name != 'merge_group'" in condition
 

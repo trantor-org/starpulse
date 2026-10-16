@@ -157,7 +157,7 @@ def surface(url: str) -> str | None:
 def median_run(runs: Sequence[Sequence[Row]]) -> list[Row]:
     """One row per surface, from the run whose p95 is the median of that surface's runs (the lower of two).
 
-    The validate lane is noisy: one starved run reads over budget on a surface that is fast in the others, and one lucky
+    A shared runner is noisy: one starved run reads over budget on a surface that is fast in the others, and one lucky
     run reads under on a slow one. Judging the median run's p95 fails a surface only when most runs agree it is slow.
     Rows are matched by name, in the order they first appear; a surface a run did not sample (a stream event that run
     never saw) is judged on the runs that did, and one no run sampled keeps its note. Several runs say so in the note.
