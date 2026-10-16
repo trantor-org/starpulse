@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.autopilot import service
 from starpulse._internal.autopilot.remote import Remote
+from starpulse._internal.server import autopilot_service as service
 from starpulse._internal.server import server
 from starpulse.tests import fake_board
 

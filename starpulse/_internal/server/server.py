@@ -1718,8 +1718,8 @@ def start_autopilot_context(
 
     The autopilot modules are imported here, not at the top, so `starpulse worker pulls` does not load them.
     """
-    from starpulse._internal.autopilot import service
     from starpulse._internal.autopilot.remote import Remote, follow_status
+    from starpulse._internal.server import autopilot_service as service
 
     if not config.autopilot_worker:
         return service.start_autopilot(config, base, feed, board, store, log, config.level, threading.Event())

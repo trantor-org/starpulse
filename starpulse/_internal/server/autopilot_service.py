@@ -1,7 +1,7 @@
 """The autopilot's runtime started over a board: the sampler and the dispatch loop, on daemon threads.
 
-`serve` starts it in-process; `starpulse worker autopilot` starts it as its own process (`autopilot.worker`). Neither is
-imported by `server.server`, so the Delivery worker's import closure holds no autopilot module.
+`serve` starts it in-process; `starpulse worker autopilot` starts it as its own process (`server.autopilot_worker`). Neither is
+imported at the top of `server.server`, so the Delivery worker's import closure holds no autopilot module.
 """
 
 from __future__ import annotations

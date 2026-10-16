@@ -1,7 +1,7 @@
 """`starpulse worker <context>`: one bounded context as its own process, beside `serve`.
 
 `pulls` is the Delivery context (the pull request store's sync and projection, the task actor and the release of
-dependents); `autopilot` is the Autopilot context, run by `starpulse._internal.autopilot.worker`.
+dependents); `autopilot` is the Autopilot context, run by `starpulse._internal.server.autopilot_worker`.
 
 The `pulls` worker reads the config and the history database `serve` does and meets `serve` only in the event log
 (`starpulse._internal.pulls.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and
@@ -130,7 +130,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = worker_parser()
     args = parser.parse_args(argv)
     if args.context == "autopilot":  # imported here: the Delivery worker's closure holds no autopilot module
-        from starpulse._internal.autopilot import worker
+        from starpulse._internal.server import autopilot_worker as worker
 
         return worker.main(argv, parser)
     path = discover(args.config)

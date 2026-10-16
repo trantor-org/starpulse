@@ -18,7 +18,6 @@ from pathlib import Path
 
 from starpulse._internal.autopilot.remote import follow_wakes, publisher
 from starpulse._internal.autopilot.runtime import Runtime
-from starpulse._internal.autopilot.service import start_autopilot
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog import events as machine_events
@@ -26,6 +25,7 @@ from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import History, database_url
 from starpulse._internal.feed.board_feed import BoardFeed, follow
 from starpulse._internal.feed.machine_tasks import MachineTasks
+from starpulse._internal.server.autopilot_service import start_autopilot
 from starpulse._internal.server.hold import hold
 from starpulse._internal.server.server import assemble, history_store
 

@@ -10,9 +10,9 @@ from pathlib import Path
 
 from starpulse._internal.autopilot.loop import PAUSES_KEY
 from starpulse._internal.autopilot.remote import Remote
-from starpulse._internal.autopilot.worker import Autopilot
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.server.autopilot_worker import Autopilot
 from starpulse._internal.server.server import assemble, history_store
 from starpulse.tests.integration.autopilot.test_autopilot_served import IDLE_HOST, _start_service, _task, _until
 

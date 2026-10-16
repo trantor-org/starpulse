@@ -18,10 +18,10 @@ import pytest
 from starpulse._internal.autopilot.ledger import LEDGER_FILE, Ledger
 from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.autopilot.sampler import PERIOD
-from starpulse._internal.autopilot.service import start_autopilot
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
+from starpulse._internal.server.autopilot_service import start_autopilot
 from starpulse._internal.server.server import assemble, history_store
 
 #: How long a test waits for the loop: far under the sampler's period, which is the bound the spec names.
