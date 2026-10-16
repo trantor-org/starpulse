@@ -88,7 +88,9 @@ while the pull request is open. That config draws a fictional workspace at a wor
 [`ci/demo_workspace.py`](../ci/demo_workspace.py) serves an eight-lane Board whose In Progress opens a delivery machine and
 the lifecycle machines in [`ci/workspace/`](../ci/workspace), beside five DAG domains, and `starpulse._internal.cli.demo` fills it with
 synthetic tasks, sessions, runs and pools. Each changed sub-mockup, a `design/<dir>/index.html` layered over a scrubbed page
-capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request. A change confined to one view's
+capture, is published beside the demos as `mockup-<dir>.html` with its scripts inlined. The preview is review context and never gates the pull request, so a failed render leaves the run green.
+A final workflow step then replaces the comment with one titled "failed" that names the head commit, links the run and carries no screenshots,
+and the next push renders again. A change confined to one view's
 feature folder (`features/kanban`, `features/dags` or `features/orbit`) screenshots that view alone; any other page path screenshots all four.
 A push that changed none of those paths since the commit the comment names leaves the comment and the demos untouched, and of `ci/` only
 the preview script, its config, the demo adapter and `ci/workspace/` start a run. A push to `main`

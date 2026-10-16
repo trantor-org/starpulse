@@ -21,6 +21,7 @@ from ui_preview import (
     DemoLeakError,
     comment_body,
     demo_note,
+    failure_body,
     find_comment,
     leaks,
     main,
@@ -28,6 +29,7 @@ from ui_preview import (
     pr_body_with_demo,
     publish,
     publish_demos,
+    publish_failure,
     push_touches_ui,
     rendered_sha,
     scan_demos,
@@ -479,3 +481,34 @@ def test_scan_demos_passes_a_clean_demo(tmp_path: Path) -> None:
     clean = tmp_path / "starpulse.html"
     clean.write_text("<html>DEMO-1</html>")
     scan_demos([clean])
+
+
+def test_a_failed_render_comment_opens_with_the_marker_names_the_run_and_claims_no_render() -> None:
+    body = failure_body("https://x/run/1", SHA)
+    assert body.startswith(MARKER + "\n")
+    assert "failed" in body and "https://x/run/1" in body and SHA[:7] in body
+    assert rendered_sha([{"id": 1, "user": {"login": "bot"}, "body": body}], author="bot") is None
+
+
+def test_a_failed_render_creates_the_comment_when_the_pull_request_has_none() -> None:
+    posted: list[tuple[str, ...]] = []
+
+    def gh(*args: str) -> str:
+        posted.append(args)
+        return "[[]]"
+
+    publish_failure(gh, "o/r", 7, "failed", author="bot")
+    assert posted[-1] == ("api", "--method", "POST", "repos/o/r/issues/7/comments", "-f", "body=failed")
+
+
+def test_a_failed_render_edits_the_earlier_preview_comment_in_place() -> None:
+    gh = FakeGh([OLD])
+    publish_failure(gh, "o/r", 7, "failed", author="bot")
+    assert gh.comments[5]["body"] == "failed"
+
+
+def test_the_workflow_reports_a_failed_pull_request_render() -> None:
+    steps = yaml.safe_load((ROOT / ".github/workflows/ui-preview.yml").read_text())["jobs"]["render"]["steps"]
+    step = next(s for s in steps if s.get("name") == "Report a failed render")
+    assert "failure()" in step["if"] and "pull_request" in step["if"]
+    assert "--failed" in step["run"]
