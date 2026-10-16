@@ -175,9 +175,9 @@ def test_slow_read_logs_one_line_with_the_query_and_each_phase_in_seconds(
 
     (line,) = _slow_reads(caplog)
     assert "query=repo=acme/widgets" in line
-    fields = dict(re.findall(r"(queue_s|compute_s|write_s|in_flight)=([0-9.]+)", line))
+    fields = dict(re.findall(r"(queue_s|compute_s|write_s|in_flight|busy|streams)=([0-9.]+)", line))
     assert float(fields["compute_s"]) >= 0.2
-    assert set(fields) == {"queue_s", "compute_s", "write_s", "in_flight"}
+    assert set(fields) == {"queue_s", "compute_s", "write_s", "in_flight", "busy", "streams"}
     assert fields["in_flight"] == "1"
 
 
