@@ -38,7 +38,7 @@ jobs:
           # shellcheck disable=SC1091
           . /home/adinb/trantor/events/lib/dagu_events/dagu_events.env
           set +a
-          for dag in ci-sp-python ci-sp-web ci-sp-static ci-sp-contract; do
+          for dag in ci-sp-python ci-sp-web ci-sp-contract ci-sp-static; do
             /home/adinb/trantor/.venv/bin/python /home/adinb/trantor/bin/dagu_event.py submit \
               --dag "$dag" --repository "$REPOSITORY" --before "$BEFORE" --after "$AFTER" \
               --delivery "$DELIVERY" --run-attempt "$RUN_ATTEMPT" --pull-request "$PULL_REQUEST" \

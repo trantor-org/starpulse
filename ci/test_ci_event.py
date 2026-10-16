@@ -11,7 +11,7 @@ from pathlib import Path
 import yaml
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/ci-event.yml"
-DAGS = ["ci-sp-python", "ci-sp-web", "ci-sp-static", "ci-sp-contract"]
+DAGS = ["ci-sp-python", "ci-sp-web", "ci-sp-contract", "ci-sp-static"]
 
 
 def workflow() -> dict:
