@@ -47,6 +47,10 @@ free-threaded CPython build after the thread exits, so a crowd of pages would le
 encodes a 1 MB snapshot, and later requests reuse the same workers. A 50-viewer Locust crowd therefore occupies 50 of
 those workers, not one abandoned heap per request.
 
+An event stream (`/api/events`, `/api/lanes`, `/api/held`) leaves that pool for as long as it stays open and is counted
+against `stream_limit` (256 on `StarPulseServer`) instead, so a crowd of long-lived streams never takes the worker a
+short request needs. A stream past the limit gets `503` with `Retry-After: 5` and the client reconnects.
+
 ### What the page shows when the server restarts
 
 The page keeps its last Board on screen while the connection is down and says why in the navigator's header, where the dot
@@ -119,7 +123,8 @@ event_log_archive_dir = "starpulse-archive"   # the default
 
 # The seconds a `GET /api/pulls` read may take, from accept to the last byte written, before `serve` logs a `slow_read`
 # line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer
-# and wrote it, and `in_flight`, the `/api/pulls` reads running when it began. No other route is timed. Above 0.
+# and wrote it, `in_flight`, the `/api/pulls` reads running when it began, and `busy` and `streams`, the request workers
+# in use (the read itself included) and the streams open when it was accepted. No other route is timed. Above 0.
 slow_read_seconds = 1   # the default
 
 # The board adapter: a module under `starpulse`, or the dotted path of one an installed package provides.

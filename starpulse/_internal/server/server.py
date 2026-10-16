@@ -223,7 +223,7 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from pydantic import ValidationError
@@ -350,6 +350,8 @@ _STATIC = _HERE / "static"
 _PAGES = {"/", "/board", "/runs"}
 #: Seconds an idle event stream waits before a keep-alive comment, which is how a closed page is noticed.
 _PING_S = 15.0
+#: Seconds a stream refused for a full stream pool is asked to wait before it reconnects.
+_STREAM_RETRY_S = 5
 #: Seconds a held-task stream lets a burst of changes settle before it rereads the holder's tasks.
 _HELD_SETTLE_S = 0.5
 _RUN = "/api/run/"
@@ -1254,13 +1256,20 @@ class _ApiHandler(SimpleHTTPRequestHandler):
         return encode("forwarding", body), status
 
     def _send(
-        self, body: bytes | Encoded, status: int = 200, cache: str = "no-store", content_type: str = "application/json"
+        self,
+        body: bytes | Encoded,
+        status: int = 200,
+        cache: str = "no-store",
+        content_type: str = "application/json",
+        retry_after: int | None = None,
     ) -> None:
         """`body` as JSON unless told otherwise; an `Encoded` one is sent as the gzip it already holds to a page that
-        accepts gzip."""
+        accepts gzip. `retry_after` is the seconds a refused client is asked to wait."""
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", cache)
+        if retry_after is not None:
+            self.send_header("Retry-After", str(retry_after))
         accepted = self.headers.get("Accept-Encoding")
         if isinstance(body, Encoded):
             body, gzipped = body.body, body.gzipped if accepts_gzip(accepted) else None
@@ -1373,7 +1382,9 @@ def request_handler(
         def setup(self) -> None:
             super().setup()
             now = time.monotonic()
-            self.queued_s = now - self.server.accepted.pop(self.request, now)  # type: ignore[attr-defined]
+            arrival = self.server.accepted.pop(self.request, _Arrival(now))  # type: ignore[attr-defined]
+            self.queued_s = now - arrival.at
+            self.arrival = arrival
 
         def do_GET(self) -> None:
             url = urlsplit(self.path)
@@ -1397,7 +1408,7 @@ def request_handler(
             elif url.path == "/api/history":
                 self._send(*history_response(history, parse_qs(url.query), flows, feed.keys))
             elif url.path == "/api/pulls":
-                with slow_reads.watch(url.query, self.queued_s) as timing:
+                with slow_reads.watch(url.query, self.queued_s, self.arrival) as timing:
                     body, status = pull_reads(url.query)
                     timing.computed()
                     self._send(body, status)
@@ -1495,6 +1506,8 @@ def request_handler(
             """Hold the connection open: the Board's snapshot, then each change as it happens. `by_ref` sends the snapshot
             as `ref <path>`, the path its body is read from: a browser reads a long event on its main thread, a fetched
             body off it."""
+            if not self._admit_stream():
+                return
             changes = None
             try:
                 # The held snapshot is sent as it is, however many changes it lacks, so a page connecting while the next
@@ -1527,6 +1540,13 @@ def request_handler(
                 if changes is not None:
                     feed.unsubscribe(changes)
 
+        def _admit_stream(self) -> bool:
+            """Move this connection's worker into the stream pool, or answer 503 when that pool is full."""
+            if self.server.open_stream():  # type: ignore[attr-defined]
+                return True
+            self._send(_error("too many open streams; retry shortly"), 503, retry_after=_STREAM_RETRY_S)
+            return False
+
         def _open_stream(self) -> None:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")  # pragma: no mutate: names are case-insensitive
@@ -1549,6 +1569,8 @@ def request_handler(
             """Hold the connection open: the Board's columns (only `states`, when named) with the tasks `holder` holds
             (all, when None), as `event`, then again each time a change alters that view. A burst of changes settles
             before one reread, and the streams that reread for a change read one build of the columns."""
+            if not self._admit_stream():
+                return
             changes = None
             try:
                 served = snapshots.get()
@@ -1803,8 +1825,9 @@ class _PullReads:
 
 class _SlowReads:
     """Logs each `/api/pulls` read that took `threshold_s` seconds or more from accept to the last byte written, with
-    the seconds it waited for a handler thread, computed its answer and wrote it, and the reads in flight when it began,
-    so a stall of the whole process can be told apart by the phase that held the time."""
+    the seconds it waited for a handler thread, computed its answer and wrote it, the reads in flight when it began, and
+    the request workers busy and streams open when it was accepted, so a stall of the whole process can be told apart by
+    the phase, and the occupant of the pool, that held the time."""
 
     class _Read:
         def __init__(self, started: float) -> None:
@@ -1820,7 +1843,7 @@ class _SlowReads:
         self._in_flight = 0
 
     @contextmanager
-    def watch(self, query: str, queued_s: float) -> Iterator[_Read]:
+    def watch(self, query: str, queued_s: float, arrival: _Arrival) -> Iterator[_Read]:
         with self._lock:
             self._in_flight += 1
             in_flight = self._in_flight
@@ -1835,12 +1858,15 @@ class _SlowReads:
             compute_s, write_s = computed_at - read.started, ended - computed_at
             if queued_s + compute_s + write_s >= self._threshold_s:
                 logger.warning(
-                    "slow_read route=/api/pulls query=%s queue_s=%.3f compute_s=%.3f write_s=%.3f in_flight=%d",
+                    "slow_read route=/api/pulls query=%s queue_s=%.3f compute_s=%.3f write_s=%.3f in_flight=%d"
+                    " busy=%d streams=%d",
                     query,
                     queued_s,
                     compute_s,
                     write_s,
                     in_flight,
+                    arrival.busy,
+                    arrival.streams,
                 )
 
 
@@ -1871,6 +1897,15 @@ def inherited_socket(environ: Mapping[str, str]) -> socket.socket | None:
 REQUEST_STACK = 256 * 1024
 
 
+class _Arrival(NamedTuple):
+    """A connection when it was accepted: the time, the request workers busy or about to be (itself included) and the
+    streams open."""
+
+    at: float
+    busy: int = 0
+    streams: int = 0
+
+
 class StarPulseServer(ThreadingHTTPServer):
     """The view's HTTP server, with a listen backlog a crowd of pages connecting at once fits in: the stock 5 drops the
     rest's SYNs, and each waits out a 1 s retransmit before its first byte.
@@ -1879,17 +1914,23 @@ class StarPulseServer(ThreadingHTTPServer):
     Request threads are pooled at `REQUEST_STACK` bytes: a request starts a worker only when none is idle (up to the
     backlog), and a worker idle for `idle_timeout` seconds exits. On free-threaded 3.14t each live thread keeps its
     allocator heap's high-water pages, so workers kept past a burst are resident memory the process never returns.
+
+    A stream (`open_stream`) leaves the request pool for the length of its connection and is counted against
+    `stream_limit` instead, so streams never take a short request's worker; a stream past the limit is refused.
     """
 
     request_queue_size = 128
+    stream_limit = 256
     idle_timeout = 30.0
 
     def __init__(
         self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], listening: socket.socket | None = None
     ) -> None:
-        self.accepted: dict[socket.socket, float] = {}  # when each request was accepted, until its thread takes it up
+        self.accepted: dict[socket.socket, _Arrival] = {}  # each request as accepted, until its thread takes it up
         self._work: queue.SimpleQueue[tuple[Any, Any]] = queue.SimpleQueue()
-        self._workers = 0
+        self._workers = 0  # request workers, not the threads serving streams
+        self.streams = 0  # streams open, each on a thread that has left the request pool
+        self._streaming = threading.local()  # set on a worker thread that has left the request pool for a stream
         self._idle = 0  # workers waiting for work, less the requests queued for them; negative is a backlog
         self._workers_lock = threading.Lock()
         super().__init__(address, handler, bind_and_activate=listening is None)
@@ -1900,7 +1941,6 @@ class StarPulseServer(ThreadingHTTPServer):
             self.server_name, self.server_port = self.server_address[:2]
 
     def process_request(self, request: Any, client_address: Any) -> None:
-        self.accepted[request] = time.monotonic()
         with self._workers_lock:
             if self._idle <= 0 and self._workers < self.request_queue_size:
                 self._workers += 1
@@ -1911,7 +1951,20 @@ class StarPulseServer(ThreadingHTTPServer):
                     threading.stack_size(previous)
             else:
                 self._idle -= 1
+            busy = self._workers - max(self._idle, 0)
+            self.accepted[request] = _Arrival(time.monotonic(), busy, self.streams)
             self._work.put((request, client_address))
+
+    def open_stream(self) -> bool:
+        """Move the calling request worker into the stream pool for the rest of its connection; `False`, with the worker
+        left in the request pool, when `stream_limit` streams are open."""
+        with self._workers_lock:
+            if self.streams >= self.stream_limit:
+                return False
+            self.streams += 1
+            self._workers -= 1  # a request may start its replacement
+        self._streaming.open = True
+        return True
 
     def _run_requests(self) -> None:
         while True:
@@ -1926,6 +1979,9 @@ class StarPulseServer(ThreadingHTTPServer):
                 continue
             self.process_request_thread(*work)
             with self._workers_lock:
+                if getattr(self._streaming, "open", False):  # served a stream: its slot is closed, its thread done
+                    self.streams -= 1
+                    return
                 self._idle += 1
 
 
