@@ -200,6 +200,13 @@ type = "native"
 # and no worker running, no pull request state is refreshed.
 # delivery_worker = false
 
+# Run the Autopilot context (the sampler and the loop that starts a session per eligible task) in its own process,
+# `starpulse worker autopilot --config <this file>`, instead of in `serve`. `serve` then starts neither, answers the
+# autopilot's status from what the worker publishes in the event log, and wakes the worker on a switch, quiet-hours or
+# harness change; the switch, the pauses and the run ledger stay in the store, so a restarted worker starts no task twice.
+# `SIGHUP` re-reads the config. With the flag set and no worker running, no task is started.
+# autopilot_worker = false
+
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
 # `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's
 # thread reads that pull request alone (one single-PR GraphQL read, no listing) and publishes it as a refresh does; one

@@ -93,7 +93,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlsplit
 
 from starpulse._internal.board.seam import (
@@ -111,13 +111,16 @@ from starpulse._internal.board.seam import (
     TaskRestorer,
     Written,
 )
-from starpulse._internal.autopilot.runtime import Runtime
 from starpulse._internal.config.harnesses import Harnesses
 from starpulse._internal.hub.forward import Forwarder
 from starpulse.contracts.adapters import Move, StartFailedError
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.eventlog.history import HistoryStore
+
+if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
+    from starpulse._internal.autopilot.remote import Remote
+    from starpulse._internal.autopilot.runtime import Runtime
 
 logger = logging.getLogger(__name__)
 
@@ -927,7 +930,7 @@ def forwarding(source: str, method: str, raw: bytes, forwarder: Forwarder | None
     return 200, {"configured": True, **forwarder.status()}
 
 
-def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | None) -> tuple[int, dict[str, Any]]:
+def autopilot(source: str, method: str, raw: bytes, runtime: Runtime | Remote | None) -> tuple[int, dict[str, Any]]:
     """Read (`GET`) whether the autopilot admits tasks, which harness it starts on, its quiet hours and each capacity
     dimension's use against its limit, or set (`PUT {"enabled": bool}`, `PUT {"harness": "<name>"}`,
     `PUT {"quietHours": {...} | null}`, or any combination) those settings, for a browser at `source`.
