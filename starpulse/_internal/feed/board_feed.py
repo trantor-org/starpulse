@@ -236,6 +236,10 @@ class BoardFeed:
         self._strip: dict | None = None
         self._pins: list[dict] = []
         self._lock = threading.RLock()
+        #: Held by `put` from placing a change to publishing its lane entry and by `reconcile_lanes` while it repairs, so
+        #: a repair never records bare a change `put` has placed and not yet recorded; a writer that learns its task's id
+        #: only from the write (a create) holds it across the write and its `note_actor`. Taken before `_lock`.
+        self.recording = threading.RLock()
         #: Counts every publish, suppressed or not: a snapshot held at this number is out of date once it moves.
         self._rev = 0
         #: Counts the publishes put on subscribers' queues.
@@ -408,7 +412,7 @@ class BoardFeed:
             self._open, self._settled, self._assignees, self._seen, self._saved = open_, settled, assignees, seen, seen
             self._pulls, self._pull_answers = pulls, answers
             self._cited, self._kept, self._kept_saved = cited, source, source
-            self._movers = self._movers_saved = movers
+            self._movers, self._movers_saved = dict(movers), movers  # a shared dict would always equal the saved one
             self._gated = {
                 t for t, agent in open_.items() if agent["state"] == WAITING and criteria.authored(agent["description"])
             }
@@ -528,31 +532,32 @@ class BoardFeed:
         """Place a task the board contract describes; one outside the adapter's key scheme is dropped."""
         if self._keys is not None and not self._keys.matches(task.id):
             return
-        change = self._place(task)
-        if self._search is not None:
-            try:
-                self._search.index(task, self._done_at(task.id))  # placed first: the done lane's entry dates it
-            except Exception as exc:  # the index is down; the task is placed and the next change is indexed
-                logger.warning("StarPulse: cannot index %s for search: %s", task.id, exc)
-        if change is None:
-            return  # the note stays for the lane change of the write that made it: the watch can place an earlier write first
-        writer = self._mover(task.id)
-        if self._lanes is not None:
-            lane, entered = change
-            try:
-                if task.settled:
-                    path = self._lane_path(task.id)
-                    if path and lane_id(path[-1]["to"]) == lane:
-                        return
-                    # a file stamped in a zone behind the moves' would settle before them and open the trajectory
-                    entered = max(entered, path[-1]["at"]) if path else entered
-                event_id = f"{task.id}@{lane}@{entered}"
-                if self._lanes.record_lane(event_id, task.id, lane, entered) and self._lane_log is not None:
-                    lane_events.publish(
-                        self._lane_log, event_id, task.model_copy(update={"lane": lane}), entered, *writer
-                    )
-            except Exception as exc:  # the history is down; the task is placed and the next change is recorded
-                logger.warning("StarPulse: cannot record the lane change of %s: %s", task.id, exc)
+        with self.recording:
+            change = self._place(task)
+            if self._search is not None:
+                try:
+                    self._search.index(task, self._done_at(task.id))  # placed first: the done lane's entry dates it
+                except Exception as exc:  # the index is down; the task is placed and the next change is indexed
+                    logger.warning("StarPulse: cannot index %s for search: %s", task.id, exc)
+            if change is None:
+                return  # the note stays for the lane change of the write that made it: the watch can place an earlier write first
+            writer = self._mover(task.id)
+            if self._lanes is not None:
+                lane, entered = change
+                try:
+                    if task.settled:
+                        path = self._lane_path(task.id)
+                        if path and lane_id(path[-1]["to"]) == lane:
+                            return
+                        # a file stamped in a zone behind the moves' would settle before them and open the trajectory
+                        entered = max(entered, path[-1]["at"]) if path else entered
+                    event_id = f"{task.id}@{lane}@{entered}"
+                    if self._lanes.record_lane(event_id, task.id, lane, entered) and self._lane_log is not None:
+                        lane_events.publish(
+                            self._lane_log, event_id, task.model_copy(update={"lane": lane}), entered, *writer
+                        )
+                except Exception as exc:  # the history is down; the task is placed and the next change is recorded
+                    logger.warning("StarPulse: cannot record the lane change of %s: %s", task.id, exc)
         if not self._replaying():
             self._refresh_ledgers()  # the Ledger reads the move from the history; the replay's moves are built once, at its end
 
@@ -568,6 +573,10 @@ class BoardFeed:
         if self._lanes is None:
             return 0
         last = {task: (lane, at) for _, task, lane, at in current}
+        with self.recording:
+            return self._reconcile(last)
+
+    def _reconcile(self, last: dict[str, tuple[str, float]]) -> int:
         with self._lock:
             held = [(task_id, agent["state"], agent["entered"]) for task_id, agent in self._open.items()]
             held += [

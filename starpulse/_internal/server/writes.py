@@ -86,6 +86,7 @@ PUT /api/autopilot {enabled: bool}: switch admission on or off by writing the fi
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import logging
@@ -617,11 +618,13 @@ def create_task(
         return 400, {"error": wrong}
     if create is None:
         return 404, {"error": "this board does not create tasks"}
-    written = create(title.strip(), {**details, "created_by": who.created_by}, actor=who.actor)
+    # the id is the writer's to choose, so the writer is noted once the task is made, with the feed's placing held
+    with feed.recording if feed is not None else contextlib.nullcontext():
+        written = create(title.strip(), {**details, "created_by": who.created_by}, actor=who.actor)
+        if written.ok and feed is not None:
+            feed.note_actor(written.output, who.actor, who.session, who.harness)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
-    if feed is not None:  # the id is the writer's to choose, so the writer is noted once the task is made
-        feed.note_actor(written.output, who.actor, who.session, who.harness)
     return 201, {"task": written.output}
 
 
