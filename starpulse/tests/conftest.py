@@ -234,8 +234,9 @@ class FakeSupervisor:
 
     made: list[FakeSupervisor] = []
 
-    def __init__(self, commands: dict[str, list[str]], **_: object) -> None:
+    def __init__(self, commands: dict[str, list[str]], **options: object) -> None:
         self.commands = commands
+        self.options = options
         self.started = False
         self.stopped = False
         type(self).made.append(self)

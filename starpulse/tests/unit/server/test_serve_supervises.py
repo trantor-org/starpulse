@@ -8,6 +8,7 @@ import pytest
 from starpulse._internal.autopilot.remote import Remote
 from starpulse._internal.server import autopilot_service as service
 from starpulse._internal.server import server
+from starpulse._internal.server.closure import Reader
 from starpulse.tests import fake_board
 from starpulse.tests.conftest import FakeSupervisor
 
@@ -54,6 +55,15 @@ def test_serve_supervises_every_worker_and_starts_no_context_in_process(
     [supervisor] = supervisors
     assert set(supervisor.commands) == {"pulls", "autopilot", "runs"}
     assert supervisor.started
+
+
+def test_serve_offers_the_reload_endpoint_beside_its_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor]
+) -> None:
+    _serve(tmp_path, monkeypatch, "")
+
+    assert supervisors[0].options["control"] == tmp_path / "starpulse.control"
+    assert isinstance(supervisors[0].options["read"], Reader)
 
 
 @pytest.mark.parametrize(

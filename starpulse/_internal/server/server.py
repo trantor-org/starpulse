@@ -262,6 +262,8 @@ from starpulse._internal.hub.forward import Forwarder
 from starpulse._internal.server.column_stream import ColumnViews, Interest, column_view
 from starpulse._internal.server.live_push import wire_forwarding, wire_level
 from starpulse._internal.server.snapshot_cache import SnapshotCache
+from starpulse._internal.server.closure import Reader
+from starpulse._internal.server.control import control_file
 from starpulse._internal.server.supervisor import Supervisor, worker_commands
 from starpulse._internal.server.writes import (
     autopilot,
@@ -2311,7 +2313,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         pull_refresh=pull_refresh,
         slow_read_s=config.slow_read_seconds,
     )
-    supervisor = Supervisor(worker_commands(config, args.config))
+    supervisor = Supervisor(worker_commands(config, args.config), read=Reader(args.config), control=control_file(args.config))
     supervisor.start()
     try:
         serve_until_stopped(StarPulseServer((args.host, args.port), handler, listening), feed)

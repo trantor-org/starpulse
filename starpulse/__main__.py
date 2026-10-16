@@ -31,6 +31,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "connect": _lazy("starpulse._internal.cli.connect"),
     "worker": _lazy("starpulse._internal.server.worker"),
     "import-history": _lazy("starpulse._internal.server.history_import"),
+    "reload": _lazy("starpulse._internal.server.control"),
 }
 
 

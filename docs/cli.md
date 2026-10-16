@@ -416,3 +416,38 @@ It prints one JSON line: `source`, `store` (the database URL, password hidden), 
 `summary_differences` (empty when the rebuilt summaries match the raw rows). A line that is not a change exits 1 and
 names the file and line; a flag the command does not allow, a file or config that cannot be read, or a board the config
 does not assemble exits 2.
+
+## Reloading a running serve
+
+`starpulse reload [--config starpulse.toml]` makes the `serve` started from that config pick up changed code and config
+without a restart of the whole server. It is not an agent verb: it reads no server and `help --agent` leaves it out.
+`serve` publishes a loopback endpoint and a random token in `starpulse.control`, mode `0600`, beside the config (else in
+the working directory) and removes the file when it stops; `reload` reads that file, so pass the same `--config`.
+
+`serve` reads each process's import closure from the installed code in a fresh interpreter, as a child started now would
+load it: the files of the `starpulse` modules the process imports, with their content hashes. It compares that and the
+process's config blocks with the last reading, taken when `serve` started or at the last `reload`, then:
+
+- **replaced**: a child whose closure changed, or whose `database_url`, `board_type` or `board` changed, is ended and
+  started again with a new pid.
+- **reloaded**: a child whose only change is its own config block (`pull_requests`, `repos`, `ci`, `release`,
+  `task_actor` for `pulls`; `autopilot`, `level`, `session_start_url` for `autopilot`) keeps its pid and re-reads the
+  config on `SIGHUP`. Where the platform has no `SIGHUP`, it is replaced instead.
+- **kept**: a child with no change.
+- **re-executed**: `serve` replaced itself, in place, because its own closure changed. Every child is ended first, so each
+  is `replaced`: the new `serve` starts them again.
+
+A change to a `delivery_worker` or `autopilot_worker` setting is read when `serve` starts and is not reconciled by
+`reload`. A closure that cannot be read, such as a half-written module, or a config that does not load, changes nothing.
+
+It prints one JSON object, and the reply is sent before a `serve` that re-executes replaces itself:
+
+```json
+{"supervisor": "kept", "children": {"pulls": "kept", "autopilot": "replaced"}}
+```
+
+| Exit | Meaning |
+| ---- | ------- |
+| 0 | The reload ran; the JSON names what each did. |
+| 1 | No supervisor is running: no `starpulse.control` beside the config, or nothing answers on its port. Says so on stderr. |
+| 2 | `serve` refused the reload, such as a closure that does not import; the reason is on stderr and nothing changed. |
