@@ -119,20 +119,38 @@ def _warm(name: str, start: Callable[[], Any]) -> Future:
     return _WARM[name]
 
 
-def pytest_collection_finish(session: pytest.Session) -> None:  # pragma: no mutate block — container lifecycle
-    if _container_skip_reason():
-        return
+def _containers_wanted(item: pytest.Item) -> set[str]:  # pragma: no mutate block — container lifecycle
+    params = getattr(getattr(item, "callspec", None), "params", {})
     wanted = set()
-    for item in session.items:
-        params = getattr(getattr(item, "callspec", None), "params", {})
-        if "pg_engine" in item.fixturenames or "postgres" in params.values():
-            wanted.add("postgres")
-        if "issuer" in item.fixturenames:
-            wanted.add("issuer")
+    if "pg_engine" in item.fixturenames or "postgres" in params.values():
+        wanted.add("postgres")
+    if "issuer" in item.fixturenames:
+        wanted.add("issuer")
+    return wanted
+
+
+def _warm_wanted(wanted: set[str]) -> None:  # pragma: no mutate block — container lifecycle
     if "postgres" in wanted and "db.testing" not in sys.modules:
         _warm("postgres", _start_postgres)
     if "issuer" in wanted:
         _warm("issuer", _start_issuer)
+
+
+def pytest_itemcollected(item: pytest.Item) -> None:  # pragma: no mutate block — container lifecycle
+    """Start a container as its first test is collected, so its start overlaps the rest of collection.
+
+    Only on an unfiltered run: ``-k`` and ``-m`` deselect after collection, so the item may never run.
+    """
+    option = item.config.option
+    wanted = _containers_wanted(item)
+    if wanted and not (option.keyword or option.markexpr) and not _container_skip_reason():
+        _warm_wanted(wanted)
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:  # pragma: no mutate block — container lifecycle
+    if _container_skip_reason():
+        return
+    _warm_wanted(set().union(*map(_containers_wanted, session.items)))
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:  # pragma: no mutate block — container lifecycle

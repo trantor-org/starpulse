@@ -52,8 +52,9 @@ Baselines on CPython 3.14.6 and memray 1.20.0, 200 iterations: pull-sync 13 752 
 96 KiB. The gate skips on 3.14t, where memray reports no allocation, and under `pytest --memray`, which cannot nest a
 tracker. A context joins by adding a driver to `test_context_budgets.py` and an entry to `BUDGETS`.
 `starpulse/tests/conftest.py` keeps the suite's fixed costs low: every SQLite connection runs `PRAGMA synchronous=OFF`, and one
-background thread starts the session's Postgres and mock-issuer containers when collection finishes, so a test waits on
-a warm container instead of paying its start.
+background thread starts the session's Postgres and mock-issuer containers when the first test that needs one is collected
+(when collection finishes on a `-k` or `-m` run, which deselects after collecting), so the start overlaps collection and a
+test waits on a warm container instead of paying its start.
 The required checks run only the tests a pull request or a merge-queue candidate can reach (`ci/select_tests.py`), as the
 workspace App's check runs from trantor's `ci-sp-*` Dagu DAGs; a push to main runs none, because the merge queue tested
 that very commit, and the full suite runs nightly and on a manual dispatch as this repository's `ci.yml`. CI's `static-checks` job imports every module an IC instance can load without the hub extras
