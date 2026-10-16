@@ -720,4 +720,18 @@ describe("the page's sources", () => {
     expect(text).not.toMatch(/setInterval/);
     expect(text).not.toMatch(/REFRESH_MS/);
   });
+
+  it("keeps no timed refresh anywhere but the clock-only and non-data timers", () => {
+    // each allowed timer repaints a clock stamp, a DOM busy state or a simulator; none refetches live data
+    const clockOnly = /\/(App\.tsx|Kanban\.tsx|Dags\.tsx|reload\.ts|renderer\.ts|demo\.ts)$/;
+    const timed = Object.entries(sources)
+      .filter(([file, text]) => !clockOnly.test(file) && /setInterval|REFRESH_MS/.test(text))
+      .map(([file]) => file);
+    const refreshing = Object.entries(sources)
+      .filter(([, text]) => /REFRESH_MS/.test(text))
+      .map(([file]) => file);
+
+    expect(timed).toEqual([]);
+    expect(refreshing).toEqual([]);
+  });
 });
