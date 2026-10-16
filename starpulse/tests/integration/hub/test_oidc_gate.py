@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -84,8 +85,12 @@ class Hub:
         return call(url(self.server, path), method, headers, data)
 
 
-@pytest.fixture
-def hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
+#: An issuer no request can reach, for a hub whose test is refused before it would call the issuer.
+OFFLINE_ISSUER = "http://issuer.invalid"
+
+
+@contextmanager
+def running_hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
     # The server binds port 0 and the gate is built once that port is known: a port picked and released first can be
     # taken by a parallel worker before the server binds it.
     gates: list[Gate] = []
@@ -128,22 +133,35 @@ def hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
         yield Hub(running, issuer, log, redirect_uri, now)
 
 
+@pytest.fixture
+def hub(issuer: str, tmp_path: Path) -> Iterator[Hub]:
+    with running_hub(issuer, tmp_path) as running:
+        yield running
+
+
+@pytest.fixture
+def offline_hub(tmp_path: Path) -> Iterator[Hub]:
+    """A hub no sign-in can reach the issuer from: it starts no issuer container."""
+    with running_hub(OFFLINE_ISSUER, tmp_path) as running:
+        yield running
+
+
 def sign_in(hub: Hub, username: str, groups: list[str]) -> Answer:
     return mock_issuer.sign_in(url(hub.server, ""), hub.issuer, username, groups)
 
 
-def test_every_documented_route_answers_401_before_sign_in_but_the_sign_in_itself(hub: Hub) -> None:
+def test_every_documented_route_answers_401_before_sign_in_but_the_sign_in_itself(offline_hub: Hub) -> None:
     refused = {}
     for method, path in sorted(documented_routes() | {("GET", "/no-such-route"), ("GET", "/assets/index-abc123.js")}):
         if path in SIGN_IN:
             continue
-        refused[method, path] = hub.call(path, method)[0]
+        refused[method, path] = offline_hub.call(path, method)[0]
     assert {key: status for key, status in refused.items() if status != 401} == {}
 
 
-def test_a_method_the_server_does_not_route_answers_401_before_sign_in_too(hub: Hub) -> None:
+def test_a_method_the_server_does_not_route_answers_401_before_sign_in_too(offline_hub: Hub) -> None:
     for method in ("HEAD", "OPTIONS", "PATCH", "TRACE"):
-        assert hub.call("/api/snapshot", method)[0] == 401, method
+        assert offline_hub.call("/api/snapshot", method)[0] == 401, method
 
 
 def test_the_two_sign_in_endpoints_are_the_only_ones_open_before_sign_in(hub: Hub) -> None:
