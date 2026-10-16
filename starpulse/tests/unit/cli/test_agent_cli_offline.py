@@ -146,6 +146,7 @@ class TestConfigCheck:
                 "state_dir": None,
                 "tier_weights": {"fast": 1, "standard": 2, "deep": 4},
                 "limits": {"cpu": 80, "memory": 80, "sessions": 2, "review": 20},
+                "session_limits": {},
             },
             "release": None,
             "analytics": {
