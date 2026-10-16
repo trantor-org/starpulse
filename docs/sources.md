@@ -50,6 +50,21 @@ tool calls by name (each `ok`), prompts (`human` with a `<user_query>`, otherwis
 switch` from `Shell` commands, `turn_ended` errors as `interrupts`, and one compaction per `compaction/segment_*.md`
 (trigger `unknown`). Subagent transcripts are not read. No Cursor row is in any ranking.
 
+A transcript carries no token count either, and Cursor has no client-side compaction threshold, so a second one-shot
+holds each Cursor task session to a context limit from outside, and a scheduler runs it every few minutes:
+
+```sh
+python -m starpulse.cursor_context [--config FILE]
+```
+
+For each tmux session `task-N` whose pane runs `cursor-agent` it reads the footer percent of the pane (`Auto  60.3%`)
+against `window_tokens` and appends `{session, task, tokens, window}` to the `cursor:context` stream, one row per session
+per minute. A session at or past `limit_tokens` is asked once to update its working doc, comment on its task and
+commit its work in progress. On a later run it is ended and started fresh on the same task through
+`session_start_url` when its pane stopped changing, or `wrapup_s` seconds after the ask. A pane with no footer percent,
+a session below the limit and a non-Cursor session are left alone. The limits are the config's `[cursor_context]`
+table ([Config file](serving.md#config-file)).
+
 A session is one harness session id; it has one row per task it worked, found from the branch the export names
 (`vcs.ref.head.name`, which Codex's export does not carry, so its sessions have no task until a shell `git switch` or
 `git checkout` in them names one), or a command or `Skill` call that matches an `[analytics]` `claims` pattern claims
