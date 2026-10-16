@@ -1,6 +1,8 @@
 """`serve` as a supervisor: each context whose `*_worker` setting is false runs as a `starpulse worker <context>` child.
 
-A child is started with `subprocess` on a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with `serve`. A context
+A child is started with `subprocess` on a pipe it exits on when `serve` dies, restarted with a growing delay when it exits and stopped with `serve`. Past its
+soft memory limit a child is replaced (the new one starts, then the old one stops); past its hard limit it is killed and
+restarted. A context
 whose setting is true is run by something outside `serve`, so it gets no child here.
 
 `starpulse reload` (`starpulse._internal.server.control`) calls `Supervisor.reload`: it reads each child's code and config
@@ -23,10 +25,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from starpulse._internal.config.config import Config
+from starpulse._internal.config.config import Config, MemoryLimit
 from starpulse._internal.server.closure import SELF, Reading, ReloadError
 from starpulse._internal.server.control import Control
 from starpulse._internal.server.hold import SUPERVISED_ENV
+from starpulse._internal.server.rss import rss_reader
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,9 @@ _HANGUP = getattr(signal, "SIGHUP", None)
 
 #: The `starpulse worker` contexts, by the `Config` flag that says an outside runner owns them.
 WORKER_FLAGS = {"pulls": "delivery_worker", "autopilot": "autopilot_worker", "runs": "runs_worker"}
+
+
+_MB = 1024 * 1024
 
 
 def worker_commands(config: Config, config_path: Path | None) -> dict[str, list[str]]:
@@ -64,6 +70,7 @@ class _Child:
     started: float = 0.0
     failures: int = 0
     due: float = 0.0
+    sampled: float = float("-inf")
 
 
 class Supervisor:
@@ -82,6 +89,9 @@ class Supervisor:
         read: Callable[[str], Reading] | None = None,
         execute: Callable[[], None] = _exec_self,
         control: Path | None = None,
+        limits: Mapping[str, MemoryLimit] | None = None,
+        rss: Callable[[int], int] | None = rss_reader(),
+        sample_every: float = 5.0,
     ) -> None:
         self._children = {name: _Child(command) for name, command in commands.items()}
         self._spawn = spawn
@@ -90,6 +100,12 @@ class Supervisor:
         self._stable_after = stable_after
         self._poll = poll
         self._grace = grace
+        self._limits = dict(limits or {})
+        self._rss = rss
+        self._sample_every = sample_every
+        if self._limits and rss is None:
+            logger.warning("no resident-size reader on %s; worker memory limits are not enforced", sys.platform)
+            self._limits = {}
         self._lock = threading.Lock()
         self._halt = threading.Event()
         self._thread: threading.Thread | None = None
@@ -118,11 +134,44 @@ class Supervisor:
                     )
                 if child.proc is None and now >= child.due:
                     self._launch(name, child, now)
+                elif name in self._limits and now - child.sampled >= self._sample_every:
+                    child.sampled = now
+                    self._check_memory(name, child, now)
 
     def _launch(self, name: str, child: _Child, now: float) -> None:
         child.proc = self._spawn(child.command)
-        child.started = now
+        child.started = child.sampled = now
         logger.info("worker %s started as pid %s", name, child.proc.pid)
+
+    def _check_memory(self, name: str, child: _Child, now: float) -> None:
+        """Replace `child` past its soft limit and kill it past its hard one; the caller holds the lock."""
+        try:
+            used = self._rss(child.proc.pid)  # type: ignore[misc]
+        except OSError, ValueError, IndexError, subprocess.CalledProcessError:
+            return
+        limit = self._limits[name]
+        old = child.proc
+        if used >= limit.hard_mb * _MB:
+            logger.warning(
+                "worker %s pid %s at %d MB passed its hard limit of %d MB; killing it",
+                name,
+                old.pid,
+                used // _MB,
+                limit.hard_mb,
+            )
+            old.kill()
+            old.wait()
+            self._launch(name, child, now)
+        elif used >= limit.soft_mb * _MB:
+            logger.warning(
+                "worker %s pid %s at %d MB passed its soft limit of %d MB; replacing it",
+                name,
+                old.pid,
+                used // _MB,
+                limit.soft_mb,
+            )
+            self._launch(name, child, now)
+            self._end([old])
 
     def pids(self) -> dict[str, int]:
         """The pid of each child running now."""

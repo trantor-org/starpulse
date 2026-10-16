@@ -1,14 +1,17 @@
 """`serve` supervises one `starpulse worker <context>` child per context: restarts it with growing delay, stops it with serve."""
 
 import itertools
+import logging
+import os
 import subprocess
 import sys
 import time
 from dataclasses import replace
 from pathlib import Path
 
+import starpulse._internal.server.rss as rss_module
 import starpulse._internal.server.supervisor as supervisor_module
-from starpulse._internal.config.config import load
+from starpulse._internal.config.config import MemoryLimit, load
 from starpulse._internal.server.supervisor import Supervisor, worker_commands
 
 STEP = 0.25
@@ -136,3 +139,92 @@ def test_the_supervisor_module_uses_no_fork_fcntl_or_proc() -> None:
     source = Path(supervisor_module.__file__).read_text()
 
     assert not any(word in source for word in ("os.fork", "fcntl", "/proc/"))
+
+
+MB = 1024 * 1024
+
+
+class Sized(Spawned):
+    """A stand-in `Popen` that stays running until terminated or killed, with a resident size the test sets."""
+
+    def __init__(self, command: list[str]) -> None:
+        super().__init__(command)
+        self.killed = False
+
+    def poll(self) -> int | None:
+        return 1 if self.terminated or self.killed else None
+
+    def kill(self) -> None:
+        self.killed = True
+
+
+def _limited(sizes: dict[int, int], **kwargs) -> Supervisor:
+    Spawned.made = []
+    return Supervisor(
+        {"pulls": SLEEP},
+        spawn=Sized,
+        limits={"pulls": MemoryLimit(100, 200)},
+        rss=lambda pid: sizes[pid] * MB,
+        sample_every=1.0,
+        **kwargs,
+    )
+
+
+def test_a_child_past_its_soft_limit_is_replaced_by_a_new_one_before_the_old_one_is_stopped(caplog) -> None:
+    sizes = {1000: 50}
+    supervisor = _limited(sizes)
+    supervisor.tick(0.0)
+    sizes[1000] = 150
+    sizes[1001] = 10
+    with caplog.at_level(logging.WARNING):
+        supervisor.tick(1.0)
+
+    old, new = Spawned.made
+    assert old.terminated
+    assert not new.terminated
+    assert supervisor.pids() == {"pulls": new.pid}
+    assert "worker pulls" in caplog.text
+    assert "soft" in caplog.text
+
+
+def test_a_child_past_its_hard_limit_is_killed_and_started_again(caplog) -> None:
+    sizes = {1000: 50, 1001: 10}
+    supervisor = _limited(sizes)
+    supervisor.tick(0.0)
+    sizes[1000] = 250
+    with caplog.at_level(logging.WARNING):
+        supervisor.tick(1.0)
+
+    old, new = Spawned.made
+    assert old.killed
+    assert supervisor.pids() == {"pulls": new.pid}
+    assert "worker pulls" in caplog.text
+    assert "hard" in caplog.text
+
+
+def test_a_child_is_sampled_no_oftener_than_the_interval() -> None:
+    sizes = {1000: 50, 1001: 10}
+    supervisor = _limited(sizes)
+    supervisor.tick(0.0)
+    sizes[1000] = 250
+    supervisor.tick(0.5)
+
+    assert len(Spawned.made) == 1
+
+
+def test_without_an_rss_reader_one_warning_is_logged_and_children_run_unlimited(caplog) -> None:
+    Spawned.made = []
+    supervisor = Supervisor({"pulls": SLEEP}, spawn=Sized, limits={"pulls": MemoryLimit(1, 2)}, rss=None)
+    with caplog.at_level(logging.WARNING):
+        supervisor.tick(0.0)
+        supervisor.tick(10.0)
+        supervisor.tick(20.0)
+
+    assert len(Spawned.made) == 1
+    assert caplog.text.count("memory limits are not enforced") == 1
+
+
+def test_this_platform_reads_a_live_processs_resident_size() -> None:
+    reader = rss_module.rss_reader()
+    assert reader is not None
+    assert reader(os.getpid()) > MB

@@ -10,6 +10,7 @@ from starpulse._internal.config.config import (
     Config,
     ConfigError,
     Forward,
+    MemoryLimit,
     OidcSettings,
     Repo,
     Source,
@@ -230,7 +231,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, autopilot, autopilot_worker, board, ci, cursor_context, database_url, delivery_worker, event_log_archive_dir, event_log_retention_days, "
-        "forward, harnesses_file, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, session_start_url, slow_read_seconds, sources, tracker_url, triggers"
+        "forward, harnesses_file, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, session_start_url, slow_read_seconds, sources, tracker_url, triggers, worker_memory"
     )
 
 
@@ -698,3 +699,34 @@ def test_duplicate_workflow_in_two_processes_is_refused(tmp_path: Path) -> None:
     text = _DAGU + '[runs.domains.Ops]\nA = ["nightly"]\nB = ["nightly"]\n'
     refusal = _refusal(tmp_path, text)
     assert "duplicate" in refusal and "runs instance dagu" in refusal
+
+
+def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrides_per_key(tmp_path: Path) -> None:
+    packaged = load(None).worker_memory
+    text = "[worker_memory.pulls]\nsoft_mb = 100\n[worker_memory.autopilot]\nsoft_mb = 10\nhard_mb = 20\n"
+    tuned = load(_write(tmp_path, text)).worker_memory
+
+    assert set(packaged) == {"pulls", "autopilot"}
+    assert all(0 < limit.soft_mb < limit.hard_mb for limit in packaged.values())
+    assert tuned["pulls"] == MemoryLimit(100, packaged["pulls"].hard_mb)
+    assert tuned["autopilot"] == MemoryLimit(10, 20)
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("[worker_memory.pulss]\nsoft_mb = 1\n", "worker_memory: unknown context(s) pulss; known: autopilot, pulls"),
+        ("[worker_memory.pulls]\nsoft_mb = 900\nhard_mb = 900\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
+        ("[worker_memory.pulls]\nsoft_mb = 5000\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
+        (
+            "[worker_memory.pulls]\nhard_mb = 0\n",
+            "worker_memory.pulls: hard_mb must be a whole number of megabytes, 1 or more",
+        ),
+        ("[worker_memory.pulls]\nsoftmb = 1\n", "worker_memory.pulls: unknown key(s) softmb; known: hard_mb, soft_mb"),
+        ("worker_memory = 3\n", "worker_memory must be a table of per-context tables"),
+    ],
+)
+def test_a_worker_memory_table_naming_no_context_or_with_soft_at_or_above_hard_is_refused_by_name(
+    tmp_path: Path, text: str, message: str
+) -> None:
+    assert _refusal(tmp_path, text) == message
