@@ -24,7 +24,7 @@ def test_help_names_every_subcommand(capsys: pytest.CaptureFixture[str]) -> None
     assert all(command in out for command in ("serve", "emit", "forward", "connect", "import-history"))
 
 
-@pytest.mark.parametrize("command", ["serve", "emit", "forward", "connect", "import-history"])
+@pytest.mark.parametrize("command", ["serve", "emit", "forward", "connect", "import-history", "worker"])
 def test_help_lists_the_subcommand_with_a_description(capsys: pytest.CaptureFixture[str], command: str) -> None:
     with pytest.raises(SystemExit):
         cli.main(["--help"])
@@ -39,10 +39,10 @@ def test_the_manifest_leaves_out_the_subcommands_because_they_do_not_read_a_runn
     assert cli.main(["help", "--agent"]) == 0
 
     verbs = {v["verb"] for v in json.loads(capsys.readouterr().out)["verbs"]}
-    assert not {"serve", "emit", "forward", "connect", "import-history"} & verbs
+    assert not {"serve", "emit", "forward", "connect", "import-history", "worker"} & verbs
 
 
-@pytest.mark.parametrize("command", ["serve", "emit", "forward", "connect", "import-history"])
+@pytest.mark.parametrize("command", ["serve", "emit", "forward", "connect", "import-history", "worker"])
 def test_a_subcommand_gets_the_rest_of_the_line(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
     seen: list[list[str]] = []
     monkeypatch.setitem(cli.COMMANDS, command, lambda argv: seen.append(argv) or 3)

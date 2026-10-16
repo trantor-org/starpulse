@@ -71,6 +71,7 @@ _KEYS = {
     "cursor_context",
     "refresh_token_env",
     "pull_requests",
+    "delivery_worker",
     "slow_read_seconds",
 }
 _OIDC_KEYS = {
@@ -492,6 +493,8 @@ class Config:
     """The environment variable holding the token `POST /api/pulls/refresh` accepts; none: the route answers 404."""
     pull_requests: bool = True
     """`serve` keeps the pull request store, refreshing it from GitHub every minute; false: no store, so an instance beside another that reads the same repositories spends none of the GitHub budget on a store no one reads."""
+    delivery_worker: bool = False
+    """The Delivery context (pull-store sync, pull projection, task actor, board release) runs in `starpulse worker pulls`, not in `serve`: `serve` keeps the store read-only and starts none of those threads; false: `serve` runs them."""
     slow_read_seconds: float = SLOW_READ_S
     """`serve` logs a `slow_read` line for each `GET /api/pulls` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it."""
     analytics: Analytics = field(default_factory=Analytics)
@@ -717,5 +720,6 @@ def load(path: Path | None) -> Config:
         cursor_context=_cursor_context(raw.get("cursor_context")),
         refresh_token_env=_refresh_token_env(raw.get("refresh_token_env")),
         pull_requests=_flag(raw, "pull_requests", True),
+        delivery_worker=_flag(raw, "delivery_worker", False),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),
     )

@@ -450,6 +450,11 @@ class BoardFeed:
             return
         self._saved, self._pulls_unsaved, self._kept_saved, self._movers_saved = seen, False, source, movers
 
+    def pulls(self) -> dict[str, list[dict]]:
+        """Each task's pull request state as `set_pulls` last took it."""
+        with self._lock:
+            return dict(self._pulls)
+
     def pull_answers(self) -> dict:
         """What the pull request reader last handed `set_pulls`, as saved; empty when nothing was."""
         with self._lock:
