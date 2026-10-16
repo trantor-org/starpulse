@@ -731,7 +731,13 @@ describe("the page's sources", () => {
       .filter(([, text]) => /REFRESH_MS/.test(text))
       .map(([file]) => file);
 
+    const idle = Object.entries(sources)
+      .filter(([file, text]) => clockOnly.test(file) && !/setInterval/.test(text))
+      .map(([file]) => file);
+
     expect(timed).toEqual([]);
     expect(refreshing).toEqual([]);
+    // an allowlisted file that no longer holds a timer is a stale entry: drop it from the list
+    expect(idle).toEqual([]);
   });
 });
