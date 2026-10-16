@@ -602,14 +602,30 @@ def test_the_first_scan_is_the_feeds_replay_and_the_feed_is_ready_once_it_has_pl
             assert not thread.is_alive(), "the polling thread outlived its test"
 
 
+def test_stop_all_ends_a_board_waiting_out_a_long_interval(tmp_path: Path) -> None:
+    write_config(tmp_path / "backlog")
+    write_task(tmp_path / "backlog", "tasks", "task-1", "To Do")
+    feed = BoardFeed()
+    board({"interval": "3600"}, tmp_path).start(feed, "test", EventLog("sqlite://"))
+    assert feed.ready.wait(timeout=5)
+    assert any(t.name == "upstream-backlog" for t in threading.enumerate())
+
+    upstream_backlog.stop_all()
+
+    assert not any(t.name == "upstream-backlog" for t in threading.enumerate())
+
+
 class _DeafWatch:
     """A watch that never hears a file change, so a server left running by a test reads no file the test edits next."""
 
     def __init__(self, _folders: object) -> None:
-        pass
+        self._woken = threading.Event()
 
     def wait(self, timeout: float) -> None:
-        time.sleep(timeout)
+        self._woken.wait(timeout)
+
+    def wake(self) -> None:
+        self._woken.set()
 
     def close(self) -> None:
         pass
