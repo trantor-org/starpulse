@@ -155,9 +155,10 @@ const HANDLERS: Record<string, Handler> = {
 export type ForwardDemo = "refused" | "down" | "none";
 /**
  * The autopilot a demo page pretends to run: `off` is paused, `over` a host past its RAM limit, `empty` a queue with nothing eligible,
- * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no autopilot, `quiet` inside its quiet hours.
+ * `refused` a switch only a loopback or private-network browser may flip, `down` a server with no autopilot, `quiet` inside its quiet hours,
+ * `credits` Cursor paused for two hours on a usage limit.
  */
-export type AutopilotDemo = "off" | "over" | "empty" | "refused" | "down" | "quiet";
+export type AutopilotDemo = "off" | "over" | "empty" | "refused" | "down" | "quiet" | "credits";
 /** The quiet hours the `quiet` demo holds admission in; the demo treats any window it keeps as holding now. */
 const NIGHT = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
 /** The limits the demo's capacity strip holds its stand-in host under, in the units the server samples. */
@@ -480,7 +481,9 @@ export class DemoServer {
     const over = this.pilot === "over";
     const use = { cpu: over ? 74 : 41, memory: over ? 91 : 58, sessions: inFlight.length, review: 13 };
     const pick = this.pilot === "empty" ? undefined : cards.find((a) => a.state === "ready" && !a.dependencies?.length);
-    const waits = this.quietHours ? "quiet hours" : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= PILOT.sessions ? `Sessions ${use.sessions}/${PILOT.sessions}` : "";
+    const pauses = this.pilot === "credits" ? [{ harness: "cursor", until: at + 2 * 3600, reason: "usage limit" }] : [];
+    const paused = pauses.some((p) => p.harness === this.harness);
+    const waits = this.quietHours ? "quiet hours" : paused ? `${this.harness} usage limit` : use.memory > PILOT.memory ? `RAM ${use.memory}/${PILOT.memory}%` : use.sessions >= PILOT.sessions ? `Sessions ${use.sessions}/${PILOT.sessions}` : "";
     const other = this.harness === "claude" ? "cursor" : "claude";
     return json({
       enabled: this.admitting,
@@ -490,6 +493,7 @@ export class DemoServer {
       dimensions: (Object.keys(PILOT) as (keyof typeof PILOT)[]).map((name) => ({ name, use: use[name], limit: PILOT[name] })),
       inFlight,
       next: this.admitting && pick ? { task: pick.id, title: pick.title ?? pick.id, verdict: waits ? "waits" : "starting", reason: waits } : null,
+      pauses,
       sessionsByHarness: {
         [this.harness]: { use: inFlight.length, limit: PILOT.sessions },
         [other]: { use: 0, limit: this.harness === "claude" ? 2 : PILOT.sessions },
@@ -565,7 +569,7 @@ export function ensureDemoServer(): DemoServer | null {
   const query = new URLSearchParams(globalThis.location?.search ?? "");
   const refuseEdits = query.get("edit") === "refuse";
   const forward = (["refused", "down", "none"] as const).find((state) => state === query.get("forward"));
-  const autopilot = (["off", "over", "empty", "refused", "down", "quiet"] as const).find((state) => state === query.get("autopilot"));
+  const autopilot = (["off", "over", "empty", "refused", "down", "quiet", "credits"] as const).find((state) => state === query.get("autopilot"));
   const many = Number(query.get("many")) || 0; // `?many=N` grows the machines under the open one to N
   const shaped = fixture ? shapeBoard(fixture, query.get("board")) : null; // `?board=no-archived|no-attention|unlisted|fourteen` reshapes the Board for a Star Map review
   if (!shaped) return null;
