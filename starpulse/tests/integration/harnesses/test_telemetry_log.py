@@ -1,6 +1,5 @@
 """The telemetry log over a real event log: what a replay, an outage, a window and a trim do to what is read."""
 
-import gc
 import json
 import re
 import sqlite3
@@ -69,18 +68,18 @@ def test_signals_older_than_the_hold_before_the_newest_are_dropped(tmp_path: Pat
     assert [s.key for s in telemetry.read()] == ["k2", "k3"]
 
 
-def test_a_read_does_not_keep_hydrated_signals_on_the_log(tmp_path: Path) -> None:
-    """Idle RSS: the log must not retain every tailed Signal between reads (live: 371k objects, ~400 MB/hr)."""
+def test_reads_share_one_hydrated_snapshot_and_a_later_publish_adds_only_its_own_signals(tmp_path: Path) -> None:
+    """Analytics requests overlap: each read must hold references to one snapshot, not its own copy of the stream
+    (live: 424k Signals, ~0.55 GB per in-flight request when every read re-hydrated)."""
     telemetry = TelemetryLog(log_at(tmp_path))
     telemetry.publish([signal(i, 100.0 + i) for i in range(50)])
+    first = telemetry.read()
 
-    found = telemetry.read()
-    assert [s.key for s in found] == [f"k{i}" for i in range(50)]
-    del found
-    gc.collect()
+    telemetry.publish([signal(50, 150.0)])
+    second = telemetry.read()
 
-    leftover = [obj for obj in gc.get_objects() if type(obj) is Signal]
-    assert leftover == []
+    assert [s.key for s in second] == [f"k{i}" for i in range(51)]
+    assert all(a is b for a, b in zip(first, second))
 
 
 def test_publishing_to_a_database_that_cannot_be_opened_drops_the_signals_without_raising(tmp_path: Path) -> None:
