@@ -1,10 +1,18 @@
-"""The wait a worker process ends in: `SIGTERM` stops it, `SIGHUP` reloads its config."""
+"""The wait a worker process ends in: `SIGTERM` stops it, `SIGHUP` reloads its config.
+
+A worker `serve` supervises also stops when its stdin pipe from `serve` closes, which `serve` dying by any signal does.
+"""
 
 from __future__ import annotations
 
+import os
 import signal
+import sys
 import threading
 from collections.abc import Callable
+
+#: Set in a supervised child's environment: its stdin is a pipe from `serve`.
+SUPERVISED_ENV = "STARPULSE_SUPERVISED"
 
 
 def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: no mutate block — process boundary
@@ -12,9 +20,17 @@ def hold(stop: threading.Event, reload: Callable[[], None]) -> None:  # pragma: 
     reloads = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: (stop.set(), reloads.set()))
     signal.signal(signal.SIGHUP, lambda *_: reloads.set())
+    if os.environ.get(SUPERVISED_ENV):
+        threading.Thread(target=_stop_at_eof, args=(stop, reloads), daemon=True).start()
     while True:
         reloads.wait()
         reloads.clear()
         if stop.is_set():
             return
         reload()
+
+
+def _stop_at_eof(stop: threading.Event, reloads: threading.Event) -> None:  # pragma: no mutate block — process boundary
+    sys.stdin.buffer.read()
+    stop.set()
+    reloads.set()
