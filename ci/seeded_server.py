@@ -39,6 +39,7 @@ from starpulse._internal.config.config import load
 from starpulse._internal.feed.history_window import HistoryWindow
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.eventlog.lane_import import Change
 
 import starpulse
 
@@ -124,14 +125,14 @@ def seed(feed: BoardFeed, store: HistoryStore, now: float) -> tuple[dict[str, di
     """Place every seeded task on the feed with its lane history in the store; the records the modal reads, by id, and
     the tasks as placed.
 
-    The whole history goes in one transaction and the feed records nothing: a commit per lane change takes minutes on a
-    loaded runner. The gate never moves a task, so the feed needs no recorder.
+    The whole history goes in as one import and the feed records nothing: a commit per lane change takes minutes on a
+    loaded runner, and folding each change as it lands costs several statements apiece where the import writes the
+    rows and folds the summaries once. The gate never moves a task, so the feed needs no recorder.
     """
     paths = {f"DEMO-{index}": (final, steps(final, index, now)) for index, final in enumerate(lanes())}
-    with store.engine.begin() as db:
-        for task_id, (_, path) in paths.items():
-            for lane, at in path:
-                store._fold_lane(db, f"{task_id}@{lane}@{at}", task_id, lane, at)
+    store.import_lanes(
+        Change(f"{task_id}@{lane}@{at}", task_id, lane, at) for task_id, (_, path) in paths.items() for lane, at in path
+    )
     records: dict[str, dict] = {}
     placed: list[BoardTask] = []
     for index, (task_id, (final, path)) in enumerate(paths.items()):
@@ -271,7 +272,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover — process
     if args.replay_rate:
         feeder.start()
     try:
-        server.serve_forever()
+        server.serve_forever(poll_interval=0.05)  # the default 0.5 s is how long a stopped run waits to be noticed
     finally:
         stop.set()
         if args.replay_rate:

@@ -15,6 +15,7 @@ from pathlib import Path
 import demo_workspace
 import pytest
 import seeded_server
+from starpulse._internal.eventlog.history import HistoryStore
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,3 +74,19 @@ def test_every_seeded_route_follows_a_transition_the_board_machine_allows() -> N
 
     for route in routes:
         assert all(step in allowed for step in itertools.pairwise(route)), route
+
+
+def test_the_seeded_history_holds_every_lane_each_task_passed_through_with_summaries_that_match_its_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = 1_800_000_000.0
+    monkeypatch.syspath_prepend(str(ROOT))
+    server, feed, tasks = seeded_server.build(0, tmp_path, now=now)
+    server.server_close()
+    store = HistoryStore(f"sqlite:///{tmp_path / 'history.sqlite'}", feed.machines)
+
+    assert store.summary_differences() == []
+    assert tasks
+    for index, final in enumerate(seeded_server.lanes()):
+        route = [lane for lane, _ in seeded_server.steps(final, index, now)]
+        assert [move["to"] for move in store.lane_path(f"DEMO-{index}")] == route
