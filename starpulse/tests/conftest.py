@@ -9,6 +9,7 @@ import importlib.util
 import shutil
 import sqlite3
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator
@@ -20,6 +21,7 @@ import pytest
 from sqlalchemy import Engine, create_engine, event, text
 from tests_slice import join_slice
 
+from starpulse._internal.board import upstream_backlog
 from starpulse._internal.eventlog import event_log
 from starpulse._internal.eventlog.history import HistoryStore
 from starpulse.tests.machines import MACHINES
@@ -197,3 +199,13 @@ def issuer() -> str:  # pragma: no mutate block — container lifecycle
     if reason := _container_skip_reason():
         pytest.skip(reason)
     return _warm("issuer", _start_issuer).result()[1]
+
+
+@pytest.fixture(autouse=True)
+def _no_upstream_backlog_thread_outlives_its_test() -> Iterator[None]:
+    """A server started over an upstream Backlog project polls it on a thread with no owner; end each one the test
+    left, so it cannot allocate during a later test on the same worker."""
+    yield
+    upstream_backlog.stop_all()
+    leaked = [t for t in threading.enumerate() if t.name == "upstream-backlog"]
+    assert not leaked, "an upstream-backlog thread outlived its test"

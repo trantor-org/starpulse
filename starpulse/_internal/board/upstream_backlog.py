@@ -17,7 +17,6 @@ import re
 import shlex
 import subprocess
 import threading
-import time
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
@@ -219,6 +218,17 @@ def _split(text: str) -> tuple[Any, str]:
         return None, ""
 
 
+#: Each adapter whose thread is running, with that thread, so `stop_all` can end what a test started.
+_live: dict[UpstreamBacklog, threading.Thread] = {}
+
+
+def stop_all(timeout: float = 5.0) -> None:
+    """Stop every running adapter thread and wait for each to end; the server never calls it, a test's teardown does."""
+    for backlog, thread in list(_live.items()):
+        backlog.stop()
+        thread.join(timeout)
+
+
 class UpstreamBacklog:
     """Reads one project's task files and hands each new or changed one to `put` as a `BoardTask`.
 
@@ -254,6 +264,8 @@ class UpstreamBacklog:
         self._seen: dict[Path, tuple[int, int]] = {}
         self._ids: dict[Path, str] = {}
         self._kept = kept
+        self._stop = threading.Event()
+        self._watching: DirWatch | None = None
         for name, (mtime_ns, size, task_id) in (files or {}).items():
             self._seen[root / name] = (mtime_ns, size)
             if task_id:
@@ -404,13 +416,14 @@ class UpstreamBacklog:
         """
 
         def run() -> None:
-            watch = self._watch()  # before the first scan, so a file written during it is not missed
+            watch = self._watching = self._watch()  # before the first scan, so a file written during it is not missed
             self.scan()
             scanned()
             try:
-                while True:
+                while not self._stop.is_set():
                     if watch is None:
-                        time.sleep(min(interval, _POLL))
+                        if self._stop.wait(min(interval, _POLL)):
+                            break
                         self.scan()
                     elif (changed := watch.wait(interval)) is None:
                         self.scan()
@@ -419,10 +432,18 @@ class UpstreamBacklog:
             finally:
                 if watch:
                     watch.close()
+                _live.pop(self, None)
 
         thread = threading.Thread(target=run, name="upstream-backlog", daemon=True)
+        _live[self] = thread
         thread.start()
         return thread
+
+    def stop(self) -> None:
+        """End the thread `start` began: it leaves its loop at once, even while it waits out `interval`."""
+        self._stop.set()
+        if self._watching:
+            self._watching.wake()
 
     def _watch(self) -> DirWatch | None:
         """A watch on the task folders, or None where the system cannot give one."""

@@ -32,6 +32,7 @@ class DirWatch:
         self._fd = self._libc.inotify_init1(_FLAGS)
         if self._fd < 0:
             raise OSError(ctypes.get_errno(), "inotify_init1 failed")
+        self._wake_read, self._wake_write = os.pipe()
         self._folders = list(folders)
         self._watched: dict[int, Path] = {}
         self._ancestors: dict[int, Path] = {}
@@ -56,13 +57,16 @@ class DirWatch:
 
     def wait(self, timeout: float) -> set[Path] | None:
         """The Markdown files that changed since the last call (none, when only other files did), once anything has, or
-        None after `timeout` seconds or after events were lost.
+        None after `timeout` seconds or after events were lost. A `wake()` ends the wait early with no files.
 
         None means "rescan everything": a missed event leaves no trace, so only the caller's full scan covers it, and so
         does a new folder, whose files may have landed before it was watched.
         """
-        if not select.select([self._fd], [], [], timeout)[0]:
+        ready = select.select([self._fd, self._wake_read], [], [], timeout)[0]
+        if not ready:
             return None
+        if self._wake_read in ready:
+            return set()
         changed: set[Path] = set()
         while True:
             try:
@@ -86,5 +90,10 @@ class DirWatch:
                 if watch in self._watched and name.endswith(".md"):
                     changed.add(self._watched[watch] / name)
 
+    def wake(self) -> None:
+        """End the current and every later `wait` at once, so a stopped caller need not wait out its timeout."""
+        os.write(self._wake_write, b"\0")
+
     def close(self) -> None:
-        os.close(self._fd)
+        for fd in (self._fd, self._wake_read, self._wake_write):
+            os.close(fd)
