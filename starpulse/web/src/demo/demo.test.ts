@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DemoServer, ROUTES, demoLive, stepRuns, type DemoFixture } from "./demo";
 import { PAGE } from "../features/level/ledgerScroll";
-import { NO_HARNESSES, fetchHarnesses, postStart } from "../features/kanban/start";
+import { fetchHarnesses, postStart } from "../features/kanban/start";
 import type { FlowSnapshot, LedgerRow, Machine, RawAgent, RunStatus, Snapshot } from "../api";
 import type { TaskRecord } from "../features/kanban/taskView";
 
@@ -582,12 +582,12 @@ describe("the demo server", () => {
     expect(s.snapshot.flows[0].agents.map((a) => a.id)).toEqual(["DEMO-1", "DEMO-2"]);
   });
 
-  it("refuses a session start with why, and names no harness, so the start question offers only Work it manually", async () => {
+  it("refuses a session start with why, and names Claude Code and Cursor, so the Autopilot card draws its harness Segments", async () => {
     const s = new DemoServer(fixture());
     const fetcher = (url: string, init?: RequestInit) => s.fetch(url, init);
 
     expect(await postStart("DEMO-1", "@agent-standard-high", "claude", fetcher)).toEqual({ ok: false, reason: ROUTES["/api/start"] });
-    expect(await fetchHarnesses(fetcher)).toEqual(NO_HARNESSES);
+    expect((await fetchHarnesses(fetcher)).harnesses.map((h) => [h.name, h.label, h.sessions])).toEqual([["claude", "Claude Code", true], ["cursor", "Cursor", true]]);
   });
 });
 

@@ -130,6 +130,7 @@ const HANDLERS: Record<string, Handler> = {
   "/api/tasks": (server, _path, _query, init) => server.create(String(init?.body ?? "{}")),
   "/api/forwarding": (server, _path, _query, init) => server.forwarding(init?.method ?? "GET", String(init?.body ?? "")),
   "/api/autopilot": (server, _path, _query, init) => server.autopilot(init?.method ?? "GET", String(init?.body ?? "")),
+  "/api/harnesses": () => json(HARNESSES),
   "/api/doctor": (server) => json(demoContract(server.snapshot, scenarioOf(globalThis.location?.search ?? ""))),
   "/api/merges": (server, _path, query) => json(server.mergesBefore(query.has("before") ? Number(query.get("before")) : undefined, Number(query.get("limit") ?? PAGE))),
   "/api/runs": (server, path, _query, init) => {
@@ -161,6 +162,16 @@ export type ForwardDemo = "refused" | "down" | "none";
 export type AutopilotDemo = "off" | "over" | "empty" | "refused" | "down" | "quiet" | "credits";
 /** The quiet hours the `quiet` demo holds admission in; the demo treats any window it keeps as holding now. */
 const NIGHT = { start: "22:00", end: "07:00", timezone: "America/Phoenix" };
+/** The harnesses the demo names, so the Autopilot card draws its harness Segments; a start on either is still refused (`/api/start`). */
+const HARNESSES = {
+  tiers: ["fast", "standard", "deep"],
+  harnesses: [
+    { name: "claude", label: "Claude Code", sessions: true, reason: null, desktop: null, tiers: {
+      fast: { model: "haiku", efforts: [] }, standard: { model: "sonnet", efforts: ["medium", "high"] }, deep: { model: "opus", efforts: ["medium", "high"] } } },
+    { name: "cursor", label: "Cursor", sessions: true, reason: null, desktop: null, tiers: {
+      fast: { model: "composer-2.5-fast", efforts: [] }, standard: { model: "composer-2.5", efforts: ["medium", "high"] }, deep: { model: "cursor-grok-4.6-xhigh", efforts: ["medium", "high"] } } },
+  ],
+};
 /** The limits the demo's capacity strip holds its stand-in host under, in the units the server samples. */
 const PILOT = { cpu: 80, memory: 85, sessions: 4, review: 24 };
 /** The fields `adapters.runs.forwarded.FIELDS` lets leave the IC, by stream; `actor` and `assignee` name a person. */
@@ -180,8 +191,6 @@ export const ROUTES: Record<string, string | null> = {
   ...Object.fromEntries(Object.keys(HANDLERS).map((r) => [r, null])),
   "/api/run": "This demo has no runs instance to start a run on.",
   "/api/start": "This demo has no session-start service to start a session with.",
-  // unanswered, the start question offers only Work it manually
-  "/api/harnesses": "This demo has no harnesses configured.",
   "/api/history-window": "This demo has no server to keep a shared history window.",
 };
 
