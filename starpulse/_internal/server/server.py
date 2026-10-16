@@ -1876,11 +1876,13 @@ class StarPulseServer(ThreadingHTTPServer):
     rest's SYNs, and each waits out a 1 s retransmit before its first byte.
 
     Given `listening`, it serves on that socket as passed, its backlog and options untouched, and binds nothing.
-    Request threads are pooled (one worker per accepted connection, up to the backlog) at `REQUEST_STACK` bytes so a
-    crowd does not abandon a free-threaded heap per request.
+    Request threads are pooled at `REQUEST_STACK` bytes: a request starts a worker only when none is idle (up to the
+    backlog), and a worker idle for `idle_timeout` seconds exits. On free-threaded 3.14t each live thread keeps its
+    allocator heap's high-water pages, so workers kept past a burst are resident memory the process never returns.
     """
 
     request_queue_size = 128
+    idle_timeout = 30.0
 
     def __init__(
         self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], listening: socket.socket | None = None
@@ -1888,6 +1890,7 @@ class StarPulseServer(ThreadingHTTPServer):
         self.accepted: dict[socket.socket, float] = {}  # when each request was accepted, until its thread takes it up
         self._work: queue.SimpleQueue[tuple[Any, Any]] = queue.SimpleQueue()
         self._workers = 0
+        self._idle = 0  # workers waiting for work, less the requests queued for them; negative is a backlog
         self._workers_lock = threading.Lock()
         super().__init__(address, handler, bind_and_activate=listening is None)
         if listening is not None:
@@ -1899,18 +1902,31 @@ class StarPulseServer(ThreadingHTTPServer):
     def process_request(self, request: Any, client_address: Any) -> None:
         self.accepted[request] = time.monotonic()
         with self._workers_lock:
-            if self._workers < self.request_queue_size:
+            if self._idle <= 0 and self._workers < self.request_queue_size:
                 self._workers += 1
                 previous = threading.stack_size(REQUEST_STACK)
                 try:
                     threading.Thread(target=self._run_requests, name="http", daemon=True).start()
                 finally:
                     threading.stack_size(previous)
-        self._work.put((request, client_address))
+            else:
+                self._idle -= 1
+            self._work.put((request, client_address))
 
     def _run_requests(self) -> None:
         while True:
-            self.process_request_thread(*self._work.get())
+            try:
+                work = self._work.get(timeout=self.idle_timeout)
+            except queue.Empty:
+                with self._workers_lock:
+                    if self._work.empty():  # a request queued under the lock is still taken before exiting
+                        self._idle -= 1
+                        self._workers -= 1
+                        return
+                continue
+            self.process_request_thread(*work)
+            with self._workers_lock:
+                self._idle += 1
 
 
 class _EventText:
