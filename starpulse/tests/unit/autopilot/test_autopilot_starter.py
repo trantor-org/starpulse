@@ -66,3 +66,12 @@ def test_a_tmux_that_fails_refuses_the_start_with_its_message(tmp_path: Path) ->
 
     with pytest.raises(StartFailedError, match="duplicate session"):
         rig.start("TASK-7")
+
+
+def test_a_harness_other_than_claude_refuses_the_start_naming_session_start_url(tmp_path: Path) -> None:
+    rig = Rig(tmp_path)
+
+    with pytest.raises(StartFailedError, match="session_start_url"):
+        rig.start("TASK-7", harness="cursor")
+
+    assert rig.ran == []
