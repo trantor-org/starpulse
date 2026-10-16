@@ -29,6 +29,7 @@ def job(workflow: str, name: str) -> dict:
     [
         ("ui-preview.yml", "render"),
         ("ui-preview.yml", "leak-scan"),
+        ("fresh-serve.yml", "fresh-serve"),
     ],
 )
 def test_pull_request_job_runs_on_the_ai_vm_1_fleet(workflow, name):
