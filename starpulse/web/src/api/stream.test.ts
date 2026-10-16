@@ -730,7 +730,6 @@ describe("the page's sources", () => {
     const refreshing = Object.entries(sources)
       .filter(([, text]) => /REFRESH_MS/.test(text))
       .map(([file]) => file);
-
     const idle = Object.entries(sources)
       .filter(([file, text]) => clockOnly.test(file) && !/setInterval/.test(text))
       .map(([file]) => file);
