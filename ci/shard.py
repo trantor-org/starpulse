@@ -30,7 +30,6 @@ SECONDS = {
     "starpulse/tests/unit/runs/test_triggers.py": 33,
     "starpulse/tests/integration/server/test_standalone.py": 33,
     "starpulse/tests/unit/server/test_forwarding_route.py": 29,
-    "starpulse/tests/integration/hub/test_hub.py": 25,
     "ci/test_soak.py": 25,
     "starpulse/tests/integration/level/test_insights_http.py": 24,
     "starpulse/tests/integration/server/test_write_guard.py": 23,

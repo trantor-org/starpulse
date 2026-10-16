@@ -14,6 +14,9 @@ import pytest
 from sqlalchemy import Engine, create_engine, text
 
 pytest.importorskip("jwt", reason="the hub extras are not installed")
+# The operator's entry point end to end, a hub process on a real Postgres: seconds a run cannot spend on every change,
+# so only `uv run pytest -m e2e` reaches it. Each piece it composes has its fast integration test beside its code.
+pytestmark = pytest.mark.e2e
 
 from starpulse._internal.eventlog import events  # noqa: E402
 from starpulse._internal.eventlog.event_log import EventLog  # noqa: E402
@@ -41,8 +44,9 @@ def _until(check: Callable[[], object], proc: subprocess.Popen, what: str) -> ob
 # another xdist worker's teardown cannot delete the page out from under the hub this test starts.
 @pytest.mark.xdist_group("static-build")
 @pytest.mark.usefixtures("build")
-# Stays slow: it starts a hub process, signs in through the issuer container and waits on the hub's migrations and
-# the event it reads back; the containers themselves start once per run.
+# About 3 s for the hub process to import, migrate and serve, then about 4 s because the event is appended from this
+# process and a Postgres append by another process reaches the hub's idle history consumer only on its 5 s fallback
+# poll (`DEFAULT_POLL_INTERVAL`).
 def test_a_hub_writes_a_machine_event_to_postgres_and_reads_it_back(
     pg_engine: Engine, issuer: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
