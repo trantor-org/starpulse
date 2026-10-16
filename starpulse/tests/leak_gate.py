@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from memray import FileReader, Tracker
+from memray import AllocationRecord, FileReader, Tracker
 
 WARMUP_ITERATIONS = 5
 WINDOWS = 2
@@ -37,14 +37,24 @@ class Budget:
     retained_bytes: int
 
 
+def _under_window(record: AllocationRecord) -> bool:
+    """Whether `record` was allocated beneath `_window_bytes`, so on its thread rather than one another test left."""
+    return any(function == "_window_bytes" and filename == __file__ for function, filename, _ in record.stack_trace())
+
+
 def _window_bytes(step: Callable[[], None], iterations: int, capture: Path) -> int:
-    """Net bytes allocated and not freed while `step` ran `iterations` times under one tracker."""
+    """Net bytes `step` allocated and did not free while it ran `iterations` times under one tracker.
+
+    The tracker sees every thread, and a daemon thread an earlier test in the process started keeps allocating, so
+    only allocations beneath this frame count.
+    """
     with Tracker(str(capture)):
         for _ in range(iterations):
             step()
         gc.collect()
     with FileReader(str(capture)) as reader:
-        return sum(record.size for record in reader.get_leaked_allocation_records(merge_threads=True))
+        records = reader.get_leaked_allocation_records(merge_threads=False)
+        return sum(record.size for record in records if _under_window(record))
 
 
 def retained_bytes(step: Callable[[], None], iterations: int) -> int:
