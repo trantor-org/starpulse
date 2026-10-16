@@ -1,5 +1,6 @@
 """`starpulse worker pulls` runs the Delivery context alone, and keeps what `serve` draws in the event log."""
 
+import os
 import threading
 from pathlib import Path
 
@@ -154,41 +155,110 @@ def _config(tmp_path: Path, text: str) -> Path:
     return path
 
 
-def test_a_reload_with_an_invalid_config_keeps_the_running_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    execs: list[object] = []
-    monkeypatch.setattr(worker.os, "execv", lambda *args: execs.append(args))
+class Loops:
+    """`worker.start_delivery` stood in: records each build's config and stop event."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.built: list[tuple[object, threading.Event]] = []
+        self.refuse: set[bool] = set()
+        monkeypatch.setattr(worker, "start_delivery", self.start)
+
+    def start(self, config, board, feed, log, pulls, pins, stop, **kwargs):
+        if config.pull_requests in self.refuse:
+            raise ValueError("refused")
+        self.built.append((config, stop))
+        return None, None
+
+
+def _delivery(path: Path) -> worker.Delivery:
+    delivery = worker.Delivery(load(path), None, None, None, None, None)
+    delivery.start()
+    return delivery
+
+
+def test_a_reload_with_an_invalid_config_keeps_the_running_loops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loops = Loops(monkeypatch)
     path = _config(tmp_path, "delivery_worker = true\n")
-    running = load(path)
+    delivery = _delivery(path)
     path.write_text("delivery_worker = 3\n")
 
-    worker.reload_config(path, running)
+    delivery.reload(path)
 
-    assert execs == []
+    assert [stop.is_set() for _, stop in loops.built] == [False]
 
 
-def test_a_reload_that_changes_no_delivery_block_does_not_restart_the_loops(
+def test_a_reload_that_changes_no_delivery_block_keeps_the_running_loops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    execs: list[object] = []
-    monkeypatch.setattr(worker.os, "execv", lambda *args: execs.append(args))
+    loops = Loops(monkeypatch)
     path = _config(tmp_path, "delivery_worker = true\nslow_read_seconds = 1.0\n")
-    running = load(path)
+    delivery = _delivery(path)
     path.write_text("delivery_worker = true\nslow_read_seconds = 2.0\n")
 
-    worker.reload_config(path, running)
+    delivery.reload(path)
 
-    assert execs == []
+    assert [stop.is_set() for _, stop in loops.built] == [False]
 
 
-def test_a_reload_that_changes_a_delivery_block_restarts_the_loops_in_the_same_process(
+def test_a_reload_that_changes_a_delivery_block_rebuilds_the_loops_in_the_same_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    execs: list[object] = []
-    monkeypatch.setattr(worker.os, "execv", lambda *args: execs.append(args))
+    loops = Loops(monkeypatch)
+    monkeypatch.setattr(os, "execv", lambda *args: pytest.fail("re-executed the worker"))
     path = _config(tmp_path, "delivery_worker = true\npull_requests = true\n")
-    running = load(path)
+    delivery = _delivery(path)
     path.write_text("delivery_worker = true\npull_requests = false\n")
 
-    worker.reload_config(path, running)
+    delivery.reload(path)
 
-    assert len(execs) == 1
+    assert [(config.pull_requests, stop.is_set()) for config, stop in loops.built] == [(True, True), (False, False)]
+
+
+def test_a_changed_delivery_block_the_loops_cannot_build_leaves_the_old_loops_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loops = Loops(monkeypatch)
+    path = _config(tmp_path, "delivery_worker = true\npull_requests = true\n")
+    delivery = _delivery(path)
+    loops.refuse = {False}
+    path.write_text("delivery_worker = true\npull_requests = false\n")
+
+    delivery.reload(path)
+
+    assert [(config.pull_requests, stop.is_set()) for config, stop in loops.built] == [(True, True), (True, False)]
+
+
+def test_a_reload_after_a_rebuild_compares_with_the_rebuilt_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loops = Loops(monkeypatch)
+    path = _config(tmp_path, "delivery_worker = true\npull_requests = true\n")
+    delivery = _delivery(path)
+    path.write_text("delivery_worker = true\npull_requests = false\n")
+    delivery.reload(path)
+
+    delivery.reload(path)
+
+    assert len(loops.built) == 2
+
+
+def test_a_changed_board_or_database_is_left_to_a_restart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    loops = Loops(monkeypatch)
+    path = _config(tmp_path, "delivery_worker = true\n")
+    delivery = _delivery(path)
+    path.write_text('delivery_worker = true\ndatabase_url = "sqlite:///other.sqlite"\n')
+
+    delivery.reload(path)
+
+    assert [stop.is_set() for _, stop in loops.built] == [False]
+
+
+def test_stopping_the_delivery_stops_its_loops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    loops = Loops(monkeypatch)
+    delivery = _delivery(_config(tmp_path, "delivery_worker = true\n"))
+
+    delivery.stop()
+
+    assert loops.built[0][1].is_set()
