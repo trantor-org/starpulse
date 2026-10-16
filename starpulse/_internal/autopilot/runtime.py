@@ -41,6 +41,7 @@ class Runtime:
     policy: Autopilot
     loop: Loop | None = None
     _push_status: Callable[[], None] | None = None
+    _served: dict[str, Any] | None = None
 
     def set_enabled(self, value: bool) -> None:
         """Set the switch; turning it on wakes the loop, which admits what capacity allows without waiting for an event."""
@@ -99,6 +100,11 @@ class Runtime:
                 body["pauses"] = pauses
         return body
 
+    def served_status(self) -> dict[str, Any]:
+        """The status the last push computed, which every change to what it shows pushes again: a `GET` reads it
+        rather than deciding the next pick over the board for each request. Computed now before any push."""
+        return self._served if self._served is not None else self.status()
+
     def push_status(self) -> None:
         """Tell the page stream the status now, when a `wire_status` publisher is bound."""
         if self._push_status is not None:
@@ -108,7 +114,8 @@ class Runtime:
         """Push `status()` as an `autopilot` feed event after each sample, switch change and loop tick."""
 
         def push() -> None:
-            publish("autopilot", self.status())
+            self._served = self.status()
+            publish("autopilot", self._served)
 
         self._push_status = push
         sample = self.sampler.sample

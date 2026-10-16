@@ -1379,6 +1379,11 @@ def request_handler(
             self.milestones = milestones
             super().__init__(*args, directory=str(static), **kwargs)  # pragma: no mutate: the server passes no kwargs
 
+        def _send(self, body: bytes | Encoded, *args: Any, **kwargs: Any) -> None:
+            if self.command != "GET":
+                snapshots.require_current()  # a write is answered once the snapshot read after it holds what it published
+            super()._send(body, *args, **kwargs)
+
         def setup(self) -> None:
             super().setup()
             now = time.monotonic()
@@ -1397,8 +1402,7 @@ def request_handler(
             elif url.path.startswith(_SNAPSHOT_BODY):
                 self._snapshot_body(url.path.removeprefix(_SNAPSHOT_BODY))
             elif url.path == "/api/snapshot":
-                served = snapshots.get()
-                self._send(served.encoded)
+                self._send(snapshots.read().encoded)
             elif url.path == "/api/merges":
                 self._send(*merges_response(feed, parse_qs(url.query)))
             elif url.path == "/api/doctor":

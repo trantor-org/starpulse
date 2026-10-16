@@ -66,3 +66,14 @@ def test_a_put_publishes_an_autopilot_event_with_the_new_enabled(tmp_path: Path)
     assert body["enabled"] is True
     published = [data for kind, data in _drain(changes) if kind == "autopilot"]
     assert published and published[-1]["enabled"] is True
+
+
+def test_a_get_serves_the_status_the_last_push_computed_without_computing_again(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path, _feed())
+    runtime.sampler.sample()
+    pushed = runtime.status()
+    runtime.status = lambda: (_ for _ in ()).throw(AssertionError("a GET recomputed the status"))  # type: ignore[method-assign]
+
+    status, body = autopilot("127.0.0.1", "GET", b"", runtime)
+
+    assert (status, body) == (200, pushed)

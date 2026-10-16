@@ -3,8 +3,10 @@
 Encoding the snapshot costs about 100 ms of the interpreter, which every other request thread waits out, and gzipping
 it tens of ms more, so the server does both once per change to the feed instead of once per request, and encodes only
 the board tasks that changed. A background thread rebuilds it shortly after a change, so a page that connects finds it
-current; a request that finds it out of date builds it itself, once however many ask at the same time, so what is
-served always includes every change made before the request.
+current. `get` is strict: a request that finds it out of date builds it itself, once however many ask at the same
+time, so what is served includes every change made before the request. `read`, which serves `/api/snapshot`, serves
+the held snapshot while it is within the TTL, so a feed that changes every second never makes a request build; the
+background thread rebuilds ahead of the TTL, and `require_current` makes the next `read` after a write hold it.
 """
 
 import hashlib
@@ -60,6 +62,8 @@ class SnapshotCache:
         self._settle_s = settle_s
         self._clock = clock
         self._held: Served | None = None
+        #: The feed revision a write last left behind, which `read` will not serve below.
+        self._floor = 0
         self._building = threading.Lock()
         self._thread: threading.Thread | None = None
         self._kept: OrderedDict[str, Encoded] = OrderedDict()
@@ -74,8 +78,25 @@ class SnapshotCache:
         self._refresh_in_background()
         if self._current(held := self._held):
             return held  # type: ignore[return-value]
+        return self._build()
+
+    def read(self) -> Served:
+        """The snapshot for a plain read: the one held while the background rebuild catches up with changes published
+        since, unless a write came after it (`require_current`). Rebuilding for each change inside the request put a
+        whole rebuild's wait on one read in ten while the feed changes about once a second."""
+        self._refresh_in_background()
+        held = self._held
+        if held is not None and held.rev >= self._floor and self._clock() - held.at < self._ttl_s:
+            return held
+        return self.get()
+
+    def require_current(self) -> None:
+        """Make `read` serve nothing older than the feed is now: called once a write has published its change."""
+        self._floor = self._feed.rev
+
+    def _build(self, force: bool = False) -> Served:
         with self._building:
-            if self._current(held := self._held):
+            if not force and self._current(held := self._held):
                 return held  # type: ignore[return-value]
             rev, sent, snapshot = self._feed.snapshot_at()
             encoded = Encoded.of(encode_snapshot(snapshot, self._tasks))
@@ -105,11 +126,15 @@ class SnapshotCache:
                     self._thread.start()
 
     def _refresh(self) -> None:
+        """Rebuild after each change, and halfway through the TTL with none, so a request never finds it expired."""
         while True:
-            self._feed.revised.wait(self._ttl_s)
+            changed = self._feed.revised.wait(self._ttl_s / 2)
             self._feed.revised.clear()
-            time.sleep(self._settle_s)
+            if changed:
+                time.sleep(self._settle_s)
             try:
-                self.get()
+                held = self._held
+                if held is None or held.rev != self._feed.rev or self._clock() - held.at >= self._ttl_s / 2:
+                    self._build(force=True)
             except Exception:
                 logger.exception("StarPulse: the snapshot could not be rebuilt; a request that asks for it sees why")
