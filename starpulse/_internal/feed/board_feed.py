@@ -488,19 +488,22 @@ class BoardFeed:
 
     def note_actor(self, task_id: str, actor: str | None, session: str = "", harness: str = "") -> None:
         """Note that `actor`, from `session` on `harness` where it names them, is writing `task_id`, so the lane entry of
-        the change `put` next places names them; None forgets the note, for a write that was refused."""
+        the change `put` next places names them; None forgets the note, for a write that was refused. The note is kept
+        under the key the scheme spells, since a task file may spell its id another way (`task-45` for `TASK-45`)."""
+        key = self._keys.canonical(task_id) if self._keys else task_id
         with self._lock:
             if actor is None:
-                self._movers.pop(task_id, None)
+                self._movers.pop(key, None)
             else:
-                self._movers[task_id] = ((actor, session, harness), self._clock())
+                self._movers[key] = ((actor, session, harness), self._clock())
 
     def _mover(self, task_id: str) -> tuple[str, str, str]:
         """The actor, session and harness noted for `task_id`, taken so one write names them once; empty when none, or
         when the note is stale. Only a put that changes the lane takes it: a put that changes none (an earlier write of
         a multi-verb command) would otherwise spend the note of the move that follows."""
+        key = self._keys.canonical(task_id) if self._keys else task_id
         with self._lock:
-            noted = self._movers.pop(task_id, None)
+            noted = self._movers.pop(key, None)
         return noted[0] if noted and self._clock() - noted[1] <= MOVER_TTL else ("", "", "")
 
     def index_tasks(self, search: TaskIndex) -> None:
