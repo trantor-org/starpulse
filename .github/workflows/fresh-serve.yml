@@ -43,4 +43,4 @@ jobs:
         working-directory: starpulse/web
       - run: uv build --wheel --out-dir "$RUNNER_TEMP/dist"
       - run: uv venv "$RUNNER_TEMP/fresh" && uv pip install --python "$RUNNER_TEMP/fresh/bin/python" "$RUNNER_TEMP"/dist/*.whl
-      - run: python3 ci/fresh_serve.py "$RUNNER_TEMP/fresh/bin/python"
+      - run: '"$RUNNER_TEMP/fresh/bin/python" -I ci/fresh_serve.py "$RUNNER_TEMP/fresh/bin/python"'
