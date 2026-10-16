@@ -43,15 +43,16 @@ def host(tmp_path, monkeypatch):
     return host
 
 
-def test_pytest_enters_the_slice_through_a_scope_holding_its_own_pid(host):
+def test_pytest_enters_the_slice_through_a_task_capped_scope_holding_its_own_pid(host):
     tests_slice.pytest_configure(SimpleNamespace())
 
     (command,) = host.calls
     assert command[0] == "busctl"
     assert command[command.index("StartTransientUnit") + 2 :] == [
-        f"tests-pytest-{os.getpid()}.scope", "fail", "2",
+        f"tests-pytest-{os.getpid()}.scope", "fail", "3",
         "PIDs", "au", "1", str(os.getpid()),
         "Slice", "s", "tests.slice",
+        "TasksMax", "t", "2048",
         "0",
     ]  # fmt: skip
 

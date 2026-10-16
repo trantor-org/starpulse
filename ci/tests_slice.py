@@ -21,6 +21,8 @@ import pytest
 
 SLICE = "tests.slice"
 MOVE_SECONDS = 2.0
+# A fork storm in one test run stops here instead of exhausting the host: a run peaks near 550 tasks.
+SCOPE_TASKS_MAX = 2048
 CGROUP_ROOT = Path("/sys/fs/cgroup")
 SELF_CGROUP = Path("/proc/self/cgroup")
 
@@ -34,11 +36,11 @@ def in_slice() -> bool:
 
 
 def start_scope(pid: int) -> subprocess.CompletedProcess[str]:
-    """Ask the system manager for a `tests-pytest-<pid>.scope` under the slice that holds `pid` (StartTransientUnit)."""
-    properties = ["PIDs", "au", "1", str(pid), "Slice", "s", SLICE]
+    """Ask the system manager for a task-capped `tests-pytest-<pid>.scope` under the slice holding `pid` (StartTransientUnit)."""
+    properties = ["PIDs", "au", "1", str(pid), "Slice", "s", SLICE, "TasksMax", "t", str(SCOPE_TASKS_MAX)]
     command = ["busctl", "call", "org.freedesktop.systemd1", "/org/freedesktop/systemd1"]
     command += ["org.freedesktop.systemd1.Manager", "StartTransientUnit", "ssa(sv)a(sa(sv))"]
-    command += [f"tests-pytest-{pid}.scope", "fail", "2", *properties, "0"]
+    command += [f"tests-pytest-{pid}.scope", "fail", "3", *properties, "0"]
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
