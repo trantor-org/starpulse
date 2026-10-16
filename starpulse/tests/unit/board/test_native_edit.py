@@ -407,3 +407,19 @@ def test_a_close_comment_of_merge_evidence_the_task_records_is_not_written_again
 
     assert (first.ok, again.ok) == (True, True)
     assert _file(base).read_text().count(proof) == 1
+
+
+def test_a_hold_comment_the_task_last_recorded_is_not_written_again_until_the_reason_changes(
+    served: tuple[Board, BoardFeed, Path],
+) -> None:
+    built, _, base = served
+    held = 'Held from Ready: "Slice three" has no task.'
+    other = "Held from Ready: the board's holds cannot be read: boom."
+
+    built.edit("task-5", {}, held)  # type: ignore[misc]
+    built.edit("task-5", {}, held)  # type: ignore[misc]  # a restarted actor
+    assert _file(base).read_text().count(held) == 1
+
+    built.edit("task-5", {}, other)  # type: ignore[misc]
+    built.edit("task-5", {}, held)  # type: ignore[misc]  # the reason came back: a new fact
+    assert _file(base).read_text().count(held) == 2
