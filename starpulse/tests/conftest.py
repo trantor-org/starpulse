@@ -227,3 +227,30 @@ def _no_upstream_backlog_thread_outlives_its_test() -> Iterator[None]:
     upstream_backlog.stop_all()
     leaked = [t for t in threading.enumerate() if t.name == "upstream-backlog"]
     assert not leaked, "an upstream-backlog thread outlived its test"
+
+
+class FakeSupervisor:
+    """What an in-process `server.main` supervises with: records its commands and starts no child process."""
+
+    made: list[FakeSupervisor] = []
+
+    def __init__(self, commands: dict[str, list[str]], **_: object) -> None:
+        self.commands = commands
+        self.started = False
+        self.stopped = False
+        type(self).made.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+@pytest.fixture(autouse=True)
+def supervisors(monkeypatch: pytest.MonkeyPatch) -> list[FakeSupervisor]:
+    """The supervisors an in-process `server.main` built this test: none of them starts a real worker child."""
+    FakeSupervisor.made = []
+    if "starpulse._internal.server.server" in sys.modules:
+        monkeypatch.setattr("starpulse._internal.server.server.Supervisor", FakeSupervisor)
+    return FakeSupervisor.made

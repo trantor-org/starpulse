@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server import server
+from starpulse._internal.server import server, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -35,7 +35,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, gh: bool 
     static.mkdir()
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
-    monkeypatch.setattr(server, "serve_until_stopped", lambda httpd, feed: None)
+    monkeypatch.setattr(worker, "hold", lambda *args: None)
     monkeypatch.setattr(server.shutil, "which", lambda name: f"/usr/bin/{name}" if gh else None)
     monkeypatch.setattr(server, "TaskActor", Actor)
     monkeypatch.setattr(Actor, "built", [])
@@ -44,7 +44,7 @@ def _serve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, gh: bool 
     config = tmp_path / "starpulse.toml"
     config.write_text(text)
 
-    server.main(["--config", str(config), "--port", "0"])
+    worker.main(["pulls", "--config", str(config)])
 
     return polled
 
@@ -80,6 +80,9 @@ class Sync:
         Sync.projects.append(project)
 
     def run_forever(self) -> None:
+        pass
+
+    def request(self) -> None:
         pass
 
 

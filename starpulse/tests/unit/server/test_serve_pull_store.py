@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from starpulse._internal.server import server
+from starpulse._internal.server import server, worker
 from starpulse.tests import fake_board
 
 
@@ -30,13 +30,13 @@ def test_serve_starts_the_pull_store_only_when_configured(
     static.mkdir()
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
-    monkeypatch.setattr(server, "serve_until_stopped", lambda httpd, feed: None)
+    monkeypatch.setattr(worker, "hold", lambda *args: None)
     monkeypatch.setattr(server.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(server, "PullSync", Sync)
     monkeypatch.setattr(Sync, "built", [])
     config = tmp_path / "starpulse.toml"
     config.write_text(line + '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["open", "shut"]\n')
 
-    server.main(["--config", str(config), "--port", "0"])
+    worker.main(["pulls", "--config", str(config)])
 
     assert len(Sync.built) == int(kept)
