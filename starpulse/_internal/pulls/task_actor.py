@@ -51,6 +51,10 @@ _CRITERIA_FACTS = ("criteria_met", "criteria_unmet")
 LATENCY_METRIC = "starpulse_task_actor_latency_seconds"
 #: The upper bounds of the latency histogram's buckets, in seconds; the count past the last is the `+Inf` bucket's.
 BUCKETS_S = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
+PROJECTION_METRIC = "starpulse_task_actor_projection_seconds"
+HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
+#: The bounds of the projection and handoff histograms: a pin walk takes seconds, and the 10 s bound is the measure.
+SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
 #: Seconds the event loop waits for a change before it looks at its stop flag.
 _POLL_S = 0.5
 
@@ -58,6 +62,38 @@ _POLL_S = 0.5
 def moves_of(machine: Mapping[str, Any]) -> dict[tuple[str, str], str]:
     """`{(lane, event): target lane}` for the transitions of a drawn machine (`snapshot.describe`)."""
     return {(move["source"], move["event"]): move["target"] for move in machine["transitions"]}
+
+
+class _Histogram:
+    """Seconds observed from any thread, as the cumulative buckets of a Prometheus histogram."""
+
+    def __init__(self, bounds: Sequence[float]) -> None:
+        self._bounds = bounds
+        self._lock = threading.Lock()
+        self._counts = [0] * (len(bounds) + 1)
+        self._sum = 0.0
+
+    def observe(self, seconds: float) -> None:
+        at = next((i for i, bound in enumerate(self._bounds) if seconds <= bound), len(self._bounds))
+        with self._lock:
+            for i in range(at, len(self._counts)):
+                self._counts[i] += 1
+            self._sum += seconds
+
+    def lines(self, name: str, help_text: str) -> list[str]:
+        with self._lock:
+            counts, total = list(self._counts), self._sum
+        buckets = [
+            f'{name}_bucket{{le="{bound:g}"}} {count}' for bound, count in zip(self._bounds, counts, strict=False)
+        ]
+        return [
+            f"# HELP {name} {help_text}",
+            f"# TYPE {name} histogram",
+            *buckets,
+            f'{name}_bucket{{le="+Inf"}} {counts[-1]}',
+            f"{name}_sum {total:g}",
+            f"{name}_count {counts[-1]}",
+        ]
 
 
 class TaskActor:
@@ -117,6 +153,12 @@ class TaskActor:
         #: How many writes landed within each bound of `BUCKETS_S`, then how many in all, and their seconds summed.
         self._buckets = [0] * (len(BUCKETS_S) + 1)
         self._sum = 0.0
+        #: How long each projection of the pull request store ran, and how long a store save waited for the actor.
+        self._projection = _Histogram(SLOW_BUCKETS_S)
+        self._handoff = _Histogram(SLOW_BUCKETS_S)
+        #: Set by a store save; `_saved_at` is the clock when the oldest unread save happened.
+        self._saved = threading.Event()
+        self._saved_at = 0.0
         #: Set once the start's derivation of every open task is done.
         self.ready = threading.Event()
         #: How many times each task's waits were derived, for the tests and a diagnosis.
@@ -146,6 +188,12 @@ class TaskActor:
                 f'{LATENCY_METRIC}_bucket{{le="+Inf"}} {counts[-1]}',
                 f"{LATENCY_METRIC}_sum {total:g}",
                 f"{LATENCY_METRIC}_count {counts[-1]}",
+                *self._projection.lines(
+                    PROJECTION_METRIC, "Seconds each projection of the pull request store ran, the pin walk included."
+                ),
+                *self._handoff.lines(
+                    HANDOFF_METRIC, "Seconds from a pull request store save to the task actor reading it."
+                ),
                 f"# HELP {PIN_HELD_METRIC} Waiting tasks whose dependencies are done but wait for a pin bump to settle.",
                 f"# TYPE {PIN_HELD_METRIC} gauge",
                 f"{PIN_HELD_METRIC} {pin_held}",
@@ -166,7 +214,45 @@ class TaskActor:
         thread.start()
         if self._evaluate is not None and self._gated_lanes:
             threading.Thread(target=self._keep_criteria, args=(stop,), name="task-actor-criteria", daemon=True).start()
+        threading.Thread(target=self._follow_store, args=(stop,), name="task-actor-store", daemon=True).start()
         return thread
+
+    def store_changed(self) -> None:
+        """Tell the actor the pull request store saved. Only a flag is set, as the saving thread must not wait."""
+        if not self._saved.is_set():
+            self._saved_at = self._clock()
+        self._saved.set()
+
+    def timed_projection(self, project: Callable[[], None]) -> Callable[[], None]:
+        """`project` that records how long each run took, however it ends."""
+
+        def timed() -> None:
+            started = self._clock()
+            try:
+                project()
+            finally:
+                self._projection.observe(self._clock() - started)
+
+        return timed
+
+    def _follow_store(self, stop: threading.Event) -> None:
+        """Re-derive the tasks whose pull requests changed as soon as the store saves, ahead of the projection that
+        saved it finishing its pin walk."""
+        self.ready.wait()
+        while not stop.is_set():
+            if not self._saved.wait(_POLL_S):
+                continue
+            self._saved.clear()
+            try:
+                self._store_saved(self._saved_at)
+            except Exception:  # one pass must not end the thread
+                logger.exception("task actor: cannot read the pull request store")
+
+    def _store_saved(self, saved: float) -> None:
+        with self._lock:
+            observed = self._clock()
+            self._handoff.observe(observed - saved)
+            self._derive_all(self._read_pulls(), observed)
 
     def _keep_criteria(self, stop: threading.Event) -> None:
         """Evaluate each gated task whose result is missing or stale, and re-derive it when the result changed."""

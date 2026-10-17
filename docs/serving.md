@@ -657,7 +657,9 @@ in the config's directory with `{id}` replaced, prints a JSON array of them, and
 task). The actor writes the reasons once as a comment on the task, and re-derives every held task when a task is created.
 
 It keeps a `pull request -> tasks` and a `task -> dependents` index, built at start and kept current from lane writes. A
-change to a pull request in the store, a lane write or a merged pin bump re-derives only the tasks it reaches. At start
+change to a pull request in the store, a lane write or a merged pin bump re-derives only the tasks it reaches. The
+actor reads a store save as it happens, so a pull request's move does not wait for the pin walk of the projection that
+saved it; the tasks held for a pin bump are re-derived after that projection. At start
 it re-derives every open task once, so a pull request that merged while the server was down still moves its task. With
 the actor on, the 30-second pass of Release does not start; the actor settles and releases on the same rules, so
 `[release]` still names the settle rule.
@@ -666,6 +668,10 @@ A write the board refuses is logged and counted, and is not retried until the ta
 
 - `starpulse_task_actor_refusals_total`: refused writes.
 - `starpulse_task_actor_latency_seconds`: a histogram of the seconds from the fact being observed to the write landing.
+- `starpulse_task_actor_projection_seconds`: a histogram of the seconds each projection of the pull request store ran,
+  the pin walk included.
+- `starpulse_task_actor_handoff_seconds`: a histogram of the seconds from a store save to the actor reading it. The
+  bounds run to 600 s, so a handoff or projection past the 10 s bound shows.
 - `starpulse_task_actor_criteria_errors{task}`: the Start Criteria of a gated task that could not be evaluated; such a
   gate never passes.
 - `starpulse_task_actor_pin_held`: a gauge of Waiting tasks whose dependencies are done but wait for a pin bump to

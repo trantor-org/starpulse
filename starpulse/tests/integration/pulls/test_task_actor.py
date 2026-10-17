@@ -2,8 +2,10 @@
 
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -13,7 +15,9 @@ from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.kit.adapter_kit import task
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.pulls.task_actor import ACTOR, TaskActor
+from starpulse._internal.server import server
 from starpulse._internal.server.assembly import assemble
+from starpulse.tests.machines import MACHINES
 from starpulse.tests.task_actor_kit import (
     CHILD,
     CHILD_PR,
@@ -192,3 +196,51 @@ def test_a_restarted_actor_does_not_write_the_hold_comment_the_task_already_hold
         assert actor.ready.wait(WITHIN_S)
 
     assert path.read_text().count('Held from Ready: "Slice three" has no task.') == 1
+
+
+class _BlockedProjection:
+    """`PullRequests` whose refresh is a pin walk that has not returned."""
+
+    release = threading.Event()
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    def refresh(self) -> None:
+        self.release.wait(WITHIN_S * 10)
+
+
+class _Sync:
+    projects: list[Callable[[], None]] = []
+
+    def __init__(self, *args: object, project: Callable[[], None], **kwargs: object) -> None:
+        self.projects.append(project)
+
+    def run_forever(self) -> None:
+        pass
+
+
+def test_a_store_save_moves_the_task_while_the_projection_is_still_blocked(
+    store: PullStore, stop: threading.Event, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    board = Board(feed, task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    delivery = SimpleNamespace(edit=board.edit, waits=WAITS, evaluate=None, holds=None)
+    monkeypatch.setattr(server.shutil, "which", lambda name: name)
+    monkeypatch.setattr(server, "moves_of", lambda machine: MOVES)
+    monkeypatch.setattr(server, "PullRequests", _BlockedProjection)
+    monkeypatch.setattr(server, "PullSync", _Sync)
+    monkeypatch.setattr(_Sync, "projects", [])
+    monkeypatch.setattr(_BlockedProjection, "release", threading.Event())
+    actor, _ = server.start_delivery(replace(load(None), task_actor=True), delivery, feed, None, store, Pins(), stop)
+    assert actor.ready.wait(WITHIN_S)
+    projection = threading.Thread(target=_Sync.projects[0], daemon=True)
+    projection.start()
+
+    store.save([pull(1, state="MERGED")])
+
+    moved = until(lambda: board.moved() == [("TASK-1", "done")])
+    still_projecting = projection.is_alive()
+    _BlockedProjection.release.set()
+    assert (moved, still_projecting) == (True, True)

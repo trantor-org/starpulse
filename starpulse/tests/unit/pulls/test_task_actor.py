@@ -78,3 +78,21 @@ def test_a_criterion_that_cannot_be_evaluated_is_exported_and_not_evaluated_agai
     assert "# TYPE starpulse_task_actor_criteria_errors gauge" in exposition
     assert _sample(exposition, 'starpulse_task_actor_criteria_errors{task="TASK-1"}') == 1
     assert not until(lambda: evaluate.asked["TASK-1"] > 1, within=0.3)
+
+
+def test_the_projection_and_the_store_to_actor_handoff_are_exported_as_histograms(
+    store: PullStore, stop: threading.Event
+) -> None:
+    board = Board(BoardFeed(), task("TASK-1", "Review", references=(PR_ONE,)))
+    store.save([pull(1, state="OPEN")])
+    actor = running(board, store, stop)
+    actor.timed_projection(lambda: None)()
+    store.save([pull(1, state="MERGED")])
+
+    actor.store_changed()
+
+    assert until(lambda: board.moved() == [("TASK-1", "done")])
+    exposition = actor.exposition()
+    for name in ("projection", "handoff"):
+        assert f"# TYPE starpulse_task_actor_{name}_seconds histogram" in exposition
+        assert _sample(exposition, f"starpulse_task_actor_{name}_seconds_count") == 1
