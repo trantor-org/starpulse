@@ -59,8 +59,9 @@ def wire_level(feed: BoardFeed, build: BuildLevel, *, delay_s: float = 0.25) -> 
     feed._publish = published  # type: ignore[method-assign]
 
 
-def wire_forwarding(feed: BoardFeed, forwarder: Forwarder) -> None:
-    """Publish a `forwarding` feed event after each forwarder step and each opt-in change."""
+def wire_forwarding(feed: BoardFeed, forwarder: Forwarder) -> Callable[[], None]:
+    """Publish a `forwarding` feed event after each opt-in change; returns the push, which the forwarding worker's
+    reports (`forward_report.Reported`) call when the forwarder's runtime changed."""
 
     def push() -> None:
         try:
@@ -68,14 +69,6 @@ def wire_forwarding(feed: BoardFeed, forwarder: Forwarder) -> None:
         except Exception:
             logger.exception("StarPulse: cannot build a forwarding event")
 
-    original_step = forwarder.step
-
-    def stepped() -> int | None:
-        result = original_step()
-        push()
-        return result
-
-    forwarder.step = stepped  # type: ignore[method-assign]
     original_set = forwarder.opt_in.set
 
     def set_opt(value: bool) -> None:
@@ -84,3 +77,4 @@ def wire_forwarding(feed: BoardFeed, forwarder: Forwarder) -> None:
         push()
 
     forwarder.opt_in.set = set_opt  # type: ignore[method-assign]
+    return push

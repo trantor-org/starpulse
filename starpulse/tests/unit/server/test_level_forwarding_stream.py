@@ -66,8 +66,7 @@ def test_a_board_lane_change_publishes_a_level_event() -> None:
     assert published
 
 
-def test_forwarder_step_publishes_a_forwarding_event(tmp_path: Path) -> None:
-    feed = BoardFeed(machines=MACHINES)
+def _forwarder() -> MagicMock:
     forwarder = MagicMock(spec=Forwarder)
     forwarder.status.return_value = {
         "url": "http://hub.example/api/forward",
@@ -80,13 +79,36 @@ def test_forwarder_step_publishes_a_forwarding_event(tmp_path: Path) -> None:
         "more": False,
         "contract": {},
     }
-    forwarder.step.return_value = 0
     forwarder.opt_in = MagicMock()
+    return forwarder
+
+
+def _forwarding(changes: queue.Queue) -> list[dict]:
+    return [data for kind, data in _drain(changes) if kind == "forwarding"]
+
+
+def test_the_returned_push_publishes_a_forwarding_event(tmp_path: Path) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    push = wire_forwarding(feed, _forwarder())
+    _, changes = feed.subscribe()
+    _drain(changes)
+
+    push()
+
+    events = _forwarding(changes)
+    assert events and events[-1]["configured"] is True
+
+
+def test_an_opt_in_change_forgets_the_status_and_publishes_a_forwarding_event(tmp_path: Path) -> None:
+    feed = BoardFeed(machines=MACHINES)
+    forwarder = _forwarder()
+    original_set = forwarder.opt_in.set
     wire_forwarding(feed, forwarder)
     _, changes = feed.subscribe()
     _drain(changes)
 
-    forwarder.step()
+    forwarder.opt_in.set(True)
 
-    events = [data for kind, data in _drain(changes) if kind == "forwarding"]
-    assert events and events[-1]["configured"] is True
+    original_set.assert_called_once_with(True)
+    forwarder.forget_status.assert_called_once_with()
+    assert _forwarding(changes)

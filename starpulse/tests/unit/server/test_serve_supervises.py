@@ -131,3 +131,24 @@ def test_serve_follows_no_run_adapter_and_starts_no_trigger_or_pushed_run_reader
     assert Dagu.followed == []
     assert "board-triggers" not in {t.name for t in threading.enumerate()} - before
     assert "dagu" in handled["args"][2]  # the page's Run now still reaches the adapter
+
+
+FORWARD = '[forward]\nurl = "https://hub.example.test"\ntoken_env = "HUB_TOKEN"\n'
+
+
+@pytest.mark.parametrize(("settings", "supervised"), [("", True), ("forwarding_worker = true\n", False)])
+def test_serve_runs_no_forwarder_thread_and_supervises_a_forwarding_child_for_a_false_setting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    supervisors: list[FakeSupervisor],
+    settings: str,
+    supervised: bool,
+) -> None:
+    monkeypatch.setenv("HUB_TOKEN", "secret")
+    before = {t.name for t in threading.enumerate()}
+
+    handled, _ = _serve(tmp_path, monkeypatch, settings + FORWARD)
+
+    assert "forwarder" not in {t.name for t in threading.enumerate()} - before
+    assert ("forwarding" in supervisors[0].commands) is supervised
+    assert handled["forwarding"] is not None  # the page still reads and sets the forwarding opt-in

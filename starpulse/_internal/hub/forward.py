@@ -213,6 +213,17 @@ class Forwarder:
             threading.Thread(target=self._refresh_status, daemon=True).start()
         return cached[1]
 
+    def runtime(self) -> dict[str, Any]:
+        """What this process learned of the hub, for another process to show: `adopt` takes it."""
+        return {"lastSent": self.last_sent, "problem": self.problem, "refused": self._refused}
+
+    def adopt(self, runtime: Mapping[str, Any]) -> None:
+        """Take the `runtime` another process's forwarder kept, so `status` shows the worker's last send and refusal."""
+        self.last_sent = runtime.get("lastSent")
+        self.problem = runtime.get("problem")
+        self._refused = bool(runtime.get("refused"))
+        self.forget_status()
+
     def forget_status(self) -> None:
         """Drop the status kept for `status_ttl`, so the next read sees a change made now, such as a new opt-in."""
         self._status_epoch += 1
@@ -260,11 +271,16 @@ class Forwarder:
             },
         }
 
-    def run(self, stop: threading.Event) -> None:
-        """Forward until `stop` is set: straight on while batches come back full, else rest for the interval."""
+    def run(self, stop: threading.Event, after_step: Callable[[], None] | None = None) -> None:
+        """Forward until `stop` is set: straight on while batches come back full, else rest for the interval.
+
+        `after_step` runs after each step to report what the step learned of the hub.
+        """
         while not stop.is_set():
             try:
                 sent = self.step()
+                if after_step:
+                    after_step()
             except Exception:  # the log or store failed; the next step retries from the saved cursor
                 logger.exception("Forwarder: step failed, retrying in %ss", self.interval)
                 sent = None
@@ -329,8 +345,8 @@ def build(
     return Forwarder(log, store, config.forward, token, OptIn(log, base / OPT_IN_FILE), status_ttl=STATUS_TTL)
 
 
-def start(forwarder: Forwarder, stop: threading.Event) -> threading.Thread:
+def start(forwarder: Forwarder, stop: threading.Event, after_step: Callable[[], None] | None = None) -> threading.Thread:
     """Run `forwarder` as a daemon thread that ends when `stop` is set."""
-    thread = threading.Thread(target=forwarder.run, args=(stop,), name="forwarder", daemon=True)
+    thread = threading.Thread(target=forwarder.run, args=(stop, after_step), name="forwarder", daemon=True)
     thread.start()
     return thread
