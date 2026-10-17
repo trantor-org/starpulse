@@ -1370,6 +1370,9 @@ export interface SubFlow {
   when: string;
 }
 export interface Transition {
+  /**
+   * The skill sentence that authorizes the transition; absent when its YAML cites none.
+   */
   cite?: Cite | null;
   event: string;
   source: string;
