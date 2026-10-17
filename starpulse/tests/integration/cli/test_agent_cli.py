@@ -2242,9 +2242,8 @@ def test_every_skill_is_a_directory_named_in_its_front_matter_with_a_description
 def test_the_claude_plugin_marketplace_serves_the_bundled_skills() -> None:
     root = skill_install.SOURCE.parents[1]
     marketplace = json.loads((root / ".claude-plugin/marketplace.json").read_text())
-    plugins = {plugin["name"]: plugin for plugin in marketplace["plugins"]}
-    assert plugins["starpulse-board"]["source"] == "./plugins/starpulse-board"
-    plugin = plugins["starpulse"]
+    [plugin] = marketplace["plugins"]
+    assert plugin["name"] == "starpulse"
     manifest = json.loads((root / plugin["source"] / ".claude-plugin/plugin.json").read_text())
     assert manifest["name"] == plugin["name"]
     assert [(root / plugin["source"] / p).resolve() for p in manifest["skills"]] == [skill_install.SOURCE.resolve()]

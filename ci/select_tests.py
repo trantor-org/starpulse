@@ -83,7 +83,6 @@ INERT = (
     ".github/actionlint.yaml",
     ".github/ISSUE_TEMPLATE/*",
     ".github/pull_request_template.md",
-    "plugins/*",  # TypeScript the Python tests never load; the plugin's own test runs under bun
     "bench/README.md",
     "bench/flow_reads.py",
     "bench/free_threading/*",  # the interpreter A/B image and its scripts, run by hand
