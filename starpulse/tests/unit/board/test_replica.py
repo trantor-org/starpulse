@@ -55,7 +55,7 @@ def _child(log: EventLog) -> replica.Publisher:
 
 
 def _reader(log: EventLog, stop: threading.Event) -> BoardFeed:
-    feed = BoardFeed()
+    feed = BoardFeed(clock=lambda: 100.0)  # the child's clock: a done task is hot on both sides
     feed.await_stream()
     replica.follow(feed, log, KEY, stop)
     return feed
