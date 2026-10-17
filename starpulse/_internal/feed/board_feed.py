@@ -118,6 +118,7 @@ def task_agent(task: BoardTask) -> dict:
         "type": task.type,
         "dependencies": list(task.dependencies),
         "prs": cited_pulls(task),
+        "runs": [],
         "description": task.description,
         "criteria": [{"text": text, "checked": checked} for text, checked in zip(task.acceptance_criteria, ticks)],
         "pause_reason": task.pause_reason,
@@ -661,6 +662,8 @@ class BoardFeed:
             self._assignees[task.id] = task.assignee
             self._cited[task.id] = cited_pulls(task)
             agent, settled = (None, settled_entry(task)) if task.settled else (task_agent(task), None)
+            if agent:
+                agent["runs"] = self._task_runs().get(task.id, [])
             before = self._open.get(task.id)
             if agent and before:
                 # the lane the task left on its last move, kept while the hourly reconcile republishes it in place
@@ -1013,10 +1016,31 @@ class BoardFeed:
                 self._runs_errors[instance] = error
             if moved:
                 self._publish("dags", {"dags": self._workflows(), "pools": self._drawn_pools(), "error": self._error()})
+                self._attach_runs()
             if changed:
                 self._publish("snapshot", self.snapshot())
         if runs_moved:
             self._refresh_ledgers()
+
+    def _task_runs(self) -> dict[str, list[dict]]:
+        """The linked runs among every instance's recent runs, by the task their run id names."""
+        out: dict[str, list[dict]] = {}
+        for dags in self._dags.values():
+            for run in (run for dag in dags for run in dag.get("recent", [])):
+                if run.get("task") and run.get("url"):
+                    out.setdefault(run["task"], []).append(
+                        {"url": run["url"], "status": run["status"], "startedAt": run["startedAt"]}
+                    )
+        return out
+
+    def _attach_runs(self) -> None:
+        """Give each open task the runs `_task_runs` finds for it and publish those whose runs changed."""
+        by_task = self._task_runs()
+        for task_id, agent in list(self._open.items()):
+            runs = by_task.get(task_id, [])
+            if not is_cold(agent) and agent.get("runs", []) != runs:
+                self._open[task_id] = agent = {**agent, "runs": runs}
+                self._publish("task", {"id": task_id, "agent": agent, "settled": None})
 
     @staticmethod
     def _tied_runs(instance: str, dags: list, tied: set[str]) -> dict[str, list]:

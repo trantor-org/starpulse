@@ -1373,6 +1373,8 @@ def test_a_tied_dag_carries_its_recent_runs_with_params_times_and_per_step_statu
 
     assert runs[0] == {
         "runId": "r1",
+        "task": None,
+        "url": f"{base_url}/dag-runs/apply/r1",
         "status": "succeeded",
         "startedAt": "2026-10-05T23:00:00Z",
         "finishedAt": "2026-10-05T23:01:00Z",
@@ -1706,3 +1708,23 @@ def test_step_cache_keeps_the_dags_a_partial_listing_leaves_out(monkeypatch: pyt
     dags("http://dagu", only={"a"}, graphs=graphs)
 
     assert set(graphs) == {"a", "b"}
+
+
+def test_a_dag_run_task_run_is_attached_to_its_task_with_a_link_to_the_run() -> None:
+    run = Past("apply", "dag-run-task-6166-1760000000", started_at="2026-10-05T23:00:00Z", nodes=(("validate", "failed"),))
+    with dagu(APPLY, history=(run, APPLIED)) as (base_url, _):
+        sink, _ = follow_tied(base_url)
+
+    attached, plain = sink.recent()["dag-run-task-6166-1760000000"], sink.recent()["r1"]
+    assert attached["task"] == "TASK-6166"
+    assert attached["url"] == f"{base_url}/dag-runs/apply/dag-run-task-6166-1760000000"
+    assert plain["task"] is None
+
+
+def test_a_dag_no_board_event_ties_keeps_its_recent_runs_while_its_latest_run_names_a_task() -> None:
+    run = Past("apply", "dag-run-task-6166-1760000000", started_at="2026-10-05T23:00:00Z")
+    latest = {"statusLabel": "succeeded", "dagRunId": "dag-run-task-6166-1760000000"}
+    with dagu(APPLY, latest=latest, history=(run,)) as (base_url, _):
+        sink, _ = follow_tied(base_url, tied=set())
+
+    assert sink.recent()["dag-run-task-6166-1760000000"]["task"] == "TASK-6166"

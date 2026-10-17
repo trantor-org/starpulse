@@ -87,7 +87,7 @@ const EMPTY: FlowSnapshot = { name: "board", machine: { states: [], transitions:
 /** A machine's task with what the Board knows of it (title, profile, labels, dependencies, pull requests, description) laid over the machine's own place for it. */
 const joined = (a: RawAgent, board: Map<string, RawAgent>): RawAgent => {
   const b = board.get(a.task ?? a.id);
-  return b ? { ...a, title: b.title, model: b.model || a.model, labels: b.labels, dependencies: b.dependencies, prs: b.prs, description: b.description } : a;
+  return b ? { ...a, title: b.title, model: b.model || a.model, labels: b.labels, dependencies: b.dependencies, prs: b.prs, runs: b.runs, description: b.description } : a;
 };
 
 /**

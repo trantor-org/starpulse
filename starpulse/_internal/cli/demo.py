@@ -470,6 +470,7 @@ def scrub(live: dict) -> dict:
         demo_pulls,
         live["now"],
     )
+    _seed_task_runs(flows, live["now"])
 
     def settled_task(id_: str, entry: dict) -> tuple[str, dict]:
         name = names.setdefault(id_, f"DEMO-{len(names) + 1}")
@@ -562,6 +563,18 @@ def _walk(machine: dict, state: str, i: int, now: float, via: str | None = None,
     if back:
         steps = _send_back(machine, steps)
     return [{"state": t, "event": e, "at": at} for (_, e, t), at in zip(steps, _times(len(steps), i, now))]
+
+
+def _seed_task_runs(flows: list[dict], now: float) -> None:
+    """Give the first In Progress Board task a failed run and the retry that succeeded, so its task view draws a Runs
+    section; the capture's own runs are dropped, as they link the live scheduler."""
+    board = next(f for f in flows if f["name"] == "board")
+    working = next((a for a in board["agents"] if a["state"] == "in_progress"), None)
+    if working is not None:
+        working["runs"] = [
+            {"url": "#", "status": "failed", "startedAt": _iso(now - 7200)},
+            {"url": "#", "status": "succeeded", "startedAt": _iso(now - 3600)},
+        ]
 
 
 def _seed_delivery(flows: list[dict], now: float) -> None:

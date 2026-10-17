@@ -407,6 +407,7 @@ def test_a_board_task_an_adapter_wrote_is_an_agent_in_its_lane() -> None:
             "type": "",
             "dependencies": ["PROJ-0"],
             "prs": [PR],
+            "runs": [],
             "description": "Draw it.",
             "criteria": [],
             "pause_reason": "",
@@ -1248,3 +1249,18 @@ def _ledgers_delta(deltas) -> dict:
 def _head(feed: BoardFeed, event: str) -> list[dict]:
     """The newest page of `event`'s Ledger, as a page opening it is handed it."""
     return (feed.ledger_rows(event, None, 20) or {"rows": []})["rows"]
+
+
+def test_a_task_card_carries_the_dagu_runs_its_dag_run_ids_name() -> None:
+    run = {"runId": "dag-run-task-7-1", "task": "TASK-7", "url": "http://dagu/dag-runs/w/dag-run-task-7-1", "status": "failed", "startedAt": "t"}
+    other = {"runId": "r1", "task": None, "url": "http://dagu/dag-runs/w/r1", "status": "succeeded", "startedAt": "t"}
+    feed = BoardFeed()
+    feed.put(BoardTask(id="TASK-7", team="demo", title="t", lane="in_progress"))
+    _, deltas = feed.subscribe()
+
+    feed.set_dags("ci", [{"name": "w", "recent": [run, other]}], None)
+
+    assert _agents(feed)[0]["runs"] == [{"url": run["url"], "status": "failed", "startedAt": "t"}]
+    assert [kind for kind, _ in (deltas.get_nowait(), deltas.get_nowait())] == ["dags", "task"]
+    feed.put(BoardTask(id="TASK-7", team="demo", title="t", lane="review"))  # a reread keeps them
+    assert len(_agents(feed)[0]["runs"]) == 1

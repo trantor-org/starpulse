@@ -132,6 +132,14 @@ class TaskCriterion(_Api):
     checked: bool
 
 
+class TaskRun(_Api):
+    """One scheduler run a task's id names, linked to the run's own page."""
+
+    url: str
+    status: str
+    started_at: str = Field(alias="startedAt")
+
+
 class RawAgent(_Api):
     """A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in."""
 
@@ -145,6 +153,9 @@ class RawAgent(_Api):
     labels: list[str] | None = None
     dependencies: list[str] | None = Field(default=None, description="A task's dependencies, as task ids.")
     prs: list[str] | None = Field(default=None, description="A task's pull requests: the PR URLs among its references.")
+    runs: list[TaskRun] | None = Field(
+        default=None, description="A task's scheduler runs: those whose run id names it (`dag-run-task-<N>-<ts>`)."
+    )
     task: str | None = Field(default=None, description="A machine's task: the id of the Backlog task its events name.")
     steps: int | None = None
     trail: list[TrailStep] | None = None

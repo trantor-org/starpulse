@@ -12,6 +12,7 @@ import pytest
 from starpulse._internal.cli.demo import (
     STATIC,
     TITLES,
+    _iso,
     _seed_ci,
     _send_back,
     capture,
@@ -189,7 +190,7 @@ def test_scrub_keeps_the_structure_and_replaces_every_task() -> None:
     ):
         assert leak not in text
     board, placed = demo["flows"][0]["agents"], demo["flows"][1]["agents"]
-    assert board[0] == {
+    assert {k: v for k, v in board[0].items() if k != "runs"} == {  # its seeded runs have their own test
         "id": "DEMO-1",
         "title": TITLES[0],
         "state": "in_progress",
@@ -429,6 +430,21 @@ def test_the_seeded_board_has_a_review_task_with_two_pulls_and_a_task_holding_th
     assert len({p["number"] for p in demo["pulls"][board[20]["id"]]}) == 2
     held = [a for a in board if board[6]["id"] in a["dependencies"]]
     assert [a["state"] for a in held] == ["waiting"] * 3
+
+
+def test_scrub_drops_live_runs_and_seeds_one_in_progress_task_with_a_failed_then_a_succeeded_run() -> None:
+    live = _live()
+    live["flows"][0]["agents"][0]["runs"] = [{"url": "http://dagu.lan/r", "status": "failed", "startedAt": ""}]
+
+    demo = scrub(live)
+
+    board = demo["flows"][0]["agents"]
+    ran = [a for a in board if a.get("runs")]
+    assert [a["state"] for a in ran] == ["in_progress"]
+    runs = ran[0]["runs"]
+    assert [r["status"] for r in runs] == ["failed", "succeeded"] and {r["url"] for r in runs} == {"#"}
+    assert runs[0]["startedAt"] < runs[1]["startedAt"] < _iso(live["now"])
+    assert "dagu.lan" not in json.dumps(demo)
 
 
 def test_scrub_seeds_one_ci_agent_per_task_with_pull_requests_walking_the_machine_per_pull_request() -> None:

@@ -27,6 +27,8 @@ export interface KanbanTask {
   /** Dependencies still on the Board and not Done. */
   openDeps: number;
   prs: Pull[];
+  /** The scheduler runs whose run id names the task, each linked to the run's page. */
+  runs?: { url: string; status: string; startedAt: string }[];
   description: string;
   /** The lifecycle machine that last placed the task, the state it left it in and when (epoch seconds). */
   live: { machine: string; state: string; at: number; source?: string | null } | null;
@@ -316,7 +318,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
     const latest = sky.latest[a.id], dependencies = a.dependencies ?? [];
     return {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.model, dependencies,
-      openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), description: a.description ?? "",
+      openDeps: dependencies.filter((d) => open.has(d)).length, prs: cited(a.prs ?? [], sky.pulls[a.id] ?? []), runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source } : null,
       released: a.state === "ready" && a.previous === "waiting", moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],

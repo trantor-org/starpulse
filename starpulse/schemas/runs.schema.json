@@ -89,6 +89,25 @@
           "title": "Runid",
           "type": "string"
         },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The Board task a `dag-run-task-<N>-<ts>` run id names (`TASK-N`); None for any other run.",
+          "title": "Task"
+        },
+        "url": {
+          "default": "",
+          "description": "A link to the run in the scheduler's own page; empty when it has none.",
+          "title": "Url",
+          "type": "string"
+        },
         "status": {
           "description": "The run's status.",
           "enum": [
