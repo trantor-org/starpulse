@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 
-
 if TYPE_CHECKING:  # annotation only: a runtime import would put the autopilot in the Delivery worker's import closure
     pass
 
@@ -57,6 +56,8 @@ _EDIT = "/api/edit"
 
 
 _ARCHIVE = "/api/archive"
+_VERDICT = "/api/verdict"
+_MISS = "/api/miss"
 
 
 _RESTORE = "/api/restore"
@@ -138,6 +139,8 @@ _TASK_WRITES = frozenset(
         _START,
         _EDIT,
         _ARCHIVE,
+        _VERDICT,
+        _MISS,
         _RESTORE,
         _COMPLETE,
         _CLAIM,
@@ -157,6 +160,8 @@ _WRITES = {
     _START: "start",
     _EDIT: "edit",
     _ARCHIVE: "archive",
+    _VERDICT: "verdict",
+    _MISS: "verdict",
     _RESTORE: "restore",
     _RETIRE: "retire",
     _RETIRED_IMPORT: "retired_import",

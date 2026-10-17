@@ -12,6 +12,8 @@
     starpulse task edit PROJ-45 --title "Rotate the signing secret" --label ops --label security
     starpulse task assign PROJ-45 @agent-standard-high
     starpulse task archive PROJ-45 --reason "superseded"
+    starpulse task verdict PROJ-45 live pass --evidence "up=1"
+    starpulse task miss PROJ-45 live --title "Repair live" --evidence "up=0"
     starpulse task restore PROJ-45
     starpulse task retire PROJ-45
     starpulse task retired PROJ-45
@@ -76,6 +78,10 @@ changes is no longer the value the edit was based on: that value is read from th
 JSON object of values the caller read earlier. A `--label`, `--dependency`, `--reference`, `--documentation` or
 `--modified-file` given at all replaces that whole list, and a blank value clears a field. `task assign` is an edit of
 the assignee alone, reported as the `profile` field. A board that cannot create, read or edit tasks answers exit 3.
+`task verdict` comments the verdict (`pass`, or `miss` with `--fix` naming the task filed for it) of a check the task's
+`## Post-merge Checks` block declares, `--evidence` with it; a verdict is final, so a second, an undeclared check or a
+malformed block is refused (exit 1). `task miss` files the fix task (`--title` and the `task create` detail flags) and
+records the MISS verdict naming it in one call, refused part-way leaving neither.
 `task archive` moves a task from any lane to the board's archive, recording `--reason` as a comment when given, and
 `task restore` returns an archived task's file to the board's tasks, unchanged, refusing one whose number is open or whose
 file name is taken (exit 1), and returns a retired task the same way;
@@ -606,8 +612,24 @@ _CHECKLISTS = {"acceptanceCriteria": ("ac", "Acceptance Criteria"), "definitionO
 _CHECKLIST_DESTS = ("{}", "reword_{}", "remove_{}", "check_{}", "uncheck_{}")
 
 
-def _task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = server_url(args.server, environ), "/api/tasks"
+def _create_flags(sub: argparse.ArgumentParser) -> None:
+    """Add the detail flags of a task a `create` or `miss` command files; the title is the caller's."""
+    sub.add_argument("--description", help="the task's Description section")
+    sub.add_argument("--priority", help="`high`, `medium` or `low`")
+    sub.add_argument("--milestone", help="the milestone's id (`m-106`)")
+    sub.add_argument("--assignee", help="who or which agent profile holds it (`@agent-standard-high`)")
+    sub.add_argument("--label", action="append", help="a label; repeat for several")
+    sub.add_argument("--dependency", action="append", help="a task it depends on; repeat for several")
+    sub.add_argument("--ac", action="append", help="an Acceptance Criterion; repeat for several, in order")
+    sub.add_argument("--status", help="the lane to open it in, else the board's first (`Waiting`)")
+    sub.add_argument("--type", help="the task's type (`bug`)")
+    sub.add_argument("--reference", action="append", help="a reference; repeat for several")
+    sub.add_argument("--documentation", action="append", help="a documentation link; repeat for several")
+    sub.add_argument("--dod", action="append", help="a Definition of Done item; repeat for several, in order")
+
+
+def _created_task(args: argparse.Namespace) -> dict[str, Any]:
+    """The title and details a `create` or `miss` command line names, each field only when given."""
     given = {
         "description": args.description,
         "priority": args.priority,
@@ -622,9 +644,30 @@ def _task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[s
         "documentation": args.documentation,
         "definitionOfDone": args.dod,
     }
-    body = {"title": args.title, **{k: v for k, v in given.items() if v is not None}, **_writer(args, environ)}
-    status, reply = _post(base, path, body)
+    return {"title": args.title, **{k: v for k, v in given.items() if v is not None}}
+
+
+def _task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/tasks"
+    status, reply = _post(base, path, {**_created_task(args), **_writer(args, environ)})
     return {"task": _record_call(base, path, status, reply, ok=(201,))["task"]}
+
+
+def _task_verdict(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/verdict"
+    body = {"task": args.task, "check": args.check, "verdict": args.verdict, "evidence": args.evidence}
+    if args.fix:
+        body["fix"] = args.fix
+    status, reply = _post(base, path, {**body, **_writer(args, environ)})
+    judged = _record_call(base, path, status, reply, missing=_TASK_MISSING)
+    return {key: judged[key] for key in ("task", "check", "verdict")}
+
+
+def _task_miss(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
+    base, path = server_url(args.server, environ), "/api/miss"
+    body = {"task": args.task, "check": args.check, "fix": _created_task(args), "evidence": args.evidence}
+    status, reply = _post(base, path, {**body, **_writer(args, environ)})
+    return _record_call(base, path, status, reply, missing=_TASK_MISSING)
 
 
 def _task_edit_call(
@@ -693,7 +736,9 @@ def _checklist_after(args: argparse.Namespace, field: str, items: list[dict[str,
 
 
 def _task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    changes = {field: getattr(args, flag) for flag, field in _TASK_EDIT_FIELDS.items() if getattr(args, flag) is not None}
+    changes = {
+        field: getattr(args, flag) for flag, field in _TASK_EDIT_FIELDS.items() if getattr(args, flag) is not None
+    }
     if args.append_notes:
         changes["appendNotes"] = "\n".join(args.append_notes)
     checklists = [field for field, (key, _) in _CHECKLISTS.items() if any(_checklist_flags(args, key))]
@@ -1300,7 +1345,9 @@ def _manifest(parser: argparse.ArgumentParser) -> dict[str, Any]:
                 "exit_codes": leaf.get_default("exit_codes"),
             }
             for verb, leaf in _leaves(parser)
-            if leaf.get_default("run")  # `serve`, `emit`, `forward`, `connect`, `worker`, `import-history`, `conform` and `reload` are listed for `--help` but read no running server
+            if leaf.get_default(
+                "run"
+            )  # `serve`, `emit`, `forward`, `connect`, `worker`, `import-history`, `conform` and `reload` are listed for `--help` but read no running server
         ],
     }
 
@@ -1318,10 +1365,22 @@ def _parser() -> argparse.ArgumentParser:
     verbs.add_parser("emit", help="push a workflow run onto the runs stream", add_help=False)
     verbs.add_parser("forward", help="let a person's name leave this instance for the hub, or stop it", add_help=False)
     verbs.add_parser("connect", help="set up a native, Backlog.md or Jira board in starpulse.toml", add_help=False)
-    verbs.add_parser("worker", help="run one context of the server as its own process (`worker pulls`, `worker autopilot`)", add_help=False)
-    verbs.add_parser("import-history", help="add a board's earlier lane changes to the store, once each", add_help=False)
-    verbs.add_parser("conform", help="replay the recorded history against the machines the project declares", add_help=False)
-    verbs.add_parser("reload", help="replace the serve children whose code changed, reload those whose config changed", add_help=False)
+    verbs.add_parser(
+        "worker",
+        help="run one context of the server as its own process (`worker pulls`, `worker autopilot`)",
+        add_help=False,
+    )
+    verbs.add_parser(
+        "import-history", help="add a board's earlier lane changes to the store, once each", add_help=False
+    )
+    verbs.add_parser(
+        "conform", help="replay the recorded history against the machines the project declares", add_help=False
+    )
+    verbs.add_parser(
+        "reload",
+        help="replace the serve children whose code changed, reload those whose config changed",
+        add_help=False,
+    )
 
     def leaf(
         group: argparse._SubParsersAction,
@@ -1465,18 +1524,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     _writer_flags(create)
     create.add_argument("title", help="the task's title")
-    create.add_argument("--description", help="the task's Description section")
-    create.add_argument("--priority", help="`high`, `medium` or `low`")
-    create.add_argument("--milestone", help="the milestone's id (`m-106`)")
-    create.add_argument("--assignee", help="who or which agent profile holds it (`@agent-standard-high`)")
-    create.add_argument("--label", action="append", help="a label; repeat for several")
-    create.add_argument("--dependency", action="append", help="a task it depends on; repeat for several")
-    create.add_argument("--ac", action="append", help="an Acceptance Criterion; repeat for several, in order")
-    create.add_argument("--status", help="the lane to open it in, else the board's first (`Waiting`)")
-    create.add_argument("--type", help="the task's type (`bug`)")
-    create.add_argument("--reference", action="append", help="a reference; repeat for several")
-    create.add_argument("--documentation", action="append", help="a documentation link; repeat for several")
-    create.add_argument("--dod", action="append", help="a Definition of Done item; repeat for several, in order")
+    _create_flags(create)
     edit = leaf(
         task_verbs,
         "edit",
@@ -1495,7 +1543,9 @@ def _parser() -> argparse.ArgumentParser:
     edit.add_argument("--dependency", action="append", help="a task it depends on; replaces the whole list")
     edit.add_argument("--reference", action="append", help="a reference; replaces the whole list")
     edit.add_argument("--documentation", action="append", help="a documentation link; replaces the whole list")
-    edit.add_argument("--modified-file", action="append", dest="modified_file", help="a modified file; replaces the whole list")
+    edit.add_argument(
+        "--modified-file", action="append", dest="modified_file", help="a modified file; replaces the whole list"
+    )
     edit.add_argument("--description", help="the Description section")
     edit.add_argument("--plan", help="the Implementation Plan section")
     edit.add_argument("--notes", help="the Implementation Notes section")
@@ -1554,6 +1604,34 @@ def _parser() -> argparse.ArgumentParser:
     _writer_flags(archive)
     archive.add_argument("task", help="the task's key (`PROJ-45`)")
     archive.add_argument("--reason", default="", help="why it is archived, recorded as a comment on the task")
+    verdict = leaf(
+        task_verbs,
+        "verdict",
+        "record a post-merge check's verdict as a comment on its task; a verdict is final",
+        _task_verdict,
+        ("task", "check", "verdict"),
+        (0, 1, 2, 3, 4),
+    )
+    _writer_flags(verdict)
+    verdict.add_argument("task", help="the task whose `## Post-merge Checks` block declares the check")
+    verdict.add_argument("check", help="the check's id")
+    verdict.add_argument("verdict", choices=("pass", "miss"), help="`pass`, or `miss` with --fix")
+    verdict.add_argument("--evidence", default="", help="what the criterion showed, recorded with the verdict")
+    verdict.add_argument("--fix", help="the task already filed to fix a miss (`PROJ-46`); required for `miss`")
+    miss = leaf(
+        task_verbs,
+        "miss",
+        "file the fix task for a missed post-merge check and record the MISS verdict naming it, both or neither",
+        _task_miss,
+        ("task", "check", "verdict", "fix"),
+        (0, 1, 2, 3, 4),
+    )
+    _writer_flags(miss)
+    miss.add_argument("task", help="the task whose `## Post-merge Checks` block declares the check")
+    miss.add_argument("check", help="the check's id")
+    miss.add_argument("--evidence", default="", help="what the criterion showed, recorded with the verdict")
+    miss.add_argument("--title", required=True, help="the fix task's title")
+    _create_flags(miss)
     restore = leaf(
         task_verbs,
         "restore",
@@ -1634,7 +1712,12 @@ def _parser() -> argparse.ArgumentParser:
         (0, 2, 3, 4),
     )
     show_machine.add_argument("name", help="the machine's name (`board`, `in-progress`)")
-    show_machine.add_argument("--format", choices=("json", "dot"), default="json", help="`dot` adds the machine as Graphviz DOT source in `diagram`")
+    show_machine.add_argument(
+        "--format",
+        choices=("json", "dot"),
+        default="json",
+        help="`dot` adds the machine as Graphviz DOT source in `diagram`",
+    )
     validate = leaf(
         machine_verbs,
         "validate",
@@ -1765,7 +1848,9 @@ def _parser() -> argparse.ArgumentParser:
         (0, 1, 2, 3),
     )
     doc_restore.add_argument("doc", help="the archived doc's id (`doc-116`)")
-    doc_restore.add_argument("--folder", default="", help="a folder under the board's docs (`specs`); default: docs itself")
+    doc_restore.add_argument(
+        "--folder", default="", help="a folder under the board's docs (`specs`); default: docs itself"
+    )
     runs = verbs.add_parser("runs", description="the workflows of the runs adapters", help="its workflows")
     runs_verbs = runs.add_subparsers(dest="verb", required=True, metavar="verb")
     leaf(

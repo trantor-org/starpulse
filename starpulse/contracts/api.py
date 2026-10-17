@@ -103,7 +103,9 @@ class Machine(_Api):
     launches: dict[str, Launch] | None = Field(
         default=None, description="Only the board machine: the skill flow each launching DAG starts."
     )
-    writers: dict[str, list[Writer]] | None = Field(default=None, description="Only the board machine: its writers per event.")
+    writers: dict[str, list[Writer]] | None = Field(
+        default=None, description="Only the board machine: its writers per event."
+    )
     dagActors: list[str] | None = Field(
         default=None, description="Only the board machine: the writers that are runs workflows."
     )
@@ -148,7 +150,8 @@ class RawAgent(_Api):
     state: str
     model: str
     holder: str | None = Field(
-        default=None, description="The session that last claimed a Board task; empty when none has, absent off the Board."
+        default=None,
+        description="The session that last claimed a Board task; empty when none has, absent off the Board.",
     )
     labels: list[str] | None = None
     dependencies: list[str] | None = Field(default=None, description="A task's dependencies, as task ids.")
@@ -161,13 +164,16 @@ class RawAgent(_Api):
     trail: list[TrailStep] | None = None
     active: float | None = None
     description: str | None = Field(default=None, description="A task's Backlog description.")
-    milestone: str | None = Field(default=None, description="A Board task's milestone; empty or absent when it has none.")
+    milestone: str | None = Field(
+        default=None, description="A Board task's milestone; empty or absent when it has none."
+    )
     type: str | None = Field(default=None, description="A Board task's type; empty or absent when it has none.")
     criteria: list[TaskCriterion] | None = Field(
         default=None, description="A Board task's acceptance criteria in file order; absent off the Board."
     )
     pause_reason: str | None = Field(
-        default=None, description="Why a paused Board task waits for a person; empty when it is not paused, absent off the Board."
+        default=None,
+        description="Why a paused Board task waits for a person; empty when it is not paused, absent off the Board.",
     )
     previous: str | None = Field(
         default=None, description="The Board lane the task left on its last move; absent before it has moved."
@@ -178,7 +184,8 @@ class RawAgent(_Api):
         "`move_set` instead, and a delta carries it here.",
     )
     move_set: str | None = Field(
-        default=None, description="A snapshot's key into its `move_sets` for the task's `moves`; absent when it has none."
+        default=None,
+        description="A snapshot's key into its `move_sets` for the task's `moves`; absent when it has none.",
     )
     entered: float | None = Field(
         default=None,
@@ -188,7 +195,9 @@ class RawAgent(_Api):
         default=None, description="When a Board task was created, in epoch seconds; null or absent when unknown."
     )
     workable: bool | None = Field(default=None, description="Whether a Board task can be worked now.")
-    workable_since: float | None = Field(default=None, description="Since when a workable Board task has been, epoch seconds.")
+    workable_since: float | None = Field(
+        default=None, description="Since when a workable Board task has been, epoch seconds."
+    )
 
 
 class Settled(_Api):
@@ -326,8 +335,7 @@ class Pull(_Api):
     merged_at: str | None = Field(description="When the PR merged, ISO 8601 UTC; null until it does.")
     threads: int = Field(description="Unresolved review threads.")
     behind_main: int | None = Field(
-        default=None,
-        description="Commits `main` holds that the PR's head lacks; null once the head branch is gone."
+        default=None, description="Commits `main` holds that the PR's head lacks; null once the head branch is gone."
     )
     stale: bool = Field(description="True when the last read failed and this is the read before it.")
 
@@ -467,9 +475,12 @@ class Snapshot(_Api):
     mergePins: list[LedgerRow] | None = Field(
         default=None, description="The pinned merge rows of the last day that the newest page leaves out."
     )
-    insights: list[Finding] | None = Field(default=None, description="The findings an engine posted that are still live.")
+    insights: list[Finding] | None = Field(
+        default=None, description="The findings an engine posted that are still live."
+    )
     capabilities: Capabilities | None = Field(
-        default=None, description="What the board writes: the task modal draws Edit and Archive only when its board does."
+        default=None,
+        description="What the board writes: the task modal draws Edit and Archive only when its board does.",
     )
     settled: dict[str, Settled]
     milestone_done: dict[str, int] | None = Field(
@@ -862,7 +873,9 @@ class SessionStep(_Api):
     at: float = Field(description="When the request was logged, in epoch seconds.")
     model: str
     origin: Literal["main", "side", "auxiliary"]
-    skill: str = Field(description="The skill most recently loaded in the session, counting this step's own; `none` before any.")
+    skill: str = Field(
+        description="The skill most recently loaded in the session, counting this step's own; `none` before any."
+    )
     activities: list[str] = Field(description="What each call it made performed, in order, with no arguments.")
     keys: list[str] = Field(
         description="One per call: the shell command the instance's redactor left, else the tool's name."
@@ -992,7 +1005,9 @@ class RunDiff(_Api):
     reference: RunRef | None = Field(description="The fewest-step conformant clean run; None when `conformant` is 0.")
     slow: RunRef = Field(description="The most-step clean run.")
     slow_only: list[ActivityCount] = Field(description="Activities the slow run made more often than the reference.")
-    reference_only: list[ActivityCount] = Field(description="Activities the reference made more often than the slow run.")
+    reference_only: list[ActivityCount] = Field(
+        description="Activities the reference made more often than the slow run."
+    )
 
 
 class RunDiffs(_Api):
@@ -1088,7 +1103,9 @@ class TraceCluster(_Api):
     first_at: float
     last_at: float
     kinds: dict[str, int]
-    descriptors: list[str] = Field(description="The features with the most weight across the cases: `a:` activity, `r:` area read, `w:` area written.")
+    descriptors: list[str] = Field(
+        description="The features with the most weight across the cases: `a:` activity, `r:` area read, `w:` area written."
+    )
     skills: list[ClusterSkill] = Field(description="The three most loaded skills, less the lifecycle skills.")
     uncovered: int = Field(description="Cases that loaded no skill beyond the lifecycle skills.")
     sample_sessions: list[str]
@@ -1751,6 +1768,28 @@ class CreateRequest(_Writer):
     acceptanceCriteria: list[str] | None = None
 
 
+class VerdictRequest(_Writer):
+    """`POST /api/verdict`: record `verdict` (`pass` or `miss`) for `check` of `task`'s `## Post-merge Checks`.
+
+    A `miss` names the task `fix` that repairs it; `evidence` is kept in the verdict's comment.
+    """
+
+    task: str
+    check: str
+    verdict: str
+    evidence: str | None = None
+    fix: str | None = None
+
+
+class MissRequest(_Writer):
+    """`POST /api/miss`: file the task `fix` and record `check` of `task` as missed, naming it, in one write."""
+
+    task: str
+    check: str
+    fix: CreateRequest
+    evidence: str | None = None
+
+
 class MilestoneCreateRequest(_Api):
     """`POST /api/milestones`: open a milestone; only the title is required."""
 
@@ -1893,6 +1932,13 @@ class Archived(_Api):
     task: str
 
 
+class Judged(_Api):
+    task: str
+    check: str
+    verdict: str
+    fix: str | None = None
+
+
 class Restored(_Api):
     task: str
 
@@ -2029,6 +2075,8 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/start": StartRequest,
     "/api/edit": EditRequest,
     "/api/archive": ArchiveRequest,
+    "/api/verdict": VerdictRequest,
+    "/api/miss": MissRequest,
     "/api/restore": RestoreRequest,
     "/api/retire": RetireRequest,
     "/api/retired/import": RetiredImportRequest,
@@ -2087,6 +2135,7 @@ BODIES: dict[str, Any] = {
     "start": Started | SkillRefusal | ApiError,
     "edit": Edited | StaleEdit | SkillRefusal | ApiError,
     "archive": Archived | SkillRefusal | ApiError,
+    "verdict": Judged | SkillRefusal | ApiError,
     "restore": Restored | SkillRefusal | ApiError,
     "retire": Retired | SkillRefusal | ApiError,
     "retired": RetiredTasks | ApiError,
@@ -2176,7 +2225,9 @@ def _move_sets(tasks: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 def _recent_settled(data: dict[str, Any]) -> dict[str, Any]:
     """The tasks created or settled since the start of the day before the snapshot's local day: the page draws the
     day's arrivals from them, and the extra day covers a page whose midnight falls earlier than the server's."""
-    since = (datetime.fromtimestamp(data["now"]).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)).timestamp()
+    since = (
+        datetime.fromtimestamp(data["now"]).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+    ).timestamp()
     return {
         task_id: entry
         for task_id, entry in data["settled"].items()
@@ -2216,7 +2267,10 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
     tasks = _dump_all(flows[0]["agents"], RawAgent, held, kept, _slim_task)
     held.clear()
     held.update(kept)
-    drawn = {**slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *flows[1:]]}), "move_sets": _move_sets(flows[0]["agents"])}
+    drawn = {
+        **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *flows[1:]]}),
+        "move_sets": _move_sets(flows[0]["agents"]),
+    }
     body = encode("snapshot", drawn)
     try:
         return _splice(body, b'"agents":[]', b'"agents":[%s]' % b",".join(tasks), after=b'"flows":[{"name":"board"')
@@ -2283,6 +2337,8 @@ class ApiContract(_Api):
         | StartRequest
         | EditRequest
         | ArchiveRequest
+        | VerdictRequest
+        | MissRequest
         | RestoreRequest
         | RetireRequest
         | RetiredImportRequest
@@ -2308,6 +2364,7 @@ class ApiContract(_Api):
         Moved
         | Edited
         | Archived
+        | Judged
         | Restored
         | Retired
         | RetiredImported

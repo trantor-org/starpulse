@@ -320,6 +320,12 @@ Draw it.
 <!-- AC:END -->
 """
 
+CHECKED_FILE = TASK_FILE.replace(
+    "Draw it.\n",
+    "Draw it.\n\n## Post-merge Checks\n\n```yaml\npost_merge_checks:\n"
+    "  - {id: live, text: It draws, within: 1d, pass: {kind: prom, expr: up}}\n```\n",
+)
+
 SHIPPED_FILE = """---
 id: task-2
 title: Ship the board
@@ -373,6 +379,13 @@ def lifecycled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]
     feed, built = _lifecycle(tmp_path, monkeypatch, tasks, [REVIEW_NEEDS_PR])
     with _serve(tmp_path, feed, writer=built.writer, read=built.read, edit=built.edit) as server:
         yield _url(server, "")
+
+
+@pytest.fixture
+def checked(tmp_path: Path) -> Iterator[str]:
+    """The `tasked` server whose `task-1` declares the post-merge check `live`."""
+    with _native_server(tmp_path, ("task-1 - Draw the board.md", CHECKED_FILE)) as url:
+        yield url
 
 
 @pytest.fixture
@@ -685,7 +698,11 @@ def test_waiting_on_drops_a_dependency_in_the_done_lane_and_keeps_one_in_progres
             "moves": {},
         }
 
-    board = [agent("PROJ-1", "waiting", ["PROJ-2", "PROJ-3"]), agent("PROJ-2", "done", []), agent("PROJ-3", "in_progress", [])]
+    board = [
+        agent("PROJ-1", "waiting", ["PROJ-2", "PROJ-3"]),
+        agent("PROJ-2", "done", []),
+        agent("PROJ-3", "in_progress", []),
+    ]
     snapshot = {"pulls": {}, "settled": {}, "flows": [{"name": "board", "agents": board}]}
 
     assert task_view(board[0], snapshot)["waiting_on"] == ["PROJ-3"]
@@ -894,7 +911,19 @@ def test_task_create_with_a_priority_the_board_does_not_know_is_refused_and_writ
 def test_task_edit_writes_every_field_given_in_one_write_and_reports_those_that_changed(
     tasked: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    argv = ["task", "edit", "task-1", "--title", "Draw the lanes", "--priority", "low", "--label", "ui", "--label", "api"]
+    argv = [
+        "task",
+        "edit",
+        "task-1",
+        "--title",
+        "Draw the lanes",
+        "--priority",
+        "low",
+        "--label",
+        "ui",
+        "--label",
+        "api",
+    ]
     argv += ["--description", "Draw them.", "--comment", "Retitled", "--server", tasked]
 
     code, doc = _run(capsys, argv)
@@ -929,7 +958,19 @@ def test_task_edit_against_a_base_a_field_has_left_is_refused_whole_and_writes_n
 
     code, doc = _run(
         capsys,
-        ["task", "edit", "task-1", "--title", "Draw the lanes", "--priority", "low", "--base", base, "--server", tasked],
+        [
+            "task",
+            "edit",
+            "task-1",
+            "--title",
+            "Draw the lanes",
+            "--priority",
+            "low",
+            "--base",
+            base,
+            "--server",
+            tasked,
+        ],
     )
 
     assert (code, doc["code"]) == (1, "refused")
@@ -958,7 +999,9 @@ def test_task_assign_sets_the_assignee_and_nothing_else(
     assert "title: Draw the board" in written
 
 
-def test_task_edit_on_a_board_that_cannot_edit_exits_3_and_says_so(bare: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_task_edit_on_a_board_that_cannot_edit_exits_3_and_says_so(
+    bare: str, capsys: pytest.CaptureFixture[str]
+) -> None:
     code, doc = _run(capsys, ["task", "edit", "PROJ-6", "--title", "X", "--server", bare])
 
     assert (code, doc["code"]) == (3, "unavailable")
@@ -1251,7 +1294,9 @@ def test_search_sends_each_label_and_the_finished_within_window(
     index.index(task("PROJ-1", "To Do", title="Drain", labels=["disk", "unraid"]))
     index.index(task("PROJ-2", "To Do", title="Drain", labels=["disk"]))
     month_ago = time.time() - 31 * 86400
-    index.index(task("PROJ-3", "Done", title="Drain", labels=["disk", "unraid"], settled="completed", settled_at=month_ago))
+    index.index(
+        task("PROJ-3", "Done", title="Drain", labels=["disk", "unraid"], settled="completed", settled_at=month_ago)
+    )
     with _serve(tmp_path, BoardFeed(machines=MACHINES), search=index) as server:
         argv = ["search", "drain", "--label", "disk", "--label", "unraid", "--finished-within-days", "30"]
         code, doc = _run(capsys, [*argv, "--server", _url(server, "")])
@@ -1278,6 +1323,8 @@ def test_the_manifest_describes_every_verb_and_each_of_its_arguments(capsys: pyt
         "task edit",
         "task assign",
         "task archive",
+        "task verdict",
+        "task miss",
         "task restore",
         "task retire",
         "task retired",
@@ -1729,7 +1776,9 @@ def forbidden() -> Iterator[str]:
 def readonly() -> Iterator[str]:
     """A server that reads `task-1` and refuses every write, as one does a browser outside the private network."""
     reads = {"task": "task-1", "record": {"title": "Draw the board", "profile": "@agent-standard-high"}}
-    with _canned(403, {"error": "Editing a task answers only loopback and private network (RFC 1918) browsers"}, reads) as base:
+    with _canned(
+        403, {"error": "Editing a task answers only loopback and private network (RFC 1918) browsers"}, reads
+    ) as base:
         yield base
 
 
@@ -2025,6 +2074,26 @@ CASES = {
     ("task archive", 2): ["task", "archive"],
     ("task archive", 3): ["task", "archive", "task-1", "--server", "{down}"],
     ("task archive", 4): ["task", "archive", "task-99", "--server", "{tasked}"],
+    ("task verdict", 0): [
+        "task",
+        "verdict",
+        "task-1",
+        "live",
+        "pass",
+        "--evidence",
+        "it draws",
+        "--server",
+        "{checked}",
+    ],
+    ("task verdict", 1): ["task", "verdict", "task-1", "live", "pass", "--server", "{tasked}"],
+    ("task verdict", 2): ["task", "verdict", "task-1"],
+    ("task verdict", 3): ["task", "verdict", "task-1", "live", "pass", "--server", "{down}"],
+    ("task verdict", 4): ["task", "verdict", "task-99", "live", "pass", "--server", "{tasked}"],
+    ("task miss", 0): ["task", "miss", "task-1", "live", "--title", "Repair live", "--server", "{checked}"],
+    ("task miss", 1): ["task", "miss", "task-1", "live", "--title", "Repair live", "--server", "{tasked}"],
+    ("task miss", 2): ["task", "miss", "task-1", "live"],
+    ("task miss", 3): ["task", "miss", "task-1", "live", "--title", "Repair live", "--server", "{down}"],
+    ("task miss", 4): ["task", "miss", "task-99", "live", "--title", "Repair live", "--server", "{tasked}"],
     ("task restore", 0): ["task", "restore", "task-1", "--server", "{archived}"],
     ("task restore", 1): ["task", "restore", "task-1", "--server", "{tasked}"],
     ("task restore", 2): ["task", "restore"],
@@ -2196,6 +2265,7 @@ SERVERS = {
     "milestoned": "milestoned",
     "tasked": "tasked",
     "archived": "archived",
+    "checked": "checked",
     "shelved": "shelved",
     "shipped": "shipped",
     "readonly": "readonly",
@@ -2432,12 +2502,19 @@ def test_task_show_reads_a_cold_done_task_whole_from_the_board_and_a_dependent_n
         _, cold = _run(capsys, ["task", "show", "proj-9", "--server", _url(server, "")])
         _, dependent = _run(capsys, ["task", "show", "PROJ-1", "--server", _url(server, "")])
 
-    assert (cold["lane"], cold["title"], cold["description"], cold["milestone"]) == ("done", "Old work", "Long ago.", "m-1")
+    assert (cold["lane"], cold["title"], cold["description"], cold["milestone"]) == (
+        "done",
+        "Old work",
+        "Long ago.",
+        "m-1",
+    )
     assert cold["criteria"] == [{"text": "ships", "checked": True}]
     assert dependent["waiting_on"] == []
 
 
-def test_board_milestone_lists_the_done_tasks_past_their_hot_day(cooled: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_board_milestone_lists_the_done_tasks_past_their_hot_day(
+    cooled: str, capsys: pytest.CaptureFixture[str]
+) -> None:
     code, board = _run(capsys, ["board", "--milestone", "m-1", "--server", cooled])
 
     done = next(column for column in board["columns"] if column["state"] == "done")

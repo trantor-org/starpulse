@@ -38,6 +38,15 @@ GET /api/task/<id> {task, record}: every editable field of a task from the board
 POST /api/edit     {task, base, changes, comment[, actor, session, harness]}: one write of every change through the board's `edit`. 409 with the
                    stale fields and their current values when any changed field no longer equals its `base`, or with
                    the writer's refusal and its skill; 403 outside loopback and RFC 1918. A GET answers 405
+POST /api/verdict  {task, check, verdict: "pass"|"miss"[, evidence, fix, actor, session, harness]}: comment the verdict of
+                   a post-merge check the task's `## Post-merge Checks` block declares, `[post-merge-check] <id> PASS|MISS`
+                   with `Fix: <task>` for a miss, through the board's `edit`; 200 {task, check, verdict[, fix]}. 409 for a
+                   malformed block, an undeclared check or one already judged (a verdict is final); 404 for a miss whose
+                   fix the board does not hold; 400 for a miss without a fix
+POST /api/miss     {task, check, fix: {title, ...as a create}[, evidence, actor, session, harness]}: file the fix task and
+                   record the MISS verdict naming it in one call, 200 {task, check, verdict, fix}. A verdict refused after
+                   the fix is filed archives the fix again, so a refused miss leaves neither; 404 for a board that cannot
+                   edit, archive and create
 POST /api/archive  {task, reason[, actor, session, harness]}: archive a task from any lane through the board's `archive`; refusals as for
                    an edit
 POST /api/complete {task}: move a Done task into the board's completed tasks through its `complete`; refusals
@@ -112,6 +121,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from starpulse._internal.board import post_merge_checks
 from starpulse._internal.board.seam import (
     AGENT,
     ANONYMOUS,
@@ -184,6 +194,8 @@ _CREATE_KINDS = {
 }
 #: Saves hold this from reading a task's current record to writing, so two browsers saving one task cannot both pass the stale check.
 _EDIT_LOCK = threading.Lock()
+#: The verdicts a post-merge check takes, as a request spells them and as the comment records them.
+_VERDICTS = {"pass": "PASS", "miss": "MISS"}
 #: The lanes Start session moves a task out of: the spec's start question, never Review's send-back.
 _STARTABLE = frozenset({"ready", "waiting", "needs_attention"})
 #: How long a task write waits, in seconds, for a restarted instance's replay to place its task before it answers 503.
@@ -297,7 +309,7 @@ def _named_actor(request: Any) -> dict[str, str] | None:
 
 _BAD_WHO = {
     "error": 'a write may name its "actor", "session" and "harness", each a non-empty text; a write naming no actor is '
-    'made by `agent` when it names a session and by `anonymous` when it names none'
+    "made by `agent` when it names a session and by `anonymous` when it names none"
 }
 
 
@@ -320,7 +332,9 @@ def _named_who(request: Any) -> _Who | None:
     A write that names no actor is an agent's when it names a session and anonymous when it names none: never the
     operator, whom only the page names.
     """
-    named = {key: request[key] for key in ("actor", "session", "harness") if isinstance(request, dict) and key in request}
+    named = {
+        key: request[key] for key in ("actor", "session", "harness") if isinstance(request, dict) and key in request
+    }
     if not all(isinstance(value, str) and value.strip() for value in named.values()):
         return None
     session = named.get("session", "").strip()
@@ -738,7 +752,128 @@ def archive_task(source: str, raw: bytes, feed: BoardFeed, archive: TaskArchiver
     return 200, {"task": task}
 
 
-def complete_task(source: str, raw: bytes, feed: BoardFeed, complete: TaskCompleter | None) -> tuple[int, dict[str, Any]]:
+def _unjudged(task: str, current: Mapping[str, Any], check: str) -> str | None:
+    """Why `check` of `task` takes no verdict now, or None when it does: the block is malformed, the task declares no
+    such check, or a verdict is already commented, which is final."""
+    try:
+        declared = post_merge_checks.parse(current["description"])
+    except ValueError as error:
+        return f"{task}: {error}"
+    if not any(declared_check["id"] == check for declared_check in declared or ()):
+        return f"{task} declares no post-merge check '{check}'"
+    existing = post_merge_checks.verdict_of([comment["text"] for comment in current["comments"]], check)
+    if existing is not None:
+        return f"{task} check '{check}' already has a {existing} verdict; a verdict is final"
+    return None
+
+
+def _judgement(request: Any) -> tuple[str, str, str] | None:
+    """The task, check and evidence a verdict or miss request names, or None when any is not text (a blank task or
+    check included)."""
+    task, check, evidence = request["task"], request["check"], request.get("evidence", "")
+    texts = (task, check, evidence)
+    if not all(isinstance(text, str) for text in texts) or not task.strip() or not check.strip():
+        return None
+    return task, check, evidence
+
+
+def record_verdict(
+    source: str, raw: bytes, feed: BoardFeed, read: TaskReader | None, edit: TaskEditor | None
+) -> tuple[int, dict[str, Any]]:
+    """Record the verdict `raw` names for a post-merge check of a task as a comment on it, through `edit`: the HTTP
+    status and JSON body.
+
+    The check must be declared in the task's `## Post-merge Checks` block and not yet judged: a verdict is final, so a
+    second is refused 409 with the malformed block and the undeclared check. A `miss` names the `fix` task already
+    filed for it (404 when the feed holds none); `/api/miss` files that fix and records the verdict in one call.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Recording a verdict answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        request = json.loads(raw)
+        judged, verdict, fix = _judgement(request), request["verdict"], request.get("fix")
+        who = _named_who(request)
+    except ValueError, TypeError, KeyError:
+        judged = verdict = fix = who = None
+    if judged is None or verdict not in _VERDICTS or (fix is not None and not isinstance(fix, str)):
+        return 400, {"error": 'a verdict needs {"task", "check", "verdict": "pass"|"miss"[, "evidence", "fix"]}'}
+    if verdict == "miss" and not fix:
+        return 400, {"error": "a miss verdict names the task filed to fix it: add its id as fix"}
+    if who is None:
+        return 400, _BAD_WHO
+    task, check, evidence = judged
+    if read is None or edit is None:
+        return 404, {"error": "this board does not edit tasks"}
+    if _held(feed, task) is None:
+        return _not_held(feed, task)
+    if verdict == "miss" and _held(feed, fix) is None:
+        return _not_held(feed, fix)
+    with _EDIT_LOCK:
+        if (current := read(task)) is None:
+            return 404, {"error": f"{task} has no record to read"}
+        if refusal := _unjudged(task, current, check):
+            return 409, {"error": refusal}
+        comment = post_merge_checks.verdict_comment(check, _VERDICTS[verdict], evidence, fix)
+        written = _written_by(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task, "check": check, "verdict": _VERDICTS[verdict], **({"fix": fix} if fix else {})}
+
+
+def record_miss(
+    source: str,
+    raw: bytes,
+    feed: BoardFeed,
+    read: TaskReader | None,
+    edit: TaskEditor | None,
+    archive: TaskArchiver | None,
+    create: TaskCreator | None,
+) -> tuple[int, dict[str, Any]]:
+    """File the fix task `raw` names for a missed post-merge check and record the MISS verdict naming it, in one call:
+    the HTTP status and JSON body, which holds the fix's id.
+
+    The request is `{task, check, fix: {title, ...as a create}[, evidence]}`. Both writes or neither: a fix whose
+    verdict comment is refused is archived again, so a refused miss leaves no fix task and no verdict. A board that
+    cannot archive is refused 404, since the fix could not be undone.
+    """
+    if not _on_lan(source):
+        return 403, {"error": "Recording a miss answers only loopback and private network (RFC 1918) browsers"}
+    try:
+        request = json.loads(raw)
+        judged, fix = _judgement(request), request["fix"]
+        who = _named_who(request)
+    except ValueError, TypeError, KeyError:
+        judged = fix = who = None
+    if judged is None or not isinstance(fix, dict):
+        return 400, {"error": 'a miss needs {"task", "check", "fix": {"title", ...}[, "evidence"]}'}
+    if who is None:
+        return 400, _BAD_WHO
+    task, check, evidence = judged
+    if read is None or edit is None or archive is None or create is None:
+        return 404, {"error": "this board does not edit, archive and create tasks"}
+    if _held(feed, task) is None:
+        return _not_held(feed, task)
+    with _EDIT_LOCK:
+        if (current := read(task)) is None:
+            return 404, {"error": f"{task} has no record to read"}
+        if refusal := _unjudged(task, current, check):
+            return 409, {"error": refusal}
+        filed = {**fix, **{key: request[key] for key in ("actor", "session", "harness") if key in request}}
+        status, body = create_task(source, json.dumps(filed).encode(), create, feed)
+        if status != 201:
+            return status, body
+        comment = post_merge_checks.verdict_comment(check, "MISS", evidence, body["task"])
+        written = _written_by(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
+        if not written.ok:
+            archive(body["task"], f"the MISS verdict on {task} {check} was refused: {written.output}", actor=who.actor)
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task, "check": check, "verdict": "MISS", "fix": body["task"]}
+
+
+def complete_task(
+    source: str, raw: bytes, feed: BoardFeed, complete: TaskCompleter | None
+) -> tuple[int, dict[str, Any]]:
     """Complete the Done task `raw` names through `complete`, for a browser at `source`: the HTTP status and JSON body.
 
     The board's writer refuses a task that is not Done, which answers 409 with the writer's reason and skill.
@@ -1110,7 +1245,7 @@ def start_task(
     if not isinstance(task, str) or not isinstance(assignee, str):
         return 400, {"error": 'a start needs {"task": "TASK-N", "assignee": "@agent-<tier>-<effort>"}'}
     if not isinstance(harness, str) or not harness:
-        return 400, {"error": 'harness must be a non-empty name from agent-harnesses.toml'}
+        return 400, {"error": "harness must be a non-empty name from agent-harnesses.toml"}
     if not isinstance(mode, str) or mode not in _START_MODES:
         return 400, {"error": 'mode must be "interactive" or "headless"'}
     if named is None:

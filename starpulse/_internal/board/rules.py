@@ -4,7 +4,8 @@
 which writes it judges, `require` is one primitive the task as it will be after the write must satisfy, and `reason`
 is the refusal every writer, the CLI's and the page's, answers with. A primitive is a one-key table naming its kind:
 `{field: {...}}`, `{label: {...}}`, `{section: {...}}`, `{body: {...}}`, `{block: {...}}`,
-`{dependencies: {...}}` or `{checklist: {...}}`, or a combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives. A write carries the actor that
+`{post_merge_checks: {}}`, `{dependencies: {...}}` or `{checklist: {...}}`, or a
+combinator, `all_of`, `any_of`, `exactly_one` and `none_of`, over a list of primitives. A write carries the actor that
 makes it (`operator`, `agent`, or `<instance>/<workflow>` as a machine's `writers` spell it), which `unless_actor`
 exempts.
 """
@@ -16,8 +17,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-import yaml
-
+from starpulse._internal.board import post_merge_checks
+from starpulse._internal.board.sections import fenced_list, under
 from starpulse._internal.machines.transitions import lane_id
 
 __all__ = ["Record", "Rule", "load", "refusal"]
@@ -39,8 +40,6 @@ class Record:
 
 #: A primitive: whether the record satisfies it.
 Primitive = Callable[[Record], bool]
-#: The `## <heading>` lines that bound a body's sections.
-_HEADING = re.compile(r"^##[ \t]+(.*?)[ \t]*$", re.M)
 #: The regions of a body a rule can read, by the name a rule gives them and the markers that bound them.
 _REGIONS = {
     "description": "SECTION:DESCRIPTION",
@@ -52,8 +51,6 @@ _REGIONS = {
 _CHECKLISTS = ("acceptance_criteria", "definition_of_done")
 _UNCHECKED = re.compile(r"^- \[ \] #\d+ ", re.M)
 _ITEM = re.compile(r"^- \[[ xX]\]", re.M)
-#: The first fenced YAML block of a section.
-_FENCE = re.compile(r"```ya?ml\n(.*?)\n```", re.S)
 _RULE_KEYS = {"on", "require", "reason", "skill", "unless_actor"}
 _ON_KEYS = {"to", "from", "while", "write"}
 
@@ -168,16 +165,6 @@ def _label(spec: Mapping[str, Any], where: str) -> Primitive:
     )
 
 
-def _under(body: str, heading: str) -> str | None:
-    """The text under the body's `## <heading>` up to the next `##` heading, or None when it has no such section."""
-    heads = list(_HEADING.finditer(body))
-    for number, head in enumerate(heads):
-        if head[1].casefold() == heading.casefold():
-            end = heads[number + 1].start() if number + 1 < len(heads) else len(body)
-            return body[head.end() : end].strip()
-    return None
-
-
 def _section(spec: Mapping[str, Any], where: str) -> Primitive:
     _unknown(spec, {"heading", "nonempty", "not_matching", "except_self"}, where, "section")
     heading = spec.get("heading")
@@ -192,7 +179,7 @@ def _section(spec: Mapping[str, Any], where: str) -> Primitive:
     nonempty, except_self = bool(spec.get("nonempty")), bool(spec.get("except_self"))
 
     def holds(record: Record) -> bool:
-        text = _under(record.body, heading.strip())
+        text = under(record.body, heading.strip())
         if text is None and unwanted is None:
             return False
         if nonempty and not text:
@@ -241,13 +228,23 @@ def _block(spec: Mapping[str, Any], where: str) -> Primitive:
         raise ValueError(f"{where}: block needs `key`, the YAML key that holds the list")
 
     def holds(record: Record) -> bool:
-        text = _under(record.body, heading.strip())
-        fenced = _FENCE.search(text) if text else None
         try:
-            parsed = yaml.safe_load(fenced.group(1)) if fenced else None
-        except yaml.YAMLError:
+            return bool(fenced_list(record.body, heading.strip(), key))
+        except ValueError:
             return False
-        return isinstance(parsed, dict) and isinstance(parsed.get(key), list) and bool(parsed[key])
+
+    return holds
+
+
+def _post_merge_checks(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, set(), where, "post_merge_checks")
+
+    def holds(record: Record) -> bool:
+        try:
+            post_merge_checks.parse(record.body)
+        except ValueError:
+            return False
+        return True
 
     return holds
 
@@ -296,6 +293,7 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "section": _section,
     "body": _body,
     "block": _block,
+    "post_merge_checks": _post_merge_checks,
     "dependencies": _dependencies,
     "checklist": _checklist,
 }

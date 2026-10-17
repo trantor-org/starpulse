@@ -293,6 +293,26 @@ def test_a_block_primitive_reads_the_fenced_yaml_list_under_a_heading(
     assert lands(tmp_path, BLOCK, body) is expected
 
 
+CHECKS = "\n## Post-merge Checks\n\n```yaml\npost_merge_checks:\n{check}\n```\n"
+VALID_CHECK = "  - {id: a, text: t, within: 1d, pass: {kind: gh}}"
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("\n## Other\n\ntext\n", True),
+        (CHECKS.format(check=VALID_CHECK), True),
+        (CHECKS.format(check="  - {id: a, text: t, within: soon, pass: {kind: gh}}"), False),
+        (CHECKS.format(check=VALID_CHECK + "\n" + VALID_CHECK), False),
+        ("\n## Post-merge Checks\n\n```yaml\npost_merge_checks: [\n```\n", False),
+    ],
+)
+def test_a_post_merge_checks_primitive_holds_when_the_block_is_absent_or_valid(
+    tmp_path: Path, body: str, expected: bool
+) -> None:
+    assert lands(tmp_path, {"post_merge_checks": {}}, body) is expected
+
+
 @pytest.mark.parametrize(
     ("combinator", "labels", "expected"),
     [
