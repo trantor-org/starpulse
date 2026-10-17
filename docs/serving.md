@@ -186,7 +186,7 @@ type = "native"
 #   on       = { to = "Done" }                 a write that enters Done (`from = [...]` narrows it to those states)
 #            | { to = "Done", while = true }   ... and a write that leaves the task in Done
 #            | { write = true }                every write, whatever the task's state
-#   require  = one primitive: field, label, section, dependencies, checklist, or all_of, any_of, exactly_one,
+#   require  = one primitive: field, label, section, body, block, dependencies, checklist, or all_of, any_of, exactly_one,
 #              none_of over a list of them
 #   unless_actor = ["dagu/reconciler"]         actors the rule does not judge: operator, agent, <instance>/<workflow>
 # [[board.rules]]

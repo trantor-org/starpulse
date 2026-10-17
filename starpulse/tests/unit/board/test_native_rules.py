@@ -215,6 +215,84 @@ def test_a_section_primitive_reads_the_body_section_under_its_heading(
     assert lands(tmp_path, require, body) is expected
 
 
+STARTS = {"label": {"starts_with": "board-lint-"}}
+
+
+@pytest.mark.parametrize(
+    ("labels", "expected"),
+    [("[board-lint-weekly, size-3]", True), ("[size-3]", False), ("[my-board-lint-x]", False), ("[]", False)],
+)
+def test_a_label_primitive_reads_whether_a_label_starts_with_a_prefix(
+    tmp_path: Path, labels: str, expected: bool
+) -> None:
+    assert lands(tmp_path, STARTS, labels=labels) is expected
+
+
+#: The fixture task's own description reads "Why".
+DESCRIBED = "\n<!-- SECTION:PLAN:BEGIN -->\n{plan}\n<!-- SECTION:PLAN:END -->\n"
+
+
+@pytest.mark.parametrize(
+    ("require", "plan", "expected"),
+    [
+        ({"body": {"region": "description", "matches": r"\bWhy\b"}}, "step", True),
+        ({"body": {"region": "description", "matches": r"docs/adr/"}}, "see docs/adr/", False),
+        ({"body": {"region": "plan", "matches": r"\S"}}, "step", True),
+        ({"body": {"region": "plan", "matches": r"\S"}}, "  ", False),
+        ({"body": {"matches": r"docs/adr/"}}, "see docs/adr/", True),
+        ({"body": {"region": "definition_of_done", "matches": r"\S"}}, "step", False),
+    ],
+)
+def test_a_body_primitive_searches_the_body_or_one_marked_region_of_it(
+    tmp_path: Path, require: dict[str, Any], plan: str, expected: bool
+) -> None:
+    assert lands(tmp_path, require, DESCRIBED.format(plan=plan)) is expected
+
+
+@pytest.mark.parametrize(("minimum", "expected"), [(1, True), (2, True), (3, False)])
+def test_a_checklist_primitive_counts_the_items_of_the_named_lists(
+    tmp_path: Path, minimum: int, expected: bool
+) -> None:
+    require = {"checklist": {"sections": ["acceptance_criteria"], "min_items": minimum}}
+
+    assert lands(tmp_path, require, CHECKLISTS.format(ac=" ", dod="x")) is expected
+
+
+def test_a_checklist_counts_items_across_every_named_list_and_may_also_require_them_checked(tmp_path: Path) -> None:
+    both = {"checklist": {"sections": ["acceptance_criteria", "definition_of_done"], "min_items": 3}}
+    checked = {"checklist": {"sections": ["acceptance_criteria"], "min_items": 2, "all_checked": True}}
+
+    assert lands(tmp_path, both, CHECKLISTS.format(ac=" ", dod="x"))
+    assert not lands(tmp_path, checked, CHECKLISTS.format(ac=" ", dod="x"))
+    assert lands(tmp_path, checked, CHECKLISTS.format(ac="x", dod=" "))
+
+
+BLOCKED = "\n## Start Criteria\n\n{fence}\n\n## Other\n\ntext\n"
+GOOD = "```yaml\nstart_criteria:\n  - id: a\n    kind: task\n```"
+BLOCK = {"block": {"heading": "Start Criteria", "key": "start_criteria"}}
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (BLOCKED.format(fence=GOOD), True),
+        (BLOCKED.format(fence="```yml\nstart_criteria: [{id: a}]\n```"), True),
+        ("\n## Other\n\ntext\n", False),
+        (BLOCKED.format(fence="no fence here"), False),
+        (BLOCKED.format(fence="```yaml\nstart_criteria: [\n```"), False),
+        (BLOCKED.format(fence="```yaml\n- just a list\n```"), False),
+        (BLOCKED.format(fence="```yaml\nstart_criteria: []\n```"), False),
+        (BLOCKED.format(fence="```yaml\nstart_criteria: soon\n```"), False),
+        (BLOCKED.format(fence="```yaml\nother: [a]\n```"), False),
+        ("\n## Other\n\n```yaml\nstart_criteria: [a]\n```\n\n## Start Criteria\n\ntext\n", False),
+    ],
+)
+def test_a_block_primitive_reads_the_fenced_yaml_list_under_a_heading(
+    tmp_path: Path, body: str, expected: bool
+) -> None:
+    assert lands(tmp_path, BLOCK, body) is expected
+
+
 @pytest.mark.parametrize(
     ("combinator", "labels", "expected"),
     [
@@ -323,6 +401,15 @@ def test_a_checklist_rule_judges_the_list_as_the_same_write_leaves_it(tmp_path: 
         ({"dependencies": {"all_in": []}}, "all_in"),
         ({"checklist": {"sections": ["plan"], "all_checked": True}}, "plan"),
         ({"checklist": {"sections": ["acceptance_criteria"]}}, "all_checked"),
+        ({"checklist": {"sections": ["acceptance_criteria"], "min_items": 0}}, "min_items"),
+        ({"checklist": {"sections": ["acceptance_criteria"], "min_items": True}}, "min_items"),
+        ({"label": {"starts_with": ""}}, "label"),
+        ({"label": {"starts_with": "a", "contains": "b"}}, "label"),
+        ({"body": {}}, "matches"),
+        ({"body": {"matches": "("}}, "matches"),
+        ({"body": {"matches": "a", "region": "notes"}}, "notes"),
+        ({"block": {"heading": "Notes"}}, "key"),
+        ({"block": {"key": "notes"}}, "heading"),
     ],
 )
 def test_a_primitive_the_board_cannot_read_is_a_startup_error_naming_it(
