@@ -246,20 +246,24 @@ class UpstreamBacklog:
         files: Mapping[str, list] | None = None,
         kept: Callable[[dict[str, list]], None] = lambda _files: None,
         retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
+        index: Callable[[BoardTask], None] = lambda _task: None,
     ) -> None:
         """`files` are the fingerprints a saved Board was placed from (`files`), so the first scan reads only the files
         changed since; `kept` is handed them after each scan that placed or retracted a task. `retired` streams the
         text of every retired task, or answers None while that is unchanged since it last answered (a `True` argument
         streams it regardless); a scan settles the ones in the done lane as completed, so a task depending on one is
-        not left waiting on a file that is gone. Only their ids are kept, never their text."""
+        not left waiting on a file that is gone. `index` is handed each retired task that is not Done, to be searchable
+        and not placed. Only their ids are kept, never their text."""
         self.root = root
         self.config = read_config(root)
         self._team = require_project(root, self.config)
         self._put = put
         self._retract = retract
         self._retired = retired
+        self._index = index
         self._settled_retired: set[str] = set()
-        self._retired_done: set[str] = set()
+        self._indexed_retired: set[str] = set()
+        self._retired_ids: set[str] = set()
         self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
         self._lanes = {lane_id(status) for status in self.config.statuses}
         self._seen: dict[Path, tuple[int, int]] = {}
@@ -338,6 +342,7 @@ class UpstreamBacklog:
         if task_id and task_id not in self._ids.values():
             self._retract(task_id)
             self._settled_retired.discard(task_id)  # no longer on the board, so a retired copy is placed again
+            self._indexed_retired.discard(task_id)
         del self._seen[gone]
 
     def _settle(self, changed: bool) -> None:
@@ -351,29 +356,36 @@ class UpstreamBacklog:
             self._settle_retired(texts)
 
     def _retired_unsettled(self) -> bool:
-        """Whether a retired done task is unplaced though no file holds it, or placed though a file does."""
+        """Whether a retired task is unsettled though no file holds it, or settled though a file does."""
         held = set(self._ids.values())
-        return bool(self._settled_retired & held or self._retired_done - self._settled_retired - held)
+        settled = self._settled_retired | self._indexed_retired
+        return bool(settled & held or self._retired_ids - settled - held)
 
     def _settle_retired(self, texts: Iterable[str]) -> None:
         """Place each retired task in the done lane as completed, and retract one no longer kept.
 
-        A retired task that is not Done (archived before it was retired) stays unplaced, as it is once its file is
-        gone; one whose file is back (restored) is the scan's to place."""
+        A retired task that is not Done (archived before it was retired) is indexed for search as archived and left unplaced, as
+        it is once its file is gone; one whose file is back (restored) is the scan's to place."""
         placed: set[str] = set()
-        done: set[str] = set()
+        indexed: set[str] = set()
+        retired: set[str] = set()
         held = set(self._ids.values())
         for text in texts:
             task = self._task(self.root, text, "completed")
-            if task is None or task.lane != _DONE_LANE:
+            if task is None:
                 continue
-            done.add(task.id)
-            if task.id not in held:
+            retired.add(task.id)
+            if task.id in held:
+                continue
+            if task.lane == _DONE_LANE:
                 self._put(task)
                 placed.add(task.id)
-        for task_id in self._settled_retired - placed - held:
+            else:
+                self._index(task.model_copy(update={"settled": "archived"}))
+                indexed.add(task.id)
+        for task_id in (self._settled_retired | self._indexed_retired) - placed - indexed - held:
             self._retract(task_id)
-        self._settled_retired, self._retired_done = placed, done
+        self._settled_retired, self._indexed_retired, self._retired_ids = placed, indexed, retired
 
     def _task(self, path: Path, text: str, settled: Literal["completed", "archived"] | None) -> BoardTask | None:
         frontmatter, body = _split(text)
@@ -562,6 +574,7 @@ def project_board(
             files=files,
             kept=lambda scanned: feed.keep_source({"files": scanned}),
             retired=retired,
+            index=feed.index_only,
         ).start(interval, scanned=lambda: feed.expect("0-0"))
         threading.Thread(target=feed.keep_saved, args=(threading.Event(),), name="board-state", daemon=True).start()
 

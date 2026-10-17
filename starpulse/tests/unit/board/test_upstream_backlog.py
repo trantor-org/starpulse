@@ -1075,6 +1075,29 @@ def test_a_done_file_a_watch_sees_leave_for_the_retired_store_is_settled_done_ag
     assert [(t.id, t.lane) for t in placed] == [("task-3", "done"), ("task-3", "done")]
 
 
+def test_a_retired_task_that_is_not_done_is_indexed_not_placed_and_retracted_once_it_is_gone(tmp_path: Path) -> None:
+    write_config(tmp_path)
+    path = write_task(tmp_path, "tasks", "task-3", "Blocked")
+    retired = [path.read_text()]
+
+    def stream(force: bool) -> Iterator[str]:
+        return iter(retired)
+
+    placed: list[BoardTask] = []
+    indexed: list[BoardTask] = []
+    retracted: list[str] = []
+    adapter = UpstreamBacklog(tmp_path, placed.append, retract=retracted.append, retired=stream, index=indexed.append)
+    path.unlink()
+
+    adapter.scan()
+
+    assert placed == []
+    assert [(t.id, t.settled) for t in indexed] == [("task-3", "archived")]
+    retired.clear()
+    adapter.scan()
+    assert retracted == ["task-3"]
+
+
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_an_idle_adapter_stats_no_task_file_between_full_scans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     write_config(tmp_path)

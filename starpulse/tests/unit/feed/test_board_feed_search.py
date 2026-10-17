@@ -68,6 +68,18 @@ def test_a_task_in_the_done_lane_is_indexed_as_finished_when_it_entered_the_lane
     assert [hit["task"] for hit in index.search("drain", finished_since=50.0)] == ["PROJ-1"]
 
 
+def test_a_task_indexed_only_is_found_and_never_placed_and_retracting_it_drops_it(index: SearchIndex) -> None:
+    feed = BoardFeed()
+    feed.index_tasks(index)
+
+    feed.index_only(_task("PROJ-1", title="Drain the queue", settled="completed"))
+
+    assert _found(index, "drain") == ["PROJ-1"]
+    assert feed.task("PROJ-1") is None
+    feed.retract("PROJ-1")
+    assert _found(index, "drain") == []
+
+
 def test_an_index_that_fails_does_not_stop_the_task_being_placed() -> None:
     class Broken:
         def index(self, task: BoardTask, finished_at: float | None = None) -> None:
@@ -80,6 +92,7 @@ def test_an_index_that_fails_does_not_stop_the_task_being_placed() -> None:
     feed.index_tasks(Broken())  # type: ignore[arg-type]
 
     feed.put(_task("PROJ-1"))
+    feed.index_only(_task("PROJ-2"))
     feed.retract("PROJ-1")
 
     assert feed.task("PROJ-1") is None

@@ -609,6 +609,15 @@ class BoardFeed:
         if not self._replaying():
             self._refresh_ledgers()  # the Ledger reads the move from the history; the replay's moves are built once, at its end
 
+    def index_only(self, task: BoardTask) -> None:
+        """Make a task searchable without placing it: no lane, no page card. `retract` drops it from the index."""
+        if self._search is None or (self._keys is not None and not self._keys.matches(task.id)):
+            return
+        try:
+            self._search.index(task)
+        except Exception as exc:  # the index is down; the task stays unsearchable until it is next streamed
+            logger.warning("StarPulse: cannot index %s for search: %s", task.id, exc)
+
     def reconcile_lanes(self, current: Iterable[tuple[str, str, str, float]]) -> int:
         """Record, and with a log publish, the lane a held task is in where the history's last lane for it differs.
 

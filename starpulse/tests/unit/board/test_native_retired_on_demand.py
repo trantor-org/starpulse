@@ -11,6 +11,7 @@ from starpulse._internal.board.seam import Board
 from starpulse._internal.board.upstream_backlog import UpstreamBacklog
 from starpulse._internal.config.config import load
 from starpulse._internal.eventlog.event_log import EventLog
+from starpulse._internal.feed.search import SearchIndex
 from starpulse._internal.server.assembly import assemble
 from starpulse.tests.unit.board.test_native import native_root, write_task
 
@@ -56,6 +57,27 @@ def test_a_scan_settles_a_retired_done_task_without_holding_its_text(
     assert adapter._settled_retired == {"task-5"}
     assert not any(_holds(held, text) for held in vars(adapter).values())
     assert built.retired("task-5")[0]["text"] == text
+
+
+def test_a_scan_makes_a_retired_blocked_task_searchable_without_placing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapters: list[UpstreamBacklog] = []
+    monkeypatch.setattr(UpstreamBacklog, "start", lambda self, interval, scanned: adapters.append(self))
+    built, feed = assemble(load(None), tmp_path, None, ())
+    log = EventLog(f"sqlite:///{tmp_path / 'history.sqlite'}")
+    search = SearchIndex.open(log.engine)
+    assert search is not None and built.retire is not None and built.archive is not None
+    feed.index_tasks(search)
+    write_task(tmp_path, "task-7", "Blocked", title="Drain the stuck queue")
+    built.start(feed, "test", log)
+    assert built.archive("task-7", "").ok
+    assert built.retire("task-7").ok
+
+    adapters[0].scan()
+
+    assert [hit["task"] for hit in search.search("stuck queue")] == ["task-7"]
+    assert feed.task("task-7") is None
 
 
 def test_the_reader_streams_every_text_in_id_order_across_pages(
