@@ -45,6 +45,15 @@ SECONDS = {
 }
 UNMEASURED = 0.3
 
+#: Files whose tests share the checkout's `static` directory through the `build` stub, which one test writes and
+#: removes while another in a different shard (the shards share one clone) would find it gone: they stay in one shard.
+STATIC_BUILD = (
+    "starpulse/tests/integration/server/test_standalone.py",
+    "starpulse/tests/integration/server/test_api_swap.py",
+    "starpulse/tests/integration/server/test_snapshot_served.py",
+    "starpulse/tests/e2e/hub/test_hub.py",
+)
+
 
 def weigh(tests_per_file: dict[str, int]) -> dict[str, float]:
     return {file: SECONDS.get(file, tests * UNMEASURED) for file, tests in tests_per_file.items()}
@@ -54,10 +63,14 @@ def assign(weights: dict[str, float], count: int) -> list[set[str]]:
     """Split the files into `count` shards of near-equal total weight; the same input always gives the same split."""
     shards: list[set[str]] = [set() for _ in range(count)]
     totals = [0] * count
-    for file in sorted(weights, key=lambda name: (-weights[name], name)):
+    together = sorted(file for file in STATIC_BUILD if file in weights)
+    units = {file: [file] for file in weights if file not in together}
+    if together:
+        units[together[0]] = together
+    for lead in sorted(units, key=lambda name: (-sum(weights[file] for file in units[name]), name)):
         lightest = totals.index(min(totals))
-        shards[lightest].add(file)
-        totals[lightest] += weights[file]
+        shards[lightest].update(units[lead])
+        totals[lightest] += sum(weights[file] for file in units[lead])
     return shards
 
 
