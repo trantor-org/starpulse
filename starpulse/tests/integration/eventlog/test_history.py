@@ -41,7 +41,7 @@ def test_an_entry_without_an_event_id_is_keyed_by_its_stream_id(store: HistorySt
     assert _event_ids(store) == ["1-0", "2-0"]
 
 
-def test_a_run_keyed_entry_is_kept_with_its_run_and_actor_but_has_no_task_path(store: HistoryStore) -> None:
+def test_a_run_keyed_entry_is_kept_with_its_run_and_actor(store: HistoryStore) -> None:
     store.record_machine("1-0", _RUN | {"actor": "dispatcher"})
 
     with store.engine.connect() as db:
@@ -50,7 +50,6 @@ def test_a_run_keyed_entry_is_kept_with_its_run_and_actor_but_has_no_task_path(s
         ).one()
 
     assert tuple(row) == ("r-1", None, "run-1", "authoring-skills", "GUIDANCE_READ", "dispatcher", 5.0)
-    assert store.machine_path("run-1", "authoring-skills") == ([], 0)
 
 
 def test_a_tasks_machine_path_places_each_event_and_counts_every_row(store: HistoryStore) -> None:
@@ -107,6 +106,16 @@ def test_a_machine_path_is_ordered_by_time_and_holds_only_that_machines_events(s
         ],
         2,
     )
+
+
+def test_a_run_keyed_machine_path_is_read_by_the_run_id_oldest_first(store: HistoryStore) -> None:
+    store.record_machine("1-0", _RUN | {"event_id": "r2", "event": "GUIDANCE_READ", "time": "7"})
+    store.record_machine("2-0", _RUN | {"event_id": "r1", "event": "GUIDANCE_READ", "time": "5"})
+    store.record_machine("3-0", _RUN | {"event_id": "r3", "run": "run-2"})
+
+    path, steps = store.machine_path("run-1", "authoring-skills")
+
+    assert ([step["at"] for step in path], steps) == ([5.0, 7.0], 2)
 
 
 def test_lane_rows_are_every_tasks_lane_changes_in_time_order(store: HistoryStore) -> None:

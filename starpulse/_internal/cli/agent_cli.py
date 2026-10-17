@@ -1326,12 +1326,12 @@ def _parser() -> argparse.ArgumentParser:
     trace = leaf(
         task_verbs,
         "trace",
-        "a task's path: its Board lane changes, or with --flow its events on that machine, oldest first",
+        "a task's path: its Board lane changes, or with --flow its events on that machine, oldest first; a run id traces on --flow",
         _trace,
         ("task", "flow", "path", "steps"),
         (0, 2, 3, 4),
     )
-    trace.add_argument("task", help="the task's key (`PROJ-45`)")
+    trace.add_argument("task", help="the task's key (`PROJ-45`), or with --flow a run id")
     trace.add_argument("--flow", help="the machine to trace the task on (`in-progress`), else the Board's lanes")
     create = leaf(
         task_verbs,
