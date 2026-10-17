@@ -17,7 +17,7 @@ import re
 import shlex
 import subprocess
 import threading
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -245,12 +245,13 @@ class UpstreamBacklog:
         retract: Callable[[str], None] = lambda _task: None,
         files: Mapping[str, list] | None = None,
         kept: Callable[[dict[str, list]], None] = lambda _files: None,
-        retired: Callable[[], Mapping[str, str] | None] = lambda: None,
+        retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
     ) -> None:
         """`files` are the fingerprints a saved Board was placed from (`files`), so the first scan reads only the files
-        changed since; `kept` is handed them after each scan that placed or retracted a task. `retired` answers the
-        text of every retired task by id, or None while that is unchanged since it last answered; a scan settles the
-        ones in the done lane as completed, so a task depending on one is not left waiting on a file that is gone."""
+        changed since; `kept` is handed them after each scan that placed or retracted a task. `retired` streams the
+        text of every retired task, or answers None while that is unchanged since it last answered (a `True` argument
+        streams it regardless); a scan settles the ones in the done lane as completed, so a task depending on one is
+        not left waiting on a file that is gone. Only their ids are kept, never their text."""
         self.root = root
         self.config = read_config(root)
         self._team = require_project(root, self.config)
@@ -258,7 +259,7 @@ class UpstreamBacklog:
         self._retract = retract
         self._retired = retired
         self._settled_retired: set[str] = set()
-        self._retired_texts: Mapping[str, str] = {}
+        self._retired_done: set[str] = set()
         self._moves = moves if moves is not None else board_moves(board_machine(self.config.statuses))
         self._lanes = {lane_id(status) for status in self.config.statuses}
         self._seen: dict[Path, tuple[int, int]] = {}
@@ -336,33 +337,43 @@ class UpstreamBacklog:
         task_id = self._ids.pop(gone, None)
         if task_id and task_id not in self._ids.values():
             self._retract(task_id)
+            self._settled_retired.discard(task_id)  # no longer on the board, so a retired copy is placed again
         del self._seen[gone]
 
     def _settle(self, changed: bool) -> None:
-        """Settle the retired tasks again when their text or the board's files changed.
+        """Settle the retired tasks again when their rows changed, or the board's files did and left one unsettled.
 
-        A file that leaves the board for the retired store is retracted with it, so the retired text kept from the
-        last answer is settled again even when `retired` answers None (unchanged)."""
-        if (texts := self._retired()) is not None:
-            self._retired_texts, changed = texts, True
-        if changed:
-            self._settle_retired(self._retired_texts)
+        A file that leaves the board for the retired store is retracted with it, and a file back for a retired task
+        displaces it, so the text is streamed again then even when `retired` answers None (unchanged)."""
+        if (texts := self._retired(False)) is None and changed and self._retired_unsettled():
+            texts = self._retired(True)
+        if texts is not None:
+            self._settle_retired(texts)
 
-    def _settle_retired(self, texts: Mapping[str, str]) -> None:
-        """Place each retired task whose kept text is in the done lane as completed, and retract one no longer kept.
+    def _retired_unsettled(self) -> bool:
+        """Whether a retired done task is unplaced though no file holds it, or placed though a file does."""
+        held = set(self._ids.values())
+        return bool(self._settled_retired & held or self._retired_done - self._settled_retired - held)
+
+    def _settle_retired(self, texts: Iterable[str]) -> None:
+        """Place each retired task in the done lane as completed, and retract one no longer kept.
 
         A retired task that is not Done (archived before it was retired) stays unplaced, as it is once its file is
         gone; one whose file is back (restored) is the scan's to place."""
         placed: set[str] = set()
+        done: set[str] = set()
         held = set(self._ids.values())
-        for text in texts.values():
+        for text in texts:
             task = self._task(self.root, text, "completed")
-            if task is not None and task.lane == _DONE_LANE and task.id not in held:
+            if task is None or task.lane != _DONE_LANE:
+                continue
+            done.add(task.id)
+            if task.id not in held:
                 self._put(task)
                 placed.add(task.id)
         for task_id in self._settled_retired - placed - held:
             self._retract(task_id)
-        self._settled_retired = placed
+        self._settled_retired, self._retired_done = placed, done
 
     def _task(self, path: Path, text: str, settled: Literal["completed", "archived"] | None) -> BoardTask | None:
         frontmatter, body = _split(text)
@@ -508,7 +519,7 @@ def project_board(
     settings: Mapping[str, Any],
     base: Path,
     writers: Callable[[BacklogConfig], Mapping[str, Any]],
-    retired: Callable[[], Mapping[str, str] | None] = lambda: None,
+    retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
 ) -> Board:
     """The Board of the Markdown project in `root`, polled every `settings["interval"]` seconds, with the writers `writers` builds.
 

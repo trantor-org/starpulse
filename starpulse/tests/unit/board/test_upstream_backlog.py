@@ -1052,10 +1052,20 @@ def test_a_task_file_deleted_after_start_is_retracted(tmp_path: Path) -> None:
 def test_a_done_file_a_watch_sees_leave_for_the_retired_store_is_settled_done_again(tmp_path: Path) -> None:
     write_config(tmp_path)
     path = write_task(tmp_path, "completed", "task-3", "Done")
-    answers = iter([{"task-3": path.read_text()}, None])  # retired before its file left, then unchanged
+    text = path.read_text()
+    answered = False
+
+    def retired(force: bool) -> Iterator[str] | None:
+        """The retired text once, then unchanged until a scan asks for it again."""
+        nonlocal answered
+        if answered and not force:
+            return None
+        answered = True
+        return iter([text])
+
     placed: list[BoardTask] = []
     retracted: list[str] = []
-    adapter = UpstreamBacklog(tmp_path, placed.append, retract=retracted.append, retired=lambda: next(answers))
+    adapter = UpstreamBacklog(tmp_path, placed.append, retract=retracted.append, retired=retired)
     adapter.scan()
     path.unlink()
 
