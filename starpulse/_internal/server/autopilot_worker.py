@@ -18,6 +18,7 @@ from pathlib import Path
 
 from starpulse._internal.autopilot.remote import follow_wakes, publisher
 from starpulse._internal.autopilot.runtime import Runtime
+from starpulse._internal.board import replica
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog import events as machine_events
@@ -126,11 +127,11 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     log = EventLog(database_url(config.database_url, base))
-    board.start(feed, "starpulse-autopilot", log)
+    stop = threading.Event()
+    replica.read(board, feed, "starpulse-autopilot", log, config, stop, local=args.local_board)
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     autopilot = Autopilot(config, base, board, feed, log, history_store(config, base, feed.machines))
     autopilot.start()
-    stop = threading.Event()
     hold(stop, lambda: autopilot.reload(path))
     autopilot.stop()

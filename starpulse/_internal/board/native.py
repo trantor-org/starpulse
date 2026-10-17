@@ -1017,8 +1017,11 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         retired.changes(),
     )
 
-    def start(feed: BoardFeed, group: str, log: EventLog) -> None:
+    def attach(log: EventLog) -> None:
         retired.engine = log.engine  # the retired tasks live in the view's history store
+
+    def start(feed: BoardFeed, group: str, log: EventLog) -> None:
+        attach(log)
         made.start(feed, group, log)
 
-    return replace(made, start=start)
+    return replace(made, start=start, attach=attach)

@@ -276,3 +276,22 @@ def test_this_platform_reads_a_live_processs_resident_size() -> None:
     reader = rss_module.rss_reader()
     assert reader is not None
     assert reader(os.getpid()) > MB
+
+
+def test_a_hub_s_workers_start_the_board_themselves_and_every_other_worker_reads_the_replica() -> (
+    None
+):
+    hub = worker_commands(load(None), None, hub=True)
+    served = worker_commands(load(None), None)
+
+    for context in ("pulls", "autopilot", "runs"):
+        assert hub[context][-1] == "--local-board"
+        assert "--local-board" not in served[context]
+    assert "--local-board" not in served["board"]
+
+
+def test_the_worker_parser_takes_the_local_board_flag() -> None:
+    from starpulse._internal.server.worker import worker_parser
+
+    assert worker_parser().parse_args(["runs", "--local-board"]).local_board is True
+    assert worker_parser().parse_args(["runs"]).local_board is False

@@ -561,6 +561,7 @@ def project_board(
         cues=lambda qualify: cues,
         waits=compiled.waits if compiled else {},
         source=str(root),
+        state_key=lambda: _state_key(root, board_file),
         **writers(config),
     )
 

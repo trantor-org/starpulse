@@ -46,6 +46,8 @@ WORKER_FLAGS = {
     "board": "board_worker",
 }
 
+#: The contexts that read the Board: a hub has no Board child for them to read it from.
+READERS = ("pulls", "runs", "autopilot")
 
 _MB = 1024 * 1024
 
@@ -56,11 +58,20 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
     Forwarding has work only with a `[forward]` table, so a config without one gets no forwarding child. A hub keeps its
     history threads in-process, so it gets no history child. Search has work only with an `embeddings_url`, and a hub keeps
     no search index, so a config without one, or a hub, gets no search child. A hub keeps its board writers in-process, so it
-    gets no board child.
+    gets no board child, and its pulls, runs and autopilot workers start the board adapter themselves
+    (`--local-board`) where the others read the replica the Board child publishes.
     """
     tail = ["--config", str(config_path)] if config_path else []
     return {
-        context: [sys.executable, "-m", "starpulse", "worker", context, *tail]
+        context: [
+            sys.executable,
+            "-m",
+            "starpulse",
+            "worker",
+            context,
+            *tail,
+            *(["--local-board"] if hub and context in READERS else []),
+        ]
         for context, flag in WORKER_FLAGS.items()
         if not getattr(config, flag)
         and (context != "forwarding" or config.forward is not None)

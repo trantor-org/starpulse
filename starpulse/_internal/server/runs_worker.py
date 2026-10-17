@@ -16,6 +16,7 @@ import logging
 import threading
 from pathlib import Path
 
+from starpulse._internal.board import replica
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import database_url
@@ -64,10 +65,12 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     log = EventLog(database_url(config.database_url, base))
-    board.start(feed, "starpulse-runs", log)
+    stop = threading.Event()
+    replica.read(
+        board, feed, "starpulse-runs", log, config, stop, local=args.local_board
+    )
     store = history_store(config, base, feed.machines)
     publisher = Publisher(log)
-    stop = threading.Event()
     for instance, adapter in adapters:
         adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
     if config.triggers:
