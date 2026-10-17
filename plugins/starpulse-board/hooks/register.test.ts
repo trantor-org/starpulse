@@ -481,6 +481,7 @@ type Host = {
   posted?: string[][]
   post?: (argv: readonly string[]) => ReturnType<typeof answer>
   toasts?: string[]
+  titles?: string
 }
 
 // Stands in for the engine and the host: the registry above, tmux session task-7 holding pid 200, a held-task stream
@@ -524,6 +525,7 @@ const sessionsHost = (on: On, host: Host = {}) => {
   on('fs.read', ($, e) => ({ value: JSON.stringify(registry()[e.path]) }))
   on('process.run', ($, e) => {
     host.ran?.push([...e.argv])
+    if (e.argv[0] === 'grep' && e.argv.includes('-H')) return answer(0, host.titles ?? '')
     if (e.argv[0] === 'tmux' && e.argv[1] === 'list-panes') return answer(0, '200 task-7\n999 scratch\n')
     if (e.argv[0] === 'tmux') {
       host.switched?.push([...e.argv])
@@ -875,6 +877,36 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await label(`session:${SESSION}`)).toMatch(/^me, you, working, /)
     expect(await ui.find({ key: 'session:abcd1234-5678' })).toBeUndefined()
     expect(await ui.find({ key: 'session:session-3' })).toBeUndefined()
+  })
+
+  // Claude titles a session in its transcript: an ai-title it rewrites as the work goes, a custom-title on /rename.
+  test(`the Sessions pane names a session by its transcript's latest title, a rename first (${surface})`, async ($, on) => {
+    const transcript = '/home/me/.claude/projects/-work/session-2.jsonl'
+    const titles = [
+      `${transcript}:{"type":"ai-title","aiTitle":"Draft the plan","sessionId":"session-2"}`,
+      `${transcript}:{"type":"ai-title","aiTitle":"Fix the sessions pane","sessionId":"session-2"}`,
+      `/home/me/.claude/projects/-work/${SESSION}.jsonl:{"type":"custom-title","customTitle":"Mine","sessionId":"${SESSION}"}`,
+      `/home/me/.claude/projects/-work/${SESSION}.jsonl:{"type":"ai-title","aiTitle":"Later summary","sessionId":"${SESSION}"}`,
+    ].join('\n')
+    const registry = Object.fromEntries(Object.entries(REGISTRY).map(([path, s]) => [path, { ...s, cwd: '/work' }]))
+    sessionsHost(on, { registry, titles })
+
+    await start($, surface)
+    const ui = await sessionsPane($, surface)
+    const label = async (key: string) => (await ui.find({ key }))?.props.label as string
+
+    expect(await label('session:session-2')).toMatch(/^Fix the sessions pane, working, /)
+    expect(await label(`session:${SESSION}`)).toMatch(/^Mine, you, working, /)
+  })
+
+  test(`a narrow Sessions pane cuts a long name to its width (${surface})`, async ($, on) => {
+    const registry = { ...REGISTRY, '/home/me/.claude/sessions/200.json': { ...REGISTRY['/home/me/.claude/sessions/200.json'], name: 'Fix the sessions pane title truncation' } }
+    sessionsHost(on, { registry })
+
+    await start($, surface)
+    const ui = await $.ui.mount({ plugin: 'starpulse-board', surface, component: 'Pane', props: { ...PANE_PROPS, placement: 'dock', bodyColumns: 30 }, requestId: 'starpulse-sessions' })
+
+    expect(await ui.findAll({ type: 'Text', text: 'Fix the sessions p…' })).toHaveLength(1)
   })
 
   // The dock paints grey behind every cell a pane draws: the Sessions root takes the body's rows and fills them black, as the Board's does.
