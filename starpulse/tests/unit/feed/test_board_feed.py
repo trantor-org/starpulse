@@ -886,7 +886,8 @@ def _reopen_rows(*moves: tuple[str, str]) -> list:
     rows = [("TASK-1", at + i, old, new) for i, (old, new) in enumerate(moves)]
     feed.read_lanes(lambda since=None: rows)
     feed.set_dags("ci", [_dag("start")], None)
-    return [r["tasks"] for r in feed.snapshot()["ledgers"].get("REOPEN", [])]
+    page = feed.ledger_rows("REOPEN", None, 20)
+    return [r["tasks"] for r in page["rows"]] if page else []
 
 
 def test_reopen_ledger_adds_no_row_for_a_flap_that_ends_done() -> None:
