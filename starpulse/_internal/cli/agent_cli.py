@@ -1215,7 +1215,7 @@ def _manifest(parser: argparse.ArgumentParser) -> dict[str, Any]:
                 "exit_codes": leaf.get_default("exit_codes"),
             }
             for verb, leaf in _leaves(parser)
-            if leaf.get_default("run")  # `serve`, `emit`, `forward`, `connect`, `worker`, `import-history` and `reload` are listed for `--help` but read no running server
+            if leaf.get_default("run")  # `serve`, `emit`, `forward`, `connect`, `worker`, `import-history`, `conform` and `reload` are listed for `--help` but read no running server
         ],
     }
 
@@ -1225,7 +1225,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="starpulse",
         description="StarPulse: workflows and tasks. These verbs read a running server as JSON.",
-        epilog="`starpulse serve` runs the server, `starpulse emit` pushes a workflow run and `starpulse forward` sets the hub opt-in, `starpulse connect` sets up a tracker, `starpulse worker pulls` runs the pull request delivery loops alone, `starpulse worker autopilot` runs the autopilot alone `starpulse import-history` adds earlier lane changes to the store and `starpulse reload` replaces the serve children whose code changed; each has its own --help.",
+        epilog="`starpulse serve` runs the server, `starpulse emit` pushes a workflow run and `starpulse forward` sets the hub opt-in, `starpulse connect` sets up a tracker, `starpulse worker pulls` runs the pull request delivery loops alone, `starpulse worker autopilot` runs the autopilot alone `starpulse import-history` adds earlier lane changes to the store, `starpulse conform` replays the recorded history against the machines the project declares and `starpulse reload` replaces the serve children whose code changed; each has its own --help.",
     )
     verbs = parser.add_subparsers(dest="command", required=True, metavar="command")
     # Listed so `--help` shows how to start the server; `__main__` hands these words to their own parsers before this one.
@@ -1235,6 +1235,7 @@ def _parser() -> argparse.ArgumentParser:
     verbs.add_parser("connect", help="set up a native, Backlog.md or Jira board in starpulse.toml", add_help=False)
     verbs.add_parser("worker", help="run one context of the server as its own process (`worker pulls`, `worker autopilot`)", add_help=False)
     verbs.add_parser("import-history", help="add a board's earlier lane changes to the store, once each", add_help=False)
+    verbs.add_parser("conform", help="replay the recorded history against the machines the project declares", add_help=False)
     verbs.add_parser("reload", help="replace the serve children whose code changed, reload those whose config changed", add_help=False)
 
     def leaf(

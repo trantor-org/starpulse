@@ -122,6 +122,18 @@ def test_lane_rows_are_every_tasks_lane_changes_in_time_order(store: HistoryStor
     ]
 
 
+def test_machine_event_rows_are_every_keys_events_per_machine_in_time_order(store: HistoryStore) -> None:
+    store.record_machine("a", {"machine": "in-progress", "event": "START", "task": "PROJ-7", "time": 5.0})
+    store.record_machine("b", {"machine": "in-progress", "event": "START", "run": "run-1", "time": 1.0})
+    store.record_machine("c", {"machine": "in-progress", "event": "FINISH", "task": "PROJ-7", "time": 9.0})
+
+    assert store.machine_event_rows(since=2.0) == [
+        ("in-progress", "PROJ-7", 5.0, "START"),
+        ("in-progress", "PROJ-7", 9.0, "FINISH"),
+    ]
+    assert store.machine_event_rows()[0] == ("in-progress", "run-1", 1.0, "START")
+
+
 def test_current_lanes_are_each_tasks_latest_lane_change_in_the_order_those_changes_happened(store: HistoryStore) -> None:
     store.record_lane("a", "PROJ-7", "Ready", 1.0)
     store.record_lane("b", "PROJ-8", "To Do", 2.0)

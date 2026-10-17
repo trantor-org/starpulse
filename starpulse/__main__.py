@@ -3,7 +3,8 @@
 `serve` runs the view (`starpulse._internal.server.server`), `emit` pushes a workflow run onto the runs stream (`starpulse._internal.runs.emit`) and
 `forward` sets the opt-in that lets a person's name leave for a hub (`starpulse._internal.hub.forward`), `connect` writes the
 config's `[board]` for a tracker after checking it answers (`starpulse._internal.cli.connect`) and `import-history` adds a
-board's earlier lane changes to the store (`starpulse._internal.server.history_import`); each reads the rest of the
+board's earlier lane changes to the store (`starpulse._internal.server.history_import`) and `conform` replays the recorded
+history against the machines the project declares (`starpulse._internal.server.conform`); each reads the rest of the
 line with its own flags, so `starpulse serve --help` lists the server's. Any other word is a verb that reads the
 running server as JSON (`starpulse._internal.cli.agent_cli`), and `starpulse help --agent` lists them.
 """
@@ -31,6 +32,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "connect": _lazy("starpulse._internal.cli.connect"),
     "worker": _lazy("starpulse._internal.server.worker"),
     "import-history": _lazy("starpulse._internal.server.history_import"),
+    "conform": _lazy("starpulse._internal.server.conform"),
     "reload": _lazy("starpulse._internal.server.control"),
 }
 

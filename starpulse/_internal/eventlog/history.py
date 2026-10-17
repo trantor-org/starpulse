@@ -622,6 +622,15 @@ class HistoryStore:
             rows = db.execute(query).all()
         return [tuple(row) for row in rows]
 
+    def machine_event_rows(self, since: float | None = None) -> list[tuple[str, str, float, str]]:
+        """`(machine, key, at, event)` for every machine event at or after epoch `since` (None: all), oldest first; the key is
+        the task, or the run when the event moved one."""
+        c = _machine_events.c
+        query = select(c.machine, func.coalesce(c.task, c.run), c.occurred_at, c.event).order_by(*_STEP_ORDER)
+        if since is not None:
+            query = query.where(c.occurred_at >= since)
+        return self._read(query)
+
     def lane_changes(self) -> list[tuple[str, str, str, float]]:
         """`(event_id, task, lane, at)` for every lane change of every task, oldest first."""
         c = _lane_changes.c
