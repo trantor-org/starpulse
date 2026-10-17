@@ -576,7 +576,7 @@ describe("a Board path's route search", () => {
       if (got.c !== c0 && got.c.x % 40 === 10) searched++;
     }
     expect(searched).toBeGreaterThanOrEqual(10); // a third of the cases ran the search rather than drawing straight or keeping their bend
-  });
+  }, 60_000); // the brute-force reference takes ~3 s alone and passed 15 s on a loaded CI runner
 });
 
 describe("a Board with DAGs in its snapshot", () => {
