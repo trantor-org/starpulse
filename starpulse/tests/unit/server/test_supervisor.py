@@ -273,6 +273,18 @@ def test_a_child_is_sampled_no_oftener_than_the_interval() -> None:
     assert len(Spawned.made) == 1
 
 
+def test_a_limited_child_that_exits_at_startup_is_restarted_after_its_delay() -> None:
+    sizes = {1000: 10, 1001: 10}
+    supervisor = _limited(sizes, first_delay=5.0)
+    supervisor.tick(0.0)
+    Spawned.made[0].terminated = True  # it exited during startup, as a worker meeting a locked database does
+
+    supervisor.tick(2.0)  # noted dead, due at +5s, and sampled while it waits
+    supervisor.tick(7.0)
+
+    assert supervisor.pids() == {"pulls": 1001}
+
+
 def test_without_an_rss_reader_one_warning_is_logged_and_children_run_unlimited(caplog) -> None:
     Spawned.made = []
     supervisor = Supervisor({"pulls": SLEEP}, spawn=Sized, limits={"pulls": MemoryLimit(1, 2)}, rss=None)

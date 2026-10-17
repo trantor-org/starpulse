@@ -8,12 +8,16 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
+from starpulse._internal.config.config import load
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
+from starpulse._internal.eventlog.summaries import Summariser, summary_basis
 from starpulse._internal.hub import forward, forward_report
 from starpulse._internal.server import forwarding_worker, worker
+from starpulse._internal.server.assembly import assemble
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
@@ -126,3 +130,17 @@ def test_a_worker_with_no_forward_table_refuses_to_start(run) -> None:
         run(BOARD)
 
     assert refusal.value.code == 1
+
+
+def test_starting_the_worker_leaves_the_summaries_the_other_workers_folded(run, tmp_path: Path) -> None:
+    """Summaries folded under no machines differ from the ones every other worker folds, so each start would rebuild
+    them all over and set the other workers rebuilding against it."""
+    config = tmp_path / "starpulse.toml"
+    config.write_text(FORWARD + BOARD)
+    _, feed = assemble(load(config), tmp_path, None, [])
+    folded = HistoryStore(f"sqlite:///{(tmp_path / 'starpulse-history.sqlite').resolve()}", feed.machines)
+
+    run()
+
+    with folded.engine.connect() as db:
+        assert db.execute(select(summary_basis.c.fingerprint)).scalar() == Summariser(feed.machines).fingerprint()

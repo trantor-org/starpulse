@@ -340,3 +340,12 @@ def test_the_consistency_check_names_each_summary_that_differs_from_the_raw_rows
     ]
     store.rebuild_summaries()
     assert store.summary_differences() == []
+
+
+def test_a_store_opening_while_another_worker_rebuilds_waits_out_the_rebuild(store: HistoryStore) -> None:
+    """Every worker opens the store at once at `serve` start; one rebuilding the summaries holds the write lock for
+    seconds on a large history, so the others wait for it rather than exit on `database is locked`."""
+    with store.engine.connect() as db:
+        waits_ms = db.exec_driver_sql("PRAGMA busy_timeout").scalar()
+
+    assert waits_ms >= 60_000
