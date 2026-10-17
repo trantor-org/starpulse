@@ -984,21 +984,22 @@ class BoardFeed:
         """Every tied Board event's occurrences since `since`, newest first, with the run of every workflow tied to it
         among the `recent` runs (`starpulse._internal.feed.ledger`).
 
-        The merge event's occurrences are the merged `pulls`; any other event's are the tasks that entered the lane it
-        reaches, read from the lane history `read_lanes` was given. Only the window's changes are read: this runs on
+        The merge event's occurrences are the merged `pulls`; any other event's are the tasks that made one of its
+        moves, a lane it leaves and the lane it reaches, read from the lane history `read_lanes` was given. A move
+        into a lane the event reaches from another lane is not the event. Only the window's changes are read: this runs on
         every run, pull and live lane update, and the whole history is far larger than a day.
         """
         events: dict[str, list[Occurrence]] = {}
         if MERGE_EVENT in self._ties:
             events[MERGE_EVENT] = [o for o in pull_occurrences(pulls) if o.at >= since]
-        reached = {
-            event: {t["target"] for t in self._drawn["board"].get("transitions", []) if t["event"] == event}
+        moves = {
+            event: {(t["source"], t["target"]) for t in self._drawn["board"].get("transitions", []) if t["event"] == event}
             for event in self._ties.keys() - {MERGE_EVENT}
         }
-        if reached and self._lane_rows is not None:
-            for task, at, _from, to in self._lane_rows(since):
-                for event, lanes in reached.items():
-                    if lane_id(to) in lanes:
+        if moves and self._lane_rows is not None:
+            for task, at, old, to in self._lane_rows(since):
+                for event, made in moves.items():
+                    if old is not None and (lane_id(old), lane_id(to)) in made:
                         events.setdefault(event, []).append(Occurrence(f"{task}@{at}", at, (task,)))
         return build(
             events,

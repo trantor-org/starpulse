@@ -858,6 +858,47 @@ def test_the_replay_builds_the_ledger_once_when_it_reaches_the_entry_it_expected
     assert sorted(r["tasks"][0] for r in feed.snapshot()["ledgers"]["STARTED"]) == ["TASK-1", "TASK-2"]
 
 
+REOPEN_MACHINE = {
+    "states": [
+        {"id": "ready", "name": "Ready", "initial": True, "final": False},
+        {"id": "in_progress", "name": "In Progress", "initial": False, "final": False},
+        {"id": "needs_attention", "name": "Needs attention", "initial": False, "final": False},
+        {"id": "done", "name": "Done", "initial": False, "final": True},
+    ],
+    "transitions": [
+        {"source": "ready", "target": "in_progress", "event": "CLAIM"},
+        {"source": "in_progress", "target": "needs_attention", "event": "PARK"},
+        {"source": "needs_attention", "target": "in_progress", "event": "RESUME"},
+        {"source": "in_progress", "target": "done", "event": "FINALIZE"},
+        {"source": "done", "target": "ready", "event": "REOPEN"},
+        {"source": "done", "target": "in_progress", "event": "REOPEN"},
+    ],
+    "writers": {"REOPEN": [{"actor": "ci/start", "trigger": "reopen a done task"}]},
+}
+
+
+def _reopen_rows(*moves: tuple[str, str]) -> list:
+    feed = BoardFeed(
+        clock=lambda: datetime(2026, 10, 7, 1, tzinfo=ZoneInfo("UTC")).timestamp(),
+        machines={"board": REOPEN_MACHINE},
+        domains={"ci": ["ci/start"]},
+    )
+    at = datetime(2026, 10, 7, 0, 30, tzinfo=ZoneInfo("UTC")).timestamp()
+    rows = [("TASK-1", at + i, old, new) for i, (old, new) in enumerate(moves)]
+    feed.read_lanes(lambda since=None: rows)
+    feed.set_dags("ci", [_dag("start")], None)
+    return [r["tasks"] for r in feed.snapshot()["ledgers"].get("REOPEN", [])]
+
+
+def test_reopen_ledger_adds_no_row_for_a_flap_that_ends_done() -> None:
+    flap = [("In Progress", "Needs attention"), ("Needs attention", "In Progress"), ("In Progress", "Done")]
+
+    assert _reopen_rows(*flap) == []
+
+
+def test_reopen_ledger_adds_one_row_for_a_move_out_of_done() -> None:
+    assert _reopen_rows(("In Progress", "Done"), ("Done", "Ready")) == [["TASK-1"]]
+
 BEFORE = "0" * 40
 FAILED = {
     **APPLIED,

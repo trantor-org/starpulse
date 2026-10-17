@@ -2,7 +2,7 @@
 
 A workflow is tied to a Board event, either because the machine's YAML says the event cues it or because it writes the
 event. An *occurrence* is one time the event happened: for the merge event a pull request landing (its merge commit,
-pull request and tasks), for any other event a task entering the lane the event reaches. A run pairs with an occurrence
+pull request and tasks), for any other event a task making one of its moves, out of a lane the event leaves into the lane it reaches. A run pairs with an occurrence
 two ways:
 
 - by key, when the runs instance's `[runs.commit]` names a run parameter that carries the occurrence's commit
