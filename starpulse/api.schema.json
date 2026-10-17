@@ -753,6 +753,24 @@
       "title": "Change",
       "type": "object"
     },
+    "Cite": {
+      "additionalProperties": false,
+      "description": "The sentence of a skill that sends a session down a transition.",
+      "properties": {
+        "quote": {
+          "type": "string"
+        },
+        "skill": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "quote"
+      ],
+      "title": "Cite",
+      "type": "object"
+    },
     "Claim": {
       "additionalProperties": false,
       "properties": {
@@ -7422,6 +7440,18 @@
     "Transition": {
       "additionalProperties": false,
       "properties": {
+        "cite": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cite"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The skill sentence that authorizes the transition; absent when its YAML cites none."
+        },
         "event": {
           "type": "string"
         },
