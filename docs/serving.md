@@ -283,6 +283,12 @@ type = "native"
 # nor repeats a lane row nor re-dates a task; `serve` rereads the dates every 30 s. A hub (`serve --hub`) keeps both
 # writers in-process and ignores this setting. With the flag set and no worker running, no Start Criteria are
 # evaluated, so a Waiting task with them never becomes workable. The release of dependents belongs to the `pulls` worker.
+# The Board worker is also the only process that runs the board adapter's watchers: it publishes each changed task to
+# the `board:replica` stream of the event log and checkpoints the Board every minute, and `serve` and the other
+# workers read that replica (restoring the checkpoint, then tailing the stream) instead of running the adapter, so a
+# task it places reaches them within half a second. A worker a hub manages, which has no Board child, is started with
+# `--local-board` (`starpulse worker pulls|runs|autopilot --local-board`) and runs the adapter in its own process. With
+# no Board worker running, `serve` and those workers stay not ready, with no Board once nothing is checkpointed.
 # board_worker = false
 
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:

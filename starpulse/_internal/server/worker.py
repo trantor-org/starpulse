@@ -21,6 +21,7 @@ import logging
 import threading
 from pathlib import Path
 
+from starpulse._internal.board import replica
 from starpulse._internal.board.seam import Board
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.config.pins import GitHub
@@ -29,6 +30,7 @@ from starpulse._internal.eventlog.history import database_url
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.pulls.delivery import (
     NotingFeed,
+    Projected,
     Publisher,
     follow_refreshes,
     keep_metrics,
@@ -127,6 +129,13 @@ def worker_parser() -> argparse.ArgumentParser:
         default=None,
         help="the config `serve` runs from; default: starpulse.toml in the working directory, else the defaults",
     )
+    parser.add_argument(
+        "--local-board",
+        action="store_true",
+        dest="local_board",
+        help="start the board adapter in this process instead of reading the replica the Board child publishes "
+        "(a worker a hub manages: a hub runs no Board child)",
+    )
     return parser
 
 
@@ -169,8 +178,9 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     log = EventLog(database_url(config.database_url, base))
-    board.start(feed, "starpulse-pulls", log)
     stop = threading.Event()
+    replica.read(board, feed, "starpulse-pulls", log, config, stop, local=args.local_board)
+    Projected(log, feed).apply()  # the pull request answers the pins read: the Board's checkpoint no longer holds them
     pins = GitHub(lambda: feed.pull_answers().get("pins", {}))
     delivery = Delivery(config, board, feed, log, PullStore(log.engine), pins)
     try:

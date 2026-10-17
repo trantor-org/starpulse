@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from starpulse._internal.server import history_worker, server, worker
+from starpulse._internal.server import board_worker, history_worker, server, worker
 from starpulse._internal.eventlog import events
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore
@@ -40,7 +40,9 @@ def test_serve_and_the_history_worker_record_run_and_task_machine_events(
 
     held: list[threading.Event] = []
     monkeypatch.setattr(history_worker, "hold", lambda stop, reload: held.append(stop))
+    monkeypatch.setattr(board_worker, "hold", lambda stop, reload: held.append(stop))
 
+    worker.main(["board", "--config", str(config)])  # the Board child serve reads its Board from
     server.main(["--config", str(config), "--port", "0"])
     worker.main(["history", "--config", str(config)])
 

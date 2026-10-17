@@ -21,6 +21,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from starpulse._internal.board import replica
 from starpulse._internal.config.config import Config, discover, load
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.eventlog.history import HistoryStore, database_url
@@ -56,12 +57,14 @@ def start_writers(
     evaluate: Callable[[str, str], list[dict]] | None,
     stop: threading.Event,
     lane_log: EventLog | None = None,
+    live: bool = True,
 ) -> tuple[threading.Thread, threading.Thread]:
     """Start the criteria thread, which runs until `stop` is set, and the lane reconcile, which ends after its one pass.
     Both wait for `feed` to have read the Board. A reconciled lane also reaches `lane_log`, for the hub it is forwarded
-    to and the triggers that start a run on it."""
+    to and the triggers that start a run on it. A `live` feed also records each lane a task enters as it places it; the
+    Board child places none live, as `serve` records the ones its replica puts with whoever moved them."""
     feed.date_lanes(store.lane_path)
-    feed.record_lanes(store, lane_log)
+    feed.record_lanes(store, lane_log, live=live)
     feed.track_criteria(evaluate, store)
 
     def keep() -> None:
@@ -90,6 +93,7 @@ def main(argv: list[str] | None, parser: argparse.ArgumentParser) -> None:
     log = EventLog(database_url(config.database_url, base))
     store = history_store(config, base, feed.machines)
     stop = threading.Event()
-    start_writers(feed, store, board.evaluate, stop, log if config.forward is not None or config.triggers else None)
-    board.start(feed, "starpulse-board", log)
+    lane_log = log if config.forward is not None or config.triggers else None
+    start_writers(feed, store, board.evaluate, stop, lane_log, live=False)
+    replica.publish(board, feed, "starpulse-board", log, config)
     hold(stop, lambda: reload(path, config))

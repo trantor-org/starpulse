@@ -206,6 +206,7 @@ class BoardFeed:
         self._lanes: LaneRecorder | None = None
         #: Where each lane change `_lanes` wrote is also appended as a `lane_events` entry; None appends nothing.
         self._lane_log: EventLog | None = None
+        self._live_lanes = True
         #: Who wrote each task last through the server (`note_actor`) and when, until the lane change it made is placed.
         #: Saved with the Board (`save`) and restored by `resume`, so a restart between a write and its placement keeps it.
         self._movers: dict[str, tuple[tuple[str, str, str], float]] = {}
@@ -371,15 +372,19 @@ class BoardFeed:
             self._seen = max(self._seen, stream_id(entry_id))
         self._check_ready()
 
-    def resume(self, store: BoardStore, stream: str, retained: Callable[[str], bool]) -> str | None:
+    def resume(
+        self, store: BoardStore, stream: str, retained: Callable[[str], bool], *, keep: bool = True
+    ) -> str | None:
         """Restore the Board `store` saved for `stream` and return the cursor to read the stream after, else None.
 
         None means the reader replays what the stream retains: nothing was saved, `retained(cursor)` says the stream
         no longer holds every entry after the saved cursor, or the saved state is not one this feed can read. The
-        feed saves to `store` under `stream` from now on (`save`, `keep_saved`). One line says which start it was:
+        feed saves to `store` under `stream` from now on (`save`, `keep_saved`) unless `keep` is false, which makes it
+        a reader of a Board another process saves. One line says which start it was:
         `resuming after <cursor>` or `replaying: <reason>`, at WARNING because nothing configures a lower level.
         """
-        self._store = (store, stream)
+        if keep:
+            self._store = (store, stream)
         saved = store.load_board_state(stream)
         if saved is None:
             logger.warning("StarPulse: replaying: no saved Board")
@@ -485,15 +490,18 @@ class BoardFeed:
         """Date a lane the feed replays by the history's last change into it (`History.lane_path`), not by the replay."""
         self._lane_path = lane_path
 
-    def record_lanes(self, lanes: LaneRecorder, log: EventLog | None = None) -> None:
+    def record_lanes(self, lanes: LaneRecorder, log: EventLog | None = None, *, live: bool = True) -> None:
         """Keep each lane change the feed applies in `lanes` (`HistoryStore.record_lane`), and with a `log`, append
         the change as a `lane_events` entry under the same event id once `lanes` has written it.
 
         The event id names the task, the lane and when it entered it, so a replay of a change the history holds
-        repeats nothing. A history that cannot be written is logged: the task is still placed.
+        repeats nothing. A history that cannot be written is logged: the task is still placed. A feed that is not `live`
+        records no lane as `put` places it and only repairs the history's (`reconcile_lanes`): the feed that places the
+        same task from a replica records it, naming the actor who wrote it.
         """
         self._lanes = lanes
         self._lane_log = log
+        self._live_lanes = live
 
     def note_actor(self, task_id: str, actor: str | None, session: str = "", harness: str = "") -> None:
         """Note that `actor`, from `session` on `harness` where it names them, is writing `task_id`, so the lane entry of
@@ -542,7 +550,7 @@ class BoardFeed:
             if change is None:
                 return  # the note stays for the lane change of the write that made it: the watch can place an earlier write first
             writer = self._mover(task.id)
-            if self._lanes is not None:
+            if self._lanes is not None and self._live_lanes:
                 lane, entered = change
                 try:
                     if task.settled:
@@ -1277,7 +1285,7 @@ class Resumable(Protocol):
     def keep_saved(self, stop: threading.Event, interval: float = ...) -> None: ...
 
 
-def _retained(log: EventLog, stream: str) -> Callable[[str], bool]:
+def retained(log: EventLog, stream: str) -> Callable[[str], bool]:
     """Whether the log still holds every `stream` row after a saved cursor: `Tail`'s gap rule, and a cursor the log
     has not reached yet (the database was replaced) is no cursor of this log."""
 
@@ -1316,7 +1324,7 @@ def follow(
             try:
                 last = log.last(stream)
                 if isinstance(feed, Resumable):
-                    after = feed.resume(log, stream, _retained(log, stream))
+                    after = feed.resume(log, stream, retained(log, stream))
                 break
             except Exception as exc:  # the database is unreachable; the next attempt retries
                 logger.warning("StarPulse: cannot reach the event log for %s, retrying: %s", stream, exc)

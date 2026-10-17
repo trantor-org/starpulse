@@ -235,6 +235,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from starpulse._internal.board import replica
 from starpulse._internal.board.seam import (
     AssigneeWriter,
     Board,
@@ -2246,7 +2247,11 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     search = None if args.hub else SearchIndex.open(log.engine, config.search)
     if search is not None:
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
-    board.start(feed, f"starpulse-{port}", log)
+    stop = threading.Event()
+    if args.hub:  # a hub has no Board child: it reads its Board itself
+        board.start(feed, f"starpulse-{port}", log)
+    else:
+        replica.read(board, feed, f"starpulse-{port}", log, config, stop, local=False)
     # a move the feed applied but never recorded (a restart between the two) is put in the history once the replay is read
     if args.hub:
         threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
@@ -2259,7 +2264,6 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
     actor_metrics = None
     # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its
     # projection and asks it
-    stop = threading.Event()
     Projected(log, feed).follow(stop)
     follow_notes(log, feed, stop)
     # `starpulse worker runs` runs the run adapters, the trigger starts and the pushed-runs follower; this process
