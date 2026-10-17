@@ -28,6 +28,7 @@ _PULL = re.compile(r"https://github\.com/([^/\s]+)/([^/\s]+)/pull/\d+/?")
 _GH_TIMEOUT_S = 30
 #: Seconds a read of a default branch's head commit is reused; the branch moves, so it is never saved.
 _HEAD_TTL_S = 60.0
+_RETRY_WAIT_S = 300.0
 #: `compare` statuses meaning the pointer's commit is, or descends from, the compared merge.
 _CONTAINS = {"ahead", "identical"}
 _COMMIT_ID = re.compile(r"[0-9a-f]{40}")
@@ -116,6 +117,12 @@ class GitHub:
         self._reaches: dict[tuple[str, str, str], bool] = {}
         self._saved: Callable[[], Mapping[str, list[list]]] | None = saved
         self._heads: dict[str, tuple[float, str | None]] = {}
+        self._unreadable: dict[tuple[str, ...], float] = {}
+
+    def _retry(self, key: tuple[str, ...]) -> bool:
+        """Whether `key` may be asked: it has not failed within `_RETRY_WAIT_S`. A failing read is not re-asked every pass."""
+        failed_at = self._unreadable.get(key)
+        return failed_at is None or time.monotonic() - failed_at >= _RETRY_WAIT_S
 
     def _restored(self) -> None:
         if self._saved is not None:
@@ -125,17 +132,23 @@ class GitHub:
     def pointer(self, repo: str, sha: str, path: str) -> str | None:
         self._restored()
         key = (repo, sha, path)
-        if key not in self._pointers:
+        if key not in self._pointers and self._retry(("pointer", *key)):
             found = _api(f"repos/{repo}/contents/{path}?ref={sha}", ".sha", missing=_MISSING)
             if found:
                 self._pointers[key] = None if found == _MISSING else found
+            else:
+                self._unreadable[("pointer", *key)] = time.monotonic()
         return self._pointers.get(key)
 
     def reaches(self, repo: str, sha: str, pointer: str) -> bool:
         self._restored()
         key = (repo, sha, pointer)
-        if key not in self._reaches and (status := _api(f"repos/{repo}/compare/{sha}...{pointer}", ".status")):
-            self._reaches[key] = status in _CONTAINS
+        if key not in self._reaches and self._retry(("reaches", *key)):
+            status = _api(f"repos/{repo}/compare/{sha}...{pointer}", ".status")
+            if status:
+                self._reaches[key] = status in _CONTAINS
+            else:
+                self._unreadable[("reaches", *key)] = time.monotonic()
         return self._reaches.get(key, False)
 
     def head(self, repo: str) -> str | None:
