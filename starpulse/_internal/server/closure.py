@@ -24,6 +24,7 @@ ENTRIES = {
     "pulls": "starpulse._internal.server.worker",
     "autopilot": "starpulse._internal.server.autopilot_worker",
     "runs": "starpulse._internal.server.runs_worker",
+    "forwarding": "starpulse._internal.server.forwarding_worker",
 }
 
 _PROBE = (
@@ -64,7 +65,7 @@ def code_of(entry: str, package: str = "starpulse") -> frozenset[tuple[str, str]
 def _blocks(name: str, config: Config) -> tuple[object, object]:
     """The (restart, live) config blocks of `name`: the ones a running worker needs a new process for, and the ones it
     re-reads on `SIGHUP`. `serve` itself has none."""
-    from starpulse._internal.server import autopilot_worker, runs_worker, worker  # noqa: PLC0415 - imported only when read
+    from starpulse._internal.server import autopilot_worker, forwarding_worker, runs_worker, worker  # noqa: PLC0415 - imported only when read
 
     if name == "pulls":
         return worker.fixed_blocks(config), worker.delivery_blocks(config)
@@ -72,6 +73,8 @@ def _blocks(name: str, config: Config) -> tuple[object, object]:
         return autopilot_worker.fixed_blocks(config), autopilot_worker.autopilot_blocks(config)
     if name == "runs":
         return runs_worker.built_blocks(config), ()
+    if name == "forwarding":
+        return forwarding_worker.built_blocks(config), ()
     return (), ()
 
 
