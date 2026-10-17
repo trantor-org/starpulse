@@ -15,7 +15,7 @@ from starpulse._internal.server import assembly, history_worker, worker
 from starpulse.tests import fake_board
 
 BOARD = '[board]\ntype = "starpulse.tests.fake_board"\nlanes = ["waiting", "ready", "done"]\nwrites = true\n'
-WAIT_S = 5.0
+WAIT_S = 30.0  # the worker is a spawned child; a loaded CI runner took over 5 s to start it
 
 
 def _eventually(ready: Callable[[], object]) -> bool:
