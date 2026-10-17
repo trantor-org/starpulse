@@ -23,6 +23,7 @@ import logging
 import math
 import os
 import threading
+import time
 import urllib.request
 from collections.abc import Sequence
 
@@ -119,6 +120,9 @@ _POOL = 50
 _BATCH = 1
 #: Rows changed since the held vectors were read beyond which reading them all again is cheaper than naming them.
 _RELOAD_AT = 500
+#: Seconds a held read of the vectors is trusted: `starpulse worker search` writes vectors this process never sees as
+#: a write, so an older read is made again.
+_SHARED_REFRESH_S = 30.0
 _TEXT_LIMIT = 8000
 _TIMEOUT = 10.0
 #: Seconds a search waits for its query's vector before ranking lexically, so a slow endpoint costs the order and not
@@ -202,6 +206,7 @@ class SearchIndex:
         #: and the next search reads those rows alone, so a burst of writes never makes a search read every vector.
         self._near: _Near | None = None
         self._dirty: set[int] = set()
+        self._read_at = 0.0
         #: Held by the one search refreshing `_near`, which reads and normalises outside `_lock` so a write never waits
         #: for it.
         self._refreshing = threading.Lock()
@@ -334,12 +339,14 @@ class SearchIndex:
             with self._lock:
                 changed, self._dirty = self._dirty, set()
             held = self._near
-            if held is not None and (held.matrix.shape[1] != dimension or len(changed) > _RELOAD_AT):
+            stale = time.monotonic() - self._read_at >= _SHARED_REFRESH_S
+            if held is not None and (held.matrix.shape[1] != dimension or len(changed) > _RELOAD_AT or stale):
                 held = None
             if held is not None and not changed:
                 return held
             try:
                 self._near = self._read_near(held, changed, dimension)
+                self._read_at = time.monotonic()
             except BaseException:
                 with self._lock:
                     self._dirty |= changed

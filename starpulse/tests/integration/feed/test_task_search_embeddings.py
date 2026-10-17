@@ -441,3 +441,17 @@ def test_five_thousand_embedded_tasks_are_scored_in_under_a_tenth_of_a_second(en
     for hit, (_, similarity) in zip(hits, expected, strict=True):
         assert hit["score"] == pytest.approx((1 - search_module._LEXICAL_WEIGHT) * similarity, abs=1e-4)
     assert elapsed < 0.1
+
+
+def test_a_search_sees_vectors_another_process_embedded_after_its_own_warm_read(
+    engine, endpoint: _Endpoint, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(search_module, "_SHARED_REFRESH_S", 0)  # a held read is as old as it can be
+    settings = Search(endpoint.url, "m")
+    serving = _open(engine, settings)
+    _board(serving)
+    assert _found(serving, "tuning knobs") == []  # warm: no word matches and no vector is held
+
+    _open(engine, settings).embed_pending()  # `starpulse worker search` writes vectors serve never wrote
+
+    assert _found(serving, "tuning knobs") == ["PROJ-2"]  # found by meaning: only the cache task is near "tuning"

@@ -231,7 +231,7 @@ def test_hub_mode_is_a_serve_flag_not_a_config_setting(tmp_path: Path) -> None:
 def test_unknown_keys_are_refused_by_name_beside_the_known_ones(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'zeta = 1\ntrakcer_url = "http://x.test"\n') == (
         "unknown config key(s) trakcer_url, zeta; known: aggregates_only, analytics, autopilot, autopilot_worker, board, ci, cursor_context, database_url, delivery_worker, event_log_archive_dir, event_log_retention_days, "
-        "forward, forwarding_worker, harnesses_file, history_worker, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, session_start_url, slow_read_seconds, sources, tracker_url, triggers, worker_memory"
+        "forward, forwarding_worker, harnesses_file, history_worker, hub_retention_days, level, mode, oidc, pull_requests, refresh_token_env, release, repos, runs, runs_worker, search, search_worker, session_start_url, slow_read_seconds, sources, tracker_url, triggers, worker_memory"
     )
 
 
@@ -556,6 +556,12 @@ def test_history_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
     assert _refusal(tmp_path, 'history_worker = "yes"\n') == "history_worker must be true or false"
 
 
+def test_search_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
+    assert load(None).search_worker is False
+    assert load(_write(tmp_path, "search_worker = true\n")).search_worker is True
+    assert _refusal(tmp_path, 'search_worker = "yes"\n') == "search_worker must be true or false"
+
+
 def test_forwarding_worker_defaults_off_and_is_a_flag(tmp_path: Path) -> None:
     assert load(None).forwarding_worker is False
     assert load(_write(tmp_path, "forwarding_worker = true\n")).forwarding_worker is True
@@ -718,7 +724,7 @@ def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrid
     text = "[worker_memory.pulls]\nsoft_mb = 100\n[worker_memory.autopilot]\nsoft_mb = 10\nhard_mb = 20\n"
     tuned = load(_write(tmp_path, text)).worker_memory
 
-    assert set(packaged) == {"pulls", "autopilot", "runs", "forwarding", "history"}
+    assert set(packaged) == {"pulls", "autopilot", "runs", "forwarding", "history", "search"}
     assert all(0 < limit.soft_mb < limit.hard_mb for limit in packaged.values())
     assert tuned["pulls"] == MemoryLimit(100, packaged["pulls"].hard_mb)
     assert tuned["autopilot"] == MemoryLimit(10, 20)
@@ -727,7 +733,7 @@ def test_each_worker_context_has_a_packaged_memory_limit_that_the_config_overrid
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ("[worker_memory.pulss]\nsoft_mb = 1\n", "worker_memory: unknown context(s) pulss; known: autopilot, forwarding, history, pulls, runs"),
+        ("[worker_memory.pulss]\nsoft_mb = 1\n", "worker_memory: unknown context(s) pulss; known: autopilot, forwarding, history, pulls, runs, search"),
         ("[worker_memory.pulls]\nsoft_mb = 900\nhard_mb = 900\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
         ("[worker_memory.pulls]\nsoft_mb = 5000\n", "worker_memory.pulls: soft_mb must be below hard_mb"),
         (
