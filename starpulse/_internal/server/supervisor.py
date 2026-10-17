@@ -43,6 +43,7 @@ WORKER_FLAGS = {
     "forwarding": "forwarding_worker",
     "history": "history_worker",
     "search": "search_worker",
+    "board": "board_worker",
 }
 
 
@@ -54,7 +55,8 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
 
     Forwarding has work only with a `[forward]` table, so a config without one gets no forwarding child. A hub keeps its
     history threads in-process, so it gets no history child. Search has work only with an `embeddings_url`, and a hub keeps
-    no search index, so a config without one, or a hub, gets no search child.
+    no search index, so a config without one, or a hub, gets no search child. A hub keeps its board writers in-process, so it
+    gets no board child.
     """
     tail = ["--config", str(config_path)] if config_path else []
     return {
@@ -64,6 +66,7 @@ def worker_commands(config: Config, config_path: Path | None, *, hub: bool = Fal
         and (context != "forwarding" or config.forward is not None)
         and (context != "history" or not hub)
         and (context != "search" or (config.search.embeddings_url and not hub))
+        and (context != "board" or not hub)
     }
 
 

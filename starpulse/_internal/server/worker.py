@@ -5,7 +5,8 @@ dependents); `autopilot` is the Autopilot context, run by `starpulse._internal.s
 Runs context, run by `starpulse._internal.server.runs_worker`; `forwarding` is the Forwarding context, run by
 `starpulse._internal.server.forwarding_worker`; `history` is the History context, run by
 `starpulse._internal.server.history_worker`; `search` is the Search context's embedding catch-up, run by
-`starpulse._internal.server.search_worker`.
+`starpulse._internal.server.search_worker`; `board` is the Board context's writers (the Start Criteria dating and the
+lane reconcile), run by `starpulse._internal.server.board_worker`.
 
 The `pulls` worker reads the config and the history database `serve` does and meets `serve` only in the event log
 (`starpulse._internal.pulls.delivery`): it keeps the pull request projection there, takes the refreshes a page asked and
@@ -38,7 +39,7 @@ from starpulse._internal.server.server import assemble, start_delivery
 
 logger = logging.getLogger(__name__)
 
-CONTEXTS = ("pulls", "autopilot", "runs", "forwarding", "history", "search")
+CONTEXTS = ("pulls", "autopilot", "runs", "forwarding", "history", "search", "board")
 
 
 def delivery_blocks(config: Config) -> tuple:
@@ -153,6 +154,10 @@ def main(argv: list[str] | None = None) -> None:
         from starpulse._internal.server import search_worker
 
         return search_worker.main(argv, parser)
+    if args.context == "board":
+        from starpulse._internal.server import board_worker
+
+        return board_worker.main(argv, parser)
     path = discover(args.config)
     try:
         config = load(path)

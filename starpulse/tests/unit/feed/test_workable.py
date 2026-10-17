@@ -1,5 +1,6 @@
 """Whether each open task can be worked yet, and since when, on the Board snapshot."""
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -291,3 +292,59 @@ def test_a_store_that_cannot_be_written_leaves_the_pass_in_memory() -> None:
     feed.evaluate_criteria()
 
     assert _agent(feed, "PROJ-1")["workable_since"] == 500.0
+
+
+class Shared:
+    """A criteria store another process writes."""
+
+    def __init__(self) -> None:
+        self.met: dict[str, float] = {}
+
+    def criteria_met(self) -> dict[str, float]:
+        return dict(self.met)
+
+    def save_criteria_met(self, met: dict[str, float]) -> None:
+        self.met = dict(met)
+
+
+def test_a_feed_following_the_store_adopts_what_another_process_dated_without_evaluating() -> None:
+    now = [100.0]
+    feed = _live(now)
+    feed.put(_task("PROJ-1", "waiting", description=BLOCK))
+    store = Shared()
+    stopped = threading.Event()
+    stopped.set()  # one pass, then it ends
+    feed.follow_criteria(store, stopped)
+    assert _agent(feed, "PROJ-1")["workable"] is False
+    _, deltas = feed.subscribe()
+
+    store.met = {"PROJ-1": 500.0}
+    feed.follow_criteria(store, stopped)
+
+    agent = _agent(feed, "PROJ-1")
+    assert (agent["workable"], agent["workable_since"]) == (True, 500.0)
+    assert [d[1]["agent"]["workable"] for d in _drain(deltas)] == [True]
+
+    store.met = {}
+    feed.follow_criteria(store, stopped)
+
+    assert _agent(feed, "PROJ-1")["workable"] is False
+
+
+def test_a_feed_following_a_store_that_is_down_keeps_what_it_held() -> None:
+    class Down(Shared):
+        def criteria_met(self) -> dict[str, float]:
+            raise RuntimeError("down")
+
+    now = [100.0]
+    feed = _live(now)
+    feed.put(_task("PROJ-1", "waiting", description=BLOCK))
+    store = Shared()
+    store.met = {"PROJ-1": 500.0}
+    stopped = threading.Event()
+    stopped.set()
+    feed.follow_criteria(store, stopped)
+
+    feed.follow_criteria(Down(), stopped)
+
+    assert _agent(feed, "PROJ-1")["workable"] is True

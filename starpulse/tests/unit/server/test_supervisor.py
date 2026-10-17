@@ -59,7 +59,7 @@ def _wait_for(check, timeout: float = 10.0):
 def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true_one_gets_none() -> None:
     every = worker_commands(load(None), None)
     only_autopilot = worker_commands(
-        replace(load(None), delivery_worker=True, runs_worker=True, history_worker=True), Path("/etc/starpulse.toml")
+        replace(load(None), delivery_worker=True, runs_worker=True, history_worker=True, board_worker=True), Path("/etc/starpulse.toml")
     )
     neither = worker_commands(
         replace(
@@ -69,6 +69,7 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
             runs_worker=True,
             forwarding_worker=True,
             history_worker=True,
+            board_worker=True,
         ),
         None,
     )
@@ -76,7 +77,7 @@ def test_a_context_whose_worker_setting_is_false_gets_a_child_command_and_a_true
     assert every["pulls"] == [sys.executable, "-m", "starpulse", "worker", "pulls"]
     assert every["runs"] == [sys.executable, "-m", "starpulse", "worker", "runs"]
     assert every["history"] == [sys.executable, "-m", "starpulse", "worker", "history"]
-    assert set(every) == {"pulls", "autopilot", "runs", "history"}  # forwarding has no child without a [forward] table
+    assert set(every) == {"pulls", "autopilot", "runs", "history", "board"}  # forwarding has no child without a [forward] table
     assert only_autopilot == {
         "autopilot": [sys.executable, "-m", "starpulse", "worker", "autopilot", "--config", "/etc/starpulse.toml"]
     }
@@ -87,6 +88,12 @@ def test_the_history_child_runs_for_a_false_setting_and_never_beside_a_hub() -> 
     assert "history" in worker_commands(load(None), None)
     assert "history" not in worker_commands(replace(load(None), history_worker=True), None)
     assert "history" not in worker_commands(load(None), None, hub=True)  # a hub keeps its history threads in-process
+
+
+def test_the_board_child_runs_for_a_false_setting_and_no_hub() -> None:
+    assert "board" in worker_commands(load(None), None)
+    assert "board" not in worker_commands(replace(load(None), board_worker=True), None)
+    assert "board" not in worker_commands(load(None), None, hub=True)  # a hub keeps its board writers in-process
 
 
 def test_the_search_child_runs_only_for_an_embeddings_url_a_false_setting_and_no_hub() -> None:
