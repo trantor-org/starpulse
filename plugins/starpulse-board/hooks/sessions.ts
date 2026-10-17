@@ -27,7 +27,7 @@ export type Row = {
   peer: PeerSession | null
 }
 
-export type Held = { task: string; lane: string }
+export type Held = { task: string; title: string; lane: string }
 
 // The task each session holds and the lane that task sits in, from the open lanes of the Board.
 export const holdersOf = (found: Lane[] | null): Map<string, Held> => {
@@ -35,7 +35,7 @@ export const holdersOf = (found: Lane[] | null): Map<string, Held> => {
   for (const lane of found ?? []) {
     for (const t of lane.tasks) {
       if (t.holder && !held.has(t.holder)) {
-        held.set(t.holder, { task: t.id, lane: lane.state })
+        held.set(t.holder, { task: t.id, title: t.title, lane: lane.state })
       }
     }
   }
@@ -70,10 +70,12 @@ export const rowsOf = (all: PeerSession[], archived: ArchivedSession[], held: Ma
   const enterable = alive(all, archived).filter(s => s.tmux !== null || s.isOwn)
   const live = enterable.map((s): Row => {
     const mine = held.get(s.id)
+    // Claude titles a session StarPulse started from its start prompt, the task ID the chip already shows.
+    const isTaskId = mine !== undefined && s.name === mine.task && mine.title !== ''
 
     return {
       id: s.id,
-      name: s.name,
+      name: isTaskId ? mine.title : s.name,
       tmux: s.tmux,
       cwd: s.cwd,
       task: mine?.task ?? '',
