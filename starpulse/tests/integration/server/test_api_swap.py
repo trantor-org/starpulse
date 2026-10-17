@@ -1,0 +1,88 @@
+"""Replacing the Page API child drains the requests it took and refuses none that arrive meanwhile."""
+
+import socket
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+from contextlib import closing
+from pathlib import Path
+
+import pytest
+
+from starpulse._internal.server.closure import SELF, Reading
+from starpulse._internal.server.supervisor import Supervisor
+from starpulse.tests.integration.server.test_standalone import _env, build  # noqa: F401 - `build` is a fixture
+
+pytestmark = pytest.mark.xdist_group("static-build")
+
+
+def _snapshot(port: int) -> None:
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/snapshot", timeout=30) as resp:
+        assert resp.status == 200
+        resp.read()
+
+
+def test_the_swapped_api_child_answers_every_request_made_across_the_swap(
+    build: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,  # noqa: F811
+) -> None:
+    for key, value in _env().items():
+        monkeypatch.setenv(key, value)
+    config = tmp_path / "starpulse.toml"
+    config.write_text("")
+    version = [0]
+
+    def read(name: str) -> Reading:
+        return Reading(frozenset({(name, "0" if name == SELF else str(version[0]))}), (), ())
+
+    command = [sys.executable, "-m", "starpulse", "worker", "api", "--config", str(config), "--hours", "6"]
+    answered: list[int] = []
+    failed: list[BaseException] = []
+    halt = threading.Event()
+
+    def ask(port: int) -> None:
+        while not halt.is_set():
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/snapshot", timeout=60) as resp:
+                    resp.read()
+                    answered.append(resp.status)
+            except (OSError, urllib.error.URLError) as exc:
+                failed.append(exc)
+            time.sleep(0.05)
+
+    with closing(socket.create_server(("127.0.0.1", 0), backlog=128)) as listening:
+        port = listening.getsockname()[1]
+        supervisor = Supervisor({"api": command}, sockets={"api": listening}, read=read, poll=0.1)
+        supervisor.start()
+        try:
+            deadline = time.monotonic() + 60
+            while True:
+                try:
+                    _snapshot(port)
+                    break
+                except OSError:
+                    assert time.monotonic() < deadline, "the first API child never answered"
+                    time.sleep(0.2)
+            first = supervisor.pids()["api"]
+            clients = [threading.Thread(target=ask, args=(port,), daemon=True) for _ in range(4)]
+            for client in clients:
+                client.start()
+            time.sleep(1)
+            version[0] = 1
+            assert supervisor.reload()["children"] == {"api": "replaced"}
+            second = supervisor.pids()["api"]
+            deadline = time.monotonic() + 60
+            before = len(answered)
+            while len(answered) < before + 20:  # the new child answers what queued while it started
+                assert time.monotonic() < deadline, "the replacement never answered"
+                time.sleep(0.2)
+        finally:
+            halt.set()
+            supervisor.stop()
+
+    assert first != second
+    assert failed == []
+    assert set(answered) == {200}

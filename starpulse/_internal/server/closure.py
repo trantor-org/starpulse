@@ -21,6 +21,7 @@ SELF = "serve"
 #: The module each process starts from; its imports are what a change to the installed code can reach it through.
 ENTRIES = {
     SELF: "starpulse._internal.server.server",
+    "api": "starpulse._internal.server.api_worker",
     "pulls": "starpulse._internal.server.worker",
     "autopilot": "starpulse._internal.server.autopilot_worker",
     "runs": "starpulse._internal.server.runs_worker",
@@ -68,8 +69,10 @@ def code_of(entry: str, package: str = "starpulse") -> frozenset[tuple[str, str]
 def _blocks(name: str, config: Config) -> tuple[object, object]:
     """The (restart, live) config blocks of `name`: the ones a running worker needs a new process for, and the ones it
     re-reads on `SIGHUP`. `serve` itself has none."""
-    from starpulse._internal.server import autopilot_worker, board_worker, forwarding_worker, history_worker, runs_worker, search_worker, worker  # noqa: PLC0415 - imported only when read
+    from starpulse._internal.server import api_worker, autopilot_worker, board_worker, forwarding_worker, history_worker, runs_worker, search_worker, worker  # noqa: PLC0415 - imported only when read
 
+    if name == "api":
+        return api_worker.built_blocks(config), ()
     if name == "pulls":
         return worker.fixed_blocks(config), worker.delivery_blocks(config)
     if name == "autopilot":

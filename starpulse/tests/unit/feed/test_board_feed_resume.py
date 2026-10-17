@@ -251,12 +251,18 @@ class _Server:
         time.sleep(5)  # the handler leaves before this ends
         raise AssertionError("SIGTERM did not stop the server")
 
+    def drain(self, timeout: float) -> bool:
+        return True
+
 
 class _InterruptedServer:
     """A server stopped from its controlling terminal."""
 
     def serve_forever(self) -> None:
         raise KeyboardInterrupt
+
+    def drain(self, timeout: float) -> bool:
+        return True
 
 
 def test_a_stopped_server_saves_the_board_before_it_exits() -> None:

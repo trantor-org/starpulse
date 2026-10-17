@@ -252,6 +252,8 @@ class FakeSupervisor:
 def supervisors(monkeypatch: pytest.MonkeyPatch) -> list[FakeSupervisor]:
     """The supervisors an in-process `server.main` built this test: none of them starts a real worker child."""
     FakeSupervisor.made = []
+    monkeypatch.setenv("STARPULSE_STATIC", "")  # `server.main` exports the page build it checked; undone at teardown
+    monkeypatch.delenv("STARPULSE_STATIC")
     if "starpulse._internal.server.server" in sys.modules:
         monkeypatch.setattr("starpulse._internal.server.server.Supervisor", FakeSupervisor)
     return FakeSupervisor.made

@@ -7,7 +7,7 @@ import pytest
 
 from starpulse._internal.autopilot.remote import Remote
 from starpulse._internal.server import autopilot_service as service
-from starpulse._internal.server import server
+from starpulse._internal.server import server, worker
 from starpulse._internal.server.closure import Reader
 from starpulse.tests import fake_board
 from starpulse.tests.conftest import FakeSupervisor
@@ -24,11 +24,12 @@ def _serve(
     (static / "index.html").write_text("<html></html>")
     monkeypatch.setattr(server, "_STATIC", static)
 
-    def end(httpd: object, feed: object) -> None:
+    def end() -> None:
         if ending:
             raise ending
 
-    monkeypatch.setattr(server, "serve_until_stopped", end)
+    monkeypatch.setattr(server, "stay_until_stopped", end)
+    monkeypatch.setattr(server, "serve_until_stopped", lambda httpd, feed: None)
     threads: list[str] = []
     monkeypatch.setattr(service, "start_autopilot", lambda *args, **kwargs: threads.append("autopilot"))
     monkeypatch.setattr(server, "start_delivery", lambda *args, **kwargs: threads.append("delivery") or (None, None))
@@ -41,6 +42,7 @@ def _serve(
         server.main(["--config", str(config), "--port", "0"])
     except SystemExit, KeyboardInterrupt:
         pass
+    worker.main(["api", "--config", str(config), "--port", "0"])  # the Page API child serve supervises builds the page
 
     return handled, threads
 
@@ -53,7 +55,7 @@ def test_serve_supervises_every_worker_and_starts_no_context_in_process(
     assert threads == []
     assert isinstance(handled["autopilot"], Remote)
     [supervisor] = supervisors
-    assert set(supervisor.commands) == {"pulls", "autopilot", "runs", "history", "board"}
+    assert set(supervisor.commands) == {"api", "pulls", "autopilot", "runs", "history", "board"}
     assert supervisor.started
 
 
@@ -69,14 +71,15 @@ def test_serve_offers_the_reload_endpoint_beside_its_config(
 @pytest.mark.parametrize(
     ("settings", "supervised"),
     [
-        ("delivery_worker = true\n", {"autopilot", "runs", "history", "board"}),
-        ("autopilot_worker = true\n", {"pulls", "runs", "history", "board"}),
-        ("runs_worker = true\n", {"pulls", "autopilot", "history", "board"}),
-        ("history_worker = true\n", {"pulls", "autopilot", "runs", "board"}),
-        ("board_worker = true\n", {"pulls", "autopilot", "runs", "history"}),
+        ("api_worker = true\n", {"pulls", "autopilot", "runs", "history", "board"}),
+        ("delivery_worker = true\n", {"api", "autopilot", "runs", "history", "board"}),
+        ("autopilot_worker = true\n", {"api", "pulls", "runs", "history", "board"}),
+        ("runs_worker = true\n", {"api", "pulls", "autopilot", "history", "board"}),
+        ("history_worker = true\n", {"api", "pulls", "autopilot", "runs", "board"}),
+        ("board_worker = true\n", {"api", "pulls", "autopilot", "runs", "history"}),
         (
-            "delivery_worker = true\nautopilot_worker = true\nruns_worker = true\nhistory_worker = true\n"
-            "board_worker = true\n",
+            "api_worker = true\ndelivery_worker = true\nautopilot_worker = true\nruns_worker = true\n"
+            "history_worker = true\nboard_worker = true\n",
             set(),
         ),
     ],

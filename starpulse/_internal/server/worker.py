@@ -1,6 +1,6 @@
 """`starpulse worker <context>`: one bounded context as its own process, beside `serve`.
 
-`pulls` is the Delivery context (the pull request store's sync and projection, the task actor and the release of
+`api` is the Page API, run by `starpulse._internal.server.api_worker` on the socket `serve` hands it; `pulls` is the Delivery context (the pull request store's sync and projection, the task actor and the release of
 dependents); `autopilot` is the Autopilot context, run by `starpulse._internal.server.autopilot_worker`; `runs` is the
 Runs context, run by `starpulse._internal.server.runs_worker`; `forwarding` is the Forwarding context, run by
 `starpulse._internal.server.forwarding_worker`; `history` is the History context, run by
@@ -37,11 +37,11 @@ from starpulse._internal.pulls.delivery import (
 from starpulse._internal.pulls.pulls import PullStore
 from starpulse._internal.server.assembly import worker_board
 from starpulse._internal.server.hold import hold
-from starpulse._internal.server.server import start_delivery
+from starpulse._internal.server.server import listen_options, start_delivery
 
 logger = logging.getLogger(__name__)
 
-CONTEXTS = ("pulls", "autopilot", "runs", "forwarding", "history", "search", "board")
+CONTEXTS = ("api", "pulls", "autopilot", "runs", "forwarding", "history", "search", "board")
 
 
 def delivery_blocks(config: Config) -> tuple:
@@ -136,6 +136,8 @@ def worker_parser() -> argparse.ArgumentParser:
         help="start the board adapter in this process instead of reading the replica the Board child publishes "
         "(a worker a hub manages: a hub runs no Board child)",
     )
+    listen_options(parser)  # read by `api`: where the page listens when `serve` hands it no socket
+    parser.set_defaults(hub=False)  # the Page API child serves an instance; a hub serves its page in `serve`
     return parser
 
 
@@ -143,6 +145,10 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO)
     parser = worker_parser()
     args = parser.parse_args(argv)
+    if args.context == "api":  # imported here: the other workers' closures hold no page
+        from starpulse._internal.server import api_worker
+
+        return api_worker.main(argv, parser)
     if args.context == "autopilot":  # imported here: the Delivery worker's closure holds no autopilot module
         from starpulse._internal.server import autopilot_worker as worker
 

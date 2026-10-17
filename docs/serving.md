@@ -53,10 +53,12 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). For each one whose `delivery_worker`,
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `api` (the Page API), `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). For each one whose `api_worker`, `delivery_worker`,
 `autopilot_worker`, `runs_worker`, `forwarding_worker`, `history_worker`, `search_worker` or `board_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
+
+The `api` child serves the page and the HTTP API. `serve` binds `--host` and `--port` once (or adopts the socket the service manager passes in), keeps that listening socket for the life of the process and starts `starpulse worker api` with it on the descriptor named by `STARPULSE_LISTEN_FD`. `serve` first builds the page's machines and board from the config and exits 1 with the reason when it cannot, so a bad `starpulse.toml` or `board.yaml` stops `serve` rather than a child that exits at every start; it also tells the child, in `STARPULSE_STATIC`, which page build it checked. The child reads the Board from the replica the `board` child publishes and starts no adapter watcher. A reload or restart of the child starts the new one on the same socket, then stops the old: the old one stops accepting, finishes its in-flight requests (up to 8 s) and exits, so a connection made meanwhile queues in the backlog and none is refused. A `serve --hub` serves its page in-process and gets no `api` child.
 
 Every context is its own child, the light ones (`forwarding`, `history`, `search`) included, so a restart, a reload and a memory limit each reach one context alone. Merging the light ones into one child would save their duplicated import floor; sharing that floor between separate children saves it without giving up the isolation.
 
@@ -226,6 +228,12 @@ type = "native"
 # no PR state, and `/api/pulls` answers only from rows the database already holds. Set it on a second instance beside one
 # that reads the same repositories, so the GitHub budget pays for one store.
 # pull_requests = true
+
+# Whether something outside `serve` runs the Page API (the page and the HTTP API). False, the default: `serve` binds the
+# listening socket, keeps it, and supervises `starpulse worker api` as a child that serves from it. True: you run
+# `starpulse worker api --config <this file>` yourself, which binds `--host` and `--port` (or adopts the socket the service
+# manager passes in), and `serve` binds and supervises nothing for it.
+# api_worker = false
 
 # Whether something outside `serve` runs the Delivery context (the pull request store's sync and projection, the task actor
 # and the release of dependents). False, the default: `serve` supervises it as a child process, `starpulse worker pulls`.

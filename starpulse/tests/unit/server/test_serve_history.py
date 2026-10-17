@@ -43,7 +43,7 @@ def test_serve_and_the_history_worker_record_run_and_task_machine_events(
     monkeypatch.setattr(board_worker, "hold", lambda stop, reload: held.append(stop))
 
     worker.main(["board", "--config", str(config)])  # the Board child serve reads its Board from
-    server.main(["--config", str(config), "--port", "0"])
+    worker.main(["api", "--config", str(config), "--port", "0"])
     worker.main(["history", "--config", str(config)])
 
     own = HistoryStore(f"sqlite:///{tmp_path / 'starpulse-history.sqlite'}", {})
