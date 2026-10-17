@@ -21,15 +21,28 @@ from statistics import median
 from typing import Any, NamedTuple
 
 from starpulse._internal.config.analytics import Analytics, MachineStage, SkillMachine
+from starpulse._internal.config.level import Level, Terminal
 from starpulse._internal.level.cells import MIN_N, cell_of
 from starpulse._internal.level.sessions import session_health, slice_health
 from starpulse._internal.level.signals import CLAUDE_CODE, Signal
 from starpulse._internal.level.steps import NO_SKILL, Owned, owned_steps
+from starpulse._internal.level.trajectories import absorb
 from starpulse.contracts.adapters import TaskKeys
 
-__all__ = ["CUT_SHARE", "END", "LONG_STRETCH", "START", "directly_follows", "fast_slow_diff", "sub_stages"]
+__all__ = [
+    "CUT_SHARE",
+    "END",
+    "LONG_STRETCH",
+    "START",
+    "cost_to_go",
+    "directly_follows",
+    "fast_slow_diff",
+    "sub_stages",
+]
 
 START, END = "[start]", "[end]"
+#: The level a skill machine's chain is solved over: every run ends in `END`.
+_STEPS = Level("skill", END, (Terminal(END, "goal"),))
 #: A cut's commonest successor takes at most this share of the occurrences that leave it.
 CUT_SHARE = 0.8
 
@@ -207,6 +220,15 @@ def _counts(counter: Counter[str]) -> list[dict[str, Any]]:
     return [{"activity": a, "count": n} for a, n in sorted(counter.items(), key=lambda item: (-item[1], item[0]))]
 
 
+def _clean_tasks(signals: list[Signal], keys: TaskKeys | None, analytics: Analytics | None) -> set[str]:
+    """The tasks that completed clean in Claude Code alone."""
+    return {
+        s["task"]
+        for s in slice_health(session_health(signals, keys, analytics))
+        if s["clean"] and s["complete"] and set(s["harnesses"]) == {CLAUDE_CODE}
+    }
+
+
 def fast_slow_diff(
     found: Iterable[Signal],
     keys: TaskKeys | None,
@@ -217,11 +239,7 @@ def fast_slow_diff(
     stop = analytics.stop_activities if analytics else frozenset()
     machines = {m.skill: m for m in analytics.skill_machines} if analytics else {}
     signals = list(found)
-    clean = {
-        s["task"]
-        for s in slice_health(session_health(signals, keys, analytics))
-        if s["clean"] and s["complete"] and set(s["harnesses"]) == {CLAUDE_CODE}
-    }
+    clean = _clean_tasks(signals, keys, analytics)
     rows = []
     for (kind, size, skill), runs in runs_by_transition(owned_steps(signals, keys, analytics), tasks, stop).items():
         group = [r for r in runs if r.task in clean]
@@ -244,4 +262,69 @@ def fast_slow_diff(
                 "reference_only": _counts(fast - slower),
             }
         )
+    return rows
+
+
+def _stage_visits(run: Run, machine: SkillMachine) -> list[tuple[str, int]]:
+    """The run's visits to the machine's states as (state, steps taken there), a self-loop collapsed. A step is in the
+    stage its run had reached when it began, `START` before the first; a step's tool calls then advance the run one
+    stage at a time, as `_conforms` reads them."""
+    visits: list[tuple[str, int]] = []
+    reached = 0
+    for owned in sorted(run.steps, key=lambda o: o.step["at"]):
+        state = machine.stages[reached - 1].name if reached else START
+        if visits and visits[-1][0] == state:
+            visits[-1] = (state, visits[-1][1] + 1)
+        else:
+            visits.append((state, 1))
+        for call in sorted((c for c in owned.calls if c.kind == "tool"), key=lambda c: c.time):
+            if reached < len(machine.stages) and _reaches(machine.stages[reached], call):
+                reached += 1
+    return visits
+
+
+def cost_to_go(
+    found: Iterable[Signal],
+    keys: TaskKeys | None,
+    tasks: Mapping[str, Mapping[str, Any]],
+    analytics: Analytics | None = None,
+) -> list[dict[str, Any]]:
+    """One row per state of each skill machine within a kind and size, by kind, size, skill, then the machine's order:
+    the expected agent steps from a run's first step in that state until the run ends, and `n`, the times the state
+    was seen left.
+
+    The chain is the trajectories' absorbing chain (`trajectories.absorb`) over the clean completed runs of the
+    cell, its stays counted in steps, a run's last step absorbing into `END`. A state no run reached has no row, and
+    a cell's rows are served whatever their `n`: the gate that spends them holds a state seen leave under `MIN_N`
+    times.
+    """
+    stop = analytics.stop_activities if analytics else frozenset()
+    machines = {m.skill: m for m in analytics.skill_machines} if analytics else {}
+    signals = list(found)
+    clean = _clean_tasks(signals, keys, analytics)
+    rows = []
+    for (kind, size, skill), runs in runs_by_transition(owned_steps(signals, keys, analytics), tasks, stop).items():
+        if (machine := machines.get(skill)) is None:
+            continue
+        counts: dict[str, Counter[str]] = defaultdict(Counter)
+        stays: dict[str, list[float]] = defaultdict(list)
+        for run in (r for r in runs if r.task in clean):
+            visits = _stage_visits(run, machine)
+            for (state, length), (after, _) in pairwise([*visits, (END, 0)]):
+                counts[state][after] += 1
+                stays[state].append(length)
+        chain = absorb(counts, stays, _STEPS, unit=1)
+        order = [START, *(stage.name for stage in machine.stages)]
+        rows += [
+            {
+                "kind": kind,
+                "size": size,
+                "skill": skill,
+                "state": state,
+                "n": chain[state]["n"],
+                "cost_to_go": chain[state]["expected_days"],
+            }
+            for state in order
+            if state in chain
+        ]
     return rows

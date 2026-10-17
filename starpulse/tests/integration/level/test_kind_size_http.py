@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from starpulse._internal.config.analytics import Analytics
 from starpulse._internal.eventlog.event_log import EventLog
 from starpulse._internal.feed.board_feed import BoardFeed
 from starpulse._internal.harnesses.telemetry import TelemetryLog, signals
@@ -18,6 +19,7 @@ from starpulse._internal.kit.adapter_kit import serve, url
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.tests.machines import MACHINES
 from starpulse.tests.unit.harnesses.test_telemetry import FIXTURES
+from starpulse.tests.unit.level.test_flow import EXECUTE_8, WORK_STEPS, completed
 
 KEYS = TaskKeys(
     key=re.compile(r"TASK-\d+"),
@@ -76,3 +78,33 @@ def test_an_instance_that_receives_no_telemetry_cannot_report(tmp_path: Path, ro
         status, body = _get(server, route)
 
     assert (status, "telemetry" in body["error"]) == (501, True)
+
+
+def test_cost_to_go_is_served_per_state_with_the_times_the_state_was_left(tmp_path: Path) -> None:
+    telemetry = TelemetryLog(EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}"))
+    runs = [("read", "edit", "test"), ("edit", "test"), ("edit", "edit", "test"), ("edit", "test", "read")]
+    for n, calls in enumerate(runs, 1):
+        telemetry.publish(completed(n, *calls))
+    feed = BoardFeed(machines=MACHINES, keys=KEYS)
+    feed.titled = lambda: {f"TASK-{n}": EXECUTE_8 for n in range(1, 5)}  # type: ignore[method-assign]
+    analytics = Analytics(
+        completion_skill="completing-tasks", stop_activities=frozenset({"Skill"}), skill_machines=(WORK_STEPS,)
+    )
+    with serve(tmp_path, feed, telemetry=telemetry, clock=lambda: 4600.0, analytics=analytics) as server:
+        status, body = _get(server, "cost-to-go", "?hours=1")
+
+    rows = [r for r in body["cost_to_go"] if r["skill"] == "work"]
+    assert (status, body["now"], body["window_s"]) == (200, 4600.0, 3600.0)
+    assert [(r["kind"], r["size"], r["state"], r["n"], round(r["cost_to_go"], 2)) for r in rows] == [
+        ("execute", 8, "[start]", 4, 2.75),
+        ("execute", 8, "edit", 4, 1.5),
+        ("execute", 8, "test", 1, 1.0),
+    ]
+
+
+def test_cost_to_go_is_empty_inside_the_history_and_refused_past_it(server: ThreadingHTTPServer) -> None:
+    inside = _get(server, "cost-to-go", "?hours=1.06")
+    past = _get(server, "cost-to-go", "?hours=24")
+
+    assert inside == (200, {"now": NOW, "window_s": 1.06 * 3600, "cost_to_go": []})
+    assert (past[0], "longer than the history" in past[1]["error"]) == (400, True)

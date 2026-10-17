@@ -141,6 +141,12 @@ GET /api/analytics/diff[?hours=N]
                    reference, slow, slow_only, reference_only}`. A transition with under 5 clean runs is not listed;
                    one with none that conforms to its skill's machine is, with `conformant` 0, `reference` null and
                    `reference_only` empty. Refusals as `/api/analytics/steps`
+GET /api/analytics/cost-to-go[?hours=N]
+                   the expected agent steps to a run's end from each state of each skill machine over the last `hours`,
+                   default 168, as `{now, window_s, cost_to_go}` (`flow.cost_to_go`): each is `{kind, size, skill,
+                   state, n, cost_to_go}` for a state of the machine or `[start]`, `n` the times the state was seen
+                   left in the clean completed runs; every state is listed whatever its `n`. Refusals as
+                   `/api/analytics/steps`
 GET /api/level[?hours=N]
                    the level's flow numbers on the Backlog flow metric definitions (`level_metrics`), over the
                    last `hours`, default 168: `wip`, `throughput`, `time_in_state`, `aging`, and the orbit's
@@ -305,7 +311,7 @@ from starpulse._internal.level.trajectories import WhatIfRefused, trajectory_ana
 from starpulse._internal.level import analytics
 from starpulse._internal.level.clusters import Cluster, cluster_key, dispersion, trace, trace_clusters
 from starpulse._internal.level.cells import cell_report, transition_cost
-from starpulse._internal.level.flow import directly_follows, fast_slow_diff, sub_stages
+from starpulse._internal.level.flow import cost_to_go, directly_follows, fast_slow_diff, sub_stages
 from starpulse._internal.level.sessions import session_health, slice_health
 from starpulse._internal.level.steps import session_steps
 from starpulse._internal.level.traces import Case, cases as trace_cases, missed_loads
@@ -739,6 +745,21 @@ def diff_response(
     (`flow.fast_slow_diff`) over the last `hours`; refusals as `steps_response`."""
     return _kind_size_response(
         telemetry, query, now, "diff", lambda found, _: fast_slow_diff(found, keys, titled(), analytics)
+    )
+
+
+def cost_to_go_response(
+    telemetry: TelemetryLog | None,
+    query: dict[str, list[str]],
+    keys: TaskKeys | None,
+    titled: Callable[[], Mapping[str, Mapping[str, Any]]],
+    now: float,
+    analytics: Analytics | None = None,
+) -> tuple[bytes, int]:
+    """The body and status for `/api/analytics/cost-to-go`: the expected agent steps to a run's end from each
+    skill-machine state (`flow.cost_to_go`) over the last `hours`; refusals as `steps_response`."""
+    return _kind_size_response(
+        telemetry, query, now, "cost_to_go", lambda found, _: cost_to_go(found, keys, titled(), analytics)
     )
 
 
@@ -1448,6 +1469,10 @@ def request_handler(
                 self._send(*graph_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
             elif url.path == "/api/analytics/stages":
                 self._send(*stages_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
+            elif url.path == "/api/analytics/cost-to-go":
+                self._send(
+                    *cost_to_go_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics)
+                )
             elif url.path == "/api/analytics/diff":
                 self._send(*diff_response(telemetry, parse_qs(url.query), feed.keys, feed.titled, clock(), analytics))
             elif url.path == "/api/analytics/missed-loads":

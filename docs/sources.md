@@ -256,6 +256,23 @@ transition whose clean group has no conforming run is listed with `conformant` 0
 Blind spot: the diff compares activity counts of two runs, not their order, and one reference is one run's way, not
 the best way. The stages an instance declares are its reading of the skill's steps; StarPulse does not derive them.
 
+## Read the steps still to come from each state of a skill machine
+
+`GET /api/analytics/cost-to-go` (`?hours=N`, 168 by default) is `{now, window_s, cost_to_go}`, one row per state of
+each `[[analytics.skill_machines]]` machine within a kind and size, by kind, size, skill, then the machine's order with
+`[start]` first. A step is in the stage its run had reached when the step began, and `[start]` before the first stage.
+The rows come from the trajectories' absorbing chain over the clean completed runs of the skill (the `diff` report's
+runs), with the run's last step absorbing into its end; a state's `cost_to_go` is the expected agent steps from a run's
+first step in it until the run ends, and the unit is steps, not days. A skill with no machine has no rows.
+
+- `kind`, `size`, `skill`, `state`: the cell.
+- `n`: the times the state was seen left in those runs. Every state is listed whatever its `n`; a consumer holds a cell
+  with a small one (trantor's tier gate holds under 5).
+- `cost_to_go`: the expected steps, as the closed form `(I - Q)^-1` of the observed transitions.
+
+Blind spot: a state reached once reads as certain. The chain is the observed transitions only, with no smoothing, so
+`n` is the confidence a reader must apply.
+
 ## Find missed skill loads and recurring work
 
 The same signals say what each session did, not only how long it took. A tool call is lifted to *activities* with no

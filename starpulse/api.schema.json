@@ -962,6 +962,31 @@
       "title": "ContractReport",
       "type": "object"
     },
+    "CostToGo": {
+      "additionalProperties": false,
+      "description": "`GET /api/analytics/cost-to-go`: every state of each skill machine, whatever its `n`; a consumer holds a cell with a small one.",
+      "properties": {
+        "cost_to_go": {
+          "items": {
+            "$ref": "#/$defs/StateCost"
+          },
+          "type": "array"
+        },
+        "now": {
+          "type": "number"
+        },
+        "window_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "now",
+        "window_s",
+        "cost_to_go"
+      ],
+      "title": "CostToGo",
+      "type": "object"
+    },
     "CreateRequest": {
       "additionalProperties": false,
       "description": "`POST /api/tasks`: create a task in the board's starting lane, stamped `created_by: <harness>:<session>`.",
@@ -6573,6 +6598,43 @@
       "title": "Started",
       "type": "object"
     },
+    "StateCost": {
+      "additionalProperties": false,
+      "description": "One skill-machine state's expected cost-to-go within a kind and size.",
+      "properties": {
+        "cost_to_go": {
+          "description": "The expected agent steps from a run's first step in the state until the run ends.",
+          "type": "number"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "n": {
+          "description": "The times the state was seen left in the clean completed runs.",
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "skill": {
+          "type": "string"
+        },
+        "state": {
+          "description": "A stage of the skill's machine, or `[start]` before its first.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "size",
+        "skill",
+        "state",
+        "n",
+        "cost_to_go"
+      ],
+      "title": "StateCost",
+      "type": "object"
+    },
     "Step": {
       "additionalProperties": false,
       "description": "One step of a DAG in its latest run.",
@@ -7712,6 +7774,9 @@
     "contractReport": {
       "$ref": "#/$defs/ContractReport"
     },
+    "costToGo": {
+      "$ref": "#/$defs/CostToGo"
+    },
     "diff": {
       "$ref": "#/$defs/RunDiffs"
     },
@@ -7923,6 +7988,7 @@
     "graph",
     "stages",
     "diff",
+    "costToGo",
     "missedLoads",
     "traceClusters",
     "level",

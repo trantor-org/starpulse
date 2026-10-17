@@ -29,7 +29,7 @@ from typing import Any
 from starpulse._internal.config.level import Level
 from starpulse._internal.eventlog.level_metrics import Run, WindowPastHistory, held_steps
 
-__all__ = ["WhatIfRefused", "betweenness", "trajectory_analytics", "what_if"]
+__all__ = ["WhatIfRefused", "absorb", "betweenness", "trajectory_analytics", "what_if"]
 
 _DAY_S = 86400.0
 
@@ -136,7 +136,7 @@ def what_if(
     changed = dict(counts)
     changed[origin] = Counter({after: n / out * scale for after, n in counts[origin].items() if after != to} | {to: p})
     try:
-        after = _absorb(changed, model.stays, level)
+        after = absorb(changed, model.stays, level)
     except ZeroDivisionError:
         raise WhatIfRefused(f"with {origin} -> {to} at {p} a run never finishes") from None
     firsts = Counter(steps[0][1] for _, steps in ended if steps[0][1] in counts)
@@ -214,8 +214,8 @@ class _Model:
                     self.stays[state].append(later - at)
                     loop_counts[state, loops[i]][after if after in terminals else (after, loops[i + 1])] += 1
                     loop_stays[state, loops[i]].append(later - at)
-        self.plain = _absorb(self.counts, self.stays, level)
-        self.conditioned = _absorb(loop_counts, loop_stays, level)
+        self.plain = absorb(self.counts, self.stays, level)
+        self.conditioned = absorb(loop_counts, loop_stays, level)
 
     def row(self, state: str, loops: int) -> tuple[dict[str, Any] | None, bool]:
         """The row a run in `state` after `loops` loops is forecast from, and whether it is pooled: the state's own row
@@ -436,12 +436,15 @@ def _chain(rows: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     return {state: {"expected_days": row["expected_days"], "p_goal": row["p_goal"]} for state, row in rows.items()}
 
 
-def _absorb(counts: Mapping[Any, Counter[Any]], stays: Mapping[Any, list[float]], level: Level) -> dict[Any, Any]:
-    """Each state's expected days to finish and chance of ending in each terminal and in the goal, solved from the
-    transitions observed, with `n`, the times it was seen leave.
+def absorb(
+    counts: Mapping[Any, Counter[Any]], stays: Mapping[Any, list[float]], level: Level, unit: float = _DAY_S
+) -> dict[Any, Any]:
+    """Each state's expected stay to finish (`expected_days`) and chance of ending in each terminal and in the goal,
+    solved from the transitions observed, with `n`, the times it was seen leave. A stay is in seconds, shown in days
+    when `unit` is a day; stays counted in steps take a `unit` of 1.
 
     With Q the transitions among the states that have a way out and R the chance of stepping into a terminal at once,
-    the expected days are N h and the chances N R, where N = (I - Q)^-1 and h is the mean stay in days. Both come from
+    the expected days are N h and the chances N R, where N = (I - Q)^-1 and h is the mean stay in `unit`s. Both come from
     solving (I - Q) x = column rather than inverting. A target with no row of its own absorbs.
     """
     states = list(counts)
@@ -454,7 +457,7 @@ def _absorb(counts: Mapping[Any, Counter[Any]], stays: Mapping[Any, list[float]]
         for after, n in counts[state].items():
             if after in index:
                 matrix[index[state]][index[after]] -= n / out
-        columns[0].append(sum(stays[state]) / len(stays[state]) / _DAY_S)
+        columns[0].append(sum(stays[state]) / len(stays[state]) / unit)
         for k, end in enumerate(ends, 1):
             columns[k].append(counts[state][end] / out)
     days, *chances = _solve(matrix, columns) if states else [[] for _ in columns]

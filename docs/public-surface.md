@@ -40,6 +40,9 @@ internal and can change in any release.
   each transition's reference run against its slowest clean run (see
   [Connect sources](sources.md#graph-a-transitions-activities-and-diff-a-fast-run-against-a-slow-one)), and `starpulse
   analytics graph|stages|diff [--hours]` that read them.
+- `GET /api/analytics/cost-to-go` and its body in `api.schema.json`: the expected agent steps to a run's end from each
+  state of each skill machine, with the times the state was left (see
+  [Connect sources](sources.md#read-the-steps-still-to-come-from-each-state-of-a-skill-machine)).
 - `starpulse search QUERY` and its route `GET /api/search?q=`: the board's tasks ranked by an instance-local full-text index, as `{query, hits}` ([each verb](cli.md)); the index and its module are internal.
 - `GET /api/analytics/missed-loads` and `GET /api/analytics/trace-clusters` and their bodies in `api.schema.json`:
   the skills a session did not load for work that should have loaded them, and the work that recurs across sessions
