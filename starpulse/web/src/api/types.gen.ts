@@ -1370,9 +1370,17 @@ export interface SubFlow {
   when: string;
 }
 export interface Transition {
+  cite?: Cite | null;
   event: string;
   source: string;
   target: string;
+}
+/**
+ * The sentence of a skill that sends a session down a transition.
+ */
+export interface Cite {
+  quote: string;
+  skill: string;
 }
 /**
  * Who fires a Board event: a runs workflow (by `<instance>/<workflow>` name), `operator` or `agent`.

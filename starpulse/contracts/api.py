@@ -47,10 +47,20 @@ class MachineState(_Api):
     final: bool
 
 
+class Cite(_Api):
+    """The sentence of a skill that sends a session down a transition."""
+
+    skill: str
+    quote: str
+
+
 class Transition(_Api):
     source: str
     target: str
     event: str
+    cite: Cite | None = Field(
+        default=None, description="The skill sentence that authorizes the transition; absent when its YAML cites none."
+    )
 
 
 class Writer(_Api):

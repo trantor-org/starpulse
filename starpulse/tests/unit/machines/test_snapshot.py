@@ -9,6 +9,7 @@ from statemachine import State, StateChart
 from starpulse._internal.machines import snapshot
 from starpulse._internal.machines.machine_definition import MachineDefinitionError, load_machine
 from starpulse._internal.machines.snapshot import describe
+from starpulse.contracts.api import Cite, Transition
 
 
 class _Tiny(StateChart):
@@ -135,3 +136,14 @@ class TestSource:
     def test_an_empty_source_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(MachineDefinitionError, match="source"):
             self._drawn(tmp_path, source="")
+
+
+class TestContract:
+    def test_a_cited_transition_is_a_transition_of_the_api_contract_and_an_uncited_one_stays_bare(self) -> None:
+        cite = {"skill": "completing-tasks", "quote": "Only exit 3 is a blocker"}
+
+        cited = Transition.model_validate({"source": "a", "target": "b", "event": "GO", "cite": cite})
+        bare = Transition.model_validate({"source": "a", "target": "b", "event": "GO"})
+
+        assert cited.cite == Cite(**cite)
+        assert bare.cite is None
