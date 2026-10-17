@@ -618,10 +618,11 @@ def follow(
     interval: float = DEFAULT_POLL_INTERVAL,
     stop: threading.Event | None = None,
 ) -> None:
-    """Read the Dagu instance at `url` into `runs`: its listing, then the run entries the log retains and each new one.
+    """Read the Dagu instance at `url` into `runs`: its listing, then each run entry appended since the log's head.
 
-    The listing comes first so an entry stamped before it, already in it, is dropped (`DaguRuns`); it repeats every
-    `RECONCILE_INTERVAL` seconds, so runs show with no `handler_on` hooks publishing them. A sink with a `tied`
+    The head is read before the listing, so an entry the listing may not hold is still read and the retained ones,
+    already in it, are not replayed; an entry stamped before the listing is dropped (`DaguRuns`). The listing
+    repeats every `RECONCILE_INTERVAL` seconds, so runs show with no `handler_on` hooks publishing them. A sink with a `tied`
     attribute (the workflows a Board event cues or that write one) also gets those workflows' recent runs. Both
     threads end when `stop` is set; the server passes none and they run for the process's life.
     """
@@ -632,10 +633,9 @@ def follow(
     reader = DaguRuns(runs, lambda only=None: dags(url, only, tied(), finished, graphs), lambda: pools(url), tied=tied)
 
     def read() -> None:
+        tail = Tail.at_head(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed
         reader.reconcile()
-        Tail(log, run_events.STREAM, interval=interval).run(
-            lambda entry: reader.handle_entry(str(entry.id), entry.fields), stop
-        )
+        tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), stop)
 
     threading.Thread(target=read, name="dagu-runs", daemon=True).start()
     threading.Thread(target=_reconcile_forever, args=(reader, stop), name="dagu-runs-reconcile", daemon=True).start()

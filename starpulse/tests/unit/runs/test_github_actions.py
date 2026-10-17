@@ -445,6 +445,28 @@ def test_following_a_repository_lists_it_then_moves_a_workflow_by_the_entries_on
     ]
 
 
+def test_the_tail_starts_at_the_log_head_so_no_retained_entry_is_replayed_and_a_later_one_is_handled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("starpulse._internal.runs.github_actions._reconcile_forever", lambda runs: None)
+    served = [Recorded(runs={"ci": "ci-success"})]
+    monkeypatch.setattr("starpulse._internal.runs.github_actions.connect", lambda token: lambda *call: served[0](*call))
+    handled: list[str] = []
+    real_handle = GitHubRuns.handle_entry
+    monkeypatch.setattr(GitHubRuns, "handle_entry", lambda self, entry_id, fields: (handled.append(entry_id), real_handle(self, entry_id, fields))[1])
+    log = EventLog(f"sqlite:///{tmp_path / 'events.sqlite'}")
+    for _ in range(3):  # the retention the listing already covers
+        log.append(run_events.STREAM, run_events.entry("end", "ci.yml", "1", "succeeded", now=1.0))
+    feed = BoardFeed()
+
+    follow_repository(f"https://github.com/{REPO}", feed.runs("gh"), log, interval=0.01)
+    wait_until(lambda: feed.snapshot()["dags"])
+    log.append(run_events.STREAM, run_events.entry("end", "ci.yml", "2", "succeeded", now=time.time() + 60))
+    wait_until(lambda: handled)
+
+    assert handled == ["4"]
+
+
 def test_a_repository_where_no_run_changes_costs_at_most_five_calls_a_minute_over_ten_minutes() -> None:
     quiet = Recorded(runs={"ci": "ci-success"})
     runs = GitHubRuns(BoardFeed().runs("gh"), Repository(quiet, REPO))

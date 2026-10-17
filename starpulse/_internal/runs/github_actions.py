@@ -442,9 +442,10 @@ def _reconcile_forever(runs: GitHubRuns) -> None:
 
 
 def follow(url: str, runs: RunsSink, log: EventLog, *, interval: float = DEFAULT_POLL_INTERVAL) -> None:
-    """Read the repository at `url` into `runs`: its listing, then the run entries the log retains and each new one.
+    """Read the repository at `url` into `runs`: its listing, then each run entry appended since the log's head.
 
-    The listing comes first so an entry stamped before it, already in it, is dropped (`GitHubRuns`). Reads are signed in
+    The head is read before the listing, so an entry the listing may not hold is still read and the retained ones,
+    already in it, are not replayed; an entry stamped before the listing is dropped (`GitHubRuns`). Reads are signed in
     with `GITHUB_TOKEN` or `GH_TOKEN` when one is set; without, GitHub's lower unauthenticated rate limit applies.
     """
     repo = repo_of(url)
@@ -452,10 +453,9 @@ def follow(url: str, runs: RunsSink, log: EventLog, *, interval: float = DEFAULT
     reader = GitHubRuns(runs, Repository(transport, repo))
 
     def read() -> None:
+        tail = Tail.at_head(log, run_events.STREAM, interval=interval)  # before the listing: what it holds is not replayed
         reader.reconcile()
-        Tail(log, run_events.STREAM, interval=interval).run(
-            lambda entry: reader.handle_entry(str(entry.id), entry.fields), threading.Event()
-        )
+        tail.run(lambda entry: reader.handle_entry(str(entry.id), entry.fields), threading.Event())
 
     threading.Thread(target=read, name="github-runs", daemon=True).start()
     threading.Thread(target=_reconcile_forever, args=(reader,), name="github-runs-reconcile", daemon=True).start()

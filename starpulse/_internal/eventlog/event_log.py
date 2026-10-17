@@ -402,6 +402,18 @@ class Tail:
         self.interval = interval
         self.batch = batch
 
+    @classmethod
+    def at_head(cls, log: EventLog, stream: str, **kwargs: Any) -> Tail:
+        """A Tail that reads only the rows appended after `stream`'s newest one now, for a reader that rebuilds its
+        state from elsewhere and would discard the replay. Take it before that rebuild, so a row appended meanwhile is
+        read. When the log cannot be reached it replays the retention, which is the safe start."""
+        try:
+            after = log.last(stream)
+        except Exception as exc:  # the database is unreachable; `run` retries the polls
+            logger.warning("Tail %s: cannot read the head, replaying the retention: %s", stream, exc)
+            after = None
+        return cls(log, stream, after=after, **kwargs)
+
     def poll(self) -> list[Entry]:
         """Read the next batch of this stream's rows past the cursor, move the cursor, and return them.
 
