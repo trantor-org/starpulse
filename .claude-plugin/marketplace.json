@@ -3,17 +3,12 @@
   "owner": {
     "name": "trantor-org"
   },
-  "description": "StarPulse's agent skills and its Claude Code board band as Claude Code plugins.",
+  "description": "StarPulse's agent skills as a Claude Code plugin.",
   "plugins": [
     {
       "name": "starpulse",
       "source": "./",
       "description": "Skills for setting up StarPulse, operating a board on it, authoring lifecycle machines and writing adapters."
-    },
-    {
-      "name": "starpulse-board",
-      "source": "./plugins/starpulse-board",
-      "description": "Shows the Board tasks this Claude Code session holds above the prompt, and /board to list them."
     }
   ]
 }

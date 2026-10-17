@@ -304,8 +304,8 @@ which of the four each copy is.
 Claude Code can load the same skills as a plugin instead of copies: the repository is a plugin marketplace
 (`.claude-plugin/`), so `/plugin marketplace add trantor-org/starpulse` then `/plugin install starpulse@starpulse`, or
 a `directory` marketplace pointing at a local checkout, serves them as `starpulse:<skill>`, read in place.
-The same marketplace serves `starpulse-board` (`plugins/starpulse-board/`, `/plugin install starpulse-board@starpulse`):
-it runs `starpulse board --holder <session id>` when a session starts, after each tool call and after each turn, so a
+The `starpulse-board` mod ([trantor-org/starpulse-board](https://github.com/trantor-org/starpulse-board), `/plugin marketplace add trantor-org/starpulse-board`, then `/plugin install starpulse-board@starpulse-board`)
+runs `starpulse board --holder <session id>` when a session starts, after each tool call and after each turn, so a
 task claimed mid-turn shows before the turn ends. It draws each task that session holds as one row above the prompt in
 StarPulse's palette: lane icon, ID, the title (or the reason a Needs attention task waits on the operator, or what a
 Waiting task waits on), a bar of checked acceptance criteria with `k/n`, the lane, and the PR with its check state. A
