@@ -2,6 +2,7 @@
 
 import os
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,12 @@ class Actor:
 
     def pulls_changed(self) -> None:
         pass
+
+    def store_changed(self) -> None:
+        pass
+
+    def timed_projection(self, project: Callable[[], None]) -> Callable[[], None]:
+        return project
 
     def exposition(self) -> str:
         return "starpulse_task_actor_refusals_total 0\n"

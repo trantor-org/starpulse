@@ -1,6 +1,7 @@
 """With `delivery_worker = true` `serve` starts none of the Delivery context's threads and draws what the worker projects."""
 
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,12 @@ class Built:
 
     def pulls_changed(self) -> None:
         pass
+
+    def store_changed(self) -> None:
+        pass
+
+    def timed_projection(self, project: Callable[[], None]) -> Callable[[], None]:
+        return project
 
     def refresh(self) -> None:
         pass

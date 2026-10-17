@@ -72,7 +72,8 @@ GET /metrics       Prometheus text: `starpulse_pull_store_age_seconds{repo}`, th
                    any process appended since this one started that name no actor (none on a hub). Also this process's `process_resident_memory_bytes`,
                    `process_threads`, `process_open_fds` and `process_start_time_seconds`, which moves on every
                    restart. With `[board.actor]`, also `starpulse_task_actor_refusals_total` and the
-                   `starpulse_task_actor_latency_seconds` histogram
+                   `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds` and
+                   `starpulse_task_actor_handoff_seconds` histograms
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
                    No checks (and ok) when the server runs with no config to check
@@ -2126,8 +2127,9 @@ def start_delivery(
             feed, pulls, repos=config.repos, pins=pins, trail=CiTrail(log) if config.ci else None
         )
         project = pull_requests.refresh
-        if actor:  # the actor derives from the projection, so it follows each one
-            project = _then(project, actor.pulls_changed)
+        if actor:  # the actor reads each save at once and the pins after each projection
+            pulls.subscribe(actor.store_changed)
+            project = _then(actor.timed_projection(project), actor.pulls_changed)
         if after_project:
             project = _then(project, after_project)
         sync = PullSync(pulls, feed, config.repos, project=project, stop=stop)
