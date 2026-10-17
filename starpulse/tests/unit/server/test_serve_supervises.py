@@ -53,7 +53,7 @@ def test_serve_supervises_every_worker_and_starts_no_context_in_process(
     assert threads == []
     assert isinstance(handled["autopilot"], Remote)
     [supervisor] = supervisors
-    assert set(supervisor.commands) == {"pulls", "autopilot", "runs", "history"}
+    assert set(supervisor.commands) == {"pulls", "autopilot", "runs", "history", "board"}
     assert supervisor.started
 
 
@@ -69,12 +69,14 @@ def test_serve_offers_the_reload_endpoint_beside_its_config(
 @pytest.mark.parametrize(
     ("settings", "supervised"),
     [
-        ("delivery_worker = true\n", {"autopilot", "runs", "history"}),
-        ("autopilot_worker = true\n", {"pulls", "runs", "history"}),
-        ("runs_worker = true\n", {"pulls", "autopilot", "history"}),
-        ("history_worker = true\n", {"pulls", "autopilot", "runs"}),
+        ("delivery_worker = true\n", {"autopilot", "runs", "history", "board"}),
+        ("autopilot_worker = true\n", {"pulls", "runs", "history", "board"}),
+        ("runs_worker = true\n", {"pulls", "autopilot", "history", "board"}),
+        ("history_worker = true\n", {"pulls", "autopilot", "runs", "board"}),
+        ("board_worker = true\n", {"pulls", "autopilot", "runs", "history"}),
         (
-            "delivery_worker = true\nautopilot_worker = true\nruns_worker = true\nhistory_worker = true\n",
+            "delivery_worker = true\nautopilot_worker = true\nruns_worker = true\nhistory_worker = true\n"
+            "board_worker = true\n",
             set(),
         ),
     ],
@@ -186,3 +188,14 @@ def test_serve_runs_no_embedding_thread_and_supervises_a_search_child_for_a_fals
 
     assert "search-embeddings" not in {t.name for t in threading.enumerate()} - before
     assert ("search" in supervisors[0].commands) is supervised
+
+
+@pytest.mark.parametrize("settings", ["", "board_worker = true\n"])
+def test_serve_runs_neither_the_criteria_nor_the_reconcile_thread_whatever_the_board_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisors: list[FakeSupervisor], settings: str
+) -> None:
+    before = set(threading.enumerate())
+
+    _serve(tmp_path, monkeypatch, settings)
+
+    assert not {"board-criteria", "lane-reconcile"} & {t.name for t in set(threading.enumerate()) - before}

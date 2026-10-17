@@ -2217,8 +2217,17 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         lane_events.replay(store, log)
     # a lane entry reaches the log for the hub it is forwarded to and for the triggers that start a run on it
     feed.record_lanes(store, log if config.forward is not None or config.triggers else None)
-    feed.track_criteria(board.evaluate, store)
-    threading.Thread(target=feed.keep_criteria, args=(threading.Event(),), name="board-criteria", daemon=True).start()
+    # `starpulse worker board` dates when each task's Start Criteria were met and reconciles the lanes the history
+    # missed; this process rereads the dates it keeps. A hub has no such worker and runs both in-process.
+    if args.hub:
+        feed.track_criteria(board.evaluate, store)
+        threading.Thread(
+            target=feed.keep_criteria, args=(threading.Event(),), name="board-criteria", daemon=True
+        ).start()
+    else:
+        threading.Thread(
+            target=feed.follow_criteria, args=(store, threading.Event()), name="criteria-follow", daemon=True
+        ).start()
     feed.read_lanes(store.lane_rows)
     if args.hub:
         # The first pass runs before serving, so the hub never takes an event without today's partition.
@@ -2239,7 +2248,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no mutate block — 
         feed.index_tasks(search)  # `starpulse worker search` catches the vectors up off the feed's path
     board.start(feed, f"starpulse-{port}", log)
     # a move the feed applied but never recorded (a restart between the two) is put in the history once the replay is read
-    threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
+    if args.hub:
+        threading.Thread(target=reconcile_lanes, args=(feed, store), name="lane-reconcile", daemon=True).start()
     tasks = MachineTasks(feed, board.keys)
     follow(tasks, log, machine_events.STREAM, tasks.handle_entry)
     refusals = ClaimRefusals(feed)

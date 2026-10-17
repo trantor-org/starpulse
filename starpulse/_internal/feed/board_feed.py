@@ -768,6 +768,27 @@ class BoardFeed:
             if stop.wait(interval):
                 return
 
+    def follow_criteria(self, store: CriteriaStore, stop: threading.Event, interval: float = CRITERIA_INTERVAL) -> None:
+        """Adopt, every `interval` seconds until `stop` is set, when `store` says each task's Start Criteria were met,
+        as the process that evaluates them keeps it there; this feed evaluates nothing. A store that cannot be read
+        leaves what the feed held. The first pass assesses every open task, as `track_criteria` does."""
+        first = True
+        while True:
+            try:
+                met = dict(store.criteria_met())
+            except Exception as exc:  # the store is down; the next pass reads it again
+                logger.warning("StarPulse: cannot read when Start Criteria were met: %s", exc)
+                met = None
+            with self._lock:
+                previous = self._met
+                if met is not None:
+                    self._met = met
+                if first or self._met != previous:
+                    self._reassess(list(self._open) if first else previous.keys() | self._met.keys())
+            first = False
+            if stop.wait(interval):
+                return
+
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
         with self._lock:

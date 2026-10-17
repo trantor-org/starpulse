@@ -53,8 +53,8 @@ short request needs. A stream past the limit gets `503` with `Retry-After: 5` an
 
 ### Worker processes
 
-`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history` and `search` (with an `[search] embeddings_url`). For each one whose `delivery_worker`,
-`autopilot_worker`, `runs_worker`, `forwarding_worker`, `history_worker` or `search_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
+`serve` is a supervisor over the contexts that run as their own `starpulse worker <context>` process: `pulls` (Delivery), `autopilot`, `runs`, `forwarding`, `history`, `search` (with an `[search] embeddings_url`) and `board` (the Start Criteria dating and the lane reconcile). For each one whose `delivery_worker`,
+`autopilot_worker`, `runs_worker`, `forwarding_worker`, `history_worker`, `search_worker` or `board_worker` setting is false, the default, `serve` starts the worker as a child with `subprocess`, restarts it with a growing delay (1 s, doubling to 60 s; a child that
 ran a minute restarts at once) when it exits, and stops it when `serve` stops on `SIGTERM` or Ctrl-C. The children read the same config and `database_url` and meet `serve` only in
 the event log. A true setting means something outside `serve` runs that worker, so `serve` starts no child for it. No unit file is needed to run StarPulse.
 
@@ -274,6 +274,16 @@ type = "native"
 # (`serve --hub`) keeps no search index and ignores this setting. With the flag set and no worker running, no vector is
 # written and search ranks by the vectors already stored, else lexically.
 # search_worker = false
+
+# Whether something outside `serve` runs the Board context's writers (the thread that dates when each Waiting task's
+# Start Criteria were met, and the one-pass reconcile of the lanes the history missed). False, the default: `serve`
+# supervises them as a child process, `starpulse worker board`. True: you run `starpulse worker board --config <this
+# file>` yourself and `serve` starts no thread and no child. The dates are saved in the history and read back at start,
+# and a lane is recorded under an id naming the task, the lane and when it entered, so a restarted worker neither drops
+# nor repeats a lane row nor re-dates a task; `serve` rereads the dates every 30 s. A hub (`serve --hub`) keeps both
+# writers in-process and ignores this setting. With the flag set and no worker running, no Start Criteria are
+# evaluated, so a Waiting task with them never becomes workable. The release of dependents belongs to the `pulls` worker.
+# board_worker = false
 
 # Let a producer that just saw a pull request close have its record read now instead of at the next minute's refresh:
 # `POST /api/pulls/refresh` with `{"repo": "<owner>/<name>", "number": 12}` and `Authorization: Bearer <token>`. The PR store's

@@ -77,6 +77,7 @@ _KEYS = {
     "forwarding_worker",
     "history_worker",
     "search_worker",
+    "board_worker",
     "slow_read_seconds",
     "worker_memory",
 }
@@ -461,6 +462,7 @@ WORKER_MEMORY = {
     "forwarding": MemoryLimit(256, 512),
     "history": MemoryLimit(384, 768),
     "search": MemoryLimit(384, 768),
+    "board": MemoryLimit(768, 1536),
 }
 
 
@@ -572,6 +574,8 @@ class Config:
     """The History context (the recorder that copies the event log's machine events into the history store, and the hourly prune of the log) runs in `starpulse worker history`, not in `serve`: `serve` starts neither thread; false: `serve` supervises that worker as a child. A hub keeps both in-process whatever this says."""
     search_worker: bool = False
     """The Search context's embedding catch-up (the thread that fills vectors for indexed task text) runs in `starpulse worker search`, not in `serve`: `serve` starts no thread; false: `serve` supervises that worker as a child when `[search]` names an `embeddings_url`. A hub keeps no search index whatever this says."""
+    board_worker: bool = False
+    """The Board context's writers (the Start Criteria evaluation and the reconcile of lane records the history missed) run in `starpulse worker board`, not in `serve`: `serve` starts neither thread and reads the criteria results from the history store; false: `serve` supervises that worker as a child. A hub keeps both in-process whatever this says."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots, stops or triggers."""
     release: Release | None = None
@@ -802,5 +806,6 @@ def load(path: Path | None) -> Config:
         forwarding_worker=_flag(raw, "forwarding_worker", False),
         history_worker=_flag(raw, "history_worker", False),
         search_worker=_flag(raw, "search_worker", False),
+        board_worker=_flag(raw, "board_worker", False),
         slow_read_seconds=_slow_read(raw.get("slow_read_seconds", SLOW_READ_S)),
     )
